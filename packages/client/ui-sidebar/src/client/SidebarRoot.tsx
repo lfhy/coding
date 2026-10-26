@@ -1,7 +1,8 @@
 /**
- * 侧边栏壳负责折叠动画、顶部避让行、新建对话行和滚动条可见性。展开时第一行与 macOS
- * 交通灯同排，只承载侧栏收起按钮；第二行是新对话入口。折叠动画冻结宽内容，等淡出后再
- * 切换到 56px rail；浏览区域与页脚仍由各自 slot 占用者绘制。
+ * 侧边栏壳负责折叠动画、新对话行、交通灯避让和滚动条可见性。展开时第一行是新对话入口，
+ * 收起按钮由浏览区域的标题行渲染（壳层通过 owner share 交出动作）；收起的 56px rail 里
+ * 新对话图标与展开按钮都排在这一行。折叠动画冻结宽内容，等淡出后再切换到 rail；浏览区域
+ * 与页脚仍由各自 slot 占用者绘制。
  */
 import { useEffect, useRef, useState } from 'react'
 import clsx from 'clsx'
@@ -21,8 +22,8 @@ const COLLAPSE_SETTLE_MS = 150
 const SCROLLBAR_LINGER_MS = 2000
 
 /**
- * 渲染侧边栏壳：顶部避让行持有收起按钮，新对话行持有唯一的新建入口；欢迎页操作可见时
- * 只隐藏重复的工作台面板动作，不隐藏收起按钮。
+ * 渲染侧边栏壳：新对话行持有唯一的新建入口，并交出浏览区域标题行要用的收起动作；
+ * 欢迎页操作可见时只隐藏重复的工作台面板动作。
  * @param props - 布局 owner、slot、回调与本地化文案。
  * @returns 侧边栏元素树。
  */
@@ -105,22 +106,7 @@ export function SidebarRoot({
       }}
       onPointerLeave={() => { armLinger() }}
     >
-      {/* 顶部避让行与 macOS 交通灯同排，只放侧栏收起按钮；交通灯左侧不接管原生拖拽。 */}
-      <div className={css.topRow}>
-        <div className={css.windowDragInset} data-window-drag-inset data-window-drag-region aria-hidden="true" />
-        {wide && (
-          <Tooltip label={collapsed ? t('toggle.open') : t('toggle.collapse')} delayMs={500}>
-            <button
-              type="button"
-              className={clsx(css.iconButton, css.toggle, css.wide)}
-              aria-label={collapsed ? t('toggle.open') : t('toggle.collapse')}
-              onClick={() => { toggleSidebar() }}
-            >
-              <Icon name="sidebar" className={css.panelIcon} size={16} />
-            </button>
-          </Tooltip>
-        )}
-      </div>
+      <div className={css.windowDragInset} data-window-drag-inset data-window-drag-region aria-hidden="true" />
 
       <div className={css.logoRow} data-window-drag-region>
         {/* 品牌位改为新对话入口；rail 中没有文字位置，退化为纯图标控件并保留展开按钮。 */}
@@ -160,6 +146,8 @@ export function SidebarRoot({
         {renderSlot('sidebar.workspaces', {
           wide,
           expandSidebar: () => { if (collapsed) toggleSidebar() },
+          // 宽侧栏的收起按钮由浏览区域的标题行渲染；已收起时点击不重复收起。
+          collapseSidebar: () => { if (!collapsed) toggleSidebar() },
         })}
       </div>
 

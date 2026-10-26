@@ -88,16 +88,19 @@ function mountShell({ collapsed = false, width = 300, welcomeActionsVisible = fa
 }
 
 describe('SidebarRoot shell', () => {
-  it('retains the sidebar toggle while omitting only duplicate workbench actions on the welcome page', () => {
+  it('omits only duplicate workbench actions on the welcome page and keeps the rail toggle', () => {
+    vi.useFakeTimers()
     const b = mountShell({ welcomeActionsVisible: true })
     expect(screen.queryByTestId('brand-action-seat')).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: 'Collapse sidebar' }))
-    expect(b.toggleSidebar).toHaveBeenCalledOnce()
     expect(screen.getAllByRole('button', { name: 'New chat' })).toHaveLength(1)
 
+    // 展开态不渲染任何收起按钮；落定到 rail 后才出现展开入口。
     b.rerender({ collapsed: true, welcomeActionsVisible: true })
+    expect(screen.queryByRole('button', { name: 'Open sidebar' })).toBeNull()
+    vi.advanceTimersByTime(200)
+    b.rerender({})
     fireEvent.click(screen.getByRole('button', { name: 'Open sidebar' }))
-    expect(b.toggleSidebar).toHaveBeenCalledTimes(2)
+    expect(b.toggleSidebar).toHaveBeenCalledOnce()
     expect(screen.queryByTestId('brand-action-seat')).toBeNull()
 
     b.rerender({ welcomeActionsVisible: false })
@@ -105,19 +108,18 @@ describe('SidebarRoot shell', () => {
     expect(screen.getByRole('button', { name: 'Open sidebar' })).toBeTruthy()
   })
 
-  it('moves the collapse control into the traffic-light row above the New chat entry', () => {
+  it('routes the New chat entry and hands the collapse action to the browsing region', () => {
     const b = mountShell()
     // 新对话行内的动作洞渲染在新对话入口之后，占用者拿到 wide。
     expect(b.brandActionOwner().wide).toBe(true)
     const actions = screen.getByTestId('brand-action-seat')
     const starter = screen.getByRole('button', { name: 'New chat' })
     expect(actions.compareDocumentPosition(starter) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy()
-    // 收起按钮在新对话入口上方的一行里，不再与它同排。
-    const toggle = screen.getByRole('button', { name: 'Collapse sidebar' })
-    expect(toggle.compareDocumentPosition(starter) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     fireEvent.click(starter)
     expect(b.startSession).toHaveBeenCalledOnce()
-    fireEvent.click(toggle)
+    // 宽侧栏不再自带收起按钮，收起动作交给浏览区域的标题行。
+    expect(screen.queryByRole('button', { name: 'Collapse sidebar' })).toBeNull()
+    b.regionOwner().collapseSidebar()
     expect(b.toggleSidebar).toHaveBeenCalledOnce()
   })
 
@@ -139,17 +141,19 @@ describe('SidebarRoot shell', () => {
     expect(screen.queryByText('0123456')).toBeNull()
   })
 
-  it('hands the region its wide flag and clamps expandSidebar to the collapsed state', () => {
+  it('hands the region its wide flag and clamps both toggle requests to their own state', () => {
     const b = mountShell()
     expect(b.regionOwner().wide).toBe(true)
     // 品牌行动作与设置座位共用同一个 wide 标志。
     expect(b.brandActionOwner().wide).toBe(true)
-    // The settings seat rides the same wide flag (ui-settings renders the row).
+    // 设置座位跟随同一个 wide 标志（ui-settings 渲染对应行）。
     expect(b.settingsOwner().wide).toBe(true)
     expect(b.footerActionOwner().wide).toBe(true)
-    // Expanded: the request is a no-op (no accidental collapse).
+    // 已展开：展开请求是空操作，收起请求生效。
     b.regionOwner().expandSidebar()
     expect(b.toggleSidebar).not.toHaveBeenCalled()
+    b.regionOwner().collapseSidebar()
+    expect(b.toggleSidebar).toHaveBeenCalledOnce()
   })
 
   it('keeps the region mounted through collapse and expands on its request', () => {
@@ -165,6 +169,9 @@ describe('SidebarRoot shell', () => {
     expect(b.footerActionOwner().wide).toBe(false)
     expect(screen.getByTestId('region')).toBeTruthy()
     b.regionOwner().expandSidebar()
+    expect(b.toggleSidebar).toHaveBeenCalledOnce()
+    // 已收起：收起请求不再反转成展开。
+    b.regionOwner().collapseSidebar()
     expect(b.toggleSidebar).toHaveBeenCalledOnce()
   })
 

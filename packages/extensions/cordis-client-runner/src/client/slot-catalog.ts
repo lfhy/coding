@@ -1685,6 +1685,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
       'client-ui-settings-plugins PluginsSettingsSection id \'plugins\'',
       'client-ui-settings-proxy-pool ProxyPoolSection id \'proxy-pool\'',
       'client-ui-settings-search SearchSettingsSection id \'search\'',
+      'client-ui-theme ThemeGallery id \'appearance\'',
     ],
     replaceRisk: 'none',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'settings.section\', () => ctx.slots.register(\n      { name: \'settings.section\', id: \'my-entry\', order: 100, label: \'My entry\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
@@ -1853,7 +1854,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
       },
     ],
     ownerProps: [
-      '/** Owner share of an action rendered beside Settings at the sidebar foot. */\nexport interface SidebarFooterActionOwnerProps {\n  /** Whether the sidebar renders wide content (false = 56px rail). */\n  wide: boolean\n}',
+      '/** 渲染在侧栏页脚设置旁的动作的 owner share。 */\nexport interface SidebarFooterActionOwnerProps {\n  /** 侧边栏是否渲染宽内容（false = 56px rail）。 */\n  wide: boolean\n}',
     ],
     ownerPropsReferences: [],
     standardProps: [
@@ -1955,7 +1956,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     doc: 'The settings seat at the sidebar foot. Declared by this package\'s\n\'sidebar\' entry; ui-settings registers its trigger row + modal panel.\nThe sidebar passes only its column state — it holds no settings state.',
     registerOptions: [],
     ownerProps: [
-      '/**\n * Owner share of the sidebar settings seat: the column display state the\n * occupant\'s trigger row must render against (wide row vs rail icon).\n */\nexport interface SidebarSettingsOwnerProps {\n  /** Whether the sidebar renders wide content (false = 56px rail). */\n  wide: boolean\n}',
+      '/**\n * 设置座位的 owner share：占用者的触发行要按它渲染（宽行 vs rail 图标）。\n */\nexport interface SidebarSettingsOwnerProps {\n  /** 侧边栏是否渲染宽内容（false = 56px rail）。 */\n  wide: boolean\n}',
     ],
     ownerPropsReferences: [],
     standardProps: [
@@ -1981,7 +1982,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     doc: 'The workspace/session browsing region: section header, search, the\ngrouped/flat session list, and every workspace dialog. Declared by this\npackage\'s \'sidebar\' entry (declaring is claiming); ui-workspace\nregisters the browser.',
     registerOptions: [],
     ownerProps: [
-      '/**\n * Owner share of the browser hole — the only facts crossing the shell/region\n * boundary. Business data and actions arrive through the region\'s own inject.\n */\nexport interface SidebarSectionOwnerProps {\n  /** Shell fold-state output: wide renders the full browser, rail the icon column. */\n  wide: boolean\n  /** Rail icons request expansion; the browser rides the wide flip for focus. */\n  expandSidebar: () => void\n}',
+      '/**\n * 浏览区域的 owner share：壳层与区域之间唯一跨越边界的事实。业务数据与动作走区域\n * 自己的 inject。\n */\nexport interface SidebarSectionOwnerProps {\n  /** 壳层折叠状态：true 渲染完整浏览器，false 渲染 56px rail 的图标列。 */\n  wide: boolean\n  /** rail 图标请求展开；浏览器跟随 wide 翻转处理焦点。 */\n  expandSidebar: () => void\n  /** 宽侧栏的标题行用它渲染收起按钮；已展开时才会真正收起。 */\n  collapseSidebar: () => void\n}',
     ],
     ownerPropsReferences: [],
     standardProps: [

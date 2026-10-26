@@ -36,10 +36,10 @@ async function createRuntime(): Promise<SlotTestRuntime> {
   return runtime
 }
 
-/** Test-owned sidebar shell role: declares and renders the browsing region. */
+/** 测试自备的侧边栏壳角色：声明并渲染浏览区域，交出壳层的两个折叠动作。 */
 type FrameProps = PropsRenderSlots<'sidebar.workspaces'>
 function SidebarFrame({ renderSlot }: FrameProps) {
-  return <>{renderSlot('sidebar.workspaces', { wide: true, expandSidebar: () => {} })}</>
+  return <>{renderSlot('sidebar.workspaces', { wide: true, expandSidebar: () => {}, collapseSidebar: () => {} })}</>
 }
 
 describe('session rename through the assembled browser', () => {

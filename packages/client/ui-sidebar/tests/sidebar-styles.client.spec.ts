@@ -30,15 +30,10 @@ describe('SidebarRoot.module.css', () => {
   it('drags safe titlebar gaps but keeps traffic lights and row controls clear', () => {
     expect(root).toContain('<div className={css.windowDragInset} data-window-drag-inset data-window-drag-region aria-hidden="true" />')
     expect(root).toContain('<div className={css.logoRow} data-window-drag-region>')
-    // 顶部避让行与交通灯同排，但它自己不带拖拽区：交通灯左侧必须保留给系统按钮。
-    expect(root).toContain('<div className={css.topRow}>')
-    expect(root).not.toContain('<div className={css.topRow} data-window-drag-region>')
     expect(declarations('.windowDragInset')?.get('left')).toBe('90px')
     expect(declarations('.windowDragInset')?.get('height')).toBe('var(--app-safe-area-inset-top, 0px)')
     expect(declarations('.windowDragInset')?.get('-webkit-app-region')).toBe('no-drag')
     expect(declarations('.collapsed .windowDragInset')?.get('display')).toBe('none')
-    expect(declarations('.topRow')?.get('height')).toBe('max(var(--app-safe-area-inset-top, 0px), 32px)')
-    expect(declarations('.collapsed .topRow')?.get('display')).toBe('none')
     expect(declarations('.logoRow')?.get('-webkit-app-region')).toBe('no-drag')
     expect(css).toMatch(/\.logoRow :is\(button, a, input, select, textarea, \[role='button'\]\)\s*\{\s*-webkit-app-region: no-drag;/)
   })
@@ -46,8 +41,9 @@ describe('SidebarRoot.module.css', () => {
   it('keeps the safe area and footer edge geometry structural', () => {
     const root = declarations('.root')
     expect(root?.get('--dsh-sidebar-inline-padding')).toBe('12px')
-    // 顶部安全区由 .topRow 持有，展开时列本身不再留出垂直内边距。
-    expect(root?.get('padding')).toBe('0 var(--dsh-sidebar-inline-padding) 0')
+    expect(root?.get('padding')).toBe(
+      'calc(6px + var(--app-safe-area-inset-top, 0px)) var(--dsh-sidebar-inline-padding) 0',
+    )
     expect(declarations('.root.collapsed')?.get('padding')).toBe(
       'calc(28px + var(--app-safe-area-inset-top, 0px)) 10px 0',
     )

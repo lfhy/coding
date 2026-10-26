@@ -9,8 +9,8 @@
   display: flex;
   flex-direction: column;
   height: 100%;
-  /* 顶部避让由 .topRow 自己持有，展开时不额外留出上下内边距。 */
-  padding: 0 var(--dsh-sidebar-inline-padding) 0;
+  /* 桌面无边框壳把交通灯高度注入 --app-safe-area-inset-top；浏览器中该变量缺省为 0。 */
+  padding: calc(6px + var(--app-safe-area-inset-top, 0px)) var(--dsh-sidebar-inline-padding) 0;
   box-sizing: border-box;
   background: var(--dsw-specific-sidebar-fill);
   color: var(--dsw-alias-label-primary);
@@ -102,22 +102,6 @@
   -webkit-app-region: no-drag;
 }
 
-/* 顶部避让行：桌面无边框壳把交通灯高度注入 --app-safe-area-inset-top，收起按钮与交通灯
-   同排；浏览器中该变量缺省为 0，行高退化为 32px 的普通标题行。行内拖拽区从交通灯右侧
-   开始，按钮叠在拖拽区之上才可点击。 */
-.topRow {
-  flex: none;
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  height: max(var(--app-safe-area-inset-top, 0px), 32px);
-}
-
-.topRow :is(button, a) {
-  position: relative;
-  z-index: 1;
-}
-
 .logoRow :is(button, a, input, select, textarea, [role='button']) {
   -webkit-app-region: no-drag;
 }
@@ -139,11 +123,6 @@
   padding: 0;
   margin-bottom: 12px;
   justify-content: flex-start;
-}
-
-/* rail 自己让开交通灯高度，顶部避让行不再渲染。 */
-.collapsed .topRow {
-  display: none;
 }
 
 /* 收起 rail 中动作纵向堆叠在收起按钮上方，每个图标仍是 36×36 控件盒并居中于 56px 宽度。 */

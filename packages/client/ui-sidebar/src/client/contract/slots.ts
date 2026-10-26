@@ -51,41 +51,40 @@ export interface SidebarBrandActionOwnerProps {
 }
 
 /**
- * Owner share of the browser hole — the only facts crossing the shell/region
- * boundary. Business data and actions arrive through the region's own inject.
+ * 浏览区域的 owner share：壳层与区域之间唯一跨越边界的事实。业务数据与动作走区域
+ * 自己的 inject。
  */
 export interface SidebarSectionOwnerProps {
-  /** Shell fold-state output: wide renders the full browser, rail the icon column. */
+  /** 壳层折叠状态：true 渲染完整浏览器，false 渲染 56px rail 的图标列。 */
   wide: boolean
-  /** Rail icons request expansion; the browser rides the wide flip for focus. */
+  /** rail 图标请求展开；浏览器跟随 wide 翻转处理焦点。 */
   expandSidebar: () => void
+  /** 宽侧栏的标题行用它渲染收起按钮；已展开时才会真正收起。 */
+  collapseSidebar: () => void
 }
 
 /**
- * Owner share of the sidebar settings seat: the column display state the
- * occupant's trigger row must render against (wide row vs rail icon).
+ * 设置座位的 owner share：占用者的触发行要按它渲染（宽行 vs rail 图标）。
  */
 export interface SidebarSettingsOwnerProps {
-  /** Whether the sidebar renders wide content (false = 56px rail). */
+  /** 侧边栏是否渲染宽内容（false = 56px rail）。 */
   wide: boolean
 }
 
-/** Owner share of an action rendered beside Settings at the sidebar foot. */
+/** 渲染在侧栏页脚设置旁的动作的 owner share。 */
 export interface SidebarFooterActionOwnerProps {
-  /** Whether the sidebar renders wide content (false = 56px rail). */
+  /** 侧边栏是否渲染宽内容（false = 56px rail）。 */
   wide: boolean
 }
 
 /**
- * Registrant-private injected share (arrives via the register inject
- * factory). The shell keeps only its own controls: starting a Session from
- * the New Session button and toggling the column.
+ * 注册者私有的注入 share（来自 register 的 inject 工厂）。壳层只持有自己的控件：
+ * 从新对话入口启动会话，以及折叠整列。
  */
 export type SidebarRootInjected = {
   /**
-   * Start a New Session: with a workspace, reuse-or-create its blank session
-   * and open it; without one, inherit the current Session Workspace, then the
-   * recent Workspace, or clear into the New Session pure view when none exist.
+   * 启动新会话：指定工作区时复用或创建它的空白会话并打开；未指定时先继承当前
+   * Session 所属工作区，再退到最近工作区，都没有则清空为 New Session 空视图。
    */
   startSession: (workspaceId?: WorkspaceId) => void
   /** Toggle the sidebar column through the layout service. */
@@ -93,9 +92,8 @@ export type SidebarRootInjected = {
 }
 
 /**
- * Full component props: layout owner state/actions plus the declared holes'
- * render shares, this package's injected callbacks, and the standard locale
- * seat. No store is registered.
+ * 完整组件 props：布局 owner 状态与动作、已声明洞的渲染 share、本包注入的回调，
+ * 以及标准 locale 座位。这里不注册 store。
  */
 export type SidebarRootComponentProps =
   PropsRuntime<'sidebar'>

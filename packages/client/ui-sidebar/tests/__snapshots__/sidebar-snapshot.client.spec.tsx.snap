@@ -1,6 +1,6 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
-exports[`sidebar shell snapshots > renders only the sidebar toggle above the New chat entry in the welcome header 1`] = `
+exports[`sidebar shell snapshots > renders only the New chat entry in the welcome header 1`] = `
 <div
   data-slot="sidebar"
   style="display: contents;"
@@ -10,39 +10,11 @@ exports[`sidebar shell snapshots > renders only the sidebar toggle above the New
     style="width: 300px;"
   >
     <div
-      class="topRow"
-    >
-      <div
-        aria-hidden="true"
-        class="windowDragInset"
-        data-window-drag-inset="true"
-        data-window-drag-region="true"
-      />
-      <button
-        aria-label="Collapse sidebar"
-        class="iconButton toggle wide"
-        type="button"
-      >
-        <span
-          aria-hidden="true"
-          aria-label="sidebar"
-          class="semi-icon semi-icon-sidebar panelIcon"
-          role="img"
-          style="font-size: 16px;"
-        >
-          <svg
-            aria-hidden="true"
-            data-content="e9ddaac1"
-            fill="none"
-            focusable="false"
-            height="1em"
-            viewBox="0 0 24 24"
-            width="1em"
-            xmlns="http://www.w3.org/2000/svg"
-          />
-        </span>
-      </button>
-    </div>
+      aria-hidden="true"
+      class="windowDragInset"
+      data-window-drag-inset="true"
+      data-window-drag-region="true"
+    />
     <div
       class="logoRow"
       data-window-drag-region="true"
@@ -105,21 +77,44 @@ exports[`sidebar shell snapshots > renders the collapsed rail after the crossfad
   style="display: contents;"
 >
   <div
-    class="root fading quietBars"
-    style="width: 300px;"
+    class="root collapsed railIn quietBars"
+    style=""
   >
     <div
-      class="topRow"
+      aria-hidden="true"
+      class="windowDragInset"
+      data-window-drag-inset="true"
+      data-window-drag-region="true"
+    />
+    <div
+      class="logoRow"
+      data-window-drag-region="true"
     >
+      <button
+        aria-label="New chat"
+        class="newSession wide"
+        type="button"
+      >
+        <svg
+          data-content="c0ce4dcc"
+          fill="none"
+          height="18"
+          viewBox="0 0 16 16"
+          width="18"
+          xmlns="http://www.w3.org/2000/svg"
+        />
+      </button>
       <div
-        aria-hidden="true"
-        class="windowDragInset"
-        data-window-drag-inset="true"
-        data-window-drag-region="true"
-      />
+        class="brandActions"
+      >
+        <div
+          data-slot="sidebar.brand.action"
+          style="display: contents;"
+        />
+      </div>
       <button
         aria-label="Open sidebar"
-        class="iconButton toggle wide"
+        class="iconButton toggle"
         type="button"
       >
         <span
@@ -127,7 +122,7 @@ exports[`sidebar shell snapshots > renders the collapsed rail after the crossfad
           aria-label="sidebar"
           class="semi-icon semi-icon-sidebar panelIcon"
           role="img"
-          style="font-size: 16px;"
+          style="font-size: 18px;"
         >
           <svg
             aria-hidden="true"
@@ -141,38 +136,6 @@ exports[`sidebar shell snapshots > renders the collapsed rail after the crossfad
           />
         </span>
       </button>
-    </div>
-    <div
-      class="logoRow"
-      data-window-drag-region="true"
-    >
-      <button
-        aria-label="New chat"
-        class="newSession wide"
-        type="button"
-      >
-        <svg
-          data-content="c0ce4dcc"
-          fill="none"
-          height="16"
-          viewBox="0 0 16 16"
-          width="16"
-          xmlns="http://www.w3.org/2000/svg"
-        />
-        <span
-          class="newSessionLabel wide"
-        >
-          New chat
-        </span>
-      </button>
-      <div
-        class="brandActions"
-      >
-        <div
-          data-slot="sidebar.brand.action"
-          style="display: contents;"
-        />
-      </div>
     </div>
     <div
       class="regionArea"
@@ -216,39 +179,11 @@ exports[`sidebar shell snapshots > renders the expanded column (New chat capsule
     style="width: 300px;"
   >
     <div
-      class="topRow"
-    >
-      <div
-        aria-hidden="true"
-        class="windowDragInset"
-        data-window-drag-inset="true"
-        data-window-drag-region="true"
-      />
-      <button
-        aria-label="Collapse sidebar"
-        class="iconButton toggle wide"
-        type="button"
-      >
-        <span
-          aria-hidden="true"
-          aria-label="sidebar"
-          class="semi-icon semi-icon-sidebar panelIcon"
-          role="img"
-          style="font-size: 16px;"
-        >
-          <svg
-            aria-hidden="true"
-            data-content="e9ddaac1"
-            fill="none"
-            focusable="false"
-            height="1em"
-            viewBox="0 0 24 24"
-            width="1em"
-            xmlns="http://www.w3.org/2000/svg"
-          />
-        </span>
-      </button>
-    </div>
+      aria-hidden="true"
+      class="windowDragInset"
+      data-window-drag-inset="true"
+      data-window-drag-region="true"
+    />
     <div
       class="logoRow"
       data-window-drag-region="true"
@@ -323,39 +258,11 @@ exports[`sidebar shell snapshots > renders the expanded column in the default lo
     style="width: 300px;"
   >
     <div
-      class="topRow"
-    >
-      <div
-        aria-hidden="true"
-        class="windowDragInset"
-        data-window-drag-inset="true"
-        data-window-drag-region="true"
-      />
-      <button
-        aria-label="收起侧边栏"
-        class="iconButton toggle wide"
-        type="button"
-      >
-        <span
-          aria-hidden="true"
-          aria-label="sidebar"
-          class="semi-icon semi-icon-sidebar panelIcon"
-          role="img"
-          style="font-size: 16px;"
-        >
-          <svg
-            aria-hidden="true"
-            data-content="e9ddaac1"
-            fill="none"
-            focusable="false"
-            height="1em"
-            viewBox="0 0 24 24"
-            width="1em"
-            xmlns="http://www.w3.org/2000/svg"
-          />
-        </span>
-      </button>
-    </div>
+      aria-hidden="true"
+      class="windowDragInset"
+      data-window-drag-inset="true"
+      data-window-drag-region="true"
+    />
     <div
       class="logoRow"
       data-window-drag-region="true"

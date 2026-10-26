@@ -12,7 +12,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import clsx from 'clsx'
 import {
-  Button, IconCloseFill14, IconPersonalizationOutline16,
+  Button, Icon, IconCloseFill14, IconPersonalizationOutline16,
   IconProjectAddOutline16, IconSearchOutline16, Menu, Modal, Tooltip,
 } from 'coding-client-ui-primitives'
 import type {
@@ -744,6 +744,7 @@ function SearchResults({
 export function WorkspaceBrowser({
   wide,
   expandSidebar,
+  collapseSidebar,
   useSessions,
   useWorkspaces,
   useStore,
@@ -989,6 +990,21 @@ export function WorkspaceBrowser({
           <span className={clsx(css.sectionLabel, css.wide, searchExpanded && css.sectionLabelHidden)}>
             {groupBy === 'flat' ? t('section.sessions') : t('section.workspaces')}
           </span>
+        )}
+        {/* 壳层把收起动作交到这里：按钮排在搜索左边，搜索展开时让位给输入框。 */}
+        {wide && (
+          <div className={clsx(css.sectionToggle, searchExpanded && css.sectionToggleHidden)}>
+            <Tooltip label={t('sidebar.collapse')} side="bottom" delayMs={500}>
+              <button
+                type="button"
+                className={css.iconButton}
+                aria-label={t('sidebar.collapse')}
+                onClick={() => { collapseSidebar() }}
+              >
+                <Icon name="sidebar" size={16} />
+              </button>
+            </Tooltip>
+          </div>
         )}
         {wide && (
           <div className={clsx(css.searchSlot, searchExpanded && css.searchSlotExpanded)}>

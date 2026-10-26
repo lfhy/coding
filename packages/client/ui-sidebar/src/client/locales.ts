@@ -5,7 +5,6 @@ export const zh = {
   'session.new': '新对话',
   'session.new.label': '新建对话',
   'toggle.open': '打开侧边栏',
-  'toggle.collapse': '收起侧边栏',
 } satisfies Record<string, string>
 
 /** 侧边栏命名空间的键联合。 */
@@ -16,5 +15,4 @@ export const en = {
   'session.new': 'New chat',
   'session.new.label': 'New chat',
   'toggle.open': 'Open sidebar',
-  'toggle.collapse': 'Collapse sidebar',
 } satisfies Record<SidebarKey, string>

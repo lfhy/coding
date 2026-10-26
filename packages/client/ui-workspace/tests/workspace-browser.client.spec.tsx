@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { act, cleanup, createEvent, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, createEvent, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { bindSnapshotSelector } from 'coding-client-test-runtime'
 import type {
   SessionId, SessionListState, SessionSummary, WorkspaceId, WorkspaceListState, WorkspaceView,
@@ -63,6 +63,7 @@ function mount(overrides: Partial<WorkspaceBrowserProps> = {}) {
   const props: WorkspaceBrowserProps = {
     wide: true,
     expandSidebar: vi.fn(),
+    collapseSidebar: vi.fn(),
     useSessions: hook(sessionState([])),
     useWorkspaces: hook(workspaceState([])),
     useStore: bindSnapshotSelector(store),
@@ -388,8 +389,11 @@ describe('WorkspaceBrowser', () => {
     })
     fireEvent.click(screen.getByText('alpha'))
     expect(screen.getByText('child-s')).toBeTruthy()
-    expect(screen.queryByRole('button', { name: /展开|收起/ })).toBeNull()
-    expect(screen.getByText('child-s').closest('[role="treeitem"]')?.getAttribute('draggable')).toBe('true')
+    const forkRow = screen.getByText('child-s').closest<HTMLElement>('[role="treeitem"]')
+    if (forkRow === null) throw new Error('fork child must render a tree row')
+    // 行内没有分组折叠控件；标题行的侧栏收起按钮不属于这一行。
+    expect(within(forkRow).queryByRole('button', { name: /展开|收起/ })).toBeNull()
+    expect(forkRow.getAttribute('draggable')).toBe('true')
   })
 
   it('expands the target group before starting a session from its ＋', () => {
@@ -699,6 +703,22 @@ describe('WorkspaceBrowser', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  it('wide header renders the shell collapse control left of search', () => {
+    const collapseSidebar = vi.fn()
+    mount({ collapseSidebar })
+    const label = screen.getByText('工作区')
+    const collapse = screen.getByRole('button', { name: '收起侧边栏' })
+    const search = screen.getByRole('button', { name: '搜索会话' })
+    // 收起按钮在新对话行下方的标题行里，紧挨着搜索的左侧。
+    expect(label.compareDocumentPosition(collapse) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(collapse.compareDocumentPosition(search) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    fireEvent.click(collapse)
+    expect(collapseSidebar).toHaveBeenCalledOnce()
+    // 搜索展开后整簇动作让位，收起按钮随之隐藏（输入框独占标题行）。
+    fireEvent.click(search)
+    expect(screen.queryByRole('button', { name: '收起侧边栏' })).toBeTruthy()
   })
 
   it('rail state renders icon controls that request expansion', () => {
