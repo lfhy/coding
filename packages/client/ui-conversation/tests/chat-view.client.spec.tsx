@@ -1058,7 +1058,11 @@ describe('ChatView', () => {
     const view = render(<h.ChatView {...h.props} />)
     expect(view.getByTestId('tool-seat-r1')).toBeTruthy()
     expect(h.toolOwners[0]?.block).toMatchObject({ callId: 'r1', argsRaw: '{"command":"cmd-r1"}' })
-    expect(view.getByRole('status').textContent).toBe('Deep diving...')
+    const status = view.getByRole('status')
+    // 读屏文案是固定的状态说明；可见的轮换短语是 aria-hidden 装饰。
+    expect(status.textContent).toContain(zh['status.running'])
+    const decorative = [...status.children].filter(child => child.getAttribute('aria-hidden') === 'true')
+    expect(decorative.some(child => (child.textContent ?? '') !== '')).toBe(true)
   })
 
   it('keeps the Tool renderer mounted when a running call settles into log order', () => {
@@ -1116,10 +1120,13 @@ describe('ChatView', () => {
       nodes: [trigger], turnTimings: new Map([[1, { startTime }]]), running: true,
     })
     const view = render(<h.ChatView {...h.props} />)
-    // Freshly mounted (as after a reload) yet already past the 15s gate.
+    // 挂载即为重载后的状态，且已越过 15 秒门槛。
     const status = view.getByRole('status')
-    expect(status.textContent).toMatch(/^Deep diving\.\.\.2分0\d秒$/)
-    expect(status.querySelector('[aria-hidden="true"]')).not.toBeNull()
+    expect(status.textContent).toContain(zh['status.running'])
+    // 转圈圆环、轮换短语与计时都是装饰；计时文案留在 live region 之外。
+    const decorative = [...status.children].filter(child => child.getAttribute('aria-hidden') === 'true')
+    const clock = decorative.find(child => /^2分0\d秒$/.test(child.textContent ?? ''))
+    expect(clock).toBeDefined()
     act(() => {
       h.set({ queue: [{
         id: 'steering-occurrence' as never,
@@ -1130,7 +1137,30 @@ describe('ChatView', () => {
         text: 'also',
       }] })
     })
-    expect(status.textContent).toMatch(/^Deep diving\.\.\.2分0\d秒$/)
+    expect(status.textContent).toContain(zh['status.running'])
+    expect([...status.children].some(child => /^2分0\d秒$/.test(child.textContent ?? ''))).toBe(true)
+  })
+
+  it('rotates the decorative phrase every 10 seconds without repeating the previous one', () => {
+    vi.useFakeTimers()
+    try {
+      const h = makeHarness({ runningCalls: [runningCall('r1')], running: true })
+      const view = render(<h.ChatView {...h.props} />)
+      const phrase = (): string => [...view.getByRole('status').children]
+        .filter(child => child.getAttribute('aria-hidden') === 'true')
+        .map(child => child.textContent ?? '')
+        .find(text => text !== '') ?? ''
+      const first = phrase()
+      expect(first).not.toBe('')
+      act(() => { vi.advanceTimersByTime(10_000) })
+      const second = phrase()
+      expect(second).not.toBe('')
+      expect(second).not.toBe(first)
+      act(() => { vi.advanceTimersByTime(10_000) })
+      expect(phrase()).not.toBe(second)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('hands each ordered root call to the keyed business-node slot', () => {

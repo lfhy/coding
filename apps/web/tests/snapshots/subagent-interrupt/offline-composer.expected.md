@@ -26,7 +26,7 @@
   - img
   - text: Context injection coding-system-prompt
 - paragraph: partial
-- status: Deep diving...
+- status: Coding...
 - textbox "Parent session offline; sending is unavailable but you can still stop the run" [disabled]
 - button "Commands" [disabled]:
   - img

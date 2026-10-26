@@ -24,7 +24,7 @@
   - img
   - text: Context injection coding-system-prompt
 - paragraph: partial
-- status: Deep diving...
+- status: Coding...
 - button "2 queued messages"
 - textbox "Cmd/Ctrl+Enter steers all queued messages"
 - button "Commands":

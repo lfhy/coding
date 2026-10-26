@@ -181,6 +181,7 @@
 - **入口**：`packages/client/ui-conversation/src/client/index.ts`；组装点在 `packages/client/ui-conversation/src/client/apply.ts`。
 - **接线**：`packages/bundle/web-app/cordis.patch.yml` 的 `ui-conversation` 行；`ConversationController` 以类插件形式自注册为 `conversation` 服务；node 半注册 `ui-conversation.busyEnter` settings 节。
 - **关键文件**：`packages/client/ui-conversation/src/client/apply.ts`、`packages/client/ui-conversation/src/client/chat/ChatView.tsx`、`packages/client/ui-conversation/src/client/contract/slots.ts`、`packages/client/ui-conversation/src/client/service.ts`、`packages/client/ui-conversation/src/client/stores.ts`。
+- **第三方数据**：`packages/client/ui-conversation/src/client/chat/turn-status-phrases/` 是移植来的轮换短语（MIT，四个包），来源、取舍与许可见[包内 NOTICE](../../packages/client/ui-conversation/NOTICE.md)；改词库只动该目录，轮换逻辑与阶段边界在同目录 `index.ts`。
 - **改这里要同步**：新 slot 改 `contract/slots.ts` 与 `apply.ts` 的 children 表；跨域类型只进 `contract/`（`scripts/verify-client-domain-graph.ts` 强制领域目录互不 import）；下游占用包。
 - **不变量**：Chat 业务行是彼此独立的注册表贡献——新行注册一个 `ConversationNodeDefinition` 加 keyed `conversation.chat.node` renderer，绝不把事件 switch 折进 `Session`/`SessionManager` 或中央 renderer；`match(event)` 只读当前事件且按 log `seq` 可确定性回放。ChatView 的定位细轨仅从当前已加载的持久用户／中途引导节点取标记，并与消息流使用同一滚动容器；加载旧页后才增补标记。
 - **测试**：`pnpm exec vitest run packages/client/ui-conversation/tests`

@@ -16,6 +16,10 @@ import { ConversationAnchorRail } from './ConversationAnchorRail.tsx'
 import { PendingSteeringBubble } from './MessageItem.tsx'
 import { ChatNodeSeat } from './ChatNodeSeat.tsx'
 import { formatRunDuration } from './message-chrome.ts'
+import {
+  pickTurnStatusPhrase, TURN_STATUS_ROTATE_MS, turnStatusLocale, turnStatusPhase, turnStatusPhrases,
+} from './turn-status-phrases/index.ts'
+import a11yCss from './accessibility.module.css'
 import css from './ChatView.module.css'
 
 const FOLLOW_THRESHOLD = 24
@@ -139,17 +143,15 @@ function runningTurnStartTime(timeline: ConversationTimelineSnapshot): number | 
   return latest
 }
 
-/** Turn-level model activity label retained across first-token, tool, and streaming phases. */
+/** 回合级活动标签：跨首 token、工具调用与流式阶段保持不变。 */
 function TurnStatus({ startTime, t }: {
-  /** The running turn's logged `turn/start` time; null falls back to mount
-   *  time when that boundary is outside the window. */
+  /** 运行中回合记录的 `turn/start` 时间；该边界在窗口外时回退到挂载时间。 */
   startTime: number | null
-  /** The owning view's locale seat. */
+  /** 所属视图的语言座位。 */
   t: ChatViewSlotProps['t']
 }) {
   const [mountedAt] = useState(() => Date.now())
-  // Anchored to turn/start so a mid-turn reload keeps the real
-  // elapsed time and the final footer's Ran-for label matches this clock.
+  // 锚定 turn/start：中途重载仍保留真实耗时，收尾行的 Ran-for 与本时钟一致。
   const anchor = startTime ?? mountedAt
   const [elapsedMs, setElapsedMs] = useState(() => Math.max(0, Date.now() - anchor))
   useEffect(() => {
@@ -160,12 +162,27 @@ function TurnStatus({ startTime, t }: {
     const id = setInterval(tick, 1000)
     return () => { clearInterval(id) }
   }, [anchor])
-  // Short turns keep the plain label; the clock only appears once the turn
-  // has clearly been running for a while.
+  // 短回合只显示标签；明显运行一段时间后才出现计时。
   const showClock = elapsedMs >= 15_000
+  const phase = turnStatusPhase(elapsedMs)
+  // 换词只在阶段切换或到点换词时发生，不跟着每秒计时刷新。
+  const [phrase, setPhrase] = useState<string | null>(null)
+  useEffect(() => {
+    const rotate = (): void => {
+      setPhrase(previous => pickTurnStatusPhrase(turnStatusPhrases(phase, turnStatusLocale()), previous))
+    }
+    rotate()
+    const id = setInterval(rotate, TURN_STATUS_ROTATE_MS)
+    return () => { clearInterval(id) }
+  }, [phase])
   return (
     <div className={css.turnStatus} role="status" aria-live="polite">
-      Deep diving...
+      {/* 圆环与轮换短语都只是进行中的装饰；读屏只读固定状态文案与计时。 */}
+      <span className={css.turnStatusSpinner} aria-hidden />
+      {phrase !== null && (
+        <span key={phrase} className={css.turnStatusLabel} aria-hidden>{phrase}</span>
+      )}
+      <span className={a11yCss.visuallyHidden}>{t('status.running')}</span>
       {showClock && (
         <span className={css.turnStatusClock} aria-hidden>
           {formatRunDuration(elapsedMs, t)}

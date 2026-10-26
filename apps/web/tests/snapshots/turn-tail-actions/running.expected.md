@@ -34,7 +34,7 @@
   - img
   - text: Bash Print alpha to stdout
 - paragraph: partial
-- status: Deep diving...
+- status: Coding...
 - textbox "Message the agent"
 - button "Commands":
   - img

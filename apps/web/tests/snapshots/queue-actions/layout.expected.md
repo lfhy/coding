@@ -30,7 +30,7 @@
   - img
   - text: Context injection coding-system-prompt
 - paragraph: partial
-- status: Deep diving...
+- status: Coding...
 - region "To-dos":
   - button "To-dos 1 completed · 1 in progress"
 - img

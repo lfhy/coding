@@ -24,7 +24,7 @@
   - img
   - text: Context injection coding-system-prompt
 - paragraph: partial
-- status: Deep diving...
+- status: Coding...
 - list:
   - listitem:
     - text: Edited queue item
