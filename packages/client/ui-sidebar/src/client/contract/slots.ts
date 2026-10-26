@@ -1,11 +1,8 @@
 /**
- * Sidebar slot contract: the registrant-side props composition for the
- * layout-owned `sidebar` slot, plus the holes this shell declares. The shell
- * owns column geometry (fold state machine, brand row, New Session);
- * everything between the section header and the list bottom is the
- * `sidebar.workspaces` registrant's (ui-workspace), and the foot is the
- * `sidebar.settings` registrant's (ui-settings), followed by optional footer
- * actions in `sidebar.footer.action`.
+ * 侧边栏 slot 契约：布局持有的 `sidebar` slot 对注册者暴露的 props 组合，以及壳层声明的洞。
+ * 壳层持有栏几何（折叠状态机、顶部避让行、新建对话行）；标题与列表底部之间属于
+ * `sidebar.workspaces` 注册者（ui-workspace），底部属于 `sidebar.settings` 注册者
+ * （ui-settings），其后是 `sidebar.footer.action` 的可选页脚动作。
  */
 import type { PropsLocale, PropsRenderSlots, PropsRuntime } from 'coding-client-ui-slots'
 // Type-only: pulls ui-layout's SlotMap merge (the 'sidebar' entry) into every
@@ -16,15 +13,11 @@ import type { WorkspaceId } from 'coding-client-runtime/client'
 declare module 'coding-client-ui-slots' {
   interface SlotMap {
     /**
-     * 宽侧边栏中渲染的品牌名称。由本包的 `sidebar` 条目声明；壳层提供通用文本兜底。
-     */
-    'sidebar.brand.name': { kind: 'single'; scope: 'root'; owner: SidebarBrandNameOwnerProps }
-    /**
-     * 品牌行内的可选常驻动作，渲染在收起按钮之前。宽侧栏中它们与收起按钮同排，是一个
-     * 横向图标行；收起的 56px rail 中则纵向排列，排在收起按钮上方。注册者按列表条目注册
-     * （每个条目自带 `id` 与可选 `order`），进入 `sidebar.brand.action` 的条目在所有侧边栏
-     * 宽度下都可见，因此工作台关闭时也能作为入口。组件收到 `wide`：为 `false` 时必须提供
-     * 适合 36×36 控件盒的纯图标呈现。没有注册者时该洞渲染为空，不占位。
+     * 新建对话行内的可选常驻动作，渲染在新对话入口之后。宽侧栏中它们与入口同排，是一个
+     * 横向图标行；收起的 56px rail 中则纵向排列，排在新建对话图标与展开按钮之间。注册者按
+     * 列表条目注册（每个条目自带 `id` 与可选 `order`），进入 `sidebar.brand.action` 的条目在
+     * 所有侧边栏宽度下都可见，因此工作台关闭时也能作为入口。组件收到 `wide`：为 `false` 时
+     * 必须提供适合 36×36 控件盒的纯图标呈现。没有注册者时该洞渲染为空，不占位。
      */
     'sidebar.brand.action': { kind: 'list'; scope: 'root'; owner: SidebarBrandActionOwnerProps }
     /**
@@ -48,14 +41,8 @@ declare module 'coding-client-ui-slots' {
   }
 }
 
-/** 侧边栏品牌名称占用者的空 owner share。 */
-export interface SidebarBrandNameOwnerProps {
-  /** 标记字段：占用者自行持有内容和宽度。 */
-  children?: never
-}
-
 /**
- * 品牌行常驻动作的 owner share。占用者常驻可见（含收起 rail），因此每个动作都要在
+ * 新建对话行常驻动作的 owner share。占用者常驻可见（含收起 rail），因此每个动作都要在
  * `wide` 与 rail 两种形态下可用。
  */
 export interface SidebarBrandActionOwnerProps {
@@ -113,7 +100,6 @@ export type SidebarRootInjected = {
 export type SidebarRootComponentProps =
   PropsRuntime<'sidebar'>
   & PropsRenderSlots<
-    | 'sidebar.brand.name'
     | 'sidebar.brand.action'
     | 'sidebar.workspaces'
     | 'sidebar.settings'

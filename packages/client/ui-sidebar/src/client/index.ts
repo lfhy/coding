@@ -8,22 +8,22 @@ import { SidebarRoot } from './SidebarRoot.tsx'
 import { en, zh, type SidebarKey } from './locales.ts'
 
 export type {
-  SidebarBrandActionOwnerProps, SidebarBrandNameOwnerProps, SidebarFooterActionOwnerProps,
+  SidebarBrandActionOwnerProps, SidebarFooterActionOwnerProps,
   SidebarRootComponentProps, SidebarRootInjected, SidebarSectionOwnerProps, SidebarSettingsOwnerProps,
 } from './contract/slots.ts'
 export type { SidebarKey } from './locales.ts'
 
 declare module 'coding-client-ui-slots' {
   interface LocaleNamespaceMap {
-    /** Sidebar shell controls copy. */
+    /** 侧边栏壳层控件文案。 */
     sidebar: SidebarKey
   }
 }
 
-/** Dictionary namespace owned by this plugin (shell controls copy). */
+/** 本插件持有的字典命名空间（壳层控件文案）。 */
 const NS = 'sidebar'
 
-/** Services required by the sidebar plugin. */
+/** 侧边栏插件所需的服务。 */
 export const inject = ['slots', 'layout', 'sessions', 'workspaces', 'locale']
 
 /** 注册侧边栏壳层及其服务回调。
@@ -33,7 +33,7 @@ export function apply(ctx: ClientContext): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-sidebar: dictionaries')
 
   const injectProps = (): SidebarRootInjected => ({
-    // 壳层的 New Session 按钮复用运行时共享操作：先当前 Session 的 Workspace，后最近 Workspace。
+    // 壳层的新对话入口复用运行时共享操作：先当前 Session 的 Workspace，后最近 Workspace。
     startSession: (workspaceId) => { ctx.workspaces.startSession(workspaceId) },
     toggleSidebar: () => { ctx.layout.toggleSidebar() },
   })
@@ -44,8 +44,7 @@ export function apply(ctx: ClientContext): void {
       // 壳层持有几何；ui-workspace 注册完整浏览区域（标题、搜索、会话列表、Workspace 对话框），
       // ui-settings 注册底部触发器和设置面板。
       children: {
-        'sidebar.brand.name': { kind: 'single', scope: 'root' },
-        // 品牌行常驻动作由 ui-open-in-app 注册：宽侧栏与收起 rail 都渲染，与收起按钮同排。
+        // 新对话行内的常驻动作：宽侧栏与收起 rail 都渲染，靠在新对话入口之后。
         'sidebar.brand.action': { kind: 'list', scope: 'root' },
         'sidebar.workspaces': { kind: 'single', scope: 'root' },
         'sidebar.settings': { kind: 'single', scope: 'root' },

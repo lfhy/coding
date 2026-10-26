@@ -1,7 +1,7 @@
 /**
- * 侧边栏壳负责折叠动画、品牌行和滚动条可见性。欢迎页右上角可操作时，品牌行
- * 只隐藏重复的工作台面板开关，保留侧边栏自身的折叠按钮。折叠动画冻结宽内容，
- * 等淡出后再切换到 56px rail；浏览区域与页脚仍由各自 slot 占用者绘制。
+ * 侧边栏壳负责折叠动画、顶部避让行、新建对话行和滚动条可见性。展开时第一行与 macOS
+ * 交通灯同排，只承载侧栏收起按钮；第二行是新对话入口。折叠动画冻结宽内容，等淡出后再
+ * 切换到 56px rail；浏览区域与页脚仍由各自 slot 占用者绘制。
  */
 import { useEffect, useRef, useState } from 'react'
 import clsx from 'clsx'
@@ -11,19 +11,18 @@ import {
 import type { SidebarRootComponentProps } from './contract/slots.ts'
 import css from './SidebarRoot.module.css'
 
-/** Wide-content unmount delay; matches the 150ms wide-content fade-out. */
+/** 宽内容卸载延迟；与 150ms 的宽内容淡出对齐。 */
 const COLLAPSE_SETTLE_MS = 150
 
 /**
- * How long the column's scrollbars stay drawn after the pointer leaves it.
- * The bar is a pointer affordance here, and hiding it on the leave event
- * itself makes it blink out while the pointer is only crossing the column's
- * edge — on the way to the conversation, or around a portalled menu.
+ * 指针离开后栏内滚动条继续绘制的时长。滚动条在这里只是指针可供性：如果在离开事件
+ * 当场隐藏，指针只是路过栏边缘（去往会话区或经过 portal 菜单）时滑块就会闪烁。
  */
 const SCROLLBAR_LINGER_MS = 2000
 
 /**
- * 渲染侧边栏壳，欢迎页操作可见时仍保留原有的侧栏折叠按钮。
+ * 渲染侧边栏壳：顶部避让行持有收起按钮，新对话行持有唯一的新建入口；欢迎页操作可见时
+ * 只隐藏重复的工作台面板动作，不隐藏收起按钮。
  * @param props - 布局 owner、slot、回调与本地化文案。
  * @returns 侧边栏元素树。
  */
@@ -36,8 +35,7 @@ export function SidebarRoot({
   t,
   renderSlot,
 }: SidebarRootComponentProps) {
-  // Wide content stays mounted while the collapse animates (fading via
-  // .collapsed .wide), unmounts at settle, and remounts right away on expand.
+  // 折叠动画期间宽内容保持挂载（用 .wide 淡出），落定后卸载，展开时立即重新挂载。
   const [settled, setSettled] = useState(collapsed)
   useEffect(() => {
     if (!collapsed) { setSettled(false); return }
@@ -46,21 +44,17 @@ export function SidebarRoot({
   }, [collapsed])
   const wide = !collapsed || !settled
 
-  // Freeze the content at its expanded width while it fades out (collapsed
-  // && wide): the sliding column then clips it instead of reflowing it. The
-  // rail layout (.collapsed styles) only applies once the fade settles.
+  // 淡出期间把内容冻结在展开宽度（collapsed && wide）：滑动中的列只是裁切它而不是重排；
+  // rail 布局（.collapsed 样式）要等淡出落定后才生效。
   const lastWideWidth = useRef(width)
   if (!collapsed) lastWideWidth.current = width
 
-  // Rail-in only crossfades a live collapse: a refresh straight into the
-  // collapsed state renders the rail statically (no delay-hidden icons).
+  // rail 入场只用于实时折叠：刷新后直接处于收起状态时静态渲染 rail，不隐藏图标。
   const everWide = useRef(!collapsed)
   if (!collapsed) everWide.current = true
 
-  // Scrollbars in the column follow the pointer (.quietBars rebinds them
-  // away): drawn while it is inside, and for SCROLLBAR_LINGER_MS after it
-  // leaves. A pointer that returns within that window cancels the pending
-  // hide rather than restarting from a hidden bar.
+  // 栏内滚动条跟随指针（.quietBars 把它们绑定为透明）：指针在栏内时绘制，离开后继续
+  // 保留 SCROLLBAR_LINGER_MS。窗口内返回的指针取消待执行的隐藏，而不是从隐藏状态重来。
   const column = useRef<HTMLDivElement>(null)
   const [pointerInside, setPointerInside] = useState(false)
   const lingerTimer = useRef<number | undefined>(undefined)
@@ -75,18 +69,15 @@ export function SidebarRoot({
     window.clearTimeout(lingerTimer.current)
     lingerTimer.current = undefined
   }
-  // Leaving is decided by the column's BOX, not by DOM containment, and only
-  // while the bars are drawn. ui-settings renders its full-viewport panel as a
-  // fixed-position DESCENDANT of this column, so a pointer moved onto that
-  // panel — or onto the conversation once it closes — fires no `pointerleave`
-  // here, and the bars would stay drawn over a column nobody is pointing at.
-  // The element's own leave stays as the one signal geometry cannot give: a
-  // pointer that leaves the window emits no further moves.
+  // 离开与否由列的盒子判定，而不是 DOM containment，且只在滑块绘制期内生效：
+  // ui-settings 把整屏面板渲染成这一列 fixed 定位的后代，指针移到面板上（或面板关闭后
+  // 移到会话区）都不会触发本列的 pointerleave，滑块就会留在没人指向的列上。元素自身的
+  // leave 事件仍保留，因为指针离开窗口后不会再产生移动事件，那是几何判定给不出的信号。
   useEffect(() => {
     if (!pointerInside) return
     const onMove = (event: PointerEvent): void => {
       const rect = column.current?.getBoundingClientRect()
-      /* v8 ignore next -- the listener only exists while the column is mounted and revealed. */
+      /* v8 ignore next -- 监听只在列挂载并可见时存在。 */
       if (rect === undefined) return
       const inside = event.clientX >= rect.left && event.clientX < rect.right
         && event.clientY >= rect.top && event.clientY < rect.bottom
@@ -114,58 +105,57 @@ export function SidebarRoot({
       }}
       onPointerLeave={() => { armLinger() }}
     >
-      <div className={css.windowDragInset} data-window-drag-inset data-window-drag-region aria-hidden="true" />
-      <div className={css.logoRow} data-window-drag-region>
-        {/* 展开时品牌行兼作新建会话快捷入口；收起后保留切换按钮作为展开入口。 */}
+      {/* 顶部避让行与 macOS 交通灯同排，只放侧栏收起按钮；交通灯左侧不接管原生拖拽。 */}
+      <div className={css.topRow}>
+        <div className={css.windowDragInset} data-window-drag-inset data-window-drag-region aria-hidden="true" />
         {wide && (
+          <Tooltip label={collapsed ? t('toggle.open') : t('toggle.collapse')} delayMs={500}>
+            <button
+              type="button"
+              className={clsx(css.iconButton, css.toggle, css.wide)}
+              aria-label={collapsed ? t('toggle.open') : t('toggle.collapse')}
+              onClick={() => { toggleSidebar() }}
+            >
+              <Icon name="sidebar" className={css.panelIcon} size={16} />
+            </button>
+          </Tooltip>
+        )}
+      </div>
+
+      <div className={css.logoRow} data-window-drag-region>
+        {/* 品牌位改为新对话入口；rail 中没有文字位置，退化为纯图标控件并保留展开按钮。 */}
+        <Tooltip label={t('session.new.label')} delayMs={500} disabled={wide}>
           <button
             type="button"
-            className={clsx(css.brand, css.wide)}
+            className={clsx(css.newSession, css.wide)}
             aria-label={t('session.new.label')}
             onClick={() => { startSession() }}
           >
-            <span className={css.brandIdentity} aria-hidden="true">
-              <span className={css.brandName}>
-                {renderSlot('sidebar.brand.name', {}, {
-                  fallback: <span className={css.fallbackBrandName}>Coding</span>,
-                })}
-              </span>
-            </span>
+            <IconNewChatOutline16 size={wide ? 16 : 18} />
+            {wide && <span className={clsx(css.newSessionLabel, css.wide)}>{t('session.new')}</span>}
           </button>
-        )}
+        </Tooltip>
         {!welcomeActionsVisible && (
           <div className={css.brandActions}>
             {renderSlot('sidebar.brand.action', { wide })}
           </div>
         )}
-        <Tooltip label={collapsed ? t('toggle.open') : t('toggle.collapse')} delayMs={500}>
-          <button
-            type="button"
-            className={clsx(css.iconButton, css.toggle)}
-            aria-label={collapsed ? t('toggle.open') : t('toggle.collapse')}
-            onClick={() => { toggleSidebar() }}
-          >
-            {/* rail 始终提供侧边栏展开入口，品牌标识不充当开关。 */}
-            <Icon name="sidebar" className={css.panelIcon} size={wide ? 16 : 18} />
-          </button>
-        </Tooltip>
+        {!wide && (
+          <Tooltip label={t('toggle.open')} delayMs={500}>
+            <button
+              type="button"
+              className={clsx(css.iconButton, css.toggle)}
+              aria-label={t('toggle.open')}
+              onClick={() => { toggleSidebar() }}
+            >
+              {/* rail 始终提供侧边栏展开入口。 */}
+              <Icon name="sidebar" className={css.panelIcon} size={18} />
+            </button>
+          </Tooltip>
+        )}
       </div>
 
-      {/* Expanded, the button carries its own label — tooltip only on the rail. */}
-      <Tooltip label={t('session.new.label')} delayMs={500} disabled={wide}>
-        <button
-          type="button"
-          className={css.newSession}
-          aria-label={t('session.new.label')}
-          onClick={() => { startSession() }}
-        >
-          <IconNewChatOutline16 size={wide ? 14 : 18} />
-          {wide && <span className={clsx(css.newSessionLabel, css.wide)}>{t('session.new')}</span>}
-        </button>
-      </Tooltip>
-
-      {/* The browsing region fills the column between the controls and the
-          foot in both states; its rail icon column rides the same slot. */}
+      {/* 浏览区域在两种状态下都填满控件与页脚之间的空间，rail 的图标列走同一个 slot。 */}
       <div className={css.regionArea}>
         {renderSlot('sidebar.workspaces', {
           wide,
@@ -173,7 +163,7 @@ export function SidebarRoot({
         })}
       </div>
 
-      {/* Footer actions stack above Settings in both sidebar widths. */}
+      {/* 页脚动作在两种侧栏宽度下都堆叠在设置之上。 */}
       <div className={css.footArea}>
         <div className={css.footerActions}>
           {renderSlot('sidebar.footer.action', { wide })}

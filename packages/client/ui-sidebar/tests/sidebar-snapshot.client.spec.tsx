@@ -1,12 +1,9 @@
 // @vitest-environment jsdom
 /**
- * Local DOM snapshots of the sidebar shell through the real assembly path:
- * SlotTestRuntime mounts the package apply on its own fiber, the auto frame
- * supplies the layout's owner share at the render site, and the snapshot
- * captures exactly the 'sidebar' slot's output (CSS-module class names
- * folded to their semantic locals by the runtime's serializer). The child
- * holes (sidebar.workspaces / sidebar.settings) have no registrant here, so
- * the snapshots pin the shell chrome itself.
+ * 侧边栏壳层走真实装配路径的本地 DOM 快照：SlotTestRuntime 在自己的 fiber 上挂载本包
+ * apply，auto frame 在渲染点提供布局的 owner share，快照只捕获 'sidebar' slot 的输出
+ * （CSS Module 类名由运行时序列化器折叠为语义局部名）。子洞（sidebar.workspaces 与
+ * sidebar.settings）在这里没有注册者，因此快照固定的是壳层自身的镶边。
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, waitFor } from '@testing-library/react'
@@ -35,7 +32,7 @@ async function bench(options: { locale?: 'en' } = {}) {
 }
 
 describe('sidebar shell snapshots', () => {
-  it('renders only the brand, sidebar toggle, and New Session control in the welcome header', async () => {
+  it('renders only the sidebar toggle above the New chat entry in the welcome header', async () => {
     const { runtime } = await bench({ locale: 'en' })
     const slot = runtime.renderSlot('sidebar', { collapsed: false, width: 300, welcomeActionsVisible: true })
     expect(slot.view.getByRole('button', { name: 'Collapse sidebar' })).toBeTruthy()
@@ -46,17 +43,16 @@ describe('sidebar shell snapshots', () => {
   it('renders the expanded column in the default locale (zh, no setLocale)', async () => {
     const { runtime } = await bench()
     const slot = runtime.renderSlot('sidebar', { collapsed: false, width: 300, welcomeActionsVisible: false })
-    // Wordmark + capsule both start a session in the expanded state.
-    expect(slot.view.getAllByRole('button', { name: '新建会话' })).toHaveLength(2)
+    // 展开状态下新对话行只剩一个入口。
+    expect(slot.view.getAllByRole('button', { name: '新建对话' })).toHaveLength(1)
     expect(slot.container).toMatchSnapshot()
     await runtime.dispose()
   })
 
-  it('renders the expanded column (wordmark, capsule, empty holes)', async () => {
+  it('renders the expanded column (New chat capsule, empty holes)', async () => {
     const { runtime } = await bench({ locale: 'en' })
     const slot = runtime.renderSlot('sidebar', { collapsed: false, width: 300, welcomeActionsVisible: false })
-    // Wordmark + capsule both start a session in the expanded state.
-    expect(slot.view.getAllByRole('button', { name: 'New session' })).toHaveLength(2)
+    expect(slot.view.getAllByRole('button', { name: 'New chat' })).toHaveLength(1)
     expect(slot.container).toMatchSnapshot()
     await runtime.dispose()
   })
@@ -66,10 +62,9 @@ describe('sidebar shell snapshots', () => {
     const slot = runtime.renderSlot('sidebar', { collapsed: false, width: 300, welcomeActionsVisible: false })
     const shell = slot.container.firstElementChild
     slot.update({ collapsed: true, width: 56, welcomeActionsVisible: false })
-    // The wide content (wordmark shortcut) unmounts at the 150ms settle;
-    // only the rail's capsule remains a New-session button.
+    // 顶部避让行在 150ms 落定后换成 rail，收起按钮变成 rail 里的展开按钮。
     await waitFor(() => {
-      expect(slot.view.getAllByRole('button', { name: 'New session' })).toHaveLength(1)
+      expect(slot.view.getByRole('button', { name: 'Open sidebar' })).toBeTruthy()
     })
     expect(slot.container).toMatchSnapshot()
     // Same tree position: the owner flip re-rendered the shell in place.
@@ -80,11 +75,11 @@ describe('sidebar shell snapshots', () => {
   it('a locale switch refreshes mounted copy without re-registration', async () => {
     const { runtime, locale } = await bench()
     const slot = runtime.renderSlot('sidebar', { collapsed: false, width: 300, welcomeActionsVisible: false })
-    expect(slot.view.getAllByRole('button', { name: '新建会话' })).toHaveLength(2)
-    // Same fiber, same registration: setLocale alone re-renders the outlet.
+    expect(slot.view.getAllByRole('button', { name: '新建对话' })).toHaveLength(1)
+    // 同一 fiber、同一注册：只切 locale 就足以重渲染 outlet。
     act(() => { locale.setLocale('en') })
-    expect(slot.view.getAllByRole('button', { name: 'New session' })).toHaveLength(2)
-    expect(slot.view.queryByRole('button', { name: '新建会话' })).toBeNull()
+    expect(slot.view.getAllByRole('button', { name: 'New chat' })).toHaveLength(1)
+    expect(slot.view.queryByRole('button', { name: '新建对话' })).toBeNull()
     await runtime.dispose()
   })
 })

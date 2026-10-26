@@ -4,17 +4,14 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, render } from '@testing-library/react'
 import { SlotRegistry } from 'coding-client-runtime/client'
 import { apply, inject } from '../src/client/index.ts'
-import { OfficialBrandMark, OfficialBrandName } from '../src/client/Brand.tsx'
+import { OfficialBrandMark } from '../src/client/Brand.tsx'
 
 afterEach(() => {
   cleanup()
   vi.unstubAllEnvs()
 })
 
-const HOLES = [
-  'sidebar.brand.name',
-  'conversation.hero.brand.mark',
-] as const
+const HOLES = ['conversation.hero.brand.mark'] as const
 
 async function bench(declare = true) {
   const ctx = new Context()
@@ -64,11 +61,7 @@ describe('official browser-brand plugin', () => {
     for (const hole of HOLES) expect(after.slots.entries(hole)).toHaveLength(1)
   })
 
-  it('renders the official name and Hero brand mark independently', () => {
-    const name = render(<OfficialBrandName />)
-    expect(name.container.querySelector('svg')?.getAttribute('viewBox')).toBe('0 0 74 24')
-    name.unmount()
-
+  it('renders the Hero brand mark for the host surface', () => {
     const mark = render(<OfficialBrandMark size={34} className="hero-mark" />)
     expect(mark.container.querySelector('img')?.getAttribute('src')).toBe('/favicon.png')
     expect(mark.container.querySelector('img')?.getAttribute('width')).toBe('34')

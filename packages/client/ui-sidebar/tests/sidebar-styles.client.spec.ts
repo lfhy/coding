@@ -1,4 +1,4 @@
-/** Sidebar shell style contracts shared with its slot-owned controls. */
+/** 侧边栏壳层与它持有控件的样式契约。 */
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
@@ -7,9 +7,9 @@ const css = readFileSync(fileURLToPath(new URL('../src/client/SidebarRoot.module
 const root = readFileSync(fileURLToPath(new URL('../src/client/SidebarRoot.tsx', import.meta.url)), 'utf8')
 
 /**
- * Declarations of one exact selector, keyed by property.
- * @param selector - exact selector text.
- * @returns the normalized declarations, or undefined when absent.
+ * 取某条精确选择器的声明表。
+ * @param selector - 选择器原文。
+ * @returns 归一化后的声明；选择器不存在时为 undefined。
  */
 function declarations(selector: string): Map<string, string> | undefined {
   const withoutComments = css.replace(/\/\*[\s\S]*?\*\//g, ' ')
@@ -27,13 +27,18 @@ function declarations(selector: string): Map<string, string> | undefined {
 }
 
 describe('SidebarRoot.module.css', () => {
-  it('drags safe titlebar gaps but keeps traffic lights and brand controls clear', () => {
+  it('drags safe titlebar gaps but keeps traffic lights and row controls clear', () => {
     expect(root).toContain('<div className={css.windowDragInset} data-window-drag-inset data-window-drag-region aria-hidden="true" />')
     expect(root).toContain('<div className={css.logoRow} data-window-drag-region>')
+    // 顶部避让行与交通灯同排，但它自己不带拖拽区：交通灯左侧必须保留给系统按钮。
+    expect(root).toContain('<div className={css.topRow}>')
+    expect(root).not.toContain('<div className={css.topRow} data-window-drag-region>')
     expect(declarations('.windowDragInset')?.get('left')).toBe('90px')
     expect(declarations('.windowDragInset')?.get('height')).toBe('var(--app-safe-area-inset-top, 0px)')
     expect(declarations('.windowDragInset')?.get('-webkit-app-region')).toBe('no-drag')
     expect(declarations('.collapsed .windowDragInset')?.get('display')).toBe('none')
+    expect(declarations('.topRow')?.get('height')).toBe('max(var(--app-safe-area-inset-top, 0px), 32px)')
+    expect(declarations('.collapsed .topRow')?.get('display')).toBe('none')
     expect(declarations('.logoRow')?.get('-webkit-app-region')).toBe('no-drag')
     expect(css).toMatch(/\.logoRow :is\(button, a, input, select, textarea, \[role='button'\]\)\s*\{\s*-webkit-app-region: no-drag;/)
   })
@@ -41,9 +46,8 @@ describe('SidebarRoot.module.css', () => {
   it('keeps the safe area and footer edge geometry structural', () => {
     const root = declarations('.root')
     expect(root?.get('--dsh-sidebar-inline-padding')).toBe('12px')
-    expect(root?.get('padding')).toBe(
-      'calc(6px + var(--app-safe-area-inset-top, 0px)) var(--dsh-sidebar-inline-padding) 0',
-    )
+    // 顶部安全区由 .topRow 持有，展开时列本身不再留出垂直内边距。
+    expect(root?.get('padding')).toBe('0 var(--dsh-sidebar-inline-padding) 0')
     expect(declarations('.root.collapsed')?.get('padding')).toBe(
       'calc(28px + var(--app-safe-area-inset-top, 0px)) 10px 0',
     )
@@ -84,7 +88,7 @@ describe('SidebarRoot.module.css', () => {
     expect(declarations('.collapsed .newSession')?.get('width')).toBe('36px')
   })
 
-  it('lays the brand-row actions out horizontally wide and stacked in the rail', () => {
+  it('lays the New chat row actions out horizontally wide and stacked in the rail', () => {
     expect(declarations('.brandActions')?.get('gap')).toBe('4px')
     expect(declarations('.brandActions')?.get('flex-direction')).toBe('row')
     expect(declarations('.brandActions')?.get('height')).toBe('28px')
@@ -93,12 +97,12 @@ describe('SidebarRoot.module.css', () => {
     expect(declarations('.collapsed .brandActions')?.get('width')).toBe('36px')
   })
 
-  it('keeps the slotted brand row at the full artwork height', () => {
-    expect(declarations('.brandIdentity')?.get('height')).toBe('24px')
-    expect(declarations('.brandName')?.get('height')).toBe('24px')
-    expect(declarations('.brandName')?.get('line-height')).toBe('24px')
-    expect(declarations('.brandName')?.get('font-size')).toBe('18px')
-    expect(declarations('.fallbackBrandName')?.get('font-size')).toBe('17px')
-    expect(declarations('.fallbackBrandName')?.get('white-space')).toBe('nowrap')
+  it('gives the New chat entry the capsule geometry and an ellipsis label', () => {
+    expect(declarations('.logoRow')?.get('height')).toBe('46px')
+    expect(declarations('.newSession')?.get('height')).toBe('38px')
+    expect(declarations('.newSession')?.get('flex')).toBe('1')
+    expect(declarations('.newSession')?.get('border-radius')).toBe('12px')
+    expect(declarations('.collapsed .newSession')?.get('flex')).toBe('none')
+    expect(declarations('.newSessionLabel')?.get('text-overflow')).toBe('ellipsis')
   })
 })

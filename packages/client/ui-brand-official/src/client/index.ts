@@ -1,21 +1,17 @@
 /** 为通用浏览器品牌 slot 提供官方 Coding 占用者。 */
 import type { ClientContext } from 'coding-client-runtime/client'
 import type {} from 'coding-client-ui-conversation/client'
-import type {} from 'coding-client-ui-sidebar/client'
-import { OfficialBrandMark, OfficialBrandName } from './Brand.tsx'
+import { OfficialBrandMark } from './Brand.tsx'
 
 /** 所需服务：UI slot 注册表。 */
 export const inject = ['slots']
 
 /**
- * 将已发布的品牌 slot 作为一组声明感知注册填充。
+ * 将 Hero 品牌图标注册为声明感知占用者；声明缺失时等待，撤销后自行摘除。
  * @param ctx - Client 根上下文。
  */
 export function apply(ctx: ClientContext): void {
   if (process.env.DSH_CLIENT_BUILD_PROFILE !== 'official') return
-  ctx.slots.inject('sidebar.brand.name', () =>
-    ctx.slots.inject('conversation.hero.brand.mark', function* () {
-      yield ctx.slots.register({ name: 'sidebar.brand.name' }, OfficialBrandName)
-      yield ctx.slots.register({ name: 'conversation.hero.brand.mark' }, OfficialBrandMark)
-    }))
+  ctx.slots.inject('conversation.hero.brand.mark', () =>
+    ctx.slots.register({ name: 'conversation.hero.brand.mark' }, OfficialBrandMark))
 }

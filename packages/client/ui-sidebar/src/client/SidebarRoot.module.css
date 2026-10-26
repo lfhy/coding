@@ -1,10 +1,7 @@
-/* Sidebar column (figma 133:7629): vertical stack, padding 12/6, sidebar
-   fill + 1px right border painted by the layout column. Collapse is a
-   slide + crossfade, not a morph: the content holds its frozen expanded
-   layout (inline width set by the component) and fades in place (.fading)
-   while the sliding column (AppFrame grid tracks) clips it; the rail layout
-   (.collapsed) only applies after the fade settles, so nothing reflows
-   mid-slide. */
+/* 侧边栏列（figma 133:7629）：纵向堆叠，左右 12px 内边距，底色与 1px 右边框由布局
+   列绘制。折叠是滑动加交叉淡出而不是形变：内容保持冻结的展开布局（宽度由组件以内联
+   样式固定）就地淡出（.fading），滑动中的列（AppFrame 网格轨道）只负责裁切；rail 布局
+   （.collapsed）在淡出落定后才生效，因此滑动过程中不会重排。 */
 
 .root {
   --dsh-sidebar-inline-padding: 12px;
@@ -12,14 +9,13 @@
   display: flex;
   flex-direction: column;
   height: 100%;
-  /* 桌面无边框壳把交通灯高度注入 --app-safe-area-inset-top；浏览器中该变量缺省为 0。 */
-  padding: calc(6px + var(--app-safe-area-inset-top, 0px)) var(--dsh-sidebar-inline-padding) 0;
+  /* 顶部避让由 .topRow 自己持有，展开时不额外留出上下内边距。 */
+  padding: 0 var(--dsh-sidebar-inline-padding) 0;
   box-sizing: border-box;
   background: var(--dsw-specific-sidebar-fill);
   color: var(--dsw-alias-label-primary);
   font-size: 14px;
-  /* The sidebar is elevated above the conversation surface, so a revealed
-     scrollbar uses the l2 pair. .quietBars hides it without changing layout. */
+  /* 侧边栏高于会话表面，露出的滚动条使用 l2 配色；.quietBars 隐藏它但不改变布局。 */
   --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
   --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
 }
@@ -43,27 +39,23 @@
   padding: calc(28px + var(--app-safe-area-inset-top, 0px)) 10px 0;
 }
 
-/* Scrollbars in the column are a pointer affordance: the shell adds this
-   class whenever the pointer is not inside (SidebarRoot.tsx owns the linger),
-   and rebinding ui-theme's indirection pair to `transparent` takes the thumb
-   out of every scroll region nested under it — the workspace browser's
-   session list today. `transparent` rather than `display: none` on the bar:
-   the reservation (`scrollbar-gutter: stable` on the list) stays in force, so
-   revealing the thumb never reflows a row. Rebinding contract and the two
-   rendering paths it reaches: ui-theme's README. */
+/* 栏内滚动条是指针可供性：指针不在栏内时壳层加上这个类（停留时长由 SidebarRoot.tsx
+   持有），把 ui-theme 的间接层重绑为 transparent，等于撤掉所有嵌套滚动区域（目前是
+   工作区浏览器的会话列表）的滑块。这里用 transparent 而不是 display: none：列表上的
+   scrollbar-gutter: stable 预留照旧生效，因此露出滑块不会让行重排。重绑契约与它触及的
+   两条渲染路径见 ui-theme 的 README。 */
 .root.quietBars {
   --dsh-scrollbar-thumb: transparent;
   --dsh-scrollbar-thumb-hover: transparent;
 }
 
-/* Collapse phase 1: the whole frozen-width content fades out in place over
-   150ms; at settle the children unmount/snap to the rail layout. */
+/* 折叠第一阶段：整块冻结宽度的内容用 150ms 就地淡出；落定后子节点卸载并切到 rail 布局。 */
 .fading > * {
   opacity: 0;
   transition: opacity 150ms var(--ds-ease-in-out);
 }
 
-/* Wide-only content fades back in on expand remount. */
+/* 仅宽态的内容在展开重挂载时淡入。 */
 .wide {
   animation: wide-in 200ms var(--ds-ease-in-out);
 }
@@ -72,11 +64,9 @@
   from { opacity: 0; }
 }
 
-/* At the 150ms rail settle, the four upper controls enter from the former
-   rail right edge over the remaining 150ms of the AppFrame track transition.
-   The bottom-pinned settings seat shares their opacity timeline but stays
-   horizontally fixed. Only a live collapse gets .railIn; a cold collapsed
-   render stays static. */
+/* rail 落定（150ms）时，上方的三个控件从原 rail 右边缘进入，用掉 AppFrame 轨道过渡
+   剩下的 150ms。固定在底部的设置座位只共用透明度时序，水平位置不动。只有实时折叠才带
+   .railIn；冷启动即为收起状态时静态渲染。 */
 .railIn .iconButton,
 .railIn .newSession,
 .railIn .regionArea {
@@ -98,19 +88,34 @@
   from { opacity: 0; }
 }
 
-/* 品牌行在展开时将面板切换置于右侧；收起 rail 中的控件共用同一左侧基准。 */
+/* 新对话行：展开时是新对话入口与常驻动作；收起 rail 中的控件共用同一左侧基准。 */
 .logoRow {
   flex: none;
   display: flex;
   align-items: center;
-  justify-content: flex-end;
   gap: 8px;
-  height: 60px;
-  padding: 8px 0 8px 4px;
+  height: 46px;
+  padding: 4px 0;
   margin-bottom: 8px;
   box-sizing: border-box;
   overflow: hidden;
   -webkit-app-region: no-drag;
+}
+
+/* 顶部避让行：桌面无边框壳把交通灯高度注入 --app-safe-area-inset-top，收起按钮与交通灯
+   同排；浏览器中该变量缺省为 0，行高退化为 32px 的普通标题行。行内拖拽区从交通灯右侧
+   开始，按钮叠在拖拽区之上才可点击。 */
+.topRow {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  height: max(var(--app-safe-area-inset-top, 0px), 32px);
+}
+
+.topRow :is(button, a) {
+  position: relative;
+  z-index: 1;
 }
 
 .logoRow :is(button, a, input, select, textarea, [role='button']) {
@@ -129,10 +134,16 @@
 .collapsed .logoRow {
   flex-direction: column;
   align-items: flex-start;
+  gap: 12px;
   height: auto;
   padding: 0;
   margin-bottom: 12px;
   justify-content: flex-start;
+}
+
+/* rail 自己让开交通灯高度，顶部避让行不再渲染。 */
+.collapsed .topRow {
+  display: none;
 }
 
 /* 收起 rail 中动作纵向堆叠在收起按钮上方，每个图标仍是 36×36 控件盒并居中于 56px 宽度。 */
@@ -142,46 +153,6 @@
   gap: 12px;
   width: 36px;
   height: auto;
-}
-
-/* 品牌行兼作新建会话快捷入口，仅以指针样式表明可点击，不添加悬停底色。 */
-.brand {
-  flex: 1;
-  min-width: 0;
-  display: inline-flex;
-  align-items: center;
-  overflow: hidden;
-  padding: 0;
-  border: none;
-  background: transparent;
-  color: inherit;
-  cursor: pointer;
-}
-
-/* 品牌名称占据固定基线与高度，避免名称更新改变标题行几何。 */
-.brandIdentity {
-  display: inline-flex;
-  align-items: center;
-  height: 24px;
-  min-width: 0;
-}
-
-.brandName {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-  height: 24px;
-  font-size: 18px;
-  font-weight: 600;
-  line-height: 24px;
-  letter-spacing: 0.04em;
-}
-
-.fallbackBrandName {
-  font-size: 17px;
-  letter-spacing: 0px;
-  white-space: nowrap;
 }
 
 .iconButton {
@@ -218,17 +189,18 @@
   color: var(--dsw-alias-label-primary);
 }
 
-/* New Session: 38px bar, 12px radius (figma 133:7634 geometry, squared-off
-   corners); collapsed it renders as the rail's plain icon control. */
+/* 新对话入口：38px 高、12px 圆角的胶囊（figma 133:7634 几何），展开时占据新对话行；
+   收起后是 rail 中的一个纯图标控件。 */
 .newSession {
-  flex: none;
+  flex: 1;
+  min-width: 0;
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   gap: 6px;
   height: 38px;
-  padding: 8px 16px;
-  margin: 0 2px 8px;
+  padding: 8px 12px;
+  margin: 0;
   box-sizing: border-box;
   border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 12px;
@@ -246,11 +218,13 @@
 }
 
 .collapsed .newSession {
+  flex: none;
   align-self: flex-start;
+  justify-content: center;
   width: 36px;
   height: 36px;
   padding: 0;
-  margin: 0 0 12px;
+  margin: 0;
   gap: 0;
   border-color: transparent;
   background: transparent;
@@ -261,13 +235,10 @@
 }
 
 .newSessionLabel {
-  max-width: 200px;
+  min-width: 0;
   overflow: hidden;
   white-space: nowrap;
-}
-
-.collapsed .newSessionLabel {
-  max-width: 0;
+  text-overflow: ellipsis;
 }
 
 /* Region seat: always mounted so the foot never moves. Its trailing margin

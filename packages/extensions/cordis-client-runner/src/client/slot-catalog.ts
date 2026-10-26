@@ -216,7 +216,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
       },
     ],
     ownerProps: [
-      '/** Stable owner currency delivered to one keyed Chat business renderer. */\nexport interface ChatNodeOwnerProps {\n  /** Selected Tool call, when the shared details store names one. */\n  selectedCallId?: CallId | undefined\n  /** Session workspace root; Tool summaries display paths relative to it. */\n  cwd?: string | undefined\n  openFile: (path: string) => void\n  /** 仅由 Assistant 正文传入 MarkdownText，不用于文件词条和其他节点。 */\n  openBrowserUrl: (url: string) => void\n  inspectCall: (callId: CallId) => void\n  forkAt: (seq: number) => void\n  /** Render a historical image group through the attachment slot. */\n  renderMessageImages: RenderMessageImages\n  /** Resolve one session-authorized image for tool-result previews. */\n  loadImage?: ((attachment: ImageAttachmentRef) => Promise<string>) | undefined\n  /** Prose file mention resolver for the closing assistant node. */\n  fileMentions: (owner: TurnTailOwnerProps) => MarkdownFileMentions | undefined\n}',
+      '/** Stable owner currency delivered to one keyed Chat business renderer. */\nexport interface ChatNodeOwnerProps {\n  /** Selected Tool call, when the shared details store names one. */\n  selectedCallId?: CallId | undefined\n  /** Session workspace root; Tool summaries display paths relative to it. */\n  cwd?: string | undefined\n  openFile: (path: string) => void\n  /** 仅由 Assistant 正文传入 MarkdownText，不用于文件词条和其他节点。 */\n  openBrowserUrl: (url: string) => void\n  inspectCall: (callId: CallId) => void\n  forkAt: (seq: number) => void\n  /**\n   * 重发某个失败轮次开头的用户消息；只由 terminal `turn-error` 行的重试按钮使用。\n   * 拒绝表示这次重发没有被接纳，原因已由 promptError 承载。\n   */\n  retryTurn: (turn: number) => Promise<void>\n  /** Render a historical image group through the attachment slot. */\n  renderMessageImages: RenderMessageImages\n  /** Resolve one session-authorized image for tool-result previews. */\n  loadImage?: ((attachment: ImageAttachmentRef) => Promise<string>) | undefined\n  /** Prose file mention resolver for the closing assistant node. */\n  fileMentions: (owner: TurnTailOwnerProps) => MarkdownFileMentions | undefined\n}',
     ],
     ownerPropsReferences: [
       'ImageAttachmentRef',
@@ -1765,7 +1765,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     doc: '整个左侧导航栏；占用者负责展开态和紧凑 rail。',
     registerOptions: [],
     ownerProps: [
-      '/** 导航栏 owner share。 */\nexport interface SidebarOwnerProps {\n  /** 是否显示紧凑 rail。 */\n  collapsed: boolean\n  /** 实际渲染宽度。 */\n  width: number\n  /** 欢迎页右上角可操作时，品牌行只隐藏重复的工作台面板按钮。 */\n  welcomeActionsVisible: boolean\n}',
+      '/** 导航栏 owner share。 */\nexport interface SidebarOwnerProps {\n  /** 是否显示紧凑 rail。 */\n  collapsed: boolean\n  /** 实际渲染宽度。 */\n  width: number\n  /** 欢迎页右上角可操作时，新对话行只隐藏重复的工作台面板按钮。 */\n  welcomeActionsVisible: boolean\n}',
     ],
     ownerPropsReferences: [],
     standardProps: [
@@ -1787,8 +1787,8 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     key: 'sidebar.brand.action',
     kind: 'list',
     scope: 'root',
-    summary: '品牌行内的可选常驻动作，渲染在收起按钮之前。宽侧栏中它们与收起按钮同排，是一个 横向图标行；收起的 56px rail 中则纵向排列，排在收起按钮上方。注册者按列表条目注册 （每个条目自带 `id` 与可选 `order`），进入 `sidebar.brand.action` 的条目在所有侧边栏 宽度下都可见，因此工作台关闭时也能作为入口。组件收到 `wide`：为 `false` 时必须提供 适合 36×36 控件盒的纯图标呈现。没有注册者时该洞渲染为空，不占位。',
-    doc: '品牌行内的可选常驻动作，渲染在收起按钮之前。宽侧栏中它们与收起按钮同排，是一个\n横向图标行；收起的 56px rail 中则纵向排列，排在收起按钮上方。注册者按列表条目注册\n（每个条目自带 `id` 与可选 `order`），进入 `sidebar.brand.action` 的条目在所有侧边栏\n宽度下都可见，因此工作台关闭时也能作为入口。组件收到 `wide`：为 `false` 时必须提供\n适合 36×36 控件盒的纯图标呈现。没有注册者时该洞渲染为空，不占位。',
+    summary: '新建对话行内的可选常驻动作，渲染在新对话入口之后。宽侧栏中它们与入口同排，是一个 横向图标行；收起的 56px rail 中则纵向排列，排在新建对话图标与展开按钮之间。注册者按 列表条目注册（每个条目自带 `id` 与可选 `order`），进入 `sidebar.brand.action` 的条目在 所有侧边栏宽度下都可见，因此工作台关闭时也能作为入口。组件收到 `wide`：为 `false` 时 必须提供适合 36×36 控件盒的纯图标呈现。没有注册者时该洞渲染为空，不占位。',
+    doc: '新建对话行内的可选常驻动作，渲染在新对话入口之后。宽侧栏中它们与入口同排，是一个\n横向图标行；收起的 56px rail 中则纵向排列，排在新建对话图标与展开按钮之间。注册者按\n列表条目注册（每个条目自带 `id` 与可选 `order`），进入 `sidebar.brand.action` 的条目在\n所有侧边栏宽度下都可见，因此工作台关闭时也能作为入口。组件收到 `wide`：为 `false` 时\n必须提供适合 36×36 控件盒的纯图标呈现。没有注册者时该洞渲染为空，不占位。',
     registerOptions: [
       {
         name: 'id',
@@ -1810,7 +1810,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
       },
     ],
     ownerProps: [
-      '/**\n * 品牌行常驻动作的 owner share。占用者常驻可见（含收起 rail），因此每个动作都要在\n * `wide` 与 rail 两种形态下可用。\n */\nexport interface SidebarBrandActionOwnerProps {\n  /** 侧边栏是否渲染宽内容（false = 56px rail）。 */\n  wide: boolean\n}',
+      '/**\n * 新建对话行常驻动作的 owner share。占用者常驻可见（含收起 rail），因此每个动作都要在\n * `wide` 与 rail 两种形态下可用。\n */\nexport interface SidebarBrandActionOwnerProps {\n  /** 侧边栏是否渲染宽内容（false = 56px rail）。 */\n  wide: boolean\n}',
     ],
     ownerPropsReferences: [],
     standardProps: [
@@ -1824,33 +1824,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     occupants: [],
     replaceRisk: 'none',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'sidebar.brand.action\', () => ctx.slots.register(\n      { name: \'sidebar.brand.action\', id: \'my-entry\', order: 100, label: \'My entry\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-sidebar/src/client/contract/slots.ts:29',
-  },
-  {
-    key: 'sidebar.brand.name',
-    kind: 'single',
-    scope: 'root',
-    summary: '宽侧边栏中渲染的品牌名称。由本包的 `sidebar` 条目声明；壳层提供通用文本兜底。',
-    doc: '宽侧边栏中渲染的品牌名称。由本包的 `sidebar` 条目声明；壳层提供通用文本兜底。',
-    registerOptions: [],
-    ownerProps: [
-      '/** 侧边栏品牌名称占用者的空 owner share。 */\nexport interface SidebarBrandNameOwnerProps {\n  /** 标记字段：占用者自行持有内容和宽度。 */\n  children?: never\n}',
-    ],
-    ownerPropsReferences: [],
-    standardProps: [
-      'useSessions: SnapshotSelectorHook<SessionListState>',
-      'useWorkspaces: SnapshotSelectorHook<import(\'./workspaces/service.ts\').WorkspaceListState>',
-    ],
-    keyDomain: '',
-    hookContext: '',
-    slotInject: '',
-    declaredBy: 'an entry in \'sidebar\' (client-ui-sidebar), so it exists while that entry is mounted',
-    occupants: [
-      'client-ui-brand-official OfficialBrandName',
-    ],
-    replaceRisk: 'shadows-shipped-ui',
-    example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'sidebar.brand.name\', () => ctx.slots.register(\n      { name: \'sidebar.brand.name\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-sidebar/src/client/contract/slots.ts:21',
+    source: 'packages/client/ui-sidebar/src/client/contract/slots.ts:22',
   },
   {
     key: 'sidebar.footer.action',
@@ -1895,7 +1869,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'none',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'sidebar.footer.action\', () => ctx.slots.register(\n      { name: \'sidebar.footer.action\', id: \'my-entry\', order: 100, label: \'My entry\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-sidebar/src/client/contract/slots.ts:47',
+    source: 'packages/client/ui-sidebar/src/client/contract/slots.ts:40',
   },
   {
     key: 'sidebar.right.pane.tab',
@@ -1997,7 +1971,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'shadows-shipped-ui',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'sidebar.settings\', () => ctx.slots.register(\n      { name: \'sidebar.settings\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-sidebar/src/client/contract/slots.ts:42',
+    source: 'packages/client/ui-sidebar/src/client/contract/slots.ts:35',
   },
   {
     key: 'sidebar.workspaces',
@@ -2023,7 +1997,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'shadows-shipped-ui',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'sidebar.workspaces\', () => ctx.slots.register(\n      { name: \'sidebar.workspaces\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-sidebar/src/client/contract/slots.ts:36',
+    source: 'packages/client/ui-sidebar/src/client/contract/slots.ts:29',
   },
   {
     key: 'sidebar.workspaces.directoryFlow',

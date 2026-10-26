@@ -1,4 +1,4 @@
-import { BrandMark, BrandWordmark } from 'coding-client-ui-primitives'
+import { BrandMark } from 'coding-client-ui-primitives'
 import type { HeroBrandMarkOwnerProps } from 'coding-client-ui-conversation/client'
 
 /**
@@ -8,12 +8,4 @@ import type { HeroBrandMarkOwnerProps } from 'coding-client-ui-conversation/clie
  */
 export function OfficialBrandMark({ size, className }: HeroBrandMarkOwnerProps) {
   return <BrandMark size={size} className={className} />
-}
-
-/**
- * 渲染不含图标的 Coding 字标。
- * @returns Coding 字标。
- */
-export function OfficialBrandName() {
-  return <BrandWordmark includeMark={false} />
 }

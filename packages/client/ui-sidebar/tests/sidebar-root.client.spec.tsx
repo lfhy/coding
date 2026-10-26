@@ -31,7 +31,6 @@ function mountShell({ collapsed = false, width = 300, welcomeActionsVisible = fa
   let regionOwner: SidebarSectionOwnerProps | undefined
   let settingsOwner: SidebarSettingsOwnerProps | undefined
   let footerActionOwner: SidebarFooterActionOwnerProps | undefined
-  const brandName = <span data-testid="custom-brand-name">Custom Brand</span>
   let current = { collapsed, width, welcomeActionsVisible }
   const root = () => (
     <SidebarRoot
@@ -44,7 +43,6 @@ function mountShell({ collapsed = false, width = 300, welcomeActionsVisible = fa
         owner: SidebarBrandActionOwnerProps | SidebarFooterActionOwnerProps
           | SidebarSectionOwnerProps | SidebarSettingsOwnerProps,
       ) => {
-        if (key === 'sidebar.brand.name') return brandName
         if (key === 'sidebar.brand.action') {
           brandActionOwner = owner
           return <div data-testid="brand-action-seat" data-wide={owner.wide} />
@@ -92,11 +90,10 @@ function mountShell({ collapsed = false, width = 300, welcomeActionsVisible = fa
 describe('SidebarRoot shell', () => {
   it('retains the sidebar toggle while omitting only duplicate workbench actions on the welcome page', () => {
     const b = mountShell({ welcomeActionsVisible: true })
-    expect(screen.getByTestId('custom-brand-name')).toBeTruthy()
     expect(screen.queryByTestId('brand-action-seat')).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'Collapse sidebar' }))
     expect(b.toggleSidebar).toHaveBeenCalledOnce()
-    expect(screen.getAllByRole('button', { name: 'New session' })).toHaveLength(2)
+    expect(screen.getAllByRole('button', { name: 'New chat' })).toHaveLength(1)
 
     b.rerender({ collapsed: true, welcomeActionsVisible: true })
     fireEvent.click(screen.getByRole('button', { name: 'Open sidebar' }))
@@ -108,35 +105,37 @@ describe('SidebarRoot shell', () => {
     expect(screen.getByRole('button', { name: 'Open sidebar' })).toBeTruthy()
   })
 
-  it('routes New Session (capsule + wordmark) and the column toggle', () => {
+  it('moves the collapse control into the traffic-light row above the New chat entry', () => {
     const b = mountShell()
-    expect(screen.getByTestId('custom-brand-name')).toBeTruthy()
-    // 品牌行动作洞渲染在品牌按钮与收起按钮之间，占用者拿到 wide。
+    // 新对话行内的动作洞渲染在新对话入口之后，占用者拿到 wide。
     expect(b.brandActionOwner().wide).toBe(true)
     const actions = screen.getByTestId('brand-action-seat')
+    const starter = screen.getByRole('button', { name: 'New chat' })
+    expect(actions.compareDocumentPosition(starter) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy()
+    // 收起按钮在新对话入口上方的一行里，不再与它同排。
     const toggle = screen.getByRole('button', { name: 'Collapse sidebar' })
-    expect(actions.compareDocumentPosition(toggle) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    // Expanded, both the wordmark and the capsule start a session.
-    const starters = screen.getAllByRole('button', { name: 'New session' })
-    expect(starters).toHaveLength(2)
-    for (const button of starters) fireEvent.click(button)
-    expect(b.startSession).toHaveBeenCalledTimes(2)
-    fireEvent.click(screen.getByRole('button', { name: 'Collapse sidebar' }))
+    expect(toggle.compareDocumentPosition(starter) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    fireEvent.click(starter)
+    expect(b.startSession).toHaveBeenCalledOnce()
+    fireEvent.click(toggle)
     expect(b.toggleSidebar).toHaveBeenCalledOnce()
   })
 
-  it('renders generic brand fallbacks without build metadata when no package fills the slots', () => {
+  it('renders no brand wordmark in the New chat row', () => {
     vi.stubEnv('DSH_CLIENT_COMMIT_HASH', '0123456')
     render(<SidebarRoot
       collapsed={false} width={300}
       welcomeActionsVisible={false}
       useSessions={neverHook} useWorkspaces={neverHook}
       startSession={vi.fn()} toggleSidebar={vi.fn()} t={t}
-      renderSlot={((_key: string, _owner: unknown, options?: { fallback?: ReactNode }) =>
-        options?.fallback ?? null) as SidebarRootComponentProps['renderSlot']}
+      renderSlot={((
+        _key: string,
+        _owner: unknown,
+        options?: { fallback?: ReactNode },
+      ) => options?.fallback ?? null) as SidebarRootComponentProps['renderSlot']}
     />)
 
-    expect(screen.getByText('Coding')).toBeTruthy()
+    expect(screen.queryByText('Coding')).toBeNull()
     expect(screen.queryByText('0123456')).toBeNull()
   })
 
