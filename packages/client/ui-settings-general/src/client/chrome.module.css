@@ -1,7 +1,10 @@
-/* Trigger row label (the shell's button provides layout/colors; the label
- * only guards against overflow during the sidebar collapse crossfade). */
+/* 触发行文案：齿轮固定在行左端，文案占据图标右侧的剩余空间并居中；折叠交叉淡出期间
+   只保留溢出守卫，避免长文案把行撑宽。 */
 
 .triggerLabel {
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
   white-space: nowrap;
+  text-align: center;
 }

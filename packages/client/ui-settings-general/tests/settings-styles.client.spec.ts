@@ -3,6 +3,8 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
 const css = readFileSync(fileURLToPath(new URL('../src/client/SettingsRoot.module.css', import.meta.url)), 'utf8')
+/** 触发行文案由 chrome 组件绘制，它自己那份样式表决定文案的位置。 */
+const chromeCss = readFileSync(fileURLToPath(new URL('../src/client/chrome.module.css', import.meta.url)), 'utf8')
 
 /**
  * 读取设置页面样式表中精确选择器的声明。
@@ -27,8 +29,18 @@ function declarations(selector: string, source = css): Map<string, string> | und
 
 describe('SettingsRoot.module.css', () => {
   it('keeps the settings trigger within the sidebar', () => {
-    expect(declarations('.trigger')?.get('margin')).toBe('4px -2px 0')
-    expect(declarations('.trigger.rail')?.get('margin')).toBe('8px 0 0')
+    // 触发行在新对话行下方铺满栏内内容宽度，左右外扩会让它溢出栏内边距。
+    expect(declarations('.trigger')?.get('width')).toBe('100%')
+    expect(declarations('.trigger')?.get('height')).toBe('38px')
+    expect(declarations('.trigger')?.get('margin')).toBe('0')
+    // rail 形态是 36px 圆形控件盒，间距由相邻座位提供。
+    expect(declarations('.trigger.rail')?.get('width')).toBe('36px')
+    expect(declarations('.trigger.rail')?.get('margin')).toBe('0')
+  })
+
+  it('centres the trigger label in the space right of its icon', () => {
+    expect(declarations('.triggerLabel', chromeCss)?.get('flex')).toBe('1')
+    expect(declarations('.triggerLabel', chromeCss)?.get('text-align')).toBe('center')
   })
 
   it('occupies the full viewport without a mask or floating modal frame', () => {

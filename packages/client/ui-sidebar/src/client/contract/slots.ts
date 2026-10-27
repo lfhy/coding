@@ -1,8 +1,8 @@
 /**
  * 侧边栏 slot 契约：布局持有的 `sidebar` slot 对注册者暴露的 props 组合，以及壳层声明的洞。
- * 壳层持有栏几何（折叠状态机、顶部避让行、新建对话行）；标题与列表底部之间属于
- * `sidebar.workspaces` 注册者（ui-workspace），底部属于 `sidebar.settings` 注册者
- * （ui-settings），其后是 `sidebar.footer.action` 的可选页脚动作。
+ * 壳层持有栏几何（折叠状态机、顶部避让行、新建对话行）；新对话行下方属于 `sidebar.settings`
+ * 注册者（ui-settings），其后的标题与列表属于 `sidebar.workspaces` 注册者（ui-workspace），
+ * 栏底则是 `sidebar.footer.action` 的可选页脚动作。
  */
 import type { PropsLocale, PropsRenderSlots, PropsRuntime } from 'coding-client-ui-slots'
 // Type-only: pulls ui-layout's SlotMap merge (the 'sidebar' entry) into every
@@ -28,14 +28,12 @@ declare module 'coding-client-ui-slots' {
      */
     'sidebar.workspaces': { kind: 'single'; scope: 'root'; owner: SidebarSectionOwnerProps }
     /**
-     * The settings seat at the sidebar foot. Declared by this package's
-     * 'sidebar' entry; ui-settings registers its trigger row + modal panel.
-     * The sidebar passes only its column state — it holds no settings state.
+     * 新对话行正下方的设置座位。由本包的 'sidebar' entry 声明，ui-settings 在此注册
+     * 触发行与设置面板；壳层只传入栏状态，不持有任何设置状态。
      */
     'sidebar.settings': { kind: 'single'; scope: 'root'; owner: SidebarSettingsOwnerProps }
     /**
-     * Optional actions beside Settings at the sidebar foot. Declared by this
-     * package's 'sidebar' entry; each action receives only the column state.
+     * 栏底可选的附加动作。由本包的 'sidebar' entry 声明；每个动作只收到栏状态。
      */
     'sidebar.footer.action': { kind: 'list'; scope: 'root'; owner: SidebarFooterActionOwnerProps }
   }
@@ -71,7 +69,7 @@ export interface SidebarSettingsOwnerProps {
   wide: boolean
 }
 
-/** 渲染在侧栏页脚设置旁的动作的 owner share。 */
+/** 渲染在栏底的动作的 owner share。 */
 export interface SidebarFooterActionOwnerProps {
   /** 侧边栏是否渲染宽内容（false = 56px rail）。 */
   wide: boolean
