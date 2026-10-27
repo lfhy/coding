@@ -34,7 +34,7 @@ Coding 是面向个人开发的开源 AI 编程桌面客户端。它将模型对
 | Skill | 用途 |
 | --- | --- |
 | [`browser-use`](packages/skill/skill-browser-use/README.md) | 指导 Agent 先观察页面，再使用有效的元素引用操作网页，完成页面阅读、交互、截图和界面验收。 |
-| [`frontend-development`](packages/skill/skill-frontend-development/README.md) | 指导前端实现遵循项目已有技术栈、组件和设计规范，使用图标与按需 CSS 动效配方；列表页固定在视口内、只在列表区域内部滚动，长列表用虚拟滚动与无限滚动加载；避免内部实现文案和文字海报，并结合浏览器检查实际效果。 |
+| [`frontend-development`](packages/skill/skill-frontend-development/README.md) | 指导前端实现遵循项目已有技术栈、组件和设计规范，使用图标与按需 CSS 动效配方；列表页固定在视口内、只在列表区域内部滚动，长列表用虚拟滚动与无限滚动加载；列表不超出屏幕宽度，行高统一、长名称截断不换行，列不够时按优先级隐藏；避免内部实现文案和文字海报，并结合浏览器检查实际效果。 |
 | [`go-backend`](packages/skill/skill-go-backend/README.md) | 写 Go 服务端时给出布局（根 `main.go` 加 `cmd`／`conf`／`core`）、HTTP、context 与并发、错误包装、数据访问与交付验证的默认约定，前端放 `web/` 并由 `go:embed` 提供访问，优先沿用项目已有做法。 |
 | [`project-init`](packages/skill/skill-project-init/README.md) | 在改动前定好地基与可回滚的版本基线：新项目能联网时先去 GitHub 找 template 或同类开源仓库（如 vben、shadcn-admin；对话与 Agent 页面用 assistant-ui、Cherry Studio 等）当地基、复用成熟实现而不重写基础件、后端按分层技能搭，再判断 Git 工作区、`git init`、忽略规则、逐条确认后建基线提交，并给出新项目最小的 README／AGENTS。 |
 | [`genui`](packages/genui/genui/README.md) | 提供交互式回答的组件与语法指引，用于生成表格、图表、表单和流程图等内容。 |
