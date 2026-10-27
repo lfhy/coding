@@ -10,7 +10,7 @@ bash 执行 seam 分为 Service Definition（[dsh-shell](../../packages/shell/sh
 
 ## 请求与规格：`resolve()` 拆分
 
-该 seam 将**面向模型/插件的请求**（`workdir`/`timeoutMs`/`stdoutMaxBytes` 可选，由配置或请求策略补全）与执行器实际使用的**完全解析后的 spec**（这些字段均为必填）分开。工具层在二者之间调用 `ctx.shell.resolve(request)`（仓库的「包边界处显式优于隐式」规则）；`ShellExecSpec` 携带的是已解析的值。
+该 seam 将**面向模型/插件的请求**（`workdir`/`timeoutMs`/`stdoutMaxBytes`/`tty` 可选，由配置或请求策略补全）与执行器实际使用的**完全解析后的 spec**分开；`workdir`、`timeoutMs` 和 `stdoutMaxBytes` 在 spec 中已解析，`stdin`、`env` 与 `tty` 仍可缺省。工具层在二者之间调用 `ctx.shell.resolve(request)`（仓库的「包边界处显式优于隐式」规则）；`ShellExecSpec` 携带的是已解析的值。`tty` 请求伪终端，供后台进程获得可写的交互式 stdin。
 
 ```ts type-equiv
 /**
@@ -60,6 +60,11 @@ interface ShellExecRequest {
   dshEnv?: DshEnvironment | undefined
   /** Fully resolved per-call sandbox policy; sandboxing executors default it. */
   sandboxPolicy?: SandboxExecutionPolicy | undefined
+  /**
+   * 在伪终端里运行命令，让进程拥有可写的交互式 stdin。只在执行器声明
+   * {@link ShellExecutor.tty} 时生效；后台进程因此可以在运行中被写入输入。
+   */
+  tty?: boolean | undefined
 }
 ```
 
@@ -95,6 +100,11 @@ interface ShellExecSpec {
   dshEnv?: DshEnvironment | undefined
   /** Resolved sandbox policy; ignored by executors that do not confine. */
   sandboxPolicy: SandboxExecutionPolicy | undefined
+  /**
+   * 已归一化的伪终端请求，缺省表示管道。与 `stdin`/`env` 同理保持可选：既有执行器
+   * 与测试按"不写就是不请求"构造 spec，执行器用 `spec.tty === true` 判断。
+   */
+  tty?: boolean | undefined
 }
 ```
 
@@ -202,6 +212,13 @@ interface ShellProcess {
    * (no-op); idempotent.
    */
   kill(): boolean
+  /**
+   * 向交互式会话的 stdin 写入文本；仅伪终端进程提供。返回 false 表示进程已结算，
+   * 不是通道错误 — `done` 会随后给出结算事实。声明为函数型属性而不是方法，这样
+   * 调用方可以安全地取出引用再调用，不必隐式依赖接收者。
+   * @param data - 原样投递的字符，不做换行转换。
+   */
+  write?: (data: string) => boolean
 }
 ```
 
@@ -223,7 +240,7 @@ interface ShellProcessRead {
 
 ## 服务
 
-`ShellExecutor` 拥有 `resolve`、前台 `run`、后台进程 `start` 以及 `sandboxMode` 能力事实。`dsh-bash-local` 拥有命令默认值补全、超时/中止分类、终端环境以及后台读取合并；进程组、有界收集器、spill 文件、凭据清除与 dispose（资源释放）后完全停稳归[子进程服务](subprocess.md)所有。`dsh-tool-bash` 拥有面向模型的渲染，并将后台句柄适配到[通用任务运行时](jobs.md)。`dsh-shell` 拥有 shell 工具共享的退出状态约定：导出的 `parseExitStatus`/`ParsedExitStatus` 是 `dsh-tool-bash` 的 `renderResult` 与 `dsh-tool-pwsh` 的 `renderPwshResult` 所追加的 `[exit code: N]` / `[killed by signal: X]` 标记的逆解析，两个工具的 `presentResult` 都用它把渲染文本拆分为 terminal 卡的输出正文与退出状态 pill。
+`ShellExecutor` 拥有 `resolve`、前台 `run`、后台进程 `start`、`tty` 能力事实以及 `sandboxMode`。支持 `tty` 的执行器可为后台进程提供可写的交互式 stdin。`dsh-bash-local` 拥有命令默认值补全、超时/中止分类、终端环境以及后台读取合并；进程组、有界收集器、spill 文件、凭据清除与 dispose（资源释放）后完全停稳归[子进程服务](subprocess.md)所有。`dsh-tool-bash` 拥有面向模型的渲染，并将后台句柄适配到[通用任务运行时](jobs.md)。`dsh-shell` 拥有 shell 工具共享的退出状态约定：导出的 `parseExitStatus`/`ParsedExitStatus` 是 `dsh-tool-bash` 的 `renderResult` 与 `dsh-tool-pwsh` 的 `renderPwshResult` 所追加的 `[exit code: N]` / `[killed by signal: X]` 标记的逆解析，两个工具的 `presentResult` 都用它把渲染文本拆分为 terminal 卡的输出正文与退出状态 pill。
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 

@@ -208,6 +208,7 @@ export const EVENT_WALK_EXEMPTIONS: Record<string, string> = {
   'slash/input-insert-text': 'client-face slash-input protocol — packages/client/ui-input-trigger/README.md owns the API',
   'slots/changed': 'client-face slot invalidation signal — packages/client/runtime/README.md owns the API',
   'theme/change': 'client-face theme switch signal — packages/client/ui-theme/README.md owns the API',
+  'theme/appearance-change': 'client-face appearance settings signal — packages/client/ui-theme/README.md owns the API',
 }
 
 /**

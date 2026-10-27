@@ -55,7 +55,7 @@ interface JobStart {
 }
 ```
 
-`JobHooks.done` 会在生产方释放其资源后 resolve，而不是仅在工作完成时 resolve。可选的 `readOutput` 用来区分会消费输出的流式任务和仅有最终输出的任务。
+`JobHooks.done` 会在生产方释放其资源后 resolve，而不是仅在工作完成时 resolve。可选的 `readOutput` 用来区分会消费输出的流式任务和仅有最终输出的任务；可选的 `write` 仅由伪终端工作提供，用 `false` 区分已送达与没有输入通道。
 
 ```ts type-equiv
 /** Hooks through which the runtime controls and observes producer work. */
@@ -78,6 +78,12 @@ interface JobHooks {
    * job has one consuming cursor.
    */
   readOutput?(): string
+  /**
+   * 向运行中的工作写入 stdin。只有伪终端会话提供；返回 false 表示工作已结算或
+   * 无法接收输入，调用方据此区分"已送达"与"没有输入通道"。
+   * @param data - 原样投递的字符，不做换行转换。
+   */
+  write?(data: string): boolean
 }
 ```
 
@@ -224,6 +230,15 @@ abstract read(id: JobId, caller?: Agent): JobRead
  * @returns `requested` for live work, otherwise `already-finished`.
  */
 abstract kill(id: JobId, caller?: Agent, reason?: string): 'requested' | 'already-finished'
+
+/**
+ * 向运行中的工作写入 stdin（伪终端会话）。
+ * @param id - 目标任务 id。
+ * @param data - 原样投递的字符。
+ * @param caller - 发起调用的 agent；访问受限实现据此鉴权。
+ * @returns `written` 表示已交给生产方；`no-stdin` 表示该任务已结算或没有输入通道。
+ */
+abstract write(id: JobId, data: string, caller?: Agent): 'written' | 'no-stdin'
 
 /**
  * Wait for settlement or timeout without cancelling the job. Caller abort
