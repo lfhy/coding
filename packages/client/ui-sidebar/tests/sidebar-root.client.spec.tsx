@@ -123,19 +123,6 @@ describe('SidebarRoot shell', () => {
     expect(b.toggleSidebar).toHaveBeenCalledOnce()
   })
 
-  it('seats Settings directly under the New chat row and leaves footer actions at the foot', () => {
-    const b = mountShell()
-    const starter = screen.getByRole('button', { name: 'New chat' })
-    const seat = screen.getByTestId('settings-seat')
-    const region = screen.getByTestId('region')
-    const footer = screen.getByTestId('footer-action-seat')
-    // 设置座位紧跟新对话行；浏览区域与仅有的页脚动作都排在它之后。
-    expect(starter.compareDocumentPosition(seat) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    expect(seat.compareDocumentPosition(region) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    expect(region.compareDocumentPosition(footer) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    expect(b.settingsOwner().wide).toBe(true)
-  })
-
   it('renders no brand wordmark in the New chat row', () => {
     vi.stubEnv('DSH_CLIENT_COMMIT_HASH', '0123456')
     render(<SidebarRoot

@@ -1,16 +1,15 @@
 /* 侧栏触发器与设置页导航共用现有排版与交互 token；模型分区自绘内容列。 */
 
-/* 触发器是新对话行下方的第一行：宽侧栏里它与新对话胶囊同宽同高，收起 rail 中是
-   圆形图标，与上方图标列保持一节 12px 间距。 */
+/* 触发器与侧栏底部其他行共用 42px 高度。 */
 .trigger {
   flex: none;
   display: flex;
   align-items: center;
   gap: 8px;
-  width: 100%;
-  height: 38px;
-  margin: 0;
-  padding: 0 12px;
+  width: calc(100% + 4px);
+  height: 42px;
+  margin: 4px -2px 0;
+  padding: 0 10px 0 8px;
   box-sizing: border-box;
   border: none;
   border-radius: 12px;
@@ -31,7 +30,7 @@
 .trigger.rail {
   width: 36px;
   height: 36px;
-  margin: 0;
+  margin: 8px 0 0;
   justify-content: center;
   gap: 0;
   padding: 0;

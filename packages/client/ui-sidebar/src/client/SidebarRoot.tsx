@@ -1,8 +1,8 @@
 /**
  * 侧边栏壳负责折叠动画、新对话行、交通灯避让和滚动条可见性。展开时第一行是新对话入口，
- * 收起按钮由浏览区域的标题行渲染（壳层通过 owner share 交出动作）；第二行是设置座位，
- * 收起的 56px rail 里它排在展开按钮下方。折叠动画冻结宽内容，等淡出后再切换到 rail；
- * 浏览区域与页脚动作仍由各自 slot 占用者绘制。
+ * 收起按钮由浏览区域的标题行渲染（壳层通过 owner share 交出动作）；收起的 56px rail 里
+ * 新对话图标与展开按钮都排在这一行。折叠动画冻结宽内容，等淡出后再切换到 rail；浏览区域
+ * 与页脚仍由各自 slot 占用者绘制。
  */
 import { useEffect, useRef, useState } from 'react'
 import clsx from 'clsx'
@@ -22,8 +22,8 @@ const COLLAPSE_SETTLE_MS = 150
 const SCROLLBAR_LINGER_MS = 2000
 
 /**
- * 渲染侧边栏壳：新对话行持有唯一的新建入口，其下是设置座位；壳层交出浏览区域标题行要用
- * 的收起动作，欢迎页操作可见时只隐藏重复的工作台面板动作。
+ * 渲染侧边栏壳：新对话行持有唯一的新建入口，并交出浏览区域标题行要用的收起动作；
+ * 欢迎页操作可见时只隐藏重复的工作台面板动作。
  * @param props - 布局 owner、slot、回调与本地化文案。
  * @returns 侧边栏元素树。
  */
@@ -141,11 +141,6 @@ export function SidebarRoot({
         )}
       </div>
 
-      {/* 设置座位紧跟新对话行：宽侧栏是完整一行，收起 rail 中是圆形图标。 */}
-      <div className={css.settingsArea}>
-        {renderSlot('sidebar.settings', { wide })}
-      </div>
-
       {/* 浏览区域在两种状态下都填满控件与页脚之间的空间，rail 的图标列走同一个 slot。 */}
       <div className={css.regionArea}>
         {renderSlot('sidebar.workspaces', {
@@ -156,10 +151,13 @@ export function SidebarRoot({
         })}
       </div>
 
-      {/* 可选页脚动作固定在栏底；没有注册者时不占高度。 */}
+      {/* 页脚动作在两种侧栏宽度下都堆叠在设置之上。 */}
       <div className={css.footArea}>
         <div className={css.footerActions}>
           {renderSlot('sidebar.footer.action', { wide })}
+        </div>
+        <div className={css.settingsArea}>
+          {renderSlot('sidebar.settings', { wide })}
         </div>
       </div>
     </div>

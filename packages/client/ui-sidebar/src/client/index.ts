@@ -42,7 +42,7 @@ export function apply(ctx: ClientContext): void {
       name: 'sidebar',
       locale: NS,
       // 壳层持有几何；ui-workspace 注册完整浏览区域（标题、搜索、会话列表、Workspace 对话框），
-      // ui-settings 注册新对话行下方的设置入口和设置面板。
+      // ui-settings 注册底部触发器和设置面板。
       children: {
         // 新对话行内的常驻动作：宽侧栏与收起 rail 都渲染，靠在新对话入口之后。
         'sidebar.brand.action': { kind: 'list', scope: 'root' },

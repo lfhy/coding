@@ -64,12 +64,11 @@
   from { opacity: 0; }
 }
 
-/* rail 落定（150ms）时，上方的控件从原 rail 右边缘进入，用掉 AppFrame 轨道过渡
-   剩下的 150ms；新对话行下方的设置座位跟随同一套横向入场。固定在底部的页脚动作只
-   共用透明度时序。只有实时折叠才带 .railIn；冷启动即为收起状态时静态渲染。 */
+/* rail 落定（150ms）时，上方的三个控件从原 rail 右边缘进入，用掉 AppFrame 轨道过渡
+   剩下的 150ms。固定在底部的设置座位只共用透明度时序，水平位置不动。只有实时折叠才带
+   .railIn；冷启动即为收起状态时静态渲染。 */
 .railIn .iconButton,
 .railIn .newSession,
-.railIn .settingsArea,
 .railIn .regionArea {
   animation: rail-in 150ms var(--ds-ease-in-out) backwards;
 }
@@ -214,19 +213,16 @@
   background: var(--dsw-alias-interactive-bg-hover);
 }
 
-/* 图标贴在行的左端，「新对话」文案在图标右侧剩余空间里居中。 */
 .newSessionLabel {
-  flex: 1;
   min-width: 0;
   overflow: hidden;
   white-space: nowrap;
-  text-align: center;
   text-overflow: ellipsis;
 }
 
-/* Region seat: always mounted so the seats around it never move. Its trailing
-   margin cancels the wide shell inset so the nested scrollbar can sit at the
-   sidebar edge; the browser restores that inset inside its own rows. */
+/* Region seat: always mounted so the foot never moves. Its trailing margin
+   cancels the wide shell inset so the nested scrollbar can sit at the sidebar
+   edge; the browser restores that inset inside its own rows. */
 .regionArea {
   flex: 1;
   min-height: 0;
@@ -244,24 +240,8 @@
   padding-left: 0;
 }
 
-/* 设置座位紧跟新对话行。行自身的几何与悬停样式属于占用者，壳层只负责座位宽度：
-   宽侧栏铺满整列，收起的 rail 中收成一个居中的圆形图标。座位下缘留出间距，让它和
-   浏览区域的标题行分开。 */
-.settingsArea {
-  flex: none;
-  min-width: 0;
-  width: 100%;
-  margin-bottom: 6px;
-}
-
-.collapsed .settingsArea {
-  display: flex;
-  justify-content: center;
-  width: auto;
-  margin-bottom: 12px;
-}
-
-/* 页脚座位固定贴在栏底，用来堆放可选动作；没有注册者时不占高度。 */
+/* Footer seats: additive actions stack above Settings. Each occupant owns its
+   button geometry and hover chrome. */
 .footArea {
   flex: none;
   display: flex;
@@ -269,17 +249,22 @@
   margin-top: auto;
 }
 
+.settingsArea,
 .footerActions {
   flex: none;
-  display: flex;
   min-width: 0;
   width: 100%;
+}
+
+.footerActions {
+  display: flex;
 }
 
 .collapsed .footArea {
   align-items: center;
 }
 
+.collapsed .settingsArea,
 .collapsed .footerActions {
   display: flex;
   justify-content: center;
@@ -291,7 +276,6 @@
   .fading > *,
   .railIn .iconButton,
   .railIn .newSession,
-  .railIn .settingsArea,
   .railIn .footArea,
   .railIn .regionArea {
     transition: none;

@@ -13,9 +13,12 @@
 declare module 'coding-client-ui-slots' {
   interface SlotMap {
     /**
-     * 侧栏「新对话」行下方的触发行内容：图标加文案，由 slot 内容提供（可访问名称就来自
-     * 内容——rail 状态把文案渲染成视觉隐藏）。按钮外观与打开状态由 shell 持有。没有注册
-     * 贡献时退化为无标题的纯图标按钮（这是组合残缺状态；默认组合总会注册该座位）。
+     * The sidebar-foot trigger row content: icon + label, supplied as slot
+     * content (the accessible name comes from the content — rail state
+     * renders the label visually hidden). The shell renders the button
+     * chrome and owns open state. Absent contribution degrades to an
+     * icon-only button without an accessible name (broken-composition state;
+     * the shipped composition always registers the seat).
      */
     'settings.trigger': { kind: 'single'; scope: 'root'; owner: SettingsTriggerOwnerProps }
     /**

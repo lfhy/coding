@@ -100,8 +100,5 @@ describe('SidebarRoot.module.css', () => {
     expect(declarations('.newSession')?.get('border-radius')).toBe('12px')
     expect(declarations('.collapsed .newSession')?.get('flex')).toBe('none')
     expect(declarations('.newSessionLabel')?.get('text-overflow')).toBe('ellipsis')
-    // 图标贴左，文案占满图标右侧的剩余空间并居中。
-    expect(declarations('.newSessionLabel')?.get('flex')).toBe('1')
-    expect(declarations('.newSessionLabel')?.get('text-align')).toBe('center')
   })
 })
