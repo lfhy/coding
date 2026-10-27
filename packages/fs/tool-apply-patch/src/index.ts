@@ -50,17 +50,9 @@ function patchError(error: unknown): Error {
   return error instanceof PatchError ? new Error(`apply_patch verification failed: ${error.message}`) : error as Error
 }
 
-function assertSafePath(path: string): void {
-  if (path.trim().length === 0 || path.startsWith('/') || path.includes('\\') || path.split('/').includes('..')) {
-    throw new PatchError(`path is not a workspace-relative file path: ${JSON.stringify(path)}`)
-  }
-  if (path.startsWith('.')) throw new PatchError(`path is not a workspace file path: ${JSON.stringify(path)}`)
-}
-
 function assertUniquePaths(files: readonly PatchFile[]): void {
   const seen = new Set<string>()
   for (const file of files) {
-    assertSafePath(file.path)
     if (file.kind === 'update' && file.moveTo !== undefined) {
       throw new PatchError(`Move to is not supported for ${file.path}`)
     }

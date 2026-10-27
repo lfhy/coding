@@ -4,7 +4,7 @@
 
 ## Supported patch subset
 
-The parser accepts Codex's `*** Begin Patch` / `*** End Patch` envelope, `*** Add File`, and `*** Update File` hunks with `@@` context, `+`/`-`/space lines, and `*** End of File`. Additions and updates call `ctx.fs.writeText` or `ctx.fs.editText`, so the existing observation policy, stale-version checks, sandbox fence, and remote filesystem routing remain authoritative.
+The parser accepts Codex's `*** Begin Patch` / `*** End Patch` envelope, `*** Add File`, and `*** Update File` hunks with `@@` context, `+`/`-`/space lines, and `*** End of File`. Patch paths are passed to `ctx.fs.resolve` without a workspace-relative precheck; the selected filesystem provider and sandbox policy remain responsible for resolving and constraining them. Additions and updates call `ctx.fs.writeText` or `ctx.fs.editText`, so the existing observation policy, stale-version checks, sandbox fence, and remote filesystem routing remain authoritative.
 
 `*** Delete File` and `*** Move to` are rejected explicitly. `coding-fs` does not expose delete or rename primitives, and the tool does not bypass that boundary with direct host filesystem calls.
 

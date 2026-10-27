@@ -46,13 +46,13 @@ function applyPatch(input: string) {
 }
 
 describe('apply_patch integration', () => {
-  it('records an update read before requesting the guarded edit', async () => {
+  it('accepts an absolute path and records an update read before requesting the guarded edit', async () => {
     const path = join(dir, 'src/components/files/files-page.tsx')
     await mkdir(join(dir, 'src/components/files'), { recursive: true })
     await writeFile(path, 'className="flex max-w-full items-center gap-3 text-left transition-colors hover:text-primary"\n')
 
     const result = await applyPatch(`*** Begin Patch
-*** Update File: src/components/files/files-page.tsx
+*** Update File: ${path}
 @@
 -className="flex max-w-full items-center gap-3 text-left transition-colors hover:text-primary"
 +className="flex w-full min-w-0 items-center gap-3 text-left transition-colors hover:text-primary"
