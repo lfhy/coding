@@ -6,7 +6,6 @@ import { stubSettingsScope } from 'coding-client-test-runtime'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { SlotRegistry } from 'coding-client-runtime/client'
 import { LocaleRuntime } from 'coding-client-locale/client'
-import type { SessionId } from 'coding-session/types'
 import { apply as themeApply, inject as themeInject, ThemeRuntime } from 'coding-client-ui-theme/client'
 import { apply, inject, LayoutController } from 'coding-client-ui-layout/client'
 import type { AppFrameInjected } from 'coding-client-ui-layout/src/client/AppFrame.tsx'
@@ -70,7 +69,7 @@ describe('ui-layout client apply', () => {
     expect(typeof injected.retainWorkbenchViews).toBe('function')
     const layout = ctx.get('layout') as LayoutController
     layout.toggleSidebar()
-    layout.openWorkbench('layout-session' as SessionId)
+    layout.openWorkbench('layout-session')
     expect(actions.toggleSidebar).toHaveBeenCalledOnce()
     expect(actions.openWorkbench).toHaveBeenCalledOnce()
   })
