@@ -556,7 +556,7 @@ describe('sandbox escalation through ctx.approval', () => {
     const { ctx } = await setupSandboxed()
     const schema = ctx.tools.schemas().find(item => item.name === 'pwsh')!
     const properties = schema.parameters.properties as Record<string, { enum?: string[] }>
-    expect(properties['sandbox_permissions']?.enum).toEqual(['workspace-write', 'danger-full-access'])
+    expect(properties['sandbox_permissions']?.enum).toEqual(['workspace-write', 'danger-full-access', 'use_default'])
     expect(schema.description).toContain('approval prompt')
     expect(schema.description).toContain('ConstrainedLanguage')
     expect(schema.description).toContain('workspace-write stays in FullLanguage')
@@ -581,6 +581,23 @@ describe('sandbox escalation through ctx.approval', () => {
     expect(schema.parameters.properties).not.toHaveProperty('sandbox_permissions')
   })
 
+  it('treats use_default as no escalation and never prompts', async () => {
+    const { ctx, bash } = await setupSandboxed(true)
+    const prompted = vi.fn()
+    ctx.on('approval/request', () => { prompted(); return Promise.resolve<ApprovalOutcome>('allowed-once') })
+    // 沿用当前权限不是升权请求：有没有理由都不审批，命令按常驻策略执行。
+    const bare = await call(ctx, 'pwsh', {
+      command: 'Write-Output ok', description: 'use the current mode', sandbox_permissions: 'use_default',
+    }, sandboxAgent())
+    expect(bare.isError).toBe(false)
+    const withReason = await call(ctx, 'pwsh', {
+      command: 'Write-Output ok', description: 'use the current mode', sandbox_permissions: 'use_default', justification: 'redundant',
+    }, sandboxAgent())
+    expect(withReason.isError).toBe(false)
+    expect(bash.modes).toEqual(['read-only', 'read-only'])
+    expect(prompted).not.toHaveBeenCalled()
+  })
+
   it('rejects injected escalation without a sandbox and non-widening escalation without prompting', async () => {
     const plain = await setup()
     expect(text(await call(plain.ctx, 'pwsh', escalate))).toContain('not available in this composition')
@@ -589,7 +606,7 @@ describe('sandbox escalation through ctx.approval', () => {
     const prompted = vi.fn()
     ctx.on('approval/request', () => { prompted(); return Promise.resolve<ApprovalOutcome>('allowed-once') })
     const result = await call(ctx, 'pwsh', { ...escalate, sandbox_permissions: 'read-only' }, sandboxAgent('danger-full-access'))
-    expect(text(result)).toContain('must be one of ["workspace-write","danger-full-access"]')
+    expect(text(result)).toContain('must be one of ["workspace-write","danger-full-access","use_default"]')
     expect(prompted).not.toHaveBeenCalled()
 
     const malformed = sandboxAgent()

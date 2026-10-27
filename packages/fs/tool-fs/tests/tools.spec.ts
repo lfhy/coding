@@ -840,7 +840,7 @@ describe('sandbox escalation API (write/edit)', () => {
     const { ctx } = await setupConfining()
     for (const name of ['write', 'edit'] as const) {
       const props = fsSchema(ctx, name).parameters.properties
-      expect(props['sandbox_permissions']?.enum).toEqual(['workspace-write', 'danger-full-access'])
+      expect(props['sandbox_permissions']?.enum).toEqual(['workspace-write', 'danger-full-access', 'use_default'])
       expect(props['justification']).toBeDefined()
     }
   })
@@ -888,6 +888,23 @@ describe('sandbox escalation API (write/edit)', () => {
       signal: new AbortController().signal,
     })
     expect(fs.stamped).toEqual([{ mode: 'danger-full-access', workspaceRoot: resolve('/session-project') }])
+  })
+
+  it('a write with use_default keeps the standing mode and never prompts', async () => {
+    const { ctx, fs } = await setupConfining({ approval: true })
+    const prompted = vi.fn()
+    ctx.on('approval/request', () => { prompted(); return Promise.resolve('allowed-once' as const) })
+    // 沿用当前权限不是升权请求：有没有理由都不审批，变更按常驻策略执行。
+    const bare = await call(ctx, 'write', {
+      file_path: 'a.txt', content: 'x', sandbox_permissions: 'use_default',
+    }, escalationAgent())
+    expect(bare.isError).toBe(false)
+    const withReason = await call(ctx, 'write', {
+      file_path: 'a.txt', content: 'y', sandbox_permissions: 'use_default', justification: 'redundant',
+    }, escalationAgent())
+    expect(withReason.isError).toBe(false)
+    expect(fs.stamped.map(policy => policy?.mode)).toEqual(['workspace-write', 'workspace-write'])
+    expect(prompted).not.toHaveBeenCalled()
   })
 
   it('an already-active escalation target runs without prompting', async () => {

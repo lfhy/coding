@@ -34,9 +34,33 @@ export const WIDER_MODES: Record<string, readonly SandboxMode[]> = {
 export const ESCALATION_TARGETS: readonly SandboxMode[] = ['workspace-write', 'danger-full-access']
 
 /**
+ * `sandbox_permissions` 上“沿用当前权限”的哨兵值。模型（尤其按 Codex 的 shell 词汇
+ * 训练过的）会显式写出它来表示不请求升权；它与省略该字段完全等价：整对参数（连同理由）
+ * 在执行前被忽略，既不降权也不触发审批。
+ */
+export const ESCALATION_DEFAULT_TARGET = 'use_default'
+
+/**
+ * schema 公开的完整取值词汇：{@link ESCALATION_TARGETS} 加上沿用当前权限的哨兵。参数
+ * 校验按 schema 的 `enum` 执行，因此哨兵必须列在这里，否则模型照习惯写出的
+ * `use_default` 会在执行前被判成无效参数而不是被忽略。
+ */
+export const ESCALATION_VALUES: readonly string[] = [...ESCALATION_TARGETS, ESCALATION_DEFAULT_TARGET]
+
+/**
+ * 把 `sandbox_permissions` 的原始取值归一成本次调用真正请求的目标模式。
+ * @param value - 模型传入的原始值，可能缺省、可能是沿用当前权限的哨兵，或任意字符串。
+ * @returns 待判断的升权目标；缺省与哨兵都返回 `undefined`（本次调用不请求升权）。
+ */
+export function escalationTarget(value: string | undefined): SandboxMode | undefined {
+  return value === undefined || value === ESCALATION_DEFAULT_TARGET ? undefined : value as SandboxMode
+}
+
+/**
  * 校验工具 schema 无法表达的升权参数配对。本次已处于 `danger-full-access` 时，
  * `sandbox_permissions` 无法再拓宽任何权限，因此整个字段（连同理由）一律忽略；
- * 其他请求缺少理由或仅提供理由均在执行前失败。
+ * {@link ESCALATION_DEFAULT_TARGET} 不请求升权，同样整对忽略；其他请求缺少理由或仅
+ * 提供理由均在执行前失败。
  * @param sandboxPermissions - 原始 `sandbox_permissions` 参数。
  * @param justification - 原始 `justification` 参数。
  * @param effectiveMode - 本次调用已经生效的沙箱模式；未提供时严格校验配对。
@@ -49,6 +73,8 @@ export function validateEscalationArgs(
   // 已持有全部权限：此时没有更宽的目标，字段写什么都不会改变本次调用的能力，
   // 也无法降低它——因此拼写、理由是否成对都不再是待执行的请求，直接忽略。
   if (effectiveMode === 'danger-full-access') return
+  // 沿用当前权限不是升权请求：理由可有可无，也不进入下面的配对校验。
+  if (sandboxPermissions === ESCALATION_DEFAULT_TARGET) return
   if (sandboxPermissions !== undefined && justification === undefined) {
     throw new Error('invalid escalation: sandbox_permissions requires a justification')
   }

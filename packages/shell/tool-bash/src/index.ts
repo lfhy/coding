@@ -20,7 +20,7 @@ import type {} from 'coding-jobs'
 import type {} from 'coding-user-approval'
 import type {} from 'coding-shell-env'
 import type { SandboxExecutionPolicy, SandboxMode } from 'coding-sandbox'
-import { ESCALATION_TARGETS, approveEscalation, canonicalPath, validateEscalationArgs } from 'coding-sandbox'
+import { ESCALATION_TARGETS, ESCALATION_VALUES, approveEscalation, canonicalPath, escalationTarget, validateEscalationArgs } from 'coding-sandbox'
 import type { SandboxPolicyService } from 'coding-sandbox-policy'
 import { DSH_ENV_PREFIX } from 'coding-shell'
 import type { ShellRunResult } from 'coding-shell'
@@ -309,8 +309,8 @@ export function apply(ctx: Context, config: Config = {}): void {
       ...escalationModes.length > 0 ? {
         sandbox_permissions: {
           type: 'string' as const,
-          enum: [...escalationModes],
-          description: 'The wider sandbox mode this command needs. Only valid as a one-shot retry of a command the sandbox just denied; requires justification and user approval.',
+          enum: [...ESCALATION_VALUES],
+          description: 'The wider sandbox mode this command needs. Only valid as a one-shot retry of a command the sandbox just denied; requires justification and user approval. `use_default` asks for no change and equals omitting the field.',
         },
         justification: {
           type: 'string' as const,
@@ -380,10 +380,12 @@ export function apply(ctx: Context, config: Config = {}): void {
     async execute(args: BashToolArgs, exec) {
       const standingPolicy = resolveSandboxPolicy(exec)
       validateBashArgs(args, standingPolicy?.mode)
-      // description 仅供展示；未指定 workdir 时使用调用会话的工作区。
-      const approvedMode = args.sandbox_permissions !== undefined
-        ? await approveBashEscalation(args.sandbox_permissions, args.justification ?? '', exec, standingPolicy)
-        : undefined
+      // description 仅供展示；未指定 workdir 时使用调用会话的工作区。`use_default` 与缺省
+      // 都归一成“不请求升权”，本次调用沿用常驻策略。
+      const requestedMode = escalationTarget(args.sandbox_permissions)
+      const approvedMode = requestedMode === undefined
+        ? undefined
+        : await approveBashEscalation(requestedMode, args.justification ?? '', exec, standingPolicy)
       const policy = approvedMode === undefined
         ? standingPolicy
         : { ...(standingPolicy as SandboxExecutionPolicy), mode: approvedMode }

@@ -10,10 +10,13 @@ import { HarnessError } from 'coding-llm'
 import type { SessionId } from 'coding-session'
 
 export {
+  ESCALATION_DEFAULT_TARGET,
   ESCALATION_TARGETS,
+  ESCALATION_VALUES,
   WIDER_MODES,
   approveEscalation,
   escalationHintMarker,
+  escalationTarget,
   sandboxDenialMarker,
   validateEscalationArgs,
 } from './escalation.ts'

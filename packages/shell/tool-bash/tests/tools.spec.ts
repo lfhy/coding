@@ -700,7 +700,7 @@ describe('sandbox escalation through the generic task producer', () => {
     const { ctx } = await setupSandboxed()
     const schema = ctx.tools.schemas().find(item => item.name === 'bash')!
     const properties = schema.parameters.properties as Record<string, { enum?: string[] }>
-    expect(properties['sandbox_permissions']?.enum).toEqual(['workspace-write', 'danger-full-access'])
+    expect(properties['sandbox_permissions']?.enum).toEqual(['workspace-write', 'danger-full-access', 'use_default'])
     expect(schema.description).toContain('approval prompt')
 
     for (const args of [
@@ -712,6 +712,23 @@ describe('sandbox escalation through the generic task producer', () => {
     }
   })
 
+  it('treats use_default as no escalation and never prompts', async () => {
+    const { ctx, bash } = await setupSandboxed(true)
+    const prompted = vi.fn()
+    ctx.on('approval/request', () => { prompted(); return Promise.resolve<ApprovalOutcome>('allowed-once') })
+    // 沿用当前权限不是升权请求：有没有理由都不审批，命令按常驻策略执行。
+    const bare = await call(ctx, 'bash', {
+      command: 'true', description: 'use the current mode', sandbox_permissions: 'use_default',
+    }, sandboxAgent())
+    expect(bare.isError).toBe(false)
+    const withReason = await call(ctx, 'bash', {
+      command: 'true', description: 'use the current mode', sandbox_permissions: 'use_default', justification: 'redundant',
+    }, sandboxAgent())
+    expect(withReason.isError).toBe(false)
+    expect(bash.modes).toEqual(['read-only', 'read-only'])
+    expect(prompted).not.toHaveBeenCalled()
+  })
+
   it('rejects injected escalation without a sandbox and narrowing escalation without prompting', async () => {
     const plain = await setup()
     expect(text(await call(plain, 'bash', escalate))).toContain('not available in this composition')
@@ -720,7 +737,7 @@ describe('sandbox escalation through the generic task producer', () => {
     const prompted = vi.fn()
     ctx.on('approval/request', () => { prompted(); return Promise.resolve<ApprovalOutcome>('allowed-once') })
     const result = await call(ctx, 'bash', { ...escalate, sandbox_permissions: 'read-only' }, sandboxAgent('danger-full-access'))
-    expect(text(result)).toContain('must be one of ["workspace-write","danger-full-access"]')
+    expect(text(result)).toContain('must be one of ["workspace-write","danger-full-access","use_default"]')
     expect(prompted).not.toHaveBeenCalled()
 
     const malformed = sandboxAgent()

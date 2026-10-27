@@ -13,7 +13,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { ToolExecution } from 'coding-tools'
 import type { SandboxExecutionPolicy, SandboxMode } from 'coding-sandbox'
-import { ESCALATION_TARGETS, approveEscalation, escalationHintMarker, sandboxDenialMarker, validateEscalationArgs } from 'coding-sandbox'
+import { ESCALATION_TARGETS, ESCALATION_VALUES, approveEscalation, escalationHintMarker, escalationTarget, sandboxDenialMarker, validateEscalationArgs } from 'coding-sandbox'
 import type { SandboxPolicyService } from 'coding-sandbox-policy'
 import { FsError } from 'coding-fs'
 
@@ -51,17 +51,18 @@ export class FsSandboxController {
 
   /**
    * 变更工具 `parameters` 使用的升权 schema 字段。仅在受限后端下调用，并以
-   * {@link escalationModes} 守卫；枚举固定封闭目标词汇，同档幂等与严格拓宽判断在
-   * 每次执行时完成。
+   * {@link escalationModes} 守卫；枚举固定封闭目标词汇加上“沿用当前权限”的哨兵，
+   * 同档幂等与严格拓宽判断在每次执行时完成。
    * @returns 两个升权参数定义。
    */
   schemaFields(): EscalationSchemaFields {
     return {
       sandbox_permissions: {
         type: 'string',
-        enum: [...this.escalationModes],
+        enum: [...ESCALATION_VALUES],
         description: 'The wider sandbox mode this file operation needs. Only valid as a one-shot retry '
-          + 'of an operation the sandbox just denied; requires justification and user approval.',
+          + 'of an operation the sandbox just denied; requires justification and user approval. '
+          + '`use_default` asks for no change and equals omitting the field.',
       },
       justification: {
         type: 'string',
@@ -83,7 +84,9 @@ export class FsSandboxController {
   async resolvePolicy(toolName: string, args: FsEscalationArgs, exec: ToolExecution): Promise<SandboxExecutionPolicy | undefined> {
     const standingPolicy = this.policy?.resolve({ ...exec.agent ? { session: exec.agent.session } : {} })
     validateEscalationArgs(args.sandbox_permissions, args.justification, standingPolicy?.mode)
-    if (args.sandbox_permissions === undefined) {
+    // `use_default` 与缺省都归一成“不请求升权”，本次变更沿用常驻策略。
+    const requestedMode = escalationTarget(args.sandbox_permissions)
+    if (requestedMode === undefined) {
       return standingPolicy
     }
     if (this.escalationModes.length === 0) {
@@ -91,7 +94,7 @@ export class FsSandboxController {
     }
     const policy = standingPolicy as SandboxExecutionPolicy
     const approvedMode = await approveEscalation(
-      { requestedMode: args.sandbox_permissions, justification: args.justification ?? '', effectiveMode: policy.mode, subject: 'operation' },
+      { requestedMode, justification: args.justification ?? '', effectiveMode: policy.mode, subject: 'operation' },
       {
         approver: this.ctx.get('approval'),
         agent: exec.agent,

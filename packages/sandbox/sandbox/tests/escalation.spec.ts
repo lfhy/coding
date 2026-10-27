@@ -7,10 +7,13 @@
 
 import { describe, expect, it } from 'vitest'
 import {
+  ESCALATION_DEFAULT_TARGET,
   ESCALATION_TARGETS,
+  ESCALATION_VALUES,
   WIDER_MODES,
   approveEscalation,
   escalationHintMarker,
+  escalationTarget,
   sandboxDenialMarker,
   validateEscalationArgs,
 } from 'coding-sandbox'
@@ -25,6 +28,27 @@ describe('the strictly-wider ladder', () => {
 
   it('the target enum is the closed set every session could escalate TO (read-only is the floor)', () => {
     expect(ESCALATION_TARGETS).toEqual(['workspace-write', 'danger-full-access'])
+  })
+
+  it('the advertised vocabulary adds the no-op sentinel after the targets', () => {
+    // schema 枚举带哨兵：参数校验按 schema 执行，模型照习惯写出的 use_default 必须通过
+    // 校验，再由执行期归一成“不请求升权”。
+    expect(ESCALATION_VALUES).toEqual(['workspace-write', 'danger-full-access', 'use_default'])
+    expect(ESCALATION_DEFAULT_TARGET).toBe('use_default')
+  })
+})
+
+describe('escalationTarget', () => {
+  it('normalizes the omitted field and the sentinel to no escalation request', () => {
+    expect(escalationTarget(undefined)).toBeUndefined()
+    expect(escalationTarget(ESCALATION_DEFAULT_TARGET)).toBeUndefined()
+  })
+
+  it('passes a real target through for the ladder to judge', () => {
+    expect(escalationTarget('workspace-write')).toBe('workspace-write')
+    expect(escalationTarget('danger-full-access')).toBe('danger-full-access')
+    // 词汇外的值原样传递：拒绝由严格拓宽检查在执行前给出，而不是在这里静默丢弃。
+    expect(escalationTarget('yolo')).toBe('yolo')
   })
 })
 
@@ -51,6 +75,14 @@ describe('validateEscalationArgs', () => {
       }
     }
     expect(() => { validateEscalationArgs('workspace-write', '', 'workspace-write') }).toThrow(/non-empty sentence/)
+  })
+
+  it('ignores the whole pair when the target asks for the current mode', () => {
+    // 沿用当前权限不是升权请求：理由可有可无、内容不限，都不进入配对校验，也不降权。
+    for (const justification of [undefined, '', ' ', 'redundant']) {
+      expect(() => { validateEscalationArgs(ESCALATION_DEFAULT_TARGET, justification, 'read-only') }).not.toThrow()
+      expect(() => { validateEscalationArgs(ESCALATION_DEFAULT_TARGET, justification, 'workspace-write') }).not.toThrow()
+    }
   })
 
   it('ignores the escalation field entirely once the call already holds full access', () => {
