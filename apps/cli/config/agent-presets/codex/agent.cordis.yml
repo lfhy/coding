@@ -5,9 +5,15 @@
 #
 # - Persona: `codex-rs/protocol/src/prompts/base_instructions/default.md`, plus
 #   the multi-agent developer section from
-#   `codex-rs/core/templates/collab/experimental_prompt.md`. Only the
-#   `close_agent` reference is rewritten, because Codex multi-agent v2 replaces
-#   it with `interrupt_agent` and this composition never registers close_agent.
+#   `codex-rs/core/templates/collab/experimental_prompt.md`. Two references are
+#   rewritten to match this composition. `close_agent` becomes
+#   `interrupt_agent`, because Codex multi-agent v2 replaces it and this
+#   composition never registers close_agent. The `apply_patch` example uses the
+#   tool's real argument shape (`{"input": "..."}`) instead of Codex's shell
+#   form (`{"command": ["apply_patch", ...]}`), because `apply_patch` is a
+#   function tool here and `exec_command` runs a plain shell with no
+#   interception; the shell form teaches the model to look for a binary that
+#   does not exist.
 # - Tools: Codex's own set — `exec_command`/`write_stdin`, `apply_patch`,
 #   `update_plan`, `web_search`/`web_fetch`, and the v2 collaboration tools
 #   (`spawn_agent`, `send_message`, `followup_task`, `wait_agent`,
@@ -161,7 +167,7 @@
       - Working on the repo(s) in the current environment is allowed, even if they are proprietary.
       - Analyzing code for vulnerabilities is allowed.
       - Showing user code and tool call details is allowed.
-      - Use the `apply_patch` tool to edit files (NEVER try `applypatch` or `apply-patch`, only `apply_patch`): {"command":["apply_patch","*** Begin Patch\\n*** Update File: path/to/file.py\\n@@ def example():\\n- pass\\n+ return 123\\n*** End Patch"]}
+      - Use the `apply_patch` tool to edit files (NEVER try `applypatch` or `apply-patch`, only `apply_patch`). It is always a tool call whose single argument is the patch text, never a shell command: {"input":"*** Begin Patch\n*** Update File: path/to/file.py\n@@ def example():\n- pass\n+ return 123\n*** End Patch"}
 
       If completing the user's task requires writing or modifying files, your code and final answer should follow these coding guidelines, though user instructions (i.e. AGENTS.md) may override these guidelines:
 

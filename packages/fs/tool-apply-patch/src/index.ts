@@ -27,11 +27,11 @@ export const inject = ['tools', 'fs', 'systemPrompt']
 const DESCRIPTION = 'Apply a Codex-style patch to workspace files. The input must be a string containing '
   + '`*** Begin Patch` and `*** End Patch`; do not wrap the patch syntax in another JSON object. '
   + 'Supports `*** Add File` and `*** Update File`. `*** Delete File` and `*** Move to` are not supported; '
-  + 'use the available file editing tools for those operations.'
+  + 'use the shell for deletes and moves.'
 
 const GUIDANCE = 'Use apply_patch for a small, targeted batch of file changes. Send the complete patch envelope '
-  + 'as the input string. It supports Add File and Update File sections; Delete File and Move to are not '
-  + 'available in this filesystem composition. Read existing files before updating them.'
+  + 'as the input string; `*** Add File` and `*** Update File` are sections inside that envelope, not separate tools. '
+  + 'Delete File and Move to are not available in this filesystem composition. Read existing files before updating them.'
 
 interface ApplyPatchArgs { input: string }
 
@@ -151,7 +151,7 @@ export function apply(ctx: Context): void {
         const policy = policyOf(ctx, exec)
         if (file.kind === 'add') {
           const existing = await readExisting(ctx, file.path, exec, policy)
-          if (existing.content !== undefined) throw new Error(`apply_patch: ${file.path} already exists; use Update File`)
+          if (existing.content !== undefined) throw new Error(`apply_patch: ${file.path} already exists; an Add File section cannot overwrite it — use an Update File section instead`)
           const intent = await ctx.waterfall('fs/write-intent', existing.target, exec, () => undefined)
           const outcome = await ctx.fs.writeText(existing.target, file.content, intent, exec.signal, policy)
           ctx.emit('fs/observed', existing.target, { kind: 'present', version: outcome.version }, exec)
@@ -161,7 +161,7 @@ export function apply(ctx: Context): void {
 
         if (file.kind !== 'update') throw new Error(`apply_patch: unsupported file operation for ${file.path}`)
         const existing = await readExisting(ctx, file.path, exec, policy)
-        if (existing.content === undefined) throw new Error(`apply_patch: ${file.path} does not exist; use Add File`)
+        if (existing.content === undefined) throw new Error(`apply_patch: ${file.path} does not exist; an Update File section needs an existing file — use an Add File section instead`)
         const after = applyPatchHunks(file.path, existing.content, file.hunks)
         const intent = await ctx.waterfall('fs/edit-intent', existing.target, exec, () => undefined)
         const outcome = await ctx.fs.editText(existing.target, {
