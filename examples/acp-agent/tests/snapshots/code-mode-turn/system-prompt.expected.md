@@ -7,7 +7,7 @@ Verify your work by running the code or tests. Keep answers brief and factual.
 
 `run_code` is the only tool you can call directly — a tool call naming any other tool fails. Reach every tool the SDK declares below from inside the program.
 
-Use the read tool — not shell commands like cat — to inspect text files. Results include line numbers. Use offset and limit to continue reading large files.
+Use the read tool — not shell commands like cat — to inspect text files. Results include line numbers. You may read up to 10000 lines per call; for larger files or when you only need a section, use offset and limit to page through the file. If the result ends with a continuation footer, pass its suggested offset to the next read call.
 
 Use the write tool to create files or completely replace file contents. Existing files are overwritten, so read an existing file first (the default fs-observation-policy requires it) and prefer edit for targeted changes.
 
@@ -52,10 +52,12 @@ interface ToolArgsMap {
     timeoutMs?: number;
     /** Working directory for this command. Defaults to the session workspace; a relative path is resolved against it. */
     workdir?: string;
+    /** Run the command in a pseudo-terminal so it can read from an interactive stdin. A background tty session can only be collected with the job tools; typing into it requires a stdin-capable session controller. */
+    tty?: boolean;
     /** Run in the background and return a job id immediately (collect with job_output, stop with job_kill). No timeout applies. */
     run_in_background?: boolean;
-    /** The wider sandbox mode this command needs. Only valid as a one-shot retry of a command the sandbox just denied; requires justification and user approval. */
-    sandbox_permissions?: "workspace-write" | "danger-full-access";
+    /** The wider sandbox mode this command needs. Only valid as a one-shot retry of a command the sandbox just denied; requires justification and user approval. `use_default` asks for no change and equals omitting the field. */
+    sandbox_permissions?: "workspace-write" | "danger-full-access" | "use_default";
     /** Required with sandbox_permissions: one sentence for the user explaining why this exact command needs the wider access. */
     justification?: string;
   } & Record<string, JsonValue>;
@@ -76,14 +78,21 @@ interface ToolArgsMap {
     new_string: string;
     /** Replace all matches. Defaults to false; when false, old_string must appear exactly once. */
     replace_all?: boolean;
-    /** The wider sandbox mode this file operation needs. Only valid as a one-shot retry of an operation the sandbox just denied; requires justification and user approval. */
-    sandbox_permissions?: "workspace-write" | "danger-full-access";
+    /** The wider sandbox mode this file operation needs. Only valid as a one-shot retry of an operation the sandbox just denied; requires justification and user approval. `use_default` asks for no change and equals omitting the field. */
+    sandbox_permissions?: "workspace-write" | "danger-full-access" | "use_default";
     /** Required with sandbox_permissions: one sentence for the user explaining why this exact file operation needs the wider access. */
     justification?: string;
   } & Record<string, JsonValue>;
+  /** Send a follow-up task to a background subagent by its subagent id. The message is queued for the next turn; it does not interrupt an in-flight model request or tool call. This confirms acceptance, not completion of the task. */
+  followup_task: {
+    /** The subagent id returned when the background subagent was started. */
+    subagent_id: string;
+    /** The message to deliver to the subagent. */
+    message: string;
+  } & Record<string, JsonValue>;
   /** Read the current same-session goal, including its exact id/revision, objective, phase, completed continuation rounds, round limit, blocker reason when present, and whether another continuation is armed. Call this before updating a goal. */
   get_goal: Record<string, JsonValue>;
-  /** Request cancellation of a background agent's current turn by its agent id. The target may be your direct child or a deeper agent created under you. Only the current turn stops: messages already queued for the agent stay parked until a later send_message, agents it started keep running, and the agent itself stays available for follow-ups. This call returns as soon as the stop request is accepted, so the target may keep running briefly; interrupting an agent that already finished is an accepted no-op. */
+  /** Request cancellation of a background agent's current turn by its agent id. The target may be your direct child or a deeper agent created under you. Only the current turn stops: queued messages stay parked until a later send_message or followup_task, agents it started keep running, and the agent stays available. The call returns as soon as the stop request is accepted; interrupting an already finished agent is a no-op. */
   interrupt_agent: {
     /** The agent id of the running agent to interrupt. */
     agent_id: string;
@@ -124,10 +133,10 @@ interface ToolArgsMap {
     file_path: string;
     /** 1-based first line to return. Defaults to 1. */
     offset?: number;
-    /** Maximum number of lines to return. Defaults to 2000. */
+    /** Maximum number of lines to return in this call (up to 10000). Defaults to 10000. For a large file, set offset to the first line you need and use the continuation offset from the footer. */
     limit?: number;
   } & Record<string, JsonValue>;
-  /** Send a message to a background subagent by its subagent id. The message is inserted into the next available step, so an agent still working can use it before its next model request; this cannot interrupt an in-flight model request or tool call. If the agent is idle, the message wakes it. This call confirms acceptance, not that the agent has read the message, and returns no answer. A failure means the message was NOT delivered. */
+  /** Send a message to a background subagent by its subagent id. The message is inserted into the next available step without interrupting an in-flight model request or tool call. If the agent is idle, the message wakes it. This confirms acceptance, not that the agent has read the message. */
   send_message: {
     /** The subagent id returned when the background subagent was started. */
     subagent_id: string;
@@ -221,8 +230,8 @@ interface ToolArgsMap {
     file_path: string;
     /** Full UTF-8 text content to write. */
     content: string;
-    /** The wider sandbox mode this file operation needs. Only valid as a one-shot retry of an operation the sandbox just denied; requires justification and user approval. */
-    sandbox_permissions?: "workspace-write" | "danger-full-access";
+    /** The wider sandbox mode this file operation needs. Only valid as a one-shot retry of an operation the sandbox just denied; requires justification and user approval. `use_default` asks for no change and equals omitting the field. */
+    sandbox_permissions?: "workspace-write" | "danger-full-access" | "use_default";
     /** Required with sandbox_permissions: one sentence for the user explaining why this exact file operation needs the wider access. */
     justification?: string;
   } & Record<string, JsonValue>;
@@ -277,6 +286,9 @@ interface ToolOutputMap {
     path: string;
     before: string;
     after: string;
+  };
+  followup_task: {
+    messageId: string;
   };
   get_goal: {
     goal: null;

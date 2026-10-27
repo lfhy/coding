@@ -22,6 +22,10 @@
             "type": "string",
             "description": "Working directory for this command. Defaults to the session workspace; a relative path is resolved against it."
           },
+          "tty": {
+            "type": "boolean",
+            "description": "Run the command in a pseudo-terminal so it can read from an interactive stdin. A background tty session can only be collected with the job tools; typing into it requires a stdin-capable session controller."
+          },
           "run_in_background": {
             "type": "boolean",
             "description": "Run in the background and return a job id immediately (collect with job_output, stop with job_kill). No timeout applies."

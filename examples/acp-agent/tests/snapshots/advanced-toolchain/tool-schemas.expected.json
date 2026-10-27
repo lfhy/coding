@@ -22,6 +22,10 @@
             "type": "string",
             "description": "Working directory for this command. Defaults to the session workspace; a relative path is resolved against it."
           },
+          "tty": {
+            "type": "boolean",
+            "description": "Run the command in a pseudo-terminal so it can read from an interactive stdin. A background tty session can only be collected with the job tools; typing into it requires a stdin-capable session controller."
+          },
           "run_in_background": {
             "type": "boolean",
             "description": "Run in the background and return a job id immediately (collect with job_output, stop with job_kill). No timeout applies."
@@ -89,6 +93,10 @@
                   "kind",
                   "pluginId"
                 ]
+              },
+              {
+                "type": "string",
+                "description": "JSON-encoded plugin selector; accepted for compatibility with model tool-call serializers."
               }
             ]
           },
@@ -307,6 +315,27 @@
       }
     },
     {
+      "name": "followup_task",
+      "description": "Send a follow-up task to a background subagent by its subagent id. The message is queued for the next turn; it does not interrupt an in-flight model request or tool call. This confirms acceptance, not completion of the task.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "subagent_id": {
+            "type": "string",
+            "description": "The subagent id returned when the background subagent was started."
+          },
+          "message": {
+            "type": "string",
+            "description": "The message to deliver to the subagent."
+          }
+        },
+        "required": [
+          "subagent_id",
+          "message"
+        ]
+      }
+    },
+    {
       "name": "get_goal",
       "description": "Read the current same-session goal, including its exact id/revision, objective, phase, completed continuation rounds, round limit, blocker reason when present, and whether another continuation is armed. Call this before updating a goal.",
       "parameters": {
@@ -316,7 +345,7 @@
     },
     {
       "name": "interrupt_agent",
-      "description": "Request cancellation of a background agent's current turn by its agent id. The target may be your direct child or a deeper agent created under you. Only the current turn stops: messages already queued for the agent stay parked until a later send_message, agents it started keep running, and the agent itself stays available for follow-ups. This call returns as soon as the stop request is accepted, so the target may keep running briefly; interrupting an agent that already finished is an accepted no-op.",
+      "description": "Request cancellation of a background agent's current turn by its agent id. The target may be your direct child or a deeper agent created under you. Only the current turn stops: queued messages stay parked until a later send_message or followup_task, agents it started keep running, and the agent stays available. The call returns as soon as the stop request is accepted; interrupting an already finished agent is a no-op.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -435,7 +464,7 @@
           },
           "limit": {
             "type": "number",
-            "description": "Maximum number of lines to return. Defaults to 2000."
+            "description": "Maximum number of lines to return in this call (up to 10000). Defaults to 10000. For a large file, set offset to the first line you need and use the continuation offset from the footer."
           }
         },
         "required": [
@@ -466,7 +495,7 @@
     },
     {
       "name": "send_message",
-      "description": "Send a message to a background subagent by its subagent id. The message is inserted into the next available step, so an agent still working can use it before its next model request; this cannot interrupt an in-flight model request or tool call. If the agent is idle, the message wakes it. This call confirms acceptance, not that the agent has read the message, and returns no answer. A failure means the message was NOT delivered.",
+      "description": "Send a message to a background subagent by its subagent id. The message is inserted into the next available step without interrupting an in-flight model request or tool call. If the agent is idle, the message wakes it. This confirms acceptance, not that the agent has read the message.",
       "parameters": {
         "type": "object",
         "properties": {
