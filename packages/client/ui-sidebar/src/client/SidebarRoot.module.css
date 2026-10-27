@@ -213,10 +213,13 @@
   background: var(--dsw-alias-interactive-bg-hover);
 }
 
+/* 图标贴在胶囊左端，「新对话」文案占满图标右侧的剩余空间并居中。 */
 .newSessionLabel {
+  flex: 1;
   min-width: 0;
   overflow: hidden;
   white-space: nowrap;
+  text-align: center;
   text-overflow: ellipsis;
 }
 
