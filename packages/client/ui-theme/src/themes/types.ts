@@ -34,6 +34,13 @@ export interface ThemePresetData {
    * 单套色预设给一个字符串；跟随明暗的预设按方案各给一份。
    */
   backdrop?: string | { light?: string; dark?: string }
+  /**
+   * 缩略图键（`thumbnails.generated.ts` 里的文件名，不含扩展名）。
+   * 单套色预设给一个键；跟随明暗的预设用 `thumbnails` 按方案各给一张。
+   */
+  thumbnail?: string
+  /** 跟随明暗的预设的两张缩略图键。 */
+  thumbnails?: { light?: string; dark?: string }
 }
 
 /** 一条 OpenCode 配色：37 个语义槽的明暗两套色值。 */
@@ -64,6 +71,8 @@ export interface ThemePreset {
   palettes: { light?: ThemeTokens; dark?: ThemeTokens }
   /** 自带背景（壁纸），按方案给出。 */
   backdrop: { light?: string; dark?: string }
+  /** 界面截图 data URL，按方案给出；没有缩略图的主题是空对象。 */
+  thumbnails: { light?: string; dark?: string }
   /** 卡片预览色。 */
   preview: ThemePreview
 }

@@ -151,6 +151,30 @@ describe('ThemeGallery', () => {
     expect(screen.getByText('轴伊 · 花语')).toBeDefined()
   })
 
+  it('shows the interface thumbnail when a theme has one and colors otherwise', () => {
+    mount()
+    const grid = screen.getByRole('group', { name: /共 \d+ 套配色/ })
+    // 幻梦与轴伊带界面截图；OpenCode 与内置三项只有配色块。
+    const images = grid.querySelectorAll('img')
+    expect(images.length).toBe(10)
+    expect(images[0]?.getAttribute('src')).toMatch(/^data:image\/jpeg;base64,/)
+    expect(images[0]?.getAttribute('alt')).toBe('')
+    expect(screen.getByRole('button', { name: /德古拉/ }).querySelector('img')).toBeNull()
+    expect(screen.getByRole('button', { name: /跟随系统/ }).querySelector('img')).toBeNull()
+  })
+
+  it('picks the thumbnail matching the active color scheme', () => {
+    mount({ scheme: 'dark' })
+    const darkGrid = screen.getByRole('group', { name: /共 \d+ 套配色/ })
+    const dark = [...darkGrid.querySelectorAll('img')].map(node => node.getAttribute('src'))
+    cleanup()
+    mount({ scheme: 'light' })
+    const lightGrid = screen.getByRole('group', { name: /共 \d+ 套配色/ })
+    const light = [...lightGrid.querySelectorAll('img')].map(node => node.getAttribute('src'))
+    // 轴伊是跟随明暗的主题，两套方案各用一张截图。
+    expect(dark.filter(Boolean)).not.toEqual(light.filter(Boolean))
+  })
+
   it('switches theme when a card is clicked', () => {
     const { injected } = mount()
     fireEvent.click(screen.getByRole('button', { name: /沉静蓝/ }))

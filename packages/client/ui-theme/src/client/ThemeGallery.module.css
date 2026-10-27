@@ -2,7 +2,7 @@
  * 宽度与其它设置分区的居中内容列一致；卡片墙按可用宽度自动分列。 */
 
 .page {
-  width: min(760px, 100%);
+  width: min(860px, 100%);
   min-width: 0;
   padding: 24px;
   box-sizing: border-box;
@@ -125,10 +125,29 @@
   color: var(--dsw-alias-label-tertiary);
 }
 
+/* 卡片墙自己滚动：47 套的主题列表不该把高级外观顶到几屏之外。
+ * 区域可聚焦，键盘用户能直接滚动它。 */
+.gridScroll {
+  /* 卡片自带抬升底色，滚动条按高层级表面重绑一组 l2 滑块，避免深色下与
+   * 卡片底色撞在一起（scrollbar 约定见 ui-theme README）。 */
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
+  max-height: min(52vh, 560px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 4px;
+  border-radius: 14px;
+}
+
+.gridScroll:focus-visible {
+  outline: 2px solid var(--dsw-alias-state-business-primary);
+  outline-offset: 2px;
+}
+
 .grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(auto-fill, minmax(196px, 1fr));
+  gap: 12px;
 }
 
 .footerActions {

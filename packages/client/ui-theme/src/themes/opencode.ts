@@ -213,6 +213,8 @@ export function opencodePreset(data: OpencodePaletteData): ThemePreset {
     scheme: auto ? 'auto' : 'dark',
     palettes,
     backdrop: backdropOf(data, auto),
+    // 上游只提供整体截图，没有逐套界面缩略图；卡片回落到配色块。
+    thumbnails: {},
     preview: {
       background: usable(base.background) ?? (auto ? '#ffffff' : '#101014'),
       text: usable(base.text) ?? (auto ? '#1a1a1a' : '#f4f4f5'),

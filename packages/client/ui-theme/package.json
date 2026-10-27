@@ -80,6 +80,7 @@
   ],
   "scripts": {
     "bundle": "tsdown",
+    "gen:thumbnails": "node scripts/gen-thumbnails.mjs",
     "watch": "tsdown --watch"
   },
   "dependencies": {

@@ -16,6 +16,7 @@ import { OPENCODE_PRESET_GROUP_E } from './data/opencode-5.ts'
 import { OPENCODE_PRESET_GROUP_F } from './data/opencode-6.ts'
 import { OPENCODE_PRESET_GROUP_G } from './data/opencode-7.ts'
 import { opencodePreset } from './opencode.ts'
+import { THEME_THUMBNAILS } from './thumbnails.generated.ts'
 import { hueOf } from './color.ts'
 import type {
   OpencodePaletteData, ThemePreset, ThemePresetData, ThemeScheme, ThemeSourceId, ThemeTokens,
@@ -98,6 +99,29 @@ export const BASE_THEME_CHOICES: readonly BaseThemeChoice[] = [
   },
 ]
 
+/**
+ * 缩略图键查表；键不存在时抛错——数据文件与 `thumbnails/` 目录不同步是
+ * 笔误级别的错误，静默回落会让卡片无声地少一张截图。
+ */
+function thumbnailUrl(key: string | undefined): string | undefined {
+  if (key === undefined) return undefined
+  const url = THEME_THUMBNAILS[key]
+  if (url === undefined) throw new Error(`theme thumbnail "${key}" is missing from thumbnails.generated.ts`)
+  return url
+}
+
+/** 把数据里的缩略图键解析成 data URL，按方案整理。 */
+function resolveThumbnails(data: ThemePresetData): { light?: string; dark?: string } {
+  if (data.scheme !== 'auto') {
+    const url = thumbnailUrl(data.thumbnail)
+    if (url === undefined) return {}
+    return data.scheme === 'light' ? { light: url } : { dark: url }
+  }
+  const light = thumbnailUrl(data.thumbnails?.light)
+  const dark = thumbnailUrl(data.thumbnails?.dark)
+  return { ...(light === undefined ? {} : { light }), ...(dark === undefined ? {} : { dark }) }
+}
+
 /** 一条预设数据转成目录条目时的兜底预览色。 */
 const FALLBACK_PREVIEW = { background: '#1b1d21', text: '#f4f4f5', accent: '#5a6cff' }
 
@@ -142,6 +166,7 @@ function buildPreset(data: ThemePresetData, source: ThemeSourceId): ThemePreset 
     scheme,
     palettes: { ...(light === undefined ? {} : { light }), ...(dark === undefined ? {} : { dark }) },
     backdrop,
+    thumbnails: resolveThumbnails(data),
     preview: previewFrom(previewTokens),
   }
 }

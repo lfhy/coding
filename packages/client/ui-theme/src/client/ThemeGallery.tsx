@@ -54,6 +54,8 @@ interface GalleryEntry {
   englishName: string
   scheme: 'light' | 'dark' | 'auto'
   preview: { background: string; text: string; accent: string }
+  /** 界面截图，按方案给出；空对象表示该主题没有截图，卡片回落到配色块。 */
+  thumbnails: { light?: string; dark?: string }
   source: ThemeSourceId
   group: ThemeGroupId
   imported: boolean
@@ -67,6 +69,7 @@ function baseEntries(): GalleryEntry[] {
     englishName: choice.englishName,
     scheme: choice.scheme,
     preview: choice.preview,
+    thumbnails: {},
     source: 'builtin' as const,
     group: 'neutral' as ThemeGroupId,
     imported: false,
@@ -81,6 +84,7 @@ function presetEntry(preset: ThemePreset): GalleryEntry {
     englishName: preset.englishName,
     scheme: preset.scheme,
     preview: preset.preview,
+    thumbnails: preset.thumbnails,
     source: preset.source,
     group: themeGroupOf(preset),
     imported: preset.source === 'imported',
@@ -106,6 +110,7 @@ function packEntry(pack: ImportedThemePack): GalleryEntry {
     englishName: pack.englishName,
     scheme: pack.scheme,
     preview: { background, text: tokens?.['--dsw-alias-label-primary'] ?? readableOn(background), accent },
+    thumbnails: {},
     source: 'imported',
     group: 'neutral',
     imported: true,
@@ -121,6 +126,7 @@ export function ThemeGallery({ t, useStore, ...actions }: ThemeGalleryComponentP
   const [filter, setFilter] = useState<Filter>('all')
   const [query, setQuery] = useState('')
   const preference = useStore(s => s.preference)
+  const scheme = useStore(s => s.scheme)
   const favorites = useStore(s => s.favorites)
   const packs = useStore(s => s.packs)
   const accent = useStore(s => s.accent)
@@ -192,28 +198,36 @@ export function ThemeGallery({ t, useStore, ...actions }: ThemeGalleryComponentP
       {entries.length === 0
         ? <p className={css.empty}>{t('search.empty')}</p>
         : (
-          <div className={css.grid} role="group" aria-label={t('list.hint', { count: entries.length })}>
-            {entries.map(entry => (
-              <ThemeCard
-                key={entry.id}
-                id={entry.id}
-                name={entry.name}
-                scheme={entry.scheme}
-                preview={entry.preview}
-                selected={preference === entry.id}
-                favorite={favorites.includes(entry.id)}
-                imported={entry.imported}
-                labels={{
-                  current: t('card.current'),
-                  favorite: t('action.favorite'),
-                  unfavorite: t('action.unfavorite'),
-                  scheme: t(entry.scheme === 'light' ? 'scheme.light' : entry.scheme === 'dark' ? 'scheme.dark' : 'scheme.auto'),
-                  imported: t('pack.imported'),
-                }}
-                onSelect={actions.selectTheme}
-                onToggleFavorite={actions.toggleFavorite}
-              />
-            ))}
+          <div
+            className={css.gridScroll}
+            role="group"
+            aria-label={t('list.hint', { count: entries.length })}
+            tabIndex={0}
+          >
+            <div className={css.grid}>
+              {entries.map(entry => (
+                <ThemeCard
+                  key={entry.id}
+                  id={entry.id}
+                  name={entry.name}
+                  scheme={entry.scheme}
+                  preview={entry.preview}
+                  thumbnail={entry.thumbnails[scheme] ?? entry.thumbnails.dark ?? entry.thumbnails.light}
+                  selected={preference === entry.id}
+                  favorite={favorites.includes(entry.id)}
+                  imported={entry.imported}
+                  labels={{
+                    current: t('card.current'),
+                    favorite: t('action.favorite'),
+                    unfavorite: t('action.unfavorite'),
+                    scheme: t(entry.scheme === 'light' ? 'scheme.light' : entry.scheme === 'dark' ? 'scheme.dark' : 'scheme.auto'),
+                    imported: t('pack.imported'),
+                  }}
+                  onSelect={actions.selectTheme}
+                  onToggleFavorite={actions.toggleFavorite}
+                />
+              ))}
+            </div>
           </div>
         )}
 

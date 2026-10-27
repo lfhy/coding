@@ -12,6 +12,10 @@ import type { ThemePresetData } from '../types.ts'
 export const JOI_PRESETS: readonly ThemePresetData[] = [
   {
     id: 'joi-flowers',
+    thumbnails: {
+      light: 'joi-flowers',
+      dark: 'joi-flowers-dark',
+    },
     name: '轴伊 · 花语',
     englishName: 'Joi Flowers',
     scheme: 'auto',
@@ -168,6 +172,10 @@ export const JOI_PRESETS: readonly ThemePresetData[] = [
   },
   {
     id: 'joi-library',
+    thumbnails: {
+      light: 'joi-library',
+      dark: 'joi-library-dark',
+    },
     name: '轴伊 · 书库',
     englishName: 'Joi Library',
     scheme: 'auto',

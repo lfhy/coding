@@ -76,6 +76,27 @@ describe('theme catalog', () => {
     for (const preset of THEME_PRESETS) expect(groups.has(themeGroupOf(preset))).toBe(true)
   })
 
+  it('ships interface thumbnails for the ported themes that have them', () => {
+    const dream = findThemePreset('dream-abyss')
+    expect(dream?.thumbnails.dark).toMatch(/^data:image\/jpeg;base64,/)
+    expect(dream?.thumbnails.light).toBeUndefined()
+    const ivory = findThemePreset('dream-ivory')
+    expect(ivory?.thumbnails.light).toMatch(/^data:image\/jpeg;base64,/)
+
+    const joiFlowers = findThemePreset('joi-flowers')
+    expect(joiFlowers?.thumbnails.light).toMatch(/^data:image\/jpeg;base64,/)
+    expect(joiFlowers?.thumbnails.dark).toMatch(/^data:image\/jpeg;base64,/)
+    expect(joiFlowers?.thumbnails.light).not.toBe(joiFlowers?.thumbnails.dark)
+
+    // OpenCode 只有整体截图，没有逐套缩略图：卡片回落到配色块。
+    expect(findThemePreset('oc-dracula')?.thumbnails).toEqual({})
+    for (const preset of THEME_PRESETS) {
+      for (const url of Object.values(preset.thumbnails)) {
+        expect(url).toMatch(/^data:image\/jpeg;base64,/)
+      }
+    }
+  })
+
   it('classifies dark-only OpenCode palettes as fixed dark themes', () => {
     expect(findThemePreset('oc-aura')?.scheme).toBe('dark')
     expect(findThemePreset('oc-dracula')?.scheme).toBe('auto')

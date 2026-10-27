@@ -12,6 +12,7 @@ import type { ThemePresetData } from '../types.ts'
 export const DREAM_SKIN_PRESETS: readonly ThemePresetData[] = [
   {
     id: 'dream-abyss',
+    thumbnail: 'dream-abyss',
     name: '沉静蓝',
     englishName: 'Abyss',
     scheme: 'dark',
@@ -68,6 +69,7 @@ export const DREAM_SKIN_PRESETS: readonly ThemePresetData[] = [
   },
   {
     id: 'dream-aurora',
+    thumbnail: 'dream-aurora',
     name: '极光青',
     englishName: 'Aurora',
     scheme: 'dark',
@@ -124,6 +126,7 @@ export const DREAM_SKIN_PRESETS: readonly ThemePresetData[] = [
   },
   {
     id: 'dream-nebula',
+    thumbnail: 'dream-nebula',
     name: '星云紫',
     englishName: 'Nebula',
     scheme: 'dark',
@@ -180,6 +183,7 @@ export const DREAM_SKIN_PRESETS: readonly ThemePresetData[] = [
   },
   {
     id: 'dream-ember',
+    thumbnail: 'dream-ember',
     name: '余烬橙',
     englishName: 'Ember',
     scheme: 'dark',
@@ -236,6 +240,7 @@ export const DREAM_SKIN_PRESETS: readonly ThemePresetData[] = [
   },
   {
     id: 'dream-midnight',
+    thumbnail: 'dream-midnight',
     name: '午夜黑',
     englishName: 'Midnight',
     scheme: 'dark',
@@ -292,6 +297,7 @@ export const DREAM_SKIN_PRESETS: readonly ThemePresetData[] = [
   },
   {
     id: 'dream-ivory',
+    thumbnail: 'dream-ivory',
     name: 'iOS 扁平',
     englishName: 'Ivory',
     scheme: 'light',
@@ -348,6 +354,7 @@ export const DREAM_SKIN_PRESETS: readonly ThemePresetData[] = [
   },
   {
     id: 'dream-mist',
+    thumbnail: 'dream-mist',
     name: '液态玻璃',
     englishName: 'Mist',
     scheme: 'light',
@@ -404,6 +411,7 @@ export const DREAM_SKIN_PRESETS: readonly ThemePresetData[] = [
   },
   {
     id: 'dream-rose',
+    thumbnail: 'dream-rose',
     name: 'Material 粉',
     englishName: 'Rose',
     scheme: 'light',

@@ -38,6 +38,15 @@
   - 上游浅色变体缺失或本身偏暗的主题收敛为固定深色主题。
   - 未收录 4 套 desktop-2.0 主题（`palette` + `overrides` 另一套 schema）、25 个 IP 主题胶囊、字体与字号设置、自定义主题编辑器。
 
+## 主题缩略图
+
+`src/themes/thumbnails/` 下的界面截图同样来自上述仓库，已缩放到 640px 宽并转成 JPEG：
+
+- `dream-*.jpg`：dsh-dream-skin `docs/previews/<skin>.png`（8 张，MIT）。
+- `joi-flowers.jpg` / `joi-flowers-dark.jpg` / `joi-library.jpg` / `joi-library-dark.jpg`：dsh-joi-channel-theme `docs/new-chat-flowers.png`、`docs/new-chat-flowers-dark.png`、`docs/new-chat-library.png`、`docs/new-chat-library-dark.png`（MIT；截图中的角色形象按该仓库 `LICENSE-ASSETS.md` 仅作主题预览，不随包再分发任何原始角色素材）。
+
+OpenCode 调色板只提供整体截图，没有逐套主题的界面图，因此这 37 套在页面上回落成配色块，未收录其截图。
+
 ## 许可文本
 
 三份上游许可均为 MIT，允许在保留版权与许可声明的前提下使用、修改与再分发。若需完整许可原文，请访问上述仓库的 `LICENSE` 文件。
