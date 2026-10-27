@@ -1,6 +1,6 @@
 import tsconfigPaths from 'vite-tsconfig-paths'
 import { defineConfig } from 'vitest/config'
-import { standardDecoratorPlugin, vitestExecArgv } from './vitest.shared.ts'
+import { resolveExtensions, standardDecoratorPlugin, vitestExecArgv } from './vitest.shared.ts'
 
 // Web browser lane: real host entry points, built-client interaction snapshots,
 // and replayed keyless e2e scenarios outside the unit/e2e includes. Linux PR CI
@@ -21,6 +21,7 @@ export default defineConfig({
     tsconfigPaths({ projects: ['./tsconfig.base.json'] }),
     standardDecoratorPlugin(),
   ],
+  resolve: { extensions: resolveExtensions },
   test: {
     execArgv: vitestExecArgv,
     include: [
