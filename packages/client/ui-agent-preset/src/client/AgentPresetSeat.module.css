@@ -101,22 +101,32 @@
   color: var(--dsw-alias-label-caption);
 }
 
-/* Menu rows carry the name over its description: the id alone never said what
-   a preset does, which is why the metadata exists. */
+/* 菜单行把名称放在描述之上：光看 id 不知道一个预设组装了什么，描述才是这行
+   存在的理由。描述长度由作者决定、彼此差别很大，因此行高固定、描述只留两行，
+   整个菜单才是等高的一列。 */
 .item {
   display: flex;
   flex-direction: column;
+  justify-content: center;
   gap: 2px;
+  height: 54px;
   max-width: 280px;
 }
 
 .itemName {
+  overflow: hidden;
   font-size: 13px;
   line-height: 20px;
   color: var(--dsw-alias-label-primary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .itemDesc {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
   font-size: 12px;
   line-height: 16px;
   color: var(--dsw-alias-label-caption);

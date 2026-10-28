@@ -20,6 +20,7 @@ import { IconAgentPresetOutline16, IconChevronDownOutline14, Menu } from 'coding
 import type {} from 'coding-client-ui-conversation/client'
 import type { AgentPresetSeatState } from './seat-store.ts'
 import { presetDisplayText } from './locales.ts'
+import { PresetDescription } from './PresetDescription.tsx'
 import css from './AgentPresetSeat.module.css'
 
 /** Registration-side business face for the hero chip. */
@@ -144,7 +145,12 @@ export function AgentPresetSeat({ load, select, introduced, useAgentPresetSeat, 
           label: (
             <span className={css.item}>
               <span className={css.itemName}>{text.name}</span>
-              <span className={css.itemDesc}>{text.description ?? t('noDescription')}</span>
+              {/* 描述截到两行：行高一致，菜单不会一条高一条矮；被截断时才给完整文本。 */}
+              <PresetDescription
+                className={css.itemDesc}
+                maxWidth={280}
+                text={text.description ?? t('noDescription')}
+              />
             </span>
           ),
         }

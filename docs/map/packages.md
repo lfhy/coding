@@ -173,7 +173,7 @@ workspace 共 262 个包，按 group 分节。每行给出包目录、职责（R
 
 ## packages/genui
 
-- `packages/genui/genui` — 内嵌 GenUI 能力：把模型回答中的 ` ```gen-ui ` 围栏渲染成可交互组件… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 16）
+- `packages/genui/genui` — 内嵌 GenUI 能力：把模型回答中的 ` ```gen-ui ` 围栏渲染成可交互组件… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 17）
 
 ## packages/goal
 

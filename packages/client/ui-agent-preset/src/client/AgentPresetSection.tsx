@@ -10,15 +10,16 @@
  * mounted once at session creation and nothing re-reads the file.
  */
 
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useEffect } from 'react'
 import type { ReactNode } from 'react'
 import {
-  Button, IconBrowseOutline16, IconCopyOutline16, IconFolderOpenOutline16, IconPlusOutline16, IconTrashOutline16, Modal, Tooltip,
+  Button, IconBrowseOutline16, IconCopyOutline16, IconFolderOpenOutline16, IconPlusOutline16, IconTrashOutline16, Modal,
 } from 'coding-client-ui-primitives'
 import type { SnapshotStore } from 'coding-client-runtime/client'
 import type { InjectFace, PropsLocale, PropsRuntime } from 'coding-client-ui-slots'
 import { draftBlocker, type AgentPresetSectionState } from './section-store.ts'
 import { presetDisplayText, type AgentPresetSettingsKey } from './locales.ts'
+import { PresetDescription } from './PresetDescription.tsx'
 import css from './AgentPresetSection.module.css'
 
 /** Registration-side business face for the management section. */
@@ -138,39 +139,6 @@ function CopyDialog({ state, t, actions }: CopyDialogProps): ReactNode {
 }
 
 /**
- * Render one card's description, clamped by CSS and offered in full on hover.
- * The tooltip is attached only while the text is actually cut off, so a short
- * description does not answer a hover with a bubble repeating the card.
- * @param props.text - the description as rendered, already localized.
- * @returns the description element, tooltip-anchored while it overflows.
- */
-function CardDescription({ text }: { text: string }): ReactNode {
-  const ref = useRef<HTMLSpanElement | null>(null)
-  const [truncated, setTruncated] = useState(false)
-  useLayoutEffect(() => {
-    const el = ref.current
-    /* v8 ignore next -- the ref is attached before layout effects run. */
-    if (el === null) return
-    const measure = () => { setTruncated(el.scrollHeight > el.clientHeight) }
-    measure()
-    // Card width follows the settings pane, which resizes with the window.
-    if (typeof ResizeObserver === 'undefined') return
-    const observer = new ResizeObserver(measure)
-    observer.observe(el)
-    return () => { observer.disconnect() }
-  }, [text])
-  return (
-    // Capped near the card's own width: the default half-viewport bubble would
-    // spill a description out of the settings dialog and across the app behind it.
-    <Tooltip label={text} side="bottom" delayMs={400} disabled={!truncated} maxWidth={360}>
-      {/* The empty title stops the card body's native tooltip from climbing to
-        this span: a cut-off description answers with one bubble, not two. */}
-      <span ref={ref} className={css.cardDesc} title="">{text}</span>
-    </Tooltip>
-  )
-}
-
-/**
  * Render the Agent presets section content column.
  * @param props - composed slot props.
  * @returns the section, or null when the deployment composes no presets.
@@ -280,7 +248,7 @@ export function AgentPresetSection(props: AgentPresetSectionProps): ReactNode {
                         </span>
                         {row.isDefault ? <span className={css.inUse}>{t('inUse')}</span> : null}
                       </span>
-                      <CardDescription text={text.description ?? t('noDescription')} />
+                      <PresetDescription className={css.cardDesc} maxWidth={360} text={text.description ?? t('noDescription')} />
                       {row.broken === undefined
                         ? null
                         : <span className={css.cardBrokenReason} role="alert">{row.broken}</span>}

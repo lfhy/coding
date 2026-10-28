@@ -8,7 +8,7 @@
  */
 
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { bindSnapshotSelector } from 'coding-client-test-runtime'
 import { createSnapshotStore } from 'coding-client-runtime/client'
 import { AgentPresetLabel } from '../src/client/AgentPresetLabel.tsx'
@@ -221,6 +221,58 @@ describe('the new-session chip', () => {
     // in for the name.
     expect(screen.getByText(en.noDescription)).toBeTruthy()
     expect(screen.getByText('mine')).toBeTruthy()
+  })
+
+  describe('a row description longer than the clamp', () => {
+    /** jsdom 没有 ResizeObserver；描述靠它观测自己的盒子。 */
+    class ResizeObserverStub {
+      observe(): void {}
+      unobserve(): void {}
+      disconnect(): void {}
+    }
+
+    const LONG = '始终用简体中文交流的友好通用助手，提供持久 bash 与文件编辑能力。'.repeat(8)
+
+    beforeEach(() => {
+      vi.stubGlobal('ResizeObserver', ResizeObserverStub)
+      vi.useFakeTimers()
+    })
+    afterEach(() => {
+      vi.useRealTimers()
+      vi.unstubAllGlobals()
+      vi.restoreAllMocks()
+    })
+
+    /** 强制截断判定：jsdom 不做布局，两个高度都是 0。 */
+    function clamp(overflowing: boolean): void {
+      vi.spyOn(Element.prototype, 'scrollHeight', 'get').mockReturnValue(overflowing ? 400 : 80)
+      vi.spyOn(Element.prototype, 'clientHeight', 'get').mockReturnValue(80)
+    }
+
+    it('offers the whole description on hover once the row cuts it off', () => {
+      clamp(true)
+      const options = [{ id: 'zh', trust: 'user' as const, name: '中文助手', description: LONG }]
+      renderSeat({ current: 'zh', options })
+      fireEvent.click(screen.getByRole('button'))
+
+      fireEvent.mouseEnter(screen.getByText(LONG))
+      act(() => { vi.advanceTimersByTime(400) })
+
+      expect(screen.getByRole('tooltip').textContent).toBe(LONG)
+    })
+
+    it('stays quiet when the description already fits', () => {
+      clamp(false)
+      const options = [{ id: 'zh', trust: 'user' as const, name: '中文助手', description: '短描述。' }]
+      renderSeat({ current: 'zh', options })
+      fireEvent.click(screen.getByRole('button'))
+
+      fireEvent.mouseEnter(screen.getByText('短描述。'))
+      act(() => { vi.advanceTimersByTime(400) })
+
+      // 完整内容已经在行里，再弹一个重复的气泡只是噪音。
+      expect(screen.queryByRole('tooltip')).toBeNull()
+    })
   })
 
   it('falls back to the id when the staged preset published no name', () => {
