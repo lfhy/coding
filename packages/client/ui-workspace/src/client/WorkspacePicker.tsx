@@ -26,6 +26,12 @@ const OPEN_FOLDER = '::open-folder'
 const CONNECT_REMOTE = '::connect-remote'
 const WITHOUT_PROJECT = '::without-project'
 
+/**
+ * 菜单里最多列出的工作区行数。工作区会越积越多，不封顶时菜单会长到视口高度；
+ * 超出的工作区由搜索框按标题或路径定位，菜单高度因此保持稳定。
+ */
+const WORKSPACE_MENU_LIMIT = 6
+
 /** 选择器核心属性；侧边栏只传目录操作，Hero 额外传远程和无项目操作。 */
 export interface WorkspacePickFlowProps {
   /** 所在 slot 的本地化函数。 */
@@ -99,11 +105,13 @@ export function WorkspacePickFlow({
   const actionBusy = flowBusy || startingWithoutProject
   const flowAvailable = useDirectoryFlow(occupied => occupied)
   const normalizedQuery = query.trim().toLocaleLowerCase()
-  const visibleWorkspaces = useMemo(() => workspaces.filter(workspace => (
+  const matchedWorkspaces = useMemo(() => workspaces.filter(workspace => (
     normalizedQuery === ''
       || workspace.title.toLocaleLowerCase().includes(normalizedQuery)
       || workspace.path.toLocaleLowerCase().includes(normalizedQuery)
   )), [normalizedQuery, workspaces])
+  const visibleWorkspaces = matchedWorkspaces.slice(0, WORKSPACE_MENU_LIMIT)
+  const hiddenWorkspaceCount = matchedWorkspaces.length - visibleWorkspaces.length
 
   useEffect(() => {
     if (!open) setQuery('')
@@ -163,6 +171,14 @@ export function WorkspacePickFlow({
   }))
   if (!addOnly && normalizedQuery !== '' && workspaceEntries.length === 0 && workspaceSnapshot.phase === 'ready') {
     workspaceEntries.push({ type: 'label', id: '::no-matches', text: t('picker.noMatches') })
+  }
+  // 提示被截断的工作区数量：只说明还有多少条，不把结果行继续铺开。
+  if (!addOnly && hiddenWorkspaceCount > 0) {
+    workspaceEntries.push({
+      type: 'label',
+      id: '::more-workspaces',
+      text: t('picker.more', { n: hiddenWorkspaceCount }),
+    })
   }
   const auxiliaryEntries: MenuEntry[] = addOnly
     ? []

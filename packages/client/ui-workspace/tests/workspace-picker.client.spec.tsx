@@ -131,6 +131,23 @@ describe('WorkspacePicker', () => {
     expect(screen.getByRole('menuitem', { name: 'Beta' })).toBeTruthy()
   })
 
+  it('caps the workspace rows and points the remainder at the search field', () => {
+    const many = Array.from({ length: 9 }, (_, index) => workspace(`space-${index}`, `Space ${index}`))
+    mount(many)
+    // 固定上限让菜单高度不随工作区数量增长，剩余条目只以计数提示。
+    expect(screen.getAllByRole('menuitem', { name: /^Space \d$/ })).toHaveLength(6)
+    expect(screen.getByText('还有 3 个工作区，输入关键词查找')).toBeTruthy()
+  })
+
+  it('reaches workspaces beyond the row cap through search', () => {
+    const many = Array.from({ length: 9 }, (_, index) => workspace(`space-${index}`, `Space ${index}`))
+    mount(many)
+    fireEvent.change(screen.getByRole('textbox', { name: '搜索工作区' }), { target: { value: 'space-8' } })
+    expect(screen.getByRole('menuitem', { name: 'Space 8' })).toBeTruthy()
+    expect(screen.getAllByRole('menuitem', { name: /^Space \d$/ })).toHaveLength(1)
+    expect(screen.queryByText(/还有 \d+ 个工作区/)).toBeNull()
+  })
+
   it('starts an ungrouped session from the no-project action', async () => {
     const startSessionWithoutWorkspace = vi.fn(async () => {})
     const b = mount([], vi.fn(), occupancySource(), startSessionWithoutWorkspace)
