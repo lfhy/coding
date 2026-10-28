@@ -108,7 +108,7 @@ describe('reverse preset discovery', () => {
     const presets = await discoverPresets([{ path: PRESET_ROOT, trust: 'system' }])
 
     expect(presets.map(preset => preset.id).sort())
-      .toEqual(['code', 'codex', 'cordis', 'minimal', 'reverse', 'standard'])
+      .toEqual(['codex', 'cordis', 'longrun', 'minimal', 'reverse', 'standard'])
     const reverse = presets.find(preset => preset.id === 'reverse')
     // `broken` 是发现过程给出的原因；能挂载的预设没有这个字段。
     expect(reverse).toMatchObject({ id: 'reverse', trust: 'system' })

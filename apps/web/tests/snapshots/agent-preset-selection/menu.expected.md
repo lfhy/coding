@@ -2,6 +2,7 @@
   - menuitem "Standard mode Full coding agent with file editing, shell, file and web search, skills, planning, goals, subagents, and workflows; tools are callable natively or through the Code Mode SDK so the model can combine multi-step operations in one TypeScript program.":
     - text: Standard mode Full coding agent with file editing, shell, file and web search, skills, planning, goals, subagents, and workflows; tools are callable natively or through the Code Mode SDK so the model can combine multi-step operations in one TypeScript program.
     - img
+  - 'menuitem "Long-run task mode Coordinates long tasks as phases: the main agent splits goals, runs subagents in parallel, waits for them, then has an independent review agent accept or reject the work; rejected goals go back to the same subagent, and handoffs keep only the main goal and acceptance state."'
   - menuitem "Minimal mode Two-tool coding agent with persistent bash and str_replace_editor."
   - menuitem "Creator mode Built for creating custom agent presets, with all Standard mode capabilities plus runtime inspection, plugin experiments, and preset-authoring guidance."
   - 'menuitem "Codex mode Codex prompt and tool surface: shell, apply_patch, update_plan, web search, and continuable subagents with wait_agent, plus bundled skills for project setup, Go backend, frontend, and visual style."'

@@ -44,6 +44,16 @@
         - img
         - text: 复制
     - listitem:
+      - 'button "设为默认: 长线任务模式"':
+        - text: 长线任务模式 内置 把长任务按阶段推进：主 Agent 拆分目标、并行派发子 Agent、等待其结算，再由独立验收 Agent 判定通过与否；未通过打回原执行者继续修，上下文交接只保留主线目标与验收状态。
+        - code: longrun
+      - 'button "查看: 长线任务模式"':
+        - img
+        - text: 查看
+      - 'button "复制: 长线任务模式"':
+        - img
+        - text: 复制
+    - listitem:
       - 'button "设为默认: 极简模式"':
         - text: 极简模式 内置 仅提供持久 bash 与 str_replace_editor 的双工具编码 Agent。
         - code: minimal

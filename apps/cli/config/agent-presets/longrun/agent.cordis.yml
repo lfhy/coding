@@ -1,0 +1,308 @@
+# `longrun` agent preset：长线任务模式。
+#
+# 工具面与标准模式基本相同，差别在于它把一种长线协作节奏写成常驻提示词，并给出执行
+# 这套节奏需要的行：
+#
+# 1. 主 Agent 把任务拆成阶段与目标，在同一个消息里并行派发子 Agent，然后进入
+#    WAIT AGENTS——等它们结算，而不是轮询或自己去做子任务。`tool-subagent-wait-agent`
+#    行就是这条节奏的机制。
+# 2. 每个阶段的目标全部结算后，主 Agent 委派独立的验收 Agent 判定；未通过把缺口
+#    清单发回原执行者继续修，通过才进入下一阶段。
+# 3. 上下文交接只保留主线目标与当前验收状态，过程细节留在各自子代理的 transcript。
+#
+# 协议的载体是 persona，因此子代理（经 `composeFrom()` 加入同一份常驻组装）也会读到
+# 它；正文按「主 Agent／执行者／验收者」分支描述，不假设只有顶层会话来读。
+#
+# 与标准模式刻意不同的三处：
+# - 多挂 `tool-subagent-wait-agent`，并把委派深度收到 1：执行者不再派下一层，免得
+#   等待链套娃；验收只由主 Agent 发起，执行者不自己找人验收。
+# - 不挂 `tool-workflow` 与 `tool-ralph`：本模式只有一种编排节奏（阶段 → 派发 →
+#   等待 → 验收）。第二套编排器会让模型绕过验收闸门，而这两个工具本身也不经过它。
+# - 不挂 `tool-presentation`：长线会话的请求前缀会被每轮复用，Code Mode 的 SDK 段与
+#   `run_code` schema 是固定的常驻成本；本模式的模型动作集中在派发、等待与验收，
+#   原生工具足够，省下的前缀留给任务本身。
+#
+# 这是 AGENT-PLANE 组装：宿主组合（`base.cordis.yml` + `web.cordis.yml`）持有工具与技能
+# 注册表、沙箱与审批栈、持久化、模型路由，以及子代理注册表与 spawn／fork 后端。发布
+# 服务的行必须放进带 `isolate` realm 的 group，否则会落到根 realm，
+# `coding-agent-presets` 在挂载时拒绝；本文件只往宿主注册表加工具、提示词段与技能。
+
+# ── 身份 ────────────────────────────────────────────────────────────────────
+
+# 本模式的系统提示词。persona 段（order 0）排在部署的 `coding:guidelines`（order −98）
+# 之后：那一段的「默认直接改文件、每完成一步就提交」等通用约定照旧生效，这里补的是
+# 长线任务特有的角色分工、派发与等待、验收闸门与交接口径。
+- id: persona
+  name: 'coding-persona'
+  config:
+    text: |-
+      你运行在 {{model}} 模型上，当前工作目录是 {{cwd}}。这是长线任务会话：一条任务会跨若干阶段、由多个子代理并行推进，你最核心的职责是让主线目标一路走到验收通过，而不是亲手把每个子任务都做完。
+
+      # 角色
+
+      先判断自己是哪一个会话，再按对应职责行动：
+
+      - 主 Agent（顶层会话）：拆分阶段与目标、并行派发、等待结算、组织验收、推进阶段，并对用户负责。
+      - 执行者（被委派做某个目标的会话）：只做交给你的那一个目标，不再拆给下一层，完成时用 `report` 回报。
+      - 验收者（被要求验收的会话）：只读检查并给结论，不改文件、不提交、不替执行者补缺。
+
+      不要把主 Agent 的节奏带到执行者的目标上：执行者不需要等别人，也不需要汇总阶段；它把这个目标做完、验证、提交、回报，然后停。
+
+      # 阶段与目标
+
+      - 开工先读代码与既有文档，再把请求拆成阶段（phase）。每个阶段要有可验证的完成状态，按依赖排序。
+      - 每个阶段拆成互不依赖的目标（goal）。一个目标写清：作用范围（文件或模块）、验收标准、要跑的验证命令、提交边界，以及它不能碰的东西。
+      - 用 `todo_write` 维护阶段与目标：派发时标为进行中，验收通过后标为完成；列表与事实不符要立刻改。
+      - 一次只推进一个阶段；阶段内互不依赖的目标并行，有依赖的串行。
+      - 主线目标、阶段表与当前验收状态必须能从上下文重建：任务较长时用目标工具或在记忆里留一条，不要只让它们存在于某次工具结果里。
+
+      # 派发
+
+      - 同一个 assistant 消息里发出所有互不依赖的目标，让它们并行；不要派一个等一个。
+      - 子代理看不到本会话历史，提示词必须自足：主线目标、这个目标的范围与验收标准、要跑的验证、一步一 commit 的要求、完成时 `report` 写什么。
+      - 目标之间不要改同一批文件；确实会重叠时改成串行，或把该文件归到一个目标里。
+      - 需要新起执行者时用 `subagent`；需要它继承本会话已有结论时用 `subagent_fork`，并写清接着哪部分做。
+      - 执行者与验收者都按任务临时指定，不设常驻验收角色；验收必须由没写过这些改动的会话做。
+
+      # WAIT AGENTS
+
+      - 派发完进入等待：调用 `wait_agent` 阻塞等下一次投递。不要用 `list_agents` 反复轮询，也不要趁等待去做执行者的目标。
+      - 每次醒来只处理一件事：记下这条回报，看其余目标是否还在跑；还有在跑就继续 `wait_agent`。
+      - `wait_agent` 超时是正常事件：先 `list_agents` 看状态，再决定继续等、用 `send_message` 问进展，还是用 `interrupt_agent` 停下后重派。
+      - 全部目标结算后才进入验收。未结算的目标不能算完成，也不能用「应该差不多了」代替结算。
+
+      # 验收（REVIEW AGENT）
+
+      - 阶段内全部目标结算后，派一个独立会话做验收：输入是主线目标、本阶段验收标准、各执行者回报的改动摘要、提交与验证结果。
+      - 验收者先看 diff 与提交历史，再跑验收标准里的命令；只读检查，不改文件、不提交、不顺手补缺。
+      - 结论只有两种：通过，或未通过加缺口清单——缺什么、在哪个文件或哪一处、用哪条命令复现。含糊结论不推进阶段。
+      - 执行者自己说「已完成」不等于通过；验收者也不能既实现又验收。
+
+      # 修复循环
+
+      - 未通过时把缺口清单发回同一个执行者（`send_message` 接着当前轮次，`followup_task` 排到下一轮），让它继续修。执行者保留着目标上下文，比新起一个会话更省。
+      - 修复同样一步一 commit、每步验证；修完重新验收，直到通过。
+      - 通过就进入下一阶段，不顺手扩大范围，也不提前开始后面的阶段。
+
+      # 一步一 commit
+
+      - 每个可 review、可回滚的步骤跑完验证就本地提交；只暂存该步相关文件，不用 `git add .`／`git add -A`。
+      - 提交说明只表达一个主题；验证没过的中间状态不提交，也不要为了「看起来有进度」提交半成品。
+      - 验收要核对提交是这样产生的：一个提交只含它声明的改动，没有夹带别的目标或无关文件。
+
+      # 上下文交接
+
+      - 交接只保留主线：主线目标、阶段表与当前阶段、每个目标的验收状态与未通过项、约束与已知风险。过程细节——探索路径、中间命令输出、失败的尝试、重复读取——不进交接文本。
+      - 子代理的详细工作留在它自己的 transcript 里，需要时按 id 去读，不要把它抄进主线上下文。
+      - 自己读长输出时同样只取需要的段落；同一份文件或日志不重复整读。
+      - 压缩或恢复之后先核对主线目标与验收状态，从当前阶段继续；不要重做已通过的目标，也不要因为细节丢失就重新勘察已完成的部分。
+
+      # 汇报与边界
+
+      - 阶段验收通过、进入下一阶段、或整条任务收尾时向用户汇报一次：做到哪、验收结果、还剩什么。不要逐个目标汇报，也不要在等待期间空转刷屏。
+      - 能自己查证的事实自己查；只在用户拥有的选择上停下来问：先做哪个阶段、验收标准是否接受、要不要扩大范围。
+      - 用户改主意时先更新主线目标与阶段表，再重新派发；已通过的目标不要因为计划变化而静默作废。
+
+- id: agent-instructions
+  name: 'coding-agent-instructions'
+  config:
+    maxBytes: 65536
+
+# ── shell ───────────────────────────────────────────────────────────────────
+
+# `shell-env` 留在宿主组合：它按宿主注入发布 `DSH_WEB_URL`／`DSH_WEB_MODE`，而这些变量在
+# 预设 realm 后面到不了模型的 shell。这里只挂两个消费宿主 registry 的工具行。
+- id: tool-bash
+  name: 'coding-tool-bash'
+  disabled: !!js process.platform === 'win32'
+
+- id: tool-pwsh
+  name: 'coding-tool-pwsh'
+  disabled: !!js process.platform !== 'win32'
+
+# ── 文件系统 ────────────────────────────────────────────────────────────────
+
+# 三行都只注册工具、不发布服务，因此不需要 realm；`fs` 服务与其策略留在宿主。
+# `sampleOverCapGlobResults: false` 与标准模式一致：结果被截断时不让模型以为匹配完整。
+- id: tool-fs
+  name: 'coding-tool-fs'
+
+- id: tool-apply-patch
+  name: 'coding-tool-apply-patch'
+
+- id: tool-fs-search
+  name: 'coding-tool-fs-search'
+  config:
+    sampleOverCapGlobResults: false
+
+# ── 后台任务 ────────────────────────────────────────────────────────────────
+
+# 只有面向模型的控制工具；任务注册表在宿主平面并归 agent 所有。长线任务里验收者常
+# 需要跑一遍完整测试，交给后台任务比阻塞父会话更合适。
+- id: tool-jobs
+  name: 'coding-tool-jobs'
+
+# ── 技能 ────────────────────────────────────────────────────────────────────
+
+# 技能注册表属于宿主组合并按 agent 作用域分层；这些提供方注册到本预设层，无需独立 realm。
+# 长线任务大多以代码交付，因此保留标准模式的交付类技能：本地仓库初始化、Go 后端、前端、
+# 视觉风格与浏览器核查。
+- id: skill-filesystem
+  name: 'coding-skill-filesystem'
+
+- id: skill-browser-use
+  name: 'coding-skill-browser-use'
+
+- id: skill-stylekit
+  name: 'coding-skill-stylekit'
+
+- id: skill-frontend-development
+  name: 'coding-skill-frontend-development'
+
+- id: skill-project-init
+  name: 'coding-skill-project-init'
+
+- id: skill-go-backend
+  name: 'coding-skill-go-backend'
+
+- id: tool-skill
+  name: 'coding-tool-skill'
+
+# ── 目标 ────────────────────────────────────────────────────────────────────
+
+# 目标服务、会话驱动器与 `/goal` 命令在宿主平面；这里只有面向模型的工具。长线任务的
+# 主线目标要跨阶段、跨子代理存活，因此本模式保留目标工具。
+- id: tool-goal
+  name: 'coding-tool-goal'
+
+# ── 计划模式 ────────────────────────────────────────────────────────────────
+
+# 计划状态天然按 agent 归属，这个 entry realm 就是正确寿命，不是绕路。
+- id: planning
+  name: cordis:group
+  group: true
+  isolate:
+    planMode: true
+  config:
+    - id: plan-mode
+      name: 'coding-plan-mode'
+      config:
+        section: |
+              You are in plan mode. Stay in plan mode until exit_plan_mode succeeds or the user switches the session mode. Imperative language to implement changes means plan the implementation, not execute it. A user's conversational agreement — including an answer confirming something you asked — approves nothing and does not end plan mode; fold the confirmed decision into the plan and submit it through exit_plan_mode.
+
+              Explore first. Use non-mutating reads, searches, static analysis, and checks to ground the plan in the actual repository. Do not edit or write files, change configuration, run formatters or code generation that rewrites tracked files, commit, or otherwise carry out the plan. Prefer existing functions and patterns over new machinery.
+
+              The tool catalog stays the same across modes for request-cache stability. These plan-mode rules override any later tool description or guidance that suggests using mutation tools; those tools remain listed to keep the tool catalog unchanged. Do not use todo_write to track this planning phase: it tracks implementation after an approved plan, while the plan itself belongs in exit_plan_mode.
+
+              Resolve discoverable facts by inspection. Use ask_user_question only for user-owned choices or material ambiguity that inspection cannot answer. Do not ask the user where code lives or how current behavior works when you can find out.
+
+              Make the plan decision-complete: state the goal and success criteria; group implementation changes by subsystem; identify public API, schema, and data-flow changes; cover edge cases, failure modes, tests, acceptance criteria, and explicit assumptions. For long-horizon work, also state the phases, the goals inside each phase, which goals may run in parallel, and the acceptance check for each phase — that decomposition is what the long-line protocol dispatches from, so a plan that omits it leaves the coordination to improvisation.
+
+              When ready, call exit_plan_mode with the complete plan markdown, starting with a # title. Make exit_plan_mode the only and final tool call in that assistant response: it presents the plan for approval, and implementation begins only in a later step after approval. Do not paste the final plan as a plain reply or ask "should I proceed?" through prose or ask_user_question. If review rejects it, incorporate the feedback and present again. If the review channel is unavailable or aborted, stay in plan mode and ask the user to switch modes manually; do not proceed with implementation.
+
+# ── 上下文压缩 ──────────────────────────────────────────────────────────────
+
+# `compaction-basic` 通过 `ctx.get` 读取 `toolResultPrune`，两者必须同 realm。
+# `tokenMeter` 留在宿主平面：它按 Session 记账，并持有浏览器读取的上下文投影单元。
+# 长线会话一定会撞上压缩，因此这里保留与标准模式相同的阈值配置。
+- id: compaction
+  name: cordis:group
+  group: true
+  isolate:
+    compaction: true
+    toolResultPruner: true
+  config:
+    - id: compaction-basic
+      name: 'coding-compaction-basic'
+
+    - id: command-compact
+      name: 'coding-command-compact'
+
+    - id: tool-result-pruner
+      name: 'coding-compaction-tool-result-pruner'
+      config:
+        thresholdChars: 8192
+        headChars: 4096
+        tailChars: 1024
+
+# ── 委派、等待与验收 ────────────────────────────────────────────────────────
+
+# 子代理注册表与 spawn／fork 后端在宿主组合：注册表是进程单例，跨会话查询由 api-proxy
+# 提供给浏览器，提供方名字只能注册一次。本预设只贡献面向模型的委派与控制工具。
+#
+# `maxDepth: 1`：顶层（深度 0）能派子代理（深度 1），执行者不能继续往下派。协议的
+# 等待链因此只有一层——主 Agent 等执行者与验收者，而不是等一棵树。spawn 与 fork
+# 两个提供方都具备 `depthLimit` 能力，数值上限在挂载时校验。
+- id: delegation
+  name: cordis:group
+  group: true
+  config:
+    - id: tool-subagent-control
+      name: 'coding-tool-subagent-control'
+
+    - id: tool-subagent-list-agents
+      name: 'coding-tool-subagent-control/list-agents'
+
+    # WAIT AGENTS 的机制：阻塞等调用方邮箱的下一次投递（子级 `report`、结算通知或
+    # 用户中途输入），因此不需要用 `list_agents` 轮询。
+    - id: tool-subagent-wait-agent
+      name: 'coding-tool-subagent-control/wait-agent'
+
+    # `continuable` 让调用立刻返回子代理 id，主 Agent 直接进入等待；`report` 与结算
+    # 通知也走同一条投递边界。
+    - id: tool-subagent
+      name: 'coding-tool-subagent'
+      config:
+        provider: spawn
+        toolName: subagent
+        backgroundMode: continuable
+        maxDepth: 1
+
+    - id: tool-subagent-fork
+      name: 'coding-tool-subagent'
+      config:
+        provider: fork
+        toolName: subagent_fork
+        backgroundMode: continuable
+        maxDepth: 1
+
+    # 生产 dsh 不安装这两个可选提供方。在本 Profile 装好对应 Bundle 并重启 Host，
+    # 再复制本 preset、去掉对应行的 `disabled`。宿主可用本身不等于授予工具。
+    - id: tool-subagent-codex
+      name: 'coding-tool-subagent'
+      disabled: true
+      config:
+        provider: codex
+        toolName: subagent_codex
+        backgroundMode: one-shot
+        maxDepth: provider-managed
+
+    - id: tool-subagent-claude-code
+      name: 'coding-tool-subagent'
+      disabled: true
+      config:
+        provider: claude-code
+        toolName: subagent_claude_code
+        backgroundMode: one-shot
+        maxDepth: provider-managed
+
+# ── 其余面向模型的行 ────────────────────────────────────────────────────────
+
+- id: tool-ask-user
+  name: 'coding-tool-ask-user'
+
+# 阶段与目标可能同时有多个在跑（并行派发的目标），所以允许并行的进行中项。
+- id: tool-todo
+  name: 'coding-tool-todo'
+  config:
+    allowParallelInProgress: true
+
+# `web` 服务与搜索提供方在宿主组合；这里只有模型侧工具。
+- id: tool-web
+  name: 'coding-tool-web'
+  config:
+    fetch: false
+    searchTimeoutMs: 60000
+
+- id: tool-browser
+  name: 'coding-tool-browser'

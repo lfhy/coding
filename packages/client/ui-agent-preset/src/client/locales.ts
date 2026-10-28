@@ -9,6 +9,7 @@ export type AgentPresetSettingsKey =
   | 'presetCordisName' | 'presetCordisDescription'
   | 'presetCodexName' | 'presetCodexDescription'
   | 'presetReverseName' | 'presetReverseDescription'
+  | 'presetLongrunName' | 'presetLongrunDescription'
   | 'duplicate' | 'duplicateUnavailable' | 'delete' | 'presetId' | 'presetIdPlaceholder' | 'copyOf'
   | 'displayName' | 'displayNamePlaceholder'
   | 'inUse' | 'noDescription' | 'builtInGroup' | 'customGroup'
@@ -50,6 +51,9 @@ export const en: Record<AgentPresetSettingsKey, string> = {
   presetReverseName: 'Reverse engineering mode',
   presetReverseDescription:
     'All Standard mode capabilities plus the REA engine as MCP tools and bundled reverse-engineering skills, for binaries, installers, firmware, and runtime behavior.',
+  presetLongrunName: 'Long-run task mode',
+  presetLongrunDescription:
+    'Coordinates long tasks as phases: the main agent splits goals, runs subagents in parallel, waits for them, then has an independent review agent accept or reject the work; rejected goals go back to the same subagent, and handoffs keep only the main goal and acceptance state.',
   duplicate: 'Duplicate',
   duplicateUnavailable: 'This deployment has no writable preset directory',
   delete: 'Delete',
@@ -112,6 +116,8 @@ export const zh: Record<AgentPresetSettingsKey, string> = {
   presetCodexDescription: '对齐 Codex 的提示词与工具面：Shell、apply_patch、update_plan、联网搜索，以及带 wait_agent 的可继续子 agent；随包技能提供项目初始化、Go 后端、前端与视觉风格指引。',
   presetReverseName: '逆向分析模式',
   presetReverseDescription: '具备标准模式的全部能力，并接入 REA 逆向引擎的 MCP 工具与随模式分发的逆向调查技能，用于二进制、安装包、固件与运行时行为分析。',
+  presetLongrunName: '长线任务模式',
+  presetLongrunDescription: '把长任务按阶段推进：主 Agent 拆分目标、并行派发子 Agent、等待其结算，再由独立验收 Agent 判定通过与否；未通过打回原执行者继续修，上下文交接只保留主线目标与验收状态。',
   duplicate: '复制',
   duplicateUnavailable: '此部署未配置可写的预设目录',
   delete: '删除',
@@ -178,6 +184,7 @@ const BUILT_IN_PRESET_KEYS: Readonly<Partial<Record<string, PresetLocaleKeys>>> 
   cordis: { name: 'presetCordisName', description: 'presetCordisDescription' },
   codex: { name: 'presetCodexName', description: 'presetCodexDescription' },
   reverse: { name: 'presetReverseName', description: 'presetReverseDescription' },
+  longrun: { name: 'presetLongrunName', description: 'presetLongrunDescription' },
 }
 
 /**

@@ -211,7 +211,7 @@ describe('the shipped Web composition', () => {
   it('supplies both shipped presets, and only those, from the system root', async () => {
     const listed = await ctx.agentPresets.list()
 
-    expect(listed.map(preset => preset.id).sort()).toEqual(['codex', 'cordis', 'minimal', 'reverse', 'standard'])
+    expect(listed.map(preset => preset.id).sort()).toEqual(['codex', 'cordis', 'longrun', 'minimal', 'reverse', 'standard'])
     expect(listed.every(preset => preset.trust === 'system')).toBe(true)
     expect(ctx.agentPresets.defaultId).toBe('standard')
   })
