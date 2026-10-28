@@ -662,8 +662,9 @@ img.mediaPlayer { aspect-ratio: 16 / 9; object-fit: cover; background: var(--dsl
 .tableWrap {
   border-radius: var(--dsl-g-radius-control);
   border: 1px solid var(--dsl-g-border-surface);
-  /* A table whose nowrap cells exceed the column width must scroll, not clip
-     (mirrors the shell markdown table's .tableScroll pattern). */
+  /* 单元格按容器宽度换行，正常表格不会横向滚动。这里保留滚动只作为兜底：
+     内联代码片段保持 pre、图表类单元格有固定宽度，极端内容仍可能比正文列宽，
+     那种情况宁可滚动也不让内容被裁掉或压到相邻列上。 */
   overflow-x: auto;
   overscroll-behavior-x: contain;
   max-width: 100%;
@@ -684,13 +685,20 @@ img.mediaPlayer { aspect-ratio: 16 / 9; object-fit: cover; background: var(--dsl
   text-transform: uppercase;
   border-bottom: 1px solid var(--dsl-g-border-strong);
   background: var(--dsl-g-zebra);
-  white-space: nowrap;
+  /* 表格常落在比正文更窄的容器里（消息列、侧边卡），表头与单元格都必须能
+     折行，否则整张表横向滚动。用 break-word 而不是 anywhere：后者会让列的
+     最小宽度塌到一个字符，短列（提交号、版本号）被挤成竖排；两者都只在必要
+     时才断开长词。 */
+  overflow-wrap: break-word;
+  white-space: normal;
 }
 .table td {
+  /* 单元格折行规则与表头一致：窄面板里文字换行，表格本身不再横向滚动。 */
   padding: 10px var(--dsl-g-gap-md);
   border-bottom: 1px solid var(--dsl-g-border);
   color: var(--dsw-alias-label-primary);
-  white-space: nowrap;
+  overflow-wrap: break-word;
+  white-space: normal;
   font-variant-numeric: tabular-nums;
   line-height: 1.5;
   vertical-align: middle;
@@ -704,17 +712,15 @@ img.mediaPlayer { aspect-ratio: 16 / 9; object-fit: cover; background: var(--dsl
 .table tr:last-child td { border-bottom: none; }
 /* Numeric columns (auto-detected) right-align with tabular numerals — the
    table's data voice. */
-.table th.thNum, .table td.tdNum { text-align: right; }
+.table th.thNum, .table td.tdNum { text-align: right; white-space: nowrap; }
 /* Signed values read as a delta chip (+12.4% / -3%) without any new spec
    field: the renderer classifies the cell text. */
 .tdDelta { font-weight: 600; }
 .tdDeltaUp { color: var(--dsw-alias-state-success-secondary, #1f9d63); }
 .tdDeltaDown { color: var(--dsw-alias-state-error-primary, #d94848); }
-/* A cell carrying real line breaks opts out of the `nowrap` data voice.
-   Prose keeps `pre-line` (newlines paint, spaces collapse as everywhere else);
-   a code-shaped cell uses `pre-wrap` so leading indentation survives too.
-   Either way the newline characters stay in the DOM, which is what makes the
-   cell selectable and copyable as the multi-line snippet the model wrote. */
+/* 带真实换行的单元格保留模型写出的换行：散文类用 `pre-line`（换行符生效、
+   空格仍按常规折叠），代码形用 `pre-wrap`（缩进也保留）。换行符本身留在 DOM
+   里，单元格可被选中并原样复制成多行片段。 */
 .table th.tdMultiline,
 .table td.tdMultiline {
   white-space: pre-line;
@@ -729,25 +735,20 @@ img.mediaPlayer { aspect-ratio: 16 / 9; object-fit: cover; background: var(--dsl
   word-break: normal;
   vertical-align: top;
 }
-/* An inline code span keeps its own spacing too (a pasted snippet often lives
-   inside backticks), matching the block-level code surface. */
+/* 内联代码片段保留自己的空格（模型常把粘贴内容放进反引号），与块级代码面一致。 */
 .inlineCode { white-space: pre-wrap; }
-/* Table cells are single-line by default, so a chip inside them must not
-   re-open line breaking. Host shells render message bodies inside `.markdown`,
-   which makes every chip an atomic `inline-flex` box and inherits
-   `overflow-wrap: anywhere` into the cell; together with `pre-wrap` the chip's
-   automatic minimum size collapses, the column can then be sized below its
-   content, and the still-unbroken text is painted over the next column (#280).
-   Keep the cell's own line-breaking contract for every table section. */
+/* 表格里的内联代码片段保持 `pre`，不被单元格的折行规则拆开：宿主把消息正文
+   渲染在 `.markdown` 里，片段是原子的 `inline-flex` 盒子；若在这里改用
+   `pre-wrap`，它的自动最小宽度会塌陷，列可以窄于内容，未断开的文本会画到相邻
+   列上（#280）。片段本身比面板还宽时，`.tableWrap` 的横向滚动是兜底。 */
 .table > thead > tr > th:not(.tdCode):not(.tdMultiline) .inlineCode,
 .table > tbody > tr:not(.detailRow) > td:not(.tdCode):not(.tdMultiline) .inlineCode,
 .table > tfoot > tr > td:not(.tdCode):not(.tdMultiline) .inlineCode {
   white-space: pre;
 }
-/* Rich-text owners must paint the real newlines kept by renderInline. Scope
-   this to prose/labels: table data keeps nowrap and code keeps pre-wrap. For
-   flex controls, target the label span so emphasis and plain text share one
-   line-formatting context (rather than becoming separate flex items). */
+/* 富文本宿主必须画出 renderInline 保留的真实换行。这里只覆盖散文与标签：
+   表格数据按单元格规则换行，代码保持 pre-wrap。对 flex 控件要落到 label
+   容器上，让强调与普通文本共享同一个行格式上下文，而不是各自成为 flex 项。 */
 .calloutBody,
 .liTitle,
 .liDesc,
