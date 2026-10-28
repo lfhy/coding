@@ -30,6 +30,7 @@
 | 改输入、命令、工具卡片或轨迹 | [map/hot.md 的对话路线](map/hot.md#对话输入命令与视图) | `ui-conversation`、`ui-input-trigger`、`ui-commands`、`ui-tool`、`ui-trajectory` | 对应包测试 + 用户可见输出的 keyless 回放 |
 | 改会话日志事件 | [subsystems/session.md](subsystems/session.md)、`map/invariants.md` | `packages/core/session/src/types.ts`、投影与快照 | `pnpm run gen-persistence-catalog` + session 测试 |
 | 改插件装配 | `map/wiring.md` | `packages/bundle/*/cordis.patch.yml` | `dsh --profile web --dump-config` |
+| 新增或改一个 Agent 预设（模式） | [map/hot.md 的模式路线](map/hot.md#模式与预设分发agent-preset) | `apps/cli/config/agent-presets/<id>/`、`ui-agent-preset` 的 locale 词典与 `BUILT_IN_PRESET_KEYS`、名单断言与菜单快照、`python/sdk-runtime/package.json` | `pnpm run gen-code-map`、`pnpm run verify-cordis-config`、定向 vitest |
 | 改插件可配置项 | [config-catalog.md](config-catalog.md)、包 README | 插件 `Config` 字段 + 包 README | `pnpm run gen-config-catalog` + 包测试 |
 | 改模型可见文本 | 包 README 的 Model Experience 一节 | 提示词、工具 schema、结果渲染 | keyless snapshot（`pnpm run test:snapshot`） |
 | 移植上游修复 | 对应包 README 与 `map/hot.md` 条目 | 受影响包；按本仓库约定改写，不保留上游发布流程约束 | 覆盖改动的测试 |
