@@ -132,6 +132,40 @@ describe('Menu', () => {
     expect(onClose).not.toHaveBeenCalled()
   })
 
+  it('maxHeight caps the card so the item area scrolls instead of growing', () => {
+    const many = Array.from({ length: 12 }, (_, index) => ({ id: `i${index}`, label: `Item ${index}` }))
+    render(
+      <Menu open anchor={<span>trigger</span>} maxHeight={320} items={many} onSelect={() => {}} onClose={() => {}} />)
+
+    // 行数不裁剪：限高只把溢出交给滚动，所有条目仍然可访问。
+    expect(screen.getAllByRole('menuitem')).toHaveLength(12)
+    expect(screen.getByRole('menu').style.maxHeight).toBe('min(320px, calc(100vh - 24px))')
+  })
+
+  it('treats an owner-rendered external trigger as inside, so its own click can toggle', () => {
+    const onClose = vi.fn()
+    const trigger = document.createElement('button')
+    document.body.append(trigger)
+    render(
+      <Menu
+        open
+        anchor={null}
+        anchorRef={{ current: trigger }}
+        items={items}
+        onSelect={() => {}}
+        onClose={onClose}
+      />)
+
+    // 外置触发器不属于菜单 DOM；它不在豁免名单里时，pointerdown 会先关闭菜单，
+    // 随后的 click 又把它打开，于是触发器永远合不上。
+    fireEvent.pointerDown(trigger)
+    expect(onClose).not.toHaveBeenCalled()
+    // 页面其他位置仍是外部点击。
+    fireEvent.pointerDown(document.body)
+    expect(onClose).toHaveBeenCalledTimes(1)
+    trigger.remove()
+  })
+
   it('selected item shows the trailing check; align=end, side=top, and className apply', () => {
     const { container } = render(
       <Menu

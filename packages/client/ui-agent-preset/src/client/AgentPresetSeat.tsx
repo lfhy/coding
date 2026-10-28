@@ -57,6 +57,12 @@ function introStaggerMs(count: number): number {
   return Math.min(INTRO_CHAR_STAGGER_MS, INTRO_TEXT_REVEAL_MS / (count - 1))
 }
 
+/**
+ * 菜单卡片的限高（px）。预设会随自定义项增多，且每行带描述；超出这个高度的
+ * 行在菜单内部滚动，菜单因此不会长到视口高度。
+ */
+const PRESET_MENU_MAX_HEIGHT = 440
+
 /** Full component props. */
 export type AgentPresetSeatProps =
   PropsRuntime<'conversation.hero.agentPreset'>
@@ -150,6 +156,7 @@ export function AgentPresetSeat({ load, select, introduced, useAgentPresetSeat, 
       }}
       align="start"
       portal
+      maxHeight={PRESET_MENU_MAX_HEIGHT}
       anchor={(
         <button
           type="button"

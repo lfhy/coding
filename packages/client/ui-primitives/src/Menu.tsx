@@ -9,7 +9,7 @@
 // internally past that; submenu-bearing menus are exempt (see .scrollable).
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import type { CSSProperties, ReactNode } from 'react'
+import type { CSSProperties, ReactNode, RefObject } from 'react'
 import { createPortal } from 'react-dom'
 import clsx from 'clsx'
 import { IconCheckOutline16 } from 'coding-client-ui-icons'
@@ -60,6 +60,9 @@ const MEASURE_STYLE: CSSProperties = { visibility: 'hidden', left: 0, top: 0 }
  * 渲染相对锚点定位的下拉菜单。
  * @param props.open - 列表是否显示，由 owner 控制。
  * @param props.anchor - 原位渲染的触发元素。
+ * @param props.anchorRef - 外置触发器：anchor 为 null、由 owner 单独渲染触发元素时，
+ * 传入该元素的 ref。它的位置仍由 getAnchorRect 提供，点击它（含再次点击收起）
+ * 不被当作外部点击。不传则只有 anchor 子树与列表内部免于关闭。
  * @param props.header - 固定在滚动列表上方的可选非行内容。
  * @param props.items - 可选行与分隔符。
  * @param props.selectedId - 显示为选中的行。
@@ -83,9 +86,12 @@ const MEASURE_STYLE: CSSProperties = { visibility: 'hidden', left: 0, top: 0 }
  * Menu 自身 wrapper；当 wrapper 不参与触发元素布局时必须提供。每次打开、
  * 滚动和窗口尺寸变化都会调用；返回 null 会跳过当帧定位。
  * @param props.footer - 固定在可滚动项目区下方、以细线分隔的行。
+ * @param props.maxHeight - 卡片的最大高度（px）；超出部分在项目区内部滚动，
+ * 页头与页脚保持固定。未设置时沿用「短于视口」的默认行为。含子菜单的菜单
+ * 会因裁剪裁掉侧卡片，不适合使用本属性。
  * @returns 含条件列表的锚点 wrapper。
  */
-export function Menu({ open, anchor, header, items, selectedId, selectedIds, multiSelect = false, highlightSelected = false, onSelect, onClose, align = 'start', side = 'bottom', portal = false, portalContainer, matchAnchorWidth = false, keyboardNavigation = false, closeOnPointerLeave = false, dense = false, compact = false, getAnchorRect, footer, className }: {
+export function Menu({ open, anchor, header, items, selectedId, selectedIds, multiSelect = false, highlightSelected = false, onSelect, onClose, align = 'start', side = 'bottom', portal = false, portalContainer, matchAnchorWidth = false, keyboardNavigation = false, closeOnPointerLeave = false, dense = false, compact = false, getAnchorRect, anchorRef, footer, maxHeight, className }: {
   open: boolean
   anchor: ReactNode
   header?: ReactNode
@@ -107,6 +113,8 @@ export function Menu({ open, anchor, header, items, selectedId, selectedIds, mul
   dense?: boolean
   compact?: boolean
   getAnchorRect?: () => DOMRect | null
+  anchorRef?: RefObject<HTMLElement | null> | undefined
+  maxHeight?: number
   className?: string
 }) {
   const rootRef = useRef<HTMLSpanElement>(null)
@@ -195,9 +203,11 @@ export function Menu({ open, anchor, header, items, selectedId, selectedIds, mul
     }
     const onPointerDown = (e: PointerEvent) => {
       if (!(e.target instanceof Node)) return
-      // The portaled list is outside the anchor subtree; check both.
+      // The portaled list is outside the anchor subtree; check both, plus the
+      // owner's external trigger when the menu does not render its own.
       if (rootRef.current?.contains(e.target) === true) return
       if (listRef.current?.contains(e.target) === true) return
+      if (anchorRef?.current?.contains(e.target) === true) return
       onClose()
     }
     const onKeyDown = (e: KeyboardEvent) => {
@@ -294,7 +304,11 @@ export function Menu({ open, anchor, header, items, selectedId, selectedIds, mul
       className={clsx(css.list, dense && css.denseList, compact && css.compactList, scrollable && css.scrollable,
         portal && css.portal, matchAnchorWidth && css.matchAnchorWidth,
         side === 'top' && !portal && css.sideTop, align === 'end' && !portal && css.alignEnd)}
-      style={portal ? fixedPos ?? MEASURE_STYLE : undefined}
+      style={{
+        ...portal ? fixedPos ?? MEASURE_STYLE : {},
+        // 限高同时收敛到视口内：短视口下卡片仍留出与定位相同的 12px 边距。
+        ...maxHeight === undefined ? {} : { maxHeight: `min(${maxHeight}px, calc(100vh - 24px))` },
+      }}
       role="menu"
       onKeyDown={keyboardNavigation ? (event) => {
         const items = focusableItems()

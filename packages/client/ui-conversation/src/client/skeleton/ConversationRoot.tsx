@@ -125,9 +125,8 @@ export function ConversationRoot({
         label={chipTitle}
         mode={noProject ? 'no-project' : undefined}
         menuOpen={pickerOpen}
-        // 菜单的 document pointerdown 会先于触发按钮 click 关闭菜单；阻止它
-        // 把这次点击当作外点后，再由按钮自身切换一次即可正确收起。
-        onPointerDown={(event) => { event.stopPropagation() }}
+        // 选择器菜单把按钮当作自己的外置触发器（anchorRef），因此这次点击
+        // 不算外部点击：按钮的 click 单独负责开关，同时别的已展开菜单会照常收起。
         onClick={() => { setPickerOpen(open => !open) }}
         t={t}
       />

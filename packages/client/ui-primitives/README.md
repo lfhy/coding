@@ -8,7 +8,7 @@
 
 `writeClipboard` 优先使用异步剪贴板 API；若宿主没有提供该 API，或异步写入被拒绝，会在同一次用户操作中尝试选区复制。仅在宿主确认写入时返回成功，由调用控件负责显示复制反馈；两条路径都失败时不显示成功。
 
-`Menu` 的 `selectedIds` 显示多个选中标记；真正允许同时勾选时传入 `multiSelect`，选项才以 `menuitemcheckbox` 和 `aria-checked` 报告状态。消费方在 `onSelect` 中更新选择并决定何时关闭；其他菜单维持普通 `menuitem` 语义。`portal` 菜单固定于锚点并避开祖先滚动裁剪，可用 `matchAnchorWidth` 使宽度对齐触发框；`highlightSelected` 在行尾勾选之外用主题强调底色标记已选项。嵌套模态框传入 `portalContainer` 可把选项保留在对话框的无障碍子树中；`keyboardNavigation` 使打开时焦点进入选项，方向键与 Home/End 导航。
+`Menu` 的 `selectedIds` 显示多个选中标记；真正允许同时勾选时传入 `multiSelect`，选项才以 `menuitemcheckbox` 和 `aria-checked` 报告状态。消费方在 `onSelect` 中更新选择并决定何时关闭；其他菜单维持普通 `menuitem` 语义。`portal` 菜单固定于锚点并避开祖先滚动裁剪，可用 `matchAnchorWidth` 使宽度对齐触发框；`highlightSelected` 在行尾勾选之外用主题强调底色标记已选项。嵌套模态框传入 `portalContainer` 可把选项保留在对话框的无障碍子树中；`keyboardNavigation` 使打开时焦点进入选项，方向键与 Home/End 导航。`maxHeight` 给卡片设上限（px，且不超过视口减 24px 的边距）：超出的行在项目区内部滚动，固定页头与页脚不随之移动，适合条目会持续增长的列表菜单；含子菜单的菜单不要使用它，横向卡片会被滚动裁剪。外置触发器的菜单（`anchor` 为 null、由 owner 单独渲染按钮并传 `getAnchorRect`）还要传 `anchorRef`：该元素上的 pointerdown 视为内部点击，既不触发菜单自身的开关误关闭，也不再需要 owner 用 `stopPropagation` 挡事件——挡事件会让页面上其他已展开菜单收不到这次外部点击。
 
 `Modal` 居中渲染可见 `title`，同名的多行编辑窗口可用 `ariaLabel` 提供包含行号的无障碍名称，同时保留简短可见标题。阻断式嵌套窗口可启用 `trapFocus`，让 Tab 在当前窗口的操作之间循环。
 

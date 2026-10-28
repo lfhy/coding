@@ -2,7 +2,7 @@
 // 常驻编辑器仍由 ConversationRoot 持有，以便在引导层和常规编辑器间切换时保留 textarea。
 
 import { useEffect, useId, useState } from 'react'
-import type { PointerEvent, ReactNode, RefObject } from 'react'
+import type { ReactNode, RefObject } from 'react'
 import {
   BrandMark, IconChevronDownOutline14, IconFolderClose16, IconFolderOpen16, IconNewChatOutline16,
 } from 'coding-client-ui-primitives'
@@ -83,13 +83,12 @@ export function workspaceLabel(cwd: string): string {
 }
 
 /** 会话引导区的工作区状态入口；无项目会话显示聊天图标。 */
-export function WorkspaceChip({ buttonRef, label, mode, menuOpen = false, onClick, onPointerDown, t }: {
+export function WorkspaceChip({ buttonRef, label, mode, menuOpen = false, onClick, t }: {
   buttonRef?: RefObject<HTMLButtonElement>
   label?: string | undefined
   mode?: 'no-project' | undefined
   menuOpen?: boolean
   onClick?: () => void
-  onPointerDown?: (event: PointerEvent<HTMLButtonElement>) => void
   t: HeroTranslate
 }) {
   return (
@@ -100,7 +99,6 @@ export function WorkspaceChip({ buttonRef, label, mode, menuOpen = false, onClic
       aria-label={t('hero.chooseWorkspace')}
       aria-haspopup="menu"
       aria-expanded={menuOpen}
-      onPointerDown={onPointerDown}
       onClick={onClick}
     >
       {label === undefined

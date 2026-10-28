@@ -106,7 +106,7 @@ function mount(
     renderPicker(items),
   )
   return {
-    view, onPick, onClose, createWorkspace, startSessionWithoutWorkspace, probe, occupancy,
+    view, onPick, onClose, createWorkspace, startSessionWithoutWorkspace, probe, occupancy, anchorRef,
     rerenderItems: (nextItems: readonly WorkspaceView[]) => { view.rerender(renderPicker(nextItems)) },
   }
 }
@@ -131,21 +131,30 @@ describe('WorkspacePicker', () => {
     expect(screen.getByRole('menuitem', { name: 'Beta' })).toBeTruthy()
   })
 
-  it('caps the workspace rows and points the remainder at the search field', () => {
-    const many = Array.from({ length: 9 }, (_, index) => workspace(`space-${index}`, `Space ${index}`))
-    mount(many)
-    // 固定上限让菜单高度不随工作区数量增长，剩余条目只以计数提示。
-    expect(screen.getAllByRole('menuitem', { name: /^Space \d$/ })).toHaveLength(6)
-    expect(screen.getByText('还有 3 个工作区，输入关键词查找')).toBeTruthy()
+  it('does not close on pointerdown in its own chip, and closes on a real outside click', () => {
+    const b = mount([workspace('alpha', 'Alpha')])
+    // hero 的 chip 由 owner 单独渲染，不在菜单 DOM 内：它必须被当作内部触发器，
+    // 这样点它只触发自身的开关，同时点另一个下拉时这里仍会按外部点击收起。
+    fireEvent.pointerDown(b.anchorRef.current)
+    expect(b.onClose).not.toHaveBeenCalled()
+    fireEvent.pointerDown(document.body)
+    expect(b.onClose).toHaveBeenCalledTimes(1)
   })
 
-  it('reaches workspaces beyond the row cap through search', () => {
+  it('lists every workspace and leaves overflow to the menu scroll area', () => {
+    const many = Array.from({ length: 9 }, (_, index) => workspace(`space-${index}`, `Space ${index}`))
+    mount(many)
+    // 行数不设上限：菜单靠自身滚动承载，任何工作区都不必先搜索才可见。
+    expect(screen.getAllByRole('menuitem', { name: /^Space \d$/ })).toHaveLength(9)
+    expect(screen.queryByText(/还有 \d+ 个工作区/)).toBeNull()
+  })
+
+  it('still narrows the list through the search field', () => {
     const many = Array.from({ length: 9 }, (_, index) => workspace(`space-${index}`, `Space ${index}`))
     mount(many)
     fireEvent.change(screen.getByRole('textbox', { name: '搜索工作区' }), { target: { value: 'space-8' } })
-    expect(screen.getByRole('menuitem', { name: 'Space 8' })).toBeTruthy()
     expect(screen.getAllByRole('menuitem', { name: /^Space \d$/ })).toHaveLength(1)
-    expect(screen.queryByText(/还有 \d+ 个工作区/)).toBeNull()
+    expect(screen.getByRole('menuitem', { name: 'Space 8' })).toBeTruthy()
   })
 
   it('starts an ungrouped session from the no-project action', async () => {
