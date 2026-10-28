@@ -211,7 +211,7 @@ describe('the shipped Web composition', () => {
   it('supplies both shipped presets, and only those, from the system root', async () => {
     const listed = await ctx.agentPresets.list()
 
-    expect(listed.map(preset => preset.id).sort()).toEqual(['codex', 'code', 'cordis', 'minimal', 'reverse', 'standard'])
+    expect(listed.map(preset => preset.id).sort()).toEqual(['codex', 'cordis', 'minimal', 'reverse', 'standard'])
     expect(listed.every(preset => preset.trust === 'system')).toBe(true)
     expect(ctx.agentPresets.defaultId).toBe('standard')
   })
@@ -308,35 +308,31 @@ describe('the shipped Web composition', () => {
     }
   })
 
-  it('presents `code` as Code Mode without disturbing a native session beside it', async () => {
-    const coded = await ctx.agents.create({
-      sessionId: SessionId('preset-code'),
-      setup: agentCtx => ctx.agentPresets.mount(agentCtx, 'code').then(() => undefined),
-    })
-    const native = await ctx.agents.create({
-      sessionId: SessionId('preset-code-native'),
+  it('presents native schemas and the run_code transport together from `standard`', async () => {
+    const merged = await ctx.agents.create({
+      sessionId: SessionId('preset-merged'),
       setup: agentCtx => ctx.agentPresets.mount(agentCtx, 'standard').then(() => undefined),
     })
+    const minimal = await ctx.agents.create({
+      sessionId: SessionId('preset-merged-minimal'),
+      setup: agentCtx => ctx.agentPresets.mount(agentCtx, 'minimal').then(() => undefined),
+    })
     try {
-      // One tool reaches the MODEL: the transport. The registry's catalog for
-      // this agent is unchanged — a code mode collapses the presentation, not
-      // the capabilities — so the assembly is what carries the claim.
-      const assembly = await ctx.systemPrompt.assemble({ scope: coded.agent })
-      expect(assembly.tools.map(tool => tool.name)).toEqual(['run_code'])
-      expect(toolNames(ctx, coded.agent)).not.toContain('str_replace_editor')
+      // 合并后的标准模式：原生 schema 与 run_code 同时到达模型，SDK 段照常生成。
+      const assembly = await ctx.systemPrompt.assemble({ scope: merged.agent })
+      const names = assembly.tools.map(tool => tool.name)
+      expect(names).toContain('run_code')
+      expect(names).toEqual(expect.arrayContaining(['bash', 'read', 'edit', 'skill']))
       const sdk = assembly.sections.find(section => section.name === 'tools:sdk')?.text ?? ''
-      expect(sdk).not.toContain('str_replace_editor')
       expect(sdk).toContain('web_search')
 
-      // The presentation is this agent's alone: the deployment default is
-      // native, and the session composed from `standard` still sees it.
-      const nativeAssembly = await ctx.systemPrompt.assemble({ scope: native.agent })
-      expect(nativeAssembly.tools.map(tool => tool.name)).toContain('bash')
-      expect(nativeAssembly.tools.map(tool => tool.name)).not.toContain('run_code')
-      expect(nativeAssembly.sections.some(section => section.name === 'tools:sdk')).toBe(false)
+      // 呈现方式仍按 agent 隔离：minimal 只拿到它自己的两个工具，没有 run_code 与 SDK 段。
+      const minimalAssembly = await ctx.systemPrompt.assemble({ scope: minimal.agent })
+      expect(minimalAssembly.tools.map(tool => tool.name)).toEqual(['bash', 'str_replace_editor'])
+      expect(minimalAssembly.sections.some(section => section.name === 'tools:sdk')).toBe(false)
     } finally {
-      await native.dispose()
-      await coded.dispose()
+      await minimal.dispose()
+      await merged.dispose()
     }
   })
 

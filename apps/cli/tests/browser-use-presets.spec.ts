@@ -132,7 +132,7 @@ afterAll(async () => {
   if (root !== undefined) await rm(root, { recursive: true, force: true })
 })
 
-async function agent(preset: 'standard' | 'code' | 'minimal' | 'codex', cwd: string) {
+async function agent(preset: 'standard' | 'minimal' | 'codex', cwd: string) {
   const handle = await ctx.agents.create({
     sessionId: SessionId(`browser-${preset}-${Math.random().toString(36).slice(2)}`),
     meta: { cwd },
@@ -147,14 +147,15 @@ function call(agent: Agent, name: string, args: unknown) {
 }
 
 describe('browser tools and skill in the shipped Web preset composition', () => {
-  it.each(['standard', 'code'] as const)('honors Full access in %s without approval and restores session-local restrictions', async (preset) => {
-    const selected = await agent(preset, root)
-    const isolated = await agent(preset, root)
+  // 标准模式同时提供两种调用形态；两种都要遵守同一份会话权限。
+  it.each(['native', 'code'] as const)('honors Full access via %s without approval and restores session-local restrictions', async (form) => {
+    const selected = await agent('standard', root)
+    const isolated = await agent('standard', root)
     const browser = ctx.browserUse as FixtureBrowser
     browser.commands.mockClear()
     const requested = vi.spyOn(ctx.approval, 'request')
     const args = { url: 'https://example.test/full-access' }
-    const execute = (target: Agent) => preset === 'standard'
+    const execute = (target: Agent) => form === 'native'
       ? call(target, 'browser_navigate', args)
       : call(target, 'run_code', {
         code: `return await tools.browser_navigate(${JSON.stringify(args)})`,
@@ -172,7 +173,7 @@ describe('browser tools and skill in the shipped Web preset composition', () => 
         action: 'navigate', observation: { tabId: 'fixture-tab', url: args.url, snapshot: '[button-1] button Continue' }, image: null,
       }
       expect(result.isError, JSON.stringify(result.content)).toBe(false)
-      expect(result).toMatchObject({ isError: false, value: preset === 'standard' ? value : { result: value } })
+      expect(result).toMatchObject({ isError: false, value: form === 'native' ? value : { result: value } })
       expect(JSON.stringify(result.content)).toContain(args.url)
       expect(JSON.stringify(result.content)).toContain('[button-1] button Continue')
       expect(requested).not.toHaveBeenCalled()
@@ -212,58 +213,56 @@ describe('browser tools and skill in the shipped Web preset composition', () => 
     }
   }, 30_000)
 
-  it('presents seven native schemas in standard and SDK bindings in Code Mode, and executes both', async () => {
-    const native = await agent('standard', root)
-    const coded = await agent('code', root)
+  it('presents native schemas and the run_code transport together, and executes both', async () => {
+    const merged = await agent('standard', root)
     const browser = ctx.browserUse as FixtureBrowser
     browser.commands.mockClear()
     const requested = vi.fn(() => Promise.resolve('allowed-once' as const))
     const unlisten = ctx.on('approval/request', requested, { prepend: true })
     try {
-      const standardPrompt = await ctx.systemPrompt.assemble({ scope: native.agent })
-      const codePrompt = await ctx.systemPrompt.assemble({ scope: coded.agent })
+      const prompt = await ctx.systemPrompt.assemble({ scope: merged.agent })
       const browserTools = [
         'browser_navigate', 'browser_snapshot', 'browser_click', 'browser_fill', 'browser_act',
         'browser_scroll', 'browser_viewport', 'browser_screenshot', 'browser_close',
       ]
-      expect(standardPrompt.tools.map(tool => tool.name).filter(name => name.startsWith('browser_')))
+      // 合并后的标准模式同时通告原生 schema 与 run_code，SDK 段也照常生成。
+      expect(prompt.tools.map(tool => tool.name).filter(name => name.startsWith('browser_')))
         .toEqual([...browserTools].sort())
-      expect(standardPrompt.tools.map(tool => tool.name)).not.toContain('browser_use')
-      expect(standardPrompt.tools.map(tool => tool.name)).not.toContain('run_code')
-      expect(codePrompt.tools.map(tool => tool.name)).toEqual(['run_code'])
-      expect(codePrompt.sections.find(section => section.name === 'tools:sdk')?.text)
+      expect(prompt.tools.map(tool => tool.name)).not.toContain('browser_use')
+      expect(prompt.tools.map(tool => tool.name)).toContain('run_code')
+      expect(prompt.sections.find(section => section.name === 'tools:sdk')?.text)
         .toMatch(/browser_navigate/)
-      expect(ctx.tools.schemas(coded.agent).map(tool => tool.name).filter(name => name.startsWith('browser_'))).toEqual(browserTools)
+      expect(ctx.tools.schemas(merged.agent).map(tool => tool.name).filter(name => name.startsWith('browser_'))).toEqual(browserTools)
 
-      const direct = await call(native.agent, 'browser_navigate', { url: 'https://example.test/native' })
+      const direct = await call(merged.agent, 'browser_navigate', { url: 'https://example.test/native' })
       expect(direct).toMatchObject({ isError: false, value: {
         action: 'navigate', observation: { tabId: 'fixture-tab', url: 'https://example.test/native' }, image: null,
       } })
-      const bypass = await call(coded.agent, 'browser_snapshot', {})
-      expect(bypass.error?.info).toMatchObject({ code: 'UNKNOWN_TOOL' })
-      expect(browser.commands).toHaveBeenCalledTimes(1)
+      // `both` 不收窄可调用面：直呼的第二个浏览器工具同样执行。
+      const directSnapshot = await call(merged.agent, 'browser_snapshot', {})
+      expect(directSnapshot.isError).toBe(false)
+      expect(browser.commands).toHaveBeenCalledTimes(2)
 
-      const composed = await call(coded.agent, 'run_code', {
+      const composed = await call(merged.agent, 'run_code', {
         code: 'const result = await tools.browser_navigate({ url: "https://example.test/code" }); return result.observation.snapshot',
         description: 'Inspect the fixture browser',
       })
       expect(composed).toMatchObject({ isError: false, value: {
         result: '[button-1] button Continue',
       } })
-      expect(browser.commands).toHaveBeenCalledTimes(2)
-      expect(browser.commands.mock.calls.map(([, command]) => command.kind)).toEqual(['navigate', 'navigate'])
-      expect(browser.commands.mock.calls.map(([, , , target]) => target)).toEqual([{ kind: 'none' }, { kind: 'none' }])
-      expect(requested).toHaveBeenCalledTimes(2)
+      expect(browser.commands).toHaveBeenCalledTimes(3)
+      expect(browser.commands.mock.calls.map(([, command]) => command.kind)).toEqual(['navigate', 'snapshot', 'navigate'])
+      // 首个 navigate 还没有已知标签，其后的调用带上刚观测到的标签。
+      expect(browser.commands.mock.calls.map(([, , , target]) => target?.kind)).toEqual(['none', 'tab', 'tab'])
+      expect(requested).toHaveBeenCalledTimes(3)
     } finally {
       unlisten()
-      await coded.dispose()
-      await native.dispose()
+      await merged.dispose()
     }
   }, 30_000)
 
   it('lists and loads bundled browser and frontend skills only for presets with browser tools', async () => {
     const native = await agent('standard', root)
-    const coded = await agent('code', root)
     const codex = await agent('codex', root)
     const minimal = await agent('minimal', root)
     const entries = (target: Agent) => ctx.skills.list({ cwd: root, scope: target })
@@ -280,19 +279,17 @@ describe('browser tools and skill in the shipped Web preset composition', () => 
         name: 'stylekit', source: 'bundled', provider: 'stylekit',
         invocation: { modelInvocable: true, userInvocable: true },
       })
-      expect((await entries(coded.agent)).map(skill => skill.name)).toContain('frontend-development')
-      expect((await entries(coded.agent)).map(skill => skill.name)).toContain('stylekit')
-      // Codex 模式对齐 Codex 工具面：不含浏览器、前端与 StyleKit 技能（宿主半的 GenUI 技能不属预设）。
+      // Codex 模式对齐 Codex 工具面：随包技能含前端与 StyleKit，但不含浏览器技能
+      // （宿主半的 GenUI 技能不属预设）。
       const codexSkills = (await entries(codex.agent)).map(skill => skill.name)
       expect(codexSkills).not.toContain('browser-use')
-      expect(codexSkills).not.toContain('frontend-development')
-      expect(codexSkills).not.toContain('stylekit')
+      expect(codexSkills).toEqual(expect.arrayContaining(['frontend-development', 'stylekit']))
       expect((await entries(minimal.agent)).map(skill => skill.name)).not.toContain('frontend-development')
       expect((await entries(minimal.agent)).map(skill => skill.name)).not.toContain('stylekit')
       expect((await ctx.skills.list()).map(skill => skill.name)).not.toContain('frontend-development')
       expect(ctx.tools.schemas(minimal.agent).map(tool => tool.name).filter(name => name.startsWith('browser_'))).toEqual([])
 
-      for (const target of [native.agent, coded.agent]) {
+      for (const target of [native.agent]) {
         const decision = await agentEvents(target.ctx, target).waterfall(
           'agent/pre-step',
           { messages: [], turn: 1, step: 1, signal },
@@ -330,7 +327,7 @@ describe('browser tools and skill in the shipped Web preset composition', () => 
       } })
       expect(JSON.stringify(frontendSkill.value)).toContain('do not hand-write a foundation from zero')
       expect(JSON.stringify(frontendSkill.content)).toContain('browser-use')
-      const codeFrontendSkill = await call(coded.agent, 'run_code', {
+      const codeFrontendSkill = await call(native.agent, 'run_code', {
         code: 'return await tools.skill({ name: "frontend-development" })',
         description: 'Load frontend development instructions',
       })
@@ -342,21 +339,18 @@ describe('browser tools and skill in the shipped Web preset composition', () => 
     } finally {
       await codex.dispose()
       await minimal.dispose()
-      await coded.dispose()
       await native.dispose()
     }
   }, 30_000)
 
   it('keeps rejected approval and Remote-SSH workspaces away from the provider', async () => {
     const local = await agent('standard', root)
-    const coded = await agent('code', root)
     const remote = join(root, 'remote')
     await mkdir(remote)
     await writeFile(join(remote, '.coding-remote-workspace.json'), JSON.stringify({
       version: 3, remoteRoot: '/srv/project', connectionId: 'fixture', generation: 1, mode: 'basic',
     }))
     const remoteAgent = await agent('standard', remote)
-    const remoteCodeAgent = await agent('code', remote)
     const browser = ctx.browserUse as FixtureBrowser
     browser.commands.mockClear()
     const requested = vi.fn(() => Promise.resolve('rejected' as const))
@@ -365,7 +359,7 @@ describe('browser tools and skill in the shipped Web preset composition', () => 
       const native = await call(local.agent, 'browser_navigate', { url: 'https://example.test/native' })
       expect(native.isError).toBe(true)
       expect(JSON.stringify(native.content)).toContain('approval rejected')
-      const nested = await call(coded.agent, 'run_code', {
+      const nested = await call(local.agent, 'run_code', {
         code: 'await tools.browser_navigate({ url: "https://example.test/code" })', description: 'Rejected browser request',
       })
       expect(nested.isError).toBe(true)
@@ -373,16 +367,15 @@ describe('browser tools and skill in the shipped Web preset composition', () => 
 
       for (const permission of ['workspace-write', 'danger-full-access']) {
         ctx.permissionPresets.set(remoteAgent.agent.session, permission)
-        ctx.permissionPresets.set(remoteCodeAgent.agent.session, permission)
         const remoteResult = await call(remoteAgent.agent, 'browser_snapshot', {})
         expect(remoteResult.isError).toBe(true)
         expect(JSON.stringify(remoteResult.content)).toContain('remote workspace')
-        const remoteCodeResult = await call(remoteCodeAgent.agent, 'run_code', {
+        const remoteCodeResult = await call(remoteAgent.agent, 'run_code', {
           code: 'await tools.browser_snapshot({})', description: 'Remote browser request',
         })
         expect(remoteCodeResult.isError).toBe(true)
         expect(JSON.stringify(remoteCodeResult.content)).toMatch(/remote|REMOTE/)
-        for (const target of [remoteAgent.agent, remoteCodeAgent.agent]) {
+        for (const target of [remoteAgent.agent]) {
           expect(target.session.events.filter(event =>
             event.type === 'approval/asked' || event.type === 'approval/decided')).toEqual([])
         }
@@ -391,9 +384,7 @@ describe('browser tools and skill in the shipped Web preset composition', () => 
       expect(browser.commands).not.toHaveBeenCalled()
     } finally {
       unlisten()
-      await remoteCodeAgent.dispose()
       await remoteAgent.dispose()
-      await coded.dispose()
       await local.dispose()
     }
   }, 30_000)
