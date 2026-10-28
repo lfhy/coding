@@ -731,7 +731,7 @@ describe('browser action tools', () => {
     expect(failedRelease).toHaveBeenCalledOnce()
   })
 
-  it('returns canonical observation for PTC and saves a screenshot before rendering its image block', async () => {
+  it('returns canonical observation for code mode and saves a screenshot before rendering its image block', async () => {
     const { ctx, call } = await setup()
     const browser = ctx.browserUse as FakeBrowser
     const prepareTarget = vi.spyOn(browser, 'prepareTarget')
@@ -805,7 +805,7 @@ describe('browser action tools', () => {
     expect(rendered).toEqual([{ type: 'text', text: JSON.stringify(canonical) }])
   })
 
-  it('binds standard and PTC results to the active tab observed before approval', async () => {
+  it('binds native and code-mode results to the active tab observed before approval', async () => {
     const { ctx, call } = await setup()
     const browser = ctx.browserUse as FakeBrowser
     browser.currentState = activeState()

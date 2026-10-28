@@ -270,3 +270,18 @@
 
 - id: tool-browser
   name: 'coding-tool-browser'
+
+# ── 工具呈现 ─────────────────────────────────────────────────────────────────
+
+# 标准模式同时提供两种工具形态：原生 schema 直呼，以及 Code Mode 的 `run_code`
+# 加一份按当前工具生成的 TypeScript SDK（原先独立的 PTC 预设已并入这里，二者
+# 的组装差别只有这一行）。`both` 不会收起原生调用，因此不需要「只能调
+# `run_code`」的提示；模型可以直呼单个工具，也可以用一个程序组合多步操作。
+#
+# 代价与前提：每个标准会话的请求前缀都会包含 SDK 段与 `run_code` schema（首轮
+# 全价，之后由 KV cache 复用）；`both` 在挂载时要求宿主装配 `ctx.codeRuntime`，
+# 未装配代码运行时的组合只能使用 native 呈现的预设（如 `minimal`）。
+- id: tool-presentation
+  name: 'coding-agent-tool-presentation'
+  config:
+    mode: both

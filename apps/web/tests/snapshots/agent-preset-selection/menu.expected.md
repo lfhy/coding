@@ -1,7 +1,8 @@
 - menu:
-  - menuitem "Standard mode Full coding agent with file editing, shell, file and web search, skills, planning, goals, subagents, and workflows.":
-    - text: Standard mode Full coding agent with file editing, shell, file and web search, skills, planning, goals, subagents, and workflows.
+  - menuitem "Standard mode Full coding agent with file editing, shell, file and web search, skills, planning, goals, subagents, and workflows; tools are callable natively or through the Code Mode SDK so the model can combine multi-step operations in one TypeScript program.":
+    - text: Standard mode Full coding agent with file editing, shell, file and web search, skills, planning, goals, subagents, and workflows; tools are callable natively or through the Code Mode SDK so the model can combine multi-step operations in one TypeScript program.
     - img
-  - menuitem "PTC mode All Standard mode capabilities, with tools exposed through the Code Mode SDK so the model can combine multi-step operations in one TypeScript program."
   - menuitem "Minimal mode Two-tool coding agent with persistent bash and str_replace_editor."
   - menuitem "Creator mode Built for creating custom agent presets, with all Standard mode capabilities plus runtime inspection, plugin experiments, and preset-authoring guidance."
+  - 'menuitem "Codex mode Codex prompt and tool surface: shell, apply_patch, update_plan, web search, and continuable subagents with wait_agent, plus bundled skills for project setup, Go backend, frontend, and visual style."'
+  - menuitem "Reverse engineering mode All Standard mode capabilities plus the REA engine as MCP tools and bundled reverse-engineering skills, for binaries, installers, firmware, and runtime behavior."

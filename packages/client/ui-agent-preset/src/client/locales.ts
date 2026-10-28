@@ -5,7 +5,6 @@ export type AgentPresetSettingsKey =
   | 'title' | 'description' | 'loading' | 'error' | 'userTrust' | 'seatHint' | 'headerHint'
   | 'nav' | 'sectionIntro' | 'builtIn' | 'setDefault' | 'view'
   | 'presetStandardName' | 'presetStandardDescription'
-  | 'presetCodeName' | 'presetCodeDescription'
   | 'presetMinimalName' | 'presetMinimalDescription'
   | 'presetCordisName' | 'presetCordisDescription'
   | 'presetCodexName' | 'presetCodexDescription'
@@ -38,10 +37,7 @@ export const en: Record<AgentPresetSettingsKey, string> = {
   view: 'View',
   presetStandardName: 'Standard mode',
   presetStandardDescription:
-    'Full coding agent with file editing, shell, file and web search, skills, planning, goals, subagents, and workflows.',
-  presetCodeName: 'PTC mode',
-  presetCodeDescription:
-    'All Standard mode capabilities, with tools exposed through the Code Mode SDK so the model can combine multi-step operations in one TypeScript program.',
+    'Full coding agent with file editing, shell, file and web search, skills, planning, goals, subagents, and workflows; tools are callable natively or through the Code Mode SDK so the model can combine multi-step operations in one TypeScript program.',
   presetMinimalName: 'Minimal mode',
   presetMinimalDescription:
     'Two-tool coding agent with persistent bash and str_replace_editor.',
@@ -107,9 +103,7 @@ export const zh: Record<AgentPresetSettingsKey, string> = {
   setDefault: '设为默认',
   view: '查看',
   presetStandardName: '标准模式',
-  presetStandardDescription: '功能完整的编码 Agent，支持文件编辑、Shell、文件与网页检索、Skills、计划、目标、子代理和工作流。',
-  presetCodeName: 'PTC 模式',
-  presetCodeDescription: '具备标准模式的全部能力，并通过 Code Mode SDK 呈现工具，让模型用一个 TypeScript 程序组合多步操作。',
+  presetStandardDescription: '功能完整的编码 Agent，支持文件编辑、Shell、文件与网页检索、Skills、计划、目标、子代理和工作流；工具既可原生调用，也可通过 Code Mode SDK 用一个 TypeScript 程序组合多步操作。',
   presetMinimalName: '极简模式',
   presetMinimalDescription: '仅提供持久 bash 与 str_replace_editor 的双工具编码 Agent。',
   presetCordisName: '创造模式',
@@ -180,7 +174,6 @@ interface PresetLocaleKeys {
 
 const BUILT_IN_PRESET_KEYS: Readonly<Partial<Record<string, PresetLocaleKeys>>> = {
   standard: { name: 'presetStandardName', description: 'presetStandardDescription' },
-  code: { name: 'presetCodeName', description: 'presetCodeDescription' },
   minimal: { name: 'presetMinimalName', description: 'presetMinimalDescription' },
   cordis: { name: 'presetCordisName', description: 'presetCordisDescription' },
   codex: { name: 'presetCodexName', description: 'presetCodexDescription' },

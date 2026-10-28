@@ -10,6 +10,9 @@
     - button "模型":
       - img
       - text: 模型
+    - button "主题外观":
+      - img
+      - text: 主题外观
     - button "联网搜索":
       - img
       - text: 联网搜索
@@ -19,6 +22,9 @@
     - button "插件":
       - img
       - text: 插件
+    - button "代理池":
+      - img
+      - text: 代理池
     - button "Agent 预设":
       - img
       - text: Agent 预设
@@ -29,22 +35,12 @@
   - list:
     - listitem:
       - 'button "当前使用: 标准模式" [disabled] [pressed]':
-        - text: 标准模式 内置 当前使用 功能完整的编码 Agent，支持文件编辑、Shell、文件与网页检索、Skills、计划、目标、子代理和工作流。
+        - text: 标准模式 内置 当前使用 功能完整的编码 Agent，支持文件编辑、Shell、文件与网页检索、Skills、计划、目标、子代理和工作流；工具既可原生调用，也可通过 Code Mode SDK 用一个 TypeScript 程序组合多步操作。
         - code: standard
       - 'button "查看: 标准模式"':
         - img
         - text: 查看
       - 'button "复制: 标准模式"':
-        - img
-        - text: 复制
-    - listitem:
-      - 'button "设为默认: PTC 模式"':
-        - text: PTC 模式 内置 具备标准模式的全部能力，并通过 Code Mode SDK 呈现工具，让模型用一个 TypeScript 程序组合多步操作。
-        - code: code
-      - 'button "查看: PTC 模式"':
-        - img
-        - text: 查看
-      - 'button "复制: PTC 模式"':
         - img
         - text: 复制
     - listitem:
@@ -65,6 +61,26 @@
         - img
         - text: 查看
       - 'button "复制: 创造模式"':
+        - img
+        - text: 复制
+    - listitem:
+      - 'button "设为默认: Codex 模式"':
+        - text: Codex 模式 内置 对齐 Codex 的提示词与工具面：Shell、apply_patch、update_plan、联网搜索，以及带 wait_agent 的可继续子 agent；随包技能提供项目初始化、Go 后端、前端与视觉风格指引。
+        - code: codex
+      - 'button "查看: Codex 模式"':
+        - img
+        - text: 查看
+      - 'button "复制: Codex 模式"':
+        - img
+        - text: 复制
+    - listitem:
+      - 'button "设为默认: 逆向分析模式"':
+        - text: 逆向分析模式 内置 具备标准模式的全部能力，并接入 REA 逆向引擎的 MCP 工具与随模式分发的逆向调查技能，用于二进制、安装包、固件与运行时行为分析。
+        - code: reverse
+      - 'button "查看: 逆向分析模式"':
+        - img
+        - text: 查看
+      - 'button "复制: 逆向分析模式"':
         - img
         - text: 复制
   - heading "自定义" [level=3]

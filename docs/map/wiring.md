@@ -5,46 +5,6 @@
 
 仓库里每个 Cordis 配置的行 id 与插件包。profile/bundle 的 patch 层按顺序叠加，后一层的同 id 行覆盖前一层；`dsh --profile web --dump-config` 打印实际生效的插件树。
 
-## `apps/cli/config/agent-presets/code/agent.cordis.yml`
-
-- `persona` → `coding-persona`
-- `agent-instructions` → `coding-agent-instructions`
-- `tool-bash` → `coding-tool-bash`
-- `tool-pwsh` → `coding-tool-pwsh`
-- `tool-fs` → `coding-tool-fs`
-- `tool-apply-patch` → `coding-tool-apply-patch`
-- `tool-fs-search` → `coding-tool-fs-search`
-- `tool-jobs` → `coding-tool-jobs`
-- `skill-filesystem` → `coding-skill-filesystem`
-- `skill-browser-use` → `coding-skill-browser-use`
-- `skill-stylekit` → `coding-skill-stylekit`
-- `skill-frontend-development` → `coding-skill-frontend-development`
-- `skill-project-init` → `coding-skill-project-init`
-- `skill-go-backend` → `coding-skill-go-backend`
-- `tool-skill` → `coding-tool-skill`
-- `tool-goal` → `coding-tool-goal`
-- `planning` → `cordis:group`
-- `plan-mode` → `coding-plan-mode`
-- `compaction` → `cordis:group`
-- `compaction-basic` → `coding-compaction-basic`
-- `command-compact` → `coding-command-compact`
-- `tool-result-pruner` → `coding-compaction-tool-result-pruner`
-- `delegation` → `cordis:group`
-- `tool-subagent-control` → `coding-tool-subagent-control`
-- `tool-subagent-list-agents` → `coding-tool-subagent-control/list-agents`
-- `tool-subagent` → `coding-tool-subagent`
-- `tool-subagent-fork` → `coding-tool-subagent`
-- `tool-subagent-codex` → `coding-tool-subagent`（disabled）
-- `tool-subagent-claude-code` → `coding-tool-subagent`（disabled）
-- `workflow-worker-thread` → `coding-workflow-worker-thread`
-- `tool-workflow` → `coding-tool-workflow`
-- `tool-ralph` → `coding-tool-ralph`
-- `tool-ask-user` → `coding-tool-ask-user`
-- `tool-todo` → `coding-tool-todo`
-- `tool-web` → `coding-tool-web`
-- `tool-browser` → `coding-tool-browser`
-- `tool-presentation` → `coding-agent-tool-presentation`
-
 ## `apps/cli/config/agent-presets/codex/agent.cordis.yml`
 
 - `persona` → `coding-persona`
@@ -196,6 +156,7 @@
 - `tool-todo` → `coding-tool-todo`
 - `tool-web` → `coding-tool-web`
 - `tool-browser` → `coding-tool-browser`
+- `tool-presentation` → `coding-agent-tool-presentation`
 
 ## `examples/acp-agent/cordis.yml`
 
