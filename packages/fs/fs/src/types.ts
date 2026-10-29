@@ -68,6 +68,31 @@ export interface FsTarget {
 }
 
 /**
+ * 虚拟路径前缀：把调用方看到的稳定前缀映射到本执行世界里的真实目录。
+ *
+ * 它存在的理由是「不在工作区里、但模型确实要读的只读资源」——随应用安装的内置技能资产。
+ * 这类文件的真实位置随安装方式变化（打包后的应用在 runtime 的 node_modules 下，源码运行时
+ * 在仓库包目录里），既不适合写进模型提示，也不适合作为用户界面的展示路径；前缀则同时解决
+ * 这两点：模型读稳定路径，界面显示同一条稳定路径。
+ */
+export interface FsPathAlias {
+  /** 稳定前缀，不带尾部路径分隔符，例如 `${INTERNAL_SKILL_DIR}/coding-skill-frontend-development`。 */
+  readonly prefix: string
+  /** 该前缀对应的真实目录；只有注册它的执行世界里的后端能打开。 */
+  readonly directory: string
+}
+
+/** 一条虚拟路径的展开结果。 */
+export interface FsPathAliasExpansion {
+  /** 注册时给出的真实目录。 */
+  readonly directory: string
+  /** 真实目录里的目标路径，可直接交给后端 `resolve()`。 */
+  readonly target: string
+  /** 规范化后的虚拟显示路径：前缀本身，或前缀加相对路径。 */
+  readonly displayPath: string
+}
+
+/**
  * Metadata about a target — what {@link FileSystem.stat} returns. Lets the
  * policy layer reject directories/special files before reading and choose
  * `readText` vs `streamText` from `size` without probing by failure. `version`

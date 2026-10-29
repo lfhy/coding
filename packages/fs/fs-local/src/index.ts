@@ -340,8 +340,12 @@ export class LocalFileSystem extends FileSystem {
 
   set internals(value: FsIoInternals) { this.backend.internals = value }
 
-  resolve(path: string, opts?: { cwd?: string; signal?: AbortSignal }): Promise<FsTarget> {
-    return this.backend.resolve(path, opts)
+  async resolve(path: string, opts?: { cwd?: string; signal?: AbortSignal }): Promise<FsTarget> {
+    // 虚拟前缀（例如随包内置技能的资源目录）先展开成真实目标，展示路径保持前缀形式。
+    const alias = this.expandPathAlias(path)
+    if (alias === undefined) return await this.backend.resolve(path, opts)
+    const resolved = await this.backend.resolve(alias.target, opts)
+    return { targetKey: resolved.targetKey, displayPath: alias.displayPath }
   }
 
   processPath(target: FsTarget): string { return this.backend.processPath(target) }
@@ -355,7 +359,8 @@ export class LocalFileSystem extends FileSystem {
   }
 
   lstat(path: string, opts?: { cwd?: string }, signal?: AbortSignal): Promise<FsPathInfo | undefined> {
-    return this.backend.lstat(path, opts, signal)
+    // 虚拟前缀先展开成真实目录里的路径，no-follow 探测只看真实位置。
+    return this.backend.lstat(this.expandPathAlias(path)?.target ?? path, opts, signal)
   }
 
   readText(target: FsTarget, signal?: AbortSignal): Promise<string> {

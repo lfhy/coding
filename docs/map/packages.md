@@ -161,8 +161,8 @@ workspace 共 262 个包，按 group 分节。每行给出包目录、职责（R
 
 ## packages/fs
 
-- `packages/fs/fs` — **`FileSystem`**（`ctx.fs`）定义同一个执行世界中的存储原语… 入口 `src/index.ts`（tests 3）
-- `packages/fs/fs-local` — import { LocalFileSystem } from 'coding-fs-local' 入口 `src/index.ts`（tests 4）
+- `packages/fs/fs` — **`FileSystem`**（`ctx.fs`）定义同一个执行世界中的存储原语… 入口 `src/index.ts`（tests 4）
+- `packages/fs/fs-local` — import { LocalFileSystem } from 'coding-fs-local' 入口 `src/index.ts`（tests 5）
 - `packages/fs/fs-observation-policy` — **fs-observation-policy 插件**：它记录观测到的存在或缺失状态，并在 `ctx.fs` 提供方约定… 入口 `src/index.ts`（tests 1）
 - `packages/fs/fs-sandbox` — 它原样复用本地后端配置：`cwd` 仍是相对路径的解析默认值，`diffBasisMaxBytes` 则限制可选的覆写上下文 diff 基础 入口 `src/index.ts`（tests 3）
 - `packages/fs/fs-workspace` — `coding-fs` 的多后端装配：加载它即由 `ctx.fs` 提供 `FsRegistry`，默认注册两个后端——包了沙箱围栏的本地后端… 入口 `src/index.ts`（tests 1）

@@ -12,6 +12,7 @@ await ctx.plugin(LocalFileSystem, { cwd: process.cwd() })
 
 ## 行为
 
+- **虚拟路径前缀**：`LocalFileSystem`（单后端服务入口）会展开通过 `registerPathAlias` 注册的前缀，让内置技能资源的 `${INTERNAL_SKILL_DIR}/<发行包名>/…` 落到真实目录，同时保留前缀形式的 `displayPath`；后端 `LocalFileSystemBackend` 只处理真实路径，因此多后端装配由 `FsRegistry` 负责展开。
 - **`resolve(path, opts?)`**：相对 `path` 在调用方提供 `opts.cwd` 时以该值为基准解析（面向模型的工具会传入调用 agent（智能体）的会话 cwd；见每会话 cwd 设计记录），否则以 `config.cwd` 为基准（默认 `process.cwd()`）；绝对 `path` 会忽略两者。`opts.signal` 会在解析前后检查。对于本地目标，`targetKey` 是文件的 `realpath`，因此经符号链接到达同一文件的两个输入路径会共享一个身份，写入／编辑落在链接目标上，同时保留链接；尚不存在的路径在父目录存在时使用 realpath 后的父目录加 basename，只有父目录无法解析时才回退到绝对路径。Remote-SSH marker 则生成 `coding-remote-target:v1:` 身份，包含连接模式，并把规范远程路径作为 `displayPath`；后续每次 I/O 都会针对 marker 当前连接和模式重新验证该身份。marker 缺失或失效的远端目标不会回退到本地路径。
 - **执行世界坐标**：对于本地目标，`processPath` 公开规范化宿主路径，`fileUrl` 通过 Node 的平台感知 URL 转换对其编码。对于 Remote-SSH 目标，`processPath` 返回规范远程路径，`fileUrl` 使用目标平台的 `file:` 语法；已验证的 marker target 会把这些坐标携带给远程子进程 Provider，绝不会交给本地 Node 进程。`contains` 仍可比较同一当前 marker／连接内的远程目标，Consumer 无需解析 `targetKey`。
 - **`stat` / `lstat`**：返回目标元数据；目标不存在时返回 `undefined`。`stat` 为已解析目标报告 `FsInfo`（`type` 为 `file`/`directory`/`other`，另有不透明 `version` 与字节 `size`）；路径形态的 `lstat` 不跟随最后一个符号链接，报告 `FsPathInfo`，因此可以返回 `symlink`。本地版本由 bigint `dev:ino:size:mtimeNs:ctimeNs` 派生；Remote-SSH 版本和元数据来自有界 agent 响应。两者都会在异步元数据探测前后检查取消，因此异步探测进行期间发生的中止会报告 `FS_ABORTED`，而非陈旧的不存在结果。

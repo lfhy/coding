@@ -8,6 +8,7 @@
  * @module coding-fs
  */
 
+import { join } from 'node:path'
 import { Context, Service } from '@deepseek-ai/cordis'
 import { FsError } from './types.ts'
 import type { SandboxExecutionPolicy, SandboxMode } from 'coding-sandbox'
@@ -16,6 +17,7 @@ import type {
   FsEditOutcome,
   FsEditRequest,
   FsInfo,
+  FsPathAliasExpansion,
   FsPathInfo,
   FsObservation,
   FsTarget,
@@ -36,6 +38,8 @@ export type {
   FsErrorCode,
   FsInfo,
   FsObservation,
+  FsPathAlias,
+  FsPathAliasExpansion,
   FsPathInfo,
   FsTarget,
   FsWriteIntent,
@@ -85,6 +89,9 @@ declare module '@deepseek-ai/cordis' {
  * without changing the unguarded provider contract.
  */
 export abstract class FileSystem extends Service {
+  /** 虚拟前缀到真实目录的映射；匹配按最长前缀，而不按插入顺序。 */
+  private readonly pathAliases = new Map<string, { directory: string; holds: number }>()
+
   constructor(ctx: Context) {
     super(ctx, 'fs')
   }
@@ -103,6 +110,79 @@ export abstract class FileSystem extends Service {
    */
   get sandboxMode(): SandboxMode | undefined {
     return undefined
+  }
+
+  /**
+   * 注册一个虚拟路径前缀，把调用方看到的稳定前缀映射到本执行世界里的真实目录。
+   *
+   * 只有 opt-in 的后端（多后端注册表、裸本地后端）在 `resolve()`／`lstat()` 里展开这些前缀；
+   * 展开后的目标沿用注册目录所在的真实身份，`displayPath` 则保持注册时的虚拟前缀，
+   * 因此模型读到的路径与界面展示的路径都不暴露安装位置。前缀按最长匹配生效。
+   * 同一前缀允许同一目录重复注册（多个模式预设会各挂一份同一个内置技能提供方），
+   * 每次注册各持有一份计数，全部撤销后映射才消失。
+   * @param prefix - 稳定前缀，允许带尾部路径分隔符，注册时会去掉。
+   * @param directory - 该前缀对应的真实目录。
+   * @returns 撤销本次注册的 disposer；调用多次无副作用。
+   * @throws {FsError} 同一前缀已被另一个目录占用时。
+   */
+  registerPathAlias(prefix: string, directory: string): () => void {
+    const normalized = trimTrailingSeparators(prefix)
+    if (normalized === '') throw new FsError('a filesystem path alias prefix must be non-empty', 'FS_IO_ERROR')
+    if (directory.trim().length === 0) throw new FsError('a filesystem path alias directory must be non-empty', 'FS_IO_ERROR')
+    const existing = this.pathAliases.get(normalized)
+    if (existing !== undefined && existing.directory !== directory) {
+      throw new FsError(`filesystem path alias "${normalized}" is already registered for another directory`, 'FS_IO_ERROR')
+    }
+    if (existing === undefined) {
+      this.pathAliases.set(normalized, { directory, holds: 1 })
+    } else {
+      existing.holds += 1
+    }
+    let released = false
+    return () => {
+      if (released) return
+      released = true
+      const current = this.pathAliases.get(normalized)
+      if (current === undefined) return
+      current.holds -= 1
+      if (current.holds <= 0) this.pathAliases.delete(normalized)
+    }
+  }
+
+  /**
+   * 展开一条可能带虚拟前缀的路径。只有理解虚拟前缀的后端应调用它，并把结果交给自己的
+   * 真实解析流程；未命中任何前缀时返回 `undefined`，调用方走原有逻辑。
+   * @param path - 调用方给出的原始路径。
+   * @returns 命中前缀时的真实目标与规范化显示路径。
+   */
+  protected expandPathAlias(path: string): FsPathAliasExpansion | undefined {
+    const match = this.matchPathAlias(path)
+    if (match === undefined) return undefined
+    const { prefix, directory, rest } = match
+    if (rest === '') return { directory, target: directory, displayPath: prefix }
+    return {
+      directory,
+      target: join(directory, rest),
+      displayPath: `${prefix}/${rest}`,
+    }
+  }
+
+  /** 最长前缀匹配；分隔符同时接受 `/` 与 `\`，相对部分原样保留。 */
+  private matchPathAlias(path: string): { prefix: string; directory: string; rest: string } | undefined {
+    let best: { prefix: string; directory: string; rest: string } | undefined
+    for (const [prefix, entry] of this.pathAliases) {
+      if (best !== undefined && prefix.length <= best.prefix.length) continue
+      if (!path.startsWith(prefix)) continue
+      const boundary = path.charAt(prefix.length)
+      if (boundary !== '' && boundary !== '/' && boundary !== '\\') continue
+      best = { prefix, directory: entry.directory, rest: path.slice(prefix.length + (boundary === '' ? 0 : 1)) }
+    }
+    return best
+  }
+
+  /** 已注册的虚拟前缀，按注册顺序返回；测试与诊断用。 */
+  get pathAliasPrefixes(): readonly string[] {
+    return [...this.pathAliases.keys()]
   }
 
   /**
@@ -421,7 +501,12 @@ export class FsRegistry extends FileSystem {
   }
 
   override async resolve(path: string, opts?: { cwd?: string; signal?: AbortSignal }): Promise<FsTarget> {
-    return await (await this.backendForWorkspace(opts?.cwd)).resolve(path, opts)
+    const alias = this.expandPathAlias(path)
+    if (alias === undefined) return await (await this.backendForWorkspace(opts?.cwd)).resolve(path, opts)
+    // 虚拟前缀属于注册它的执行世界：按真实目录挑选后端，展示路径仍用虚拟前缀。
+    const backend = await this.backendForWorkspace(alias.directory)
+    const resolved = await backend.resolve(alias.target, opts)
+    return { targetKey: resolved.targetKey, displayPath: alias.displayPath }
   }
 
   override processPath(target: FsTarget): string {
@@ -441,7 +526,12 @@ export class FsRegistry extends FileSystem {
   }
 
   override async lstat(path: string, opts?: { cwd?: string }, signal?: AbortSignal): Promise<FsPathInfo | undefined> {
-    return await (await this.backendForWorkspace(opts?.cwd)).lstat(path, opts, signal)
+    const alias = this.expandPathAlias(path)
+    if (alias === undefined) {
+      return await (await this.backendForWorkspace(opts?.cwd)).lstat(path, opts, signal)
+    }
+    const backend = await this.backendForWorkspace(alias.directory)
+    return await backend.lstat(alias.target, opts, signal)
   }
 
   override readText(target: FsTarget, signal?: AbortSignal): Promise<string> {
@@ -482,5 +572,16 @@ export class FsRegistry extends FileSystem {
   }
 }
 
+
+/** 去掉前缀尾部的路径分隔符，使 `/a/b/` 与 `/a/b` 注册成同一个前缀。 */
+function trimTrailingSeparators(prefix: string): string {
+  let end = prefix.length
+  while (end > 0) {
+    const character = prefix.charAt(end - 1)
+    if (character !== '/' && character !== '\\') break
+    end -= 1
+  }
+  return prefix.slice(0, end)
+}
 
 export default FileSystem
