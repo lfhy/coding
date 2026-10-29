@@ -135,7 +135,7 @@ describe('mode-aware wire contribution', () => {
     expect(sdk?.text).not.toContain('run_code:')
     // A model that writes Node-ish code fails on the first `require`, so the
     // section must state the environment before it states the API.
-    expect(sdk?.text).toContain('not a Node.js one: there is no `require` and no module `import`')
+    expect(sdk?.text).toContain('`require` loads Node built-in modules only')
   })
 
   it("mode 'code' states the run_code-only rule BEFORE the per-tool guidance that names each tool", async () => {
@@ -1257,7 +1257,7 @@ describe('the run_code dispatch bridge', () => {
     })
     const redirected = ((await runCode(ctx, 'program')).content[0] as { text: string }).text
     expect(redirected).toContain('code run failed (exception): ReferenceError: require is not defined')
-    expect(redirected).toContain('`require` is not available: `run_code` programs have no CommonJS modules')
+    expect(redirected).toContain('`require` is not available: `run_code` programs are not CommonJS modules')
     // Captured logs stay last: the hint belongs to the failure, not the output.
     expect(redirected.indexOf('CommonJS modules')).toBeLessThan(redirected.indexOf('Captured output:'))
 

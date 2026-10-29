@@ -52,7 +52,7 @@ SDK 对外提供默认及具名导出的 `WorkerThreadCodeRuntime` 类，以及 
 - **basic 模式的 Goja 在本机而非 SSH 主机**：其编排程序不能直接访问远端进程或文件；须通过 Host binding 使用该工作区的 Bash、文件等远端能力。
 - **本地 worker 的 `computeMs` 到期最多可能超过一个轮询间隔**：系统每 25 ms 采样一次忙碌时间（内部常量，有意不做成配置）。
 - **远程 Goja 的活动片段计时器在调度延迟时可能晚于目标触发**：超出预算的完成值仍会被作为 `timeout` 拒绝，而不会发布。
-- **本地程序没有 CommonJS 模块加载器**：程序作为 `AsyncFunction` 的函数体执行，`require`、`module`、`exports`、`__dirname`／`__filename` 和静态 `import` 都不存在，模型程序只能经 binding 使用宿主能力；`process`（其中 `stdout`／`stderr` 已被接成日志）、`fetch` 和动态 `import()` 恰好仍可见，属执行基底附带、不应在程序里依赖，因为远端 Goja 没有它们。Code Mode 的 SDK 说明据此告诉模型：shell、文件与网络都是工具调用。
+- **程序获得的 `require` 只解析 Node 内建模块**：程序作为 `AsyncFunction` 的函数体执行，`require` 作为参数注入，查找函数在程序运行前从 `process.getBuiltinModule` 捕获，因此 `require('node:fs')` 与 `require('fs')` 都能拿到真实内建模块，而 `module`、`exports`、`__dirname`／`__filename`、静态 `import` 以及任何第三方包或工作区文件都会被明确拒绝——worker 自身的加载器按应用打包目录解析，模型程序不应经由一个稳定 API 触达内部包，工作区脚本仍归工具负责。`process`（其中 `stdout`／`stderr` 已被接成日志）、`fetch` 与动态 `import()` 恰好也可见，属执行基底附带、不应在程序里依赖，因为远端 Goja 三者都没有；这一区域（非安全边界，参见文首的信任立场）因此由 Code Mode 的 SDK 说明如实告知模型：内建模块只在本地可用，shell、文件与网络始终是工具调用。
 - **程序获得一个含 5 个方法的 `console` shim**（`log`／`info`／`warn`／`error`／`debug`）：有意不提供 Node 的完整 console 接口。
 - **中间绑定值没有字节上限**：程序可以用永远不会成为外层输出的值耗尽进程或 worker 内存。
 - **默认 64 MiB 是拒绝边界，不是可恢复存储**：外层落盘只能保存发生 `output-limit` 后返回的有界日志和诊断；在运行时上限之外被拒绝的字节永远不会到达落盘层。

@@ -19,7 +19,10 @@ export type {
 
 /**
  * Binding globals EVERY backend refuses because SOME backend owns the slot in
- * the program's namespace: `console` (the worker's log capture), and
+ * the program's namespace: `console` (the worker's log capture),
+ * `require` (the worker's Node built-in loader, injected as a program
+ * parameter — a namespace or error class of that name would shadow it or make
+ * the wrapper's parameter list a strict-mode duplicate), and
  * `__dsh_main__`/`__builtins__`/`__name__` (the Python backend's bootstrap
  * wrapper and seeded module globals; see the [portable-identifier Agent
  * Note]()),
@@ -36,9 +39,12 @@ export type {
  * the name at COMPILE time, so an injected global under that name is
  * unreachable from the program — accepted by validation, unusable on the
  * Python backend, which is exactly the split the shared set exists to prevent.
+ * `require` is the same kind of split in the other direction: only the worker
+ * backend injects it, and only for Node built-in modules, so a program may see
+ * it locally and never in a remote isolate.
  */
 export const RESERVED_BINDING_GLOBALS: ReadonlySet<string> = new Set([
-  'console',
+  'console', 'require',
   '__dsh_main__', '__builtins__', '__name__', '__debug__',
 ])
 

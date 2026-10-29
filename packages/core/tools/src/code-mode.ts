@@ -48,9 +48,10 @@ const TYPESCRIPT_FLAVOR: RunCodeFlavor = {
     'Execute a TypeScript program against the available tools. Takes two required '
     + 'arguments: `code`, the BODY of an async function (erasable syntax only; top-level '
     + '`await` and `return` work), and `description`, a short summary of what the program '
-    + 'does. It has no `require` and no module `import`: shell, file and network work goes '
-    + 'through the tools, as `await tools.name(args)` per the declarations in the system '
-    + 'prompt. Only what you print or return is program output — curate it. Image-bearing '
+    + 'does. `require` loads Node built-in modules only, and only in a local workspace; a '
+    + 'remote isolate has none, so shell, file and network work goes through the tools — '
+    + '`await tools.name(args)` per the declarations in the system prompt. Only what you '
+    + 'print or return is program output — curate it. Image-bearing '
     + 'subtool results are attached after the run.',
   codeDescription: 'The program: the body of an async TypeScript function.',
 }
@@ -260,9 +261,10 @@ function renderValue(value: JsonValue): string {
 }
 
 /**
- * CommonJS globals a program reaches for out of habit. The runtime has none
- * of them, and the bare `ReferenceError` reads as a broken deployment, so the
- * failure text names the replacement route.
+ * CommonJS globals a program reaches for out of habit. `require` exists only in
+ * the local Node worker and only for built-ins, so a remote isolate answers
+ * every one of them with a bare `ReferenceError` that reads as a broken
+ * deployment; the failure text names the replacement route.
  */
 const COMMONJS_GLOBALS = ['require', 'module', 'exports', '__dirname', '__filename'] as const
 
@@ -276,7 +278,7 @@ const COMMONJS_GLOBALS = ['require', 'module', 'exports', '__dirname', '__filena
 function moduleAccessHint(message: string): string {
   const missing = COMMONJS_GLOBALS.find(name => message.includes(`ReferenceError: ${name} is not defined`))
   if (missing === undefined) return ''
-  return `\n(\`${missing}\` is not available: \`run_code\` programs have no CommonJS modules, so the shell, files and network are reached through the tools)`
+  return `\n(\`${missing}\` is not available: \`run_code\` programs are not CommonJS modules. Node built-ins come from \`require('node:…')\` in a local workspace; the shell, files and network are tool calls)`
 }
 
 /** Canonical value returned by the outer Code Mode transport. */

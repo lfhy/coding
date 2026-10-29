@@ -97,6 +97,31 @@ export class LogBuffer {
   }
 }
 
+/** `node:` 前缀在查找内建模块前剥掉：`require('node:fs')` 与 `require('fs')` 等价。 */
+const NODE_PROTOCOL_PREFIX = /^node:/
+
+/**
+ * 程序可见的 `require`：只解析 Node 内建模块。worker 自身的模块加载器会按应用
+ * 打包目录解析第三方包与内部包，那不是模型程序应当经由一个稳定 API 触达的东西；
+ * 工作区脚本由工具承担，因此这里只接受 Node 内核登记过的内建 id（`node:` 前缀
+ * 可有可无），其余 id 一律以明确诊断拒绝，而不是回落到真实模块解析。
+ *
+ * @param lookup - 内建模块查找函数；真实 worker 传入捕获好的 `process.getBuiltinModule`，测试注入替身。
+ * @returns 注入到程序参数列表里的 `require`。
+ */
+export function makeProgramRequire(lookup: (id: string) => unknown): (id: unknown) => unknown {
+  return (id: unknown): unknown => {
+    const name = typeof id === 'string' ? id.replace(NODE_PROTOCOL_PREFIX, '') : ''
+    const builtin = name.length > 0 ? lookup(name) : undefined
+    if (builtin === undefined) {
+      // 类型描述不用 String(id)：程序可以传入 toString 抛错的对象。
+      const requested = typeof id === 'string' ? JSON.stringify(id) : `a ${typeof id}`
+      throw new CapturedError(`require resolves only Node built-in modules inside run_code programs: ${requested} is not one`)
+    }
+    return builtin
+  }
+}
+
 /** The five console methods the shim captures, in the seam's level vocabulary. */
 const CONSOLE_LEVELS = ['log', 'info', 'warn', 'error', 'debug'] as const
 
@@ -397,6 +422,9 @@ export async function runWorkerMain(
     errorClassValues.push(errorClass)
   }
   const consoleShim = makeConsoleShim(logs)
+  // 在程序运行前捕获内建查找函数，程序的后续改写无法改变 `require` 的实际来源。
+  const getBuiltinModule = process.getBuiltinModule.bind(process)
+  const programRequire = makeProgramRequire(getBuiltinModule)
 
   let done: DoneMessage
   try {
@@ -408,9 +436,10 @@ export async function runWorkerMain(
       ...data.namespaces.map(namespace => namespace.global),
       ...errorClassParameters,
       'console',
+      'require',
       `'use strict';\n${data.code}`,
     )
-    const value = await fn(...namespaces, ...errorClassValues, consoleShim)
+    const value = await fn(...namespaces, ...errorClassValues, consoleShim, programRequire)
     done = {
       type: 'done',
       ...prepareCompletion(value, logs.remainingOutputBytes(), data.maxOutputBytes),

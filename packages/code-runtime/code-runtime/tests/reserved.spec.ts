@@ -15,6 +15,9 @@ import {
 describe('seam-owned portable identifier exclusions', () => {
   it('RESERVED_BINDING_GLOBALS covers each backend-owned slot', () => {
     expect(RESERVED_BINDING_GLOBALS.has('console')).toBe(true)
+    // The worker injects a built-in-only `require`; a namespace of that name
+    // would shadow it or duplicate the wrapper's parameter list.
+    expect(RESERVED_BINDING_GLOBALS.has('require')).toBe(true)
     expect(RESERVED_BINDING_GLOBALS.has('__dsh_main__')).toBe(true)
     expect(RESERVED_BINDING_GLOBALS.has('__builtins__')).toBe(true)
     expect(RESERVED_BINDING_GLOBALS.has('__name__')).toBe(true)

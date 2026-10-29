@@ -155,7 +155,7 @@ Code Mode 会公开生成的 [`run_code` schema](../../../docs/tool-catalog.md#d
 
 `run_code` takes two required arguments: `code` — the body of an async TypeScript function (erasable syntax only — no `enum` or namespaces; type annotations are advisory, the code runs type-stripped) — and `description`, a short summary of what the program does. Inside the program:
 
-- The program runs in a plain JavaScript context, not a Node.js one: there is no `require` and no module `import`. Everything that touches the shell, the filesystem or the network is a tool call.
+- `require` loads Node built-in modules only (`node:fs`, `child_process`, `path`) and only in a local workspace: a remote isolate has none, so shell, file and network work is a tool call.
 - Call tools as `await tools.name(args)` — quoted access for exotic names: `tools["my-tool"](args)`. Every call resolves to the tool's typed canonical JSON value. Tool arguments must be lossless JSON.
 - A FAILED tool call rejects with `ToolCallError`, whose `toolName` identifies the failed tool and whose `message` is human-readable — `try/catch` it to handle and continue.
 - Independent read-only calls MAY overlap under `Promise.all` (safe calls run concurrently; mutating calls run alone, in submission order). Sequence dependent work with `await`.
@@ -176,7 +176,7 @@ The available tools:
 
 #### 模型看到的内容
 
-循环会保留模型发出的参数和注册表的最终内容。任何抛出异常或遭到拒绝的调用，都会转换为确切的 `Error: <message>`。Code Mode 只返回外层程序打印的行和呈现后的返回值；两者都为空时返回 `(run_code completed with no output)`；失败时返回 `Error: code run failed (<kind>): <message>`，并根据是否存在已捕获内容，在其后附加 `Captured output:` 与捕获的行。程序抛出点名 CommonJS 全局（`require`、`module`、`exports`、`__dirname`、`__filename`）的 `ReferenceError` 时，`<message>` 之后还会附一句说明，把 shell、文件与网络指向工具，而不是让模型把「`require` 未定义」读成部署损坏；该说明排在 `Captured output:` 之前。内部分发事件只保留在日志中；成功且含图片的子结果会在外层结果之后作为带来源归属的上下文追加，后置执行监听器也可以在同一边界追加其他带来源归属的上下文。
+循环会保留模型发出的参数和注册表的最终内容。任何抛出异常或遭到拒绝的调用，都会转换为确切的 `Error: <message>`。Code Mode 只返回外层程序打印的行和呈现后的返回值；两者都为空时返回 `(run_code completed with no output)`；失败时返回 `Error: code run failed (<kind>): <message>`，并根据是否存在已捕获内容，在其后附加 `Captured output:` 与捕获的行。程序抛出点名 CommonJS 全局（`require`、`module`、`exports`、`__dirname`、`__filename`）的 `ReferenceError` 时，`<message>` 之后还会附一句说明：程序不是 CommonJS 模块，内建模块只在本地工作区经 `require('node:…')` 取得，shell、文件与网络是工具调用。这样模型不会把「`require` 未定义」读成部署损坏；该说明排在 `Captured output:` 之前。内部分发事件只保留在日志中；成功且含图片的子结果会在外层结果之后作为带来源归属的上下文追加，后置执行监听器也可以在同一边界追加其他带来源归属的上下文。
 
 #### Token 影响
 

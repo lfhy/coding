@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { EventEmitter } from 'node:events'
-import { LogBuffer, makeBindingErrorClasses, makeConsoleShim, makeNamespaces, captureStreamWrites, prepareCompletion, prepareException, runWorkerMain, wireReplies } from '../src/bootstrap.ts'
+import { LogBuffer, makeBindingErrorClasses, makeConsoleShim, makeNamespaces, makeProgramRequire, captureStreamWrites, prepareCompletion, prepareException, runWorkerMain, wireReplies } from '../src/bootstrap.ts'
 import type { BootstrapPort, PatchableStream, PendingCall } from '../src/bootstrap.ts'
 import type { ReplyMessage, WorkerToHost } from '../src/protocol.ts'
 import { decodeWorkerJson, encodeWorkerJson } from '../src/worker-json.ts'
@@ -97,6 +97,26 @@ describe('makeConsoleShim', () => {
     shim.error('e')
     shim.debug('d')
     expect(seen).toEqual(['plain { a: 1 }', 'i', 'w', 'e', 'd'])
+  })
+})
+
+describe('makeProgramRequire', () => {
+  /** Built-in lookup stand-in: only `fs`/`path` exist, so a third id proves the rejection path. */
+  const lookup = (id: string): unknown => ({ fs: { tag: 'fs' }, path: { tag: 'path' } } as Record<string, unknown>)[id]
+
+  it('resolves built-in ids with and without the node: prefix', () => {
+    const require = makeProgramRequire(lookup)
+    expect(require('fs')).toEqual({ tag: 'fs' })
+    expect(require('node:path')).toEqual({ tag: 'path' })
+  })
+
+  it('refuses every id the Node kernel does not register as a built-in', () => {
+    const require = makeProgramRequire(lookup)
+    for (const id of ['lodash', './script.js', 'node:not-a-builtin', '', 42, null, undefined, {}, ['fs']]) {
+      expect(() => require(id)).toThrow(/require resolves only Node built-in modules inside run_code programs/)
+    }
+    expect(() => require('lodash')).toThrow('"lodash" is not one')
+    expect(() => require(42)).toThrow('a number is not one')
   })
 })
 
@@ -347,6 +367,26 @@ describe('runWorkerMain', () => {
     }, fakeStreams())
     expect(port.logs()).toEqual(['got 42'])
     expect(port.doneValue()).toEqual({ doubled: 42 })
+  })
+
+  it('exposes a built-in-only require to the program', async () => {
+    const port = new FakePort()
+    await runWorkerMain(port, {
+      ...BOOT,
+      code: 'const path = require("node:path"); console.log(path.basename("/a/b.txt")); return null',
+      namespaces: [],
+    }, fakeStreams())
+    expect(port.logs()).toEqual(['b.txt'])
+    const done = port.done()
+    expect(done?.type === 'done' ? done.error : 'missing done').toBeUndefined()
+  })
+
+  it('reports a non-built-in require as a program exception', async () => {
+    const port = new FakePort()
+    await runWorkerMain(port, { ...BOOT, code: 'return require("lodash")', namespaces: [] }, fakeStreams())
+    const done = port.done()
+    expect(done?.type === 'done' ? done.error?.kind : undefined).toBe('exception')
+    expect(done?.type === 'done' ? done.error?.message : '').toContain('require resolves only Node built-in modules')
   })
 
   it('reports worker-side log capture overflow before completing', async () => {

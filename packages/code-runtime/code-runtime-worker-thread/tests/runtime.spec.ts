@@ -50,6 +50,23 @@ describe('WorkerThreadCodeRuntime — programs and bindings (real workers)', () 
     expect(result.logs).toEqual(['point { x: 1, y: 2 }', 'raw-out\n', 'careful'])
   })
 
+  it('gives the program a require that resolves Node built-ins only', async () => {
+    const { runtime } = await setup()
+    const result = await runtime.run({
+      program: `
+        const path = require('node:path');
+        console.log(path.basename('/a/b.txt'));
+        let rejected = '';
+        try { require('coding-tools') } catch (error) { rejected = error.message }
+        return rejected;
+      `,
+      bindings: [],
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.logs).toEqual(['b.txt'])
+    expect(result.value).toContain('require resolves only Node built-in modules')
+  })
+
   it('bridges binding calls both ways and rejects the program-side call on a host rejection', async () => {
     const { runtime } = await setup()
     const calls: unknown[] = []
