@@ -136,6 +136,12 @@ describe('tool-call-model', () => {
     expect(toolRowModel('read', running({ name: 'read', argsRaw: '{"path":"/Users/u/ws/a.md"}' }), '').summary).toBe('/Users/u/ws/a.md')
   })
 
+  it('labels built-in skill resources instead of showing their installation path', () => {
+    const args = '{"file_path":"${INTERNAL_SKILL_DIR}/coding-skill-stylekit/assets/styles/x.json"}'
+    expect(toolRowModel('read', running({ name: 'read', argsRaw: args }), '/tmp/ws').summary)
+      .toBe('内置 Skill coding-skill-stylekit/assets/styles/x.json')
+  })
+
   it('abbreviates leftover POSIX home paths after cwd relativization', () => {
     const home = '/Users/u'
     const cwd = '/tmp/ws'

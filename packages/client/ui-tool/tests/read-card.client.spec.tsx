@@ -114,6 +114,12 @@ describe('readCardModel', () => {
       .toBe('C:\\Users\\u\\a.ts')
   })
 
+  it('labels a built-in skill resource path instead of leaking its installation path', () => {
+    const path = '${INTERNAL_SKILL_DIR}/coding-skill-frontend-development/assets/notification-and-structure.md'
+    expect(readCardModel(settled({ resultView: resultRead({ path }) }), '/w/app')?.label)
+      .toBe('内置 Skill coding-skill-frontend-development/assets/notification-and-structure.md')
+  })
+
   it('carries an omitted language through as undefined', () => {
     const noLang = resultRead()
     delete (noLang as { lang?: string }).lang

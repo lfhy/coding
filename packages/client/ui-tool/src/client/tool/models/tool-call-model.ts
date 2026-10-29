@@ -155,16 +155,33 @@ const SUMMARY_KEYS: Record<ToolRowVariant, readonly string[]> = {
 }
 
 /**
- * Strip the workspace root from a workspace-rooted absolute path (display only).
- * @param text - the path to shorten.
- * @param cwd - session workspace root; absent or empty leaves the path unchanged.
- * @returns the path relative to the workspace root, or unchanged when it is not rooted there.
+ * 去掉工作区根前缀（仅用于展示）。
+ * @param text - 待缩短的路径。
+ * @param cwd - 会话工作区根；缺省或空字符串时原样返回。
+ * @returns 相对工作区根的路径；不在工作区下时原样返回。
  */
 export function relativizeToCwd(text: string, cwd: string | undefined): string {
   if (cwd === undefined || cwd === '') return text
   const root = cwd.replace(/[/\\]+$/, '')
   if (text.startsWith(`${root}/`) || text.startsWith(`${root}\\`)) return text.slice(root.length + 1)
   return text
+}
+
+/**
+ * 内置技能资源路径的稳定前缀标记，与宿主 `coding-skill` 的 `INTERNAL_SKILL_ROOT` 同值。
+ * 宿主把它展开成技能包的真实安装目录，因此真实路径既不稳定、也不该出现在界面上：
+ * 工具参数与读取结果只带这个前缀，展示时换成可读标签。
+ */
+const INTERNAL_SKILL_ROOT = '${INTERNAL_SKILL_DIR}'
+
+/**
+ * 把内置技能资源路径的前缀换成可读标签，其余文本原样返回。
+ * @param text - 路径或摘要文本。
+ * @returns 展示用文本。
+ */
+export function labelSkillResourcePath(text: string): string {
+  if (!text.includes(INTERNAL_SKILL_ROOT)) return text
+  return text.split(`${INTERNAL_SKILL_ROOT}/`).join('内置 Skill ')
 }
 
 function deriveSummary(variant: ToolRowVariant, argsRaw: string): string {
@@ -227,7 +244,7 @@ export function toolRowModel(toolName: string, block: ToolCallBlock, cwd?: strin
       : block.isError ? 'error' : 'ok'
   const base = argsRaw === ''
     ? block.callId
-    : abbreviateHomePath(relativizeToCwd(deriveSummary(variant, argsRaw), cwd), home)
+    : abbreviateHomePath(relativizeToCwd(labelSkillResourcePath(deriveSummary(variant, argsRaw)), cwd), home)
   const toolTitle = TOOL_TITLES[toolName]
   // Others keeps the static "Tool call" title (figma literal); the real tool
   // name rides the mutable summary slot unless the tool owns a specific title.

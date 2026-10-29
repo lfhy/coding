@@ -14,7 +14,7 @@
  */
 import { abbreviateHomePath } from 'coding-client-runtime/client'
 import type { ReadBlockLine, ReadBlockProps } from 'coding-client-ui-primitives'
-import { relativizeToCwd, type ToolCallBlock } from './tool-call-model.ts'
+import { labelSkillResourcePath, relativizeToCwd, type ToolCallBlock } from './tool-call-model.ts'
 
 /**
  * Content lines the chat row's resident read body shows before collapsing the
@@ -66,7 +66,7 @@ export function readCardModel(block: ToolCallBlock, sessionCwd?: string, home?: 
   // shape so the card never holds a reference into the runtime's cache.
   const lines: ReadBlockLine[] = result.lines.map(line => ({ number: line.number, text: line.text }))
   return {
-    label: result.title ?? abbreviateHomePath(relativizeToCwd(result.path, sessionCwd), home),
+    label: result.title ?? abbreviateHomePath(relativizeToCwd(labelSkillResourcePath(result.path), sessionCwd), home),
     lines,
     totalLines: result.totalLines,
     lang: result.lang,
