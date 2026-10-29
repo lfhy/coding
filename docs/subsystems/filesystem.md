@@ -325,6 +325,21 @@ Abstract filesystem provider. Targets must preserve identity across aliases; rea
 
 ```ts cordis-catalog
 /**
+ * 注册一个虚拟路径前缀，把调用方看到的稳定前缀映射到本执行世界里的真实目录。
+ *
+ * 只有 opt-in 的后端（多后端注册表、裸本地后端）在 `resolve()`／`lstat()` 里展开这些前缀；
+ * 展开后的目标沿用注册目录所在的真实身份，`displayPath` 则保持注册时的虚拟前缀，
+ * 因此模型读到的路径与界面展示的路径都不暴露安装位置。前缀按最长匹配生效。
+ * 同一前缀允许同一目录重复注册（多个模式预设会各挂一份同一个内置技能提供方），
+ * 每次注册各持有一份计数，全部撤销后映射才消失。
+ * @param prefix - 稳定前缀，允许带尾部路径分隔符，注册时会去掉。
+ * @param directory - 该前缀对应的真实目录。
+ * @returns 撤销本次注册的 disposer；调用多次无副作用。
+ * @throws {FsError} 同一前缀已被另一个目录占用时。
+ */
+registerPathAlias(prefix: string, directory: string): () => void
+
+/**
  * Resolve a model/plugin-supplied path into a stable {@link FsTarget}. May perform I/O (a
  * remote/sandboxed backend may need a round-trip to map a path to a stable identity), hence
  * async even though the local backend only normalizes + realpaths.
@@ -460,7 +475,7 @@ abstract editText( target: FsTarget, edit: FsEditRequest, expected?: { version: 
 
 Types: [SandboxExecutionPolicy](sandbox.md)
 
-Source: [`packages/fs/fs/src/index.ts:87`](../../packages/fs/fs/src/index.ts)
+Source: [`packages/fs/fs/src/index.ts:91`](../../packages/fs/fs/src/index.ts)
 
 <a id="fs-events"></a>
 
@@ -483,7 +498,7 @@ Single-slot decision for the next FileSystem.editText. Calling `next()` yields a
 'fs/edit-intent'(target: FsTarget, actor: object | undefined, next: () => { version: FsVersion } | undefined | Promise<{ version: FsVersion } | undefined>): Promise<{ version: FsVersion } | undefined>
 ```
 
-Source: [`packages/fs/fs/src/index.ts:67`](../../packages/fs/fs/src/index.ts)
+Source: [`packages/fs/fs/src/index.ts:71`](../../packages/fs/fs/src/index.ts)
 
 <a id="fsobserved--emit"></a>
 
@@ -504,7 +519,7 @@ Record an authoritative positive or negative observation. Listeners must be sync
 'fs/observed'(target: FsTarget, observation: FsObservation, actor: object | undefined): void
 ```
 
-Source: [`packages/fs/fs/src/index.ts:77`](../../packages/fs/fs/src/index.ts)
+Source: [`packages/fs/fs/src/index.ts:81`](../../packages/fs/fs/src/index.ts)
 
 <a id="fswrite-intent--waterfall"></a>
 
@@ -524,5 +539,5 @@ Single-slot decision for the next FileSystem.writeText. Calling `next()` yields 
 'fs/write-intent'(target: FsTarget, actor: object | undefined, next: () => FsWriteIntent | undefined | Promise<FsWriteIntent | undefined>): Promise<FsWriteIntent | undefined>
 ```
 
-Source: [`packages/fs/fs/src/index.ts:59`](../../packages/fs/fs/src/index.ts)
+Source: [`packages/fs/fs/src/index.ts:63`](../../packages/fs/fs/src/index.ts)
 <!-- END GENERATED cordis-surface -->
