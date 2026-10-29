@@ -13,7 +13,7 @@
     - text: "131072"
   - text: 最大输出 token
   - textbox "最大输出 token 2":
-    - /placeholder: 32K
+    - /placeholder: 256K
     - text: 64K
   - button "取消"
   - button "保存"

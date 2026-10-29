@@ -1023,10 +1023,12 @@ describe('ModelsSection', () => {
     })
     openAdvanced()
     expandRow(1)
-    expect(screen.getByLabelText<HTMLInputElement>(`${en.maxTokens} 1`).placeholder).toBe('32K')
+    // DeepSeek 渠道的空字段提示按它自己的回退显示：256K 上下文与 256K 输出。
+    expect(screen.getByLabelText<HTMLInputElement>(`${en.contextWindow} 1`).placeholder).toBe('256K')
+    expect(screen.getByLabelText<HTMLInputElement>(`${en.maxTokens} 1`).placeholder).toBe('256K')
     expandRow(2)
-    // 两行继承同一个渠道上限，但浮动卡片只显示当前行。
-    expect(screen.getByLabelText<HTMLInputElement>(`${en.maxTokens} 2`).placeholder).toBe('32K')
+    // 两行继承同一个渠道容量，但浮动卡片只显示当前行。
+    expect(screen.getByLabelText<HTMLInputElement>(`${en.maxTokens} 2`).placeholder).toBe('256K')
 
     fireEvent.change(screen.getByLabelText(`${en.maxTokens} 2`), { target: { value: '64K' } })
     fireEvent.blur(screen.getByLabelText(`${en.maxTokens} 2`))

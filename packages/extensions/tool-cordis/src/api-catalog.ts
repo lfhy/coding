@@ -774,6 +774,13 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     description: 'Abstract filesystem provider. Targets must preserve identity across aliases; reads expose regular UTF-8 text or typed errors, listings are stable and content-free, and mutations are atomic. Optional guards add stale protection without changing the unguarded provider contract.',
     methods: [
       {
+        signature: 'registerPathAlias(prefix: string, directory: string): () => void',
+        description: '注册一个虚拟路径前缀，把调用方看到的稳定前缀映射到本执行世界里的真实目录。\n\n只有 opt-in 的后端（多后端注册表、裸本地后端）在 `resolve()`／`lstat()` 里展开这些前缀； 展开后的目标沿用注册目录所在的真实身份，`displayPath` 则保持注册时的虚拟前缀， 因此模型读到的路径与界面展示的路径都不暴露安装位置。前缀按最长匹配生效。 同一前缀允许同一目录重复注册（多个模式预设会各挂一份同一个内置技能提供方）， 每次注册各持有一份计数，全部撤销后映射才消失。',
+        parameters: [{ name: 'prefix', description: '稳定前缀，允许带尾部路径分隔符，注册时会去掉。' }, { name: 'directory', description: '该前缀对应的真实目录。' }],
+        returns: '撤销本次注册的 disposer；调用多次无副作用。',
+        throws: ['{FsError} 同一前缀已被另一个目录占用时。'],
+      },
+      {
         signature: 'abstract resolve(path: string, opts?: { cwd?: string; signal?: AbortSignal }): Promise<FsTarget>',
         description: 'Resolve a model/plugin-supplied path into a stable FsTarget. May perform I/O (a remote/sandboxed backend may need a round-trip to map a path to a stable identity), hence async even though the local backend only normalizes + realpaths.',
         parameters: [{ name: 'path', description: 'the path to resolve; relative paths resolve against `opts.cwd`.' }, { name: 'opts', description: 'optional cwd override and cancellation signal.' }],
@@ -4735,7 +4742,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SkillResourceBase',
-    declaration: 'export type SkillResourceBase = {\n    readonly kind: \'directory\';\n    readonly path: string;\n} | {\n    readonly kind: \'url\';\n    readonly url: string;\n} | {\n    readonly kind: \'opaque\';\n    readonly description: string;\n};',
+    declaration: 'export type SkillResourceBase = {\n    readonly kind: \'directory\';\n    readonly path: string;\n} | {\n    readonly kind: \'url\';\n    readonly url: string;\n} | {\n    readonly kind: \'alias\';\n    readonly path: string;\n} | {\n    readonly kind: \'opaque\';\n    readonly description: string;\n};',
   },
   {
     name: 'SkillSource',

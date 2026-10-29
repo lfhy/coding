@@ -113,8 +113,8 @@ export interface DeepSeekAdapterOptions {
 
 /** Default maximum idle interval while an adapter stream read is outstanding. */
 export const DEFAULT_STREAM_IDLE_TIMEOUT_MS = 300_000
-/** Default combined request/response context capacity. */
-export const DEFAULT_CONTEXT_WINDOW = 1_000_000
+/** 未声明容量的模型沿用的回退上下文容量（256K），与自定义渠道的缺省一致。 */
+export const DEFAULT_CONTEXT_WINDOW = 262_144
 /** Default per-request output-token cap. */
 export const DEFAULT_MAX_TOKENS = 256_000
 /** Default bound on accumulated base64 image payload per request. */

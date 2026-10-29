@@ -181,19 +181,15 @@ function IconTrash(): ReactNode {
 type CapacityField = 'contextWindow' | 'maxTokens'
 
 /**
- * What an empty capacity field is worth, shown as its placeholder so a row left
- * blank does not read as a model with no capacity at all.
- *
- * The magnitudes are the adapter's own route-level fallbacks (`llm-pi-ai`'s
- * `defaultContextWindow` and `defaultMaxTokens`), spelled the way a person
- * would say them. They are a hint, not a mirror: this page counts `K` as 1000,
- * so typing `256K` stores 256000 while leaving the field blank keeps the
- * adapter's 262144. A deployment that overrides those defaults is not
- * reflected here — nothing on this page can read them.
+ * 空容量字段的占位提示，按家族给出该渠道真正套用的回退值，让人知道留空会得到
+ * 什么：`llm-pi-ai` 路由是 `defaultContextWindow`（262,144）与 `defaultMaxTokens`
+ * （32,768），`llm-deepseek` 渠道是 256K 上下文与 256K 输出。它们只是提示而非
+ * 镜像——本页把 `K` 读作 1000，输入 `256K` 存 256000，留空则仍用适配器的常量；
+ * 在 `settings.yaml` 里改过渠道级回退的部署不会反映到这里。
  */
-const CAPACITY_HINT: Readonly<Record<CapacityField, string>> = {
-  contextWindow: '256K',
-  maxTokens: '32K',
+const CAPACITY_HINTS: Readonly<Record<'pi-ai' | 'deepseek', Readonly<Record<CapacityField, string>>>> = {
+  'pi-ai': { contextWindow: '256K', maxTokens: '32K' },
+  deepseek: { contextWindow: '256K', maxTokens: '256K' },
 }
 
 /**
@@ -205,6 +201,15 @@ const CAPACITY_HINT: Readonly<Record<CapacityField, string>> = {
  */
 function capacitySpelling(value: number | undefined): string {
   return value === undefined ? '' : formatCapacity(value)
+}
+
+/**
+ * 空容量字段的占位提示，取该 settings namespace 所属家族的回退写法。
+ * @param settingsNs - 拥有该模型目录的设置 namespace。
+ * @returns 两项容量的占位文本。
+ */
+function capacityHints(settingsNs: string): Readonly<Record<CapacityField, string>> {
+  return settingsNs === 'llm-deepseek' ? CAPACITY_HINTS.deepseek : CAPACITY_HINTS['pi-ai']
 }
 
 /** Adopt a candidate, keeping whatever capacities the provider disclosed. */
@@ -671,7 +676,7 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
                   type="text"
                   inputMode="numeric"
                   value={capacityText(model, 'contextWindow')}
-                  placeholder={CAPACITY_HINT.contextWindow}
+                  placeholder={capacityHints(props.probe.settingsNs).contextWindow}
                   aria-label={`${t('modelContextWindow')} ${index + 1}`}
                   aria-invalid={invalidCapacity('contextWindow')}
                   disabled={disabled}
@@ -688,7 +693,7 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
                   type="text"
                   inputMode="numeric"
                   value={capacityText(model, 'maxTokens')}
-                  placeholder={CAPACITY_HINT.maxTokens}
+                  placeholder={capacityHints(props.probe.settingsNs).maxTokens}
                   aria-label={`${t('modelMaxTokens')} ${index + 1}`}
                   aria-invalid={invalidCapacity('maxTokens')}
                   disabled={disabled}

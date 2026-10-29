@@ -316,6 +316,34 @@ describe('channel model catalog', () => {
     expect(within(saved).getByRole<HTMLInputElement>('textbox', { name: `${en.modelMaxTokens} 1` }).value).toBe('1M')
   })
 
+  it('hints the capacity fallback its channel actually applies', () => {
+    const face = {
+      models: [{ id: 'probe' }],
+      onChange: vi.fn(),
+      probe: { settingsNs: 'llm-pi-ai' },
+      api: { llm: {} } as never,
+      t: (key: keyof typeof en) => en[key],
+      disabled: false,
+    }
+    render(<ModelListEditor {...face} />)
+    fireEvent.click(screen.getByRole('button', { name: `${en.modelAdvanced} 1` }))
+    let card = screen.getByRole('dialog', { name: `${en.modelAdvanced} 1` })
+    // pi-ai 路由的空字段提示是模型编辑器自带的近似回退值。
+    expect(within(card).getByRole<HTMLInputElement>('textbox', { name: `${en.modelContextWindow} 1` }).placeholder)
+      .toBe('256K')
+    expect(within(card).getByRole<HTMLInputElement>('textbox', { name: `${en.modelMaxTokens} 1` }).placeholder)
+      .toBe('32K')
+    cleanup()
+    // DeepSeek 渠道按它自己的回退提示，否则留空时推理容量与提示相左。
+    render(<ModelListEditor {...face} probe={{ settingsNs: 'llm-deepseek' }} />)
+    fireEvent.click(screen.getByRole('button', { name: `${en.modelAdvanced} 1` }))
+    card = screen.getByRole('dialog', { name: `${en.modelAdvanced} 1` })
+    expect(within(card).getByRole<HTMLInputElement>('textbox', { name: `${en.modelContextWindow} 1` }).placeholder)
+      .toBe('256K')
+    expect(within(card).getByRole<HTMLInputElement>('textbox', { name: `${en.modelMaxTokens} 1` }).placeholder)
+      .toBe('256K')
+  })
+
   it.each([
     [en.modelContextWindow, 'garbage'], [en.modelContextWindow, '0'], [en.modelContextWindow, '-1'],
     [en.modelContextWindow, '1.5'], [en.modelContextWindow, '1.0001K'], [en.modelMaxTokens, 'garbage'],

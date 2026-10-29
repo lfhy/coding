@@ -943,7 +943,8 @@ describe('plugin registration and config', () => {
       })
     await expect(ctx.llm.resolveModelInfo('deepseek-official', 'arbitrary-unlisted'))
       .resolves.toMatchObject({
-        context: { contextWindow: 1_000_000 },
+        // 未声明容量的模型回退到 256K，与自定义渠道的缺省一致；目录里的 V4 自己声明 1M。
+        context: { contextWindow: 262_144 },
         defaultMaxTokens: 256_000,
       })
   })

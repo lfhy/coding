@@ -26,7 +26,7 @@ harness LLM（大语言模型）seam 的 DeepSeek chat-completions 适配器：�
         initialDelayMs: 500
         maxDelayMs: 10000
         jitterRatio: 0.1
-    defaultContextWindow: 1000000 # optional positive-integer fallback; this is the default
+    defaultContextWindow: 262144 # optional positive-integer fallback; this is the default
     userAgent: Coding/2026.1014.aaaaaa (MacOS 27;arm64) # 可选；本渠道模型请求的 User-Agent，省略用产品默认值
     models:                  # optional; defaults to V4 Flash and V4 Pro
       - id: deepseek-v4-flash
@@ -48,7 +48,7 @@ harness LLM（大语言模型）seam 的 DeepSeek chat-completions 适配器：�
 
 `maxRequestImageBytes` 限制累计 base64 图片 payload，默认值为 20 MiB，为官方 30 MiB 请求正文限制中的文本、工具和 JSON 分帧保留余量。历史超过上限时，适配器会从最旧图片开始替换为固定模型可见占位文本 `[image omitted to keep the request within its image limit; older images are omitted first. If this image is still needed, read its file again when a path is available; otherwise ask the user to attach it again.]`，直至请求可容纳；被省略的附件不会被读取。附件准入仍负责单图和单消息原始字节数、媒体类型、尺寸与像素限制。
 
-`contextWindow` 对每个已配置模型都可选，不会通过建议 catalog 公开。`ctx.llm.resolveModelInfo('deepseek-official', model).context` 先返回精确模型值，再对不含容量的配置项或未列出原样传递 id 返回 `defaultContextWindow`。适配器默认值为 1,000,000；因此，压力敏感插件可以获得由部署决定的容量，不会将模型 selector 视为权威。为 `deepseek-official` 注册另一个适配器会抛出 `LlmError('DUPLICATE_ADAPTER')`。
+`contextWindow` 对每个已配置模型都可选，不会通过建议 catalog 公开。`ctx.llm.resolveModelInfo('deepseek-official', model).context` 先返回精确模型值，再对不含容量的配置项或未列出原样传递 id 返回 `defaultContextWindow`。适配器默认值为 262,144（256K），与自定义渠道的缺省容量一致；因此，压力敏感插件可以获得由部署决定的容量，不会将模型 selector 视为权威。目录里两个 V4 模型各自声明 1,000,000，不受该回退值影响。为 `deepseek-official` 注册另一个适配器会抛出 `LlmError('DUPLICATE_ADAPTER')`。
 
 `maxTokens` 是适配器为对话请求配置的输出上限，默认值为 256,000。Catalog 配置项可以自带 `maxTokens`，它对该模型胜出；不含该上限的配置项以及任何未列出原样传递 id 都解析为 profile 值，因此新增按模型的上限只改变一个模型，而非整条路由。确切模型解析会将胜出值公开为 `defaultMaxTokens`；`LlmRuntime` 会在 agent loop（智能体循环）写入 `request/header` 前，将该值填入 `GenerateOptions.maxTokens`，从而仍可根据持久记录重建协议请求。显式的请求值或 `AgentOptions.maxTokens` 值优先，并会序列化为 `max_tokens`。适配器不会根据 `contextWindow` 自动调低该请求预算；上下文或提供方输出上限较小的部署必须配置与其相容的 `maxTokens`。
 

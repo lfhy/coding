@@ -1009,7 +1009,7 @@ export interface Config {
   reasoningEffort?: 'off' | 'low' | 'high' | 'max'
   /** Default per-request output cap (default 256,000); a model's own cap and explicit request values win. */
   maxTokens?: number
-  /** Positive context capacity used when the selected model has no exact value (default 1,000,000). */
+  /** 目录里未声明容量的模型沿用的回退上下文容量，默认 262,144（256K）。 */
   defaultContextWindow?: number
   /** Advisory models shown by discovery consumers; defaults to V4 Flash and V4 Pro. */
   models?: DeepSeekCatalogModel[]
@@ -1052,7 +1052,7 @@ export interface DeepSeekCatalogModel {
 
 Depends on: [`ModelModality`](subsystems/llm-streaming.md) · [`OutboundConfig`](../packages/net/proxy-pool/src/index.ts) · [`RetryPolicyConfig`](../packages/llm/llm/src/index.ts)
 
-Source: [`packages/llm/llm-deepseek/src/index.ts:71`](../packages/llm/llm-deepseek/src/index.ts)
+Source: [`packages/llm/llm-deepseek/src/index.ts:74`](../packages/llm/llm-deepseek/src/index.ts)
 
 <a id="coding-llm-pi-ai"></a>
 
@@ -2152,7 +2152,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/skill/skill/src/index.ts:279`](../packages/skill/skill/src/index.ts)
+Source: [`packages/skill/skill/src/index.ts:314`](../packages/skill/skill/src/index.ts)
 
 <a id="coding-skill-filesystem"></a>
 
@@ -3666,10 +3666,12 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 - `coding-session-log-export` — requires `commands` ([`packages/session-query/session-log-export/src/index.ts`](../packages/session-query/session-log-export/src/index.ts))
 - `coding-session-projection` ([`packages/session/session-projection/src/index.ts`](../packages/session/session-projection/src/index.ts))
 - `coding-session-stats` — requires `sessionProjections` ([`packages/session/session-stats/src/index.ts`](../packages/session/session-stats/src/index.ts))
-- `coding-skill-badge` — requires `skills` ([`packages/skill/skill-badge/src/index.ts`](../packages/skill/skill-badge/src/index.ts))
-- `coding-skill-browser-use` — requires `skills` ([`packages/skill/skill-browser-use/src/index.ts`](../packages/skill/skill-browser-use/src/index.ts))
-- `coding-skill-frontend-development` — requires `skills` ([`packages/skill/skill-frontend-development/src/index.ts`](../packages/skill/skill-frontend-development/src/index.ts))
-- `coding-skill-stylekit` — requires `skills` ([`packages/skill/skill-stylekit/src/index.ts`](../packages/skill/skill-stylekit/src/index.ts))
+- `coding-skill-badge` — requires `skills` · `fs` ([`packages/skill/skill-badge/src/index.ts`](../packages/skill/skill-badge/src/index.ts))
+- `coding-skill-browser-use` — requires `skills` · `fs` ([`packages/skill/skill-browser-use/src/index.ts`](../packages/skill/skill-browser-use/src/index.ts))
+- `coding-skill-frontend-development` — requires `skills` · `fs` ([`packages/skill/skill-frontend-development/src/index.ts`](../packages/skill/skill-frontend-development/src/index.ts))
+- `coding-skill-go-backend` — requires `skills` · `fs` ([`packages/skill/skill-go-backend/src/index.ts`](../packages/skill/skill-go-backend/src/index.ts))
+- `coding-skill-project-init` — requires `skills` · `fs` ([`packages/skill/skill-project-init/src/index.ts`](../packages/skill/skill-project-init/src/index.ts))
+- `coding-skill-stylekit` — requires `skills` · `fs` ([`packages/skill/skill-stylekit/src/index.ts`](../packages/skill/skill-stylekit/src/index.ts))
 - `coding-storage` ([`packages/storage/storage/src/index.ts`](../packages/storage/storage/src/index.ts))
 - `coding-subagent` ([`packages/subagent/subagent/src/index.ts`](../packages/subagent/subagent/src/index.ts))
 - `coding-subprocess-local` ([`packages/subprocess/subprocess-local/src/index.ts`](../packages/subprocess/subprocess-local/src/index.ts))

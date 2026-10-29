@@ -192,5 +192,5 @@ Registers one `ctx.codeRuntime` implementation. Program, budget, abort, and subs
 abstract run(request: CodeRunRequest): Promise<CodeRunResult>
 ```
 
-Source: [`packages/code-runtime/code-runtime/src/index.ts:102`](../../packages/code-runtime/code-runtime/src/index.ts)
+Source: [`packages/code-runtime/code-runtime/src/index.ts:108`](../../packages/code-runtime/code-runtime/src/index.ts)
 <!-- END GENERATED cordis-surface -->

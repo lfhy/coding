@@ -54,9 +54,12 @@ const DEFAULT_CHANNEL_NAME = 'DeepSeek'
 /** 本插件拥有的唯一提供方路由。 */
 const PROVIDER = 'deepseek-official'
 
+/** DeepSeek V4 目录模型自己声明的上下文容量（1M）；未声明的模型回退到 256K。 */
+const V4_CONTEXT_WINDOW = 1_000_000
+
 const DEFAULT_MODELS: DeepSeekCatalogModel[] = [
-  { id: 'deepseek-v4-flash', name: 'DeepSeek-V4-Flash', contextWindow: DEFAULT_CONTEXT_WINDOW },
-  { id: 'deepseek-v4-pro', name: 'DeepSeek-V4-Pro', contextWindow: DEFAULT_CONTEXT_WINDOW },
+  { id: 'deepseek-v4-flash', name: 'DeepSeek-V4-Flash', contextWindow: V4_CONTEXT_WINDOW },
+  { id: 'deepseek-v4-pro', name: 'DeepSeek-V4-Pro', contextWindow: V4_CONTEXT_WINDOW },
 ]
 
 const MODEL_MODALITIES = ['text', 'image'] as const satisfies readonly ModelModality[]
@@ -81,7 +84,7 @@ export interface Config {
   reasoningEffort?: 'off' | 'low' | 'high' | 'max'
   /** Default per-request output cap (default 256,000); a model's own cap and explicit request values win. */
   maxTokens?: number
-  /** Positive context capacity used when the selected model has no exact value (default 1,000,000). */
+  /** 目录里未声明容量的模型沿用的回退上下文容量，默认 262,144（256K）。 */
   defaultContextWindow?: number
   /** Advisory models shown by discovery consumers; defaults to V4 Flash and V4 Pro. */
   models?: DeepSeekCatalogModel[]
