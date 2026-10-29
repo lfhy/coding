@@ -48,7 +48,8 @@ const TYPESCRIPT_FLAVOR: RunCodeFlavor = {
     'Execute a TypeScript program against the available tools. Takes two required '
     + 'arguments: `code`, the BODY of an async function (erasable syntax only; top-level '
     + '`await` and `return` work), and `description`, a short summary of what the program '
-    + 'does. Call tools as `await tools.name(args)` per the declarations in the system '
+    + 'does. It has no `require` and no module `import`: shell, file and network work goes '
+    + 'through the tools, as `await tools.name(args)` per the declarations in the system '
     + 'prompt. Only what you print or return is program output — curate it. Image-bearing '
     + 'subtool results are attached after the run.',
   codeDescription: 'The program: the body of an async TypeScript function.',
@@ -256,6 +257,26 @@ function renderJsonValue(value: Exclude<JsonValue, string>): string {
 /** Render one present program completion value for the model-facing result text. */
 function renderValue(value: JsonValue): string {
   return typeof value === 'string' ? value : renderJsonValue(value)
+}
+
+/**
+ * CommonJS globals a program reaches for out of habit. The runtime has none
+ * of them, and the bare `ReferenceError` reads as a broken deployment, so the
+ * failure text names the replacement route.
+ */
+const COMMONJS_GLOBALS = ['require', 'module', 'exports', '__dirname', '__filename'] as const
+
+/**
+ * The tools redirect appended to a missing-CommonJS-global failure, or an
+ * empty string for every other failure (whose message already names its own
+ * cause).
+ * @param message - the runtime's exception text for this run.
+ * @returns the hint line, newline-prefixed, or `''`.
+ */
+function moduleAccessHint(message: string): string {
+  const missing = COMMONJS_GLOBALS.find(name => message.includes(`ReferenceError: ${name} is not defined`))
+  if (missing === undefined) return ''
+  return `\n(\`${missing}\` is not available: \`run_code\` programs have no CommonJS modules, so the shell, files and network are reached through the tools)`
 }
 
 /** Canonical value returned by the outer Code Mode transport. */
@@ -649,7 +670,8 @@ export function createRunCodeTool(registry: ToolRuntime, options: RunCodeBridgeO
 
         if (result.error) {
           const logsText = result.logs.length > 0 ? `\nCaptured output:\n${result.logs.join('\n')}` : ''
-          throw new CodeRunFailedError(`code run failed (${result.error.kind}): ${result.error.message}${logsText}`)
+          const hint = result.error.kind === 'exception' ? moduleAccessHint(result.error.message) : ''
+          throw new CodeRunFailedError(`code run failed (${result.error.kind}): ${result.error.message}${hint}${logsText}`)
         }
         return {
           logs: result.logs,

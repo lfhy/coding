@@ -133,6 +133,9 @@ describe('mode-aware wire contribution', () => {
     expect(sdk?.text).toContain('declare const tools: {')
     expect(sdk?.text).toContain('echo: {')
     expect(sdk?.text).not.toContain('run_code:')
+    // A model that writes Node-ish code fails on the first `require`, so the
+    // section must state the environment before it states the API.
+    expect(sdk?.text).toContain('not a Node.js one: there is no `require` and no module `import`')
   })
 
   it("mode 'code' states the run_code-only rule BEFORE the per-tool guidance that names each tool", async () => {
@@ -1244,6 +1247,27 @@ describe('the run_code dispatch bridge', () => {
     const error = new CodeRunFailedError('boom')
     expect(error.code).toBe('CODE_RUN_FAILED')
     expect(error.name).toBe('CodeRunFailedError')
+  })
+
+  it('redirects a program that failed on a missing CommonJS global, and only that failure', async () => {
+    const { ctx, runtime } = await setup({ mode: 'code' })
+    runtime.behavior = () => Promise.resolve({
+      logs: ['started'],
+      error: { kind: 'exception', message: 'ReferenceError: require is not defined\n    at eval (eval at runWorkerMain, <anonymous>:1:1)' },
+    })
+    const redirected = ((await runCode(ctx, 'program')).content[0] as { text: string }).text
+    expect(redirected).toContain('code run failed (exception): ReferenceError: require is not defined')
+    expect(redirected).toContain('`require` is not available: `run_code` programs have no CommonJS modules')
+    // Captured logs stay last: the hint belongs to the failure, not the output.
+    expect(redirected.indexOf('CommonJS modules')).toBeLessThan(redirected.indexOf('Captured output:'))
+
+    // A TypeError mentioning no CommonJS global gets no redirect.
+    runtime.behavior = () => Promise.resolve({
+      logs: [],
+      error: { kind: 'exception', message: 'TypeError: tools.echo is not a function' },
+    })
+    const plain = ((await runCode(ctx, 'program')).content[0] as { text: string }).text
+    expect(plain).not.toContain('CommonJS modules')
   })
 
   it('aborting the outer signal aborts the in-flight sub-dispatch and abandons queued ones', async () => {
