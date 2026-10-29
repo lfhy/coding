@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises'
-import { fileURLToPath } from 'node:url'
 import { Context } from '@deepseek-ai/cordis'
+import { FsRegistry } from 'coding-fs'
 import { describe, expect, it } from 'vitest'
 import SkillRegistry, { renderSkillContent } from 'coding-skill'
 import * as SkillFrontendDevelopment from 'coding-skill-frontend-development'
@@ -17,20 +17,24 @@ const motionRecipeUrls = [
   'list-stagger.css',
   'feedback.css',
 ].map(name => new URL(`../assets/motion-recipes/${name}`, import.meta.url))
-const resourcePath = fileURLToPath(new URL('../assets/', import.meta.url))
+const resourcePrefix = '${INTERNAL_SKILL_DIR}/coding-skill-frontend-development'
 const description = '在创建或修改前端、网页、组件或用户界面时使用。遵循项目已有技术栈、组件、图标库和设计规范；没有既有图标库时按需读取内置参考并默认选用 Lucide，禁止手写或内联 SVG（除非确实缺少领域图标且已走项目图标抽象）；请求失败等短暂通知必须使用共享 Toast，长流程使用分步模态框，抽屉内使用子 Tab；列表页不整页滚动，搜索与筛选工具栏留在视口内，只让列表区域内部滚动，长列表使用虚拟滚动与无限滚动加载；列表不超出屏幕宽度，长名称截断成省略号且整行不换行，行高统一，列不够时按优先级隐藏；避免文字海报和页面／图标硬切；禁止把系统或开发者提示、技能、工具调用、Agent 计划、框架／库／包标识、内部路径、调试信息或内部状态写进用户界面；完成后加载 browser-use 检查真实渲染与交互。仅在用户明确要求具名视觉方向时配合 stylekit，不能覆盖产品规范。'
 
 describe('bundled frontend-development skill', () => {
   it('registers and loads its published instructions', async () => {
     const ctx = new Context()
     await ctx.plugin(SkillRegistry)
+    // 内置技能的展示路径是虚拟前缀，插件挂载时把它注册到文件系统。
+    await ctx.plugin(FsRegistry)
     const fiber = await ctx.plugin(SkillFrontendDevelopment)
     try {
+      // 插件挂载时把虚拟前缀登记到文件系统，模型之后才能按前缀读到资产。
+      expect(ctx.fs.pathAliasPrefixes).toEqual([resourcePrefix])
       expect(await ctx.skills.list()).toEqual([{
         name: 'frontend-development', description,
         invocation: { modelInvocable: true, userInvocable: true },
         provider: 'frontend-development', source: 'bundled',
-        resourceBase: { kind: 'directory', path: resourcePath },
+        resourceBase: { kind: 'alias', path: resourcePrefix },
       }])
       const loaded = await ctx.skills.get('frontend-development')
       expect(loaded).toBeDefined()

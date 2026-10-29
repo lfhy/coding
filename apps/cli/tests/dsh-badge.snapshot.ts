@@ -5,7 +5,6 @@ const binScript = fileURLToPath(new URL('./fixtures/dsh-badge/snapshot.ts', impo
 const configPath = fileURLToPath(new URL('./fixtures/dsh-badge/cordis.yml', import.meta.url))
 const defaultConfigPath = fileURLToPath(new URL('./fixtures/dsh-badge/default.cordis.yml', import.meta.url))
 const tsconfigPath = fileURLToPath(new URL('../../../tsconfig.json', import.meta.url))
-const badgeAssetsPath = fileURLToPath(new URL('../../../packages/skill/skill-badge/assets/', import.meta.url))
 
 describe('dsh badge assembled snapshot', () => {
   it('advertises and loads the opt-in bundled skill through the shipped app', async () => {
@@ -26,9 +25,8 @@ describe('dsh badge assembled snapshot', () => {
       tsconfigPath,
     })
     const disabledSnapshot = JSON.parse(disabled.stdout) as unknown
-    const enabledSnapshot = JSON.parse(
-      enabled.stdout.replaceAll(badgeAssetsPath, '{{badgeAssetsPath}}'),
-    ) as unknown
+    // 资源基底是稳定虚拟前缀，不再需要把安装路径替换成占位符。
+    const enabledSnapshot = JSON.parse(enabled.stdout) as unknown
 
     expect(disabled.stderr).toBe('')
     expect(enabled.stderr).toBe('')
@@ -72,8 +70,8 @@ describe('dsh badge assembled snapshot', () => {
             {
               "text": "<skill_content name="dsh-badge">
       <skill_resources>
-      Base directory for this skill: {{badgeAssetsPath}}
-      Resolve relative paths mentioned by this skill against the base directory before using them. Load referenced resources only as needed.
+      Skill resources live under this path prefix: \${INTERNAL_SKILL_DIR}/coding-skill-badge
+      The prefix is a fixed alias for the skill's own resource directory, not an installation path. Pass it verbatim to file tools and never substitute a real filesystem location; load referenced resources only as needed.
       </skill_resources>
 
       <skill_instructions>
@@ -151,8 +149,8 @@ describe('dsh badge assembled snapshot', () => {
             "name": "dsh-badge",
             "provider": "dsh-badge",
             "resourceBase": {
-              "kind": "directory",
-              "path": "{{badgeAssetsPath}}",
+              "kind": "alias",
+              "path": "\${INTERNAL_SKILL_DIR}/coding-skill-badge",
             },
           },
         },
@@ -165,8 +163,8 @@ describe('dsh badge assembled snapshot', () => {
           "name": "dsh-badge",
           "provider": "dsh-badge",
           "resourceBase": {
-            "kind": "directory",
-            "path": "{{badgeAssetsPath}}",
+            "kind": "alias",
+            "path": "\${INTERNAL_SKILL_DIR}/coding-skill-badge",
           },
           "source": "bundled",
         },

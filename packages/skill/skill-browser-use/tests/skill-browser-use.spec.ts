@@ -1,16 +1,17 @@
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { fileURLToPath, pathToFileURL } from 'node:url'
+import { pathToFileURL } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import Include from '@deepseek-ai/cordis-plugin-include'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
+import { FsRegistry } from 'coding-fs'
 import SkillRegistry, { renderSkillContent } from 'coding-skill'
 import * as SkillBrowserUse from 'coding-skill-browser-use'
 
 const bodyUrl = new URL('../assets/browser-use.md', import.meta.url)
-const resourcePath = fileURLToPath(new URL('../assets/', import.meta.url))
+const resourcePrefix = '${INTERNAL_SKILL_DIR}/coding-skill-browser-use'
 const description = 'Use when a task requires reading, reproducing, verifying, or driving a rendered page, including your own app on localhost or a dev server, and any UI check, screenshot, or visual confirmation. Use these tools instead of scripting a headless browser (Playwright, Puppeteer, curl) from bash. Load this skill before the first browser_navigate, browser_snapshot, browser_click, browser_fill, browser_act, browser_scroll, browser_viewport, browser_screenshot, or browser_close call.'
 
 let root: string | undefined
@@ -27,6 +28,7 @@ async function boot(): Promise<Context> {
   const configPath = join(root, 'cordis.yml')
   await writeFile(configPath, [
     "- name: 'coding-skill'",
+    "- name: 'coding-fs'",
     "- name: 'coding-skill-browser-use'",
     '',
   ].join('\n'))
@@ -37,6 +39,7 @@ async function boot(): Promise<Context> {
   ctx.loader.builtins.include = Include
   const modules = new Map<string, unknown>([
     ['coding-skill', SkillRegistry],
+    ['coding-fs', FsRegistry],
     ['coding-skill-browser-use', SkillBrowserUse],
   ])
   ctx.loader.internal = {
@@ -59,8 +62,9 @@ describe('bundled browser-use skill', () => {
       name: 'browser-use', description,
       invocation: { modelInvocable: true, userInvocable: true },
       provider: 'browser-use', source: 'bundled',
-      resourceBase: { kind: 'directory', path: resourcePath },
+      resourceBase: { kind: 'alias', path: resourcePrefix },
     }])
+    expect(context.fs.pathAliasPrefixes).toEqual([resourcePrefix])
     const loaded = await context.skills.get('browser-use')
     expect(loaded).toBeDefined()
     if (loaded === undefined) throw new Error('bundled browser-use skill is unavailable')
@@ -99,6 +103,7 @@ describe('bundled browser-use skill', () => {
   it('removes the provider when its plugin fiber is disposed', async () => {
     ctx = new Context()
     await ctx.plugin(SkillRegistry)
+    await ctx.plugin(FsRegistry)
     const fiber = await ctx.plugin(SkillBrowserUse)
     expect((await ctx.skills.list()).map(skill => skill.name)).toEqual(['browser-use'])
     await fiber.dispose()

@@ -2,6 +2,7 @@ import { readFile, readdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Context } from '@deepseek-ai/cordis'
+import { FsRegistry } from 'coding-fs'
 import { describe, expect, it } from 'vitest'
 import SkillRegistry, { renderSkillContent } from 'coding-skill'
 import * as SkillStylekit from 'coding-skill-stylekit'
@@ -9,20 +10,24 @@ import * as SkillStylekit from 'coding-skill-stylekit'
 const bodyUrl = new URL('../assets/stylekit.md', import.meta.url)
 const catalogUrl = new URL('../assets/styles.jsonl', import.meta.url)
 const specDir = fileURLToPath(new URL('../assets/styles/', import.meta.url))
-const resourcePath = fileURLToPath(new URL('../assets/', import.meta.url))
+const resourcePrefix = '${INTERNAL_SKILL_DIR}/coding-skill-stylekit'
 const description = '在需要给网页或界面一个具名视觉风格时使用：玻璃拟态、新野兽派、赛博朋克、包豪斯、瑞士网格、便当盒布局、Apple／Stripe／Notion／Linear 风格、日式极简、复古 Y2K 等 StyleKit 风格目录。用来把“做得好看点”落成可执行的配色、设计令牌与 do／don\'t 规则，并在项目现有技术栈内实现；风格指南不覆盖产品行为、无障碍与项目已有组件。'
 
 describe('bundled stylekit skill', () => {
   it('registers and loads its published instructions', async () => {
     const ctx = new Context()
     await ctx.plugin(SkillRegistry)
+    // 内置技能的展示路径是虚拟前缀，插件挂载时把它注册到文件系统。
+    await ctx.plugin(FsRegistry)
     const fiber = await ctx.plugin(SkillStylekit)
     try {
+      // 插件挂载时把虚拟前缀登记到文件系统，模型之后才能按前缀读到资产。
+      expect(ctx.fs.pathAliasPrefixes).toEqual([resourcePrefix])
       expect(await ctx.skills.list()).toEqual([{
         name: 'stylekit', description,
         invocation: { modelInvocable: true, userInvocable: true },
         provider: 'stylekit', source: 'bundled',
-        resourceBase: { kind: 'directory', path: resourcePath },
+        resourceBase: { kind: 'alias', path: resourcePrefix },
       }])
       const loaded = await ctx.skills.get('stylekit')
       expect(loaded).toBeDefined()

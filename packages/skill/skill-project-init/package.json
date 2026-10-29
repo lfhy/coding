@@ -32,11 +32,13 @@
   ],
   "license": "MIT",
   "peerDependencies": {
+    "coding-fs": "workspace:^",
     "coding-invariants": "workspace:^",
     "coding-skill": "workspace:^",
     "@deepseek-ai/cordis": "workspace:^"
   },
   "devDependencies": {
+    "coding-fs": "workspace:^",
     "coding-invariants": "workspace:^",
     "coding-skill": "workspace:^",
     "@deepseek-ai/cordis": "workspace:^"

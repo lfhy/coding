@@ -7,29 +7,33 @@
  */
 
 import { readFile } from 'node:fs/promises'
-import { fileURLToPath } from 'node:url'
 import { Context } from '@deepseek-ai/cordis'
+import { FsRegistry } from 'coding-fs'
 import { describe, expect, it } from 'vitest'
 import SkillRegistry, { renderSkillContent } from 'coding-skill'
 import * as SkillProjectInit from 'coding-skill-project-init'
 
 const bodyUrl = new URL('../assets/project-init.md', import.meta.url)
-const resourcePath = fileURLToPath(new URL('../assets/', import.meta.url))
+const resourcePrefix = '${INTERNAL_SKILL_DIR}/coding-skill-project-init'
 const description = '在新建项目（含 AI 对话／Agent 页面）、空目录或需要让改动可回滚时使用：已在 Git 工作区就不重复初始化；新项目且有联网时先在 GitHub 按优先级找 template 或同类开源仓库（如 vben、shadcn-admin、assistant-ui、Cherry Studio）当地基，对话页面直接接成熟实现不重写；前端进 Go 工程的 web 目录并由 go:embed 提供、后端按分层技能自己搭；未初始化就 git init、写 .gitignore、逐条确认后建基线提交，并给出新项目最小的 README／AGENTS；之后每一步改动都小步验证并本地提交。'
 
 describe('bundled project-init skill', () => {
   it('registers, loads, and unregisters its published instructions', async () => {
     const ctx = new Context()
     await ctx.plugin(SkillRegistry)
+    // 内置技能的展示路径是虚拟前缀，插件挂载时把它注册到文件系统。
+    await ctx.plugin(FsRegistry)
     const fiber = await ctx.plugin(SkillProjectInit)
     try {
+      // 插件挂载时把虚拟前缀登记到文件系统，模型之后才能按前缀读到资产。
+      expect(ctx.fs.pathAliasPrefixes).toEqual([resourcePrefix])
       expect(await ctx.skills.list()).toEqual([{
         name: 'project-init',
         description,
         invocation: { modelInvocable: true, userInvocable: true },
         provider: 'project-init',
         source: 'bundled',
-        resourceBase: { kind: 'directory', path: resourcePath },
+        resourceBase: { kind: 'alias', path: resourcePrefix },
       }])
       const loaded = await ctx.skills.get('project-init')
       if (loaded === undefined) throw new Error('bundled project-init skill is unavailable')

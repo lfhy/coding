@@ -7,29 +7,33 @@
  */
 
 import { readFile } from 'node:fs/promises'
-import { fileURLToPath } from 'node:url'
 import { Context } from '@deepseek-ai/cordis'
+import { FsRegistry } from 'coding-fs'
 import { describe, expect, it } from 'vitest'
 import SkillRegistry, { renderSkillContent } from 'coding-skill'
 import * as SkillGoBackend from 'coding-skill-go-backend'
 
 const bodyUrl = new URL('../assets/go-backend.md', import.meta.url)
-const resourcePath = fileURLToPath(new URL('../assets/', import.meta.url))
+const resourcePrefix = '${INTERNAL_SKILL_DIR}/coding-skill-go-backend'
 const description = '在写或改 Go 后端代码时使用：按项目已有布局与依赖实现 HTTP、后台任务、数据库访问与测试，涵盖根 main.go 加 cmd／conf／core 分层、web 目录经 go:embed 提供前端、context 与并发生命周期、错误包装、参数化查询与迁移，以及 go vet、go test -race 的交付验证。'
 
 describe('bundled go-backend skill', () => {
   it('registers, loads, and unregisters its published instructions', async () => {
     const ctx = new Context()
     await ctx.plugin(SkillRegistry)
+    // 内置技能的展示路径是虚拟前缀，插件挂载时把它注册到文件系统。
+    await ctx.plugin(FsRegistry)
     const fiber = await ctx.plugin(SkillGoBackend)
     try {
+      // 插件挂载时把虚拟前缀登记到文件系统，模型之后才能按前缀读到资产。
+      expect(ctx.fs.pathAliasPrefixes).toEqual([resourcePrefix])
       expect(await ctx.skills.list()).toEqual([{
         name: 'go-backend',
         description,
         invocation: { modelInvocable: true, userInvocable: true },
         provider: 'go-backend',
         source: 'bundled',
-        resourceBase: { kind: 'directory', path: resourcePath },
+        resourceBase: { kind: 'alias', path: resourcePrefix },
       }])
       const loaded = await ctx.skills.get('go-backend')
       if (loaded === undefined) throw new Error('bundled go-backend skill is unavailable')

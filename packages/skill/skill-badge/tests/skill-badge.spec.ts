@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
-import { fileURLToPath } from 'node:url'
 import { Context } from '@deepseek-ai/cordis'
+import { FsRegistry } from 'coding-fs'
 import { describe, expect, it } from 'vitest'
 import SkillRegistry from 'coding-skill'
 import * as SkillBadge from 'coding-skill-badge'
@@ -10,8 +10,10 @@ describe('dsh-skill-badge', () => {
   it('registers and disposes the bundled badge skill', async () => {
     const ctx = new Context()
     await ctx.plugin(SkillRegistry)
+    // 内置技能的展示路径是虚拟前缀，插件挂载时把它注册到文件系统。
+    await ctx.plugin(FsRegistry)
     const fiber = await ctx.plugin(SkillBadge)
-    const resourcePath = fileURLToPath(new URL('../assets/', import.meta.url))
+    const resourcePrefix = '${INTERNAL_SKILL_DIR}/coding-skill-badge'
 
     expect(await ctx.skills.list()).toEqual([{
       name: 'dsh-badge',
@@ -19,11 +21,12 @@ describe('dsh-skill-badge', () => {
       invocation: { modelInvocable: true, userInvocable: true },
       provider: 'dsh-badge',
       source: 'bundled',
-      resourceBase: { kind: 'directory', path: resourcePath },
+      resourceBase: { kind: 'alias', path: resourcePrefix },
     }])
+    expect(ctx.fs.pathAliasPrefixes).toEqual([resourcePrefix])
     const loaded = await ctx.skills.get('dsh-badge')
     expect(loaded?.content).toContain('Preserve the badge\'s 121×20 dimensions')
-    expect(loaded?.resourceBase).toEqual({ kind: 'directory', path: resourcePath })
+    expect(loaded?.resourceBase).toEqual({ kind: 'alias', path: resourcePrefix })
 
     await fiber.dispose()
     expect(await ctx.skills.list()).toEqual([])

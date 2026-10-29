@@ -151,13 +151,15 @@ interface SkillCandidate extends SkillSummary {
 }
 ```
 
-`SkillDefinition` 是 `ctx.skills.get()` 返回的完整解析结果，供 `skill` 工具使用。`resourceBase` 告知工具如何为本地、URL 或提供方管理的 skill 渲染相对资源引导。
+`SkillDefinition` 是 `ctx.skills.get()` 返回的完整解析结果，供 `skill` 工具使用。`resourceBase` 告知工具如何为本地、URL、虚拟前缀或提供方管理的 skill 渲染相对资源引导。`alias` 只随包内置技能使用：宿主把 `${INTERNAL_SKILL_DIR}/<发行包名>` 写进提示，提供方同时把同名前缀注册成 [`ctx.fs`](filesystem.md) 的路径别名，真实安装目录因此在模型提示与界面里都不出现，源码运行与打包安装也共用同一条路径。
 
 ```ts type-equiv
 /** Optional provider-specific base used by loaded skill bodies to resolve relative resources. */
 type SkillResourceBase =
   | { readonly kind: 'directory'; readonly path: string }
   | { readonly kind: 'url'; readonly url: string }
+  /** 稳定虚拟前缀：由文件系统路径别名展开成真实目录，模型原样交给文件工具即可。 */
+  | { readonly kind: 'alias'; readonly path: string }
   | { readonly kind: 'opaque'; readonly description: string }
 ```
 
@@ -230,7 +232,7 @@ interface Config {
 
 在后续每个模型步骤之前，消费方都会应用精确的工具可见性，并对完整快照中 `<available_skills>` 标签之间精确渲染的条目计算 digest。它以该插件所发布、最新一条可识别且仍可见的目录消息中的相同条目作为比较基线。digest 发生变化时，会通过 `agent.inject()` 追加一条持久的完整目录替换；删除所有 skill 时会追加一条显式的空替换。不完整快照会保留上一份可用模型视图。如果压缩（compaction）隐藏了所有历史目录消息，下一份完整快照会重新建立当前目录；如果视图为空且从未发布目录，则不发送任何内容。这些目录消息属于会话历史，而非 World State。
 
-面向模型的 `skill({ name })` 工具校验 kebab-case 名称，在与调用策略无关的目录中查找摘要，并在加载前通过 `isModelInvocable` 拒绝无权访问的 skill；随后它根据调用方 agent 的 cwd 重新读取完整定义，并在返回内容前再次检查策略。该工具将无法解析的 skill 报告为未知或已不可用，并返回包含 `<skill_content name="...">`、`<skill_resources>` 和 `<skill_instructions>` 的工具结果。`resourceBase` 仅按需解析显式引用的脚本、参考资料和资产；加载结果不枚举 skill 目录。因此，仅修改正文会改变后续工具调用，而不会生成目录消息或改写先前工具结果。
+面向模型的 `skill({ name })` 工具校验 kebab-case 名称，在与调用策略无关的目录中查找摘要，并在加载前通过 `isModelInvocable` 拒绝无权访问的 skill；随后它根据调用方 agent 的 cwd 重新读取完整定义，并在返回内容前再次检查策略。该工具将无法解析的 skill 报告为未知或已不可用，并返回包含 `<skill_content name="...">`、`<skill_resources>` 和 `<skill_instructions>` 的工具结果。`resourceBase` 仅按需解析显式引用的脚本、参考资料和资产（`alias` 前缀由文件工具原样转给 `ctx.fs`，由它展开）；加载结果不枚举 skill 目录。因此，仅修改正文会改变后续工具调用，而不会生成目录消息或改写先前工具结果。
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 

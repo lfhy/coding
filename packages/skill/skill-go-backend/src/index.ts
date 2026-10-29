@@ -7,8 +7,11 @@
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import type { Context } from '@deepseek-ai/cordis'
+import type {} from 'coding-fs'
 import {
   BUNDLED_SKILL_RANK,
+  internalSkillPath,
+  internalSkillResourceBase,
   type SkillCandidate,
   type SkillDefinition,
   type SkillProvider,
@@ -16,10 +19,11 @@ import {
 
 const PROVIDER_NAME = 'go-backend'
 const SKILL_BODY_URL = new URL('../assets/go-backend.md', import.meta.url)
-const RESOURCE_BASE = {
-  kind: 'directory',
-  path: fileURLToPath(new URL('../assets/', import.meta.url)),
-} as const
+const SKILL_PACKAGE = 'coding-skill-go-backend'
+/** 资产目录的真实位置：只用于注册虚拟前缀，不进入模型提示或界面。 */
+const ASSETS_DIR = fileURLToPath(new URL('../assets/', import.meta.url))
+const SKILL_RESOURCE_PATH = internalSkillPath(SKILL_PACKAGE)
+const RESOURCE_BASE = internalSkillResourceBase(SKILL_PACKAGE)
 const INVOCATION = { modelInvocable: true, userInvocable: true } as const
 const DESCRIPTION = '在写或改 Go 后端代码时使用：按项目已有布局与依赖实现 HTTP、后台任务、数据库访问与测试，涵盖根 main.go 加 cmd／conf／core 分层、web 目录经 go:embed 提供前端、context 与并发生命周期、错误包装、参数化查询与迁移，以及 go vet、go test -race 的交付验证。'
 const CANDIDATE: SkillCandidate = {
@@ -51,8 +55,8 @@ const provider: SkillProvider = {
 
 /** Cordis 插件名。 */
 export const name = 'skill-go-backend'
-/** 技能提供方所需的注册表服务。 */
-export const inject = ['skills']
+/** 技能提供方所需的注册表服务与文件系统路径别名。 */
+export const inject = ['skills', 'fs']
 
 /**
  * 注册随包分发的 `go-backend` 技能提供方。
@@ -60,5 +64,7 @@ export const inject = ['skills']
  * @returns 无返回值；注册随插件卸载撤销。
  */
 export function apply(ctx: Context): void {
+  // 虚拟前缀随插件卸载撤销；多个模式预设挂同一提供方时由文件系统按计数合并。
+  ctx.effect(() => ctx.fs.registerPathAlias(SKILL_RESOURCE_PATH, ASSETS_DIR))
   ctx.skills.registerProvider(() => provider)
 }

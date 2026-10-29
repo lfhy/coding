@@ -41,6 +41,12 @@
 
 `renderSkillContent(skill)` 把一个已加载 skill 渲染为规范的 `<skill_content>` 块（转义后的 `name` 属性、资源提示、原样正文）。它是两条加载路径的唯一真源：`dsh-tool-skill` 将其作为 `skill` 工具结果返回，并在用户显式的手势边界将其注入，因此无论加载由谁发起，模型看到的都是同一种形态。`escapeText` 随之一并导出，供要在同一标记框架中嵌入文案的消费方使用。该包还声明 `skill-invocation` 这个 `MessageSource` kind（{ name, form: 'instructions' }），用户显式注入会把它打在自己的消息上——transcript（文本记录）消费方依据这份元数据呈现该次调用，而不是重新解析正文。
 
+### 资源基底
+
+`SkillResourceBase` 描述「已加载的正文怎么找到它的相对资源」，由 `renderSkillContent` 渲染成 `<skill_resources>` 提示，模型只按需读取被显式引用的文件。四种形态分别是 `directory`（真实目录）、`url`（远端基址）、`alias`（稳定虚拟前缀）与 `opaque`（提供方自管资源）。
+
+`alias` 是随包内置技能唯一使用的形态：`internalSkillPath('<发行包名>')` 给出 `${INTERNAL_SKILL_DIR}/<发行包名>`，提供方同时把同名前缀注册成 `ctx.fs` 的路径别名，并把真实资产目录交给它。因此模型提示与界面里只有稳定前缀，源码运行（仓库包目录）与打包安装（应用 runtime 的 `node_modules`）看到的是同一条路径，客户端再把它显示成「内置 Skill …」。
+
 `isModelInvocable(skill)` 和 `isUserInvocable(skill)` 分别直接读取对应的正向字段。`ctx.skills.get()` 仍是受信且与策略无关的加载原语，因此每个面向用户或模型的消费方都必须先执行与自身接口匹配的判定，再暴露或加载 skill。
 
 ## 提供方约定

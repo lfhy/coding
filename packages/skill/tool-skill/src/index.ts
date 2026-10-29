@@ -122,6 +122,14 @@ export function apply(ctx: Context, config: Config = {}): void {
                 type: 'object',
                 additionalProperties: false,
                 properties: {
+                  kind: { type: 'string', required: true, const: 'alias' },
+                  path: { type: 'string', required: true },
+                },
+              },
+              {
+                type: 'object',
+                additionalProperties: false,
+                properties: {
                   kind: { type: 'string', required: true, const: 'opaque' },
                   description: { type: 'string', required: true },
                 },

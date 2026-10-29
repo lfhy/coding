@@ -8185,6 +8185,9 @@ importers:
       '@deepseek-ai/cordis':
         specifier: workspace:^
         version: link:../../../vendor/cordis
+      coding-fs:
+        specifier: workspace:^
+        version: link:../../fs/fs
       coding-invariants:
         specifier: workspace:^
         version: link:../../runtime-diagnostics/invariants
@@ -8197,6 +8200,9 @@ importers:
       '@deepseek-ai/cordis':
         specifier: workspace:^
         version: link:../../../vendor/cordis
+      coding-fs:
+        specifier: workspace:^
+        version: link:../../fs/fs
       coding-invariants:
         specifier: workspace:^
         version: link:../../runtime-diagnostics/invariants
@@ -8237,6 +8243,9 @@ importers:
       '@deepseek-ai/cordis':
         specifier: workspace:^
         version: link:../../../vendor/cordis
+      coding-fs:
+        specifier: workspace:^
+        version: link:../../fs/fs
       coding-invariants:
         specifier: workspace:^
         version: link:../../runtime-diagnostics/invariants
@@ -8249,6 +8258,9 @@ importers:
       '@deepseek-ai/cordis':
         specifier: workspace:^
         version: link:../../../vendor/cordis
+      coding-fs:
+        specifier: workspace:^
+        version: link:../../fs/fs
       coding-invariants:
         specifier: workspace:^
         version: link:../../runtime-diagnostics/invariants
@@ -8261,6 +8273,9 @@ importers:
       '@deepseek-ai/cordis':
         specifier: workspace:^
         version: link:../../../vendor/cordis
+      coding-fs:
+        specifier: workspace:^
+        version: link:../../fs/fs
       coding-invariants:
         specifier: workspace:^
         version: link:../../runtime-diagnostics/invariants
@@ -8273,6 +8288,9 @@ importers:
       '@deepseek-ai/cordis':
         specifier: workspace:^
         version: link:../../../vendor/cordis
+      coding-fs:
+        specifier: workspace:^
+        version: link:../../fs/fs
       coding-invariants:
         specifier: workspace:^
         version: link:../../runtime-diagnostics/invariants

@@ -27,6 +27,34 @@ const RUNTIME_RANK = 250
 export const BUNDLED_SKILL_RANK = 600
 
 /**
+ * 随包内置技能资源路径的固定标记。它不指向任何真实目录：模型看到的是
+ * `${INTERNAL_SKILL_DIR}/<发行包名>/…`，内置技能提供方把同名前缀注册成 `ctx.fs` 的路径别名，
+ * 真实安装位置只在展开时出现。因此同一条路径在源码运行和打包安装后都成立，
+ * 也不会把安装目录写进模型提示或用户界面。
+ */
+export const INTERNAL_SKILL_ROOT = '${INTERNAL_SKILL_DIR}'
+
+/**
+ * 拼出随包内置技能的稳定资源路径。
+ * @param packageName - 资产所在发行包名，例如 `coding-skill-frontend-development`。
+ * @param relative - 相对该包资产目录的路径；省略时得到目录本身。
+ * @returns 以 {@link INTERNAL_SKILL_ROOT} 开头的稳定路径。
+ */
+export function internalSkillPath(packageName: string, relative?: string): string {
+  const base = `${INTERNAL_SKILL_ROOT}/${packageName}`
+  return relative === undefined || relative === '' ? base : `${base}/${relative}`
+}
+
+/**
+ * 构造随包内置技能的虚拟资源基底：模型按它解析技能正文里的相对资源引用。
+ * @param packageName - 资产所在发行包名。
+ * @returns 供 `resourceBase` 使用的别名基底。
+ */
+export function internalSkillResourceBase(packageName: string): { readonly kind: 'alias'; readonly path: string } {
+  return { kind: 'alias', path: internalSkillPath(packageName) }
+}
+
+/**
  * Return whether a string is a valid kebab-case skill name.
  * @param name - candidate skill name to validate.
  * @returns whether the name matches the public skill-name grammar.
@@ -42,6 +70,8 @@ export type SkillSource = 'project-dsh' | 'project-agents' | 'runtime' | 'user-d
 export type SkillResourceBase =
   | { readonly kind: 'directory'; readonly path: string }
   | { readonly kind: 'url'; readonly url: string }
+  /** 稳定虚拟前缀：由文件系统路径别名展开成真实目录，模型原样交给文件工具即可。 */
+  | { readonly kind: 'alias'; readonly path: string }
   | { readonly kind: 'opaque'; readonly description: string }
 
 /** Invocation controls shared by skill discovery consumers. */
@@ -196,6 +226,11 @@ function renderResourceHint(skill: Pick<SkillDefinition, 'provider' | 'resourceB
       return [
         `Base directory for this skill: ${escapeText(base.path)}`,
         'Resolve relative paths mentioned by this skill against the base directory before using them. Load referenced resources only as needed.',
+      ]
+    case 'alias':
+      return [
+        `Skill resources live under this path prefix: ${escapeText(base.path)}`,
+        'The prefix is a fixed alias for the skill\'s own resource directory, not an installation path. Pass it verbatim to file tools and never substitute a real filesystem location; load referenced resources only as needed.',
       ]
     case 'url':
       return [
