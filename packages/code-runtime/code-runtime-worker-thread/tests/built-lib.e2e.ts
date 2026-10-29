@@ -23,7 +23,7 @@ describe.skipIf(!built)('built lib real load path (plain node)', () => {
       const ctx = new Context()
       await ctx.plugin(WorkerThreadCodeRuntime, {})
       const result = await ctx.codeRuntime.run({
-        program: 'const doubled: number = await tools.double({ n: 21 }); console.log("halfway", doubled); let failure; try { await tools.fail({}) } catch (error) { failure = { typed: error instanceof ToolCallError, name: error.name, toolName: error.toolName, message: error.message } } return { doubled, failure };',
+        program: 'const path = require("node:path"); const doubled: number = await tools.double({ n: 21 }); console.log("halfway", doubled, path.basename("/a/b.txt")); let failure; try { await tools.fail({}) } catch (error) { failure = { typed: error instanceof ToolCallError, name: error.name, toolName: error.toolName, message: error.message } } return { doubled, failure };',
         bindings: [{
           global: 'tools',
           functions: {
@@ -52,6 +52,7 @@ describe.skipIf(!built)('built lib real load path (plain node)', () => {
       doubled: 42,
       failure: { typed: true, name: 'ToolCallError', toolName: 'fail', message: 'denied' },
     })
-    expect(result.logs).toContain('halfway 42')
+    // The bundled CJS worker must expose the same built-in-only `require` as source mode.
+    expect(result.logs).toContain('halfway 42 b.txt')
   })
 })
