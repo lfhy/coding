@@ -122,6 +122,8 @@ flowchart LR
   cfg --> plugin_dsh_base_compaction_basic
   plugin_dsh_base_command_compact["command-compact<br/>coding-command-compact"]
   cfg --> plugin_dsh_base_command_compact
+  plugin_dsh_base_tool_context_compact["tool-context-compact<br/>coding-tool-context-compact"]
+  cfg --> plugin_dsh_base_tool_context_compact
   plugin_dsh_base_subagent["subagent<br/>coding-subagent"]
   cfg --> plugin_dsh_base_subagent
   plugin_dsh_base_subagent_spawn_in_process["subagent-spawn-in-process<br/>coding-subagent-spawn-in-process"]
@@ -263,6 +265,7 @@ flowchart LR
 | `token-meter` | `coding-token-meter` |
 | `compaction-basic` | `coding-compaction-basic` |
 | `command-compact` | `coding-command-compact` |
+| `tool-context-compact` | `coding-tool-context-compact` |
 | `subagent` | `coding-subagent` |
 | `subagent-spawn-in-process` | `coding-subagent-spawn-in-process` |
 | `subagent-fork-in-process` | `coding-subagent-fork-in-process` |

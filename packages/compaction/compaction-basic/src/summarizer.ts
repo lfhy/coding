@@ -56,7 +56,10 @@ const COMPACTION_INSTRUCTION = [
   '',
   '## Critical Context',
   '- [decisions and their rationale, constraints, user preferences, open questions, data needed to continue]',
-  '',
+].join('\n')
+
+/** Output rules closing every summarization directive, with or without a focus. */
+const COMPACTION_RULES = [
   'Rules:',
   '- Write concise English engineering prose. Preserve exact file paths, commands, error strings, identifiers, numeric values, function signatures, and syntax fragments.',
   '- Capture user feedback and explicit instructions faithfully, especially corrections.',
@@ -64,6 +67,27 @@ const COMPACTION_INSTRUCTION = [
   '- Output only the checkpoint text: do not call any tool or take any other action.',
   `- If the conversation already contains a ${SUMMARY_OPEN_TAG} block, it is a PRIOR checkpoint. Do not copy it forward verbatim: preserve still-true facts, drop stale ones, and merge newer information into a single consolidated summary under the same structure.`,
 ].join('\n')
+
+/**
+ * Compose the complete directive. The section structure stays fixed for every
+ * request so checkpoints remain comparable; a stated focus only reweights which
+ * details stay precise, and sits before the rules so those keep the last word.
+ * @param focus - stated intent of the work continuing after the checkpoint.
+ * @returns the directive appended after the replayed conversation.
+ */
+function compactionInstruction(focus?: string): string {
+  return [
+    COMPACTION_INSTRUCTION,
+    ...focus === undefined ? [] : [
+      '',
+      'The work continuing after this checkpoint is:',
+      focus,
+      'Keep what that work needs at full precision, condense or drop what it has outgrown, and still emit every section above.',
+    ],
+    '',
+    COMPACTION_RULES,
+  ].join('\n')
+}
 
 /** Framing that makes the replacement user message established context. */
 const CHECKPOINT_PREAMBLE =
@@ -82,6 +106,11 @@ export interface SummarizationInput {
   readonly tools?: readonly ToolSchema[]
   /** The shadowed region, in surface order, that precedes the compaction instruction. */
   readonly messages: readonly Message[]
+  /**
+   * What the work continuing after the checkpoint needs preserved, when the
+   * requester stated it. It weights the same structure instead of replacing it.
+   */
+  readonly focus?: string
 }
 
 /** Safe summary content plus the exact auxiliary call envelope recorded with it. */
@@ -146,7 +175,7 @@ export async function summarizeWithLlm(
   const messages: Message[] = [
     ...input.messages,
     createUserMessage({
-      content: [{ type: 'text', text: COMPACTION_INSTRUCTION }],
+      content: [{ type: 'text', text: compactionInstruction(input.focus) }],
       source: { kind: 'plugin', plugin: 'dsh-compaction-basic' },
     }),
   ]

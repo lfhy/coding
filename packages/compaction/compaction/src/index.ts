@@ -24,7 +24,20 @@ export type { CompactionCheckpointSource } from './checkpoint.ts'
 /** Why automatic policy is asking a backend to consider compaction. */
 export type CompactionTrigger = 'pressure' | 'context-overflow'
 
-/** Expected failure classes for an explicit idle-session compaction request. */
+/**
+ * One compaction the model requests itself, in the middle of its own turn.
+ * The backend owns range selection and summarization; the request states only
+ * what the remaining work still needs.
+ */
+export interface ContextCompactionRequest {
+  /**
+   * What must survive the replacement — the concrete task ahead, decisions,
+   * paths, or constraints. Absent for a general engineering checkpoint.
+   */
+  focus?: string
+}
+
+/** Expected failure classes for an explicit compaction request. */
 export type ManualCompactionErrorCode =
   | 'busy'
   | 'cancelled'
@@ -34,7 +47,9 @@ export type ManualCompactionErrorCode =
   | 'persistence'
 
 /**
- * Expected manual-compaction failure suitable for a direct human-command result.
+ * Expected failure of an explicit compaction request — the human `/compact`
+ * command or the model's own {@link CompactionEngine.compactContext} — suitable
+ * for a direct human-command result.
  * Shared durable-lock entry assertions may also throw the `busy` subtype from
  * automatic compaction paths.
  */
@@ -138,6 +153,28 @@ export abstract class CompactionEngine extends Service {
     agent: ManualCompactAgentContext,
     signal: AbortSignal,
     sourceCommandId?: CommandId,
+  ): Promise<CompactionResult | null>
+
+  /**
+   * Compact earlier history on the model's own request while its turn is still
+   * open, so the rest of the turn — and later turns — continue from a smaller
+   * history. The backend picks the useful range without touching the open step;
+   * `request.focus` states what the remaining work still needs, so the summary
+   * keeps it and drops what the task has outgrown. The transaction is numbered
+   * to the open turn like {@link compactRegion}, and only the selected span must
+   * stay stable, so unrelated nodes appended while the summary runs survive.
+   * @param agent - agent whose open-turn session surface is compacted.
+   * @param request - the model's own request, including its focus when stated.
+   * @param signal - cancellation scoped to the calling tool execution.
+   * @returns the compaction result, or `null` when no safe useful range exists.
+   * @throws {@link ManualCompactionError} for expected active-compaction, changed-span,
+   * summarization/shrink, or commit-stage failures; an aborted request preserves
+   * its exact abort reason. Failed attempts remain visible in the log.
+   */
+  abstract compactContext(
+    agent: CompactionAgentContext,
+    request: ContextCompactionRequest,
+    signal: AbortSignal,
   ): Promise<CompactionResult | null>
 
   /**

@@ -3,7 +3,7 @@
 
 # 包清单
 
-workspace 共 262 个包，按 group 分节。每行给出包目录、职责（README 首段）、源码入口与 `tests/` 下的 spec 文件数；标 `client` 的包导出 `./client` 浏览器半，标 `bundle` 的包是 profile/bundle 装配层。
+workspace 共 263 个包，按 group 分节。每行给出包目录、职责（README 首段）、源码入口与 `tests/` 下的 spec 文件数；标 `client` 的包导出 `./client` 浏览器半，标 `bundle` 的包是 profile/bundle 装配层。
 
 模型可见工具的名称与 schema 见 [tool-catalog.md](../tool-catalog.md)，插件可配置项见 [config-catalog.md](../config-catalog.md)，依赖边见 [module-graph.md](../module-graph.md)。
 
@@ -97,8 +97,9 @@ workspace 共 262 个包，按 group 分节。每行给出包目录、职责（R
 
 - `packages/compaction/command-compact` — 通过 `ctx.compaction` 提供面向用户的 `/compact` 压缩（compaction）控制 入口 `src/index.ts`（tests 3）
 - `packages/compaction/compaction` — **`CompactionEngine`**（`ctx.compaction`）定义压缩（compaction）做什么，即判定历史记录是否过大… 入口 `src/index.ts`（tests 3）
-- `packages/compaction/compaction-basic` — **基础压缩（compaction）后端**：`BasicCompactionEngine` 实现 `coding-compaction` Se… 入口 `src/index.ts`（tests 4）
+- `packages/compaction/compaction-basic` — **基础压缩（compaction）后端**：`BasicCompactionEngine` 实现 `coding-compaction` Se… 入口 `src/index.ts`（tests 5）
 - `packages/compaction/compaction-tool-result-pruner` — 可安全回放、不依赖模型的剪枝服务（`ctx.toolResultPruner`） 入口 `src/index.ts`（tests 2）
+- `packages/compaction/tool-context-compact` — 把压缩（compaction）的**时机**交给模型：通过 `ctx.compaction` 注册面向模型的 `context_compact`… 入口 `src/index.ts`（tests 3）
 
 ## packages/computer-use
 

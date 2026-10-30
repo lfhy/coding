@@ -348,6 +348,7 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   CodeRunResult: 'code-runtime.md',
   CompactionResult: 'compaction.md',
   CompactionTrigger: 'compaction.md',
+  ContextCompactionRequest: 'compaction.md',
   PruneResult: 'compaction.md',
   FileReadOutcome: 'filesystem.md',
   FsDirEntry: 'filesystem.md',

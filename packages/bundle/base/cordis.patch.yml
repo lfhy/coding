@@ -329,6 +329,12 @@
     - id: command-compact
       name: 'coding-command-compact'
 
+    # Model-driven `context_compact`: the model decides that earlier history has
+    # stopped paying for itself — a topic change, or exploration done before the
+    # real work — and states what the checkpoint must keep.
+    - id: tool-context-compact
+      name: 'coding-tool-context-compact'
+
     - id: subagent
       name: 'coding-subagent'
 

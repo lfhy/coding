@@ -78,6 +78,11 @@
     maxTokens: 8192
     compactionRetries: 1
 
+# Model-driven counterpart to the automatic thresholds: the model decides a topic
+# moved on, or exploration is done, and states what the checkpoint must keep.
+- id: tool-context-compact
+  name: 'coding-tool-context-compact'
+
 # Projection registry: subagent catalog identity (mode/label) folds through
 # its registered units; the catalog surfaces (`list_agents`, subagent listing)
 # fail loud without the capability.

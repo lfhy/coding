@@ -41,6 +41,10 @@ class LoaderCompactionEngine extends CompactionEngine {
     return Promise.resolve(null)
   }
 
+  override compactContext(): Promise<CompactionResult | null> {
+    return Promise.reject(new Error('/compact must use the idle command entry point'))
+  }
+
   override compactRegion(): Promise<CompactionResult> {
     return Promise.resolve(RESULT)
   }

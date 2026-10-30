@@ -62,6 +62,11 @@ interface ToolArgsMap {
     /** Required with sandbox_permissions: one sentence for the user explaining why this exact command needs the wider access. */
     justification?: string;
   } & Record<string, JsonValue>;
+  /** Replace older conversation history with a structured checkpoint to free context. Use it when the history has stopped earning its tokens — the topic moved on, or exploration is finished and the real work is about to start. Pass `focus` to state what the remaining work needs (the concrete task, decisions and constraints that still apply, files and identifiers that matter), so the checkpoint keeps that and drops what the work has outgrown. The current step is never replaced. A busy or failed call leaves the conversation unchanged. */
+  context_compact: {
+    /** What the work continuing after the checkpoint needs preserved: the concrete task, the decisions and constraints that still apply, and the files or identifiers that matter. Omit only when the whole history is equally relevant. At most 2000 characters. */
+    focus?: string;
+  } & Record<string, JsonValue>;
   /** Create one persisted same-session completion goal when the current direct human request is a long-running objective that should continue across autonomous goal rounds. You may infer that intent without requiring the user to say "create a goal". Do not use this for trivial single-turn work. Execution rejects non-human and subagent authority. */
   create_goal: {
     /** The concrete completion objective inferred from the direct human request. */
@@ -265,6 +270,16 @@ interface ToolOutputMap {
       enforcement?: string;
       runnerFailed?: boolean;
     };
+  };
+  context_compact: {
+    /** What happened: `compacted`, `nothing_to_compact`, `busy`, or `failed`. */
+    status: "compacted" | "nothing_to_compact" | "busy" | "failed";
+    /** History items replaced by the checkpoint; 0 unless `status` is `compacted`. */
+    shadowedItems: number;
+    /** Estimated tokens those items occupied; 0 unless `status` is `compacted`. */
+    shadowedTokens: number;
+    /** Failure class, present only when `status` is `failed`. */
+    failure?: "changed" | "summary" | "commit";
   };
   create_goal: {
     goal: null;

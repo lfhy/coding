@@ -33,6 +33,7 @@ This table connects model-visible tool names to the plugin package and service s
 | `coding-tool-terminal` | `terminal_close`, `terminal_list`, `terminal_open`, `terminal_read`, `terminal_send`, `terminal_signal` | `ctx.tools`, `ctx.terminals`, `ctx.systemPrompt`, `ctx.jobs at call time for run_in_background` | `tool/call`, `tool/result` | - | The six terminal tools are opt-in and complement one-shot shell/filesystem tools. `terminal_send(run_in_background: true)` registers with `ctx.jobs`; TUI, named key sequences, BEL, resize, auto-start, and cross-agent sharing are absent from the schema. |
 | `coding-tool-goal` | `create_goal`, `get_goal`, `update_goal` | `ctx.tools`, `ctx.agents`, `ctx.goals`, `ctx.systemPrompt`, `a calling Agent in an authorized open turn` | `tool/call`, `goal/change for mutations`, `tool/result` | - | create, edit, pause, and resume require direct-human root authority; complete and blocked also accept the exact current goal round. The default blocked lower bound is three admitted rounds. |
 | `coding-schedule` | `schedule_create`, `schedule_delete`, `schedule_list` | `ctx.tools`, `ctx.sessions`, `Session persistence`, `a future live root Agent` | `tool/call`, `schedule/change create or delete`, `tool/result` | - | Registered only inside live root Agent scopes created after the opt-in Schedule plugin loads. Version 1 accepts after_seconds, explicit absolute at, and bounded fixed-rate every_seconds, and discloses session-local delivery; management reads and mutations require the shared Session persistence barrier. |
+| `coding-tool-context-compact` | `context_compact` | `ctx.tools`, `ctx.compaction` | `tool/call`, `compaction/* transaction events for the replaced range`, `tool/result` | - | The tool only names what the remaining work must keep; range selection, the open-turn transaction, and the summary stay with the mounted backend. `compactContext` compacts by span, so unrelated nodes appended while the summary runs survive the replacement. |
 | `coding-tool-lsp` | `lsp` | `ctx.tools`, `ctx.lsp`, `ctx.systemPrompt` | `tool/call`, `tool/result` | - | The lsp tool keeps provider selection and language-server subprocesses behind ctx.lsp, so its model-visible schema stays stable across providers. Requires a registered provider (e.g. `coding-lsp-stdio`) at runtime; without one, a query returns the structured `LSP_UNAVAILABLE` error rather than changing the schema. |
 | `coding-tool-ralph` | `ralph` | `ctx.tools`, `ctx.workflowEngine`, `ctx.subagents`, `ctx.systemPrompt`, `a calling Agent (exec.agent parents every fresh round)` | `tool/call`, `tool/result`, `workflow and child session events during execution` | - | A fixed foreground workflow starts one fresh structured child per round; the model selects only the immutable objective and an optional round cap. |
 | `coding-tool-skill` | `skill` | `ctx.tools`, `ctx.agents`, `ctx.skills` | `tool/call`, `tool/result`, `user/message replacement catalogs via agent.inject()` | - | - |
@@ -2436,6 +2437,30 @@ List every active reminder in the current session in creation order, including i
 Source: [`packages/schedule/schedule/src/tools.ts`](../packages/schedule/schedule/src/tools.ts)
 
 Registered only inside live root Agent scopes created after the opt-in Schedule plugin loads. Version 1 accepts after_seconds, explicit absolute at, and bounded fixed-rate every_seconds, and discloses session-local delivery; management reads and mutations require the shared Session persistence barrier.
+
+<a id="coding-tool-context-compact"></a>
+
+## `coding-tool-context-compact`
+
+### `context_compact`
+
+Replace older conversation history with a structured checkpoint to free context. Use it when the history has stopped earning its tokens — the topic moved on, or exploration is finished and the real work is about to start. Pass `focus` to state what the remaining work needs (the concrete task, decisions and constraints that still apply, files and identifiers that matter), so the checkpoint keeps that and drops what the work has outgrown. The current step is never replaced. A busy or failed call leaves the conversation unchanged.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "focus": {
+      "type": "string",
+      "description": "What the work continuing after the checkpoint needs preserved: the concrete task, the decisions and constraints that still apply, and the files or identifiers that matter. Omit only when the whole history is equally relevant. At most 2000 characters."
+    }
+  }
+}
+```
+
+Source: [`packages/compaction/tool-context-compact/src/index.ts`](../packages/compaction/tool-context-compact/src/index.ts)
+
+The tool only names what the remaining work must keep; range selection, the open-turn transaction, and the summary stay with the mounted backend. `compactContext` compacts by span, so unrelated nodes appended while the summary runs survive the replacement.
 
 <a id="coding-tool-lsp"></a>
 

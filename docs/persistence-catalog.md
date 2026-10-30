@@ -293,7 +293,7 @@ Source: [`packages/interaction/commands/src/types.ts:96`](../packages/interactio
 'compaction/end': { compactionId: CompactionId; sourceCommandId?: CommandId; turn: number | null; error?: string }
 ```
 
-Source: [`packages/compaction/compaction/src/types.ts:71`](../packages/compaction/compaction/src/types.ts)
+Source: [`packages/compaction/compaction/src/types.ts:78`](../packages/compaction/compaction/src/types.ts)
 
 <a id="compactionprune--log-only"></a>
 
@@ -319,7 +319,7 @@ Source: [`packages/compaction/compaction/src/types.ts:71`](../packages/compactio
 }
 ```
 
-Source: [`packages/compaction/compaction/src/types.ts:81`](../packages/compaction/compaction/src/types.ts)
+Source: [`packages/compaction/compaction/src/types.ts:88`](../packages/compaction/compaction/src/types.ts)
 
 <a id="compactionstart--log-only"></a>
 
@@ -354,6 +354,13 @@ Source: [`packages/compaction/compaction/src/types.ts:23`](../packages/compactio
   compactionId: CompactionId
   sourceCommandId?: CommandId
   summary: ContentBlock[]
+  /**
+   * What the remaining work needed preserved, when the requester stated it.
+   * It changes the summarization instruction, so it is recorded here for the
+   * same reason as the call envelope: the one-shot request stays
+   * reconstructable from the log.
+   */
+  focus?: string
   shadowedRange: { start: number; end: number }
   shadowedSeqs: number[]
   shadowedTokenCount: number
@@ -659,7 +666,7 @@ Source: [`packages/session/session-title/src/index.ts:100`](../packages/session/
 
 Types: [SessionTitleLlmRequestEventData](subsystems/session-title.md)
 
-Source: [`packages/session/session-title-llm/src/index.ts:43`](../packages/session/session-title-llm/src/index.ts)
+Source: [`packages/session/session-title-llm/src/index.ts:44`](../packages/session/session-title-llm/src/index.ts)
 
 ### `step/*`
 
@@ -1026,4 +1033,4 @@ Source: [`packages/llm/llm-vision-fallback/src/index.ts:65`](../packages/llm/llm
 'web/deepseek-search-llm-request': DeepSeekSearchLlmRequest
 ```
 
-Source: [`packages/web/web-search-deepseek/src/provider.ts:133`](../packages/web/web-search-deepseek/src/provider.ts)
+Source: [`packages/web/web-search-deepseek/src/provider.ts:140`](../packages/web/web-search-deepseek/src/provider.ts)

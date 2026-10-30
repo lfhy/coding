@@ -166,6 +166,11 @@ interface ToolArgsMap {
     /** Required with sandbox_permissions: one sentence for the user explaining why this exact command needs the wider access. */
     justification?: string;
   } & Record<string, JsonValue>;
+  /** Replace older conversation history with a structured checkpoint to free context. Use it when the history has stopped earning its tokens — the topic moved on, or exploration is finished and the real work is about to start. Pass `focus` to state what the remaining work needs (the concrete task, decisions and constraints that still apply, files and identifiers that matter), so the checkpoint keeps that and drops what the work has outgrown. The current step is never replaced. A busy or failed call leaves the conversation unchanged. */
+  context_compact: {
+    /** What the work continuing after the checkpoint needs preserved: the concrete task, the decisions and constraints that still apply, and the files or identifiers that matter. Omit only when the whole history is equally relevant. At most 2000 characters. */
+    focus?: string;
+  } & Record<string, JsonValue>;
   /** Define an immutable Cordis Package. For a new Plugin, use kind:"new" and provide only a semantic prefix of 3–6 lowercase English letters; the Host returns the final pluginId and packageId. To modify an existing Plugin, use kind:"existing" with its exact pluginId to append a Package without overwriting older versions. Provide at least one of code.host and code.client. Each value is a plain JavaScript function body that returns a Cordis Plugin; no TypeScript, JSX, or import transformation occurs. Query Inspect before depending on a Service, Event, Builtin, Slot, or token. Define only validates parameters and syntax and records source: it does not request approval, execute apply, or change currentPackageId. On success, call cordis_run with the returned IDs. */
   cordis_define: {
     plugin: {
@@ -430,6 +435,16 @@ interface ToolOutputMap {
       enforcement?: string;
       runnerFailed?: boolean;
     };
+  };
+  context_compact: {
+    /** What happened: `compacted`, `nothing_to_compact`, `busy`, or `failed`. */
+    status: "compacted" | "nothing_to_compact" | "busy" | "failed";
+    /** History items replaced by the checkpoint; 0 unless `status` is `compacted`. */
+    shadowedItems: number;
+    /** Estimated tokens those items occupied; 0 unless `status` is `compacted`. */
+    shadowedTokens: number;
+    /** Failure class, present only when `status` is `failed`. */
+    failure?: "changed" | "summary" | "commit";
   };
   cordis_define: {
     pluginId: string;

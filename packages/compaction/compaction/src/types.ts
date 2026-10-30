@@ -34,6 +34,13 @@ declare module 'coding-session/types' {
       compactionId: CompactionId
       sourceCommandId?: CommandId
       summary: ContentBlock[]
+      /**
+       * What the remaining work needed preserved, when the requester stated it.
+       * It changes the summarization instruction, so it is recorded here for the
+       * same reason as the call envelope: the one-shot request stays
+       * reconstructable from the log.
+       */
+      focus?: string
       shadowedRange: { start: number; end: number }
       shadowedSeqs: number[]
       shadowedTokenCount: number

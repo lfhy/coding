@@ -7,7 +7,7 @@
 import { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { CompactionEngine, ManualCompactionError } from 'coding-compaction'
-import type { CompactionResult, CompactionTrigger } from 'coding-compaction'
+import type { CompactionResult, CompactionTrigger, ContextCompactionRequest } from 'coding-compaction'
 import type { TokenMeter } from 'coding-token-meter'
 import type { Session } from 'coding-session'
 import { CONTEXT_WINDOW_EXCEEDED_CODE, assertNever } from 'coding-llm'
@@ -352,7 +352,45 @@ export class BasicCompactionEngine extends CompactionEngine {
       start,
       end,
       agent,
-      { owner: 'current-turn', stability: 'whole-surface' },
+      { owner: 'current-turn', stability: 'whole-surface', failure: 'raw' },
+      signal,
+    )
+  }
+
+  /**
+   * Compact the head of an open turn on the model's own request, keeping the
+   * open step and the requester's stated focus. The selected span alone must stay
+   * stable, so tool results that land while the summary runs survive the
+   * replacement.
+   * @param agent - agent whose open-turn session surface is compacted.
+   * @param request - the model's request, including its focus when stated.
+   * @param signal - cancellation of the calling tool execution, forwarded to summarization.
+   * @returns the committed result, or `null` when the surface holds no safe range.
+   */
+  override async compactContext(
+    agent: Agent,
+    request: ContextCompactionRequest,
+    signal: AbortSignal,
+  ): Promise<CompactionResult | null> {
+    signal.throwIfAborted()
+    const range = selectCompactableRange(
+      agent.session,
+      this.ctx.tokenMeter.measure(agent.session),
+      0,
+    )
+    if (range === null) return null
+    return compactSurfaceRegion(
+      this.regionDependencies(),
+      agent.session,
+      range.start,
+      range.end,
+      agent,
+      {
+        owner: 'current-turn',
+        stability: 'selected-span',
+        failure: 'classified',
+        ...request.focus === undefined ? {} : { focus: request.focus },
+      },
       signal,
     )
   }
@@ -391,6 +429,7 @@ export class BasicCompactionEngine extends CompactionEngine {
             {
               owner: null,
               stability: 'selected-span',
+              failure: 'classified',
               ...sourceCommandId === undefined ? {} : { sourceCommandId },
               flush: async () => {
                 await this.ctx.sessions.flush(agent.session)

@@ -27,6 +27,7 @@
     "coding-commands": "workspace:*",
     "coding-compaction": "workspace:*",
     "coding-compaction-basic": "workspace:*",
+    "coding-tool-context-compact": "workspace:*",
     "coding-compaction-tool-result-pruner": "workspace:*",
     "coding-credentials-local": "workspace:*",
     "coding-e2b": "workspace:*",

@@ -1255,6 +1255,26 @@ describe('default one-shot summarizer', () => {
     expect(lastText).toContain('## Primary Request and Intent')
   })
 
+  it('reweights the same structure with the requester focus before the rules', async () => {
+    const { adapter, compact } = await summarizerHarness([{ type: 'text', text: 'summary' }])
+    await compact.runSummarize({
+      messages: [createUserMessage({
+        content: [{ type: 'text', text: 'explored the parser' }],
+        source: { kind: 'plugin', plugin: 'test' },
+      })],
+      focus: 'implement the recursive parser next',
+    }, agent(conversation(1), MODEL))
+
+    const instruction = adapter.lastOptions?.messages.at(-1)?.content[0]
+    const directive = instruction?.type === 'text' ? instruction.text : ''
+    expect(directive).toContain('The work continuing after this checkpoint is:')
+    expect(directive).toContain('implement the recursive parser next')
+    expect(directive).toContain('## Primary Request and Intent')
+    // The focus reweights the structure; the rules still close the directive.
+    expect(directive.indexOf('implement the recursive parser next'))
+      .toBeLessThan(directive.indexOf('Rules:'))
+  })
+
   it('applies the routed model policy without changing the replayed prefix', async () => {
     const { ctx, compact } = await summarizerHarness(
       [{ type: 'text', text: 'unused default summary' }],

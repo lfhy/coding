@@ -249,6 +249,7 @@
     { "path": "./packages/compaction/compaction-basic" },
     { "path": "./packages/compaction/command-compact" },
     { "path": "./packages/compaction/compaction-tool-result-pruner" },
+    { "path": "./packages/compaction/tool-context-compact" },
     { "path": "./packages/web/web" },
     { "path": "./packages/computer-use/computer-use" },
     { "path": "./packages/computer-use/tool-computer-use" },

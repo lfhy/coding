@@ -15,7 +15,7 @@
 - **收敛**：最多按 `compactionRetries` 重试头部检查点压缩；拒绝不能缩小源内容的摘要，如果重试仍无法回到阈值以下，则抛出异常。
 - **摘要**：直接 `llm/stream` 调用使用已配置的提供方／模型对与上限，回退到最新已记录请求目标，然后再回退到 agent（智能体）目标，而不运行仅用于 agent loop 的 `agent/request` 扩展点。该调用会逐字回放会话自身的系统提示词、工具与已遮蔽区域消息（包括图片引用），并将压缩指令作为最后一条 user 消息追加，从而复用提供方的热前缀 cache，而非使它失效。所选适配器必须解析或明确拒绝这些图片。它将 `GenerateOptions.purpose` 设为 `compaction`，适配器可将其作为请求归因转发（DeepSeek 适配器发送 `x-deepseek-harness-compact: 1`），但不会触碰模型可见的请求体。只有返回的文本会进入检查点；推理（reasoning）和工具调用都会被排除，以免泄露私有推理或产生遗留调用；图片输出会以 `UNSUPPORTED_CONTENT` 失败，而不是消失。
 - **框定**：替换 user 消息使用 `<compacted-summary>` 标签标记已建立的检查点上下文。原始摘要保留在 `compaction/summary` 事件上，后续自动周期会合并之前的检查点。
-- **生命周期**：所有入口点共享一个先记录标记的区域事务。它会验证范围与活动锁，同步追加 `compaction/start`，准备并等待摘要，重新验证，再追加 `compaction/summary` 和替换，最后恰好进行一次闭合尝试。自动调用和显式范围调用要求数字标识的开放轮次归属，并要求整个表层保持稳定；串行 `agent/pre-step` listener 会在派生请求之前检查压力，而规范提供方溢出则经由 `agent/request-error` 进入，并且只在表层取得持久进展后才允许重试。`compactNow()` 会预留空闲接纳，使用 `turn: null`，允许所选 span 之外追加仅追加上下文，flush 每次已闭合尝试，并在 `finally` 中释放接纳预留。
+- **生命周期**：所有入口点共享一个先记录标记的区域事务。它会验证范围与活动锁，同步追加 `compaction/start`，准备并等待摘要，重新验证，再追加 `compaction/summary` 和替换，最后恰好进行一次闭合尝试。自动调用和显式范围调用要求数字标识的开放轮次归属，并要求整个表层保持稳定；串行 `agent/pre-step` listener 会在派生请求之前检查压力，而规范提供方溢出则经由 `agent/request-error` 进入，并且只在表层取得持久进展后才允许重试。`compactNow()` 会预留空闲接纳，使用 `turn: null`，允许所选 span 之外追加仅追加上下文，flush 每次已闭合尝试，并在 `finally` 中释放接纳预留。`compactContext()` 面向模型在轮内发起的请求：它归属打开的轮次，只要求所选 span 稳定，因此摘要期间落地的其他节点会保留；它选择与 `compactNow()` 相同的最小配对安全尾部，把请求的 `focus` 送入摘要指令并记入 `compaction/summary.focus`。
 - **溢出恢复**：提供方已确认的溢出不需容量元数据。它会绕过常规压力与保留，执行剪枝，再尝试一次最大平衡头部缩减，并留下最新不可分单元。只要 `surface.replaceGeneration` 前进，就允许重试，包括剪枝在后续摘要工作抛出异常前已落地的情况。如果没有替换、目标特定上限已耗尽、已取消，或遇到未知／非规范错误，则保留原始提供方失败。
 - **失败处理**：活动的未匹配 `compaction/start` 是持久锁。位于较新 `session/end-seed` 之前的未匹配标记，是先前生命周期留下的陈旧证据，不会阻塞；位于该边界之后的标记报告 `busy`。摘要和 span 变更失败会以错误闭合，并保持会话表层不变，但日志中仍保留该尝试。闭合失败会有意留下阻塞性的未匹配标记。压力检查中的运行故障会发出警告并继续；只有此前没有替换推进表层时，溢出恢复失败才保留原始提供方错误。完成清理与持久化后，取消仍具有最终决定权。
 
@@ -62,7 +62,7 @@ export function apply(ctx: Context): void {
 }
 ```
 
-加载插件会注册 `ctx.compaction`。在该插件之前添加同级 [`dsh-compaction-tool-result-pruner`](../compaction-tool-result-pruner/README.md) 以启用可选的不依赖模型的处理阶段。当 `auto: true`（默认）时，它会在 token 压力下自动压缩。同级 [`dsh-command-compact`](../command-compact/README.md) 调用 `ctx.compaction.compactNow(...)`；编程调用方也可以直接使用任一 seam 操作。
+加载插件会注册 `ctx.compaction`。在该插件之前添加同级 [`dsh-compaction-tool-result-pruner`](../compaction-tool-result-pruner/README.md) 以启用可选的不依赖模型的处理阶段。当 `auto: true`（默认）时，它会在 token 压力下自动压缩。同级 [`dsh-command-compact`](../command-compact/README.md) 调用 `ctx.compaction.compactNow(...)`，面向模型的 [`dsh-tool-context-compact`](../tool-context-compact/README.md) 调用 `ctx.compaction.compactContext(...)`；编程调用方也可以直接使用任一 seam 操作。
 
 例如，同一个压缩插件可以安全服务于容量不同的模型，并应用一项目标特定策略：
 
@@ -137,6 +137,11 @@ Output EXACTLY the Markdown structure below: keep every section, in order. Use t
 ## Critical Context
 - [decisions and their rationale, constraints, user preferences, open questions, data needed to continue]
 
+The work continuing after this checkpoint is:
+[focus supplied by the requesting model — this block appears only when one was stated]
+
+Keep what that work needs at full precision, condense or drop what it has outgrown, and still emit every section above.
+
 Rules:
 - Write concise English engineering prose. Preserve exact file paths, commands, error strings, identifiers, numeric values, function signatures, and syntax fragments.
 - Capture user feedback and explicit instructions faithfully, especially corrections.
@@ -158,5 +163,6 @@ Rules:
 - **计量准确度取决于固定启发式规则**：可复用提供方用量缺失时，会回退到字符数加结构开销，而非精确的 token 化。
 - **溢出分类由适配器维护**：提供方措辞可能改变；两个 DeepSeek 适配器将当前可识别的上下文限制失败规范化为 `CONTEXT_WINDOW_EXCEEDED`。
 - **部分不可分单元与仅 envelope 溢出仍不在表层压缩范围内**：恢复无法缩减系统／工具／前缀、拆分不可分的非工具节点，或修复不可剪枝剩余部分仍超出窗口的工具单元。可选 pruner 可以缩减原本不可分工具对内的文本型工具结果主体。
+- **`compactContext` 只保留最小的配对安全尾部**：它和 `compactNow()` 使用同一保留策略，因此轮内较早的步骤（包括本轮的用户消息）也会被检查点取代；正在执行的步骤因工具配对边界始终保留。想要确定性的范围时使用 `compactRegion`。
 - **`compactRegion` 要求存在未结束的轮次**：在完全关闭的会话上手动调用会抛出异常（「no open turn」），而不是执行压缩。
 - **摘要失败会保留最新持久表层**：任何替换前，自动路径会记录警告，并携带完整超预算历史继续。如果剪枝已落地，后续摘要失败会从该持久剪枝表层继续。因达到 `maxTokens` 而发生的摘要截断（隐藏推理 token 可能会耗尽该额度）遵循同一规则。

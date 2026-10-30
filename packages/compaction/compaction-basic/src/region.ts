@@ -55,9 +55,17 @@ interface CompactionTransactionOptions {
   readonly owner: 'current-turn' | null
   /** Surface relationship that must survive asynchronous summarization. */
   readonly stability: 'whole-surface' | 'selected-span'
+  /**
+   * `classified` rechecks cancellation around the transaction and reports every
+   * failure as an expected {@link ManualCompactionError}; `raw` preserves the
+   * original error for automatic policy, which only logs it.
+   */
+  readonly failure: 'raw' | 'classified'
+  /** What the remaining work needs the summary to preserve, when the requester stated it. */
+  readonly focus?: string
   /** Optional durability checkpoint after a successfully closed bracket. */
   readonly flush?: () => Promise<void>
-  /** Manual command that initiated this transaction, when present. */
+  /** Explicit request that initiated this transaction, when present. */
   readonly sourceCommandId?: CommandId
 }
 
@@ -145,7 +153,7 @@ export function selectCompactableRange(
  * @param start - inclusive first surface-node seq.
  * @param end - inclusive last surface-node seq.
  * @param agent - agent used by the summarizer.
- * @param options - bracket owner, stability rule, and optional durability checkpoint.
+ * @param options - bracket owner, stability rule, failure reporting, focus, and optional durability checkpoint.
  * @param signal - optional summarization cancellation signal.
  * @returns the successful durable compaction result.
  */
@@ -158,7 +166,7 @@ export async function compactSurfaceRegion(
   options: CompactionTransactionOptions,
   signal?: AbortSignal,
 ): Promise<CompactionResult> {
-  if (options.owner === null) signal?.throwIfAborted()
+  if (options.failure === 'classified') signal?.throwIfAborted()
   const selection = validateSurfaceRegion(session, start, end)
   const entryState = inspectCompactionEntryState(session.events)
   assertCompactionInactive(
@@ -170,7 +178,7 @@ export async function compactSurfaceRegion(
   let owner: number | null
   if (options.owner === null) {
     if (entryState.openTurn !== null) {
-      throw new ManualCompactionError('busy', 'manual compaction: the session already has an open turn')
+      throw new ManualCompactionError('busy', 'compaction requires an idle session: this session already has an open turn')
     }
     owner = null
   } else {
@@ -198,7 +206,7 @@ export async function compactSurfaceRegion(
   let stage: TransactionFailure['stage'] = 'summary'
 
   try {
-    const prepared = prepareCompaction(dependencies, session, selection)
+    const prepared = prepareCompaction(dependencies, session, selection, options.focus)
     const summarized = await summarizeCompaction(
       dependencies,
       prepared,
@@ -207,7 +215,7 @@ export async function compactSurfaceRegion(
       options.sourceCommandId,
       signal,
     )
-    if (options.owner === null) signal?.throwIfAborted()
+    if (options.failure === 'classified') signal?.throwIfAborted()
     assertStable(dependencies, session, summarized)
     stage = 'commit'
     const pending = commitCompactionBody(session, startEvent, summarized)
@@ -236,15 +244,15 @@ export async function compactSurfaceRegion(
     }
   }
 
-  if (options.owner === null) signal?.throwIfAborted()
+  if (options.failure === 'classified') signal?.throwIfAborted()
   if (failure !== undefined) {
-    if (options.owner === null) throwManualFailure(failure)
+    if (options.failure === 'classified') throwClassifiedFailure(failure)
     throw failure.error
   }
   if (flushFailure !== undefined) {
     throw new ManualCompactionError(
       'persistence',
-      'manual compaction durability checkpoint failed',
+      'explicit compaction durability checkpoint failed',
       { cause: flushFailure },
     )
   }
@@ -253,25 +261,25 @@ export async function compactSurfaceRegion(
   return result
 }
 
-/** Classify one closed manual attempt without weakening cancellation precedence. */
-function throwManualFailure(failure: TransactionFailure): never {
+/** Classify one closed explicit attempt without weakening cancellation precedence. */
+function throwClassifiedFailure(failure: TransactionFailure): never {
   if (failure.stage === 'commit') {
     throw new ManualCompactionError(
       'commit',
-      'manual compaction did not commit cleanly',
+      'explicit compaction did not commit cleanly',
       { cause: failure.error },
     )
   }
   if (failure.error instanceof SurfaceChangedError) {
     throw new ManualCompactionError(
       'changed',
-      'the compacted history changed during manual compaction',
+      'the compacted history changed during compaction',
       { cause: failure.error },
     )
   }
   throw new ManualCompactionError(
     'summary',
-    'manual compaction could not produce a smaller summary',
+    'compaction could not produce a smaller summary',
     { cause: failure.error },
   )
 }
@@ -340,6 +348,7 @@ function prepareCompaction(
   dependencies: RegionDependencies,
   session: Session,
   selection: SurfaceSelection,
+  focus?: string,
 ): PreparedCompaction {
   const measurement = dependencies.meter.measure(session)
   const selectedNodes = measurement.nodes.slice(selection.startIdx, selection.endIdx + 1)
@@ -352,7 +361,7 @@ function prepareCompaction(
     measurement,
     selectedNodes,
     shadowedTokenCount: selectedNodes.reduce((total, node) => total + node.tokens, 0),
-    input: buildSummarizationInput(session, selection.shadowedSeqs),
+    input: buildSummarizationInput(session, selection.shadowedSeqs, focus),
   }
 }
 
@@ -450,6 +459,7 @@ function commitCompactionBody(
       ? {}
       : { sourceCommandId: startEvent.data.sourceCommandId },
     summary,
+    ...summarized.input.focus === undefined ? {} : { focus: summarized.input.focus },
     ...callProvenance,
     shadowedRange: { start, end },
     shadowedSeqs: [...shadowedSeqs],
@@ -493,11 +503,13 @@ function completeCompaction(
  * and reuses the provider's KV cache.
  * @param session - session supplying the request header and per-node projection.
  * @param shadowedSeqs - the surface-node seqs, in order, being compacted.
+ * @param focus - what the remaining work needs preserved, when the requester stated it.
  * @returns the replayed conversation prefix to condense.
  */
 function buildSummarizationInput(
   session: Session,
   shadowedSeqs: readonly number[],
+  focus?: string,
 ): SummarizationInput {
   const header = session.requestHeader()
   const events = session.events
@@ -510,6 +522,7 @@ function buildSummarizationInput(
     ...header?.system === undefined ? {} : { system: header.system },
     ...header?.tools === undefined ? {} : { tools: header.tools },
     messages: regionMessages,
+    ...focus === undefined ? {} : { focus },
   }
 }
 

@@ -9,24 +9,26 @@
 | `coding-compaction`（本包） | Service Definition：抽象服务 + `compaction/*` 事件 + `CompactionResult` + 关联检查点源构造函数 + 工具配对边界 helper |
 | `coding-compaction-basic` | Service Provider：`ctx.tokenMeter` 压力 + token 预算保留 + `llm.stream()` 摘要 |
 | `coding-command-compact` | Consumer：面向人类的 `/compact` 命令，基于 `ctx.compaction.compactNow()` 实现 |
+| `coding-tool-context-compact` | Consumer：面向模型的 `context_compact` 工具，基于 `ctx.compaction.compactContext()` 实现 |
 
 与 bash seam 不同，该 Service Definition 依赖 `coding-session` 和 `coding-llm`。约定的动词基于 `Session` 定义，其输出使用 `ContentBlock` 词汇，因此无法在不指名这些包的情况下表达。这项对「Service Definition 只依赖 cordis」指引的偏离是有意的，并记录在 压缩能力 seam 设计记录 中。
 
 ## 服务 API（`ctx.compaction`）
 
-三个操作都是**抽象方法**：触发策略、保留、事件顺序与摘要均属于后端。可复用的请求测量是独立服务 [`ctx.tokenMeter`](../../llm/token-meter/README.md)，而非本 Service Definition 的一部分。
+四个操作都是**抽象方法**：触发策略、保留、事件顺序与摘要均属于后端。可复用的请求测量是独立服务 [`ctx.tokenMeter`](../../llm/token-meter/README.md)，而非本 Service Definition 的一部分。
 
 | 成员 | 语义 |
 |---|---|
 | `compactIfNeeded(agent, trigger, signal)` | 根据 `trigger: 'pressure' \| 'context-overflow'` 判断是否需要自动压缩。压力触发可应用后端的阈值与保留尾部策略；已确认溢出可强制进行有效的平衡缩减。返回 `CompactionResult`，无安全范围时则返回 `null`。后端摘要请求是直接的 `ctx.llm.stream()` 调用（不是 agent loop（智能体循环）步骤），因此每次调用都可在 `llm/stream` 处拦截。 |
 | `compactNow(agent, signal)` | 即使未达到自动压力，也显式压缩一段有效、平衡的较早范围。该操作会在让出控制权前同步预留空闲轮次接纳；没有有效范围时不写入任何内容；在摘要前记录独立的 `compaction/* { turn: null }` 尝试；释放预留前等待其持久性检查点。预期操作失败使用 `ManualCompactionError`；取消会原样重新抛出 abort 原因。 |
+| `compactContext(agent, request, signal)` | 在模型自己的轮次仍然打开时压缩较早历史：后端在不触碰当前步骤的前提下选择范围，`request.focus` 说明后续工作仍需要什么，摘要据此保留它、丢掉任务已经过时的部分。标记对归属于打开的轮次（`turn` 为该轮次号），稳定检查只覆盖所选 span，因此摘要期间追加的无关节点会保留。返回 `CompactionResult`，无安全范围时返回 `null`；预期失败以同样的 `ManualCompactionError` 分类抛出。 |
 | `compactRegion(start, end, agent, signal?)` | 强制将表层节点 `[start, end]`（包含两端 seq）从 `agent.session` 摘要为单个替换节点，其源由 `compactCheckpointSource(compactionId)` 创建。如果压缩已在进行、`start`／`end` 不是表层节点，或 `start` 在表层上位于 `end` 之后，则**抛出异常**。该范围是表层位置范围，不是数值 seq 区间：在之前的 replace 将新生成的高 seq 摘要节点放到已遮蔽范围的位置之后，表层顺序不再跟随 seq 顺序。 |
 
 `CompactionResult` 向调用方保留原始摘要与记录操作过程的事件 seq，同时保留已遮蔽范围与 token 计量；其结构由漂移检查保障，定义见 [压缩数据结构参考](../../../docs/subsystems/compaction.md#compactionresult)。
 
-`compactIfNeeded` 和 `compactNow` 必须传入 `signal`；`compactRegion` 的该参数可选。通过 `ctx.llm.stream()` 摘要的后端**必须** 将它转发到调用的 `GenerateOptions.signal`，因此 abort 或 fiber dispose（资源释放）会停止进行中的摘要。自动和显式范围标记对会从当前打开的轮次恢复其数字形式归属。手动标记对不要求存在打开的轮次，并标记 `turn: null`。
+`compactIfNeeded`、`compactNow` 与 `compactContext` 必须传入 `signal`；`compactRegion` 的该参数可选。通过 `ctx.llm.stream()` 摘要的后端**必须** 将它转发到调用的 `GenerateOptions.signal`，因此 abort 或 fiber dispose（资源释放）会停止进行中的摘要。自动和显式范围标记对会从当前打开的轮次恢复其数字形式归属。手动标记对不要求存在打开的轮次，并标记 `turn: null`。
 
-`ManualCompactionError.code` 是封闭集合 `busy | changed | summary | commit | persistence`。`changed` 和 `summary` 表示所选会话表层未被替换，但日志仍会记录失败尝试。`commit` 有意不判断是否发生了部分变更；`persistence` 表示内存中的 bracket 已闭合，但显式 flush 失败。
+`ManualCompactionError` 是显式压缩请求（`/compact` 命令与模型的 `compactContext`）的预期失败类型；`code` 是封闭集合 `busy | changed | summary | commit | persistence`。`changed` 和 `summary` 表示所选会话表层未被替换，但日志仍会记录失败尝试。`commit` 有意不判断是否发生了部分变更；`persistence` 表示内存中的 bracket 已闭合，但显式 flush 失败。
 
 ## 工具配对边界
 
@@ -86,6 +88,6 @@
 
 ## 已知限制与暂缓事项
 
-- **面向用户的命令，而非模型工具**：`coding-command-compact` 通过 `ctx.commands` 暴露无参数 `/compact`；不会注册面向模型的压缩工具。
+- **两种显式入口，各自的时机**：`coding-command-compact` 暴露无参数 `/compact`（空闲、轮次之间），`coding-tool-context-compact` 暴露面向模型的 `context_compact`（轮内、当前步骤之前）。两者都不接受范围或保留策略参数，策略仍属于后端。
 - **部分单元溢出不在约定内**：平衡摘要压缩无法拆分一个不可分单元。当闭合工具对中可移除的主要部分是承载文本的工具结果时，可选剪枝配套服务仍可修复该工具对；无法压缩大型非工具节点，或不可剪枝剩余部分过大的工具单元。
 - **单独接近窗口大小的 envelope 不属于表层压缩工作**：压缩缩减派生历史，绝不缩减系统提示词、工具或会话前缀。

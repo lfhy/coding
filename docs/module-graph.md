@@ -197,6 +197,7 @@ flowchart TD
     pkg_compaction["compaction"]
     pkg_compaction_basic["compaction-basic"]
     pkg_compaction_tool_result_pruner["compaction-tool-result-pruner"]
+    pkg_tool_context_compact["tool-context-compact"]
   end
   subgraph group_computer_use["packages/computer-use"]
     pkg_computer_use["computer-use"]
@@ -509,18 +510,6 @@ flowchart TD
   pkg_agent --> pkg_session
   pkg_agent --> pkg_system_prompt
   pkg_agent --> pkg_typert_protocol
-  pkg_skill_badge --> pkg_invariants
-  pkg_skill_badge --> pkg_skill
-  pkg_skill_browser_use --> pkg_invariants
-  pkg_skill_browser_use --> pkg_skill
-  pkg_skill_frontend_development --> pkg_invariants
-  pkg_skill_frontend_development --> pkg_skill
-  pkg_skill_go_backend --> pkg_invariants
-  pkg_skill_go_backend --> pkg_skill
-  pkg_skill_project_init --> pkg_invariants
-  pkg_skill_project_init --> pkg_skill
-  pkg_skill_stylekit --> pkg_invariants
-  pkg_skill_stylekit --> pkg_skill
   pkg_web_fetch_http --> pkg_invariants
   pkg_web_fetch_http --> pkg_timeout
   pkg_web_fetch_http --> pkg_web
@@ -772,10 +761,28 @@ flowchart TD
   pkg_fs_local --> pkg_subprocess
   pkg_fs_observation_policy --> pkg_fs
   pkg_fs_observation_policy --> pkg_invariants
+  pkg_skill_badge --> pkg_fs
+  pkg_skill_badge --> pkg_invariants
+  pkg_skill_badge --> pkg_skill
+  pkg_skill_browser_use --> pkg_fs
+  pkg_skill_browser_use --> pkg_invariants
+  pkg_skill_browser_use --> pkg_skill
   pkg_skill_filesystem --> pkg_fs
   pkg_skill_filesystem --> pkg_home_paths
   pkg_skill_filesystem --> pkg_invariants
   pkg_skill_filesystem --> pkg_skill
+  pkg_skill_frontend_development --> pkg_fs
+  pkg_skill_frontend_development --> pkg_invariants
+  pkg_skill_frontend_development --> pkg_skill
+  pkg_skill_go_backend --> pkg_fs
+  pkg_skill_go_backend --> pkg_invariants
+  pkg_skill_go_backend --> pkg_skill
+  pkg_skill_project_init --> pkg_fs
+  pkg_skill_project_init --> pkg_invariants
+  pkg_skill_project_init --> pkg_skill
+  pkg_skill_stylekit --> pkg_fs
+  pkg_skill_stylekit --> pkg_invariants
+  pkg_skill_stylekit --> pkg_skill
   pkg_hook_protocol --> pkg_invariants
   pkg_hook_protocol --> pkg_session
   pkg_hook_protocol --> pkg_shell
@@ -999,6 +1006,9 @@ flowchart TD
   pkg_command_compact --> pkg_commands
   pkg_command_compact --> pkg_compaction
   pkg_command_compact --> pkg_invariants
+  pkg_tool_context_compact --> pkg_compaction
+  pkg_tool_context_compact --> pkg_invariants
+  pkg_tool_context_compact --> pkg_tools
   pkg_computer_use --> pkg_agent
   pkg_computer_use --> pkg_brand
   pkg_computer_use --> pkg_invariants
@@ -1760,12 +1770,6 @@ flowchart TD
 | [`web`](../packages/web/web) | `web` | [`invariants`](../packages/runtime-diagnostics/invariants), [`llm`](../packages/llm/llm) |
 | [`lsp`](../packages/lsp/lsp) | `lsp` | [`brand`](../packages/util/brand), [`invariants`](../packages/runtime-diagnostics/invariants), [`llm`](../packages/llm/llm) |
 | [`agent`](../packages/core/agent) | `core` | [`invariants`](../packages/runtime-diagnostics/invariants), [`llm`](../packages/llm/llm), [`scope`](../packages/core/scope), [`session`](../packages/core/session), [`system-prompt`](../packages/core/system-prompt), [`typert-protocol`](../packages/typert/protocol) |
-| [`skill-badge`](../packages/skill/skill-badge) | `skill` | [`invariants`](../packages/runtime-diagnostics/invariants), [`skill`](../packages/skill/skill) |
-| [`skill-browser-use`](../packages/skill/skill-browser-use) | `skill` | [`invariants`](../packages/runtime-diagnostics/invariants), [`skill`](../packages/skill/skill) |
-| [`skill-frontend-development`](../packages/skill/skill-frontend-development) | `skill` | [`invariants`](../packages/runtime-diagnostics/invariants), [`skill`](../packages/skill/skill) |
-| [`skill-go-backend`](../packages/skill/skill-go-backend) | `skill` | [`invariants`](../packages/runtime-diagnostics/invariants), [`skill`](../packages/skill/skill) |
-| [`skill-project-init`](../packages/skill/skill-project-init) | `skill` | [`invariants`](../packages/runtime-diagnostics/invariants), [`skill`](../packages/skill/skill) |
-| [`skill-stylekit`](../packages/skill/skill-stylekit) | `skill` | [`invariants`](../packages/runtime-diagnostics/invariants), [`skill`](../packages/skill/skill) |
 | [`web-fetch-http`](../packages/web/web-fetch-http) | `web` | [`invariants`](../packages/runtime-diagnostics/invariants), [`timeout`](../packages/util/timeout), [`web`](../packages/web/web) |
 | [`web-search-anysearch`](../packages/web/web-search-anysearch) | `web` | [`invariants`](../packages/runtime-diagnostics/invariants), [`launch-environment`](../packages/util/launch-environment), [`proxy-pool`](../packages/net/proxy-pool), [`settings`](../packages/settings/settings), [`web`](../packages/web/web) |
 | [`web-search-bing`](../packages/web/web-search-bing) | `web` | [`invariants`](../packages/runtime-diagnostics/invariants), [`proxy-pool`](../packages/net/proxy-pool), [`settings`](../packages/settings/settings), [`web`](../packages/web/web) |
@@ -1824,7 +1828,13 @@ flowchart TD
 | [`goal-round-driver`](../packages/goal/goal-round-driver) | `goal` | [`agent`](../packages/core/agent), [`goal`](../packages/goal/goal), [`invariants`](../packages/runtime-diagnostics/invariants), [`llm`](../packages/llm/llm), [`session`](../packages/core/session) |
 | [`fs-local`](../packages/fs/fs-local) | `fs` | [`fs`](../packages/fs/fs), [`invariants`](../packages/runtime-diagnostics/invariants), [`subprocess`](../packages/subprocess/subprocess) |
 | [`fs-observation-policy`](../packages/fs/fs-observation-policy) | `fs` | [`fs`](../packages/fs/fs), [`invariants`](../packages/runtime-diagnostics/invariants) |
+| [`skill-badge`](../packages/skill/skill-badge) | `skill` | [`fs`](../packages/fs/fs), [`invariants`](../packages/runtime-diagnostics/invariants), [`skill`](../packages/skill/skill) |
+| [`skill-browser-use`](../packages/skill/skill-browser-use) | `skill` | [`fs`](../packages/fs/fs), [`invariants`](../packages/runtime-diagnostics/invariants), [`skill`](../packages/skill/skill) |
 | [`skill-filesystem`](../packages/skill/skill-filesystem) | `skill` | [`fs`](../packages/fs/fs), [`home-paths`](../packages/util/home-paths), [`invariants`](../packages/runtime-diagnostics/invariants), [`skill`](../packages/skill/skill) |
+| [`skill-frontend-development`](../packages/skill/skill-frontend-development) | `skill` | [`fs`](../packages/fs/fs), [`invariants`](../packages/runtime-diagnostics/invariants), [`skill`](../packages/skill/skill) |
+| [`skill-go-backend`](../packages/skill/skill-go-backend) | `skill` | [`fs`](../packages/fs/fs), [`invariants`](../packages/runtime-diagnostics/invariants), [`skill`](../packages/skill/skill) |
+| [`skill-project-init`](../packages/skill/skill-project-init) | `skill` | [`fs`](../packages/fs/fs), [`invariants`](../packages/runtime-diagnostics/invariants), [`skill`](../packages/skill/skill) |
+| [`skill-stylekit`](../packages/skill/skill-stylekit) | `skill` | [`fs`](../packages/fs/fs), [`invariants`](../packages/runtime-diagnostics/invariants), [`skill`](../packages/skill/skill) |
 | [`hook-protocol`](../packages/hooks/hook-protocol) | `hooks` | [`invariants`](../packages/runtime-diagnostics/invariants), [`session`](../packages/core/session), [`shell`](../packages/shell/shell) |
 | [`session-query`](../packages/session-query/session-query) | `session-query` | [`brand`](../packages/util/brand), [`invariants`](../packages/runtime-diagnostics/invariants), [`llm`](../packages/llm/llm), [`session`](../packages/core/session), [`session-persistence`](../packages/session/session-persistence), [`session-title`](../packages/session/session-title) |
 | [`acp`](../packages/acp/acp) | `acp` | [`agent`](../packages/core/agent), [`attachment`](../packages/attachment/attachment), [`invariants`](../packages/runtime-diagnostics/invariants), [`llm`](../packages/llm/llm), [`session`](../packages/core/session), [`user-approval`](../packages/interaction/user-approval) |
@@ -1861,6 +1871,7 @@ flowchart TD
 | [`tool-session-query`](../packages/session-query/tool-session-query) | `session-query` | [`invariants`](../packages/runtime-diagnostics/invariants), [`llm`](../packages/llm/llm), [`session`](../packages/core/session), [`session-query`](../packages/session-query/session-query), [`system-prompt`](../packages/core/system-prompt), [`timeout`](../packages/util/timeout), [`tools`](../packages/core/tools) |
 | [`tool-browser`](../packages/browser/tool-browser) | `browser` | [`attachment`](../packages/attachment/attachment), [`browser`](../packages/browser/browser), [`invariants`](../packages/runtime-diagnostics/invariants), [`llm`](../packages/llm/llm), [`sandbox-policy`](../packages/sandbox/sandbox-policy), [`subprocess`](../packages/subprocess/subprocess), [`tools`](../packages/core/tools), [`user-approval`](../packages/interaction/user-approval) |
 | [`command-compact`](../packages/compaction/command-compact) | `compaction` | [`commands`](../packages/interaction/commands), [`compaction`](../packages/compaction/compaction), [`invariants`](../packages/runtime-diagnostics/invariants) |
+| [`tool-context-compact`](../packages/compaction/tool-context-compact) | `compaction` | [`compaction`](../packages/compaction/compaction), [`invariants`](../packages/runtime-diagnostics/invariants), [`tools`](../packages/core/tools) |
 | [`computer-use`](../packages/computer-use/computer-use) | `computer-use` | [`agent`](../packages/core/agent), [`brand`](../packages/util/brand), [`invariants`](../packages/runtime-diagnostics/invariants), [`session`](../packages/core/session), [`settings`](../packages/settings/settings), [`storage-domain`](../packages/storage/storage-domain), [`subprocess`](../packages/subprocess/subprocess), [`tools`](../packages/core/tools), [`user-approval`](../packages/interaction/user-approval) |
 | [`agent-instructions`](../packages/context/agent-instructions) | `context` | [`agent`](../packages/core/agent), [`fs`](../packages/fs/fs), [`home-paths`](../packages/util/home-paths), [`invariants`](../packages/runtime-diagnostics/invariants), [`llm`](../packages/llm/llm), [`session`](../packages/core/session), [`tools`](../packages/core/tools) |
 | [`file-reference-local`](../packages/context/file-reference-local) | `context` | [`agent`](../packages/core/agent), [`file-reference`](../packages/context/file-reference), [`invariants`](../packages/runtime-diagnostics/invariants), [`system-prompt`](../packages/core/system-prompt), [`tools`](../packages/core/tools) |

@@ -622,6 +622,13 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         throws: ['{@link ManualCompactionError} for expected busy, agent-cancellation, changed-span, summarization/shrink, commit-stage, or persistence failures; an aborted request preserves its exact abort reason. Failed attempts remain visible in the log.'],
       },
       {
+        signature: 'abstract compactContext( agent: CompactionAgentContext, request: ContextCompactionRequest, signal: AbortSignal, ): Promise<CompactionResult | null>',
+        description: 'Compact earlier history on the model\'s own request while its turn is still open, so the rest of the turn — and later turns — continue from a smaller history. The backend picks the useful range without touching the open step; `request.focus` states what the remaining work still needs, so the summary keeps it and drops what the task has outgrown. The transaction is numbered to the open turn like compactRegion, and only the selected span must stay stable, so unrelated nodes appended while the summary runs survive.',
+        parameters: [{ name: 'agent', description: 'agent whose open-turn session surface is compacted.' }, { name: 'request', description: 'the model\'s own request, including its focus when stated.' }, { name: 'signal', description: 'cancellation scoped to the calling tool execution.' }],
+        returns: 'the compaction result, or `null` when no safe useful range exists.',
+        throws: ['{@link ManualCompactionError} for expected active-compaction, changed-span, summarization/shrink, or commit-stage failures; an aborted request preserves its exact abort reason. Failed attempts remain visible in the log.'],
+      },
+      {
         signature: 'abstract compactRegion( start: number, end: number, agent: CompactionAgentContext, signal?: AbortSignal, ): Promise<CompactionResult>',
         description: 'Forcibly compact a range of surface nodes into a single summary node. `start` and `end` name an inclusive span by surface position, not numeric seq order; replacements can make visible seqs non-monotonic. Both edges must be balanced so assistant tool calls remain paired with their results. A model- backed implementation forwards cancellation and rejects active, missing, reversed, or unbalanced ranges. The target session is `agent.session`. Its replacement user message must use compactCheckpointSource with the transaction\'s `CompactionId`. Use toolPairingBalancedBefore and toolPairingBalancedAfter for the edge checks.',
         parameters: [{ name: 'start', description: 'first surface seq, inclusive.' }, { name: 'end', description: 'last surface seq, inclusive.' }, { name: 'agent', description: 'context whose session is mutated and whose routing options guide summarization.' }, { name: 'signal', description: 'optional cancellation; model-backed implementations must forward it.' }],
@@ -3423,6 +3430,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ContentBlockType',
     declaration: 'export type ContentBlockType = keyof ContentBlockMap;',
+  },
+  {
+    name: 'ContextCompactionRequest',
+    declaration: 'export interface ContextCompactionRequest {\n    focus?: string;\n}',
   },
   {
     name: 'ContextFormed',

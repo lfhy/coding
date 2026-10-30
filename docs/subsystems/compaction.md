@@ -11,10 +11,12 @@
 | 事件 | 载荷 | 作用 |
 |---|---|---|
 | `compaction/start` | `{ turn }` | 获取日志记录的锁；数字标识尚未结束的自动轮次，`null` 标识独立手动尝试 |
-| `compaction/summary` | `{ summary, rawOutput?, llmStreamCall?, shadowedRange, shadowedSeqs, shadowedTokenCount, provider, model, maxTokens?, usage? }` | 安全摘要投影、可选的完整提供方输出与 usage、生成结果时恰好通过此上下文的 `ctx.llm.stream()` 发起一次调用所带的 `llmStreamCall: true` 标记（此时必须提供完整的 `rawOutput`）、被遮蔽的 surface 边界对（`start`/`end` seq——位置跨度，而非数值区间）、按 surface 顺序排列的被遮蔽 seq、估算 token 数，以及摘要调用的 envelope（`provider`、`model`，若有生成上限则还包括该上限）——写入日志后，该一次性请求可由日志 + 代码重建（见可重建性 设计记录）；未带标记的 `rawOutput` 并不能判定调用路径 |
+| `compaction/summary` | `{ summary, focus?, rawOutput?, llmStreamCall?, shadowedRange, shadowedSeqs, shadowedTokenCount, provider, model, maxTokens?, usage? }` | 安全摘要投影、可选的完整提供方输出与 usage、生成结果时恰好通过此上下文的 `ctx.llm.stream()` 发起一次调用所带的 `llmStreamCall: true` 标记（此时必须提供完整的 `rawOutput`）、被遮蔽的 surface 边界对（`start`/`end` seq——位置跨度，而非数值区间）、按 surface 顺序排列的被遮蔽 seq、估算 token 数，以及摘要调用的 envelope（`provider`、`model`，若有生成上限则还包括该上限）——写入日志后，该一次性请求可由日志 + 代码重建（见可重建性 设计记录）；未带标记的 `rawOutput` 并不能判定调用路径 |
 | `compaction/end` | `{ turn, error? }` | 使用相同的数字或 `null` 归属值释放锁（`error` 记录失败尝试） |
 
 锁括住**整个**操作：先追加 `compaction/start`，然后执行摘要生成、写入 `compaction/summary` 记录与 `user/message` 替换，最后才追加 `compaction/end`。最后释放锁意味着操作中途崩溃会表现为可检测的遗留锁（有 `compaction/start` 而无匹配的 `compaction/end`），而非一个虚假声称压缩已完成的 `compaction/end`。
+
+`focus` 只在请求方（当前是模型的 `context_compact` 工具）交代了后续工作所需内容时出现：它进入摘要指令，因此与 `provider`／`model`／`maxTokens`／`rawOutput` 一样，必须随摘要一起记录，那次一次性请求才能由日志 + 代码重建。
 
 这些标记表示锁的时间点，而不是排他的容器。摘要等待期间，不相关的空闲注入可以出现在独立的手动 start 与 end 之间。手动路径只重新验证所选位置 span，因此替换检查点之后仍保留该注入上下文。活动的未匹配 start 会阻塞所有入口点；较新 `session/end-seed` 之前的未匹配 start 是先前生命周期留下的陈旧证据，会被忽略。
 
@@ -64,12 +66,29 @@ interface CompactionResult {
 type CompactionTrigger = 'pressure' | 'context-overflow'
 ```
 
-`CompactionEngine` 暴露 `compactIfNeeded(agent, trigger, signal)` 以执行自动 `pressure` 或 `context-overflow` 策略，暴露 `compactNow(agent, signal)` 以便即使未达到压力也对空闲会话进行一次有效缩减，还针对显式、两端均包含的 surface 范围暴露 `compactRegion(...)`。`compactNow()` 作为轮次之间的 agent maintenance 运行；没有有效范围时返回 `null` 且不写入；在摘要前记录独立的 `turn: null` 标记对，并在后续排队提示词能够从新表层派生前 flush 已闭合尝试。每个后端都使用 `compactCheckpointSource(compactionId, sourceCommandId?)` 创建替换用 `user/message` 的源；client 与 wire 消费方从无 Cordis 的 `coding-compaction/checkpoint` 子路径导入该构造函数、`CompactionCheckpointSource` 和 `isCompactCheckpointSource()`，包根则为 host 消费方重新导出它们。必填的事务身份会关联替换检查点，而该判定函数使检查点识别不依赖任一特定后端。实现必须把传入的 signal 转发给摘要流程。该 seam 不拥有计价 API：单例 [`ctx.tokenMeter`](token-meter.md) 直接拥有估算与回放，而 `dsh-compaction-basic` 拥有保留策略、事件排序、按路由执行的摘要调用及其配置。
-
-预期的手动失败使用 `ManualCompactionErrorCode`：
+模型主动请求的压缩只交代后续工作需要什么；范围选择与摘要仍是后端策略。
 
 ```ts type-equiv
-/** Expected failure classes for an explicit idle-session compaction request. */
+/**
+ * One compaction the model requests itself, in the middle of its own turn.
+ * The backend owns range selection and summarization; the request states only
+ * what the remaining work still needs.
+ */
+interface ContextCompactionRequest {
+  /**
+   * What must survive the replacement — the concrete task ahead, decisions,
+   * paths, or constraints. Absent for a general engineering checkpoint.
+   */
+  focus?: string
+}
+```
+
+`CompactionEngine` 暴露 `compactIfNeeded(agent, trigger, signal)` 以执行自动 `pressure` 或 `context-overflow` 策略，暴露 `compactNow(agent, signal)` 以便即使未达到压力也对空闲会话进行一次有效缩减，暴露 `compactContext(agent, request, signal)` 以便模型在自己的轮次仍然打开时主动压缩，还针对显式、两端均包含的 surface 范围暴露 `compactRegion(...)`。`compactNow()` 作为轮次之间的 agent maintenance 运行；没有有效范围时返回 `null` 且不写入；在摘要前记录独立的 `turn: null` 标记对，并在后续排队提示词能够从新表层派生前 flush 已闭合尝试。每个后端都使用 `compactCheckpointSource(compactionId, sourceCommandId?)` 创建替换用 `user/message` 的源；client 与 wire 消费方从无 Cordis 的 `coding-compaction/checkpoint` 子路径导入该构造函数、`CompactionCheckpointSource` 和 `isCompactCheckpointSource()`，包根则为 host 消费方重新导出它们。必填的事务身份会关联替换检查点，而该判定函数使检查点识别不依赖任一特定后端。实现必须把传入的 signal 转发给摘要流程。该 seam 不拥有计价 API：单例 [`ctx.tokenMeter`](token-meter.md) 直接拥有估算与回放，而 `dsh-compaction-basic` 拥有保留策略、事件排序、按路由执行的摘要调用及其配置。
+
+预期的手动失败使用 `ManualCompactionErrorCode`，模型的 `compactContext` 请求沿用同一分类：
+
+```ts type-equiv
+/** Expected failure classes for an explicit compaction request. */
 type ManualCompactionErrorCode =
   | 'busy'
   | 'cancelled'
@@ -165,6 +184,24 @@ abstract compactIfNeeded( agent: CompactionAgentContext, trigger: CompactionTrig
 abstract compactNow( agent: ManualCompactAgentContext, signal: AbortSignal, sourceCommandId?: CommandId, ): Promise<CompactionResult | null>
 
 /**
+ * Compact earlier history on the model's own request while its turn is still
+ * open, so the rest of the turn — and later turns — continue from a smaller
+ * history. The backend picks the useful range without touching the open step;
+ * `request.focus` states what the remaining work still needs, so the summary
+ * keeps it and drops what the task has outgrown. The transaction is numbered
+ * to the open turn like {@link compactRegion}, and only the selected span must
+ * stay stable, so unrelated nodes appended while the summary runs survive.
+ * @param agent - agent whose open-turn session surface is compacted.
+ * @param request - the model's own request, including its focus when stated.
+ * @param signal - cancellation scoped to the calling tool execution.
+ * @returns the compaction result, or `null` when no safe useful range exists.
+ * @throws {@link ManualCompactionError} for expected active-compaction, changed-span,
+ * summarization/shrink, or commit-stage failures; an aborted request preserves
+ * its exact abort reason. Failed attempts remain visible in the log.
+ */
+abstract compactContext( agent: CompactionAgentContext, request: ContextCompactionRequest, signal: AbortSignal, ): Promise<CompactionResult | null>
+
+/**
  * Forcibly compact a range of surface nodes into a single summary node.
  * `start` and `end` name an inclusive span by surface position, not numeric seq
  * order; replacements can make visible seqs non-monotonic. Both edges must be
@@ -187,7 +224,7 @@ abstract compactRegion( start: number, end: number, agent: CompactionAgentContex
 
 Types: [CommandId](commands.md)
 
-Source: [`packages/compaction/compaction/src/index.ts:96`](../../packages/compaction/compaction/src/index.ts)
+Source: [`packages/compaction/compaction/src/index.ts:111`](../../packages/compaction/compaction/src/index.ts)
 
 <a id="ctxtoolresultpruner--toolresultpruner"></a>
 

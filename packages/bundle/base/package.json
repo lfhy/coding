@@ -103,6 +103,7 @@
     "coding-token-meter": "workspace:^",
     "coding-tool-bash": "workspace:^",
     "coding-tool-call-timeout-policy": "workspace:^",
+    "coding-tool-context-compact": "workspace:^",
     "coding-tool-fs": "workspace:^",
     "coding-tool-apply-patch": "workspace:^",
     "coding-tool-fs-search": "workspace:^",

@@ -7,7 +7,7 @@ import {
   compactCheckpointSource,
   isCompactCheckpointSource,
 } from 'coding-compaction'
-import type { CompactionResult, CompactionTrigger } from 'coding-compaction'
+import type { CompactionResult, CompactionTrigger, ContextCompactionRequest } from 'coding-compaction'
 import { Session, SessionId } from 'coding-session'
 import type { CompactionAgentContext } from 'coding-compaction'
 import type { ManualCompactAgentContext } from 'coding-compaction'
@@ -33,6 +33,15 @@ class StubCompactionEngine extends CompactionEngine {
 
   override async compactNow(
     _agent: ManualCompactAgentContext,
+    signal: AbortSignal,
+  ): Promise<CompactionResult | null> {
+    this.lastSignal = signal
+    return null
+  }
+
+  override async compactContext(
+    _agent: CompactionAgentContext,
+    _request: ContextCompactionRequest,
     signal: AbortSignal,
   ): Promise<CompactionResult | null> {
     this.lastSignal = signal
@@ -116,6 +125,9 @@ describe('CompactionEngine seam', () => {
       ...stubAgent(session),
       runMaintenance: task => task(new AbortController().signal),
     }, signal)).toBeNull()
+    expect(svc.lastSignal).toBe(signal)
+    expect(await svc.compactContext(stubAgent(session), { focus: 'ship it' }, signal)).toBeNull()
+    expect(await svc.compactContext(stubAgent(session), {}, signal)).toBeNull()
     expect(svc.lastSignal).toBe(signal)
   })
 

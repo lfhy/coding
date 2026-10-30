@@ -73,6 +73,8 @@ import * as ToolTasks from 'coding-tool-jobs'
 import type TeamService from 'coding-experimental-agent-team'
 import * as ToolTeam from 'coding-experimental-tool-agent-team'
 import * as ToolTodo from 'coding-tool-todo'
+import * as ToolContextCompact from 'coding-tool-context-compact'
+import CompactionEngine from 'coding-compaction'
 import * as ToolSubagent from 'coding-tool-subagent'
 import * as ToolWeb from 'coding-tool-web'
 import VmWorkflowEngine from 'coding-workflow-worker-thread'
@@ -154,6 +156,28 @@ class CatalogComputerUseService extends ComputerUseService {
 
   override act(): Promise<never> {
     return Promise.reject(new Error('gen-tool-catalog: UI input is unreachable during schema harvest'))
+  }
+}
+
+/**
+ * 压缩 seam 的 schema 采集替身：工具 schema 只取决于 seam 的方法签名，
+ * 采集期绝不写入会话，因此四个入口一律拒绝。
+ */
+class CatalogCompactionEngine extends CompactionEngine {
+  override compactIfNeeded(): Promise<never> {
+    return Promise.reject(new Error('gen-tool-catalog: compaction writes are unreachable during schema harvest'))
+  }
+
+  override compactContext(): Promise<never> {
+    return Promise.reject(new Error('gen-tool-catalog: compaction writes are unreachable during schema harvest'))
+  }
+
+  override compactNow(): Promise<never> {
+    return Promise.reject(new Error('gen-tool-catalog: compaction writes are unreachable during schema harvest'))
+  }
+
+  override compactRegion(): Promise<never> {
+    return Promise.reject(new Error('gen-tool-catalog: compaction writes are unreachable during schema harvest'))
   }
 }
 
@@ -515,6 +539,22 @@ const TOOL_PACKAGES: ToolPackage[] = [
       + 'Version 1 accepts after_seconds, explicit absolute at, and bounded fixed-rate every_seconds, '
       + 'and discloses session-local delivery; '
       + 'management reads and mutations require the shared Session persistence barrier.',
+  },
+  {
+    pkg: 'coding-tool-context-compact',
+    dir: 'tool-context-compact',
+    source: 'packages/compaction/tool-context-compact/src/index.ts',
+    requires: ['ctx.tools', 'ctx.compaction'],
+    writes: ['tool/call', 'compaction/* transaction events for the replaced range', 'tool/result'],
+    async mount(ctx) {
+      await ctx.plugin(CatalogCompactionEngine)
+      await ctx.plugin(ToolContextCompact)
+    },
+    note:
+      'The tool only names what the remaining work must keep; range selection, the open-turn '
+      + 'transaction, and the summary stay with the mounted backend. '
+      + '`compactContext` compacts by span, so unrelated nodes appended while the summary runs '
+      + 'survive the replacement.',
   },
   {
     pkg: 'coding-tool-lsp',
