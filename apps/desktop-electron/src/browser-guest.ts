@@ -145,8 +145,11 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
     } })
     const wc = view.webContents
     if (owner.tabs.size === 0) {
-      wc.session.setPermissionRequestHandler((_contents, _permission, callback) => { callback(false) })
-      wc.session.setPermissionCheckHandler(() => false)
+      // 只放行「写入剪贴板」这一项权限，让页面的复制按钮在 guest 里照常工作；读取剪贴板与
+      // 其它权限（相机、通知、全屏等）继续一律拒绝，guest 与真人共用系统剪贴板。
+      const granted = new Set(['clipboard-sanitized-write'])
+      wc.session.setPermissionRequestHandler((_contents, permission, callback) => { callback(granted.has(permission)) })
+      wc.session.setPermissionCheckHandler((_contents, permission) => granted.has(permission))
       wc.session.on('will-download', (event) => { event.preventDefault() })
     }
     wc.setWindowOpenHandler(() => ({ action: 'deny' }))

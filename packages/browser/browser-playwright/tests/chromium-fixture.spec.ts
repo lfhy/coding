@@ -152,6 +152,49 @@ describe.skipIf(process.env.DSH_BROWSER_E2E !== '1' || !existsSync(chromium.exec
       }
     })
 
+    it('lets a page copy to the clipboard while clipboard reads stay denied', { timeout: 40_000 }, async () => {
+      const html = `<!doctype html><title>Clipboard</title>
+        <button id="copy">Copy</button><button id="read">Read</button><output>Waiting</output>
+        <script>
+          const out = document.querySelector('output')
+          document.querySelector('#copy').addEventListener('click', async () => {
+            try { await navigator.clipboard.writeText('copied-by-page'); out.textContent = 'copied' }
+            catch (error) { out.textContent = 'write-failed:' + error.name }
+          })
+          document.querySelector('#read').addEventListener('click', async () => {
+            try { out.textContent = 'read:' + await navigator.clipboard.readText() }
+            catch (error) { out.textContent = 'read-failed:' + error.name }
+          })
+        </script>`
+      const server = createServer((_req, res) => { res.setHeader('content-type', 'text/html'); res.end(html) })
+      await new Promise<void>((resolve) => { server.listen(0, '127.0.0.1', resolve) })
+      const origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
+      const ctx = new Context()
+      const signal = new AbortController().signal
+      try {
+        await ctx.plugin(PlaywrightBrowserUse).await()
+        const id = SessionId('clipboard')
+        const initial = await ctx.browserUse.execute(id, { kind: 'navigate', url: origin }, signal)
+        const copy = element(initial.observation.snapshot, 'button', 'Copy')
+        const copied = await ctx.browserUse.execute(id, { kind: 'click', ref: copy,
+          revision: initial.observation.revision }, signal)
+        // 提供方只为页面预授予 clipboard-write：复制按钮照常工作。
+        expect(copied.observation.snapshot).toContain('copied')
+        expect(copied.observation.snapshot).not.toContain('write-failed')
+        const read = element(copied.observation.snapshot, 'button', 'Read')
+        await ctx.browserUse.execute(id, { kind: 'click', ref: read,
+          revision: copied.observation.revision }, signal)
+        // 读取是异步的：等页面写回结果后再观测。
+        await new Promise<void>((resolve) => { setTimeout(resolve, 150) })
+        const afterRead = await ctx.browserUse.execute(id, { kind: 'snapshot' }, signal)
+        // 读取剪贴板仍被拒绝，页面拿不到宿主剪贴板内容。
+        expect(afterRead.observation.snapshot).toContain('read-failed:NotAllowedError')
+      } finally {
+        await ctx.fiber.dispose()
+        await new Promise<void>((resolve) => { server.close(() => { resolve() }) })
+      }
+    })
+
     it('navigates loopback and localhost with the default Provider and no network config', { timeout: 40_000 }, async () => {
       const { ctx, origin, close } = await fixture()
       const signal = new AbortController().signal

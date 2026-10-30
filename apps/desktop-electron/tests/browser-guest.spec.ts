@@ -100,7 +100,7 @@ function fakeContents() {
       setPermissionRequestHandler: vi.fn<(
         handler: (contents: unknown, permission: string, callback: (allowed: boolean) => void) => void,
       ) => void>(),
-      setPermissionCheckHandler: vi.fn<(handler: () => boolean) => void>(),
+      setPermissionCheckHandler: vi.fn<(handler: (contents: unknown, permission: string) => boolean) => void>(),
       on: vi.fn<(event: string, handler: (event: { preventDefault(): void }) => void) => void>(),
       webRequest: { onBeforeRequest: vi.fn<(
         filter: { urls: string[] },
@@ -233,10 +233,18 @@ describe('Electron 实时浏览器 guest', () => {
     expect(guestPreferences.partition).toMatch(/^dsh-guest-/)
     const wc = electron.views[0]!.webContents
     expect(wc.setWindowOpenHandler.mock.calls[0]?.[0]()).toEqual({ action: 'deny' })
-    expect(wc.session.setPermissionCheckHandler.mock.calls[0]?.[0]()).toBe(false)
+    // 只有「写入剪贴板」放行，页面的复制按钮可用；读取剪贴板与其它权限继续拒绝。
+    const checkHandler = wc.session.setPermissionCheckHandler.mock.calls[0]?.[0]
+    expect(checkHandler?.(wc, 'clipboard-sanitized-write')).toBe(true)
+    expect(checkHandler?.(wc, 'clipboard-read')).toBe(false)
+    expect(checkHandler?.(wc, 'camera')).toBe(false)
+    const requestHandler = wc.session.setPermissionRequestHandler.mock.calls[0]?.[0]
     const callback = vi.fn()
-    wc.session.setPermissionRequestHandler.mock.calls[0]?.[0]?.(wc, 'camera', callback)
+    requestHandler?.(wc, 'camera', callback)
     expect(callback).toHaveBeenCalledWith(false)
+    const allowed = vi.fn()
+    requestHandler?.(wc, 'clipboard-sanitized-write', allowed)
+    expect(allowed).toHaveBeenCalledWith(true)
     const download = { preventDefault: vi.fn() }
     wc.session.on.mock.calls[0]?.[1]?.(download)
     expect(download.preventDefault).toHaveBeenCalledOnce()

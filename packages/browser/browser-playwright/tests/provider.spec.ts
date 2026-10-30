@@ -964,7 +964,9 @@ describe('Playwright browser owner', () => {
       new AbortController().signal)
     expect(vi.mocked(chromium).launch.mock.calls).toEqual([[{ headless: true }]])
     expect(browser.newContext).toHaveBeenCalledExactlyOnceWith({
-      viewport: { width: 1280, height: 720 }, deviceScaleFactor: 2, acceptDownloads: false, permissions: [],
+      viewport: { width: 1280, height: 720 }, deviceScaleFactor: 2, acceptDownloads: false,
+      // 只放行剪贴板写入，使页面的复制按钮可用；读取剪贴板继续拒绝。
+      permissions: ['clipboard-write'],
     })
     expect(browserContext.route).not.toHaveBeenCalled()
     expect(browserContext.routeWebSocket).not.toHaveBeenCalled()

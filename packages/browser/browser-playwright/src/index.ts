@@ -202,7 +202,10 @@ export default class PlaywrightBrowserUse extends BrowserUseService {
   private async create(): Promise<SessionPage> {
     const browser = await this.launch()
     const browserContext = await browser.newContext({
-      viewport: VIEWPORT, deviceScaleFactor: 2, acceptDownloads: false, permissions: [],
+      viewport: VIEWPORT, deviceScaleFactor: 2, acceptDownloads: false,
+      // 页面只能写入剪贴板，使「复制」按钮在自动化里照常工作；读取剪贴板会让任意页面拿到
+      // 用户系统剪贴板内容，因此与其它权限一起保持拒绝。
+      permissions: ['clipboard-write'],
     })
     try {
       const page = await browserContext.newPage()
