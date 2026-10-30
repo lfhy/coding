@@ -6,7 +6,7 @@
 
 - **单元测试**（`pnpm run test`）：vitest 运行包和示例各自的 `tests/**` 目录下的测试，以及匹配 `scripts/**/*.spec.ts` 的仓库脚本测试；测试文件与其所覆盖的代码区域放在一起。每个注册表都有一个 HMR（热模块替换）安全测试（对向该注册表贡献内容的 fiber 执行 dispose（资源释放），并断言清理完成）。优先覆盖边界情况、错误路径、事件顺序、并发竞态，以及针对约定回归的永久测试（见 `packages/core/agent-loop/tests/contract-regressions.spec.ts`）。
 - **覆盖率门禁**（`pnpm run test:coverage`）：门禁级运行，对 `packages/*/*/src` 按文件 100% 覆盖。未覆盖的行往往是门禁正确标记出的死代码（应删除），而非需要补写的测试。行覆盖率是必要条件，但永远不是充分条件：它证明行被执行过，不证明功能按交付预期工作。`packages/shell/pwsh-local/src` 的按文件 100% 覆盖需要真实的 `pwsh`：缺少它时其执行器套件会自动跳过，`vitest.config.ts` 会豁免该文件以使无 pwsh 的主机保持绿色，而 CI runner 自带 pwsh，仍按完整标准执行门禁。
-- **真实 API e2e**（`pnpm run test:e2e`）：带密钥测试调用真实提供方 API，包括 DeepSeek 模型以及各提供方特有的冒烟测试；这些测试各自由自己的密钥控制（`EXA_API_KEY`、`PERPLEXITY_API_KEY` 等），缺少密钥时套件会自动跳过，使 keyless CI 保持绿色。
+- **真实 API e2e**（`pnpm run test:e2e`）：调用真实提供方 API。出厂默认模型是内置 Free 渠道的匿名免费层，它的凭据是空 Bearer 而不是本机密钥，因此这层套件无需任何配置就能真的发出请求——[`coding-llm-opencode`](../packages/llm/llm-opencode/README.md) 用它对上游做冒烟，离线或上游拒绝时按探活结果自跳过。DeepSeek 路由与其它提供方特有的套件仍各自由自己的密钥控制（`DEEPSEEK_API_KEY`、`EXA_API_KEY`、`PERPLEXITY_API_KEY` 等），缺少时自动跳过，使 keyless CI 保持绿色。
 - **快照**（`pnpm run test:snapshot`）：无密钥预期输出覆盖对外行为（传输约定与呈现），持久化日志则固定组装后的后端行为。ACP 启动真实的自动化服务器示例、回放录制会话，并对归一化 JSON-RPC 与重新持久化的日志执行 diff；headless 后端场景通过未导出的 JSONL 测试 driver 启动各自显式的示例组装，而 `apps/cli` 则单独负责产品 CLI（命令行界面）`dsh --profile headless` 的验收。当模型 transcript（文本记录）发生变化时使用 `pnpm run test:snapshot:record`，回放输入仍然有效时使用 `pnpm run test:snapshot:refresh`；请审查每一处 JSONL 与预期输出差异。一个 ACP 场景（`text-turn`）固定完整的系统提示词与工具 schema 内容；其他 fixture（测试前置数据）将其 token 化，因此修改只会扰动一行。
 - **Web 浏览器快照**（`pnpm run test:web`；也由可选的 `check:ci:linux-primary`、`check:ci:consumers` 检查命令运行）：Chromium 将回放后的浏览器输出与 `apps/web/tests/snapshots/` 比较。这些检查命令强制只读的 `DSH_SNAPSHOT=replay`，绝不写入预期输出；record/refresh 留在本地，每处 diff 都须评审。`test:web` 先构建并加载交付的客户端和插件 CSS。
 
@@ -14,9 +14,9 @@ Web 回放先串行运行会改写源码和构建产物的 HMR 用例及 Cordis 
 
 签入仓库的会话格式 JSONL 使用规范打包行布局，无密钥快照门禁会通过 `session` header 发现每一份此类 fixture；[临时迁移器](../scripts/migrate-packed-session-fixtures.ts)会改写旧版 fixture 布局。
 
-## 带密钥策略：推理（inference）在这里很便宜
+## 真实模型策略：推理（inference）在这里很便宜
 
-我们是 DeepSeek，不要吝惜真实 API 测试。无密钥测试只能证明底层通路；只有带密钥运行才能证明 agent（智能体）能对接真实模型正常工作。覆盖文件写入提示词、包含多个轮次的对话、工具使用和流中取消。价值最高的是**冒烟测试**：启动真实示例、发送一条提示词，并检查外部世界；它们能捕获「单元测试全绿、产品却坏了」这一类 mock 无法发现的问题（[事故复盘 0001](postmortem/0001-acp-default-export-drops-inject.md)）。自动跳过让无密钥 CI 和无密钥贡献者不受阻塞；它不是成本信号。每个示例都提供无密钥和带密钥冒烟测试（[examples/AGENTS.md](../examples/AGENTS.md)）。
+我们是 DeepSeek，不要吝惜真实 API 测试。无密钥的单元测试只能证明底层通路；真实模型 e2e 才证明 agent（智能体）能对接模型正常工作。内置 Free 渠道让这件事随时可跑，不需要先配置任何凭据；要验证 DeepSeek 自身路由或其它提供方的行为时，再为对应套件准备密钥。覆盖文件写入提示词、包含多个轮次的对话、工具使用和流中取消。价值最高的是**冒烟测试**：启动真实示例、发送一条提示词，并检查外部世界；它们能捕获「单元测试全绿、产品却坏了」这一类 mock 无法发现的问题（[事故复盘 0001](postmortem/0001-acp-default-export-drops-inject.md)）。跳过条件只服务于「这个资源此刻不可用」（离线、缺该提供方的密钥），不是成本信号：Free 渠道的套件不因缺密钥跳过。每个示例都提供不调模型的和真实模型的冒烟测试（[examples/AGENTS.md](../examples/AGENTS.md)）。
 
 ## 优先使用真实实现而非 mock
 

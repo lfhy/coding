@@ -375,6 +375,14 @@ describe.skipIf(!existsSync(dshBin))('dsh BUILT bin (node lib/bin.js, no tsx)', 
       successText: 'published headless profile reached the mock',
     })
     const home = mkdtempSync(join(tmpdir(), 'dsh-built-headless-'))
+    // The shipped default is the keyless Free channel, which would answer from its
+    // live upstream; pin this temp home to the DeepSeek route the mock serves.
+    writeFileSync(join(home, 'settings.yaml'), [
+      'agent-default-model:',
+      '  provider: deepseek-official',
+      '  model: deepseek-v4-flash',
+      '',
+    ].join('\n'))
     try {
       const result = await runBuiltBin(['--profile', 'headless', 'answer', 'from', 'the', 'published', 'entry'], {
         DSH_HOME: home,
@@ -717,10 +725,10 @@ describe.skipIf(!existsSync(dshBin))('dsh BUILT bin (node lib/bin.js, no tsx)', 
       const { stdout, code, stderr } = await runBuiltBin(['--profile', 'web', '--dump-default-config'], { DSH_HOME: home })
       expect(code).toBe(0)
       expect(stderr).toBe('')
-      expect(stdout).toContain("name: 'coding-agent-loop'")
+      expect(stdout).toContain('name: coding-agent-loop')
       expect(stdout).toContain('agents: []')
       expect(stdout).toContain('# == coding-base')
-      expect(stdout).toContain("name: 'coding-host-webserver'")
+      expect(stdout).toContain('name: coding-host-webserver')
     }, 30_000)
 
     it('prints the headless profile without Host or browser layers', async () => {
@@ -730,10 +738,10 @@ describe.skipIf(!existsSync(dshBin))('dsh BUILT bin (node lib/bin.js, no tsx)', 
       )
       expect(code).toBe(0)
       expect(stderr).toBe('')
-      expect(stdout).toContain("name: 'coding-headless'")
-      expect(stdout).not.toMatch(/name: 'coding-host-/)
-      expect(stdout).not.toContain("name: 'coding-web-app'")
-      expect(stdout).not.toMatch(/name: 'coding-client-/)
+      expect(stdout).toContain('name: coding-headless')
+      expect(stdout).not.toMatch(/name: '?coding-host-/)
+      expect(stdout).not.toContain('name: coding-web-app')
+      expect(stdout).not.toMatch(/name: '?coding-client-/)
     }, 30_000)
 
     it('composes the profile user layer and a --patch overlay in order', async () => {

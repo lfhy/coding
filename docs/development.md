@@ -10,7 +10,7 @@
 - Node.js 支持 `^22.19.0 || >=24.0.0`；个人客户端 CI 使用 Node 24。Go 在 macOS 上需 1.25 或更新版本，在 Linux 上需 1.24 或更新版本。
 - Linux 需先准备符合上述版本的 Node.js、仓库指定的 pnpm 和 Go。
 - Git 2.26 或更高版本；钩子设置会启用 Git 的 worktree 专属配置扩展。
-- 可选：一个 DeepSeek API key，用于 Web、headless 和 ACP（Agent Client Protocol）自动化 agent（智能体）演示以及真实 API 的 e2e 测试。
+- 可选：外部提供方的 API key。出厂默认模型走内置 Free 渠道（匿名免费层，见 [模型渠道](../packages/llm/llm-opencode/README.md)），因此 Web、headless 演示与真实模型 e2e 都不需要先准备密钥；要跑 DeepSeek 路由或其它提供方特有的套件时才需要各自的 key。
 
 ### 首次搭建
 
@@ -101,14 +101,14 @@ pnpm run build
 
 ### 环境变量
 
-真实的 DeepSeek 适配器和需要密钥的 agent 演示从环境变量或仓库根目录一个被 gitignore 的 `.env` 文件读取凭证：
+外部提供方的适配器与套件从环境变量或仓库根目录一个被 gitignore 的 `.env` 文件读取凭证：
 
 ```sh
 DEEPSEEK_API_KEY=sk-...
 DEEPSEEK_BASE_URL=https://... # optional
 ```
 
-`DEEPSEEK_BASE_URL` 可选，默认为公开 API。请勿提交真实凭证。未设置 `DEEPSEEK_API_KEY` 时，真实 API 的 e2e 套件会自动跳过。
+`DEEPSEEK_BASE_URL` 可选，默认为公开 API。请勿提交真实凭证。未设置 `DEEPSEEK_API_KEY` 时，DeepSeek 专属的 e2e 套件会自动跳过，而内置 Free 渠道的套件仍然照常运行——它的凭据是空 Bearer，不是本机密钥。
 
 ### Git 集成
 
@@ -147,19 +147,19 @@ macOS arm64 上测试原生桌面窗口，从仓库根目录执行 `make dev`，
 pnpm run build
 ```
 
-单次运行的 Headless coding agent 需要环境变量或仓库根目录 `.env` 中的 `DEEPSEEK_API_KEY`：
+单次运行的 Headless coding agent 使用组合默认的 Free 渠道模型，无需任何凭据：
 
 ```sh
 pnpm dsh --profile headless "summarize this workspace"
 ```
 
-自指的 cordis 演示可以检查并修改其实时插件运行时，并需要相同的凭证（默认 `web`，也可用 `acp`）：
+自指的 cordis 演示可以检查并修改其实时插件运行时；`web` 形态同样走 Free 渠道，`acp` 形态跑的是显式选了 DeepSeek 路由的示例组合，因此只有后者需要 `DEEPSEEK_API_KEY`：
 
 ```sh
 pnpm run demo:cordis
 ```
 
-ACP 自动化服务器通过 JSON-RPC stdio 提供全新 agent 会话，同样需要 `DEEPSEEK_API_KEY`：
+ACP 自动化服务器通过 JSON-RPC stdio 提供全新 agent 会话；`examples/acp-agent/cordis.yml` 显式把模型固定成 DeepSeek 路由，因此这条演示需要 `DEEPSEEK_API_KEY`：
 
 ```sh
 pnpm run demo:acp

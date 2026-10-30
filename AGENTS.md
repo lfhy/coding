@@ -39,7 +39,7 @@ pnpm run build:official      # 使用固定客户端元数据构建可消费产�
 pnpm run test:gui            # CLI/Host/Client GUI 相关测试
 pnpm run check:all           # 需要完整本地门禁时使用
 pnpm run hygiene             # 包约束、入口、依赖和产物卫生检查
-pnpm run test:e2e            # 有 DEEPSEEK_API_KEY 时才运行真实 API 测试
+pnpm run test:e2e            # 真实模型 e2e：内置 Free 渠道无需密钥，其它提供方按各自密钥自跳过
 ```
 
 先安装依赖再运行脚本；仓库使用 `package.json` 固定的 pnpm 版本和 Node 引擎范围。普通变更选择覆盖改动的最小检查集；跨包、公开行为、构建产物或用户可见输出的变更补充相应的构建、快照或文档检查。不要因为本地缺少外部凭据而把 keyless 检查改成静默跳过。
@@ -75,7 +75,7 @@ CI 不代表桌面端所有平台已经支持。新增桌面壳或原生模块�
 
 ## 凭据、数据与安全
 
-本地真实 API 使用环境变量或根目录被 gitignore 的 `.env`，例如 `DEEPSEEK_API_KEY` 和可选的 `DEEPSEEK_BASE_URL`；绝不提交凭据、会话、设置、缓存或构建产物。配置文件、session log、worker 消息、工具 JSON 和 RPC 输入都视为外部数据，必须在所属解析点失败并给出具体诊断。不要为了测试方便放宽文件系统、Shell、网络或桌面权限。
+出厂默认模型是内置 Free 渠道的匿名免费层，不需要本机凭据；自己接的提供方从环境变量或根目录被 gitignore 的 `.env` 读取，例如 `DEEPSEEK_API_KEY` 和可选的 `DEEPSEEK_BASE_URL`。绝不提交凭据、会话、设置、缓存或构建产物。配置文件、session log、worker 消息、工具 JSON 和 RPC 输入都视为外部数据，必须在所属解析点失败并给出具体诊断。不要为了测试方便放宽文件系统、Shell、网络或桌面权限。
 
 SQLite schema、session format、配置文件和 wire/RPC 数据一旦被代码消费，就按拥有它的包维护版本与不变量。当前仍处于个人客户端早期阶段，可以在没有外部消费者时整体更新格式和引用；若将来形成可分发桌面安装包，再为迁移和回滚建立单独决策。
 
