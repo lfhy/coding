@@ -218,6 +218,9 @@
     - id: command-compact
       name: 'coding-command-compact'
 
+    - id: tool-context-compact
+      name: 'coding-tool-context-compact'
+
     - id: tool-result-pruner
       name: 'coding-compaction-tool-result-pruner'
       config:

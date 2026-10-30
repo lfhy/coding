@@ -33,6 +33,8 @@ flowchart LR
   cfg --> plugin_acp_token_meter
   plugin_acp_compaction_basic["compaction-basic<br/>coding-compaction-basic"]
   cfg --> plugin_acp_compaction_basic
+  plugin_acp_tool_context_compact["tool-context-compact<br/>coding-tool-context-compact"]
+  cfg --> plugin_acp_tool_context_compact
   plugin_acp_session_projection["session-projection<br/>coding-session-projection"]
   cfg --> plugin_acp_session_projection
   plugin_acp_subagent["subagent<br/>coding-subagent"]
@@ -84,6 +86,7 @@ flowchart LR
 | `acp-agent` | `coding-acp-demo` |
 | `token-meter` | `coding-token-meter` |
 | `compaction-basic` | `coding-compaction-basic` |
+| `tool-context-compact` | `coding-tool-context-compact` |
 | `session-projection` | `coding-session-projection` |
 | `subagent` | `coding-subagent` |
 | `subagent-spawn-in-process` | `coding-subagent-spawn-in-process` |
