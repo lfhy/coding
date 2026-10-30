@@ -97,6 +97,19 @@ describe('desktop browser bridge', () => {
       { kind: 'viewport', width: 1920, height: 1400 }, { kind: 'viewport', width: 390, height: 844, mobile: true }]) {
       expect(() => parseBridgeRequest({ v: 1, id: 'resize', method: 'execute', sessionId: id, command })).toThrow()
     }
+    expect(parseBridgeRequest({ v: 1, id: 'upload', method: 'execute', sessionId: id,
+      command: { kind: 'upload', ref: 'f1', revision: 3, files: ['/tmp/a.png', '/tmp/b.png'] } }).command)
+      .toEqual({ kind: 'upload', ref: 'f1', revision: 3, files: ['/tmp/a.png', '/tmp/b.png'] })
+    for (const command of [
+      { kind: 'upload', ref: 'f1', revision: 3, files: [] },
+      { kind: 'upload', ref: 'f1', revision: 3, files: [''] },
+      { kind: 'upload', ref: 'f1', revision: 3, files: ['/tmp/a\u0000b'] },
+      { kind: 'upload', ref: 'f1', revision: 3, files: ['/tmp/a', '/tmp/b', '/tmp/c', '/tmp/d', '/tmp/e',
+        '/tmp/f', '/tmp/g', '/tmp/h', '/tmp/i'] },
+      { kind: 'upload', ref: 'f1', revision: 3, files: ['/tmp/a'], text: 'x' },
+      { kind: 'upload', ref: '', revision: 3, files: ['/tmp/a'] },
+      { kind: 'upload', ref: 'f1', revision: 0, files: ['/tmp/a'] },
+    ]) expect(() => parseBridgeRequest({ v: 1, id: 'upload', method: 'execute', sessionId: id, command })).toThrow()
     expect(() => parseBridgeResponse({ v: 1, id: 'x', ok: true, value: { observation, png: 'broken' } }, 'execute')).toThrow()
     expect(parseBridgeRequest({ v: 1, id: 'batch', method: 'execute', sessionId: id,
       command: { kind: 'act', revision: 2,

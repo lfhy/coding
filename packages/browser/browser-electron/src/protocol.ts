@@ -6,6 +6,9 @@ export const MAX_PNG_BYTES = 2 * 1024 * 1024
 export const MAX_BRIDGE_FRAME_BYTES = 3 * 1024 * 1024
 /** 与工具层一致的批量上限；主进程在执行任何命令前再次检查。 */
 export const MAX_ACT_STEPS = 8
+/** 与工具层一致的上传上限：一次命令最多 8 个文件，每个路径最多 1024 字符。 */
+export const MAX_UPLOAD_FILES = 8
+export const MAX_UPLOAD_PATH_CHARS = 1024
 const CODES = new Set<BrowserUseErrorCode>(['BROWSER_INVALID_URL', 'BROWSER_STALE_REF', 'BROWSER_CLOSED',
   'BROWSER_DENIED', 'BROWSER_UNAVAILABLE', 'BROWSER_FAILED', 'BROWSER_BUSY'])
 
@@ -97,6 +100,11 @@ function capture(value: unknown): value is {
   if (value.steps !== undefined && !stepResults(value.steps)) return false
   try { decodeBridgePng(value.png); return true } catch { return false }
 }
+// 上传文件由 Host 解析成绝对路径；主进程只核对形状，真正的文件读取仍由 Chromium 完成。
+function uploadFiles(value: unknown): value is readonly string[] {
+  return Array.isArray(value) && value.length > 0 && value.length <= MAX_UPLOAD_FILES &&
+    value.every((file: unknown) => bounded(file, MAX_UPLOAD_PATH_CHARS) && !/[\u0000-\u001f]/.test(file))
+}
 function steps(value: unknown): value is readonly BrowserStep[] {
   return Array.isArray(value) && value.length > 0 && value.length <= MAX_ACT_STEPS && value.every((step: unknown) => {
     if (!record(step) || typeof step.kind !== 'string') return false
@@ -158,6 +166,8 @@ function command(value: unknown, human: boolean): boolean {
   if (kind === 'click') return fields(value, ['kind', 'ref', 'revision']) && bounded(value.ref, 256) && integer(value.revision, 1)
   if (kind === 'fill') return fields(value, ['kind', 'ref', 'revision', 'text']) && bounded(value.ref, 256) &&
     integer(value.revision, 1) && typeof value.text === 'string' && value.text.length <= 2000
+  if (kind === 'upload') return fields(value, ['kind', 'ref', 'revision', 'files']) && bounded(value.ref, 256) &&
+    integer(value.revision, 1) && uploadFiles(value.files)
   if (kind === 'act') return fields(value, ['kind', 'revision', 'steps']) && integer(value.revision, 1) &&
     steps(value.steps)
   return kind === 'scroll' && fields(value, ['kind', 'direction', 'pixels']) &&

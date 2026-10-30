@@ -16,12 +16,16 @@ export interface BrowserStepResult {
   readonly reason?: string
 }
 
-/** 一次会话浏览器操作。元素引用只在产生它的标签页与观测修订版中有效。 */
+/**
+ * 一次会话浏览器操作。元素引用只在产生它的标签页与观测修订版中有效。
+ * `upload` 直接把文件交给文件输入控件，不打开系统文件选择框；`files` 是提供方执行世界中的绝对路径。
+ */
 export type BrowserCommand =
   | { readonly kind: 'navigate'; readonly url: string }
   | { readonly kind: 'snapshot' }
   | { readonly kind: 'click'; readonly ref: string; readonly revision: number }
   | { readonly kind: 'fill'; readonly ref: string; readonly text: string; readonly revision: number }
+  | { readonly kind: 'upload'; readonly ref: string; readonly revision: number; readonly files: readonly string[] }
   | { readonly kind: 'act'; readonly revision: number; readonly steps: readonly BrowserStep[] }
   | { readonly kind: 'scroll'; readonly direction: 'up' | 'down'; readonly pixels: number }
   | { readonly kind: 'viewport'; readonly width: number; readonly height: number }

@@ -28,11 +28,35 @@ function pngSize(data: Uint8Array): { width: number; height: number } {
   const view = new DataView(data.buffer, data.byteOffset, data.byteLength)
   return { width: view.getUint32(16), height: view.getUint32(20) }
 }
+interface ElementMetadata {
+  role: string
+  name: string
+  x: number
+  y: number
+  width: number
+  height: number
+}
+// 同一份 handle.evaluate 既取元素元数据、也回答“点击会不会弹文件选择框”，用回调源码区分。
 const handle = {
   asElement: vi.fn(() => handle),
-  evaluate: vi.fn(async () => ({ role: 'button', name: 'Open', x: 10, y: 20, width: 30, height: 40 })),
+  evaluate: vi.fn(async (callback?: unknown): Promise<boolean | ElementMetadata> =>
+    String(callback).includes('isFile') ? false
+      : ({ role: 'button', name: 'Open', x: 10, y: 20, width: 30, height: 40 })),
   boundingBox: vi.fn(async () => ({ x: 10, y: 20, width: 30, height: 40 })),
   click: vi.fn(async () => {}), fill: vi.fn(async () => {}), dispose: vi.fn(async () => {}),
+}
+// 每个测试按需放进列表，模拟页面上被藏起来的文件输入控件。
+const fileHandles: Array<{
+  asElement: () => unknown
+  evaluate: () => Promise<unknown>
+  setInputFiles: (files: string[], options?: { timeout: number }) => Promise<void>
+  dispose: () => Promise<void>
+}> = []
+const fileHandle = {
+  asElement: () => fileHandle,
+  evaluate: vi.fn(async () => ({ name: 'avatar', accept: 'image/png', multiple: true, selected: 0 })),
+  setInputFiles: vi.fn(async (_files: string[], _options?: { timeout: number }) => {}),
+  dispose: vi.fn(async () => {}),
 }
 const locator = {
   count: vi.fn(async () => 1), nth: vi.fn(() => ({ elementHandle: async () => handle })),
@@ -49,9 +73,11 @@ const page = {
     limit: number
     scanLimit: number
     viewport: { width: number; height: number }
-  }) => _options === undefined ? documentHandle : {
-    getProperties: async () => new Map([['0', handle]]), dispose: async () => {},
-  }),
+  }) => _options === undefined ? documentHandle :
+    'selector' in _options
+      ? { getProperties: async () => new Map([['0', handle]]), dispose: async () => {} }
+      : { getProperties: async () => new Map(fileHandles.map((entry, index) => [String(index), entry])),
+        dispose: async () => {} }),
   evaluate: vi.fn(async (_evaluate: () => Promise<void>) => {}),
   goto: vi.fn(async () => null), screenshot: vi.fn(async () => png),
   goBack: vi.fn(async () => ({})), goForward: vi.fn(async () => ({})), reload: vi.fn(async () => ({})),
@@ -150,9 +176,13 @@ beforeEach(() => {
   vi.unstubAllGlobals()
   vi.clearAllMocks()
   documentHandle.evaluate.mockResolvedValue(true)
-  page.evaluateHandle.mockImplementation(async (_evaluate, options) => options === undefined ? documentHandle : {
-    getProperties: async () => new Map([['0', handle]]), dispose: async () => {},
-  })
+  fileHandles.length = 0
+  fileHandle.setInputFiles.mockClear()
+  page.evaluateHandle.mockImplementation(async (_evaluate, options) => options === undefined ? documentHandle :
+    'selector' in options
+      ? { getProperties: async () => new Map([['0', handle]]), dispose: async () => {} }
+      : { getProperties: async () => new Map(fileHandles.map((entry, index) => [String(index), entry])),
+        dispose: async () => {} })
   vi.mocked(chromium).launch.mockResolvedValue(browser as unknown as Browser)
   page.screenshot.mockResolvedValue(png)
   page.goto.mockResolvedValue(null)
@@ -554,6 +584,72 @@ describe('Playwright browser owner', () => {
       .then(() => null, (error: unknown) => error)
     expect(rejection).toMatchObject({ code: 'BROWSER_STALE_REF' })
     expect(rejection instanceof Error ? rejection.message : '').toContain(reason)
+    await ctx.fiber.dispose()
+  })
+
+  it('lists hidden file inputs under File inputs and uploads through their ref', async () => {
+    const { ctx, service } = await headlessProvider()
+    const id = SessionId('upload')
+    const signal = new AbortController().signal
+    fileHandles.push(fileHandle)
+    const first = await service.execute(id, { kind: 'navigate', url: 'http://localhost/' }, signal)
+    expect(first.observation.snapshot).toContain('File inputs:')
+    const uploadRef = first.observation.snapshot.match(/\n(f1-\S+) "avatar" \(accept=image\/png, multiple, no file selected\)/)?.[1]
+    if (!uploadRef) throw new Error('missing file input ref')
+
+    const next = await service.execute(id, { kind: 'upload', ref: uploadRef,
+      revision: first.observation.revision, files: ['/tmp/a.png', '/tmp/b.png'] }, signal)
+    expect(fileHandle.setInputFiles).toHaveBeenCalledWith(['/tmp/a.png', '/tmp/b.png'], { timeout: 10_000 })
+    expect(next.observation.revision).toBe(first.observation.revision + 1)
+    expect(next.observation.snapshot).toContain('File inputs:')
+    await ctx.fiber.dispose()
+  })
+
+  it('refuses to click or fill a file input and points at browser_upload', async () => {
+    const { ctx, service } = await headlessProvider()
+    const id = SessionId('upload-guard')
+    const signal = new AbortController().signal
+    fileHandles.push(fileHandle)
+    const first = await service.execute(id, { kind: 'navigate', url: 'http://localhost/' }, signal)
+    const uploadRef = first.observation.snapshot.match(/\n(f1-\S+) "avatar"/)?.[1]
+    if (!uploadRef) throw new Error('missing file input ref')
+
+    for (const command of [
+      { kind: 'click', ref: uploadRef, revision: first.observation.revision } as const,
+      { kind: 'fill', ref: uploadRef, revision: first.observation.revision, text: 'x' } as const,
+    ]) {
+      await expect(service.execute(id, command, signal)).rejects.toThrow(/call browser_upload/)
+    }
+    expect(handle.click).not.toHaveBeenCalled()
+    expect(handle.fill).not.toHaveBeenCalled()
+    await ctx.fiber.dispose()
+  })
+
+  it('refuses to click an element that would open a file chooser', async () => {
+    const { ctx, service } = await headlessProvider()
+    const id = SessionId('upload-label')
+    const signal = new AbortController().signal
+    const first = await service.execute(id, { kind: 'navigate', url: 'http://localhost/' }, signal)
+    // 观测完成后把所有点击前置检查判定为“会弹文件选择框”，模拟样式化上传按钮。
+    handle.evaluate.mockImplementation(async () => true)
+
+    await expect(service.execute(id, { kind: 'click', ref: ref(first.observation.snapshot),
+      revision: first.observation.revision }, signal)).rejects.toThrow(/opens a file chooser/)
+    expect(handle.click).not.toHaveBeenCalled()
+    handle.evaluate.mockImplementation(async (callback?: unknown) => String(callback).includes('isFile') ? false
+      : ({ role: 'button', name: 'Open', x: 10, y: 20, width: 30, height: 40 }))
+    await ctx.fiber.dispose()
+  })
+
+  it('rejects uploads whose ref is not a file input in the current observation', async () => {
+    const { ctx, service } = await headlessProvider()
+    const id = SessionId('upload-ref')
+    const signal = new AbortController().signal
+    const first = await service.execute(id, { kind: 'navigate', url: 'http://localhost/' }, signal)
+    await expect(service.execute(id, { kind: 'upload', ref: ref(first.observation.snapshot),
+      revision: first.observation.revision, files: ['/tmp/a.png'] }, signal))
+      .rejects.toThrow(/not a file input in the current observation/)
+    expect(fileHandle.setInputFiles).not.toHaveBeenCalled()
     await ctx.fiber.dispose()
   })
 
@@ -1195,7 +1291,8 @@ describe('Playwright browser owner', () => {
     expect(resized?.viewport).toEqual({ width: 375, height: 800 })
     expect(resized?.stateRevision).toBe(approved.stateRevision + 2)
     expect(service.latest(id)?.observation.viewport).toEqual({ width: 375, height: 800 })
-    expect(page.evaluateHandle.mock.calls.findLast(([, options]) => options !== undefined)?.[1])
+    expect(page.evaluateHandle.mock.calls.findLast(([, options]) =>
+      typeof options === 'object' && options !== null && 'viewport' in options)?.[1])
       .toMatchObject({ viewport: { width: 375, height: 800 } })
     await expect(service.execute(id, { kind: 'click', ref: ref(initial.observation.snapshot),
       revision: initial.observation.revision }, signal)).rejects.toMatchObject({ code: 'BROWSER_STALE_REF' })

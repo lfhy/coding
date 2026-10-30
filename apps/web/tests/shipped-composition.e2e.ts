@@ -44,6 +44,7 @@ const EXPECTED_TOOLS = [
   'browser_screenshot',
   'browser_scroll',
   'browser_snapshot',
+  'browser_upload',
   'browser_viewport',
   'create_goal',
   'edit',

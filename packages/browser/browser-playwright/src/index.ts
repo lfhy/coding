@@ -31,6 +31,8 @@ const ACT_SETTLE_MS = 500
 const MAX_STEP_REASON_CHARS = 200
 const IDLE_TIMEOUT = 10 * 60_000
 const ELEMENT_SELECTOR = 'button, a[href], input, textarea, select, [role="button"], [role="link"], [role="textbox"]'
+// 文件输入通常被页面藏起来，单独按 FILE_INPUT_LIMIT 列出，供 browser_upload 引用。
+const FILE_INPUT_LIMIT = 3
 
 interface SessionTab {
   readonly id: BrowserTabId
@@ -39,6 +41,8 @@ interface SessionTab {
   documentHandle: JSHandle<Document>
   revision: number
   refs: Map<string, ElementHandle>
+  /** 本次观测里属于文件输入的引用；点击和填写拒绝它们，上传要求它们。 */
+  fileInputs: Set<string>
   capture?: BrowserCapture
   summary: BrowserTabSummary
   history: string[]
@@ -78,6 +82,20 @@ function actionabilityReason(error: unknown): string {
   if (/not editable|cannot be filled|not an <input>|not a form control/i.test(message)) return 'is not editable'
   if (/does not receive events/i.test(message)) return 'does not receive pointer events'
   return 'did not become actionable'
+}
+
+/**
+ * 上传失败的最短可读原因；文件路径只在工具参数里出现，不回显到页面内容附近。
+ * @param error Playwright 抛出的原始错误。
+ * @returns 面向模型的一句话原因。
+ */
+function uploadReason(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error)
+  if (/Non-multiple file input/i.test(message)) return 'accepts a single file only'
+  if (/webkitdirectory/i.test(message)) return 'accepts a directory only'
+  if (/not an HTMLInputElement/i.test(message)) return 'is not a file input'
+  if (/ENOENT|no such file|File not found|Cannot access/i.test(message)) return 'cannot read the requested file'
+  return 'did not accept the files'
 }
 
 /**
@@ -192,6 +210,7 @@ export default class PlaywrightBrowserUse extends BrowserUseService {
       const id = tabId()
       const generation = randomUUID()
       const tab: SessionTab = { id, page, generation, documentHandle, revision: 0, refs: new Map(),
+        fileInputs: new Set(),
         summary: { id, generation, url: 'about:blank', title: '', canGoBack: false, canGoForward: false },
         history: [], historyIndex: -1 }
       const tabs = new Map([[id, tab]])
@@ -243,6 +262,7 @@ export default class PlaywrightBrowserUse extends BrowserUseService {
   private async clearRefs(tab: SessionTab): Promise<void> {
     for (const ref of tab.refs.values()) await ref.dispose().catch(() => {})
     tab.refs.clear()
+    tab.fileInputs.clear()
   }
 
   /** 只刷新审批所需的 URL 与 Document 身份，不观测页面或发布截图。 */
@@ -400,6 +420,8 @@ export default class PlaywrightBrowserUse extends BrowserUseService {
         const element = walker.currentNode as Element
         if (element.shadowRoot) walkers.push(document.createTreeWalker(element.shadowRoot, NodeFilter.SHOW_ELEMENT))
         if (!element.matches(selector)) continue
+        // 文件输入单独列在 File inputs：点它只会弹系统选择框，上传要按引用指定文件。
+        if (element instanceof HTMLInputElement && element.type === 'file') continue
         const box = element.getBoundingClientRect()
         const style = getComputedStyle(element)
         if (!box.width || !box.height || style.visibility === 'hidden' || style.display === 'none' ||
@@ -450,9 +472,12 @@ export default class PlaywrightBrowserUse extends BrowserUseService {
       for (const candidate of candidates.values()) await candidate.dispose().catch(() => {})
       throw error
     }
+    const fileInputs = new Set<string>()
+    const fileEntries = await this.fileEntries(tab, refs, fileInputs)
     const text = await page.locator('body').evaluate(body => (body as HTMLElement).innerText.slice(0, 6000)).catch(() => '')
-    const snapshot = `Page text:\n${text}\nElements:\n${entries.join('\n')}`.slice(0, SNAPSHOT_LIMIT)
-      .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, ' ')
+    const sections = `Page text:\n${text}\nElements:\n${entries.join('\n')}`
+    const snapshot = (fileEntries.length === 0 ? sections : `${sections}\nFile inputs:\n${fileEntries.join('\n')}`)
+      .slice(0, SNAPSHOT_LIMIT).replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, ' ')
     const title = (await page.title()).slice(0, 4096).replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, ' ')
     let png: Uint8Array = await page.screenshot({ type: 'png', scale: 'device', animations: 'disabled', timeout: 10_000 })
     if (owner.stateRevision !== stateRevision ||
@@ -501,12 +526,72 @@ export default class PlaywrightBrowserUse extends BrowserUseService {
     }
     tab.documentHandle = documentHandle
     tab.refs = refs
+    tab.fileInputs = fileInputs
     tab.revision = observation.revision
     const capture = { observation, png: new Uint8Array(png) }
     tab.capture = capture
     owner.stateRevision++
     owner.lastUsed = Date.now()
     return capture
+  }
+
+  /**
+   * 收集当前文档的文件输入控件，包括页面藏起来的真实 input（常见做法是把它藏在样式化按钮后面）。
+   * 每次观测最多 FILE_INPUT_LIMIT 个，引用与其他元素共用同一份 refs 与观测修订版；
+   * 这些引用只能用于 `upload`，点击或填写会在 elementStep 里被拒绝。
+   * @param tab 当前标签页；引用随下一次观测作废。
+   * @param refs 本次观测的引用表。
+   * @param fileInputs 输出参数：记下本次观测里属于文件输入的引用。
+   * @returns 快照 `File inputs:` 段的行。
+   */
+  private async fileEntries(tab: SessionTab, refs: Map<string, ElementHandle>,
+    fileInputs: Set<string>): Promise<string[]> {
+    const selection = await tab.page.evaluateHandle(({ limit, scanLimit }: { limit: number; scanLimit: number }) => {
+      const found: HTMLInputElement[] = []
+      const walkers = [document.createTreeWalker(document, NodeFilter.SHOW_ELEMENT)]
+      let scanned = 0
+      while (walkers.length && scanned < scanLimit && found.length < limit) {
+        const walker = walkers[walkers.length - 1]
+        if (!walker?.nextNode()) { walkers.pop(); continue }
+        scanned++
+        const element = walker.currentNode as Element
+        if (element.shadowRoot) walkers.push(document.createTreeWalker(element.shadowRoot, NodeFilter.SHOW_ELEMENT))
+        if (element instanceof HTMLInputElement && element.type === 'file') found.push(element)
+      }
+      return found
+    }, { limit: FILE_INPUT_LIMIT, scanLimit: ELEMENT_SCAN_LIMIT })
+    let candidates: Awaited<ReturnType<typeof selection.getProperties>>
+    try { candidates = await selection.getProperties() }
+    finally { await selection.dispose() }
+    const rows: string[] = []
+    try {
+      for (const candidate of candidates.values()) {
+        const handle = candidate.asElement() as ElementHandle | null
+        if (handle === null) { await candidate.dispose(); continue }
+        const info = await handle.evaluate((element: Element) => {
+          const input = element as HTMLInputElement
+          const label = input.labels && input.labels.length > 0 ? (input.labels[0] as HTMLElement).innerText : ''
+          return {
+            name: (input.getAttribute('aria-label') || input.getAttribute('placeholder') ||
+              input.getAttribute('title') || label || '').trim().slice(0, 160),
+            accept: (input.getAttribute('accept') || '').slice(0, 120),
+            multiple: input.multiple,
+            selected: input.files?.length ?? 0,
+          }
+        }).catch(() => null)
+        if (info === null) { await handle.dispose().catch(() => {}); continue }
+        const ref = `f${rows.length + 1}-${tab.generation}-${randomUUID()}`
+        const details = [info.accept === '' ? '' : `accept=${info.accept}`, info.multiple ? 'multiple' : 'single',
+          info.selected === 0 ? 'no file selected' : `${info.selected} selected`].filter(part => part !== '').join(', ')
+        refs.set(ref, handle)
+        fileInputs.add(ref)
+        rows.push(`${ref} ${JSON.stringify(info.name)} (${details})`)
+      }
+    } catch (error) {
+      for (const candidate of candidates.values()) await candidate.dispose().catch(() => {})
+      throw error
+    }
+    return rows
   }
 
   /**
@@ -520,6 +605,13 @@ export default class PlaywrightBrowserUse extends BrowserUseService {
   private async elementStep(owner: SessionPage, tab: SessionTab, step: BrowserStep): Promise<BrowserObservation['cursor']> {
     const handle = tab.refs.get(step.ref)
     if (handle === undefined) throw fail(`browser element is no longer current: ${step.ref}`, 'BROWSER_STALE_REF')
+    if (tab.fileInputs.has(step.ref)) {
+      // 文件输入既不接受文本也不是「点一下就完成」的目标：点它会弹系统选择框。
+      throw fail(`browser element ${step.ref} is a file input; call browser_upload with this ref instead of ${step.kind === 'click' ? 'clicking' : 'filling'} it`, 'BROWSER_STALE_REF')
+    }
+    if (step.kind === 'click' && await this.opensFileChooser(handle)) {
+      throw fail(`browser element ${step.ref} opens a file chooser; call browser_upload with the file input ref listed under File inputs`, 'BROWSER_STALE_REF')
+    }
     const box = await handle.boundingBox()
     if (box === null) throw fail(`browser element no longer visible: ${step.ref}`, 'BROWSER_STALE_REF')
     if (box.x + box.width <= 0 || box.y + box.height <= 0 || box.x >= owner.viewport.width ||
@@ -537,6 +629,44 @@ export default class PlaywrightBrowserUse extends BrowserUseService {
       throw fail(`browser element ${step.ref} ${actionabilityReason(error)}`, 'BROWSER_STALE_REF')
     }
     return cursor
+  }
+
+  /**
+   * 点击会不会打开系统文件选择框：目标本身、它关联或内部包含的文件输入控件。
+   * 无法判断的脚本调用（例如按钮里执行 showPicker）仍可能在提供方之外弹框，因此只作前置提示。
+   * @param handle 即将点击的元素句柄。
+   * @returns 该点击是否会触发文件选择框。
+   */
+  private async opensFileChooser(handle: ElementHandle): Promise<boolean> {
+    return handle.evaluate((element: Element) => {
+      const isFile = (node: Element | null | undefined): boolean =>
+        node instanceof HTMLInputElement && node.type === 'file'
+      if (isFile(element)) return true
+      const label = element.closest('label')
+      if (label instanceof HTMLLabelElement && isFile(label.control)) return true
+      const nested = element.querySelector('label')
+      return nested instanceof HTMLLabelElement && isFile(nested.control)
+    }).catch(() => false)
+  }
+
+  /**
+   * 把文件交给当前观测里的文件输入控件：不打开系统文件选择框，也不移动鼠标。
+   * 引用必须来自 `File inputs:`，且在同一次观测的修订版内；失败不重试。
+   * @param tab 引用所属标签页。
+   * @param command 已校验的上传命令，`files` 为提供方世界的绝对路径。
+   * @returns 无返回值；成功路径由调用方统一重新观测。
+   */
+  private async uploadFiles(tab: SessionTab, command: Extract<BrowserCommand, { kind: 'upload' }>): Promise<void> {
+    const handle = tab.refs.get(command.ref)
+    if (!tab.fileInputs.has(command.ref) || handle === undefined) {
+      throw fail(`browser element ${command.ref} is not a file input in the current observation; use a ref listed under File inputs`, 'BROWSER_STALE_REF')
+    }
+    try {
+      await handle.setInputFiles([...command.files], { timeout: 10_000 })
+    } catch (error) {
+      if (error instanceof BrowserUseError) throw error
+      throw fail(`browser file input ${command.ref} ${uploadReason(error)}`, 'BROWSER_STALE_REF')
+    }
   }
 
   /**
@@ -566,6 +696,13 @@ export default class PlaywrightBrowserUse extends BrowserUseService {
           throw fail(`stale browser element ${command.ref} at revision ${command.revision}`, 'BROWSER_STALE_REF')
         }
         cursor = await this.elementStep(owner, tab, command)
+        break
+      }
+      case 'upload': {
+        if (tab.revision !== command.revision) {
+          throw fail(`stale browser file input ${command.ref} at revision ${command.revision}`, 'BROWSER_STALE_REF')
+        }
+        await this.uploadFiles(tab, command)
         break
       }
       case 'act': {
@@ -643,8 +780,8 @@ export default class PlaywrightBrowserUse extends BrowserUseService {
       if (command.kind === 'navigate') validateBrowserUrl(command.url)
       if (!owner) owner = await this.createOwner(sessionId, signal)
       const tab = this.active(owner)
-      if ((command.kind === 'click' || command.kind === 'fill' || command.kind === 'act') &&
-        tab.capture?.observation.url !== tab.page.url()) {
+      if ((command.kind === 'click' || command.kind === 'fill' || command.kind === 'upload' ||
+        command.kind === 'act') && tab.capture?.observation.url !== tab.page.url()) {
         throw fail('browser page changed since the element was observed', 'BROWSER_STALE_REF')
       }
       return this.perform(owner, tab, command)
@@ -672,6 +809,7 @@ export default class PlaywrightBrowserUse extends BrowserUseService {
       const generation = randomUUID()
       const documentHandle = await createdPage.evaluateHandle(() => document)
       const tab: SessionTab = { id, page: createdPage, generation, documentHandle, revision: 0, refs: new Map(),
+        fileInputs: new Set(),
         summary: { id, generation, url: 'about:blank', title: '', canGoBack: false, canGoForward: false },
         history: [], historyIndex: -1 }
       owner.tabs.set(id, tab)

@@ -116,6 +116,42 @@ describe.skipIf(process.env.DSH_BROWSER_E2E !== '1' || !existsSync(chromium.exec
       }
     })
 
+    it('uploads local files into a hidden file input without opening a system dialog', { timeout: 40_000 }, async () => {
+      const root = await mkdtemp(join(tmpdir(), 'dsh-browser-upload-'))
+      const first = join(root, 'one.txt')
+      const second = join(root, 'two.txt')
+      const html = `<!doctype html><title>Upload</title>
+        <input id="file" type="file" multiple style="display:none" aria-label="Attachment"
+          onchange="document.querySelector('output').textContent =
+            [...this.files].map(file => file.name).join(',') || 'empty'">
+        <label for="file">Choose files</label><output>Waiting</output>`
+      const server = createServer((_req, res) => { res.setHeader('content-type', 'text/html'); res.end(html) })
+      await new Promise<void>((resolve) => { server.listen(0, '127.0.0.1', resolve) })
+      const origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
+      const ctx = new Context()
+      const signal = new AbortController().signal
+      try {
+        await writeFile(first, 'one')
+        await writeFile(second, 'two')
+        await ctx.plugin(PlaywrightBrowserUse).await()
+        const id = SessionId('upload')
+        const initial = await ctx.browserUse.execute(id, { kind: 'navigate', url: origin }, signal)
+        expect(initial.observation.snapshot).toContain('File inputs:')
+        expect(initial.observation.snapshot).toContain('multiple')
+        const uploadRef = initial.observation.snapshot.match(/\n(f\d+-[^ ]+) "Attachment"/)?.[1]
+        if (!uploadRef) throw new Error('file input ref absent')
+        const uploaded = await ctx.browserUse.execute(id, { kind: 'upload', ref: uploadRef,
+          revision: initial.observation.revision, files: [first, second] }, signal)
+        // 页面自己的 change 处理器读到两个文件名，说明浏览器真的把文件写进了控件。
+        expect(uploaded.observation.snapshot).toContain('one.txt,two.txt')
+        expect(uploaded.observation.snapshot).toContain('2 selected')
+      } finally {
+        await ctx.fiber.dispose()
+        await new Promise<void>((resolve) => { server.close(() => { resolve() }) })
+        await rm(root, { recursive: true, force: true })
+      }
+    })
+
     it('navigates loopback and localhost with the default Provider and no network config', { timeout: 40_000 }, async () => {
       const { ctx, origin, close } = await fixture()
       const signal = new AbortController().signal

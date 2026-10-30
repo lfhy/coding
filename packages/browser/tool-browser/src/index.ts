@@ -1,5 +1,6 @@
 /** 面向模型的浏览器操作；调用会话的权限决定是否审批，页面、安全策略及资源生命周期属于提供方。 @module coding-tool-browser */
 
+import { basename } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import type { BrowserCommand, BrowserExpectedTarget, BrowserObservation, BrowserStep, BrowserStepResult } from 'coding-browser'
 import { BrowserUseError } from 'coding-browser'
@@ -11,6 +12,7 @@ import { defineTool } from 'coding-tools'
 import type { ParameterSchemaSpec, ToolRunContext } from 'coding-tools'
 import type {} from 'coding-user-approval'
 import type {} from 'coding-sandbox-policy'
+import { MAX_UPLOAD_FILES, MAX_UPLOAD_PATH_CHARS, resolveUploadFiles, validateUploadPaths } from './uploads.ts'
 
 /** 插件名。 */
 export const name = 'tool-browser'
@@ -26,6 +28,9 @@ const MAX_REF_CHARS = 256
 const MAX_ACT_STEPS = 8
 const MAX_APPROVAL_ORIGIN_CHARS = 256
 const MAX_STALE_REASON_CHARS = 200
+// 审批理由只列文件名：用户要判断"上传了什么"，不需要把本机路径写进提示与审计。
+const MAX_APPROVAL_FILE_NAMES = 3
+const MAX_APPROVAL_FILE_NAME_CHARS = 64
 const STOPPED_NAVIGATION_DIAGNOSTIC = 'browser navigation timed out; loading stopped, take a new snapshot of the current page'
 
 function validateNavigationUrl(raw: string): void {
@@ -66,6 +71,7 @@ interface BrowserArgs {
   ref?: string
   revision?: number
   text?: string
+  files?: readonly string[]
   direction?: 'up' | 'down'
   pixels?: number
   width?: number
@@ -111,7 +117,8 @@ function parseActStep(raw: unknown, index: number, toolName: string): BrowserSte
 export function parseBrowserCommand(action: BrowserCommand['kind'], args: BrowserArgs): BrowserCommand {
   const allowed: Record<BrowserCommand['kind'], readonly (keyof BrowserArgs)[]> = {
     navigate: ['url'], snapshot: [], click: ['ref', 'revision'],
-    fill: ['ref', 'revision', 'text'], act: ['revision', 'steps'], scroll: ['direction', 'pixels'],
+    fill: ['ref', 'revision', 'text'], upload: ['ref', 'revision', 'files'], act: ['revision', 'steps'],
+    scroll: ['direction', 'pixels'],
     viewport: ['width', 'height'], screenshot: [], close: [],
   }
   const toolName = `browser_${action}`
@@ -127,13 +134,17 @@ export function parseBrowserCommand(action: BrowserCommand['kind'], args: Browse
       validateNavigationUrl(args.url)
       return { kind: 'navigate', url: args.url }
     case 'click':
-    case 'fill': {
+    case 'fill':
+    case 'upload': {
       if (args.ref === undefined || args.ref.trim().length === 0) throw new Error(`${toolName}: ref must be non-empty`)
       if (args.ref.length > MAX_REF_CHARS) throw new Error(`${toolName}: ref exceeds ${MAX_REF_CHARS} characters`)
       if (!Number.isSafeInteger(args.revision) || args.revision === undefined || args.revision < 1) {
         throw new Error(`${toolName}: revision must be a positive integer`)
       }
       if (action === 'click') return { kind: 'click', ref: args.ref, revision: args.revision }
+      if (action === 'upload') {
+        return { kind: 'upload', ref: args.ref, revision: args.revision, files: validateUploadPaths(args.files) }
+      }
       if (args.text === undefined || args.text.length > MAX_FILL_CHARS) {
         throw new Error(`${toolName}: text is required and must not exceed ${MAX_FILL_CHARS} characters`)
       }
@@ -225,6 +236,15 @@ function approvalReason(command: BrowserCommand, currentUrl: string | undefined)
     const counts = [fills === 0 ? '' : `${fills} fill`, clicks === 0 ? '' : `${clicks} click`].filter(part => part !== '').join(', ')
     return `Browser act ${command.steps.length} step${command.steps.length === 1 ? '' : 's'} (${counts}) (current origin: ${approvalOrigin(currentUrl) ?? 'unknown'}; approval covers every step in this call)`
   }
+  if (command.kind === 'upload') {
+    // 只给出文件名与数量：路径、页面内容与文件内容都不进入提示与审计。
+    const names = command.files.map(file => basename(file).replace(/[\u0000-\u001f\u007f]/g, ' ')
+      .slice(0, MAX_APPROVAL_FILE_NAME_CHARS))
+    const shown = names.slice(0, MAX_APPROVAL_FILE_NAMES).join(', ')
+    const rest = names.length - MAX_APPROVAL_FILE_NAMES
+    const listed = rest > 0 ? `${shown} and ${rest} more` : shown
+    return `Browser upload ${names.length} file${names.length === 1 ? '' : 's'} (${listed}) (current origin: ${approvalOrigin(currentUrl) ?? 'unknown'}; approval is for this call only)`
+  }
   const ref = command.kind === 'click' || command.kind === 'fill'
     ? ` ref ${/^[a-zA-Z0-9_-]{1,64}$/.test(command.ref) ? command.ref : '[opaque]'}`
     : ''
@@ -261,13 +281,16 @@ function browserFailure(command: BrowserCommand, error: BrowserUseError): Browse
   // 批量动作的各步可能已经生效，恢复提示必须提醒不要整批重放。
   const replay = command.kind === 'act'
     ? 'Steps already executed may have taken effect: do not replay them without checking the new page'
-    : 'A click or fill may have taken effect: do not replay it without checking the new page'
+    : command.kind === 'upload'
+      ? 'The files may already be selected: do not repeat the upload without checking the new page'
+      : 'A click or fill may have taken effect: do not replay it without checking the new page'
   let guidance: string
   switch (error.code) {
     case 'BROWSER_STALE_REF':
       if (command.kind === 'snapshot' && error.message.includes('document changed during observation')) {
         guidance = 'document changed during observation; try at most two fresh browser_snapshot calls. If both fail, reopen the last successfully observed HTTP(S) or local file:/// URL once with browser_navigate only when still relevant, then inspect its observation; stop if that fails. The last observed URL may not be the current URL'
-      } else if (command.kind === 'click' || command.kind === 'fill' || command.kind === 'act') {
+      } else if (command.kind === 'click' || command.kind === 'fill' || command.kind === 'act' ||
+        command.kind === 'upload') {
         const reason = staleTargetReason(error)
         guidance = reason === ''
           ? `target or element changed; take a fresh browser_snapshot before acting. ${replay}`
@@ -298,20 +321,22 @@ function browserFailure(command: BrowserCommand, error: BrowserUseError): Browse
           ? 'the viewport change failed; keep width 200..1920 and height 240..1400 with an area of at most 1800000 pixels'
           : command.kind === 'act'
             ? 'the batch failed; steps already executed may have taken effect: do not replay them without checking the new page'
-            : 'browser operation failed; do not replay a click or fill without checking whether it took effect'
+            : command.kind === 'upload'
+              ? 'the upload failed; do not repeat it without checking whether the files were accepted'
+              : 'browser operation failed; do not replay a click or fill without checking whether it took effect'
       break
   }
   return new BrowserUseError(`${toolName}: ${error.code}: ${guidance}`, error.code, { cause: error })
 }
 
 /**
- * 注册九个动作工具和它们的系统提示词路由；仅全权限且关闭审批提示的会话免于一次性审批，审批服务缺席仍拒绝。
+ * 注册十个动作工具和它们的系统提示词路由；仅全权限且关闭审批提示的会话免于一次性审批，审批服务缺席仍拒绝。
  * @param ctx - 持有浏览器服务、附件存储、工具注册表和系统提示词的上下文。
  * @returns 无返回值；注册随插件卸载撤销。
  */
 export function apply(ctx: Context): void {
   // 跨调用路由属于系统提示词：模型最容易走错的替代方案是在 bash 里自建无头浏览器脚本，
-  // 而九项工具的 schema 只在模型已决定调用浏览器后才生效。
+  // 而十项工具的 schema 只在模型已决定调用浏览器后才生效。
   ctx.systemPrompt.section({
     name: 'tool:browser',
     order: 107,
@@ -374,6 +399,14 @@ export function apply(ctx: Context): void {
   register('fill', 'Fill an element using its ref and revision from the current browser observation; never use selectors.', {
     ref, revision, text: { type: 'string', required: true, description: 'Text to enter, at most 2000 characters.' },
   })
+  register('upload', 'Set the selected files of a file input listed in the current observation, without opening a system file chooser. Use this instead of clicking an upload button that opens one. Paths must be regular files inside the session workspace; the files become the input\'s selection in the order given.', {
+    ref, revision,
+    files: {
+      type: 'array', required: true,
+      description: `Paths of 1..${MAX_UPLOAD_FILES} regular files inside the session workspace, relative to its root or absolute, at most ${MAX_UPLOAD_PATH_CHARS} characters each.`,
+      items: { type: 'string' },
+    },
+  })
   register('act',
     'Run several element actions from one observation in a single call, for example fill two fields and then click submit. Steps run in order with the same revision; the batch stops at the first step that cannot run and returns a fresh observation with each attempted step\'s outcome. Load the browser-use skill first when available.', {
       revision: { type: 'integer', required: true, description: 'Positive revision from the observation that produced every ref in this batch.' },
@@ -411,8 +444,8 @@ export function apply(ctx: Context): void {
   register('close', 'Close the session browser only when requested; the returned observation is no longer a live page.', {})
 }
 
-async function executeBrowserCommand(ctx: Context, command: BrowserCommand, exec: ToolRunContext): Promise<BrowserUseValue> {
-  const toolName = toolNameOf(command)
+async function executeBrowserCommand(ctx: Context, requested: BrowserCommand, exec: ToolRunContext): Promise<BrowserUseValue> {
+  const toolName = toolNameOf(requested)
   const agent = exec.agent
   if (agent === undefined) throw new Error(`${toolName}: calling agent is required`)
   const cwd = agent.session.header.cwd
@@ -420,6 +453,10 @@ async function executeBrowserCommand(ctx: Context, command: BrowserCommand, exec
     throw new Error(`${toolName}: remote workspaces do not support browser operations`)
   }
   exec.signal.throwIfAborted()
+  // 上传路径在审批前解析成绝对路径：不存在的文件不占用一次审批，审批理由也能只给文件名。
+  const command: BrowserCommand = requested.kind === 'upload'
+    ? { ...requested, files: await resolveUploadFiles(cwd, requested.files, exec.signal) }
+    : requested
   const approval = ctx.get('approval')
   if (approval === undefined) throw new Error(`${toolName}: approval service is unavailable`)
   const sessionId = agent.session.id

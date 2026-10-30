@@ -1,5 +1,6 @@
 /** 原生 guest 的隔离世界观测与截图；导航或会话失效后拒绝发布迟到结果。 */
 
+import type { Debugger } from 'electron'
 import type { BrowserCapture, BrowserObservation } from 'coding-browser'
 import { fail, GuestError, invalidate, refreshSummary, MAX_URL_LENGTH, OVERLONG_URL, FRAME_LIMIT,
   type Owner, type Tab } from './browser-guest-state.ts'
@@ -39,7 +40,8 @@ export function createGuestObserver(options: {
     fail('browser document changed during observation', 'BROWSER_STALE_REF')
   }
 
-  async function evaluate<T>(tab: Tab, expression: string): Promise<T> {
+  /** 取得（必要时创建）本标签页的隔离世界；页面导航后旧 id 由导航处理清空。 */
+  async function isolatedWorld(tab: Tab): Promise<{ debuggerApi: Debugger; contextId: number }> {
     const debuggerApi = tab.view.webContents.debugger
     if (!debuggerApi.isAttached()) debuggerApi.attach('1.3')
     if (tab.worldContextId === undefined) {
@@ -49,11 +51,45 @@ export function createGuestObserver(options: {
       }) as { executionContextId: number }
       tab.worldContextId = world.executionContextId
     }
+    return { debuggerApi, contextId: tab.worldContextId }
+  }
+
+  async function evaluate<T>(tab: Tab, expression: string): Promise<T> {
+    const { debuggerApi, contextId } = await isolatedWorld(tab)
     const result = await debuggerApi.sendCommand('Runtime.evaluate', {
-      expression, contextId: tab.worldContextId, returnByValue: true, awaitPromise: true,
+      expression, contextId, returnByValue: true, awaitPromise: true,
     }) as { result?: { value?: T }; exceptionDetails?: unknown }
     if (result.exceptionDetails || result.result?.value === undefined) fail('browser document evaluation failed', 'BROWSER_FAILED')
     return result.result.value
+  }
+
+  /**
+   * 把模型给出的引用解析成 CDP 可寻址的文件输入句柄，并复核它仍是本次观测的那个元素。
+   * 引用失效、身份变化、被禁用或指向非文件输入都以过期引用拒绝，不退回任何其它元素。
+   * @param tab 引用所属标签页。
+   * @param ref 模型给出的不透明引用。
+   * @returns 文件输入元素的 CDP 远端对象 id，供 `DOM.setFileInputFiles` 使用。
+   */
+  async function fileInputObjectId(tab: Tab, ref: string): Promise<string> {
+    const { debuggerApi, contextId } = await isolatedWorld(tab)
+    const expression = `(() => { const ref = globalThis.__dshGuestRefs?.get(${JSON.stringify(ref)}); const el = ref?.el;
+      if (!el || !el.isConnected) return null;
+      if (ref.form !== (el.form ?? null)) return null;
+      const path = globalThis.__dshGuestPath(el);
+      if (path.length !== ref.path.length || path.some((part, i) =>
+        part.node !== ref.path[i].node || part.parent !== ref.path[i].parent ||
+        JSON.stringify(part.attributes) !== JSON.stringify(ref.path[i].attributes))) return null;
+      if (JSON.stringify(ref.identity) !== JSON.stringify(globalThis.__dshGuestIdentity(el))) return null;
+      if (el.disabled || el.matches(':disabled') || el.closest('[inert], [aria-disabled="true"]')) return null;
+      if (!(el instanceof HTMLInputElement) || el.type !== 'file') return null;
+      return el; })()`
+    const result = await debuggerApi.sendCommand('Runtime.evaluate', {
+      expression, contextId, returnByValue: false,
+    }) as { result?: { objectId?: string }; exceptionDetails?: unknown }
+    if (result.exceptionDetails || result.result?.objectId === undefined) {
+      fail(`browser element ${ref} is not a file input in the current observation; use a ref listed under File inputs`, 'BROWSER_STALE_REF')
+    }
+    return result.result.objectId
   }
 
   function assertStable(sessionId: string, owner: Owner, tab: Tab, navigation: number): void {
@@ -73,7 +109,10 @@ export function createGuestObserver(options: {
     assertStable(sessionId, owner, tab, navigation)
     const wc = tab.view.webContents
     if (page.href === null || page.href !== usableUrl(sessionId, owner, tab)) staleObservation(sessionId, owner, tab)
-    const snapshot = `Page text:\n${page.text}\nElements:\n${page.entries.join('\n')}`.slice(0, 12_000)
+    const sections = `Page text:\n${page.text}\nElements:\n${page.entries.join('\n')}`
+    // 没有文件输入的页面保持原有快照形状，省略空段。
+    const snapshot = (page.fileEntries.length === 0 ? sections :
+      `${sections}\nFile inputs:\n${page.fileEntries.join('\n')}`).slice(0, 12_000)
       .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, ' ')
     let png: Uint8Array | null = null
     // 原生页面未呈现时仍可观测 DOM；显式截图在隐藏工作台中也必须尝试捕获新画面。
@@ -130,5 +169,5 @@ export function createGuestObserver(options: {
     }
   }
 
-  return { usableUrl, evaluate, assertStable, observe, refreshMutation }
+  return { usableUrl, evaluate, fileInputObjectId, assertStable, observe, refreshMutation }
 }

@@ -55,7 +55,8 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
   let cursorOverlay: ReturnType<typeof createBrowserCursorOverlay> | undefined
   // 指针位置归标签页所有；释放输入租约不清空它。
   const pointers = new Map<BrowserTabId, { x: number; y: number }>()
-  const { usableUrl, evaluate, assertStable, observe, refreshMutation } = createGuestObserver({ owners, destroy, emit })
+  const { usableUrl, evaluate, fileInputObjectId, assertStable, observe, refreshMutation } =
+    createGuestObserver({ owners, destroy, emit })
 
   function clearOverlay(): void { overlay?.close(); overlay = undefined }
   function clearCursorOverlay(): void { cursorOverlay?.dispose(); cursorOverlay = undefined }
@@ -421,6 +422,7 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
       try {
         const { cursor, feedback, steps } = await performModelOperation({
           command, owner, tab, evaluate, requireTarget, pointers,
+          fileInputObjectId: ref => fileInputObjectId(tab, ref),
           assertStable: (navigation) => { assertStable(sessionId, owner, tab, navigation) },
           assertTarget: () => { assertTarget(owner, expectedTarget) },
           destroy: () => { destroy(sessionId) },

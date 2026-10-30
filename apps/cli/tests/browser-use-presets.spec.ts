@@ -222,8 +222,8 @@ describe('browser tools and skill in the shipped Web preset composition', () => 
     try {
       const prompt = await ctx.systemPrompt.assemble({ scope: merged.agent })
       const browserTools = [
-        'browser_navigate', 'browser_snapshot', 'browser_click', 'browser_fill', 'browser_act',
-        'browser_scroll', 'browser_viewport', 'browser_screenshot', 'browser_close',
+        'browser_navigate', 'browser_snapshot', 'browser_click', 'browser_fill', 'browser_upload',
+        'browser_act', 'browser_scroll', 'browser_viewport', 'browser_screenshot', 'browser_close',
       ]
       // 合并后的标准模式同时通告原生 schema 与 run_code，SDK 段也照常生成。
       expect(prompt.tools.map(tool => tool.name).filter(name => name.startsWith('browser_')))

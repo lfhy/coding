@@ -36,10 +36,17 @@ function fakeContents() {
   let observerIncomplete = false
   let targetVisible = true
   let targetPosition = { x: 10, y: 10 }
+  let targetOpensChooser = false
+  let fileEntries: string[] = []
+  let uploadFails = false
   const sendCommand = vi.fn(async (command: string, params?: unknown): Promise<unknown> => {
     if (command === 'Page.getFrameTree') return { frameTree: { frame: { id: 'frame' } } }
     if (command === 'Page.createIsolatedWorld') return { executionContextId: 4 }
     if (command === 'Page.captureScreenshot') return { data: png().toString('base64') }
+    if (command === 'DOM.setFileInputFiles') {
+      if (uploadFails) throw new Error('File not found')
+      return {}
+    }
     if (command === 'Runtime.evaluate') {
       if ((params as { expression: string }).expression === 'globalThis.__dshGuestReadMutationRevision()') {
         return { result: { value: domRevision } }
@@ -47,13 +54,18 @@ function fakeContents() {
       if ((params as { expression: string }).expression.startsWith('({ revision: globalThis.__dshGuestReadMutationRevision()')) {
         return { result: { value: { revision: domRevision, incomplete: observerIncomplete } } }
       }
+      // 只有 upload 的句柄解析表达式以 return null 结束；快照脚本本身也提到文件输入。
+      if ((params as { expression: string }).expression.includes("el.type !== 'file') return null")) {
+        return { result: { objectId: 'file-input-object' } }
+      }
       if ((params as { expression: string }).expression.includes('__dshGuestRefs?.get')) {
+        if (targetOpensChooser) return { result: { value: { reason: 'element_opens_file_chooser' } } }
         return { result: { value: targetVisible
           ? { ok: true, ...targetPosition }
           : { reason: 'element_covered', blocker: 'div "overlay"' } } }
       }
-      return { result: { value: { text: 'Hello', entries: [], title: 'Example',
-        href: url.length <= 4096 ? url || 'about:blank' : null, domRevision } } }
+      return { result: { value: { text: 'Hello', entries: [], fileEntries,
+        title: 'Example', href: url.length <= 4096 ? url || 'about:blank' : null, domRevision } } }
     }
     return {}
   })
@@ -61,6 +73,11 @@ function fakeContents() {
     events,
     mutate: () => { domRevision++ },
     changeTarget: () => { targetVisible = false; domRevision++ },
+    exposeFileInput: (rows: string[] = ['f1-1 "avatar" (accept=image/png, single, no file selected)']) => {
+      fileEntries = rows
+    },
+    opensFileChooserTarget: () => { targetOpensChooser = true },
+    failUpload: () => { uploadFails = true },
     truncateObserver: () => { observerIncomplete = true },
     moveTarget: (x: number, y: number) => { targetPosition = { x, y } },
     startLoading: () => { loading = true; events.get('did-start-loading')?.() },
@@ -557,6 +574,55 @@ describe('Electron 实时浏览器 guest', () => {
     expect(clicked.observation.cursor).toMatchObject({ kind: 'click' })
     expect(shield.webContents.focus).not.toHaveBeenCalled()
     await manager.release('s1')
+    await manager.dispose()
+  })
+
+  it('列出文件输入并用 CDP 上传，不派发指针事件', async () => {
+    const manager = createBrowserGuestManager(fixture())
+    const navigated = await manager.execute('s1', { kind: 'navigate', url: 'https://example.com/' })
+    const guest = electron.views[0]!.webContents
+    guest.exposeFileInput()
+    const capture = await manager.execute('s1', { kind: 'snapshot' })
+    expect(capture.observation.snapshot).toContain('File inputs:')
+    expect(capture.observation.snapshot).toContain('f1-1 "avatar" (accept=image/png, single, no file selected)')
+
+    const uploaded = await manager.execute('s1', { kind: 'upload', ref: 'f1-1',
+      revision: capture.observation.revision, files: ['/tmp/avatar.png'] })
+    expect(uploaded.observation.revision).toBe(capture.observation.revision + 1)
+    expect(guest.debugger.sendCommand).toHaveBeenCalledWith('DOM.setFileInputFiles', {
+      files: ['/tmp/avatar.png'], objectId: 'file-input-object',
+    })
+    // 上传直接写入控件，不移动鼠标也不点击。
+    expect(guest.debugger.sendCommand.mock.calls.some(([command]) => command === 'Input.dispatchMouseEvent')).toBe(false)
+    expect(uploaded.observation.cursor).toBeNull()
+    expect(navigated.observation.revision).toBeLessThan(capture.observation.revision)
+    await manager.dispose()
+  })
+
+  it('拒绝点击会弹出文件选择框的目标，并指向 browser_upload', async () => {
+    const manager = createBrowserGuestManager(fixture())
+    await manager.execute('s1', { kind: 'navigate', url: 'https://example.com/' })
+    const guest = electron.views[0]!.webContents
+    const capture = await manager.execute('s1', { kind: 'snapshot' })
+    guest.opensFileChooserTarget()
+
+    await expect(manager.execute('s1', { kind: 'click', ref: 'e1', revision: capture.observation.revision }))
+      .rejects.toThrow(/call browser_upload with the file input ref listed under File inputs/)
+    expect(guest.debugger.sendCommand.mock.calls.some(([command]) => command === 'Input.dispatchMouseEvent')).toBe(false)
+    await manager.dispose()
+  })
+
+  it('上传失败时给出可读原因而不回显主机路径', async () => {
+    const manager = createBrowserGuestManager(fixture())
+    await manager.execute('s1', { kind: 'navigate', url: 'https://example.com/' })
+    const guest = electron.views[0]!.webContents
+    guest.exposeFileInput()
+    const capture = await manager.execute('s1', { kind: 'snapshot' })
+    guest.failUpload()
+
+    await expect(manager.execute('s1', { kind: 'upload', ref: 'f1-1',
+      revision: capture.observation.revision, files: ['/tmp/private/secret.txt'] }))
+      .rejects.toThrow('browser upload failed: the file could not be read')
     await manager.dispose()
   })
 
@@ -1140,6 +1206,47 @@ describe('Electron 实时浏览器 guest', () => {
     await manager.dispose()
   })
 
+  it('快照把隐藏的文件输入列在 File inputs，并不放进可点击元素', async () => {
+    const manager = createBrowserGuestManager(fixture())
+    await manager.control('s1', { kind: 'ensure-tab' })
+    const wc = electron.views[0]!.webContents
+    await manager.execute('s1', { kind: 'snapshot' })
+    const expression = (wc.debugger.sendCommand.mock.calls.find(([command, params]) =>
+      command === 'Runtime.evaluate' && (params as { expression: string }).expression.includes('const scanRoots'))?.[1] as
+      { expression: string }).expression
+
+    const fileInput = {
+      tagName: 'INPUT', type: 'file', nodeType: 1, nodeName: 'INPUT', shadowRoot: null, host: undefined,
+      form: null, labels: [], multiple: false, files: [], value: '', parentNode: null,
+      disabled: false, readOnly: false, innerText: '',
+      attributes: [{ name: 'type', value: 'file' }, { name: 'aria-label', value: 'Avatar' }],
+      getAttribute: (name: string) => name === 'type' ? 'file' : name === 'aria-label' ? 'Avatar' : null,
+      hasAttribute: () => false,
+      matches: (selector: string) => selector.includes('input') && !selector.includes(':disabled'),
+      closest: () => null,
+    }
+    const document = { title: 'Upload', body: { innerText: '' }, nodes: [fileInput],
+      createTreeWalker(tree: unknown) {
+        const nodes = tree === document ? document.nodes : []
+        let index = -1
+        return { currentNode: undefined as unknown,
+          nextNode() { index++; this.currentNode = nodes[index]; return index < nodes.length } }
+      } }
+    class MutationObserver {
+      observe() {}
+      disconnect() {}
+      takeRecords() { return [] }
+    }
+    const context = { document, MutationObserver, Node: { ELEMENT_NODE: 1 }, NodeFilter: { SHOW_ELEMENT: 1 },
+      location: { href: 'https://example.com/' }, innerWidth: 800, innerHeight: 600 }
+    const snapshot = runInNewContext(expression, context) as { entries: string[]; fileEntries: string[] }
+    expect(snapshot.entries).toEqual([])
+    expect(snapshot.fileEntries[0]).toMatch(/^f1-\S+ "Avatar" \(single, no file selected\)$/)
+    const refs = (context as unknown as { __dshGuestRefs: Map<string, { el: unknown }> }).__dshGuestRefs
+    expect(refs.get(snapshot.fileEntries[0]!.split(' ')[0]!)?.el).toBe(fileInput)
+    await manager.dispose()
+  })
+
   it('隔离世界引用允许旁支更新和目标移动，却拒绝目标改址、断连与遮挡', async () => {
     const manager = createBrowserGuestManager(fixture())
     const capture = await manager.execute('s1', { kind: 'navigate', url: 'https://example.com/' })
@@ -1423,7 +1530,7 @@ describe('Electron 实时浏览器 guest', () => {
         if ((params as { expression: string }).expression === 'globalThis.__dshGuestReadMutationRevision()') {
           return { result: { value: 0 } }
         }
-        return { result: { value: { text: '', entries: [], title: '', href: 'about:blank', domRevision: 0 } } }
+        return { result: { value: { text: '', entries: [], fileEntries: [], title: '', href: 'about:blank', domRevision: 0 } } }
       }
       if (command === 'Page.captureScreenshot') return { data: png(3000, 2000, 2 * 1024 * 1024).toString('base64') }
       return {}

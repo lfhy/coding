@@ -123,6 +123,8 @@ export const snapshotScript = `(function () {
   while (walker.nextNode() && scanned++ < 50000 && entries.length < 150) {
     const el = walker.currentNode;
     if (!el.matches(ACTIONABLE)) continue;
+    // 文件输入单独列在 File inputs：点它只会弹系统选择框，上传要按引用指定文件。
+    if (el.tagName === 'INPUT' && el.type === 'file') continue;
     const box = el.getBoundingClientRect(); const style = getComputedStyle(el);
     if (!box.width || !box.height || style.display === 'none' || style.visibility === 'hidden' ||
       style.pointerEvents === 'none' || box.right <= 0 || box.bottom <= 0 ||
@@ -138,14 +140,39 @@ export const snapshotScript = `(function () {
     entries.push(ref + ' ' + (el.getAttribute('role') || el.tagName.toLowerCase()) + ' ' +
       JSON.stringify(String(name).trim().slice(0, 160)) + ' (' + [box.x, box.y, box.width, box.height].map(Math.round).join(',') + ')');
   }
+  // 真正的文件输入常被藏起来（样式化按钮在后面触发它），因此不受可见性与命中测试约束。
+  const fileEntries = [];
+  const fileWalker = document.createTreeWalker(document, NodeFilter.SHOW_ELEMENT);
+  let fileScanned = 0;
+  while (fileWalker.nextNode() && fileEntries.length < 3 && fileScanned++ < 50000) {
+    const el = fileWalker.currentNode;
+    if (el.tagName !== 'INPUT' || el.type !== 'file') continue;
+    const ref = 'f' + (fileEntries.length + 1) + '-' + Date.now() + '-' + Math.random();
+    const label = el.labels && el.labels.length ? (el.labels[0].innerText || '') : '';
+    const accept = (el.getAttribute('accept') || '').slice(0, 120);
+    const name = (el.getAttribute('aria-label') || el.getAttribute('placeholder') ||
+      el.getAttribute('title') || label || '').trim().slice(0, 160);
+    const details = [accept ? 'accept=' + accept : '', el.multiple ? 'multiple' : 'single',
+      el.files && el.files.length ? el.files.length + ' selected' : 'no file selected'].filter(Boolean).join(', ');
+    refs.set(ref, { el, form: el.form ?? null, identity: identity(el), path: path(el) });
+    fileEntries.push(ref + ' ' + JSON.stringify(name) + ' (' + details + ')');
+  }
   root.__dshGuestRefs = refs;
-  return { text: (document.body?.innerText || '').slice(0, 6000), entries,
+  return { text: (document.body?.innerText || '').slice(0, 6000), entries, fileEntries,
     title: document.title.slice(0, 4096), href: location.href.length <= 4096 ? location.href : null,
     domRevision: scanRoots() };
 })()`
 
 /** 主进程执行观测脚本后得到的页面摘要。 */
-export type Snapshot = { text: string; entries: string[]; title: string; href: string | null; domRevision: number }
+export type Snapshot = {
+  text: string
+  entries: string[]
+  /** `File inputs:` 段的行；只有上传能引用这些 ref。 */
+  fileEntries: string[]
+  title: string
+  href: string | null
+  domRevision: number
+}
 
 /**
  * 引用复核结果：命中点，或无法点击的具体原因与遮挡者。

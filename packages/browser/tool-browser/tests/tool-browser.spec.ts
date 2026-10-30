@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { deflateSync } from 'node:zlib'
@@ -322,6 +322,111 @@ describe('browser action tools', () => {
     expect(asked.mock.calls[0]?.[0].reason).toBe(
       'Browser viewport 390x844 (current origin: https://example.com; approval is for this call only)')
     expect(result.value).toMatchObject({ action: 'viewport', image: null })
+  })
+
+  it('uploads a workspace file as an absolute path without opening a file chooser', async () => {
+    const { ctx, call, agent } = await setup(true, { mode: 'danger-full-access', policy: 'never' })
+    const browser = ctx.browserUse as FakeBrowser
+    browser.currentState = activeState()
+    const cwd = (agent.session.header as { cwd?: string }).cwd as string
+    await writeFile(join(cwd, 'avatar.png'), PNG)
+    const request = vi.spyOn(ctx.approval, 'request')
+
+    const result = await call({ action: 'upload', ref: 'f1', revision: 1, files: ['avatar.png'] })
+    expect(result.isError).toBe(false)
+    expect(request).not.toHaveBeenCalled()
+    expect(browser.commands.mock.calls[0]?.[1]).toEqual({
+      kind: 'upload', ref: 'f1', revision: 1, files: [join(await realpath(cwd), 'avatar.png')],
+    })
+    expect(result.value).toMatchObject({ action: 'upload', image: null })
+  })
+
+  it('names the uploaded files but not their paths in the approval prompt', async () => {
+    const { ctx, call, agent } = await setup()
+    const browser = ctx.browserUse as FakeBrowser
+    browser.currentState = activeState()
+    const cwd = (agent.session.header as { cwd?: string }).cwd as string
+    for (const name of ['avatar.png', 'report.pdf', 'notes.txt', 'extra.csv']) {
+      await writeFile(join(cwd, name), PNG)
+    }
+    const asked = vi.fn((_request: { reason?: string }) => Promise.resolve('allowed-once' as const))
+    ctx.on('approval/request', asked)
+
+    const result = await call({ action: 'upload', ref: 'f1', revision: 1, files: ['avatar.png', 'report.pdf', 'notes.txt', 'extra.csv'] })
+    expect(result.isError).toBe(false)
+    expect(asked.mock.calls[0]?.[0].reason).toBe(
+      'Browser upload 4 files (avatar.png, report.pdf, notes.txt and 1 more) (current origin: https://example.com; approval is for this call only)')
+    expect(asked.mock.calls[0]?.[0].reason).not.toContain(cwd)
+  })
+
+  it('rejects uploads that leave the workspace, are not regular files, or do not exist', async () => {
+    const { ctx, call, agent } = await setup(true, { mode: 'danger-full-access', policy: 'never' })
+    const browser = ctx.browserUse as FakeBrowser
+    browser.currentState = activeState()
+    const cwd = (agent.session.header as { cwd?: string }).cwd as string
+    await symlink('/etc/hosts', join(cwd, 'escape.txt'))
+    await mkdir(join(cwd, 'folder'))
+
+    for (const [files, expected] of [
+      [['escape.txt'], 'browser_upload: only files inside the session workspace can be uploaded: escape.txt'],
+      [['folder'], 'browser_upload: not a regular file: folder'],
+      [['missing.txt'], 'browser_upload: no such file: missing.txt'],
+    ] as const) {
+      const result = await call({ action: 'upload', ref: 'f1', revision: 1, files: [...files] })
+      expect(result.isError).toBe(true)
+      expect(text(result)).toContain(expected)
+    }
+    expect(browser.commands).not.toHaveBeenCalled()
+  })
+
+  it('rejects malformed upload arguments before approval', async () => {
+    const { ctx, call } = await setup()
+    const browser = ctx.browserUse as FakeBrowser
+    browser.currentState = activeState()
+    const asked = vi.fn(() => Promise.resolve('allowed-once' as const))
+    ctx.on('approval/request', asked)
+
+    for (const [files, expected] of [
+      [[], 'browser_upload: files must be a non-empty array of at most 8 paths'],
+      [Array.from({ length: 9 }, (_value, index) => `f${index}.txt`), 'browser_upload: files must be a non-empty array of at most 8 paths'],
+      [[''], 'browser_upload: files[0] must be a non-empty path of at most 1024 characters'],
+      [['a\u0000b'], 'browser_upload: files[0] must not contain control characters'],
+    ] as const) {
+      const result = await call({ action: 'upload', ref: 'f1', revision: 1, files })
+      expect(result.isError).toBe(true)
+      expect(text(result)).toContain(expected)
+    }
+    expect(asked).not.toHaveBeenCalled()
+    expect(browser.commands).not.toHaveBeenCalled()
+  })
+
+  it('refuses uploads when the session has no workspace directory', async () => {
+    const { ctx, call, agent } = await setup(true, { mode: 'danger-full-access', policy: 'never' })
+    const browser = ctx.browserUse as FakeBrowser
+    browser.currentState = activeState()
+    delete (agent.session.header as { cwd?: string }).cwd
+
+    const result = await call({ action: 'upload', ref: 'f1', revision: 1, files: ['avatar.png'] })
+    expect(result.isError).toBe(true)
+    expect(text(result)).toContain('this session has no workspace directory')
+    expect(browser.commands).not.toHaveBeenCalled()
+  })
+
+  it('reports a stale file input with its provider reason and without replaying the upload', async () => {
+    const { ctx, call, agent } = await setup()
+    const browser = ctx.browserUse as FakeBrowser
+    browser.currentState = activeState()
+    const cwd = (agent.session.header as { cwd?: string }).cwd as string
+    await writeFile(join(cwd, 'avatar.png'), PNG)
+    ctx.on('approval/request', () => Promise.resolve('allowed-once' as const))
+    browser.commands.mockRejectedValueOnce(new BrowserUseError(
+      'browser element f1 is not a file input in the current observation; use a ref listed under File inputs', 'BROWSER_STALE_REF'))
+
+    const result = await call({ action: 'upload', ref: 'f1', revision: 1, files: ['avatar.png'] })
+    expect(result.isError).toBe(true)
+    expect(text(result)).toContain('is not a file input in the current observation')
+    expect(text(result)).toContain('do not repeat the upload')
+    expect(browser.commands).toHaveBeenCalledTimes(1)
   })
 
   it('treats an invisible click target as uncertain without replaying it', async () => {
@@ -1029,17 +1134,17 @@ describe('browser action tools', () => {
     expect((ctx.browserUse as FakeBrowser).commands).not.toHaveBeenCalled()
   })
 
-  it('publishes only nine action-specific tool schemas with required parameters', async () => {
+  it('publishes only ten action-specific tool schemas with required parameters', async () => {
     const { ctx } = await setup()
     const schemas = ctx.tools.schemas().filter(tool => tool.name.startsWith('browser_'))
     expect(schemas.map(tool => tool.name)).toEqual([
-      'browser_navigate', 'browser_snapshot', 'browser_click', 'browser_fill', 'browser_act',
+      'browser_navigate', 'browser_snapshot', 'browser_click', 'browser_fill', 'browser_upload', 'browser_act',
       'browser_scroll', 'browser_viewport', 'browser_screenshot', 'browser_close',
     ])
     expect(ctx.tools.get('browser_use')).toBeUndefined()
     expect(schemas.map(tool => (tool.parameters as { required?: string[] }).required ?? [])).toEqual([
-      ['url'], [], ['ref', 'revision'], ['ref', 'revision', 'text'], ['revision', 'steps'],
-      ['direction', 'pixels'], ['width', 'height'], [], [],
+      ['url'], [], ['ref', 'revision'], ['ref', 'revision', 'text'], ['ref', 'revision', 'files'],
+      ['revision', 'steps'], ['direction', 'pixels'], ['width', 'height'], [], [],
     ])
     for (const schema of schemas) {
       expect((schema.parameters as { properties: Record<string, unknown> }).properties).not.toHaveProperty('action')

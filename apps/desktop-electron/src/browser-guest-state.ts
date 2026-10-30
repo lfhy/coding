@@ -27,6 +27,8 @@ export const STALE_TARGET_REASONS: Record<string, string> = {
   element_disabled: 'is disabled or inert',
   element_offscreen: 'is outside the visible viewport',
   element_covered: 'is covered by another element',
+  element_opens_file_chooser: 'opens a file chooser; call browser_upload with the file input ref listed under File inputs',
+  element_is_file_input: 'is a file input; call browser_upload with this ref instead of filling it',
 }
 
 /** 一个 guest 标签页及其最近一次观测的主进程状态。 */

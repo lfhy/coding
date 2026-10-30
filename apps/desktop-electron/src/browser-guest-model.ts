@@ -12,6 +12,8 @@ interface ModelOperation {
   owner: Owner
   tab: Tab
   evaluate: <T>(tab: Tab, expression: string) => Promise<T>
+  /** 把引用解析成 CDP 可寻址的文件输入句柄；引用失效或不是文件输入时以过期引用拒绝。 */
+  fileInputObjectId: (ref: string) => Promise<string>
   requireTarget: (outcome: TargetOutcome, ref: string, owner: Owner) => { x: number; y: number }
   assertStable(navigation: number): void
   assertTarget(): void
@@ -36,6 +38,18 @@ export interface ModelOperationOutcome {
 function stepReason(error: Error): string {
   const message = error.message.replace(/[\u0000-\u001f\u007f]+/g, ' ').replace(/\s+/g, ' ').trim()
   return (message === '' ? 'the element could not be used' : message).slice(0, MAX_STEP_REASON_CHARS)
+}
+
+/**
+ * CDP 上传失败的最短可读原因；文件路径来自模型输入，不把主机或页面内容写进诊断。
+ * @param error `DOM.setFileInputFiles` 抛出的原始错误。
+ * @returns 面向模型的一句话原因。
+ */
+function uploadFailure(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error)
+  if (/File not found|ENOENT|No such file/i.test(message)) return 'browser upload failed: the file could not be read'
+  if (/not an input|not an HTMLInputElement/i.test(message)) return 'browser upload failed: the element is not a file input'
+  return 'browser upload failed'
 }
 
 /**
@@ -68,6 +82,12 @@ async function performElementStep(operation: ModelOperation, revision: number, s
     }
     if (JSON.stringify(ref.identity) !== JSON.stringify(globalThis.__dshGuestIdentity(el))) {
       return { reason: 'element_changed' };
+    }
+    // 文件输入不能被点击（会弹系统文件选择框），也不能被填写；两者都引导到 browser_upload。
+    const isFile = node => !!node && node.tagName === 'INPUT' && node.type === 'file';
+    const label = el.closest('label');
+    if (isFile(el) || (label && isFile(label.control))) {
+      return { reason: ${step.kind === 'click'} ? 'element_opens_file_chooser' : 'element_is_file_input' };
     }
     if (${step.kind === 'fill'} && (el.disabled || el.readOnly ||
       (!('value' in el) && !el.isContentEditable))) return { reason: 'element_not_editable' };
@@ -208,6 +228,26 @@ export async function performModelOperation(operation: ModelOperation): Promise<
       break
     }
     case 'viewport': await operation.setViewport(command.width, command.height); break
+    case 'upload': {
+      // 上传与点击同样绑定本次观测修订版：引用、页面与审批目标都在动手前复核。
+      if (command.revision !== tab.revision) operation.fail('stale browser element revision')
+      const current = tab.capture
+      if (current === undefined || current.observation.revision !== command.revision) {
+        operation.fail('stale browser element revision')
+      }
+      const epoch = tab.navigation
+      operation.assertTarget()
+      const objectId = await operation.fileInputObjectId(command.ref)
+      operation.assertStable(epoch)
+      operation.assertTarget()
+      operation.mutate()
+      try {
+        await tab.view.webContents.debugger.sendCommand('DOM.setFileInputFiles', {
+          files: [...command.files], objectId,
+        })
+      } catch (error) { throw new GuestError(uploadFailure(error), 'BROWSER_FAILED') }
+      break
+    }
     case 'snapshot': case 'screenshot': break
     default: { const never: never = command; throw new Error(`unknown browser command: ${String(never)}`) }
   }
