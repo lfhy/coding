@@ -1,4 +1,5 @@
-/** 来自 Host 的页面目录、画面和活动事件在浏览器边界统一校验。 */
+/** 来自 Host 的页面目录、画面、状态、历史与活动事件在浏览器边界统一校验。 */
+import { actionKind, type EgoAction, type EgoActionKind } from './actions.ts'
 
 export interface EgoPage {
   readonly targetId: string
@@ -7,6 +8,8 @@ export interface EgoPage {
   readonly active: boolean
   readonly viewportW: number | null
   readonly viewportH: number | null
+  /** 页面是否要求人工完成验证；Host 的检测细节不进入视图。 */
+  readonly humanCheck: boolean
 }
 
 export interface EgoFrame {
@@ -17,13 +20,22 @@ export interface EgoFrame {
   readonly ts: number
 }
 
+export interface EgoStatus {
+  readonly running: boolean
+  readonly browserConnected: boolean
+}
+
 export interface EgoActivity {
   readonly sessionId: string
   readonly count: number
+  readonly kind: EgoActionKind
+  readonly at: number | null
 }
 
 const ID = /^[a-zA-Z0-9._~-]{1,128}$/u
 const BASE64 = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/u
+const ACTIVITY_KEYS = new Set(['count', 'sessionId', 'tool', 'at'])
+const CONTROL = /[\u0000-\u001f\u007f]/u
 
 function record(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -40,13 +52,27 @@ function viewport(value: unknown): value is number {
 }
 
 function safeAddress(value: unknown): value is string {
-  if (typeof value !== 'string' || value.length > 4096 || /[\u0000-\u001f\u007f]/u.test(value)) return false
+  if (typeof value !== 'string' || value.length > 4096 || CONTROL.test(value)) return false
   if (value === 'about:blank') return true
   try {
     const url = new URL(value)
     return (['http:', 'https:', 'file:', 'chrome:'].includes(url.protocol))
       && url.username === '' && url.password === ''
   } catch { return false }
+}
+
+/**
+ * 人机验证只保留布尔事实：Host 可能发送 null、布尔或带检测细节的对象。
+ * @param value - spaces 项的 humanCheck 字段。
+ * @returns 是否需要人工验证；形状无法解释时为 null。
+ */
+function humanCheck(value: unknown): boolean | null {
+  if (value === undefined || value === null || value === false) return false
+  if (value === true) return true
+  const detail = record(value)
+  if (detail === null) return null
+  if (detail.detected === undefined) return true
+  return typeof detail.detected === 'boolean' ? detail.detected : null
 }
 
 /**
@@ -61,13 +87,15 @@ export function parseSpaces(value: unknown): readonly EgoPage[] {
     const page = record(item)
     if (!page || !validId(page.targetId) || seen.has(page.targetId)
       || typeof page.title !== 'string' || page.title.length > 4096
-      || /[\u0000-\u001f\u007f]/u.test(page.title) || !safeAddress(page.url)
+      || CONTROL.test(page.title) || !safeAddress(page.url)
       || typeof page.active !== 'boolean'
       || (page.viewportW != null && !viewport(page.viewportW))
       || (page.viewportH != null && !viewport(page.viewportH))) throw new Error('invalid page')
+    const human = humanCheck(page.humanCheck)
+    if (human === null) throw new Error('invalid page')
     seen.add(page.targetId)
     return { targetId: page.targetId, title: page.title, url: page.url, active: page.active,
-      viewportW: page.viewportW ?? null, viewportH: page.viewportH ?? null }
+      viewportW: page.viewportW ?? null, viewportH: page.viewportH ?? null, humanCheck: human }
   })
 }
 
@@ -87,13 +115,50 @@ export function parseFrame(value: unknown): EgoFrame | null {
 }
 
 /**
- * 全局活动流只能提供调用次数与会话身份，其他字段一律拒绝。
+ * 面板状态只取运行与连接两个布尔值；其余字段（路径、进程信息）一律忽略。
+ * @param value - status 路由的 JSON 值。
+ * @returns 可用于展示的状态，形状不符时为 null。
+ */
+export function parseStatus(value: unknown): EgoStatus | null {
+  const status = record(value)
+  if (!status || status.ok !== true || typeof status.running !== 'boolean'
+    || typeof status.browserConnected !== 'boolean') return null
+  return { running: status.running, browserConnected: status.browserConnected }
+}
+
+/**
+ * 历史只接受有序的动作列表；工具名在此归入展示类别，原值不进入视图。
+ * @param value - history 路由的 JSON 值。
+ * @returns 已归类的动作；形状异常时抛错，由调用方保留上一份状态。
+ */
+export function parseActions(value: unknown): readonly EgoAction[] {
+  const payload = record(value)
+  if (!payload || payload.ok !== true || !Array.isArray(payload.actions)
+    || payload.actions.length > 64) throw new Error('invalid browser history')
+  return payload.actions.map((item) => {
+    const action = record(item)
+    if (!action || typeof action.tool !== 'string' || action.tool.length > 128 || CONTROL.test(action.tool)
+      || typeof action.at !== 'number' || !Number.isSafeInteger(action.at) || action.at < 0) {
+      throw new Error('invalid browser action')
+    }
+    return { kind: actionKind(action.tool), at: action.at }
+  })
+}
+
+/**
+ * 全局活动流只提供调用次数、工具类别与会话身份；页面、画面和其他字段一律拒绝。
  * @param value - SSE tool-call 的 JSON 值。
  * @returns 校验后的活动；不完整数据为 null。
  */
 export function parseActivity(value: unknown): EgoActivity | null {
   const event = record(value)
-  if (!event || Object.keys(event).length !== 2 || !validId(event.sessionId)
+  if (!event || Object.keys(event).some(key => !ACTIVITY_KEYS.has(key))
+    || !validId(event.sessionId)
     || typeof event.count !== 'number' || !Number.isSafeInteger(event.count) || event.count < 0) return null
-  return { sessionId: event.sessionId, count: event.count }
+  if ('tool' in event && (typeof event.tool !== 'string' || event.tool.length > 128 || CONTROL.test(event.tool))) {
+    return null
+  }
+  if ('at' in event && (typeof event.at !== 'number' || !Number.isSafeInteger(event.at) || event.at < 0)) return null
+  return { sessionId: event.sessionId, count: event.count, kind: actionKind(event.tool),
+    at: typeof event.at === 'number' ? event.at : null }
 }

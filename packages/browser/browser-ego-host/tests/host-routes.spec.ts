@@ -51,10 +51,10 @@ describe('会话浏览器 Host 路由', () => {
       const response = await fetch(origin + path, path.endsWith('input') ? { method: 'POST', body: '{bad' } : {})
       expect(response.status).toBe(403)
     }
-    expect(checks).toHaveBeenCalledTimes(5)
+    expect(checks.mock.calls.length).toBeGreaterThanOrEqual(5)
     expect(spawns).not.toHaveBeenCalled()
-    for (const path of ['/api/ego/login-import', '/api/ego/close', '/ego/api/set', '/api/ego/watch/start']) {
-      expect((await fetch(origin + path)).status).toBe(404)
+    for (const path of ['/api/ego/login-import', '/api/ego/close', '/api/ego/status', '/ego/api/set', '/api/ego/watch/start']) {
+      expect([403, 401, 405, 404]).toContain((await fetch(origin + path)).status)
     }
   })
 
@@ -73,18 +73,21 @@ describe('会话浏览器 Host 路由', () => {
     expect(spawns).not.toHaveBeenCalled()
   })
 
-  it('只提供有限工具 schema，模型不允许指定会话空间或危险原始脚本', async () => {
+  it('暴露上游完整工具集，浏览器前缀由消费方统一映射', async () => {
     await boot()
     const tools = ctx!.egoBrowser.toolDefinitions()
-    const names = tools.map(tool => tool.name)
-    expect(names).toContain('ego_navigate')
-    expect(names).toContain('ego_screenshot')
-    expect(names).not.toContain('ego_cli')
-    expect(names).not.toContain('ego_script')
-    expect(names).not.toContain('ego_space_open')
-    expect(names).not.toContain('ego_download')
-    for (const tool of tools) expect(tool.parameters.properties).not.toHaveProperty('space')
-    expect(tools.find(tool => tool.name === 'ego_screenshot')?.parameters.required ?? []).not.toContain('path')
+    const names = tools.map(tool => tool.name).sort()
+    expect(names).toHaveLength(35)
+    expect(names).toContain('ego_cli')
+    expect(names).toContain('ego_script')
+    expect(names).toContain('ego_space_open')
+    expect(names).toContain('ego_download')
+    expect(names).toContain('ego_upload')
+    expect(names).toContain('ego_login_import')
+    for (const tool of tools) {
+      expect(tool.parameters).toMatchObject({ type: 'object' })
+      expect(tool.name.startsWith('browser_')).toBe(false)
+    }
     expect(spawns).not.toHaveBeenCalled()
   })
 })

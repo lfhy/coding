@@ -202,7 +202,7 @@
 
 ## packages/client/ui-browser
 
-默认浏览器路线：[Ego Host](../../packages/browser/browser-ego-host/README.md) 在 base 提供会话空间、有限安全工具定义和受信画面／输入路由；[浏览器工具消费方](../../packages/browser/tool-browser-ego/README.md)在标准、长任务与逆向分析预设中把这些定义以 `browser_` 前缀注册并逐会话审批；[Agent 浏览器面板](../../packages/client/ui-browser-ego/README.md)在 Web 组合中占用右侧 keyed 外部标签。改动牵涉 base/Web/预设配置、桌面打包、Host 路由、模型目录和用户指南；验证运行 Host／工具／Client 定向测试、真实 Loader 与隔离 Edge 冒烟、Web 回放及权限拒绝测试。下述旧界面只存在于可选源码，不会在默认工作台启动或用作后备。
+默认浏览器路线：[Ego Host](../../packages/browser/browser-ego-host/README.md) 在 base 提供会话空间、上游全部 35 个工具定义和受信画面／输入路由；[浏览器工具消费方](../../packages/browser/tool-browser-ego/README.md)在标准、长任务与逆向分析预设中把这些定义以 `browser_` 前缀注册并逐会话审批；[Agent 浏览器面板](../../packages/client/ui-browser-ego/README.md)在 Web 组合中占用右侧 keyed 外部标签。改动牵涉 base/Web/预设配置、桌面打包、Host 路由、模型目录和用户指南；验证运行 Host／工具／Client 定向测试、真实 Loader 与隔离 Edge 冒烟、Web 回放及权限拒绝测试。下述旧界面只存在于可选源码，不会在默认工作台启动或用作后备。
 
 - **拥有**：占用 `workbench.browser` 和 `workbench.browser.tabs` 的会话级人工地址栏／历史／页面标签，通过 `syncBrowserTabs()` 把每个 Host 页面同步为统一顶栏中的 `browser` 标签；Web/CLI 的截图坐标交互、观测轮询与图片 URL 生命周期；桌面端的原生 guest 呈现请求，不请求 PNG 镜像。
 - **不拥有**：slot 声明、功能菜单、统一工作台标签状态、文件视图和终端（`packages/client/ui-open-in-app`）；Host 的 `browser.control` 实现与信任限制（`packages/host/apiproxy`、`packages/client/connection`）；浏览器状态与模型工具（`packages/browser/browser`、`packages/browser/tool-browser`）。

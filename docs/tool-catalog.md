@@ -18,7 +18,7 @@ This table connects model-visible tool names to the plugin package and service s
 | `coding-tool-memory` | `memory_delete`, `memory_list`, `memory_read`, `memory_save`, `memory_update` | `ctx.tools`, `ctx.memory` | `tool/call`, `tool/result for project-scoped memory reads and writes` | - | The five memory tools take no path: the owning session decides which project they read and write, and each call resolves it from the session cwd. |
 | `coding-tool-ask-user` | `ask_user_question` | `ctx.tools`, `ctx.userQuestions` | `tool/call`, `tool/result after a UI/provider answers the question` | - | ask_user_question pauses the tool call until the active UI provider returns a human answer. |
 | `coding-tool-browser` | `browser_act`, `browser_click`, `browser_close`, `browser_fill`, `browser_navigate`, `browser_screenshot`, `browser_scroll`, `browser_snapshot`, `browser_upload`, `browser_viewport` | `ctx.tools`, `ctx.browserUse`, `ctx.attachments`, `ctx.approval and a calling Agent at execution time` | `tool/call`, `durable attachment on screenshot`, `tool/result` | - | Each operation is bound to the active tab and session revision. Full access with approval prompts disabled proceeds directly; otherwise only allowed-once approval proceeds if that target remains current. A remote workspace is rejected. Only explicit screenshots save a PNG attachment and render an image block. The browser provider owns URL/network policy and session tab lifetime. |
-| `coding-tool-browser-ego` | `browser_captcha`, `browser_check`, `browser_click`, `browser_drag`, `browser_fill`, `browser_hover`, `browser_key`, `browser_navigate`, `browser_page_info`, `browser_read_element`, `browser_screenshot`, `browser_scroll`, `browser_select`, `browser_snapshot`, `browser_tabs`, `browser_wait`, `browser_wait_for_selector`, `browser_wait_for_url` | `ctx.tools`, `ctx.egoBrowser`, `ctx.attachments`, `ctx.approval and a calling Agent at execution time` | `tool/call`, `durable screenshot attachment`, `tool/result` | - | The default Web and desktop browser tools use session-scoped ego-lite pages. The model sees only the Host safe subset under browser_* names; every call checks session sandbox and approval, remote workspaces are denied, and an explicit screenshot persists an image attachment. |
+| `coding-tool-browser-ego` | `browser_auth_flush`, `browser_captcha`, `browser_cdp`, `browser_check`, `browser_cli`, `browser_click`, `browser_dialog`, `browser_doctor`, `browser_download`, `browser_drag`, `browser_fill`, `browser_help`, `browser_hover`, `browser_http`, `browser_js`, `browser_key`, `browser_login_import`, `browser_navigate`, `browser_page_info`, `browser_read_element`, `browser_screenshot`, `browser_script`, `browser_scroll`, `browser_select`, `browser_snapshot`, `browser_space_close`, `browser_space_open`, `browser_status`, `browser_tabs`, `browser_upload`, `browser_wait`, `browser_wait_for_human`, `browser_wait_for_response`, `browser_wait_for_selector`, `browser_wait_for_url` | `ctx.tools`, `ctx.egoBrowser`, `ctx.attachments`, `ctx.approval and a calling Agent at execution time` | `tool/call`, `durable screenshot attachment`, `tool/result` | - | The default Web and desktop browser tools use session-scoped ego-lite pages. The model sees only the Host safe subset under browser_* names; every call checks session sandbox and approval, remote workspaces are denied, and an explicit screenshot persists an image attachment. |
 | `coding-tool-computer-use` | `computer_click`, `computer_confirm`, `computer_drag`, `computer_list_apps`, `computer_observe`, `computer_perform_action`, `computer_press_key`, `computer_scroll`, `computer_set_value`, `computer_type_text`, `computer_wait` | `ctx.tools`, `ctx.skills`, `ctx.computerUse and a calling Agent at execution time` | `tool/call`, `tool/result`, `workspace screenshot Artifact on request`, `one computer_use_state read/control lease decision after an approval or a configured grant` | - | The only globally visible tool is computer_use_activate; loading the Skill replaces it with the execution vocabulary for that Agent alone. Every action binds to a fresh observation, so a stale element index fails closed, and a coordinate target is only accepted after a screenshot delivered the raster it was chosen from. Accessibility actions are preferred over pointer input, and pointer input is routed to the selected process instead of the global cursor. |
 | `coding-tools` | `run_code` | `ctx.tools`, `ctx.codeRuntime (execution time)`, `ctx.systemPrompt` | `tool/call`, `one tool/code-dispatch-start + tool/code-dispatch pair per bridged sub-call`, `tool/result` | - | Owned by the tool registry as a reserved transport outside filterable capability layers under `mode: code` / `mode: both` (see the Code Mode design record). Under `code` it is the registry's only wire contribution; the other visible capabilities are declared in a generated SDK section in the loaded runtime's language, and a program calls them through bindings scheduled under the native concurrency contract (submission-ordered starts and policy; concurrency-safe bodies overlap up to `maxParallelSubCalls`) that re-enter the complete guarded tool pipeline and link each nested execution to this outer result. |
 | `coding-plan-mode` | `exit_plan_mode` | `ctx.tools`, `ctx.systemPrompt`, `ctx.userQuestions (execution time, opportunistic)` | `tool/call`, `plan/mode inactive on an approved review`, `tool/result` | - | exit_plan_mode stays in the model-facing schema while planning is inactive so transitions add no tool-catalog churn on top of the plan-policy change. Its execute path rejects calls outside plan mode; in plan mode it presents the plan over the user-questions seam (approve / keep planning with feedback), and approval logs plan mode inactive at the step boundary. |
@@ -538,9 +538,9 @@ Each operation is bound to the active tab and session revision. Full access with
 
 ## `coding-tool-browser-ego`
 
-### `browser_captcha`
+### `browser_auth_flush`
 
-Detect a human-verification challenge on the current page.
+Force all persistent login cookies in the agent browser to be written to the on-disk profile. Call this after login (or before ending a browsing task) so the login survives a later DSH/browser restart — Chrome only flushes cookies to disk on graceful close, this nudges it to persist them now.
 
 ```json
 {
@@ -551,9 +551,57 @@ Detect a human-verification challenge on the current page.
 
 Source: [`packages/browser/tool-browser-ego/src/index.ts`](../packages/browser/tool-browser-ego/src/index.ts)
 
+### `browser_captcha`
+
+Check the current page for a human-verification (CAPTCHA) challenge — reCAPTCHA / hCaptcha / Cloudflare / Turnstile — and return { detected, kind }. If detected=true, ALERT THE USER that they must complete the verification in the 'ego lite - agent' browser window (it is the same live session shown in the watch panel), then continue after they have.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "space": {
+      "type": "string",
+      "description": "Task-space name or numeric id; defaults to the configured defaultSpace."
+    }
+  }
+}
+```
+
+Source: [`packages/browser/tool-browser-ego/src/index.ts`](../packages/browser/tool-browser-ego/src/index.ts)
+
+### `browser_cdp`
+
+Issue a raw CDP command on the page target, e.g. cdp("Page.handleJavaScriptDialog", { accept: true }).
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "method": {
+      "type": "string",
+      "description": "CDP method name, e.g. Page.handleJavaScriptDialog."
+    },
+    "params": {
+      "type": "object",
+      "description": "CDP method parameters object.",
+      "additionalProperties": true
+    },
+    "space": {
+      "type": "string",
+      "description": "Task-space name or numeric id. Omit to use this session’s own space (dsh-agent-<session>) when session-scoped spaces are on (default), otherwise the most recently opened or explicitly selected space."
+    }
+  },
+  "required": [
+    "method"
+  ]
+}
+```
+
+Source: [`packages/browser/tool-browser-ego/src/index.ts`](../packages/browser/tool-browser-ego/src/index.ts)
+
 ### `browser_check`
 
-Set or clear a checkbox.
+Check (tick) or uncheck a checkbox/radio element. Does nothing if already in the desired state.
 
 ```json
 {
@@ -561,15 +609,44 @@ Set or clear a checkbox.
   "properties": {
     "selector": {
       "type": "string",
-      "description": "Checkbox selector."
+      "description": "CSS selector of the checkbox/radio."
     },
     "checked": {
       "type": "boolean",
-      "description": "Whether the checkbox should be checked."
+      "description": "true=check (default), false=uncheck."
+    },
+    "space": {
+      "type": "string",
+      "description": "Task-space name or numeric id. Omit to use this session’s own space (dsh-agent-<session>) when session-scoped spaces are on (default), otherwise the most recently opened or explicitly selected space."
     }
   },
   "required": [
     "selector"
+  ]
+}
+```
+
+Source: [`packages/browser/tool-browser-ego/src/index.ts`](../packages/browser/tool-browser-ego/src/index.ts)
+
+### `browser_cli`
+
+Escape hatch: run an arbitrary `ego-browser nodejs` heredoc script verbatim (facades page/browser/taskSpaces/site/fetch and the raw cdp() are preloaded). Use when the structured browser_* tools do not cover the task. Returns raw stdout plus the parsed console.log payload when present.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "script": {
+      "type": "string",
+      "description": "Full JS script body for the heredoc; ego-browser helpers are preloaded. End with console.log('@@DSH_RESULT@@' + JSON.stringify({...})) — the literal @@DSH_RESULT@@ sentinel is required. (A trailing plain JSON line is accepted as a fallback, with result.fallback=true.)"
+    },
+    "tab": {
+      "type": "string",
+      "description": "Optional tab targetId (from browser_tabs list). Omit to use the tab Chrome reports as active, falling back to the first real page."
+    }
+  },
+  "required": [
+    "script"
   ]
 }
 ```
@@ -578,7 +655,7 @@ Source: [`packages/browser/tool-browser-ego/src/index.ts`](../packages/browser/t
 
 ### `browser_click`
 
-Click a page element by selector or snapshot ref.
+Click an element in the current page. Target with a CSS selector, an xpath=.../loc=.../ref=N value from browser_snapshot, or viewport coordinates.
 
 ```json
 {
@@ -586,12 +663,106 @@ Click a page element by selector or snapshot ref.
   "properties": {
     "selector": {
       "type": "string",
-      "description": "CSS selector or ref from snapshot."
+      "description": "CSS selector, xpath=..., loc=..., or ref=N from the snapshot. Required unless x/y are given."
+    },
+    "x": {
+      "type": "number",
+      "description": "Viewport x coordinate for a coordinate click."
+    },
+    "y": {
+      "type": "number",
+      "description": "Viewport y coordinate for a coordinate click."
+    },
+    "label": {
+      "type": "string",
+      "description": "Short human label for the action, e.g. \"click submit button\"."
+    },
+    "double": {
+      "type": "boolean",
+      "description": "Double-click instead of single-click. Useful for opening files/rows or triggering dblclick handlers."
+    },
+    "space": {
+      "type": "string",
+      "description": "Task-space name or numeric id. Omit to use this session’s own space (dsh-agent-<session>) when session-scoped spaces are on (default), otherwise the most recently opened or explicitly selected space."
     }
-  },
-  "required": [
-    "selector"
-  ]
+  }
+}
+```
+
+Source: [`packages/browser/tool-browser-ego/src/index.ts`](../packages/browser/tool-browser-ego/src/index.ts)
+
+### `browser_dialog`
+
+Accept or dismiss a native browser dialog (alert/confirm/prompt), optionally supplying text for a prompt. This tool only reaches a dialog that is blocking the page RIGHT NOW — a dialog fired by an earlier browser_* call has already been auto-dismissed across the call boundary. To accept a dialog triggered by a click, do both in one call: page.once("dialog", d => d.accept()); await page.click(selector). If a dialog is blocking the page, page.evaluate/snapshot calls hang until it is handled.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "accept": {
+      "type": "boolean",
+      "description": "true=Accept/OK (default), false=Dismiss/Cancel."
+    },
+    "text": {
+      "type": "string",
+      "description": "Text to type into a prompt dialog."
+    },
+    "space": {
+      "type": "string",
+      "description": "Task-space name or numeric id. Omit to use this session’s own space (dsh-agent-<session>) when session-scoped spaces are on (default), otherwise the most recently opened or explicitly selected space."
+    }
+  }
+}
+```
+
+Source: [`packages/browser/tool-browser-ego/src/index.ts`](../packages/browser/tool-browser-ego/src/index.ts)
+
+### `browser_doctor`
+
+Preflight the ego-browser environment: vendored runtime present, Chrome/Edge/Brave candidates, state dir, CDP/browser.json, ego-cast worker, task spaces. Run first when the browser fails to start (update, reboot, port conflict) or before a long session.
+
+```json
+{
+  "type": "object",
+  "properties": {}
+}
+```
+
+Source: [`packages/browser/tool-browser-ego/src/index.ts`](../packages/browser/tool-browser-ego/src/index.ts)
+
+### `browser_download`
+
+Wait for a file download triggered by the current action, then return its saved path. Provide `triggerSelector` (a download button/link to click) or `triggerScript` (arbitrary JS that triggers the download). The file is captured into a temp dir and (optionally) copied to `savePath`. Returns { path, suggestedFilename, url }.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "triggerSelector": {
+      "type": "string",
+      "description": "CSS selector of the element (button/link) whose click starts the download."
+    },
+    "triggerScript": {
+      "type": "string",
+      "description": "Full JS snippet that triggers the download (e.g. window.open() or a fetch-to-blob download); runs in the page before waiting for the download."
+    },
+    "savePath": {
+      "type": "string",
+      "description": "Optional absolute destination path to also copy the downloaded file to. Otherwise only the temp-captured path is returned."
+    },
+    "timeout": {
+      "type": "number",
+      "description": "How long to wait for the download in ms (default 30000)."
+    },
+    "deliver": {
+      "type": "boolean",
+      "description": "Surface the downloaded file as a deliverable card in the conversation (default true). Set false to keep it a bare path."
+    },
+    "space": {
+      "type": "string",
+      "description": "Task-space name or numeric id. Omit to use this session’s own space (dsh-agent-<session>) when session-scoped spaces are on (default), otherwise the most recently opened or explicitly selected space."
+    }
+  }
 }
 ```
 
@@ -599,7 +770,7 @@ Source: [`packages/browser/tool-browser-ego/src/index.ts`](../packages/browser/t
 
 ### `browser_drag`
 
-Drag one page element onto another.
+Drag an element to a target (Playwright dragTo) or drag the pointer through coordinates. Use for sliders, sortable rows, and drag-drop zones.
 
 ```json
 {
@@ -607,17 +778,24 @@ Drag one page element onto another.
   "properties": {
     "from": {
       "type": "string",
-      "description": "Start element."
+      "description": "CSS selector of the element to drag from."
     },
     "to": {
       "type": "string",
-      "description": "Drop element."
+      "description": "CSS selector of the drop target (used with from)."
+    },
+    "points": {
+      "type": "array",
+      "description": "Alternative: a flat list of [x1,y1,x2,y2,...] viewport coordinates to drag the mouse through.",
+      "items": {
+        "type": "number"
+      }
+    },
+    "space": {
+      "type": "string",
+      "description": "Task-space name or numeric id. Omit to use this session’s own space (dsh-agent-<session>) when session-scoped spaces are on (default), otherwise the most recently opened or explicitly selected space."
     }
-  },
-  "required": [
-    "from",
-    "to"
-  ]
+  }
 }
 ```
 
@@ -625,7 +803,7 @@ Source: [`packages/browser/tool-browser-ego/src/index.ts`](../packages/browser/t
 
 ### `browser_fill`
 
-Fill a page input with text.
+Type text into an input field. Target with a CSS selector, xpath=..., loc=..., or ref=N from browser_snapshot.
 
 ```json
 {
@@ -633,11 +811,15 @@ Fill a page input with text.
   "properties": {
     "selector": {
       "type": "string",
-      "description": "CSS selector or ref from snapshot."
+      "description": "CSS selector, xpath=..., loc=..., or ref=N for the input."
     },
     "text": {
       "type": "string",
-      "description": "Text to enter."
+      "description": "Text to type into the field."
+    },
+    "space": {
+      "type": "string",
+      "description": "Task-space name or numeric id. Omit to use this session’s own space (dsh-agent-<session>) when session-scoped spaces are on (default), otherwise the most recently opened or explicitly selected space."
     }
   },
   "required": [
@@ -649,9 +831,27 @@ Fill a page input with text.
 
 Source: [`packages/browser/tool-browser-ego/src/index.ts`](../packages/browser/tool-browser-ego/src/index.ts)
 
+### `browser_help`
+
+Query the built-in ego-browser tool guide. `topic` may be a category (overview/tools/navigate/observe/input/keyboard-mouse/form/wait/network/login/script/doctor) or a specific tool name (e.g. browser_click). Returns the matching usage notes. Call this when unsure which eyebrow tool to use.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "topic": {
+      "type": "string",
+      "description": "Category or tool name to look up; omitted/all returns the overview index."
+    }
+  }
+}
+```
+
+Source: [`packages/browser/tool-browser-ego/src/index.ts`](../packages/browser/tool-browser-ego/src/index.ts)
+
 ### `browser_hover`
 
-Hover over a page element.
+Move the pointer over an element (CSS selector / ref) or to viewport coordinates. Triggers CSS :hover, dropdowns and mouseenter handlers.
 
 ```json
 {
@@ -659,11 +859,91 @@ Hover over a page element.
   "properties": {
     "selector": {
       "type": "string",
-      "description": "CSS selector or snapshot ref."
+      "description": "CSS selector, xpath=..., loc=..., or ref=N for the element."
+    },
+    "x": {
+      "type": "number",
+      "description": "Viewport x (only with y)."
+    },
+    "y": {
+      "type": "number",
+      "description": "Viewport y (only with x)."
+    },
+    "space": {
+      "type": "string",
+      "description": "Task-space name or numeric id. Omit to use this session’s own space (dsh-agent-<session>) when session-scoped spaces are on (default), otherwise the most recently opened or explicitly selected space."
+    }
+  }
+}
+```
+
+Source: [`packages/browser/tool-browser-ego/src/index.ts`](../packages/browser/tool-browser-ego/src/index.ts)
+
+### `browser_http`
+
+Make an HTTP request and return status + body. Default runs in the agent page's browser context (cross-origin allowed when the server's CORS permits); set `mode: server` to use Node-side fetch.server. Use to scrape an API, POST data, or hit a service. (Note: on the vendored ego-linux Windows runtime, fetch.server can hit a libuv crash, so prefer the default browser mode there.)
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "url": {
+      "type": "string",
+      "description": "Absolute URL to request."
+    },
+    "method": {
+      "type": "string",
+      "description": "HTTP method, default GET."
+    },
+    "headers": {
+      "type": "object",
+      "description": "Request headers, e.g. { 'Content-Type': 'application/json' }.",
+      "additionalProperties": true
+    },
+    "body": {
+      "type": "string",
+      "description": "Request body (for POST/PUT)."
+    },
+    "timeout": {
+      "type": "number",
+      "description": "Timeout in ms (default 20000)."
+    },
+    "mode": {
+      "type": "string",
+      "description": "'browser' (default) runs via the page context; 'server' uses Node-side fetch.server."
+    },
+    "space": {
+      "type": "string",
+      "description": "Task-space name or numeric id. Omit to use this session’s own space (dsh-agent-<session>) when session-scoped spaces are on (default), otherwise the most recently opened or explicitly selected space."
     }
   },
   "required": [
-    "selector"
+    "url"
+  ]
+}
+```
+
+Source: [`packages/browser/tool-browser-ego/src/index.ts`](../packages/browser/tool-browser-ego/src/index.ts)
+
+### `browser_js`
+
+Evaluate a JavaScript expression in the current page and return its JSON-serializable value (e.g. "document.title", "document.querySelectorAll('a').length").
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "expression": {
+      "type": "string",
+      "description": "JavaScript expression string to evaluate in the page."
+    },
+    "space": {
+      "type": "string",
+      "description": "Task-space name or numeric id. Omit to use this session’s own space (dsh-agent-<session>) when session-scoped spaces are on (default), otherwise the most recently opened or explicitly selected space."
+    }
+  },
+  "required": [
+    "expression"
   ]
 }
 ```
@@ -672,7 +952,7 @@ Source: [`packages/browser/tool-browser-ego/src/index.ts`](../packages/browser/t
 
 ### `browser_key`
 
-Press a key or type into the focused page.
+Press a keyboard key or shortcut combination on the current page, e.g. 'Enter', 'Tab', 'Control+a', 'Escape', 'ArrowDown'. Useful for forms, shortcuts and navigation. Pass `text` to type a string of characters instead (keyboard.type).
 
 ```json
 {
@@ -680,11 +960,48 @@ Press a key or type into the focused page.
   "properties": {
     "key": {
       "type": "string",
-      "description": "Key combination, e.g. Enter or Control+a."
+      "description": "Key or combo: 'Enter', 'Tab', 'Control+c', 'Meta+v', 'ArrowDown', 'Escape', 'F5', etc. (ignored when `text` is given)."
     },
     "text": {
       "type": "string",
-      "description": "Text to type instead of pressing one key."
+      "description": "Type this text character-by-character (keyboard.type). Use instead of `key` for typing words into the focused element."
+    },
+    "space": {
+      "type": "string",
+      "description": "Task-space name or numeric id. Omit to use this session’s own space (dsh-agent-<session>) when session-scoped spaces are on (default), otherwise the most recently opened or explicitly selected space."
+    }
+  }
+}
+```
+
+Source: [`packages/browser/tool-browser-ego/src/index.ts`](../packages/browser/tool-browser-ego/src/index.ts)
+
+### `browser_login_import`
+
+Import login cookies from the system browser into the agent browser, so sites open already logged in, with two SAFE routes (#69): (1) source="extension" — load the companion extension/ folder once in Chrome/Edge, keep the browser open, run this with explicit domains and click Export in the extension popup; cookies are read through the browser's own cookies API and POSTed to a loopback receiver (token file: <stateDir>/login-extension-token). This works on modern Chrome/Edge (including Windows 127+ ABE). (2) source="chrome"|"edge"|"brave"|"auto" — the source browser must be closed; the tool copies only Local State + the Cookies DB to a throwaway profile and reads it headless. On Chrome/Edge 127+ (App-Bound Encryption) that copy reads 0 cookies and the tool reports it explicitly; the real profile is never booted or modified. dryRun=true reports what would be imported. The agent browser must be running (call browser_status first). Imported logins persist in the on-disk profile. Cookie values are never shown — only domain names and counts.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "source": {
+      "type": "string",
+      "description": "extension | chrome | edge | brave | auto (default: auto = first detected browser). Use \"extension\" for modern Chrome/Edge without closing it."
+    },
+    "domains": {
+      "description": "Optional array of domains to import, e.g. [\"bilibili.com\",\"zhihu.com\"] (subdomains included). Omit = ALL cookies — prefer an explicit list."
+    },
+    "profile": {
+      "type": "string",
+      "description": "Source browser profile directory name, e.g. \"Default\" or \"Profile 1\" (default: the first profile)."
+    },
+    "closeSource": {
+      "type": "boolean",
+      "description": "A running source browser holds an exclusive lock on its cookie store (Windows). true = gracefully close it first (its windows/tabs restore on next launch). false (default) = return an actionable error instead."
+    },
+    "dryRun": {
+      "type": "boolean",
+      "description": "true = only report what would be imported (domains + cookie counts), write nothing."
     }
   }
 }
@@ -694,7 +1011,7 @@ Source: [`packages/browser/tool-browser-ego/src/index.ts`](../packages/browser/t
 
 ### `browser_navigate`
 
-Open a URL in the current session browser.
+Open a URL in the task space, or switch to the existing tab for it. Always prefer reusing existing open tabs before opening duplicate URLs. Waits for document load. Returns resulting page info.
 
 ```json
 {
@@ -702,7 +1019,23 @@ Open a URL in the current session browser.
   "properties": {
     "url": {
       "type": "string",
-      "description": "HTTP(S) page URL."
+      "description": "Absolute URL to open, e.g. https://example.com/path."
+    },
+    "wait": {
+      "type": "boolean",
+      "description": "Wait for document load (default true)."
+    },
+    "timeout": {
+      "type": "number",
+      "description": "Load wait timeout in ms (default 20000)."
+    },
+    "tab": {
+      "type": "string",
+      "description": "Optional tab targetId (from browser_tabs list). Omit to use the tab Chrome reports as active, falling back to the first real page."
+    },
+    "space": {
+      "type": "string",
+      "description": "Task-space name or numeric id. Omit to use this session’s own space (dsh-agent-<session>) when session-scoped spaces are on (default), otherwise the most recently opened or explicitly selected space."
     }
   },
   "required": [
@@ -715,12 +1048,17 @@ Source: [`packages/browser/tool-browser-ego/src/index.ts`](../packages/browser/t
 
 ### `browser_page_info`
 
-Read the current page title, URL and viewport.
+Return the current page info: url, title, viewport size (w, h), scroll offsets (sx, sy), device metrics (pw, ph), and whether a native dialog is open. Also reports `humanCheck` — whether a CAPTCHA / human-verification challenge is detected on the page (so the agent can alert the user to complete it).
 
 ```json
 {
   "type": "object",
-  "properties": {}
+  "properties": {
+    "space": {
+      "type": "string",
+      "description": "Task-space name or numeric id. Omit to use this session’s own space (dsh-agent-<session>) when session-scoped spaces are on (default), otherwise the most recently opened or explicitly selected space."
+    }
+  }
 }
 ```
 
@@ -728,7 +1066,7 @@ Source: [`packages/browser/tool-browser-ego/src/index.ts`](../packages/browser/t
 
 ### `browser_read_element`
 
-Read one page element rather than a full snapshot.
+Read a single element (by selector): its text, HTML, input value, an attribute, or visibility/enabled/count. Cheaper and more precise than a full-page snapshot.
 
 ```json
 {
@@ -736,24 +1074,19 @@ Read one page element rather than a full snapshot.
   "properties": {
     "selector": {
       "type": "string",
-      "description": "CSS selector or snapshot ref."
+      "description": "CSS selector of the target element."
     },
     "what": {
       "type": "string",
-      "description": "Property to read.",
-      "enum": [
-        "text",
-        "html",
-        "value",
-        "attribute",
-        "visible",
-        "enabled",
-        "count"
-      ]
+      "description": "What to read: 'text' (default) | 'html' | 'value' | 'attribute' | 'visible' | 'enabled' | 'count'."
     },
     "attribute": {
       "type": "string",
-      "description": "Attribute name when reading an attribute."
+      "description": "Attribute name when what=attribute."
+    },
+    "space": {
+      "type": "string",
+      "description": "Task-space name or numeric id. Omit to use this session’s own space (dsh-agent-<session>) when session-scoped spaces are on (default), otherwise the most recently opened or explicitly selected space."
     }
   },
   "required": [
@@ -766,15 +1099,27 @@ Source: [`packages/browser/tool-browser-ego/src/index.ts`](../packages/browser/t
 
 ### `browser_screenshot`
 
-Save a screenshot in the session workspace.
+Capture a screenshot of the current page (or of a single element if selector is given). Returns the file path of the saved PNG, which you can then read with a vision/image tool.
 
 ```json
 {
   "type": "object",
   "properties": {
+    "selector": {
+      "type": "string",
+      "description": "Optional CSS selector of an element to screenshot instead of the whole page."
+    },
     "path": {
       "type": "string",
-      "description": "Optional new PNG file in the session workspace root."
+      "description": "Optional absolute output path for the PNG."
+    },
+    "deliver": {
+      "type": "boolean",
+      "description": "Surface the PNG as a deliverable card in the conversation (default true). Set false to keep it a bare path."
+    },
+    "space": {
+      "type": "string",
+      "description": "Task-space name or numeric id. Omit to use this session’s own space (dsh-agent-<session>) when session-scoped spaces are on (default), otherwise the most recently opened or explicitly selected space."
     }
   }
 }
@@ -782,9 +1127,38 @@ Save a screenshot in the session workspace.
 
 Source: [`packages/browser/tool-browser-ego/src/index.ts`](../packages/browser/tool-browser-ego/src/index.ts)
 
+### `browser_script`
+
+Run an arbitrary `ego-browser nodejs` heredoc script in ONE invocation (same runtime/API as browser_cli: page/…locator/browser/taskSpaces/site/fetch/cdp preloaded), and return structured {ok, stdout, stderr, result, durationMs, timedOut}. Use for a full multi-step browser task as a single script. NOTE: `page` is the ego runtime page facade, NOT Playwright — it has goto/reload/info/url/title/locator/getBy*/waitFor*/evaluate/screenshot/snapshot/drainEvents/keyboard/mouse but no fill/click/type/press; use browser_fill/browser_click or page.locator(...). page.goto() does not return a Playwright Response; get status via browser_wait_for_response or page.info().
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "script": {
+      "type": "string",
+      "description": "Full JS script body; end with console.log('@@DSH_RESULT@@' + JSON.stringify({...})) — the literal @@DSH_RESULT@@ sentinel is required. (A trailing plain JSON line is accepted as a fallback, with result.fallback=true.)"
+    },
+    "timeoutMs": {
+      "type": "integer",
+      "description": "Per-run timeout in ms (default plugin grace)."
+    },
+    "tab": {
+      "type": "string",
+      "description": "Optional tab targetId (from browser_tabs list). Omit to use the tab Chrome reports as active, falling back to the first real page."
+    }
+  },
+  "required": [
+    "script"
+  ]
+}
+```
+
+Source: [`packages/browser/tool-browser-ego/src/index.ts`](../packages/browser/tool-browser-ego/src/index.ts)
+
 ### `browser_scroll`
 
-Scroll the current page by pixel offsets.
+Scroll the page: by pixel deltas (wheel), or bring an element into view (scrollIntoView).
 
 ```json
 {
@@ -792,11 +1166,19 @@ Scroll the current page by pixel offsets.
   "properties": {
     "deltaX": {
       "type": "number",
-      "description": "Horizontal offset in pixels."
+      "description": "Horizontal scroll delta (wheel) in px."
     },
     "deltaY": {
       "type": "number",
-      "description": "Vertical offset in pixels."
+      "description": "Vertical scroll delta (wheel) in px."
+    },
+    "selector": {
+      "type": "string",
+      "description": "CSS selector to scroll into view (primary if given)."
+    },
+    "space": {
+      "type": "string",
+      "description": "Task-space name or numeric id. Omit to use this session’s own space (dsh-agent-<session>) when session-scoped spaces are on (default), otherwise the most recently opened or explicitly selected space."
     }
   }
 }
@@ -806,7 +1188,7 @@ Source: [`packages/browser/tool-browser-ego/src/index.ts`](../packages/browser/t
 
 ### `browser_select`
 
-Choose an option from a page select element.
+Choose an option in a <select> dropdown by value, label, or index (a single value or an array for multi-select).
 
 ```json
 {
@@ -814,16 +1196,18 @@ Choose an option from a page select element.
   "properties": {
     "selector": {
       "type": "string",
-      "description": "Select element."
+      "description": "CSS selector of the <select> element."
     },
     "value": {
+      "description": "The option: a string value/label, or {value:'..'}, {label:'..'}, {index:n}, or an array of these for multi-select."
+    },
+    "space": {
       "type": "string",
-      "description": "Option value or label."
+      "description": "Task-space name or numeric id. Omit to use this session’s own space (dsh-agent-<session>) when session-scoped spaces are on (default), otherwise the most recently opened or explicitly selected space."
     }
   },
   "required": [
-    "selector",
-    "value"
+    "selector"
   ]
 }
 ```
@@ -832,7 +1216,75 @@ Source: [`packages/browser/tool-browser-ego/src/index.ts`](../packages/browser/t
 
 ### `browser_snapshot`
 
-Read the current page semantic tree.
+Read the current page as text: the full-page semantic tree annotated with [ref=N, loc=...] selectors that browser_click / browser_fill can target. This is the main observation tool for any browser task.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "space": {
+      "type": "string",
+      "description": "Task-space name or numeric id. Omit to use this session’s own space (dsh-agent-<session>) when session-scoped spaces are on (default), otherwise the most recently opened or explicitly selected space."
+    },
+    "scope": {
+      "type": "string",
+      "description": "snapshot scope: 'full_page' (default) or 'only_within_viewport'."
+    }
+  }
+}
+```
+
+Source: [`packages/browser/tool-browser-ego/src/index.ts`](../packages/browser/tool-browser-ego/src/index.ts)
+
+### `browser_space_close`
+
+Close an ego-lite task space. WARNING: In persistent profile mode, DO NOT call this tool when finishing tasks! Keep the space, tabs, and browser window alive so login sessions and streams remain intact. Conclude tasks by replying to the user directly without closing the space.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Task-space name or numeric id to close."
+    },
+    "keep": {
+      "type": "boolean",
+      "description": "Keep the live page open (default false: close it)."
+    }
+  },
+  "required": [
+    "name"
+  ]
+}
+```
+
+Source: [`packages/browser/tool-browser-ego/src/index.ts`](../packages/browser/tool-browser-ego/src/index.ts)
+
+### `browser_space_open`
+
+Open (or reuse) the ego-lite task space. In persistent profile mode (default), ALWAYS use or reuse the single 'default' space. Login credentials automatically persist on disk across restarts — if a page requires login, prompt user to log in manually in the opened window. DO NOT create numbered spaces like #4, #5.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Task-space name. In persistent mode, ALWAYS specify 'default'. Reuse this single space for all browsing tasks."
+    }
+  },
+  "required": [
+    "name"
+  ]
+}
+```
+
+Source: [`packages/browser/tool-browser-ego/src/index.ts`](../packages/browser/tool-browser-ego/src/index.ts)
+
+### `browser_status`
+
+Check whether the ego-browser CLI is usable (runs `ego-browser --status`). Use this first when other browser_* tools report "CLI not found".
 
 ```json
 {
@@ -845,12 +1297,59 @@ Source: [`packages/browser/tool-browser-ego/src/index.ts`](../packages/browser/t
 
 ### `browser_tabs`
 
-List pages in the current session only.
+List, switch, open, or close agent-browser tabs. Use it to keep tab hygiene: list the open pages, switch to one, open a new tab for a URL, or close scratch tabs. Tab ids are stable target ids (also returned by browser_space_open / browser_navigate).
 
 ```json
 {
   "type": "object",
-  "properties": {}
+  "properties": {
+    "action": {
+      "type": "string",
+      "description": "'list' (default) | 'switch' | 'open' | 'close'."
+    },
+    "targetId": {
+      "type": "string",
+      "description": "Tab target id for action=switch / action=close."
+    },
+    "url": {
+      "type": "string",
+      "description": "URL for action=open (default: 'about:blank')."
+    },
+    "space": {
+      "type": "string",
+      "description": "Task-space name or numeric id. Omit to use this session’s own space (dsh-agent-<session>) when session-scoped spaces are on (default), otherwise the most recently opened or explicitly selected space."
+    }
+  }
+}
+```
+
+Source: [`packages/browser/tool-browser-ego/src/index.ts`](../packages/browser/tool-browser-ego/src/index.ts)
+
+### `browser_upload`
+
+Set files on a file <input> element (path-driven). Use to upload a dataset/attachment from a local path.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "selector": {
+      "type": "string",
+      "description": "CSS selector of the <input type=file> element."
+    },
+    "path": {
+      "type": "string",
+      "description": "Absolute path of the file(s) to upload on this machine."
+    },
+    "space": {
+      "type": "string",
+      "description": "Task-space name or numeric id. Omit to use this session’s own space (dsh-agent-<session>) when session-scoped spaces are on (default), otherwise the most recently opened or explicitly selected space."
+    }
+  },
+  "required": [
+    "selector",
+    "path"
+  ]
 }
 ```
 
@@ -858,15 +1357,15 @@ Source: [`packages/browser/tool-browser-ego/src/index.ts`](../packages/browser/t
 
 ### `browser_wait`
 
-Wait briefly for page updates.
+Pause for a fixed number of milliseconds (e.g. for animations or partial loads). For load waits prefer browser_navigate's wait option.
 
 ```json
 {
   "type": "object",
   "properties": {
     "ms": {
-      "type": "integer",
-      "description": "Wait between 1 and 30000 milliseconds."
+      "type": "number",
+      "description": "Milliseconds to wait."
     }
   },
   "required": [
@@ -877,9 +1376,80 @@ Wait briefly for page updates.
 
 Source: [`packages/browser/tool-browser-ego/src/index.ts`](../packages/browser/tool-browser-ego/src/index.ts)
 
+### `browser_wait_for_human`
+
+Hand the page to the human for a CAPTCHA / login / 2FA / confirmation, then wait until it is cleared. Say what you need in the conversation FIRST ("solve the challenge in the agent browser window, I will wait"), then call this. It polls the page until the challenge disappears — and, when `selector` is given, until that selector exists — returning { needed, resolved, waitedMs }. A timeout is not an error: resolved=false means "still not done", so report back and call again. This is a deliberate blocking wait; do not route it through approval flows, which auto-reject under policy "never".
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "reason": {
+      "type": "string",
+      "description": "Why the wait is needed: captcha | login | 2fa | confirm (free text is fine)."
+    },
+    "timeoutSec": {
+      "type": "number",
+      "description": "How long to wait in seconds (default 60, clamped to 5–110)."
+    },
+    "pollMs": {
+      "type": "number",
+      "description": "Polling interval in ms (default 1500, clamped to 250–10000)."
+    },
+    "selector": {
+      "type": "string",
+      "description": "Optional selector that must also exist before returning (e.g. a post-login element). Omitting it waits only for the challenge to clear."
+    },
+    "space": {
+      "type": "string",
+      "description": "Task-space name or numeric id; defaults to this session’s space."
+    }
+  }
+}
+```
+
+Source: [`packages/browser/tool-browser-ego/src/index.ts`](../packages/browser/tool-browser-ego/src/index.ts)
+
+### `browser_wait_for_response`
+
+Wait for a network response matching a URL/glob/regex and return it. Optionally return the body (text or JSON) — ideal for scraping API responses or confirming a submission. By default it also matches responses that already finished during the CURRENT document load (includeBuffered), because "wait for the response of the page I just opened" is the common case; set includeBuffered=false for strict future-only semantics. Across separate browser_* calls only future responses can be seen — trigger the request and the wait in the same browser_script. On timeout the result carries the current URL and a hint instead of throwing.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "url": {
+      "type": "string",
+      "description": "URL/glob/regex to match, e.g. '/api/search' or 'https://*.com/data'."
+    },
+    "timeout": {
+      "type": "number",
+      "description": "How long to wait in ms (default 10000)."
+    },
+    "body": {
+      "type": "string",
+      "description": "Return the response body: 'none' (default) | 'text' | 'json'."
+    },
+    "includeBuffered": {
+      "type": "boolean",
+      "description": "Also match responses that already completed during the current document load (default true). Set false to wait only for future responses."
+    },
+    "space": {
+      "type": "string",
+      "description": "Task-space name or numeric id. Omit to use this session’s own space (dsh-agent-<session>) when session-scoped spaces are on (default), otherwise the most recently opened or explicitly selected space."
+    }
+  },
+  "required": [
+    "url"
+  ]
+}
+```
+
+Source: [`packages/browser/tool-browser-ego/src/index.ts`](../packages/browser/tool-browser-ego/src/index.ts)
+
 ### `browser_wait_for_selector`
 
-Wait for a page element to appear or disappear.
+Wait until an element matching a CSS selector appears (state=visible, default) or disappears (state=hidden). Use instead of a blind fixed wait when a page renders asynchronously.
 
 ```json
 {
@@ -887,21 +1457,19 @@ Wait for a page element to appear or disappear.
   "properties": {
     "selector": {
       "type": "string",
-      "description": "Page selector."
+      "description": "CSS selector of the element to wait for, e.g. '.results' or '[data-id=done]'."
     },
     "state": {
       "type": "string",
-      "description": "Desired element state.",
-      "enum": [
-        "visible",
-        "attached",
-        "hidden",
-        "detached"
-      ]
+      "description": "Target state: 'visible' (default) | 'attached' | 'hidden' | 'detached'."
     },
     "timeout": {
-      "type": "integer",
-      "description": "Maximum wait in milliseconds."
+      "type": "number",
+      "description": "How long to wait in ms (default 10000)."
+    },
+    "space": {
+      "type": "string",
+      "description": "Task-space name or numeric id. Omit to use this session’s own space (dsh-agent-<session>) when session-scoped spaces are on (default), otherwise the most recently opened or explicitly selected space."
     }
   },
   "required": [
@@ -914,7 +1482,7 @@ Source: [`packages/browser/tool-browser-ego/src/index.ts`](../packages/browser/t
 
 ### `browser_wait_for_url`
 
-Wait until the current page reaches a URL pattern.
+Wait until the page navigates to a URL matching a substring / glob / regex. Use to catch login redirects or pagination. IMPORTANT: it only observes navigations that happen DURING this call — if the navigation already finished in a previous browser_* call, read browser_page_info instead. Matching is Playwright semantics: a full URL or a ** glob ("**/search**"); a bare substring does not match. The result always carries the current URL.
 
 ```json
 {
@@ -922,11 +1490,15 @@ Wait until the current page reaches a URL pattern.
   "properties": {
     "pattern": {
       "type": "string",
-      "description": "URL or glob pattern."
+      "description": "URL/glob to match (e.g. '/login?done', 'https://*/post/*', or a /regex/)."
     },
     "timeout": {
-      "type": "integer",
-      "description": "Maximum wait in milliseconds."
+      "type": "number",
+      "description": "How long to wait in ms (default 10000)."
+    },
+    "space": {
+      "type": "string",
+      "description": "Task-space name or numeric id. Omit to use this session’s own space (dsh-agent-<session>) when session-scoped spaces are on (default), otherwise the most recently opened or explicitly selected space."
     }
   },
   "required": [

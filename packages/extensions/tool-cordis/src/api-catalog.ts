@@ -758,14 +758,14 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
   },
   {
     key: 'egoBrowser',
-    summary: '服务不含动态装配参数；工具权限由调用者自己的审批消费方处理。',
-    description: '服务不含动态装配参数；工具权限由调用者自己的审批消费方处理。',
+    summary: '服务只收集上游工具定义；模型工具由按 Agent 权限审批的消费方注册。',
+    description: '服务只收集上游工具定义；模型工具由按 Agent 权限审批的消费方注册。',
     methods: [
       {
         signature: 'toolDefinitions(): readonly ToolDefinition[]',
-        description: '暴露固定安全集合给按 Agent 权限审批的工具消费方；本服务不碰 ctx.tools。',
+        description: '暴露上游完整工具集合给按 Agent 权限审批的消费方；本服务不碰 ctx.tools。',
         parameters: [],
-        returns: '带执行时会话复核的结构化定义；调用者决定是否、何时注册。',
+        returns: '每次调用都复核调用会话的工具定义。',
       },
     ],
   },

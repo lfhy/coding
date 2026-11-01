@@ -1,0 +1,274 @@
+{
+  "$schema": "https://dsh.community/schemas/dsh-plugin-0.15.json",
+  "id": "dsh-ego-browser",
+  "name": "ego-browser",
+  "version": "0.9.7",
+  "manifestVersion": "0.15",
+  "facets": {
+    "host": {
+      "entry": "lib/index.js",
+      "apiVersion": "v1alpha1"
+    }
+  },
+  "requires": {
+    "contracts": [
+      {
+        "apiVersion": "presentation.dsh/v1alpha1",
+        "kind": "OpenExternal",
+        "optional": true,
+        "fallback": "report the URL as text instead of opening it"
+      },
+      {
+        "apiVersion": "presentation.dsh/v1alpha1",
+        "kind": "Notification",
+        "optional": true,
+        "fallback": "omit transient notifications when tuiToast is unavailable; tool results remain available"
+      }
+    ]
+  },
+  "permissions": [],
+  "contributes": {
+    "commands": [],
+    "x-dsh-tui": [
+      {
+        "apiVersion": "tui.dsh/v1alpha1",
+        "kind": "SettingsSection",
+        "id": "dsh-ego-browser.settings",
+        "name": "ego_browser_settings",
+        "spec": {
+          "namespace": "ego-browser",
+          "title": "Agent 浏览器",
+          "titles": {
+            "en": "Agent Browser",
+            "zh": "Agent 浏览器"
+          },
+          "fields": [
+            {
+              "path": [
+                "isolateSpaces"
+              ],
+              "label": "Space isolation",
+              "kind": "boolean",
+              "hint": "Use a temporary isolated profile; off keeps the persistent login profile.",
+              "titles": {
+                "en": "Space isolation",
+                "zh": "任务空间沙盒隔离"
+              },
+              "hintTitles": {
+                "en": "Use a temporary isolated profile; off keeps the persistent login profile.",
+                "zh": "使用临时隔离空间；关闭时使用持久化登录配置。"
+              }
+            },
+            {
+              "path": [
+                "idleTimeoutMin"
+              ],
+              "label": "Idle auto-stop (minutes)",
+              "kind": "number",
+              "hint": "Stop the browser after N minutes without tool calls; 0 disables. Watching is not activity.",
+              "titles": {
+                "en": "Idle auto-stop (minutes)",
+                "zh": "空闲自动回收（分钟）"
+              },
+              "hintTitles": {
+                "en": "Stop the browser after N minutes without tool calls; 0 disables. Watching is not activity.",
+                "zh": "N 分钟没有工具调用后关闭浏览器；0 表示关闭回收。观看不算活动。"
+              }
+            },
+            {
+              "path": [
+                "residentExecutor"
+              ],
+              "label": "Resident executor",
+              "kind": "boolean",
+              "hint": "Reuse the execution process; default off.",
+              "titles": {
+                "en": "Resident executor",
+                "zh": "常驻执行进程"
+              },
+              "hintTitles": {
+                "en": "Reuse the execution process; default off.",
+                "zh": "复用执行进程；默认关闭。"
+              }
+            },
+            {
+              "path": [
+                "residentIdleMin"
+              ],
+              "label": "Resident idle stop (minutes)",
+              "kind": "number",
+              "hint": "Stop the resident executor after N idle minutes; 0 keeps it until unload.",
+              "titles": {
+                "en": "Resident idle stop (minutes)",
+                "zh": "常驻空闲停止（分钟）"
+              },
+              "hintTitles": {
+                "en": "Stop the resident executor after N idle minutes; 0 keeps it until unload.",
+                "zh": "空闲 N 分钟后停止常驻执行进程；0 表示保留到卸载。"
+              }
+            },
+            {
+              "path": [
+                "disableFrameRelay"
+              ],
+              "label": "Disable live preview frames",
+              "kind": "boolean",
+              "hint": "No watch panel frames, no screencast capture and no cast worker. Handy in TUI/headless setups. ego_* tools keep working.",
+              "titles": {
+                "en": "Disable live preview frames",
+                "zh": "关闭实时画面传输"
+              },
+              "hintTitles": {
+                "en": "No watch panel frames, no screencast capture and no cast worker. Handy in TUI/headless setups. ego_* tools keep working.",
+                "zh": "不传输观察窗画面、不做 screencast 采集、不启动 cast worker；适合 TUI/无头环境，ego_* 工具不受影响。"
+              }
+            },
+            {
+              "path": [
+                "egoBin"
+              ],
+              "label": "Runtime script (egoBin)",
+              "kind": "text",
+              "hint": "Node-executable script (.mjs/.js); NOT the official ego-browser.exe. Empty = bundled runtime.",
+              "titles": {
+                "en": "Runtime script (egoBin)",
+                "zh": "运行时脚本（egoBin）"
+              },
+              "hintTitles": {
+                "en": "Node-executable script (.mjs/.js); NOT the official ego-browser.exe. Empty = bundled runtime.",
+                "zh": "Node 可执行脚本（.mjs/.js），不是官方 ego-browser.exe；留空使用内置运行时。"
+              }
+            },
+            {
+              "path": [
+                "chromePath"
+              ],
+              "label": "Browser binary path",
+              "kind": "text",
+              "hint": "Path to Chrome, Chromium or Edge. Empty means auto-detect.",
+              "titles": {
+                "en": "Browser binary path",
+                "zh": "浏览器程序路径"
+              },
+              "hintTitles": {
+                "en": "Path to Chrome, Chromium or Edge. Empty means auto-detect.",
+                "zh": "Chrome、Chromium 或 Edge 路径；留空自动检测。"
+              }
+            },
+            {
+              "path": [
+                "captureBackend"
+              ],
+              "label": "Capture backend",
+              "kind": "select",
+              "options": [
+                {
+                  "value": "auto",
+                  "label": "Auto"
+                },
+                {
+                  "value": "cdp",
+                  "label": "CDP"
+                },
+                {
+                  "value": "ffmpeg",
+                  "label": "FFmpeg"
+                }
+              ],
+              "titles": {
+                "en": "Capture backend",
+                "zh": "画面采集后端"
+              },
+              "hint": "Choose automatic detection, CDP or FFmpeg.",
+              "hintTitles": {
+                "en": "Choose automatic detection, CDP or FFmpeg.",
+                "zh": "选择自动检测、CDP 或 FFmpeg。"
+              }
+            },
+            {
+              "path": [
+                "streamProfile"
+              ],
+              "label": "Quality profile",
+              "kind": "select",
+              "options": [
+                {
+                  "value": "low",
+                  "label": "Low",
+                  "titles": {
+                    "zh": "低"
+                  }
+                },
+                {
+                  "value": "balanced",
+                  "label": "Balanced",
+                  "titles": {
+                    "zh": "均衡"
+                  }
+                },
+                {
+                  "value": "high",
+                  "label": "High",
+                  "titles": {
+                    "zh": "高"
+                  }
+                }
+              ],
+              "titles": {
+                "en": "Quality profile",
+                "zh": "画质预设"
+              },
+              "hint": "Low reduces bandwidth; balanced is the default; high improves detail.",
+              "hintTitles": {
+                "en": "Low reduces bandwidth; balanced is the default; high improves detail.",
+                "zh": "低画质减少带宽；均衡为默认；高画质保留更多细节。"
+              }
+            },
+            {
+              "path": [
+                "ffmpegPath"
+              ],
+              "label": "FFmpeg binary path",
+              "kind": "text",
+              "hint": "Path to FFmpeg. Empty means auto-detect or on-demand installation.",
+              "titles": {
+                "en": "FFmpeg binary path",
+                "zh": "FFmpeg 程序路径"
+              },
+              "hintTitles": {
+                "en": "Path to FFmpeg. Empty means auto-detect or on-demand installation.",
+                "zh": "FFmpeg 路径；留空自动检测或按需安装。"
+              }
+            },
+            {
+              "path": [
+                "tuiAutoOpenPanel"
+              ],
+              "label": "Auto-open TUI browser panel",
+              "titles": {
+                "en": "Auto-open TUI browser panel",
+                "zh": "自动打开 TUI 浏览器面板"
+              },
+              "kind": "boolean",
+              "hint": "Off by default. Open the panel on the first ego_* call; otherwise show a badge and status only.",
+              "hintTitles": {
+                "en": "Off by default. Open the panel on the first ego_* call; otherwise show a badge and status only.",
+                "zh": "默认关闭。开启后首次 ego_* 调用打开面板；关闭时仅显示角标和状态。"
+              }
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "subscriptions": [],
+  "license": "MIT",
+  "source": {
+    "repository": "https://github.com/Fisfzy/dsh-ego-browser"
+  },
+  "compat": {
+    "hosts": [
+      "dsh-tui"
+    ]
+  }
+}

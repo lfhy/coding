@@ -59,6 +59,18 @@ export async function workerGet(port: number, path: '/api/health' | '/api/spaces
   } catch { return null }
 }
 
+/** 受控写请求：只用于已核验会话与目标的路由，不转发任意路径。 */
+export async function workerPost(port: number, path: '/api/close' | '/api/input', body: Record<string, unknown>): Promise<boolean> {
+  try {
+    const response = await fetch(`http://127.0.0.1:${port}${path}`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body), signal: AbortSignal.timeout(4000),
+    })
+    const result: unknown = await response.json()
+    return response.ok && result !== null && typeof result === 'object' && 'ok' in result && result.ok === true
+  } catch { return false }
+}
+
 /** 输入仅在上层完整校验与归属复核通过后发送封闭字段。 */
 export async function workerInput(port: number, body: Record<string, unknown>): Promise<boolean> {
   try {

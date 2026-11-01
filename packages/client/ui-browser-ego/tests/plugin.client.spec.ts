@@ -44,6 +44,7 @@ describe('Agent 浏览器插件注册与生命周期', () => {
     expect(entry?.options.key).toBe(WATCH_ID)
     const face = entry?.inject as unknown as (sessionId: string) => AgentBrowserInjected
     expect(face('session-one').hooks.browserEgo).not.toBe(face('session-two').hooks.browserEgo)
+    expect(typeof face('session-one').close).toBe('function')
     stream.emit('session-one', 1)
     stream.emit('session-two', 2)
     stream.emit('session-one', 3)

@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { BrowserEgoController } from '../src/client/controller.ts'
 
 const first = { targetId: 'first', title: 'First', url: 'https://example.com/', active: true,
-  viewportW: 400, viewportH: 300 }
+  viewportW: 400, viewportH: 300, humanCheck: false }
 const second = { ...first, targetId: 'second', title: 'Second', active: false }
 
 class FakeStream extends EventTarget {
@@ -14,16 +14,29 @@ class FakeStream extends EventTarget {
   close(): void { this.closed = true }
 }
 
-function fixture(fetcher = vi.fn(async (_url: string, _init?: RequestInit) => Response.json({ ok: true, spaces: [first, second] }))) {
+type Fetcher = (url: string, init?: RequestInit) => Promise<Response>
+
+function overview(url: string): Response | null {
+  if (url.startsWith('/api/ego/status')) {
+    return Response.json({ ok: true, running: true, browserConnected: true, spaces: 2 })
+  }
+  if (url.startsWith('/api/ego/history')) return Response.json({ ok: true, actions: [] })
+  return null
+}
+
+function fixture(fetcher: Fetcher = vi.fn(async (url: string) => overview(url)
+  ?? Response.json({ ok: true, spaces: [first, second] }))) {
   const streams: FakeStream[] = []
+  const activities: FakeStream[] = []
   const controller = new BrowserEgoController('session-one', fetcher,
-    (url) => { const stream = new FakeStream(url); streams.push(stream); return stream as unknown as EventSource })
-  return { controller, fetcher, streams }
+    (url) => { const stream = new FakeStream(url); streams.push(stream); return stream as unknown as EventSource },
+    (url) => { const stream = new FakeStream(url); activities.push(stream); return stream as unknown as EventSource })
+  return { controller, fetcher, streams, activities }
 }
 
 describe('会话画面与人工输入', () => {
   it('只在可见期间连接同一会话的目录和 SSE，隐藏后丢弃旧事件', async () => {
-    const { controller, fetcher, streams } = fixture(vi.fn(async url => url.startsWith('/api/ego/frame?')
+    const { controller, fetcher, streams } = fixture(vi.fn(async (url: string) => url.startsWith('/api/ego/frame?')
       ? new Response(null, { status: 404 }) : Response.json({ ok: true, spaces: [first, second] })))
     controller.show(true)
     await vi.waitFor(() => { expect(controller.view.getSnapshot().phase).toBe('ready') })
@@ -50,7 +63,7 @@ describe('会话画面与人工输入', () => {
   })
 
   it('保持更新 SSE 列表的权威性，并拒绝目标外、画面外或隐藏时人工输入', async () => {
-    const { controller, fetcher, streams } = fixture(vi.fn(async (url, _init) => {
+    const { controller, fetcher, streams } = fixture(vi.fn(async (url: string, _init?: RequestInit) => {
       if (url === '/api/ego/input') return Response.json({ ok: true })
       if (url.startsWith('/api/ego/frame?')) return new Response(null, { status: 404 })
       return Response.json({ ok: true, spaces: [first, second] })
@@ -75,9 +88,11 @@ describe('会话画面与人工输入', () => {
 
   it('忽略比实时流更旧的目录结果并保留最新画面', async () => {
     let resolve!: (value: Response) => void
-    const fetcher = vi.fn((url: string, _init?: RequestInit) => url.startsWith('/api/ego/frame?')
-      ? Promise.resolve(new Response(null, { status: 404 }))
-      : new Promise<Response>((done) => { resolve = done }))
+    const fetcher = vi.fn((url: string) => {
+      if (url.startsWith('/api/ego/frame?')) return Promise.resolve(new Response(null, { status: 404 }))
+      if (url.startsWith('/api/ego/spaces')) return new Promise<Response>((done) => { resolve = done })
+      return Promise.resolve(new Response(null, { status: 503 }))
+    })
     const { controller, streams } = fixture(fetcher)
     controller.show(true)
     streams[0]?.emit('spaces', [first])
@@ -92,7 +107,7 @@ describe('会话画面与人工输入', () => {
     const replies: Array<(value: Response) => void> = []
     const fetcher = vi.fn((url: string, _init?: RequestInit) => url.startsWith('/api/ego/frame?')
       ? new Promise<Response>((done) => { replies.push(done) })
-      : Promise.resolve(Response.json({ ok: true, spaces: [first, second] })))
+      : Promise.resolve(overview(url) ?? Response.json({ ok: true, spaces: [first, second] })))
     const { controller, streams } = fixture(fetcher)
     controller.show(true)
     await vi.waitFor(() => { expect(controller.view.getSnapshot().pages).toHaveLength(2) })
@@ -119,5 +134,100 @@ describe('会话画面与人工输入', () => {
     expect(controller.view.getSnapshot().frame).toBeNull()
     streams[0]?.emit('frame', { targetId: 'first', data: 'YWJj', vw: 400, vh: 300, ts: 6 })
     expect(controller.view.getSnapshot().pages).toEqual([])
+  })
+
+  it('读取运行状态与最近动作，状态不可用时保持中性', async () => {
+    const { controller } = fixture(vi.fn(async (url: string) => {
+      if (url.startsWith('/api/ego/status')) {
+        return Response.json({ ok: true, running: false, browserConnected: false, spaces: 2 })
+      }
+      if (url.startsWith('/api/ego/history')) return Response.json({ ok: true, actions: [
+        { tool: 'browser_navigate', at: 10 }, { tool: 'ego_captcha', at: 20 }, { tool: 'raw_unknown', at: 30 },
+      ] })
+      if (url.startsWith('/api/ego/frame?')) return new Response(null, { status: 404 })
+      return Response.json({ ok: true, spaces: [first, second] })
+    }))
+    controller.show(true)
+    await vi.waitFor(() => {
+      expect(controller.view.getSnapshot().actions).toHaveLength(3)
+      expect(controller.view.getSnapshot().status).not.toBeNull()
+    })
+    expect(controller.view.getSnapshot().status).toEqual({ running: false, browserConnected: false })
+    expect(controller.view.getSnapshot().actions).toEqual([
+      { kind: 'navigate', at: 10 }, { kind: 'verify', at: 20 }, { kind: 'other', at: 30 },
+    ])
+    controller.show(false)
+  })
+
+  it('状态接口不可用时只保留空状态', async () => {
+    const { controller } = fixture(vi.fn(async (url: string) => {
+      if (url.startsWith('/api/ego/status')) return new Response(null, { status: 503 })
+      if (url.startsWith('/api/ego/history')) return new Response(null, { status: 503 })
+      if (url.startsWith('/api/ego/frame?')) return new Response(null, { status: 404 })
+      return Response.json({ ok: true, spaces: [first] })
+    }))
+    controller.show(true)
+    await vi.waitFor(() => { expect(controller.view.getSnapshot().phase).toBe('ready') })
+    expect(controller.view.getSnapshot().status).toBeNull()
+    expect(controller.view.getSnapshot().actions).toEqual([])
+    controller.show(false)
+  })
+
+  it('关闭页面成功后刷新目录，失败或未知目标不改动列表', async () => {
+    let spacesCalls = 0
+    const fetcher = vi.fn(async (url: string) => {
+      if (url === '/api/ego/close') return Response.json({ ok: true })
+      if (url.startsWith('/api/ego/frame?')) return new Response(null, { status: 404 })
+      const status = overview(url)
+      if (status !== null) return status
+      spacesCalls += 1
+      return Response.json({ ok: true, spaces: spacesCalls === 1 ? [first, second] : [first] })
+    })
+    const { controller } = fixture(fetcher)
+    controller.show(true)
+    await vi.waitFor(() => { expect(controller.view.getSnapshot().pages).toHaveLength(2) })
+    expect(await controller.close('second')).toBe(true)
+    expect(fetcher).toHaveBeenCalledWith('/api/ego/close', expect.objectContaining({
+      method: 'POST', body: JSON.stringify({ sessionId: 'session-one', targetId: 'second' }),
+    }))
+    expect(controller.view.getSnapshot().pages.map(page => page.targetId)).toEqual(['first'])
+    expect(controller.view.getSnapshot().closing).toBeNull()
+    expect(await controller.close('missing')).toBe(false)
+    controller.show(false)
+  })
+
+  it('关闭失败时保留页面并结束关闭状态', async () => {
+    const fetcher = vi.fn(async (url: string) => {
+      if (url === '/api/ego/close') return Response.json({ ok: false }, { status: 503 })
+      if (url.startsWith('/api/ego/frame?')) return new Response(null, { status: 404 })
+      return overview(url) ?? Response.json({ ok: true, spaces: [first, second] })
+    })
+    const { controller } = fixture(fetcher)
+    controller.show(true)
+    await vi.waitFor(() => { expect(controller.view.getSnapshot().pages).toHaveLength(2) })
+    expect(await controller.close('second')).toBe(false)
+    expect(controller.view.getSnapshot().pages).toHaveLength(2)
+    expect(controller.view.getSnapshot().closing).toBeNull()
+    controller.show(false)
+  })
+
+  it('只把本会话的活动追加到最近动作，隐藏后停止监听', async () => {
+    const { controller, activities } = fixture(vi.fn(async (url: string) => {
+      if (url.startsWith('/api/ego/frame?')) return new Response(null, { status: 404 })
+      return overview(url) ?? Response.json({ ok: true, spaces: [first, second] })
+    }))
+    controller.show(true)
+    await vi.waitFor(() => { expect(controller.view.getSnapshot().phase).toBe('ready') })
+    expect(activities[0]?.url).toBe('/api/ego/activity')
+    activities[0]?.emit('tool-call', { count: 1, sessionId: 'other', tool: 'browser_click', at: 5 })
+    expect(controller.view.getSnapshot().actions).toEqual([])
+    activities[0]?.emit('tool-call', { count: 2, sessionId: 'session-one', tool: 'ego_click', at: 6 })
+    activities[0]?.emit('tool-call', { count: 3, sessionId: 'session-one', tool: 'browser_click', at: 6 })
+    expect(controller.view.getSnapshot().actions).toEqual([{ kind: 'click', at: 6 }])
+    activities[0]?.emit('tool-call', { count: 4, sessionId: 'session-one', data: 'frame' })
+    expect(controller.view.getSnapshot().actions).toHaveLength(1)
+    controller.show(false)
+    expect(activities[0]?.closed).toBe(true)
+    expect(controller.view.getSnapshot().actions).toEqual([])
   })
 })

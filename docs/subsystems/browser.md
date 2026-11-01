@@ -226,17 +226,17 @@ Source: [`packages/browser/browser/src/index.ts:24`](../../packages/browser/brow
 
 ### `ctx.egoBrowser` — `EgoBrowserHost`
 
-服务不含动态装配参数；工具权限由调用者自己的审批消费方处理。
+服务只收集上游工具定义；模型工具由按 Agent 权限审批的消费方注册。
 
 ```ts cordis-catalog
 /**
- * 暴露固定安全集合给按 Agent 权限审批的工具消费方；本服务不碰 ctx.tools。
- * @returns 带执行时会话复核的结构化定义；调用者决定是否、何时注册。
+ * 暴露上游完整工具集合给按 Agent 权限审批的消费方；本服务不碰 ctx.tools。
+ * @returns 每次调用都复核调用会话的工具定义。
  */
 toolDefinitions(): readonly ToolDefinition[]
 ```
 
 Types: [ToolDefinition](tools.md)
 
-Source: [`packages/browser/browser-ego-host/src/index.ts:57`](../../packages/browser/browser-ego-host/src/index.ts)
+Source: [`packages/browser/browser-ego-host/src/index.ts:56`](../../packages/browser/browser-ego-host/src/index.ts)
 <!-- END GENERATED cordis-surface -->

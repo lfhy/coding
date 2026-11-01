@@ -1,0 +1,176 @@
+// src/settings.ts — host-side bridge between the `ego-browser` settings
+// namespace and the plugin's other halves (tool registration + RPC gateway).
+//
+// The composition `Config` (cordis.patch.yml) is the first-boot seed; once the
+// `ctx.settings` service mounts, the user-editable layer takes over and live
+// re-registration follows every committed change. Headless assemblies without
+// a settings provider fall back to the composition config (no persistence, no
+// live reload).
+//
+// The bridge pattern mirrors `dsh-advisor/src/settings.ts` and
+// `dsh-plugin-interpreters/src/settings.ts`: a `source()` thunk the gateway
+// reads in-process, plus an `onChange()` subscription the host entry uses to
+// react to live changes. This avoids any wire-layer allowlist (the DSH
+// settings RPC domain only serves a fixed namespace set to browser
+// configuration clients; the gateway bypasses it through a self-hosted HTTP
+// route).
+
+import { Config } from './config.ts'
+import type { EgoContext, SettingsScope } from './types.ts'
+
+/** Settings namespace under which ego-browser config persists. */
+type SettingsNamespace = string
+export const SETTINGS_NAMESPACE = 'ego-browser' as SettingsNamespace
+
+const SHARED_SCOPE_KEY = Symbol.for('dsh-ego-browser.settings-scope')
+
+interface SharedScope {
+  scope: SettingsScope | null
+  refs: number
+}
+
+function getSharedScope(): SharedScope {
+  const existing = (globalThis as unknown as Record<symbol, SharedScope>)[SHARED_SCOPE_KEY]
+  if (existing) return existing
+  const fresh: SharedScope = { scope: null, refs: 0 }
+  ;(globalThis as unknown as Record<symbol, SharedScope>)[SHARED_SCOPE_KEY] = fresh
+  return fresh
+}
+
+/**
+ * Mirror of the dsh-settings internal `isUnloading` guard. The cordis const
+ * enum for fiber state is erased at compile time, so the literal states are
+ * matched numerically: 4 = DISPOSED, 5 = UNLOADING.
+ */
+function isUnloading(ctx: EgoContext): boolean {
+  const state = ctx.fiber?.state
+  return state === 4 || state === 5
+}
+
+export interface SettingsBridge {
+  source(): Record<string, unknown>
+  onChange(cb: () => void): () => void
+}
+
+/**
+ * Install the `ego-browser` settings namespace and return the bridge.
+ *
+ * The settings service is reached through `ctx.inject(['settings'], ...)` so a
+ * composition without a settings provider still loads the plugin (entry-source
+ * fallback, no persistence). Multi-fiber dedupe is handled by catching the
+ * `"already registered"` rejection — host composition may mount several
+ * concurrent fibers of this plugin, and only the first registration owns the
+ * namespace.
+ *
+ * [DSH 0.1.7] The registrable settings namespace was replaced by a forms service
+ * over the profile's own entries: `ctx.settings` still exists (describe/revisions)
+ * but `register` is gone, and the live user values sit on the loader-owned row
+ * config instead. A plugin that keeps reading the mount-time composition snapshot
+ * sees every write as "accepted but unchanged", so when `register` is absent the
+ * bridge switches to the caller-supplied live source.
+ */
+export function installEgoBrowserSettings(
+  ctx: EgoContext,
+  entry: Record<string, unknown>,
+  /** The row's currently effective config (loader-owned; reflects volatile commits). */
+  live?: () => Record<string, unknown> | undefined,
+): SettingsBridge {
+  const listeners = new Set<() => void>()
+  let source: () => Record<string, unknown> = () => entry
+  /** 0.1.7 形态：settings 服务不再有 register，活值由 loader 的 config 提供。 */
+  const liveSource = (): Record<string, unknown> => {
+    let values: Record<string, unknown> | undefined
+    try {
+      values = live?.()
+    } catch {
+      values = undefined
+    }
+    if (values === undefined || values === null) return entry
+    return { ...entry, ...values }
+  }
+  const notify = (): void => {
+    for (const listener of [...listeners]) listener()
+  }
+  ctx.inject?.(['settings'], (sctx) => {
+    const sharedScope = getSharedScope()
+    let scope = sharedScope.scope
+    const service = sctx.settings as unknown as Record<string, unknown> | undefined
+    // DSH 0.1.7 把可注册的 settings 命名空间换成了 loader 条目上的配置文档：
+    // 服务仍在（describe/revisions 可用）但 `register` 已移除。此时活值来自
+    // 本插件自己被 loader 更新的 config，读路径必须切过去，否则写的值永远读不到。
+    if (service === undefined || typeof service.register !== 'function') {
+      source = liveSource
+      // [0.1.7] The forms service persists through configEditor and then calls
+      // describe(), which emits `settings/document-updated` for the entry whose
+      // raw config moved (settings/src/index.ts write() → describe()). The
+      // legacy register path had `scope.watch(...)`; without an equivalent
+      // signal here the bridge never notified, so push consumers (the cast
+      // worker's hot config push in cast-server) only saw saves after the next
+      // spawn. Both write paths converge on that event: the plugin-page form
+      // (remote settings.mutate) and this plugin's own /ego/api/set gateway
+      // (settings.update) — so one subscription covers both.
+      const subscribe = (sctx as unknown as {
+        on?: (name: string, cb: (ns: string, revision: number) => void) => (() => void) | undefined
+      }).on
+      const offUpdate = typeof subscribe === 'function'
+        ? subscribe.call(sctx, 'settings/document-updated', (ns: string) => {
+            if (ns !== SETTINGS_NAMESPACE || isUnloading(ctx)) return
+            notify()
+          })
+        : undefined
+      if (typeof offUpdate === 'function') {
+        sctx.effect?.(() => () => {
+          try {
+            offUpdate()
+          } catch {
+            /* ignore */
+          }
+        })
+      }
+      notify()
+      return
+    }
+    if (!scope) {
+      try {
+        scope = sctx.settings!.register(SETTINGS_NAMESPACE, Config, {
+          base: entry,
+        })
+        sharedScope.scope = scope
+      } catch (error) {
+        if (
+          !(error instanceof Error) ||
+          !error.message.includes('already registered')
+        )
+          throw error
+        ctx.logger?.('ego-browser')?.warn(
+          'settings namespace already registered outside the shared bridge',
+        )
+        return
+      }
+    }
+    sharedScope.refs += 1
+    source = () => scope!.get()
+    const offScopeWatch = scope.watch(() => {
+      if (isUnloading(ctx)) return
+      notify()
+    })
+    sctx.effect?.(() => () => {
+      offScopeWatch?.()
+      sharedScope.refs = Math.max(0, sharedScope.refs - 1)
+      if (sharedScope.refs === 0 && sharedScope.scope === scope) sharedScope.scope = null
+      if (isUnloading(ctx)) return
+      source = () => entry
+      notify()
+    })
+    notify()
+  })
+  return {
+    source: () => source(),
+    onChange: (cb) => {
+      listeners.add(cb)
+      return () => {
+        listeners.delete(cb)
+      }
+    },
+  }
+}

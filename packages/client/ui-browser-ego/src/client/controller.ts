@@ -1,6 +1,10 @@
 /** 会话级画面控制器；严格按面板显隐持有 SSE、请求与输入状态。 */
 import { createSnapshotStore } from 'coding-client-runtime/client'
-import { parseFrame, parseSpaces, type EgoFrame, type EgoPage, validId } from './wire.ts'
+import { appendAction, type EgoAction } from './actions.ts'
+import {
+  parseActions, parseActivity, parseFrame, parseSpaces, parseStatus,
+  type EgoFrame, type EgoPage, type EgoStatus, validId,
+} from './wire.ts'
 
 /** 面板订阅的投影视图，不保存页面 DOM 或模型可见内容。 */
 export interface BrowserEgoView {
@@ -10,6 +14,9 @@ export interface BrowserEgoView {
   readonly frame: EgoFrame | null
   readonly relayOff: boolean
   readonly pending: boolean
+  readonly closing: string | null
+  readonly status: EgoStatus | null
+  readonly actions: readonly EgoAction[]
 }
 
 type Fetcher = (input: string, init?: RequestInit) => Promise<Response>
@@ -17,6 +24,7 @@ type StreamFactory = (url: string) => EventSource
 
 const INITIAL: BrowserEgoView = {
   phase: 'loading', pages: [], selectedId: null, frame: null, relayOff: false, pending: false,
+  closing: null, status: null, actions: [],
 }
 
 function streamUrl(sessionId: string, path: string): string {
@@ -24,10 +32,11 @@ function streamUrl(sessionId: string, path: string): string {
 }
 
 /**
- * 一次显隐周期只持有一条会话过滤的 SSE；卸载、切换或隐藏会丢弃全部旧帧。
+ * 一次显隐周期只持有一条会话过滤的画面流和一条活动流；卸载、切换或隐藏会丢弃全部旧帧。
  * @param sessionId - Host 已授权且 Client 正展示的会话身份。
  * @param fetcher - 同源请求载体。
- * @param connect - 会话事件载体。
+ * @param connect - 会话画面事件载体。
+ * @param connectActivity - 只报告工具动作的全局事件载体；失败时动作历史仍可经 HTTP 读取。
  */
 export class BrowserEgoController {
   readonly view = createSnapshotStore<BrowserEgoView>(INITIAL)
@@ -38,11 +47,13 @@ export class BrowserEgoController {
   private frameRequest: AbortController | null = null
   private input: AbortController | null = null
   private stream: EventSource | null = null
+  private activity: EventSource | null = null
   private refreshTimer: ReturnType<typeof setTimeout> | null = null
 
   constructor(private readonly sessionId: string,
     private readonly fetcher: Fetcher = (input, init) => fetch(input, init),
-    private readonly connect: StreamFactory = url => new EventSource(url)) {
+    private readonly connect: StreamFactory = url => new EventSource(url),
+    private readonly connectActivity: StreamFactory = url => new EventSource(url)) {
     if (!validId(sessionId)) throw new Error('invalid session id')
   }
 
@@ -58,15 +69,17 @@ export class BrowserEgoController {
     this.input?.abort()
     this.input = null
     this.closeStream()
+    this.closeActivity()
     this.clearTimer()
     this.view.set(INITIAL)
     if (visible) {
       void this.refresh()
       this.openStream(this.epoch)
+      this.openActivity(this.epoch)
     }
   }
 
-  /** 重新获取当前会话页面；迟到响应不能覆盖更新的 SSE 列表。 */
+  /** 同时刷新页面目录、浏览器状态与最近动作；迟到响应不能覆盖更新的 SSE 列表。 */
   async refresh(): Promise<void> {
     if (!this.shown) return
     this.request?.abort()
@@ -74,6 +87,14 @@ export class BrowserEgoController {
     this.request = request
     const epoch = this.epoch
     const listVersion = this.listVersion
+    try {
+      await Promise.all([this.loadPages(request, epoch, listVersion), this.loadOverview(request, epoch)])
+    } finally {
+      if (this.request === request) this.request = null
+    }
+  }
+
+  private async loadPages(request: AbortController, epoch: number, listVersion: number): Promise<void> {
     try {
       const response = await this.fetcher(streamUrl(this.sessionId, '/api/ego/spaces'), {
         signal: request.signal, cache: 'no-store',
@@ -94,9 +115,31 @@ export class BrowserEgoController {
       if (this.current(epoch, request) && listVersion === this.listVersion) {
         this.view.set({ ...this.view.getSnapshot(), phase: 'error' })
       }
-    } finally {
-      if (this.request === request) this.request = null
     }
+  }
+
+  private async loadOverview(request: AbortController, epoch: number): Promise<void> {
+    const [status, actions] = await Promise.all([
+      this.statusOf(request).catch(() => null),
+      this.historyOf(request).catch(() => null),
+    ])
+    if (!this.current(epoch, request)) return
+    const view = this.view.getSnapshot()
+    this.view.set({ ...view, status, actions: actions ?? view.actions })
+  }
+
+  private async statusOf(request: AbortController): Promise<EgoStatus | null> {
+    const response = await this.fetcher(streamUrl(this.sessionId, '/api/ego/status'), {
+      signal: request.signal, cache: 'no-store',
+    })
+    return response.ok ? parseStatus(await response.json() as unknown) : null
+  }
+
+  private async historyOf(request: AbortController): Promise<readonly EgoAction[] | null> {
+    const response = await this.fetcher(streamUrl(this.sessionId, '/api/ego/history'), {
+      signal: request.signal, cache: 'no-store',
+    })
+    return response.ok ? parseActions(await response.json() as unknown) : null
   }
 
   /**
@@ -110,6 +153,35 @@ export class BrowserEgoController {
     this.cancelFrameRefresh()
     this.view.set({ ...view, selectedId: targetId, frame: null })
     this.refreshSelectedFrame()
+  }
+
+  /**
+   * 关闭本会话的一个页面；成功后刷新目录，失败只回传布尔值由面板显示固定文案。
+   * @param targetId - 已列入当前会话目录的页面身份。
+   * @returns Host 是否接受关闭；隐藏后的迟到结果按成功处理，避免已不可见的面板弹出提示。
+   */
+  async close(targetId: string): Promise<boolean> {
+    const view = this.view.getSnapshot()
+    if (!this.shown || !validId(targetId) || view.closing !== null
+      || !view.pages.some(page => page.targetId === targetId)) return false
+    const epoch = this.epoch
+    this.view.set({ ...view, closing: targetId })
+    try {
+      const response = await this.fetcher('/api/ego/close', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ sessionId: this.sessionId, targetId }),
+      })
+      if (epoch !== this.epoch) return true
+      if (!response.ok) return false
+      await this.refresh()
+      return true
+    } catch { return epoch !== this.epoch }
+    finally {
+      if (epoch === this.epoch) {
+        const current = this.view.getSnapshot()
+        if (current.closing === targetId) this.view.set({ ...current, closing: null })
+      }
+    }
   }
 
   /** 刷新被选页面的一帧；Host 再次校验 Session 与 targetId 归属。 */
@@ -233,6 +305,29 @@ export class BrowserEgoController {
     })
   }
 
+  /** 活动流只追加本会话的动作；不影响页面目录与画面。 */
+  private openActivity(epoch: number): void {
+    let stream: EventSource
+    try { stream = this.connectActivity('/api/ego/activity') }
+    catch { return }
+    this.activity = stream
+    stream.addEventListener('tool-call', (event: MessageEvent) => {
+      if (!this.shown || epoch !== this.epoch || this.activity !== stream || typeof event.data !== 'string') return
+      let activity
+      try { activity = parseActivity(JSON.parse(event.data) as unknown) }
+      catch { return }
+      if (!activity || activity.sessionId !== this.sessionId) return
+      const view = this.view.getSnapshot()
+      this.view.set({ ...view, actions: appendAction(view.actions,
+        { kind: activity.kind, at: activity.at ?? Date.now() }) })
+    })
+    stream.addEventListener('error', () => {
+      // 活动流只是增强信息；断线后不再重试，历史接口在下次刷新时补齐。
+      if (this.activity !== stream) return
+      this.closeActivity()
+    })
+  }
+
   private clearTimer(): void {
     if (this.refreshTimer !== null) clearTimeout(this.refreshTimer)
     this.refreshTimer = null
@@ -241,5 +336,10 @@ export class BrowserEgoController {
   private closeStream(): void {
     this.stream?.close()
     this.stream = null
+  }
+
+  private closeActivity(): void {
+    this.activity?.close()
+    this.activity = null
   }
 }

@@ -74,7 +74,7 @@ describe('bundled browser-use skill', () => {
     expect(loaded.content).toContain('Each call takes one argument object')
     expect(loaded.content).toContain('await tools.browser_snapshot({})')
     expect(loaded.content).toContain('not a Markdown link or a `file:///` URL')
-    expect(loaded.content).toContain('`browser_tabs({})` only lists the current session')
+    expect(loaded.content).toContain('`browser_tabs({})` lists the current session')
     expect(loaded.content).toContain('`browser_click({selector: "ref=1"})`')
     expect(loaded.content).toContain('`browser_fill({selector: "ref=2", text: "example"})`')
     expect(loaded.content).toContain('CSS selectors also work')

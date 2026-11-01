@@ -2,11 +2,19 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Context } from '@deepseek-ai/cordis'
 import type { SessionId } from 'coding-session/types'
-import { subscribeActivity } from './activity.ts'
+import { recentActions, subscribeActivity } from './activity.ts'
 import { targetIdsForSession, validId } from './session-space.ts'
-import { ensureWorker, workerGet, workerInput } from './worker.ts'
+import { ensureWorker, workerGet, workerInput, workerPost } from './worker.ts'
 
-interface Page { targetId: string; url: string; title: string; active: boolean; viewportW: number | null; viewportH: number | null }
+interface Page {
+  targetId: string
+  url: string
+  title: string
+  active: boolean
+  viewportW: number | null
+  viewportH: number | null
+  humanCheck?: unknown
+}
 interface Frame { targetId: string; data: string; vw: number; vh: number; ts: number }
 const MAX_BODY_BYTES = 8192
 
@@ -50,7 +58,8 @@ function pages(value: unknown, targetIds: ReadonlySet<string>): Page[] {
       || typeof page.url !== 'string' || typeof page.title !== 'string') return []
     return [{ targetId: page.targetId, url: page.url, title: page.title, active: page.active === true,
       viewportW: typeof page.viewportW === 'number' ? page.viewportW : null,
-      viewportH: typeof page.viewportH === 'number' ? page.viewportH : null }]
+      viewportH: typeof page.viewportH === 'number' ? page.viewportH : null,
+      humanCheck: page.humanCheck ?? null }]
   })
 }
 async function currentPages(sessionId: SessionId, port: number): Promise<Page[]> {
@@ -210,5 +219,53 @@ export function installRoutes(ctx: Context): void {
       const accepted = await workerInput(port, input)
       send(res, accepted ? 200 : 503, { ok: accepted })
     })
+    register('/api/ego/close', async (req, res) => {
+      if (req.method !== 'POST') { send(res, 405, { ok: false }); return }
+      const body = object(await readBody(req))
+      if (!body || !validId(body.sessionId) || !webCtx.sessions.get(body.sessionId as SessionId)
+        || !validId(body.targetId)) { send(res, 400, { ok: false }); return }
+      const sessionId = body.sessionId as SessionId
+      if (!(await targetIdsForSession(sessionId)).has(body.targetId)) { send(res, 403, { ok: false }); return }
+      const port = await ensureWorker(webCtx)
+      if (port === null) { send(res, 503, { ok: false }); return }
+      const accepted = await workerPost(port, '/api/close', { targetId: body.targetId })
+      send(res, accepted ? 200 : 503, { ok: accepted })
+    })
+    register('/api/ego/status', (req, res) => {
+      if (req.method !== 'GET') { send(res, 405, { ok: false }); return }
+      const sessionId = getSession(webCtx, req, res)
+      if (!sessionId) return
+      envCheck(webCtx, sessionId).then((result) => { send(res, 200, result) }).catch(() => {
+        send(res, 200, {
+          ok: true, running: false, browserConnected: false, spaces: 0, actions: recentActions(sessionId),
+        })
+      })
+    })
+    register('/api/ego/history', (req, res) => {
+      if (req.method !== 'GET') { send(res, 405, { ok: false }); return }
+      const sessionId = getSession(webCtx, req, res)
+      if (!sessionId) return
+      send(res, 200, { ok: true, actions: recentActions(sessionId) })
+    })
   })
+}
+
+/** 面板状态：只暴露运行/连接/页面数量与最近动作，不返回路径或进程信息。 */
+async function envCheck(webCtx: Context, sessionId: SessionId): Promise<{
+  ok: boolean
+  running: boolean
+  browserConnected: boolean
+  spaces: number
+  actions: readonly { tool: string; at: number }[]
+}> {
+  const port = await ensureWorker(webCtx)
+  const health = port === null ? null : object(await workerGet(port, '/api/health'))
+  const pages = port === null ? [] : await currentPages(sessionId, port)
+  return {
+    ok: true,
+    running: port !== null,
+    browserConnected: health?.browserConnected === true,
+    spaces: pages.length,
+    actions: recentActions(sessionId),
+  }
 }

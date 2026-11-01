@@ -1,28 +1,32 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AgentBrowserPanel, type AgentBrowserProps } from '../src/client/AgentBrowserPanel.tsx'
 import type { BrowserEgoView } from '../src/client/controller.ts'
+import type { EgoAction } from '../src/client/actions.ts'
 import { en } from '../src/client/locales.ts'
 
 const page = { targetId: 'first', title: 'Example', url: 'https://example.com/', active: true,
-  viewportW: 400, viewportH: 300 }
+  viewportW: 400, viewportH: 300, humanCheck: false }
 const frame = { targetId: 'first', src: 'data:image/jpeg;base64,YWJj', width: 400, height: 300, ts: 1 }
 const ready: BrowserEgoView = { phase: 'ready', pages: [page], selectedId: page.targetId,
-  frame, relayOff: false, pending: false }
+  frame, relayOff: false, pending: false, closing: null,
+  status: { running: true, browserConnected: true }, actions: [] }
 
-afterEach(() => { cleanup() })
+afterEach(() => { cleanup(); vi.useRealTimers() })
 
 function mount(view: BrowserEgoView, shown = true) {
   const show = vi.fn()
   const send = vi.fn(async () => true)
+  const close = vi.fn(async () => false)
   const props = { sessionId: 'session-one', shown,
     useTabInfo: () => ({ shown }),
     useBrowserEgo: (select: (snapshot: BrowserEgoView) => unknown) => select(view),
-    show, send, select: vi.fn(), refresh: vi.fn(async () => {}),
-    t: (key: keyof typeof en) => en[key],
+    show, send, close, select: vi.fn(), refresh: vi.fn(async () => {}),
+    t: (key: keyof typeof en, params?: Record<string, unknown>) =>
+      en[key].replace(/\{(\w+)\}/gu, (match, name: string) => (name in (params ?? {}) ? String(params?.[name]) : match)),
   } as unknown as AgentBrowserProps
-  return { ...render(<AgentBrowserPanel {...props} />), props, send, show }
+  return { ...render(<AgentBrowserPanel {...props} />), props, send, close, show }
 }
 
 describe('Agent 浏览器面板', () => {
@@ -31,6 +35,7 @@ describe('Agent 浏览器面板', () => {
     expect(screen.getByRole('region', { name: 'Agent Browser' })).toBeTruthy()
     expect(screen.getByText('Example')).toBeTruthy()
     expect(screen.queryByText(/ego_|browser_|https:\/\//)).toBeNull()
+    expect(screen.getByText('No browser activity yet')).toBeTruthy()
     expect(panel.show).toHaveBeenCalledWith(true)
     panel.rerender(<AgentBrowserPanel {...panel.props} useTabInfo={() => ({ ...panel.props.useTabInfo(), shown: false })} />)
     expect(panel.show).toHaveBeenCalledWith(false)
@@ -64,5 +69,70 @@ describe('Agent 浏览器面板', () => {
     expect(screen.getByRole('alert').textContent).toContain('That action did not finish')
     expect(screen.queryByText(/JSON|stack/)).toBeNull()
     panel.unmount()
+  })
+
+  it('显示运行/连接状态与页面数量，状态不可用时只给中性说明', () => {
+    const running = mount(ready)
+    expect(screen.getByText('Browser running')).toBeTruthy()
+    expect(screen.getByText('Connected')).toBeTruthy()
+    expect(screen.getByText('Pages: 1')).toBeTruthy()
+    running.unmount()
+
+    const stopped = mount({ ...ready, status: { running: false, browserConnected: false } })
+    expect(screen.getByText('Browser not running')).toBeTruthy()
+    expect(screen.getByText('Not connected')).toBeTruthy()
+    stopped.unmount()
+
+    const unknown = mount({ ...ready, status: null, pages: [page, { ...page, targetId: 'second' }] })
+    expect(screen.getByText('Browser status is unavailable right now')).toBeTruthy()
+    expect(screen.queryByText('Browser running')).toBeNull()
+    expect(screen.getByText('Pages: 2')).toBeTruthy()
+    expect(document.body.textContent).not.toMatch(/api\/ego|127\.0\.0\.1/u)
+    unknown.unmount()
+  })
+
+  it('按类别和时间展示最近动作，最多 8 条且最新在前', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-02-01T00:00:00Z'))
+    const now = Date.now()
+    const actions: EgoAction[] = Array.from({ length: 9 }, (_, index) => ({
+      kind: 'click' as const, at: now - (30 - index) * 1000,
+    }))
+    actions.push({ kind: 'navigate', at: now - 1000 })
+    const panel = mount({ ...ready, actions })
+    const rows = screen.getAllByRole('listitem')
+    expect(rows).toHaveLength(8)
+    expect(within(rows[0] as HTMLElement).getByText('Opened a page')).toBeTruthy()
+    expect(within(rows[0] as HTMLElement).getByText('just now')).toBeTruthy()
+    expect(within(rows[1] as HTMLElement).getByText('Clicked the page')).toBeTruthy()
+    expect(within(rows[1] as HTMLElement).getByText('22s ago')).toBeTruthy()
+    expect(document.body.textContent).not.toMatch(/browser_|ego_/u)
+    panel.unmount()
+  })
+
+  it('关闭标签后回传目标，失败只用共享提示说明', async () => {
+    const panel = mount(ready)
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Close this page: Example' }))
+    })
+    expect(panel.close).toHaveBeenCalledWith('first')
+    expect(screen.getByRole('alert').textContent).toContain('Could not close this page')
+    expect(document.body.textContent).not.toMatch(/stack|Error|JSON/u)
+    panel.close.mockResolvedValueOnce(true)
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Close this page: Example' }))
+    })
+    expect(panel.close).toHaveBeenCalledTimes(2)
+    panel.unmount()
+  })
+
+  it('仅在对应页面需要人工验证时显示提示，不暴露检测细节', () => {
+    const panel = mount({ ...ready, pages: [{ ...page, humanCheck: true }] })
+    expect(screen.getByText('This page needs a human check. Complete it in the view.')).toBeTruthy()
+    expect(document.body.textContent).not.toMatch(/recaptcha|selector|captcha|JSON/u)
+    panel.unmount()
+    const quiet = mount(ready)
+    expect(screen.queryByText(/human check/u)).toBeNull()
+    quiet.unmount()
   })
 })

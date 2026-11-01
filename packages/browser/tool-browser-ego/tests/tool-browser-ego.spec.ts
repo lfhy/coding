@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Context, Service } from '@deepseek-ai/cordis'
@@ -16,9 +16,11 @@ import * as BrowserTool from '../src/index.ts'
 
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC', 'base64')
 
+/** 生成与上游同形的 fixture 定义；执行由 FixtureHost 统一接管。 */
 function fixture(name: string, parameters: Record<string, unknown> = {}): ToolDefinition {
   return defineTool({
-    name: `ego_${name}`, description: `Call ego_${name} then ego_snapshot`, parameters: parameters as never,
+    name: `ego_${name}`, description: `Call ego_${name} then ego_snapshot`,
+    parameters: parameters as never,
     output: { schema: { type: 'object', additionalProperties: true,
       properties: { ok: { type: 'boolean', required: true } } },
     render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }],
@@ -33,7 +35,6 @@ class FixtureHost extends Service {
       await writeFile(args.path as string, PNG)
       return { ok: true, path: args.path }
     }
-    if (name === 'ego_download') return { ok: true, path: args.savePath }
     return { ok: true, name, args }
   })
   definitions: ToolDefinition[] = []
@@ -85,22 +86,28 @@ function content(result: { content: readonly { type: string; text?: string }[] }
   return result.content.filter(block => block.type === 'text').map(block => block.text).join('')
 }
 
+const ALL = ['status', 'auth_flush', 'login_import', 'space_open', 'space_close', 'snapshot', 'navigate', 'click',
+  'fill', 'js', 'cdp', 'screenshot', 'page_info', 'tabs', 'wait', 'wait_for_selector', 'wait_for_url',
+  'wait_for_response', 'key', 'hover', 'read_element', 'select', 'drag', 'scroll', 'upload', 'download',
+  'check', 'dialog', 'http', 'cli', 'captcha', 'wait_for_human', 'help', 'doctor', 'script'] as const
+
 describe('Ego browser model tools', () => {
-  it('registers only Host-allowed names, keeps schema and removes registrations on dispose', async () => {
-    const source = fixture('navigate', { url: { type: 'string', required: true, description: 'Use ego_snapshot' } })
-    const { ctx, fiber, call, host } = await setup([source, fixture('script'), fixture('help'), fixture('snapshot')])
-    expect(ctx.tools.get('browser_navigate')?.parameters).toMatchObject({ properties: {
-      url: { type: 'string', description: 'Use browser_snapshot' },
-    } })
-    expect(ctx.tools.get('browser_navigate')?.output.schema).toEqual(source.output.schema)
+  it('registers the full Host tool set with browser names and rewrites help text', async () => {
+    const { ctx, fiber, host } = await setup(ALL.map(name => fixture(name, {
+      url: { type: 'string', required: true, description: 'Use ego_snapshot' },
+    })))
+    expect(ctx.tools.schemas().map(schema => schema.name).sort())
+      .toEqual(ALL.map(name => `browser_${name}`).sort())
+    expect(ctx.tools.get('browser_navigate')?.parameters).toMatchObject({
+      properties: { url: { type: 'string', description: 'Use browser_snapshot' } },
+    })
     expect(ctx.tools.get('browser_navigate')?.description).toBe('Call browser_navigate then browser_snapshot')
-    expect(ctx.tools.get('browser_script')).toBeUndefined()
-    expect(ctx.tools.get('browser_help')).toBeUndefined()
-    expect((await call('navigate', { url: 'https://example.com/path?secret=123' })).isError).toBe(false)
-    expect(host.calls.mock.calls[0]?.[0]).toBe('ego_navigate')
+    expect(await ctx.tools.execute({ name: 'browser_cli', arguments: {}, callId: CallId('x'),
+      signal: new AbortController().signal, agent: undefined as never })).toMatchObject({ isError: true })
+    expect(host.calls).not.toHaveBeenCalled()
     await fiber.dispose()
     expect(ctx.tools.get('browser_navigate')).toBeUndefined()
-    expect(ctx.tools.get('browser_snapshot')).toBeUndefined()
+    expect(ctx.tools.get('browser_script')).toBeUndefined()
   })
 
   it.each([
@@ -152,26 +159,11 @@ describe('Ego browser model tools', () => {
     expect(host.calls).not.toHaveBeenCalled()
   })
 
-  it('allows a high-risk download script only on full access with a one-call grant', async () => {
-    const { call, host, ctx, cwd } = await setup([fixture('download')], 'danger-full-access', 'ask')
-    const reasons: string[] = []
-    ctx.on('approval/request', ({ reason }) => {
-      reasons.push(reason ?? '')
-      return Promise.resolve('allowed-once' as const)
-    })
-    const result = await call('download', { triggerScript: 'fetch("secret")', savePath: 'saved.zip' })
-    expect(result.isError).toBe(false)
-    expect(host.calls).toHaveBeenCalledOnce()
-    expect(host.calls.mock.calls[0]?.[1]).toMatchObject({ savePath: join(await realpath(cwd), 'saved.zip') })
-    expect(reasons).toHaveLength(1)
-    expect(reasons[0]).not.toMatch(/secret|saved\.zip|fetch/)
-  })
-
   it.each(['rejected', 'cancelled', 'unavailable'] as const)('stops after %s outcome without invoking Host', async (outcome) => {
     const { call, host, ctx } = await setup([fixture('navigate')], 'danger-full-access', 'ask')
     const asked = vi.fn(async (request: { reason?: string }) => {
       expect(request.reason).toContain('origin: https://example.com')
-      expect(request.reason).not.toMatch(/secret|path|password/)
+      expect(request.reason).not.toMatch(/secret|password|path/)
       return outcome
     })
     ctx.on('approval/request', asked)
@@ -181,45 +173,29 @@ describe('Ego browser model tools', () => {
     expect(host.calls).not.toHaveBeenCalled()
   })
 
-  it('denies unsafe upload symlinks and passes a real in-workspace file', async () => {
-    const { call, cwd, host } = await setup([fixture('upload')])
-    await writeFile(join(cwd, 'sample.txt'), 'safe')
-    await symlink('/etc/hosts', join(cwd, 'escape.txt'))
-    await mkdir(join(cwd, 'folder'))
-    for (const path of ['escape.txt', '../outside', 'folder']) {
-      expect((await call('upload', { selector: '#file', path })).isError).toBe(true)
-    }
-    expect(host.calls).not.toHaveBeenCalled()
-    expect((await call('upload', { selector: '#file', path: 'sample.txt' })).isError).toBe(false)
-    expect(host.calls.mock.calls[0]?.[1]).toMatchObject({ path: join(await realpath(cwd), 'sample.txt') })
-  })
-
-  it('denies output escape, existing files, read-only writes and hidden download scripting', async () => {
-    const { call, cwd, host, session } = await setup([fixture('download'), fixture('screenshot')])
-    await writeFile(join(cwd, 'existing.png'), PNG)
-    await symlink('/tmp', join(cwd, 'escape'))
-    for (const path of ['../outside.png', 'escape/out.png', 'existing.png', 'folder/']) {
-      expect((await call('screenshot', { path })).isError).toBe(true)
-      expect((await call('download', { savePath: path })).isError).toBe(true)
-    }
-    setSandboxMode(session, 'read-only')
-    expect((await call('screenshot')).isError).toBe(true)
-    setSandboxMode(session, 'workspace-write')
-    expect((await call('download', { triggerScript: 'fetch("secret")' })).isError).toBe(true)
-    expect(host.calls).not.toHaveBeenCalled()
+  it('passes complete upstream arguments, including scripts and file paths, unchanged', async () => {
+    const { call, host, cwd, ctx } = await setup([fixture('download'), fixture('upload'), fixture('script')])
+    ctx.on('approval/request', async () => 'allowed-once' as const)
+    const savePath = join(await realpath(cwd), 'saved.zip')
+    expect((await call('download', { triggerScript: 'fetch("x")', savePath })).isError).toBe(false)
+    expect(host.calls.mock.calls[0]?.[1]).toMatchObject({ triggerScript: 'fetch("x")', savePath })
+    expect((await call('upload', { selector: '#file', path: join(cwd, 'sample.txt') })).isError).toBe(false)
+    expect((await call('script', { code: 'await page.info()' })).isError).toBe(false)
+    expect(host.calls).toHaveBeenCalledTimes(3)
   })
 
   it('persists only an explicit screenshot and returns a model image block', async () => {
     const { call, cwd, ctx, host } = await setup([fixture('snapshot'), fixture('screenshot')])
     const save = vi.spyOn(ctx.attachments, 'saveImage')
     expect((await call('snapshot')).content.map(block => block.type)).toEqual(['text'])
-    const shot = await call('screenshot', { path: 'screen.png' })
+    const path = join(await realpath(cwd), 'screen.png')
+    const shot = await call('screenshot', { path })
     expect(shot.isError).toBe(false)
-    expect(shot.value).toEqual({ ok: true, path: join(await realpath(cwd), 'screen.png') })
+    expect(shot.value).toEqual({ ok: true, path })
     expect(shot.content.map(block => block.type)).toEqual(['text', 'image'])
     expect(save).toHaveBeenCalledOnce()
-    expect((await readFile(join(cwd, 'screen.png')))).toEqual(PNG)
-    expect(host.calls.mock.calls[1]?.[1]).toMatchObject({ path: join(await realpath(cwd), 'screen.png') })
+    expect(await readFile(path)).toEqual(PNG)
+    expect(host.calls.mock.calls[1]?.[1]).toMatchObject({ path })
   })
 
   it('rejects an oversized structured result without truncating the output schema', async () => {

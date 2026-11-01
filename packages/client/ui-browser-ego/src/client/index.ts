@@ -52,6 +52,7 @@ export function apply(ctx: ClientContext): void {
           show: (visible) => { controller.show(visible) },
           refresh: () => controller.refresh(),
           select: (targetId) => { controller.select(targetId) },
+          close: targetId => controller.close(targetId),
           send: (targetId, input) => controller.send(targetId, input),
         }
       },
