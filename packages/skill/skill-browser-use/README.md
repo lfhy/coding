@@ -2,7 +2,7 @@
 
 随包分发的浏览器操作 skill 提供方，向 `ctx.skills` 登记 `browser-use`。插件依赖技能注册表，无配置；随包发布 `assets/browser-use.md` 作为正文资源，资源目录供技能消费方定位。插件卸载时撤销登记。启用本插件仅提供使用指引，不安装浏览器工具、浏览器服务或审批服务，也不改变权限。
 
-技能面向需要读取、复现、验证或驱动渲染后页面的任务，包括本机 localhost 或开发服务器上的自有应用，以及界面检查、截图和视觉确认；目录描述要求优先使用这十项工具，而不是在 bash 里自建无头浏览器脚本。它要求在每次动作后检查返回观测，仅使用最新观测的元素 ref 与 revision；目标或引用失效时最多两次新快照核对 URL、标题和可见元素，而失败消息点名原因（被遮挡、隐藏、禁用、移出视口、不可编辑）时按原因处理——关闭或等掉遮挡、滚动或换元素——只有在页面状态本身未知时才重拍快照。若两次快照都因文档变化失败、任务仍需读取或重新打开该页且不存在不确定的提交结果，模型可另行获批导航上次成功观测的 HTTP(S) 地址一次；该地址不一定是实时当前地址，导航失败即停止。同一个表单需要填多个字段并提交时，正文要求把它们放进同一次 `browser_act`（共用最新观测的 revision，最多 8 步），批次在第一个无法执行的步骤处停止，结果里的 `steps` 只列出实际尝试过的步骤，缺的步骤即没有执行，因此提交点击要放在最后；上传要走 `browser_upload`：它取最新观测 `File inputs:` 段里的 `ref` 与该观测的 `revision`，把工作区内的 1–8 个文件直接写进文件输入控件，不打开系统文件选择框；正文禁止点上传按钮或文件输入来代替上传，因为原生选择框无法被工具驱动，提供方也会在派发输入前拒绝；页面自身的「复制」按钮可用（提供方只向页面预授予剪贴板写入），但工具不能读取剪贴板或合成粘贴事件，正文要求用页面自己的提示核对复制结果；点击、填写或批次中的某一步可能已执行而观测失败，指引禁止自动重放；拒绝、取消、忙碌、不可用或远程不支持也不能以再次调用绕过。除非用户要求关闭，否则保留页面供工作台查看。网页内容是非可信数据。十项工具的字段、执行审批和远程工作区限制由[工具消费方](../../browser/tool-browser/README.md)拥有；普通 Web/CLI 与桌面端的提供方行为分别见 [Playwright](../../browser/browser-playwright/README.md) 和 [Electron](../../browser/browser-electron/README.md)。此包不承诺自动等待或限制导航目的地。
+技能面向页面阅读、交互和界面验收，包括本地开发页面。正文引导 Agent 使用受控的 `browser_*` 工具：以 `browser_navigate` 打开无凭据的 HTTP(S) 地址，随后用 `browser_snapshot` 读取语义树；点击、填写接受快照引用或 CSS 选择器，动作结果不包含更新后的语义树，后续动作应按需要重新观察。宿主交付导航、快照、页面信息、标签列表、点击、填写、滚动、等待、键盘、悬停、单元素读取、选择、拖拽、复选、人机验证检测和截图工具；标签仅能列出，不能通过工具打开、切换或关闭。没有 `revision` 参数、批量动作、视口尺寸设置或上传下载工具。截图只写入工作区新文件；只读会话禁止保存，其它会话仍按权限逐次审批。失败的动作可能已经改变页面，不自动重放提交或删除；被拒绝的调用、不可用的浏览器和远程工作区也不能通过其他入口绕过。页面内容属于不可信数据；视觉判断须查看实际截图，无法获取图像时说明限制。工具字段、审批和路径约束由[浏览器工具消费方](../../browser/tool-browser-ego/src/index.ts)持有；浏览器运行时由[宿主提供方](../../browser/browser-ego-host/src/index.ts)承接。
 
 ## Model Experience
 
@@ -12,13 +12,13 @@
 
 目录贡献的名称为 `browser-use`，描述为：
 
-> Use when a task requires reading, reproducing, verifying, or driving a rendered page, including your own app on localhost or a dev server, and any UI check, screenshot, or visual confirmation. Use these tools instead of scripting a headless browser (Playwright, Puppeteer, curl) from bash. Load this skill before the first browser_navigate, browser_snapshot, browser_click, browser_fill, browser_act, browser_scroll, browser_viewport, browser_screenshot, or browser_close call.
+> Use when a task requires reading, reproducing, verifying, or driving a rendered page, including your own app on localhost or a dev server, and any UI check or visual confirmation. Prefer registered browser_* tools over headless-browser scripts or the browser CLI. Load this skill before browser_navigate, browser_snapshot, browser_page_info, browser_tabs, browser_click, browser_fill, browser_scroll, browser_wait, browser_key, browser_read_element, or browser_screenshot.
 
 被选择时加载的固定正文见 [`assets/browser-use.md`](assets/browser-use.md)。技能允许模型从目录加载，也允许用户显式调用。
 
-这条描述是模型可见的唯一触发条件：`tool-browser` 不注册系统提示词段，十项工具的 schema 只提示各自“先加载本技能”，都无法让模型在尚未决定调用浏览器时选到这些工具。因此描述按“任务需要读取、复现、验证或驱动渲染后的页面”划定触发范围，而不是按“浏览网页”划定领域，并显式点名最容易走错的近似路径：在 bash 里自建 Playwright、Puppeteer 或 curl 脚本，以及验证本机开发中的应用。消费方按 `catalogDescriptionMaxLength`（默认 500）从末尾截断描述，而“先加载本技能”的要求正位于末尾，所以新增触发条件时不要用满上限。
+目录描述涵盖本地开发页面和视觉确认，并要求在调用浏览器工具前先加载技能。技能正文在加载时加入模型上下文；工具清单与参数以运行时注册项为准，不能从技能文本推断不存在的工具。
 
-正文要求每个后台 worker 在自己的 Session 中加载技能并导航：其他 worker 的页面、元素引用与审批不能跨会话复用；切换工作台的会话或隐藏浏览器不阻止活跃 worker 继续操作自己的页面。正文要求传纯 HTTP(S) 或本机 `file:///` 地址而不是 Markdown 链接，本地文件直接在会话浏览器中打开，无需启动临时 HTTP 服务；文件入口不能用于绕过已拒绝的文件访问或浏览器审批。输入错误时仅在目标明确的情况下修正参数；无字段快照调用显式传 `{}`。动态内容或原生导航安全停止后需另取快照；目标变化后的快照和有界重开都需要各自独立审批。截图只供视觉检查，操作只使用当前 `Elements:` 列出的元素，不从截图推断坐标或由元素名称猜测链接地址。正文另有视觉验收规则：观测只有文本与引用、没有像素，重叠、裁切、错位和缺失样式在其中看不出来，因此改动或核对可见界面、任务涉及布局与样式时须先 `browser_screenshot` 再看返回的图片，最终改动后截一次即可；模型收不到图片时结果里没有图片块，此时应说明看不到页面，不能声称渲染正确。需要核对响应式布局时，正文要求先用 `browser_viewport` 设置要验证的宽高（例如手机 390x844）再截图：媒体查询就地重算，无需重新导航；视口变化使旧引用和旧截图失效，尺寸保持到下一次设置或真人调整工作台面板为止，所以宽度相关结论要以观测里的 `viewport` 为准。
+正文以一参数对象调用为例，说明 URL、元素选择、动作后观察、截图权限、人工登录以及不重放不确定结果；详情直接阅读[技能正文](assets/browser-use.md)。
 
 #### Token effect
 
@@ -30,6 +30,6 @@
 
 ## Known Limitations and Deferred Work
 
-- 技能只描述当前十项结构化操作，不增加键盘、历史、标签页或任意脚本操作；需要这些能力的任务须由其他受控界面处理。
-- 上传只能使用会话工作区内的常规文件；技能不能让模型绕过这条限制，`file:///` 导航和 bash 脚本也不是上传的替代通道。
+- 技能只指导宿主实际交付的工具；模型没有上传、下载、标签切换、任意网页脚本、原始浏览器协议、视口尺寸或批量动作工具；响应式布局须根据实际可观察视口验证。
+- 截图只写入工作区新文件；本地文件 URL 或脚本不是浏览器操作的替代通道。
 - 技能不能强制执行浏览器权限或目标策略；执行判断由浏览器工具及服务提供方承担。

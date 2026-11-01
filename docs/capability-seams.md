@@ -173,8 +173,11 @@ flowchart LR
   svc_jobs["ctx.jobs<br/>Background job registry"]
   pkg_jobs_local["jobs-local"]
   pkg_tool_jobs["tool-jobs"]
+  pkg_browser_ego_host["browser-ego-host"]
+  svc_egoBrowser["ctx.egoBrowser<br/>Session-scoped ego-lite browser definitions and live view"]
+  pkg_tool_browser_ego["tool-browser-ego"]
   pkg_browser["browser"]
-  svc_browserUse["ctx.browserUse<br/>Session-owned browser operations"]
+  svc_browserUse["ctx.browserUse<br/>Optional legacy session browser contract"]
   pkg_browser_playwright["browser-playwright"]
   pkg_browser_electron["browser-electron"]
   pkg_tool_browser["tool-browser"]
@@ -242,6 +245,7 @@ flowchart LR
   pkg_bash_local --> svc_shell
   pkg_bash_sandbox --> svc_shell
   pkg_browser --> svc_browserUse
+  pkg_browser_ego_host --> svc_egoBrowser
   pkg_browser_electron --> svc_browserUse
   pkg_browser_playwright --> svc_browserUse
   pkg_code_runtime --> svc_codeRuntime
@@ -373,6 +377,7 @@ flowchart LR
   svc_dynamicCordisRunner --> pkg_tool_cordis
   svc_e2b --> pkg_fs_e2b
   svc_e2b --> pkg_subprocess_e2b
+  svc_egoBrowser --> pkg_tool_browser_ego
   svc_fs --> pkg_tool_fs
   svc_invariants --> pkg_agent
   svc_invariants --> pkg_agent_loop
@@ -534,7 +539,8 @@ flowchart LR
 | `ctx.subagents` | `seam` | [`subagent`](../packages/subagent/subagent) | [`subagent-spawn-in-process`](../packages/subagent/subagent-spawn-in-process), [`subagent-fork-in-process`](../packages/subagent/subagent-fork-in-process), [`subagent-acp`](../packages/subagent/subagent-acp), [`subagent-codex`](../packages/subagent/subagent-codex), [`subagent-claude-code`](../packages/subagent/subagent-claude-code), [`subagent-dsh-sdk`](../packages/subagent/subagent-dsh-sdk) | [`tool-subagent`](../packages/subagent/tool-subagent), [`tool-subagent-control`](../packages/subagent/tool-subagent-control), [`tool-ralph`](../packages/workflow/tool-ralph) | - | Providers implement transports; the service also owns optional Activation-based continuation orchestration, tool-subagent selects one-shot or continuable delegation, tool-subagent-control delivers follow-ups, and tool-ralph requires one fresh structured-output route. |
 | `ctx.agentTeams` | `core` | `agent-team` | - | `tool-agent-team` | - | Owns the implicit-root roster, durable peer mailbox, shared task DAG, and continuable-child lifecycle; tool-agent-team contributes the scoped model policy and controls. |
 | `ctx.jobs` | `seam` | [`jobs`](../packages/jobs/jobs) | [`jobs-local`](../packages/jobs/jobs-local) | [`tool-bash`](../packages/shell/tool-bash), [`tool-terminal`](../packages/terminal/tool-terminal), [`tool-subagent`](../packages/subagent/tool-subagent), [`tool-jobs`](../packages/jobs/tool-jobs) | - | Producers (background bash, PTY sends, and subagent delegations) register running work; tool-jobs is the model-facing controller that reads, lists, and kills it; jobs-local is the process-local registry. |
-| `ctx.browserUse` | `seam` | [`browser`](../packages/browser/browser) | [`browser-playwright`](../packages/browser/browser-playwright), [`browser-electron`](../packages/browser/browser-electron) | [`tool-browser`](../packages/browser/tool-browser) | - | Web and CLI sessions use isolated Playwright pages; the managed Electron Host uses a live native guest shared by human and model operations. Both retain session-scoped approval and target checks; the desktop bridge fails closed, while Web shows read-only captured frames. |
+| `ctx.egoBrowser` | `core` | [`browser-ego-host`](../packages/browser/browser-ego-host) | - | [`tool-browser-ego`](../packages/browser/tool-browser-ego) | - | The Host owns ego-lite task spaces and session-filtered live frames. Agent-scoped tools perform permission checks before invoking its browser definitions; the right workbench consumes a local-only session view. |
+| `ctx.browserUse` | `seam` | [`browser`](../packages/browser/browser) | [`browser-playwright`](../packages/browser/browser-playwright), [`browser-electron`](../packages/browser/browser-electron) | [`tool-browser`](../packages/browser/tool-browser) | - | This optional service is not mounted by the default Web, headless or desktop assemblies. Custom compositions may opt in to its isolated Playwright or native guest provider and its original browser tools. |
 | `ctx.memory` | `seam` | [`memory`](../packages/memory/memory) | [`memory-local`](../packages/memory/memory-local) | [`memory-context`](../packages/memory/memory-context), [`tool-memory`](../packages/memory/tool-memory) | - | The service owns project-key resolution, file-name and size policy, the Markdown entry format and the injected excerpt; memory-local only implements the four storage primitives on the host filesystem. |
 | `ctx.computerUse` | `core` | [`computer-use`](../packages/computer-use/computer-use) | - | [`tool-computer-use`](../packages/computer-use/tool-computer-use) | - | One host-plane provider owns the fixed-argv Swift helper, observation cache, per-app leases and confirmation tokens for every Session; tool-computer-use contributes the Skill-gated model surface in the agent presets. |
 | `ctx.web` | `seam` | [`web`](../packages/web/web) | [`web-search-exa`](../packages/web/web-search-exa), [`web-search-perplexity`](../packages/web/web-search-perplexity), [`web-search-deepseek`](../packages/web/web-search-deepseek), [`web-search-duckduckgo`](../packages/web/web-search-duckduckgo), [`web-search-tavily`](../packages/web/web-search-tavily), [`web-fetch-http`](../packages/web/web-fetch-http) | [`tool-web`](../packages/web/tool-web) | - | Search and fetch providers register into one ctx.web seam; tool-web owns the stable model-facing names. |

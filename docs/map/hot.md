@@ -13,12 +13,12 @@
 ## 浏览器与 Host 传输
 
 - **路线**：`packages/client/connection/src/client/connection.ts` 管重连和双下行流，`src/client/web-api-client.ts` 发 `/api` 请求；Host 端 `packages/client/connection/src/index.ts`/`api-request-trust.ts` 管路由与信任栅栏，`packages/host/webserver/src/index.ts` 管 HTTP/upgrade 注册，`packages/host/apiproxy/src/api-proxy.ts` 管方法实现，`src/api/rpc.schema.ts` 与 `browser.schema.ts` 管 wire 校验；`packages/api/remotes/src/client/index.ts` 是另一套 Typert Remote 入口，先于 API Proxy 认领自己的方法。
-- **技术与边界**：浏览器 unary/respond 用 HTTP POST，下行 `events.mux`/`events.host` 用 WebSocket；webserver 不实现业务，apiproxy 不注册 HTTP 路由。人工 `browser.control` 是回环同源特权方法，只接受已附着的本地 Session，远程 marker 拒绝；Agent 浏览器操作从审批等待至执行结束持有 Host 操作权，人工命令被拒绝。方法约定和信任规则分别见 [apiproxy](../../packages/host/apiproxy/README.md)、[connection](../../packages/client/connection/README.md)。另一套 Typert Remote 入口见 [remotes](../../packages/api/remotes/README.md)。
+- **技术与边界**：浏览器 unary/respond 用 HTTP POST，下行 `events.mux`/`events.host` 用 WebSocket；webserver 不实现业务，apiproxy 不注册 HTTP 路由。默认 Agent 浏览器的会话过滤画面流与人工输入由 [Ego Host](../../packages/browser/browser-ego-host/README.md) 单独注册 `/api/ego/*`，入口先复用 connection 信任检查并限制本机同源；旧 `browser.control` 仅供未装配的可选旧服务。另一套 Typert Remote 入口见 [remotes](../../packages/api/remotes/README.md)。
 - **连带与验证**：协议变更同步 API schema、Client 调用、Host handler 与 keyless 回放；路由或升级变更同步信任拒绝测试，不能只验证回环成功路径。定向运行 `pnpm exec vitest run packages/client/connection/tests packages/host/apiproxy/tests packages/host/webserver/tests`，浏览器组装变化再跑 `DSH_SNAPSHOT=replay pnpm run test:web`。
 
 ## 桌面壳与 Host 启动
 
-- **路线**：Electron 壳在 `apps/desktop-electron/src/main.ts`、`window.ts`、`native-chrome.ts`；Go helper `apps/desktop/cmd/electron-helper/main.go` 经 `apps/internal/hostlaunch/launcher.go` 启动 Host，并复用 `apps/desktop/internal/desktopremote/service.go` 与 `bridge.go`。helper stdio、远程连接 preload/main 授权分别在 `helper-client.ts`、`preload.ts`、`remote-ipc.ts`；桌面浏览器 guest、私有 Host 桥与受限呈现 IPC 在 `browser-guest.ts`、`browser-bridge.ts`、`browser-ipc.ts`。
+- **路线**：Electron 壳在 `apps/desktop-electron/src/main.ts`、`window.ts`、`native-chrome.ts`；Go helper `apps/desktop/cmd/electron-helper/main.go` 经 `apps/internal/hostlaunch/launcher.go` 启动 Host，并复用 `apps/desktop/internal/desktopremote/service.go` 与 `bridge.go`。helper stdio、远程连接 preload/main 授权分别在 `helper-client.ts`、`preload.ts`、`remote-ipc.ts`；Agent 浏览器由 [Ego Host](../../packages/browser/browser-ego-host/README.md) 在受管 Host 进程运行，桌面不启动旧 guest/bridge，也不公开旧呈现 IPC。
 - **技术与边界**：`make dev` 启动 Electron 开发态，`make install` 安装由 `pnpm run build:desktop` 组装的 `dist/Coding.app`。Web UI、RPC 和会话由共享 Client/Host 包拥有；开发 home 独立，生产配置共享 `~/.coding`（首次启动自动从 `~/.dsh` 迁移）且先取得安装版单实例锁。壳与 Host 边界见[桌面原生验收](../desktop-shell-comparison.md)，运行限制见 [Electron README](../../apps/desktop-electron/README.md)。
 - **连带与验证**：Host 就绪记录或所有权改动核对 `packages/bundle/web-app/src/managed-host.ts`、`apps/internal/hostlaunch` 与 Go helper；远程连接协议改动核对 `desktopremote`、`helperwire`、Electron IPC 和 Client 工作区。打包资源同步 `scripts/build-electron-helper.ts`、`scripts/package-electron-macos-app.ts` 与对应测试。开发态、SSH 和打包版分别做原生验证，命令见[应用条目](#appsdesktop-electron)。
 
@@ -190,22 +190,24 @@
 
 ## packages/client/ui-open-in-app
 
-- **拥有**：工作区打开能力的浏览器半：会话页头分体入口（`OpenInAppAction`）及右侧边栏、终端底栏开关（`WorkbenchPanelToggles`），均占用 `conversation.session.header.utilities`；欢迎页开关占用 `conversation.hero.actions`；内置工作台（`WorkspaceWorkbench`，占用 root scope `workbench`）按 Session 持有功能菜单、唯一共享新增入口、统一的文件管理器／文件预览／浏览器页面／终端／外部标签、文件视图及右侧终端，声明 `workbench.browser`／`workbench.browser.tabs` 与 keyed `sidebar.right.pane.tab`／`.title` 子 slot；保留式底栏终端（`RetainedTerminalPanel`）独立占用 `workbench.bottom`；另有 `OpenInAppController`。
-- **不拥有**：浏览器画面、人工导航和标签操作属于 `packages/client/ui-browser`；Host 路由（应用启动、文件 list/read、终端 WebSocket）属于 `packages/host/open-in-app`；workbench 壳层几何与 `ctx.layout` 属于 `packages/client/ui-layout`；`conversation.session.header.utilities` 与 `conversation.hero.actions` 座位声明属于 `packages/client/ui-conversation`。
+- **拥有**：工作区打开能力的浏览器半：会话页头分体入口（`OpenInAppAction`）及右侧边栏、终端底栏开关（`WorkbenchPanelToggles`），均占用 `conversation.session.header.utilities`；欢迎页开关占用 `conversation.hero.actions`；内置工作台（`WorkspaceWorkbench`，占用 root scope `workbench`）按 Session 持有功能菜单、唯一共享新增入口、文件管理器／文件预览／终端／外部标签、文件视图及右侧终端，声明 keyed `sidebar.right.pane.tab`／`.title` 子 slot；保留式底栏终端（`RetainedTerminalPanel`）独立占用 `workbench.bottom`；另有 `OpenInAppController`。
+- **不拥有**：浏览器页面、实时画面及人工输入属于 `packages/browser/browser-ego-host` 和 `packages/client/ui-browser-ego`；Host 路由（应用启动、文件 list/read、终端 WebSocket）属于 `packages/host/open-in-app`；workbench 壳层几何与 `ctx.layout` 属于 `packages/client/ui-layout`；`conversation.session.header.utilities` 与 `conversation.hero.actions` 座位声明属于 `packages/client/ui-conversation`。
 - **入口**：`packages/client/ui-open-in-app/src/client/index.ts`（注入 `slots`、`locale`、`layout`、`sessions`、`workspaces`；通过 `ctx.slots.inject(...)` 在各座位注册）；node 半是空 apply。
 - **接线**：`packages/bundle/web-app/cordis.patch.yml` 的 `ui-open-in-app` 行与 host 行 `open-in-app` 并排挂载；共享常量经 `coding-host-open-in-app/shared`。
 - **关键文件**：`packages/client/ui-open-in-app/src/client/index.ts`、`packages/client/ui-open-in-app/src/client/controller.ts`、`packages/client/ui-open-in-app/src/client/store.ts`、`packages/client/ui-open-in-app/src/client/WorkspaceWorkbench.tsx`、`packages/client/ui-open-in-app/src/client/sidebar-tab-registry.ts`、`packages/client/ui-open-in-app/src/client/sidebar-tab-service.ts`、`packages/client/ui-open-in-app/src/client/TerminalPanel.tsx`、`packages/client/ui-open-in-app/src/client/RetainedTerminalPanel.tsx`。
 - **改这里要同步**：路由或帧协议改动同步 `packages/host/open-in-app`；工作台或底栏显隐语义改动同步 `packages/client/ui-layout`（owner prop `bottomOpen`），页头与欢迎页入口变动核对 `packages/client/ui-conversation` 的座位；外部标签定义、实例状态或 keyed slot 变动同步本包 README 和对应插件贡献。
-- **不变量**：文件树只回传当前 Session id 与 Host 返回的 provider segment 数组，绝不提交工作区根或自行拼接 Windows/POSIX/UNC 路径；菜单终端新建右侧标签，底栏入口显示独立底栏，两处标签分别独占 WebSocket 与 PTY；切换标签或 Session、隐藏底栏或工作台均不释放已激活终端，关闭对应标签释放该终端；外部标签按 Session 隔离，定义卸载时清理该定义的已打开实例；关闭最后一个右侧标签（含 Shell 退出关闭最后一个终端、关闭最后一个浏览器页面）时收起右侧边栏并保留底栏，定义卸载等被动清理不收起。
+- **不变量**：文件树只回传当前 Session id 与 Host 返回的 provider segment 数组，绝不提交工作区根或自行拼接 Windows/POSIX/UNC 路径；菜单终端新建右侧标签，底栏入口显示独立底栏，两处标签分别独占 WebSocket 与 PTY；切换标签或 Session、隐藏底栏或工作台均不释放已激活终端，关闭对应标签释放该终端；外部标签按 Session 隔离，定义卸载时清理该定义的已打开实例；关闭最后一个右侧标签（含 Shell 退出关闭最后一个终端）时收起右侧边栏并保留底栏，定义卸载等被动清理不收起。
 - **终端尺寸**：可见终端在建连前 fit，以实测 cols/rows 分配 PTY；尺寸在建连期间及 ready 后变化时同步到同一 PTY。右侧与底栏均走 `TerminalPanel`，隐藏/切换不重连。
 - **测试**：`pnpm exec vitest run packages/client/ui-open-in-app/tests`
 
 ## packages/client/ui-browser
 
+默认浏览器路线：[Ego Host](../../packages/browser/browser-ego-host/README.md) 在 base 提供会话空间、有限安全工具定义和受信画面／输入路由；[浏览器工具消费方](../../packages/browser/tool-browser-ego/README.md)在标准、长任务与逆向分析预设中把这些定义以 `browser_` 前缀注册并逐会话审批；[Agent 浏览器面板](../../packages/client/ui-browser-ego/README.md)在 Web 组合中占用右侧 keyed 外部标签。改动牵涉 base/Web/预设配置、桌面打包、Host 路由、模型目录和用户指南；验证运行 Host／工具／Client 定向测试、真实 Loader 与隔离 Edge 冒烟、Web 回放及权限拒绝测试。下述旧界面只存在于可选源码，不会在默认工作台启动或用作后备。
+
 - **拥有**：占用 `workbench.browser` 和 `workbench.browser.tabs` 的会话级人工地址栏／历史／页面标签，通过 `syncBrowserTabs()` 把每个 Host 页面同步为统一顶栏中的 `browser` 标签；Web/CLI 的截图坐标交互、观测轮询与图片 URL 生命周期；桌面端的原生 guest 呈现请求，不请求 PNG 镜像。
 - **不拥有**：slot 声明、功能菜单、统一工作台标签状态、文件视图和终端（`packages/client/ui-open-in-app`）；Host 的 `browser.control` 实现与信任限制（`packages/host/apiproxy`、`packages/client/connection`）；浏览器状态与模型工具（`packages/browser/browser`、`packages/browser/tool-browser`）。
 - **入口**：`packages/client/ui-browser/src/client/index.ts`（注入 `slots`、`locale`、`connection`，两个 slot 共用会话控制器）；node 半是空 apply。
-- **接线**：`packages/bundle/web-app/cordis.patch.yml` 的 `ui-browser` 行，依赖 `ui-open-in-app` 声明的两个 slot。
+- **接线**：默认组合不装配本包；其 `workbench.browser` 席位只供自定义旧组合声明，默认工作台不渲染。默认面板由 `packages/bundle/web-app/cordis.patch.yml` 的 `ui-browser-ego` 行占用 `sidebar.right.pane.tab`。
 - **关键文件**：`packages/client/ui-browser/src/client/BrowserMirror.tsx`、`packages/client/ui-browser/src/client/controller.ts`、`packages/client/ui-browser/src/client/wire.ts`。
 - **改这里要同步**：人工命令同步 `packages/host/apiproxy/src/api/browser.schema.ts` 与 `packages/browser/browser`；slot owner 改动同步 `ui-open-in-app`；用户可见操作同步[使用指南](../user/guide/index.md#让-agent-使用浏览器)。
 - **不变量**：Web/CLI 页面只作为经校验的 PNG 画面进入 Client，截图等比缩小且不超过原生大小，坐标命令绑定当前画面身份；桌面端使用主进程持有的 `WebContentsView`，renderer 只呈现 guest 的位置，不使用 `<webview>` 或 PNG 镜像；Agent 操作持有 Host 操作权时控件禁用；旧 generation／revision 和晚到的截图不能覆盖新状态，Web/CLI Blob URL 在换帧、消失和卸载时释放。
@@ -246,12 +248,12 @@
 
 ## apps/desktop-electron
 
-- **拥有**：Electron 窗口、macOS 菜单和托盘、受限 preload/main IPC、Go helper 客户端与应用退出清理、按 Session 管理的实时浏览器 guest 与 Host 私有回环桥，以及开发与生产运行路径校验。
-- **不拥有**：Remote-SSH 实现与 bridge（归 `apps/desktop/internal/desktopremote`）、Host 生命周期协议（归 `apps/internal/hostlaunch`）、UI 和会话（归 Client/Host 插件）；十项浏览器工具归 [浏览器工具包](../../packages/browser/tool-browser/README.md)，桌面 Host 能力契约归 [Electron 提供方](../../packages/browser/browser-electron/README.md)，Web/CLI 的 Playwright 页面归其[提供方](../../packages/browser/browser-playwright/README.md)，工作台标签与呈现请求归 [ui-browser](../../packages/client/ui-browser/README.md)。
+- **拥有**：Electron 窗口、macOS 菜单和托盘、受限 preload/main IPC、Go helper 客户端与应用退出清理，以及开发与生产运行路径校验；旧 guest 源码不由 `main.ts` 启动，也不在默认包体运行闭包中。
+- **不拥有**：Remote-SSH 实现与 bridge（归 `apps/desktop/internal/desktopremote`）、Host 生命周期协议（归 `apps/internal/hostlaunch`）、UI 和会话（归 Client/Host 插件）；默认浏览器归 [Ego Host](../../packages/browser/browser-ego-host/README.md) 与 [Agent 浏览器面板](../../packages/client/ui-browser-ego/README.md)，模型权限归 [浏览器工具包](../../packages/browser/tool-browser-ego/README.md)。
 - **入口**：`apps/desktop-electron/src/main.ts`；Go 进程入口在 `apps/desktop/cmd/electron-helper/main.go`。`make dev` 与 `pnpm run dev:electron` 启动开发态；`build:desktop` 经 `scripts/package-electron-macos-app.ts` 组装生产包，`make install` 才将其安装到 `/Applications/Coding.app`。
-- **关键文件**：`apps/desktop-electron/src/window.ts`、`native-chrome.ts`、`preload.ts`、`remote-ipc.ts`、`browser-guest.ts`、`browser-bridge.ts`、`browser-ipc.ts`、`helper-client.ts`、`runtime-config.ts`、`apps/desktop/internal/helperwire/`。
-- **改这里要同步**：Remote-SSH 输入与状态同步 `packages/client/ui-workspace/src/client/remote.ts`、`apps/desktop/internal/desktopremote` 与 `apps/desktop/cmd/electron-helper`；生产路径及资源（Electron 原生 guest 与共享 Host 的 Playwright JS 依赖，不含独立 Chromium 浏览器）同步 `scripts/build-electron-helper.ts`、`scripts/package-electron-macos-app.ts` 和 `apps/desktop-electron/README.md`。
-- **不变量**：main 对每次 IPC 核验窗口、主 frame、精确 Host origin 和输入；同源重载期间暂停授权，窗口丢失即撤权；helper 不经 renderer 转交 SSH 凭据或浏览器 bridge token。浏览器桥断开后失效并清理 guest，不切换到 Playwright；按 Session 临时 partition 隔离，隐藏页面仅卸载视图。生产配置使用共享 `~/.coding`，Go helper 在操作前取得安装版单实例锁；Chromium `userData` 使用独立目录。
+- **关键文件**：`apps/desktop-electron/src/main.ts`、`window.ts`、`native-chrome.ts`、`preload.ts`、`remote-ipc.ts`、`helper-client.ts`、`runtime-config.ts`、`apps/desktop/internal/helperwire/`。
+- **改这里要同步**：Remote-SSH 输入与状态同步 `packages/client/ui-workspace/src/client/remote.ts`、`apps/desktop/internal/desktopremote` 与 `apps/desktop/cmd/electron-helper`；生产路径及浏览器内嵌运行时资源同步 `scripts/build-electron-helper.ts`、`scripts/package-electron-macos-app.ts` 和 `apps/desktop-electron/README.md`。
+- **不变量**：main 对每次 Remote IPC 核验窗口、主 frame 与 Host origin；helper 不经 renderer 转交 SSH 凭据。生产配置使用共享 `~/.coding`，Go helper 在操作前取得安装版单实例锁；浏览器页面与 Profile 由 Ego Host 自己管理，不经 Electron guest 桥。
 - **测试**：定向运行 `pnpm exec vitest run apps/desktop-electron/tests scripts/build-electron-helper.spec.ts scripts/package-electron-macos-app.spec.ts` 和 `cd apps/desktop && go test ./cmd/electron-helper ./internal/desktopremote ./internal/helperwire`；开发窗口另跑 `pnpm run test:electron:smoke`，回环 SSH fixture 分别运行 `pnpm run test:electron:remote-basic` 与 `pnpm run test:electron:remote-ssh`，打包版启动用 `pnpm run test:electron:packaged` 单独验证。
 
 ## packages/bundle/base

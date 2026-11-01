@@ -188,10 +188,8 @@ flowchart LR
   cfg --> plugin_dsh_base_web_search_deepseek
   plugin_dsh_base_web_search_tavily["web-search-tavily<br/>coding-web-search-tavily"]
   cfg --> plugin_dsh_base_web_search_tavily
-  plugin_dsh_base_browser_playwright["browser-playwright<br/>coding-browser-playwright"]
-  cfg --> plugin_dsh_base_browser_playwright
-  plugin_dsh_base_browser_electron["browser-electron<br/>coding-browser-electron"]
-  cfg --> plugin_dsh_base_browser_electron
+  plugin_dsh_base_browser_ego_host["browser-ego-host<br/>coding-browser-ego-host"]
+  cfg --> plugin_dsh_base_browser_ego_host
   plugin_dsh_base_tool_web["tool-web<br/>coding-tool-web"]
   cfg --> plugin_dsh_base_tool_web
   plugin_dsh_base_tools["tools<br/>coding-tools"]
@@ -298,8 +296,7 @@ flowchart LR
 | `web-search-parallel` | `coding-web-search-parallel` |
 | `web-search-deepseek` | `coding-web-search-deepseek` |
 | `web-search-tavily` | `coding-web-search-tavily` |
-| `browser-playwright` | `coding-browser-playwright` |
-| `browser-electron` | `coding-browser-electron` |
+| `browser-ego-host` | `coding-browser-ego-host` |
 | `tool-web` | `coding-tool-web` |
 | `tools` | `coding-tools` |
 | `system-prompt` | `coding-system-prompt` |

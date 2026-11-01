@@ -18,6 +18,7 @@ This table connects model-visible tool names to the plugin package and service s
 | `coding-tool-memory` | `memory_delete`, `memory_list`, `memory_read`, `memory_save`, `memory_update` | `ctx.tools`, `ctx.memory` | `tool/call`, `tool/result for project-scoped memory reads and writes` | - | The five memory tools take no path: the owning session decides which project they read and write, and each call resolves it from the session cwd. |
 | `coding-tool-ask-user` | `ask_user_question` | `ctx.tools`, `ctx.userQuestions` | `tool/call`, `tool/result after a UI/provider answers the question` | - | ask_user_question pauses the tool call until the active UI provider returns a human answer. |
 | `coding-tool-browser` | `browser_act`, `browser_click`, `browser_close`, `browser_fill`, `browser_navigate`, `browser_screenshot`, `browser_scroll`, `browser_snapshot`, `browser_upload`, `browser_viewport` | `ctx.tools`, `ctx.browserUse`, `ctx.attachments`, `ctx.approval and a calling Agent at execution time` | `tool/call`, `durable attachment on screenshot`, `tool/result` | - | Each operation is bound to the active tab and session revision. Full access with approval prompts disabled proceeds directly; otherwise only allowed-once approval proceeds if that target remains current. A remote workspace is rejected. Only explicit screenshots save a PNG attachment and render an image block. The browser provider owns URL/network policy and session tab lifetime. |
+| `coding-tool-browser-ego` | `browser_captcha`, `browser_check`, `browser_click`, `browser_drag`, `browser_fill`, `browser_hover`, `browser_key`, `browser_navigate`, `browser_page_info`, `browser_read_element`, `browser_screenshot`, `browser_scroll`, `browser_select`, `browser_snapshot`, `browser_tabs`, `browser_wait`, `browser_wait_for_selector`, `browser_wait_for_url` | `ctx.tools`, `ctx.egoBrowser`, `ctx.attachments`, `ctx.approval and a calling Agent at execution time` | `tool/call`, `durable screenshot attachment`, `tool/result` | - | The default Web and desktop browser tools use session-scoped ego-lite pages. The model sees only the Host safe subset under browser_* names; every call checks session sandbox and approval, remote workspaces are denied, and an explicit screenshot persists an image attachment. |
 | `coding-tool-computer-use` | `computer_click`, `computer_confirm`, `computer_drag`, `computer_list_apps`, `computer_observe`, `computer_perform_action`, `computer_press_key`, `computer_scroll`, `computer_set_value`, `computer_type_text`, `computer_wait` | `ctx.tools`, `ctx.skills`, `ctx.computerUse and a calling Agent at execution time` | `tool/call`, `tool/result`, `workspace screenshot Artifact on request`, `one computer_use_state read/control lease decision after an approval or a configured grant` | - | The only globally visible tool is computer_use_activate; loading the Skill replaces it with the execution vocabulary for that Agent alone. Every action binds to a fresh observation, so a stale element index fails closed, and a coordinate target is only accepted after a screenshot delivered the raster it was chosen from. Accessibility actions are preferred over pointer input, and pointer input is routed to the selected process instead of the global cursor. |
 | `coding-tools` | `run_code` | `ctx.tools`, `ctx.codeRuntime (execution time)`, `ctx.systemPrompt` | `tool/call`, `one tool/code-dispatch-start + tool/code-dispatch pair per bridged sub-call`, `tool/result` | - | Owned by the tool registry as a reserved transport outside filterable capability layers under `mode: code` / `mode: both` (see the Code Mode design record). Under `code` it is the registry's only wire contribution; the other visible capabilities are declared in a generated SDK section in the loaded runtime's language, and a program calls them through bindings scheduled under the native concurrency contract (submission-ordered starts and policy; concurrency-safe bodies overlap up to `maxParallelSubCalls`) that re-enter the complete guarded tool pipeline and link each nested execution to this outer result. |
 | `coding-plan-mode` | `exit_plan_mode` | `ctx.tools`, `ctx.systemPrompt`, `ctx.userQuestions (execution time, opportunistic)` | `tool/call`, `plan/mode inactive on an approved review`, `tool/result` | - | exit_plan_mode stays in the model-facing schema while planning is inactive so transitions add no tool-catalog churn on top of the plan-policy change. Its execute path rejects calls outside plan mode; in plan mode it presents the plan over the user-questions seam (approve / keep planning with feedback), and approval logs plan mode inactive at the step boundary. |
@@ -532,6 +533,411 @@ Change the CSS viewport of the session browser, for example 390x844 to check a p
 Source: [`packages/browser/tool-browser/src/index.ts`](../packages/browser/tool-browser/src/index.ts)
 
 Each operation is bound to the active tab and session revision. Full access with approval prompts disabled proceeds directly; otherwise only allowed-once approval proceeds if that target remains current. A remote workspace is rejected. Only explicit screenshots save a PNG attachment and render an image block. The browser provider owns URL/network policy and session tab lifetime.
+
+<a id="coding-tool-browser-ego"></a>
+
+## `coding-tool-browser-ego`
+
+### `browser_captcha`
+
+Detect a human-verification challenge on the current page.
+
+```json
+{
+  "type": "object",
+  "properties": {}
+}
+```
+
+Source: [`packages/browser/tool-browser-ego/src/index.ts`](../packages/browser/tool-browser-ego/src/index.ts)
+
+### `browser_check`
+
+Set or clear a checkbox.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "selector": {
+      "type": "string",
+      "description": "Checkbox selector."
+    },
+    "checked": {
+      "type": "boolean",
+      "description": "Whether the checkbox should be checked."
+    }
+  },
+  "required": [
+    "selector"
+  ]
+}
+```
+
+Source: [`packages/browser/tool-browser-ego/src/index.ts`](../packages/browser/tool-browser-ego/src/index.ts)
+
+### `browser_click`
+
+Click a page element by selector or snapshot ref.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "selector": {
+      "type": "string",
+      "description": "CSS selector or ref from snapshot."
+    }
+  },
+  "required": [
+    "selector"
+  ]
+}
+```
+
+Source: [`packages/browser/tool-browser-ego/src/index.ts`](../packages/browser/tool-browser-ego/src/index.ts)
+
+### `browser_drag`
+
+Drag one page element onto another.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "from": {
+      "type": "string",
+      "description": "Start element."
+    },
+    "to": {
+      "type": "string",
+      "description": "Drop element."
+    }
+  },
+  "required": [
+    "from",
+    "to"
+  ]
+}
+```
+
+Source: [`packages/browser/tool-browser-ego/src/index.ts`](../packages/browser/tool-browser-ego/src/index.ts)
+
+### `browser_fill`
+
+Fill a page input with text.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "selector": {
+      "type": "string",
+      "description": "CSS selector or ref from snapshot."
+    },
+    "text": {
+      "type": "string",
+      "description": "Text to enter."
+    }
+  },
+  "required": [
+    "selector",
+    "text"
+  ]
+}
+```
+
+Source: [`packages/browser/tool-browser-ego/src/index.ts`](../packages/browser/tool-browser-ego/src/index.ts)
+
+### `browser_hover`
+
+Hover over a page element.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "selector": {
+      "type": "string",
+      "description": "CSS selector or snapshot ref."
+    }
+  },
+  "required": [
+    "selector"
+  ]
+}
+```
+
+Source: [`packages/browser/tool-browser-ego/src/index.ts`](../packages/browser/tool-browser-ego/src/index.ts)
+
+### `browser_key`
+
+Press a key or type into the focused page.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "key": {
+      "type": "string",
+      "description": "Key combination, e.g. Enter or Control+a."
+    },
+    "text": {
+      "type": "string",
+      "description": "Text to type instead of pressing one key."
+    }
+  }
+}
+```
+
+Source: [`packages/browser/tool-browser-ego/src/index.ts`](../packages/browser/tool-browser-ego/src/index.ts)
+
+### `browser_navigate`
+
+Open a URL in the current session browser.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "url": {
+      "type": "string",
+      "description": "HTTP(S) page URL."
+    }
+  },
+  "required": [
+    "url"
+  ]
+}
+```
+
+Source: [`packages/browser/tool-browser-ego/src/index.ts`](../packages/browser/tool-browser-ego/src/index.ts)
+
+### `browser_page_info`
+
+Read the current page title, URL and viewport.
+
+```json
+{
+  "type": "object",
+  "properties": {}
+}
+```
+
+Source: [`packages/browser/tool-browser-ego/src/index.ts`](../packages/browser/tool-browser-ego/src/index.ts)
+
+### `browser_read_element`
+
+Read one page element rather than a full snapshot.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "selector": {
+      "type": "string",
+      "description": "CSS selector or snapshot ref."
+    },
+    "what": {
+      "type": "string",
+      "description": "Property to read.",
+      "enum": [
+        "text",
+        "html",
+        "value",
+        "attribute",
+        "visible",
+        "enabled",
+        "count"
+      ]
+    },
+    "attribute": {
+      "type": "string",
+      "description": "Attribute name when reading an attribute."
+    }
+  },
+  "required": [
+    "selector"
+  ]
+}
+```
+
+Source: [`packages/browser/tool-browser-ego/src/index.ts`](../packages/browser/tool-browser-ego/src/index.ts)
+
+### `browser_screenshot`
+
+Save a screenshot in the session workspace.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "path": {
+      "type": "string",
+      "description": "Optional new PNG file in the session workspace root."
+    }
+  }
+}
+```
+
+Source: [`packages/browser/tool-browser-ego/src/index.ts`](../packages/browser/tool-browser-ego/src/index.ts)
+
+### `browser_scroll`
+
+Scroll the current page by pixel offsets.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "deltaX": {
+      "type": "number",
+      "description": "Horizontal offset in pixels."
+    },
+    "deltaY": {
+      "type": "number",
+      "description": "Vertical offset in pixels."
+    }
+  }
+}
+```
+
+Source: [`packages/browser/tool-browser-ego/src/index.ts`](../packages/browser/tool-browser-ego/src/index.ts)
+
+### `browser_select`
+
+Choose an option from a page select element.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "selector": {
+      "type": "string",
+      "description": "Select element."
+    },
+    "value": {
+      "type": "string",
+      "description": "Option value or label."
+    }
+  },
+  "required": [
+    "selector",
+    "value"
+  ]
+}
+```
+
+Source: [`packages/browser/tool-browser-ego/src/index.ts`](../packages/browser/tool-browser-ego/src/index.ts)
+
+### `browser_snapshot`
+
+Read the current page semantic tree.
+
+```json
+{
+  "type": "object",
+  "properties": {}
+}
+```
+
+Source: [`packages/browser/tool-browser-ego/src/index.ts`](../packages/browser/tool-browser-ego/src/index.ts)
+
+### `browser_tabs`
+
+List pages in the current session only.
+
+```json
+{
+  "type": "object",
+  "properties": {}
+}
+```
+
+Source: [`packages/browser/tool-browser-ego/src/index.ts`](../packages/browser/tool-browser-ego/src/index.ts)
+
+### `browser_wait`
+
+Wait briefly for page updates.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "ms": {
+      "type": "integer",
+      "description": "Wait between 1 and 30000 milliseconds."
+    }
+  },
+  "required": [
+    "ms"
+  ]
+}
+```
+
+Source: [`packages/browser/tool-browser-ego/src/index.ts`](../packages/browser/tool-browser-ego/src/index.ts)
+
+### `browser_wait_for_selector`
+
+Wait for a page element to appear or disappear.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "selector": {
+      "type": "string",
+      "description": "Page selector."
+    },
+    "state": {
+      "type": "string",
+      "description": "Desired element state.",
+      "enum": [
+        "visible",
+        "attached",
+        "hidden",
+        "detached"
+      ]
+    },
+    "timeout": {
+      "type": "integer",
+      "description": "Maximum wait in milliseconds."
+    }
+  },
+  "required": [
+    "selector"
+  ]
+}
+```
+
+Source: [`packages/browser/tool-browser-ego/src/index.ts`](../packages/browser/tool-browser-ego/src/index.ts)
+
+### `browser_wait_for_url`
+
+Wait until the current page reaches a URL pattern.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "pattern": {
+      "type": "string",
+      "description": "URL or glob pattern."
+    },
+    "timeout": {
+      "type": "integer",
+      "description": "Maximum wait in milliseconds."
+    }
+  },
+  "required": [
+    "pattern"
+  ]
+}
+```
+
+Source: [`packages/browser/tool-browser-ego/src/index.ts`](../packages/browser/tool-browser-ego/src/index.ts)
+
+The default Web and desktop browser tools use session-scoped ego-lite pages. The model sees only the Host safe subset under browser_* names; every call checks session sandbox and approval, remote workspaces are denied, and an explicit screenshot persists an image attachment.
 
 <a id="coding-tool-computer-use"></a>
 

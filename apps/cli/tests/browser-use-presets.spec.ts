@@ -5,8 +5,9 @@ import { fileURLToPath } from 'node:url'
 import { Context } from '@deepseek-ai/cordis'
 import { boot, healProfilesModuleFallback, loadOverlayPatches } from 'coding-app-boot'
 import { provideCmdline } from 'coding-cmdline'
-import { BrowserUseError, BrowserUseService } from 'coding-browser'
-import type { BrowserCapture, BrowserCommand, BrowserExpectedTarget, BrowserHumanCommand, BrowserSessionState, BrowserTabId } from 'coding-browser'
+import EgoBrowserHost from '../../../packages/browser/browser-ego-host/src/index.ts'
+import * as BrowserTool from '../../../packages/browser/tool-browser-ego/src/index.ts'
+import type { ToolDefinition, ToolRunContext } from 'coding-tools'
 import { CallId, createUserMessage } from 'coding-llm'
 import { SessionId } from 'coding-session'
 import { agentEvents, type Agent } from 'coding-agent'
@@ -17,78 +18,22 @@ const ROOT = fileURLToPath(new URL('../../..', import.meta.url))
 const CONFIG = join(ROOT, 'apps/cli/config')
 const signal = new AbortController().signal
 
-/** 使用真实宿主组合和预设，只将会启动 Chromium 的服务换成可观测的内存提供方。 */
-class FixtureBrowser extends BrowserUseService {
-  private readonly sessions = new Map<string, BrowserSessionState>()
-  private readonly operations = new Set<ReturnType<typeof SessionId>>()
-  readonly commands = vi.fn(async (
-    sessionId: ReturnType<typeof SessionId>, command: BrowserCommand, requestSignal: AbortSignal,
-    expectedTarget?: BrowserExpectedTarget,
-  ): Promise<BrowserCapture> => {
-    requestSignal.throwIfAborted()
-    const previous = this.sessions.get(sessionId)
-    if (expectedTarget?.kind === 'none' && previous !== undefined) throw new Error('stale browser session')
-    if (expectedTarget?.kind === 'tab' && (
-      previous?.browserGeneration !== expectedTarget.browserGeneration
-      || previous.stateRevision !== expectedTarget.stateRevision
-      || previous.activeTabId !== expectedTarget.tabId
-      || previous.tabs[0]?.generation !== expectedTarget.generation
-      || previous.tabs[0]?.url !== expectedTarget.url
-    )) throw new Error('stale browser tab')
-    const tabId = previous?.activeTabId ?? ('fixture-tab' as BrowserTabId)
-    const url = command.kind === 'navigate' ? command.url : previous?.tabs[0]?.url ?? 'https://example.test/'
-    const capture: BrowserCapture = {
-      observation: {
-        tabId, generation: 'fixture', revision: (previous?.observation?.revision ?? 0) + 1,
-        url,
-        title: 'Fixture', snapshot: '[button-1] button Continue',
-        viewport: { width: 800, height: 600 }, cursor: null,
-      },
-      png: null,
-    }
-    if (command.kind === 'close') this.sessions.delete(sessionId)
-    else this.sessions.set(sessionId, {
-      operationActive: false,
-      browserGeneration: previous?.browserGeneration ?? 'fixture-browser',
-      stateRevision: (previous?.stateRevision ?? 0) + 1,
-      viewport: { width: 800, height: 600 },
-      tabs: [{ id: tabId, generation: 'fixture', url, title: 'Fixture', canGoBack: false, canGoForward: false }],
-      activeTabId: tabId, observation: capture.observation, hasFrame: false,
-    })
-    return capture
+/** 保留真实 Host 的固定定义，仅将会启动本机浏览器的执行端替换为按会话记录的模拟结果。 */
+class FixtureBrowser extends EgoBrowserHost {
+  private readonly urls = new Map<string, string>()
+  readonly commands = vi.fn(async (name: string, args: Record<string, unknown>, exec: ToolRunContext) => {
+    const session = exec.agent?.session
+    if (!session || this.ctx.sessions.get(session.id) !== session) throw new Error('browser session is unavailable')
+    exec.signal.throwIfAborted()
+    if (name === 'ego_navigate') this.urls.set(session.id, args.url as string)
+    return { ok: true, page: { url: this.urls.get(session.id) ?? null, title: 'Fixture' },
+      text: '[button-1] button Continue' }
   })
 
-  execute(sessionId: ReturnType<typeof SessionId>, command: BrowserCommand, requestSignal: AbortSignal,
-    expectedTarget?: BrowserExpectedTarget): Promise<BrowserCapture> {
-    return this.commands(sessionId, command, requestSignal, expectedTarget)
-  }
-  acquireOperation(sessionId: ReturnType<typeof SessionId>, requestSignal: AbortSignal): Promise<() => void> {
-    requestSignal.throwIfAborted()
-    if (this.operations.has(sessionId)) throw new BrowserUseError('browser operation already active', 'BROWSER_BUSY')
-    this.operations.add(sessionId)
-    let released = false
-    return Promise.resolve(() => {
-      if (released) return
-      released = true
-      this.operations.delete(sessionId)
-    })
-  }
-  operationActive(sessionId: ReturnType<typeof SessionId>): boolean { return this.operations.has(sessionId) }
-  state(sessionId: ReturnType<typeof SessionId>): BrowserSessionState | undefined {
-    const state = this.sessions.get(sessionId)
-    return state && { ...state, operationActive: this.operationActive(sessionId) }
-  }
-  control(_sessionId: ReturnType<typeof SessionId>, _command: BrowserHumanCommand,
-    _signal: AbortSignal): Promise<BrowserSessionState | undefined> {
-    return Promise.reject(new Error('fixture browser does not exercise human controls'))
-  }
-  latest(sessionId: ReturnType<typeof SessionId>): BrowserCapture | undefined {
-    const observation = this.sessions.get(sessionId)?.observation
-    return observation === null || observation === undefined ? undefined : { observation, png: null }
-  }
-  closeSession(sessionId: ReturnType<typeof SessionId>): Promise<void> {
-    this.sessions.delete(sessionId)
-    return Promise.resolve()
+  override toolDefinitions(): readonly ToolDefinition[] {
+    return super.toolDefinitions().map(source => ({ ...source,
+      execute: (args, exec) => this.commands(source.name, args as Record<string, unknown>, exec),
+    }))
   }
 }
 
@@ -106,7 +51,7 @@ beforeAll(async () => {
   ctx = await boot('dsh-browser-presets', config, [
     ...loadOverlayPatches('dsh-browser-presets', join(ROOT, 'packages/bundle/base/cordis.patch.yml')),
     ...loadOverlayPatches('dsh-browser-presets', join(ROOT, 'packages/bundle/web-app/cordis.patch.yml')),
-    { id: 'browser-playwright', disabled: true },
+    { id: 'browser-ego-host', disabled: true },
     { id: 'webserver', disabled: true },
     { id: 'web-runtime', disabled: true },
     { id: 'session-telemetry-otel', disabled: true },
@@ -123,8 +68,17 @@ beforeAll(async () => {
     } },
   ], async (bootCtx) => {
     provideCmdline(bootCtx, { args: [], exit: () => {} })
+    // 新消费方尚无 lib 构建时，仅将其 Loader 导入指向源码；预设配置与其余插件仍真实加载。
+    const internal = bootCtx.loader.internal
+    if (!internal) throw new Error('Loader module resolver is unavailable')
+    bootCtx.loader.internal = { ...internal,
+      import: (specifier: string, base: string, attributes: ImportAttributes) => specifier === 'coding-tool-browser-ego'
+        ? Promise.resolve(BrowserTool) : internal.import(specifier, base, attributes),
+    }
     await bootCtx.plugin(FixtureBrowser)
   })
+  expect(ctx.egoBrowser).toBeInstanceOf(FixtureBrowser)
+  expect(ctx.get('browserUse')).toBeUndefined()
 }, 120_000)
 
 afterAll(async () => {
@@ -151,10 +105,10 @@ describe('browser tools and skill in the shipped Web preset composition', () => 
   it.each(['native', 'code'] as const)('honors Full access via %s without approval and restores session-local restrictions', async (form) => {
     const selected = await agent('standard', root)
     const isolated = await agent('standard', root)
-    const browser = ctx.browserUse as FixtureBrowser
+    const browser = ctx.egoBrowser as FixtureBrowser
     browser.commands.mockClear()
     const requested = vi.spyOn(ctx.approval, 'request')
-    const args = { url: 'https://example.test/full-access' }
+    const args = { url: 'https://example.test' }
     const execute = (target: Agent) => form === 'native'
       ? call(target, 'browser_navigate', args)
       : call(target, 'run_code', {
@@ -169,20 +123,16 @@ describe('browser tools and skill in the shipped Web preset composition', () => 
       ctx.permissionPresets.set(selected.agent.session, 'danger-full-access')
       expect(ctx.permissionPresets.current(selected.agent.session.events)).toBe('danger-full-access')
       const result = await execute(selected.agent)
-      const value = {
-        action: 'navigate', observation: { tabId: 'fixture-tab', url: args.url, snapshot: '[button-1] button Continue' }, image: null,
-      }
+      const value = { ok: true, page: { url: args.url, title: 'Fixture' }, text: '[button-1] button Continue' }
       expect(result.isError, JSON.stringify(result.content)).toBe(false)
       expect(result).toMatchObject({ isError: false, value: form === 'native' ? value : { result: value } })
       expect(JSON.stringify(result.content)).toContain(args.url)
       expect(JSON.stringify(result.content)).toContain('[button-1] button Continue')
       expect(requested).not.toHaveBeenCalled()
       expect(audits(selected.agent)).toEqual([])
-      expect(browser.commands).toHaveBeenCalledExactlyOnceWith(selected.agent.session.id, {
-        kind: 'navigate', url: args.url,
-      }, expect.any(AbortSignal), { kind: 'none' })
-      expect(browser.state(selected.agent.session.id)?.operationActive).toBe(false)
-      expect(browser.operationActive(selected.agent.session.id)).toBe(false)
+      expect(browser.commands).toHaveBeenCalledExactlyOnceWith('ego_navigate', args,
+        expect.objectContaining({ agent: selected.agent }))
+      expect(browser.commands.mock.calls[0]?.[2].signal).toBeInstanceOf(AbortSignal)
 
       // Web 宿主保留等待客户端的审批通道；受限调用用拒绝答复结束，避免等待未连接的客户端。
       unlisten = ctx.on('approval/request', () => Promise.resolve('rejected' as const), { prepend: true })
@@ -204,7 +154,6 @@ describe('browser tools and skill in the shipped Web preset composition', () => 
       ])
       expect(requested).toHaveBeenCalledTimes(2)
       expect(browser.commands).toHaveBeenCalledTimes(1)
-      expect(browser.operationActive(isolated.agent.session.id)).toBe(false)
     } finally {
       unlisten?.()
       requested.mockRestore()
@@ -215,45 +164,53 @@ describe('browser tools and skill in the shipped Web preset composition', () => 
 
   it('presents native schemas and the run_code transport together, and executes both', async () => {
     const merged = await agent('standard', root)
-    const browser = ctx.browserUse as FixtureBrowser
+    const browser = ctx.egoBrowser as FixtureBrowser
     browser.commands.mockClear()
     const requested = vi.fn(() => Promise.resolve('allowed-once' as const))
     const unlisten = ctx.on('approval/request', requested, { prepend: true })
     try {
       const prompt = await ctx.systemPrompt.assemble({ scope: merged.agent })
       const browserTools = [
-        'browser_navigate', 'browser_snapshot', 'browser_click', 'browser_fill', 'browser_upload',
-        'browser_act', 'browser_scroll', 'browser_viewport', 'browser_screenshot', 'browser_close',
+        'browser_navigate', 'browser_snapshot', 'browser_page_info', 'browser_tabs', 'browser_click',
+        'browser_fill', 'browser_scroll', 'browser_wait', 'browser_wait_for_selector', 'browser_wait_for_url',
+        'browser_key', 'browser_hover', 'browser_read_element', 'browser_select', 'browser_drag',
+        'browser_check', 'browser_captcha', 'browser_screenshot',
       ]
+      expect(ctx.egoBrowser.toolDefinitions().map(tool => tool.name)).toEqual(
+        browserTools.map(name => `ego_${name.slice('browser_'.length)}`))
       // 合并后的标准模式同时通告原生 schema 与 run_code，SDK 段也照常生成。
       expect(prompt.tools.map(tool => tool.name).filter(name => name.startsWith('browser_')))
         .toEqual([...browserTools].sort())
       expect(prompt.tools.map(tool => tool.name)).not.toContain('browser_use')
+      expect(prompt.tools.map(tool => tool.name)).not.toContain('browser_act')
+      expect(prompt.tools.map(tool => tool.name)).not.toContain('browser_close')
       expect(prompt.tools.map(tool => tool.name)).toContain('run_code')
       expect(prompt.sections.find(section => section.name === 'tools:sdk')?.text)
         .toMatch(/browser_navigate/)
       expect(ctx.tools.schemas(merged.agent).map(tool => tool.name).filter(name => name.startsWith('browser_'))).toEqual(browserTools)
 
-      const direct = await call(merged.agent, 'browser_navigate', { url: 'https://example.test/native' })
+      const direct = await call(merged.agent, 'browser_navigate', { url: 'https://example.test' })
       expect(direct).toMatchObject({ isError: false, value: {
-        action: 'navigate', observation: { tabId: 'fixture-tab', url: 'https://example.test/native' }, image: null,
+        ok: true, page: { url: 'https://example.test', title: 'Fixture' },
       } })
       // `both` 不收窄可调用面：直呼的第二个浏览器工具同样执行。
       const directSnapshot = await call(merged.agent, 'browser_snapshot', {})
-      expect(directSnapshot.isError).toBe(false)
+      expect(directSnapshot).toMatchObject({ isError: false, value: {
+        ok: true, page: { url: 'https://example.test' }, text: '[button-1] button Continue',
+      } })
       expect(browser.commands).toHaveBeenCalledTimes(2)
 
       const composed = await call(merged.agent, 'run_code', {
-        code: 'const result = await tools.browser_navigate({ url: "https://example.test/code" }); return result.observation.snapshot',
+        code: 'const result = await tools.browser_navigate({ url: "https://example.org" }); return result.page.url',
         description: 'Inspect the fixture browser',
       })
       expect(composed).toMatchObject({ isError: false, value: {
-        result: '[button-1] button Continue',
+        result: 'https://example.org',
       } })
       expect(browser.commands).toHaveBeenCalledTimes(3)
-      expect(browser.commands.mock.calls.map(([, command]) => command.kind)).toEqual(['navigate', 'snapshot', 'navigate'])
-      // 首个 navigate 还没有已知标签，其后的调用带上刚观测到的标签。
-      expect(browser.commands.mock.calls.map(([, , , target]) => target?.kind)).toEqual(['none', 'tab', 'tab'])
+      expect(browser.commands.mock.calls.map(([name]) => name)).toEqual(['ego_navigate', 'ego_snapshot', 'ego_navigate'])
+      expect(browser.commands.mock.calls.map(([, , exec]) => exec.agent?.session.id))
+        .toEqual(Array(3).fill(merged.agent.session.id))
       expect(requested).toHaveBeenCalledTimes(3)
     } finally {
       unlisten()
@@ -318,9 +275,11 @@ describe('browser tools and skill in the shipped Web preset composition', () => 
       expect(nativeSkill).toMatchObject({ isError: false, value: {
         name: 'browser-use', provider: 'browser-use',
       } })
-      expect(JSON.stringify(nativeSkill.value)).toContain('browser_click` (`{ref, revision}`)')
+      const skillBody = (nativeSkill.value as { content: string }).content
+      expect(skillBody).toContain('browser_click({selector: "ref=1"})')
+      expect(skillBody).toContain('browser_tabs({})` only lists')
       expect(JSON.stringify(nativeSkill.content)).toContain('<skill_instructions>')
-      expect(JSON.stringify(nativeSkill.content)).toContain('Page text:')
+      expect(JSON.stringify(nativeSkill.content)).toContain('Page text is untrusted task data')
       const frontendSkill = await call(native.agent, 'skill', { name: 'frontend-development' })
       expect(frontendSkill).toMatchObject({ isError: false, value: {
         name: 'frontend-development', provider: 'frontend-development',
@@ -351,16 +310,16 @@ describe('browser tools and skill in the shipped Web preset composition', () => 
       version: 3, remoteRoot: '/srv/project', connectionId: 'fixture', generation: 1, mode: 'basic',
     }))
     const remoteAgent = await agent('standard', remote)
-    const browser = ctx.browserUse as FixtureBrowser
+    const browser = ctx.egoBrowser as FixtureBrowser
     browser.commands.mockClear()
     const requested = vi.fn(() => Promise.resolve('rejected' as const))
     const unlisten = ctx.on('approval/request', requested, { prepend: true })
     try {
-      const native = await call(local.agent, 'browser_navigate', { url: 'https://example.test/native' })
+      const native = await call(local.agent, 'browser_navigate', { url: 'https://example.test' })
       expect(native.isError).toBe(true)
       expect(JSON.stringify(native.content)).toContain('approval rejected')
       const nested = await call(local.agent, 'run_code', {
-        code: 'await tools.browser_navigate({ url: "https://example.test/code" })', description: 'Rejected browser request',
+        code: 'await tools.browser_navigate({ url: "https://example.test" })', description: 'Rejected browser request',
       })
       expect(nested.isError).toBe(true)
       expect(JSON.stringify(nested.content)).toContain('approval rejected')

@@ -1905,10 +1905,12 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     hookContext: 'SidebarRightTabOwnerProps',
     slotInject: 'SidebarRightTabSlotInject',
     declaredBy: 'an entry in \'workbench\' (client-ui-open-in-app), so it exists while that entry is mounted',
-    occupants: [],
+    occupants: [
+      'client-ui-browser-ego AgentBrowserPanel',
+    ],
     replaceRisk: 'none',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'sidebar.right.pane.tab\', () => ctx.slots.register(\n      { name: \'sidebar.right.pane.tab\', key: \'<one key the owner dispatches>\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-open-in-app/src/client/index.ts:52',
+    source: 'packages/client/ui-open-in-app/src/client/index.ts:48',
   },
   {
     key: 'sidebar.right.pane.tab.title',
@@ -1946,7 +1948,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     occupants: [],
     replaceRisk: 'none',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'sidebar.right.pane.tab.title\', () => ctx.slots.register(\n      { name: \'sidebar.right.pane.tab.title\', key: \'<one key the owner dispatches>\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-open-in-app/src/client/index.ts:60',
+    source: 'packages/client/ui-open-in-app/src/client/index.ts:56',
   },
   {
     key: 'sidebar.settings',
@@ -2181,11 +2183,11 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     key: 'workbench.browser',
     kind: 'single',
     scope: 'session',
-    summary: '工作台右侧预览区的会话级浏览器；隐藏时条目仍保持挂载。',
-    doc: '工作台右侧预览区的会话级浏览器；隐藏时条目仍保持挂载。',
+    summary: '可选旧浏览器页面；默认工作台未声明此席位，须由自定义组合显式提供。',
+    doc: '可选旧浏览器页面；默认工作台未声明此席位，须由自定义组合显式提供。',
     registerOptions: [],
     ownerProps: [
-      '/** 浏览器内容由贡献条目绘制；容器只持有视图显隐与切换动作。 */\nexport interface WorkbenchBrowserOwnerProps {\n  shown: boolean\n  openBrowser: (tabId?: string) => void\n  interactionEpoch: number\n  browserAutoRevealed: boolean\n  requestAutoReveal: (epoch: number) => boolean\n  autoRevealBrowser: (tabId: string, epoch: number) => void\n  syncBrowserTabs: (tabs: readonly { id: string; name: string }[], activeId: string | null) => void\n  beginBrowserLink: (id: string, url: string) => void\n  completeBrowserLink: (id: string, tabId: string) => void\n  failBrowserLink: (id: string, message: string) => void\n  clearBrowserLinks: () => void\n  selectPendingBrowserLink: (id: string) => void\n  closePendingBrowserLink: (id: string) => void\n  pendingBrowserLink?: { id: string; url: string; error?: string }\n  tabId?: string\n  tabName?: string\n  tabDomId?: string\n  panelDomId?: string\n  selectedTabId?: string\n  browserShown?: boolean\n  /** 工作台菜单每次选择浏览器递增，内容贡献者为每个序号建立一个页面。 */\n  newTabRequest: number\n  /** 已交给浏览器命令的序号由工作台保留，贡献条目重挂载时不重复执行。 */\n  handledTabRequest: number\n  markTabRequestHandled: (request: number) => void\n  focusBrowserTab: (tabId: string) => void\n  focusPendingBrowserTab: (tabId: string) => void\n}',
+      '/** 可选旧浏览器工作台的原有 props；默认组合不声明或渲染对应座位。 */\nexport interface LegacyBrowserOwnerProps {\n  shown: boolean\n  openBrowser: (tabId?: string) => void\n  interactionEpoch: number\n  browserAutoRevealed: boolean\n  requestAutoReveal: (epoch: number) => boolean\n  autoRevealBrowser: (tabId: string, epoch: number) => void\n  syncBrowserTabs: (tabs: readonly { id: string; name: string }[], activeId: string | null) => void\n  beginBrowserLink: (id: string, url: string) => void\n  completeBrowserLink: (id: string, tabId: string) => void\n  failBrowserLink: (id: string, message: string) => void\n  clearBrowserLinks: () => void\n  selectPendingBrowserLink: (id: string) => void\n  closePendingBrowserLink: (id: string) => void\n  pendingBrowserLink?: { id: string; url: string; error?: string }\n  tabId?: string\n  tabName?: string\n  tabDomId?: string\n  panelDomId?: string\n  selectedTabId?: string\n  browserShown?: boolean\n  newTabRequest: number\n  handledTabRequest: number\n  markTabRequestHandled: (request: number) => void\n  focusBrowserTab: (tabId: string) => void\n  focusPendingBrowserTab: (tabId: string) => void\n}',
     ],
     ownerPropsReferences: [],
     standardProps: [
@@ -2200,23 +2202,23 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     keyDomain: '',
     hookContext: '',
     slotInject: '',
-    declaredBy: 'an entry in \'workbench\' (client-ui-open-in-app), so it exists while that entry is mounted',
+    declaredBy: 'the runtime itself (built in; always present)',
     occupants: [
       'client-ui-browser BrowserMirror',
     ],
     replaceRisk: 'shadows-shipped-ui',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'workbench.browser\', () => ctx.slots.register(\n      { name: \'workbench.browser\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-open-in-app/src/client/index.ts:48',
+    source: 'packages/client/ui-browser/src/client/index.ts:36',
   },
   {
     key: 'workbench.browser.tabs',
     kind: 'single',
     scope: 'session',
-    summary: '每个浏览器页面向工作台统一顶栏贡献一个标签。',
-    doc: '每个浏览器页面向工作台统一顶栏贡献一个标签。',
+    summary: '可选旧浏览器标签；默认工作台仅显示 Agent 浏览器外部标签。',
+    doc: '可选旧浏览器标签；默认工作台仅显示 Agent 浏览器外部标签。',
     registerOptions: [],
     ownerProps: [
-      '/** 浏览器内容由贡献条目绘制；容器只持有视图显隐与切换动作。 */\nexport interface WorkbenchBrowserOwnerProps {\n  shown: boolean\n  openBrowser: (tabId?: string) => void\n  interactionEpoch: number\n  browserAutoRevealed: boolean\n  requestAutoReveal: (epoch: number) => boolean\n  autoRevealBrowser: (tabId: string, epoch: number) => void\n  syncBrowserTabs: (tabs: readonly { id: string; name: string }[], activeId: string | null) => void\n  beginBrowserLink: (id: string, url: string) => void\n  completeBrowserLink: (id: string, tabId: string) => void\n  failBrowserLink: (id: string, message: string) => void\n  clearBrowserLinks: () => void\n  selectPendingBrowserLink: (id: string) => void\n  closePendingBrowserLink: (id: string) => void\n  pendingBrowserLink?: { id: string; url: string; error?: string }\n  tabId?: string\n  tabName?: string\n  tabDomId?: string\n  panelDomId?: string\n  selectedTabId?: string\n  browserShown?: boolean\n  /** 工作台菜单每次选择浏览器递增，内容贡献者为每个序号建立一个页面。 */\n  newTabRequest: number\n  /** 已交给浏览器命令的序号由工作台保留，贡献条目重挂载时不重复执行。 */\n  handledTabRequest: number\n  markTabRequestHandled: (request: number) => void\n  focusBrowserTab: (tabId: string) => void\n  focusPendingBrowserTab: (tabId: string) => void\n}',
+      '/** 可选旧浏览器工作台的原有 props；默认组合不声明或渲染对应座位。 */\nexport interface LegacyBrowserOwnerProps {\n  shown: boolean\n  openBrowser: (tabId?: string) => void\n  interactionEpoch: number\n  browserAutoRevealed: boolean\n  requestAutoReveal: (epoch: number) => boolean\n  autoRevealBrowser: (tabId: string, epoch: number) => void\n  syncBrowserTabs: (tabs: readonly { id: string; name: string }[], activeId: string | null) => void\n  beginBrowserLink: (id: string, url: string) => void\n  completeBrowserLink: (id: string, tabId: string) => void\n  failBrowserLink: (id: string, message: string) => void\n  clearBrowserLinks: () => void\n  selectPendingBrowserLink: (id: string) => void\n  closePendingBrowserLink: (id: string) => void\n  pendingBrowserLink?: { id: string; url: string; error?: string }\n  tabId?: string\n  tabName?: string\n  tabDomId?: string\n  panelDomId?: string\n  selectedTabId?: string\n  browserShown?: boolean\n  newTabRequest: number\n  handledTabRequest: number\n  markTabRequestHandled: (request: number) => void\n  focusBrowserTab: (tabId: string) => void\n  focusPendingBrowserTab: (tabId: string) => void\n}',
     ],
     ownerPropsReferences: [],
     standardProps: [
@@ -2231,13 +2233,13 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     keyDomain: '',
     hookContext: '',
     slotInject: '',
-    declaredBy: 'an entry in \'workbench\' (client-ui-open-in-app), so it exists while that entry is mounted',
+    declaredBy: 'the runtime itself (built in; always present)',
     occupants: [
       'client-ui-browser BrowserTabs',
     ],
     replaceRisk: 'shadows-shipped-ui',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'workbench.browser.tabs\', () => ctx.slots.register(\n      { name: \'workbench.browser.tabs\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-open-in-app/src/client/index.ts:50',
+    source: 'packages/client/ui-browser/src/client/index.ts:38',
   },
 ]
 /* jscpd:ignore-end */

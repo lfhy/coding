@@ -68,17 +68,13 @@ async function fixture(): Promise<PackagingPaths> {
   })}\n`)
   for (const [, , name] of remoteArtifacts) await file(join(paths.remoteAgent, name))
   const runtimeModules = join(paths.runtime, 'runtime', 'node_modules')
-  await file(join(runtimeModules, 'playwright', 'package.json'), '{"version":"1.61.1"}\n')
-  await file(join(runtimeModules, 'playwright-core', 'package.json'), '{"version":"1.61.1"}\n')
-  await file(join(runtimeModules, 'coding-browser-playwright', 'lib', 'index.js'))
-  const electronProvider = join(runtimeModules, 'coding-browser-electron')
-  await file(join(electronProvider, 'package.json'), `${JSON.stringify({
-    name: 'coding-browser-electron',
-    exports: { './protocol': { default: './lib/types/protocol.js' } },
-  })}\n`)
-  await file(join(electronProvider, 'lib', 'index.js'))
-  await file(join(electronProvider, 'lib', 'types', 'protocol.js'))
-  await file(join(runtimeModules, 'ws', 'index.js'))
+  const egoProvider = join(runtimeModules, 'coding-browser-ego-host')
+  await file(join(egoProvider, 'package.json'), '{"name":"coding-browser-ego-host"}\n')
+  for (const path of [
+    'lib/index.js', 'runtime/ego-browser/dist/out/index.js', 'runtime/ego-browser/screenshot-clip.mjs',
+    'runtime/ego-linux/bin/ego-browser.mjs', 'runtime/ego-linux/src/chrome.mjs', 'runtime/ego-linux/src/shim.mjs',
+    'bin/ego-cast-worker.mjs', 'LICENSE', 'THIRD_PARTY_NOTICES.upstream.md',
+  ]) await file(join(egoProvider, path))
   return paths
 }
 
@@ -139,10 +135,9 @@ describe('macOS Electron application packaging', () => {
   })
 
   it.each([
-    'import WebSocket from "ws"',
-    'import { parseBridgeFrame } from "coding-browser-electron/protocol"',
+    'import { unused } from "coding-browser-ego-host"',
     'import "./unpacked-chunk.js"',
-    'await import("ws")',
+    'await import("not-bundled-module")',
   ])('rejects an unresolved main-process import before replacing an existing app: %s', async (source) => {
     const paths = await fixture()
     const previous = join(paths.output, 'previous.txt')
@@ -204,14 +199,15 @@ describe('macOS Electron application packaging', () => {
     expect(await readFile(previous, 'utf8')).toBe('preserved')
   })
 
-  it('rejects an unexpected Playwright browser resource without replacing the old app', async () => {
+  it('拒绝缺失的 ego 浏览器宿主入口，不触碰旧包', async () => {
     const paths = await fixture()
     const previous = join(paths.output, 'previous.txt')
     await file(previous, 'preserved')
-    await file(join(paths.electron, 'Electron.app', 'Contents', 'Resources', 'playwright-browsers', 'browser'), 'unexpected')
+    const missing = join(paths.runtime, 'runtime', 'node_modules', 'coding-browser-ego-host', 'lib', 'index.js')
+    await rm(missing)
     const { run, calls } = fakeCommands()
     await expect(packageElectronMacosApp(paths, { run, platform: 'darwin', arch: 'arm64' }))
-      .rejects.toThrow('unexpected Playwright browser resource')
+      .rejects.toThrow(missing)
     expect(calls.some(([command]) => command === process.execPath)).toBe(false)
     expect(await readFile(previous, 'utf8')).toBe('preserved')
   })
@@ -253,10 +249,17 @@ describe('macOS Electron application packaging', () => {
     expect(listPackage(archive, { isPack: false })).toContain('/lib/preload.cjs')
     for (const item of ['coding-host', 'coding-electron-helper', 'metadata.json',
       'runtime/node_modules/coding/lib/bin.js',
-      'runtime/node_modules/coding-browser-electron/lib/index.js',
-      'runtime/node_modules/coding-browser-electron/lib/types/protocol.js',
-      'runtime/node_modules/ws/index.js', 'runtime/node_modules/playwright/package.json',
-      'runtime/node_modules/playwright-core/package.json', 'remote-agent/manifest.json', 'CodingIcon.png']) {
+      'runtime/node_modules/coding-browser-ego-host/package.json',
+      'runtime/node_modules/coding-browser-ego-host/lib/index.js',
+      'runtime/node_modules/coding-browser-ego-host/runtime/ego-browser/dist/out/index.js',
+      'runtime/node_modules/coding-browser-ego-host/runtime/ego-browser/screenshot-clip.mjs',
+      'runtime/node_modules/coding-browser-ego-host/runtime/ego-linux/bin/ego-browser.mjs',
+      'runtime/node_modules/coding-browser-ego-host/runtime/ego-linux/src/chrome.mjs',
+      'runtime/node_modules/coding-browser-ego-host/runtime/ego-linux/src/shim.mjs',
+      'runtime/node_modules/coding-browser-ego-host/bin/ego-cast-worker.mjs',
+      'runtime/node_modules/coding-browser-ego-host/LICENSE',
+      'runtime/node_modules/coding-browser-ego-host/THIRD_PARTY_NOTICES.upstream.md',
+      'remote-agent/manifest.json', 'CodingIcon.png']) {
       expect((await stat(join(resources, item))).isFile()).toBe(true)
     }
     expect(await readFile(join(resources, 'CodingIcon.png'), 'utf8'))
@@ -267,8 +270,9 @@ describe('macOS Electron application packaging', () => {
     expect(signs.at(-1)?.[1].at(-1)).toContain('.Coding.staging-')
     expect(signs.slice(0, -1).some(([, args]) => args.at(-1)?.includes('Electron Helper.app'))).toBe(true)
     expect(calls.some(([command]) => command === process.execPath)).toBe(false)
-    expect(calls.some(([, args]) => args.some(arg => arg.includes('chrome-headless-shell')))).toBe(false)
-    await expect(stat(join(resources, 'playwright-browsers'))).rejects.toThrow()
+    for (const old of ['coding-browser-electron', 'coding-browser-playwright', 'playwright', 'playwright-core']) {
+      await expect(stat(join(resources, 'runtime', 'node_modules', old))).rejects.toThrow()
+    }
     expect(calls.some(([command, args]) => command === 'codesign' && args.includes('--deep') && args.includes('--verify'))).toBe(true)
     const updateIntegrity = calls.find(([command, args]) => command === '/usr/libexec/PlistBuddy'
       && args[1]?.startsWith('Add :ElectronAsarIntegrity:Resources/app.asar:hash string '))
@@ -294,44 +298,38 @@ describe('macOS Electron application packaging', () => {
     await expect(stat(join(paths.output, '..', '.Coding.previous.app'))).rejects.toThrow()
   })
 
-  it('拒绝版本不匹配或缺失的 Host runtime Playwright JavaScript 包，不触碰旧包', async () => {
+  it.each([
+    'runtime/ego-browser/dist/out/index.js',
+    'runtime/ego-browser/screenshot-clip.mjs',
+    'runtime/ego-linux/bin/ego-browser.mjs',
+    'runtime/ego-linux/src/chrome.mjs',
+    'runtime/ego-linux/src/shim.mjs',
+    'bin/ego-cast-worker.mjs',
+    'LICENSE',
+    'THIRD_PARTY_NOTICES.upstream.md',
+  ])('拒绝缺失的 ego 浏览器生产资源 %s，不触碰旧包', async (resource) => {
     const paths = await fixture()
     await file(join(paths.output, 'previous.txt'), 'preserved')
     const { run, calls } = fakeCommands()
-    const modules = join(paths.runtime, 'runtime', 'node_modules')
-    const packagePath = join(modules, 'playwright', 'package.json')
-    await file(packagePath, '{"version":"1.60.0"}\n')
+    const missing = join(paths.runtime, 'runtime', 'node_modules', 'coding-browser-ego-host', resource)
+    await rm(missing)
     await expect(packageElectronMacosApp(paths, { run, platform: 'darwin', arch: 'arm64' }))
-      .rejects.toThrow('Host runtime Playwright 1.61.1')
-    await file(packagePath, '{"version":"1.61.1"}\n')
-    const corePackage = join(modules, 'playwright-core', 'package.json')
-    await rm(corePackage)
-    await expect(packageElectronMacosApp(paths, { run, platform: 'darwin', arch: 'arm64' }))
-      .rejects.toThrow(corePackage)
+      .rejects.toThrow(missing)
     expect(calls.some(([command]) => command === process.execPath)).toBe(false)
     expect(await readFile(join(paths.output, 'previous.txt'), 'utf8')).toBe('preserved')
   })
 
-  it('拒绝缺失或错误导出的桌面浏览器 Provider 与传输依赖，不触碰旧包', async () => {
+  it('拒绝无效的 ego 浏览器宿主包名，不触碰旧包', async () => {
     const paths = await fixture()
     await file(join(paths.output, 'previous.txt'), 'preserved')
     const { run, calls } = fakeCommands()
     const modules = join(paths.runtime, 'runtime', 'node_modules')
-    const provider = join(modules, 'coding-browser-electron')
-    const required = [join(provider, 'lib', 'index.js'), join(provider, 'lib', 'types', 'protocol.js'),
-      join(modules, 'ws', 'index.js')]
-    for (const path of required) {
-      await rm(path)
-      await expect(packageElectronMacosApp(paths, { run, platform: 'darwin', arch: 'arm64' }))
-        .rejects.toThrow(path)
-      await file(path)
-    }
+    const provider = join(modules, 'coding-browser-ego-host')
     await file(join(provider, 'package.json'), JSON.stringify({
       name: 'coding-browser-electron',
-      exports: { './protocol': { default: './lib/protocol.js' } },
     }))
     await expect(packageElectronMacosApp(paths, { run, platform: 'darwin', arch: 'arm64' }))
-      .rejects.toThrow('invalid Host runtime Electron browser protocol export')
+      .rejects.toThrow('invalid Host runtime ego browser manifest')
     expect(calls.some(([command]) => command === process.execPath)).toBe(false)
     expect(await readFile(join(paths.output, 'previous.txt'), 'utf8')).toBe('preserved')
   })

@@ -1,6 +1,8 @@
 # 浏览器使用
 
-浏览器使用能力由 [`coding-browser`](../../packages/browser/browser/README.md) 定义 `ctx.browserUse`，由 Web/CLI 的 [Playwright 提供方](../../packages/browser/browser-playwright/README.md)或桌面 Host 的 [Electron 提供方](../../packages/browser/browser-electron/README.md)实现，并由[十项浏览器工具](../../packages/browser/tool-browser/README.md)消费。服务按 `SessionId` 隔离浏览器资源与标签页；工具负责调用会话的权限判断、所需审批和模型结果，完全访问的免逐次审批条件见[工具 README](../../packages/browser/tool-browser/README.md)。提供方负责导航输入校验、页面资源及清理，使用 Chromium 原生联网，不过滤目的地、重定向或子资源；两个提供方都只向页面预授予 `clipboard-write`（复制按钮需要），`clipboard-read` 与下载、弹窗等其它权限一律拒绝，因为浏览器与真人共用系统剪贴板。工作台读取 Host 标签页状态；Web/CLI 绘制 Host 操作后捕获的 PNG，桌面端呈现与 Agent 共用的实时 `WebContentsView` guest。预览 API 的入站信任限制由提供方持有，与页面出站联网无关。
+默认浏览器由 [`coding-browser-ego-host`](../../packages/browser/browser-ego-host/README.md) 在 `ctx.egoBrowser` 上提供受限工具定义、按会话隔离的 ego-lite 页面和经 Host 信任检查的实时观察路由；[模型工具消费方](../../packages/browser/tool-browser-ego/README.md)按会话权限与审批策略注册 `browser_*`，右侧[Agent 浏览器面板](../../packages/client/ui-browser-ego/README.md)读取所属会话的画面和页面列表。`ctx.egoBrowser` 不直接向模型注册 `ego_*`；会话空间名从完整 Session id 派生，不信任模型指定的空间。宿主实现与未开放的上游操作以包 README 为准。
+
+以下 `ctx.browserUse` 与其命令／引用类型属于未装配在默认组合中的可选旧服务：[`coding-browser`](../../packages/browser/browser/README.md) 定义接口，Playwright 和 Electron guest 提供方只能在显式自定义组合中使用；其旧 `browser.control` 与截图路由不作为 ego-lite 的后备。下面生成区域仍记录该可选服务的准确 API。
 
 以下跨包类型声明来自 [`packages/browser/browser/src/types.ts`](../../packages/browser/browser/src/types.ts)。服务方法的完整签名与 JSDoc 由下方 Cordis API 区域生成。
 
@@ -219,4 +221,22 @@ abstract closeSession(sessionId: SessionId): Promise<void>
 Types: [SessionId](core.md)
 
 Source: [`packages/browser/browser/src/index.ts:24`](../../packages/browser/browser/src/index.ts)
+
+<a id="ctxegobrowser--egobrowserhost"></a>
+
+### `ctx.egoBrowser` — `EgoBrowserHost`
+
+服务不含动态装配参数；工具权限由调用者自己的审批消费方处理。
+
+```ts cordis-catalog
+/**
+ * 暴露固定安全集合给按 Agent 权限审批的工具消费方；本服务不碰 ctx.tools。
+ * @returns 带执行时会话复核的结构化定义；调用者决定是否、何时注册。
+ */
+toolDefinitions(): readonly ToolDefinition[]
+```
+
+Types: [ToolDefinition](tools.md)
+
+Source: [`packages/browser/browser-ego-host/src/index.ts:57`](../../packages/browser/browser-ego-host/src/index.ts)
 <!-- END GENERATED cordis-surface -->

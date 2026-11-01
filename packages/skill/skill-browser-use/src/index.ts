@@ -21,7 +21,7 @@ const ASSETS_DIR = fileURLToPath(new URL('../assets/', import.meta.url))
 const SKILL_RESOURCE_PATH = internalSkillPath(SKILL_PACKAGE)
 const RESOURCE_BASE = internalSkillResourceBase(SKILL_PACKAGE)
 const INVOCATION = { modelInvocable: true, userInvocable: true } as const
-const DESCRIPTION = 'Use when a task requires reading, reproducing, verifying, or driving a rendered page, including your own app on localhost or a dev server, and any UI check, screenshot, or visual confirmation. Use these tools instead of scripting a headless browser (Playwright, Puppeteer, curl) from bash. Load this skill before the first browser_navigate, browser_snapshot, browser_click, browser_fill, browser_upload, browser_act, browser_scroll, browser_viewport, browser_screenshot, or browser_close call.'
+const DESCRIPTION = 'Use when a task requires reading, reproducing, verifying, or driving a rendered page, including your own app on localhost or a dev server, and any UI check or visual confirmation. Prefer registered browser_* tools over headless-browser scripts or the browser CLI. Load this skill before browser_navigate, browser_snapshot, browser_page_info, browser_tabs, browser_click, browser_fill, browser_scroll, browser_wait, browser_key, browser_read_element, or browser_screenshot.'
 const CANDIDATE: SkillCandidate = {
   name: 'browser-use',
   description: DESCRIPTION,

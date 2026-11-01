@@ -29,11 +29,14 @@ describe('gen-tool-catalog collectToolCatalog', () => {
     const catalog = await collectToolCatalog()
     const names = catalog.flatMap(entry => entry.schemas.map(s => s.name)).sort()
     expect(names).toEqual([
-      'apply_patch', 'ask_user_question', 'bash', 'bash', 'browser_act', 'browser_click', 'browser_close',
-      'browser_fill', 'browser_navigate', 'browser_screenshot', 'browser_scroll', 'browser_snapshot',
-      'browser_upload', 'browser_viewport',
+      'apply_patch', 'ask_user_question', 'bash', 'bash', 'browser_act', 'browser_captcha', 'browser_check',
+      'browser_click', 'browser_click', 'browser_close', 'browser_drag', 'browser_fill', 'browser_fill',
+      'browser_hover', 'browser_key', 'browser_navigate', 'browser_navigate', 'browser_page_info',
+      'browser_read_element', 'browser_screenshot', 'browser_screenshot', 'browser_scroll', 'browser_scroll',
+      'browser_select', 'browser_snapshot', 'browser_snapshot', 'browser_tabs', 'browser_upload',
+      'browser_viewport', 'browser_wait', 'browser_wait_for_selector', 'browser_wait_for_url',
       'computer_click', 'computer_confirm', 'computer_drag', 'computer_list_apps', 'computer_observe', 'computer_perform_action',
-      'computer_press_key', 'computer_scroll', 'computer_set_value', 'computer_type_text', 'computer_wait',
+      'computer_press_key', 'computer_scroll', 'computer_set_value', 'computer_type_text', 'computer_wait', 'context_compact',
       'cordis_define', 'cordis_inspect_list',
       'cordis_inspect_query', 'cordis_inspect_self', 'cordis_run', 'cordis_stop',
       'cordis_undefine', 'create_goal', 'edit', 'exit_plan_mode', 'followup_task', 'followup_task', 'get_goal', 'glob', 'grep',

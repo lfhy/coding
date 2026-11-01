@@ -98,26 +98,28 @@ describe('event relation call-site indexing', () => {
 })
 
 describe('browser capability diagrams', () => {
-  it('shows the service owner, Host provider, and direct model consumer without treating the display client as a provider', () => {
+  it('shows the Host-owned default service and its model consumer alongside the optional legacy seam', () => {
     const capability = readFileSync(resolve(import.meta.dirname, '../docs/capability-seams.md'), 'utf8')
-    expect(capability).toContain('pkg_browser --> svc_browserUse')
-    expect(capability).toContain('pkg_browser_playwright --> svc_browserUse')
-    expect(capability).toContain('svc_browserUse --> pkg_tool_browser')
-    expect(capability).not.toContain('pkg_ui_browser --> svc_browserUse')
-    expect(capability).not.toContain('svc_browserUse --> pkg_ui_browser')
-    expect(capability).toContain('| `ctx.browserUse` | `seam` | [`browser`](../packages/browser/browser) | [`browser-playwright`](../packages/browser/browser-playwright) | [`tool-browser`](../packages/browser/tool-browser) | - |')
+    expect(capability).toContain('pkg_browser_ego_host --> svc_egoBrowser')
+    expect(capability).toContain('svc_egoBrowser --> pkg_tool_browser_ego')
+    expect(capability).not.toContain('svc_egoBrowser --> pkg_ui_browser_ego')
+    expect(capability).toContain('Optional legacy session browser contract')
+    expect(capability).toContain('| `ctx.egoBrowser` | `core` | [`browser-ego-host`](../packages/browser/browser-ego-host) | - | [`tool-browser-ego`](../packages/browser/tool-browser-ego) | - |')
   })
 
-  it('shows the Host browser provider in the shared base composition', () => {
+  it('shows only the ego Host in the shared base composition', () => {
     const composition = readFileSync(resolve(import.meta.dirname, '../apps/cli/composition.md'), 'utf8')
-    expect(composition).toContain('plugin_dsh_base_browser_playwright["browser-playwright<br/>coding-browser-playwright"]')
-    expect(composition).toContain('| `browser-playwright` | `coding-browser-playwright` |')
-    expect(composition).not.toContain('| `tool-browser` | `coding-tool-browser` |')
+    expect(composition).toContain('plugin_dsh_base_browser_ego_host["browser-ego-host<br/>coding-browser-ego-host"]')
+    expect(composition).toContain('| `browser-ego-host` | `coding-browser-ego-host` |')
+    expect(composition).not.toContain('browser-playwright')
+    expect(composition).not.toContain('browser-electron')
+    expect(composition).not.toContain('| `tool-browser` | `coding-tool-browser-ego` |')
   })
 
-  it.each(['standard', 'code'])('mounts the model-facing tool in the %s session preset', (preset) => {
+  it.each(['standard', 'longrun', 'reverse'])('mounts the ego browser tool in the %s session preset', (preset) => {
     const config = readFileSync(resolve(import.meta.dirname, `../apps/cli/config/agent-presets/${preset}/agent.cordis.yml`), 'utf8')
-    expect(config).toMatch(/- id: tool-browser\n  name: 'coding-tool-browser'/)
+    expect(config).toMatch(/- id: tool-browser\n  name: 'coding-tool-browser-ego'/)
     expect(config).not.toContain("name: 'coding-browser-playwright'")
+    expect(config).not.toContain("name: 'coding-browser-electron'")
   })
 })
