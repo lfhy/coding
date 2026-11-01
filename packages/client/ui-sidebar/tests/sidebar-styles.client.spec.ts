@@ -58,11 +58,12 @@ describe('SidebarRoot.module.css', () => {
     expect(declarations('.footArea')?.get('margin-top')).toBe('auto')
   })
 
-  it('moves the four upper controls while the settings seat only fades', () => {
+  it('moves the top entry seats and the region while the footer only fades', () => {
     const animation = 'rail-in 150ms var(--ds-ease-in-out) backwards'
     for (const selector of [
       '.railIn .iconButton',
       '.railIn .newSession',
+      '.railIn .settingsArea',
       '.railIn .regionArea',
     ]) {
       expect(declarations(selector)?.get('animation')).toBe(animation)
@@ -93,15 +94,34 @@ describe('SidebarRoot.module.css', () => {
     expect(declarations('.collapsed .brandActions')?.get('width')).toBe('36px')
   })
 
-  it('gives the New chat entry the capsule geometry and an ellipsis label', () => {
-    expect(declarations('.logoRow')?.get('height')).toBe('46px')
-    expect(declarations('.newSession')?.get('height')).toBe('38px')
+  it('gives the New chat entry the same row geometry as the settings entry', () => {
+    expect(declarations('.logoRow')?.get('height')).toBe('42px')
+    expect(declarations('.newSession')?.get('height')).toBe('42px')
     expect(declarations('.newSession')?.get('flex')).toBe('1')
     expect(declarations('.newSession')?.get('border-radius')).toBe('12px')
+    expect(declarations('.newSession')?.get('border')).toBe('none')
+    expect(declarations('.newSession')?.get('background')).toBe('transparent')
+    expect(declarations('.newSession')?.get('padding')).toBe('0 10px 0 8px')
     expect(declarations('.collapsed .newSession')?.get('flex')).toBe('none')
     expect(declarations('.newSessionLabel')?.get('text-overflow')).toBe('ellipsis')
-    // 图标贴左，文案占满图标右侧的剩余空间并居中。
+    // 图标贴左，文案紧接图标占满剩余空间（按钮默认居中文字，这里显式左对齐）。
     expect(declarations('.newSessionLabel')?.get('flex')).toBe('1')
-    expect(declarations('.newSessionLabel')?.get('text-align')).toBe('center')
+    expect(declarations('.newSessionLabel')?.get('text-align')).toBe('start')
+  })
+
+  it('keeps the settings seat under the New chat entry above the entry divider', () => {
+    expect(declarations('.settingsArea')?.get('width')).toBe('100%')
+    expect(declarations('.settingsArea')?.get('margin-top')).toBe('2px')
+    expect(declarations('.topDivider')?.get('height')).toBe('1px')
+    expect(declarations('.topDivider')?.get('margin')).toBe('8px 0')
+    expect(declarations('.topDivider')?.get('background')).toBe('var(--dsw-alias-border-l2)')
+    expect(declarations('.collapsed .topDivider')?.get('width')).toBe('30px')
+    expect(declarations('.collapsed .topDivider')?.get('margin')).toBe('10px auto')
+    // 顶部入口区与浏览区域之间是分隔线，设置座位不再出现在页脚里。
+    const settings = root.indexOf("renderSlot('sidebar.settings'")
+    expect(settings).toBeGreaterThan(root.indexOf('css.logoRow'))
+    expect(settings).toBeLessThan(root.indexOf('css.topDivider'))
+    expect(settings).toBeLessThan(root.indexOf("renderSlot('sidebar.workspaces'"))
+    expect(root.slice(root.indexOf('css.footArea'))).not.toContain("renderSlot('sidebar.settings'")
   })
 })

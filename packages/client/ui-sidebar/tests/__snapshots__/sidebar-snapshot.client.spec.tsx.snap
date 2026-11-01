@@ -40,6 +40,18 @@ exports[`sidebar shell snapshots > renders only the New chat entry in the welcom
       </button>
     </div>
     <div
+      class="settingsArea"
+    >
+      <div
+        data-slot="sidebar.settings"
+        style="display: contents;"
+      />
+    </div>
+    <div
+      aria-hidden="true"
+      class="topDivider"
+    />
+    <div
       class="regionArea"
     >
       <div
@@ -55,14 +67,6 @@ exports[`sidebar shell snapshots > renders only the New chat entry in the welcom
       >
         <div
           data-slot="sidebar.footer.action"
-          style="display: contents;"
-        />
-      </div>
-      <div
-        class="settingsArea"
-      >
-        <div
-          data-slot="sidebar.settings"
           style="display: contents;"
         />
       </div>
@@ -138,6 +142,18 @@ exports[`sidebar shell snapshots > renders the collapsed rail after the crossfad
       </button>
     </div>
     <div
+      class="settingsArea"
+    >
+      <div
+        data-slot="sidebar.settings"
+        style="display: contents;"
+      />
+    </div>
+    <div
+      aria-hidden="true"
+      class="topDivider"
+    />
+    <div
       class="regionArea"
     >
       <div
@@ -156,20 +172,12 @@ exports[`sidebar shell snapshots > renders the collapsed rail after the crossfad
           style="display: contents;"
         />
       </div>
-      <div
-        class="settingsArea"
-      >
-        <div
-          data-slot="sidebar.settings"
-          style="display: contents;"
-        />
-      </div>
     </div>
   </div>
 </div>
 `;
 
-exports[`sidebar shell snapshots > renders the expanded column (New chat capsule, empty holes) 1`] = `
+exports[`sidebar shell snapshots > renders the expanded column (New chat row, empty holes) 1`] = `
 <div
   data-slot="sidebar"
   style="display: contents;"
@@ -217,6 +225,18 @@ exports[`sidebar shell snapshots > renders the expanded column (New chat capsule
       </div>
     </div>
     <div
+      class="settingsArea"
+    >
+      <div
+        data-slot="sidebar.settings"
+        style="display: contents;"
+      />
+    </div>
+    <div
+      aria-hidden="true"
+      class="topDivider"
+    />
+    <div
       class="regionArea"
     >
       <div
@@ -232,14 +252,6 @@ exports[`sidebar shell snapshots > renders the expanded column (New chat capsule
       >
         <div
           data-slot="sidebar.footer.action"
-          style="display: contents;"
-        />
-      </div>
-      <div
-        class="settingsArea"
-      >
-        <div
-          data-slot="sidebar.settings"
           style="display: contents;"
         />
       </div>
@@ -296,6 +308,18 @@ exports[`sidebar shell snapshots > renders the expanded column in the default lo
       </div>
     </div>
     <div
+      class="settingsArea"
+    >
+      <div
+        data-slot="sidebar.settings"
+        style="display: contents;"
+      />
+    </div>
+    <div
+      aria-hidden="true"
+      class="topDivider"
+    />
+    <div
       class="regionArea"
     >
       <div
@@ -311,14 +335,6 @@ exports[`sidebar shell snapshots > renders the expanded column in the default lo
       >
         <div
           data-slot="sidebar.footer.action"
-          style="display: contents;"
-        />
-      </div>
-      <div
-        class="settingsArea"
-      >
-        <div
-          data-slot="sidebar.settings"
           style="display: contents;"
         />
       </div>

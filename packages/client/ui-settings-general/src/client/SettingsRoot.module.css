@@ -1,14 +1,14 @@
 /* 侧栏触发器与设置页导航共用现有排版与交互 token；模型分区自绘内容列。 */
 
-/* 触发器与侧栏底部其他行共用 42px 高度。 */
+/* 触发器与侧栏顶部入口区的新对话行共用 42px 行高与左右内边距，两者悬停填充对齐。 */
 .trigger {
   flex: none;
   display: flex;
   align-items: center;
   gap: 8px;
-  width: calc(100% + 4px);
+  width: 100%;
   height: 42px;
-  margin: 4px -2px 0;
+  margin: 0;
   padding: 0 10px 0 8px;
   box-sizing: border-box;
   border: none;
@@ -26,11 +26,11 @@
   background: var(--dsw-alias-interactive-bg-hover);
 }
 
-/* 折叠侧栏时使用与相邻控件一致的圆形点击区域。 */
+/* 折叠侧栏时使用与相邻 rail 控件一致的圆形点击区域；间距由侧栏的座位决定。 */
 .trigger.rail {
   width: 36px;
   height: 36px;
-  margin: 8px 0 0;
+  margin: 0;
   justify-content: center;
   gap: 0;
   padding: 0;

@@ -51,7 +51,7 @@ describe('sidebar shell snapshots', () => {
     await runtime.dispose()
   })
 
-  it('renders the expanded column (New chat capsule, empty holes)', async () => {
+  it('renders the expanded column (New chat row, empty holes)', async () => {
     const { runtime } = await bench({ locale: 'en' })
     const slot = runtime.renderSlot('sidebar', { collapsed: false, width: 300, welcomeActionsVisible: false })
     expect(slot.view.getAllByRole('button', { name: 'New chat' })).toHaveLength(1)

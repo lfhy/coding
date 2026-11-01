@@ -1825,14 +1825,14 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     occupants: [],
     replaceRisk: 'none',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'sidebar.brand.action\', () => ctx.slots.register(\n      { name: \'sidebar.brand.action\', id: \'my-entry\', order: 100, label: \'My entry\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-sidebar/src/client/contract/slots.ts:22',
+    source: 'packages/client/ui-sidebar/src/client/contract/slots.ts:23',
   },
   {
     key: 'sidebar.footer.action',
     kind: 'list',
     scope: 'root',
-    summary: 'Optional actions beside Settings at the sidebar foot.',
-    doc: 'Optional actions beside Settings at the sidebar foot. Declared by this\npackage\'s \'sidebar\' entry; each action receives only the column state.',
+    summary: 'Optional actions pinned to the sidebar foot, below the browsing region.',
+    doc: 'Optional actions pinned to the sidebar foot, below the browsing region.\nDeclared by this package\'s \'sidebar\' entry; each action receives only\nthe column state.',
     registerOptions: [
       {
         name: 'id',
@@ -1870,7 +1870,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'none',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'sidebar.footer.action\', () => ctx.slots.register(\n      { name: \'sidebar.footer.action\', id: \'my-entry\', order: 100, label: \'My entry\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-sidebar/src/client/contract/slots.ts:40',
+    source: 'packages/client/ui-sidebar/src/client/contract/slots.ts:44',
   },
   {
     key: 'sidebar.right.pane.tab',
@@ -1952,8 +1952,8 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     key: 'sidebar.settings',
     kind: 'single',
     scope: 'root',
-    summary: 'The settings seat at the sidebar foot.',
-    doc: 'The settings seat at the sidebar foot. Declared by this package\'s\n\'sidebar\' entry; ui-settings registers its trigger row + modal panel.\nThe sidebar passes only its column state — it holds no settings state.',
+    summary: 'The settings seat directly under the New chat entry, above the divider that closes the sidebar\'s top entry block.',
+    doc: 'The settings seat directly under the New chat entry, above the divider\nthat closes the sidebar\'s top entry block. Declared by this package\'s\n\'sidebar\' entry; ui-settings registers its trigger row + modal panel.\nThe trigger shares the New chat row\'s geometry, and the sidebar passes\nonly its column state — it holds no settings state.',
     registerOptions: [],
     ownerProps: [
       '/**\n * 设置座位的 owner share：占用者的触发行要按它渲染（宽行 vs rail 图标）。\n */\nexport interface SidebarSettingsOwnerProps {\n  /** 侧边栏是否渲染宽内容（false = 56px rail）。 */\n  wide: boolean\n}',
@@ -1972,7 +1972,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'shadows-shipped-ui',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'sidebar.settings\', () => ctx.slots.register(\n      { name: \'sidebar.settings\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-sidebar/src/client/contract/slots.ts:35',
+    source: 'packages/client/ui-sidebar/src/client/contract/slots.ts:38',
   },
   {
     key: 'sidebar.workspaces',
@@ -1998,7 +1998,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'shadows-shipped-ui',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'sidebar.workspaces\', () => ctx.slots.register(\n      { name: \'sidebar.workspaces\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-sidebar/src/client/contract/slots.ts:29',
+    source: 'packages/client/ui-sidebar/src/client/contract/slots.ts:30',
   },
   {
     key: 'sidebar.workspaces.directoryFlow',

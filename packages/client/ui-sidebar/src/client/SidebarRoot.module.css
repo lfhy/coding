@@ -64,11 +64,12 @@
   from { opacity: 0; }
 }
 
-/* rail 落定（150ms）时，上方的三个控件从原 rail 右边缘进入，用掉 AppFrame 轨道过渡
-   剩下的 150ms。固定在底部的设置座位只共用透明度时序，水平位置不动。只有实时折叠才带
+/* rail 落定（150ms）时，顶部入口区与浏览区域的控件从原 rail 右边缘进入，用掉 AppFrame
+   轨道过渡剩下的 150ms。页脚动作只共用透明度时序，水平位置不动。只有实时折叠才带
    .railIn；冷启动即为收起状态时静态渲染。 */
 .railIn .iconButton,
 .railIn .newSession,
+.railIn .settingsArea,
 .railIn .regionArea {
   animation: rail-in 150ms var(--ds-ease-in-out) backwards;
 }
@@ -94,9 +95,9 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  height: 46px;
-  padding: 4px 0;
-  margin-bottom: 8px;
+  height: 42px;
+  padding: 0;
+  margin: 6px 0 0;
   box-sizing: border-box;
   overflow: hidden;
   -webkit-app-region: no-drag;
@@ -168,32 +169,38 @@
   color: var(--dsw-alias-label-primary);
 }
 
-/* 新对话入口：38px 高、12px 圆角的胶囊（figma 133:7634 几何），展开时占据新对话行；
-   收起后是 rail 中的一个纯图标控件。 */
+/* 新对话入口与设置入口是同一种行控件：42px 高、12px 圆角、透明底、悬停填充，
+   图标在前、文案随后。展开时占满新对话行，收起后是 rail 中的一个纯图标控件。 */
 .newSession {
   flex: 1;
   min-width: 0;
   display: flex;
   align-items: center;
   justify-content: flex-start;
-  gap: 6px;
-  height: 38px;
-  padding: 8px 12px;
+  gap: 8px;
+  height: 42px;
+  padding: 0 10px 0 8px;
   margin: 0;
   box-sizing: border-box;
-  border: 1px solid var(--dsw-alias-border-l2);
+  border: none;
   border-radius: 12px;
-  background: var(--dsw-alias-button-elevated-fill);
+  background: transparent;
   color: var(--dsw-alias-label-primary);
+  font-family: inherit;
   font-size: 14px;
-  font-weight: 500;
   line-height: 22px;
   cursor: pointer;
   overflow: hidden;
 }
 
 .newSession:hover {
-  background: var(--dsw-alias-button-floating-hover);
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+/* 焦点环画在行内侧：新对话行裁切溢出，向外偏移的轮廓会被切掉。 */
+.newSession:focus-visible {
+  outline: 2px solid var(--dsw-alias-state-business-primary);
+  outline-offset: -2px;
 }
 
 .collapsed .newSession {
@@ -205,22 +212,37 @@
   padding: 0;
   margin: 0;
   gap: 0;
-  border-color: transparent;
-  background: transparent;
+  border-radius: 50%;
 }
 
 .collapsed .newSession:hover {
   background: var(--dsw-alias-interactive-bg-hover);
 }
 
-/* 图标贴在胶囊左端，「新对话」文案占满图标右侧的剩余空间并居中。 */
+/* 文案紧接图标并占满剩余空间；按钮默认居中文字，这里明确左对齐以对齐设置行。 */
 .newSessionLabel {
   flex: 1;
   min-width: 0;
   overflow: hidden;
   white-space: nowrap;
-  text-align: center;
+  text-align: start;
   text-overflow: ellipsis;
+}
+
+/* 设置座位：紧贴新对话入口下方，两者共用同一行几何（触发行由 ui-settings 渲染）。 */
+.settingsArea {
+  flex: none;
+  min-width: 0;
+  width: 100%;
+  margin-top: 2px;
+}
+
+/* 顶部入口区与工作区列表之间的分隔线；rail 中缩成居中短线。 */
+.topDivider {
+  flex: none;
+  height: 1px;
+  margin: 8px 0;
+  background: var(--dsw-alias-border-l2);
 }
 
 /* Region seat: always mounted so the foot never moves. Its trailing margin
@@ -243,8 +265,7 @@
   padding-left: 0;
 }
 
-/* Footer seats: additive actions stack above Settings. Each occupant owns its
-   button geometry and hover chrome. */
+/* 页脚只承载可选动作：占用者自己持有按钮几何与悬停样式。 */
 .footArea {
   flex: none;
   display: flex;
@@ -252,14 +273,10 @@
   margin-top: auto;
 }
 
-.settingsArea,
 .footerActions {
   flex: none;
   min-width: 0;
   width: 100%;
-}
-
-.footerActions {
   display: flex;
 }
 
@@ -274,11 +291,18 @@
   width: auto;
 }
 
+/* rail 中顶部入口区与图标列之间的分隔线缩成一段居中短线。 */
+.collapsed .topDivider {
+  width: 30px;
+  margin: 10px auto;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .wide,
   .fading > *,
   .railIn .iconButton,
   .railIn .newSession,
+  .railIn .settingsArea,
   .railIn .footArea,
   .railIn .regionArea {
     transition: none;

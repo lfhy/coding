@@ -1,8 +1,9 @@
 /**
  * 侧边栏 slot 契约：布局持有的 `sidebar` slot 对注册者暴露的 props 组合，以及壳层声明的洞。
- * 壳层持有栏几何（折叠状态机、顶部避让行、新建对话行）；标题与列表底部之间属于
- * `sidebar.workspaces` 注册者（ui-workspace），底部属于 `sidebar.settings` 注册者
- * （ui-settings），其后是 `sidebar.footer.action` 的可选页脚动作。
+ * 壳层持有栏几何（折叠状态机、顶部避让行、新对话行）；新对话行下方的顶部入口区属于
+ * `sidebar.settings` 注册者（ui-settings），它与工作区列表之间由壳层的分隔线隔开；
+ * 标题与列表之间属于 `sidebar.workspaces` 注册者（ui-workspace），底部是
+ * `sidebar.footer.action` 的可选页脚动作。
  */
 import type { PropsLocale, PropsRenderSlots, PropsRuntime } from 'coding-client-ui-slots'
 // Type-only: pulls ui-layout's SlotMap merge (the 'sidebar' entry) into every
@@ -28,14 +29,17 @@ declare module 'coding-client-ui-slots' {
      */
     'sidebar.workspaces': { kind: 'single'; scope: 'root'; owner: SidebarSectionOwnerProps }
     /**
-     * The settings seat at the sidebar foot. Declared by this package's
+     * The settings seat directly under the New chat entry, above the divider
+     * that closes the sidebar's top entry block. Declared by this package's
      * 'sidebar' entry; ui-settings registers its trigger row + modal panel.
-     * The sidebar passes only its column state — it holds no settings state.
+     * The trigger shares the New chat row's geometry, and the sidebar passes
+     * only its column state — it holds no settings state.
      */
     'sidebar.settings': { kind: 'single'; scope: 'root'; owner: SidebarSettingsOwnerProps }
     /**
-     * Optional actions beside Settings at the sidebar foot. Declared by this
-     * package's 'sidebar' entry; each action receives only the column state.
+     * Optional actions pinned to the sidebar foot, below the browsing region.
+     * Declared by this package's 'sidebar' entry; each action receives only
+     * the column state.
      */
     'sidebar.footer.action': { kind: 'list'; scope: 'root'; owner: SidebarFooterActionOwnerProps }
   }

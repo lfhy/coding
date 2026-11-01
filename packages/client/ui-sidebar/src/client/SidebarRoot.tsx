@@ -1,8 +1,8 @@
 /**
- * 侧边栏壳负责折叠动画、新对话行、交通灯避让和滚动条可见性。展开时第一行是新对话入口，
+ * 侧边栏壳负责折叠动画、顶部入口区（新对话、设置）、交通灯避让和滚动条可见性。宽侧栏的
  * 收起按钮由浏览区域的标题行渲染（壳层通过 owner share 交出动作）；收起的 56px rail 里
- * 新对话图标与展开按钮都排在这一行。折叠动画冻结宽内容，等淡出后再切换到 rail；浏览区域
- * 与页脚仍由各自 slot 占用者绘制。
+ * 新对话图标与展开按钮都排在新对话行。折叠动画冻结宽内容，等淡出后再切换到 rail；浏览
+ * 区域与页脚仍由各自 slot 占用者绘制。
  */
 import { useEffect, useRef, useState } from 'react'
 import clsx from 'clsx'
@@ -141,6 +141,15 @@ export function SidebarRoot({
         )}
       </div>
 
+      {/* 设置入口从页脚移到新对话下方：两者是同一种行控件，共用同一组悬停与圆角几何。
+          rail 中它同样排在这一块，因此折叠前后不需要换渲染位置。 */}
+      <div className={css.settingsArea}>
+        {renderSlot('sidebar.settings', { wide })}
+      </div>
+
+      {/* 顶部入口与下方工作区列表之间的分隔线；rail 中缩成一段短线。 */}
+      <div className={css.topDivider} aria-hidden="true" />
+
       {/* 浏览区域在两种状态下都填满控件与页脚之间的空间，rail 的图标列走同一个 slot。 */}
       <div className={css.regionArea}>
         {renderSlot('sidebar.workspaces', {
@@ -151,13 +160,10 @@ export function SidebarRoot({
         })}
       </div>
 
-      {/* 页脚动作在两种侧栏宽度下都堆叠在设置之上。 */}
+      {/* 页脚只剩可选动作；设置入口已经在顶部入口区。 */}
       <div className={css.footArea}>
         <div className={css.footerActions}>
           {renderSlot('sidebar.footer.action', { wide })}
-        </div>
-        <div className={css.settingsArea}>
-          {renderSlot('sidebar.settings', { wide })}
         </div>
       </div>
     </div>

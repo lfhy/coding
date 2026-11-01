@@ -26,9 +26,13 @@ function declarations(selector: string, source = css): Map<string, string> | und
 }
 
 describe('SettingsRoot.module.css', () => {
-  it('keeps the settings trigger within the sidebar', () => {
-    expect(declarations('.trigger')?.get('margin')).toBe('4px -2px 0')
-    expect(declarations('.trigger.rail')?.get('margin')).toBe('8px 0 0')
+  it('keeps the settings trigger on the sidebar top entry rows', () => {
+    // 触发行与侧栏顶部的新对话行共用行高、内边距与整行宽度，间距由侧栏座位给出。
+    expect(declarations('.trigger')?.get('margin')).toBe('0')
+    expect(declarations('.trigger')?.get('width')).toBe('100%')
+    expect(declarations('.trigger')?.get('height')).toBe('42px')
+    expect(declarations('.trigger.rail')?.get('margin')).toBe('0')
+    expect(declarations('.trigger.rail')?.get('width')).toBe('36px')
   })
 
   it('occupies the full viewport without a mask or floating modal frame', () => {
