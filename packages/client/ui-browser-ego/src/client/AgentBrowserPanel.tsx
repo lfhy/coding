@@ -83,13 +83,15 @@ export function AgentBrowserPanel({
     && image.current.naturalWidth > 0 && image.current.naturalHeight > 0
     && (selected.viewportW === null || selected.viewportW === frame.width)
     && (selected.viewportH === null || selected.viewportH === frame.height)
-  const textReady = imageReady && clickTarget?.targetId === selected.targetId
-    && clickTarget.timestamp === frame.ts && text.length > 0 && text.length <= 2000
   const videoMime = view.video.available ? view.video.mime : null
   const videoTarget = selected?.targetId ?? null
   // 只有用户选择视频后端、Host 报告 fMP4 就绪且上一次播放没有失败时才用 MSE。
   const videoMode = shown && settings.backend === 'ffmpeg' && videoMime !== null && !videoFailed
     && view.phase === 'ready' && !view.relayOff && videoTarget !== null
+  const textReady = shown && view.phase === 'ready' && !view.relayOff && selected !== undefined
+    && clickTarget?.targetId === selected.targetId
+    && (videoMode || (imageReady && clickTarget.timestamp === frame.ts))
+    && text.length > 0 && text.length <= 2000
   const notify = (key: Notice['key']) => {
     setNotice(previous => ({ id: (previous?.id ?? 0) + 1, key }))
   }
@@ -110,35 +112,42 @@ export function AgentBrowserPanel({
 
   const warn = () => { notify('inputFailed') }
   const point = (event: MouseEvent<HTMLButtonElement> | WheelEvent<HTMLButtonElement>) => {
-    const node = image.current
-    if (!imageReady || node === null) return null
-    const rect = node.getBoundingClientRect()
-    return pointOnFrame(event.clientX, event.clientY, rect,
-      { width: node.naturalWidth, height: node.naturalHeight },
-      { width: frame.width, height: frame.height })
+    const node = videoMode ? video.current : image.current
+    const viewportW = frame?.width ?? selected?.viewportW ?? null
+    const viewportH = frame?.height ?? selected?.viewportH ?? null
+    if (node === null || viewportW === null || viewportH === null) return null
+    const natural = videoMode
+      ? { width: (node as HTMLVideoElement).videoWidth, height: (node as HTMLVideoElement).videoHeight }
+      : { width: (node as HTMLImageElement).naturalWidth, height: (node as HTMLImageElement).naturalHeight }
+    if (natural.width <= 0 || natural.height <= 0) return null
+    if (!videoMode && !imageReady) return null
+    return pointOnFrame(event.clientX, event.clientY, node.getBoundingClientRect(),
+      natural, { width: viewportW, height: viewportH })
   }
   async function click(event: MouseEvent<HTMLButtonElement>): Promise<void> {
     const current = point(event)
-    if (!current || frame === null) return
-    const targetId = frame.targetId
+    const targetId = frame?.targetId ?? selected?.targetId
+    if (!current || targetId === undefined) return
     const down = await send(targetId, { type: 'mousePressed', ...current, button: 'left', buttons: 1, clickCount: 1 })
     // 页面切换时旧目标的释放可能被拒；只将成功的完整点击作为文字输入定位。
     const up = down && await send(targetId, { type: 'mouseReleased', ...current, button: 'left', buttons: 0, clickCount: 1 })
     if (!down || !up) { setClickTarget(null); warn(); return }
-    setClickTarget({ targetId, timestamp: frame.ts })
+    setClickTarget({ targetId, timestamp: videoMode ? Date.now() : frame?.ts ?? 0 })
   }
   async function wheel(event: WheelEvent<HTMLButtonElement>): Promise<void> {
     if (event.deltaY === 0) return
     const current = point(event)
-    if (!current || frame === null) return
+    const targetId = frame?.targetId ?? selected?.targetId
+    if (!current || targetId === undefined) return
     event.preventDefault()
     const deltaY = Math.max(-2000, Math.min(2000, Math.round(event.deltaY)))
-    if (!await send(frame.targetId, { type: 'mouseWheel', ...current, deltaX: 0, deltaY })) warn()
+    if (!await send(targetId, { type: 'mouseWheel', ...current, deltaX: 0, deltaY })) warn()
   }
   async function typeAtPoint(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault()
-    if (!textReady) return
-    if (await send(frame.targetId, { type: 'insertText', text })) setText('')
+    const targetId = frame?.targetId ?? selected?.targetId
+    if (!textReady || targetId === undefined) return
+    if (await send(targetId, { type: 'insertText', text })) setText('')
     else warn()
   }
   async function closePage(targetId: string): Promise<void> {
@@ -201,8 +210,12 @@ export function AgentBrowserPanel({
       {view.phase === 'ready' && view.pages.length > 0 && (view.relayOff
         ? <p className={css.center}>{t('relayOff')}</p>
         : videoMode
-          ? <video ref={video} className={css.video} muted autoPlay playsInline
-            aria-label={t('videoPreview')} />
+          ? <button type="button" className={css.frameAction} disabled={view.pending}
+            aria-label={t('videoPreview')} title={t('preview')}
+            onClick={(event) => { void click(event) }} onWheel={(event) => { void wheel(event) }}>
+            <video ref={video} className={css.video} muted autoPlay playsInline
+              aria-label={t('videoPreview')} />
+          </button>
           : frame === null ? <p className={css.center}>{t('noFrame')}</p>
             : <button type="button" className={css.frameAction} disabled={view.pending}
               aria-label={t('preview')} title={t('preview')}

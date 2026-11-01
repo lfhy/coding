@@ -225,6 +225,28 @@ describe('会话画面与人工输入', () => {
     expect(controller.view.getSnapshot().video).toEqual({ available: false, mime: null })
   })
 
+  it('视频后端没有 JPEG 帧时仍按页面视口发送点击与滚动', async () => {
+    const mime = 'video/mp4; codecs="avc1.42E01E"'
+    const fetcher = vi.fn(async (url: string) => {
+      if (url === '/api/ego/video/status') return Response.json({ ok: true, backend: 'ffmpeg', mime })
+      if (url.startsWith('/api/ego/frame?')) return new Response(null, { status: 404 })
+      if (url === '/api/ego/input') return Response.json({ ok: true })
+      return overview(url) ?? Response.json({ ok: true, spaces: [first, second] })
+    })
+    const { controller } = fixture(fetcher)
+    controller.show(true)
+    await vi.waitFor(() => { expect(controller.view.getSnapshot().video.available).toBe(true) })
+    expect(controller.view.getSnapshot().frame).toBeNull()
+    expect(await controller.send('first', { type: 'mousePressed', x: 12, y: 15, button: 'left', buttons: 1, clickCount: 1 })).toBe(true)
+    expect(await controller.send('first', { type: 'mouseWheel', x: 12, y: 15, deltaX: 0, deltaY: 120 })).toBe(true)
+    expect(fetcher).toHaveBeenCalledWith('/api/ego/input', expect.objectContaining({
+      body: JSON.stringify({ sessionId: 'session-one', targetId: 'first', type: 'mousePressed',
+        x: 12, y: 15, button: 'left', buttons: 1, clickCount: 1 }),
+    }))
+    expect(await controller.send('first', { type: 'mousePressed', x: 400, y: 15, button: 'left', buttons: 1, clickCount: 1 })).toBe(false)
+    controller.show(false)
+  })
+
   it('视频状态不可用时保持不可用投影，单帧画面不受影响', async () => {
     const { controller, streams } = fixture(vi.fn(async (url: string) => {
       if (url === '/api/ego/video/status') return new Response(null, { status: 503 })

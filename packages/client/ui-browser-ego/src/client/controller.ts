@@ -238,10 +238,15 @@ export class BrowserEgoController {
     | { type: 'insertText'; text: string }): Promise<boolean> {
     const current = this.view.getSnapshot()
     if (!this.shown || !validId(targetId) || current.phase !== 'ready'
-      || current.selectedId !== targetId || current.frame?.targetId !== targetId
-      || current.pending) return false
+      || current.selectedId !== targetId || current.pending) return false
+    const selected = current.pages.find(page => page.targetId === targetId)
+    // 视频后端没有 JPEG 帧；操作边界来自该页面自己的视口尺寸。
+    const frame = current.frame?.targetId === targetId ? current.frame : null
+    const width = frame?.width ?? (current.video.available ? selected?.viewportW ?? null : null)
+    const height = frame?.height ?? (current.video.available ? selected?.viewportH ?? null : null)
+    if (width === null || height === null || width <= 0 || height <= 0) return false
     if ('x' in input && (!Number.isSafeInteger(input.x) || !Number.isSafeInteger(input.y)
-      || input.x < 0 || input.y < 0 || input.x >= current.frame.width || input.y >= current.frame.height)) return false
+      || input.x < 0 || input.y < 0 || input.x >= width || input.y >= height)) return false
     if (input.type === 'insertText' && (input.text.length < 1 || input.text.length > 2000)) return false
     if (input.type === 'mouseWheel' && (![input.deltaX, input.deltaY].every(Number.isFinite)
       || !Number.isSafeInteger(input.deltaX) || !Number.isSafeInteger(input.deltaY)
