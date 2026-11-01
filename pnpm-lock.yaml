@@ -2245,6 +2245,12 @@ importers:
       coding-client-ui-primitives:
         specifier: workspace:^
         version: link:../ui-primitives
+      coding-client-ui-settings:
+        specifier: workspace:^
+        version: link:../ui-settings
+      coding-client-ui-settings-plugins:
+        specifier: workspace:^
+        version: link:../ui-settings-plugins
       coding-client-ui-slots:
         specifier: workspace:^
         version: link:../ui-slots

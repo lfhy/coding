@@ -78,6 +78,7 @@ beforeAll(async () => {
     await bootCtx.plugin(FixtureBrowser)
   })
   expect(ctx.egoBrowser).toBeInstanceOf(FixtureBrowser)
+  expect(ctx.settings.describe().map(section => String(section.ns))).toContain('ego-browser')
   expect(ctx.get('browserUse')).toBeUndefined()
 }, 120_000)
 

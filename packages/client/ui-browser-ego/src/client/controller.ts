@@ -2,8 +2,8 @@
 import { createSnapshotStore } from 'coding-client-runtime/client'
 import { appendAction, type EgoAction } from './actions.ts'
 import {
-  parseActions, parseActivity, parseFrame, parseSpaces, parseStatus,
-  type EgoFrame, type EgoPage, type EgoStatus, validId,
+  parseActions, parseActivity, parseFrame, parseSpaces, parseStatus, parseVideoStatus,
+  type EgoFrame, type EgoPage, type EgoStatus, type EgoVideo, validId,
 } from './wire.ts'
 
 /** 面板订阅的投影视图，不保存页面 DOM 或模型可见内容。 */
@@ -16,6 +16,7 @@ export interface BrowserEgoView {
   readonly pending: boolean
   readonly closing: string | null
   readonly status: EgoStatus | null
+  readonly video: EgoVideo
   readonly actions: readonly EgoAction[]
 }
 
@@ -24,7 +25,7 @@ type StreamFactory = (url: string) => EventSource
 
 const INITIAL: BrowserEgoView = {
   phase: 'loading', pages: [], selectedId: null, frame: null, relayOff: false, pending: false,
-  closing: null, status: null, actions: [],
+  closing: null, status: null, video: { available: false, mime: null }, actions: [],
 }
 
 function streamUrl(sessionId: string, path: string): string {
@@ -119,13 +120,15 @@ export class BrowserEgoController {
   }
 
   private async loadOverview(request: AbortController, epoch: number): Promise<void> {
-    const [status, actions] = await Promise.all([
+    const [status, actions, video] = await Promise.all([
       this.statusOf(request).catch(() => null),
       this.historyOf(request).catch(() => null),
+      this.videoOf(request).catch(() => null),
     ])
     if (!this.current(epoch, request)) return
     const view = this.view.getSnapshot()
-    this.view.set({ ...view, status, actions: actions ?? view.actions })
+    this.view.set({ ...view, status, actions: actions ?? view.actions,
+      video: video ?? { available: false, mime: null } })
   }
 
   private async statusOf(request: AbortController): Promise<EgoStatus | null> {
@@ -133,6 +136,14 @@ export class BrowserEgoController {
       signal: request.signal, cache: 'no-store',
     })
     return response.ok ? parseStatus(await response.json() as unknown) : null
+  }
+
+  /** 视频后端状态只决定画面形态；不可用时面板继续使用单帧画面。 */
+  private async videoOf(request: AbortController): Promise<EgoVideo> {
+    const response = await this.fetcher('/api/ego/video/status', {
+      signal: request.signal, cache: 'no-store',
+    })
+    return response.ok ? parseVideoStatus(await response.json() as unknown) : { available: false, mime: null }
   }
 
   private async historyOf(request: AbortController): Promise<readonly EgoAction[] | null> {

@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AgentBrowserPanel, type AgentBrowserProps } from '../src/client/AgentBrowserPanel.tsx'
 import type { BrowserEgoView } from '../src/client/controller.ts'
 import type { EgoAction } from '../src/client/actions.ts'
+import type { EgoBrowserCapture } from '../src/client/settings.ts'
 import { en } from '../src/client/locales.ts'
 
 const page = { targetId: 'first', title: 'Example', url: 'https://example.com/', active: true,
@@ -11,22 +12,25 @@ const page = { targetId: 'first', title: 'Example', url: 'https://example.com/',
 const frame = { targetId: 'first', src: 'data:image/jpeg;base64,YWJj', width: 400, height: 300, ts: 1 }
 const ready: BrowserEgoView = { phase: 'ready', pages: [page], selectedId: page.targetId,
   frame, relayOff: false, pending: false, closing: null,
-  status: { running: true, browserConnected: true }, actions: [] }
+  status: { running: true, browserConnected: true }, video: { available: false, mime: null }, actions: [] }
+const mime = 'video/mp4; codecs="avc1.42E01E"'
 
-afterEach(() => { cleanup(); vi.useRealTimers() })
+afterEach(() => { cleanup(); vi.useRealTimers(); vi.unstubAllGlobals() })
 
-function mount(view: BrowserEgoView, shown = true) {
+function mount(view: BrowserEgoView, shown = true, backend: EgoBrowserCapture['backend'] = 'auto') {
   const show = vi.fn()
   const send = vi.fn(async () => true)
   const close = vi.fn(async () => false)
+  const select = vi.fn()
   const props = { sessionId: 'session-one', shown,
     useTabInfo: () => ({ shown }),
-    useBrowserEgo: (select: (snapshot: BrowserEgoView) => unknown) => select(view),
-    show, send, close, select: vi.fn(), refresh: vi.fn(async () => {}),
+    useBrowserEgo: (choose: (snapshot: BrowserEgoView) => unknown) => choose(view),
+    useBrowserEgoSettings: (choose: (snapshot: EgoBrowserCapture) => unknown) => choose({ backend }),
+    show, send, close, select, refresh: vi.fn(async () => {}),
     t: (key: keyof typeof en, params?: Record<string, unknown>) =>
       en[key].replace(/\{(\w+)\}/gu, (match, name: string) => (name in (params ?? {}) ? String(params?.[name]) : match)),
   } as unknown as AgentBrowserProps
-  return { ...render(<AgentBrowserPanel {...props} />), props, send, close, show }
+  return { ...render(<AgentBrowserPanel {...props} />), props, send, close, select, show }
 }
 
 describe('Agent 浏览器面板', () => {
@@ -35,7 +39,7 @@ describe('Agent 浏览器面板', () => {
     expect(screen.getByRole('region', { name: 'Agent Browser' })).toBeTruthy()
     expect(screen.getByText('Example')).toBeTruthy()
     expect(screen.queryByText(/ego_|browser_|https:\/\//)).toBeNull()
-    expect(screen.getByText('No browser activity yet')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Action history' })).toBeTruthy()
     expect(panel.show).toHaveBeenCalledWith(true)
     panel.rerender(<AgentBrowserPanel {...panel.props} useTabInfo={() => ({ ...panel.props.useTabInfo(), shown: false })} />)
     expect(panel.show).toHaveBeenCalledWith(false)
@@ -91,7 +95,7 @@ describe('Agent 浏览器面板', () => {
     unknown.unmount()
   })
 
-  it('按类别和时间展示最近动作，最多 8 条且最新在前', () => {
+  it('历史动作在抽屉里按类别和时间展示，最多 8 条且最新在前', () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-02-01T00:00:00Z'))
     const now = Date.now()
@@ -100,6 +104,7 @@ describe('Agent 浏览器面板', () => {
     }))
     actions.push({ kind: 'navigate', at: now - 1000 })
     const panel = mount({ ...ready, actions })
+    fireEvent.click(screen.getByRole('button', { name: 'Action history' }))
     const rows = screen.getAllByRole('listitem')
     expect(rows).toHaveLength(8)
     expect(within(rows[0] as HTMLElement).getByText('Opened a page')).toBeTruthy()
@@ -134,5 +139,63 @@ describe('Agent 浏览器面板', () => {
     const quiet = mount(ready)
     expect(screen.queryByText(/human check/u)).toBeNull()
     quiet.unmount()
+  })
+
+  it('抽屉默认收起，点条目只保持选中态并关闭，不触发任何页面操作', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-02-01T00:00:00Z'))
+    const now = Date.now()
+    const actions: EgoAction[] = [
+      { kind: 'navigate', at: now - 2000 }, { kind: 'click', at: now - 1000 },
+    ]
+    const panel = mount({ ...ready, actions })
+    const toggle = screen.getByRole('button', { name: 'Action history' })
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+    expect(screen.queryAllByRole('listitem')).toHaveLength(0)
+
+    fireEvent.click(toggle)
+    expect(toggle.getAttribute('aria-expanded')).toBe('true')
+    const rows = screen.getAllByRole('listitem')
+    expect(rows).toHaveLength(2)
+    fireEvent.click(within(rows[0] as HTMLElement).getByRole('button'))
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+    expect(screen.queryAllByRole('listitem')).toHaveLength(0)
+    expect(panel.send).not.toHaveBeenCalled()
+    expect(panel.close).not.toHaveBeenCalled()
+    expect(panel.select).not.toHaveBeenCalled()
+
+    fireEvent.click(toggle)
+    const reopened = screen.getAllByRole('listitem')
+    expect(within(reopened[0] as HTMLElement).getByRole('button').getAttribute('aria-current')).toBe('true')
+    expect(within(reopened[1] as HTMLElement).getByRole('button').getAttribute('aria-current')).toBeNull()
+    panel.unmount()
+  })
+
+  it('空历史在抽屉里显示中性空状态', () => {
+    const panel = mount(ready)
+    fireEvent.click(screen.getByRole('button', { name: 'Action history' }))
+    expect(screen.getByText('No browser activity yet')).toBeTruthy()
+    expect(document.body.textContent).not.toMatch(/api\/ego|JSON/u)
+    panel.unmount()
+  })
+
+  it('视频后端可用但 MSE 不受支持时回退单帧并给中性提示', () => {
+    const panel = mount({ ...ready, video: { available: true, mime } }, true, 'ffmpeg')
+    expect(screen.getByText('Live video is unavailable; showing still frames instead')).toBeTruthy()
+    expect(screen.getByAltText('Current page view')).toBeTruthy()
+    expect(document.querySelector('video')).toBeNull()
+    expect(document.body.textContent).not.toMatch(/video\/mp4|api\/ego|MediaSource/u)
+    panel.unmount()
+  })
+
+  it('仅视频后端且流就绪时才尝试视频画面，隐藏后不渲染', () => {
+    const cdp = mount({ ...ready, video: { available: true, mime } }, true, 'auto')
+    expect(document.querySelector('video')).toBeNull()
+    expect(screen.queryByText(/Live video is unavailable/u)).toBeNull()
+    cdp.unmount()
+
+    const hidden = mount({ ...ready, video: { available: true, mime } }, false, 'ffmpeg')
+    expect(document.querySelector('video')).toBeNull()
+    hidden.unmount()
   })
 })

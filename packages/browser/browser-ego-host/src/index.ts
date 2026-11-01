@@ -11,7 +11,7 @@ import type {} from 'coding-session'
 import type {} from 'coding-subprocess'
 import type { SessionId } from 'coding-session/types'
 import { markToolStart } from './activity.ts'
-import { installRoutes } from './routes.ts'
+import { installRoutes, trusted } from './routes.ts'
 import { apply as applyUpstream } from 'coding-browser-ego-host/upstream'
 
 /** 上游 apply 只按结构使用 Context，本地适配层集中在这里。 */
@@ -21,6 +21,7 @@ type UpstreamContext = {
   get?(name: string): unknown
   effect?(fn: () => unknown, label?: string): unknown
   on?(event: string, fn: (...args: unknown[]) => unknown): () => void
+  inject?(services: readonly string[], fn: (sctx: UpstreamContext) => void): void
   settings?: unknown
 }
 type WebServerLike = {
@@ -68,6 +69,7 @@ export default class EgoBrowserHost extends Service {
         : ctx.get(name) as unknown,
       effect: (fn, label) => ctx.effect(fn as never, label),
       on: (event, fn) => ctx.on(event as never, fn as never),
+      inject: (services, fn) => { ctx.inject(services, fn as never) },
       settings: ctx.get('settings'),
     }
     const config: Record<string, unknown> = {
@@ -111,16 +113,15 @@ function guardedServer(ctx: Context): WebServerLike {
       if (property === 'register') {
         return (options: { path: string; handler?: (req: never, res: never) => unknown }) => {
           if (OWNED_PATHS.has(options.path)) return () => {}
-          const rejection = (req: Parameters<Context['connection']['requestRejection']>[0]): boolean => {
-            const verdict = ctx.connection.requestRejection(req)
-            return verdict === undefined
-          }
+          const allowed = (req: Parameters<Context['connection']['requestRejection']>[0]): boolean =>
+            trusted(ctx, req as never, { writeHead: () => {}, end: () => {} } as never)
           return (target.register as (options: unknown) => () => void)({
             ...options,
             handler: (req: never, res: never) => {
-              if (!rejection(req)) {
-                (res as { statusCode: number }).statusCode = 403
-                ;(res as { end: () => void }).end()
+              if (!allowed(req)) {
+                const response = res as { statusCode: number; end: () => void }
+                response.statusCode = 403
+                response.end()
                 return
               }
               return options.handler?.(req, res)

@@ -1,8 +1,8 @@
-/** 工作台会话面板只呈现经验证的页面与 JPEG；人工输入由 Host 再次授权。 */
+/** 工作台会话面板只呈现经验证的页面与画面；人工输入由 Host 再次授权。 */
 import { useEffect, useRef, useState, type FormEvent, type MouseEvent, type WheelEvent } from 'react'
 import {
-  IconBrowseOutline16, IconChecklistOutline14, IconCloseOutline16, IconGlobeOutline14,
-  IconRefreshOutline16, IconWarningOutline16,
+  IconBrowseOutline16, IconChecklistOutline14, IconChevronDownOutline14, IconCloseOutline16,
+  IconGlobeOutline14, IconRefreshOutline16, IconWarningOutline16,
 } from 'coding-client-ui-icons'
 import { Button, Input, StateDot, Toast, Tooltip } from 'coding-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime, HostObservable } from 'coding-client-ui-slots'
@@ -11,11 +11,17 @@ import { actionLabelKey, recentActions, relativeTime } from './actions.ts'
 import type { BrowserEgoController, BrowserEgoView } from './controller.ts'
 import { pointOnFrame } from './geometry.ts'
 import { NS } from './locales.ts'
+import type { EgoBrowserCapture } from './settings.ts'
+import { createMsePlayer } from './video.ts'
 import css from './AgentBrowserPanel.module.css'
 
 /** 从会话级注入面取得状态 Hook 和命令，不在组件内寻找 Cordis 上下文。 */
 export interface AgentBrowserInjected {
-  hooks: { browserEgo: HostObservable<BrowserEgoView> }
+  hooks: {
+    browserEgo: HostObservable<BrowserEgoView>
+    /** 采集设置的投影；视频后端只在此处读取，不直接访问设置服务。 */
+    browserEgoSettings: HostObservable<EgoBrowserCapture>
+  }
   show: (visible: boolean) => void
   refresh: () => Promise<void>
   select: (targetId: string) => void
@@ -39,18 +45,26 @@ function pageName(page: { title: string; url: string }, fallback: string): strin
 
 /**
  * Host 只发送所属 Session 的页面；手动查看后台页面时单独请求已授权画面。
- * @param props - 框架注入的会话 ID、标签显隐与业务操作。
- * @returns 状态区、页面标签、实时 JPEG 视图、最近动作与人工操作。
+ * @param props - 框架注入的会话 ID、标签显隐、采集设置与业务操作。
+ * @returns 状态区、页面标签、画面区（单帧或视频）、历史动作抽屉与人工操作。
  */
-export function AgentBrowserPanel({ sessionId, useTabInfo, useBrowserEgo, show, refresh, select, close, send, t }: AgentBrowserProps) {
+export function AgentBrowserPanel({
+  sessionId, useTabInfo, useBrowserEgo, useBrowserEgoSettings,
+  show, refresh, select, close, send, t,
+}: AgentBrowserProps) {
   const { shown } = useTabInfo()
   const view = useBrowserEgo(snapshot => snapshot)
+  const settings = useBrowserEgoSettings(snapshot => snapshot)
   const [loadedSrc, setLoadedSrc] = useState<string | null>(null)
   const [clickTarget, setClickTarget] = useState<ClickTarget | null>(null)
   const [text, setText] = useState('')
   const [notice, setNotice] = useState<Notice | null>(null)
   const [now, setNow] = useState(() => Date.now())
+  const [drawerOpen, setDrawerOpen] = useState(false)
+  const [selectedAction, setSelectedAction] = useState<string | null>(null)
+  const [videoFailed, setVideoFailed] = useState(false)
   const image = useRef<HTMLImageElement>(null)
+  const video = useRef<HTMLVideoElement>(null)
 
   useEffect(() => { show(shown) }, [shown, show])
   useEffect(() => () => { show(false) }, [show])
@@ -71,9 +85,29 @@ export function AgentBrowserPanel({ sessionId, useTabInfo, useBrowserEgo, show, 
     && (selected.viewportH === null || selected.viewportH === frame.height)
   const textReady = imageReady && clickTarget?.targetId === selected.targetId
     && clickTarget.timestamp === frame.ts && text.length > 0 && text.length <= 2000
+  const videoMime = view.video.available ? view.video.mime : null
+  const videoTarget = selected?.targetId ?? null
+  // 只有用户选择视频后端、Host 报告 fMP4 就绪且上一次播放没有失败时才用 MSE。
+  const videoMode = shown && settings.backend === 'ffmpeg' && videoMime !== null && !videoFailed
+    && view.phase === 'ready' && !view.relayOff && videoTarget !== null
   const notify = (key: Notice['key']) => {
     setNotice(previous => ({ id: (previous?.id ?? 0) + 1, key }))
   }
+
+  const videoOffered = settings.backend === 'ffmpeg' && videoMime !== null
+  // 类型、页面或后端变化时允许重新尝试一次；失败状态不因每秒时间刷新而复原。
+  useEffect(() => { setVideoFailed(false) }, [videoMime, videoTarget, shown, settings.backend])
+  useEffect(() => {
+    const node = video.current
+    if (!videoMode || node === null) return
+    const stop = createMsePlayer({
+      video: node, mime: videoMime,
+      onFailure: () => { setVideoFailed(true) },
+    })
+    // 隐藏、切换页面或离开视频后端时同时中止请求、丢弃队列并解除媒体源。
+    return () => { stop() }
+  }, [videoMode, videoMime, videoTarget])
+
   const warn = () => { notify('inputFailed') }
   const point = (event: MouseEvent<HTMLButtonElement> | WheelEvent<HTMLButtonElement>) => {
     const node = image.current
@@ -111,6 +145,7 @@ export function AgentBrowserPanel({ sessionId, useTabInfo, useBrowserEgo, show, 
     if (await close(targetId)) setClickTarget(null)
     else notify('closeFailed')
   }
+  const actions = recentActions(view.actions)
 
   return <section className={css.root} hidden={!shown} aria-label={t('title')}>
     <header className={css.header}>
@@ -165,31 +200,49 @@ export function AgentBrowserPanel({ sessionId, useTabInfo, useBrowserEgo, show, 
       </p>}
       {view.phase === 'ready' && view.pages.length > 0 && (view.relayOff
         ? <p className={css.center}>{t('relayOff')}</p>
-        : frame === null ? <p className={css.center}>{t('noFrame')}</p>
-          : <button type="button" className={css.frameAction} disabled={view.pending}
-            aria-label={t('preview')} title={t('preview')}
-            onClick={(event) => { void click(event) }} onWheel={(event) => { void wheel(event) }}>
-            <img ref={image} className={css.frame} src={frame.src} alt={t('preview')} draggable={false}
-              onLoad={() => { setLoadedSrc(frame.src) }} onError={() => { setLoadedSrc(null) }} />
-          </button>)}
+        : videoMode
+          ? <video ref={video} className={css.video} muted autoPlay playsInline
+            aria-label={t('videoPreview')} />
+          : frame === null ? <p className={css.center}>{t('noFrame')}</p>
+            : <button type="button" className={css.frameAction} disabled={view.pending}
+              aria-label={t('preview')} title={t('preview')}
+              onClick={(event) => { void click(event) }} onWheel={(event) => { void wheel(event) }}>
+              <img ref={image} className={css.frame} src={frame.src} alt={t('preview')} draggable={false}
+                onLoad={() => { setLoadedSrc(frame.src) }} onError={() => { setLoadedSrc(null) }} />
+            </button>)}
+      {videoFailed && videoOffered && <p className={css.videoNotice} role="status">
+        {t('videoFallback')}
+      </p>}
     </div>
-    <section className={css.history} aria-label={t('history')}>
-      <div className={css.historyHeading}><IconChecklistOutline14 size={14} />{t('history')}</div>
-      {view.actions.length === 0
-        ? <p className={css.historyEmpty}>{t('historyEmpty')}</p>
-        : <ol className={css.historyList}>
-          {recentActions(view.actions).map((action, index) => {
-            const time = relativeTime(action.at, now)
-            const label = t(actionLabelKey(action.kind))
-            return <li key={`${action.at}-${action.kind}-${index}`} className={css.historyRow}>
-              <span className={css.historyLabel}>{label}</span>
-              <span className={css.historyTime}>
-                {time.key === 'timeNow' ? t(time.key) : t(time.key, { count: time.count })}
-              </span>
-            </li>
-          })}
-        </ol>}
-    </section>
+    <div className={css.historyDock}>
+      <Button size="sm" variant="toolbar" className={css.historyButton} aria-expanded={drawerOpen}
+        onClick={() => { setDrawerOpen(!drawerOpen) }}
+        icon={<IconChecklistOutline14 size={14} />}>
+        <span className={css.historyButtonText}>{t('history')}</span>
+        <IconChevronDownOutline14 size={12} className={drawerOpen ? css.historyChevronOpen : css.historyChevron} />
+      </Button>
+      {drawerOpen && <section className={css.drawer} aria-label={t('history')}>
+        {actions.length === 0
+          ? <p className={css.historyEmpty}>{t('historyEmpty')}</p>
+          : <ol className={css.historyList}>
+            {actions.map((action, index) => {
+              const key = `${action.at}-${action.kind}-${index}`
+              const time = relativeTime(action.at, now)
+              const seat = selectedAction === key
+              return <li key={key} className={css.historyItem}>
+                <button type="button" className={css.historyRow} data-selected={seat || undefined}
+                  aria-current={seat ? 'true' : undefined}
+                  onClick={() => { setSelectedAction(key); setDrawerOpen(false) }}>
+                  <span className={css.historyLabel}>{t(actionLabelKey(action.kind))}</span>
+                  <span className={css.historyTime}>
+                    {time.key === 'timeNow' ? t(time.key) : t(time.key, { count: time.count })}
+                  </span>
+                </button>
+              </li>
+            })}
+          </ol>}
+      </section>}
+    </div>
     <form className={css.typeBar} onSubmit={(event) => { void typeAtPoint(event) }}>
       <label htmlFor={`browser-ego-text-${sessionId}`} className={css.srOnly}>{t('typeLabel')}</label>
       <Input id={`browser-ego-text-${sessionId}`} value={text} maxLength={2000}

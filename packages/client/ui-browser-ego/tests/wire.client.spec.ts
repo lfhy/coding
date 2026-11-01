@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { pointOnFrame } from '../src/client/geometry.ts'
-import { parseActions, parseActivity, parseFrame, parseSpaces, parseStatus } from '../src/client/wire.ts'
+import {
+  parseActions, parseActivity, parseFrame, parseSpaces, parseStatus, parseVideoStatus,
+} from '../src/client/wire.ts'
 
 const page = { targetId: 'page-one', title: '页面', url: 'https://example.com/', active: true,
   viewportW: 480, viewportH: 320 }
@@ -49,6 +51,18 @@ describe('Agent 浏览器输入边界', () => {
     expect(() => parseActions({ ok: true })).toThrow()
     expect(() => parseActions({ ok: true, actions: [{ tool: 'browser_click', at: -1 }] })).toThrow()
     expect(() => parseActions({ ok: true, actions: [{ tool: 'browser_\nclick', at: 1 }] })).toThrow()
+  })
+
+  it('只接受可播放的视频类型，拒绝空值与非视频类型', () => {
+    expect(parseVideoStatus({ ok: true, mime: 'video/mp4; codecs="avc1.42E01E"' }))
+      .toEqual({ available: true, mime: 'video/mp4; codecs="avc1.42E01E"' })
+    expect(parseVideoStatus({ ok: true, capture: { backend: 'ffmpeg', mime: 'video/mp4' } }))
+      .toEqual({ available: true, mime: 'video/mp4' })
+    expect(parseVideoStatus({ ok: false, mime: 'video/mp4' })).toEqual({ available: false, mime: null })
+    expect(parseVideoStatus({ ok: true, mime: null })).toEqual({ available: false, mime: null })
+    expect(parseVideoStatus({ ok: true, mime: 'text/html' })).toEqual({ available: false, mime: null })
+    expect(parseVideoStatus({ mime: 'javascript:alert(1)' })).toEqual({ available: false, mime: null })
+    expect(parseVideoStatus(null)).toEqual({ available: false, mime: null })
   })
 
   it('只将实际 JPEG 的非留白位置映射到视口整数坐标', () => {

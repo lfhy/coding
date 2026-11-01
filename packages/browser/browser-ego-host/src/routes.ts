@@ -27,7 +27,7 @@ function send(res: ServerResponse, status: number, payload: unknown): void {
   res.end(JSON.stringify(payload))
 }
 
-function trusted(ctx: Context, req: IncomingMessage, res: ServerResponse): boolean {
+export function trusted(ctx: Context, req: IncomingMessage, res: ServerResponse): boolean {
   const rejection = ctx.connection.requestRejection(req)
   if (rejection !== undefined) { res.writeHead(rejection); res.end(); return false }
   const authority = req.headers.host

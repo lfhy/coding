@@ -23,7 +23,13 @@
   "license": "MIT",
   "dsh": {
     "client": {
-      "inject": ["coding-client-locale", "coding-client-runtime", "coding-client-ui-open-in-app"],
+      "inject": [
+        "coding-client-locale",
+        "coding-client-runtime",
+        "coding-client-ui-open-in-app",
+        "coding-client-ui-settings",
+        "coding-client-ui-settings-plugins"
+      ],
       "platform": "web"
     }
   },
@@ -33,7 +39,10 @@
     "coding-client-locale": "workspace:^",
     "coding-client-runtime": "workspace:^",
     "coding-client-ui-open-in-app": "workspace:^",
-    "coding-invariants": "workspace:^"
+    "coding-client-ui-settings": "workspace:^",
+    "coding-client-ui-settings-plugins": "workspace:^",
+    "coding-invariants": "workspace:^",
+    "coding-session": "workspace:^"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "workspace:^",
@@ -46,6 +55,8 @@
     "coding-client-ui-icons": "workspace:^",
     "coding-client-ui-open-in-app": "workspace:^",
     "coding-client-ui-primitives": "workspace:^",
+    "coding-client-ui-settings": "workspace:^",
+    "coding-client-ui-settings-plugins": "workspace:^",
     "coding-client-ui-slots": "workspace:^",
     "coding-invariants": "workspace:^",
     "coding-session": "workspace:^",

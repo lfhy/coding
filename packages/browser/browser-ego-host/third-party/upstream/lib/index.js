@@ -2104,7 +2104,14 @@ function initCastServer(ctx, cfg, bridge2, ffmpegManager, openAgentWindow2 = asy
   if (!rawServer || typeof rawServer.register !== "function") {
     return;
   }
-  const isTrustedRequest = (req) => /(?:^|;\s*)dsh-auth-[^=]+=/.test(String(req.headers.cookie ?? ""));
+  const isTrustedRequest = (req) => {
+    const remote = req.socket.remoteAddress ?? "";
+    if (!["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(remote)) return false;
+    const authority = req.headers.host ?? "";
+    if (!/^(?:127\.0\.0\.1|localhost|\[::1\]):\d+$/.test(authority)) return false;
+    if (req.headers.origin !== void 0 && req.headers.origin !== `http://${authority}`) return false;
+    return /(?:^|;\s*)dsh-auth-[^=]+=/.test(String(req.headers.cookie ?? ""));
+  };
   const guardHandler = (handler) => async (req, resRaw) => {
     const res = resRaw;
     if (!isTrustedRequest(req)) {
@@ -2116,8 +2123,19 @@ function initCastServer(ctx, cfg, bridge2, ffmpegManager, openAgentWindow2 = asy
     return handler(req, res);
   };
   const rawRegister = rawServer.register.bind(rawServer);
+  const externallyOwned = /* @__PURE__ */ new Set([
+    "/api/ego/spaces",
+    "/api/ego/stream",
+    "/api/ego/input",
+    "/api/ego/close",
+    "/api/ego/status",
+    "/api/ego/history",
+    "/api/ego/frame",
+    "/api/ego/activity"
+  ]);
   const server = Object.assign(Object.create(Object.getPrototypeOf(rawServer)), rawServer, {
-    register: (opts) => rawRegister({
+    register: (opts) => externallyOwned.has(opts.path) ? () => {
+    } : rawRegister({
       ...opts,
       handler: opts.handler ? guardHandler(opts.handler) : opts.handler
     })

@@ -211,6 +211,34 @@ describe('会话画面与人工输入', () => {
     controller.show(false)
   })
 
+  it('读取视频后端状态，隐藏后回到不可用', async () => {
+    const mime = 'video/mp4; codecs="avc1.42E01E"'
+    const { controller } = fixture(vi.fn(async (url: string) => {
+      if (url === '/api/ego/video/status') return Response.json({ ok: true, backend: 'ffmpeg', mime })
+      if (url.startsWith('/api/ego/frame?')) return new Response(null, { status: 404 })
+      return overview(url) ?? Response.json({ ok: true, spaces: [first, second] })
+    }))
+    controller.show(true)
+    await vi.waitFor(() => { expect(controller.view.getSnapshot().video.available).toBe(true) })
+    expect(controller.view.getSnapshot().video.mime).toBe(mime)
+    controller.show(false)
+    expect(controller.view.getSnapshot().video).toEqual({ available: false, mime: null })
+  })
+
+  it('视频状态不可用时保持不可用投影，单帧画面不受影响', async () => {
+    const { controller, streams } = fixture(vi.fn(async (url: string) => {
+      if (url === '/api/ego/video/status') return new Response(null, { status: 503 })
+      if (url.startsWith('/api/ego/frame?')) return new Response(null, { status: 404 })
+      return overview(url) ?? Response.json({ ok: true, spaces: [first] })
+    }))
+    controller.show(true)
+    await vi.waitFor(() => { expect(controller.view.getSnapshot().phase).toBe('ready') })
+    expect(controller.view.getSnapshot().video).toEqual({ available: false, mime: null })
+    streams[0]?.emit('frame', { targetId: 'first', data: 'YWJj', vw: 400, vh: 300, ts: 1 })
+    expect(controller.view.getSnapshot().frame?.targetId).toBe('first')
+    controller.show(false)
+  })
+
   it('只把本会话的活动追加到最近动作，隐藏后停止监听', async () => {
     const { controller, activities } = fixture(vi.fn(async (url: string) => {
       if (url.startsWith('/api/ego/frame?')) return new Response(null, { status: 404 })

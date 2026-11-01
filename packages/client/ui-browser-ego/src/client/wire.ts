@@ -25,6 +25,12 @@ export interface EgoStatus {
   readonly browserConnected: boolean
 }
 
+/** 视频后端的可用性与 fMP4 类型；不可用时面板回退单帧画面。 */
+export interface EgoVideo {
+  readonly available: boolean
+  readonly mime: string | null
+}
+
 export interface EgoActivity {
   readonly sessionId: string
   readonly count: number
@@ -36,6 +42,7 @@ const ID = /^[a-zA-Z0-9._~-]{1,128}$/u
 const BASE64 = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/u
 const ACTIVITY_KEYS = new Set(['count', 'sessionId', 'tool', 'at'])
 const CONTROL = /[\u0000-\u001f\u007f]/u
+const VIDEO_MIME = /^video\/[a-z0-9.+-]+(?:\s*;\s*[a-z0-9-]+=(?:"[^"]{0,120}"|[a-z0-9.+-]+))*$/iu
 
 function record(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -161,4 +168,22 @@ export function parseActivity(value: unknown): EgoActivity | null {
   if ('at' in event && (typeof event.at !== 'number' || !Number.isSafeInteger(event.at) || event.at < 0)) return null
   return { sessionId: event.sessionId, count: event.count, kind: actionKind(event.tool),
     at: typeof event.at === 'number' ? event.at : null }
+}
+
+/**
+ * 视频状态只取“是否可用”与可播放类型：Host 的进程、代次与编码器诊断一律不进入视图。
+ * @param value - video/status 路由的 JSON 值。
+ * @returns 可用于建立 MSE 的投影；形状不符或未就绪时为不可用。
+ */
+export function parseVideoStatus(value: unknown): EgoVideo {
+  const payload = record(value)
+  if (payload === null || payload.ok === false) return { available: false, mime: null }
+  const capture = record(payload.capture)
+  const candidate = typeof payload.mime === 'string'
+    ? payload.mime
+    : capture !== null && typeof capture.mime === 'string' ? capture.mime : null
+  if (candidate === null) return { available: false, mime: null }
+  const mime = candidate.trim()
+  if (mime.length === 0 || mime.length > 200 || !VIDEO_MIME.test(mime)) return { available: false, mime: null }
+  return { available: true, mime }
 }

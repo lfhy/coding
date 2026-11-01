@@ -1,10 +1,12 @@
 import { Context } from '@deepseek-ai/cordis'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { SlotRegistry } from 'coding-client-runtime/client'
+import { stubSettingsScope } from 'coding-client-test-runtime'
 import { LocaleRuntime } from 'coding-client-locale/client'
 import { apply, inject } from '../src/client/index.ts'
 import { AgentBrowserPanel, type AgentBrowserInjected } from '../src/client/AgentBrowserPanel.tsx'
 import { WATCH_ID, WATCH_KIND } from '../src/client/activity.ts'
+import type { EgoBrowserSettings } from '../src/client/settings.ts'
 
 afterEach(() => { vi.unstubAllGlobals() })
 
@@ -20,6 +22,9 @@ describe('Agent 浏览器插件注册与生命周期', () => {
     const ctx = new Context()
     await ctx.plugin(SlotRegistry).await()
     ctx.provide('locale', new LocaleRuntime(ctx))
+    // 设置卡与面板共用同一个设置命名空间；服务在部署中由设置插件提供。
+    const settings = stubSettingsScope<EgoBrowserSettings>()
+    ctx.provide('settingsScope', { bind: () => settings.scope } as never)
     const tab = { id: WATCH_ID, kind: WATCH_KIND, title: () => 'Agent 浏览器' }
     const register = vi.fn((_definition: { id: string; kind: string; keepMounted?: boolean }) => vi.fn())
     ctx.provide('sidebarRightTabs', { register })

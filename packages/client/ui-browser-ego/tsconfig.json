@@ -9,6 +9,8 @@
     { "path": "../ui-icons" },
     { "path": "../ui-open-in-app" },
     { "path": "../ui-primitives" },
+    { "path": "../ui-settings" },
+    { "path": "../ui-settings-plugins" },
     { "path": "../ui-slots" },
     { "path": "../../core/session" },
     { "path": "../../runtime-diagnostics/invariants" }

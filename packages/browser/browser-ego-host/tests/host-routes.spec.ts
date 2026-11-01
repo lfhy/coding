@@ -14,6 +14,7 @@ let stateDir: string | undefined
 let session: { id: ReturnType<typeof SessionId>; header: { cwd: string } }
 let checks: ReturnType<typeof vi.fn>
 let spawns: ReturnType<typeof vi.fn>
+let settingsRegister: ReturnType<typeof vi.fn>
 
 async function boot(rejection?: 403): Promise<string> {
   stateDir = await mkdtemp(join(tmpdir(), 'coding-ego-host-route-'))
@@ -25,6 +26,8 @@ async function boot(rejection?: 403): Promise<string> {
   ctx.provide('connection', { requestRejection: checks } as never)
   ctx.provide('sessions', { get: (id: string) => id === session.id ? session : undefined } as never)
   ctx.provide('subprocess', { spawn: spawns } as never)
+  settingsRegister = vi.fn(() => ({ get: () => ({}), watch: () => () => {} }))
+  ctx.provide('settings', { register: settingsRegister } as never)
   await ctx.plugin(WebServer, { host: '127.0.0.1', port: 0 }).await()
   await ctx.plugin(EgoBrowserHost).await()
   return `http://127.0.0.1:${String(ctx.webServer.port)}`
@@ -49,7 +52,7 @@ describe('会话浏览器 Host 路由', () => {
       '/api/ego/input',
     ]) {
       const response = await fetch(origin + path, path.endsWith('input') ? { method: 'POST', body: '{bad' } : {})
-      expect(response.status).toBe(403)
+      expect(response.status, path).toBe(403)
     }
     expect(checks.mock.calls.length).toBeGreaterThanOrEqual(5)
     expect(spawns).not.toHaveBeenCalled()
@@ -71,6 +74,12 @@ describe('会话浏览器 Host 路由', () => {
       body: JSON.stringify({ sessionId: session.id, targetId: 'foreign', type: 'mousePressed', x: 1, y: 2 }),
     })).status).toBe(403)
     expect(spawns).not.toHaveBeenCalled()
+  })
+
+  it('把上游浏览器设置注册为可编辑的插件命名空间', async () => {
+    await boot()
+    expect(settingsRegister).toHaveBeenCalled()
+    expect(settingsRegister.mock.calls[0]?.[0]).toBe('ego-browser')
   })
 
   it('暴露上游完整工具集，浏览器前缀由消费方统一映射', async () => {

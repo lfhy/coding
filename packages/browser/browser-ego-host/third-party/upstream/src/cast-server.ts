@@ -395,8 +395,14 @@ export function initCastServer(
   // requiring its mere presence closes the remote surface. A local process can
   // still forge the header, but that is the same threat tier as the host's own
   // token fence (a local process can read the process token too).
-  const isTrustedRequest = (req: IncomingMessage): boolean =>
-    /(?:^|;\s*)dsh-auth-[^=]+=/.test(String(req.headers.cookie ?? ''))
+  const isTrustedRequest = (req: IncomingMessage): boolean => {
+    const remote = req.socket.remoteAddress ?? ''
+    if (!['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(remote)) return false
+    const authority = req.headers.host ?? ''
+    if (!/^(?:127\.0\.0\.1|localhost|\[::1\]):\d+$/.test(authority)) return false
+    if (req.headers.origin !== undefined && req.headers.origin !== `http://${authority}`) return false
+    return /(?:^|;\s*)dsh-auth-[^=]+=/.test(String(req.headers.cookie ?? ''))
+  }
   const guardHandler = (handler: NonNullable<RegisterRouteOptions['handler']>) =>
     async (req: unknown, resRaw: unknown) => {
       const res = resRaw as ServerResponse
@@ -412,8 +418,14 @@ export function initCastServer(
   // webServer singleton in place — other plugins' routes registered through the
   // same service instance must keep their own (unguarded) semantics.
   const rawRegister = rawServer.register.bind(rawServer) as (opts: RegisterRouteOptions) => () => void
+  // 本项目的会话化 Host 路由拥有这些端点：上游不得再注册同名路由，否则会
+  // 抢先返回未按 Session 过滤的页面与画面。其余上游路由仍由下方 guard 保护。
+  const externallyOwned = new Set([
+    '/api/ego/spaces', '/api/ego/stream', '/api/ego/input', '/api/ego/close',
+    '/api/ego/status', '/api/ego/history', '/api/ego/frame', '/api/ego/activity',
+  ])
   const server = Object.assign(Object.create(Object.getPrototypeOf(rawServer)), rawServer, {
-    register: (opts: RegisterRouteOptions) => rawRegister({
+    register: (opts: RegisterRouteOptions) => externallyOwned.has(opts.path) ? () => {} : rawRegister({
       ...opts,
       handler: opts.handler ? guardHandler(opts.handler) : opts.handler,
     }),
