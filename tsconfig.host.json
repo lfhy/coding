@@ -257,6 +257,8 @@
     { "path": "./packages/browser/browser-electron" },
     { "path": "./packages/browser/browser-playwright" },
     { "path": "./packages/browser/tool-browser" },
+    { "path": "./packages/browser/browser-ego-host" },
+    { "path": "./packages/browser/tool-browser-ego" },
     { "path": "./packages/web/web-search-exa" },
     { "path": "./packages/web/web-search-perplexity" },
     { "path": "./packages/web/web-search-deepseek" },

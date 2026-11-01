@@ -50,6 +50,7 @@ export const SERVICE_PAGE: Record<string, string> = {
   apiProxy: 'typert.md',
   approval: 'approval.md',
   attachments: 'attachment.md',
+  egoBrowser: 'browser.md',
   browserUse: 'browser.md',
   computerUse: 'computer-use.md',
   shell: 'shell.md',

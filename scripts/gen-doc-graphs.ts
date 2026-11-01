@@ -505,13 +505,21 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'Producers (background bash, PTY sends, and subagent delegations) register running work; tool-jobs is the model-facing controller that reads, lists, and kills it; jobs-local is the process-local registry.',
   },
   {
+    key: 'egoBrowser',
+    pkg: 'browser-ego-host',
+    title: 'Session-scoped ego-lite browser definitions and live view',
+    mode: 'core',
+    consumers: ['tool-browser-ego'],
+    note: 'The Host owns ego-lite task spaces and session-filtered live frames. Agent-scoped tools perform permission checks before invoking its browser definitions; the right workbench consumes a local-only session view.',
+  },
+  {
     key: 'browserUse',
     pkg: 'browser',
-    title: 'Session-owned browser operations',
+    title: 'Optional legacy session browser contract',
     mode: 'seam',
     implementations: ['browser-playwright', 'browser-electron'],
     consumers: ['tool-browser'],
-    note: 'Web and CLI sessions use isolated Playwright pages; the managed Electron Host uses a live native guest shared by human and model operations. Both retain session-scoped approval and target checks; the desktop bridge fails closed, while Web shows read-only captured frames.',
+    note: 'This optional service is not mounted by the default Web, headless or desktop assemblies. Custom compositions may opt in to its isolated Playwright or native guest provider and its original browser tools.',
   },
   {
     key: 'memory',

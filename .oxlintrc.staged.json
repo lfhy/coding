@@ -12,6 +12,7 @@
     "**/.node-next-types-*/**",
     "apps/desktop/frontend/wailsjs/**",
     "vendor/**",
+    "packages/browser/browser-ego-host/third-party/**",
     "native/**",
     "**/*.js",
     "**/*.mjs",

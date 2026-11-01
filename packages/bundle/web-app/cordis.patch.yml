@@ -79,8 +79,8 @@
     - id: ui-open-in-app
       name: 'coding-client-ui-open-in-app'
 
-    - id: ui-browser
-      name: 'coding-client-ui-browser'
+    - id: ui-browser-ego
+      name: 'coding-client-ui-browser-ego'
 
     - id: workspace
       name: 'coding-workspace'

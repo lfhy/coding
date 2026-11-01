@@ -264,9 +264,9 @@ importers:
       coding-tool-bash-persistent:
         specifier: workspace:^
         version: link:../../packages/shell/tool-bash-persistent
-      coding-tool-browser:
+      coding-tool-browser-ego:
         specifier: workspace:^
-        version: link:../../packages/browser/tool-browser
+        version: link:../../packages/browser/tool-browser-ego
       coding-tool-computer-use:
         specifier: workspace:^
         version: link:../../packages/computer-use/tool-computer-use
@@ -379,21 +379,9 @@ importers:
 
   apps/desktop-electron:
     dependencies:
-      coding-attachment:
-        specifier: workspace:^
-        version: link:../../packages/attachment/attachment
-      coding-browser:
-        specifier: workspace:^
-        version: link:../../packages/browser/browser
-      coding-browser-electron:
-        specifier: workspace:^
-        version: link:../../packages/browser/browser-electron
       coding-home-paths:
         specifier: workspace:^
         version: link:../../packages/util/home-paths
-      ws:
-        specifier: ^8.21.0
-        version: 8.21.0
     devDependencies:
       '@types/node':
         specifier: ^22.20.0
@@ -401,18 +389,24 @@ importers:
       '@types/ws':
         specifier: ^8.18.1
         version: 8.18.2
+      coding-browser:
+        specifier: workspace:^
+        version: link:../../packages/browser/browser
+      coding-browser-electron:
+        specifier: workspace:^
+        version: link:../../packages/browser/browser-electron
       electron:
         specifier: 44.0.0
         version: 44.0.0
-      playwright:
-        specifier: 1.61.1
-        version: 1.61.1
       tsdown:
         specifier: ^0.22.2
         version: 0.22.2(oxc-resolver@11.20.0)(publint@0.3.21)(tsx@4.22.4)(typescript@6.0.3)
       typescript:
         specifier: ^6.0.3
         version: 6.0.3
+      ws:
+        specifier: ^8.21.0
+        version: 8.21.0
 
   apps/runtime:
     dependencies:
@@ -1092,6 +1086,30 @@ importers:
         specifier: workspace:^
         version: link:../../core/session
 
+  packages/browser/browser-ego-host:
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      coding-client-connection:
+        specifier: workspace:^
+        version: link:../../client/connection
+      coding-host-webserver:
+        specifier: workspace:^
+        version: link:../../host/webserver
+      coding-invariants:
+        specifier: workspace:^
+        version: link:../../runtime-diagnostics/invariants
+      coding-session:
+        specifier: workspace:^
+        version: link:../../core/session
+      coding-subprocess:
+        specifier: workspace:^
+        version: link:../../subprocess/subprocess
+      coding-tools:
+        specifier: workspace:^
+        version: link:../../core/tools
+
   packages/browser/browser-electron:
     dependencies:
       '@deepseek-ai/schemastery':
@@ -1199,6 +1217,51 @@ importers:
         specifier: workspace:^
         version: link:../../interaction/user-approval
 
+  packages/browser/tool-browser-ego:
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/cordis-plugin-include':
+        specifier: workspace:^
+        version: link:../../../vendor/include
+      '@deepseek-ai/cordis-plugin-loader':
+        specifier: workspace:^
+        version: link:../../../vendor/loader
+      coding-attachment:
+        specifier: workspace:^
+        version: link:../../attachment/attachment
+      coding-attachment-local:
+        specifier: workspace:^
+        version: link:../../attachment/attachment-local
+      coding-browser-ego-host:
+        specifier: workspace:^
+        version: link:../browser-ego-host
+      coding-invariants:
+        specifier: workspace:^
+        version: link:../../runtime-diagnostics/invariants
+      coding-llm:
+        specifier: workspace:^
+        version: link:../../llm/llm
+      coding-sandbox-policy:
+        specifier: workspace:^
+        version: link:../../sandbox/sandbox-policy
+      coding-session:
+        specifier: workspace:^
+        version: link:../../core/session
+      coding-subprocess:
+        specifier: workspace:^
+        version: link:../../subprocess/subprocess
+      coding-system-prompt:
+        specifier: workspace:^
+        version: link:../../core/system-prompt
+      coding-tools:
+        specifier: workspace:^
+        version: link:../../core/tools
+      coding-user-approval:
+        specifier: workspace:^
+        version: link:../../interaction/user-approval
+
   packages/bundle/base:
     dependencies:
       '@deepseek-ai/cordis-plugin-hmr':
@@ -1228,12 +1291,9 @@ importers:
       coding-bash-sandbox:
         specifier: workspace:^
         version: link:../../shell/bash-sandbox
-      coding-browser-electron:
+      coding-browser-ego-host:
         specifier: workspace:^
-        version: link:../../browser/browser-electron
-      coding-browser-playwright:
-        specifier: workspace:^
-        version: link:../../browser/browser-playwright
+        version: link:../../browser/browser-ego-host
       coding-command-compact:
         specifier: workspace:^
         version: link:../../compaction/command-compact
@@ -1581,9 +1641,9 @@ importers:
       coding-client-ui-brand-official:
         specifier: workspace:^
         version: link:../../client/ui-brand-official
-      coding-client-ui-browser:
+      coding-client-ui-browser-ego:
         specifier: workspace:^
-        version: link:../../client/ui-browser
+        version: link:../../client/ui-browser-ego
       coding-client-ui-commands:
         specifier: workspace:^
         version: link:../../client/ui-commands
@@ -2124,6 +2184,54 @@ importers:
       coding-client-ui-conversation:
         specifier: workspace:^
         version: link:../ui-conversation
+      coding-client-ui-icons:
+        specifier: workspace:^
+        version: link:../ui-icons
+      coding-client-ui-open-in-app:
+        specifier: workspace:^
+        version: link:../ui-open-in-app
+      coding-client-ui-primitives:
+        specifier: workspace:^
+        version: link:../ui-primitives
+      coding-client-ui-slots:
+        specifier: workspace:^
+        version: link:../ui-slots
+      coding-invariants:
+        specifier: workspace:^
+        version: link:../../runtime-diagnostics/invariants
+      coding-session:
+        specifier: workspace:^
+        version: link:../../core/session
+      react:
+        specifier: ^18.2.0
+        version: 18.3.1
+      react-dom:
+        specifier: ^18.2.0
+        version: 18.3.1(react@18.3.1)
+
+  packages/client/ui-browser-ego:
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@testing-library/react':
+        specifier: ^16.1.0
+        version: 16.3.2(@testing-library/dom@10.4.2)(@types/react-dom@18.3.7(@types/react@18.3.31))(@types/react@18.3.31)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      '@types/react':
+        specifier: ~18.3.1
+        version: 18.3.31
+      '@types/react-dom':
+        specifier: ~18.3.0
+        version: 18.3.7(@types/react@18.3.31)
+      coding-client-locale:
+        specifier: workspace:^
+        version: link:../locale
+      coding-client-runtime:
+        specifier: workspace:^
+        version: link:../runtime
+      coding-client-test-runtime:
+        specifier: workspace:^
+        version: link:../../test-support/client-runtime
       coding-client-ui-icons:
         specifier: workspace:^
         version: link:../ui-icons
@@ -10336,12 +10444,9 @@ importers:
       coding-browser:
         specifier: workspace:^
         version: link:../../packages/browser/browser
-      coding-browser-electron:
+      coding-browser-ego-host:
         specifier: workspace:^
-        version: link:../../packages/browser/browser-electron
-      coding-browser-playwright:
-        specifier: workspace:^
-        version: link:../../packages/browser/browser-playwright
+        version: link:../../packages/browser/browser-ego-host
       coding-code-runtime:
         specifier: workspace:^
         version: link:../../packages/code-runtime/code-runtime
@@ -10588,9 +10693,9 @@ importers:
       coding-tool-bash-persistent:
         specifier: workspace:^
         version: link:../../packages/shell/tool-bash-persistent
-      coding-tool-browser:
+      coding-tool-browser-ego:
         specifier: workspace:^
-        version: link:../../packages/browser/tool-browser
+        version: link:../../packages/browser/tool-browser-ego
       coding-tool-call-timeout-policy:
         specifier: workspace:^
         version: link:../../packages/guard/timeout-policy
@@ -14996,9 +15101,6 @@ packages:
 
   package-json-from-dist@1.0.1:
     resolution: {integrity: sha512-UEZIS3/by4OC8vL3P2dTXRETpebLI2NiI5vIrjaD/5UtrkFX/tNbwjTSRAGC/+7CAo2pIcBaRgWmcBBHcsaCIw==}
-
-  package-manager-detector@1.6.0:
-    resolution: {integrity: sha512-61A5ThoTiDG/C8s8UMZwSorAGwMJ0ERVGj2OjoW5pAalsNOg15+iQiPzrLJ4jhZ1HJzmC2PIHT2oEiH3R5fzNA==}
 
   package-manager-detector@1.9.0:
     resolution: {integrity: sha512-zAMfbta9nPA8AKkA4WdmNAT8R8s6Dk0/xwPsqNnRidMFcLo1YkLuPDTgs2f64XdzS8vbLNnoJ+uUIkgbz7oRHA==}
@@ -20134,8 +20236,6 @@ snapshots:
 
   package-json-from-dist@1.0.1: {}
 
-  package-manager-detector@1.6.0: {}
-
   package-manager-detector@1.9.0: {}
 
   pako@1.0.11: {}
@@ -20247,7 +20347,7 @@ snapshots:
   publint@0.3.21:
     dependencies:
       '@publint/pack': 0.1.4
-      package-manager-detector: 1.6.0
+      package-manager-detector: 1.9.0
       picocolors: 1.1.1
       sade: 1.8.1
 

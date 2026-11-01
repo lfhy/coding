@@ -31,10 +31,45 @@ type LinkQueue = { owner: LinkOwner; jobs: LinkJob[]; running: boolean; cancelle
 const MAX_QUEUED_LINKS = 32
 
 declare module 'coding-client-ui-slots' {
+  interface SlotMap {
+    /** 可选旧浏览器页面；默认工作台未声明此席位，须由自定义组合显式提供。 */
+    'workbench.browser': { kind: 'single'; scope: 'session'; owner: LegacyBrowserOwnerProps }
+    /** 可选旧浏览器标签；默认工作台仅显示 Agent 浏览器外部标签。 */
+    'workbench.browser.tabs': { kind: 'single'; scope: 'session'; owner: LegacyBrowserOwnerProps }
+  }
   interface LocaleNamespaceMap {
     /** 浏览器画面区的展示文案。 */
     'browser-mirror': BrowserMirrorKey
   }
+}
+
+/** 可选旧浏览器工作台的原有 props；默认组合不声明或渲染对应座位。 */
+export interface LegacyBrowserOwnerProps {
+  shown: boolean
+  openBrowser: (tabId?: string) => void
+  interactionEpoch: number
+  browserAutoRevealed: boolean
+  requestAutoReveal: (epoch: number) => boolean
+  autoRevealBrowser: (tabId: string, epoch: number) => void
+  syncBrowserTabs: (tabs: readonly { id: string; name: string }[], activeId: string | null) => void
+  beginBrowserLink: (id: string, url: string) => void
+  completeBrowserLink: (id: string, tabId: string) => void
+  failBrowserLink: (id: string, message: string) => void
+  clearBrowserLinks: () => void
+  selectPendingBrowserLink: (id: string) => void
+  closePendingBrowserLink: (id: string) => void
+  pendingBrowserLink?: { id: string; url: string; error?: string }
+  tabId?: string
+  tabName?: string
+  tabDomId?: string
+  panelDomId?: string
+  selectedTabId?: string
+  browserShown?: boolean
+  newTabRequest: number
+  handledTabRequest: number
+  markTabRequestHandled: (request: number) => void
+  focusBrowserTab: (tabId: string) => void
+  focusPendingBrowserTab: (tabId: string) => void
 }
 
 /** 人工导航经同源连接服务发往 Host。 */

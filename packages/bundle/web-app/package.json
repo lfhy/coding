@@ -57,7 +57,7 @@
     "coding-client-ui-agent-preset": "workspace:^",
     "coding-client-ui-attachment": "workspace:^",
     "coding-client-ui-brand-official": "workspace:^",
-    "coding-client-ui-browser": "workspace:^",
+    "coding-client-ui-browser-ego": "workspace:^",
     "coding-client-ui-commands": "workspace:^",
     "coding-client-ui-conversation": "workspace:^",
     "coding-client-ui-cordis": "workspace:^",

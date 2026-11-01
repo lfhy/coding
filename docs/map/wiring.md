@@ -102,7 +102,7 @@
 - `tool-ask-user` → `coding-tool-ask-user`
 - `tool-todo` → `coding-tool-todo`
 - `tool-web` → `coding-tool-web`
-- `tool-browser` → `coding-tool-browser`
+- `tool-browser` → `coding-tool-browser-ego`
 
 ## `apps/cli/config/agent-presets/minimal/agent.cordis.yml`
 
@@ -155,7 +155,7 @@
 - `tool-ask-user` → `coding-tool-ask-user`
 - `tool-todo` → `coding-tool-todo`
 - `tool-web` → `coding-tool-web`
-- `tool-browser` → `coding-tool-browser`
+- `tool-browser` → `coding-tool-browser-ego`
 - `mcp-rea` → `coding-mcp-client`
 - `mcp-rea-windows` → `coding-mcp-client`
 
@@ -197,7 +197,7 @@
 - `tool-ask-user` → `coding-tool-ask-user`
 - `tool-todo` → `coding-tool-todo`
 - `tool-web` → `coding-tool-web`
-- `tool-browser` → `coding-tool-browser`
+- `tool-browser` → `coding-tool-browser-ego`
 - `tool-presentation` → `coding-agent-tool-presentation`
 
 ## `examples/acp-agent/cordis.yml`
@@ -381,8 +381,7 @@
 - `web-search-parallel` → `coding-web-search-parallel`
 - `web-search-deepseek` → `coding-web-search-deepseek`
 - `web-search-tavily` → `coding-web-search-tavily`
-- `browser-playwright` → `coding-browser-playwright`
-- `browser-electron` → `coding-browser-electron`
+- `browser-ego-host` → `coding-browser-ego-host`
 - `tool-web` → `coding-tool-web`
 - `tools` → `coding-tools`
 - `system-prompt` → `coding-system-prompt`
@@ -406,7 +405,7 @@
 - `session-log-download` → `coding-session-log-export`
 - `open-in-app` → `coding-host-open-in-app`
 - `ui-open-in-app` → `coding-client-ui-open-in-app`
-- `ui-browser` → `coding-client-ui-browser`
+- `ui-browser-ego` → `coding-client-ui-browser-ego`
 - `workspace` → `coding-workspace`
 - `session-projection-cache` → `coding-session-projection-cache`
 - `session-reference` → `coding-session-reference`

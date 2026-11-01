@@ -182,15 +182,7 @@ function rightWorkbench() {
     openWorkbench: vi.fn(), closeWorkbench: vi.fn(), toggleWorkbenchFullscreen: vi.fn(),
     openSidebarTab: vi.fn(),
     toggleBottom: bottomToggle,
-    renderSlot: vi.fn((name: string, owner: {
-      shown: boolean
-      tabId?: string
-      browserShown?: boolean
-      openBrowser: (id?: string) => void
-    }) => name === 'workbench.browser'
-      ? <div hidden={!owner.shown}>browser page</div>
-      : owner.tabId === undefined ? null : <button type="button" role="tab"
-        aria-selected={owner.browserShown} onClick={() => { owner.openBrowser(owner.tabId) }}>browser tab</button>),
+    renderSlot: vi.fn(() => null),
   } as unknown as WorkspaceWorkbenchProps
   return { instance, list, props: workbenchProps, bottomToggle }
 }
@@ -282,12 +274,13 @@ describe('右侧和底栏终端', () => {
     fireEvent.click(screen.getByRole('button', { name: zh['tabs.close'].replace('{name}', 'coding 3') }))
     act(() => {
       b.instance.actions.openFile(SESSION, { name: 'a.txt', segments: ['a.txt'] })
-      b.instance.actions.syncBrowserTabs(SESSION, [{ id: 'browser-page', name: 'Page' }], 'browser-page')
+      b.instance.actions.openExternalTab(SESSION, { definitionId: 'agent-browser', kind: 'ego-browser:watch',
+        name: 'Agent 浏览器', address: 'sidebar://ego-browser%3Awatch' })
     })
     expect(screen.getByRole('tab', { name: 'a.txt' })).toBeDefined()
     expect(screen.getByRole('tab', { name: 'coding 1' })).toBeDefined()
-    fireEvent.click(screen.getByRole('tab', { name: 'browser tab' }))
-    expect(screen.getByText('browser page').hasAttribute('hidden')).toBe(false)
+    fireEvent.click(screen.getByRole('tab', { name: 'Agent 浏览器' }))
+    expect(b.instance.getSnapshot().sessions[SESSION]).toMatchObject({ view: 'external' })
     fireEvent.click(screen.getByRole('tab', { name: 'coding 1' }), { detail: 1 })
     expect(firstTerminal?.writes).toEqual(['first scrollback'])
     expect(secondTerminal?.writes).toEqual(['second scrollback'])

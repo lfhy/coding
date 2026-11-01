@@ -44,10 +44,6 @@ declare module '@deepseek-ai/cordis' {
 
 declare module 'coding-client-ui-slots' {
   interface SlotMap {
-    /** 工作台右侧预览区的会话级浏览器；隐藏时条目仍保持挂载。 */
-    'workbench.browser': { kind: 'single'; scope: 'session'; owner: WorkbenchBrowserOwnerProps }
-    /** 每个浏览器页面向工作台统一顶栏贡献一个标签。 */
-    'workbench.browser.tabs': { kind: 'single'; scope: 'session'; owner: WorkbenchBrowserOwnerProps }
     /** 第三方标签的内容座位；注册键等于定义 id。 */
     'sidebar.right.pane.tab': {
       kind: 'keyed'
@@ -65,37 +61,6 @@ declare module 'coding-client-ui-slots' {
       inject: SidebarRightTabSlotInject
     }
   }
-}
-
-/** 浏览器内容由贡献条目绘制；容器只持有视图显隐与切换动作。 */
-export interface WorkbenchBrowserOwnerProps {
-  shown: boolean
-  openBrowser: (tabId?: string) => void
-  interactionEpoch: number
-  browserAutoRevealed: boolean
-  requestAutoReveal: (epoch: number) => boolean
-  autoRevealBrowser: (tabId: string, epoch: number) => void
-  syncBrowserTabs: (tabs: readonly { id: string; name: string }[], activeId: string | null) => void
-  beginBrowserLink: (id: string, url: string) => void
-  completeBrowserLink: (id: string, tabId: string) => void
-  failBrowserLink: (id: string, message: string) => void
-  clearBrowserLinks: () => void
-  selectPendingBrowserLink: (id: string) => void
-  closePendingBrowserLink: (id: string) => void
-  pendingBrowserLink?: { id: string; url: string; error?: string }
-  tabId?: string
-  tabName?: string
-  tabDomId?: string
-  panelDomId?: string
-  selectedTabId?: string
-  browserShown?: boolean
-  /** 工作台菜单每次选择浏览器递增，内容贡献者为每个序号建立一个页面。 */
-  newTabRequest: number
-  /** 已交给浏览器命令的序号由工作台保留，贡献条目重挂载时不重复执行。 */
-  handledTabRequest: number
-  markTabRequestHandled: (request: number) => void
-  focusBrowserTab: (tabId: string) => void
-  focusPendingBrowserTab: (tabId: string) => void
 }
 
 /** locale、slot、布局、会话与工作区选择需要的服务。 */
@@ -190,8 +155,6 @@ export function apply(ctx: ClientContext): void {
     const disposeWorkbench = ctx.slots.register({
       name: 'workbench',
       children: {
-        'workbench.browser': { kind: 'single', scope: 'session' },
-        'workbench.browser.tabs': { kind: 'single', scope: 'session' },
         'sidebar.right.pane.tab': { kind: 'keyed', scope: 'session', inject: tabInfoInject },
         'sidebar.right.pane.tab.title': { kind: 'keyed', scope: 'session', inject: tabInfoInject },
       },

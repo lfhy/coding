@@ -10,18 +10,16 @@
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
-    "coding-attachment": "workspace:^",
-    "coding-browser": "workspace:^",
-    "coding-browser-electron": "workspace:^",
-    "coding-home-paths": "workspace:^",
-    "ws": "^8.21.0"
+    "coding-home-paths": "workspace:^"
   },
   "devDependencies": {
-    "@types/ws": "^8.18.1",
     "@types/node": "^22.20.0",
+    "@types/ws": "^8.18.1",
+    "coding-browser": "workspace:^",
+    "coding-browser-electron": "workspace:^",
     "electron": "44.0.0",
-    "playwright": "1.61.1",
     "tsdown": "^0.22.2",
-    "typescript": "^6.0.3"
+    "typescript": "^6.0.3",
+    "ws": "^8.21.0"
   }
 }

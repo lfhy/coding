@@ -18,10 +18,8 @@
 .previewSlot[hidden],
 .fileView[hidden],
 .menuView[hidden],
-.browserView[hidden],
 .externalPanel[hidden],
 .terminalStack[hidden],
-.browserTabs[hidden],
 .treeView[hidden] {
   display: none;
 }
@@ -132,16 +130,6 @@
   align-items: center;
   min-width: 0;
   height: 100%;
-}
-
-.browserTabs {
-  flex: 0 1 var(--workbench-tab-width);
-  display: flex;
-  align-items: center;
-  min-width: var(--workbench-tab-min-width);
-  max-width: 220px;
-  height: 100%;
-  margin-right: var(--workbench-tab-gap);
 }
 
 .tab {
@@ -255,8 +243,6 @@
 .previewStack,
 .fileView,
 .historyView,
-.browserView,
-.browserPanel,
 .externalPanel,
 .treeView,
 .previewSlot,
@@ -274,18 +260,12 @@
 
 .fileView,
 .historyView,
-.menuView,
-.browserView {
+.menuView {
   width: 100%;
   height: 100%;
 }
 
 .historyView > div {
-  width: 100%;
-  height: 100%;
-}
-
-.browserPanel {
   width: 100%;
   height: 100%;
 }

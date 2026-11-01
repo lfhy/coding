@@ -9,8 +9,7 @@ export default defineConfig([
     platform: 'node',
     target: 'node22',
     deps: {
-      alwaysBundle: ['ws', 'coding-home-paths', /^coding-browser-electron(?:\/|$)/u,
-        /^coding-attachment\/image-processing$/u],
+      alwaysBundle: ['coding-home-paths'],
       neverBundle: ['electron'],
     },
     dts: false,

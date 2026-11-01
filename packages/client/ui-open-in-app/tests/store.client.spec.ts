@@ -39,26 +39,23 @@ describe('file workbench store', () => {
       nextTerminalNumber: 1,
       nextLauncherNumber: 1,
       nextExternalNumber: 1,
-      activeBrowserTabId: null,
-      interactionEpoch: 8,
-      browserAutoRevealed: false,
       filesQuery: '',
       filesExpanded: [],
       filesLevels: {},
     })
   })
 
-  it('retains the browser selection per Session and returns to files on tab activation', () => {
+  it('retains file selection per Session and returns from the menu on tab activation', () => {
     const first = createWorkbenchStore().create()
     const second = createWorkbenchStore().create()
     const file = { name: 'notes.txt', segments: ['notes.txt'] }
     first.actions.openFile(file)
-    first.actions.setView('browser')
-    expect(first.store.getSnapshot().view).toBe('browser')
+    first.actions.setView('menu')
+    expect(first.store.getSnapshot().view).toBe('menu')
     expect(second.store.getSnapshot().view).toBe('menu')
     first.actions.activateFile(tabIdForSegments(file.segments))
     expect(first.store.getSnapshot()).toMatchObject({ view: 'files', activeId: tabIdForSegments(file.segments) })
-    first.actions.setView('browser')
+    first.actions.setView('menu')
     first.actions.openFile({ name: 'next.txt', segments: ['next.txt'] })
     expect(first.store.getSnapshot().view).toBe('files')
   })
@@ -137,9 +134,9 @@ describe('统一工作台标签', () => {
     instance.actions.openExternalTab({ definitionId: 'plugin:notes', kind: 'notes', name: 'Notes', address: '/notes' })
     expect(instance.getSnapshot().tabs.map(tab => tab.type)).toEqual(['terminal', 'file-manager', 'terminal', 'external'])
     instance.actions.openLauncher()
-    instance.actions.setView('browser')
+    instance.actions.setView('files')
     expect(instance.getSnapshot().tabs.some(tab => tab.type === 'launcher')).toBe(false)
-    expect(instance.getSnapshot().view).toBe('browser')
+    expect(instance.getSnapshot()).toMatchObject({ view: 'files', activeId: 'file-manager' })
   })
 
   it('关闭启动标签仅修改本地状态，选择邻项或返回空菜单；返回菜单不创建启动项', () => {
@@ -207,45 +204,26 @@ describe('统一工作台标签', () => {
     expect(instance.getSnapshot()).toMatchObject({ view: 'menu', activeId: null, tabs: [] })
   })
 
-  it('自动显露仅选中 Host 已同步的页面，人工操作优先于迟到的观测', () => {
-    const instance = createWorkbenchStore().create()
-    instance.actions.openFile({ name: 'notes.txt', segments: ['notes.txt'] })
-    instance.actions.syncBrowserTabs([{ id: 'one', name: '第一页' }, { id: 'two', name: '第二页' }], 'one')
-    const epoch = instance.getSnapshot().interactionEpoch
-    instance.actions.autoRevealBrowser('missing', epoch)
-    expect(instance.getSnapshot().view).toBe('files')
-    instance.actions.autoRevealBrowser('two', epoch)
-    expect(instance.getSnapshot()).toMatchObject({ view: 'browser', activeId: 'browser:two', browserAutoRevealed: true })
-    instance.actions.syncBrowserTabs([{ id: 'one', name: '第一页' }, { id: 'two', name: '第二页' }], 'one')
-    expect(instance.getSnapshot()).toMatchObject({ activeId: 'browser:one', browserAutoRevealed: false })
-    instance.actions.activateTab('browser:one')
-    instance.actions.autoRevealBrowser('two', epoch)
-    expect(instance.getSnapshot()).toMatchObject({ activeId: 'browser:one', browserAutoRevealed: false })
-    instance.actions.syncBrowserTabs([{ id: 'one', name: '第一页' }, { id: 'two', name: '第二页' }], 'one')
-    expect(instance.getSnapshot().activeId).toBe('browser:one')
-    instance.actions.recordInteraction()
-    instance.actions.autoRevealBrowser('two', epoch)
-    expect(instance.getSnapshot().activeId).toBe('browser:one')
-  })
   it('按标签类型切换内容，关闭活动标签时选择相邻项，关闭最后一项回到菜单', () => {
     const instance = createWorkbenchStore().create()
     const fileId = tabIdForSegments(['notes.txt'])
     instance.actions.openFile({ name: 'notes.txt', segments: ['notes.txt'] })
     instance.actions.openTerminal()
-    instance.actions.syncBrowserTabs([{ id: 'page', name: '页面' }], 'page')
+    instance.actions.openExternalTab({ definitionId: 'agent-browser', kind: 'ego-browser:watch',
+      name: 'Agent 浏览器', address: 'sidebar://ego-browser%3Awatch' })
     instance.actions.openTerminal()
     expect(instance.getSnapshot().tabs.map(tab => [tab.type, tab.id])).toEqual([
-      ['file', fileId], ['terminal', 'terminal:1'], ['browser', 'browser:page'], ['terminal', 'terminal:2'],
+      ['file', fileId], ['terminal', 'terminal:1'], ['external', 'external:["ego-browser:watch"]'], ['terminal', 'terminal:2'],
     ])
     expect(instance.getSnapshot()).toMatchObject({ view: 'terminal', activeId: 'terminal:2' })
 
     instance.actions.activateTab(fileId)
     expect(instance.getSnapshot()).toMatchObject({ view: 'files', activeId: fileId })
-    instance.actions.activateTab('browser:page')
-    expect(instance.getSnapshot()).toMatchObject({ view: 'browser', activeId: 'browser:page' })
+    instance.actions.activateTab('external:["ego-browser:watch"]')
+    expect(instance.getSnapshot()).toMatchObject({ view: 'external', activeId: 'external:["ego-browser:watch"]' })
     instance.actions.closeTab('terminal:1')
-    expect(instance.getSnapshot()).toMatchObject({ view: 'browser', activeId: 'browser:page' })
-    instance.actions.closeTab('browser:page')
+    expect(instance.getSnapshot()).toMatchObject({ view: 'external', activeId: 'external:["ego-browser:watch"]' })
+    instance.actions.closeExternalTab('external:["ego-browser:watch"]')
     expect(instance.getSnapshot()).toMatchObject({ view: 'terminal', activeId: 'terminal:2' })
     instance.actions.closeTab('terminal:2')
     expect(instance.getSnapshot()).toMatchObject({ view: 'files', activeId: fileId })
@@ -289,84 +267,6 @@ describe('统一工作台标签', () => {
     expect(instance.getSnapshot()).toMatchObject({ view: 'terminal', activeId: 'terminal:1' })
   })
 
-  it('同步浏览器标题和活动页时保留文件与终端选择，返回浏览器时恢复 Host 活动页', () => {
-    const instance = createWorkbenchStore().create()
-    const fileId = tabIdForSegments(['notes.txt'])
-    const pages = [{ id: 'one', name: '第一页' }, { id: 'two', name: '第二页' }]
-    instance.actions.openFile({ name: 'notes.txt', segments: ['notes.txt'] })
-    instance.actions.syncBrowserTabs(pages, 'one')
-    expect(instance.getSnapshot()).toMatchObject({ view: 'files', activeId: fileId })
-    instance.actions.openTerminal()
-    instance.actions.syncBrowserTabs([{ id: 'one', name: '更新标题' }, pages[1]!], 'two')
-    expect(instance.getSnapshot()).toMatchObject({ view: 'terminal', activeId: 'terminal:1' })
-    expect(instance.getSnapshot().tabs.find(tab => tab.id === 'browser:one')).toMatchObject({ name: '更新标题' })
-    instance.actions.setView('browser')
-    expect(instance.getSnapshot()).toMatchObject({ view: 'browser', activeId: 'browser:two' })
-    instance.actions.syncBrowserTabs(pages, 'one')
-    expect(instance.getSnapshot()).toMatchObject({ view: 'browser', activeId: 'browser:one' })
-
-    const unchanged = instance.getSnapshot()
-    instance.actions.syncBrowserTabs(pages, 'one')
-    expect(instance.getSnapshot()).toBe(unchanged)
-    instance.actions.setView('menu')
-    instance.actions.syncBrowserTabs([pages[1]!], 'two')
-    expect(instance.getSnapshot().view).toBe('menu')
-    instance.actions.setView('browser')
-    expect(instance.getSnapshot()).toMatchObject({ view: 'browser', activeId: 'browser:two' })
-    instance.actions.syncBrowserTabs([], null)
-    expect(instance.getSnapshot()).toMatchObject({ view: 'terminal', activeId: 'terminal:1' })
-  })
-
-  it('首次浏览器加载没有标签时保留入口，Host 关闭最后一个标签后返回菜单', () => {
-    const instance = createWorkbenchStore().create()
-    instance.actions.setView('browser')
-    instance.actions.syncBrowserTabs([], null)
-    expect(instance.getSnapshot()).toMatchObject({ view: 'browser', activeId: null })
-    instance.actions.syncBrowserTabs([{ id: 'page', name: '页面' }], 'page')
-    expect(instance.getSnapshot()).toMatchObject({ view: 'browser', activeId: 'browser:page' })
-    instance.actions.syncBrowserTabs([], null)
-    expect(instance.getSnapshot()).toMatchObject({ view: 'menu', activeId: null, tabs: [] })
-  })
-
-  it('链接点击先显示独立占位页，Host 同步不会抢占它，失败可重试且人工选择优先', () => {
-    const instance = createWorkbenchStore().create()
-    const actions = instance.actions
-    actions.beginBrowserLink('browser-link:1', 'https://one.example/')
-    actions.beginBrowserLink('browser-link:2', 'https://two.example/')
-    expect(instance.getSnapshot()).toMatchObject({ view: 'browser', activeId: 'browser-link:2',
-      tabs: [{ type: 'browser-pending', id: 'browser-link:1' }, { type: 'browser-pending', id: 'browser-link:2' }] })
-    actions.syncBrowserTabs([{ id: 'host-one', name: 'One' }], 'host-one')
-    expect(instance.getSnapshot().activeId).toBe('browser-link:2')
-    actions.completeBrowserLink('browser-link:1', 'host-one')
-    expect(instance.getSnapshot().activeId).toBe('browser-link:2')
-    actions.failBrowserLink('browser-link:2', 'network error')
-    expect(instance.getSnapshot().tabs.find(tab => tab.id === 'browser-link:2'))
-      .toMatchObject({ error: 'network error', url: 'https://two.example/' })
-    actions.beginBrowserLink('browser-link:2', 'https://two.example/')
-    expect(instance.getSnapshot().tabs.find(tab => tab.id === 'browser-link:2')).not.toHaveProperty('error')
-    actions.activateTab('browser:host-one')
-    actions.syncBrowserTabs([{ id: 'host-one', name: 'One' }, { id: 'host-two', name: 'Two' }], 'host-one')
-    actions.completeBrowserLink('browser-link:2', 'host-two')
-    expect(instance.getSnapshot()).toMatchObject({ view: 'browser', activeId: 'browser:host-one' })
-  })
-
-  it('菜单切换优先于完成的链接，关闭占位页不发送 Host id', () => {
-    const instance = createWorkbenchStore().create()
-    instance.actions.beginBrowserLink('browser-link:1', 'https://example.com/')
-    instance.actions.setView('menu')
-    instance.actions.syncBrowserTabs([{ id: 'host-one', name: 'One' }], 'host-one')
-    instance.actions.completeBrowserLink('browser-link:1', 'host-one')
-    expect(instance.getSnapshot()).toMatchObject({ view: 'menu', activeId: 'browser:host-one' })
-    instance.actions.beginBrowserLink('browser-link:2', 'https://example.com/')
-    instance.actions.closeTab('browser-link:2')
-    instance.actions.failBrowserLink('browser-link:2', 'ignored')
-    expect(instance.getSnapshot().tabs.some(tab => tab.id === 'browser-link:2')).toBe(false)
-    instance.actions.beginBrowserLink('browser-link:3', 'https://another.example.com/')
-    instance.actions.failBrowserLink('browser-link:3', 'network error')
-    instance.actions.clearBrowserLinks()
-    expect(instance.getSnapshot().tabs.some(tab => tab.type === 'browser-pending')).toBe(false)
-    expect(instance.getSnapshot()).toMatchObject({ view: 'browser', activeId: 'browser:host-one' })
-  })
 })
 
 describe('根级保留工作台状态', () => {
@@ -463,15 +363,15 @@ describe('根级保留工作台状态', () => {
     instance.actions.toggleFilesExpanded(firstId, 'root')
     instance.actions.setFilesLevel(firstId, [], 'loading')
     instance.actions.setFilesListing(firstId, [], { path: '/first', entries: [], truncated: false })
-    instance.actions.syncBrowserTabs(secondId, [{ id: 'page', name: '页面' }], 'page')
-    instance.actions.setView(secondId, 'browser')
+    instance.actions.openExternalTab(secondId, { definitionId: 'agent-browser', kind: 'ego-browser:watch',
+      name: 'Agent 浏览器', address: 'sidebar://ego-browser%3Awatch' })
     expect(instance.getSnapshot().sessions[firstId]).toMatchObject({
       view: 'files', filesQuery: 'first', filesExpanded: ['root'],
       filesLevels: { '[]': { phase: 'ready', listing: { path: '/first' } } },
     })
     expect(instance.getSnapshot().sessions[secondId]).toMatchObject({
-      view: 'browser', activeId: 'browser:page', filesQuery: '', filesExpanded: [], filesLevels: {},
-      tabs: [{ type: 'terminal', id: 'terminal:1', number: 1 }, { type: 'browser', id: 'browser:page' }],
+      view: 'external', activeId: 'external:["ego-browser:watch"]', filesQuery: '', filesExpanded: [], filesLevels: {},
+      tabs: [{ type: 'terminal', id: 'terminal:1', number: 1 }, { type: 'external', kind: 'ego-browser:watch' }],
     })
     instance.actions.activateTab(firstId, 'terminal:1')
     instance.actions.closeTab(firstId, 'terminal:1')

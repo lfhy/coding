@@ -80,7 +80,7 @@
     "coding-tool-jobs": "workspace:^",
     "coding-tool-todo": "workspace:^",
     "coding-tool-web": "workspace:^",
-    "coding-tool-browser": "workspace:^",
+    "coding-tool-browser-ego": "workspace:^",
     "coding-tool-computer-use": "workspace:^",
     "coding-tool-workflow": "workspace:^",
     "coding-web-app": "workspace:^",

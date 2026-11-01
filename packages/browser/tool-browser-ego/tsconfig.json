@@ -1,0 +1,18 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": { "rootDir": "src", "outDir": "lib/types" },
+  "include": ["src"],
+  "references": [
+    { "path": "../../../vendor/cosmokit" },
+    { "path": "../../../vendor/cordis" },
+    { "path": "../browser-ego-host" },
+    { "path": "../../llm/llm" },
+    { "path": "../../core/tools" },
+    { "path": "../../core/session" },
+    { "path": "../../interaction/user-approval" },
+    { "path": "../../sandbox/sandbox-policy" },
+    { "path": "../../attachment/attachment" },
+    { "path": "../../subprocess/subprocess" },
+    { "path": "../../runtime-diagnostics/invariants" }
+  ]
+}

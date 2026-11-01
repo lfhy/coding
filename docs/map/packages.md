@@ -3,7 +3,7 @@
 
 # 包清单
 
-workspace 共 263 个包，按 group 分节。每行给出包目录、职责（README 首段）、源码入口与 `tests/` 下的 spec 文件数；标 `client` 的包导出 `./client` 浏览器半，标 `bundle` 的包是 profile/bundle 装配层。
+workspace 共 266 个包，按 group 分节。每行给出包目录、职责（README 首段）、源码入口与 `tests/` 下的 spec 文件数；标 `client` 的包导出 `./client` 浏览器半，标 `bundle` 的包是 profile/bundle 装配层。
 
 模型可见工具的名称与 schema 见 [tool-catalog.md](../tool-catalog.md)，插件可配置项见 [config-catalog.md](../config-catalog.md)，依赖边见 [module-graph.md](../module-graph.md)。
 
@@ -29,9 +29,11 @@ workspace 共 263 个包，按 group 分节。每行给出包目录、职责（R
 ## packages/browser
 
 - `packages/browser/browser` — 模型消费方在审批前调用 `acquireOperation(sessionId, signal)`：提供方立即阻止新人工命令… 入口 `src/index.ts`（tests 1）
+- `packages/browser/browser-ego-host` — 可用的受限 ego-lite 工具为 `navigate`、`snapshot`、`page_info`、`tabs`… 入口 `src/index.ts`（tests 3）
 - `packages/browser/browser-electron` — 模型操作从审批到执行结束独占会话；人工操作按会话排队，并在命令发送前执行准入复核 入口 `src/index.ts`（tests 1）
 - `packages/browser/browser-playwright` — 截图以设备像素密度捕获一次，已在 2 MiB 以内的画面保持原样；超限则直接用共享 `fitImage` 策略和 Sharp PNG 编码器等比… 入口 `src/index.ts`（tests 3）
 - `packages/browser/tool-browser` — 其余组合保持一次性审批路径：`danger-full-access` 搭配 `ask` 仍对每次调用（包括快照与关闭）申请审批… 入口 `src/index.ts`（tests 2）
+- `packages/browser/tool-browser-ego` — 模型侧的 Ego 浏览器工具消费方 入口 `src/index.ts`（tests 2）
 
 ## packages/bundle
 
@@ -50,6 +52,7 @@ workspace 共 263 个包，按 group 分节。每行给出包目录、职责（R
 - `packages/client/ui-attachment` — 对话 UI 的动态附件呈现插件 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 7）
 - `packages/client/ui-brand-official` — 仅当 `DSH_CLIENT_BUILD_PROFILE` 为 `official` 时… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 2）
 - `packages/client/ui-browser` — 本包的 Client 半边占用 `workbench.browser` 内容和 `workbench.browser.tabs` 顶栏标签两个会… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 9）
+- `packages/client/ui-browser-ego` — 本包在现有右侧工作台注册一个会话级「Agent 浏览器」外部标签；只负责显示所属会话的页面标签列表、活动页实时画面和基础人工操作… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 5）
 - `packages/client/ui-commands` — 客户端命令 API（`ctx.commandUi`）：以会话为 key 的命令目录缓存、带 `matchSpace`／`matchEnter` … [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 5）
 - `packages/client/ui-conversation` — 会话领域：骨架（标题栏／标签页／编辑器／空状态）、聊天视图（分组步骤摘要流、流式尾部隔离与轮次状态）、输入区 dock… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 39）
 - `packages/client/ui-deliverables` — 产出文件与可点击文件引用功能的属主 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 2）
@@ -62,7 +65,7 @@ workspace 共 263 个包，按 group 分节。每行给出包目录、职责（R
 - `packages/client/ui-layout` — 本包拥有浏览器根布局、瞬时面板几何和 `ctx.layout` [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 7）
 - `packages/client/ui-message-feedback` — 单条消息反馈插件的浏览器侧：一对 Like/Dislike 按钮加一个可选备注… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 4）
 - `packages/client/ui-model-selection` — 模型选择插件（浏览器侧）：**两个入口共用一份会话级目录**，由 `ModelDirectoryResolver`… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 2）
-- `packages/client/ui-open-in-app` — 右侧工作台的标签、功能菜单与显隐按 Session 管理；文件管理器、文件预览、浏览器页面、终端和可选的外部插件内容使用同一标签栏 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 16）
+- `packages/client/ui-open-in-app` — 右侧工作台的标签、功能菜单与显隐按 Session 管理；文件管理器、文件预览、Git 历史、终端和外部插件内容使用同一标签栏 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 16）
 - `packages/client/ui-permission-presets` — 面向两种不同生命周期的浏览器权限界面 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 3）
 - `packages/client/ui-plan` — Plan mode 状态徽章，纯浏览器 surface 插件 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 2）
 - `packages/client/ui-primitives` — 纯 React 原子组件（零 cordis）：StateDot、DisclosureRow、ic_ds_* 图标、Button/Pill/Men… 入口 `src/index.ts`（tests 22）

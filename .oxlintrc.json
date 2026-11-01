@@ -22,6 +22,7 @@
     "apps/desktop/frontend/wailsjs/**", // Wails generates runtime declarations and bindings during desktop development.
     "packages/typert/generator/tests/fixtures/type-model/**", // tsgolint rejects this fixture's preserved project shapes before rules run.
     "vendor/**", // Vendored source keeps upstream style and idioms.
+    "packages/browser/browser-ego-host/third-party/**", // 保留的上游只读原文不套用项目自有源码风格。
     "native/**", // The imported landlock-run subtree has its own gates; see native/README.md.
     "**/*.js",
     "**/*.mjs",

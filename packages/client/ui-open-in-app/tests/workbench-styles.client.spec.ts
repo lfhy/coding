@@ -24,7 +24,7 @@ describe('workbench desktop titlebar', () => {
 
   it('shares one tab width, height, spacing and selection treatment across tab types', () => {
     expect(css).toMatch(/\.topbar\s*\{[^}]*--workbench-tab-width:\s*184px/)
-    expect(css).toMatch(/\.browserTabs\s*\{[^}]*flex:\s*0 1 var\(--workbench-tab-width\)/)
+    expect(css).not.toContain('.browserTabs')
     expect(css).toMatch(/\.tab\s*\{[^}]*flex:\s*0 1 var\(--workbench-tab-width\)/)
     expect(css).toMatch(/\.tab\s*\{[^}]*height:\s*var\(--workbench-tab-height\)/)
     expect(css).toMatch(/\.tab:not\(\.tabActive\):hover:has\(> button:enabled\)/)

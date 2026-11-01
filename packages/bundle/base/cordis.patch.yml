@@ -491,19 +491,9 @@
       config:
         apiKeyEnv: TAVILY_API_KEY
 
-    # 浏览器归会话所有，在模型导航获准或人工创建标签页时按需启动；完全访问预设无需逐次审批。
-    # HTTP 预览路由仅在 Web Host 挂载传输服务时注册。
-    - id: browser-playwright
-      name: 'coding-browser-playwright'
-      disabled: !!js Boolean(process.env.DSH_DESKTOP_BROWSER_BRIDGE_ORIGIN)
-
-    # 受管桌面 Host 由主进程注入本次启动的私有桥地址和令牌；与 Playwright 提供方互斥。
-    - id: browser-electron
-      name: 'coding-browser-electron'
-      disabled: !!js "!process.env.DSH_DESKTOP_BROWSER_BRIDGE_ORIGIN"
-      config:
-        originEnv: DSH_DESKTOP_BROWSER_BRIDGE_ORIGIN
-        tokenEnv: DSH_DESKTOP_BROWSER_BRIDGE_TOKEN
+    # 会话浏览器只由 ego-lite 运行时持有；模型工具按 Agent 预设单独装配。
+    - id: browser-ego-host
+      name: 'coding-browser-ego-host'
 
     - id: tool-web
       name: 'coding-tool-web'

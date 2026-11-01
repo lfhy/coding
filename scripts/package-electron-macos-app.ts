@@ -132,29 +132,26 @@ async function fileHash(path: string): Promise<string> {
   return createHash('sha256').update(await readFile(path)).digest('hex')
 }
 
-const playwrightVersion = '1.61.1'
-
-async function validatePlaywright(paths: PackagingPaths): Promise<void> {
-  const runtimeModules = join(paths.runtime, 'runtime', 'node_modules')
-  if (await readVersion(join(runtimeModules, 'playwright', 'package.json')) !== playwrightVersion ||
-    await readVersion(join(runtimeModules, 'playwright-core', 'package.json')) !== playwrightVersion) {
-    throw new Error(`package: expected Host runtime Playwright ${playwrightVersion}`)
-  }
-  await requireFile(join(runtimeModules, 'coding-browser-playwright', 'lib', 'index.js'))
-}
-
-async function validateElectronBrowser(paths: PackagingPaths): Promise<void> {
+/** 校验生产 Host 实际加载的 ego 浏览器包，而非 Electron 主进程的旧浏览器桥。 */
+async function validateEgoBrowser(paths: PackagingPaths): Promise<void> {
   const modules = join(paths.runtime, 'runtime', 'node_modules')
-  const provider = join(modules, 'coding-browser-electron')
+  const provider = join(modules, 'coding-browser-ego-host')
   const manifest: unknown = JSON.parse(await readFile(join(provider, 'package.json'), 'utf8'))
-  const record = manifest as { name?: unknown; exports?: { './protocol'?: { default?: unknown } } }
-  if (typeof manifest !== 'object' || manifest === null || record.name !== 'coding-browser-electron' ||
-    record.exports?.['./protocol']?.default !== './lib/types/protocol.js') {
-    throw new Error('package: invalid Host runtime Electron browser protocol export')
+  if (typeof manifest !== 'object' || manifest === null || Array.isArray(manifest) ||
+    (manifest as { name?: unknown }).name !== 'coding-browser-ego-host') {
+    throw new Error('package: invalid Host runtime ego browser manifest')
   }
-  await requireFile(join(provider, 'lib', 'index.js'))
-  await requireFile(join(provider, 'lib', 'types', 'protocol.js'))
-  await requireFile(join(modules, 'ws', 'index.js'))
+  for (const path of [
+    'lib/index.js',
+    'runtime/ego-browser/dist/out/index.js',
+    'runtime/ego-browser/screenshot-clip.mjs',
+    'runtime/ego-linux/bin/ego-browser.mjs',
+    'runtime/ego-linux/src/chrome.mjs',
+    'runtime/ego-linux/src/shim.mjs',
+    'bin/ego-cast-worker.mjs',
+    'LICENSE',
+    'THIRD_PARTY_NOTICES.upstream.md',
+  ]) await requireFile(join(provider, path))
 }
 
 async function validate(paths: PackagingPaths, run: Run): Promise<string> {
@@ -224,8 +221,7 @@ async function validate(paths: PackagingPaths, run: Run): Promise<string> {
     throw new Error('package: deployed Host CLI version differs from runtime metadata')
   }
   await assertArm64(paths.helper, run)
-  await validatePlaywright(paths)
-  await validateElectronBrowser(paths)
+  await validateEgoBrowser(paths)
 
   const agentManifest = join(paths.remoteAgent, 'manifest.json')
   const agent: unknown = JSON.parse(await readFile(agentManifest, 'utf8'))
@@ -344,9 +340,6 @@ export async function packageElectronMacosApp(
     const contents = join(stage, 'Contents')
     await rename(join(contents, 'MacOS', 'Electron'), join(contents, 'MacOS', applicationExecutable))
     const resources = join(contents, 'Resources')
-    if (await exists(join(resources, 'playwright-browsers'))) {
-      throw new Error('package: unexpected Playwright browser resource in Electron application')
-    }
     const appDirectory = join(stage, '.asar-source')
     const archive = join(resources, 'app.asar')
     await rm(join(resources, 'default_app.asar'), { force: true })

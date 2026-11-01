@@ -1,6 +1,6 @@
 {
   "name": "coding-client-ui-open-in-app",
-  "description": "Session workspace launcher, file workbench, and retained browser terminal",
+  "description": "Session workspace launcher, file workbench, and retained terminal panels",
   "version": "0.1.0-rc.8",
   "publishConfig": {
     "access": "public"

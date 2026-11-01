@@ -2,6 +2,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { useEffect } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { IconBrowseOutline16 } from 'coding-client-ui-primitives'
 import { bindSnapshotSelector, makeTranslate } from 'coding-client-test-runtime'
 import type { SessionId } from 'coding-session/types'
 import type { GitHistory } from 'coding-host-apiproxy/api'
@@ -64,7 +65,7 @@ function bench(over: {
   bottomOpen?: boolean
   listFiles?: (segments: readonly string[], signal?: AbortSignal) => Promise<WorkspaceFilesPayload>
   readFile?: (segments: readonly string[], signal?: AbortSignal) => Promise<WorkspaceFilePayload>
-  initialView?: 'menu' | 'files' | 'history' | 'browser'
+  initialView?: 'menu' | 'files' | 'history'
   gitHistory?: (query: { count: number }, signal: AbortSignal) => Promise<GitHistory | null>
   externalDefinitions?: readonly SidebarRightTabDefinition[]
 } = {}) {
@@ -80,7 +81,6 @@ function bench(over: {
   const closeWorkbench = vi.fn()
   const toggleWorkbenchFullscreen = vi.fn()
   const toggleBottom = vi.fn()
-  const openWorkbench = vi.fn()
   const openSidebarTab = vi.fn((_sessionId: SessionId, kind: string) => {
     const definition = over.externalDefinitions?.find(candidate => candidate.kind === kind)
     if (definition === undefined) return
@@ -88,8 +88,7 @@ function bench(over: {
     instance.actions.openExternalTab({ definitionId: definition.id, kind,
       name: definition.title(address), address, multiple: definition.multiple ?? false })
   })
-  const renderSlot = vi.fn((name: string, _owner?: unknown, _options?: unknown) => <div data-testid={name === 'workbench.browser'
-    ? 'browser-contribution' : 'browser-tabs-contribution'} />)
+  const renderSlot = vi.fn((name: string, _owner?: unknown, _options?: unknown) => <div data-testid={name} />)
   const listFiles = vi.fn(over.listFiles ?? (async () => listing('/workspace', [])))
   const readFile = vi.fn(over.readFile ?? (async (): Promise<WorkspaceFilePayload> => ({
     path: '/workspace/file', content: { kind: 'text', text: '' },
@@ -101,7 +100,6 @@ function bench(over: {
     fullscreen: over.fullscreen ?? false,
     bottomOpen: over.bottomOpen ?? false,
     closeWorkbench,
-    openWorkbench,
     toggleWorkbenchFullscreen,
     toggleBottom,
     openSidebarTab,
@@ -118,7 +116,7 @@ function bench(over: {
     terminalUrl: (id: SessionId) => `ws://test/terminal?sessionId=${id}`,
     t,
   } as unknown as WorkspaceWorkbenchProps
-  return { instance, props, closeWorkbench, openWorkbench, openSidebarTab, renderSlot,
+  return { instance, props, closeWorkbench, openSidebarTab, renderSlot,
     toggleWorkbenchFullscreen, toggleBottom, listFiles, readFile, gitHistory }
 }
 
@@ -242,8 +240,7 @@ describe('WorkspaceWorkbench shell', () => {
     b.renderSlot.mockImplementation((name, owner?: unknown, options?: unknown) => {
       if (name === 'sidebar.right.pane.tab.title') return <span>{tabNameFromOwner(owner)}</span>
       if (name === 'sidebar.right.pane.tab') return <ExternalBody name={tabNameFromOwner(owner) ?? ''} />
-      return <div data-testid={name === 'workbench.browser'
-        ? 'browser-contribution' : 'browser-tabs-contribution'} data-entry-key={entryKeyFromOptions(options)} />
+      return <div data-testid={name} data-entry-key={entryKeyFromOptions(options)} />
     })
     act(() => {
       b.instance.actions.openExternalTab({ definitionId: 'plugin:retained', kind: 'retained',
@@ -288,7 +285,7 @@ describe('WorkspaceWorkbench shell', () => {
     const menu = screen.getByRole('navigation', { name: zh['workbench.menu.label'] })
     const icons = within(menu).getAllByRole('button', { hidden: true })
       .map(button => button.querySelector('svg'))
-    expect(icons).toHaveLength(4)
+    expect(icons).toHaveLength(3)
     for (const icon of icons) {
       expect(icon?.getAttribute('width')).toBe('18')
       expect(icon?.getAttribute('height')).toBe('18')
@@ -335,172 +332,24 @@ describe('WorkspaceWorkbench shell', () => {
       .toHaveLength(5)
   })
 
-  it('switches browser and files without unmounting the browser child or clearing file tabs', async () => {
-    const b = bench()
+  it('opens Agent Browser through the external guide and retains file tabs on selection', () => {
+    const b = bench({ externalDefinitions: [{ id: 'ego-browser', kind: 'ego-browser:watch',
+      title: () => 'Agent 浏览器', guide: [{ id: 'watch', order: 10, title: () => 'Agent 浏览器', icon: IconBrowseOutline16 }] }] })
+    b.renderSlot.mockImplementation((name, owner?: unknown) => name === 'sidebar.right.pane.tab.title'
+      ? <span>{tabNameFromOwner(owner)}</span> : <div data-testid={name} />)
     b.instance.actions.openFile({ name: 'kept.txt', segments: ['kept.txt'] })
-    const mounted = render(<WorkspaceWorkbench {...b.props} />)
-    const browser = screen.getByTestId('browser-contribution')
-    act(() => { b.instance.actions.syncBrowserTabs([{ id: 'kept-page', name: 'Kept page' }], 'kept-page') })
-    const browserTabs = screen.getByTestId('browser-tabs-contribution')
-    const topbar = mounted.container.querySelector('header') as HTMLElement
-    expect(topbar.contains(browserTabs)).toBe(true)
-    expect(browserTabs.parentElement?.hasAttribute('hidden')).toBe(false)
-    fireEvent.click(screen.getByRole('button', { name: zh['workbench.menu.back'] }))
-    fireEvent.click(screen.getByRole('button', { name: zh['workbench.menu.browser'] }))
-    expect(b.openWorkbench).toHaveBeenCalledOnce()
-    expect(b.instance.store.getSnapshot()).toMatchObject({ view: 'browser', activeId: 'browser:kept-page' })
-    expect(screen.getByTestId('browser-contribution')).toBe(browser)
-    expect(screen.getByTestId('browser-tabs-contribution')).toBe(browserTabs)
-    expect(browserTabs.parentElement?.hasAttribute('hidden')).toBe(false)
-    const browserPanel = browser.closest('[role="tabpanel"]') as HTMLElement
-    expect(browserPanel.id).not.toBe('')
-    expect(b.renderSlot).toHaveBeenCalledWith('workbench.browser.tabs', expect.objectContaining({
-      tabId: 'kept-page', tabDomId: browserPanel.getAttribute('aria-labelledby'), panelDomId: browserPanel.id,
-    }))
-    expect(b.renderSlot).toHaveBeenLastCalledWith('workbench.browser', expect.objectContaining({ shown: true }))
-    expect(b.renderSlot).toHaveBeenCalledWith('workbench.browser.tabs', expect.objectContaining({ shown: true }))
-    expect((mounted.container.querySelector('main > div:first-child') as HTMLElement).hidden).toBe(true)
-    expect(mounted.container.querySelector('main > div:first-child')?.hasAttribute('inert')).toBe(true)
-    expect(mounted.container.querySelector('aside')?.hidden).toBe(true)
-    fireEvent.click(screen.getByRole('button', { name: zh['workbench.menu.back'] }))
-    fireEvent.click(screen.getByRole('button', { name: zh['workbench.menu.files'] }))
-    expect(b.instance.store.getSnapshot().view).toBe('files')
-    expect(b.renderSlot).toHaveBeenLastCalledWith('workbench.browser', expect.objectContaining({ shown: false }))
-    fireEvent.click(screen.getByRole('button', { name: zh['workbench.menu.back'] }))
-    fireEvent.click(screen.getByRole('button', { name: zh['workbench.menu.browser'] }))
-    const owner = (b.renderSlot as unknown as { mock: { lastCall?: [string, {
-      openBrowser: () => void
-    }] } }).mock.lastCall?.[1]
-    expect(owner).toBeDefined()
-    if (!owner) throw new Error('browser slot owner was not registered')
-    fireEvent.click(screen.getByRole('button', { name: zh['workbench.menu.back'] }))
-    expect(b.instance.store.getSnapshot().view).toBe('menu')
-    expect(document.activeElement).toBe(screen.getByRole('button', { name: zh['workbench.menu.terminal'] }))
-    act(() => { owner.openBrowser() })
-    expect(b.instance.store.getSnapshot().view).toBe('browser')
-    expect(b.openWorkbench).toHaveBeenCalledTimes(3)
-    mounted.rerender(<WorkspaceWorkbench {...b.props} shown={false} />)
-    expect(b.renderSlot).toHaveBeenLastCalledWith('workbench.browser', expect.objectContaining({ shown: false }))
-    expect(screen.getByTestId('browser-contribution')).toBe(browser)
-  })
-
-  it('retains consumed browser requests and never focuses a disabled or hidden browser tab', () => {
-    const b = bench()
-    b.renderSlot.mockImplementation(name => name === 'workbench.browser.tabs'
-      ? <button type="button" role="tab" data-browser-tab-id="new-page">New page</button>
-      : <div data-testid="browser-contribution" />)
     render(<WorkspaceWorkbench {...b.props} />)
-    fireEvent.click(screen.getByRole('button', { name: zh['workbench.menu.browser'] }))
-    const owner = (b.renderSlot as unknown as { mock: { lastCall?: [string, {
-      newTabRequest: number
-      handledTabRequest: number
-      markTabRequestHandled: (request: number) => void
-      focusBrowserTab: (tabId: string) => void
-      focusPendingBrowserTab: (tabId: string) => void
-      syncBrowserTabs: (tabs: readonly { id: string; name: string }[], activeId: string) => void
-    }] } }).mock.lastCall?.[1]
-    if (!owner) throw new Error('browser slot owner was not registered')
-    expect(owner.newTabRequest).toBe(1)
-    act(() => { owner.markTabRequestHandled(1) })
-    expect(b.renderSlot).toHaveBeenLastCalledWith('workbench.browser', expect.objectContaining({
-      newTabRequest: 1, handledTabRequest: 1,
-    }))
-    act(() => { owner.focusBrowserTab('new-page') })
-    act(() => { owner.focusPendingBrowserTab('unrelated-page') })
-    act(() => { owner.syncBrowserTabs([{ id: 'new-page', name: 'New page' }], 'new-page') })
-    const tab = screen.getByRole('tab', { name: 'New page' })
-    expect(document.activeElement).toBe(tab)
-    screen.getByRole('button', { name: zh['workbench.fullscreen.enter'] }).focus()
-    ;(tab as HTMLButtonElement).disabled = true
-    act(() => { owner.focusBrowserTab('new-page') })
-    expect(document.activeElement).not.toBe(tab)
-    ;(tab as HTMLButtonElement).disabled = false
-    act(() => { owner.focusPendingBrowserTab('new-page') })
-    expect(document.activeElement).toBe(tab)
-    fireEvent.click(screen.getByRole('button', { name: zh['tabs.add'] }))
-    const menu = screen.getByRole('button', { name: zh['workbench.menu.terminal'] })
-    expect(document.activeElement).toBe(menu)
-    act(() => { owner.focusBrowserTab('new-page') })
-    expect(document.activeElement).toBe(menu)
-  })
-
-  it('reveals the first linked page before a Host tab exists without requesting an empty tab', () => {
-    const b = bench()
-    render(<WorkspaceWorkbench {...b.props} />)
-    const owner = (b.renderSlot as unknown as { mock: { lastCall?: [string, {
-      beginBrowserLink: (id: string, url: string) => void
-    }] } }).mock.lastCall?.[1]
-    if (!owner) throw new Error('browser slot owner was not registered')
-    act(() => { owner.beginBrowserLink('browser-link:1', 'https://slow.example/') })
-    expect(b.openWorkbench).toHaveBeenCalledOnce()
-    expect(b.instance.getSnapshot()).toMatchObject({ view: 'browser', activeId: 'browser-link:1' })
-    expect(b.renderSlot).toHaveBeenCalledWith('workbench.browser', expect.objectContaining({
-      pendingBrowserLink: { id: 'browser-link:1', type: 'browser-pending', url: 'https://slow.example/' },
-      newTabRequest: 0,
-    }))
-    expect(b.renderSlot).toHaveBeenCalledWith('workbench.browser.tabs', expect.objectContaining({
-      pendingBrowserLink: { id: 'browser-link:1', type: 'browser-pending', url: 'https://slow.example/' },
-      browserShown: true,
-    }))
-  })
-
-  it('tolerates a browser focus reply arriving after the workbench is unmounted', () => {
-    const b = bench()
-    const mounted = render(<WorkspaceWorkbench {...b.props} />)
-    fireEvent.click(screen.getByRole('button', { name: zh['workbench.menu.browser'] }))
-    const owner = (b.renderSlot as unknown as { mock: { lastCall?: [string, {
-      focusBrowserTab: (tabId: string) => void
-    }] } }).mock.lastCall?.[1]
-    if (!owner) throw new Error('browser slot owner was not registered')
-    mounted.unmount()
-    expect(() => { owner.focusBrowserTab('late-page') }).not.toThrow()
-  })
-
-  it('keeps one browser content instance while reassigning the active page panel relationship', () => {
-    const b = bench()
-    b.instance.actions.syncBrowserTabs([{ id: 'first', name: 'First' }, { id: 'second', name: 'Second' }], 'first')
-    b.instance.actions.setView('browser')
-    const mounted = render(<WorkspaceWorkbench {...b.props} />)
-    const browser = screen.getByTestId('browser-contribution')
-    const firstPanel = browser.closest('[role="tabpanel"]') as HTMLElement
-    const firstPanelId = firstPanel.id
-    expect(firstPanel.getAttribute('aria-labelledby')).not.toBeNull()
-    act(() => { b.instance.actions.activateTab('browser:second') })
-    const secondPanel = browser.closest('[role="tabpanel"]') as HTMLElement
-    expect(secondPanel).toBe(firstPanel)
-    expect(secondPanel.id).not.toBe(firstPanelId)
-    expect(mounted.container.querySelectorAll('[role="tabpanel"][id]')).toHaveLength(2)
-    expect((mounted.container.querySelector(`[id="${firstPanelId}"]`) as HTMLElement).hidden).toBe(true)
-    expect(screen.getByTestId('browser-contribution')).toBe(browser)
-  })
-
-  it('only reveals a browser page when its interaction is still current', () => {
-    const b = bench()
-    b.instance.actions.syncBrowserTabs([{ id: 'page', name: 'Page' }], 'page')
-    render(<WorkspaceWorkbench {...b.props} />)
-    fireEvent.click(screen.getByRole('button', { name: zh['workbench.menu.browser'] }))
-    const owner = (b.renderSlot as unknown as { mock: { lastCall?: [string, {
-      interactionEpoch: number
-      requestAutoReveal: (epoch: number) => boolean
-      autoRevealBrowser: (tabId: string, epoch: number) => void
-    }] } }).mock.lastCall?.[1]
-    if (!owner) throw new Error('browser slot owner was not registered')
-    expect(owner.requestAutoReveal(owner.interactionEpoch + 1)).toBe(false)
-    expect(b.openWorkbench).toHaveBeenCalledOnce()
     fireEvent.click(screen.getByRole('button', { name: zh['workbench.menu.back'] }))
-    fireEvent.click(screen.getByRole('button', { name: zh['workbench.menu.files'] }))
-    const current = (b.renderSlot as unknown as { mock: { lastCall?: [string, typeof owner] } }).mock.lastCall?.[1]
-    if (!current) throw new Error('browser slot owner was not registered')
-    expect(current.requestAutoReveal(owner.interactionEpoch)).toBe(false)
-    expect(current.requestAutoReveal(current.interactionEpoch)).toBe(true)
-    act(() => { current.autoRevealBrowser('page', current.interactionEpoch) })
-    expect(b.instance.getSnapshot()).toMatchObject({ view: 'browser', activeId: 'browser:page', browserAutoRevealed: true })
-    expect(b.openWorkbench).toHaveBeenCalledTimes(2)
-    act(() => { b.instance.actions.recordInteraction() })
-    const afterInteraction = (b.renderSlot as unknown as { mock: { lastCall?: [string, typeof owner] } }).mock.lastCall?.[1]
-    if (!afterInteraction) throw new Error('browser slot owner was not registered')
-    expect(afterInteraction.requestAutoReveal(current.interactionEpoch)).toBe(false)
-    expect(b.openWorkbench).toHaveBeenCalledTimes(2)
+    expect(screen.queryByRole('button', { name: '浏览器' })).toBeNull()
+    const guide = screen.getByRole('button', { name: 'Agent 浏览器' })
+    expect(guide.querySelector('svg path')).not.toBeNull()
+    fireEvent.click(guide)
+    expect(b.openSidebarTab).toHaveBeenCalledExactlyOnceWith(SESSION, 'ego-browser:watch')
+    expect(b.instance.getSnapshot()).toMatchObject({ view: 'external', tabs: [{ type: 'file' }, { type: 'external' }] })
+    expect(screen.getByRole('tabpanel', { name: 'Agent 浏览器' }).contains(
+      screen.getByTestId('sidebar.right.pane.tab'))).toBe(true)
+    fireEvent.click(screen.getByRole('tab', { name: 'kept.txt' }))
+    expect(b.instance.getSnapshot()).toMatchObject({ view: 'files', tabs: [{ type: 'file' }, { type: 'external' }] })
   })
 
   it('navigates workbench tabs by arrow, Home and End without changing the feature menu on other keys', () => {
@@ -579,10 +428,10 @@ describe('WorkspaceWorkbench shell', () => {
     expect(b.listFiles).not.toHaveBeenCalled()
     const items = within(menu).getAllByRole('button')
     expect(items.map(item => item.textContent)).toEqual([
-      '变更记录', '终端', '浏览器', '文件',
+      '变更记录', '终端', '文件',
     ])
     expect(items[0]?.hasAttribute('disabled')).toBe(false)
-    expect(items[3]?.hasAttribute('disabled')).toBe(false)
+    expect(items[2]?.hasAttribute('disabled')).toBe(false)
     fireEvent.click(items[0] as HTMLButtonElement)
     expect(b.instance.store.getSnapshot().view).toBe('history')
     expect(screen.getByRole('tab', { name: zh['workbench.menu.review'] }).getAttribute('aria-selected')).toBe('true')
@@ -593,20 +442,17 @@ describe('WorkspaceWorkbench shell', () => {
     expect(screen.getByRole('tab', { name: 'coding 1' }).getAttribute('aria-selected')).toBe('true')
     expect(screen.getByTestId('right-terminal').hasAttribute('hidden')).toBe(false)
     fireEvent.click(screen.getByRole('button', { name: zh['workbench.menu.back'] }))
-    fireEvent.click(items[3] as HTMLButtonElement)
+    fireEvent.click(items[2] as HTMLButtonElement)
     expect(b.instance.store.getSnapshot().view).toBe('files')
     expect(screen.getByRole('tab', { name: zh['files.tab'] }).getAttribute('aria-selected')).toBe('true')
     await waitFor(() => { expect(b.listFiles).toHaveBeenCalledOnce() })
     expect(document.activeElement).toBe(screen.getByRole('button', { name: zh['workbench.menu.back'] }))
-    fireEvent.click(screen.getByRole('button', { name: zh['workbench.menu.back'] }))
-    fireEvent.click(within(menu).getByRole('button', { name: zh['workbench.menu.browser'] }))
-    expect(b.renderSlot).toHaveBeenLastCalledWith('workbench.browser', expect.objectContaining({ shown: true }))
+    expect(b.renderSlot).not.toHaveBeenCalledWith('workbench.browser', expect.anything())
   })
 
   it('uses one shared add action to create a launcher tab without discarding existing tabs', () => {
     const b = bench()
     b.instance.actions.openFile({ name: 'note.txt', segments: ['note.txt'] })
-    b.instance.actions.syncBrowserTabs([{ id: 'page', name: 'Page' }], 'page')
     render(<WorkspaceWorkbench {...b.props} />)
     const add = screen.getByRole('button', { name: zh['tabs.add'] })
     expect(screen.getAllByRole('button', { name: zh['tabs.add'] })).toHaveLength(1)
@@ -623,7 +469,7 @@ describe('WorkspaceWorkbench shell', () => {
     expect(screen.getByRole('tab', { name: 'note.txt' })).toBeDefined()
     fireEvent.click(screen.getByRole('button', { name: zh['workbench.menu.terminal'] }))
     expect(screen.queryByRole('tab', { name: zh['tabs.new'] })).toBeNull()
-    expect(b.instance.getSnapshot().tabs.map(tab => tab.type)).toEqual(['file', 'browser', 'terminal'])
+    expect(b.instance.getSnapshot().tabs.map(tab => tab.type)).toEqual(['file', 'terminal'])
     fireEvent.click(add)
     fireEvent.click(screen.getByRole('button', { name: zh['workbench.menu.files'] }))
     expect(b.instance.getSnapshot()).toMatchObject({ view: 'files', activeId: 'file-manager' })
@@ -631,10 +477,7 @@ describe('WorkspaceWorkbench shell', () => {
     fireEvent.click(add)
     fireEvent.click(screen.getByRole('button', { name: zh['workbench.menu.files'] }))
     expect(b.instance.getSnapshot().tabs.filter(tab => tab.type === 'file-manager')).toHaveLength(1)
-    fireEvent.click(add)
-    fireEvent.click(screen.getByRole('button', { name: zh['workbench.menu.browser'] }))
-    expect(b.instance.getSnapshot()).toMatchObject({ view: 'browser', activeId: 'browser:page' })
-    expect(b.instance.getSnapshot().tabs).toHaveLength(4)
+    expect(b.instance.getSnapshot().tabs).toHaveLength(3)
     fireEvent.click(screen.getByRole('button', { name: zh['tabs.close'].replace('{name}', zh['files.tab']) }))
     expect(screen.queryByRole('tab', { name: zh['files.tab'] })).toBeNull()
     expect(screen.getByRole('tab', { name: 'note.txt' })).toBeDefined()
@@ -661,7 +504,7 @@ describe('WorkspaceWorkbench shell', () => {
     expect(b.instance.getSnapshot()).toMatchObject({ view: 'menu', activeId: 'launcher:2' })
     fireEvent.click(screen.getByRole('button', { name: zh['tabs.close'].replace('{name}', zh['tabs.new']) }))
     expect(b.instance.getSnapshot()).toMatchObject({ view: 'menu', activeId: null, tabs: [] })
-    expect(b.renderSlot).not.toHaveBeenCalledWith('workbench.browser', expect.objectContaining({ newTabRequest: 1 }))
+    expect(b.renderSlot).not.toHaveBeenCalled()
   })
 
   it('scrolls the selected launcher into view without stealing focus from its menu', () => {
@@ -724,20 +567,6 @@ describe('WorkspaceWorkbench shell', () => {
       name: 'Notes', address: 'sidebar://notes' })
     render(<WorkspaceWorkbench {...b.props} />)
     fireEvent.click(screen.getByRole('button', { name: zh['tabs.close'].replace('{name}', 'Notes') }))
-    expect(b.closeWorkbench).toHaveBeenCalledOnce()
-    expect(b.instance.getSnapshot().tabs).toEqual([])
-  })
-
-  it('closes the right sidebar when the last browser page closes but not on an empty browser sync', () => {
-    const b = bench()
-    render(<WorkspaceWorkbench {...b.props} />)
-    const browserOwner = () => b.renderSlot.mock.calls.findLast(([name]) => name === 'workbench.browser')?.[1] as {
-      syncBrowserTabs: (tabs: readonly { id: string; name: string }[], activeId: string | null) => void
-    }
-    act(() => { browserOwner().syncBrowserTabs([], null) })
-    expect(b.closeWorkbench).not.toHaveBeenCalled()
-    act(() => { browserOwner().syncBrowserTabs([{ id: 'page', name: 'Page' }], 'page') })
-    act(() => { browserOwner().syncBrowserTabs([], null) })
     expect(b.closeWorkbench).toHaveBeenCalledOnce()
     expect(b.instance.getSnapshot().tabs).toEqual([])
   })

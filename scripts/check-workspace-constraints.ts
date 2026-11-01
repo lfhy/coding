@@ -173,6 +173,8 @@ const packageFileExtras: Readonly<Record<string, readonly string[]>> = {
   'coding-skill-frontend-development': ['assets'],
   // StyleKit 技能的随包目录快照与上游 MIT 来源说明都要随 npm 包交付。
   'coding-skill-stylekit': ['assets', 'NOTICE.md'],
+  // Agent 浏览器的内嵌 CLI、观察 worker 与两级 MIT 来源声明必须与 Host 同包交付。
+  'coding-browser-ego-host': ['runtime/', 'bin/', 'third-party/host/', 'LICENSE', 'THIRD_PARTY_NOTICES.upstream.md', 'NOTICE.md'],
   'coding-subprocess-local': ['scripts/ensure-spawn-helper.mjs'],
   // Computer Use runs a locally built Swift helper, so the package ships the helper
   // sources plus the build script the provider invokes when the pinned binary is absent.

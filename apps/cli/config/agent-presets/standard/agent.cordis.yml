@@ -272,7 +272,7 @@
     searchTimeoutMs: 60000
 
 - id: tool-browser
-  name: 'coding-tool-browser'
+  name: 'coding-tool-browser-ego'
 
 # ── 工具呈现 ─────────────────────────────────────────────────────────────────
 

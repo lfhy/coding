@@ -29,6 +29,7 @@ import { AttachmentStore } from 'coding-attachment'
 import type { ImageAttachmentLimits, ImageAttachmentRef, SaveImageAttachment, StoredImageAttachment } from 'coding-attachment'
 import BrowserUseService from 'coding-browser'
 import type { BrowserCapture, BrowserCommand, BrowserExpectedTarget, BrowserHumanCommand, BrowserSessionState } from 'coding-browser'
+import EgoBrowserHost from 'coding-browser-ego-host'
 import LocalMemory from 'coding-memory-local'
 import * as ToolMemory from 'coding-tool-memory'
 import UserQuestionService from 'coding-user-questions'
@@ -51,6 +52,7 @@ import { ComputerUseService, resolveConfig } from 'coding-computer-use'
 import * as ToolComputerUse from 'coding-tool-computer-use'
 import { createComputerUseTools } from 'coding-tool-computer-use'
 import * as ToolBrowser from 'coding-tool-browser'
+import * as ToolBrowserEgo from 'coding-tool-browser-ego'
 import * as ToolBash from 'coding-tool-bash'
 import * as ToolPwsh from 'coding-tool-pwsh'
 import * as ToolBashPersistent from 'coding-tool-bash-persistent'
@@ -316,6 +318,23 @@ const TOOL_PACKAGES: ToolPackage[] = [
     },
     note:
       'Each operation is bound to the active tab and session revision. Full access with approval prompts disabled proceeds directly; otherwise only allowed-once approval proceeds if that target remains current. A remote workspace is rejected. Only explicit screenshots save a PNG attachment and render an image block. The browser provider owns URL/network policy and session tab lifetime.',
+  },
+  {
+    pkg: 'coding-tool-browser-ego',
+    dir: 'tool-browser-ego',
+    source: 'packages/browser/tool-browser-ego/src/index.ts',
+    requires: ['ctx.tools', 'ctx.egoBrowser', 'ctx.attachments', 'ctx.approval and a calling Agent at execution time'],
+    writes: ['tool/call', 'durable screenshot attachment', 'tool/result'],
+    async mount(ctx) {
+      await ctx.plugin(SessionStore)
+      await ctx.plugin(LocalSubprocessRuntime)
+      await ctx.plugin(EgoBrowserHost)
+      await ctx.plugin(CatalogAttachmentStore)
+      await ctx.plugin(ApprovalService)
+      await ctx.plugin(ToolBrowserEgo)
+    },
+    note:
+      'The default Web and desktop browser tools use session-scoped ego-lite pages. The model sees only the Host safe subset under browser_* names; every call checks session sandbox and approval, remote workspaces are denied, and an explicit screenshot persists an image attachment.',
   },
   {
     pkg: 'coding-tool-computer-use',

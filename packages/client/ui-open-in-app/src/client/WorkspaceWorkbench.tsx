@@ -17,7 +17,6 @@ import {
   IconFolderClose16,
   IconFolderOpen16,
   IconFolderOpenOutline16,
-  IconBrowseOutline16,
   IconGlobeOutline14,
   IconCordisPluginOutline14,
   IconBranchOutline16,
@@ -73,8 +72,7 @@ export interface WorkspaceWorkbenchInjected {
 /** 工作台 slot、根级 viewing store、Host 能力和词典组成的 props。 */
 export type WorkspaceWorkbenchProps =
   & PropsRuntime<'workbench'>
-  & PropsRenderSlots<'workbench.browser' | 'workbench.browser.tabs'
-    | 'sidebar.right.pane.tab' | 'sidebar.right.pane.tab.title'>
+  & PropsRenderSlots<'sidebar.right.pane.tab' | 'sidebar.right.pane.tab.title'>
   & PropsStore<ReturnType<typeof createRetainedWorkbenchStore>>
   & PropsLocale<typeof NS>
   & InjectFace<WorkspaceWorkbenchInjected>
@@ -90,7 +88,6 @@ type WorkbenchViewProps = Pick<WorkspaceWorkbenchProps, 'shown' | 'fullscreen' |
   panelPrefix: string
   selectTab: (id: string, focus: boolean) => void
   closeWorkbench: () => void
-  openWorkbench: () => void
   toggleWorkbenchFullscreen: () => void
   toggleBottom: () => void
   openSidebarTab: (kind: string) => void
@@ -414,7 +411,7 @@ function FilePreview({ tab, visible, readFile, t }: {
 }
 
 /**
- * 根级工作台保留每个 Session 的终端；会话切换只替换文件与浏览器的展示树。
+ * 根级工作台保留每个 Session 的终端；会话切换只替换文件与外部标签的展示树。
  * @param props - 布局状态、根级 tab store、Host 能力和本地化文案。
  * @returns 按类型渲染内容并保留已激活 PTY 的工作台。
  */
@@ -462,15 +459,6 @@ export function WorkspaceWorkbench(props: WorkspaceWorkbenchProps): React.JSX.El
         setFocusRequest(null)
         props.actions.closeTab(sessionId, id)
       },
-      syncBrowserTabs: (tabs, activeId) => { props.actions.syncBrowserTabs(sessionId, tabs, activeId) },
-      beginBrowserLink: (id, url) => { props.actions.beginBrowserLink(sessionId, id, url) },
-      completeBrowserLink: (id, tabId) => {
-        props.actions.completeBrowserLink(sessionId, id, tabId)
-      },
-      failBrowserLink: (id, message) => { props.actions.failBrowserLink(sessionId, id, message) },
-      clearBrowserLinks: () => { props.actions.clearBrowserLinks(sessionId) },
-      recordInteraction: () => { props.actions.recordInteraction(sessionId) },
-      autoRevealBrowser: (tabId, epoch) => { props.actions.autoRevealBrowser(sessionId, tabId, epoch) },
       setFilesQuery: (query) => { props.actions.setFilesQuery(sessionId, query) },
       toggleFilesExpanded: (key) => { props.actions.toggleFilesExpanded(sessionId, key) },
       setFilesLevel: (segments, phase) => { props.actions.setFilesLevel(sessionId, segments, phase) },
@@ -485,16 +473,12 @@ export function WorkspaceWorkbench(props: WorkspaceWorkbenchProps): React.JSX.El
       listFiles: (segments: readonly string[], signal?: AbortSignal) => props.listFiles(sessionId, segments, signal),
       readFile: (segments: readonly string[], signal?: AbortSignal) => props.readFile(sessionId, segments, signal),
       gitHistory: (query: { count: number }, signal: AbortSignal) => props.gitHistory(sessionId, query, signal),
-      closeWorkbench: () => {
-        props.actions.recordInteraction(sessionId)
-        props.closeWorkbench(sessionId)
-      },
-      openWorkbench: () => { props.openWorkbench(sessionId) },
+      closeWorkbench: () => { props.closeWorkbench(sessionId) },
       toggleWorkbenchFullscreen: () => { props.toggleWorkbenchFullscreen(sessionId) },
       toggleBottom: () => { props.toggleBottom(sessionId) },
       openSidebarTab: (kind: string) => { props.openSidebarTab(sessionId, kind) },
     }
-  }, [props.actions, props.listFiles, props.readFile, props.gitHistory, props.closeWorkbench, props.openWorkbench,
+  }, [props.actions, props.listFiles, props.readFile, props.gitHistory, props.closeWorkbench,
     props.toggleWorkbenchFullscreen, props.toggleBottom, props.openSidebarTab, sessionId])
   const terminalShown = props.shown && state?.view === 'terminal'
   const tabDefinitions = props.useSidebarRightTabs(definitions => definitions)
@@ -528,7 +512,7 @@ export function WorkspaceWorkbench(props: WorkspaceWorkbenchProps): React.JSX.El
 function WorkbenchView(props: WorkbenchViewProps): React.JSX.Element {
   const {
     shown, fullscreen, bottomOpen, narrow, actions, readFile, listFiles, gitHistory, completedFocusTabId,
-    closeWorkbench, openWorkbench, toggleWorkbenchFullscreen, toggleBottom, openSidebarTab, t, renderSlot,
+    closeWorkbench, toggleWorkbenchFullscreen, toggleBottom, openSidebarTab, t, renderSlot,
     panelPrefix, selectTab, tabDefinitions,
   } = props
   const { view, tabs, activeId, filesQuery, filesExpanded, filesLevels } = props.state
@@ -541,33 +525,9 @@ function WorkbenchView(props: WorkbenchViewProps): React.JSX.Element {
   const treeVisible = view === 'files' && !narrowPreview
   // 窄屏目录树承接文件管理器标签的面板关联，宽屏仍与预览区并列。
   const narrowFileManager = narrow ? tabs.find(tab => tab.type === 'file-manager') : undefined
-  const browserShown = shown && view === 'browser'
-  const [newTabRequest, setNewTabRequest] = useState(0)
-  const [handledTabRequest, setHandledTabRequest] = useState(0)
-  const markTabRequestHandled = useCallback((request: number): void => {
-    setHandledTabRequest(previous => Math.max(previous, request))
-  }, [])
-  const showBrowser = useCallback((tabId?: string): void => {
-    actions.setView('browser')
-    if (tabId !== undefined) actions.activateTab(`browser:${tabId}`)
-    openWorkbench()
-  }, [actions, openWorkbench])
-  const requestAutoReveal = useCallback((epoch: number): boolean => {
-    if (props.state.interactionEpoch !== epoch) return false
-    openWorkbench()
-    return true
-  }, [props.state.interactionEpoch, openWorkbench])
-  const wasShown = useRef(shown)
-  useEffect(() => {
-    if (wasShown.current && !shown) actions.recordInteraction()
-    wasShown.current = shown
-  }, [shown, actions])
   const returnButton = useRef<HTMLButtonElement>(null)
   const menuTerminalButton = useRef<HTMLButtonElement>(null)
   const tablist = useRef<HTMLDivElement>(null)
-  const pendingBrowserFocus = useRef<string | null>(null)
-  const browserFocusAllowed = useRef(browserShown)
-  browserFocusAllowed.current = browserShown
   const focusAfterClose = useRef(false)
   const lastCompletedFocus = useRef(completedFocusTabId)
   const pendingFocus = useRef<'menu' | 'return' | null>(null)
@@ -618,26 +578,6 @@ function WorkbenchView(props: WorkbenchViewProps): React.JSX.Element {
     if (view === 'menu') menuTerminalButton.current?.focus()
     else tablist.current?.querySelector<HTMLButtonElement>('[role="tab"][aria-selected="true"]')?.focus()
   }, [completedFocusTabId, tabs, view])
-  const focusPendingBrowserTab = useCallback((tabId: string): void => {
-    if (!browserFocusAllowed.current || pendingBrowserFocus.current !== tabId) return
-    const button = Array.from(tablist.current?.querySelectorAll<HTMLButtonElement>('[data-browser-tab-id]') ?? [])
-      .find(candidate => candidate.dataset.browserTabId === tabId)
-    if (button === undefined || button.disabled) return
-    button.focus()
-    pendingBrowserFocus.current = null
-  }, [])
-  const focusBrowserTab = useCallback((tabId: string): void => {
-    if (!browserFocusAllowed.current) return
-    pendingBrowserFocus.current = tabId
-    focusPendingBrowserTab(tabId)
-  }, [focusPendingBrowserTab])
-  useLayoutEffect(() => {
-    if (!browserShown) {
-      pendingBrowserFocus.current = null
-      return
-    }
-    if (pendingBrowserFocus.current !== null) focusPendingBrowserTab(pendingBrowserFocus.current)
-  }, [tabs, browserShown, focusPendingBrowserTab])
   const expanded = useMemo(() => new Set(filesExpanded), [filesExpanded])
   const requests = useRef(new Map<string, AbortController>())
   const rootKey = tabIdForSegments([])
@@ -699,40 +639,6 @@ function WorkbenchView(props: WorkbenchViewProps): React.JSX.Element {
     close(id)
     if (tabs.length === 1) closeWorkbench()
   }, [closeWorkbench, tabs])
-  const tabsRef = useRef(tabs)
-  tabsRef.current = tabs
-  // 关闭最后一个浏览器页面后工作台没有标签；浏览器处于空状态时的同步不经过标签关闭。
-  const syncBrowserTabs = useCallback<WorkbenchActions['syncBrowserTabs']>((incoming, activeId) => {
-    const current = tabsRef.current
-    const closesLastTab = current.length === 1 && current[0]?.type === 'browser' && incoming.length === 0
-    actions.syncBrowserTabs(incoming, activeId)
-    if (closesLastTab) closeWorkbench()
-  }, [actions, closeWorkbench])
-
-  const browserOwner = {
-    shown: browserShown,
-    interactionEpoch: props.state.interactionEpoch,
-    browserAutoRevealed: props.state.browserAutoRevealed,
-    requestAutoReveal,
-    autoRevealBrowser: actions.autoRevealBrowser,
-    newTabRequest,
-    handledTabRequest,
-    markTabRequestHandled,
-    focusBrowserTab,
-    focusPendingBrowserTab,
-    openBrowser: showBrowser,
-    syncBrowserTabs,
-    beginBrowserLink: (id: string, url: string) => {
-      actions.beginBrowserLink(id, url)
-      openWorkbench()
-    },
-    completeBrowserLink: actions.completeBrowserLink,
-    failBrowserLink: actions.failBrowserLink,
-    clearBrowserLinks: actions.clearBrowserLinks,
-    selectPendingBrowserLink: (id: string) => { actions.activateTab(id) },
-    closePendingBrowserLink: (id: string) => { closeTab(id, actions.closeTab) },
-    ...view === 'browser' && active?.type === 'browser' ? { selectedTabId: active.browserTabId } : {},
-  }
   return (
     <>
       <header className={css.topbar} data-window-drag-region="">
@@ -770,14 +676,6 @@ function WorkbenchView(props: WorkbenchViewProps): React.JSX.Element {
                   }}><IconCloseOutline16 size={12} /></button>
               </div>
             }
-            if (tab.type === 'browser' || tab.type === 'browser-pending') return <div key={tab.id} className={css.browserTabs}>
-              {renderSlot('workbench.browser.tabs', { ...browserOwner, shown,
-                ...tab.type === 'browser' ? { tabId: tab.browserTabId, tabName: tab.name } : {
-                  pendingBrowserLink: tab,
-                }, browserShown: browserShown && activeId === tab.id,
-                tabDomId: tabDomId(panelPrefix, props.sessionId, tab.id, 'tab'),
-                panelDomId: tabDomId(panelPrefix, props.sessionId, tab.id, 'panel') })}
-            </div>
             if (tab.type === 'external') {
               const selected = view === 'external' && activeId === tab.id
               const definitionId = tabDefinitions.find(candidate => candidate.kind === tab.kind)?.id ?? tab.definitionId
@@ -887,14 +785,6 @@ function WorkbenchView(props: WorkbenchViewProps): React.JSX.Element {
                 <Icon name="terminal-menu" size={18} />
                 <span>{t('workbench.menu.terminal')}</span>
               </button>
-              <button type="button" className={css.functionItem} onClick={() => {
-                pendingFocus.current = 'return'
-                setNewTabRequest(previous => previous + 1)
-                showBrowser()
-              }}>
-                <IconBrowseOutline16 size={18} />
-                <span>{t('workbench.menu.browser')}</span>
-              </button>
               <button type="button" className={css.functionItem} onClick={showFiles}>
                 <IconFolderOpenOutline16 size={18} />
                 <span>{t('workbench.menu.files')}</span>
@@ -910,6 +800,7 @@ function WorkbenchView(props: WorkbenchViewProps): React.JSX.Element {
                   return null
                 }
                 const available = guideAvailable(definition)
+                const GuideIcon = entry.icon ?? IconPlusOutline16
                 return <button type="button" className={css.functionItem} key={`${definition.id}:${entry.id}`}
                   disabled={!available} title={!available ? t('workbench.menu.unavailable') : undefined}
                   onClick={() => {
@@ -922,7 +813,7 @@ function WorkbenchView(props: WorkbenchViewProps): React.JSX.Element {
                       setGuideError(t('workbench.menu.unavailable'))
                     }
                   }}>
-                  <IconPlusOutline16 size={18} />
+                  <GuideIcon size={18} />
                   <span>{title}</span>
                   {description !== undefined && <small>{description}</small>}
                 </button>
@@ -970,23 +861,6 @@ function WorkbenchView(props: WorkbenchViewProps): React.JSX.Element {
               <GitHistoryPanel shown={shown && view === 'history' && activeId === tab.id}
                 history={gitHistory} t={t} />
             </div>)}
-          </div>
-          <div className={css.browserView} hidden={view !== 'browser'} {...view !== 'browser' ? { inert: '' } : {}}>
-            <div className={css.browserPanel}
-              {...active?.type === 'browser' || active?.type === 'browser-pending' ? {
-                id: tabDomId(panelPrefix, props.sessionId, active.id, 'panel'),
-                role: 'tabpanel',
-                'aria-labelledby': tabDomId(panelPrefix, props.sessionId, active.id, 'tab'),
-              } : {}}>
-              {renderSlot('workbench.browser', { ...browserOwner,
-                ...active?.type === 'browser-pending' ? { pendingBrowserLink: active } : {},
-              })}
-            </div>
-            {tabs.filter(tab => (tab.type === 'browser' || tab.type === 'browser-pending') && tab.id !== activeId).map(tab => (
-              <div key={tab.id} id={tabDomId(panelPrefix, props.sessionId, tab.id, 'panel')}
-                role="tabpanel" aria-labelledby={tabDomId(panelPrefix, props.sessionId, tab.id, 'tab')}
-                hidden {...{ inert: '' }} />
-            ))}
           </div>
           {tabs.filter((tab): tab is WorkbenchExternalTab => tab.type === 'external').map((tab) => {
             const visible = shown && view === 'external' && activeId === tab.id

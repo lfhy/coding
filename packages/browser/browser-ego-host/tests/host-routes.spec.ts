@@ -1,0 +1,90 @@
+/** 真 WebServer + Host 信任栅栏：任何拒绝都不读取载荷也不启动浏览器。 */
+import { Context } from '@deepseek-ai/cordis'
+import WebServer from 'coding-host-webserver'
+import { SessionId } from 'coding-session/types'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import EgoBrowserHost from '../src/index.ts'
+import { spaceNameForSession } from '../src/session-space.ts'
+
+let ctx: Context | undefined
+let stateDir: string | undefined
+let session: { id: ReturnType<typeof SessionId>; header: { cwd: string } }
+let checks: ReturnType<typeof vi.fn>
+let spawns: ReturnType<typeof vi.fn>
+
+async function boot(rejection?: 403): Promise<string> {
+  stateDir = await mkdtemp(join(tmpdir(), 'coding-ego-host-route-'))
+  vi.stubEnv('EGO_LINUX_STATE_DIR', stateDir)
+  session = { id: SessionId('session-abcdefgh-first'), header: { cwd: stateDir } }
+  ctx = new Context()
+  checks = vi.fn(() => rejection)
+  spawns = vi.fn(() => { throw new Error('a rejected route must never spawn a worker') })
+  ctx.provide('connection', { requestRejection: checks } as never)
+  ctx.provide('sessions', { get: (id: string) => id === session.id ? session : undefined } as never)
+  ctx.provide('subprocess', { spawn: spawns } as never)
+  await ctx.plugin(WebServer, { host: '127.0.0.1', port: 0 }).await()
+  await ctx.plugin(EgoBrowserHost).await()
+  return `http://127.0.0.1:${String(ctx.webServer.port)}`
+}
+
+afterEach(async () => {
+  await ctx?.fiber.dispose()
+  if (stateDir) await rm(stateDir, { recursive: true, force: true })
+  vi.unstubAllEnvs()
+  ctx = undefined
+  stateDir = undefined
+})
+
+describe('会话浏览器 Host 路由', () => {
+  it('所有 API 端点和不存在的危险路由均执行可信连接检查', async () => {
+    const origin = await boot(403)
+    for (const path of [
+      '/api/ego/spaces?sessionId=session-abcdefgh-first',
+      '/api/ego/stream?sessionId=session-abcdefgh-first',
+      '/api/ego/frame?sessionId=session-abcdefgh-first&targetId=x',
+      '/api/ego/activity',
+      '/api/ego/input',
+    ]) {
+      const response = await fetch(origin + path, path.endsWith('input') ? { method: 'POST', body: '{bad' } : {})
+      expect(response.status).toBe(403)
+    }
+    expect(checks).toHaveBeenCalledTimes(5)
+    expect(spawns).not.toHaveBeenCalled()
+    for (const path of ['/api/ego/login-import', '/api/ego/close', '/ego/api/set', '/api/ego/watch/start']) {
+      expect((await fetch(origin + path)).status).toBe(404)
+    }
+  })
+
+  it('拒绝不存在的 Session、跨 Session 帧和输入；不启动 worker', async () => {
+    const origin = await boot()
+    await writeFile(join(stateDir!, 'task-spaces.json'), JSON.stringify({ spaces: [
+      { name: spaceNameForSession(SessionId('another-session')), targetIds: ['foreign'] },
+      { name: spaceNameForSession(session.id), targetIds: ['owned'] },
+    ] }))
+    expect((await fetch(`${origin}/api/ego/spaces?sessionId=unknown`)).status).toBe(404)
+    expect((await fetch(`${origin}/api/ego/frame?sessionId=${session.id}&targetId=foreign`)).status).toBe(404)
+    expect((await fetch(`${origin}/api/ego/input`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ sessionId: session.id, targetId: 'foreign', type: 'mousePressed', x: 1, y: 2 }),
+    })).status).toBe(403)
+    expect(spawns).not.toHaveBeenCalled()
+  })
+
+  it('只提供有限工具 schema，模型不允许指定会话空间或危险原始脚本', async () => {
+    await boot()
+    const tools = ctx!.egoBrowser.toolDefinitions()
+    const names = tools.map(tool => tool.name)
+    expect(names).toContain('ego_navigate')
+    expect(names).toContain('ego_screenshot')
+    expect(names).not.toContain('ego_cli')
+    expect(names).not.toContain('ego_script')
+    expect(names).not.toContain('ego_space_open')
+    expect(names).not.toContain('ego_download')
+    for (const tool of tools) expect(tool.parameters.properties).not.toHaveProperty('space')
+    expect(tools.find(tool => tool.name === 'ego_screenshot')?.parameters.required ?? []).not.toContain('path')
+    expect(spawns).not.toHaveBeenCalled()
+  })
+})

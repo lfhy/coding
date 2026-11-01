@@ -281,7 +281,7 @@
     searchTimeoutMs: 60000
 
 - id: tool-browser
-  name: 'coding-tool-browser'
+  name: 'coding-tool-browser-ego'
 
 # ── REA MCP 服务器 ──────────────────────────────────────────────────────────
 
