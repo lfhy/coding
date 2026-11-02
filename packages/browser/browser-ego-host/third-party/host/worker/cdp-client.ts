@@ -1,5 +1,3 @@
-import type { WebSocket } from 'ws'
-
 export interface CdpError extends Error {
   code?: number
   data?: unknown
@@ -43,8 +41,8 @@ export class CdpClient {
       clearTimeout(pending.timer)
       if (message.error) {
         const error = new Error(message.error.message || `CDP error ${message.error.code}`) as CdpError
-        error.code = message.error.code
-        error.data = message.error.data
+        if (message.error.code !== undefined) error.code = message.error.code
+        if (message.error.data !== undefined) error.data = message.error.data
         pending.reject(error)
       } else {
         pending.resolve(message.result || {})

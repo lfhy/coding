@@ -228,7 +228,7 @@ export class CdpCaptureBackend {
 
   async switchTarget({ targetId, maxWidth }: { targetId: string; maxWidth?: number }): Promise<void> {
     this.onStatus({ backend: 'cdp', state: 'switching', targetId })
-    await this.start({ targetId, maxWidth })
+    await this.start({ targetId, ...(maxWidth === undefined ? {} : { maxWidth }) })
   }
 
   async updateConfig(): Promise<void> {

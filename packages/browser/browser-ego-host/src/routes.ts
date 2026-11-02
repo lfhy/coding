@@ -1,8 +1,9 @@
-/** 四条会话化 Host 路由；每个 handler 首句检查共享连接防线。 */
+/** 会话化浏览器 Host 路由；每个 handler 读取载荷前检查连接与回环同源。 */
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Context } from '@deepseek-ai/cordis'
 import type { SessionId } from 'coding-session/types'
 import { recentActions, subscribeActivity } from './activity.ts'
+import { parseNavigation } from './navigation.ts'
 import { targetIdsForSession, validId } from './session-space.ts'
 import { ensureWorker, workerGet, workerInput, workerPost } from './worker.ts'
 
@@ -98,10 +99,23 @@ async function readBody(req: IncomingMessage): Promise<unknown> {
   } catch { return null }
 }
 
-/** 只接受已显示视口内的鼠标操作或有界文本，剔除所有额外 CDP 字段。 */
+/** 只接受视口内鼠标、有界文本与受限按键，剔除所有额外 CDP 字段。 */
 export function parseInput(value: unknown, page: Page): Record<string, unknown> | null {
   const body = object(value)
   if (!body || body.targetId !== page.targetId || !validId(body.sessionId)) return null
+  if (body.type === 'keyDown' || body.type === 'keyUp') {
+    const keys = ['Enter', 'Backspace', 'Tab', 'Escape', 'Delete', 'Home', 'End', 'PageUp', 'PageDown',
+      'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown']
+    if (!keys.includes(body.key as string) || typeof body.code !== 'string' || body.code !== body.key
+      || !Number.isSafeInteger(body.windowsVirtualKeyCode) || (body.windowsVirtualKeyCode as number) < 0
+      || (body.windowsVirtualKeyCode as number) > 255
+      || (body.modifiers !== undefined && (!Number.isSafeInteger(body.modifiers) || (body.modifiers as number) < 0
+        || (body.modifiers as number) > 7))) return null
+    const allowed = ['sessionId', 'targetId', 'type', 'key', 'code', 'windowsVirtualKeyCode', 'modifiers']
+    if (Object.keys(body).some(key => !allowed.includes(key))) return null
+    return { targetId: page.targetId, type: body.type, key: body.key, code: body.code,
+      windowsVirtualKeyCode: body.windowsVirtualKeyCode, modifiers: body.modifiers ?? 0 }
+  }
   if (body.type === 'insertText') {
     return typeof body.text === 'string' && body.text.length > 0 && body.text.length <= 2000
       ? { targetId: page.targetId, type: 'insertText', text: body.text } : null
@@ -217,6 +231,37 @@ export function installRoutes(ctx: Context): void {
         send(res, 400, { ok: false }); return
       }
       const accepted = await workerInput(port, input)
+      send(res, accepted ? 200 : 503, { ok: accepted })
+    })
+    register('/api/ego/navigation', async (req, res) => {
+      if (req.method !== 'POST') { send(res, 405, { ok: false }); return }
+      const body = object(await readBody(req))
+      const command = parseNavigation(body, true)
+      if (!command || !body || !webCtx.sessions.get(body.sessionId as SessionId)) {
+        send(res, 400, { ok: false }); return
+      }
+      const sessionId = body.sessionId as SessionId
+      const owned = await targetIdsForSession(sessionId)
+      if (command.targetId && !owned.has(command.targetId)) { send(res, 403, { ok: false }); return }
+      if (!command.targetId) {
+        if (owned.size > 0 || command.url === undefined) { send(res, 409, { ok: false }); return }
+        // 无目标时只允许进入该会话空间，不从 worker 的全局活动标签中选页。
+        const created = await webCtx.egoBrowser.createSessionPage(sessionId, command.url)
+        send(res, created ? 200 : 503, { ok: created })
+        return
+      }
+      const port = await ensureWorker(webCtx)
+      if (port === null) { send(res, 503, { ok: false }); return }
+      if (!(await currentPages(sessionId, port)).some(page => page.targetId === command.targetId)) {
+        send(res, 409, { ok: false }); return
+      }
+      if (!webCtx.sessions.get(sessionId) || !(await targetIdsForSession(sessionId)).has(command.targetId)) {
+        send(res, 409, { ok: false }); return
+      }
+      const accepted = await workerPost(port, '/api/navigation', {
+        targetId: command.targetId, action: command.action,
+        ...(command.url === undefined ? {} : { url: command.url }),
+      })
       send(res, accepted ? 200 : 503, { ok: accepted })
     })
     register('/api/ego/close', async (req, res) => {

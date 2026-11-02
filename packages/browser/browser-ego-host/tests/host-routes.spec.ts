@@ -50,8 +50,10 @@ describe('会话浏览器 Host 路由', () => {
       '/api/ego/frame?sessionId=session-abcdefgh-first&targetId=x',
       '/api/ego/activity',
       '/api/ego/input',
+      '/api/ego/navigation',
     ]) {
-      const response = await fetch(origin + path, path.endsWith('input') ? { method: 'POST', body: '{bad' } : {})
+      const response = await fetch(origin + path, ['/api/ego/input', '/api/ego/navigation'].includes(path)
+        ? { method: 'POST', body: '{bad' } : {})
       expect(response.status, path).toBe(403)
     }
     expect(checks.mock.calls.length).toBeGreaterThanOrEqual(5)
@@ -73,7 +75,39 @@ describe('会话浏览器 Host 路由', () => {
       method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ sessionId: session.id, targetId: 'foreign', type: 'mousePressed', x: 1, y: 2 }),
     })).status).toBe(403)
+    const postNavigation = (body: unknown): Promise<Response> => fetch(`${origin}/api/ego/navigation`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+    })
+    expect((await postNavigation({ sessionId: 'unknown', targetId: 'owned', action: 'reload' })).status).toBe(400)
+    expect((await postNavigation({ sessionId: session.id, targetId: 'foreign', action: 'reload' })).status).toBe(403)
+    expect((await postNavigation({ sessionId: session.id, targetId: 'owned', action: 'navigate', url: 'javascript:alert(1)' })).status).toBe(400)
+    expect((await postNavigation({ sessionId: session.id, targetId: 'owned', action: 'reload', cdp: 'Page.navigate' })).status).toBe(400)
     expect(spawns).not.toHaveBeenCalled()
+  })
+
+  it('空会话的 navigate 在派生空间中创建页面，拒绝已占用空间与其他动作', async () => {
+    const origin = await boot()
+    const action = { sessionId: session.id, action: 'navigate', url: 'https://example.com/' }
+    const post = async (body: unknown): Promise<number> => (await fetch(`${origin}/api/ego/navigation`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+    })).status
+    expect(await post({ ...action, action: 'reload' })).toBe(400)
+    expect(await post({ ...action, url: 'javascript:alert(1)' })).toBe(400)
+    await writeFile(join(stateDir!, 'task-spaces.json'), JSON.stringify({ spaces: [
+      { name: spaceNameForSession(session.id), targetIds: ['owned'] },
+    ] }))
+    expect(await post(action)).toBe(409)
+    expect(spawns).not.toHaveBeenCalled()
+    await writeFile(join(stateDir!, 'task-spaces.json'), JSON.stringify({ spaces: [] }))
+    // 创建标签时必须使用会话哈希空间；模拟进程失败，不能误报页面已创建。
+    expect(await post(action)).toBe(503)
+    const spec = spawns.mock.calls.find(call => (call[0] as { argv?: string[] }).argv?.includes('nodejs'))?.[0] as {
+      env?: NodeJS.ProcessEnv
+      stdio?: { stdin?: { data?: string } }
+    }
+    expect(spec.stdio?.stdin?.data).toContain(`taskSpaces.useOrCreate(${JSON.stringify(spaceNameForSession(session.id))})`)
+    expect(spec.stdio?.stdin?.data).toContain(`ego.createTab(${JSON.stringify(action.url)})`)
+    expect(spec.env?.EGO_ISOLATE_SPACES).toBe('1')
   })
 
   it('把上游浏览器设置注册为可编辑的插件命名空间', async () => {

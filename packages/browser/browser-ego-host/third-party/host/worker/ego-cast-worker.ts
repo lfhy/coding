@@ -5,13 +5,15 @@ import { homedir, platform } from 'node:os'
 import { join } from 'node:path'
 import { execFileSync } from 'node:child_process'
 import type { AddressInfo } from 'node:net'
-import { WebSocket } from 'ws'
 import { CdpClient } from './cdp-client.ts'
 import { TargetSessions, CdpCaptureBackend } from './capture-cdp.ts'
 import { CaptureManager } from './capture-manager.ts'
 import { captureSnapshot } from './snapshot.ts'
-import { FfmpegCaptureBackend } from './capture-ffmpeg.ts'
-import { computeWindowBounds, widthWithDelta, clampViewportSize } from './window-size.ts'
+import { captureFrame } from './frame.ts'
+import { navigateTarget } from './navigation.ts'
+import { parseNavigation } from '../../../src/navigation.ts'
+import { FfmpegCaptureBackend } from '../../upstream/src/worker/capture-ffmpeg.ts'
+import { computeWindowBounds, widthWithDelta, clampViewportSize } from '../../upstream/src/worker/window-size.ts'
 
 const SENTINEL = '@@DSH_RESULT@@'
 const HOME = homedir() || process.env.HOME || process.env.USERPROFILE || '/root'
@@ -436,6 +438,17 @@ async function main(): Promise<void> {
     try {
       if (req.method === 'GET' && url.pathname === '/api/health') return sendJson(res, 200, { workerOk: true, browserConnected: !!active, capture: manager.status() })
       if (req.method === 'GET' && url.pathname === '/api/spaces') return sendJson(res, 200, { ok: true, spaces: active ? await snapshotSpaces() : [], capture: manager.status() })
+      if (req.method === 'GET' && url.pathname === '/api/frame') {
+        const browser = active
+        if (!browser) return sendJson(res, 409, { ok: false, error: 'no live browser' })
+        const targetId = url.searchParams.get('targetId')
+        if (url.searchParams.size !== 1 || !targetId) return sendJson(res, 400, { ok: false, error: 'targetId required' })
+        if (!(await listTargets()).some(target => target.targetId === targetId)) {
+          return sendJson(res, 409, { ok: false, error: 'target is no longer available' })
+        }
+        try { return sendJson(res, 200, await captureFrame(browser.sessions, targetId)) }
+        catch { return sendJson(res, 503, { ok: false, error: 'frame unavailable' }) }
+      }
       if (req.method === 'GET' && url.pathname === '/api/snapshot') {
         const browser = active
         if (!browser) return sendJson(res, 409, { ok: false, error: 'no live browser' })
@@ -553,6 +566,19 @@ async function main(): Promise<void> {
       if (req.method === 'POST' && url.pathname === '/api/watch/start') { if (!active) return sendJson(res, 409, { ok: false, error: 'no live browser' }); return sendJson(res, 200, { ok: true, ...await manager.startWatch(await readJson(req) as { clientId: string; targetId: string; backend?: string; maxWidth?: number }) }) }
       if (req.method === 'POST' && url.pathname === '/api/watch/switch') return sendJson(res, 200, { ok: true, ...await manager.switchWatch(await readJson(req) as { clientId: string; targetId: string; maxWidth?: number }) })
       if (req.method === 'POST' && url.pathname === '/api/watch/stop') return sendJson(res, 200, { ok: true, ...await manager.stopWatch(await readJson(req) as { clientId: string }) })
+      if (req.method === 'POST' && url.pathname === '/api/navigation') {
+        const command = parseNavigation(await readJson(req))
+        if (!command || !command.targetId) return sendJson(res, 400, { ok: false, error: 'invalid navigation request' })
+        const browser = active
+        if (!browser) return sendJson(res, 409, { ok: false, error: 'no live browser' })
+        if (!(await listTargets()).some(target => target.targetId === command.targetId)) {
+          return sendJson(res, 409, { ok: false, error: 'target is no longer available' })
+        }
+        try {
+          const ok = await navigateTarget(browser.sessions, command)
+          return sendJson(res, ok ? 200 : 409, { ok })
+        } catch { return sendJson(res, 503, { ok: false, error: 'navigation failed' }) }
+      }
       if (req.method === 'POST' && url.pathname === '/api/input') {
         const body = await readJson(req)
         if (!active) return sendJson(res, 409, { ok: false, code: 'browser-disconnected', error: 'no live browser' })

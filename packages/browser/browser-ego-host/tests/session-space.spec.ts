@@ -58,4 +58,21 @@ describe('会话空间归属', () => {
       { sessionId: 'session-a', targetId: 'owned', type: 'mouseWheel', x: 1, y: 2, deltaX: Infinity, deltaY: 0 },
     ]) expect(parseInput(invalid, page)).toBeNull()
   })
+
+  it('只转发允许的按键事件字段，拒绝按键注入和任意 CDP 额外参数', () => {
+    const page = { targetId: 'owned', url: 'https://example.com', title: 'Example', active: true,
+      viewportW: 120, viewportH: 80 }
+    const key = { sessionId: 'session-a', targetId: 'owned', type: 'keyDown',
+      key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 }
+    expect(parseInput(key, page)).toEqual({ targetId: 'owned', type: 'keyDown',
+      key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, modifiers: 0 })
+    expect(parseInput({ ...key, type: 'keyUp', modifiers: 2 }, page)).toEqual({
+      targetId: 'owned', type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, modifiers: 2,
+    })
+    for (const invalid of [
+      { ...key, key: 'a', code: 'KeyA' }, { ...key, code: 'Tab' }, { ...key, windowsVirtualKeyCode: -1 },
+      { ...key, windowsVirtualKeyCode: 256 }, { ...key, modifiers: 8 },
+      { ...key, text: 'injected' }, { ...key, nativeVirtualKeyCode: 1 },
+    ]) expect(parseInput(invalid, page)).toBeNull()
+  })
 })

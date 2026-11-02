@@ -11,6 +11,8 @@ import type {} from 'coding-session'
 import type {} from 'coding-subprocess'
 import type { SessionId } from 'coding-session/types'
 import { markToolStart } from './activity.ts'
+import { parseScriptResult } from './scripts.ts'
+import { spaceNameForSession, targetIdsForSession } from './session-space.ts'
 import { installRoutes, trusted } from './routes.ts'
 import { apply as applyUpstream } from 'coding-browser-ego-host/upstream'
 
@@ -36,6 +38,7 @@ const CLI = fileURLToPath(new URL('../runtime/ego-linux/bin/ego-browser.mjs', im
 const OWNED_PATHS = new Set([
   '/api/ego/spaces', '/api/ego/stream', '/api/ego/input', '/api/ego/status',
   '/api/ego/close', '/api/ego/history', '/api/ego/frame', '/api/ego/activity',
+  '/api/ego/navigation',
 ])
 
 declare module '@deepseek-ai/cordis' {
@@ -128,6 +131,35 @@ export default class EgoBrowserHost extends Service {
     } catch {
       return false
     }
+  }
+
+  /**
+   * 仅为空会话创建自己的任务空间页面；CLI 在该空间创建或使用空白锚页，不选全局标签。
+   * @param sessionId - 已在 sessions 服务中确认存在的会话。
+   * @param url - Host 已验证的绝对导航地址。
+   * @returns 页面归属写入会话空间并确认仍存在时为 true。
+   */
+  async createSessionPage(sessionId: SessionId, url: string): Promise<boolean> {
+    if ((await targetIdsForSession(sessionId)).size !== 0) return false
+    const space = spaceNameForSession(sessionId)
+    const script = `await taskSpaces.useOrCreate(${JSON.stringify(space)})\n` +
+      `const page = await ego.createTab(${JSON.stringify(url)})\n` +
+      'console.log(\'@@DSH_RESULT@@\' + JSON.stringify({ ok: true, targetId: page.targetId }))\n'
+    const env: NodeJS.ProcessEnv = { ...(this.browserEnv?.() ?? process.env), EGO_ISOLATE_SPACES: '1' }
+    try {
+      const handle = this.ctx.subprocess.spawn({
+        argv: [process.execPath, CLI, 'nodejs'], cwd: process.cwd(), env,
+        stdio: { stdin: { data: script }, stdout: { maxBytes: 4096 }, stderr: { maxBytes: 4096 } },
+        graceMs: 30_000,
+      })
+      const outcome = await handle.done
+      if (outcome.exitCode !== 0) return false
+      const output = handle.collected.stdout?.readFrom(0).text ?? ''
+      const result: unknown = parseScriptResult(output)
+      if (!result || typeof result !== 'object' || !('ok' in result) || result.ok !== true
+        || !('targetId' in result) || typeof result.targetId !== 'string') return false
+      return (await targetIdsForSession(sessionId)).has(result.targetId)
+    } catch { return false }
   }
 
   /** 在执行入口记录活动历史，失败仍交给上游工具自己报告。 */

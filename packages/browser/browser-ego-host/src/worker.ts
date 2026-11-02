@@ -60,7 +60,7 @@ export async function workerGet(port: number, path: '/api/health' | '/api/spaces
 }
 
 /** 受控写请求：只用于已核验会话与目标的路由，不转发任意路径。 */
-export async function workerPost(port: number, path: '/api/close' | '/api/input', body: Record<string, unknown>): Promise<boolean> {
+export async function workerPost(port: number, path: '/api/close' | '/api/input' | '/api/navigation', body: Record<string, unknown>): Promise<boolean> {
   try {
     const response = await fetch(`http://127.0.0.1:${port}${path}`, {
       method: 'POST', headers: { 'content-type': 'application/json' },
