@@ -42,6 +42,8 @@ function streamUrl(sessionId: string, path: string): string {
 export class BrowserEgoController {
   readonly view = createSnapshotStore<BrowserEgoView>(INITIAL)
   private shown = false
+  private viewers = new Set<string>()
+  private selectedViewId: string | null = null
   private epoch = 0
   private listVersion = 0
   private request: AbortController | null = null
@@ -58,10 +60,24 @@ export class BrowserEgoController {
     if (!validId(sessionId)) throw new Error('invalid session id')
   }
 
-  /** 显示时刷新并连接画面；隐藏时同步阻止输入并断开旧流。 */
-  show(visible: boolean): void {
-    if (this.shown === visible) return
-    this.shown = visible
+  /** 多个工作台页面共享一条会话流；切换时跟随当前可见页面，最后隐藏时释放。 */
+  show(visible: boolean, viewId = 'default'): void {
+    if (visible) {
+      this.viewers.add(viewId)
+      if (this.selectedViewId !== viewId) {
+        this.selectedViewId = viewId
+        if (validId(viewId)) this.select(viewId)
+      }
+    } else {
+      this.viewers.delete(viewId)
+      if (this.selectedViewId === viewId) {
+        this.selectedViewId = this.viewers.values().next().value ?? null
+        if (this.selectedViewId !== null && validId(this.selectedViewId)) this.select(this.selectedViewId)
+      }
+    }
+    const showing = this.viewers.size > 0
+    if (this.shown === showing) return
+    this.shown = showing
     this.epoch++
     this.listVersion++
     this.request?.abort()
@@ -73,11 +89,18 @@ export class BrowserEgoController {
     this.closeActivity()
     this.clearTimer()
     this.view.set(INITIAL)
-    if (visible) {
+    if (showing) {
       void this.refresh()
       this.openStream(this.epoch)
       this.openActivity(this.epoch)
     }
+  }
+
+  /** 插件撤销时释放所有保留标签的订阅与输入，即使视图尚在隐藏状态。 */
+  dispose(): void {
+    this.viewers.clear()
+    this.selectedViewId = null
+    this.show(false)
   }
 
   /** 同时刷新页面目录、浏览器状态与最近动作；迟到响应不能覆盖更新的 SSE 列表。 */
@@ -166,6 +189,30 @@ export class BrowserEgoController {
     this.refreshSelectedFrame()
   }
 
+  /** 仅导航本会话页面；空白目录时允许 Host 为本会话建立第一张页面。 */
+  async navigate(targetId: string | undefined, action: 'navigate' | 'reload' | 'back' | 'forward', url?: string): Promise<boolean> {
+    const view = this.view.getSnapshot()
+    const create = targetId === undefined && action === 'navigate' && view.pages.length === 0
+    if (!this.shown || view.pending || !create && (!validId(targetId)
+      || !view.pages.some(page => page.targetId === targetId))) return false
+    const epoch = this.epoch
+    this.cancelFrameRefresh()
+    this.view.set({ ...view, frame: view.selectedId === targetId ? null : view.frame, pending: true })
+    try {
+      const response = await this.fetcher('/api/ego/navigation', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ sessionId: this.sessionId, ...(targetId === undefined ? {} : { targetId }),
+          action, ...(url === undefined ? {} : { url }) }),
+      })
+      if (!response.ok || epoch !== this.epoch) return false
+      await this.refresh()
+      return true
+    } catch { return false }
+    finally {
+      if (epoch === this.epoch) this.view.set({ ...this.view.getSnapshot(), pending: false })
+    }
+  }
+
   /**
    * 用户主动要求时把浏览器换成可见窗口（登录扫码、人机验证需要）。
    *
@@ -232,6 +279,9 @@ export class BrowserEgoController {
           || current.selectedId !== targetId || frame.targetId !== targetId
           || !current.pages.some(page => page.targetId === targetId)
           || current.frame?.targetId === targetId && frame.ts <= current.frame.ts) return
+        const page = current.pages.find(item => item.targetId === targetId)
+        if (page?.viewportW != null && page.viewportW !== frame.width
+          || page?.viewportH != null && page.viewportH !== frame.height) return
         this.view.set({ ...current, frame })
       } catch { /* 页面可能导航或结束；下一次刷新重新取得最新目标。 */ }
       finally { if (this.frameRequest === request) this.frameRequest = null }
@@ -252,7 +302,8 @@ export class BrowserEgoController {
   async send(targetId: string, input:
     | { type: 'mousePressed' | 'mouseReleased'; x: number; y: number; button: 'left'; buttons: 0 | 1; clickCount: 1 }
     | { type: 'mouseWheel'; x: number; y: number; deltaX: number; deltaY: number }
-    | { type: 'insertText'; text: string }): Promise<boolean> {
+    | { type: 'insertText'; text: string }
+    | { type: 'keyDown' | 'keyUp'; key: string; code: string; windowsVirtualKeyCode: number }): Promise<boolean> {
     const current = this.view.getSnapshot()
     if (!this.shown || !validId(targetId) || current.phase !== 'ready'
       || current.selectedId !== targetId || current.pending) return false
@@ -262,9 +313,15 @@ export class BrowserEgoController {
     const width = frame?.width ?? (current.video.available ? selected?.viewportW ?? null : null)
     const height = frame?.height ?? (current.video.available ? selected?.viewportH ?? null : null)
     if (width === null || height === null || width <= 0 || height <= 0) return false
+    if (frame && selected && ((selected.viewportW !== null && frame.width !== selected.viewportW)
+      || (selected.viewportH !== null && frame.height !== selected.viewportH))) return false
     if ('x' in input && (!Number.isSafeInteger(input.x) || !Number.isSafeInteger(input.y)
       || input.x < 0 || input.y < 0 || input.x >= width || input.y >= height)) return false
     if (input.type === 'insertText' && (input.text.length < 1 || input.text.length > 2000)) return false
+    if ((input.type === 'keyDown' || input.type === 'keyUp')
+      && (!['Enter', 'Backspace', 'Delete', 'Home', 'End', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(input.key)
+        || input.code !== input.key || !Number.isSafeInteger(input.windowsVirtualKeyCode)
+        || input.windowsVirtualKeyCode < 0 || input.windowsVirtualKeyCode > 255)) return false
     if (input.type === 'mouseWheel' && (![input.deltaX, input.deltaY].every(Number.isFinite)
       || !Number.isSafeInteger(input.deltaX) || !Number.isSafeInteger(input.deltaY)
       || Math.abs(input.deltaX) > 2000 || Math.abs(input.deltaY) > 2000)) return false
@@ -295,13 +352,18 @@ export class BrowserEgoController {
   private acceptPages(pages: readonly EgoPage[], relayOff = false): void {
     this.listVersion++
     const previous = this.view.getSnapshot()
-    const selectedId = pages.some(page => page.targetId === previous.selectedId)
-      ? previous.selectedId : pages.find(page => page.active)?.targetId ?? pages[0]?.targetId ?? null
-    if (selectedId !== previous.selectedId || relayOff) this.cancelFrameRefresh()
+    const selectedId = pages.find(page => page.targetId === this.selectedViewId)?.targetId
+      ?? (this.selectedViewId === 'default' ? pages.find(page => page.targetId === previous.selectedId)?.targetId
+        ?? pages.find(page => page.active)?.targetId ?? pages[0]?.targetId : null) ?? null
+    const selected = pages.find(page => page.targetId === selectedId)
+    const oldSelected = previous.pages.find(page => page.targetId === selectedId)
+    const changed = selected?.url !== oldSelected?.url
+      || selected?.viewportW !== oldSelected?.viewportW || selected?.viewportH !== oldSelected?.viewportH
+    if (selectedId !== previous.selectedId || relayOff || changed) this.cancelFrameRefresh()
     this.view.set({ ...previous, phase: 'ready', pages, selectedId,
-      frame: !relayOff && previous.frame?.targetId === selectedId ? previous.frame : null, relayOff })
-    if (selectedId !== previous.selectedId && selectedId !== null && !relayOff
-      && pages.find(page => page.targetId === selectedId)?.active !== true) this.refreshSelectedFrame()
+      frame: !relayOff && !changed && previous.frame?.targetId === selectedId ? previous.frame : null, relayOff })
+    if (selectedId !== null && !relayOff && (changed || selectedId !== previous.selectedId
+      || this.view.getSnapshot().frame === null)) this.refreshSelectedFrame()
   }
 
   private openStream(epoch: number): void {
@@ -323,6 +385,9 @@ export class BrowserEgoController {
       if (!frame || view.relayOff || view.phase !== 'ready' || view.selectedId !== frame.targetId
         || !view.pages.some(page => page.targetId === frame.targetId)
         || (view.frame?.targetId === frame.targetId && frame.ts <= view.frame.ts)) return
+      const page = view.pages.find(item => item.targetId === frame.targetId)
+      if (page?.viewportW != null && page.viewportW !== frame.width
+        || page?.viewportH != null && page.viewportH !== frame.height) return
       this.view.set({ ...view, frame })
     })
     stream.addEventListener('error', () => {

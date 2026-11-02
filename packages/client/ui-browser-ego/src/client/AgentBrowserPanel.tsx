@@ -1,13 +1,12 @@
 /** 工作台会话面板只呈现经验证的页面与画面；人工输入由 Host 再次授权。 */
-import { useEffect, useRef, useState, type FormEvent, type MouseEvent, type WheelEvent } from 'react'
+import { useEffect, useRef, useState, type ClipboardEvent, type CompositionEvent, type FormEvent, type KeyboardEvent, type MouseEvent, type WheelEvent } from 'react'
 import {
-  IconBrowseOutline16, IconChecklistOutline14, IconChevronDownOutline14, IconCloseOutline16,
-  IconGlobeOutline14, IconRefreshOutline16, IconRightUpOutline16, IconWarningOutline16,
+  IconChevronLeftOutline14, IconChevronRightOutline14,
+  IconRefreshOutline16, IconRightUpOutline16, IconWarningOutline16,
 } from 'coding-client-ui-icons'
-import { Button, Input, StateDot, Toast, Tooltip } from 'coding-client-ui-primitives'
+import { Button, Input, Toast } from 'coding-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime, HostObservable } from 'coding-client-ui-slots'
 import type {} from 'coding-client-ui-open-in-app/client'
-import { actionLabelKey, recentActions, relativeTime } from './actions.ts'
 import type { BrowserEgoController, BrowserEgoView } from './controller.ts'
 import { pointOnFrame } from './geometry.ts'
 import { NS } from './locales.ts'
@@ -22,10 +21,9 @@ export interface AgentBrowserInjected {
     /** 采集设置的投影；视频后端只在此处读取，不直接访问设置服务。 */
     browserEgoSettings: HostObservable<EgoBrowserCapture>
   }
-  show: (visible: boolean) => void
+  show: (visible: boolean, viewId: string) => void
   refresh: () => Promise<void>
-  select: (targetId: string) => void
-  close: (targetId: string) => Promise<boolean>
+  navigate: BrowserEgoController['navigate']
   /** 由用户触发：把浏览器换成可见窗口，用于登录与人机验证。 */
   raiseWindow: () => Promise<boolean>
   send: BrowserEgoController['send']
@@ -34,52 +32,58 @@ export interface AgentBrowserInjected {
 export type AgentBrowserProps = PropsRuntime<'sidebar.right.pane.tab'> & PropsLocale<typeof NS>
   & InjectFace<AgentBrowserInjected>
 
-type ClickTarget = { targetId: string; timestamp: number }
-type Notice = { id: number; key: 'inputFailed' | 'closeFailed' | 'raiseFailed' }
+type Notice = { id: number; key: 'inputFailed' | 'navigateFailed' | 'raiseFailed' }
 
-function pageName(page: { title: string; url: string }, fallback: string): string {
-  if (page.title !== '') return page.title
+/** 人工画面只投递这些导航键；按键码不依赖浏览器已废弃的事件属性。 */
+const NAVIGATION_KEYS: Readonly<Record<string, number>> = {
+  Enter: 13, Backspace: 8, Delete: 46, Home: 36, End: 35,
+  ArrowLeft: 37, ArrowUp: 38, ArrowRight: 39, ArrowDown: 40,
+}
+
+/** 人工地址栏只接受无凭据的 HTTP(S) 地址，不传递可执行或本地文件协议。 */
+function addressFromDraft(draft: string): string | null {
+  const value = draft.trim()
+  if (!value || value.length > 2048 || /[\s\u007f]/u.test(value)) return null
+  const candidate = /^https?:\/\//iu.test(value) ? value : /^[a-z][\w+.-]*:\/\//iu.test(value)
+    ? value : `https://${value}`
   try {
-    const url = new URL(page.url)
-    return url.protocol === 'http:' || url.protocol === 'https:' ? url.hostname : fallback
-  } catch { return fallback }
+    const url = new URL(candidate)
+    if (url.username || url.password) return null
+    return (url.protocol === 'https:' || url.protocol === 'http:') && url.hostname !== '' ? url.href : null
+  } catch { return null }
 }
 
 /**
  * Host 只发送所属 Session 的页面；手动查看后台页面时单独请求已授权画面。
  * @param props - 框架注入的会话 ID、标签显隐、采集设置与业务操作。
- * @returns 状态区、页面标签、画面区（单帧或视频）、历史动作抽屉与人工操作。
+ * @returns 地址栏、网页导航与当前工作台标签对应的画面。
  */
 export function AgentBrowserPanel({
   sessionId, useTabInfo, useBrowserEgo, useBrowserEgoSettings,
-  show, refresh, select, close, raiseWindow, send, t,
+  show, refresh, navigate, raiseWindow, send, t,
 }: AgentBrowserProps) {
-  const { shown } = useTabInfo()
+  const { shown, tab } = useTabInfo()
+  const targetId = tab.params !== null && typeof tab.params === 'object' && !Array.isArray(tab.params)
+    && 'targetId' in tab.params && typeof tab.params.targetId === 'string' ? tab.params.targetId : null
+  const viewId = targetId ?? 'default'
   const view = useBrowserEgo(snapshot => snapshot)
   const settings = useBrowserEgoSettings(snapshot => snapshot)
   const [loadedSrc, setLoadedSrc] = useState<string | null>(null)
-  const [clickTarget, setClickTarget] = useState<ClickTarget | null>(null)
-  const [text, setText] = useState('')
+  const [address, setAddress] = useState('')
+  const [addressEditing, setAddressEditing] = useState(false)
+  const [addressError, setAddressError] = useState(false)
   const [notice, setNotice] = useState<Notice | null>(null)
-  const [now, setNow] = useState(() => Date.now())
-  const [drawerOpen, setDrawerOpen] = useState(false)
-  const [selectedAction, setSelectedAction] = useState<string | null>(null)
   const [videoFailed, setVideoFailed] = useState(false)
   const image = useRef<HTMLImageElement>(null)
   const video = useRef<HTMLVideoElement>(null)
 
-  useEffect(() => { show(shown) }, [shown, show])
-  useEffect(() => () => { show(false) }, [show])
-  // 相对时间需要自行走动；隐藏或没有动作时不安排计时器。
-  useEffect(() => {
-    if (!shown || view.actions.length === 0) return
-    const timer = setInterval(() => { setNow(Date.now()) }, 1000)
-    return () => { clearInterval(timer) }
-  }, [shown, view.actions.length])
-  useEffect(() => { setNow(Date.now()) }, [view.actions])
-
-  const selected = view.pages.find(page => page.targetId === view.selectedId)
+  useEffect(() => { show(shown, viewId) }, [shown, viewId, show])
+  useEffect(() => () => { show(false, viewId) }, [show, viewId])
+  const selected = view.pages.find(page => page.targetId === targetId)
   const frame = view.frame?.targetId === selected?.targetId ? view.frame : null
+  useEffect(() => {
+    if (!addressEditing) setAddress(selected?.url === 'about:blank' ? '' : selected?.url ?? '')
+  }, [addressEditing, selected?.url])
   const imageReady = shown && !view.pending && view.phase === 'ready' && !view.relayOff
     && frame !== null && selected !== undefined && loadedSrc === frame.src && image.current?.complete === true
     && image.current.naturalWidth > 0 && image.current.naturalHeight > 0
@@ -89,11 +93,7 @@ export function AgentBrowserPanel({
   const videoTarget = selected?.targetId ?? null
   // 只有用户选择视频后端、Host 报告 fMP4 就绪且上一次播放没有失败时才用 MSE。
   const videoMode = shown && settings.backend === 'ffmpeg' && videoMime !== null && !videoFailed
-    && view.phase === 'ready' && !view.relayOff && videoTarget !== null
-  const textReady = shown && view.phase === 'ready' && !view.relayOff && selected !== undefined
-    && clickTarget?.targetId === selected.targetId
-    && (videoMode || (imageReady && clickTarget.timestamp === frame.ts))
-    && text.length > 0 && text.length <= 2000
+    && view.phase === 'ready' && !view.relayOff && videoTarget !== null && selected?.active === true
   const notify = (key: Notice['key']) => {
     setNotice(previous => ({ id: (previous?.id ?? 0) + 1, key }))
   }
@@ -132,80 +132,83 @@ export function AgentBrowserPanel({
   }
   async function click(event: MouseEvent<HTMLButtonElement>): Promise<void> {
     const current = point(event)
-    const targetId = frame?.targetId ?? selected?.targetId
+    const targetId = selected?.targetId
     if (!current || targetId === undefined) return
     const down = await send(targetId, { type: 'mousePressed', ...current, button: 'left', buttons: 1, clickCount: 1 })
-    // 页面切换时旧目标的释放可能被拒；只将成功的完整点击作为文字输入定位。
     const up = down && await send(targetId, { type: 'mouseReleased', ...current, button: 'left', buttons: 0, clickCount: 1 })
-    if (!down || !up) { setClickTarget(null); warn(); return }
-    setClickTarget({ targetId, timestamp: videoMode ? Date.now() : frame?.ts ?? 0 })
+    if (!down || !up) warn()
   }
   async function wheel(event: WheelEvent<HTMLButtonElement>): Promise<void> {
     if (event.deltaY === 0) return
     const current = point(event)
-    const targetId = frame?.targetId ?? selected?.targetId
-    if (!current || targetId === undefined) return
+    if (!current || selected === undefined) return
     event.preventDefault()
     const deltaY = Math.max(-2000, Math.min(2000, Math.round(event.deltaY)))
-    if (!await send(targetId, { type: 'mouseWheel', ...current, deltaX: 0, deltaY })) warn()
+    if (!await send(selected.targetId, { type: 'mouseWheel', ...current, deltaX: 0, deltaY })) warn()
   }
-  async function typeAtPoint(event: FormEvent<HTMLFormElement>): Promise<void> {
+  async function key(event: KeyboardEvent<HTMLButtonElement>): Promise<void> {
+    if ((!imageReady && !videoMode) || event.metaKey || event.ctrlKey
+      || event.altKey || event.nativeEvent.isComposing) return
+    if (event.key === 'Tab' || event.key === 'Escape') return
+    if (event.key.length === 1) {
+      event.preventDefault()
+      if (!await send(selected.targetId, { type: 'insertText', text: event.key })) warn()
+    } else {
+      const windowsVirtualKeyCode = NAVIGATION_KEYS[event.key]
+      if (windowsVirtualKeyCode === undefined) return
+      event.preventDefault()
+      const fields = { key: event.key, code: event.key, windowsVirtualKeyCode }
+      const down = await send(selected.targetId, { type: 'keyDown', ...fields })
+      const up = down && await send(selected.targetId, { type: 'keyUp', ...fields })
+      if (!down || !up) warn()
+    }
+  }
+  /** 画面获得焦点后，粘贴和中文输入与普通按键走相同的会话授权路径。 */
+  async function insert(text: string): Promise<void> {
+    if ((!imageReady && !videoMode) || text.length === 0 || text.length > 2000) return
+    if (!await send(selected.targetId, { type: 'insertText', text })) warn()
+  }
+  function paste(event: ClipboardEvent<HTMLButtonElement>): void {
     event.preventDefault()
-    const targetId = frame?.targetId ?? selected?.targetId
-    if (!textReady || targetId === undefined) return
-    if (await send(targetId, { type: 'insertText', text })) setText('')
-    else warn()
+    void insert(event.clipboardData.getData('text/plain'))
   }
-  async function closePage(targetId: string): Promise<void> {
-    if (await close(targetId)) setClickTarget(null)
-    else notify('closeFailed')
+  function composed(event: CompositionEvent<HTMLButtonElement>): void {
+    void insert(event.data)
   }
-  const actions = recentActions(view.actions)
-
+  async function submitAddress(event: FormEvent<HTMLFormElement>): Promise<void> {
+    event.preventDefault()
+    const url = addressFromDraft(address)
+    if (url === null) { setAddressError(true); return }
+    setAddressError(false)
+    if (!await navigate(selected?.targetId, 'navigate', url)) notify('navigateFailed')
+  }
+  async function move(action: 'back' | 'forward' | 'reload'): Promise<void> {
+    if (selected && !await navigate(selected.targetId, action)) notify('navigateFailed')
+  }
   return <section className={css.root} hidden={!shown} aria-label={t('title')}>
-    <header className={css.header}>
-      <span className={css.heading}><IconBrowseOutline16 size={16} />{t('title')}</span>
+    <div className={css.toolbar}>
+      <Button size="sm" variant="toolbar" title={t('back')} aria-label={t('back')}
+        disabled={selected === undefined || view.pending} icon={<IconChevronLeftOutline14 />}
+        onClick={() => { void move('back') }} />
+      <Button size="sm" variant="toolbar" title={t('forward')} aria-label={t('forward')}
+        disabled={selected === undefined || view.pending} icon={<IconChevronRightOutline14 />}
+        onClick={() => { void move('forward') }} />
+      <Button size="sm" variant="toolbar" title={t('reload')} aria-label={t('reload')}
+        disabled={selected === undefined || view.pending} icon={<IconRefreshOutline16 size={14} />}
+        onClick={() => { void move('reload') }} />
+      <form className={css.address} onSubmit={(event) => { void submitAddress(event) }}>
+        <label htmlFor={`ego-address-${sessionId}-${tab.id}`} className={css.srOnly}>{t('address')}</label>
+        <Input id={`ego-address-${sessionId}-${tab.id}`} type="text" inputMode="url" spellCheck={false}
+          autoComplete="url" value={address} disabled={view.phase !== 'ready' || view.pending}
+          placeholder={t('addressPlaceholder')} aria-invalid={addressError}
+          onFocus={() => { setAddressEditing(true) }} onBlur={() => { setAddressEditing(false) }}
+          onChange={(event) => { setAddress(event.target.value); setAddressError(false) }} />
+      </form>
       <Button size="sm" variant="toolbar" className={css.refresh} title={t('openWindow')}
         aria-label={t('openWindow')} icon={<IconRightUpOutline16 size={14} />}
         onClick={() => { void openWindow() }} />
-      <Button size="sm" variant="toolbar" className={css.refresh} title={t('refresh')}
-        aria-label={t('refresh')} icon={<IconRefreshOutline16 size={14} />}
-        onClick={() => { void refresh() }} />
-    </header>
-    <div className={css.status} role="status">
-      {view.status === null
-        ? <span className={css.statusMuted}>{t('statusUnknown')}</span>
-        : <span className={css.statusItem}>
-          <StateDot state={view.status.running && view.status.browserConnected ? 'done' : 'warning'} />
-          <span>{view.status.running ? t('statusRunning') : t('statusStopped')}</span>
-        </span>}
-      {view.status !== null && <span className={css.statusItem}>
-        <span>{view.status.browserConnected ? t('statusConnected') : t('statusDisconnected')}</span>
-      </span>}
-      {view.phase !== 'loading' && <span className={css.statusItem}>
-        {t('pageCount', { count: view.pages.length })}
-      </span>}
     </div>
-    <nav className={css.tabs} aria-label={t('tabs')}>
-      {view.pages.map((page) => {
-        const name = pageName(page, t('page'))
-        const current = page.targetId === selected?.targetId
-        return <span key={page.targetId} className={css.tabItem} data-active={current || undefined}>
-          <Button size="sm" variant="toolbar" className={css.tab} title={name}
-            aria-current={current ? 'page' : undefined}
-            onClick={() => { select(page.targetId); setClickTarget(null) }}
-            icon={<IconGlobeOutline14 size={14} />}>
-            <span className={css.tabName}>{name}</span>
-          </Button>
-          <Tooltip label={t('closeTab')} side="bottom" delayMs={300}>
-            <button type="button" className={css.tabClose} aria-label={`${t('closeTab')}: ${name}`}
-              disabled={view.closing !== null} onClick={() => { void closePage(page.targetId) }}>
-              <IconCloseOutline16 size={12} />
-            </button>
-          </Tooltip>
-        </span>
-      })}
-    </nav>
+    {addressError && <p className={css.addressError} role="alert">{t('invalidAddress')}</p>}
     <div className={css.stage}>
       {view.phase === 'loading' && <p role="status" className={css.center}>{t('loading')}</p>}
       {view.phase === 'error' && <div className={css.center} role="alert">
@@ -216,19 +219,23 @@ export function AgentBrowserPanel({
       {view.phase === 'ready' && selected?.humanCheck === true && <p className={css.notice} role="status">
         <IconWarningOutline16 size={14} /><span>{t('humanCheck')}</span>
       </p>}
-      {view.phase === 'ready' && view.pages.length > 0 && (view.relayOff
+      {view.phase === 'ready' && view.pages.length > 0 && selected === undefined
+        && <p className={css.center}>{t('pageUnavailable')}</p>}
+      {view.phase === 'ready' && selected !== undefined && (view.relayOff
         ? <p className={css.center}>{t('relayOff')}</p>
         : videoMode
           ? <button type="button" className={css.frameAction} disabled={view.pending}
             aria-label={t('videoPreview')} title={t('preview')}
-            onClick={(event) => { void click(event) }} onWheel={(event) => { void wheel(event) }}>
+            onClick={(event) => { void click(event) }} onWheel={(event) => { void wheel(event) }}
+            onKeyDown={(event) => { void key(event) }} onPaste={paste} onCompositionEnd={composed}>
             <video ref={video} className={css.video} muted autoPlay playsInline
               aria-label={t('videoPreview')} />
           </button>
           : frame === null ? <p className={css.center}>{t('noFrame')}</p>
             : <button type="button" className={css.frameAction} disabled={view.pending}
               aria-label={t('preview')} title={t('preview')}
-              onClick={(event) => { void click(event) }} onWheel={(event) => { void wheel(event) }}>
+              onClick={(event) => { void click(event) }} onWheel={(event) => { void wheel(event) }}
+              onKeyDown={(event) => { void key(event) }} onPaste={paste} onCompositionEnd={composed}>
               <img ref={image} className={css.frame} src={frame.src} alt={t('preview')} draggable={false}
                 onLoad={() => { setLoadedSrc(frame.src) }} onError={() => { setLoadedSrc(null) }} />
             </button>)}
@@ -236,42 +243,6 @@ export function AgentBrowserPanel({
         {t('videoFallback')}
       </p>}
     </div>
-    <div className={css.historyDock}>
-      <Button size="sm" variant="toolbar" className={css.historyButton} aria-expanded={drawerOpen}
-        onClick={() => { setDrawerOpen(!drawerOpen) }}
-        icon={<IconChecklistOutline14 size={14} />}>
-        <span className={css.historyButtonText}>{t('history')}</span>
-        <IconChevronDownOutline14 size={12} className={drawerOpen ? css.historyChevronOpen : css.historyChevron} />
-      </Button>
-      {drawerOpen && <section className={css.drawer} aria-label={t('history')}>
-        {actions.length === 0
-          ? <p className={css.historyEmpty}>{t('historyEmpty')}</p>
-          : <ol className={css.historyList}>
-            {actions.map((action, index) => {
-              const key = `${action.at}-${action.kind}-${index}`
-              const time = relativeTime(action.at, now)
-              const seat = selectedAction === key
-              return <li key={key} className={css.historyItem}>
-                <button type="button" className={css.historyRow} data-selected={seat || undefined}
-                  aria-current={seat ? 'true' : undefined}
-                  onClick={() => { setSelectedAction(key); setDrawerOpen(false) }}>
-                  <span className={css.historyLabel}>{t(actionLabelKey(action.kind))}</span>
-                  <span className={css.historyTime}>
-                    {time.key === 'timeNow' ? t(time.key) : t(time.key, { count: time.count })}
-                  </span>
-                </button>
-              </li>
-            })}
-          </ol>}
-      </section>}
-    </div>
-    <form className={css.typeBar} onSubmit={(event) => { void typeAtPoint(event) }}>
-      <label htmlFor={`browser-ego-text-${sessionId}`} className={css.srOnly}>{t('typeLabel')}</label>
-      <Input id={`browser-ego-text-${sessionId}`} value={text} maxLength={2000}
-        disabled={!imageReady} placeholder={t('typePlaceholder')}
-        onChange={(event) => { setText(event.target.value) }} />
-      <Button type="submit" size="sm" variant="outline" disabled={!textReady}>{t('send')}</Button>
-    </form>
     {notice !== null && <Toast key={notice.id} text={t(notice.key)} onDone={() => { setNotice(null) }} />}
   </section>
 }

@@ -26,17 +26,18 @@ describe('Agent 浏览器插件注册与生命周期', () => {
     const settings = stubSettingsScope<EgoBrowserSettings>()
     ctx.provide('settingsScope', { bind: () => settings.scope } as never)
     const tab = { id: WATCH_ID, kind: WATCH_KIND, title: () => 'Agent 浏览器' }
-    const register = vi.fn((_definition: { id: string; kind: string; keepMounted?: boolean }) => vi.fn())
+    const register = vi.fn((_definition: { id: string; kind: string; keepMounted?: boolean; multiple?: boolean }) => vi.fn())
     ctx.provide('sidebarRightTabs', { register })
-    const openTabForSession = vi.fn()
-    ctx.provide('sidebarRight', { openTabForSession })
+    const openResourceForSession = vi.fn()
+    const syncTabsForSession = vi.fn()
+    ctx.provide('sidebarRight', { openResourceForSession, syncTabsForSession })
     ctx.provide('sessions', { list: { getSnapshot: () => ({ byId: { 'session-one': {}, 'session-two': {} } }) } })
     const stream = new FakeStream()
     vi.stubGlobal('EventSource', class extends EventTarget { constructor() { super(); return stream } })
     const fiber = ctx.plugin({ inject: [...inject], apply })
     await fiber.await()
     expect(register).toHaveBeenCalledOnce()
-    expect(register.mock.calls.at(0)?.[0]).toMatchObject({ id: tab.id, kind: tab.kind, keepMounted: true })
+    expect(register.mock.calls.at(0)?.[0]).toMatchObject({ id: tab.id, kind: tab.kind, keepMounted: true, multiple: true })
     expect(ctx.slots.entries('sidebar.right.pane.tab')).toEqual([])
 
     const root = ctx.slots.register({ name: 'root', children: {
@@ -49,12 +50,15 @@ describe('Agent 浏览器插件注册与生命周期', () => {
     expect(entry?.options.key).toBe(WATCH_ID)
     const face = entry?.inject as unknown as (sessionId: string) => AgentBrowserInjected
     expect(face('session-one').hooks.browserEgo).not.toBe(face('session-two').hooks.browserEgo)
-    expect(typeof face('session-one').close).toBe('function')
+    expect(typeof face('session-one').navigate).toBe('function')
     stream.emit('session-one', 1)
     stream.emit('session-two', 2)
     stream.emit('session-one', 3)
     stream.emit('unknown', 4)
-    expect(openTabForSession.mock.calls).toEqual([['session-one', WATCH_KIND], ['session-two', WATCH_KIND]])
+    expect(openResourceForSession.mock.calls).toEqual([
+      ['session-one', 'sidebar://ego-browser%3Awatch', { kind: WATCH_KIND, reuseAddress: true }],
+      ['session-two', 'sidebar://ego-browser%3Awatch', { kind: WATCH_KIND, reuseAddress: true }],
+    ])
     root()
     expect(ctx.slots.entries('sidebar.right.pane.tab')).toEqual([])
     await fiber.dispose()

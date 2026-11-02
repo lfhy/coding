@@ -62,6 +62,39 @@ describe('会话画面与人工输入', () => {
     controller.show(false)
   })
 
+  it('多个视图共用会话流，切换页面丢弃旧帧，最后一个视图隐藏才断开', async () => {
+    const { controller, streams, activities } = fixture(vi.fn(async (url: string) =>
+      url.startsWith('/api/ego/frame?') ? new Response(null, { status: 404 })
+        : overview(url) ?? Response.json({ ok: true, spaces: [first, second] })))
+    controller.show(true, 'first')
+    await vi.waitFor(() => { expect(controller.view.getSnapshot().selectedId).toBe('first') })
+    expect(streams).toHaveLength(1)
+    expect(activities).toHaveLength(1)
+    streams[0]?.emit('frame', { targetId: 'first', data: 'YWJj', vw: 400, vh: 300, ts: 1 })
+    expect(controller.view.getSnapshot().frame?.targetId).toBe('first')
+
+    controller.show(true, 'second')
+    expect(controller.view.getSnapshot().selectedId).toBe('second')
+    expect(controller.view.getSnapshot().frame).toBeNull()
+    streams[0]?.emit('frame', { targetId: 'first', data: 'YWJj', vw: 400, vh: 300, ts: 2 })
+    expect(controller.view.getSnapshot().frame).toBeNull()
+    streams[0]?.emit('frame', { targetId: 'second', data: 'YWJj', vw: 400, vh: 300, ts: 3 })
+    expect(controller.view.getSnapshot().frame?.targetId).toBe('second')
+    controller.show(false, 'second')
+    expect(controller.view.getSnapshot().selectedId).toBe('first')
+    expect(controller.view.getSnapshot().frame).toBeNull()
+    expect(streams).toHaveLength(1)
+    expect(activities).toHaveLength(1)
+    expect(streams[0]?.closed).toBe(false)
+    expect(activities[0]?.closed).toBe(false)
+    controller.show(false, 'first')
+    expect(streams[0]?.closed).toBe(true)
+    expect(activities[0]?.closed).toBe(true)
+    expect(controller.view.getSnapshot().pages).toEqual([])
+    streams[0]?.emit('frame', { targetId: 'first', data: 'YWJj', vw: 400, vh: 300, ts: 4 })
+    expect(controller.view.getSnapshot().frame).toBeNull()
+  })
+
   it('保持更新 SSE 列表的权威性，并拒绝目标外、画面外或隐藏时人工输入', async () => {
     const { controller, fetcher, streams } = fixture(vi.fn(async (url: string, _init?: RequestInit) => {
       if (url === '/api/ego/input') return Response.json({ ok: true })
@@ -84,6 +117,62 @@ describe('会话画面与人工输入', () => {
     expect(await controller.send('first', click)).toBe(false)
     controller.show(false)
     expect(await controller.send('first', click)).toBe(false)
+  })
+
+  it('只允许当前可见且有匹配画面的页面发送白名单按键与文字', async () => {
+    const fetcher = vi.fn(async (url: string) => url === '/api/ego/input'
+      ? Response.json({ ok: true }) : url.startsWith('/api/ego/frame?')
+        ? new Response(null, { status: 404 })
+        : overview(url) ?? Response.json({ ok: true, spaces: [first, second] }))
+    const { controller, streams } = fixture(fetcher)
+    controller.show(true, 'first')
+    await vi.waitFor(() => { expect(controller.view.getSnapshot().selectedId).toBe('first') })
+    const key = { type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 } as const
+    expect(await controller.send('first', key)).toBe(false)
+    expect(fetcher.mock.calls.filter(([path]) => path === '/api/ego/input')).toHaveLength(0)
+    streams[0]?.emit('frame', { targetId: 'first', data: 'YWJj', vw: 400, vh: 300, ts: 1 })
+    for (const invalid of [
+      { ...key, key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9 },
+      { ...key, key: 'r', code: 'KeyR', windowsVirtualKeyCode: 82 },
+      { ...key, code: 'NumpadEnter' },
+      { ...key, windowsVirtualKeyCode: 256 },
+    ]) expect(await controller.send('first', invalid)).toBe(false)
+    expect(await controller.send('first', { type: 'insertText', text: '' })).toBe(false)
+    expect(fetcher.mock.calls.filter(([path]) => path === '/api/ego/input')).toHaveLength(0)
+    expect(await controller.send('first', key)).toBe(true)
+    expect(await controller.send('first', { ...key, type: 'keyUp' })).toBe(true)
+    expect(await controller.send('first', { type: 'insertText', text: '你好' })).toBe(true)
+    expect(fetcher.mock.calls.filter(([path]) => path === '/api/ego/input')).toHaveLength(3)
+    expect(fetcher).toHaveBeenCalledWith('/api/ego/input', expect.objectContaining({
+      method: 'POST', body: JSON.stringify({ sessionId: 'session-one', targetId: 'first', ...key }),
+    }))
+
+    controller.show(true, 'second')
+    expect(await controller.send('first', key)).toBe(false)
+    expect(await controller.send('second', key)).toBe(false)
+    streams[0]?.emit('frame', { targetId: 'first', data: 'YWJj', vw: 400, vh: 300, ts: 2 })
+    expect(await controller.send('second', key)).toBe(false)
+    expect(fetcher.mock.calls.filter(([path]) => path === '/api/ego/input')).toHaveLength(3)
+    controller.show(false, 'second')
+    controller.show(false, 'first')
+    expect(await controller.send('first', key)).toBe(false)
+  })
+
+  it('页面视口变更后拒绝旧帧坐标与按键，直到新尺寸画面到达', async () => {
+    const fetcher = vi.fn(async (url: string) => url === '/api/ego/input'
+      ? Response.json({ ok: true }) : url.startsWith('/api/ego/frame?')
+        ? new Response(null, { status: 404 })
+        : overview(url) ?? Response.json({ ok: true, spaces: [first] }))
+    const { controller, streams } = fixture(fetcher)
+    controller.show(true, 'first')
+    await vi.waitFor(() => { expect(controller.view.getSnapshot().selectedId).toBe('first') })
+    streams[0]?.emit('frame', { targetId: 'first', data: 'YWJj', vw: 400, vh: 300, ts: 1 })
+    streams[0]?.emit('spaces', [{ ...first, viewportW: 600 }])
+    expect(await controller.send('first', { type: 'insertText', text: 'a' })).toBe(false)
+    expect(fetcher.mock.calls.filter(([path]) => path === '/api/ego/input')).toHaveLength(0)
+    streams[0]?.emit('frame', { targetId: 'first', data: 'YWJj', vw: 600, vh: 300, ts: 2 })
+    expect(await controller.send('first', { type: 'insertText', text: 'a' })).toBe(true)
+    controller.show(false, 'first')
   })
 
   it('忽略比实时流更旧的目录结果并保留最新画面', async () => {
@@ -134,6 +223,108 @@ describe('会话画面与人工输入', () => {
     expect(controller.view.getSnapshot().frame).toBeNull()
     streams[0]?.emit('frame', { targetId: 'first', data: 'YWJj', vw: 400, vh: 300, ts: 6 })
     expect(controller.view.getSnapshot().pages).toEqual([])
+  })
+
+  it('拒绝跨页旧帧及视口不匹配的流和单帧，不让它们覆盖当前画面', async () => {
+    const fetcher = vi.fn(async (url: string) => url.startsWith('/api/ego/frame?')
+      ? Response.json({ targetId: 'second', data: 'YWJj', vw: 401, vh: 300, ts: 10 })
+      : overview(url) ?? Response.json({ ok: true, spaces: [first, second] }))
+    const { controller, streams } = fixture(fetcher)
+    controller.show(true, 'first')
+    await vi.waitFor(() => { expect(controller.view.getSnapshot().selectedId).toBe('first') })
+    streams[0]?.emit('frame', { targetId: 'first', data: 'YWJj', vw: 400, vh: 300, ts: 1 })
+    controller.show(true, 'second')
+    expect(controller.view.getSnapshot().frame).toBeNull()
+    await vi.waitFor(() => {
+      expect(fetcher).toHaveBeenCalledWith('/api/ego/frame?sessionId=session-one&targetId=second', expect.any(Object))
+    })
+    streams[0]?.emit('frame', { targetId: 'first', data: 'YWJj', vw: 400, vh: 300, ts: 11 })
+    streams[0]?.emit('frame', { targetId: 'second', data: 'YWJj', vw: 401, vh: 300, ts: 12 })
+    expect(controller.view.getSnapshot().frame).toBeNull()
+    streams[0]?.emit('frame', { targetId: 'second', data: 'YWJj', vw: 400, vh: 301, ts: 13 })
+    expect(controller.view.getSnapshot().frame).toBeNull()
+    streams[0]?.emit('frame', { targetId: 'second', data: 'YWJj', vw: 400, vh: 300, ts: 2 })
+    expect(controller.view.getSnapshot().frame?.ts).toBe(2)
+    await controller.refresh()
+    expect(controller.view.getSnapshot().frame?.ts).toBe(2)
+    controller.show(false, 'second')
+    controller.show(false, 'first')
+  })
+
+  it('只向本会话目录中的目标 POST 地址、后退、前进与刷新', async () => {
+    const fetcher = vi.fn(async (url: string) => url === '/api/ego/navigation'
+      ? Response.json({ ok: true }) : url.startsWith('/api/ego/frame?')
+        ? new Response(null, { status: 404 })
+        : overview(url) ?? Response.json({ ok: true, spaces: [first, second] }))
+    const { controller } = fixture(fetcher)
+    expect(await controller.navigate('first', 'reload')).toBe(false)
+    controller.show(true, 'second')
+    await vi.waitFor(() => { expect(controller.view.getSnapshot().selectedId).toBe('second') })
+    const url = 'https://example.org/path?from=address'
+    for (const [action, address] of [['navigate', url], ['back', undefined], ['forward', undefined],
+      ['reload', undefined]] as const) {
+      expect(await controller.navigate('second', action, address)).toBe(true)
+      expect(fetcher).toHaveBeenCalledWith('/api/ego/navigation', expect.objectContaining({
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ sessionId: 'session-one', targetId: 'second', action,
+          ...(address === undefined ? {} : { url: address }) }),
+      }))
+    }
+    expect(fetcher.mock.calls.filter(([path]) => path === '/api/ego/navigation')).toHaveLength(4)
+    expect(controller.view.getSnapshot().pending).toBe(false)
+    controller.show(false, 'second')
+  })
+
+  it('拒绝未知、非法与跨会话目标，不能无目标导航已有页面', async () => {
+    const fetcher = vi.fn(async (url: string) => url.startsWith('/api/ego/frame?')
+      ? new Response(null, { status: 404 })
+      : overview(url) ?? Response.json({ ok: true, spaces: [first] }))
+    const { controller } = fixture(fetcher)
+    controller.show(true)
+    await vi.waitFor(() => { expect(controller.view.getSnapshot().phase).toBe('ready') })
+    for (const targetId of ['other-session-page', 'bad id', '']) {
+      expect(await controller.navigate(targetId, 'navigate', 'https://example.org/')).toBe(false)
+      expect(await controller.navigate(targetId, 'back')).toBe(false)
+    }
+    expect(await controller.navigate(undefined, 'navigate', 'https://example.org/')).toBe(false)
+    expect(await controller.navigate(undefined, 'reload')).toBe(false)
+    expect(fetcher.mock.calls.filter(([path]) => path === '/api/ego/navigation')).toHaveLength(0)
+    controller.show(false)
+    expect(await controller.navigate('first', 'reload')).toBe(false)
+  })
+
+  it('空白会话仅向 Host 发送无 targetId 的新建导航，不能无目标前进后退或刷新', async () => {
+    const fetcher = vi.fn(async (url: string) => url === '/api/ego/navigation'
+      ? Response.json({ ok: true })
+      : overview(url) ?? Response.json({ ok: true, spaces: [] }))
+    const { controller } = fixture(fetcher)
+    controller.show(true)
+    await vi.waitFor(() => { expect(controller.view.getSnapshot().phase).toBe('ready') })
+    for (const action of ['back', 'forward', 'reload'] as const) {
+      expect(await controller.navigate(undefined, action)).toBe(false)
+    }
+    expect(await controller.navigate('missing', 'navigate', 'https://example.org/')).toBe(false)
+    expect(await controller.navigate(undefined, 'navigate', 'https://example.org/')).toBe(true)
+    expect(fetcher.mock.calls.filter(([path]) => path === '/api/ego/navigation')).toHaveLength(1)
+    expect(fetcher).toHaveBeenCalledWith('/api/ego/navigation', expect.objectContaining({
+      method: 'POST', body: JSON.stringify({ sessionId: 'session-one', action: 'navigate', url: 'https://example.org/' }),
+    }))
+    controller.show(false)
+  })
+
+  it('Host 拒绝非法地址或失败的历史导航时返回失败并解除等待', async () => {
+    const fetcher = vi.fn(async (url: string) => url === '/api/ego/navigation'
+      ? new Response(null, { status: 400 }) : url.startsWith('/api/ego/frame?')
+        ? new Response(null, { status: 404 })
+        : overview(url) ?? Response.json({ ok: true, spaces: [first] }))
+    const { controller } = fixture(fetcher)
+    controller.show(true)
+    await vi.waitFor(() => { expect(controller.view.getSnapshot().phase).toBe('ready') })
+    expect(await controller.navigate('first', 'navigate', 'javascript:alert(1)')).toBe(false)
+    expect(await controller.navigate('first', 'back')).toBe(false)
+    expect(controller.view.getSnapshot().pending).toBe(false)
+    expect(fetcher.mock.calls.filter(([path]) => path === '/api/ego/navigation')).toHaveLength(2)
+    controller.show(false)
   })
 
   it('读取运行状态与最近动作，状态不可用时保持中性', async () => {

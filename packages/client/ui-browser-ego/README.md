@@ -2,34 +2,32 @@
 
 ## 目标与边界
 
-本包在右侧工作台注册一个会话级「Agent 浏览器」外部标签，并在设置页注册「Agent 浏览器」设置卡。面板负责显示所属会话的页面标签、浏览器状态、历史动作、活动页实时画面（单帧 JPEG 或视频）和基础人工操作；设置卡负责读写 Host 的 `ego-browser` 设置命名空间。它不启动浏览器、不注册模型工具，也不复用旧浏览器的页面或截图。Host 流推送活动页画面；人工选择其他标签时按该会话的目标身份读取单帧画面或切换到视频流。工作台通过 `sidebarRightTabs` 持有标签类型，通过 keyed `sidebar.right.pane.tab` 渲染内容；设置卡通过 keyed `settings.plugin.item` 挂到设置页的插件页，key 即设置命名空间。本包只在其 Client 组合行被挂载后生效；Host 浏览器服务、`/api/ego/*` 路由与 `ego-browser` 命名空间的注册由其他包提供。
+本包向右侧工作台贡献会话级「Agent 浏览器」入口：所属会话的每个浏览器页面对应一个工作台顶栏标签，内容区仅显示当前页面的地址栏、导航按钮与画面（单帧 JPEG 或视频），没有第二层页面标签或底部操作栏。工作台标签只是一份页面视图：关闭它不向 Host 发送关闭页面命令，页面仍可由 Agent 使用；浏览器页面从 Host 目录消失时才移除相应视图。没有页面时手动入口显示空状态。本包还在设置页注册「Agent 浏览器」设置卡，读写 Host 的 `ego-browser` 设置命名空间。它不启动浏览器、不注册模型工具，也不复用旧浏览器的页面或截图。Host 流推送所属会话活动页画面，后台页按目标身份读取单帧。工作台通过 `sidebarRightTabs` 持有标签类型，通过 keyed `sidebar.right.pane.tab` 渲染内容；设置卡通过 keyed `settings.plugin.item` 挂到插件设置页。本包只在 Client 组合行挂载后生效；浏览器服务与 `/api/ego/*` 路由由 [Ego Host](../../browser/browser-ego-host/README.md) 提供。
 
 ## 数据与操作契约
 
 页面显示时，Client 并行向同源路由读取会话数据：
 
 - `GET /api/ego/spaces?sessionId=<id>` 返回 `{ ok: true, spaces, frameRelay? }`。`spaces` 每项含 `targetId`、`title`、`url`、`active`、可选 `viewportW`／`viewportH` 与可选 `humanCheck`；Client 只把 `humanCheck` 归一化为布尔事实（`null`／`false`／`{ detected: false }` 视为无需验证），不保存检测类别或选择器。
-- `GET /api/ego/status?sessionId=<id>` 返回 `{ ok, running, browserConnected, spaces }`。面板只取 `running` 与 `browserConnected` 两个布尔值用于顶部状态区，页面数量以当前页面列表为准；状态路由缺失、失败或形状不符时显示中性说明，不展示路径、进程或堆栈。
-- `GET /api/ego/history?sessionId=<id>` 返回 `{ ok, actions: [{ tool, at }] }`。工具名只在浏览器边界归入封闭的动作类别（如打开网页、点击页面、等待人工操作），原始工具名不进入视图或界面。
-- `GET /api/ego/video/status` 返回 `{ ok, mime? }` 或 `{ ok, capture: { backend, mime? } }`。Client 只取可播放的 `video/*` 类型；没有合法类型即视为视频不可用，不影响单帧画面。
+- `GET /api/ego/status?sessionId=<id>` 返回 `{ ok, running, browserConnected, spaces }`。Client 只保留运行与连接布尔值，不把路径、进程或堆栈送进视图；工作台不显示独立的浏览器状态栏。
+- `GET /api/ego/history?sessionId=<id>` 返回 `{ ok, actions: [{ tool, at }] }`。Client 将工具名归入封闭动作类别，不把原始工具名送进视图；工作台没有历史动作抽屉。
+- `GET /api/ego/video/status` 返回 `{ ok, mime? }` 或 `{ ok, capture: { backend, mime? } }`。Client 只取合法的 `video/*` 类型；没有合法类型即视为视频不可用，不影响单帧画面。
 
-同时订阅 `GET /api/ego/stream?sessionId=<id>`：`spaces` 事件是同一会话的页面数组，`frame` 事件含 `targetId`、JPEG base64 `data`、视口 `vw`／`vh` 和单调时间戳 `ts`。选中或刷新后台页面时向同源 `GET /api/ego/frame?sessionId=<id>&targetId=<id>` 读取同一结构的单帧 JSON；切页、隐藏和卸载会取消在途读取并拒绝晚到的旧目标。Host 必须按 `sessionId` 过滤列表、SSE、单帧与输入目标，不能让其他会话的页面或画面进入该流；输入时还须复核目标是否仍归该会话，不得依赖 Client 的校验代替授权。
+页面可见时订阅 `GET /api/ego/stream?sessionId=<id>`：`spaces` 事件是该会话的页面数组，`frame` 事件含 `targetId`、JPEG base64 `data`、视口 `vw`／`vh` 与时间戳 `ts`。页面目录按 `targetId` 同步成一页一个工作台顶栏标签；新出现的页面加入，页面从目录消失才移除视图。手动关闭顶栏标签只关闭 Client 视图，同一页面不会因下一次目录轮询又打开，Host target 不受影响；需真正关闭页面时由 Agent 使用浏览器工具。切到后台页或重新显示时按会话目标向同源 `GET /api/ego/frame?sessionId=<id>&targetId=<id>` 请求单帧；切页、隐藏和卸载取消旧读取并拒绝迟到帧。Host 按 `sessionId` 过滤列表、SSE、单帧与输入目标，操作前复核页面归属，不能用 Client 检查代替授权。
 
-页面标签上的关闭按钮向同源 `POST /api/ego/close` 发送 `{ sessionId, targetId }`。成功后重新读取页面目录；失败只在共享 Toast 中显示固定文案，不显示响应内容或原始错误。关闭期间该会话的关闭按钮保持禁用，避免重复提交。
+当前页面上方提供地址栏、后退、前进和网页刷新：人工导航以 `POST /api/ego/navigation` 发送 `{ sessionId, targetId, action, url? }`。地址栏承诺无凭据的 HTTP(S) 地址；未写 scheme 的地址补 `https://`，非法地址在 Client 提示，不发送请求。`navigate` 带 URL；`back`／`forward`／`reload` 不带 URL，没有可用历史项或 Host 拒绝时只显示固定失败提示，不重复操作。Host 路由可在尚无页面时接纳省略 `targetId` 的导航以创建本会话首张网页，但面板是否开放此入口以可见页面状态为准。后端另接受严格本地 `file:///` 地址，不作为地址栏的产品承诺；Host 对人工导航执行回环同源请求校验、会话与目标归属检查，拒绝其他协议、越权目标与多余字段。
 
-标题栏的「在浏览器窗口中打开」按钮向同源 `POST /api/ego/window` 发送 `{ sessionId }`；这是唯一会让浏览器出现在前台的操作，由用户主动点击，用于登录扫码与人机验证。默认的无窗口模式不会弹出浏览器，也不会抢走焦点。成功只表示请求被接受，之后仍以画面流与页面目录为准；失败显示固定文案。
+人工输入只针对可见的工作台页面，向同源 `POST /api/ego/input` 发送 `{ sessionId, targetId, type, ... }`。点击投递 `mousePressed`／`mouseReleased`，滚动投递 `mouseWheel`；点画面后聚焦输入控件，可直接键入普通文字（`insertText`）及受限的回车、退格、删除、方向、Home／End 等按键（`keyDown`／`keyUp`），组合键、浏览器快捷键和任意 CDP 事件不在人工面板开放。坐标按画面内容区映射到页面 CSS 视口；旧帧、留白、未知目标或无效尺寸不能触发输入，失败只用固定文案提示。Host 对请求还要检查连接信任、回环同源、会话存活、target 归属及输入字段和范围，不能依赖 Client 的检查。
 
-基础人工操作只在标签与页面均可见且画面已匹配时向同源 `POST /api/ego/input` 发送 `{ sessionId, targetId, type, ... }`；点击使用一对 `mousePressed`／`mouseReleased`，滚动使用 `mouseWheel`，在已点击的位置输入文字使用 `insertText`。坐标是截图内容区的 CSS 视口像素；加载中的旧画面、画面外点击、未知目标、无效尺寸与过期帧均不能触发输入。Host 对 POST 仍须做同源和本机请求校验、会话权限、目标及输入边界校验。
+页面上方的「在浏览器窗口中打开」按钮向同源 `POST /api/ego/window` 发送 `{ sessionId }`；用户主动点击后才把默认无窗口的浏览器呈现在前台，以便登录扫码或处理人机验证。请求被接受不等于画面已就绪；画面和目录仍以 Host 推送为准，失败只显示固定文案。
 
-`spaces` 中 `humanCheck` 非空的当前页面会在画面顶部显示一条不拦截指针的提示条，说明需要在画面中完成人工验证；提示不包含检测类别、选择器等原始数据。
+`spaces` 中当前页面的 `humanCheck` 为真时，画面顶部显示不拦截指针的人工验证提示，不展示检测类别和选择器。
 
-历史动作收在画面下方的「历史动作」抽屉里：按钮带 `aria-expanded`，抽屉内最多 8 条、按时间倒序显示动作类别与相对时间；点条目只保留选中态并收起抽屉，不触发任何页面操作，抽屉为空时显示「还没有浏览器操作」。相对时间每秒更新，面板隐藏或无动作时不安排计时器。
-
-自动展开使用独立、只含 `{ count, sessionId, tool?, at? }` 的 `GET /api/ego/activity` SSE `tool-call` 事件，不能通过该流传输页面与画面。Host 只广播新调用，不回放历史事件；Client 每会话收到首条新活动时通过 `sidebarRight.openTabForSession(sessionId, 'ego-browser:watch')` 定向打开，此后只记录更高计数，不重复抢焦点。面板可见时还会把同一会话的新活动计入历史动作，已经出现的重复通知只记一次；活动流暂不可用时保留 HTTP 历史与手动入口，不影响面板渲染。浏览器面板隐藏时停止画面流、视频播放、活动流与人工输入，重新显示时刷新页面并重连；宿主负责浏览器及其页面的生命周期。
+自动打开使用独立的 `GET /api/ego/activity` SSE `tool-call` 事件，载荷只含 `{ count, sessionId, tool?, at? }`，不得承载页面和画面。Host 只广播新调用，不回放历史；Client 每个会话收到首次新活动时定向打开工作台浏览器入口，并按已知活动页面定位相应视图，此后不重复抢焦点。活动流暂不可用时保留手动入口；隐藏最后一个浏览器视图时释放页面画面流、视频播放与人工输入，重新显示时刷新页面目录并重连，Host 浏览器及 target 继续运行。
 
 ## 视频画面
 
-`captureBackend` 为 `ffmpeg` 且视频状态报告了可播放类型时，画面区改为 `<video muted autoplay playsinline>`，由 Media Source Extensions 消费同源 `GET /api/ego/video` 的 fMP4：分片先进入有上限的队列，`SourceBuffer` 追上后再继续读取，播放位置贴近缓冲末尾并移除过旧区间，避免长期积压。以下任一情况都会释放播放器、中止在途请求并回退到单帧 JPEG，同时在画面区显示中性提示，不展示编解码器错误文本：浏览器不支持 MSE 或该类型、媒体源建立失败、流请求失败或提前结束、解析出的媒体源已关闭。面板隐藏、切换页面、切换回 `auto`／`cdp` 时同样停止播放器，不会继续拉流。`auto` 与 `cdp` 保持原有 JPEG 实时画面；视频画面当前只用于观看，点击、滚动与文字插入仍以单帧画面为准。
+`captureBackend` 为 `ffmpeg` 且视频状态报告了可播放类型时，画面区用 `<video muted autoplay playsinline>` 与 Media Source Extensions 消费同源 `GET /api/ego/video` 的 fMP4。分片队列有上限，播放跟随缓冲末尾并清理旧区间。浏览器不支持 MSE／媒体类型、建源失败、视频流请求失败或中断时停止播放器并回退到单帧 JPEG，仅显示中性提示；隐藏视图、换页或改回 `auto`／`cdp` 时也停止拉流。视频画面可用于点击、滚动和聚焦后输入文字、受限按键；指针坐标按视频实际尺寸与页面 CSS 视口换算，尺寸缺失或点击留白区时不发送指针输入。
 
 ## 设置卡
 
@@ -50,7 +48,7 @@
 
 ## 验收
 
-运行 `pnpm exec vitest run packages/client/ui-browser-ego` 验证输入校验、SSE 会话过滤、关闭标签、状态与历史、活动归类、相对时间、人机验证提示、面板显隐、设置卡读写与只读、视频状态解析、MSE 失败回退与播放器释放、历史抽屉开合以及槽位注册／注销；运行包专属 `pnpm exec tsc -b packages/client/ui-browser-ego --pretty false` 检查源码类型，`pnpm exec tsx scripts/run-oxlint.ts packages/client/ui-browser-ego` 检查静态规则。接入装配后还需由工作台所属测试验证真实挂载、Web 端回放以及 Host 路由的跨会话、跨站拒绝；当前目录的测试不能代替这些跨包检查。
+修改本包行为时，定向验证应覆盖一页一工作台标签、视图关闭不关闭 Host target、后台页画面、地址栏与历史导航、键盘输入、同源与跨会话拒绝，以及视频回退和设置读写。Client 测试可运行 `pnpm exec vitest run packages/client/ui-browser-ego`；Host 与工作台契约分别运行其所属测试。
 
 ## 模型体验
 
@@ -62,4 +60,4 @@
 
 ## 已知限制与延后工作
 
-单帧与视频路径都支持点击、滚动、定点文字插入、关闭页面以及状态与历史动作展示；视频模式按 `video.videoWidth/videoHeight` 与页面 CSS 视口映射坐标，缺少尺寸或落在留白内时拒绝输入。最近动作只保留最近 8 条，状态与视频可用性没有推送通道，需在显示、手动刷新或关闭页面后更新。浏览器窗口调整、登录态导入、上传／下载与原始脚本仍没有面板控件，也不在本包范围内。设置卡覆盖的是面板与采集相关字段，Host 的其余字段（如额外启动参数）不在本卡出现。画面可见性随当前会话工作台挂载，隐藏或切换时需要重新取得最新画面。Host 未接线前菜单中没有此标签，也不能单独启动本包成为可用浏览器。
+面板处理当前会话的浏览器画面与人工操作，顶部工作台标签关闭不结束浏览器 target；共享 `+` 入口本身不创建空白网页。没有浏览器窗口尺寸控制、登录态导入、上传／下载、原始脚本、内部页面标签、底部文字输入栏或动作历史抽屉。视频画面可进行指针和受限键盘输入；无有效视口时拒绝指针输入。状态、历史和视频可用性尚无主动推送，需要显示或刷新视图时更新。设置卡仅覆盖面板与采集相关字段，不展示 Host 其余字段（如额外启动参数）；Host 路由未接线时不能仅靠本包启动浏览器。
