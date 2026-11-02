@@ -142,9 +142,10 @@ export default class EgoBrowserHost extends Service {
   async createSessionPage(sessionId: SessionId, url: string): Promise<boolean> {
     if ((await targetIdsForSession(sessionId)).size !== 0) return false
     const space = spaceNameForSession(sessionId)
+    // CLI 的脚本以 page 为预置形参；局部变量不能重名，否则在运行前就解析失败。
     const script = `await taskSpaces.useOrCreate(${JSON.stringify(space)})\n` +
-      `const page = await ego.createTab(${JSON.stringify(url)})\n` +
-      'console.log(\'@@DSH_RESULT@@\' + JSON.stringify({ ok: true, targetId: page.targetId }))\n'
+      `const createdTab = await ego.createTab(${JSON.stringify(url)})\n` +
+      'console.log(\'@@DSH_RESULT@@\' + JSON.stringify({ ok: true, targetId: createdTab.targetId }))\n'
     const env: NodeJS.ProcessEnv = { ...(this.browserEnv?.() ?? process.env), EGO_ISOLATE_SPACES: '1' }
     try {
       const handle = this.ctx.subprocess.spawn({

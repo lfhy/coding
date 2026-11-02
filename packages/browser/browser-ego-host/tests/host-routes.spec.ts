@@ -110,6 +110,37 @@ describe('会话浏览器 Host 路由', () => {
     expect(spec.env?.EGO_ISOLATE_SPACES).toBe('1')
   })
 
+  it('空会话建页脚本能在 CLI 预置 page 形参下执行并登记目标', async () => {
+    const origin = await boot()
+    const space = spaceNameForSession(session.id)
+    const address = 'https://example.org/'
+    const AsyncFunction = (async () => {}).constructor as
+      new (...args: string[]) => (...args: unknown[]) => Promise<void>
+    spawns.mockImplementation((raw: unknown) => {
+      const spec = raw as { stdio: { stdin: { data: string } } }
+      const run = new AsyncFunction('taskSpaces', 'ego', 'page', 'console', spec.stdio.stdin.data)
+      let stdout = ''
+      return {
+        done: run({ useOrCreate: async (name: string) => { expect(name).toBe(space) } },
+          { createTab: async (url: string) => {
+            expect(url).toBe(address)
+            await writeFile(join(stateDir!, 'task-spaces.json'), JSON.stringify({ spaces: [
+              { name: space, targetIds: ['created'] },
+            ] }))
+            return { targetId: 'created' }
+          } }, {}, { log: (line: string) => { stdout += `${line}\n` } }).then(() => ({ exitCode: 0 })),
+        collected: { stdout: { readFrom: () => ({ text: stdout }) } },
+      }
+    })
+    const response = await fetch(`${origin}/api/ego/navigation`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ sessionId: session.id, action: 'navigate', url: address }),
+    })
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ ok: true })
+    expect(spawns).toHaveBeenCalledTimes(1)
+  })
+
   it('把上游浏览器设置注册为可编辑的插件命名空间', async () => {
     await boot()
     expect(settingsRegister).toHaveBeenCalled()
