@@ -1,5 +1,5 @@
 ---
-description: "在 Session 工作台中呈现受控浏览器并提供人工导航控件。"
+description: "在自定义工作台中呈现可选浏览器镜像并提供人工导航控件。"
 kind: "package-reference"
 ---
 
@@ -7,7 +7,9 @@ kind: "package-reference"
 
 ## 用法与行为
 
-本包的 Client 半边占用 `workbench.browser` 内容和 `workbench.browser.tabs` 顶栏标签两个会话级 slot；[`ui-open-in-app`](../ui-open-in-app/README.md) 声明 slot 并拥有与文件、终端共用的工作台标签行及唯一新增入口。本包通过 `syncBrowserTabs()` 同步 Host 页面标签和当前页面，每个页面成为一个 `browser` 标签；`tabId` 指定标签条目在统一顶栏逐页绘制，不提供浏览器专用新增按钮。标签的 `shown` 跟随工作台显隐，`browserShown` 决定选中状态；内容的 `shown` 只在选中浏览器且工作台可见时为真。内容通过 `selectedTabId` 将工作台选中的浏览器页面对齐到 Host 当前页面；命令执行中或 Agent 占用浏览器时，以 Host 操作结果为准，不为旧的工作台选择追加切页命令。每个挂载的 Session 每约 750ms 从同源 Host GET `/browser-use/state?sessionId=` 读取观测；Web/CLI 状态有画面时再按 generation/revision GET `/browser-use/frame` 读取 PNG。桌面端由原生 guest 呈现页面，不请求镜像 PNG。切换右侧标签或隐藏工作台不会卸载当前 Session 的内容条目；切换 Session 时重新挂载对应的浏览器内容，Host 页面继续存续。成功的 `browser_navigate` 工具结果只为当前 Session 触发一次展示：同步 Host 实际页面标签后打开右侧工作台并选中该页面，直接工具调用与 Code Mode 调用一致；桌面原生导航超时且已安全停稳时，虽工具报告失败，仍须确认 Host 活动标签存活才展示。挂载时已有状态、其他工具结果、历史回放、审批拒绝、无效导航或无法安全停稳的失败不触发。等待状态期间用户手动选择页面或面板时，以用户选择为准，不另建空白页。
+本包只供显式声明并渲染 `workbench.browser` 与 `workbench.browser.tabs` 两个会话级 slot 的自定义工作台组合使用；装配后，Client 半边分别向这两个 slot 贡献浏览器内容与逐页顶栏标签。默认组合不装配本包；[`ui-open-in-app`](../ui-open-in-app/README.md) 不声明或渲染这两个 slot，其工作台中的 Agent 浏览器由外部插件通过 keyed 标签提供。自定义工作台 owner 负责标签行和新增入口的呈现。
+
+本包通过 `syncBrowserTabs()` 同步 Host 页面标签和当前页面，每个页面成为一个 `browser` 标签；`tabId` 指定标签条目在统一顶栏逐页绘制，不提供浏览器专用新增按钮。标签的 `shown` 跟随工作台显隐，`browserShown` 决定选中状态；内容的 `shown` 只在选中浏览器且工作台可见时为真。内容通过 `selectedTabId` 将工作台选中的浏览器页面对齐到 Host 当前页面；命令执行中或 Agent 占用浏览器时，以 Host 操作结果为准，不为旧的工作台选择追加切页命令。每个挂载的 Session 每约 750ms 从同源 Host GET `/browser-use/state?sessionId=` 读取观测；Web/CLI 状态有画面时再按 generation/revision GET `/browser-use/frame` 读取 PNG。桌面端由原生 guest 呈现页面，不请求镜像 PNG。切换右侧标签或隐藏工作台不会卸载当前 Session 的内容条目；切换 Session 时重新挂载对应的浏览器内容，Host 页面继续存续。成功的 `browser_navigate` 工具结果只为当前 Session 触发一次展示：同步 Host 实际页面标签后打开右侧工作台并选中该页面，直接工具调用与 Code Mode 调用一致；桌面原生导航超时且已安全停稳时，虽工具报告失败，仍须确认 Host 活动标签存活才展示。挂载时已有状态、其他工具结果、历史回放、审批拒绝、无效导航或无法安全停稳的失败不触发。等待状态期间用户手动选择页面或面板时，以用户选择为准，不另建空白页。
 
 Assistant 正文中的 HTTP(S) 链接可通过可选的 `ctx.chatBrowserLinks.open(sessionId, url)` 打开：内容 slot 挂载期间登记所属会话，每次点击（包括相同 URL）被接纳时立即打开工作台、选中独立的 `browser-pending` 占位标签并显示目标 URL 与加载状态，返回的 Promise 随 UI 接纳兑现，不等待页面导航。同一会话按点击顺序执行 Host 原子新建并导航，每次各建一个页面；不同会话互不等待。占位 id 只属于 Client，绝不作为 Host 页面 id；Host 成功返回后同步页面集并仅替换对应占位标签，进行中的 Host 状态轮询不会提前显示空白页。最后获接纳的点击可自动保持焦点；点击后人工选择其他工作台内容则以人工选择为准。隐藏的工作台同样可用；点击不经过菜单的新标签请求、模型工具或审批。每会话最多接纳 32 个待完成点击，超过时明确拒绝，已接纳任务不受影响。导航中的占位标签不可关闭；Host 拒绝或命令失败在该标签内保留错误和重试入口，重试沿用占位 id，后续点击继续执行，不把已接纳失败抛回 Chat 弹窗。服务缺席、会话不可用或容量已满等接纳前失败仍拒绝 Promise；会话内容卸载时取消排队任务并清理占位与错误标签。未装配本插件时不提供该服务。
 

@@ -385,11 +385,11 @@ describe('terminal WebSocket gateway', () => {
     cleanup.push(() => host.close())
     const url = `${host.origin}/open-in-app/terminal?sessionId=session&cols=80&rows=24`
     const firstSocket = new WebSocket(url)
-    const secondSocket = new WebSocket(url)
     const readFirst = frameReader(firstSocket)
-    const readSecond = frameReader(secondSocket)
-
     expect(await readFirst()).toMatchObject({ type: 'ready' })
+
+    const secondSocket = new WebSocket(url)
+    const readSecond = frameReader(secondSocket)
     expect(await readSecond()).toMatchObject({ type: 'ready' })
     expect(fixture.spawnTerminal).toHaveBeenCalledTimes(2)
 
