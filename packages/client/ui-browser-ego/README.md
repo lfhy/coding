@@ -13,6 +13,8 @@
 - `GET /api/ego/history?sessionId=<id>` 返回 `{ ok, actions: [{ tool, at }] }`。Client 将工具名归入封闭动作类别，不把原始工具名送进视图；工作台没有历史动作抽屉。
 - `GET /api/ego/video/status` 返回 `{ ok, mime? }` 或 `{ ok, capture: { backend, mime? } }`。Client 只取合法的 `video/*` 类型；没有合法类型即视为视频不可用，不影响单帧画面。
 
+打开右侧工作台的共享 `+` 后选择「Agent 浏览器」会请求 `POST /api/ego/pages`（仅 `{ sessionId }`），在所属会话新建一张独立空白网页，确认目录归属后替换这次本地新标签；已有页面的地址和导航状态不变。首次打开会话空间复用其空白页。普通功能菜单选择「Agent 浏览器」仍查看已有页面，不额外新建网页；请求失败时保留新标签供重试，切换会话或关闭新标签后迟到响应不抢焦点。地址栏右侧的提交与弹出窗口按钮使用同组紧凑图标与悬停／键盘提示；画面鼠标移动经当前页面所属目标查询标准光标、标题和链接，离开画面即清除，旧目标的迟到结果不得覆盖新画面。
+
 页面可见时订阅 `GET /api/ego/stream?sessionId=<id>`：`spaces` 事件是该会话的页面数组，`frame` 事件含 `targetId`、JPEG base64 `data`、视口 `vw`／`vh` 与时间戳 `ts`。页面目录按 `targetId` 同步成一页一个工作台顶栏标签；新出现的页面加入，页面从目录消失才移除视图。手动关闭顶栏标签只关闭 Client 视图，同一页面不会因下一次目录轮询又打开，Host target 不受影响；需真正关闭页面时由 Agent 使用浏览器工具。切到后台页或重新显示时按会话目标向同源 `GET /api/ego/frame?sessionId=<id>&targetId=<id>` 请求单帧；切页、隐藏和卸载取消旧读取并拒绝迟到帧。Host 按 `sessionId` 过滤列表、SSE、单帧与输入目标，操作前复核页面归属，不能用 Client 检查代替授权。
 
 当前页面上方提供地址栏、后退、前进和网页刷新：输入网址后按回车或点击「打开网址」按钮提交，失焦不会清除尚未提交的草稿；页面目标或实际 URL 变化时同步地址。人工导航以 `POST /api/ego/navigation` 发送 `{ sessionId, targetId, action, url? }`。地址栏承诺无凭据的 HTTP(S) 地址；未写 scheme 的地址补 `https://`，非法地址在 Client 提示，不发送请求。`navigate` 带 URL；`back`／`forward`／`reload` 不带 URL，没有可用历史项或 Host 拒绝时只显示固定失败提示，不重复操作。Host 路由可在尚无页面时接纳省略 `targetId` 的导航以创建本会话首张网页，但面板是否开放此入口以可见页面状态为准。后端另接受严格本地 `file:///` 地址，不作为地址栏的产品承诺；Host 对人工导航执行回环同源请求校验、会话与目标归属检查，拒绝其他协议、越权目标与多余字段。

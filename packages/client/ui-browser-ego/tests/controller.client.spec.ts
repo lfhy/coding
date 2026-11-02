@@ -62,6 +62,28 @@ describe('会话画面与人工输入', () => {
     controller.show(false)
   })
 
+  it('只读取当前会话画面上的网页悬停，隐藏后忽略晚到响应', async () => {
+    let resolveHover: ((response: Response) => void) | undefined
+    const fetcher = vi.fn(async (url: string) => {
+      if (url === '/api/ego/hover') return await new Promise<Response>((resolve) => { resolveHover = resolve })
+      if (url.startsWith('/api/ego/frame?')) return new Response(null, { status: 404 })
+      return overview(url) ?? Response.json({ ok: true, spaces: [first, second] })
+    })
+    const { controller, streams } = fixture(fetcher)
+    controller.show(true, 'first')
+    await vi.waitFor(() => { expect(controller.view.getSnapshot().phase).toBe('ready') })
+    streams[0]?.emit('frame', { targetId: 'first', data: 'YWJj', vw: 400, vh: 300, ts: 1 })
+    expect(await controller.hover('second', 5, 10)).toBeNull()
+    const reading = controller.hover('first', 5, 10)
+    await vi.waitFor(() => { expect(resolveHover).toBeDefined() })
+    expect(fetcher).toHaveBeenCalledWith('/api/ego/hover', expect.objectContaining({
+      body: JSON.stringify({ sessionId: 'session-one', targetId: 'first', x: 5, y: 10 }),
+    }))
+    controller.show(false, 'first')
+    resolveHover?.(Response.json({ ok: true, targetId: 'first', cursor: 'pointer', title: 'Link', href: 'https://example.com/' }))
+    expect(await reading).toBeNull()
+  })
+
   it('多个视图共用会话流，切换页面丢弃旧帧，最后一个视图隐藏才断开', async () => {
     const { controller, streams, activities } = fixture(vi.fn(async (url: string) =>
       url.startsWith('/api/ego/frame?') ? new Response(null, { status: 404 })

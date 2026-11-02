@@ -2,9 +2,9 @@
 import { useEffect, useRef, useState, type ClipboardEvent, type CompositionEvent, type FormEvent, type KeyboardEvent, type MouseEvent, type WheelEvent } from 'react'
 import {
   IconChevronLeftOutline14, IconChevronRightOutline14,
-  IconRefreshOutline16, IconRightUpOutline16, IconSendOutline14, IconWarningOutline16,
+  IconRefreshOutline16, IconRightUpOutline14, IconWarningOutline16,
 } from 'coding-client-ui-icons'
-import { Button, Input, Toast } from 'coding-client-ui-primitives'
+import { Button, Input, Toast, Tooltip } from 'coding-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime, HostObservable } from 'coding-client-ui-slots'
 import type {} from 'coding-client-ui-open-in-app/client'
 import type { BrowserEgoController, BrowserEgoView } from './controller.ts'
@@ -27,6 +27,7 @@ export interface AgentBrowserInjected {
   /** 由用户触发：把浏览器换成可见窗口，用于登录与人机验证。 */
   raiseWindow: () => Promise<boolean>
   send: BrowserEgoController['send']
+  hover: BrowserEgoController['hover']
 }
 
 export type AgentBrowserProps = PropsRuntime<'sidebar.right.pane.tab'> & PropsLocale<typeof NS>
@@ -60,7 +61,7 @@ function addressFromDraft(draft: string): string | null {
  */
 export function AgentBrowserPanel({
   sessionId, useTabInfo, useBrowserEgo, useBrowserEgoSettings,
-  show, refresh, navigate, raiseWindow, send, t,
+  show, refresh, navigate, raiseWindow, send, hover, t,
 }: AgentBrowserProps) {
   const { shown, tab } = useTabInfo()
   const targetId = tab.params !== null && typeof tab.params === 'object' && !Array.isArray(tab.params)
@@ -75,6 +76,8 @@ export function AgentBrowserPanel({
   const lastPage = useRef<{ targetId: string | null; url: string } | null>(null)
   const [notice, setNotice] = useState<Notice | null>(null)
   const [videoFailed, setVideoFailed] = useState(false)
+  const [hovered, setHovered] = useState<{ cursor: string; title: string | null; href: string | null } | null>(null)
+  const hoverVersion = useRef(0)
   const image = useRef<HTMLImageElement>(null)
   const video = useRef<HTMLVideoElement>(null)
 
@@ -96,6 +99,10 @@ export function AgentBrowserPanel({
     && (selected.viewportW === null || selected.viewportW === frame.width)
     && (selected.viewportH === null || selected.viewportH === frame.height)
   const videoMime = view.video.available ? view.video.mime : null
+  useEffect(() => {
+    hoverVersion.current++
+    setHovered(null)
+  }, [shown, targetId, pageUrl, view.pending])
   const videoTarget = selected?.targetId ?? null
   // 只有用户选择视频后端、Host 报告 fMP4 就绪且上一次播放没有失败时才用 MSE。
   const videoMode = shown && settings.backend === 'ffmpeg' && videoMime !== null && !videoFailed
@@ -135,6 +142,15 @@ export function AgentBrowserPanel({
     if (!videoMode && !imageReady) return null
     return pointOnFrame(event.clientX, event.clientY, node.getBoundingClientRect(),
       natural, { width: viewportW, height: viewportH })
+  }
+  function movePointer(event: MouseEvent<HTMLButtonElement>): void {
+    const current = point(event)
+    const currentTarget = selected?.targetId
+    const request = ++hoverVersion.current
+    if (current === null || currentTarget === undefined) { setHovered(null); return }
+    void hover(currentTarget, current.x, current.y).then((value) => {
+      if (hoverVersion.current === request) setHovered(value)
+    })
   }
   async function click(event: MouseEvent<HTMLButtonElement>): Promise<void> {
     const current = point(event)
@@ -195,15 +211,15 @@ export function AgentBrowserPanel({
   }
   return <section className={css.root} hidden={!shown} aria-label={t('title')}>
     <div className={css.toolbar}>
-      <Button size="sm" variant="toolbar" title={t('back')} aria-label={t('back')}
-        disabled={selected === undefined || view.pending} icon={<IconChevronLeftOutline14 />}
-        onClick={() => { void move('back') }} />
-      <Button size="sm" variant="toolbar" title={t('forward')} aria-label={t('forward')}
-        disabled={selected === undefined || view.pending} icon={<IconChevronRightOutline14 />}
-        onClick={() => { void move('forward') }} />
-      <Button size="sm" variant="toolbar" title={t('reload')} aria-label={t('reload')}
-        disabled={selected === undefined || view.pending} icon={<IconRefreshOutline16 size={14} />}
-        onClick={() => { void move('reload') }} />
+      <Tooltip label={t('back')} side="bottom"><button type="button" className={css.iconButton}
+        aria-label={t('back')} disabled={selected === undefined || view.pending}
+        onClick={() => { void move('back') }}><IconChevronLeftOutline14 /></button></Tooltip>
+      <Tooltip label={t('forward')} side="bottom"><button type="button" className={css.iconButton}
+        aria-label={t('forward')} disabled={selected === undefined || view.pending}
+        onClick={() => { void move('forward') }}><IconChevronRightOutline14 /></button></Tooltip>
+      <Tooltip label={t('reload')} side="bottom"><button type="button" className={css.iconButton}
+        aria-label={t('reload')} disabled={selected === undefined || view.pending}
+        onClick={() => { void move('reload') }}><IconRefreshOutline16 size={14} /></button></Tooltip>
       <form className={css.address} onSubmit={(event) => { void submitAddress(event) }}>
         <label htmlFor={`ego-address-${sessionId}-${tab.id}`} className={css.srOnly}>{t('address')}</label>
         <Input id={`ego-address-${sessionId}-${tab.id}`} type="text" inputMode="url" spellCheck={false}
@@ -217,16 +233,18 @@ export function AgentBrowserPanel({
             }
           }}
           onChange={(event) => { setAddress(event.target.value); setAddressError(false) }} />
-        <Button type="submit" size="sm" variant="toolbar" title={t('openAddress')}
-          aria-label={t('openAddress')} disabled={view.phase !== 'ready' || view.pending}
-          icon={<IconSendOutline14 />} />
+        <Tooltip label={t('openAddress')} side="bottom"><button type="submit" className={css.iconButton}
+          aria-label={t('openAddress')} disabled={view.phase !== 'ready' || view.pending}>
+          <IconChevronRightOutline14 size={14} /></button></Tooltip>
       </form>
-      <Button size="sm" variant="toolbar" className={css.refresh} title={t('openWindow')}
-        aria-label={t('openWindow')} icon={<IconRightUpOutline16 size={14} />}
-        onClick={() => { void openWindow() }} />
+      <Tooltip label={t('openWindow')} side="bottom"><button type="button" className={css.iconButton}
+        aria-label={t('openWindow')} onClick={() => { void openWindow() }}>
+        <IconRightUpOutline14 size={14} /></button></Tooltip>
     </div>
     {addressError && <p className={css.addressError} role="alert">{t('invalidAddress')}</p>}
     <div className={css.stage}>
+      {shown && hovered?.href && <p className={css.hoverAddress} role="status">{hovered.href}</p>}
+      {shown && hovered?.title && <p className={css.hoverTitle} role="status">{hovered.title}</p>}
       {view.phase === 'loading' && <p role="status" className={css.center}>{t('loading')}</p>}
       {view.phase === 'error' && <div className={css.center} role="alert">
         <span>{t('unavailable')}</span>
@@ -242,7 +260,8 @@ export function AgentBrowserPanel({
         ? <p className={css.center}>{t('relayOff')}</p>
         : videoMode
           ? <button type="button" className={css.frameAction} disabled={view.pending}
-            aria-label={t('videoPreview')} title={t('preview')}
+            aria-label={t('videoPreview')} style={{ cursor: hovered?.cursor ?? 'default' }}
+            onMouseMove={movePointer} onMouseLeave={() => { hoverVersion.current++; setHovered(null) }}
             onClick={(event) => { void click(event) }} onWheel={(event) => { void wheel(event) }}
             onKeyDown={(event) => { void key(event) }} onPaste={paste} onCompositionEnd={composed}>
             <video ref={video} className={css.video} muted autoPlay playsInline
@@ -250,7 +269,8 @@ export function AgentBrowserPanel({
           </button>
           : frame === null ? <p className={css.center}>{t('noFrame')}</p>
             : <button type="button" className={css.frameAction} disabled={view.pending}
-              aria-label={t('preview')} title={t('preview')}
+              aria-label={t('preview')} style={{ cursor: hovered?.cursor ?? 'default' }}
+              onMouseMove={movePointer} onMouseLeave={() => { hoverVersion.current++; setHovered(null) }}
               onClick={(event) => { void click(event) }} onWheel={(event) => { void wheel(event) }}
               onKeyDown={(event) => { void key(event) }} onPaste={paste} onCompositionEnd={composed}>
               <img ref={image} className={css.frame} src={frame.src} alt={t('preview')} draggable={false}

@@ -177,6 +177,11 @@ export function apply(ctx: ClientContext): void {
           toggleWorkbenchFullscreen: (sessionId) => { ctx.layout.toggleWorkbenchFullscreen(workspaceKey(sessionId)) },
           toggleBottom: (sessionId) => { ctx.layout.toggleWorkbenchBottom(workspaceKey(sessionId)) },
           openSidebarTab: (sessionId, kind) => { sidebarRight.openTabForSession(sessionId, kind) },
+          openCreatedSidebarTab: (sessionId, kind, address, launcherId, params) => {
+            sidebarRight.openResourceForSession(sessionId, address, {
+              kind, launcherId, ...(params === undefined ? {} : { params }),
+            })
+          },
         }
       },
     }, WorkspaceWorkbench)

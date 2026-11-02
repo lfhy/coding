@@ -99,6 +99,26 @@ describe('目录驱动的页面标签', () => {
     expect(instance.getSnapshot().sessions[FIRST]).toMatchObject({ view: 'files', activeId: 'file-manager' })
   })
 
+  it('手动新建仅替换发起时仍选中的菜单标签，迟到结果不吞掉后开的菜单', () => {
+    const instance = createRetainedWorkbenchStore().create()
+    instance.actions.openLauncher(FIRST)
+    const launcherId = instance.getSnapshot().sessions[FIRST]?.activeId ?? ''
+    instance.actions.syncExternalTabs(FIRST, directory([page('new-page', '新页面')]))
+    expect(browserTabs(instance, FIRST)).toHaveLength(0)
+    instance.actions.openExternalTab(FIRST, { definitionId: DEFINITION, kind: KIND,
+      name: '新页面', address: page('new-page', '新页面').address,
+      params: { targetId: 'new-page' }, multiple: true, reuseAddress: true, launcherId })
+    expect(browserTabs(instance, FIRST).map(tab => tab.address)).toEqual([page('new-page', '新页面').address])
+    expect(instance.getSnapshot().sessions[FIRST]?.tabs.some(tab => tab.id === launcherId)).toBe(false)
+    instance.actions.openLauncher(FIRST)
+    const laterLauncher = instance.getSnapshot().sessions[FIRST]?.activeId
+    instance.actions.openExternalTab(FIRST, { definitionId: DEFINITION, kind: KIND,
+      name: '过期页面', address: page('late', '过期页面').address,
+      params: { targetId: 'late' }, multiple: true, reuseAddress: true, launcherId })
+    expect(instance.getSnapshot().sessions[FIRST]?.activeId).toBe(laterLauncher)
+    expect(browserTabs(instance, FIRST)).toHaveLength(1)
+  })
+
   it('关闭视图后的轮询不复活，目录删除关闭页面，旧页退出再出现可重新打开', () => {
     const instance = createRetainedWorkbenchStore().create()
     const firstPage = page('page-one', '第一页')

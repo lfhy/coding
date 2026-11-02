@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { execFile, execFileSync, spawn } from "node:child_process";
 import { access } from "node:fs/promises";
 import { promisify } from "node:util";
-//#region third-party/host/worker/cdp-client.ts
+//#region packages/browser/browser-ego-host/third-party/host/worker/cdp-client.ts
 var CdpClient = class {
 	ws;
 	nextId;
@@ -89,7 +89,7 @@ var CdpClient = class {
 	}
 };
 //#endregion
-//#region third-party/host/worker/capture-cdp.ts
+//#region packages/browser/browser-ego-host/third-party/host/worker/capture-cdp.ts
 var TargetSessions = class {
 	cdp;
 	sessions;
@@ -467,7 +467,7 @@ var CdpCaptureBackend = class {
 	}
 };
 //#endregion
-//#region third-party/host/worker/capture-manager.ts
+//#region packages/browser/browser-ego-host/third-party/host/worker/capture-manager.ts
 var CaptureManager = class {
 	backendFactories;
 	getConfig;
@@ -726,7 +726,7 @@ var CaptureManager = class {
 	}
 };
 //#endregion
-//#region third-party/host/worker/snapshot.ts
+//#region packages/browser/browser-ego-host/third-party/host/worker/snapshot.ts
 /** A single viewport PNG on the existing control session; never starts a watch. */
 async function captureSnapshot(sessions, targetId, maxWidth) {
 	const viewport = (await sessions.call(targetId, "Runtime.evaluate", {
@@ -751,7 +751,7 @@ async function captureSnapshot(sessions, targetId, maxWidth) {
 	return Buffer.from(image.data, "base64");
 }
 //#endregion
-//#region third-party/host/worker/frame.ts
+//#region packages/browser/browser-ego-host/third-party/host/worker/frame.ts
 /** Capture a bounded JPEG with current CSS viewport dimensions for host-side input coordinates. */
 async function captureFrame(sessions, targetId) {
 	const viewport = (await sessions.call(targetId, "Runtime.evaluate", {
@@ -786,7 +786,70 @@ async function captureFrame(sessions, targetId) {
 	};
 }
 //#endregion
-//#region third-party/host/worker/navigation.ts
+//#region packages/browser/browser-ego-host/third-party/host/worker/hover.ts
+/** 浏览器指针仅允许标准形态，避免网页 CSS 注入本地资源或自定义游标。 */
+const CURSORS = new Set([
+	"default",
+	"pointer",
+	"text",
+	"wait",
+	"progress",
+	"help",
+	"move",
+	"grab",
+	"grabbing",
+	"not-allowed",
+	"crosshair",
+	"cell",
+	"vertical-text",
+	"zoom-in",
+	"zoom-out",
+	"ew-resize",
+	"ns-resize"
+]);
+/**
+* 先向当前页面投递真实鼠标移动，再读取指针与悬停提示；跨源子帧无法读取时保留普通指针。
+* @param sessions - 只对 Host 已核验的目标调用的 CDP 会话。
+* @param targetId - 会话目录中的目标。
+* @param x - CSS 视口水平坐标。
+* @param y - CSS 视口垂直坐标。
+* @returns 页面当前的标准光标与公开链接／标题，缺失时不向面板暴露任意网页数据。
+*/
+async function hoverAt(sessions, targetId, x, y) {
+	await sessions.call(targetId, "Input.dispatchMouseEvent", {
+		type: "mouseMoved",
+		x,
+		y,
+		buttons: 0
+	});
+	const expression = `(() => {
+    const el = document.elementFromPoint(${x}, ${y});
+    const link = el?.closest('a[href]');
+    const style = el ? getComputedStyle(el) : null;
+    return { cursor: style?.cursor === 'auto' && el ?
+      (el.closest('a[href], button, [role="button"]') ? 'pointer' : el.closest('input, textarea, [contenteditable="true"]') ? 'text' : 'default')
+      : style?.cursor ?? 'default', title: el?.closest('[title]')?.getAttribute('title') ?? null,
+      href: link?.href ?? null };
+  })()`;
+	const value = (await sessions.call(targetId, "Runtime.evaluate", {
+		expression,
+		returnByValue: true
+	})).result?.value;
+	const cursor = typeof value?.cursor === "string" && CURSORS.has(value.cursor) ? value.cursor : "default";
+	const title = typeof value?.title === "string" && value.title.length <= 256 ? value.title : null;
+	let href = null;
+	if (typeof value?.href === "string" && value.href.length <= 2048) try {
+		const parsed = new URL(value.href);
+		if ((parsed.protocol === "http:" || parsed.protocol === "https:") && !parsed.username && !parsed.password) href = parsed.href;
+	} catch {}
+	return {
+		cursor,
+		title,
+		href
+	};
+}
+//#endregion
+//#region packages/browser/browser-ego-host/third-party/host/worker/navigation.ts
 /** Dispatch navigation only on an already verified page target; no implicit target selection. */
 async function navigateTarget(sessions, command) {
 	const targetId = command.targetId;
@@ -809,14 +872,14 @@ async function navigateTarget(sessions, command) {
 	}
 }
 //#endregion
-//#region src/session-space.ts
+//#region packages/browser/browser-ego-host/src/session-space.ts
 const ID_PATTERN = /^[a-zA-Z0-9._~-]{1,128}$/u;
 /** 校验跨 HTTP／工具边界的会话与页面标识。 */
 function validId(value) {
 	return typeof value === "string" && ID_PATTERN.test(value);
 }
 //#endregion
-//#region src/navigation.ts
+//#region packages/browser/browser-ego-host/src/navigation.ts
 /** Host 与 ego-cast worker 共用的人工导航输入校验；任何网页地址都不能绕过 Host 会话检查。 */
 /**
 * 接受无凭据绝对 HTTP(S) 或严格本地 file:/// 地址，不解析 DNS 或读取文件。
@@ -877,7 +940,7 @@ function parseNavigation(value, withSession = false) {
 	};
 }
 //#endregion
-//#region third-party/upstream/src/worker/mp4-fragments.ts
+//#region packages/browser/browser-ego-host/third-party/upstream/src/worker/mp4-fragments.ts
 const MAX_BOX_BYTES = 64 * 1024 * 1024;
 var Mp4FragmentParser = class {
 	onInit;
@@ -937,7 +1000,7 @@ var Mp4FragmentParser = class {
 	}
 };
 //#endregion
-//#region third-party/upstream/src/worker/capture-platform.ts
+//#region packages/browser/browser-ego-host/third-party/upstream/src/worker/capture-platform.ts
 const execFile$1 = promisify(execFile);
 function buildCaptureInput({ platform = process.platform, env = process.env, source, fps, maxWidth, encoder }) {
 	if (platform === "win32") {
@@ -1224,7 +1287,7 @@ async function resolveCaptureSource({ sessions, targetId, browserPid, platform =
 	};
 }
 //#endregion
-//#region third-party/upstream/src/worker/capture-ffmpeg.ts
+//#region packages/browser/browser-ego-host/third-party/upstream/src/worker/capture-ffmpeg.ts
 const defaultSpawn = spawn;
 function runProbe(path, argv, spawn, timeoutMs, captureOutput = false) {
 	return new Promise((resolve) => {
@@ -1650,7 +1713,7 @@ function computeWindowBounds(viewport, chromeFrame = {
 	};
 }
 //#endregion
-//#region third-party/host/worker/ego-cast-worker.ts
+//#region packages/browser/browser-ego-host/third-party/host/worker/ego-cast-worker.ts
 const SENTINEL = "@@DSH_RESULT@@";
 const HOME = homedir() || process.env.HOME || process.env.USERPROFILE || "/root";
 const IS_WIN = platform() === "win32";
@@ -2147,6 +2210,20 @@ async function main() {
 						ok: false,
 						error: "frame unavailable"
 					});
+				}
+			}
+			if (req.method === "POST" && url.pathname === "/api/hover") {
+				const body = await readJson(req);
+				const browser = active;
+				if (!browser) return sendJson(res, 409, { ok: false });
+				if (typeof body.targetId !== "string" || !Number.isSafeInteger(body.x) || !Number.isSafeInteger(body.y) || !(await listTargets()).some((target) => target.targetId === body.targetId)) return sendJson(res, 400, { ok: false });
+				try {
+					return sendJson(res, 200, {
+						ok: true,
+						...await hoverAt(browser.sessions, body.targetId, body.x, body.y)
+					});
+				} catch {
+					return sendJson(res, 503, { ok: false });
 				}
 			}
 			if (req.method === "GET" && url.pathname === "/api/snapshot") {

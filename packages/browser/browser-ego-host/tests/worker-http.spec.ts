@@ -70,7 +70,9 @@ it('封闭 worker 在真实 HTTP/CDP 连接上采帧并导航，拒绝失效目�
           case 'Target.getTargets': result = { targetInfos: [{ targetId: 'owned', type: 'page', url: 'https://example.test', title: 'Test' }] }; break
           case 'Target.attachToTarget': result = { sessionId: 'fake-session' }; break
           case 'Page.getLayoutMetrics': result = { cssLayoutViewport: { clientWidth: 640, clientHeight: 360 } }; break
-          case 'Runtime.evaluate': result = { result: { value: { x: 5, y: 7, width: viewportAvailable ? 640 : 0, height: 360, dpr: 2 } } }; break
+          case 'Runtime.evaluate': result = request.params.expression?.toString().includes('document.elementFromPoint')
+            ? { result: { value: { cursor: 'pointer', title: 'A link', href: 'https://example.test/next' } } }
+            : { result: { value: { x: 5, y: 7, width: viewportAvailable ? 640 : 0, height: 360, dpr: 2 } } }; break
           case 'Page.captureScreenshot': result = { data: imageAvailable ? JPEG : '' }; break
           case 'Page.getNavigationHistory': result = { currentIndex, entries: [{ id: 1 }, { id: 2 }, { id: 3 }] }; break
           case 'Page.navigate': result = request.params.url === 'https://fail.example/' ? { errorText: 'blocked' } : { frameId: 'frame' }; break
@@ -106,6 +108,11 @@ it('封闭 worker 在真实 HTTP/CDP 连接上采帧并导航，拒绝失效目�
   expect(calls.find(call => call.method === 'Page.captureScreenshot')).toMatchObject({
     sessionId: 'fake-session', params: { format: 'jpeg', clip: { x: 5, y: 7, width: 640, height: 360, scale: 0.5 } },
   })
+  const hovered = await fetch(`${api}/api/hover`, { method: 'POST',
+    headers: { 'content-type': 'application/json' }, body: JSON.stringify({ targetId: 'owned', x: 10, y: 20 }) })
+  expect(await hovered.json()).toMatchObject({ ok: true, cursor: 'pointer', href: 'https://example.test/next' })
+  expect(calls.some(call => call.method === 'Input.dispatchMouseEvent' && call.params.type === 'mouseMoved'
+    && call.params.x === 10 && call.params.y === 20)).toBe(true)
   viewportAvailable = false
   const badViewport = await fetch(`${api}/api/frame?targetId=owned`)
   expect(badViewport.status, stderr).toBe(503)

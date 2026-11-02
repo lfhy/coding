@@ -10,6 +10,7 @@ import { TargetSessions, CdpCaptureBackend } from './capture-cdp.ts'
 import { CaptureManager } from './capture-manager.ts'
 import { captureSnapshot } from './snapshot.ts'
 import { captureFrame } from './frame.ts'
+import { hoverAt } from './hover.ts'
 import { navigateTarget } from './navigation.ts'
 import { parseNavigation } from '../../../src/navigation.ts'
 import { FfmpegCaptureBackend } from '../../upstream/src/worker/capture-ffmpeg.ts'
@@ -448,6 +449,17 @@ async function main(): Promise<void> {
         }
         try { return sendJson(res, 200, await captureFrame(browser.sessions, targetId)) }
         catch { return sendJson(res, 503, { ok: false, error: 'frame unavailable' }) }
+      }
+      if (req.method === 'POST' && url.pathname === '/api/hover') {
+        const body = await readJson(req)
+        const browser = active
+        if (!browser) return sendJson(res, 409, { ok: false })
+        if (typeof body.targetId !== 'string' || !Number.isSafeInteger(body.x) || !Number.isSafeInteger(body.y)
+          || !(await listTargets()).some(target => target.targetId === body.targetId)) {
+          return sendJson(res, 400, { ok: false })
+        }
+        try { return sendJson(res, 200, { ok: true, ...await hoverAt(browser.sessions, body.targetId, body.x as number, body.y as number) }) }
+        catch { return sendJson(res, 503, { ok: false }) }
       }
       if (req.method === 'GET' && url.pathname === '/api/snapshot') {
         const browser = active

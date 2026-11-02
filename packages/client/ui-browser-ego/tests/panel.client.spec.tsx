@@ -29,16 +29,17 @@ function mount(view: BrowserEgoView, { shown = true, targetId = 'first', backend
   const navigate = vi.fn(async () => true)
   const raiseWindow = vi.fn(async () => true)
   const refresh = vi.fn(async () => {})
+  const hover = vi.fn(async () => ({ cursor: 'pointer', title: 'Visit website', href: 'https://example.com/' }))
   const props = { sessionId: 'session-one',
     useTabInfo: () => ({ shown, tab: { id: `browser-${targetId ?? 'fallback'}`,
       params: targetId === null ? {} : { targetId } } }),
     useBrowserEgo: (choose: (snapshot: BrowserEgoView) => unknown) => choose(view),
     useBrowserEgoSettings: (choose: (snapshot: EgoBrowserCapture) => unknown) => choose({ backend }),
-    show, send, navigate, raiseWindow, refresh,
+    show, send, hover, navigate, raiseWindow, refresh,
     t: (key: keyof typeof en, params?: Record<string, unknown>) =>
       en[key].replace(/\{(\w+)\}/gu, (match, name: string) => (name in (params ?? {}) ? String(params?.[name]) : match)),
   } as unknown as AgentBrowserProps
-  return { ...render(<AgentBrowserPanel {...props} />), props, show, send, navigate, raiseWindow, refresh }
+  return { ...render(<AgentBrowserPanel {...props} />), props, show, send, hover, navigate, raiseWindow, refresh }
 }
 
 /** jsdom 不解码 JPEG；显式提供画面尺寸以验证可点击区域与投递坐标。 */
@@ -86,6 +87,25 @@ describe('Agent 浏览器工作台页面', () => {
     expect(panel.show).toHaveBeenCalledWith(false, 'second')
     panel.unmount()
     expect(panel.show).toHaveBeenLastCalledWith(false, 'second')
+  })
+
+  it('页面移动显示原网页的指针和悬停信息，离开后清除且工具按钮可见提示', async () => {
+    const panel = mount(ready)
+    loadFrame()
+    const preview = screen.getByRole('button', { name: 'Current page view' })
+    expect(preview.style.cursor).toBe('default')
+    fireEvent.mouseMove(preview, { clientX: 100, clientY: 100 })
+    await act(async () => { await Promise.resolve() })
+    expect(panel.hover).toHaveBeenCalledWith('first', 100, 100)
+    expect(preview.style.cursor).toBe('pointer')
+    expect(screen.getByText('https://example.com/')).toBeTruthy()
+    expect(screen.getByText('Visit website')).toBeTruthy()
+    fireEvent.mouseLeave(preview)
+    expect(preview.style.cursor).toBe('default')
+    expect(screen.queryByText('Visit website')).toBeNull()
+    fireEvent.mouseEnter(screen.getByRole('button', { name: 'Open website' }))
+    expect(screen.getByRole('tooltip').textContent).toBe('Open website')
+    panel.unmount()
   })
 
   it('切换工作台目标时隔离旧画面、地址与投递目标，不依赖内部选中页', async () => {

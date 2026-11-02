@@ -4,6 +4,8 @@
  */
 
 import type { ComponentType } from 'react'
+import type { SessionId } from 'coding-session/types'
+import type { WorkbenchExternalParams } from './store.ts'
 import picomatch from 'picomatch/posix'
 
 /** extension 可接管同 kind 的 builtin；fallback 不与其他定义共存。 */
@@ -21,6 +23,8 @@ export interface SidebarRightGuideEntry {
   readonly order: number
   readonly title: () => string
   readonly description?: () => string
+  /** 仅由共享新增标签入口调用；创建资源后返回该资源的地址与目标参数，失败保留入口。 */
+  readonly create?: (sessionId: SessionId) => Promise<{ address: string; params?: WorkbenchExternalParams }>
   readonly commandId?: string
   readonly icon?: ComponentType<{ size?: number; className?: string }>
 }

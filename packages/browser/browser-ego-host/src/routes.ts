@@ -5,7 +5,7 @@ import type { SessionId } from 'coding-session/types'
 import { recentActions, replayActivity, subscribeActivity } from './activity.ts'
 import { parseNavigation } from './navigation.ts'
 import { targetIdsForSession, validId } from './session-space.ts'
-import { ensureWorker, workerGet, workerInput, workerPost } from './worker.ts'
+import { ensureWorker, workerGet, workerHover, workerInput, workerPost } from './worker.ts'
 
 interface Page {
   targetId: string
@@ -215,6 +215,33 @@ export function installRoutes(ctx: Context): void {
       const timer = setInterval(() => { void poll() }, 1000)
       res.once('close', () => { clearInterval(timer) })
     })
+    register('/api/ego/hover', async (req, res) => {
+      if (req.method !== 'POST') { send(res, 405, { ok: false }); return }
+      const body = object(await readBody(req))
+      if (!body || Object.keys(body).some(key => !['sessionId', 'targetId', 'x', 'y'].includes(key))
+        || !validId(body.sessionId) || !webCtx.sessions.get(body.sessionId as SessionId)
+        || !validId(body.targetId) || !Number.isSafeInteger(body.x) || !Number.isSafeInteger(body.y)) {
+        send(res, 400, { ok: false }); return
+      }
+      const sessionId = body.sessionId as SessionId
+      if (!(await targetIdsForSession(sessionId)).has(body.targetId)) { send(res, 403, { ok: false }); return }
+      const port = await ensureWorker(webCtx)
+      if (port === null) { send(res, 503, { ok: false }); return }
+      const page = (await currentPages(sessionId, port)).find(item => item.targetId === body.targetId)
+      const x = body.x as number, y = body.y as number
+      if (!page || x < 0 || y < 0 || x >= (page.viewportW ?? 0) || y >= (page.viewportH ?? 0)) {
+        send(res, 400, { ok: false }); return
+      }
+      const result = object(await workerHover(port, { targetId: page.targetId, x, y }))
+      if (!webCtx.sessions.get(sessionId) || !(await targetIdsForSession(sessionId)).has(page.targetId)
+        || result?.ok !== true || !['default', 'pointer', 'text', 'wait', 'progress', 'help', 'move', 'grab', 'grabbing',
+        'not-allowed', 'crosshair', 'cell', 'vertical-text', 'zoom-in', 'zoom-out', 'ew-resize', 'ns-resize'].includes(result.cursor as string)
+        || (result.title !== null && (typeof result.title !== 'string' || result.title.length > 256))
+        || (result.href !== null && (typeof result.href !== 'string' || result.href.length > 2048))) {
+        send(res, 503, { ok: false }); return
+      }
+      send(res, 200, { ok: true, targetId: page.targetId, cursor: result.cursor, title: result.title, href: result.href })
+    })
     register('/api/ego/input', async (req, res) => {
       if (req.method !== 'POST') { send(res, 405, { ok: false }); return }
       const body = object(await readBody(req))
@@ -233,6 +260,20 @@ export function installRoutes(ctx: Context): void {
       }
       const accepted = await workerInput(port, input)
       send(res, accepted ? 200 : 503, { ok: accepted })
+    })
+    register('/api/ego/pages', async (req, res) => {
+      if (req.method !== 'POST') { send(res, 405, { ok: false }); return }
+      const body = object(await readBody(req))
+      if (!body || Object.keys(body).length !== 1 || !validId(body.sessionId)
+        || !webCtx.sessions.get(body.sessionId as SessionId)) { send(res, 400, { ok: false }); return }
+      const sessionId = body.sessionId as SessionId
+      const targetId = await webCtx.egoBrowser.createBlankPage(sessionId)
+      const port = targetId === null ? null : await ensureWorker(webCtx)
+      if (!targetId || port === null || !webCtx.sessions.get(sessionId)
+        || !(await currentPages(sessionId, port)).some(page => page.targetId === targetId)) {
+        send(res, 503, { ok: false }); return
+      }
+      send(res, 200, { ok: true, targetId })
     })
     register('/api/ego/navigation', async (req, res) => {
       if (req.method !== 'POST') { send(res, 405, { ok: false }); return }

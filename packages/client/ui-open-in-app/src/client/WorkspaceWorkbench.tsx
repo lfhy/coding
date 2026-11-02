@@ -67,6 +67,8 @@ export interface WorkspaceWorkbenchInjected {
   toggleWorkbenchFullscreen: (sessionId: SessionId) => void
   toggleBottom: (sessionId: SessionId) => void
   openSidebarTab: (sessionId: SessionId, kind: string) => void
+  openCreatedSidebarTab: (sessionId: SessionId, kind: string, address: string, launcherId: string,
+    params?: WorkbenchExternalTab['params']) => void
 }
 
 /** 工作台 slot、根级 viewing store、Host 能力和词典组成的 props。 */
@@ -91,6 +93,8 @@ type WorkbenchViewProps = Pick<WorkspaceWorkbenchProps, 'shown' | 'fullscreen' |
   toggleWorkbenchFullscreen: () => void
   toggleBottom: () => void
   openSidebarTab: (kind: string) => void
+  openCreatedSidebarTab: (kind: string, address: string, launcherId: string,
+    params?: WorkbenchExternalTab['params']) => void
   listFiles: (segments: readonly string[], signal?: AbortSignal) => Promise<WorkspaceFilesPayload>
   readFile: (segments: readonly string[], signal?: AbortSignal) => Promise<WorkspaceFilePayload>
   gitHistory: (query: { count: number }, signal: AbortSignal) => Promise<GitHistory | null>
@@ -478,9 +482,13 @@ export function WorkspaceWorkbench(props: WorkspaceWorkbenchProps): React.JSX.El
       toggleWorkbenchFullscreen: () => { props.toggleWorkbenchFullscreen(sessionId) },
       toggleBottom: () => { props.toggleBottom(sessionId) },
       openSidebarTab: (kind: string) => { props.openSidebarTab(sessionId, kind) },
+      openCreatedSidebarTab: (kind: string, address: string, launcherId: string,
+        params?: WorkbenchExternalTab['params']) => {
+        props.openCreatedSidebarTab(sessionId, kind, address, launcherId, params)
+      },
     }
   }, [props.actions, props.listFiles, props.readFile, props.gitHistory, props.closeWorkbench,
-    props.toggleWorkbenchFullscreen, props.toggleBottom, props.openSidebarTab, sessionId])
+    props.toggleWorkbenchFullscreen, props.toggleBottom, props.openSidebarTab, props.openCreatedSidebarTab, sessionId])
   const terminalShown = props.shown && state?.view === 'terminal'
   const tabDefinitions = props.useSidebarRightTabs(definitions => definitions)
   return <section ref={rootRef} className={css.root} hidden={!props.shown || state === undefined}
@@ -513,7 +521,7 @@ export function WorkspaceWorkbench(props: WorkspaceWorkbenchProps): React.JSX.El
 function WorkbenchView(props: WorkbenchViewProps): React.JSX.Element {
   const {
     shown, fullscreen, bottomOpen, narrow, actions, readFile, listFiles, gitHistory, completedFocusTabId,
-    closeWorkbench, toggleWorkbenchFullscreen, toggleBottom, openSidebarTab, t, renderSlot,
+    closeWorkbench, toggleWorkbenchFullscreen, toggleBottom, openSidebarTab, openCreatedSidebarTab, t, renderSlot,
     panelPrefix, selectTab, tabDefinitions,
   } = props
   const { view, tabs, activeId, filesQuery, filesExpanded, filesLevels } = props.state
@@ -521,6 +529,9 @@ function WorkbenchView(props: WorkbenchViewProps): React.JSX.Element {
     definition, entry,
   }))).sort((left, right) => left.entry.order - right.entry.order)
   const [guideError, setGuideError] = useState<string | null>(null)
+  const [creating, setCreating] = useState<string | null>(null)
+  const pendingCreate = useRef<string | null>(null)
+  const pendingCreateSession = useRef<SessionId | null>(null)
   const active = useMemo(() => tabs.find(tab => tab.id === activeId), [activeId, tabs])
   const narrowPreview = narrow && view === 'files' && active?.type === 'file'
   const treeVisible = view === 'files' && !narrowPreview
@@ -542,6 +553,7 @@ function WorkbenchView(props: WorkbenchViewProps): React.JSX.Element {
     setGuideError(null)
     actions.setView('menu')
   }, [actions])
+  useEffect(() => () => { pendingCreate.current = null; pendingCreateSession.current = null }, [])
   const showLauncher = useCallback((): void => {
     pendingFocus.current = 'menu'
     setGuideError(null)
@@ -803,8 +815,29 @@ function WorkbenchView(props: WorkbenchViewProps): React.JSX.Element {
                 const available = guideAvailable(definition)
                 const GuideIcon = entry.icon ?? IconPlusOutline16
                 return <button type="button" className={css.functionItem} key={`${definition.id}:${entry.id}`}
-                  disabled={!available} title={!available ? t('workbench.menu.unavailable') : undefined}
+                  disabled={!available || creating !== null} title={!available ? t('workbench.menu.unavailable') : undefined}
                   onClick={() => {
+                    if (pendingCreate.current !== null) return
+                    if (active?.type === 'launcher' && entry.create !== undefined) {
+                      const launcherId = active.id
+                      pendingCreate.current = launcherId
+                      pendingCreateSession.current = props.sessionId
+                      setCreating(launcherId)
+                      setGuideError(null)
+                      void entry.create(props.sessionId).then((created) => {
+                        if (pendingCreate.current !== launcherId || pendingCreateSession.current !== props.sessionId) return
+                        openCreatedSidebarTab(definition.kind, created.address, launcherId, created.params)
+                      }).catch(() => {
+                        if (pendingCreate.current === launcherId) setGuideError(t('workbench.menu.unavailable'))
+                      }).finally(() => {
+                        if (pendingCreate.current === launcherId) {
+                          pendingCreate.current = null
+                          pendingCreateSession.current = null
+                          setCreating(null)
+                        }
+                      })
+                      return
+                    }
                     pendingFocus.current = 'return'
                     try {
                       openSidebarTab(definition.kind)

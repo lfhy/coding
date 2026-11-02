@@ -52,8 +52,10 @@ describe('会话浏览器 Host 路由', () => {
       '/api/ego/activity',
       '/api/ego/input',
       '/api/ego/navigation',
+      '/api/ego/pages',
+      '/api/ego/hover',
     ]) {
-      const response = await fetch(origin + path, ['/api/ego/input', '/api/ego/navigation'].includes(path)
+      const response = await fetch(origin + path, ['/api/ego/input', '/api/ego/navigation', '/api/ego/pages', '/api/ego/hover'].includes(path)
         ? { method: 'POST', body: '{bad' } : {})
       expect(response.status, path).toBe(403)
     }
@@ -140,6 +142,21 @@ describe('会话浏览器 Host 路由', () => {
     expect(response.status).toBe(200)
     expect(await response.json()).toEqual({ ok: true })
     expect(spawns).toHaveBeenCalledTimes(1)
+  })
+
+  it('新建入口拒绝未知会话及额外字段，保留 Host 的单会话归属', async () => {
+    const origin = await boot()
+    const post = (body: unknown): Promise<Response> => fetch(`${origin}/api/ego/pages`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+    })
+    expect((await post({ sessionId: 'unknown' })).status).toBe(400)
+    expect((await post({ sessionId: session.id, targetId: 'foreign' })).status).toBe(400)
+    expect((await post({ sessionId: session.id, url: 'https://example.com/' })).status).toBe(400)
+    const badHover = await fetch(`${origin}/api/ego/hover`, { method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ sessionId: session.id, targetId: 'foreign', x: 5, y: 5 }) })
+    expect(badHover.status).toBe(403)
+    expect(spawns).not.toHaveBeenCalled()
   })
 
   it('活动流重连时只回放存活会话的最近一次工具调用', async () => {

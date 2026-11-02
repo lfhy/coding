@@ -13,6 +13,8 @@ export interface SidebarRightOpenOptions {
   readonly params?: WorkbenchExternalParams
   /** 目录管理的多实例标签可按稳定资源地址复用，普通多实例仍保持每次新开。 */
   readonly reuseAddress?: boolean
+  /** 指定发起新建的菜单标签，只在它仍选中时完成替换。 */
+  readonly launcherId?: string
 }
 
 /** 类型入口只接收导航参数，地址由工作台合成为 `sidebar://<kind>`。 */
@@ -116,6 +118,7 @@ export class SidebarRightController implements ISidebarRight {
       name: claim.title,
       address: claim.contentId,
       ...(options.params === undefined ? {} : { params: options.params }),
+      ...(options.launcherId === undefined ? {} : { launcherId: options.launcherId }),
       ...(definition.multiple === undefined ? {} : { multiple: definition.multiple }),
       ...(definition.multiple && (definition.reuseAddress || options.reuseAddress) ? { reuseAddress: true } : {}),
     })

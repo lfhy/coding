@@ -38,7 +38,7 @@ const CLI = fileURLToPath(new URL('../runtime/ego-linux/bin/ego-browser.mjs', im
 const OWNED_PATHS = new Set([
   '/api/ego/spaces', '/api/ego/stream', '/api/ego/input', '/api/ego/status',
   '/api/ego/close', '/api/ego/history', '/api/ego/frame', '/api/ego/activity',
-  '/api/ego/navigation',
+  '/api/ego/navigation', '/api/ego/pages', '/api/ego/hover',
 ])
 
 declare module '@deepseek-ai/cordis' {
@@ -64,6 +64,8 @@ export default class EgoBrowserHost extends Service {
   private readonly definitions: readonly ToolDefinition[]
   /** 上游按当前设置计算的环境（无窗口、光标标签、Chrome 路径等）。 */
   private browserEnv: (() => NodeJS.ProcessEnv) | undefined
+  /** 人工新建页面按 Session 排队，空间锚页、页数与归属复核不得并发交错。 */
+  private readonly pageCreates = new Map<SessionId, Promise<string | null>>()
 
   constructor(ctx: Context) {
     super(ctx, 'egoBrowser')
@@ -161,6 +163,41 @@ export default class EgoBrowserHost extends Service {
         || !('targetId' in result) || typeof result.targetId !== 'string') return false
       return (await targetIdsForSession(sessionId)).has(result.targetId)
     } catch { return false }
+  }
+
+  /** 为人工工作台在指定会话空间新建一张空白页；首张页面复用空间自带锚页。 */
+  async createBlankPage(sessionId: SessionId): Promise<string | null> {
+    const previous = this.pageCreates.get(sessionId) ?? Promise.resolve(null)
+    const next = previous.then(() => this.createBlankPageNow(sessionId))
+    this.pageCreates.set(sessionId, next)
+    try { return await next }
+    finally { if (this.pageCreates.get(sessionId) === next) this.pageCreates.delete(sessionId) }
+  }
+
+  private async createBlankPageNow(sessionId: SessionId): Promise<string | null> {
+    if (!this.ctx.sessions.get(sessionId)) return null
+    const space = spaceNameForSession(sessionId)
+    const existing = await targetIdsForSession(sessionId)
+    if (existing.size >= 30) return null
+    const blankAnchor = existing.size === 0 ? 'existingTabs.find(t => t.url === "about:blank")?.targetId' : 'null'
+    const script = `await taskSpaces.useOrCreate(${JSON.stringify(space)})\n` +
+      'const existingTabs = await browser.listTabs()\n' +
+      `const targetId = ${blankAnchor} ?? (await ego.createTab('about:blank')).targetId\n` +
+      'console.log(\'@@DSH_RESULT@@\' + JSON.stringify({ ok: true, targetId }))\n'
+    const env: NodeJS.ProcessEnv = { ...(this.browserEnv?.() ?? process.env), EGO_ISOLATE_SPACES: '1' }
+    try {
+      const handle = this.ctx.subprocess.spawn({
+        argv: [process.execPath, CLI, 'nodejs'], cwd: process.cwd(), env,
+        stdio: { stdin: { data: script }, stdout: { maxBytes: 4096 }, stderr: { maxBytes: 4096 } },
+        graceMs: 30_000,
+      })
+      const outcome = await handle.done
+      if (outcome.exitCode !== 0) return null
+      const result: unknown = parseScriptResult(handle.collected.stdout?.readFrom(0).text ?? '')
+      if (!result || typeof result !== 'object' || !('targetId' in result) || typeof result.targetId !== 'string'
+        || !this.ctx.sessions.get(sessionId) || !(await targetIdsForSession(sessionId)).has(result.targetId)) return null
+      return result.targetId
+    } catch { return null }
   }
 
   /** 在执行入口记录活动历史，失败仍交给上游工具自己报告。 */

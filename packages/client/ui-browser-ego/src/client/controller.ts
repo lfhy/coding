@@ -304,6 +304,41 @@ export class BrowserEgoController {
     this.frameRequest = null
   }
 
+  /** 仅当前页面的有效画面可查询悬停状态；晚到响应不能覆盖切页后的状态。 */
+  async hover(targetId: string, x: number, y: number): Promise<{
+    cursor: string
+    title: string | null
+    href: string | null
+  } | null> {
+    const view = this.view.getSnapshot()
+    const selected = view.pages.find(page => page.targetId === targetId)
+    const frame = view.frame?.targetId === targetId ? view.frame : null
+    const width = frame?.width ?? (view.video.available ? selected?.viewportW ?? null : null)
+    const height = frame?.height ?? (view.video.available ? selected?.viewportH ?? null : null)
+    if (!this.shown || view.phase !== 'ready' || view.pending || view.selectedId !== targetId
+      || !selected || !Number.isSafeInteger(x) || !Number.isSafeInteger(y)
+      || width === null || height === null || x < 0 || y < 0 || x >= width || y >= height) return null
+    const epoch = this.epoch
+    try {
+      const response = await this.fetcher('/api/ego/hover', { method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ sessionId: this.sessionId, targetId, x, y }) })
+      if (!response.ok) return null
+      const result: unknown = await response.json()
+      if (!result || typeof result !== 'object' || !('ok' in result) || result.ok !== true
+        || !('targetId' in result) || result.targetId !== targetId
+        || !('cursor' in result) || typeof result.cursor !== 'string'
+        || !['default', 'pointer', 'text', 'wait', 'progress', 'help', 'move', 'grab', 'grabbing',
+          'not-allowed', 'crosshair', 'cell', 'vertical-text', 'zoom-in', 'zoom-out', 'ew-resize', 'ns-resize'].includes(result.cursor)
+        || !('title' in result) || result.title !== null && typeof result.title !== 'string'
+        || !('href' in result) || result.href !== null && typeof result.href !== 'string') return null
+      const latest = this.view.getSnapshot()
+      return epoch === this.epoch && latest.selectedId === targetId
+        && latest.pages.find(page => page.targetId === targetId)?.url === selected.url
+        ? { cursor: result.cursor, title: result.title, href: result.href } : null
+    } catch { return null }
+  }
+
   /**
    * 操作前再校验当前页面和画面身份；同页请求按序发送，换页、隐藏或导航取消队列。
    * @param targetId - 当前显示的页面身份。

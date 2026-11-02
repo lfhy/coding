@@ -38,7 +38,23 @@
 .address input { min-width: 0; font: var(--dsw-font-xs-13); }
 .address input[aria-invalid="true"] { outline: 2px solid var(--dsw-alias-state-warn-label); }
 .addressError { margin: 0; padding: 4px 12px; color: var(--dsw-alias-state-warn-label); font: var(--dsw-font-xxs-12); }
-.refresh { flex: none; }
+.iconButton {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: var(--dsw-alias-button-tool-bar-fill);
+  color: var(--dsw-alias-label-primary);
+  cursor: pointer;
+}
+.iconButton:hover:not(:disabled) { background: var(--dsw-alias-button-tool-bar-hover); }
+.iconButton:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: -2px; }
+.iconButton:disabled { opacity: 0.4; cursor: default; }
 
 .stage {
   position: relative;
@@ -95,8 +111,28 @@
   overflow: hidden;
   border: 0;
   background: transparent;
-  cursor: crosshair;
+  cursor: default;
 }
+
+.hoverAddress, .hoverTitle {
+  position: absolute;
+  z-index: 2;
+  left: 8px;
+  bottom: 8px;
+  max-width: calc(100% - 16px);
+  margin: 0;
+  padding: 4px 8px;
+  border-radius: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-primary);
+  font: var(--dsw-font-xxs-12);
+  pointer-events: none;
+}
+
+.hoverTitle { bottom: 38px; }
 
 .frameAction:disabled { cursor: default; }
 .frameAction:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: -2px; }

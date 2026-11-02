@@ -71,6 +71,17 @@ export async function workerPost(port: number, path: '/api/close' | '/api/input'
   } catch { return false }
 }
 
+/** 悬停仅转发已归属当前会话的坐标，结果由调用方再次检查 target。 */
+export async function workerHover(port: number, body: { targetId: string; x: number; y: number }): Promise<unknown> {
+  try {
+    const response = await fetch(`http://127.0.0.1:${port}/api/hover`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+      signal: AbortSignal.timeout(4000),
+    })
+    return response.ok ? await response.json() as unknown : null
+  } catch { return null }
+}
+
 /** 输入仅在上层完整校验与归属复核通过后发送封闭字段。 */
 export async function workerInput(port: number, body: Record<string, unknown>): Promise<boolean> {
   try {

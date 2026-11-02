@@ -58,7 +58,7 @@ export function apply(ctx: ClientContext): void {
     `sidebar://${encodeURIComponent(WATCH_KIND)}/${encodeURIComponent(targetId)}`
   const fallback = `sidebar://${encodeURIComponent(WATCH_KIND)}`
   const pageTitle = (page: EgoPage): string => {
-    if (page.title) return page.title
+    if (page.title && page.title !== 'about:blank') return page.title
     try {
       const url = new URL(page.url)
       if (url.protocol === 'http:' || url.protocol === 'https:') return url.hostname
@@ -86,7 +86,17 @@ export function apply(ctx: ClientContext): void {
     multiple: true,
     reuseAddress: true,
     title: () => t('title'),
-    guide: [{ id: 'browser-ego-watch', order: 90, title: () => t('title'), icon: IconBrowseOutline16 }],
+    guide: [{ id: 'browser-ego-watch', order: 90, title: () => t('title'), icon: IconBrowseOutline16,
+      create: async (sessionId) => {
+        const response = await fetch('/api/ego/pages', { method: 'POST',
+          headers: { 'content-type': 'application/json' }, body: JSON.stringify({ sessionId }) })
+        if (!response.ok) throw new Error('page creation failed')
+        const payload: unknown = await response.json()
+        if (!payload || typeof payload !== 'object' || !('ok' in payload) || payload.ok !== true
+          || !('targetId' in payload) || typeof payload.targetId !== 'string'
+          || !/^[a-zA-Z0-9._~-]{1,128}$/u.test(payload.targetId)) throw new Error('invalid page')
+        return { address: addressFor(payload.targetId), params: { targetId: payload.targetId } }
+      } }],
   }), 'ui-browser-ego: tab definition')
   ctx.slots.inject('sidebar.right.pane.tab', () => {
     const dispose = ctx.slots.register({
@@ -103,6 +113,7 @@ export function apply(ctx: ClientContext): void {
           navigate: (targetId, action, url) => controller.navigate(targetId, action, url),
           raiseWindow: () => controller.raiseWindow(),
           send: (targetId, input) => controller.send(targetId, input),
+          hover: (targetId, x, y) => controller.hover(targetId, x, y),
         }
       },
     }, AgentBrowserPanel)

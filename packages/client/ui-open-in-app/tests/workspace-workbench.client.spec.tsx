@@ -6,7 +6,7 @@ import { IconBrowseOutline16 } from 'coding-client-ui-primitives'
 import { bindSnapshotSelector, makeTranslate } from 'coding-client-test-runtime'
 import type { SessionId } from 'coding-session/types'
 import type { GitHistory } from 'coding-host-apiproxy/api'
-import { createWorkbenchStore, createRetainedWorkbenchStore } from '../src/client/store.ts'
+import { createWorkbenchStore, createRetainedWorkbenchStore, type WorkbenchExternalTab } from '../src/client/store.ts'
 import type { SidebarRightTabDefinition } from '../src/client/sidebar-tab-registry.ts'
 import type { SidebarRightTabOwnerProps } from '../src/client/sidebar-tab-contract.ts'
 import {
@@ -88,6 +88,13 @@ function bench(over: {
     instance.actions.openExternalTab({ definitionId: definition.id, kind,
       name: definition.title(address), address, multiple: definition.multiple ?? false })
   })
+  const openCreatedSidebarTab = vi.fn((_sessionId: SessionId, kind: string, address: string,
+    launcherId: string, params?: WorkbenchExternalTab['params']) => {
+    const definition = over.externalDefinitions?.find(candidate => candidate.kind === kind)
+    if (definition === undefined) return
+    instance.actions.openExternalTab({ definitionId: definition.id, kind,
+      name: definition.title(address), address, params, launcherId, multiple: definition.multiple ?? false })
+  })
   const renderSlot = vi.fn((name: string, _owner?: unknown, _options?: unknown) => <div data-testid={name} />)
   const listFiles = vi.fn(over.listFiles ?? (async () => listing('/workspace', [])))
   const readFile = vi.fn(over.readFile ?? (async (): Promise<WorkspaceFilePayload> => ({
@@ -103,6 +110,7 @@ function bench(over: {
     toggleWorkbenchFullscreen,
     toggleBottom,
     openSidebarTab,
+    openCreatedSidebarTab,
     useStore: bindSnapshotSelector(rootInstance.store),
     useSidebarRightTabs: (selector: (definitions: readonly SidebarRightTabDefinition[]) => unknown) =>
       selector(over.externalDefinitions ?? []),
@@ -116,7 +124,7 @@ function bench(over: {
     terminalUrl: (id: SessionId) => `ws://test/terminal?sessionId=${id}`,
     t,
   } as unknown as WorkspaceWorkbenchProps
-  return { instance, props, closeWorkbench, openSidebarTab, renderSlot,
+  return { instance, props, closeWorkbench, openSidebarTab, openCreatedSidebarTab, renderSlot,
     toggleWorkbenchFullscreen, toggleBottom, listFiles, readFile, gitHistory }
 }
 
@@ -350,6 +358,25 @@ describe('WorkspaceWorkbench shell', () => {
       screen.getByTestId('sidebar.right.pane.tab'))).toBe(true)
     fireEvent.click(screen.getByRole('tab', { name: 'kept.txt' }))
     expect(b.instance.getSnapshot()).toMatchObject({ view: 'files', tabs: [{ type: 'file' }, { type: 'external' }] })
+  })
+
+  it('共享新增入口选择浏览器时新建目标，普通菜单选择仍只打开现有视图', async () => {
+    const create = vi.fn(async () => ({ address: 'sidebar://ego-browser%3Awatch/new-target',
+      params: { targetId: 'new-target' } }))
+    const b = bench({ externalDefinitions: [{ id: 'ego-browser', kind: 'ego-browser:watch', multiple: true,
+      title: () => 'Agent 浏览器', guide: [{ id: 'watch', order: 10, title: () => 'Agent 浏览器', create }] }] })
+    render(<WorkspaceWorkbench {...b.props} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Agent 浏览器' }))
+    expect(create).not.toHaveBeenCalled()
+    expect(b.openSidebarTab).toHaveBeenCalledOnce()
+    fireEvent.click(screen.getByRole('button', { name: '添加工作台标签' }))
+    const launcher = b.instance.getSnapshot().activeId ?? ''
+    expect(create).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Agent 浏览器' }))
+    await waitFor(() => { expect(b.openCreatedSidebarTab).toHaveBeenCalledWith(SESSION,
+      'ego-browser:watch', 'sidebar://ego-browser%3Awatch/new-target', launcher, { targetId: 'new-target' }) })
+    expect(b.instance.getSnapshot().activeId).not.toBe(launcher)
+    expect(b.instance.getSnapshot().tabs.some(tab => tab.id === launcher)).toBe(false)
   })
 
   it('navigates workbench tabs by arrow, Home and End without changing the feature menu on other keys', () => {

@@ -94,6 +94,8 @@ interface OpenExternalTabInput {
   readonly params?: WorkbenchExternalParams
   readonly multiple?: boolean
   readonly reuseAddress?: boolean
+  /** 异步新建仅能消费发起请求时的本地菜单标签，失焦或关闭后不抢占其它标签。 */
+  readonly launcherId?: string
 }
 
 interface UpdateExternalTabInput {
@@ -252,6 +254,8 @@ const workbenchActions: WorkbenchActions = {
     selectTab(draft, tab)
   },
   openExternalTab: (draft, input) => {
+    if (input.launcherId !== undefined && (draft.activeId !== input.launcherId
+      || !draft.tabs.some(tab => tab.id === input.launcherId && tab.type === 'launcher'))) return
     const launcherIndex = consumeLauncher(draft)
     const exact = draft.tabs.find((tab): tab is WorkbenchExternalTab => tab.type === 'external'
       && tab.kind === input.kind && tab.address === input.address)
@@ -293,6 +297,8 @@ const workbenchActions: WorkbenchActions = {
   syncExternalTabs: (draft, { kind, definitionId, fallback, pages, firstSeen }) => {
     const current = new Set(pages.map(page => page.address))
     const previous = new Set(draft.knownExternalAddresses[kind] ?? [])
+    const pendingLauncher = draft.tabs.some(tab => tab.type === 'launcher' && tab.id === draft.activeId)
+    const isNewBrowserPage = (address: string) => pendingLauncher && kind === 'ego-browser:watch' && !previous.has(address)
     const existing = draft.tabs.filter((tab): tab is WorkbenchExternalTab => tab.type === 'external' && tab.kind === kind)
     for (const tab of existing) {
       if (tab.address !== fallback.address && !current.has(tab.address)) workbenchActions.closeExternalTab(draft, tab.id)
@@ -314,13 +320,14 @@ const workbenchActions: WorkbenchActions = {
         fallbackTab.revision++
         continue
       }
-      if (previous.has(page.address)) continue
+      if (previous.has(page.address) || isNewBrowserPage(page.address)) continue
       const newTab: WorkbenchExternalTab = { type: 'external', id: externalTabId(kind, draft.nextExternalNumber++),
         definitionId, kind, name: page.name, address: page.address, params: page.params, revision: 0 }
       draft.tabs.push(newTab)
       if (page.address === firstSeen && draft.activeId === null) selectTab(draft, newTab)
     }
-    draft.knownExternalAddresses = { ...draft.knownExternalAddresses, [kind]: [...current] }
+    draft.knownExternalAddresses = { ...draft.knownExternalAddresses,
+      [kind]: [...current].filter(address => !isNewBrowserPage(address)) }
   },
   updateExternalTab: (draft, tabId, update) => {
     const tab = draft.tabs.find((candidate): candidate is WorkbenchExternalTab => candidate.type === 'external' && candidate.id === tabId)
