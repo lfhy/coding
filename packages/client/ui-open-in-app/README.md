@@ -7,7 +7,7 @@ kind: "package-reference"
 
 ## 概述
 
-右侧工作台的标签、功能菜单与显隐按 Session 管理；文件管理器、文件预览、Git 历史、终端和外部插件内容使用同一标签栏。Agent 浏览器由外部插件在 keyed 标签座位注册，工作台只提供内容位置和标签状态，不创建浏览器页面。
+右侧工作台的标签、功能菜单与显隐按 Session 管理；文件管理器、文件预览、Git 历史、终端和外部插件内容共用顶栏。Agent 浏览器由[外部插件](../ui-browser-ego/README.md)将所属会话的每个浏览器页面映射成一个工作台标签；本包仅保存视图身份、顺序和选中状态，不创建、导航或关闭 Host 页面。关闭浏览器工作台标签只移除视图，不向 Host 发送关闭 target 请求。
 
 本包拥有工作区打开能力的 Client 入口、右侧工作台和底栏终端。工作台把文件、Git 历史、终端会话和外部插件标签放在同一行，按标签类型绘制内容；底栏终端有独立入口和标签。会话页头紧邻 Session log 提供本地工作区分体按钮，主按钮打开内置工作台，菜单可选择本地应用；Remote-SSH 工作区或经 SSH 启动的 Host 只显示固定工作台按钮。终端底栏与右侧边栏开关位于会话页头右侧；全屏或窄屏接管主内容时，工作台顶栏另提供终端底栏开关。
 
@@ -25,7 +25,7 @@ Remote-SSH 与 SSH Host 入口直接为当前工作区调用 `ctx.layout.openWor
 
 Git 历史标签仅在可见时向 `workspace.gitHistory` 请求当前 Session 工作目录的提交记录；默认读取 60 条，用户点击“查看更多提交”时按 60 条递增，最多在单次视图显示 300 条。顶部输入框在已加载条目中按主题、作者、哈希与 refs 本地筛选，不会据此查询整个仓库；刷新会重新读取。取消、隐藏或切换 Session 时终止过期读取，不会覆盖后来选择的会话；非仓库、空仓库、加载失败分别显示明确状态，失败可以重试。紧凑的提交树显示短哈希、主题、作者时间、refs 与父提交连线；点击主题展开完整哈希并可复制。该视图不会执行 checkout、提交或 fetch，远程工作区依 Host 权限拒绝并显示错误。
 
-旧浏览器的专用内容与逐页标签 slot、空白页命令和聊天链接占位标签均已移除。工作台不持有 Host 浏览器页面 id，也不负责聊天 HTTP 链接的导航；会话级 Agent 浏览器由外部插件注册 `ego-browser:watch` 类型及 keyed 内容，并可贡献功能菜单入口。定义未装配时工作台不显示浏览器入口；已装配时仍使用普通外部标签的选中、关闭与保留行为。文件管理器、文件预览标签、筛选及展开状态按 Session 保留，其他内容隐藏文件预览与目录树。
+Agent 浏览器以 `ego-browser:watch` 外部类型和 keyed 内容加入同一工作台顶栏；浏览器插件按会话页面目录同步多个实例，同一 `targetId` 只保留一个视图，页面被 Host 移除时清理相应标签。用户关闭视图后，目录轮询不会立即将同一页面重新打开；关闭视图不关闭 Host target，浏览器工具仍可操作它。工作台不提供额外的浏览器内层标签、底部输入栏或独立网页导航逻辑，当前页面的地址栏、后退／前进、网页刷新与画面输入均由[浏览器面板](../ui-browser-ego/README.md)实现。定义未装配时不显示浏览器入口；文件管理器、文件预览标签、筛选与展开状态继续按 Session 保留。
 
 欢迎页右上角按从左到右的顺序注册终端底栏与右侧边栏入口到 `conversation.hero.actions`。右侧边栏入口按整个工作台的显隐切换；打开任一入口只显示对应面板，再次点击关闭对应面板，不折叠导航栏。底栏独占时右侧工作台收起但终端继续保留在横跨主内容的底栏；会话页头与工作台顶栏的普通动作仍可同时显示两个面板。底栏终端按工作区共享：同一工作区的不同会话看到同一组标签与显隐状态，切换会话不会重建或释放终端；PTY 仍属于首次打开它的会话，因此跨会话不重放历史输出。已有会话时直接切换对应面板；尚无会话时先连接最近工作区，若没有工作区则在 Host 用户 HOME 创建未分组会话。连接尚未完成时两个入口复用同一次创建，最后一次点击决定打开的面板。创建失败时按钮旁显示错误并允许重试；异步创建期间用户若已切换到另一会话，入口不会抢占选择。面板状态按工作区保存，欢迎页发送首条消息后继续沿用。
 
@@ -47,7 +47,7 @@ Git 历史、文件管理器、文件预览、终端和外部插件标签共用�
 
 ### 外部标签扩展
 
-其他 Client 插件可以向 `ctx.sidebarRightTabs.register(definition)` 注册右侧工作台的标签类型。`ctx.sidebarRight.openTab(kind, { params? })` 在当前 Session 打开类型入口；`openTabForSession(sessionId, kind, { params? })` 定向打开，`openResourceForSession(sessionId, address, { kind?, params? })` 则按地址路由。`focusTab`、`updateTab`、`closeTab` 操作的是指定 Session 中的实例 id，而不是定义 id。定义的 `id` 标识内容提供方，`kind` 标识默认单实例去重类别：重复打开同一 `kind` 会更新并选中已有标签；`multiple: true` 为每次打开分配新的实例 id。`params` 只接受可序列化的 JSON 值。类型可使用 URI `patterns`、`priority` 和 `canOpen` 选择地址，显式 `kind` 不检查 pattern，但仍须通过 `canOpen`；未找到可用类型时打开失败。定义的 `title(address)` 在打开时生成并保存实例标题，`updateTab` 可更新地址、参数和可选标题。
+其他 Client 插件可以向 `ctx.sidebarRightTabs.register(definition)` 注册右侧工作台的标签类型。`ctx.sidebarRight.openTab(kind, { params? })` 在当前 Session 打开类型入口；`openTabForSession(sessionId, kind, { params? })` 定向打开，`openResourceForSession(sessionId, address, { kind?, params? })` 按地址路由。`syncTabsForSession(sessionId, { kind, fallback, pages })` 以最新页面目录同步多实例标签：新地址只打开一次，消失的地址移除视图，用户关闭的地址在仍属当前目录时不会被重新打开；它不对远端资源执行关闭操作。`focusTab`、`updateTab`、`closeTab` 操作指定 Session 的实例 id，而非定义 id。定义的 `id` 标识内容提供方，`kind` 标识默认单实例去重类别；`multiple: true` 允许同类资源多个实例，目录类型可设置 `reuseAddress: true`，让同一地址的再次打开切回已有视图、无目标入口切回本类现有视图。`params` 仅接受可序列化 JSON。类型可用 URI `patterns`、`priority` 和 `canOpen` 选择地址，显式 `kind` 不检查 pattern 但仍须通过 `canOpen`；无可用类型时打开失败。定义的 `title(address)` 生成并保存实例标题，`updateTab` 可更新地址、参数和标题。
 
 定义可提供按 `order` 排列的 `guide` 入口；这些入口和内置功能共用工作台的 `+` 菜单，可选 `icon` 使用贡献者提供的图标组件，未提供时沿用通用添加图标；`canOpen` 否决类型入口时该项不可用。内容注册到 Session 级 keyed slot `sidebar.right.pane.tab`，可选的标签标题注册到 `sidebar.right.pane.tab.title`，两者的注册键均为定义 `id`，不是实例 id；标题未贡献时使用保存的实例标题。owner 提供 `tab`（含实例 id、地址、参数和修订号）、`shown`、`tabDomId`、`panelDomId`、`selectTab` 与 `closeTab`，不传 React 节点或服务对象。`keepMounted: true` 使内容在当前 Session 切换标签或隐藏工作台时保留挂载；切换 Session 会重挂内容，未设置时仅绘制当前可见实例。工作台状态按 Session 隔离。注册用插件自身的 `ctx.effect()` 持有 disposer，slot 贡献用 `ctx.slots.inject(...)` 跟随声明和插件生命周期撤销；定义卸载时按定义 id 关闭各 Session 已打开的对应实例。
 

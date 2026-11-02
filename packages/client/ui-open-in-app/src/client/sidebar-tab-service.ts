@@ -11,6 +11,8 @@ type WorkbenchActions = BoundActions<ReturnType<typeof createRetainedWorkbenchSt
 export interface SidebarRightOpenOptions {
   readonly kind?: string
   readonly params?: WorkbenchExternalParams
+  /** 目录管理的多实例标签可按稳定资源地址复用，普通多实例仍保持每次新开。 */
+  readonly reuseAddress?: boolean
 }
 
 /** 类型入口只接收导航参数，地址由工作台合成为 `sidebar://<kind>`。 */
@@ -23,11 +25,20 @@ export interface SidebarRightUpdateOptions {
   readonly params?: WorkbenchExternalParams
 }
 
+/** 根据目录同步同一类外部页面；新页面加入工作台，关闭视图不影响远端页面。 */
+export interface SidebarRightSyncOptions {
+  readonly kind: string
+  readonly fallback: { readonly address: string; readonly name: string }
+  readonly pages: readonly { readonly address: string; readonly name: string; readonly params: WorkbenchExternalParams }[]
+  readonly firstSeen?: string
+}
+
 /** 已选 Session 的右侧单面板动作；不宣称支持分栏、浮动或跨 Session 标签。 */
 export interface ISidebarRight {
   openTab(kind: string, options?: SidebarRightKindOptions): void
   openTabForSession(sessionId: SessionId, kind: string, options?: SidebarRightKindOptions): void
   openResourceForSession(sessionId: SessionId, address: string, options?: SidebarRightOpenOptions): void
+  syncTabsForSession(sessionId: SessionId, options: SidebarRightSyncOptions): void
   focusTab(sessionId: SessionId, tabId: string): void
   updateTab(sessionId: SessionId, tabId: string, update: SidebarRightUpdateOptions): void
   closeTab(sessionId: SessionId, tabId: string): void
@@ -106,8 +117,16 @@ export class SidebarRightController implements ISidebarRight {
       address: claim.contentId,
       ...(options.params === undefined ? {} : { params: options.params }),
       ...(definition.multiple === undefined ? {} : { multiple: definition.multiple }),
+      ...(definition.multiple && (definition.reuseAddress || options.reuseAddress) ? { reuseAddress: true } : {}),
     })
     this.layout.openWorkbench(sessionId)
+  }
+
+  /** 只在已挂载的工作台中同步目录，不改变用户当前选中的功能标签。 */
+  syncTabsForSession(sessionId: SessionId, options: SidebarRightSyncOptions): void {
+    const definition = this.registry.get(options.kind)
+    if (definition === undefined || !definition.multiple || this.actions === undefined) return
+    this.actions.syncExternalTabs(sessionId, { ...options, definitionId: definition.id })
   }
 
   /** 只聚焦已存在的标签；store 对已关闭的 id 保持幂等。 */

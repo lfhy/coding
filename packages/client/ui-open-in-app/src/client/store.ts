@@ -77,6 +77,8 @@ export type WorkbenchState = {
   filesQuery: string
   filesExpanded: readonly string[]
   filesLevels: Readonly<Record<string, WorkbenchFileLevel | undefined>>
+  /** 最近一次目录中的目标地址；关闭视图后同一页面不会被轮询重新打开。 */
+  knownExternalAddresses: Readonly<Record<string, readonly string[]>>
 }
 
 interface OpenFileInput {
@@ -91,12 +93,21 @@ interface OpenExternalTabInput {
   readonly address: string
   readonly params?: WorkbenchExternalParams
   readonly multiple?: boolean
+  readonly reuseAddress?: boolean
 }
 
 interface UpdateExternalTabInput {
   readonly name?: string
   readonly address: string
   readonly params?: WorkbenchExternalParams
+}
+
+interface SyncExternalTabsInput {
+  readonly kind: string
+  readonly definitionId: string
+  readonly fallback: { readonly address: string; readonly name: string }
+  readonly pages: readonly { readonly address: string; readonly name: string; readonly params: WorkbenchExternalParams }[]
+  readonly firstSeen?: string
 }
 
 type WorkbenchActions = {
@@ -107,6 +118,7 @@ type WorkbenchActions = {
   openTerminal: (draft: WorkbenchState) => void
   openLauncher: (draft: WorkbenchState) => void
   openExternalTab: (draft: WorkbenchState, input: OpenExternalTabInput) => void
+  syncExternalTabs: (draft: WorkbenchState, input: SyncExternalTabsInput) => void
   updateExternalTab: (draft: WorkbenchState, tabId: string, update: UpdateExternalTabInput) => void
   closeExternalTab: (draft: WorkbenchState, tabId: string) => void
   activateTab: (draft: WorkbenchState, id: string) => void
@@ -154,6 +166,7 @@ function initialWorkbenchState(): WorkbenchState {
     filesQuery: '',
     filesExpanded: [],
     filesLevels: {},
+    knownExternalAddresses: {},
   }
 }
 
@@ -240,15 +253,26 @@ const workbenchActions: WorkbenchActions = {
   },
   openExternalTab: (draft, input) => {
     const launcherIndex = consumeLauncher(draft)
-    const existing = !input.multiple
-      ? draft.tabs.find((tab): tab is WorkbenchExternalTab => tab.type === 'external' && tab.kind === input.kind)
-      : undefined
+    const exact = draft.tabs.find((tab): tab is WorkbenchExternalTab => tab.type === 'external'
+      && tab.kind === input.kind && tab.address === input.address)
+    const existing = input.reuseAddress
+      ? exact ?? (input.params === undefined ? draft.tabs.find((tab): tab is WorkbenchExternalTab =>
+        tab.type === 'external' && tab.kind === input.kind && tab.address !== input.address
+        && (draft.knownExternalAddresses[input.kind] ?? []).includes(tab.address)) : undefined)
+      : !input.multiple ? draft.tabs.find((tab): tab is WorkbenchExternalTab =>
+        tab.type === 'external' && tab.kind === input.kind) : undefined
     if (existing !== undefined) {
-      existing.name = input.name
-      existing.address = input.address
-      if (input.params === undefined) delete existing.params
-      else existing.params = input.params
-      existing.revision++
+      if (existing === exact || !input.reuseAddress) {
+        existing.name = input.name
+        existing.address = input.address
+        if (input.params === undefined) delete existing.params
+        else existing.params = input.params
+        existing.revision++
+      }
+      if (input.reuseAddress) {
+        draft.knownExternalAddresses = { ...draft.knownExternalAddresses,
+          [input.kind]: [...new Set([...(draft.knownExternalAddresses[input.kind] ?? []), input.address])] }
+      }
       selectTab(draft, existing)
       return
     }
@@ -261,6 +285,42 @@ const workbenchActions: WorkbenchActions = {
       ...(input.params === undefined ? {} : { params: input.params }),
     }
     addTab(draft, tab, launcherIndex)
+    if (input.reuseAddress) {
+      draft.knownExternalAddresses = { ...draft.knownExternalAddresses,
+        [input.kind]: [...new Set([...(draft.knownExternalAddresses[input.kind] ?? []), input.address])] }
+    }
+  },
+  syncExternalTabs: (draft, { kind, definitionId, fallback, pages, firstSeen }) => {
+    const current = new Set(pages.map(page => page.address))
+    const previous = new Set(draft.knownExternalAddresses[kind] ?? [])
+    const existing = draft.tabs.filter((tab): tab is WorkbenchExternalTab => tab.type === 'external' && tab.kind === kind)
+    for (const tab of existing) {
+      if (tab.address !== fallback.address && !current.has(tab.address)) workbenchActions.closeExternalTab(draft, tab.id)
+    }
+    // 只给首次出现的目标开标签；手动关闭的视图不会在下一次目录轮询中复活。
+    for (const page of pages) {
+      const tab = draft.tabs.find((candidate): candidate is WorkbenchExternalTab =>
+        candidate.type === 'external' && candidate.kind === kind && candidate.address === page.address)
+      if (tab !== undefined) {
+        if (tab.name !== page.name) tab.name = page.name
+        continue
+      }
+      const fallbackTab = draft.tabs.find((tab): tab is WorkbenchExternalTab =>
+        tab.type === 'external' && tab.kind === kind && tab.address === fallback.address)
+      if (fallbackTab !== undefined) {
+        fallbackTab.address = page.address
+        fallbackTab.name = page.name
+        fallbackTab.params = page.params
+        fallbackTab.revision++
+        continue
+      }
+      if (previous.has(page.address)) continue
+      const newTab: WorkbenchExternalTab = { type: 'external', id: externalTabId(kind, draft.nextExternalNumber++),
+        definitionId, kind, name: page.name, address: page.address, params: page.params, revision: 0 }
+      draft.tabs.push(newTab)
+      if (page.address === firstSeen && draft.activeId === null) selectTab(draft, newTab)
+    }
+    draft.knownExternalAddresses = { ...draft.knownExternalAddresses, [kind]: [...current] }
   },
   updateExternalTab: (draft, tabId, update) => {
     const tab = draft.tabs.find((candidate): candidate is WorkbenchExternalTab => candidate.type === 'external' && candidate.id === tabId)
@@ -367,6 +427,9 @@ export function createRetainedWorkbenchStore(): EngineStoreHandle<RetainedWorkbe
       openLauncher: (draft, id: SessionId) => { workbenchActions.openLauncher(sessionState(draft, id)) },
       openExternalTab: (draft, id: SessionId, input: OpenExternalTabInput) => {
         workbenchActions.openExternalTab(sessionState(draft, id), input)
+      },
+      syncExternalTabs: (draft, id: SessionId, input: SyncExternalTabsInput) => {
+        workbenchActions.syncExternalTabs(sessionState(draft, id), input)
       },
       updateExternalTab: (draft, id: SessionId, tabId: string, update: UpdateExternalTabInput) => {
         workbenchActions.updateExternalTab(sessionState(draft, id), tabId, update)

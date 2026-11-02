@@ -42,6 +42,7 @@ describe('file workbench store', () => {
       filesQuery: '',
       filesExpanded: [],
       filesLevels: {},
+      knownExternalAddresses: {},
     })
   })
 

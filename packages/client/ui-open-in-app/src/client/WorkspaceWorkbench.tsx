@@ -452,6 +452,7 @@ export function WorkspaceWorkbench(props: WorkspaceWorkbenchProps): React.JSX.El
       },
       openLauncher: () => { props.actions.openLauncher(sessionId) },
       openExternalTab: (input) => { props.actions.openExternalTab(sessionId, input) },
+      syncExternalTabs: (input) => { props.actions.syncExternalTabs(sessionId, input) },
       updateExternalTab: (tabId, update) => { props.actions.updateExternalTab(sessionId, tabId, update) },
       closeExternalTab: (tabId) => { props.actions.closeExternalTab(sessionId, tabId) },
       activateTab: (id) => { props.actions.activateTab(sessionId, id) },

@@ -123,6 +123,58 @@ describe('右侧工作台插件服务', () => {
     await fiber.dispose()
   })
 
+  it('多页面目录经会话服务同步到工作台，不重复打开边栏或抢走文件标签焦点', async () => {
+    const { ctx, fiber, store, openWorkbench } = await bench()
+    ctx.sidebarRightTabs.register({ ...definition, multiple: true })
+    ctx.sidebarRight.openTabForSession(FIRST, 'notes')
+    const fallbackId = externalTabs(store, FIRST)[0]?.id
+    const fallback = { address: 'sidebar://notes', name: 'Notes' }
+    const firstPage = { address: 'sidebar://notes/one', name: '第一页', params: { targetId: 'one' } }
+    const secondPage = { address: 'sidebar://notes/two', name: '第二页', params: { targetId: 'two' } }
+    ctx.sidebarRight.syncTabsForSession(FIRST, { kind: 'notes', fallback, pages: [firstPage] })
+    expect(externalTabs(store, FIRST)).toMatchObject([{
+      id: fallbackId, definitionId: definition.id, address: firstPage.address, params: firstPage.params, revision: 1,
+    }])
+    store.actions.openFileManager(FIRST)
+    ctx.sidebarRight.syncTabsForSession(FIRST, { kind: 'notes', fallback, pages: [firstPage, secondPage] })
+    expect(externalTabs(store, FIRST).map(tab => tab.address)).toEqual([firstPage.address, secondPage.address])
+    expect(store.getSnapshot().sessions[FIRST]).toMatchObject({ view: 'files', activeId: 'file-manager' })
+    expect(store.getSnapshot().sessions[SECOND]).toBeUndefined()
+    expect(openWorkbench).toHaveBeenCalledOnce()
+    await fiber.dispose()
+  })
+
+  it('目录类型的入口切回已有页面，定向打开复用同一地址的视图', async () => {
+    const { ctx, fiber, store } = await bench()
+    ctx.sidebarRightTabs.register({ ...definition, multiple: true, reuseAddress: true })
+    const fallback = { address: 'sidebar://notes', name: 'Notes' }
+    const page = { address: 'sidebar://notes/one', name: '第一页', params: { targetId: 'one' } }
+    ctx.sidebarRight.openTabForSession(FIRST, 'notes')
+    ctx.sidebarRight.syncTabsForSession(FIRST, { kind: 'notes', fallback, pages: [page] })
+    ctx.sidebarRight.openTabForSession(FIRST, 'notes')
+    expect(externalTabs(store, FIRST)).toHaveLength(1)
+    ctx.sidebarRight.openResourceForSession(FIRST, page.address,
+      { kind: 'notes', params: page.params, reuseAddress: true })
+    expect(externalTabs(store, FIRST)).toHaveLength(1)
+    expect(externalTabs(store, FIRST)[0]?.address).toBe(page.address)
+    await fiber.dispose()
+  })
+
+  it('未注册、单实例类型或工作台已卸载时忽略目录，不建立会话状态', async () => {
+    const { ctx, fiber, store, disposeRoot } = await bench()
+    const fallback = { address: 'sidebar://notes', name: 'Notes' }
+    const pages = [{ address: 'sidebar://notes/one', name: '第一页', params: { targetId: 'one' } }]
+    ctx.sidebarRight.syncTabsForSession(SECOND, { kind: 'notes', fallback, pages })
+    ctx.sidebarRightTabs.register(definition)
+    ctx.sidebarRight.syncTabsForSession(SECOND, { kind: 'notes', fallback, pages })
+    expect(store.getSnapshot().sessions[SECOND]).toBeUndefined()
+    disposeRoot()
+    ctx.sidebarRightTabs.register({ ...definition, id: 'ext.browser', kind: 'browser', multiple: true })
+    ctx.sidebarRight.syncTabsForSession(SECOND, { kind: 'browser', fallback, pages })
+    expect(store.getSnapshot().sessions[SECOND]).toBeUndefined()
+    await fiber.dispose()
+  })
+
   it('贡献者 fiber 卸载撤销定义并清理各 Session 实例', async () => {
     const { ctx, fiber, store } = await bench()
     const plugin = ctx.plugin({ inject: ['sidebarRightTabs'], apply(child: Context) {

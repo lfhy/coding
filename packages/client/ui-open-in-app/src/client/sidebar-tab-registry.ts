@@ -38,6 +38,8 @@ export interface SidebarRightTabDefinition {
   readonly kind: string
   /** 缺省为每个 kind 一个标签。 */
   readonly multiple?: boolean
+  /** 目录管理的多实例按资源地址复用；类型入口优先切回已有资源视图。 */
+  readonly reuseAddress?: boolean
   /** 访问后隐藏仍保留内容组件，默认 false。 */
   readonly keepMounted?: boolean
   /** 含冒号时匹配完整 URI，否则匹配 URI path 任意层级；无效 URI 不匹配 path pattern。 */
