@@ -14,9 +14,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"regexp"
 	"runtime"
-	"strconv"
 	"sync"
 	"syscall"
 	"time"
@@ -34,29 +32,6 @@ type config struct {
 	exclusiveDesktopInstance                      bool
 	// guiLaunch 由 Electron 主进程声明：本次由 launchd 启动，继承的 PATH 需要登录 shell 补全。
 	guiLaunch bool
-}
-
-type browserBridgeConfig struct{ origin, token string }
-
-var browserBridgeOriginPattern = regexp.MustCompile(`^ws://127\.0\.0\.1:([1-9][0-9]{0,4})/browser-bridge$`)
-var browserBridgeTokenPattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
-
-// browserBridgeEnvironment 核验 Electron 私有环境；失败诊断不得包含令牌。
-func browserBridgeEnvironment() (browserBridgeConfig, error) {
-	origin, hasOrigin := os.LookupEnv("DSH_DESKTOP_BROWSER_BRIDGE_ORIGIN")
-	token, hasToken := os.LookupEnv("DSH_DESKTOP_BROWSER_BRIDGE_TOKEN")
-	if !hasOrigin && !hasToken {
-		return browserBridgeConfig{}, nil
-	}
-	match := browserBridgeOriginPattern.FindStringSubmatch(origin)
-	if !hasOrigin || !hasToken || match == nil || !browserBridgeTokenPattern.MatchString(token) {
-		return browserBridgeConfig{}, errors.New("invalid desktop browser bridge environment")
-	}
-	port, err := strconv.Atoi(match[1])
-	if err != nil || port > 65535 {
-		return browserBridgeConfig{}, errors.New("invalid desktop browser bridge environment")
-	}
-	return browserBridgeConfig{origin: origin, token: token}, nil
 }
 
 func parseConfig(args []string) (config, error) {
@@ -117,16 +92,9 @@ func run(args []string, stdin io.Reader, stdout io.Writer) error {
 	if err != nil {
 		return err
 	}
-	browserBridge, err := browserBridgeEnvironment()
-	if err != nil {
-		return err
-	}
-	if cfg.runtimeRoot != "" && browserBridge.origin == "" {
-		return errors.New("packaged helper requires desktop browser bridge")
-	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	return runHost(ctx, cfg, browserBridge, stdin, stdout, func(options hostlaunch.Options) (hostLauncher, error) {
+	return runHost(ctx, cfg, stdin, stdout, func(options hostlaunch.Options) (hostLauncher, error) {
 		return hostlaunch.New(options)
 	})
 }
@@ -136,7 +104,7 @@ type hostLauncher interface {
 	Ensure(context.Context) (hostlaunch.Endpoint, error)
 }
 
-func runHost(ctx context.Context, cfg config, browserBridge browserBridgeConfig, stdin io.Reader, stdout io.Writer,
+func runHost(ctx context.Context, cfg config, stdin io.Reader, stdout io.Writer,
 	newLauncher func(hostlaunch.Options) (hostLauncher, error),
 ) (result error) {
 	ctx, stop := context.WithCancel(ctx)
@@ -239,7 +207,7 @@ func runHost(ctx context.Context, cfg config, browserBridge browserBridgeConfig,
 	if err != nil {
 		return err
 	}
-	launcher, err := newLauncher(hostLauncherOptions(cfg, command, hostEnvironment(bridge.URL(), bridgeToken, agentsHome, browserBridge)))
+	launcher, err := newLauncher(hostLauncherOptions(cfg, command, hostEnvironment(bridge.URL(), bridgeToken, agentsHome)))
 	if err != nil {
 		return err
 	}
@@ -339,17 +307,12 @@ func hostLauncherOptions(cfg config, command []string, environment map[string]st
 	}
 }
 
-func hostEnvironment(bridgeURL, bridgeToken, agentsHome string, browserBridge browserBridgeConfig) map[string]string {
-	env := map[string]string{
+func hostEnvironment(bridgeURL, bridgeToken, agentsHome string) map[string]string {
+	return map[string]string{
 		"DSH_REMOTE_BRIDGE_URL":   bridgeURL,
 		"DSH_REMOTE_BRIDGE_TOKEN": bridgeToken,
 		"DSH_AGENTS_HOME":         agentsHome,
 	}
-	if browserBridge.origin != "" {
-		env["DSH_DESKTOP_BROWSER_BRIDGE_ORIGIN"] = browserBridge.origin
-		env["DSH_DESKTOP_BROWSER_BRIDGE_TOKEN"] = browserBridge.token
-	}
-	return env
 }
 
 func agentPathFor(root string) func(remoteagent.RemotePlatform) (string, error) {
