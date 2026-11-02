@@ -41,7 +41,9 @@ describe('Agent 浏览器自动展开', () => {
   })
 
   it('活动路由未就绪时不阻断手动打开，并允许后续活动重试失败会话', () => {
-    expect(() => { watchActivity(vi.fn(), () => { throw new Error('not ready') })() }).not.toThrow()
+    vi.useFakeTimers()
+    const missing = watchActivity(vi.fn(), () => { throw new Error('not ready') })
+    missing()
     const stream = new FakeStream()
     const open = vi.fn().mockImplementationOnce(() => { throw new Error('not mounted') })
     const dispose = watchActivity(open, () => stream as unknown as EventSource)
@@ -51,5 +53,31 @@ describe('Agent 浏览器自动展开', () => {
     stream.dispatchEvent(new Event('error'))
     expect(stream.closed).toBe(true)
     dispose()
+    vi.useRealTimers()
+  })
+
+  it('首连失败和活动早于会话载入时，重连与待处理回放只展开一次', () => {
+    vi.useFakeTimers()
+    const streams = [new FakeStream(), new FakeStream()]
+    let connected = 0
+    let ready = false
+    const open = vi.fn(() => { if (!ready) throw new Error('session not loaded') })
+    const dispose = watchActivity(open, () => {
+      if (++connected === 1) throw new Error('not ready')
+      return streams[connected - 2] as unknown as EventSource
+    })
+    vi.advanceTimersByTime(1500)
+    streams[0]?.emit({ sessionId: 'first', count: 1 })
+    expect(open).toHaveBeenCalledTimes(1)
+    ready = true
+    vi.advanceTimersByTime(1500)
+    expect(open).toHaveBeenCalledTimes(2)
+    streams[0]?.dispatchEvent(new Event('error'))
+    vi.advanceTimersByTime(1500)
+    streams[1]?.emit({ sessionId: 'first', count: 1 })
+    streams[1]?.emit({ sessionId: 'first', count: 2 })
+    expect(open).toHaveBeenCalledTimes(2)
+    dispose()
+    vi.useRealTimers()
   })
 })

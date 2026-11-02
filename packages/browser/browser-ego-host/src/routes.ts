@@ -2,7 +2,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Context } from '@deepseek-ai/cordis'
 import type { SessionId } from 'coding-session/types'
-import { recentActions, subscribeActivity } from './activity.ts'
+import { recentActions, replayActivity, subscribeActivity } from './activity.ts'
 import { parseNavigation } from './navigation.ts'
 import { targetIdsForSession, validId } from './session-space.ts'
 import { ensureWorker, workerGet, workerInput, workerPost } from './worker.ts'
@@ -149,6 +149,7 @@ export function installRoutes(ctx: Context): void {
       res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store', connection: 'keep-alive' })
       res.write(':ok\n\n')
       subscribeActivity(res)
+      replayActivity(res, sessionId => webCtx.sessions.get(sessionId) !== undefined)
     })
     register('/api/ego/spaces', async (req, res) => {
       if (req.method !== 'GET') { send(res, 405, { ok: false }); return }

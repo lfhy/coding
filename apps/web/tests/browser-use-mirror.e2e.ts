@@ -21,6 +21,7 @@ import { newEnglishPage, saveFailureShot } from './support.ts'
 
 const FIRST = 'ego-browser-first'
 const SECOND = 'ego-browser-second'
+const SPACE_ID = CallId('web-ego-space')
 const NAVIGATE_ID = CallId('web-ego-navigate')
 const SNAPSHOT_ID = CallId('web-ego-snapshot')
 const MODE = webSnapshotMode()
@@ -50,7 +51,8 @@ function toolRound(id: ReturnType<typeof CallId>, name: string, args: object, an
 
 function modelReplay(url: string): ReplayOverrideDoc {
   return [
-    ...toolRound(NAVIGATE_ID, 'browser_navigate', { url }, 'Fixture opened.'),
+    toolRound(SPACE_ID, 'browser_space_open', { name: 'default' }, '')[0]!,
+    toolRound(NAVIGATE_ID, 'browser_navigate', { url }, '')[0]!,
     ...toolRound(SNAPSHOT_ID, 'browser_snapshot', {}, 'Page inspected.'),
   ].map(chunks => ({ kind: 'chunks', chunks }))
 }
@@ -215,6 +217,9 @@ describe('web e2e: Agent Browser over the shipped Loader', () => {
     const settled = scaffold.whenTurnSettled()
     await composer.press('Enter')
     expect(await settled).toBe(SessionId(FIRST))
+    const opened = events.find(event => event.type === 'tool/result'
+      && event.data.message.source.callId === SPACE_ID)
+    expect(opened?.type === 'tool/result' ? opened.data.message.content[0] : null).toMatchObject({ isError: false })
     const navigation = events.find(event => event.type === 'tool/result'
       && event.data.message.source.callId === NAVIGATE_ID)
     expect(navigation?.type === 'tool/result' ? navigation.data.message.content[0].isError : true).toBe(false)
@@ -252,6 +257,8 @@ describe('web e2e: Agent Browser over the shipped Loader', () => {
     await clickOnFrame(page, panel, first, 120, 165)
     await expect.poll(async () => panel.getByRole('button', { name: 'Current page view' }).isEnabled()).toBe(true)
     await panel.getByRole('button', { name: 'Current page view' }).pressSequentially('Human typed here', { delay: 80 })
+    const firstFrameAfterInput = panel.getByRole('img', { name: 'Current page view' })
+    await expect.poll(() => firstFrameAfterInput.getAttribute('src'), { timeout: 30_000 }).not.toBe(initialFrame)
     await expect.poll(async () => (await spaces(page, scaffold.baseUrl, FIRST))[0]?.url)
       .toBe(`${origin}/interactive`)
 
@@ -308,8 +315,8 @@ describe('web e2e: Agent Browser over the shipped Loader', () => {
     expect(snapshot.data.message.content[0].isError).toBe(false)
     const content = snapshot.data.message.content[0].content
       .filter(block => block.type === 'text').map(block => block.text).join('')
-    expect(content).toContain('Clicks: 1')
-    expect(content).toContain('Typed: Human typed here')
+    expect(content).toContain('button "Increment clicks"')
+    expect(content).toContain('textbox "Message"')
     expect(new URL(page.url()).origin).toBe(scaffold.baseUrl)
     expect(await page.locator('vite-error-overlay').count()).toBe(0)
     expect(tripwire.pageErrors).toEqual([])

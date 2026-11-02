@@ -12,7 +12,7 @@ import type {} from 'coding-subprocess'
 import type { SessionId } from 'coding-session/types'
 import { markToolStart } from './activity.ts'
 import { parseScriptResult } from './scripts.ts'
-import { spaceNameForSession, targetIdsForSession } from './session-space.ts'
+import { sessionSpaceArgs, spaceNameForSession, targetIdsForSession } from './session-space.ts'
 import { installRoutes, trusted } from './routes.ts'
 import { apply as applyUpstream } from 'coding-browser-ego-host/upstream'
 
@@ -171,8 +171,12 @@ export default class EgoBrowserHost extends Service {
       execute: (args: unknown, exec: ToolRunContext) => {
         const session: { id?: unknown } | undefined = exec.agent?.session
         const id = session?.id
-        if (typeof id === 'string') markToolStart(id as SessionId, definition.name)
-        return execute(args, exec)
+        if (typeof id !== 'string' || !this.ctx.sessions.get(id as SessionId)) {
+          throw new Error('browser tool requires a live session')
+        }
+        const scoped = sessionSpaceArgs(args, id as SessionId, definition.name)
+        markToolStart(id as SessionId, definition.name)
+        return execute(scoped, exec)
       },
     }
   }

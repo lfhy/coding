@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { SessionId } from 'coding-session/types'
-import { readTaskSpaceGroups, spaceNameForSession, targetIdsForSession } from '../src/session-space.ts'
+import { readTaskSpaceGroups, sessionSpaceArgs, spaceNameForSession, targetIdsForSession } from '../src/session-space.ts'
 import { parseInput } from '../src/routes.ts'
 import { scriptFor } from '../src/scripts.ts'
 
@@ -31,6 +31,34 @@ describe('会话空间归属', () => {
     expect([...await targetIdsForSession(second)]).toEqual(['second'])
     expect(scriptFor('ego_tabs', { space: spaceNameForSession(second) }, first)).toContain(spaceNameForSession(first))
     expect(scriptFor('ego_tabs', { space: spaceNameForSession(second) }, first)).not.toContain(spaceNameForSession(second))
+  })
+
+  it('显式打开默认空间、脚本和其它空间参数都受当前会话约束', () => {
+    const first = SessionId('session-abcdefgh-first')
+    const second = SessionId('session-abcdefgh-second')
+    const own = spaceNameForSession(first)
+    expect(sessionSpaceArgs({ name: 'default' }, first, 'ego_space_open')).toEqual({ name: own })
+    expect(sessionSpaceArgs({ url: 'https://example.com/' }, first, 'ego_navigate'))
+      .toEqual({ url: 'https://example.com/' })
+    expect(sessionSpaceArgs({ space: own }, first, 'ego_navigate')).toEqual({ space: own })
+    expect(() => sessionSpaceArgs({ space: spaceNameForSession(second) }, first, 'ego_navigate'))
+      .toThrow('another task space is not available')
+    expect(() => sessionSpaceArgs({ space: 'default' }, first, 'ego_navigate'))
+      .toThrow('another task space is not available')
+    expect(sessionSpaceArgs({ name: own }, first, 'ego_space_close')).toEqual({ name: own })
+    expect(() => sessionSpaceArgs({ name: spaceNameForSession(second) }, first, 'ego_space_close'))
+      .toThrow('another task space is not available')
+    expect(sessionSpaceArgs({}, first, 'ego_captcha')).toEqual({ space: own })
+    expect(sessionSpaceArgs({}, first, 'ego_wait_for_human')).toEqual({ space: own })
+    expect(() => sessionSpaceArgs({ space: spaceNameForSession(second) }, first, 'ego_captcha'))
+      .toThrow('another task space is not available')
+    const script = 'console.log("ready")'
+    for (const name of ['ego_cli', 'ego_script']) {
+      expect(sessionSpaceArgs({ script }, first, name)).toEqual({
+        script: `await taskSpaces.useOrCreate(${JSON.stringify(own)})\n${script}`,
+      })
+      expect(() => sessionSpaceArgs({ script: 1 }, first, name)).toThrow('invalid browser script')
+    }
   })
 
   it('同名空间双重登记及不合法 target 都不会被接纳', async () => {

@@ -6,6 +6,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { markToolStart } from '../src/activity.ts'
 import EgoBrowserHost from '../src/index.ts'
 import { spaceNameForSession } from '../src/session-space.ts'
 
@@ -139,6 +140,23 @@ describe('会话浏览器 Host 路由', () => {
     expect(response.status).toBe(200)
     expect(await response.json()).toEqual({ ok: true })
     expect(spawns).toHaveBeenCalledTimes(1)
+  })
+
+  it('活动流重连时只回放存活会话的最近一次工具调用', async () => {
+    const origin = await boot()
+    const missing = SessionId('not-loaded-session')
+    markToolStart(missing, 'ego_navigate')
+    markToolStart(session.id, 'ego_navigate')
+    markToolStart(session.id, 'ego_snapshot')
+    const controller = new AbortController()
+    const response = await fetch(`${origin}/api/ego/activity`, { signal: controller.signal })
+    const reader = response.body!.getReader()
+    const chunk = await reader.read()
+    controller.abort()
+    const text = new TextDecoder().decode(chunk.value)
+    expect(text).toContain(`"sessionId":"${session.id}"`)
+    expect(text).toContain('browser_snapshot')
+    expect(text).not.toContain('not-loaded-session')
   })
 
   it('把上游浏览器设置注册为可编辑的插件命名空间', async () => {

@@ -121,7 +121,9 @@ export function apply(ctx: ClientContext): void {
   }, EgoBrowserCard))
   ctx.effect(() => watchActivity((rawId) => {
     const sessionId = rawId as SessionId
-    if (ctx.sessions.list.getSnapshot().byId[sessionId] === undefined) return
+    if (ctx.sessions.list.getSnapshot().byId[sessionId] === undefined) {
+      throw new Error('browser session is not loaded yet')
+    }
     const controller = controllerFor(sessionId)
     const page = controller.view.getSnapshot().pages.find(item => item.active)
       ?? controller.view.getSnapshot().pages[0]
