@@ -541,7 +541,12 @@ async function main() {
       process.stderr.write("replacing the headless browser with a visible one\n");
       await stopBrowser();
     }
-    const shim = await createEgoShim({ headless: false });
+    // reconcile=false: this is the one path allowed to show a window even when
+    // the configured mode is headless. The configured intent is carried over so
+    // the next tool call does not mistake this window for a stale instance.
+    const intent = status.headlessIntent
+      ?? (["1", "true", "yes", "on"].includes(String(process.env.EGO_LINUX_HEADLESS ?? "").toLowerCase()) ? true : undefined);
+    const shim = await createEgoShim({ headless: false, reconcile: false, intent });
     try {
       const { tabs } = await shim.ego.listTabs();
       // A browser with no page target shows no window; give it one.

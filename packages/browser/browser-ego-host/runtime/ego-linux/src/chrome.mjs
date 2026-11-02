@@ -765,7 +765,7 @@ function headlessUserAgent(major) {
   return `Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${major}.0.0.0 Safari/537.36`;
 }
 
-async function launch({ headless }) {
+async function launch({ headless, intent }) {
   const binary = await resolveBinary();
   const uaMajor = headless ? ((await detectChromeVersionMajor(binary)) ?? 152) : null;
   await mkdir(PROFILE_DIR, { recursive: true });
@@ -868,6 +868,12 @@ async function launch({ headless }) {
     pid: result.pid,
     binary,
     headless,
+    // What the caller asked for, which is not always what it got: --open
+    // trades a headless instance for a visible one without changing the
+    // configured mode. Reuse compares this record, so a user-opened window is
+    // not torn down by the next tool call, while a stale instance started
+    // under the old default IS replaced once.
+    headlessIntent: intent === undefined ? headless : intent,
     profileDir: PROFILE_DIR,
     // Only recorded when *we* started the X server: stopBrowser terminates
     // what is ours and leaves any user display alone.
@@ -881,7 +887,7 @@ async function launch({ headless }) {
  * already has open when possible. Each heredoc runs in its own short-lived Node
  * process, so the browser — not this process — is what has to persist.
  */
-export async function ensureBrowser({ headless = false } = {}) {
+export async function ensureBrowser({ headless = false, reconcile = true, intent } = {}) {
   if (process.env.EGO_LINUX_CDP_URL) {
     return { wsUrl: process.env.EGO_LINUX_CDP_URL, launched: false };
   }
@@ -889,9 +895,22 @@ export async function ensureBrowser({ headless = false } = {}) {
   const state = await readBrowserState();
   if (state?.port) {
     const wsUrl = await probe(state.port);
-    if (wsUrl) return { port: state.port, wsUrl, launched: false };
+    if (wsUrl) {
+      // A browser started before the mode was tracked, or under a different
+      // configured mode, keeps its window no matter what this call asked for.
+      // Replace it once instead of silently reusing it; --open passes
+      // reconcile=false because it deliberately shows a visible window.
+      if (reconcile) {
+        const recorded = state.headlessIntent;
+        if (recorded === undefined || recorded !== headless) {
+          await stopBrowser();
+          return launch({ headless, intent });
+        }
+      }
+      return { port: state.port, wsUrl, launched: false };
+    }
   }
-  return launch({ headless });
+  return launch({ headless, intent });
 }
 
 /**
