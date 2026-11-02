@@ -4751,6 +4751,8 @@ function apply(ctx, config = {}) {
     get chromePath() {
       return resolveConfig(bridge2.source()).chromePath;
     },
+    get headless() { return resolveConfig(bridge2.source()).headless },
+    get cursorName() { return resolveConfig(bridge2.source()).cursorName },
     get captureBackend() {
       return resolveConfig(bridge2.source()).captureBackend;
     },
@@ -4832,6 +4834,7 @@ function apply(ctx, config = {}) {
       return resolveConfig(bridge2.source()).residentIdleMin;
     }
   };
+  ctx.exportBrowserEnv?.(() => resolveEgoEnv(cfg));
   const browserState = new BrowserStateStore();
   const tui = installTui(ctx, browserState);
   installBrowserPanel(ctx, cfg, browserState, tui, {

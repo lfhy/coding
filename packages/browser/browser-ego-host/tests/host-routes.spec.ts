@@ -111,5 +111,24 @@ describe('会话浏览器 Host 路由', () => {
     // 会话有效时向浏览器进程发出 --open；fixture 的 spawn 会抛错，因此以失败告知。
     expect((await post({ sessionId: session.id })).status).toBe(503)
     expect(spawns).toHaveBeenCalledTimes(1)
+    // 这个进程也必须继承配置：否则打开的窗口里会重新出现厂商光标标签。
+    const spec = spawns.mock.calls[0]?.[0] as { env?: NodeJS.ProcessEnv }
+    expect(spec.env?.EGO_LINUX_CURSOR_NAME).toBe('Agent')
+    expect(spec.env?.EGO_LINUX_HEADLESS).toBe('1')
+  })
+
+  it('把无窗口与光标标签配置传给浏览器进程', async () => {
+    await boot()
+    const tool = ctx!.egoBrowser.toolDefinitions().find(item => item.name === 'ego_status')
+    try {
+      await tool!.execute({}, {
+        name: 'ego_status', agent: { session }, signal: new AbortController().signal,
+      } as never)
+    } catch { /* fixture 的 spawn 故意失败，捕获到的环境已足够断言。 */ }
+    const spec = spawns.mock.calls.at(-1)?.[0] as { env?: NodeJS.ProcessEnv }
+    // 缺少运行时配置字段时 resolveEgoEnv 读不到这两项，浏览器会照默认值弹出窗口
+    // 并显示厂商标签，因此这里直接锁住注入结果。
+    expect(spec.env?.EGO_LINUX_HEADLESS).toBe('1')
+    expect(spec.env?.EGO_LINUX_CURSOR_NAME).toBe('Agent')
   })
 })

@@ -736,6 +736,10 @@ interface EgoRuntimeConfig {
   maxOutputBytes: number
   graceMs: number
   readonly chromePath: string
+  /** Configured launch mode; false shows a real window. */
+  readonly headless: boolean
+  /** Label the page cursor carries. */
+  readonly cursorName: string
   readonly captureBackend: ResolvedConfig['captureBackend']
   readonly streamProfile: ResolvedConfig['streamProfile']
   readonly cdpFps: number
@@ -1547,6 +1551,12 @@ export function apply(ctx: EgoContext, config: RawConfig = {}): void {
     get chromePath() {
       return resolveConfig(bridge.source() as RawConfig).chromePath
     },
+    // Live getters: resolveEgoEnv() reads these for every spawn, so a GUI edit
+    // applies to the next browser cold start. Without them the configured mode
+    // and cursor label never reach the runtime and every launch keeps the
+    // runtime defaults (a real window and the vendor label).
+    get headless() { return resolveConfig(bridge.source() as RawConfig).headless },
+    get cursorName() { return resolveConfig(bridge.source() as RawConfig).cursorName },
     get captureBackend() { return resolveConfig(bridge.source() as RawConfig).captureBackend },
     get streamProfile() { return resolveConfig(bridge.source() as RawConfig).streamProfile },
     get cdpFps() { return resolveConfig(bridge.source() as RawConfig).cdpFps },
@@ -1580,6 +1590,12 @@ export function apply(ctx: EgoContext, config: RawConfig = {}): void {
     get residentExecutor() { return resolveConfig(bridge.source() as RawConfig).residentExecutor },
     get residentIdleMin() { return resolveConfig(bridge.source() as RawConfig).residentIdleMin },
   }
+  // The host starts the panel's explicit "open a window" request itself, so it
+  // needs the same environment this plugin uses for tool calls. Without it that
+  // process falls back to the runtime defaults: a vendor cursor label, and an
+  // intent record that no longer matches the configured launch mode.
+  ;(ctx as { exportBrowserEnv?: (resolve: () => NodeJS.ProcessEnv) => void })
+    .exportBrowserEnv?.(() => resolveEgoEnv(cfg))
   const browserState = new BrowserStateStore()
   const tui = installTui(ctx, browserState)
   installBrowserPanel(ctx, cfg, browserState, tui, {

@@ -23,6 +23,8 @@ type UpstreamContext = {
   on?(event: string, fn: (...args: unknown[]) => unknown): () => void
   inject?(services: readonly string[], fn: (sctx: UpstreamContext) => void): void
   settings?: unknown
+  /** 上游把「浏览器进程需要的环境」交回宿主，供宿主自己启动的进程复用。 */
+  exportBrowserEnv?(resolve: () => NodeJS.ProcessEnv): void
 }
 type WebServerLike = {
   register(options: { path: string; handler?: (req: unknown, res: unknown) => unknown }): () => void
@@ -57,6 +59,8 @@ function defaultChromePath(): string {
 export default class EgoBrowserHost extends Service {
   static inject = ['sessions', 'subprocess']
   private readonly definitions: readonly ToolDefinition[]
+  /** 上游按当前设置计算的环境（无窗口、光标标签、Chrome 路径等）。 */
+  private browserEnv: (() => NodeJS.ProcessEnv) | undefined
 
   constructor(ctx: Context) {
     super(ctx, 'egoBrowser')
@@ -71,6 +75,7 @@ export default class EgoBrowserHost extends Service {
       on: (event, fn) => ctx.on(event as never, fn as never),
       inject: (services, fn) => { ctx.inject(services, fn as never) },
       settings: ctx.get('settings'),
+      exportBrowserEnv: (resolve) => { this.browserEnv = resolve },
     }
     const config: Record<string, unknown> = {
       egoBin: CLI,
@@ -99,7 +104,9 @@ export default class EgoBrowserHost extends Service {
    * @returns 浏览器进程正常退出（退出码 0）时为 true。
    */
   async raiseWindow(): Promise<boolean> {
-    const env: NodeJS.ProcessEnv = { ...process.env }
+    // 复用上游为工具进程算好的环境：少了它，这里的 `--open` 会退回运行时默认值，
+    // 页面上重新出现厂商光标标签，启动意图也会被记成“有窗口”。
+    const env: NodeJS.ProcessEnv = { ...(this.browserEnv?.() ?? process.env) }
     if (env.EGO_LINUX_CHROME === undefined) {
       const chrome = defaultChromePath()
       if (chrome !== '') env.EGO_LINUX_CHROME = chrome
