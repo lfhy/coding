@@ -211,6 +211,23 @@ describe('会话画面与人工输入', () => {
     controller.show(false)
   })
 
+  it('只在面板可见时请求打开浏览器窗口，并只发送本会话身份', async () => {
+    const fetcher = vi.fn(async (url: string) => {
+      if (url === '/api/ego/window') return Response.json({ ok: true })
+      if (url.startsWith('/api/ego/frame?')) return new Response(null, { status: 404 })
+      return overview(url) ?? Response.json({ ok: true, spaces: [first] })
+    })
+    const { controller } = fixture(fetcher)
+    expect(await controller.raiseWindow()).toBe(false)
+    expect(fetcher).not.toHaveBeenCalledWith('/api/ego/window', expect.anything())
+    controller.show(true)
+    expect(await controller.raiseWindow()).toBe(true)
+    expect(fetcher).toHaveBeenCalledWith('/api/ego/window', expect.objectContaining({
+      method: 'POST', body: JSON.stringify({ sessionId: 'session-one' }),
+    }))
+    controller.show(false)
+  })
+
   it('读取视频后端状态，隐藏后回到不可用', async () => {
     const mime = 'video/mp4; codecs="avc1.42E01E"'
     const { controller } = fixture(vi.fn(async (url: string) => {

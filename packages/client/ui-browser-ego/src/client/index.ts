@@ -70,6 +70,7 @@ export function apply(ctx: ClientContext): void {
           refresh: () => controller.refresh(),
           select: (targetId) => { controller.select(targetId) },
           close: targetId => controller.close(targetId),
+          raiseWindow: () => controller.raiseWindow(),
           send: (targetId, input) => controller.send(targetId, input),
         }
       },

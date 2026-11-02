@@ -167,6 +167,23 @@ export class BrowserEgoController {
   }
 
   /**
+   * 用户主动要求时把浏览器换成可见窗口（登录扫码、人机验证需要）。
+   *
+   * 只有这个动作会让浏览器获得前台窗口；自动打开面板与工具调用都不会。
+   * @returns Host 是否接受了请求；浏览器进程的最终状态仍由画面流反映。
+   */
+  async raiseWindow(): Promise<boolean> {
+    if (!this.shown) return false
+    try {
+      const response = await this.fetcher('/api/ego/window', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ sessionId: this.sessionId }),
+      })
+      return response.ok
+    } catch { return false }
+  }
+
+  /**
    * 关闭本会话的一个页面；成功后刷新目录，失败只回传布尔值由面板显示固定文案。
    * @param targetId - 已列入当前会话目录的页面身份。
    * @returns Host 是否接受关闭；隐藏后的迟到结果按成功处理，避免已不可见的面板弹出提示。

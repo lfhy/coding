@@ -17,6 +17,8 @@
 
 页面标签上的关闭按钮向同源 `POST /api/ego/close` 发送 `{ sessionId, targetId }`。成功后重新读取页面目录；失败只在共享 Toast 中显示固定文案，不显示响应内容或原始错误。关闭期间该会话的关闭按钮保持禁用，避免重复提交。
 
+标题栏的「在浏览器窗口中打开」按钮向同源 `POST /api/ego/window` 发送 `{ sessionId }`；这是唯一会让浏览器出现在前台的操作，由用户主动点击，用于登录扫码与人机验证。默认的无窗口模式不会弹出浏览器，也不会抢走焦点。成功只表示请求被接受，之后仍以画面流与页面目录为准；失败显示固定文案。
+
 基础人工操作只在标签与页面均可见且画面已匹配时向同源 `POST /api/ego/input` 发送 `{ sessionId, targetId, type, ... }`；点击使用一对 `mousePressed`／`mouseReleased`，滚动使用 `mouseWheel`，在已点击的位置输入文字使用 `insertText`。坐标是截图内容区的 CSS 视口像素；加载中的旧画面、画面外点击、未知目标、无效尺寸与过期帧均不能触发输入。Host 对 POST 仍须做同源和本机请求校验、会话权限、目标及输入边界校验。
 
 `spaces` 中 `humanCheck` 非空的当前页面会在画面顶部显示一条不拦截指针的提示条，说明需要在画面中完成人工验证；提示不包含检测类别、选择器等原始数据。
@@ -40,7 +42,7 @@
 | 画面采集 | `captureBackend`（`auto`／`cdp`／`ffmpeg`，选 `ffmpeg` 时提示依赖）、`streamProfile`（`low`／`balanced`／`high`） |
 | 单帧画面 | `cdpFps`（5–30）、`cdpQuality`（1–100）、`cdpMaxWidth`（320–1920） |
 | 视频画面 | `ffmpegFps`（5–30）、`ffmpegMaxWidth`（320–1920）、`ffmpegBitrateKbps`（500–20000）、`ffmpegEncoder`（自动／软件／各平台硬件编码） |
-| 运行方式 | `disableFrameRelay`、`residentExecutor`、`sessionScopedSpaces`、`idleTimeoutMin`（0–1440） |
+| 运行方式 | `headless`（默认开：只在面板里运行，不弹窗、不抢焦点）、`cursorName`（页面光标标签，默认 `Agent`）、`disableFrameRelay`、`residentExecutor`、`sessionScopedSpaces`、`idleTimeoutMin`（0–1440） |
 | 页面视口 | `viewportWidth`（0–3840）、`viewportHeight`（0–2160）、`deviceScaleFactor`（0–4） |
 | 位置与下载 | `chromePath`、`ffmpegPath`、`egoBin`、`githubMirror` |
 

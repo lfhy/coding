@@ -21,16 +21,17 @@ function mount(view: BrowserEgoView, shown = true, backend: EgoBrowserCapture['b
   const show = vi.fn()
   const send = vi.fn(async () => true)
   const close = vi.fn(async () => false)
+  const raiseWindow = vi.fn(async () => true)
   const select = vi.fn()
   const props = { sessionId: 'session-one', shown,
     useTabInfo: () => ({ shown }),
     useBrowserEgo: (choose: (snapshot: BrowserEgoView) => unknown) => choose(view),
     useBrowserEgoSettings: (choose: (snapshot: EgoBrowserCapture) => unknown) => choose({ backend }),
-    show, send, close, select, refresh: vi.fn(async () => {}),
+    show, send, close, raiseWindow, select, refresh: vi.fn(async () => {}),
     t: (key: keyof typeof en, params?: Record<string, unknown>) =>
       en[key].replace(/\{(\w+)\}/gu, (match, name: string) => (name in (params ?? {}) ? String(params?.[name]) : match)),
   } as unknown as AgentBrowserProps
-  return { ...render(<AgentBrowserPanel {...props} />), props, send, close, select, show }
+  return { ...render(<AgentBrowserPanel {...props} />), props, send, close, raiseWindow, select, show }
 }
 
 describe('Agent 浏览器面板', () => {
@@ -45,6 +46,17 @@ describe('Agent 浏览器面板', () => {
     expect(panel.show).toHaveBeenCalledWith(false)
     panel.unmount()
     expect(panel.show).toHaveBeenCalledWith(false)
+  })
+
+  it('仅在用户点击时打开浏览器窗口，失败给出固定提示', async () => {
+    const panel = mount(ready)
+    const button = screen.getByRole('button', { name: 'Open in a browser window (for sign-in and human checks)' })
+    fireEvent.click(button)
+    await vi.waitFor(() => { expect(panel.raiseWindow).toHaveBeenCalledTimes(1) })
+    expect(screen.queryByText('Could not open the browser window. Please try again.')).toBeNull()
+    panel.raiseWindow.mockResolvedValueOnce(false)
+    fireEvent.click(button)
+    expect(await screen.findByText('Could not open the browser window. Please try again.')).toBeTruthy()
   })
 
   it('仅在加载的画面上点击并插入文字，失败不显示响应原文', async () => {

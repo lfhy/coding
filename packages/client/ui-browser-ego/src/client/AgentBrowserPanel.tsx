@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState, type FormEvent, type MouseEvent, type WheelEvent } from 'react'
 import {
   IconBrowseOutline16, IconChecklistOutline14, IconChevronDownOutline14, IconCloseOutline16,
-  IconGlobeOutline14, IconRefreshOutline16, IconWarningOutline16,
+  IconGlobeOutline14, IconRefreshOutline16, IconRightUpOutline16, IconWarningOutline16,
 } from 'coding-client-ui-icons'
 import { Button, Input, StateDot, Toast, Tooltip } from 'coding-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime, HostObservable } from 'coding-client-ui-slots'
@@ -26,6 +26,8 @@ export interface AgentBrowserInjected {
   refresh: () => Promise<void>
   select: (targetId: string) => void
   close: (targetId: string) => Promise<boolean>
+  /** 由用户触发：把浏览器换成可见窗口，用于登录与人机验证。 */
+  raiseWindow: () => Promise<boolean>
   send: BrowserEgoController['send']
 }
 
@@ -33,7 +35,7 @@ export type AgentBrowserProps = PropsRuntime<'sidebar.right.pane.tab'> & PropsLo
   & InjectFace<AgentBrowserInjected>
 
 type ClickTarget = { targetId: string; timestamp: number }
-type Notice = { id: number; key: 'inputFailed' | 'closeFailed' }
+type Notice = { id: number; key: 'inputFailed' | 'closeFailed' | 'raiseFailed' }
 
 function pageName(page: { title: string; url: string }, fallback: string): string {
   if (page.title !== '') return page.title
@@ -50,7 +52,7 @@ function pageName(page: { title: string; url: string }, fallback: string): strin
  */
 export function AgentBrowserPanel({
   sessionId, useTabInfo, useBrowserEgo, useBrowserEgoSettings,
-  show, refresh, select, close, send, t,
+  show, refresh, select, close, raiseWindow, send, t,
 }: AgentBrowserProps) {
   const { shown } = useTabInfo()
   const view = useBrowserEgo(snapshot => snapshot)
@@ -94,6 +96,10 @@ export function AgentBrowserPanel({
     && text.length > 0 && text.length <= 2000
   const notify = (key: Notice['key']) => {
     setNotice(previous => ({ id: (previous?.id ?? 0) + 1, key }))
+  }
+  // 只有这个按钮会让浏览器出现在前台；其余动作都留在面板里。
+  async function openWindow(): Promise<void> {
+    if (!await raiseWindow()) notify('raiseFailed')
   }
 
   const videoOffered = settings.backend === 'ffmpeg' && videoMime !== null
@@ -159,6 +165,9 @@ export function AgentBrowserPanel({
   return <section className={css.root} hidden={!shown} aria-label={t('title')}>
     <header className={css.header}>
       <span className={css.heading}><IconBrowseOutline16 size={16} />{t('title')}</span>
+      <Button size="sm" variant="toolbar" className={css.refresh} title={t('openWindow')}
+        aria-label={t('openWindow')} icon={<IconRightUpOutline16 size={14} />}
+        onClick={() => { void openWindow() }} />
       <Button size="sm" variant="toolbar" className={css.refresh} title={t('refresh')}
         aria-label={t('refresh')} icon={<IconRefreshOutline16 size={14} />}
         onClick={() => { void refresh() }} />

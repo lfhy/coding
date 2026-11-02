@@ -49,6 +49,10 @@ export interface EgoBrowserSettings {
   githubMirror?: string
   /** 浏览器可执行文件路径；留空时由 Host 自动检测。 */
   chromePath?: string
+  /** 无窗口运行：浏览器只出现在面板里，不会抢走前台焦点。 */
+  headless?: boolean
+  /** 页面光标旁的标签文字；留空时使用运行时默认值。 */
+  cursorName?: string
   /** 关闭实时画面中继：工具仍可用，但面板不再接收画面。 */
   disableFrameRelay?: boolean
   /** 空闲多少分钟后停止后备浏览器；0 表示不停。 */
