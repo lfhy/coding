@@ -17,7 +17,7 @@
 
 当前页面上方提供地址栏、后退、前进和网页刷新：输入网址后按回车或点击「打开网址」按钮提交，失焦不会清除尚未提交的草稿；页面目标或实际 URL 变化时同步地址。人工导航以 `POST /api/ego/navigation` 发送 `{ sessionId, targetId, action, url? }`。地址栏承诺无凭据的 HTTP(S) 地址；未写 scheme 的地址补 `https://`，非法地址在 Client 提示，不发送请求。`navigate` 带 URL；`back`／`forward`／`reload` 不带 URL，没有可用历史项或 Host 拒绝时只显示固定失败提示，不重复操作。Host 路由可在尚无页面时接纳省略 `targetId` 的导航以创建本会话首张网页，但面板是否开放此入口以可见页面状态为准。后端另接受严格本地 `file:///` 地址，不作为地址栏的产品承诺；Host 对人工导航执行回环同源请求校验、会话与目标归属检查，拒绝其他协议、越权目标与多余字段。
 
-人工输入只针对可见的工作台页面，向同源 `POST /api/ego/input` 发送 `{ sessionId, targetId, type, ... }`。点击投递 `mousePressed`／`mouseReleased`，滚动投递 `mouseWheel`；点画面后聚焦输入控件，可直接键入普通文字（`insertText`）及受限的回车、退格、删除、方向、Home／End 等按键（`keyDown`／`keyUp`），组合键、浏览器快捷键和任意 CDP 事件不在人工面板开放。坐标按画面内容区映射到页面 CSS 视口；旧帧、留白、未知目标或无效尺寸不能触发输入，失败只用固定文案提示。Host 对请求还要检查连接信任、回环同源、会话存活、target 归属及输入字段和范围，不能依赖 Client 的检查。
+人工输入只针对可见的工作台页面，向同源 `POST /api/ego/input` 发送 `{ sessionId, targetId, type, ... }`。点击投递 `mousePressed`／`mouseReleased`，滚动投递 `mouseWheel`；点画面后聚焦输入控件，可直接键入普通文字（`insertText`）及受限的回车、退格、删除、方向、Home／End 等按键（`keyDown`／`keyUp`），组合键、浏览器快捷键和任意 CDP 事件不在人工面板开放。同页输入按发起顺序投递，不能因前一请求未结束而丢弃后续按键；切页、导航或隐藏会取消该页待发输入。坐标按画面内容区映射到页面 CSS 视口；旧帧、留白、未知目标或无效尺寸不能触发输入，失败只用固定文案提示。Host 对请求还要检查连接信任、回环同源、会话存活、target 归属及输入字段和范围，不能依赖 Client 的检查。
 
 页面上方的「在浏览器窗口中打开」按钮向同源 `POST /api/ego/window` 发送 `{ sessionId }`；用户主动点击后才把默认无窗口的浏览器呈现在前台，以便登录扫码或处理人机验证。请求被接受不等于画面已就绪；画面和目录仍以 Host 推送为准，失败只显示固定文案。
 

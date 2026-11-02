@@ -119,6 +119,60 @@ describe('会话画面与人工输入', () => {
     expect(await controller.send('first', click)).toBe(false)
   })
 
+  it('连续输入保持画面可聚焦，按顺序投递点击和文字', async () => {
+    const pending: Array<() => void> = []
+    const sent: string[] = []
+    const fetcher = vi.fn((url: string, init?: RequestInit) => {
+      if (url === '/api/ego/input') {
+        const payload = JSON.parse(init?.body as string) as { type: string; text?: string }
+        sent.push(payload.text ?? payload.type)
+        return new Promise<Response>((resolve) => { pending.push(() => { resolve(Response.json({ ok: true })) }) })
+      }
+      return Promise.resolve(url.startsWith('/api/ego/frame?')
+        ? new Response(null, { status: 404 }) : overview(url) ?? Response.json({ ok: true, spaces: [first] }))
+    })
+    const { controller, streams } = fixture(fetcher)
+    controller.show(true)
+    await vi.waitFor(() => { expect(controller.view.getSnapshot().selectedId).toBe('first') })
+    streams[0]?.emit('frame', { targetId: 'first', data: 'YWJj', vw: 400, vh: 300, ts: 1 })
+    const down = controller.send('first', { type: 'mousePressed', x: 12, y: 15, button: 'left', buttons: 1, clickCount: 1 })
+    const up = controller.send('first', { type: 'mouseReleased', x: 12, y: 15, button: 'left', buttons: 0, clickCount: 1 })
+    const text = controller.send('first', { type: 'insertText', text: 'Hi' })
+    expect(controller.view.getSnapshot().pending).toBe(false)
+    await vi.waitFor(() => { expect(sent).toEqual(['mousePressed']) })
+    pending.shift()?.()
+    expect(await down).toBe(true)
+    await vi.waitFor(() => { expect(sent).toEqual(['mousePressed', 'mouseReleased']) })
+    pending.shift()?.()
+    expect(await up).toBe(true)
+    await vi.waitFor(() => { expect(sent).toEqual(['mousePressed', 'mouseReleased', 'Hi']) })
+    pending.shift()?.()
+    expect(await text).toBe(true)
+    controller.show(false)
+  })
+
+  it('换页后取消未投递的旧页按键', async () => {
+    let finish!: (value: Response) => void
+    const fetcher = vi.fn((url: string) => url === '/api/ego/input'
+      ? new Promise<Response>((resolve) => { finish = resolve })
+      : Promise.resolve(url.startsWith('/api/ego/frame?')
+        ? new Response(null, { status: 404 }) : overview(url) ?? Response.json({ ok: true, spaces: [first, second] })))
+    const { controller, streams } = fixture(fetcher)
+    controller.show(true, 'first')
+    await vi.waitFor(() => { expect(controller.view.getSnapshot().selectedId).toBe('first') })
+    streams[0]?.emit('frame', { targetId: 'first', data: 'YWJj', vw: 400, vh: 300, ts: 1 })
+    const firstInput = controller.send('first', { type: 'insertText', text: 'first' })
+    const oldInput = controller.send('first', { type: 'insertText', text: 'old' })
+    await vi.waitFor(() => { expect(fetcher.mock.calls.filter(([path]) => path === '/api/ego/input')).toHaveLength(1) })
+    controller.show(true, 'second')
+    finish(Response.json({ ok: true }))
+    expect(await firstInput).toBe(false)
+    expect(await oldInput).toBe(false)
+    expect(fetcher.mock.calls.filter(([path]) => path === '/api/ego/input')).toHaveLength(1)
+    controller.show(false, 'second')
+    controller.show(false, 'first')
+  })
+
   it('只允许当前可见且有匹配画面的页面发送白名单按键与文字', async () => {
     const fetcher = vi.fn(async (url: string) => url === '/api/ego/input'
       ? Response.json({ ok: true }) : url.startsWith('/api/ego/frame?')

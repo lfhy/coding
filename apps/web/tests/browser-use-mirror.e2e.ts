@@ -80,8 +80,14 @@ function fixture(title: string): string {
 }
 
 async function fixtureServer(): Promise<{ server: Server; origin: string }> {
-  const server = createServer((_request, response) => {
+  const server = createServer((request, response) => {
     response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
+    if (request.url?.startsWith('/second')) {
+      response.end(`<!doctype html><html><head><title>Second fixture page</title></head><body style="font:20px sans-serif">
+        <button onclick="document.querySelector('#result').textContent='Second page clicked'">Click second page</button>
+        <p id="result">Second page ready</p></body></html>`)
+      return
+    }
     response.end(`<!doctype html><html><head><title>Agent fixture</title></head><body style="margin:0;font:20px sans-serif">
       <button style="position:absolute;left:20px;top:20px;width:200px;height:80px"
         onclick="document.querySelector('#clicks').textContent='Clicks: 1'">Increment clicks</button>
@@ -221,7 +227,7 @@ describe('web e2e: Agent Browser over the shipped Loader', () => {
     const frame = panel.getByRole('img', { name: 'Current page view' })
     await expect.poll(() => frame.evaluate((image: HTMLImageElement) => image.complete && image.naturalWidth > 0),
       { timeout: 30_000 }).toBe(true)
-    expect(await panel.getByRole('textbox', { name: 'Address' }).count()).toBe(0)
+    expect(await panel.getByRole('textbox', { name: 'Web address' }).count()).toBe(1)
     expect(await panel.locator('iframe, webview').count()).toBe(0)
 
     const foreignFrame = await page.request.get(`${scaffold.baseUrl}/api/ego/frame?sessionId=${SECOND}&targetId=${first.targetId}`)
@@ -240,13 +246,14 @@ describe('web e2e: Agent Browser over the shipped Loader', () => {
     // 未装载的会话不可观察；打开后再验收其空页面列表。
     expect((await page.request.get(`${scaffold.baseUrl}/api/ego/spaces?sessionId=${SECOND}`)).status()).toBe(404)
 
+    const initialFrame = await frame.getAttribute('src')
     await clickOnFrame(page, panel, first, 120, 60)
-    await expect.poll(() => panel.getByRole('button', { name: 'Current page view' }).isEnabled()).toBe(true)
+    await expect.poll(() => frame.getAttribute('src'), { timeout: 30_000 }).not.toBe(initialFrame)
     await clickOnFrame(page, panel, first, 120, 165)
-    const input = panel.getByRole('textbox', { name: 'Text to send to page' })
-    await expect.poll(() => input.isEnabled()).toBe(true)
-    await input.fill('Human typed here')
-    await panel.getByRole('button', { name: 'Insert text' }).click()
+    await expect.poll(async () => panel.getByRole('button', { name: 'Current page view' }).isEnabled()).toBe(true)
+    await panel.getByRole('button', { name: 'Current page view' }).pressSequentially('Human typed here', { delay: 80 })
+    await expect.poll(async () => (await spaces(page, scaffold.baseUrl, FIRST))[0]?.url)
+      .toBe(`${origin}/interactive`)
 
     await openSession(page, SECOND)
     expect(await spaces(page, scaffold.baseUrl, SECOND)).toEqual([])
@@ -258,6 +265,35 @@ describe('web e2e: Agent Browser over the shipped Loader', () => {
     await expect.poll(() => panel.isVisible()).toBe(true)
     await panel.getByText('No pages are open yet').waitFor()
     expect(await panel.getByRole('img', { name: 'Current page view' }).count()).toBe(0)
+    const address = panel.getByRole('textbox', { name: 'Web address' })
+    await address.fill(`${origin}/second`)
+    await address.press('Enter')
+    await expect.poll(async () => (await spaces(page, scaffold.baseUrl, SECOND))[0]?.title,
+      { timeout: 30_000 }).toBe('Second fixture page')
+    const [second] = await spaces(page, scaffold.baseUrl, SECOND)
+    if (!second) throw new Error('empty-session address submission did not register a page')
+    expect(second.url).toBe(`${origin}/second`)
+    expect(second.targetId).not.toBe(first.targetId)
+    const workbench = page.getByRole('region', { name: 'Workbench' })
+    const secondTab = workbench.getByRole('tab', { name: 'Second fixture page' })
+    await expect.poll(() => secondTab.count(), { timeout: 30_000 }).toBe(1)
+    await expect.poll(() => secondTab.getAttribute('aria-selected')).toBe('true')
+    const secondFrame = panel.getByRole('img', { name: 'Current page view' })
+    await expect.poll(() => secondFrame.evaluate((image: HTMLImageElement) => image.complete && image.naturalWidth > 0),
+      { timeout: 30_000 }).toBe(true)
+    expect(await workbench.getByRole('tab', { name: 'Agent fixture' }).count()).toBe(0)
+    expect(await panel.getByRole('tab').count()).toBe(0)
+    const secondAddress = panel.getByRole('textbox', { name: 'Web address' })
+    await expect.poll(() => secondAddress.inputValue()).toBe(`${origin}/second`)
+    await secondAddress.fill(`${origin}/interactive`)
+    await panel.getByRole('button', { name: 'Open website' }).click()
+    await expect.poll(async () => (await spaces(page, scaffold.baseUrl, SECOND))[0]?.title,
+      { timeout: 30_000 }).toBe('Agent fixture')
+    await expect.poll(() => workbench.getByRole('tab', { name: 'Agent fixture' }).count()).toBe(1)
+    await expect.poll(() => secondAddress.inputValue()).toBe(`${origin}/interactive`)
+    await panel.getByRole('button', { name: 'Reload page' }).click()
+    await expect.poll(async () => (await spaces(page, scaffold.baseUrl, SECOND)).length).toBe(1)
+    expect((await spaces(page, scaffold.baseUrl, SECOND))[0]?.targetId).toBe(second.targetId)
 
     await openSession(page, FIRST)
     await expect.poll(() => panel.getByRole('img', { name: 'Current page view' }).count()).toBe(1)

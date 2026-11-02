@@ -49,6 +49,9 @@ export class BrowserEgoController {
   private request: AbortController | null = null
   private frameRequest: AbortController | null = null
   private input: AbortController | null = null
+  /** 同一页面的按键与鼠标事件必须依发出顺序到达 Host，不能用请求中状态丢弃后续按键。 */
+  private inputQueue: Promise<void> = Promise.resolve()
+  private inputVersion = 0
   private stream: EventSource | null = null
   private activity: EventSource | null = null
   private refreshTimer: ReturnType<typeof setTimeout> | null = null
@@ -85,6 +88,8 @@ export class BrowserEgoController {
     this.cancelFrameRefresh()
     this.input?.abort()
     this.input = null
+    this.inputVersion++
+    this.inputQueue = Promise.resolve()
     this.closeStream()
     this.closeActivity()
     this.clearTimer()
@@ -185,6 +190,9 @@ export class BrowserEgoController {
     if (!this.shown || !validId(targetId) || view.selectedId === targetId
       || !view.pages.some(page => page.targetId === targetId)) return
     this.cancelFrameRefresh()
+    this.input?.abort()
+    this.inputVersion++
+    this.inputQueue = Promise.resolve()
     this.view.set({ ...view, selectedId: targetId, frame: null })
     this.refreshSelectedFrame()
   }
@@ -195,6 +203,9 @@ export class BrowserEgoController {
     const create = targetId === undefined && action === 'navigate' && view.pages.length === 0
     if (!this.shown || view.pending || !create && (!validId(targetId)
       || !view.pages.some(page => page.targetId === targetId))) return false
+    this.input?.abort()
+    this.inputVersion++
+    this.inputQueue = Promise.resolve()
     const epoch = this.epoch
     this.cancelFrameRefresh()
     this.view.set({ ...view, frame: view.selectedId === targetId ? null : view.frame, pending: true })
@@ -294,7 +305,7 @@ export class BrowserEgoController {
   }
 
   /**
-   * 操作前再校验当前页面和画面身份，输入由 Host 复核会话所有权。
+   * 操作前再校验当前页面和画面身份；同页请求按序发送，换页、隐藏或导航取消队列。
    * @param targetId - 当前显示的页面身份。
    * @param input - 已过画面坐标校验的动作；事件类型必须在本包封闭集合中。
    * @returns 接受输入是否成功；失败时调用者只展示面向用户的固定错误。
@@ -326,22 +337,30 @@ export class BrowserEgoController {
       || !Number.isSafeInteger(input.deltaX) || !Number.isSafeInteger(input.deltaY)
       || Math.abs(input.deltaX) > 2000 || Math.abs(input.deltaY) > 2000)) return false
     const epoch = this.epoch
+    const version = this.inputVersion
+    const previous = this.inputQueue
+    let release!: () => void
+    this.inputQueue = new Promise<void>((resolve) => { release = resolve })
+    await previous
+    const latest = this.view.getSnapshot()
+    const latestPage = latest.pages.find(page => page.targetId === targetId)
+    if (epoch !== this.epoch || version !== this.inputVersion || latest.pending
+      || latest.selectedId !== targetId || !latestPage
+      || latestPage.url !== selected?.url || latestPage.viewportW !== selected.viewportW
+      || latestPage.viewportH !== selected.viewportH
+      || latest.frame?.targetId !== frame?.targetId) { release(); return false }
     const action = new AbortController()
     this.input = action
-    this.view.set({ ...current, pending: true })
     try {
       const response = await this.fetcher('/api/ego/input', {
         method: 'POST', headers: { 'content-type': 'application/json' }, signal: action.signal,
         body: JSON.stringify({ sessionId: this.sessionId, targetId, ...input }),
       })
-      if (epoch !== this.epoch || action.signal.aborted || !response.ok) return false
-      return true
+      return epoch === this.epoch && version === this.inputVersion && !action.signal.aborted && response.ok
     } catch { return false }
     finally {
       if (this.input === action) this.input = null
-      if (epoch === this.epoch) {
-        this.view.set({ ...this.view.getSnapshot(), pending: false })
-      }
+      release()
     }
   }
 
@@ -359,6 +378,11 @@ export class BrowserEgoController {
     const oldSelected = previous.pages.find(page => page.targetId === selectedId)
     const changed = selected?.url !== oldSelected?.url
       || selected?.viewportW !== oldSelected?.viewportW || selected?.viewportH !== oldSelected?.viewportH
+    if (selectedId !== previous.selectedId || changed) {
+      this.input?.abort()
+      this.inputVersion++
+      this.inputQueue = Promise.resolve()
+    }
     if (selectedId !== previous.selectedId || relayOff || changed) this.cancelFrameRefresh()
     this.view.set({ ...previous, phase: 'ready', pages, selectedId,
       frame: !relayOff && !changed && previous.frame?.targetId === selectedId ? previous.frame : null, relayOff })

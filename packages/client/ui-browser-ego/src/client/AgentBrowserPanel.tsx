@@ -141,8 +141,8 @@ export function AgentBrowserPanel({
     const targetId = selected?.targetId
     if (!current || targetId === undefined) return
     const down = await send(targetId, { type: 'mousePressed', ...current, button: 'left', buttons: 1, clickCount: 1 })
-    const up = down && await send(targetId, { type: 'mouseReleased', ...current, button: 'left', buttons: 0, clickCount: 1 })
-    if (!down || !up) warn()
+    if (!down) { warn(); return }
+    if (!await send(targetId, { type: 'mouseReleased', ...current, button: 'left', buttons: 0, clickCount: 1 })) warn()
   }
   async function wheel(event: WheelEvent<HTMLButtonElement>): Promise<void> {
     if (event.deltaY === 0) return
