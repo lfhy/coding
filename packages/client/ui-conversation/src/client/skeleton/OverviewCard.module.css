@@ -18,9 +18,9 @@
   padding: 16px;
   border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 12px;
-  background: var(--dsw-alias-bg-layer-2);
+  background: var(--dsw-specific-sidebar-fill);
   box-shadow: var(--dsw-shadow-lv1);
-  /* 卡片滚动时使用与 layer-2 表面匹配的滚动条。 */
+  /* 卡片滚动时使用与侧栏同级表面匹配的滚动条。 */
   --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
   --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
   pointer-events: auto;

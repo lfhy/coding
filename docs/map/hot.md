@@ -178,7 +178,7 @@
 
 ## packages/client/ui-conversation
 
-- **拥有**：会话领域浏览器插件：常驻会话壳（`ConversationRoot`）、视图环（`conversation.view`）、Chat 流及其左缘轨迹定位细轨、Conversation Node 注册（`registerConversationNodes`/`registerChatNodeRenderers`）、输入区（`InputHub`/`InputBar`、composer 链、`ConversationController`）、审批面板、Todo/Queue dock、统计行，以及约 20 个 `conversation.*` slot 声明。
+- **拥有**：会话领域浏览器插件：常驻会话壳（`ConversationRoot`）、视图环（`conversation.view`）、Chat 流及其左缘轨迹定位细轨、Conversation Node 注册（`registerConversationNodes`/`registerChatNodeRenderers`）、输入区（`InputHub`/`InputBar`、composer 链、`ConversationController`）、审批面板、Todo/Queue dock、与左侧侧栏共用主题背景的概览卡、统计行，以及约 20 个 `conversation.*` slot 声明。
 - **不拥有**：工具行展示属于 `packages/client/ui-tool`（占用 `conversation.chat.node`）；turn-tail 产物行属于 `packages/client/ui-deliverables`；轨迹视图属于 `packages/client/ui-trajectory`；侧边栏会话列表属于 `packages/client/ui-workspace`。
 - **入口**：`packages/client/ui-conversation/src/client/index.ts`；组装点在 `packages/client/ui-conversation/src/client/apply.ts`。
 - **接线**：`packages/bundle/web-app/cordis.patch.yml` 的 `ui-conversation` 行；`ConversationController` 以类插件形式自注册为 `conversation` 服务；node 半注册 `ui-conversation.busyEnter` settings 节。
