@@ -27,6 +27,12 @@ tmp/
 mise.toml
 dist-exe/
 dist/
+# 固定上游版本的浏览器 harness 必须随 Host 包分发，其他嵌套构建产物仍忽略。
+!packages/browser/browser-ego-host/runtime/ego-browser/dist/
+packages/browser/browser-ego-host/runtime/ego-browser/dist/*
+!packages/browser/browser-ego-host/runtime/ego-browser/dist/out/
+packages/browser/browser-ego-host/runtime/ego-browser/dist/out/*
+!packages/browser/browser-ego-host/runtime/ego-browser/dist/out/index.js
 apps/internal/runtime/
 apps/desktop-electron/lib/
 apps/tui/coding
