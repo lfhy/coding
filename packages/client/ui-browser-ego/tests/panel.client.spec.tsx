@@ -114,6 +114,19 @@ describe('Agent 浏览器工作台页面', () => {
     panel.unmount()
   })
 
+  it('切换到同网址的另一页面时不保留前一页的地址草稿', () => {
+    const sameUrl = { ...secondPage, url: page.url }
+    const panel = mount({ ...ready, pages: [page, sameUrl] })
+    const input = screen.getByRole('textbox', { name: 'Web address' })
+    fireEvent.change(input, { target: { value: 'draft.example' } })
+    const otherTab = { ...panel.props, useTabInfo: () => ({
+      shown: true, tab: { id: 'browser-second', params: { targetId: 'second' } },
+    }) } as unknown as AgentBrowserProps
+    panel.rerender(<AgentBrowserPanel {...otherTab} />)
+    expect((screen.getByRole('textbox', { name: 'Web address' }) as HTMLInputElement).value).toBe(page.url)
+    panel.unmount()
+  })
+
   it('无可用页面时保留空状态，未知目标不能显示其它页面画面', () => {
     const empty = mount({ ...ready, pages: [], frame: null }, { targetId: null })
     expect(screen.getByText('No pages are open yet')).toBeTruthy()
@@ -131,6 +144,29 @@ describe('Agent 浏览器工作台页面', () => {
     const panel = mount({ ...ready, pages: [], selectedId: null, frame: null }, { targetId: null })
     await act(async () => { submitAddress('example.org') })
     expect(panel.navigate).toHaveBeenCalledWith(undefined, 'navigate', 'https://example.org/')
+    panel.unmount()
+  })
+
+  it('失焦和点击打开按钮都使用当前输入值，草稿不在重渲染时被空目录清除', async () => {
+    const panel = mount({ ...ready, pages: [], selectedId: null, frame: null }, { targetId: null })
+    const input = screen.getByRole('textbox', { name: 'Web address' }) as HTMLInputElement
+    fireEvent.focus(input)
+    fireEvent.change(input, { target: { value: 'example.org' } })
+    fireEvent.blur(input)
+    expect(input.value).toBe('example.org')
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Open website' })) })
+    expect(panel.navigate).toHaveBeenCalledWith(undefined, 'navigate', 'https://example.org/')
+    expect(input.value).toBe('https://example.org/')
+    panel.unmount()
+  })
+
+  it('回车提交当前草稿且阻止原生表单离开工作台', async () => {
+    const panel = mount({ ...ready, pages: [], selectedId: null, frame: null }, { targetId: null })
+    const input = screen.getByRole('textbox', { name: 'Web address' }) as HTMLInputElement
+    fireEvent.change(input, { target: { value: 'example.org' } })
+    await act(async () => { fireEvent.keyDown(input, { key: 'Enter' }) })
+    expect(panel.navigate).toHaveBeenCalledWith(undefined, 'navigate', 'https://example.org/')
+    expect(screen.getByRole('region', { name: 'Agent Browser' })).toBeTruthy()
     panel.unmount()
   })
 

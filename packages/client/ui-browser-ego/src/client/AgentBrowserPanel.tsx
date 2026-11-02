@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState, type ClipboardEvent, type CompositionEvent, type FormEvent, type KeyboardEvent, type MouseEvent, type WheelEvent } from 'react'
 import {
   IconChevronLeftOutline14, IconChevronRightOutline14,
-  IconRefreshOutline16, IconRightUpOutline16, IconWarningOutline16,
+  IconRefreshOutline16, IconRightUpOutline16, IconSendOutline14, IconWarningOutline16,
 } from 'coding-client-ui-icons'
 import { Button, Input, Toast } from 'coding-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime, HostObservable } from 'coding-client-ui-slots'
@@ -72,6 +72,7 @@ export function AgentBrowserPanel({
   const [address, setAddress] = useState('')
   const [addressEditing, setAddressEditing] = useState(false)
   const [addressError, setAddressError] = useState(false)
+  const lastPage = useRef<{ targetId: string | null; url: string } | null>(null)
   const [notice, setNotice] = useState<Notice | null>(null)
   const [videoFailed, setVideoFailed] = useState(false)
   const image = useRef<HTMLImageElement>(null)
@@ -81,9 +82,14 @@ export function AgentBrowserPanel({
   useEffect(() => () => { show(false, viewId) }, [show, viewId])
   const selected = view.pages.find(page => page.targetId === targetId)
   const frame = view.frame?.targetId === selected?.targetId ? view.frame : null
+  const pageUrl = selected?.url === 'about:blank' ? '' : selected?.url ?? ''
   useEffect(() => {
-    if (!addressEditing) setAddress(selected?.url === 'about:blank' ? '' : selected?.url ?? '')
-  }, [addressEditing, selected?.url])
+    const previous = lastPage.current
+    if (previous?.targetId === targetId && previous.url === pageUrl) return
+    lastPage.current = { targetId, url: pageUrl }
+    // 失焦不覆盖草稿；切换目标时即使网址相同也要清除上一页的输入。
+    if (previous?.targetId !== targetId || !addressEditing) setAddress(pageUrl)
+  }, [addressEditing, pageUrl, targetId])
   const imageReady = shown && !view.pending && view.phase === 'ready' && !view.relayOff
     && frame !== null && selected !== undefined && loadedSrc === frame.src && image.current?.complete === true
     && image.current.naturalWidth > 0 && image.current.naturalHeight > 0
@@ -177,10 +183,12 @@ export function AgentBrowserPanel({
   }
   async function submitAddress(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault()
-    const url = addressFromDraft(address)
+    const input = event.currentTarget.elements.namedItem(`ego-address-${sessionId}-${tab.id}`)
+    const url = addressFromDraft(input instanceof HTMLInputElement ? input.value : address)
     if (url === null) { setAddressError(true); return }
     setAddressError(false)
     if (!await navigate(selected?.targetId, 'navigate', url)) notify('navigateFailed')
+    else setAddress(url)
   }
   async function move(action: 'back' | 'forward' | 'reload'): Promise<void> {
     if (selected && !await navigate(selected.targetId, action)) notify('navigateFailed')
@@ -202,7 +210,16 @@ export function AgentBrowserPanel({
           autoComplete="url" value={address} disabled={view.phase !== 'ready' || view.pending}
           placeholder={t('addressPlaceholder')} aria-invalid={addressError}
           onFocus={() => { setAddressEditing(true) }} onBlur={() => { setAddressEditing(false) }}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' && !event.nativeEvent.isComposing) {
+              event.preventDefault()
+              event.currentTarget.form?.requestSubmit()
+            }
+          }}
           onChange={(event) => { setAddress(event.target.value); setAddressError(false) }} />
+        <Button type="submit" size="sm" variant="toolbar" title={t('openAddress')}
+          aria-label={t('openAddress')} disabled={view.phase !== 'ready' || view.pending}
+          icon={<IconSendOutline14 />} />
       </form>
       <Button size="sm" variant="toolbar" className={css.refresh} title={t('openWindow')}
         aria-label={t('openWindow')} icon={<IconRightUpOutline16 size={14} />}
