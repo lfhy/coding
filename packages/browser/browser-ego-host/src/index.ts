@@ -90,6 +90,39 @@ export default class EgoBrowserHost extends Service {
    */
   toolDefinitions(): readonly ToolDefinition[] { return this.definitions }
 
+  /**
+   * 把 Agent 浏览器换成真实可见窗口（用户在面板里主动要求时使用）。
+   *
+   * 默认的无窗口模式无法完成登录扫码或人机验证，因此这一步由用户触发；
+   * 运行时的 `--open` 会把无窗口实例换成同 profile 的有窗口实例，标签页随
+   * profile 恢复。命令成功只表示请求被接受，具体页面仍以面板轮询为准。
+   * @returns 浏览器进程正常退出（退出码 0）时为 true。
+   */
+  async raiseWindow(): Promise<boolean> {
+    const env: NodeJS.ProcessEnv = { ...process.env }
+    if (env.EGO_LINUX_CHROME === undefined) {
+      const chrome = defaultChromePath()
+      if (chrome !== '') env.EGO_LINUX_CHROME = chrome
+    }
+    try {
+      const handle = this.ctx.subprocess.spawn({
+        argv: [process.execPath, CLI, '--open'],
+        cwd: process.cwd(),
+        env,
+        stdio: {
+          stdin: { data: '' },
+          stdout: { maxBytes: 4096 },
+          stderr: { maxBytes: 4096 },
+        },
+        graceMs: 30_000,
+      })
+      const outcome = await handle.done
+      return outcome.exitCode === 0
+    } catch {
+      return false
+    }
+  }
+
   /** 在执行入口记录活动历史，失败仍交给上游工具自己报告。 */
   private observe(definition: ToolDefinition): ToolDefinition {
     const execute = definition.execute.bind(definition)

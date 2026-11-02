@@ -10,6 +10,12 @@ import type { RawConfig, ResolvedConfig } from './types.ts'
 
 const backend = z.union(['auto', 'cdp', 'ffmpeg'])
 const profile = z.union(['low', 'balanced', 'high'])
+
+/**
+ * Label the page cursor carries by default. The model driving the browser is
+ * chosen per session, so the label names the role rather than a vendor.
+ */
+export const DEFAULT_CURSOR_NAME = 'Agent'
 const encoder = z.union([
   'auto', 'software', 'h264_mf', 'h264_nvenc', 'h264_qsv', 'h264_amf',
   'h264_videotoolbox', 'h264_vaapi',
@@ -28,6 +34,8 @@ const prefs = {
   residentExecutor: z.boolean().description('Reuse one resident `ego-browser --serve` process across ego_* calls: the first call pays startup, later calls skip it (~16ms). Off = spawn per call. A dead resident falls back to a fresh spawn automatically.'),
   residentIdleMin: z.number().min(0).max(1440).step(1).description('Stop the resident process after N minutes without an ego_* call (0 = keep it until the plugin unmounts). The browser itself is unaffected.'),
   chromePath: z.string().description('Path to Chrome/Chromium. Empty = auto-detect.'),
+  headless: z.boolean().description('Run the backing browser without a window: the workspace panel is the only view, and the browser cannot take focus from your work. Turn it off to watch a real window.'),
+  cursorName: z.string().description('Label drawn next to the agent cursor on the page. Empty = no label.'),
   captureBackend: backend.description('Capture backend: auto, cdp, or ffmpeg.'),
   streamProfile: profile.description('Capture quality profile.'),
   cdpFps: z.number().min(5).max(30).step(1).description('CDP preview FPS.'),
@@ -265,6 +273,12 @@ export function resolveConfig(config: RawConfig = {}): ResolvedConfig {
       : { fps: 20, width: 1280, bitrateKbps: 4000 }
   return {
     chromePath: typeof config.chromePath === 'string' ? config.chromePath : '',
+    // Default true: the agent browser belongs to the workspace panel. A real
+    // window would steal focus from whatever the user is doing, which is the
+    // reported complaint this default answers; the panel's raise action still
+    // opens one on demand for logins and human checks.
+    headless: typeof config.headless === 'boolean' ? config.headless : true,
+    cursorName: typeof config.cursorName === 'string' ? config.cursorName : DEFAULT_CURSOR_NAME,
     captureBackend: oneOf(config.captureBackend, ['auto', 'cdp', 'ffmpeg'], 'auto'),
     streamProfile: selectedProfile,
     cdpFps: finiteIn(config.cdpFps, 5, 30) ? config.cdpFps : legacyFps,

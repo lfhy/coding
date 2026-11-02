@@ -206,4 +206,24 @@ describe('Ego browser model tools', () => {
     expect(content(result)).toContain('result is too large')
     expect(content(result)).not.toContain('x'.repeat(100))
   })
+
+  it('reports the upstream failure reason so the model can correct itself', async () => {
+    const { call, host } = await setup([fixture('tabs')])
+    host.calls.mockRejectedValueOnce(new Error('targetId deadbeef is not open in this task space\n(open ids: abc)'))
+    const result = await call('tabs', { action: 'switch', targetId: 'deadbeef' })
+    expect(result.isError).toBe(true)
+    expect(content(result)).toContain('browser_tabs: browser operation failed')
+    expect(content(result)).toContain('targetId deadbeef is not open in this task space (open ids: abc)')
+  })
+
+  it('keeps the failure reason bounded and single-line', async () => {
+    const { call, host } = await setup([fixture('click')])
+    host.calls.mockRejectedValueOnce(new Error(`selector failed${'\nline'.repeat(200)}`))
+    const result = await call('click', { selector: 'button' })
+    expect(result.isError).toBe(true)
+    const text = content(result)
+    expect(text).toContain('browser_click: browser operation failed: selector failed line line')
+    expect(text).not.toContain('\nline\nline')
+    expect(text.length).toBeLessThanOrEqual(400)
+  })
 })

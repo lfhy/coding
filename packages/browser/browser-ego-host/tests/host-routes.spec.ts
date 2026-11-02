@@ -99,4 +99,17 @@ describe('会话浏览器 Host 路由', () => {
     }
     expect(spawns).not.toHaveBeenCalled()
   })
+
+  it('只为已存在的会话打开浏览器窗口，并拒绝无效会话', async () => {
+    const origin = await boot()
+    const post = (body: unknown): Promise<Response> => fetch(`${origin}/api/ego/window`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+    })
+    expect((await post({ sessionId: 'unknown' })).status).toBe(400)
+    expect((await post({})).status).toBe(400)
+    expect(spawns).not.toHaveBeenCalled()
+    // 会话有效时向浏览器进程发出 --open；fixture 的 spawn 会抛错，因此以失败告知。
+    expect((await post({ sessionId: session.id })).status).toBe(503)
+    expect(spawns).toHaveBeenCalledTimes(1)
+  })
 })

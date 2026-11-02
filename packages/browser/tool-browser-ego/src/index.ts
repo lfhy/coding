@@ -65,6 +65,22 @@ function bounded(value: unknown, name: string): void {
   }
 }
 
+/**
+ * 上游失败的简短原因，供模型自我修正用。
+ *
+ * 统一报“操作失败”会把可操作的信息（目标不在当前空间、选择器无效、能力缺失）
+ * 一起吞掉，模型只能盲目重试。这里只保留单行、限长的文本：足够指明原因，
+ * 又不会把页面内容、堆栈或本机路径带进上下文。
+ * @param error - 上游工具抛出的任意值。
+ * @returns 单行原因；没有可用文本时为空串。
+ */
+function failureDetail(error: unknown): string {
+  const message = error instanceof Error ? error.message : typeof error === 'string' ? error : ''
+  const line = message.replace(/\s+/gu, ' ').trim()
+  if (line === '') return ''
+  return line.length > 240 ? `${line.slice(0, 240)}…` : line
+}
+
 /** 远程工作区没有本机浏览器；在审批前后都拒绝，避免策略变化时落到本机。 */
 async function checkLocal(cwd: string | undefined, signal: AbortSignal, name: string): Promise<void> {
   signal.throwIfAborted()
@@ -113,9 +129,10 @@ async function run(ctx: Context, source: ToolDefinition, name: string, input: un
     throw new Error(`${name}: session permissions changed while awaiting approval`)
   }
   let value: unknown
-  try { value = await source.execute(args, exec) } catch {
+  try { value = await source.execute(args, exec) } catch (error) {
     exec.signal.throwIfAborted()
-    throw new Error(`${name}: browser operation failed; inspect the current page before retrying`)
+    const detail = failureDetail(error)
+    throw new Error(`${name}: browser operation failed${detail === '' ? '' : `: ${detail}`}; inspect the current page before retrying`)
   }
   bounded(value, name)
   if (name === 'browser_screenshot') {

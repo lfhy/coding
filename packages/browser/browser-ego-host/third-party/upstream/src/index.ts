@@ -531,6 +531,19 @@ export function resolveEgoEnv(cfg: Partial<ResolvedConfig>, { platform = process
   if (env.EGO_ISOLATE_SPACES === undefined && cfg?.isolateSpaces !== undefined) {
     env.EGO_ISOLATE_SPACES = cfg.isolateSpaces ? '1' : '0'
   }
+  // Where the agent browser lives is a product decision, so the configured
+  // value is applied after the platform probe above: a windowed browser would
+  // raise itself over the user's work on every navigation. Headless is a
+  // launch-time flag — a change applies to the next browser cold start.
+  if (env.EGO_LINUX_HEADLESS === undefined && cfg?.headless !== undefined) {
+    env.EGO_LINUX_HEADLESS = cfg.headless ? '1' : '0'
+  }
+  // The cursor label names the role, not the model vendor: the model route is
+  // chosen per session, and the overlay would otherwise claim a vendor the
+  // session may not be using. Empty means the runtime's own default.
+  if (env.EGO_LINUX_CURSOR_NAME === undefined && typeof cfg?.cursorName === 'string' && cfg.cursorName !== '') {
+    env.EGO_LINUX_CURSOR_NAME = cfg.cursorName
+  }
   return env
 }
 function describeStderr(stderr: string): string {
@@ -1278,6 +1291,90 @@ export const selectOptionScript = (selector: string, value: unknown): string =>
   `  for (const __one of __list) { const __r = await __pick(__one); __picked = Array.isArray(__r) ? __r : [__r] }\n` +
   `}\n` +
   `console.log('${SENTINEL}' + JSON.stringify({ ok: true, select: __sel, values: __picked }))\n`
+/**
+ * Page function that locates the first CSS match across open shadow roots and
+ * same-origin frames and returns its viewport centre.
+ *
+ * `page.locator(css)` only queries the top document, so a target inside a
+ * shadow root or an iframe is reported as "element not found" even though the
+ * snapshot shows it with a usable ref. Mouse helpers retry through this
+ * function after the native path fails, which keeps real CDP input (the page's
+ * own handlers still see trusted events) while covering both cases.
+ *
+ * Returns `{ ok: true, x, y }`, or `{ ok: false, reason }` with reason
+ * `invalid` (bad selector), `not-found`, `multiple` (ambiguous selector —
+ * the native path reports the same error), or `hidden` (zero-size box).
+ */
+const CSS_PIERCE_FN = `(selector) => {
+  const matches = []
+  let invalid = false
+  const walk = (root, offsetX, offsetY) => {
+    if (matches.length > 0 || invalid) return
+    let list
+    try { list = root.querySelectorAll(selector) } catch { invalid = true; return }
+    if (list.length > 0) {
+      for (const el of list) matches.push({ el, offsetX, offsetY })
+      return
+    }
+    for (const el of root.querySelectorAll('*')) {
+      if (el.shadowRoot) walk(el.shadowRoot, offsetX, offsetY)
+      if (matches.length > 0 || invalid) return
+      if (el.tagName === 'IFRAME' || el.tagName === 'FRAME') {
+        let doc = null
+        try { doc = el.contentDocument } catch { doc = null }
+        if (doc && doc.documentElement) {
+          const rect = el.getBoundingClientRect()
+          walk(doc, offsetX + rect.left, offsetY + rect.top)
+          if (matches.length > 0 || invalid) return
+        }
+      }
+    }
+  }
+  const locate = () => { matches.length = 0; invalid = false; walk(document, 0, 0) }
+  locate()
+  if (invalid) return { ok: false, reason: 'invalid' }
+  if (matches.length === 0) return { ok: false, reason: 'not-found' }
+  if (matches.length > 1) return { ok: false, reason: 'multiple', count: matches.length }
+  try { matches[0].el.scrollIntoView({ block: 'center', inline: 'center' }) } catch {}
+  // Scrolling can move an enclosing iframe, so the offsets are recomputed.
+  locate()
+  if (matches.length !== 1) return { ok: false, reason: 'not-found' }
+  const found = matches[0]
+  const rect = found.el.getBoundingClientRect()
+  if (!(rect.width > 0) || !(rect.height > 0)) return { ok: false, reason: 'hidden' }
+  return { ok: true, x: found.offsetX + rect.left + rect.width / 2, y: found.offsetY + rect.top + rect.height / 2 }
+}`
+
+/**
+ * Native locator call for a CSS target, with one coordinate retry through
+ * `CSS_PIERCE_FN`.
+ *
+ * The retry runs only after the native path threw, so ordinary selectors keep
+ * their current behaviour. A selector that matched nothing, or matched several
+ * elements, still fails with the original error: the fallback must never
+ * silently act on a different element.
+ *
+ * @param kind - Which pointer action to perform.
+ * @param selector - CSS selector supplied by the caller.
+ * @param label - Optional progress label shown by the watch panel.
+ * @returns Script lines that perform the action.
+ */
+function cssPierceFallback(kind: 'click' | 'dblclick' | 'hover', selector: string, label: string): string {
+  const native = kind === 'hover'
+    ? `await page.locator(${j(selector)}).hover()`
+    : `await page.locator(${j(selector)}).${kind}(${label === '' ? '' : `{ label: ${j(label)} }`})`
+  const retry = kind === 'hover'
+    ? `await page.mouse.move(__cssPoint.x, __cssPoint.y)`
+    : `await page.mouse.${kind}(__cssPoint.x, __cssPoint.y)`
+  return `let __cssPoint = null
+try {
+  ${native}
+} catch (__cssErr) {
+  try { __cssPoint = await page.evaluate(${CSS_PIERCE_FN}, ${j(selector)}) } catch { __cssPoint = null }
+  if (!__cssPoint || __cssPoint.ok !== true) throw __cssErr
+  ${retry}
+}`
+}
 function renderText(_args: unknown, value: unknown): unknown[] {
   const v = value as Record<string, unknown> | null
   if (
@@ -1393,7 +1490,7 @@ export function apply(ctx: EgoContext, config: RawConfig = {}): void {
   // entry + user-layer overrides) feeds `chromePath` + cast settings into cfg
   // via getters so every spawn reads the latest value without re-registration.
   const settingKeys = [
-    'chromePath', 'captureBackend', 'streamProfile', 'cdpFps', 'cdpQuality',
+    'chromePath', 'headless', 'cursorName', 'captureBackend', 'streamProfile', 'cdpFps', 'cdpQuality',
     'cdpMaxWidth', 'cdpBackstopIntervalMs', 'ffmpegFps', 'ffmpegMaxWidth', 'ffmpegBitrateKbps',
     'ffmpegEncoder', 'ffmpegPath', 'githubMirror', 'egoCliArgs', 'chromeArgs',
     'castFpsCap', 'screencastQuality', 'screencastMaxWidth', 'backstopIntervalMs',
@@ -2208,13 +2305,7 @@ function registerActionTools(ctx: EgoContext, cfg: EgoRuntimeConfig, reg: (tool:
         const dbl = bool(args.double, false)
         let action
         if (sel !== '') {
-          const labelOpt =
-            str(args.label, '') !== ''
-              ? `{ label: ${j(str(args.label, ''))} }`
-              : ''
-          action = dbl
-            ? `await page.locator(${j(sel)}).dblclick(${labelOpt})`
-            : `await page.locator(${j(sel)}).click(${labelOpt})`
+          action = cssPierceFallback(dbl ? 'dblclick' : 'click', sel, str(args.label, ''))
         } else {
           action = dbl
             ? `await page.mouse.dblclick(${x}, ${y})`
@@ -2402,23 +2493,42 @@ function registerActionTools(ctx: EgoContext, cfg: EgoRuntimeConfig, reg: (tool:
         // of a raw ReferenceError/TypeError inside the heredoc.
         const fail = (message: string): string =>
           `console.log('${SENTINEL}' + JSON.stringify({ ok: false, error: ${j(message)} }))\n`
+        // `space` declares `task` once, ahead of the guard. Repeating it inside
+        // either branch produced `Identifier 'task' has already been declared`,
+        // which made every browser_tabs action fail as a syntax error.
         const guard = (expr: string, missing: string, body: string): string =>
-          `${space}if (${expr}) {\n${fail(`runtime capability missing: ${missing}; use the bundled runtime or extend your bridge with it`)}${space}} else {\n${body}${space}}\n`
+          `${space}if (${expr}) {\n${fail(`runtime capability missing: ${missing}; use the bundled runtime or extend your bridge with it`)}} else {\n${body}}\n`
         const noBrowser = (cap: string): string =>
           `typeof browser === 'undefined' || typeof browser.${cap} !== 'function'`
+        // A targetId from an earlier call can name a tab that this task space
+        // no longer holds (the browser restarted, the tab was closed, or the
+        // id came from another space). Read the space's tabs first so the
+        // failure names the ids that actually exist instead of a transport
+        // level error the caller cannot act on.
+        const knownTabs = `const __pre = await browser.listTabs()\n`
+          + `const __openIds = __pre.map(t => t.targetId).join(', ') || 'none'\n`
+        const withKnownTarget = (target: string, body: string): string =>
+          `if (!__pre.some(t => t.targetId === ${target})) {\n` +
+          `  console.log('${SENTINEL}' + JSON.stringify({ ok: false, error: 'targetId ' + ${target} + ' is not open in this task space (open ids: ' + __openIds + '); call action=list and reuse one of them' }))\n` +
+          `} else {\n${body}}\n`
         if (action === 'switch') {
           if (!targetId) return `${space}${fail('targetId is required for action=switch')}`
           return guard(
             `${noBrowser('switchTab')} || ${noBrowser('listTabs')}`,
             'browser.switchTab / browser.listTabs',
-            `${space}await browser.switchTab(${j(targetId)})\n${done(`, switched: ${j(targetId)}`)}`,
+            `${knownTabs}${withKnownTarget(j(targetId),
+              `await browser.switchTab(${j(targetId)})\n${done(`, switched: ${j(targetId)}`)}`)}`,
           )
         }
         if (action === 'open') {
           return guard(
             `${noBrowser('listTabs')} || typeof ego === 'undefined' || typeof ego.createTab !== 'function'`,
             'ego.createTab / browser.listTabs',
-            `${space}const __created = await ego.createTab(${j(url || 'about:blank')})\n${done(`, created: __created && __created.targetId || null`)}`,
+            `let __created = null\n` +
+            `try { __created = await ego.createTab(${j(url || 'about:blank')}) } catch (__openErr) {\n` +
+            `  console.log('${SENTINEL}' + JSON.stringify({ ok: false, error: 'could not open a tab: ' + String((__openErr && __openErr.message) || __openErr) }))\n` +
+            `}\n` +
+            `if (__created) {\n${done(`, created: __created && __created.targetId || null`)}}\n`,
           )
         }
         if (action === 'close') {
@@ -2426,11 +2536,12 @@ function registerActionTools(ctx: EgoContext, cfg: EgoRuntimeConfig, reg: (tool:
           return guard(
             `${noBrowser('closeTab')} || ${noBrowser('listTabs')}`,
             'browser.closeTab / browser.listTabs',
-            `${space}await browser.closeTab(${j(targetId)})\n${done(`, closed: ${j(targetId)}`)}`,
+            `${knownTabs}${withKnownTarget(j(targetId),
+              `await browser.closeTab(${j(targetId)})\n${done(`, closed: ${j(targetId)}`)}`)}`,
           )
         }
         if (action !== 'list') return `${space}${fail(`unknown action: ${action}`)}`
-        return guard(noBrowser('listTabs'), 'browser.listTabs', `${space}${done('')}`)
+        return guard(noBrowser('listTabs'), 'browser.listTabs', `${done('')}`)
       },
       // Tab switches must move the per-space cursor too, otherwise the next
       // page tool would re-pin the tab this call just left.
@@ -2661,7 +2772,7 @@ function registerActionTools(ctx: EgoContext, cfg: EgoRuntimeConfig, reg: (tool:
         return (
           `${useSpace(str(args.space, cfg.defaultSpace))}${ensureRealTab()}` +
           (sel !== ''
-            ? `await page.locator(${j(sel)}).hover()\n`
+            ? `${cssPierceFallback('hover', sel, '')}\n`
             : `await page.mouse.move(${args.x}, ${args.y})\n`) +
           `console.log('${SENTINEL}' + JSON.stringify({ ok: true }))\n`
         )

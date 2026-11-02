@@ -2559,6 +2559,7 @@ var HUMAN_CHECK_PROBE = `(() => {
 
 // packages/browser/browser-ego-host/third-party/upstream/src/config.ts
 import z from "@deepseek-ai/schemastery";
+var DEFAULT_CURSOR_NAME = "Agent";
 var backend = z.union(["auto", "cdp", "ffmpeg"]);
 var profile = z.union(["low", "balanced", "high"]);
 var encoder = z.union([
@@ -2580,6 +2581,8 @@ var prefs = {
   residentExecutor: z.boolean().description("Reuse one resident `ego-browser --serve` process across ego_* calls: the first call pays startup, later calls skip it (~16ms). Off = spawn per call. A dead resident falls back to a fresh spawn automatically."),
   residentIdleMin: z.number().min(0).max(1440).step(1).description("Stop the resident process after N minutes without an ego_* call (0 = keep it until the plugin unmounts). The browser itself is unaffected."),
   chromePath: z.string().description("Path to Chrome/Chromium. Empty = auto-detect."),
+  headless: z.boolean().description("Run the backing browser without a window: the workspace panel is the only view, and the browser cannot take focus from your work. Turn it off to watch a real window."),
+  cursorName: z.string().description("Label drawn next to the agent cursor on the page. Empty = no label."),
   captureBackend: backend.description("Capture backend: auto, cdp, or ffmpeg."),
   streamProfile: profile.description("Capture quality profile."),
   cdpFps: z.number().min(5).max(30).step(1).description("CDP preview FPS."),
@@ -2752,6 +2755,8 @@ function resolveConfig(config = {}) {
   const profileDefaults = selectedProfile === "low" ? { fps: 15, width: 960, bitrateKbps: 2e3 } : selectedProfile === "high" ? { fps: 30, width: 1600, bitrateKbps: 8e3 } : { fps: 20, width: 1280, bitrateKbps: 4e3 };
   return {
     chromePath: typeof config.chromePath === "string" ? config.chromePath : "",
+    headless: typeof config.headless === "boolean" ? config.headless : true,
+    cursorName: typeof config.cursorName === "string" ? config.cursorName : DEFAULT_CURSOR_NAME,
     captureBackend: oneOf(config.captureBackend, ["auto", "cdp", "ffmpeg"], "auto"),
     streamProfile: selectedProfile,
     cdpFps: finiteIn(config.cdpFps, 5, 30) ? config.cdpFps : legacyFps,
@@ -4143,6 +4148,12 @@ function resolveEgoEnv(cfg, { platform = process.platform, baseEnv = process.env
   if (env.EGO_ISOLATE_SPACES === void 0 && cfg?.isolateSpaces !== void 0) {
     env.EGO_ISOLATE_SPACES = cfg.isolateSpaces ? "1" : "0";
   }
+  if (env.EGO_LINUX_HEADLESS === void 0 && cfg?.headless !== void 0) {
+    env.EGO_LINUX_HEADLESS = cfg.headless ? "1" : "0";
+  }
+  if (env.EGO_LINUX_CURSOR_NAME === void 0 && typeof cfg?.cursorName === "string" && cfg.cursorName !== "") {
+    env.EGO_LINUX_CURSOR_NAME = cfg.cursorName;
+  }
   return env;
 }
 function describeStderr(stderr) {
@@ -4558,6 +4569,56 @@ if (!Array.isArray(__picked) || __picked.length === 0) {
 }
 console.log('${SENTINEL}' + JSON.stringify({ ok: true, select: __sel, values: __picked }))
 `;
+const CSS_PIERCE_FN = `(selector) => {
+  const matches = []
+  let invalid = false
+  const walk = (root, offsetX, offsetY) => {
+    if (matches.length > 0 || invalid) return
+    let list
+    try { list = root.querySelectorAll(selector) } catch { invalid = true; return }
+    if (list.length > 0) {
+      for (const el of list) matches.push({ el, offsetX, offsetY })
+      return
+    }
+    for (const el of root.querySelectorAll('*')) {
+      if (el.shadowRoot) walk(el.shadowRoot, offsetX, offsetY)
+      if (matches.length > 0 || invalid) return
+      if (el.tagName === 'IFRAME' || el.tagName === 'FRAME') {
+        let doc = null
+        try { doc = el.contentDocument } catch { doc = null }
+        if (doc && doc.documentElement) {
+          const rect = el.getBoundingClientRect()
+          walk(doc, offsetX + rect.left, offsetY + rect.top)
+          if (matches.length > 0 || invalid) return
+        }
+      }
+    }
+  }
+  const locate = () => { matches.length = 0; invalid = false; walk(document, 0, 0) }
+  locate()
+  if (invalid) return { ok: false, reason: 'invalid' }
+  if (matches.length === 0) return { ok: false, reason: 'not-found' }
+  if (matches.length > 1) return { ok: false, reason: 'multiple', count: matches.length }
+  try { matches[0].el.scrollIntoView({ block: 'center', inline: 'center' }) } catch {}
+  locate()
+  if (matches.length !== 1) return { ok: false, reason: 'not-found' }
+  const found = matches[0]
+  const rect = found.el.getBoundingClientRect()
+  if (!(rect.width > 0) || !(rect.height > 0)) return { ok: false, reason: 'hidden' }
+  return { ok: true, x: found.offsetX + rect.left + rect.width / 2, y: found.offsetY + rect.top + rect.height / 2 }
+}`;
+function cssPierceFallback(kind, selector, label) {
+  const native = kind === "hover" ? `await page.locator(${j(selector)}).hover()` : `await page.locator(${j(selector)}).${kind}(${label === "" ? "" : `{ label: ${j(label)} }`})`;
+  const retry = kind === "hover" ? `await page.mouse.move(__cssPoint.x, __cssPoint.y)` : `await page.mouse.${kind}(__cssPoint.x, __cssPoint.y)`;
+  return `let __cssPoint = null
+try {
+  ${native}
+} catch (__cssErr) {
+  try { __cssPoint = await page.evaluate(${CSS_PIERCE_FN}, ${j(selector)}) } catch { __cssPoint = null }
+  if (!__cssPoint || __cssPoint.ok !== true) throw __cssErr
+  ${retry}
+}`;
+}
 function renderText(_args, value) {
   const v = value;
   if (v !== null && typeof v === "object" && v.ok === true && typeof v.text === "string") {
@@ -4629,6 +4690,8 @@ function defineEgoTool(ctx, cfg, opts) {
 function apply(ctx, config = {}) {
   const settingKeys = [
     "chromePath",
+    "headless",
+    "cursorName",
     "captureBackend",
     "streamProfile",
     "cdpFps",
@@ -5357,8 +5420,7 @@ console.log('${SENTINEL}' + JSON.stringify({ ok: true, reused: !!__existing, pag
         const dbl = bool(args.double, false);
         let action;
         if (sel !== "") {
-          const labelOpt = str(args.label, "") !== "" ? `{ label: ${j(str(args.label, ""))} }` : "";
-          action = dbl ? `await page.locator(${j(sel)}).dblclick(${labelOpt})` : `await page.locator(${j(sel)}).click(${labelOpt})`;
+          action = cssPierceFallback(dbl ? "dblclick" : "click", sel, str(args.label, ""));
         } else {
           action = dbl ? `await page.mouse.dblclick(${x}, ${y})` : `await page.mouse.click(${x}, ${y})`;
         }
@@ -5516,25 +5578,39 @@ console.log('${SENTINEL}' + JSON.stringify({ ok: true${extra}, tabs: __tabs }))
         const fail = (message) => `console.log('${SENTINEL}' + JSON.stringify({ ok: false, error: ${j(message)} }))
 `;
         const guard = (expr, missing, body) => `${space}if (${expr}) {
-${fail(`runtime capability missing: ${missing}; use the bundled runtime or extend your bridge with it`)}${space}} else {
-${body}${space}}
+${fail(`runtime capability missing: ${missing}; use the bundled runtime or extend your bridge with it`)}} else {
+${body}}
 `;
         const noBrowser = (cap) => `typeof browser === 'undefined' || typeof browser.${cap} !== 'function'`;
+        const knownTabs = `const __pre = await browser.listTabs()
+const __openIds = __pre.map(t => t.targetId).join(', ') || 'none'
+`;
+        const withKnownTarget = (target, body) => `if (!__pre.some(t => t.targetId === ${target})) {
+  console.log('${SENTINEL}' + JSON.stringify({ ok: false, error: 'targetId ' + ${target} + ' is not open in this task space (open ids: ' + __openIds + '); call action=list and reuse one of them' }))
+} else {
+${body}}
+`;
         if (action === "switch") {
           if (!targetId) return `${space}${fail("targetId is required for action=switch")}`;
           return guard(
             `${noBrowser("switchTab")} || ${noBrowser("listTabs")}`,
             "browser.switchTab / browser.listTabs",
-            `${space}await browser.switchTab(${j(targetId)})
-${done(`, switched: ${j(targetId)}`)}`
+            `${knownTabs}${withKnownTarget(j(targetId),
+              `await browser.switchTab(${j(targetId)})
+${done(`, switched: ${j(targetId)}`)}`)}`
           );
         }
         if (action === "open") {
           return guard(
             `${noBrowser("listTabs")} || typeof ego === 'undefined' || typeof ego.createTab !== 'function'`,
             "ego.createTab / browser.listTabs",
-            `${space}const __created = await ego.createTab(${j(url || "about:blank")})
-${done(`, created: __created && __created.targetId || null`)}`
+            `let __created = null
+try { __created = await ego.createTab(${j(url || "about:blank")}) } catch (__openErr) {
+  console.log('${SENTINEL}' + JSON.stringify({ ok: false, error: 'could not open a tab: ' + String((__openErr && __openErr.message) || __openErr) }))
+}
+if (__created) {
+${done(`, created: __created && __created.targetId || null`)}}
+`
           );
         }
         if (action === "close") {
@@ -5542,12 +5618,13 @@ ${done(`, created: __created && __created.targetId || null`)}`
           return guard(
             `${noBrowser("closeTab")} || ${noBrowser("listTabs")}`,
             "browser.closeTab / browser.listTabs",
-            `${space}await browser.closeTab(${j(targetId)})
-${done(`, closed: ${j(targetId)}`)}`
+            `${knownTabs}${withKnownTarget(j(targetId),
+              `await browser.closeTab(${j(targetId)})
+${done(`, closed: ${j(targetId)}`)}`)}`
           );
         }
         if (action !== "list") return `${space}${fail(`unknown action: ${action}`)}`;
-        return guard(noBrowser("listTabs"), "browser.listTabs", `${space}${done("")}`);
+        return guard(noBrowser("listTabs"), "browser.listTabs", `${done("")}`);
       },
       // Tab switches must move the per-space cursor too, otherwise the next
       // page tool would re-pin the tab this call just left.
@@ -5747,7 +5824,7 @@ console.log('${SENTINEL}' + JSON.stringify({ ok: true, key: ${j(k)} }))
         if (sel === "" && !hasXY)
           return `console.log('${SENTINEL}' + JSON.stringify({ ok: false, reason: 'ego_hover: provide selector or both x and y' }))
 `;
-        return `${useSpace(str(args.space, cfg.defaultSpace))}${ensureRealTab()}` + (sel !== "" ? `await page.locator(${j(sel)}).hover()
+        return `${useSpace(str(args.space, cfg.defaultSpace))}${ensureRealTab()}` + (sel !== "" ? `${cssPierceFallback("hover", sel, "")}
 ` : `await page.mouse.move(${args.x}, ${args.y})
 `) + `console.log('${SENTINEL}' + JSON.stringify({ ok: true }))
 `;

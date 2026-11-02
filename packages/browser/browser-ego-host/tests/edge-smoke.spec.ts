@@ -25,7 +25,15 @@ describe.skipIf(process.env.DSH_EGO_EDGE_SMOKE !== '1' || !existsSync(EDGE))('Ed
     process.env.EGO_LINUX_HEADLESS = '1'
     const server = createServer((_req, res) => {
       res.setHeader('content-type', 'text/html; charset=utf-8')
-      res.end('<!doctype html><title>Ego Test</title><main>Session-only fixture</main>')
+      res.end(`<!doctype html><title>Ego Test</title>
+<main>Session-only fixture</main>
+<button id="plain">Plain</button>
+<div id="shadow-host"></div>
+<iframe id="frame" srcdoc="<button id='inner'>Inner</button>"></iframe>
+<script>
+const root = document.getElementById('shadow-host').attachShadow({ mode: 'open' })
+root.innerHTML = '<button id="shadow-btn">Shadow</button>'
+</script>`)
     })
     const origin = await new Promise<string>(resolve => server.listen(0, '127.0.0.1', () => {
       resolve(`http://127.0.0.1:${(server.address() as AddressInfo).port}`)
@@ -70,6 +78,14 @@ describe.skipIf(process.env.DSH_EGO_EDGE_SMOKE !== '1' || !existsSync(EDGE))('Ed
       expect((await call('ego_snapshot', {})).text).toContain('Session-only fixture')
       expect((await call('ego_tabs', {})).tabs).toHaveLength(1)
       expect((await call('ego_tabs', {}, second)).tabs).toHaveLength(1)
+      // CSS 选择器只在顶层文档查询；命中 open shadow root 与同源 iframe 时回退到坐标点击。
+      expect((await call('ego_click', { selector: '#shadow-btn' })).ok).toBe(true)
+      expect((await call('ego_hover', { selector: '#shadow-btn' })).ok).toBe(true)
+      expect((await call('ego_click', { selector: '#inner' })).ok).toBe(true)
+      await expect(call('ego_click', { selector: '#missing-target' })).rejects.toThrow(/Element not found/u)
+      // 旧 targetId 必须指出当前空间真正存在的 id，而不是只报告操作失败。
+      await expect(call('ego_tabs', { action: 'switch', targetId: 'deadbeef' }))
+        .rejects.toThrow(/not open in this task space/u)
       const screenshot = await call('ego_screenshot', { path: join(root, 'image.png') })
       expect(screenshot).toEqual({ ok: true, path: join(root, 'image.png') })
       expect((await stat(join(root, 'image.png'))).size).toBeGreaterThan(50)

@@ -139,6 +139,10 @@ export interface ResolvedConfig {
   /** Minutes without an ego_* call before the resident process is stopped. 0 = keep until unmount. */
   residentIdleMin: number
   chromePath: string
+  /** True = run the backing browser without a window, so only the watch panel shows it. */
+  headless: boolean
+  /** Label the page cursor carries, e.g. "Agent". */
+  cursorName: string
   captureBackend: 'auto' | 'cdp' | 'ffmpeg'
   streamProfile: 'low' | 'balanced' | 'high'
   cdpFps: number

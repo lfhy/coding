@@ -231,6 +231,18 @@ export function installRoutes(ctx: Context): void {
       const accepted = await workerPost(port, '/api/close', { targetId: body.targetId })
       send(res, accepted ? 200 : 503, { ok: accepted })
     })
+    // 用户主动要求时才换上有窗口的浏览器；这是唯一会把窗口带到前台的入口。
+    // 路径避开上游的 /api/ego/raise：上游在同一 Host 上已注册那条全局路由，
+    // 同名注册会抛错并连带撤销本文件其余会话路由。
+    register('/api/ego/window', async (req, res) => {
+      if (req.method !== 'POST') { send(res, 405, { ok: false }); return }
+      const body = object(await readBody(req))
+      if (!body || !validId(body.sessionId) || !webCtx.sessions.get(body.sessionId as SessionId)) {
+        send(res, 400, { ok: false }); return
+      }
+      const raised = await webCtx.egoBrowser.raiseWindow()
+      send(res, raised ? 200 : 503, { ok: raised })
+    })
     register('/api/ego/status', (req, res) => {
       if (req.method !== 'GET') { send(res, 405, { ok: false }); return }
       const sessionId = getSession(webCtx, req, res)
