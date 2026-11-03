@@ -1,8 +1,8 @@
 /** 工作台会话面板只呈现经验证的页面与画面；人工输入由 Host 再次授权。 */
 import { useEffect, useRef, useState, type ClipboardEvent, type CompositionEvent, type FormEvent, type KeyboardEvent, type MouseEvent, type WheelEvent } from 'react'
 import {
-  IconChevronLeftOutline14, IconChevronRightOutline14,
-  IconRefreshOutline16, IconRightUpOutline16, IconWarningOutline16,
+  Icon, IconChevronLeftOutline14, IconChevronRightOutline14,
+  IconRefreshOutline16, IconWarningOutline16,
 } from 'coding-client-ui-icons'
 import { Button, Input, Toast, Tooltip } from 'coding-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime, HostObservable } from 'coding-client-ui-slots'
@@ -239,7 +239,7 @@ export function AgentBrowserPanel({
       </form>
       <Tooltip label={t('openWindow')} side="bottom"><button type="button" className={css.iconButton}
         aria-label={t('openWindow')} onClick={() => { void openWindow() }}>
-        <IconRightUpOutline16 size={16} /></button></Tooltip>
+        <Icon name="open-window" size={16} /></button></Tooltip>
     </div>
     {addressError && <p className={css.addressError} role="alert">{t('invalidAddress')}</p>}
     <div className={css.stage}>

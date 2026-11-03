@@ -242,8 +242,6 @@ describe('Agent 浏览器工作台页面', () => {
   it('只能在用户点击后打开浏览器窗口，失败不显示响应细节', async () => {
     const panel = mount(ready)
     const button = screen.getByRole('button', { name: 'Open in a browser window (for sign-in and human checks)' })
-    // 图标必须是方画布的 16px 字形：窄画布图形塞进方框会偏离按钮中心，读起来像歪的。
-    expect(button.querySelector('svg')?.getAttribute('viewBox')).toBe('0 0 16 16')
     expect(panel.raiseWindow).not.toHaveBeenCalled()
     await act(async () => { fireEvent.click(button) })
     expect(panel.raiseWindow).toHaveBeenCalledTimes(1)

@@ -63,4 +63,17 @@ describe('语义图标适配', () => {
     expect(reasoning.querySelector('path')?.getAttribute('d'))
       .toBe(original.container.querySelector('path')?.getAttribute('d'))
   })
+
+  it('外部窗口语义使用设计系统的内置图形，按字号缩放并隐藏于无障碍树', () => {
+    const view = render(<Icon name="open-window" size={18} className="toolbar-icon" />)
+    const wrapper = view.container.querySelector('.toolbar-icon') as HTMLElement
+    const svg = wrapper.querySelector('svg') as SVGElement
+    // 图形来自图标库的 24px 画布，跟随字号缩放；调用方只给语义和尺寸。
+    expect(wrapper.classList.contains('semi-icon')).toBe(true)
+    expect(wrapper.style.fontSize).toBe('18px')
+    expect(wrapper.getAttribute('aria-hidden')).toBe('true')
+    expect(svg.getAttribute('viewBox')).toBe('0 0 24 24')
+    expect(svg.getAttribute('width')).toBe('1em')
+    expect(svg.querySelectorAll('path').length).toBeGreaterThan(0)
+  })
 })
