@@ -20,6 +20,7 @@
 - **页面光标标签**：`cursorName` 默认 `Agent`，通过 `EGO_LINUX_CURSOR_NAME` 传给运行时；模型渠道是逐会话选择的，因此默认标签只描述角色，不写具体厂商。面板的窗口入口复用同一份环境（由上游按当前设置计算），因此换成可见窗口后光标标签与启动模式仍与配置一致。
 - **CSS 选择器范围**：`ego_click`、`ego_hover` 对 CSS 目标先在顶层文档定位；找不到时回退到穿透 open shadow root 与同源 iframe 的查找，再按元素中心发真实鼠标事件。多匹配、无效选择器与不可见目标仍以原错误失败，不会改点别的元素。
 - **标签页错误**：`ego_tabs` 的 `switch`/`close` 先读取当前任务空间实际存在的 id；目标不属于该空间时返回可操作的说明与现存 id 列表，`open` 失败返回底层原因。脚本只声明一次空间变量，避免整条工具调用因重复声明而失败。
+- **响应式与移动端验证**：视口覆盖由 CDP 会话语义决定，随一次 `ego-browser nodejs` 调用结束失效，因此 `ego_cdp` 单独设置 `Emulation.setDeviceMetricsOverride` 对后续调用和截图都不生效。Agent 要在别的宽度或 `mobile` 下验证，必须在同一次 `ego_script`／`ego_js` 调用里设置覆盖再取测量或 `page.screenshot`，截图尺寸是 CSS 像素（`deviceScaleFactor` 只影响布局与 `devicePixelRatio`）；面板画面与单帧由另一个 worker 的会话采集，不受该覆盖影响。设置卡的 `viewportWidth`／`viewportHeight` 则相反：每次工具调用都会在切换标签后重放固定视口，适合长时间固定在某一宽度工作。
 
 ## 验证
 
