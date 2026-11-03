@@ -47,7 +47,7 @@
 
 ## 表面、阴影与模态框
 
-普通内容留在 `bg-base` 或 `bg-layer-1`，面板使用 `bg-layer-2`，菜单等更高层级内容使用 `bg-layer-3`。会话概览信息卡与左侧边栏共用 `--dsw-specific-sidebar-fill`，随主题与壁纸保持同色；层级由表面和上下文共同表达，不通过多重内阴影堆出拟态效果。
+普通内容留在 `bg-base` 或 `bg-layer-1`，面板使用 `bg-layer-2`，菜单等更高层级内容使用 `bg-layer-3`。会话概览信息卡沿用对话页底色 `--dsw-alias-bg-base`，随主题与壁纸一起变化；层级由表面和上下文共同表达，不通过多重内阴影堆出拟态效果。
 
 模态框使用共享 [`Modal.module.css`](ui-primitives/src/Modal.module.css) 的全视口遮罩、`--dsw-mask-blur`、24px 圆角和 `--dsw-shadow-lv3`。浅色主题的 `border-inverted` 可呈透明；暗色主题保留 token 提供的细边界。模态层 z-index 为 1000，遮罩点击和 Escape 的关闭行为由拥有者明确决定。
 

@@ -18,9 +18,9 @@
   padding: 16px;
   border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 12px;
-  background: var(--dsw-specific-sidebar-fill);
+  background: var(--dsw-alias-bg-base);
   box-shadow: var(--dsw-shadow-lv1);
-  /* 卡片滚动时使用与侧栏同级表面匹配的滚动条。 */
+  /* 卡片沿用对话列底色，主题与壁纸切换时随页面一起变化；滚动条取同级表面。 */
   --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
   --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
   pointer-events: auto;
