@@ -141,6 +141,31 @@ describe('会话画面与人工输入', () => {
     expect(await controller.send('first', click)).toBe(false)
   })
 
+  it('把面板尺寸上报给 Host，同一页面同一尺寸只发一次且越界或隐藏时拒绝', async () => {
+    const { controller, fetcher, streams } = fixture(vi.fn(async (url: string, _init?: RequestInit) => {
+      if (url === '/api/ego/viewport') return Response.json({ ok: true, viewport: { width: 900, height: 640 } })
+      if (url.startsWith('/api/ego/frame?')) return new Response(null, { status: 404 })
+      return Response.json({ ok: true, spaces: [first, second] })
+    }))
+    expect(await controller.resize('first', 900, 640)).toBe(false)
+    controller.show(true)
+    await vi.waitFor(() => { expect(controller.view.getSnapshot().phase).toBe('ready') })
+    streams[0]?.emit('frame', { targetId: 'first', data: 'YWJj', vw: 400, vh: 300, ts: 1 })
+    expect(await controller.resize('other', 900, 640)).toBe(false)
+    expect(await controller.resize('first', 100, 640)).toBe(false)
+    expect(await controller.resize('first', 900, 640)).toBe(true)
+    expect(fetcher).toHaveBeenCalledWith('/api/ego/viewport', expect.objectContaining({
+      body: JSON.stringify({ sessionId: 'session-one', targetId: 'first', width: 900, height: 640 }),
+    }))
+    const calls = (fetcher as unknown as { mock: { calls: unknown[][] } }).mock.calls.filter(call => call[0] === '/api/ego/viewport')
+    expect(calls).toHaveLength(1)
+    expect(await controller.resize('first', 900, 640)).toBe(true)
+    expect((fetcher as unknown as { mock: { calls: unknown[][] } }).mock.calls.filter(call => call[0] === '/api/ego/viewport')).toHaveLength(1)
+    expect(await controller.resize('first', 1000, 700)).toBe(true)
+    controller.show(false)
+    expect(await controller.resize('first', 1100, 700)).toBe(false)
+  })
+
   it('连续输入保持画面可聚焦，按顺序投递点击和文字', async () => {
     const pending: Array<() => void> = []
     const sent: string[] = []

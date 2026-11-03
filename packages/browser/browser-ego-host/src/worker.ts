@@ -82,6 +82,29 @@ export async function workerHover(port: number, body: { targetId: string; x: num
   } catch { return null }
 }
 
+/** 面板尺寸 → 真实窗口：只转发已核验目标与边界内尺寸，回包只取夹紧后的视口。 */
+export async function workerResize(
+  port: number,
+  body: { targetId: string; width: number; height: number },
+): Promise<{ width: number; height: number } | null> {
+  try {
+    const response = await fetch(`http://127.0.0.1:${port}/api/window-size`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body), signal: AbortSignal.timeout(4000),
+    })
+    const result: unknown = await response.json()
+    if (!response.ok || result === null || typeof result !== 'object' || !('viewport' in result)) return null
+    const viewport = (result as { viewport?: unknown }).viewport
+    if (viewport === null || typeof viewport !== 'object') return null
+    const width = (viewport as { width?: unknown }).width
+    const height = (viewport as { height?: unknown }).height
+    if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height)) return null
+    if ((width as number) < 320 || (width as number) > 3840) return null
+    if ((height as number) < 200 || (height as number) > 2160) return null
+    return { width: width as number, height: height as number }
+  } catch { return null }
+}
+
 /** 输入仅在上层完整校验与归属复核通过后发送封闭字段。 */
 export async function workerInput(port: number, body: Record<string, unknown>): Promise<boolean> {
   try {

@@ -114,6 +114,7 @@ export function apply(ctx: ClientContext): void {
           raiseWindow: () => controller.raiseWindow(),
           send: (targetId, input) => controller.send(targetId, input),
           hover: (targetId, x, y) => controller.hover(targetId, x, y),
+          resize: (targetId, width, height) => controller.resize(targetId, width, height),
         }
       },
     }, AgentBrowserPanel)

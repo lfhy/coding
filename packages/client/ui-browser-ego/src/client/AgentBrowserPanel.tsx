@@ -28,6 +28,8 @@ export interface AgentBrowserInjected {
   raiseWindow: () => Promise<boolean>
   send: BrowserEgoController['send']
   hover: BrowserEgoController['hover']
+  /** 把面板内容区尺寸同步给 Host：浏览器窗口按面板大小重排，画面因此铺满面板。 */
+  resize: BrowserEgoController['resize']
 }
 
 export type AgentBrowserProps = PropsRuntime<'sidebar.right.pane.tab'> & PropsLocale<typeof NS>
@@ -61,7 +63,7 @@ function addressFromDraft(draft: string): string | null {
  */
 export function AgentBrowserPanel({
   sessionId, useTabInfo, useBrowserEgo, useBrowserEgoSettings,
-  show, refresh, navigate, raiseWindow, send, hover, t,
+  show, refresh, navigate, raiseWindow, send, hover, resize, t,
 }: AgentBrowserProps) {
   const { shown, tab } = useTabInfo()
   const targetId = tab.params !== null && typeof tab.params === 'object' && !Array.isArray(tab.params)
@@ -80,6 +82,7 @@ export function AgentBrowserPanel({
   const hoverVersion = useRef(0)
   const image = useRef<HTMLImageElement>(null)
   const video = useRef<HTMLVideoElement>(null)
+  const stage = useRef<HTMLDivElement>(null)
 
   useEffect(() => { show(shown, viewId) }, [shown, viewId, show])
   useEffect(() => () => { show(false, viewId) }, [show, viewId])
@@ -103,6 +106,39 @@ export function AgentBrowserPanel({
     hoverVersion.current++
     setHovered(null)
   }, [shown, targetId, pageUrl, view.pending])
+
+  // 面板尺寸就是页面视口：把内容区大小去抖上报给 Host，浏览器窗口随之重排，
+  // 画面才能按 1:1 铺满工作台，而不是把一个宽桌面布局缩进窄栏。
+  useEffect(() => {
+    const node = stage.current
+    const page = selected?.targetId
+    if (!shown || node === null || page === undefined) return
+    let timer: ReturnType<typeof setTimeout> | null = null
+    let retry: ReturnType<typeof setTimeout> | null = null
+    const report = (): void => {
+      const width = Math.round(node.clientWidth)
+      const height = Math.round(node.clientHeight)
+      if (width < 320 || height < 200) return
+      void resize(page, width, height).then((accepted) => {
+        // Host 可能还没起好 worker；失败只补一次重试，避免反复触发重排。
+        if (accepted || retry !== null) return
+        retry = setTimeout(() => { retry = null; report() }, 1200)
+      })
+    }
+    report()
+    // 老浏览器与测试环境没有 ResizeObserver：只同步首帧尺寸，不跟随后续拖动。
+    if (typeof ResizeObserver === 'undefined') return () => { if (retry !== null) clearTimeout(retry) }
+    const observer = new ResizeObserver(() => {
+      if (timer !== null) clearTimeout(timer)
+      timer = setTimeout(() => { timer = null; report() }, 250)
+    })
+    observer.observe(node)
+    return () => {
+      if (timer !== null) clearTimeout(timer)
+      if (retry !== null) clearTimeout(retry)
+      observer.disconnect()
+    }
+  }, [shown, selected?.targetId, resize])
   const videoTarget = selected?.targetId ?? null
   // 只有用户选择视频后端、Host 报告 fMP4 就绪且上一次播放没有失败时才用 MSE。
   const videoMode = shown && settings.backend === 'ffmpeg' && videoMime !== null && !videoFailed
@@ -242,7 +278,7 @@ export function AgentBrowserPanel({
         <Icon name="open-window" size={16} /></button></Tooltip>
     </div>
     {addressError && <p className={css.addressError} role="alert">{t('invalidAddress')}</p>}
-    <div className={css.stage}>
+    <div className={css.stage} ref={stage}>
       {shown && hovered?.href && <p className={css.hoverAddress} role="status">{hovered.href}</p>}
       {shown && hovered?.title && <p className={css.hoverTitle} role="status">{hovered.title}</p>}
       {view.phase === 'loading' && <p role="status" className={css.center}>{t('loading')}</p>}

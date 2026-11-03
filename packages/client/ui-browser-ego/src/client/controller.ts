@@ -52,6 +52,8 @@ export class BrowserEgoController {
   /** 同一页面的按键与鼠标事件必须依发出顺序到达 Host，不能用请求中状态丢弃后续按键。 */
   private inputQueue: Promise<void> = Promise.resolve()
   private inputVersion = 0
+  /** 已上报给 Host 的面板尺寸；同一页面同一尺寸不重复发送，避免重排循环。 */
+  private resizeSent: { targetId: string; width: number; height: number } | null = null
   private stream: EventSource | null = null
   private activity: EventSource | null = null
   private refreshTimer: ReturnType<typeof setTimeout> | null = null
@@ -337,6 +339,41 @@ export class BrowserEgoController {
         && latest.pages.find(page => page.targetId === targetId)?.url === selected.url
         ? { cursor: result.cursor, title: result.title, href: result.href } : null
     } catch { return null }
+  }
+
+  /**
+   * 把面板内容区尺寸同步给 Host，让浏览器窗口按面板大小重排页面。
+   *
+   * 只在面板可见、当前页面已就绪且没有进行中的操作时发送；尺寸由调用方去抖，
+   * 同一页面同一尺寸只发一次。失败只返回 false，画面与输入不受影响。
+   * @param targetId - 当前显示页面的身份。
+   * @param width - 面板内容区宽度（CSS 像素）。
+   * @param height - 面板内容区高度（CSS 像素）。
+   * @returns Host 是否接受并完成了这次窗口调整。
+   */
+  async resize(targetId: string, width: number, height: number): Promise<boolean> {
+    if (!this.shown || !validId(targetId) || !Number.isSafeInteger(width) || !Number.isSafeInteger(height)
+      || width < 320 || width > 3840 || height < 200 || height > 2160) return false
+    const view = this.view.getSnapshot()
+    if (view.phase !== 'ready' || view.selectedId !== targetId || view.pending
+      || !view.pages.some(page => page.targetId === targetId)) return false
+    const sent = this.resizeSent
+    if (sent !== null && sent.targetId === targetId && sent.width === width && sent.height === height) return true
+    this.resizeSent = { targetId, width, height }
+    const epoch = this.epoch
+    try {
+      const response = await this.fetcher('/api/ego/viewport', { method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ sessionId: this.sessionId, targetId, width, height }) })
+      if (epoch !== this.epoch) return false
+      if (!response.ok) { this.forgetResize(targetId); return false }
+      return true
+    } catch { this.forgetResize(targetId); return false }
+  }
+
+  /** 上报失败后允许下次重试同一尺寸。 */
+  private forgetResize(targetId: string): void {
+    if (this.resizeSent?.targetId === targetId) this.resizeSent = null
   }
 
   /**

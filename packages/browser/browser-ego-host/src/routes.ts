@@ -5,7 +5,7 @@ import type { SessionId } from 'coding-session/types'
 import { recentActions, replayActivity, subscribeActivity } from './activity.ts'
 import { parseNavigation } from './navigation.ts'
 import { targetIdsForSession, validId } from './session-space.ts'
-import { ensureWorker, workerGet, workerHover, workerInput, workerPost } from './worker.ts'
+import { ensureWorker, workerGet, workerHover, workerInput, workerPost, workerResize } from './worker.ts'
 
 interface Page {
   targetId: string
@@ -241,6 +241,30 @@ export function installRoutes(ctx: Context): void {
         send(res, 503, { ok: false }); return
       }
       send(res, 200, { ok: true, targetId: page.targetId, cursor: result.cursor, title: result.title, href: result.href })
+    })
+    register('/api/ego/viewport', async (req, res) => {
+      if (req.method !== 'POST') { send(res, 405, { ok: false }); return }
+      const body = object(await readBody(req))
+      const width = Number(body?.width)
+      const height = Number(body?.height)
+      if (!body || Object.keys(body).length !== 4 || !validId(body.sessionId) || !validId(body.targetId)
+        || !Number.isSafeInteger(width) || !Number.isSafeInteger(height)
+        || width < 320 || width > 3840 || height < 200 || height > 2160
+        || !webCtx.sessions.get(body.sessionId as SessionId)) { send(res, 400, { ok: false }); return }
+      const sessionId = body.sessionId as SessionId
+      if (!(await targetIdsForSession(sessionId)).has(body.targetId)) { send(res, 403, { ok: false }); return }
+      const port = await ensureWorker(webCtx)
+      if (port === null) { send(res, 503, { ok: false }); return }
+      // 页面可能在检查期间被 Agent 关掉；归属与存在性都要在转发前复核。
+      if (!(await currentPages(sessionId, port)).some(page => page.targetId === body.targetId)) {
+        send(res, 409, { ok: false }); return
+      }
+      if (!webCtx.sessions.get(sessionId) || !(await targetIdsForSession(sessionId)).has(body.targetId)) {
+        send(res, 409, { ok: false }); return
+      }
+      const viewport = await workerResize(port, { targetId: body.targetId, width, height })
+      if (viewport === null) { send(res, 503, { ok: false }); return }
+      send(res, 200, { ok: true, viewport })
     })
     register('/api/ego/input', async (req, res) => {
       if (req.method !== 'POST') { send(res, 405, { ok: false }); return }

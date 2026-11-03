@@ -54,8 +54,9 @@ describe('会话浏览器 Host 路由', () => {
       '/api/ego/navigation',
       '/api/ego/pages',
       '/api/ego/hover',
+      '/api/ego/viewport',
     ]) {
-      const response = await fetch(origin + path, ['/api/ego/input', '/api/ego/navigation', '/api/ego/pages', '/api/ego/hover'].includes(path)
+      const response = await fetch(origin + path, ['/api/ego/input', '/api/ego/navigation', '/api/ego/pages', '/api/ego/hover', '/api/ego/viewport'].includes(path)
         ? { method: 'POST', body: '{bad' } : {})
       expect(response.status, path).toBe(403)
     }
@@ -85,6 +86,25 @@ describe('会话浏览器 Host 路由', () => {
     expect((await postNavigation({ sessionId: session.id, targetId: 'foreign', action: 'reload' })).status).toBe(403)
     expect((await postNavigation({ sessionId: session.id, targetId: 'owned', action: 'navigate', url: 'javascript:alert(1)' })).status).toBe(400)
     expect((await postNavigation({ sessionId: session.id, targetId: 'owned', action: 'reload', cdp: 'Page.navigate' })).status).toBe(400)
+    expect(spawns).not.toHaveBeenCalled()
+  })
+
+  it('只转发已归属目标的合法面板尺寸，越界、额外字段与跨会话目标被拒绝', async () => {
+    const origin = await boot()
+    await writeFile(join(stateDir!, 'task-spaces.json'), JSON.stringify({ spaces: [
+      { name: spaceNameForSession(SessionId('another-session')), targetIds: ['foreign'] },
+      { name: spaceNameForSession(session.id), targetIds: ['owned'] },
+    ] }))
+    const post = (body: unknown): Promise<Response> => fetch(`${origin}/api/ego/viewport`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+    })
+    const valid = { sessionId: session.id, targetId: 'owned', width: 900, height: 640 }
+    expect((await post({ ...valid, sessionId: 'unknown' })).status).toBe(400)
+    expect((await post({ ...valid, targetId: 'foreign' })).status).toBe(403)
+    expect((await post({ ...valid, width: 100 })).status).toBe(400)
+    expect((await post({ ...valid, height: 5000 })).status).toBe(400)
+    expect((await post({ ...valid, width: 900.5 })).status).toBe(400)
+    expect((await post({ ...valid, extra: 1 })).status).toBe(400)
     expect(spawns).not.toHaveBeenCalled()
   })
 
