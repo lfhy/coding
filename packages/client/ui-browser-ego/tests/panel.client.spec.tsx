@@ -68,9 +68,9 @@ describe('Agent 浏览器工作台页面', () => {
       actions: [{ kind: 'navigate' as const, at: 1 }] }
     const panel = mount(view, { targetId: 'second' })
     expect(screen.getByRole('region', { name: 'Agent Browser' })).toBeTruthy()
-    expect((screen.getByRole('textbox', { name: 'Web address' }) as HTMLInputElement).value)
+    expect(screen.getByRole<HTMLInputElement>('textbox', { name: 'Web address' }).value)
       .toBe('https://second.example/')
-    expect((screen.getByAltText('Current page view') as HTMLImageElement).src).toContain('ZGVm')
+    expect(screen.getByAltText<HTMLImageElement>('Current page view').src).toContain('ZGVm')
     expect(screen.getByRole('button', { name: 'Back' })).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Forward' })).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Reload page' })).toBeTruthy()
@@ -118,7 +118,7 @@ describe('Agent 浏览器工作台页面', () => {
     panel.rerender(<AgentBrowserPanel {...otherTab} />)
     expect(screen.getByText('Page view is not available yet')).toBeTruthy()
     expect(screen.queryByAltText('Current page view')).toBeNull()
-    expect((screen.getByRole('textbox', { name: 'Web address' }) as HTMLInputElement).value)
+    expect(screen.getByRole<HTMLInputElement>('textbox', { name: 'Web address' }).value)
       .toBe(secondPage.url)
     expect(panel.show).toHaveBeenCalledWith(false, 'first')
     expect(panel.show).toHaveBeenCalledWith(true, 'second')
@@ -143,7 +143,7 @@ describe('Agent 浏览器工作台页面', () => {
       shown: true, tab: { id: 'browser-second', params: { targetId: 'second' } },
     }) } as unknown as AgentBrowserProps
     panel.rerender(<AgentBrowserPanel {...otherTab} />)
-    expect((screen.getByRole('textbox', { name: 'Web address' }) as HTMLInputElement).value).toBe(page.url)
+    expect(screen.getByRole<HTMLInputElement>('textbox', { name: 'Web address' }).value).toBe(page.url)
     panel.unmount()
   })
 
@@ -156,7 +156,7 @@ describe('Agent 浏览器工作台页面', () => {
     const missing = mount(ready, { targetId: 'missing' })
     expect(screen.getByText('This page is unavailable. Switch to another tab.')).toBeTruthy()
     expect(screen.queryByAltText('Current page view')).toBeNull()
-    expect((screen.getByRole('button', { name: 'Back' }) as HTMLButtonElement).disabled).toBe(true)
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Back' }).disabled).toBe(true)
     missing.unmount()
   })
 
