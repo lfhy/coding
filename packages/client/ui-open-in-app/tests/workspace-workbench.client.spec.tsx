@@ -93,7 +93,8 @@ function bench(over: {
     const definition = over.externalDefinitions?.find(candidate => candidate.kind === kind)
     if (definition === undefined) return
     instance.actions.openExternalTab({ definitionId: definition.id, kind,
-      name: definition.title(address), address, params, launcherId, multiple: definition.multiple ?? false })
+      name: definition.title(address), address, ...(params === undefined ? {} : { params }),
+      launcherId, multiple: definition.multiple ?? false })
   })
   const renderSlot = vi.fn((name: string, _owner?: unknown, _options?: unknown) => <div data-testid={name} />)
   const listFiles = vi.fn(over.listFiles ?? (async () => listing('/workspace', [])))
@@ -360,9 +361,9 @@ describe('WorkspaceWorkbench shell', () => {
     expect(b.instance.getSnapshot()).toMatchObject({ view: 'files', tabs: [{ type: 'file' }, { type: 'external' }] })
   })
 
-  it('共享新增入口选择浏览器时新建目标，普通菜单选择仍只打开现有视图', async () => {
+  it.each([{ targetId: 'new-target' }, undefined])('共享新增入口选择浏览器时新建目标，普通菜单选择仍只打开现有视图（params=%j）', async (params) => {
     const create = vi.fn(async () => ({ address: 'sidebar://ego-browser%3Awatch/new-target',
-      params: { targetId: 'new-target' } }))
+      ...(params === undefined ? {} : { params }) }))
     const b = bench({ externalDefinitions: [{ id: 'ego-browser', kind: 'ego-browser:watch', multiple: true,
       title: () => 'Agent 浏览器', guide: [{ id: 'watch', order: 10, title: () => 'Agent 浏览器', create }] }] })
     render(<WorkspaceWorkbench {...b.props} />)
@@ -374,9 +375,13 @@ describe('WorkspaceWorkbench shell', () => {
     expect(create).not.toHaveBeenCalled()
     fireEvent.click(screen.getByRole('button', { name: 'Agent 浏览器' }))
     await waitFor(() => { expect(b.openCreatedSidebarTab).toHaveBeenCalledWith(SESSION,
-      'ego-browser:watch', 'sidebar://ego-browser%3Awatch/new-target', launcher, { targetId: 'new-target' }) })
+      'ego-browser:watch', 'sidebar://ego-browser%3Awatch/new-target', launcher, params) })
     expect(b.instance.getSnapshot().activeId).not.toBe(launcher)
     expect(b.instance.getSnapshot().tabs.some(tab => tab.id === launcher)).toBe(false)
+    const tab = b.instance.getSnapshot().tabs.find(tab => tab.id === b.instance.getSnapshot().activeId)
+    expect(tab).toMatchObject({ type: 'external', address: 'sidebar://ego-browser%3Awatch/new-target' })
+    if (params === undefined) expect(tab).not.toHaveProperty('params')
+    else expect(tab).toHaveProperty('params', params)
   })
 
   it('navigates workbench tabs by arrow, Home and End without changing the feature menu on other keys', () => {
