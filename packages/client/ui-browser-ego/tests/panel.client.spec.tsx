@@ -30,16 +30,17 @@ function mount(view: BrowserEgoView, { shown = true, targetId = 'first', backend
   const raiseWindow = vi.fn(async () => true)
   const refresh = vi.fn(async () => {})
   const hover = vi.fn(async () => ({ cursor: 'pointer', title: 'Visit website', href: 'https://example.com/' }))
+  const resize = vi.fn(async () => true)
   const props = { sessionId: 'session-one',
     useTabInfo: () => ({ shown, tab: { id: `browser-${targetId ?? 'fallback'}`,
       params: targetId === null ? {} : { targetId } } }),
     useBrowserEgo: (choose: (snapshot: BrowserEgoView) => unknown) => choose(view),
     useBrowserEgoSettings: (choose: (snapshot: EgoBrowserCapture) => unknown) => choose({ backend }),
-    show, send, hover, navigate, raiseWindow, refresh,
+    show, send, hover, resize, navigate, raiseWindow, refresh,
     t: (key: keyof typeof en, params?: Record<string, unknown>) =>
       en[key].replace(/\{(\w+)\}/gu, (match, name: string) => (name in (params ?? {}) ? String(params?.[name]) : match)),
   } as unknown as AgentBrowserProps
-  return { ...render(<AgentBrowserPanel {...props} />), props, show, send, hover, navigate, raiseWindow, refresh }
+  return { ...render(<AgentBrowserPanel {...props} />), props, show, send, hover, resize, navigate, raiseWindow, refresh }
 }
 
 /** jsdom 不解码 JPEG；显式提供画面尺寸以验证可点击区域与投递坐标。 */
@@ -63,6 +64,30 @@ function submitAddress(value: string): void {
 }
 
 describe('Agent 浏览器工作台页面', () => {
+  it('按实际内容区尺寸同步页面，失败后仅有限重试且隐藏后停止', async () => {
+    vi.useFakeTimers()
+    const panel = mount(ready)
+    panel.resize.mockResolvedValue(false)
+    const stage = panel.container.querySelector('[class*="stage"]') as HTMLDivElement
+    Object.defineProperties(stage, {
+      clientWidth: { value: 380 }, clientHeight: { value: 700 },
+    })
+    panel.rerender(<AgentBrowserPanel {...panel.props} useTabInfo={() => ({
+      ...panel.props.useTabInfo(), shown: false,
+    })} />)
+    panel.rerender(<AgentBrowserPanel {...panel.props} />)
+    await act(async () => { await Promise.resolve() })
+    expect(panel.resize).toHaveBeenCalledWith('first', 380, 700)
+    await act(async () => { await vi.advanceTimersByTimeAsync(5000) })
+    expect(panel.resize).toHaveBeenCalledTimes(3)
+    panel.rerender(<AgentBrowserPanel {...panel.props} useTabInfo={() => ({
+      ...panel.props.useTabInfo(), shown: false,
+    })} />)
+    await act(async () => { await vi.advanceTimersByTimeAsync(3000) })
+    expect(panel.resize).toHaveBeenCalledTimes(3)
+    panel.unmount()
+  })
+
   it('仅呈现当前目标的地址、画面与导航；显隐按工作台目标启停', () => {
     const view = { ...ready, pages: [page, secondPage], selectedId: 'first', frame: secondFrame,
       actions: [{ kind: 'navigate' as const, at: 1 }] }

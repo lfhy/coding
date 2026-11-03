@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { execFile, execFileSync, spawn } from "node:child_process";
 import { access } from "node:fs/promises";
 import { promisify } from "node:util";
-//#region packages/browser/browser-ego-host/third-party/host/worker/cdp-client.ts
+//#region third-party/host/worker/cdp-client.ts
 var CdpClient = class {
 	ws;
 	nextId;
@@ -89,7 +89,7 @@ var CdpClient = class {
 	}
 };
 //#endregion
-//#region packages/browser/browser-ego-host/third-party/host/worker/capture-cdp.ts
+//#region third-party/host/worker/capture-cdp.ts
 var TargetSessions = class {
 	cdp;
 	sessions;
@@ -467,7 +467,7 @@ var CdpCaptureBackend = class {
 	}
 };
 //#endregion
-//#region packages/browser/browser-ego-host/third-party/host/worker/capture-manager.ts
+//#region third-party/host/worker/capture-manager.ts
 var CaptureManager = class {
 	backendFactories;
 	getConfig;
@@ -726,7 +726,7 @@ var CaptureManager = class {
 	}
 };
 //#endregion
-//#region packages/browser/browser-ego-host/third-party/host/worker/snapshot.ts
+//#region third-party/host/worker/snapshot.ts
 /** A single viewport PNG on the existing control session; never starts a watch. */
 async function captureSnapshot(sessions, targetId, maxWidth) {
 	const viewport = (await sessions.call(targetId, "Runtime.evaluate", {
@@ -751,7 +751,7 @@ async function captureSnapshot(sessions, targetId, maxWidth) {
 	return Buffer.from(image.data, "base64");
 }
 //#endregion
-//#region packages/browser/browser-ego-host/third-party/host/worker/frame.ts
+//#region third-party/host/worker/frame.ts
 /** Capture a bounded JPEG with current CSS viewport dimensions for host-side input coordinates. */
 async function captureFrame(sessions, targetId) {
 	const viewport = (await sessions.call(targetId, "Runtime.evaluate", {
@@ -786,7 +786,7 @@ async function captureFrame(sessions, targetId) {
 	};
 }
 //#endregion
-//#region packages/browser/browser-ego-host/third-party/host/worker/hover.ts
+//#region third-party/host/worker/hover.ts
 /** 浏览器指针仅允许标准形态，避免网页 CSS 注入本地资源或自定义游标。 */
 const CURSORS = new Set([
 	"default",
@@ -849,7 +849,7 @@ async function hoverAt(sessions, targetId, x, y) {
 	};
 }
 //#endregion
-//#region packages/browser/browser-ego-host/third-party/host/worker/navigation.ts
+//#region third-party/host/worker/navigation.ts
 /** Dispatch navigation only on an already verified page target; no implicit target selection. */
 async function navigateTarget(sessions, command) {
 	const targetId = command.targetId;
@@ -872,14 +872,29 @@ async function navigateTarget(sessions, command) {
 	}
 }
 //#endregion
-//#region packages/browser/browser-ego-host/src/session-space.ts
+//#region third-party/host/worker/panel-viewport.ts
+/** 在页面所在的持久采集会话上设置面板视口；关闭页面后的失败由调用方处理。 */
+async function matchPanelViewport(sessions, targetId, desired, measure) {
+	const current = await measure();
+	if (current?.width === desired.width && current.height === desired.height) return current;
+	await sessions.call(targetId, "Emulation.setDeviceMetricsOverride", {
+		width: desired.width,
+		height: desired.height,
+		deviceScaleFactor: 1,
+		mobile: false
+	});
+	const actual = await measure();
+	return actual?.width === desired.width && actual.height === desired.height ? actual : null;
+}
+//#endregion
+//#region src/session-space.ts
 const ID_PATTERN = /^[a-zA-Z0-9._~-]{1,128}$/u;
 /** 校验跨 HTTP／工具边界的会话与页面标识。 */
 function validId(value) {
 	return typeof value === "string" && ID_PATTERN.test(value);
 }
 //#endregion
-//#region packages/browser/browser-ego-host/src/navigation.ts
+//#region src/navigation.ts
 /** Host 与 ego-cast worker 共用的人工导航输入校验；任何网页地址都不能绕过 Host 会话检查。 */
 /**
 * 接受无凭据绝对 HTTP(S) 或严格本地 file:/// 地址，不解析 DNS 或读取文件。
@@ -940,7 +955,7 @@ function parseNavigation(value, withSession = false) {
 	};
 }
 //#endregion
-//#region packages/browser/browser-ego-host/third-party/upstream/src/worker/mp4-fragments.ts
+//#region third-party/upstream/src/worker/mp4-fragments.ts
 const MAX_BOX_BYTES = 64 * 1024 * 1024;
 var Mp4FragmentParser = class {
 	onInit;
@@ -1000,7 +1015,7 @@ var Mp4FragmentParser = class {
 	}
 };
 //#endregion
-//#region packages/browser/browser-ego-host/third-party/upstream/src/worker/capture-platform.ts
+//#region third-party/upstream/src/worker/capture-platform.ts
 const execFile$1 = promisify(execFile);
 function buildCaptureInput({ platform = process.platform, env = process.env, source, fps, maxWidth, encoder }) {
 	if (platform === "win32") {
@@ -1287,7 +1302,7 @@ async function resolveCaptureSource({ sessions, targetId, browserPid, platform =
 	};
 }
 //#endregion
-//#region packages/browser/browser-ego-host/third-party/upstream/src/worker/capture-ffmpeg.ts
+//#region third-party/upstream/src/worker/capture-ffmpeg.ts
 const defaultSpawn = spawn;
 function runProbe(path, argv, spawn, timeoutMs, captureOutput = false) {
 	return new Promise((resolve) => {
@@ -1713,7 +1728,7 @@ function computeWindowBounds(viewport, chromeFrame = {
 	};
 }
 //#endregion
-//#region packages/browser/browser-ego-host/third-party/host/worker/ego-cast-worker.ts
+//#region third-party/host/worker/ego-cast-worker.ts
 const SENTINEL = "@@DSH_RESULT@@";
 const HOME = homedir() || process.env.HOME || process.env.USERPROFILE || "/root";
 const IS_WIN = platform() === "win32";
@@ -1754,6 +1769,8 @@ const sseClients = /* @__PURE__ */ new Set();
 const videoClients = /* @__PURE__ */ new Set();
 const probeCache = /* @__PURE__ */ new Map();
 const frameCache = /* @__PURE__ */ new Map();
+/** 导航结束后页面可能恢复原生尺寸；下一帧采集前复核目标页面仍使用面板尺寸。 */
+const panelViewports = /* @__PURE__ */ new Map();
 let active = null;
 let currentStatus = {
 	backend: "cdp",
@@ -1863,7 +1880,8 @@ function publishStatus(status) {
 	};
 	broadcast("capture-status", currentStatus);
 }
-function publishJpeg(frame) {
+/** 目录只引用最近一次实际采集的视口，避免缓存的布局指标与页面截图尺寸分叉。 */
+function rememberFrame(frame) {
 	frameCache.delete(frame.targetId);
 	frameCache.set(frame.targetId, {
 		frame: frame.data,
@@ -1872,6 +1890,9 @@ function publishJpeg(frame) {
 		viewportH: frame.vh
 	});
 	while (frameCache.size > 30) frameCache.delete(frameCache.keys().next().value);
+}
+function publishJpeg(frame) {
+	rememberFrame(frame);
 	broadcast("frame", frame);
 }
 function publishVideoInit(event) {
@@ -1990,7 +2011,6 @@ async function snapshotSpaces() {
 	const spaces = [];
 	for (const target of targets.slice(0, 30)) {
 		const frame = frameCache.get(target.targetId);
-		const session = active.sessions.get(target.targetId);
 		const cached = probeCache.get(target.targetId);
 		if (!cached || Date.now() - cached.at > 5e3) active.sessions.call(target.targetId, "Runtime.evaluate", {
 			expression: HUMAN_PROBE_JS,
@@ -2009,8 +2029,8 @@ async function snapshotSpaces() {
 			title: target.title,
 			active: target.targetId === activeId,
 			lastActive: frame?.lastActive || 0,
-			viewportW: frame?.viewportW || session?.viewportW,
-			viewportH: frame?.viewportH || session?.viewportH,
+			viewportW: frame?.viewportW ?? null,
+			viewportH: frame?.viewportH ?? null,
 			humanCheck: cached?.human || null
 		});
 	}
@@ -2032,6 +2052,10 @@ async function connectLoop() {
 			});
 			const cdp = new CdpClient(ws);
 			const sessions = new TargetSessions(cdp);
+			sessions.onDestroyed((targetId) => {
+				panelViewports.delete(targetId);
+				frameCache.delete(targetId);
+			});
 			active = {
 				...browser,
 				ws,
@@ -2055,6 +2079,8 @@ async function connectLoop() {
 			});
 		} finally {
 			active = null;
+			panelViewports.clear();
+			frameCache.clear();
 			await sleep(2e3);
 		}
 	}
@@ -2144,12 +2170,7 @@ async function measureChromeFrame(browser, targetId) {
 		height: IS_WIN ? 132 : 88
 	};
 }
-/**
-* The page's real viewport size. The panel reports only a width (its element
-* box cannot be trusted for height: CSS caps it and the thumbnail branch
-* distorts it), so the height follows the aspect the page is actually laid out
-* at right now.
-*/
+/** 测量页面实际视口；窗口尺寸被系统限制时不能仅凭 CDP 返回成功判定已铺满。 */
 async function measureViewport(browser, targetId) {
 	try {
 		const value = (await browser.sessions.call(targetId, "Runtime.evaluate", {
@@ -2204,7 +2225,16 @@ async function main() {
 					error: "target is no longer available"
 				});
 				try {
-					return sendJson(res, 200, await captureFrame(browser.sessions, targetId));
+					const requested = panelViewports.get(targetId);
+					if (requested) {
+						if (!await matchPanelViewport(browser.sessions, targetId, requested, () => measureViewport(browser, targetId))) return sendJson(res, 503, {
+							ok: false,
+							error: "viewport did not match the panel"
+						});
+					}
+					const captured = await captureFrame(browser.sessions, targetId);
+					rememberFrame(captured);
+					return sendJson(res, 200, captured);
 				} catch {
 					return sendJson(res, 503, {
 						ok: false,
@@ -2279,6 +2309,19 @@ async function main() {
 					error: "no active target"
 				});
 				try {
+					if (hasWidth && hasHeight && typeof body.targetId === "string") {
+						const requested = clampViewportSize(requestedWidth, requestedHeight);
+						const viewport = await matchPanelViewport(browser.sessions, targetId, requested, () => measureViewport(browser, targetId));
+						if (!viewport) return sendJson(res, 503, {
+							ok: false,
+							error: "viewport did not match the panel"
+						});
+						panelViewports.set(targetId, viewport);
+						return sendJson(res, 200, {
+							ok: true,
+							viewport
+						});
+					}
 					const now = Date.now();
 					let cache = windowSizeCache.get(targetId);
 					if (!cache || now - cache.measuredAt > 1e4) {

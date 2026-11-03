@@ -232,6 +232,25 @@ describe('web e2e: Agent Browser over the shipped Loader', () => {
     const frame = panel.getByRole('img', { name: 'Current page view' })
     await expect.poll(() => frame.evaluate((image: HTMLImageElement) => image.complete && image.naturalWidth > 0),
       { timeout: 30_000 }).toBe(true)
+    // 真实装配链上确认页面而非图片拉伸到面板，等待多轮目录与画面更新也不得丢帧。
+    const panelSize = () => panel.locator('[class*="stage"]').evaluate((stage: HTMLElement) => ({
+      width: stage.clientWidth, height: stage.clientHeight,
+    }))
+    await expect.poll(async () => {
+      const measured = await panelSize()
+      const [current] = await spaces(page, scaffold.baseUrl, FIRST)
+      return { width: current?.viewportW === measured.width, height: current?.viewportH === measured.height }
+    }, { timeout: 30_000 }).toEqual({ width: true, height: true })
+    await expect.poll(async () => {
+      const measured = await panelSize()
+      const box = await frame.boundingBox()
+      return box !== null && Math.abs(box.width - measured.width) <= 2 && Math.abs(box.height - measured.height) <= 2
+    }, { timeout: 30_000 }).toBe(true)
+    await page.waitForTimeout(2500)
+    expect(await frame.evaluate((image: HTMLImageElement) => image.complete && image.naturalWidth > 0)).toBe(true)
+    const [afterPolling] = await spaces(page, scaffold.baseUrl, FIRST)
+    expect(afterPolling?.viewportW).toBe((await panelSize()).width)
+    expect(afterPolling?.viewportH).toBe((await panelSize()).height)
     expect(await panel.getByRole('textbox', { name: 'Web address' }).count()).toBe(1)
     expect(await panel.locator('iframe, webview').count()).toBe(0)
 
@@ -252,9 +271,9 @@ describe('web e2e: Agent Browser over the shipped Loader', () => {
     expect((await page.request.get(`${scaffold.baseUrl}/api/ego/spaces?sessionId=${SECOND}`)).status()).toBe(404)
 
     const initialFrame = await frame.getAttribute('src')
-    await clickOnFrame(page, panel, first, 120, 60)
+    await clickOnFrame(page, panel, (await spaces(page, scaffold.baseUrl, FIRST))[0]!, 120, 60)
     await expect.poll(() => frame.getAttribute('src'), { timeout: 30_000 }).not.toBe(initialFrame)
-    await clickOnFrame(page, panel, first, 120, 165)
+    await clickOnFrame(page, panel, (await spaces(page, scaffold.baseUrl, FIRST))[0]!, 120, 165)
     await expect.poll(async () => panel.getByRole('button', { name: 'Current page view' }).isEnabled()).toBe(true)
     await panel.getByRole('button', { name: 'Current page view' }).pressSequentially('Human typed here', { delay: 80 })
     const firstFrameAfterInput = panel.getByRole('img', { name: 'Current page view' })

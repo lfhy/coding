@@ -52,7 +52,7 @@ export class BrowserEgoController {
   /** 同一页面的按键与鼠标事件必须依发出顺序到达 Host，不能用请求中状态丢弃后续按键。 */
   private inputQueue: Promise<void> = Promise.resolve()
   private inputVersion = 0
-  /** 已上报给 Host 的面板尺寸；同一页面同一尺寸不重复发送，避免重排循环。 */
+  /** 已上报的面板尺寸；导航或新采集尺寸变化时失效，不能把旧成功当成当前页面状态。 */
   private resizeSent: { targetId: string; width: number; height: number } | null = null
   private stream: EventSource | null = null
   private activity: EventSource | null = null
@@ -95,6 +95,7 @@ export class BrowserEgoController {
     this.closeStream()
     this.closeActivity()
     this.clearTimer()
+    this.resizeSent = null
     this.view.set(INITIAL)
     if (showing) {
       void this.refresh()
@@ -342,14 +343,14 @@ export class BrowserEgoController {
   }
 
   /**
-   * 把面板内容区尺寸同步给 Host，让浏览器窗口按面板大小重排页面。
+   * 把面板内容区尺寸同步给 Host，由采集会话调整页面视口。
    *
    * 只在面板可见、当前页面已就绪且没有进行中的操作时发送；尺寸由调用方去抖，
-   * 同一页面同一尺寸只发一次。失败只返回 false，画面与输入不受影响。
+   * 网页未变时同一尺寸只发一次；导航或实测尺寸变化后重新同步。失败只返回 false，画面与输入不受影响。
    * @param targetId - 当前显示页面的身份。
    * @param width - 面板内容区宽度（CSS 像素）。
    * @param height - 面板内容区高度（CSS 像素）。
-   * @returns Host 是否接受并完成了这次窗口调整。
+   * @returns Host 是否接受并完成了这次视口调整。
    */
   async resize(targetId: string, width: number, height: number): Promise<boolean> {
     if (!this.shown || !validId(targetId) || !Number.isSafeInteger(width) || !Number.isSafeInteger(height)
@@ -367,6 +368,14 @@ export class BrowserEgoController {
         body: JSON.stringify({ sessionId: this.sessionId, targetId, width, height }) })
       if (epoch !== this.epoch) return false
       if (!response.ok) { this.forgetResize(targetId); return false }
+      const result: unknown = await response.json()
+      if (!result || typeof result !== 'object' || !('ok' in result) || result.ok !== true
+        || !('viewport' in result) || !result.viewport || typeof result.viewport !== 'object'
+        || !('width' in result.viewport) || result.viewport.width !== width
+        || !('height' in result.viewport) || result.viewport.height !== height) {
+        this.forgetResize(targetId)
+        return false
+      }
       return true
     } catch { this.forgetResize(targetId); return false }
   }
@@ -450,6 +459,11 @@ export class BrowserEgoController {
     const oldSelected = previous.pages.find(page => page.targetId === selectedId)
     const changed = selected?.url !== oldSelected?.url
       || selected?.viewportW !== oldSelected?.viewportW || selected?.viewportH !== oldSelected?.viewportH
+    if (selectedId !== previous.selectedId || selected?.url !== oldSelected?.url
+      || this.resizeSent?.targetId === selectedId && selected !== undefined && selected.viewportW !== null
+        && (selected.viewportW !== this.resizeSent.width || selected.viewportH !== this.resizeSent.height)) {
+      this.resizeSent = null
+    }
     if (selectedId !== previous.selectedId || changed) {
       this.input?.abort()
       this.inputVersion++

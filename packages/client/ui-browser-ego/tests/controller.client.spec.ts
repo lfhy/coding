@@ -143,7 +143,10 @@ describe('会话画面与人工输入', () => {
 
   it('把面板尺寸上报给 Host，同一页面同一尺寸只发一次且越界或隐藏时拒绝', async () => {
     const { controller, fetcher, streams } = fixture(vi.fn(async (url: string, _init?: RequestInit) => {
-      if (url === '/api/ego/viewport') return Response.json({ ok: true, viewport: { width: 900, height: 640 } })
+      if (url === '/api/ego/viewport') {
+        const payload = JSON.parse(_init?.body as string) as { width: number; height: number }
+        return Response.json({ ok: true, viewport: { width: payload.width, height: payload.height } })
+      }
       if (url.startsWith('/api/ego/frame?')) return new Response(null, { status: 404 })
       return Response.json({ ok: true, spaces: [first, second] })
     }))
@@ -161,9 +164,31 @@ describe('会话画面与人工输入', () => {
     expect(calls).toHaveLength(1)
     expect(await controller.resize('first', 900, 640)).toBe(true)
     expect((fetcher as unknown as { mock: { calls: unknown[][] } }).mock.calls.filter(call => call[0] === '/api/ego/viewport')).toHaveLength(1)
+    streams[0]?.emit('spaces', [{ ...first, url: 'https://new.example.test/', viewportW: 900, viewportH: 640 }, second])
+    expect(await controller.resize('first', 900, 640)).toBe(true)
+    expect((fetcher as unknown as { mock: { calls: unknown[][] } }).mock.calls.filter(call => call[0] === '/api/ego/viewport')).toHaveLength(2)
+    streams[0]?.emit('spaces', [{ ...first, url: 'https://new.example.test/', viewportW: 400, viewportH: 300 }, second])
+    expect(await controller.resize('first', 900, 640)).toBe(true)
+    expect((fetcher as unknown as { mock: { calls: unknown[][] } }).mock.calls.filter(call => call[0] === '/api/ego/viewport')).toHaveLength(3)
     expect(await controller.resize('first', 1000, 700)).toBe(true)
     controller.show(false)
     expect(await controller.resize('first', 1100, 700)).toBe(false)
+  })
+
+  it('Host 回应的实际视口不匹配时允许同一尺寸再次同步', async () => {
+    let accepted = false
+    const fetcher = vi.fn(async (url: string) => url === '/api/ego/viewport'
+      ? Response.json({ ok: true, viewport: { width: accepted ? 380 : 500, height: 700 } })
+      : url.startsWith('/api/ego/frame?') ? new Response(null, { status: 404 })
+        : overview(url) ?? Response.json({ ok: true, spaces: [first] }))
+    const { controller } = fixture(fetcher)
+    controller.show(true)
+    await vi.waitFor(() => { expect(controller.view.getSnapshot().phase).toBe('ready') })
+    expect(await controller.resize('first', 380, 700)).toBe(false)
+    accepted = true
+    expect(await controller.resize('first', 380, 700)).toBe(true)
+    expect(fetcher.mock.calls.filter(([path]) => path === '/api/ego/viewport')).toHaveLength(2)
+    controller.show(false)
   })
 
   it('连续输入保持画面可聚焦，按顺序投递点击和文字', async () => {

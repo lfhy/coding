@@ -40,6 +40,12 @@ it('封闭 worker 在真实 HTTP/CDP 连接上采帧并导航，拒绝失效目�
   let viewportAvailable = true
   let imageAvailable = true
   let currentIndex = 1
+  let windowAvailable = true
+  let windowWidth = 648
+  let windowHeight = 444
+  let emulated: { width: number; height: number } | null = null
+  let failedMetrics = false
+  const currentViewport = () => emulated ?? { width: Math.max(0, windowWidth - 8), height: Math.max(0, windowHeight - 84) }
   server = createServer()
   server.on('upgrade', (req, socket) => {
     sockets.add(socket)
@@ -69,10 +75,28 @@ it('封闭 worker 在真实 HTTP/CDP 连接上采帧并导航，拒绝失效目�
         switch (request.method) {
           case 'Target.getTargets': result = { targetInfos: [{ targetId: 'owned', type: 'page', url: 'https://example.test', title: 'Test' }] }; break
           case 'Target.attachToTarget': result = { sessionId: 'fake-session' }; break
-          case 'Page.getLayoutMetrics': result = { cssLayoutViewport: { clientWidth: 640, clientHeight: 360 } }; break
+          case 'Page.getLayoutMetrics': result = { cssLayoutViewport: {
+            clientWidth: failedMetrics ? 0 : currentViewport().width,
+            clientHeight: currentViewport().height,
+          } }; break
+          case 'Browser.getWindowForTarget': result = windowAvailable ? { windowId: 1 } : {}; break
+          case 'Browser.getWindowBounds': result = { bounds: { left: 0, top: 0, width: windowWidth, height: windowHeight } }; break
+          case 'Browser.setWindowBounds': {
+            const bounds = request.params.bounds as { width: number; height: number }
+            windowWidth = Math.max(500, bounds.width); windowHeight = bounds.height
+            break
+          }
+          case 'Emulation.setDeviceMetricsOverride': emulated = request.params as { width: number; height: number }; break
+          case 'Emulation.clearDeviceMetricsOverride': emulated = null; break
           case 'Runtime.evaluate': result = request.params.expression?.toString().includes('document.elementFromPoint')
             ? { result: { value: { cursor: 'pointer', title: 'A link', href: 'https://example.test/next' } } }
-            : { result: { value: { x: 5, y: 7, width: viewportAvailable ? 640 : 0, height: 360, dpr: 2 } } }; break
+            : request.params.expression?.toString().includes('window.outerWidth')
+              ? { result: { value: { ow: windowWidth, iw: currentViewport().width,
+                oh: windowHeight, ih: currentViewport().height } } }
+              : request.params.expression?.toString().includes('({ w:')
+                ? { result: { value: { w: currentViewport().width, h: currentViewport().height } } }
+                : { result: { value: { x: 5, y: 7, width: viewportAvailable ? currentViewport().width : 0,
+                  height: currentViewport().height, dpr: 2 } } }; break
           case 'Page.captureScreenshot': result = { data: imageAvailable ? JPEG : '' }; break
           case 'Page.getNavigationHistory': result = { currentIndex, entries: [{ id: 1 }, { id: 2 }, { id: 3 }] }; break
           case 'Page.navigate': result = request.params.url === 'https://fail.example/' ? { errorText: 'blocked' } : { frameId: 'frame' }; break
@@ -105,9 +129,38 @@ it('封闭 worker 在真实 HTTP/CDP 连接上采帧并导航，拒绝失效目�
   const image = await fetch(`${api}/api/frame?targetId=owned`)
   expect(image.status, stderr).toBe(200)
   expect(await image.json()).toMatchObject({ targetId: 'owned', data: JPEG, vw: 640, vh: 360 })
+  expect(await (await fetch(`${api}/api/spaces`)).json()).toMatchObject({ spaces: [{ viewportW: 640, viewportH: 360 }] })
+  failedMetrics = true
+  expect(await (await fetch(`${api}/api/spaces`)).json()).toMatchObject({ spaces: [{ viewportW: 640, viewportH: 360 }] })
+  failedMetrics = false
+  windowWidth = 690
+  expect(await (await fetch(`${api}/api/frame?targetId=owned`)).json()).toMatchObject({ vw: 682, vh: 360 })
+  expect(await (await fetch(`${api}/api/spaces`)).json()).toMatchObject({ spaces: [{ viewportW: 682, viewportH: 360 }] })
+  windowWidth = 648
   expect(calls.find(call => call.method === 'Page.captureScreenshot')).toMatchObject({
     sessionId: 'fake-session', params: { format: 'jpeg', clip: { x: 5, y: 7, width: 640, height: 360, scale: 0.5 } },
   })
+  const postSize = async (width: number, height: number) => {
+    const response = await fetch(`${api}/api/window-size`, { method: 'POST',
+      headers: { 'content-type': 'application/json' }, body: JSON.stringify({ targetId: 'owned', width, height }) })
+    return { status: response.status, body: await response.json() as { viewport: { width: number; height: number } } }
+  }
+  // Headless Chrome 可以把窗口宽度钳在 500；面板仍需拿到真实目标视口。
+  expect(await postSize(375, 620)).toMatchObject({ status: 200, body: { viewport: { width: 375, height: 620 } } })
+  expect(calls.some(call => call.method === 'Emulation.setDeviceMetricsOverride'
+    && call.params.width === 375 && call.params.height === 620)).toBe(true)
+  expect(await (await fetch(`${api}/api/frame?targetId=owned`)).json()).toMatchObject({ vw: 375, vh: 620 })
+  expect(await (await fetch(`${api}/api/spaces`)).json()).toMatchObject({ spaces: [{ viewportW: 375, viewportH: 620 }] })
+  expect(await postSize(800, 620)).toMatchObject({ status: 200, body: { viewport: { width: 800, height: 620 } } })
+  expect(await (await fetch(`${api}/api/frame?targetId=owned`)).json()).toMatchObject({ vw: 800, vh: 620 })
+  expect(await (await fetch(`${api}/api/spaces`)).json()).toMatchObject({ spaces: [{ viewportW: 800, viewportH: 620 }] })
+  windowAvailable = false
+  expect(await postSize(390, 700)).toMatchObject({ status: 200, body: { viewport: { width: 390, height: 700 } } })
+  expect(await (await fetch(`${api}/api/frame?targetId=owned`)).json()).toMatchObject({ vw: 390, vh: 700 })
+  expect(await (await fetch(`${api}/api/spaces`)).json()).toMatchObject({ spaces: [{ viewportW: 390, viewportH: 700 }] })
+  emulated = null
+  expect(await (await fetch(`${api}/api/frame?targetId=owned`)).json()).toMatchObject({ vw: 390, vh: 700 })
+  expect(calls.filter(call => call.method === 'Emulation.setDeviceMetricsOverride' && call.params.width === 390)).toHaveLength(2)
   const hovered = await fetch(`${api}/api/hover`, { method: 'POST',
     headers: { 'content-type': 'application/json' }, body: JSON.stringify({ targetId: 'owned', x: 10, y: 20 }) })
   expect(await hovered.json()).toMatchObject({ ok: true, cursor: 'pointer', href: 'https://example.test/next' })

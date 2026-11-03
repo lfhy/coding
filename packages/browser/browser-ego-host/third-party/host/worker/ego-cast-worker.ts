@@ -12,6 +12,7 @@ import { captureSnapshot } from './snapshot.ts'
 import { captureFrame } from './frame.ts'
 import { hoverAt } from './hover.ts'
 import { navigateTarget } from './navigation.ts'
+import { matchPanelViewport } from './panel-viewport.ts'
 import { parseNavigation } from '../../../src/navigation.ts'
 import { FfmpegCaptureBackend } from '../../upstream/src/worker/capture-ffmpeg.ts'
 import { computeWindowBounds, widthWithDelta, clampViewportSize } from '../../upstream/src/worker/window-size.ts'
@@ -96,6 +97,8 @@ const sseClients = new Set<SseClient>()
 const videoClients = new Set<VideoClient>()
 const probeCache = new Map<string, { at: number; human: unknown }>()
 const frameCache = new Map<string, CachedFrame>()
+/** 导航结束后页面可能恢复原生尺寸；下一帧采集前复核目标页面仍使用面板尺寸。 */
+const panelViewports = new Map<string, { width: number; height: number }>()
 let active: ActiveBrowser | null = null
 let currentStatus: Record<string, unknown> = { backend: 'cdp', state: 'idle', targetId: null, generation: 0, watchers: 0 }
 let videoInit: { generation: number; mime: string; buffer: Buffer } | null = null
@@ -174,10 +177,15 @@ function publishStatus(status: Record<string, unknown>): void {
   broadcast('capture-status', currentStatus)
 }
 
-function publishJpeg(frame: JpegFrame): void {
+/** 目录只引用最近一次实际采集的视口，避免缓存的布局指标与页面截图尺寸分叉。 */
+function rememberFrame(frame: JpegFrame): void {
   frameCache.delete(frame.targetId)
   frameCache.set(frame.targetId, { frame: frame.data, lastActive: frame.ts, viewportW: frame.vw, viewportH: frame.vh })
   while (frameCache.size > 30) frameCache.delete(frameCache.keys().next().value as string)
+}
+
+function publishJpeg(frame: JpegFrame): void {
+  rememberFrame(frame)
   broadcast('frame', frame)
 }
 
@@ -276,13 +284,13 @@ async function snapshotSpaces(): Promise<Array<Record<string, unknown>>> {
   const spaces: Array<Record<string, unknown>> = []
   for (const target of targets.slice(0, 30)) {
     const frame = frameCache.get(target.targetId)
-    const session = active!.sessions.get(target.targetId)
     const cached = probeCache.get(target.targetId)
     if (!cached || Date.now() - cached.at > 5000) {
       active!.sessions.call(target.targetId, 'Runtime.evaluate', { expression: HUMAN_PROBE_JS, returnByValue: true, awaitPromise: false }, 3000)
         .then((result) => { const r = result as { result?: { value?: unknown } }; probeCache.set(target.targetId, { at: Date.now(), human: r.result?.value || null }) }).catch(() => { /* ignore */ })
     }
-    spaces.push({ targetId: target.targetId, url: target.url, title: target.title, active: target.targetId === activeId, lastActive: frame?.lastActive || 0, viewportW: frame?.viewportW || session?.viewportW, viewportH: frame?.viewportH || session?.viewportH, humanCheck: cached?.human || null })
+    // 目录尺寸只来自实际截图；布局指标可能滞后于窗口或模拟视口，不可当作输入边界。
+    spaces.push({ targetId: target.targetId, url: target.url, title: target.title, active: target.targetId === activeId, lastActive: frame?.lastActive || 0, viewportW: frame?.viewportW ?? null, viewportH: frame?.viewportH ?? null, humanCheck: cached?.human || null })
   }
   spaces.sort((a, b) => Number(b.active) - Number(a.active) || (b.lastActive as number) - (a.lastActive as number))
   return spaces
@@ -297,6 +305,7 @@ async function connectLoop(): Promise<void> {
       await new Promise<void>((resolve, reject) => { ws.addEventListener('open', () => resolve(), { once: true } as AddEventListenerOptions); ws.addEventListener('error', () => reject(new Error('ws error')), { once: true } as AddEventListenerOptions) })
       const cdp = new CdpClient(ws)
       const sessions = new TargetSessions(cdp)
+      sessions.onDestroyed(targetId => { panelViewports.delete(targetId); frameCache.delete(targetId) })
       active = { ...browser, ws, cdp, sessions }
       publishStatus({ browserConnected: true })
       await manager.browserConnected()
@@ -307,6 +316,8 @@ async function connectLoop(): Promise<void> {
       publishStatus({ state: 'failed', code: 'browser-disconnected', message: (error as Error).message, browserConnected: false })
     } finally {
       active = null
+      panelViewports.clear()
+      frameCache.clear()
       await sleep(2000)
     }
   }
@@ -389,12 +400,7 @@ async function measureChromeFrame(browser: ActiveBrowser, targetId: string): Pro
   return { width: 0, height: IS_WIN ? 132 : 88 }
 }
 
-/**
- * The page's real viewport size. The panel reports only a width (its element
- * box cannot be trusted for height: CSS caps it and the thumbnail branch
- * distorts it), so the height follows the aspect the page is actually laid out
- * at right now.
- */
+/** 测量页面实际视口；窗口尺寸被系统限制时不能仅凭 CDP 返回成功判定已铺满。 */
 async function measureViewport(browser: ActiveBrowser, targetId: string): Promise<{ width: number; height: number } | null> {
   try {
     const response = await browser.sessions.call(targetId, 'Runtime.evaluate', {
@@ -447,7 +453,17 @@ async function main(): Promise<void> {
         if (!(await listTargets()).some(target => target.targetId === targetId)) {
           return sendJson(res, 409, { ok: false, error: 'target is no longer available' })
         }
-        try { return sendJson(res, 200, await captureFrame(browser.sessions, targetId)) }
+        try {
+          const requested = panelViewports.get(targetId)
+          if (requested) {
+            const applied = await matchPanelViewport(browser.sessions, targetId, requested,
+              () => measureViewport(browser, targetId))
+            if (!applied) return sendJson(res, 503, { ok: false, error: 'viewport did not match the panel' })
+          }
+          const captured = await captureFrame(browser.sessions, targetId)
+          rememberFrame(captured)
+          return sendJson(res, 200, captured)
+        }
         catch { return sendJson(res, 503, { ok: false, error: 'frame unavailable' }) }
       }
       if (req.method === 'POST' && url.pathname === '/api/hover') {
@@ -495,6 +511,15 @@ async function main(): Promise<void> {
         const targetId = typeof body.targetId === 'string' && body.targetId ? body.targetId : await activeTargetId()
         if (!targetId) return sendJson(res, 409, { ok: false, error: 'no active target' })
         try {
+          // 面板要求精确的页面尺寸；Chrome 的窗口最小宽度和系统屏幕限制会钳住真实窗口。
+          if (hasWidth && hasHeight && typeof body.targetId === 'string') {
+            const requested = clampViewportSize(requestedWidth, requestedHeight)
+            const viewport = await matchPanelViewport(browser.sessions, targetId, requested,
+              () => measureViewport(browser, targetId))
+            if (!viewport) return sendJson(res, 503, { ok: false, error: 'viewport did not match the panel' })
+            panelViewports.set(targetId, viewport)
+            return sendJson(res, 200, { ok: true, viewport })
+          }
           const now = Date.now()
           let cache = windowSizeCache.get(targetId)
           if (!cache || now - cache.measuredAt > 10000) {

@@ -28,7 +28,7 @@ export interface AgentBrowserInjected {
   raiseWindow: () => Promise<boolean>
   send: BrowserEgoController['send']
   hover: BrowserEgoController['hover']
-  /** 把面板内容区尺寸同步给 Host：浏览器窗口按面板大小重排，画面因此铺满面板。 */
+  /** 把面板内容区尺寸同步给 Host，由采集会话按页面实际视口绘制。 */
   resize: BrowserEgoController['resize']
 }
 
@@ -107,38 +107,46 @@ export function AgentBrowserPanel({
     setHovered(null)
   }, [shown, targetId, pageUrl, view.pending])
 
-  // 面板尺寸就是页面视口：把内容区大小去抖上报给 Host，浏览器窗口随之重排，
-  // 画面才能按 1:1 铺满工作台，而不是把一个宽桌面布局缩进窄栏。
+  // 内容区决定页面视口；不拉伸截图，以免画面与人工输入坐标错位。
   useEffect(() => {
     const node = stage.current
     const page = selected?.targetId
     if (!shown || node === null || page === undefined) return
     let timer: ReturnType<typeof setTimeout> | null = null
     let retry: ReturnType<typeof setTimeout> | null = null
+    let attempts = 0
+    let disposed = false
     const report = (): void => {
       const width = Math.round(node.clientWidth)
       const height = Math.round(node.clientHeight)
       if (width < 320 || height < 200) return
       void resize(page, width, height).then((accepted) => {
-        // Host 可能还没起好 worker；失败只补一次重试，避免反复触发重排。
-        if (accepted || retry !== null) return
+        // worker 尚未就绪时有界重试；隐藏或卸载后的迟到结果不可继续调尺寸。
+        if (disposed || accepted || retry !== null || attempts >= 2) return
+        attempts++
         retry = setTimeout(() => { retry = null; report() }, 1200)
       })
     }
     report()
+    const dispose = (): void => {
+      disposed = true
+      if (timer !== null) clearTimeout(timer)
+      if (retry !== null) clearTimeout(retry)
+    }
     // 老浏览器与测试环境没有 ResizeObserver：只同步首帧尺寸，不跟随后续拖动。
-    if (typeof ResizeObserver === 'undefined') return () => { if (retry !== null) clearTimeout(retry) }
+    if (typeof ResizeObserver === 'undefined') return dispose
     const observer = new ResizeObserver(() => {
       if (timer !== null) clearTimeout(timer)
-      timer = setTimeout(() => { timer = null; report() }, 250)
+      if (retry !== null) clearTimeout(retry)
+      retry = null
+      timer = setTimeout(() => { timer = null; attempts = 0; report() }, 250)
     })
     observer.observe(node)
     return () => {
-      if (timer !== null) clearTimeout(timer)
-      if (retry !== null) clearTimeout(retry)
+      dispose()
       observer.disconnect()
     }
-  }, [shown, selected?.targetId, resize])
+  }, [shown, selected?.targetId, pageUrl, selected?.viewportW, selected?.viewportH, resize])
   const videoTarget = selected?.targetId ?? null
   // 只有用户选择视频后端、Host 报告 fMP4 就绪且上一次播放没有失败时才用 MSE。
   const videoMode = shown && settings.backend === 'ffmpeg' && videoMime !== null && !videoFailed
