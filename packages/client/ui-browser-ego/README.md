@@ -40,7 +40,7 @@
 | 分组 | 字段 |
 | --- | --- |
 | 画面采集 | `captureBackend`（`auto`／`cdp`／`ffmpeg`，选 `ffmpeg` 时提示依赖）、`streamProfile`（`low`／`balanced`／`high`） |
-| 单帧画面 | `cdpFps`（5–30）、`cdpQuality`（1–100）、`cdpMaxWidth`（320–1920） |
+| 单帧画面 | `cdpFps`（5–30）、`cdpQuality`（1–100）、`cdpMaxWidth`（320–2560） |
 | 视频画面 | `ffmpegFps`（5–30）、`ffmpegMaxWidth`（320–1920）、`ffmpegBitrateKbps`（500–20000）、`ffmpegEncoder`（自动／软件／各平台硬件编码） |
 | 运行方式 | `headless`（默认开：只在面板里运行，不弹窗、不抢焦点）、`cursorName`（页面光标标签，默认 `Agent`）、`disableFrameRelay`、`residentExecutor`、`sessionScopedSpaces`、`idleTimeoutMin`（0–1440） |
 | 页面视口 | `viewportWidth`（0–3840）、`viewportHeight`（0–2160）、`deviceScaleFactor`（0–4） |

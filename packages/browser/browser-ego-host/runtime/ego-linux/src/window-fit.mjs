@@ -3,7 +3,7 @@
  *
  * Emulation.setDeviceMetricsOverride changes the page's viewport and nothing
  * else, so an agent working at a phone width renders a 390px layout inside a
- * 1280px window — a narrow strip of site with a wide band of empty chrome
+ * 2560px window — a narrow strip of site with a wide band of empty chrome
  * beside it. Watching someone work like that is the problem: it looks broken,
  * and screenshots of it are mostly blank.
  *

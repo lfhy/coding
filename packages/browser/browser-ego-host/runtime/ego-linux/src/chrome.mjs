@@ -28,6 +28,20 @@ export const WM_CLASS = "ego-lite-linux";
 /** Shown in Chrome's profile chip so the agent window is identifiable. */
 const PROFILE_LABEL = "ego lite — agent";
 
+/**
+ * Default window size for the agent browser.
+ *
+ * The window is what the page lays out at, so it decides whether the agent sees
+ * a wide desktop or a collapsed strip: a 1280px window shows a page the way a
+ * small laptop does, while the workbench panel watching that page can be wider
+ * than 2000 CSS px and then shows a scaled-down desktop. 2560x1080 keeps the
+ * layout at a wide desktop width and still exceeds the common 800x600 headless
+ * default, below which lower page content falls out of view and dispatched
+ * input hit-tests to nothing (Input.dispatchMouseEvent then waits forever for a
+ * frame that never comes).
+ */
+const WINDOW_SIZE = { width: 2560, height: 1080 };
+
 const LAUNCH_FLAGS = [
   "--no-first-run",
   "--no-default-browser-check",
@@ -36,13 +50,11 @@ const LAUNCH_FLAGS = [
   "--disable-renderer-backgrounding",
   // Node's WebSocket sends no Origin; without this Chrome rejects the upgrade.
   "--remote-allow-origins=*",
-  // Big enough that a page laid out for a desktop viewport fits. The default
-  // headless window is ~800x600, which pushes lower page content out of view;
-  // input dispatched at those coordinates hit-tests to nothing and
-  // Input.dispatchMouseEvent can hang waiting for a frame that never comes.
-  "--window-size=1280,900",
+  // Big enough that a page laid out for a wide desktop fits; see WINDOW_SIZE for
+  // why the size is this large.
+  `--window-size=${WINDOW_SIZE.width},${WINDOW_SIZE.height}`,
   // Without this the desktop's HiDPI scaling (1.5x here) shrinks the CSS
-  // viewport — a 1280px window lays out as 853px — so page content the agent
+  // viewport — a 2560px window lays out as 1707px — so page content the agent
   // expects on screen falls below the fold.
   "--force-device-scale-factor=1",
   // "Chrome didn't shut down correctly — Restore pages?". Two things keep it
@@ -258,7 +270,7 @@ export async function waitForEndpoint(profileDir, { timeoutMs = 20000 } = {}) {
  * Reset page zoom in the agent profile.
  *
  * --import-chrome-profile copies real Chrome preferences, which include the
- * user's zoom level. A 150% zoom lays a 1280px window out as 853 CSS px, so
+ * user's zoom level. A 150% zoom lays a 2560px window out as 1707 CSS px, so
  * content the page expects on screen falls below the fold — element coordinates
  * then hit-test to nothing and pointer input silently does nothing. This profile
  * exists only to drive agents, so zoom is pinned to 100%.
@@ -621,7 +633,7 @@ async function spawnXvfb(num) {
   const display = `:${num}`;
   const child = spawn(
     xvfb,
-    [display, "-screen", "0", "1280x900x24", "-nolisten", "tcp", "-ac"],
+    [display, "-screen", "0", `${WINDOW_SIZE.width}x${WINDOW_SIZE.height}x24`, "-nolisten", "tcp", "-ac"],
     { detached: true, stdio: "ignore" },
   );
   child.unref();

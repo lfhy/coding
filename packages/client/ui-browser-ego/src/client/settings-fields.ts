@@ -99,7 +99,7 @@ export const FIELD_GROUPS: readonly FieldGroup[] = [
     fields: [
       { field: 'cdpFps', kind: 'number', label: 'cdpFps', hint: 'cdpFpsHint', bounds: { min: 5, max: 30, integer: true } },
       { field: 'cdpQuality', kind: 'number', label: 'cdpQuality', hint: 'cdpQualityHint', bounds: { min: 1, max: 100, integer: true } },
-      { field: 'cdpMaxWidth', kind: 'number', label: 'cdpMaxWidth', hint: 'cdpMaxWidthHint', bounds: { min: 320, max: 1920, integer: true } },
+      { field: 'cdpMaxWidth', kind: 'number', label: 'cdpMaxWidth', hint: 'cdpMaxWidthHint', bounds: { min: 320, max: 2560, integer: true } },
     ],
   },
   {

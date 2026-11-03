@@ -200,7 +200,7 @@ export class CdpCaptureBackend {
     const session = await this.sessions.ensure(targetId)
     const config = this.getConfig()
     // The panel asks for roughly its own display width; never exceed the
-    // configured ceiling (users who want full 1280 keep it via settings).
+    // configured ceiling (2560 by default, so a wide workbench stays native).
     const effectiveMaxWidth = Math.max(320, Math.min(config.cdpMaxWidth, maxWidth && maxWidth > 0 ? Math.round(maxWidth) : config.cdpMaxWidth))
     this.current = { targetId, sessionId: session.sessionId, lastFrameAt: 0, startedAt: this.now(), maxWidth: effectiveMaxWidth }
     this.onStatus({ backend: 'cdp', state: 'starting', targetId })

@@ -1727,7 +1727,7 @@ let castConfig = {
 	ffmpegFallbackReason: "",
 	cdpFps: 20,
 	cdpQuality: 55,
-	cdpMaxWidth: 1280,
+	cdpMaxWidth: 2560,
 	cdpBackstopIntervalMs: 3e3,
 	ffmpegFps: 20,
 	ffmpegMaxWidth: 1280,
@@ -1795,7 +1795,7 @@ function normalizeConfig(input) {
 	]);
 	numberValue("cdpFps", 5, 30);
 	numberValue("cdpQuality", 1, 100);
-	numberValue("cdpMaxWidth", 320, 1920);
+	numberValue("cdpMaxWidth", 320, 2560);
 	numberValue("cdpBackstopIntervalMs", 1e3, 1e4);
 	numberValue("ffmpegFps", 5, 30);
 	numberValue("ffmpegMaxWidth", 320, 1920);
@@ -2233,9 +2233,9 @@ async function main() {
 					error: "no live browser"
 				});
 				const maxWidth = Number(url.searchParams.get("maxWidth") ?? 320);
-				if (!Number.isInteger(maxWidth) || maxWidth < 1 || maxWidth > 1920) return sendJson(res, 400, {
+				if (!Number.isInteger(maxWidth) || maxWidth < 1 || maxWidth > 2560) return sendJson(res, 400, {
 					ok: false,
-					error: "maxWidth must be an integer from 1 to 1920"
+					error: "maxWidth must be an integer from 1 to 2560"
 				});
 				const targets = await listTargets();
 				const targetId = url.searchParams.get("targetId") || await activeTargetId() || targets[0]?.targetId;

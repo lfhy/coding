@@ -40,7 +40,7 @@ const prefs = {
   streamProfile: profile.description('Capture quality profile.'),
   cdpFps: z.number().min(5).max(30).step(1).description('CDP preview FPS.'),
   cdpQuality: z.number().min(1).max(100).step(1).description('CDP JPEG quality.'),
-  cdpMaxWidth: z.number().min(320).max(1920).step(40).description('CDP frame max width.'),
+  cdpMaxWidth: z.number().min(320).max(2560).step(40).description('CDP frame max width.'),
   cdpBackstopIntervalMs: z.number().min(1000).max(10000).step(100).description('CDP recovery screenshot interval.'),
   ffmpegFps: z.number().min(5).max(30).step(1).description('FFmpeg video FPS.'),
   ffmpegMaxWidth: z.number().min(320).max(1920).step(40).description('FFmpeg video max width.'),
@@ -78,7 +78,7 @@ export const Config = z.object({
   // Deprecated read-compatible keys. The settings UI only writes canonical keys.
   castFpsCap: z.number().min(0).max(60).step(1),
   screencastQuality: z.number().min(1).max(100).step(1),
-  screencastMaxWidth: z.number().min(320).max(1920).step(40),
+  screencastMaxWidth: z.number().min(320).max(2560).step(40),
   backstopIntervalMs: z.number().min(200).max(10000).step(100),
 }) as unknown as z<Record<string, unknown>>
 
@@ -283,10 +283,11 @@ export function resolveConfig(config: RawConfig = {}): ResolvedConfig {
     streamProfile: selectedProfile,
     cdpFps: finiteIn(config.cdpFps, 5, 30) ? config.cdpFps : legacyFps,
     cdpQuality: finiteIn(config.cdpQuality, 1, 100) ? config.cdpQuality : (finiteIn(config.screencastQuality, 1, 100) ? config.screencastQuality : 55),
-    // 1280 (not 960): a 960 cap downsizes a 1264-wide viewport and the panel then
-    // upscales it, which is the "soft/garbled text" report. 1280 keeps the common
-    // laptop viewport at native width; larger displays can raise it to 1600/1920.
-    cdpMaxWidth: finiteIn(config.cdpMaxWidth, 320, 1920) ? config.cdpMaxWidth : (finiteIn(config.screencastMaxWidth, 320, 1920) ? config.screencastMaxWidth : 1280),
+    // 2560 (not 1280): the agent window is 2560x1080, and a 1280 cap downsizes
+    // that viewport by half — the panel then upscales it, which is the
+    // "soft/garbled text" report. 2560 keeps a wide workbench at native width;
+    // a smaller panel can lower it to trade sharpness for bandwidth.
+    cdpMaxWidth: finiteIn(config.cdpMaxWidth, 320, 2560) ? config.cdpMaxWidth : (finiteIn(config.screencastMaxWidth, 320, 2560) ? config.screencastMaxWidth : 2560),
     cdpBackstopIntervalMs: finiteIn(config.cdpBackstopIntervalMs, 1000, 10000) ? config.cdpBackstopIntervalMs : (finiteIn(config.backstopIntervalMs, 200, 10000) ? Math.max(1000, config.backstopIntervalMs) : 3000),
     ffmpegFps: finiteIn(config.ffmpegFps, 5, 30) ? config.ffmpegFps : profileDefaults.fps,
     ffmpegMaxWidth: finiteIn(config.ffmpegMaxWidth, 320, 1920) ? config.ffmpegMaxWidth : profileDefaults.width,

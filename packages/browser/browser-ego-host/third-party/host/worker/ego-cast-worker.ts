@@ -42,7 +42,7 @@ interface CastConfig {
 
 const DEFAULT_CONFIG: CastConfig = {
   captureBackend: 'auto', streamProfile: 'balanced', ffmpegFallbackReason: '',
-  cdpFps: 20, cdpQuality: 55, cdpMaxWidth: 1280, cdpBackstopIntervalMs: 3000,
+  cdpFps: 20, cdpQuality: 55, cdpMaxWidth: 2560, cdpBackstopIntervalMs: 3000,
   ffmpegFps: 20, ffmpegMaxWidth: 1280, ffmpegBitrateKbps: 4000, ffmpegEncoder: 'auto', ffmpegPath: '', ffmpegResolvedPath: '',
 }
 let castConfig: CastConfig = { ...DEFAULT_CONFIG }
@@ -113,7 +113,7 @@ function normalizeConfig(input: Record<string, unknown>): CastConfig {
   if (typeof input.ffmpegFallbackReason === 'string') next.ffmpegFallbackReason = input.ffmpegFallbackReason
   enumValue('streamProfile', ['low', 'balanced', 'high'])
   enumValue('ffmpegEncoder', ['auto', 'software', 'h264_mf', 'h264_nvenc', 'h264_qsv', 'h264_amf', 'h264_videotoolbox', 'h264_vaapi'])
-  numberValue('cdpFps', 5, 30); numberValue('cdpQuality', 1, 100); numberValue('cdpMaxWidth', 320, 1920); numberValue('cdpBackstopIntervalMs', 1000, 10000)
+  numberValue('cdpFps', 5, 30); numberValue('cdpQuality', 1, 100); numberValue('cdpMaxWidth', 320, 2560); numberValue('cdpBackstopIntervalMs', 1000, 10000)
   numberValue('ffmpegFps', 5, 30); numberValue('ffmpegMaxWidth', 320, 1920); numberValue('ffmpegBitrateKbps', 500, 20000)
   if (typeof input.ffmpegPath === 'string') next.ffmpegPath = input.ffmpegPath
   if (typeof input.ffmpegResolvedPath === 'string') next.ffmpegResolvedPath = input.ffmpegResolvedPath
@@ -465,7 +465,7 @@ async function main(): Promise<void> {
         const browser = active
         if (!browser) return sendJson(res, 409, { ok: false, error: 'no live browser' })
         const maxWidth = Number(url.searchParams.get('maxWidth') ?? 320)
-        if (!Number.isInteger(maxWidth) || maxWidth < 1 || maxWidth > 1920) return sendJson(res, 400, { ok: false, error: 'maxWidth must be an integer from 1 to 1920' })
+        if (!Number.isInteger(maxWidth) || maxWidth < 1 || maxWidth > 2560) return sendJson(res, 400, { ok: false, error: 'maxWidth must be an integer from 1 to 2560' })
         const targets = await listTargets()
         const targetId = url.searchParams.get('targetId') || await activeTargetId() || targets[0]?.targetId
         if (!targetId || !targets.some(target => target.targetId === targetId)) return sendJson(res, 409, { ok: false, error: 'target is no longer available' })
