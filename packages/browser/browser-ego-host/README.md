@@ -4,7 +4,7 @@
 
 ## 当前能力
 
-上游 v0.9.7 的 35 个工具全部移植：`status`、`auth_flush`、`login_import`、`space_open`、`space_close`、`snapshot`、`navigate`、`click`、`fill`、`js`、`cdp`、`screenshot`、`page_info`、`tabs`（列出/打开/切换/关闭）、`wait`、`wait_for_selector`、`wait_for_url`、`wait_for_response`、`key`、`hover`、`read_element`、`select`、`drag`、`scroll`、`upload`、`download`、`check`、`dialog`、`http`、`cli`、`captcha`、`wait_for_human`、`help`、`doctor`、`script`。消费方统一以 `browser_*` 注册，参数与上游 schema 一致；审批、Remote-SSH 拒绝与结果上限由消费方执行。Host 在执行时将 `space_open`／`space_close` 固定到当前会话空间，拒绝指定其他空间的操作；`cli`／`script` 执行前先进入当前会话空间，页面才会出现在该会话工作台。默认每个会话独立任务空间（上游 `sessionScopedSpaces`），浏览器 Profile 持久保存在用户目录，跨会话共享登录态但页面/标签隔离。
+上游 v0.9.7 的 35 个工具全部移植：`status`、`auth_flush`、`login_import`、`space_open`、`space_close`、`snapshot`、`navigate`、`click`、`fill`、`js`、`cdp`、`screenshot`、`page_info`、`tabs`（列出/打开/切换/关闭）、`wait`、`wait_for_selector`、`wait_for_url`、`wait_for_response`、`key`、`hover`、`read_element`、`select`、`drag`、`scroll`、`upload`、`download`、`check`、`dialog`、`http`、`cli`、`captcha`、`wait_for_human`、`help`、`doctor`、`script`。消费方统一以 `browser_*` 注册，参数形状与上游 schema 一致；审批、Remote-SSH 拒绝与结果上限由消费方执行。Host 将省略的 `space`、空字符串与 `default` 都视为当前会话空间，并将 `space_open`／`space_close` 的 `name: "default"` 映射到本会话；显式指定其他空间仍拒绝，不能用空值绕过隔离。`cli`／`script` 执行前先进入当前会话空间，页面才会出现在该会话工作台。默认每个会话独立任务空间（上游 `sessionScopedSpaces`），浏览器 Profile 持久保存在用户目录，跨会话共享登录态但页面/标签隔离。
 
 宿主的 `third-party/upstream/src/` 是上游 Host 源码，构建产物 `third-party/upstream/lib/index.js` 才是运行时入口；`apply()` 收集全部工具定义并由本包暴露，同时注册上游观察窗路由。上游 `/api/ego/*` 与 `/ego/api/*` 统一经过本项目 `connection.requestRejection` 与回环同源栅栏；`spaces`、`stream`、`frame`、`input`、`navigation`、`close`、`status`、`history` 使用本项目按会话过滤的实现，其余上游路由（设置网关、登录导入、watch、video 等）在通过同一栅栏后可用。
 

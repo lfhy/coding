@@ -25,7 +25,7 @@ function modelName(upstream: string): string {
   return `browser_${upstream.slice(4)}`
 }
 
-/** schema 只改注解文字，不动参数结构和输出约束；不把上游说明里的旧工具名暴露给模型。 */
+/** 上游描述中的旧工具名不进入模型提示。 */
 function renameDescription<T>(schema: T): T {
   if (Array.isArray(schema)) return schema.map(renameDescription) as T
   if (schema === null || typeof schema !== 'object') return schema
@@ -33,6 +33,33 @@ function renameDescription<T>(schema: T): T {
     key,
     key === 'description' && typeof value === 'string' ? value.replaceAll('ego_', 'browser_') : renameDescription(value),
   ])) as T
+}
+
+/** 把上游的全局空间说明收敛为当前会话，不改实际参数与输出格式。 */
+function browserDescription(name: string, description: string): string {
+  const text = description.replaceAll('ego_', 'browser_')
+  if (name === 'browser_space_open') {
+    return 'Open or reuse this session’s browser pages. Other sessions’ pages are not available.'
+  }
+  if (name === 'browser_space_close') {
+    return 'Close this session’s browser pages. Keep them open when you finish a task so you can continue later.'
+  }
+  return text
+}
+
+/** schema 中的空间参数只接受当前会话；调用时留空或传旧别名均由宿主收敛。 */
+function browserParameters(name: string, schema: Record<string, unknown>): Record<string, unknown> {
+  const parameters = renameDescription(schema)
+  if (!('properties' in parameters) || !parameters.properties || typeof parameters.properties !== 'object') return parameters
+  const properties = parameters.properties as Record<string, unknown>
+  const key = name === 'browser_space_open' || name === 'browser_space_close' ? 'name' : 'space'
+  const field = properties[key]
+  if (!field || typeof field !== 'object') return parameters
+  return { ...parameters, properties: { ...properties, [key]: { ...field,
+    description: key === 'space'
+      ? 'Optional. Uses this session’s pages; other sessions’ pages are unavailable. Leave blank unless resuming an older call.'
+      : 'Use "default" to select this session’s browser pages; other sessions’ pages are unavailable.',
+  } } }
 }
 
 function origin(value: unknown): string {
@@ -132,7 +159,11 @@ async function run(ctx: Context, source: ToolDefinition, name: string, input: un
   try { value = await source.execute(args, exec) } catch (error) {
     exec.signal.throwIfAborted()
     const detail = failureDetail(error)
-    throw new Error(`${name}: browser operation failed${detail === '' ? '' : `: ${detail}`}; inspect the current page before retrying`)
+    const isSpaceError = detail.includes('another task space is not available')
+    const advice = isSpaceError
+      ? 'omit the space argument to use this session’s pages; do not retry another session’s space'
+      : 'inspect the current page before retrying'
+    throw new Error(`${name}: browser operation failed${detail === '' ? '' : `: ${detail}`}; ${advice}`)
   }
   bounded(value, name)
   if (name === 'browser_screenshot') {
@@ -152,11 +183,11 @@ export function apply(ctx: Context): void {
   const imageForPath = new Map<string, ContentBlock>()
   for (const source of ctx.egoBrowser.toolDefinitions()) {
     const visibleName = modelName(source.name)
-    const parameterSchema = renameDescription(source.parameters)
+    const parameterSchema = browserParameters(visibleName, source.parameters)
     ctx.tools.register({
       ...source,
       name: visibleName,
-      description: source.description.replaceAll('ego_', 'browser_'),
+      description: browserDescription(visibleName, source.description),
       parameters: parameterSchema,
       output: {
         ...source.output,

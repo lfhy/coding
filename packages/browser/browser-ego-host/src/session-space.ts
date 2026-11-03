@@ -7,7 +7,7 @@ import type { SessionId } from 'coding-session/types'
 
 const ID_PATTERN = /^[a-zA-Z0-9._~-]{1,128}$/u
 
-/** 模型省略或显式传入空间时都只能操作当前会话；空间别名不暴露给工具执行器。 */
+/** 省略空间与旧版的默认别名都归当前会话；显式指定别的空间仍拒绝。 */
 export function sessionSpaceArgs(value: unknown, sessionId: SessionId, name: string): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(`${name}: invalid browser arguments`)
   const args = value as Record<string, unknown>
@@ -16,18 +16,14 @@ export function sessionSpaceArgs(value: unknown, sessionId: SessionId, name: str
     if (args.name !== own && args.name !== 'default') throw new Error(`${name}: another task space is not available`)
     return { ...args, name: own }
   }
-  if (name === 'ego_captcha' || name === 'ego_wait_for_human') {
-    if ('space' in args && args.space !== undefined && args.space !== own) {
-      throw new Error(`${name}: another task space is not available`)
-    }
-    return { ...args, space: own }
-  }
   if (name === 'ego_cli' || name === 'ego_script') {
     if (typeof args.script !== 'string') throw new Error(`${name}: invalid browser script`)
     return { ...args, script: `await taskSpaces.useOrCreate(${JSON.stringify(own)})\n${args.script}` }
   }
-  if ('space' in args) {
-    if (args.space !== undefined && args.space !== own) throw new Error(`${name}: another task space is not available`)
+  if ('space' in args || name === 'ego_captcha' || name === 'ego_wait_for_human') {
+    if (args.space !== undefined && args.space !== '' && args.space !== 'default' && args.space !== own) {
+      throw new Error(`${name}: another task space is not available`)
+    }
     return { ...args, space: own }
   }
   return args

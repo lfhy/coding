@@ -110,6 +110,32 @@ describe('Ego browser model tools', () => {
     expect(ctx.tools.get('browser_script')).toBeUndefined()
   })
 
+  it('describes only this session’s pages without changing browser argument shapes', async () => {
+    const tools = ['page_info', 'snapshot', 'tabs', 'captcha', 'wait_for_human'].map(name => fixture(name, {
+      space: { type: 'string', description: 'Use the global default task space.' },
+    }))
+    const { ctx, call, host } = await setup([...tools,
+      fixture('space_open', { name: { type: 'string', required: true, description: 'Use default.' } }),
+      fixture('space_close', { name: { type: 'string', required: true, description: 'Use default.' } }),
+    ])
+    for (const name of ['page_info', 'snapshot', 'tabs', 'captcha', 'wait_for_human']) {
+      const schema = ctx.tools.get(`browser_${name}`)?.parameters
+      expect(schema).toMatchObject({ properties: { space: { type: 'string' } } })
+      const properties = schema?.properties as Record<string, { description?: string }>
+      expect(properties.space?.description).toContain('this session')
+      expect(schema).not.toMatchObject({ required: ['space'] })
+      expect((await call(name, { space: 'default' })).isError).toBe(false)
+    }
+    for (const name of ['space_open', 'space_close']) {
+      const tool = ctx.tools.get(`browser_${name}`)
+      expect(tool?.description).toContain('this session')
+      expect(tool?.parameters).toMatchObject({ required: ['name'], properties: { name: { type: 'string' } } })
+      const properties = tool?.parameters.properties as Record<string, { description?: string }>
+      expect(properties.name?.description).toContain('this session')
+    }
+    expect(host.calls).toHaveBeenCalledTimes(5)
+  })
+
   it.each([
     ['read-only', 'ask', true], ['read-only', 'never', false],
     ['workspace-write', 'ask', true], ['workspace-write', 'never', false],
@@ -214,6 +240,14 @@ describe('Ego browser model tools', () => {
     expect(result.isError).toBe(true)
     expect(content(result)).toContain('browser_tabs: browser operation failed')
     expect(content(result)).toContain('targetId deadbeef is not open in this task space (open ids: abc)')
+  })
+
+  it('does not send the model into a repeated page-info call after a space denial', async () => {
+    const { call, host } = await setup([fixture('page_info')])
+    host.calls.mockRejectedValueOnce(new Error('ego_page_info: another task space is not available'))
+    const text = content(await call('page_info', { space: 'foreign' }))
+    expect(text).toContain('omit the space argument to use this session’s pages')
+    expect(text).not.toContain('inspect the current page before retrying')
   })
 
   it('keeps the failure reason bounded and single-line', async () => {

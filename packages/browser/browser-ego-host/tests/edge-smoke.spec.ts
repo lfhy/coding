@@ -75,17 +75,21 @@ root.innerHTML = '<button id="shadow-btn">Shadow</button>'
         return await tool.execute(args, exec) as Record<string, unknown>
       }
       expect((await call('ego_navigate', { url: origin })).ok).toBe(true)
-      expect((await call('ego_snapshot', {})).text).toContain('Session-only fixture')
-      expect((await call('ego_tabs', {})).tabs).toHaveLength(1)
-      expect((await call('ego_tabs', {}, second)).tabs).toHaveLength(1)
+      expect((await call('ego_page_info', { space: 'default' })).page).toMatchObject({ url: origin + '/' })
+      expect((await call('ego_page_info', { space: '' })).page).toMatchObject({ url: origin + '/' })
+      expect((await call('ego_snapshot', { space: 'default' })).text).toContain('Session-only fixture')
+      expect((await call('ego_tabs', { space: 'default' })).tabs).toHaveLength(1)
+      expect((await call('ego_tabs', { space: '' }, second)).tabs).toHaveLength(1)
+      await expect(call('ego_tabs', { space: 'foreign' })).rejects.toThrow(/another task space is not available/u)
       // CSS 选择器只在顶层文档查询；命中 open shadow root 与同源 iframe 时回退到坐标点击。
       expect((await call('ego_click', { selector: '#shadow-btn' })).ok).toBe(true)
       expect((await call('ego_hover', { selector: '#shadow-btn' })).ok).toBe(true)
       expect((await call('ego_click', { selector: '#inner' })).ok).toBe(true)
       await expect(call('ego_click', { selector: '#missing-target' })).rejects.toThrow(/Element not found/u)
       // 旧 targetId 必须指出当前空间真正存在的 id，而不是只报告操作失败。
-      await expect(call('ego_tabs', { action: 'switch', targetId: 'deadbeef' }))
-        .rejects.toThrow(/not open in this task space/u)
+      const missing = await call('ego_tabs', { action: 'switch', targetId: 'deadbeef' })
+      expect(missing.ok).toBe(false)
+      expect(missing.error).toContain('not open in this task space')
       const screenshot = await call('ego_screenshot', { path: join(root, 'image.png') })
       expect(screenshot).toEqual({ ok: true, path: join(root, 'image.png') })
       expect((await stat(join(root, 'image.png'))).size).toBeGreaterThan(50)

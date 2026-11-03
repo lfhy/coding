@@ -1,6 +1,6 @@
 # coding-tool-browser-ego
 
-模型侧的 Ego 浏览器工具消费方。需同时挂载 `coding-browser-ego-host`、`coding-tools`、`coding-attachment` 与 `coding-user-approval`；有效沙箱模式由可选的 `coding-sandbox-policy` 按调用会话解析。宿主返回完整工具定义，本包全部登记并把 `ego_*` 名称及说明映射为 `browser_*`，保留参数和输出 JSON Schema，不引入旧浏览器作为回退。函数插件没有公开配置；注册项随插件卸载撤销。
+模型侧的 Ego 浏览器工具消费方。需同时挂载 `coding-browser-ego-host`、`coding-tools`、`coding-attachment` 与 `coding-user-approval`；有效沙箱模式由可选的 `coding-sandbox-policy` 按调用会话解析。宿主返回完整工具定义，本包全部登记并把 `ego_*` 名称映射为 `browser_*`；空间参数的说明改为本会话页面，其余说明替换旧工具名，参数形状和输出 JSON Schema 保持不变。不引入旧浏览器作为回退。函数插件没有公开配置；注册项随插件卸载撤销。
 
 每次调用要求活跃 Agent 和审批服务；带 Remote-SSH marker 的会话在审批前、审批后与调用前均拒绝，不会隐式操作本机浏览器。会话有效沙箱模式为 `danger-full-access` 且审批策略为 `never` 时，常规浏览器操作免于弹窗；其余组合调用 `approval.request`，只接受本次的 `allowed-once`。拒绝、取消、无人应答与权限在等待期间变更均不会调用宿主。审批理由只说明操作与目标 HTTP(S) origin，拒绝在审计记录中包含 URL 路径、查询、表单、文件路径、空间名和脚本。宿主还须按会话隔离浏览器空间并禁止模型选择其它空间；本包不提供跨会话空间能力。
 
@@ -14,7 +14,7 @@
 
 #### What the model sees
 
-模型看到宿主交付的全部 `browser_*` 原参数 schema；描述中旧工具名替换为新名称，执行结果保持上游规范 JSON。只有显式截图会多一个持久图像块；过大结果与拒绝仅返回可恢复的错误文本。
+模型看到宿主交付的全部 `browser_*` 参数 schema；`space` 的说明要求省略以使用本会话，`space_open`／`space_close` 的 `name` 说明使用 `default` 别名，不再建议全局空间；其余描述中旧工具名替换为新名称。若显式指定其他会话空间被拒，错误说明应省略空间字段，而不是反复查询同一个空间。执行结果保持上游规范 JSON；只有显式截图会多一个持久图像块，过大结果与拒绝仅返回可恢复的错误文本。
 
 #### Token effect
 

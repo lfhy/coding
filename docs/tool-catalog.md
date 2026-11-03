@@ -561,7 +561,7 @@ Check the current page for a human-verification (CAPTCHA) challenge — reCAPTCH
   "properties": {
     "space": {
       "type": "string",
-      "description": "Task-space name or numeric id; defaults to the configured defaultSpace."
+      "description": "Optional. Uses this session’s pages; other sessions’ pages are unavailable. Leave blank unless resuming an older call."
     }
   }
 }
@@ -588,7 +588,7 @@ Issue a raw CDP command on the page target, e.g. cdp("Page.handleJavaScriptDialo
     },
     "space": {
       "type": "string",
-      "description": "Task-space name or numeric id. Omit to use this session’s own space (dsh-agent-<session>) when session-scoped spaces are on (default), otherwise the most recently opened or explicitly selected space."
+      "description": "Optional. Uses this session’s pages; other sessions’ pages are unavailable. Leave blank unless resuming an older call."
     }
   },
   "required": [
@@ -617,7 +617,7 @@ Check (tick) or uncheck a checkbox/radio element. Does nothing if already in the
     },
     "space": {
       "type": "string",
-      "description": "Task-space name or numeric id. Omit to use this session’s own space (dsh-agent-<session>) when session-scoped spaces are on (default), otherwise the most recently opened or explicitly selected space."
+      "description": "Optional. Uses this session’s pages; other sessions’ pages are unavailable. Leave blank unless resuming an older call."
     }
   },
   "required": [
@@ -683,7 +683,7 @@ Click an element in the current page. Target with a CSS selector, an xpath=.../l
     },
     "space": {
       "type": "string",
-      "description": "Task-space name or numeric id. Omit to use this session’s own space (dsh-agent-<session>) when session-scoped spaces are on (default), otherwise the most recently opened or explicitly selected space."
+      "description": "Optional. Uses this session’s pages; other sessions’ pages are unavailable. Leave blank unless resuming an older call."
     }
   }
 }
@@ -709,7 +709,7 @@ Accept or dismiss a native browser dialog (alert/confirm/prompt), optionally sup
     },
     "space": {
       "type": "string",
-      "description": "Task-space name or numeric id. Omit to use this session’s own space (dsh-agent-<session>) when session-scoped spaces are on (default), otherwise the most recently opened or explicitly selected space."
+      "description": "Optional. Uses this session’s pages; other sessions’ pages are unavailable. Leave blank unless resuming an older call."
     }
   }
 }
@@ -760,7 +760,7 @@ Wait for a file download triggered by the current action, then return its saved 
     },
     "space": {
       "type": "string",
-      "description": "Task-space name or numeric id. Omit to use this session’s own space (dsh-agent-<session>) when session-scoped spaces are on (default), otherwise the most recently opened or explicitly selected space."
+      "description": "Optional. Uses this session’s pages; other sessions’ pages are unavailable. Leave blank unless resuming an older call."
     }
   }
 }
@@ -793,7 +793,7 @@ Drag an element to a target (Playwright dragTo) or drag the pointer through coor
     },
     "space": {
       "type": "string",
-      "description": "Task-space name or numeric id. Omit to use this session’s own space (dsh-agent-<session>) when session-scoped spaces are on (default), otherwise the most recently opened or explicitly selected space."
+      "description": "Optional. Uses this session’s pages; other sessions’ pages are unavailable. Leave blank unless resuming an older call."
     }
   }
 }
@@ -819,7 +819,7 @@ Type text into an input field. Target with a CSS selector, xpath=..., loc=..., o
     },
     "space": {
       "type": "string",
-      "description": "Task-space name or numeric id. Omit to use this session’s own space (dsh-agent-<session>) when session-scoped spaces are on (default), otherwise the most recently opened or explicitly selected space."
+      "description": "Optional. Uses this session’s pages; other sessions’ pages are unavailable. Leave blank unless resuming an older call."
     }
   },
   "required": [
@@ -871,7 +871,7 @@ Move the pointer over an element (CSS selector / ref) or to viewport coordinates
     },
     "space": {
       "type": "string",
-      "description": "Task-space name or numeric id. Omit to use this session’s own space (dsh-agent-<session>) when session-scoped spaces are on (default), otherwise the most recently opened or explicitly selected space."
+      "description": "Optional. Uses this session’s pages; other sessions’ pages are unavailable. Leave blank unless resuming an older call."
     }
   }
 }
@@ -914,7 +914,7 @@ Make an HTTP request and return status + body. Default runs in the agent page's 
     },
     "space": {
       "type": "string",
-      "description": "Task-space name or numeric id. Omit to use this session’s own space (dsh-agent-<session>) when session-scoped spaces are on (default), otherwise the most recently opened or explicitly selected space."
+      "description": "Optional. Uses this session’s pages; other sessions’ pages are unavailable. Leave blank unless resuming an older call."
     }
   },
   "required": [
@@ -939,7 +939,7 @@ Evaluate a JavaScript expression in the current page and return its JSON-seriali
     },
     "space": {
       "type": "string",
-      "description": "Task-space name or numeric id. Omit to use this session’s own space (dsh-agent-<session>) when session-scoped spaces are on (default), otherwise the most recently opened or explicitly selected space."
+      "description": "Optional. Uses this session’s pages; other sessions’ pages are unavailable. Leave blank unless resuming an older call."
     }
   },
   "required": [
@@ -968,7 +968,7 @@ Press a keyboard key or shortcut combination on the current page, e.g. 'Enter', 
     },
     "space": {
       "type": "string",
-      "description": "Task-space name or numeric id. Omit to use this session’s own space (dsh-agent-<session>) when session-scoped spaces are on (default), otherwise the most recently opened or explicitly selected space."
+      "description": "Optional. Uses this session’s pages; other sessions’ pages are unavailable. Leave blank unless resuming an older call."
     }
   }
 }
@@ -1035,7 +1035,7 @@ Open a URL in the task space, or switch to the existing tab for it. Always prefe
     },
     "space": {
       "type": "string",
-      "description": "Task-space name or numeric id. Omit to use this session’s own space (dsh-agent-<session>) when session-scoped spaces are on (default), otherwise the most recently opened or explicitly selected space."
+      "description": "Optional. Uses this session’s pages; other sessions’ pages are unavailable. Leave blank unless resuming an older call."
     }
   },
   "required": [
@@ -1056,7 +1056,7 @@ Return the current page info: url, title, viewport size (w, h), scroll offsets (
   "properties": {
     "space": {
       "type": "string",
-      "description": "Task-space name or numeric id. Omit to use this session’s own space (dsh-agent-<session>) when session-scoped spaces are on (default), otherwise the most recently opened or explicitly selected space."
+      "description": "Optional. Uses this session’s pages; other sessions’ pages are unavailable. Leave blank unless resuming an older call."
     }
   }
 }
@@ -1086,7 +1086,7 @@ Read a single element (by selector): its text, HTML, input value, an attribute, 
     },
     "space": {
       "type": "string",
-      "description": "Task-space name or numeric id. Omit to use this session’s own space (dsh-agent-<session>) when session-scoped spaces are on (default), otherwise the most recently opened or explicitly selected space."
+      "description": "Optional. Uses this session’s pages; other sessions’ pages are unavailable. Leave blank unless resuming an older call."
     }
   },
   "required": [
@@ -1119,7 +1119,7 @@ Capture a screenshot of the current page (or of a single element if selector is 
     },
     "space": {
       "type": "string",
-      "description": "Task-space name or numeric id. Omit to use this session’s own space (dsh-agent-<session>) when session-scoped spaces are on (default), otherwise the most recently opened or explicitly selected space."
+      "description": "Optional. Uses this session’s pages; other sessions’ pages are unavailable. Leave blank unless resuming an older call."
     }
   }
 }
@@ -1178,7 +1178,7 @@ Scroll the page: by pixel deltas (wheel), or bring an element into view (scrollI
     },
     "space": {
       "type": "string",
-      "description": "Task-space name or numeric id. Omit to use this session’s own space (dsh-agent-<session>) when session-scoped spaces are on (default), otherwise the most recently opened or explicitly selected space."
+      "description": "Optional. Uses this session’s pages; other sessions’ pages are unavailable. Leave blank unless resuming an older call."
     }
   }
 }
@@ -1203,7 +1203,7 @@ Choose an option in a <select> dropdown by value, label, or index (a single valu
     },
     "space": {
       "type": "string",
-      "description": "Task-space name or numeric id. Omit to use this session’s own space (dsh-agent-<session>) when session-scoped spaces are on (default), otherwise the most recently opened or explicitly selected space."
+      "description": "Optional. Uses this session’s pages; other sessions’ pages are unavailable. Leave blank unless resuming an older call."
     }
   },
   "required": [
@@ -1224,7 +1224,7 @@ Read the current page as text: the full-page semantic tree annotated with [ref=N
   "properties": {
     "space": {
       "type": "string",
-      "description": "Task-space name or numeric id. Omit to use this session’s own space (dsh-agent-<session>) when session-scoped spaces are on (default), otherwise the most recently opened or explicitly selected space."
+      "description": "Optional. Uses this session’s pages; other sessions’ pages are unavailable. Leave blank unless resuming an older call."
     },
     "scope": {
       "type": "string",
@@ -1238,7 +1238,7 @@ Source: [`packages/browser/tool-browser-ego/src/index.ts`](../packages/browser/t
 
 ### `browser_space_close`
 
-Close an ego-lite task space. WARNING: In persistent profile mode, DO NOT call this tool when finishing tasks! Keep the space, tabs, and browser window alive so login sessions and streams remain intact. Conclude tasks by replying to the user directly without closing the space.
+Close this session’s browser pages. Keep them open when you finish a task so you can continue later.
 
 ```json
 {
@@ -1246,7 +1246,7 @@ Close an ego-lite task space. WARNING: In persistent profile mode, DO NOT call t
   "properties": {
     "name": {
       "type": "string",
-      "description": "Task-space name or numeric id to close."
+      "description": "Use \"default\" to select this session’s browser pages; other sessions’ pages are unavailable."
     },
     "keep": {
       "type": "boolean",
@@ -1263,7 +1263,7 @@ Source: [`packages/browser/tool-browser-ego/src/index.ts`](../packages/browser/t
 
 ### `browser_space_open`
 
-Open (or reuse) the ego-lite task space. In persistent profile mode (default), ALWAYS use or reuse the single 'default' space. Login credentials automatically persist on disk across restarts — if a page requires login, prompt user to log in manually in the opened window. DO NOT create numbered spaces like #4, #5.
+Open or reuse this session’s browser pages. Other sessions’ pages are not available.
 
 ```json
 {
@@ -1271,7 +1271,7 @@ Open (or reuse) the ego-lite task space. In persistent profile mode (default), A
   "properties": {
     "name": {
       "type": "string",
-      "description": "Task-space name. In persistent mode, ALWAYS specify 'default'. Reuse this single space for all browsing tasks."
+      "description": "Use \"default\" to select this session’s browser pages; other sessions’ pages are unavailable."
     }
   },
   "required": [
@@ -1317,7 +1317,7 @@ List, switch, open, or close agent-browser tabs. Use it to keep tab hygiene: lis
     },
     "space": {
       "type": "string",
-      "description": "Task-space name or numeric id. Omit to use this session’s own space (dsh-agent-<session>) when session-scoped spaces are on (default), otherwise the most recently opened or explicitly selected space."
+      "description": "Optional. Uses this session’s pages; other sessions’ pages are unavailable. Leave blank unless resuming an older call."
     }
   }
 }
@@ -1343,7 +1343,7 @@ Set files on a file <input> element (path-driven). Use to upload a dataset/attac
     },
     "space": {
       "type": "string",
-      "description": "Task-space name or numeric id. Omit to use this session’s own space (dsh-agent-<session>) when session-scoped spaces are on (default), otherwise the most recently opened or explicitly selected space."
+      "description": "Optional. Uses this session’s pages; other sessions’ pages are unavailable. Leave blank unless resuming an older call."
     }
   },
   "required": [
@@ -1402,7 +1402,7 @@ Hand the page to the human for a CAPTCHA / login / 2FA / confirmation, then wait
     },
     "space": {
       "type": "string",
-      "description": "Task-space name or numeric id; defaults to this session’s space."
+      "description": "Optional. Uses this session’s pages; other sessions’ pages are unavailable. Leave blank unless resuming an older call."
     }
   }
 }
@@ -1436,7 +1436,7 @@ Wait for a network response matching a URL/glob/regex and return it. Optionally 
     },
     "space": {
       "type": "string",
-      "description": "Task-space name or numeric id. Omit to use this session’s own space (dsh-agent-<session>) when session-scoped spaces are on (default), otherwise the most recently opened or explicitly selected space."
+      "description": "Optional. Uses this session’s pages; other sessions’ pages are unavailable. Leave blank unless resuming an older call."
     }
   },
   "required": [
@@ -1469,7 +1469,7 @@ Wait until an element matching a CSS selector appears (state=visible, default) o
     },
     "space": {
       "type": "string",
-      "description": "Task-space name or numeric id. Omit to use this session’s own space (dsh-agent-<session>) when session-scoped spaces are on (default), otherwise the most recently opened or explicitly selected space."
+      "description": "Optional. Uses this session’s pages; other sessions’ pages are unavailable. Leave blank unless resuming an older call."
     }
   },
   "required": [
@@ -1498,7 +1498,7 @@ Wait until the page navigates to a URL matching a substring / glob / regex. Use 
     },
     "space": {
       "type": "string",
-      "description": "Task-space name or numeric id. Omit to use this session’s own space (dsh-agent-<session>) when session-scoped spaces are on (default), otherwise the most recently opened or explicitly selected space."
+      "description": "Optional. Uses this session’s pages; other sessions’ pages are unavailable. Leave blank unless resuming an older call."
     }
   },
   "required": [

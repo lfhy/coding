@@ -41,17 +41,20 @@ describe('会话空间归属', () => {
     expect(sessionSpaceArgs({ url: 'https://example.com/' }, first, 'ego_navigate'))
       .toEqual({ url: 'https://example.com/' })
     expect(sessionSpaceArgs({ space: own }, first, 'ego_navigate')).toEqual({ space: own })
-    expect(() => sessionSpaceArgs({ space: spaceNameForSession(second) }, first, 'ego_navigate'))
-      .toThrow('another task space is not available')
-    expect(() => sessionSpaceArgs({ space: 'default' }, first, 'ego_navigate'))
-      .toThrow('another task space is not available')
+    for (const name of ['ego_navigate', 'ego_page_info', 'ego_snapshot', 'ego_tabs', 'ego_captcha', 'ego_wait_for_human']) {
+      expect(sessionSpaceArgs({ space: 'default' }, first, name), name).toEqual({ space: own })
+      expect(sessionSpaceArgs({ space: '' }, first, name), name).toEqual({ space: own })
+      expect(sessionSpaceArgs({ space: undefined }, first, name), name).toEqual({ space: own })
+      expect(() => sessionSpaceArgs({ space: spaceNameForSession(second) }, first, name))
+        .toThrow('another task space is not available')
+      expect(() => sessionSpaceArgs({ space: 'unrelated' }, first, name))
+        .toThrow('another task space is not available')
+    }
     expect(sessionSpaceArgs({ name: own }, first, 'ego_space_close')).toEqual({ name: own })
     expect(() => sessionSpaceArgs({ name: spaceNameForSession(second) }, first, 'ego_space_close'))
       .toThrow('another task space is not available')
     expect(sessionSpaceArgs({}, first, 'ego_captcha')).toEqual({ space: own })
     expect(sessionSpaceArgs({}, first, 'ego_wait_for_human')).toEqual({ space: own })
-    expect(() => sessionSpaceArgs({ space: spaceNameForSession(second) }, first, 'ego_captcha'))
-      .toThrow('another task space is not available')
     const script = 'console.log("ready")'
     for (const name of ['ego_cli', 'ego_script']) {
       expect(sessionSpaceArgs({ script }, first, name)).toEqual({
