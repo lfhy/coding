@@ -163,6 +163,10 @@ export interface PptChartSeries {
   readonly name: string
   readonly values: readonly number[]
   readonly color: string
+  /** 画在主轴还是次坐标轴；缺省主轴。 */
+  readonly axis?: 'primary' | 'secondary'
+  /** 组合图里这条系列画成柱还是线；缺省跟随图表类型。 */
+  readonly as?: 'bar' | 'line'
 }
 
 /** 图表元素：分类轴 + 一到多条系列。 */
@@ -174,6 +178,8 @@ export interface PptChartElement extends ElementFrame, ElementMotion {
   readonly series: readonly PptChartSeries[]
   /** 是否显示数值标签。 */
   readonly showValues: boolean
+  /** 柱状/折线是否堆叠。 */
+  readonly stacked: boolean
   /** 文字与网格颜色。 */
   readonly textColor: string
 }
@@ -439,6 +445,12 @@ function parseChart(value: Record<string, unknown>, at: string): Omit<PptChartEl
       name: entry.name,
       values: entry.values.map((item, valueIndex) => bounded(item, `${at}.series[${index}].values[${valueIndex}]`, -1e9, 1e9)),
       color: color(entry.color, `${at}.series[${index}].color`),
+      ...entry.axis === undefined
+        ? {}
+        : { axis: oneOf(entry.axis, `${at}.series[${index}].axis`, ['primary', 'secondary'] as const) },
+      ...entry.as === undefined
+        ? {}
+        : { as: oneOf(entry.as, `${at}.series[${index}].as`, ['bar', 'line'] as const) },
     }
   })
   return {
@@ -446,6 +458,7 @@ function parseChart(value: Record<string, unknown>, at: string): Omit<PptChartEl
     categories,
     series,
     showValues: value.showValues === true,
+    stacked: value.stacked === true,
     textColor: color(value.textColor, `${at}.textColor`),
   }
 }

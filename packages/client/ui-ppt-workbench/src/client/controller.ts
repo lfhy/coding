@@ -327,10 +327,24 @@ export class PptPanelController {
    */
   async updateElement(elementId: string, patch: {
     frame?: Partial<{ x: number; y: number; w: number; h: number }>
-    text?: Partial<{ content: string; size: number; color: string; bold: boolean; align: string; valign: string }>
+    text?: Partial<{
+      content: string
+      size: number
+      color: string
+      bold: boolean
+      align: string
+      valign: string
+      font: string
+    }>
     fill?: string
     color?: string
     width?: number
+    source?: string
+    fit?: 'cover' | 'contain'
+    cells?: readonly (readonly { readonly content: string }[])[]
+    chart?: { categories: readonly string[]; series: readonly unknown[] }
+    stacked?: boolean
+    animation?: 'none' | 'fade' | 'fly' | 'zoom' | 'wipe'
   }): Promise<void> {
     const state = this.view.getSnapshot()
     const page = currentPage(state.project, state.pageIndex)

@@ -188,6 +188,30 @@ describe('.pptx 导出', () => {
     expect(types).toContain('.drawingml.chart+xml')
   })
 
+  it('堆叠、次坐标轴与组合图写成对应的图表属性', () => {
+    const stacked: PptDeck = {
+      ...deck,
+      pages: [{
+        id: 'p1', name: '堆叠', background: null, transition: 'none',
+        elements: [{
+          id: 'c1', kind: 'chart', x: 0, y: 0, w: 720, h: 360, chart: 'bar', stacked: true,
+          categories: ['A', 'B'], showValues: false, textColor: '#9aa7b4',
+          series: [
+            { name: '甲', values: [1, 2], color: '#4f8cff' },
+            { name: '乙', values: [3, 4], color: '#b5652c', axis: 'secondary', as: 'line' },
+          ],
+        }],
+      }],
+    }
+    const chart = readZip(buildPptx(stacked))
+      .find(entry => entry.path === 'ppt/charts/chart1.xml')?.data.toString('utf8') ?? ''
+    expect(chart).toContain('<c:grouping val="stacked"/>')
+    expect(chart).toContain('<c:overlap val="100"/>')
+    expect(chart).toContain('<c:lineChart>')
+    expect(chart).toContain('<c:axPos val="r"/>')
+    expect(chart).toContain('<c:axId val="3"/>')
+  })
+
   it('元素动画写出 p:timing，字体嵌入写出 fntdata 与 embeddedFontLst', () => {
     const animated: PptDeck = {
       ...deck,

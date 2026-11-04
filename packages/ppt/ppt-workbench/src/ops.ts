@@ -76,6 +76,8 @@ export interface UpdateElementOp {
   readonly chart?: { readonly categories: readonly string[]; readonly series: readonly PptChartSeries[] }
   /** 入场动画。 */
   readonly animation?: ElementAnimation
+  /** 图表是否堆叠。 */
+  readonly stacked?: boolean
 }
 
 /** 元素层级调整。 */
@@ -272,6 +274,7 @@ function parseOp(value: unknown, at: string): PptOp {
           ? {}
           : { animation: pick(MOTIONS, value.animation, `${at}.animation`) },
         ...value.chart === undefined ? {} : { chart: parseChartPatch(value.chart, `${at}.chart`) },
+        ...value.stacked === undefined ? {} : { stacked: value.stacked === true },
       }
     }
     case 'remove_element':
@@ -353,6 +356,7 @@ function normalizeElement(raw: Record<string, unknown>, deck: PptDeck): PptEleme
     source.categories = source.categories ?? ['一季度', '二季度', '三季度', '四季度']
     source.series = source.series ?? [{ name: '系列 1', values: [1, 2, 3, 4], color: palette.accent }]
     source.showValues = source.showValues ?? false
+    source.stacked = source.stacked ?? false
     source.textColor = source.textColor ?? palette.muted
   }
   if (source.kind === 'image') {
@@ -409,6 +413,10 @@ function patchElement(element: PptElement, op: UpdateElementOp): PptElement {
     if (op.source !== undefined) next.source = op.source
     if (op.fit !== undefined) next.fit = op.fit
   }
+  if (op.stacked !== undefined && element.kind !== 'chart') {
+    throw new PptModelError('stacked 只对 chart 元素有效')
+  }
+  if (element.kind === 'chart' && op.stacked !== undefined) next.stacked = op.stacked
   if (element.kind === 'chart' && op.chart !== undefined) {
     if (op.chart.series.some(series => series.values.length !== op.chart?.categories.length)) {
       throw new PptModelError('图表系列的数值长度必须等于分类数')

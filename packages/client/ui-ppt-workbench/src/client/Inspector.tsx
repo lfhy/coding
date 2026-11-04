@@ -25,6 +25,10 @@ export interface ElementPatch {
   fit?: 'cover' | 'contain'
   cells?: readonly (readonly { readonly content: string }[])[]
   animation?: 'none' | 'fade' | 'fly' | 'zoom' | 'wipe'
+  /** 图表：整表替换分类与系列。 */
+  chart?: { categories: readonly string[]; series: readonly unknown[] }
+  /** 图表是否堆叠。 */
+  stacked?: boolean
 }
 
 export interface InspectorProps {
@@ -37,6 +41,8 @@ export interface InspectorProps {
   readonly onRemove: () => void
   readonly onDuplicate: () => void
   readonly onReorder: (to: 'front' | 'back' | 'forward' | 'backward') => void
+  /** 图表的开关：堆叠、次坐标轴、组合（第二条系列画成折线）。 */
+  readonly onChart: (patch: { stacked?: boolean; secondary?: boolean; combo?: boolean }) => void
   readonly onPage: (patch: { name?: string; background?: string | null; transition?: SlideTransition }) => void
   readonly onDeck: (patch: { title?: string; theme?: string; size?: '16:9' | '4:3' }) => void
 }
@@ -171,7 +177,7 @@ function TableCellEditor({
  * @returns 属性表单。
  */
 export function Inspector({
-  deck, page, element, busy, t, onElement, onRemove, onDuplicate, onReorder, onPage, onDeck,
+  deck, page, element, busy, t, onElement, onRemove, onDuplicate, onReorder, onChart, onPage, onDeck,
 }: InspectorProps) {
   const background = page.background ?? '#000000'
   return (
@@ -232,6 +238,37 @@ export function Inspector({
           {element.kind === 'rect' || element.kind === 'ellipse' ? (
             <ColorField label={t('fill')} value={element.fill} disabled={busy}
               onCommit={(fill) => { onElement({ fill }) }} />
+          ) : null}
+          {element.kind === 'chart' ? (
+            <>
+              <label className={css.check}>
+                <input
+                  type="checkbox"
+                  checked={element.stacked}
+                  disabled={busy || element.chart === 'pie'}
+                  onChange={(event) => { onChart({ stacked: event.target.checked }) }}
+                />
+                <span>{t('chartStacked')}</span>
+              </label>
+              <label className={css.check}>
+                <input
+                  type="checkbox"
+                  checked={element.series.some(series => series.axis === 'secondary')}
+                  disabled={busy || element.chart === 'pie'}
+                  onChange={(event) => { onChart({ secondary: event.target.checked }) }}
+                />
+                <span>{t('chartSecondary')}</span>
+              </label>
+              <label className={css.check}>
+                <input
+                  type="checkbox"
+                  checked={element.series.some(series => series.as !== undefined)}
+                  disabled={busy || element.chart === 'pie' || element.series.length < 2}
+                  onChange={(event) => { onChart({ combo: event.target.checked }) }}
+                />
+                <span>{t('chartCombo')}</span>
+              </label>
+            </>
           ) : null}
           {element.kind === 'table' ? (
             <TableCellEditor element={element} busy={busy} t={t} onCommit={(cells) => { onElement({ cells }) }} />

@@ -275,6 +275,31 @@ export function PptWorkbench({
               onRemove={() => { if (element !== null) void removeElement(element.id) }}
               onDuplicate={() => { if (element !== null) void duplicateElement(element.id) }}
               onReorder={(to) => { if (element !== null) void reorderElement(element.id, to) }}
+              onChart={(patch) => {
+                if (element === null || element.kind !== 'chart') return
+                const series = element.series.map((entry, index) => {
+                  if (patch.combo !== undefined) {
+                    return { ...entry, as: patch.combo && index > 0 ? 'line' as const : undefined }
+                  }
+                  if (patch.secondary !== undefined) {
+                    return { ...entry, axis: patch.secondary && index > 0 ? 'secondary' as const : 'primary' as const }
+                  }
+                  return entry
+                }).map(({ as, axis, ...rest }) => ({
+                  ...rest,
+                  ...as === undefined ? {} : { as },
+                  ...axis === undefined ? {} : { axis },
+                }))
+                void updateElement(
+                  element.id,
+                  element.chart === 'pie' && patch.stacked === undefined
+                    ? {}
+                    : {
+                      chart: { categories: element.categories, series },
+                      ...patch.stacked === undefined ? {} : { stacked: patch.stacked },
+                    },
+                )
+              }}
               onPage={(patch) => { void updatePage(patch) }}
               onDeck={(patch) => { void updateDeck(patch) }}
             />

@@ -217,22 +217,26 @@ function numCache(values: readonly number[]): string {
   return `<c:formatCode>General</c:formatCode><c:ptCount val="${values.length}"/>${points}`
 }
 
-function chartSeriesXml(element: PptChartElement): string {
-  return element.series.map((series, index) => {
-    const cats = `<c:cat><c:strRef><c:f>Sheet1!$A$2:$A$${element.categories.length + 1}</c:f>`
+function chartSeriesXml(element: PptChartElement, seriesKind?: 'bar' | 'line'): string {
+  return element.series
+    .map((series, index) => ({ series, index }))
+    .filter(({ series }) => seriesKind === undefined || (series.as ?? element.chart) === seriesKind)
+    .map(({ series, index }) => {
+      const cats = `<c:cat><c:strRef><c:f>Sheet1!$A$2:$A$${element.categories.length + 1}</c:f>`
       + `${strCache(element.categories)}</c:strRef></c:cat>`
-    const values = `<c:val><c:numRef><c:f>Sheet1!$${String.fromCharCode(66 + index)}$2:`
+      const values = `<c:val><c:numRef><c:f>Sheet1!$${String.fromCharCode(66 + index)}$2:`
       + `$${String.fromCharCode(66 + index)}$${series.values.length + 1}</c:f>`
       + `<c:numCache>${numCache(series.values)}</c:numCache></c:numRef></c:val>`
-    const name = `<c:tx><c:strRef><c:f>Sheet1!$${String.fromCharCode(66 + index)}$1</c:f>`
+      const name = `<c:tx><c:strRef><c:f>Sheet1!$${String.fromCharCode(66 + index)}$1</c:f>`
       + `${strCache([series.name])}</c:strRef></c:tx>`
-    const shapeProps = `<c:spPr><a:solidFill><a:srgbClr val="${srgb(series.color)}"/></a:solidFill></c:spPr>`
-    const labels = element.showValues
-      ? '<c:dLbls><c:showVal val="1"/></c:dLbls>'
-      : ''
-    return `<c:ser><c:idx val="${index}"/><c:order val="${index}"/>${name}${shapeProps}`
+      const shapeProps = `<c:spPr><a:solidFill><a:srgbClr val="${srgb(series.color)}"/></a:solidFill></c:spPr>`
+      const labels = element.showValues
+        ? '<c:dLbls><c:showVal val="1"/></c:dLbls>'
+        : ''
+      return `<c:ser><c:idx val="${index}"/><c:order val="${index}"/>${name}${shapeProps}`
       + `${element.chart === 'pie' ? '' : cats}${values}${labels}</c:ser>`
-  }).join('')
+    })
+    .join('')
 }
 
 /**
@@ -250,9 +254,32 @@ function chartXml(element: PptChartElement): string {
       + `<c:pieChart><c:varyColors val="1"/>${series}</c:pieChart></c:plotArea>${textProps}</c:chart>`
       + '</c:chartSpace>'
   }
+  const hasSecondary = element.series.some(series => series.axis === 'secondary')
+  const mixed = element.series.some(series => series.as !== undefined && series.as !== element.chart)
+  const axes = '<c:catAx><c:axId val="1"/><c:scaling><c:orientation val="minMax"/></c:scaling>'
+    + '<c:delete val="0"/><c:axPos val="b"/></c:catAx>'
+    + '<c:valAx><c:axId val="2"/><c:scaling><c:orientation val="minMax"/></c:scaling>'
+    + '<c:delete val="0"/><c:axPos val="l"/><c:crossAx val="1"/></c:valAx>'
+    + (hasSecondary
+      ? '<c:valAx><c:axId val="3"/><c:scaling><c:orientation val="minMax"/></c:scaling>'
+        + '<c:delete val="0"/><c:axPos val="r"/><c:crosses val="max"/><c:crossAx val="1"/></c:valAx>'
+      : '')
+  if (mixed) {
+    // 组合图：柱与线分开成两个图表类型，共享分类轴；次坐标轴由图上的第二条数值轴承接。
+    const barSeries = chartSeriesXml(element, 'bar')
+    const lineSeries = chartSeriesXml(element, 'line')
+    const lineAxis = hasSecondary ? '3' : '2'
+    return `${XML_DECL}\n<c:chartSpace ${CHART_NS}><c:chart><c:plotArea><c:layout/>`
+      + (barSeries === '' ? '' : `<c:barChart><c:barDir val="col"/><c:grouping val="${element.stacked ? 'stacked' : 'clustered'}"/>`
+        + `<c:varyColors val="0"/><c:overlap val="${element.stacked ? 100 : 0}"/>${barSeries}`
+        + '<c:axId val="1"/><c:axId val="2"/></c:barChart>')
+      + (lineSeries === '' ? '' : '<c:lineChart><c:grouping val="standard"/><c:varyColors val="0"/>'
+        + `${lineSeries}<c:marker val="1"/><c:axId val="1"/><c:axId val="${lineAxis}"/></c:lineChart>`)
+      + `${axes}</c:plotArea>${textProps}</c:chart></c:chartSpace>`
+  }
   if (element.chart === 'line') {
     return `${XML_DECL}\n<c:chartSpace ${CHART_NS}><c:chart><c:plotArea><c:layout/>`
-      + `<c:lineChart><c:grouping val="standard"/><c:varyColors val="0"/>${series}`
+      + `<c:lineChart><c:grouping val="${element.stacked ? 'stacked' : 'standard'}"/><c:varyColors val="0"/>${series}`
       + '<c:marker val="1"/><c:axId val="1"/><c:axId val="2"/></c:lineChart>'
       + '<c:catAx><c:axId val="1"/><c:scaling><c:orientation val="minMax"/></c:scaling>'
       + '<c:delete val="0"/><c:axPos val="b"/></c:catAx>'
@@ -261,7 +288,8 @@ function chartXml(element: PptChartElement): string {
       + `</c:plotArea>${textProps}</c:chart></c:chartSpace>`
   }
   return `${XML_DECL}\n<c:chartSpace ${CHART_NS}><c:chart><c:plotArea><c:layout/>`
-    + `<c:barChart><c:barDir val="col"/><c:grouping val="clustered"/><c:varyColors val="0"/>${series}`
+    + `<c:barChart><c:barDir val="col"/><c:grouping val="${element.stacked ? 'stacked' : 'clustered'}"/>`
+    + `<c:varyColors val="0"/><c:overlap val="${element.stacked ? 100 : 0}"/>${series}`
     + '<c:axId val="1"/><c:axId val="2"/></c:barChart>'
     + '<c:catAx><c:axId val="1"/><c:scaling><c:orientation val="minMax"/></c:scaling>'
     + '<c:delete val="0"/><c:axPos val="b"/></c:catAx>'

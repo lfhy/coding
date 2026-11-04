@@ -94,6 +94,7 @@ function chart(frame: Frame, deck: PptDeck): PptChartElement {
     categories: ['一季度', '二季度', '三季度', '四季度'],
     series: [{ name: '本期', values: [32, 45, 38, 56], color: palette.accent }],
     showValues: false,
+    stacked: false,
     textColor: palette.muted,
   }
 }
