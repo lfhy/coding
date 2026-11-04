@@ -181,6 +181,7 @@ export async function createProject(
         id: `p${Date.now().toString(36)}`,
         name: '封面',
         background: null,
+        transition: 'none',
         elements: [
           {
             id: `t${Date.now().toString(36)}a`,
@@ -205,6 +206,25 @@ export async function createProject(
       nextRevision: 2,
       entries: [{ revision: 1, deck }],
     }
+    await mkdir(dir, { recursive: true })
+    await writeJson(join(dir, DECK_FILE), { revision: 1, deck })
+    await writeFile(join(dir, HISTORY_FILE), `${JSON.stringify(history, null, 2)}\n`, 'utf8')
+    return snapshotOf(dir, 1, deck, history, Date.now())
+  })
+}
+
+/**
+ * 用一份现成的工程内容新建目录（导入走这条路径）。
+ * @param dir - 绝对工程目录。
+ * @param deck - 已校验的工程。
+ * @returns 新建后的工程视图。
+ * @throws PptStoreError - 目录里已有工程时拒绝覆盖。
+ */
+export async function createProjectFromDeck(dir: string, deck: PptDeck): Promise<PptSnapshot> {
+  return withLock(dir, async () => {
+    const existing = await stat(join(dir, DECK_FILE)).then(() => true, () => false)
+    if (existing) throw new PptStoreError('conflict', `${dir} 里已经有演示文稿`)
+    const history: PptHistory = { cursor: 0, nextRevision: 2, entries: [{ revision: 1, deck }] }
     await mkdir(dir, { recursive: true })
     await writeJson(join(dir, DECK_FILE), { revision: 1, deck })
     await writeFile(join(dir, HISTORY_FILE), `${JSON.stringify(history, null, 2)}\n`, 'utf8')
@@ -365,6 +385,36 @@ export async function redoProject(dir: string, steps: number): Promise<PptSnapsh
 function clampSteps(steps: number): number {
   if (!Number.isSafeInteger(steps)) throw new PptStoreError('bad-request', 'steps 必须是整数')
   return Math.min(Math.max(steps, 1), 20)
+}
+
+/**
+ * 读取工程内的一张图片。
+ * @param dir - 绝对工程目录。
+ * @param source - 工程的 `media/<file>` 相对路径（模型已校验）。
+ * @returns 图片字节；文件不存在时为 undefined。
+ */
+export async function readProjectMedia(dir: string, source: string): Promise<Uint8Array | undefined> {
+  const target = join(dir, source)
+  const inside = relative(dir, target)
+  if (inside.startsWith('..') || inside.split(sep).includes('..')) return undefined
+  return readFile(target).catch(() => undefined)
+}
+
+/**
+ * 把上传的图片写进工程目录的 `media/`。
+ * @param dir - 绝对工程目录。
+ * @param name - 原始文件名，用于取扩展名并生成安全的存储名。
+ * @param bytes - 图片字节。
+ * @returns 写入后的 `media/<file>` 相对路径。
+ */
+export async function writeProjectMedia(dir: string, name: string, bytes: Uint8Array): Promise<string> {
+  const ext = (name.split('.').pop() ?? 'png').toLowerCase()
+  const allowed = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg']
+  const safeExt = allowed.includes(ext) ? ext : 'png'
+  const file = `up-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}.${safeExt}`
+  await mkdir(join(dir, 'media'), { recursive: true })
+  await writeFile(join(dir, 'media', file), bytes)
+  return `media/${file}`
 }
 
 /**

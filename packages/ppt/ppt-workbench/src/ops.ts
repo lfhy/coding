@@ -5,8 +5,9 @@
  */
 
 import {
-  bounded, color, defaultText, isRecord, newId, parseDeck, parseElement, PptModelError,
-  type ElementFrame, type PptDeck, type PptElement, type PptPage, type PptText, type ThemeId,
+  bounded, color, defaultText, isRecord, mediaPath, newId, parseDeck, parseElement, PPT_THEMES, PptModelError,
+  type ElementFrame, type PptDeck, type PptElement, type PptPage, type PptText, type SlideTransition,
+  type ThemeId,
 } from 'coding-ppt-model'
 
 /** 新建一页。 */
@@ -32,12 +33,13 @@ export interface MovePageOp {
   readonly to: number
 }
 
-/** 改页面名称或底色。 */
+/** 改页面名称、底色或转场。 */
 export interface UpdatePageOp {
   readonly op: 'update_page'
   readonly page: string
   readonly name?: string
   readonly background?: string | null
+  readonly transition?: SlideTransition
 }
 
 /** 新增元素；`element.id` 缺省时自动生成。 */
@@ -57,6 +59,26 @@ export interface UpdateElementOp {
   readonly fill?: string
   readonly color?: string
   readonly width?: number
+  /** 图片：换图（工程内 media 相对路径）。 */
+  readonly source?: string
+  readonly fit?: 'cover' | 'contain'
+  /** 表格：整表内容替换，维度需与 rows × columns 一致。 */
+  readonly cells?: readonly (readonly { readonly content: string }[])[]
+}
+
+/** 元素层级调整。 */
+export interface ReorderElementOp {
+  readonly op: 'reorder_element'
+  readonly page: string
+  readonly element: string
+  readonly to: 'front' | 'back' | 'forward' | 'backward'
+}
+
+/** 复制元素（同页、错开 24px）。 */
+export interface DuplicateElementOp {
+  readonly op: 'duplicate_element'
+  readonly page: string
+  readonly element: string
 }
 
 /** 删除元素。 */
@@ -77,12 +99,16 @@ export interface UpdateDeckOp {
 /** 一次编辑的任意一步。 */
 export type PptOp =
   | AddPageOp | RemovePageOp | MovePageOp | UpdatePageOp
-  | AddElementOp | UpdateElementOp | RemoveElementOp | UpdateDeckOp
+  | AddElementOp | UpdateElementOp | RemoveElementOp
+  | ReorderElementOp | DuplicateElementOp | UpdateDeckOp
 
 const OP_NAMES = [
   'add_page', 'remove_page', 'move_page', 'update_page',
-  'add_element', 'update_element', 'remove_element', 'update_deck',
+  'add_element', 'update_element', 'remove_element',
+  'reorder_element', 'duplicate_element', 'update_deck',
 ] as const
+const TRANSITIONS = ['none', 'fade', 'push'] as const
+const REORDER_TARGETS = ['front', 'back', 'forward', 'backward'] as const
 
 const ALIGNMENTS = ['left', 'center', 'right'] as const
 const VALIGNMENTS = ['top', 'middle', 'bottom'] as const
@@ -105,6 +131,17 @@ function shortText(value: unknown, at: string, max: number): string {
 
 function optionalColor(value: unknown, at: string): string | null {
   return value === null ? null : color(value, at)
+}
+
+function parseCells(value: unknown, at: string): readonly (readonly { readonly content: string }[])[] {
+  if (!Array.isArray(value) || value.length === 0) throw new PptModelError(`${at} 必须是非空数组`)
+  return value.map((row, rowIndex) => {
+    if (!Array.isArray(row) || row.length === 0) throw new PptModelError(`${at}[${rowIndex}] 必须是非空数组`)
+    return row.map((cell, columnIndex) => {
+      if (!isRecord(cell)) throw new PptModelError(`${at}[${rowIndex}][${columnIndex}] 必须是对象`)
+      return { content: shortText(cell.content ?? '', `${at}[${rowIndex}][${columnIndex}].content`, 5000) }
+    })
+  })
 }
 
 function parseFrame(value: unknown, at: string): Partial<ElementFrame> | undefined {
@@ -160,6 +197,9 @@ function parseOp(value: unknown, at: string): PptOp {
         ...value.background === undefined
           ? {}
           : { background: optionalColor(value.background, `${at}.background`) },
+        ...value.transition === undefined
+          ? {}
+          : { transition: pick(TRANSITIONS, value.transition, `${at}.transition`) },
       }
     case 'add_element':
       if (!isRecord(value.element)) throw new PptModelError(`${at}.element 必须是对象`)
@@ -176,13 +216,25 @@ function parseOp(value: unknown, at: string): PptOp {
         ...value.fill === undefined ? {} : { fill: color(value.fill, `${at}.fill`) },
         ...value.color === undefined ? {} : { color: color(value.color, `${at}.color`) },
         ...value.width === undefined ? {} : { width: bounded(value.width, `${at}.width`, 0.5, 40) },
+        ...value.source === undefined ? {} : { source: mediaPath(value.source, `${at}.source`) },
+        ...value.fit === undefined ? {} : { fit: pick(['cover', 'contain'] as const, value.fit, `${at}.fit`) },
+        ...value.cells === undefined ? {} : { cells: parseCells(value.cells, `${at}.cells`) },
       }
     }
     case 'remove_element':
+    case 'duplicate_element':
+      // 两个 op 只认页面与元素 id，参数形状一致。
       return {
         op,
         page: shortText(value.page, `${at}.page`, 64),
         element: shortText(value.element, `${at}.element`, 64),
+      }
+    case 'reorder_element':
+      return {
+        op,
+        page: shortText(value.page, `${at}.page`, 64),
+        element: shortText(value.element, `${at}.element`, 64),
+        to: pick(REORDER_TARGETS, value.to, `${at}.to`),
       }
     case 'update_deck':
       return {
@@ -223,10 +275,27 @@ function replacePage(pages: readonly PptPage[], at: number, page: PptPage): PptP
   return pages.map((entry, index) => index === at ? page : entry)
 }
 
-/** 补全缺省 id 与文本默认值后校验新元素。 */
+/** 补全缺省 id 与各类默认值后校验新元素。 */
 function normalizeElement(raw: Record<string, unknown>, deck: PptDeck): PptElement {
   const source: Record<string, unknown> = { ...raw }
   if (source.id === undefined) source.id = newId()
+  const palette = PPT_THEMES[deck.theme]
+  if (source.kind === 'table') {
+    const rows = typeof source.rows === 'number' ? source.rows : 3
+    const columns = typeof source.columns === 'number' ? source.columns : 3
+    source.rows = rows
+    source.columns = columns
+    source.columnWeights = source.columnWeights ?? Array.from({ length: columns }, () => 1)
+    source.header = source.header ?? true
+    source.headerFill = source.headerFill ?? palette.accent
+    source.borderColor = source.borderColor ?? palette.muted
+    source.text = { size: 24, color: palette.text, bold: false, align: 'left', ...isRecord(source.text) ? source.text : {} }
+    source.cells = source.cells ?? Array.from({ length: rows }, () => Array.from({ length: columns }, () => ({ content: '' })))
+  }
+  if (source.kind === 'image') {
+    if (source.source === undefined) throw new PptModelError('图片元素必须提供 source')
+    source.fit = source.fit ?? 'cover'
+  }
   if (source.kind === 'text') {
     if (!isRecord(source.text)) throw new PptModelError('文本元素必须提供 text 对象')
     const patch = defaultText(deck, '', 32)
@@ -251,6 +320,12 @@ function patchElement(element: PptElement, op: UpdateElementOp): PptElement {
   if (op.text !== undefined && element.kind !== 'text') {
     throw new PptModelError('text 只对 text 元素有效')
   }
+  if ((op.source !== undefined || op.fit !== undefined) && element.kind !== 'image') {
+    throw new PptModelError('source 与 fit 只对 image 元素有效')
+  }
+  if (op.cells !== undefined && element.kind !== 'table') {
+    throw new PptModelError('cells 只对 table 元素有效')
+  }
   const next: Record<string, unknown> = { ...element }
   if (op.frame !== undefined) {
     for (const key of ['x', 'y', 'w', 'h'] as const) {
@@ -263,6 +338,16 @@ function patchElement(element: PptElement, op: UpdateElementOp): PptElement {
   if (element.kind === 'line') {
     if (op.color !== undefined) next.color = op.color
     if (op.width !== undefined) next.width = op.width
+  }
+  if (element.kind === 'image') {
+    if (op.source !== undefined) next.source = op.source
+    if (op.fit !== undefined) next.fit = op.fit
+  }
+  if (element.kind === 'table' && op.cells !== undefined) {
+    if (op.cells.length !== element.rows || op.cells.some(row => row.length !== element.columns)) {
+      throw new PptModelError(`cells 维度必须等于 ${element.rows} × ${element.columns}`)
+    }
+    next.cells = op.cells
   }
   return parseElement(next, 'element')
 }
@@ -287,6 +372,7 @@ export function applyOps(deck: PptDeck, ops: readonly PptOp[]): { deck: PptDeck;
           id: newId(),
           name: op.name ?? `第 ${at + 1} 页`,
           background: op.background ?? null,
+          transition: 'none',
           elements: [],
         }
         pages = [...pages.slice(0, at), page, ...pages.slice(at)]
@@ -316,6 +402,7 @@ export function applyOps(deck: PptDeck, ops: readonly PptOp[]): { deck: PptDeck;
           ...current,
           ...op.name === undefined ? {} : { name: op.name },
           ...op.background === undefined ? {} : { background: op.background },
+          ...op.transition === undefined ? {} : { transition: op.transition },
         })
         touched.push(op.page)
         break
@@ -350,6 +437,33 @@ export function applyOps(deck: PptDeck, ops: readonly PptOp[]): { deck: PptDeck;
         }
         pages = replacePage(pages, at, { ...page, elements: page.elements.filter(item => item.id !== op.element) })
         touched.push(op.element)
+        break
+      }
+      case 'reorder_element': {
+        const at = findPage(pages, op.page)
+        const page = pageAt(pages, at)
+        const current = page.elements.findIndex(entry => entry.id === op.element)
+        if (current < 0) throw new PptModelError(`页面 "${page.id}" 里没有元素 "${op.element}"`)
+        const target = op.to === 'front' ? page.elements.length - 1
+          : op.to === 'back' ? 0
+            : Math.min(Math.max(current + (op.to === 'forward' ? 1 : -1), 0), page.elements.length - 1)
+        const rest = page.elements.filter((_, index) => index !== current)
+        const moved = page.elements[current]
+        if (moved === undefined) throw new PptModelError(`页面 "${page.id}" 里没有元素 "${op.element}"`)
+        const elements = [...rest.slice(0, target), moved, ...rest.slice(target)]
+        pages = replacePage(pages, at, { ...page, elements })
+        touched.push(op.element)
+        break
+      }
+      case 'duplicate_element': {
+        const at = findPage(pages, op.page)
+        const page = pageAt(pages, at)
+        const source = page.elements.find(entry => entry.id === op.element)
+        if (source === undefined) throw new PptModelError(`页面 "${page.id}" 里没有元素 "${op.element}"`)
+        if (page.elements.length >= 200) throw new PptModelError('一页最多 200 个元素')
+        const copy: PptElement = { ...source, id: newId(), x: source.x + 24, y: source.y + 24 }
+        pages = replacePage(pages, at, { ...page, elements: [...page.elements, copy] })
+        touched.push(copy.id)
         break
       }
       case 'update_deck':

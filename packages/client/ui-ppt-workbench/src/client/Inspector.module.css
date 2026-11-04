@@ -87,3 +87,9 @@
   font: var(--dsw-font-xs-13);
   cursor: pointer;
 }
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}

@@ -7,16 +7,20 @@
  * @module coding-ppt-workbench
  */
 
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { dirname, join } from 'node:path'
 import { Service, type Context } from '@deepseek-ai/cordis'
 import type {} from 'coding-host-webserver'
 import type {} from 'coding-session'
 import type { SessionId } from 'coding-session/types'
+import { checkDeck, type PptCheckResult } from './check.ts'
 import { buildPptx } from './export/pptx.ts'
+import { importPptx } from './import.ts'
 import { PptModelError, type SlideSizeId, type ThemeId } from 'coding-ppt-model'
 import { installRoutes } from './routes.ts'
 import {
-  createProject, editProject, listProjects, loadProject, redoProject, resolveProjectDir,
-  suggestProjectDir, undoProject, writeExport,
+  createProject, createProjectFromDeck, editProject, listProjects, loadProject, readProjectMedia, redoProject,
+  resolveProjectDir, suggestProjectDir, undoProject, writeExport, writeProjectMedia,
   type PptProjectSummary, type PptSnapshot,
 } from './store.ts'
 
@@ -243,15 +247,96 @@ export default class PptProjects extends Service {
   }
 
   /**
+   * 读取工程内的一张图片，供面板显示。
+   * @param sessionId - 会话身份。
+   * @param dir - 工程目录；缺省为当前工程。
+   * @param source - 工程的 `media/<file>` 相对路径。
+   * @returns 图片字节；越界或不存在时为 undefined。
+   */
+  media(sessionId: string, dir: string | undefined, source: string): Promise<Uint8Array | undefined> {
+    return readProjectMedia(this.resolveDir(sessionId, dir), source)
+  }
+
+  /**
+   * 把上传的图片写进工程并返回可写进元素的相对路径。
+   * @param sessionId - 会话身份。
+   * @param dir - 工程目录；缺省为当前工程。
+   * @param name - 上传时的文件名（取扩展名）。
+   * @param bytes - 图片字节。
+   * @returns `media/<file>` 相对路径。
+   */
+  upload(sessionId: string, dir: string | undefined, name: string, bytes: Uint8Array): Promise<string> {
+    return writeProjectMedia(this.resolveDir(sessionId, dir), name, bytes)
+  }
+
+  /**
+   * 规则质检。
+   * @param sessionId - 会话身份。
+   * @param dir - 工程目录；缺省为当前工程。
+   * @returns 质检结果。
+   */
+  async check(sessionId: string, dir?: string): Promise<PptCheckResult> {
+    const snapshot = await loadProject(this.resolveDir(sessionId, dir))
+    return checkDeck(snapshot.deck)
+  }
+
+  /**
+   * 把工作区里的 .pptx 导入成工程。
+   * @param sessionId - 会话身份。
+   * @param source - 工作区相对的 .pptx 路径。
+   * @param options - 目标目录与标题（都缺省时按源文件名生成）。
+   * @returns 新工程快照与未能表达的类别。
+   */
+  async import(sessionId: string, source: string, options: { dir?: string; title?: string }): Promise<{
+    snapshot: PptSnapshot
+    dropped: readonly string[]
+  }> {
+    const root = this.rootOf(sessionId)
+    const sourcePath = resolveProjectDir(root, source)
+    const bytes = await readFile(sourcePath).catch(() => undefined)
+    if (bytes === undefined) throw new PptModelError(`找不到要导入的文件：${source}`)
+    const title = options.title ?? source.split(/[\\/]/u).pop()?.replace(/\.pptx$/iu, '') ?? '导入的演示文稿'
+    const imported = importPptx(new Uint8Array(bytes), { title })
+    const dir = options.dir === undefined
+      ? await suggestProjectDir(root, title)
+      : resolveProjectDir(root, options.dir)
+    const snapshot = await createProjectFromDeck(dir, imported.deck)
+    for (const entry of imported.media) {
+      await mkdir(dirname(join(dir, entry.part)), { recursive: true })
+      await writeFile(join(dir, entry.part), entry.bytes)
+    }
+    this.focus(sessionId, dir)
+    return { snapshot, dropped: imported.dropped }
+  }
+
+  /**
    * 导出当前版本为 .pptx。
    * @param sessionId - 会话身份。
    * @param dir - 工程目录；缺省为当前工程。
    * @returns 导出文件路径与大小。
    */
-  async export(sessionId: string, dir?: string): Promise<PptExportResult> {
+  async export(sessionId: string, dir?: string, options: { skipCheck?: boolean } = {}): Promise<PptExportResult> {
     const absolute = this.resolveDir(sessionId, dir)
     const snapshot = await loadProject(absolute)
-    const bytes = buildPptx(snapshot.deck)
+    if (options.skipCheck !== true) {
+      const result = checkDeck(snapshot.deck)
+      const blockers = result.issues.filter(issue => issue.severity === 'error')
+      if (blockers.length > 0) {
+        throw new PptModelError(`导出被质检拦住：${blockers.map(issue => issue.message).join('；')}`)
+      }
+    }
+    const sources = new Set<string>()
+    for (const page of snapshot.deck.pages) {
+      for (const element of page.elements) {
+        if (element.kind === 'image') sources.add(element.source)
+      }
+    }
+    const media = new Map<string, Uint8Array>()
+    for (const source of sources) {
+      const bytesOfImage = await readProjectMedia(absolute, source)
+      if (bytesOfImage !== undefined) media.set(source, bytesOfImage)
+    }
+    const bytes = buildPptx(snapshot.deck, { media: source => media.get(source) })
     const path = await writeExport(absolute, snapshot.revision, snapshot.title, bytes)
     return { path, bytes: bytes.length, revision: snapshot.revision }
   }

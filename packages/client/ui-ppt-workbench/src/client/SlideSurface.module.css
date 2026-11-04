@@ -54,3 +54,40 @@
   margin: 0;
   text-align: center;
 }
+
+.image {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  user-select: none;
+}
+
+.cell {
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
+  border-right: 1px solid;
+  border-bottom: 1px solid;
+  overflow: hidden;
+  white-space: pre-wrap;
+}
+
+.selection {
+  position: absolute;
+  border: 2px dashed var(--dsw-alias-state-business-primary);
+  pointer-events: none;
+}
+
+.handle {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  margin: -6px 0 0 -6px;
+  border: 1px solid var(--dsw-alias-state-business-primary);
+  border-radius: 2px;
+  background: var(--dsw-alias-bg-base);
+  pointer-events: auto;
+  touch-action: none;
+}

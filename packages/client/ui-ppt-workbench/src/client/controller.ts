@@ -5,7 +5,7 @@
  */
 
 import { createSnapshotStore } from 'coding-client-runtime/client'
-import type { PptElement, PptElementKind } from 'coding-ppt-model'
+import type { PptElementKind, PptPage, SlideTransition } from 'coding-ppt-model'
 import {
   errorOf, parseExport, parseSnapshot, parseState,
   type PptProjectView, type PptSnapshotView,
@@ -31,6 +31,13 @@ export interface PptPanelState {
   readonly editingId: string | null
   readonly busy: boolean
   readonly notice: PptNotice | null
+  /** 最近一次质检的问题列表；未检查时为 null。 */
+  readonly issues: readonly {
+    readonly severity: 'error' | 'warning'
+    readonly code: string
+    readonly pageName: string
+    readonly message: string
+  }[] | null
 }
 
 type Fetcher = (input: string, init?: RequestInit) => Promise<Response>
@@ -40,7 +47,7 @@ type MutablePanelState = { -readonly [K in keyof PptPanelState]: PptPanelState[K
 
 const INITIAL: PptPanelState = {
   phase: 'loading', root: '', projects: [], project: null, pageIndex: 0,
-  selectedId: null, editingId: null, busy: false, notice: null,
+  selectedId: null, editingId: null, busy: false, notice: null, issues: null,
 }
 
 const POLL_MS = 3000
@@ -329,10 +336,67 @@ export class PptPanelController {
   }
 
   /**
-   * 修改当前页的名称或底色。
+   * 复制元素。
+   * @param elementId - 元素 id。
+   */
+  async duplicateElement(elementId: string): Promise<void> {
+    const page = currentPage(this.view.getSnapshot().project, this.view.getSnapshot().pageIndex)
+    if (page === null) return
+    await this.edit([{ op: 'duplicate_element', page: page.id, element: elementId }])
+  }
+
+  /**
+   * 调整元素层级。
+   * @param elementId - 元素 id。
+   * @param to - 置顶、置底、上移一层或下移一层。
+   */
+  async reorderElement(elementId: string, to: 'front' | 'back' | 'forward' | 'backward'): Promise<void> {
+    const page = currentPage(this.view.getSnapshot().project, this.view.getSnapshot().pageIndex)
+    if (page === null) return
+    await this.edit([{ op: 'reorder_element', page: page.id, element: elementId, to }])
+  }
+
+  /**
+   * 上传一张图片到工程并插入当前页。
+   * @param file - 浏览器选择的图片文件。
+   */
+  async insertImage(file: File): Promise<void> {
+    const state = this.view.getSnapshot()
+    const page = currentPage(state.project, state.pageIndex)
+    if (page === null) return
+    await this.run(async () => {
+      const buffer = new Uint8Array(await file.arrayBuffer())
+      const upload = await this.post('upload', { dir: state.project?.dir, name: file.name, base64: toBase64(buffer) })
+      const source = (upload as { source?: unknown } | null)?.source
+      if (typeof source !== 'string') throw new Error('upload payload is malformed')
+      const payload = await this.post('edit', {
+        dir: state.project?.dir,
+        baseRevision: state.project?.revision,
+        ops: [{
+          op: 'add_element', page: page.id,
+          element: { kind: 'image', source, fit: 'cover', x: 160, y: 120, w: 640, h: 360 },
+        }],
+      })
+      this.adopt(payload)
+    })
+  }
+
+  /** 运行一次规则质检并把结果挂到状态上。 */
+  async checkDeck(): Promise<void> {
+    await this.run(async () => {
+      const payload = await this.post('check', {})
+      const check = (payload as { check?: unknown } | null)?.check
+      const issues = parseCheck(check)
+      if (issues === null) throw new Error('check payload is malformed')
+      this.patch((draft) => { draft.issues = issues })
+    })
+  }
+
+  /**
+   * 修改当前页的名称、底色或转场。
    * @param patch - 页面属性。
    */
-  async updatePage(patch: { name?: string; background?: string | null }): Promise<void> {
+  async updatePage(patch: { name?: string; background?: string | null; transition?: SlideTransition }): Promise<void> {
     const state = this.view.getSnapshot()
     const page = currentPage(state.project, state.pageIndex)
     if (page === null) return
@@ -354,12 +418,34 @@ export class PptPanelController {
  * @param index - 页码下标。
  * @returns 页面；没有工程或下标越界时 null。
  */
-export function currentPage(
-  project: PptSnapshotView | null,
-  index: number,
-): { id: string; name: string; background: string | null; elements: readonly PptElement[] } | null {
+export function currentPage(project: PptSnapshotView | null, index: number): PptPage | null {
   if (project === null) return null
   return project.deck.pages[index] ?? null
+}
+
+function toBase64(bytes: Uint8Array): string {
+  let binary = ''
+  for (const byte of bytes) binary += String.fromCharCode(byte)
+  return btoa(binary)
+}
+
+/**
+ * 解析质检响应。
+ * @param value - 响应里的 `check` 字段。
+ * @returns 问题列表；结构不完整时 null。
+ */
+export function parseCheck(value: unknown): PptPanelState['issues'] {
+  if (typeof value !== 'object' || value === null) return null
+  const issues = (value as { issues?: unknown }).issues
+  if (!Array.isArray(issues)) return null
+  return issues.flatMap((entry) => {
+    if (typeof entry !== 'object' || entry === null) return []
+    const record = entry as Record<string, unknown>
+    const severity = record.severity === 'error' ? 'error' : record.severity === 'warning' ? 'warning' : null
+    if (severity === null || typeof record.code !== 'string'
+      || typeof record.pageName !== 'string' || typeof record.message !== 'string') return []
+    return [{ severity, code: record.code, pageName: record.pageName, message: record.message }]
+  })
 }
 
 function clampPageIndex(project: PptSnapshotView, index: number): number {
@@ -370,6 +456,16 @@ function clampPageIndex(project: PptSnapshotView, index: number): number {
 function newElement(kind: PptElementKind, count: number): Record<string, unknown> {
   const offset = (count % 6) * 24
   const base = { x: 120 + offset, y: 140 + offset }
+  if (kind === 'table') {
+    return {
+      kind, ...base, w: 720, h: 264, rows: 3, columns: 3, header: true,
+      cells: [
+        [{ content: '项目' }, { content: '本期' }, { content: '上期' }],
+        [{ content: '' }, { content: '' }, { content: '' }],
+        [{ content: '' }, { content: '' }, { content: '' }],
+      ],
+    }
+  }
   if (kind === 'text') {
     return {
       kind, ...base, w: 520, h: 96,

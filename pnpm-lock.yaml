@@ -7142,6 +7142,10 @@ importers:
         version: link:../../runtime-diagnostics/invariants
 
   packages/ppt/ppt-workbench:
+    dependencies:
+      fflate:
+        specifier: ^0.8.2
+        version: 0.8.3
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: workspace:^

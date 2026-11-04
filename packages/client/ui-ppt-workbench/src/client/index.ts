@@ -104,6 +104,15 @@ export function apply(ctx: ClientContext): void {
         updateElement: (id, patch) => controller.updateElement(id, patch),
         updatePage: patch => controller.updatePage(patch),
         updateDeck: patch => controller.updateDeck(patch),
+        duplicateElement: id => controller.duplicateElement(id),
+        reorderElement: (id, to) => controller.reorderElement(id, to),
+        insertImage: file => controller.insertImage(file),
+        checkDeck: () => controller.checkDeck(),
+        mediaUrl: (dir, source) => {
+          const query = new URLSearchParams({ sessionId, path: source })
+          if (dir !== undefined) query.set('dir', dir)
+          return `/api/ppt/media?${query.toString()}`
+        },
       }
     },
   }, PptWorkbench))

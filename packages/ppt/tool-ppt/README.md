@@ -10,6 +10,8 @@ PPT 创作模式的七个模型工具：`ppt_create`、`ppt_open`、`ppt_read`�
 
 - **目录参数可选**：`dir` 省略时作用于「会话当前打开的工程」；给出时按工作区相对路径解析，越界即拒绝。
 - **编辑是原子的**：`ppt_edit` 的 `ops` 要么整体生效，要么整体失败；`base_revision` 与当前版本不符时返回冲突，而不是覆盖别处的改动。
+- **元素种类**：文本框、矩形/椭圆、连接线、图片（`media/<file>`）、表格（行 × 列 + 单元格文本），另有层级调整（`reorder_element`）与复制（`duplicate_element`）。
+- **导入**只搬运模型能表达的结构；图表、SmartArt 与动画会出现在结果的 `dropped` 里，应当如实告诉用户。
 - **失败诊断**：参数、目录、版本与工程内容的问题都以工具错误返回中文原因（例如「找不到页面 "p2"」「工程已被修改：当前版本 4，请求基于 3」），模型据此重读再改。
 
 ## 工具面
@@ -21,7 +23,9 @@ PPT 创作模式的七个模型工具：`ppt_create`、`ppt_open`、`ppt_read`�
 | `ppt_read` | 读整份页面与元素数据 | `dir` |
 | `ppt_edit` | 应用 ops（页与元素的增删改、页面属性、文稿属性） | `ops` · `base_revision` · `dir` |
 | `ppt_undo` / `ppt_redo` | 版本前后移动 | `steps` · `dir` |
-| `ppt_export` | 导出 .pptx 到 `export/` | `dir` |
+| `ppt_check` | 规则质检（出界、零尺寸、溢出、对比度） | `dir` |
+| `ppt_import` | 把工作区里的 .pptx 逆向成工程 | `source` · `dir` · `title` |
+| `ppt_export` | 导出 .pptx 到 `export/`（error 级质检会拦住） | `dir` · `skip_check` |
 
 ## 使用本包
 
@@ -43,6 +47,6 @@ PPT 创作模式的七个模型工具：`ppt_create`、`ppt_open`、`ppt_read`�
 
 ## 已知限制与暂缓工作
 
-- 没有 `ppt_import`：不能把既有 .pptx 逆向进工程。
-- 没有质检工具（文字溢出、对比度、缺字体等规则检查），导出不阻断。
 - 没有单页图片化预览；面板用 DOM 直渲，模型要看画面只能自行合成截图。
+- 质检只有规则层，没有把成品页送去多模态模型看配色与版式的 AI 层。
+- 导入对图表、SmartArt、OLE 与动画只能报告 `dropped`，不能降级成占位形状。

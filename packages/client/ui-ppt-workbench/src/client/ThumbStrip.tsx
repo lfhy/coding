@@ -1,4 +1,5 @@
 /** 页缩略图竖条：选页、增删页与页序调整；缩略图复用画布的同一套渲染。 */
+import { useState } from 'react'
 import type { Translate } from 'coding-client-ui-slots'
 import {
   IconChevronDownOutline14, IconChevronUpOutline14, IconTrashOutline16,
@@ -27,11 +28,27 @@ const THUMB_WIDTH = 128
  * @returns 可滚动的缩略图竖条。
  */
 export function ThumbStrip({ deck, pageIndex, busy, t, onSelect, onAdd, onRemove, onMove }: ThumbStripProps) {
+  const [dragging, setDragging] = useState<string | null>(null)
   return (
     <aside className={css.strip} aria-label={t('title')}>
       <ul className={css.list}>
         {deck.pages.map((page, index) => (
-          <li key={page.id} className={css.item} data-active={index === pageIndex ? 'true' : undefined}>
+          <li
+            key={page.id}
+            className={css.item}
+            data-active={index === pageIndex ? 'true' : undefined}
+            data-dragging={dragging === page.id ? 'true' : undefined}
+            draggable={!busy}
+            onDragStart={() => { setDragging(page.id) }}
+            onDragEnd={() => { setDragging(null) }}
+            onDragOver={(event) => { event.preventDefault() }}
+            onDrop={(event) => {
+              event.preventDefault()
+              const from = deck.pages.findIndex(entry => entry.id === dragging)
+              setDragging(null)
+              if (from >= 0 && from !== index) onMove(page, index)
+            }}
+          >
             <button
               type="button"
               className={css.button}

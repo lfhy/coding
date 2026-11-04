@@ -6,14 +6,14 @@
  * @module coding-ppt-workbench/client/PptWorkbench
  */
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { SnapshotStore } from 'coding-client-runtime/client'
 import type { InjectFace, PropsLocale, PropsRuntime } from 'coding-client-ui-slots'
 import {
   IconChevronDownOutline14, IconChevronUpOutline14, IconDownloadOutline16,
   IconPlusOutline16, IconRefreshOutline16,
 } from 'coding-client-ui-icons'
-import type { PptElementKind } from 'coding-ppt-model'
+import type { PptElementKind, SlideTransition } from 'coding-ppt-model'
 import type { PptPanelState } from './controller.ts'
 import { currentPage } from './controller.ts'
 import type { ElementPatch } from './Inspector.tsx'
@@ -45,8 +45,13 @@ export interface PptWorkbenchInjected {
   addElement: (kind: PptElementKind) => Promise<void>
   removeElement: (id: string) => Promise<void>
   updateElement: (id: string, patch: ElementPatch) => Promise<void>
-  updatePage: (patch: { name?: string; background?: string | null }) => Promise<void>
+  updatePage: (patch: { name?: string; background?: string | null; transition?: SlideTransition }) => Promise<void>
   updateDeck: (patch: { title?: string; theme?: string; size?: '16:9' | '4:3' }) => Promise<void>
+  duplicateElement: (id: string) => Promise<void>
+  reorderElement: (id: string, to: 'front' | 'back' | 'forward' | 'backward') => Promise<void>
+  insertImage: (file: File) => Promise<void>
+  checkDeck: () => Promise<void>
+  mediaUrl: (dir: string | undefined, source: string) => string
 }
 
 export type PptWorkbenchProps =
@@ -55,6 +60,14 @@ export type PptWorkbenchProps =
   & InjectFace<PptWorkbenchInjected>
 
 const ADD_KINDS: readonly PptElementKind[] = ['text', 'rect', 'ellipse', 'line']
+
+/** 各元素种类在工具条上的文案键。 */
+const LABEL_OF: Readonly<Record<string, (t: PptWorkbenchProps['t']) => string>> = {
+  text: t => t('addText'),
+  rect: t => t('addRect'),
+  ellipse: t => t('addEllipse'),
+  line: t => t('addLine'),
+}
 
 /**
  * 工作台面板。
@@ -65,9 +78,11 @@ export function PptWorkbench({
   shown, t, usePpt, show, refresh, open, create, undo, redo, exportDeck,
   selectPage, selectElement, setEditing, addPage, removePage, movePage,
   addElement, removeElement, updateElement, updatePage, updateDeck,
+  duplicateElement, reorderElement, insertImage, checkDeck, mediaUrl,
 }: PptWorkbenchProps) {
   const state = usePpt(snapshot => snapshot)
   const [title, setTitle] = useState('')
+  const fileInput = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     if (!shown) return undefined
@@ -82,6 +97,8 @@ export function PptWorkbench({
     : page.elements.find(entry => entry.id === state.selectedId) ?? null
 
   const notice = describeNotice(state, t)
+  const addTable = (): void => { void addElement('table') }
+  const mediaUrlOf = (source: string): string => mediaUrl(project?.dir, source)
 
   return (
     <div className={css.root} data-busy={state.busy ? 'true' : undefined}>
@@ -98,6 +115,10 @@ export function PptWorkbench({
         <button type="button" className={css.action} disabled={state.busy || project?.canRedo !== true}
           title={t('redo')} onClick={() => { void redo() }}>
           <IconChevronDownOutline14 size={14} />
+        </button>
+        <button type="button" className={css.action} title={t('check')} disabled={state.busy || project === null}
+          onClick={() => { void checkDeck() }}>
+          {t('check')}
         </button>
         <button type="button" className={css.action} title={t('reload')} onClick={refresh}>
           <IconRefreshOutline16 size={14} />
@@ -170,11 +191,30 @@ export function PptWorkbench({
             <div className={css.addRow}>
               {ADD_KINDS.map(kind => (
                 <button key={kind} type="button" className={css.action} disabled={state.busy}
-                  title={t(kind === 'text' ? 'addText' : kind === 'rect' ? 'addRect' : kind === 'ellipse' ? 'addEllipse' : 'addLine')}
+                  title={LABEL_OF[kind]?.(t) ?? kind}
                   onClick={() => { void addElement(kind) }}>
-                  {t(kind === 'text' ? 'addText' : kind === 'rect' ? 'addRect' : kind === 'ellipse' ? 'addEllipse' : 'addLine')}
+                  {LABEL_OF[kind]?.(t) ?? kind}
                 </button>
               ))}
+              <button type="button" className={css.action} disabled={state.busy}
+                title={t('addImage')} onClick={() => { fileInput.current?.click() }}>
+                {t('addImage')}
+              </button>
+              <button type="button" className={css.action} disabled={state.busy}
+                title={t('addTable')} onClick={addTable}>
+                {t('addTable')}
+              </button>
+              <input
+                ref={fileInput}
+                type="file"
+                accept="image/png,image/jpeg,image/gif,image/webp,image/svg+xml"
+                hidden
+                onChange={(event) => {
+                  const file = event.target.files?.[0]
+                  event.target.value = ''
+                  if (file !== undefined) void insertImage(file)
+                }}
+              />
             </div>
             {page === null ? null : (
               <Stage
@@ -192,6 +232,8 @@ export function PptWorkbench({
                   if (content !== null && target !== null) void updateElement(target, { text: { content } })
                 }}
                 onMove={(id, x, y) => { void updateElement(id, { frame: { x, y } }) }}
+                onResize={(id, box) => { void updateElement(id, { frame: box }) }}
+                mediaUrl={mediaUrlOf}
               />
             )}
           </main>
@@ -207,11 +249,23 @@ export function PptWorkbench({
                 void updateElement(element.id, patch)
               }}
               onRemove={() => { if (element !== null) void removeElement(element.id) }}
+              onDuplicate={() => { if (element !== null) void duplicateElement(element.id) }}
+              onReorder={(to) => { if (element !== null) void reorderElement(element.id, to) }}
               onPage={(patch) => { void updatePage(patch) }}
               onDeck={(patch) => { void updateDeck(patch) }}
             />
           )}
         </div>
+      )}
+
+      {state.issues === null ? null : (
+        <ul className={css.issues}>
+          {state.issues.length === 0
+            ? <li data-severity="ok">{t('checkClean')}</li>
+            : state.issues.map((issue, index) => (
+              <li key={`${issue.code}-${index}`} data-severity={issue.severity}>{issue.message}</li>
+            ))}
+        </ul>
       )}
 
       <footer className={css.status} data-tone={notice.tone}>

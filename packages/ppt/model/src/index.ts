@@ -106,11 +106,53 @@ export interface PptLineElement extends ElementFrame {
   readonly width: number
 }
 
-/** 一页上的一个元素。 */
-export type PptElement = PptTextElement | PptShapeElement | PptLineElement
+/** 图片元素：`source` 是工程目录内的相对路径（例如 `media/cover.png`）。 */
+export interface PptImageElement extends ElementFrame {
+  readonly id: string
+  readonly kind: 'image'
+  readonly source: string
+  /** `cover` 填满裁切，`contain` 完整放入。 */
+  readonly fit: 'cover' | 'contain'
+}
+
+/** 表格单元格。 */
+export interface PptTableCell {
+  readonly content: string
+}
+
+/** 表格元素的共享排版。 */
+export interface PptTableStyle {
+  /** 字号，单位是基准像素。 */
+  readonly size: number
+  readonly color: string
+  readonly bold: boolean
+  readonly align: TextAlign
+}
+
+/** 表格元素；`cells` 的维度必须等于 rows × columns。 */
+export interface PptTableElement extends ElementFrame {
+  readonly id: string
+  readonly kind: 'table'
+  readonly rows: number
+  readonly columns: number
+  /** 各列相对宽度权重，长度等于 columns。 */
+  readonly columnWeights: readonly number[]
+  /** 首行是否按表头样式绘制。 */
+  readonly header: boolean
+  readonly headerFill: string
+  readonly borderColor: string
+  readonly text: PptTableStyle
+  readonly cells: readonly (readonly PptTableCell[])[]
+}
+
+/** 一页上的一个元素；数组顺序即绘制顺序（后面的盖住前面的）。 */
+export type PptElement = PptTextElement | PptShapeElement | PptLineElement | PptImageElement | PptTableElement
 
 /** 元素种类。 */
 export type PptElementKind = PptElement['kind']
+
+/** 页面切换时的转场效果。 */
+export type SlideTransition = 'none' | 'fade' | 'push'
 
 /** 一页幻灯片。 */
 export interface PptPage {
@@ -118,6 +160,7 @@ export interface PptPage {
   readonly name: string
   /** `null` 表示使用主题底色。 */
   readonly background: string | null
+  readonly transition: SlideTransition
   readonly elements: readonly PptElement[]
 }
 
@@ -239,7 +282,72 @@ export function parseElement(value: unknown, at: string): PptElement {
       width: bounded(value.width, `${at}.width`, 0.5, 40),
     }
   }
-  throw new PptModelError(`${at}.kind 必须是 text / rect / ellipse / line 之一`)
+  if (value.kind === 'image') {
+    return {
+      id, kind: 'image', ...box,
+      source: mediaPath(value.source, `${at}.source`),
+      fit: value.fit === 'contain' ? 'contain' : 'cover',
+    }
+  }
+  if (value.kind === 'table') {
+    return { id, kind: 'table', ...box, ...parseTable(value, at) }
+  }
+  throw new PptModelError(`${at}.kind 必须是 text / rect / ellipse / line / image / table 之一`)
+}
+
+/**
+ * 校验工程内的媒体相对路径：只允许 `media/` 下的单层文件名，避免读到工程外的东西。
+ * @param value - 候选路径。
+ * @param at - 诊断里使用的位置描述。
+ * @returns 规范化的相对路径。
+ */
+export function mediaPath(value: unknown, at: string): string {
+  const path = text(value, at, 200)
+  if (!/^media\/[A-Za-z0-9._-]{1,120}$/u.test(path) || path.includes('..')) {
+    throw new PptModelError(`${at} 必须是 media/ 下的文件名`)
+  }
+  return path
+}
+
+function parseTableStyle(value: unknown, at: string): PptTableStyle {
+  if (!isRecord(value)) throw new PptModelError(`${at} 必须是对象`)
+  return {
+    size: bounded(value.size, `${at}.size`, 6, 120),
+    color: color(value.color, `${at}.color`),
+    bold: value.bold === true,
+    align: oneOf(value.align, `${at}.align`, ['left', 'center', 'right'] as const),
+  }
+}
+
+function parseTable(value: Record<string, unknown>, at: string): Omit<PptTableElement, 'id' | 'kind' | 'x' | 'y' | 'w' | 'h'> {
+  const rows = bounded(value.rows, `${at}.rows`, 1, 50)
+  const columns = bounded(value.columns, `${at}.columns`, 1, 20)
+  if (!Number.isSafeInteger(rows) || !Number.isSafeInteger(columns)) {
+    throw new PptModelError(`${at} 的行列数必须是整数`)
+  }
+  if (!Array.isArray(value.columnWeights) || value.columnWeights.length !== columns) {
+    throw new PptModelError(`${at}.columnWeights 长度必须等于列数`)
+  }
+  const columnWeights = value.columnWeights.map((weight, index) => bounded(weight, `${at}.columnWeights[${index}]`, 0.1, 100))
+  if (!Array.isArray(value.cells) || value.cells.length !== rows) {
+    throw new PptModelError(`${at}.cells 的维度必须等于行数`)
+  }
+  const cells = value.cells.map((row, rowIndex) => {
+    if (!Array.isArray(row) || row.length !== columns) {
+      throw new PptModelError(`${at}.cells[${rowIndex}] 的列数必须等于 ${columns}`)
+    }
+    return row.map((cell, columnIndex) => {
+      if (!isRecord(cell)) throw new PptModelError(`${at}.cells[${rowIndex}][${columnIndex}] 必须是对象`)
+      return { content: text(cell.content, `${at}.cells[${rowIndex}][${columnIndex}].content`, MAX_TEXT) }
+    })
+  })
+  return {
+    rows, columns, columnWeights, cells,
+    header: value.header !== false,
+    headerFill: color(value.headerFill, `${at}.headerFill`),
+    borderColor: color(value.borderColor, `${at}.borderColor`),
+    text: parseTableStyle(value.text, `${at}.text`),
+  }
 }
 
 /**
@@ -265,6 +373,7 @@ export function parsePage(value: unknown, at: string): PptPage {
     id: text(value.id, `${at}.id`, 64),
     name: text(value.name, `${at}.name`, 200),
     background: value.background === null ? null : color(value.background, `${at}.background`),
+    transition: oneOf(value.transition ?? 'none', `${at}.transition`, ['none', 'fade', 'push'] as const),
     elements,
   }
 }

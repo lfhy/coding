@@ -18,7 +18,9 @@ interface ConnectionFence {
 }
 
 const PREFIX = '/api/ppt/'
-const MAX_BODY = 512 * 1024
+const MAX_BODY = 16 * 1024 * 1024
+/** 单张图片上限，与附件通道的默认预算一致。 */
+const MAX_IMAGE = 8 * 1024 * 1024
 const STATES: Readonly<Record<PptStoreError['code'], number>> = {
   'not-found': 404,
   conflict: 409,
@@ -119,6 +121,16 @@ function optionalNumber(value: unknown, what: string): number | undefined {
   return value
 }
 
+const MEDIA_TYPES: Readonly<Record<string, string>> = {
+  png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif',
+  webp: 'image/webp', svg: 'image/svg+xml',
+}
+
+function mediaType(source: string): string {
+  const ext = source.split('.').pop()?.toLowerCase() ?? 'png'
+  return MEDIA_TYPES[ext] ?? 'application/octet-stream'
+}
+
 function snapshotBody(snapshot: PptSnapshot): unknown {
   return { ok: true, project: snapshot }
 }
@@ -206,9 +218,76 @@ export function installRoutes(ctx: Context, service: PptProjects): void {
     ))
   })
 
+  // 图片用原始字节返回：面板直接把它当 <img src>，不需要再解 base64。
+  ctx.effect(() => ctx.webServer.register({
+    kind: 'exact',
+    path: `${PREFIX}media`,
+    handler: async (req, res) => {
+      if (!trusted(ctx, req, res)) return
+      if ((req.method ?? 'GET') !== 'GET') {
+        sendJson(res, 405, { ok: false, error: { code: 'method', message: '只接受 GET' } })
+        return
+      }
+      const url = new URL(req.url ?? '/', `http://127.0.0.1:${ctx.webServer.port}`)
+      try {
+        const sessionId = sessionIdOf({ sessionId: url.searchParams.get('sessionId') ?? undefined })
+        const dir = url.searchParams.get('dir') ?? undefined
+        const source = url.searchParams.get('path') ?? ''
+        const bytes = await service.media(sessionId, dir, source)
+        if (bytes === undefined) {
+          sendJson(res, 404, { ok: false, error: { code: 'not-found', message: `找不到图片 ${source}` } })
+          return
+        }
+        res.writeHead(200, { 'content-type': mediaType(source), 'cache-control': 'max-age=60' })
+        res.end(Buffer.from(bytes))
+      } catch (reason) {
+        const reply = fail(reason)
+        sendJson(res, reply.status, reply.body)
+      }
+    },
+  }), `pptWorkbench: GET ${PREFIX}media`)
+
+  route('upload', ['POST'], async (body, url) => {
+    const sessionId = sessionIdOf({ sessionId: url.searchParams.get('sessionId') ?? undefined })
+    const name = optionalString(body.name, 'name')
+    const base64 = optionalString(body.base64, 'base64')
+    if (name === undefined || base64 === undefined) {
+      throw new PptStoreError('bad-request', 'name 与 base64 必须提供')
+    }
+    const bytes = Buffer.from(base64, 'base64')
+    if (bytes.length === 0 || bytes.length > MAX_IMAGE) {
+      throw new PptStoreError('bad-request', `图片大小必须在 1 到 ${MAX_IMAGE} 字节之间`)
+    }
+    const source = await service.upload(sessionId, optionalString(body.dir, 'dir'), name, bytes)
+    return { ok: true, source }
+  })
+
+  route('check', ['POST'], async (body) => {
+    const sessionId = sessionIdOf(body)
+    return { ok: true, check: await service.check(sessionId, optionalString(body.dir, 'dir')) }
+  })
+
+  route('import', ['POST'], async (body) => {
+    const sessionId = sessionIdOf(body)
+    const source = optionalString(body.source, 'source')
+    if (source === undefined) throw new PptStoreError('bad-request', 'source 必须提供')
+    const dir = optionalString(body.dir, 'dir')
+    const title = optionalString(body.title, 'title')
+    const imported = await service.import(sessionId, source, {
+      ...dir === undefined ? {} : { dir },
+      ...title === undefined ? {} : { title },
+    })
+    return { ok: true, project: imported.snapshot, dropped: imported.dropped }
+  })
+
   route('export', ['POST'], async (body) => {
     const sessionId = sessionIdOf(body)
-    return { ok: true, export: await service.export(sessionId, optionalString(body.dir, 'dir')) }
+    return {
+      ok: true,
+      export: await service.export(sessionId, optionalString(body.dir, 'dir'), {
+        skipCheck: body.skipCheck === true,
+      }),
+    }
   })
 
   route('ack', ['POST'], (body) => {

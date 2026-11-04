@@ -209,3 +209,18 @@
   white-space: nowrap;
   text-overflow: ellipsis;
 }
+
+.issues {
+  margin: 0;
+  padding: 6px 10px;
+  max-height: 96px;
+  overflow: auto;
+  border-top: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-xxs-12);
+  list-style: none;
+}
+
+.issues > li[data-severity='error'] { color: var(--dsw-alias-state-error-primary); }
+.issues > li[data-severity='warning'] { color: var(--dsw-alias-state-warn-label); }

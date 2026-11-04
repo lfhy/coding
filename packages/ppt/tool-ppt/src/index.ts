@@ -30,9 +30,31 @@ interface PptProjectsFace {
   open: (sessionId: string, dir: string) => Promise<PptSnapshotFace>
   read: (sessionId: string, dir?: string) => Promise<PptSnapshotFace>
   edit: (sessionId: string, dir: string | undefined, ops: unknown, baseRevision?: number) => Promise<PptSnapshotFace>
+  check: (sessionId: string, dir?: string) => Promise<PptCheckFace>
+  import: (sessionId: string, source: string, options: { dir?: string; title?: string }) => Promise<{
+    snapshot: PptSnapshotFace
+    dropped: readonly string[]
+  }>
   undo: (sessionId: string, dir: string | undefined, steps: number) => Promise<PptSnapshotFace>
   redo: (sessionId: string, dir: string | undefined, steps: number) => Promise<PptSnapshotFace>
-  export: (sessionId: string, dir?: string) => Promise<{ path: string; bytes: number; revision: number }>
+  export: (
+    sessionId: string,
+    dir?: string,
+    options?: { skipCheck?: boolean },
+  ) => Promise<{ path: string; bytes: number; revision: number }>
+}
+
+/** 质检结果。 */
+interface PptCheckFace {
+  readonly ok: boolean
+  readonly issues: readonly {
+    readonly severity: 'error' | 'warning'
+    readonly code: string
+    readonly page: string
+    readonly pageName: string
+    readonly element?: string
+    readonly message: string
+  }[]
 }
 
 /** 工程快照里工具用到的字段。 */
@@ -131,12 +153,16 @@ const OPS_HELP = 'Array of edit operations, applied atomically in order. Each it
   + '\n- {"op":"add_page","at":<index>,"name":<string>,"background":"#rrggbb"|null} — insert a blank page;'
   + '\n- {"op":"remove_page","page":<pageId>} — delete a page (never the last one);'
   + '\n- {"op":"move_page","page":<pageId>,"to":<index>} — reorder;'
-  + '\n- {"op":"update_page","page":<pageId>,"name":<string>,"background":"#rrggbb"|null};'
+  + '\n- {"op":"update_page","page":<pageId>,"name":<string>,"background":"#rrggbb"|null,"transition":"none"|"fade"|"push"};'
   + '\n- {"op":"add_element","page":<pageId>,"element":{...}} — element kinds:'
   + ' text {id?,kind:"text",x,y,w,h,text:{content,size,color,bold,align:"left"|"center"|"right",valign:"top"|"middle"|"bottom"}},'
-  + ' rect|ellipse {id?,kind,x,y,w,h,fill}, line {id?,kind:"line",x,y,w,h,color,width};'
-  + '\n- {"op":"update_element","page":<pageId>,"element":<elementId>,"frame":{x?,y?,w?,h?},"text":{...},"fill":..,"color":..,"width":..};'
+  + ' rect|ellipse {id?,kind,x,y,w,h,fill}, line {id?,kind:"line",x,y,w,h,color,width},'
+  + ' image {id?,kind:"image",x,y,w,h,source:"media/<file>",fit:"cover"|"contain"},'
+  + ' table {id?,kind:"table",x,y,w,h,rows,columns,cells:[[{content}]],header?,headerFill?,borderColor?,text?:{size,color,bold,align}};'
+  + '\n- {"op":"update_element","page":<pageId>,"element":<elementId>,"frame":{x?,y?,w?,h?},"text":{...},"fill":..,"color":..,"width":..,"source":"media/<file>","fit":..,"cells":[[{content}]]};'
   + '\n- {"op":"remove_element","page":<pageId>,"element":<elementId>};'
+  + '\n- {"op":"reorder_element","page":<pageId>,"element":<elementId>,"to":"front"|"back"|"forward"|"backward"} — z-order;'
+  + '\n- {"op":"duplicate_element","page":<pageId>,"element":<elementId>} — copy offset by 24px;'
   + '\n- {"op":"update_deck","title":<string>,"size":"16:9"|"4:3","theme":"ink"|"paper"|"ocean"|"forest"}.'
   + '\nCanvas coordinates are base pixels: 1280x720 for 16:9 and 960x720 for 4:3, origin at the top-left.'
   + ' One page holds at most 200 elements; a deck holds at most 200 pages.'
@@ -275,11 +301,77 @@ export function apply(ctx: Context): void {
   }))
 
   ctx.tools.register(defineTool({
+    name: 'ppt_check',
+    description: 'Run the deterministic layout checks before exporting: elements outside the canvas, zero-size elements, '
+      + 'estimated text overflow and low text/background contrast. Errors block ppt_export; warnings are advice.',
+    parameters: {
+      dir: { type: 'string', description: 'Workspace-relative project directory; omit for the open project.' },
+    },
+    output: outputOf({
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        ok: { type: 'boolean', required: true },
+        issues: {
+          type: 'array',
+          required: true,
+          items: {
+            type: 'object',
+            additionalProperties: false,
+            properties: {
+              severity: { type: 'string', required: true, enum: ['error', 'warning'] },
+              code: { type: 'string', required: true },
+              page: { type: 'string', required: true },
+              pageName: { type: 'string', required: true },
+              element: { type: 'string' },
+              message: { type: 'string', required: true },
+            },
+          },
+        },
+      },
+    } as const),
+    async execute(args, exec) {
+      const result = await projects().check(sessionOf(exec), args.dir)
+      return { ok: result.ok, issues: result.issues.map(issue => ({ ...issue })) }
+    },
+    presentCall: args => present('Check deck', 'read', args.dir),
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'ppt_import',
+    description: 'Import an existing .pptx from the workspace into a project so the deck can be edited here. '
+      + 'Text, autoshapes, lines, pictures and tables become editable elements; charts, SmartArt and animations '
+      + 'cannot be represented and are reported back in "dropped".',
+    parameters: {
+      source: { type: 'string', required: true, description: 'Workspace-relative path of the .pptx file.' },
+      dir: { type: 'string', description: 'Workspace-relative project directory to create; defaults to the file name.' },
+      title: { type: 'string', description: 'Deck title; defaults to the file name.' },
+    },
+    output: outputOf({
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        project: SUMMARY_SCHEMA,
+        dropped: { type: 'array', required: true, items: { type: 'string' } },
+      },
+    } as const),
+    async execute(args, exec) {
+      const imported = await projects().import(sessionOf(exec), args.source, {
+        ...args.dir === undefined ? {} : { dir: args.dir },
+        ...args.title === undefined ? {} : { title: args.title },
+      })
+      return { project: summaryOf(imported.snapshot), dropped: [...imported.dropped] }
+    },
+    presentCall: args => present('Import .pptx', 'other', args.source),
+  }))
+
+  ctx.tools.register(defineTool({
     name: 'ppt_export',
     description: 'Export the current revision as a .pptx file under the project directory (export/<title>-v<revision>.pptx). '
       + 'Report the absolute path to the user; open it with their presentation app.',
     parameters: {
       dir: { type: 'string', description: 'Workspace-relative project directory; omit for the open project.' },
+      skip_check: { type: 'boolean', description: 'Export even when ppt_check reports blocking layout errors.' },
     },
     output: outputOf({
       type: 'object',
@@ -289,9 +381,9 @@ export function apply(ctx: Context): void {
         bytes: { type: 'number', required: true },
         revision: { type: 'number', required: true },
       },
-    }),
+    } as const),
     async execute(args, exec) {
-      return projects().export(sessionOf(exec), args.dir)
+      return projects().export(sessionOf(exec), args.dir, { skipCheck: args.skip_check === true })
     },
     presentCall: args => present('Export .pptx', 'other', args.dir),
   }))

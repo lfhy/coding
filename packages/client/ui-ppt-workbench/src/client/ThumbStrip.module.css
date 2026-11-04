@@ -82,3 +82,5 @@
   font: var(--dsw-font-xs-13);
   cursor: pointer;
 }
+
+.item[data-dragging='true'] { opacity: 0.5; }

@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react'
 import type { Translate } from 'coding-client-ui-slots'
 import { IconTrashOutline16 } from 'coding-client-ui-icons'
-import type { PptDeck, PptElement, PptPage } from 'coding-ppt-model'
+import type { PptDeck, PptElement, PptPage, SlideTransition } from 'coding-ppt-model'
 import type { PptWorkbenchKey } from './locales.ts'
 import css from './Inspector.module.css'
 
@@ -23,7 +23,9 @@ export interface InspectorProps {
   readonly t: Translate<PptWorkbenchKey>
   readonly onElement: (patch: ElementPatch) => void
   readonly onRemove: () => void
-  readonly onPage: (patch: { name?: string; background?: string | null }) => void
+  readonly onDuplicate: () => void
+  readonly onReorder: (to: 'front' | 'back' | 'forward' | 'backward') => void
+  readonly onPage: (patch: { name?: string; background?: string | null; transition?: SlideTransition }) => void
   readonly onDeck: (patch: { title?: string; theme?: string; size?: '16:9' | '4:3' }) => void
 }
 
@@ -115,7 +117,9 @@ function TextField({
  * @param props - 当前页、选中元素与提交回调。
  * @returns 属性表单。
  */
-export function Inspector({ deck, page, element, busy, t, onElement, onRemove, onPage, onDeck }: InspectorProps) {
+export function Inspector({
+  deck, page, element, busy, t, onElement, onRemove, onDuplicate, onReorder, onPage, onDeck,
+}: InspectorProps) {
   const background = page.background ?? '#000000'
   return (
     <aside className={css.panel}>
@@ -184,6 +188,13 @@ export function Inspector({ deck, page, element, busy, t, onElement, onRemove, o
                 onCommit={(width) => { onElement({ width }) }} />
             </>
           ) : null}
+          <div className={css.row}>
+            <button type="button" className={css.link} disabled={busy} onClick={onDuplicate}>{t('duplicate')}</button>
+            <button type="button" className={css.link} disabled={busy} onClick={() => { onReorder('front') }}>{t('bringFront')}</button>
+            <button type="button" className={css.link} disabled={busy} onClick={() => { onReorder('back') }}>{t('sendBack')}</button>
+            <button type="button" className={css.link} disabled={busy} onClick={() => { onReorder('forward') }}>{t('forward')}</button>
+            <button type="button" className={css.link} disabled={busy} onClick={() => { onReorder('backward') }}>{t('backward')}</button>
+          </div>
           <button type="button" className={css.danger} disabled={busy} onClick={onRemove}>
             <IconTrashOutline16 size={14} />
             {t('deleteElement')}

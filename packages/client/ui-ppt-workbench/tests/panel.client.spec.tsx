@@ -34,13 +34,13 @@ function deck(): PptSnapshotView {
       theme: 'ink',
       pages: [
         {
-          id: 'p1', name: '封面', background: null,
+          id: 'p1', name: '封面', background: null, transition: 'none',
           elements: [{
             id: 't1', kind: 'text', x: 96, y: 260, w: 1088, h: 120,
             text: { content: '季度汇报', size: 64, color: '#f5f7fa', bold: true, align: 'left', valign: 'middle' },
           }],
         },
-        { id: 'p2', name: '结论', background: null, elements: [] },
+        { id: 'p2', name: '结论', background: null, transition: 'none', elements: [] },
       ],
     },
   }
@@ -48,7 +48,7 @@ function deck(): PptSnapshotView {
 
 const ready: PptPanelState = {
   phase: 'ready', root: '/workspace', projects: [], project: deck(),
-  pageIndex: 0, selectedId: null, editingId: null, busy: false, notice: null,
+  pageIndex: 0, selectedId: null, editingId: null, busy: false, notice: null, issues: null,
 }
 
 function mount(state: PptPanelState, shown = true) {

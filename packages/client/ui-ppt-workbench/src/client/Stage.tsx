@@ -8,7 +8,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { Translate } from 'coding-client-ui-slots'
 import { SLIDE_SIZES, type PptDeck, type PptPage } from 'coding-ppt-model'
 import type { PptWorkbenchKey } from './locales.ts'
-import { SlideSurface } from './SlideSurface.tsx'
+import { SlideSurface, type ElementBox } from './SlideSurface.tsx'
 import css from './Stage.module.css'
 
 export interface StageProps {
@@ -22,6 +22,8 @@ export interface StageProps {
   readonly onBeginEdit: (id: string) => void
   readonly onEndEdit: (content: string | null) => void
   readonly onMove: (id: string, x: number, y: number) => void
+  readonly onResize: (id: string, box: ElementBox) => void
+  readonly mediaUrl: (source: string) => string
 }
 
 const MIN_WIDTH = 240
@@ -44,7 +46,7 @@ export function fitWidth(box: { width: number; height: number }, ratio: number):
  * @returns 自适应宽度的画布。
  */
 export function Stage({
-  deck, page, selectedId, editingId, busy, t, onSelect, onBeginEdit, onEndEdit, onMove,
+  deck, page, selectedId, editingId, busy, t, onSelect, onBeginEdit, onEndEdit, onMove, onResize, mediaUrl,
 }: StageProps) {
   const host = useRef<HTMLDivElement>(null)
   // 观察器报告之前先按一个常见宽度铺一次，避免首帧空白。
@@ -86,8 +88,9 @@ export function Stage({
             onCommit: () => { onEndEdit(draft) },
             onCancel: () => { onEndEdit(null) },
           }}
-          interaction={{ onSelect, onBeginEdit, onMove }}
+          interaction={{ onSelect, onBeginEdit, onMove, onResize }}
           emptyHint={t('emptyPage')}
+          mediaUrl={mediaUrl}
         />
       )}
       <p className={css.hint}>{t('selectHint')}</p>

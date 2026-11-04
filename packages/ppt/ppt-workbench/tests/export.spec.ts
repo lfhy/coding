@@ -14,6 +14,7 @@ const deck: PptDeck = {
       id: 'p1',
       name: '封面',
       background: null,
+      transition: 'fade',
       elements: [
         {
           id: 't1', kind: 'text', x: 96, y: 260, w: 1088, h: 120,
@@ -26,6 +27,7 @@ const deck: PptDeck = {
       id: 'p2',
       name: '图形',
       background: '#faf7f1',
+      transition: 'none',
       elements: [
         { id: 'e1', kind: 'ellipse', x: 100, y: 100, w: 200, h: 200, fill: '#b5652c' },
         { id: 'l1', kind: 'line', x: 400, y: 100, w: 300, h: 200, color: '#23201b', width: 3 },
@@ -112,5 +114,67 @@ describe('.pptx 导出', () => {
 
   it('同样的输入得到同样的字节', () => {
     expect(Buffer.from(buildPptx(deck)).equals(Buffer.from(buildPptx(deck)))).toBe(true)
+  })
+
+  it('图片写入 media 部件并在 slide 里引用', () => {
+    const withImage: PptDeck = {
+      ...deck,
+      pages: [{
+        ...deck.pages[0]!,
+        elements: [
+          ...deck.pages[0]!.elements,
+          { id: 'i1', kind: 'image', x: 800, y: 400, w: 320, h: 180, source: 'media/logo.png', fit: 'contain' },
+        ],
+      }],
+    }
+    const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
+    const entries = readZip(buildPptx(withImage, { media: source => source === 'media/logo.png' ? png : undefined }))
+    const paths = entries.map(entry => entry.path)
+    expect(paths).toContain('ppt/media/image1.png')
+    const types = entries.find(entry => entry.path === '[Content_Types].xml')?.data.toString('utf8') ?? ''
+    expect(types).toContain('<Default Extension="png" ContentType="image/png"/>')
+    const slide = entries.find(entry => entry.path === 'ppt/slides/slide1.xml')?.data.toString('utf8') ?? ''
+    expect(slide).toContain('<p:pic>')
+    expect(slide).toContain('r:embed="rId2"')
+    const slideRels = entries.find(entry => entry.path === 'ppt/slides/_rels/slide1.xml.rels')
+      ?.data.toString('utf8') ?? ''
+    expect(slideRels).toContain('../media/image1.png')
+    expect(Buffer.from(entries.find(entry => entry.path === 'ppt/media/image1.png')?.data ?? []).equals(png)).toBe(true)
+  })
+
+  it('表格写成 graphicFrame，转场写成 p:transition', () => {
+    const withTable: PptDeck = {
+      ...deck,
+      pages: [{
+        id: 'p1', name: '表', background: null, transition: 'fade',
+        elements: [{
+          id: 'tb', kind: 'table', x: 100, y: 100, w: 600, h: 200,
+          rows: 2, columns: 2, columnWeights: [2, 1], header: true,
+          headerFill: '#4f8cff', borderColor: '#9aa7b4',
+          text: { size: 20, color: '#101418', bold: false, align: 'left' },
+          cells: [[{ content: '指标' }, { content: '数值' }], [{ content: '增长' }, { content: '32%' }]],
+        }],
+      }],
+    }
+    const entries = readZip(buildPptx(withTable))
+    const slide = entries.find(entry => entry.path === 'ppt/slides/slide1.xml')?.data.toString('utf8') ?? ''
+    expect(slide).toContain('drawingml/2006/table')
+    expect(slide).toContain('<a:tbl>')
+    expect(slide).toContain('<a:t>增长</a:t>')
+    expect(slide).toContain('<p:transition><p:fade/></p:transition>')
+  })
+
+  it('缺图时退化成占位形状，导出仍然成立', () => {
+    const withImage: PptDeck = {
+      ...deck,
+      pages: [{
+        ...deck.pages[0]!,
+        elements: [{ id: 'i1', kind: 'image', x: 10, y: 10, w: 100, h: 100, source: 'media/missing.png', fit: 'cover' }],
+      }],
+    }
+    const entries = readZip(buildPptx(withImage))
+    const slide = entries.find(entry => entry.path === 'ppt/slides/slide1.xml')?.data.toString('utf8') ?? ''
+    expect(slide).toContain('<p:sp>')
+    expect(slide).not.toContain('<p:pic>')
   })
 })
