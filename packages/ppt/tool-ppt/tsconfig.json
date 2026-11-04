@@ -19,6 +19,12 @@
     },
     {
       "path": "../../core/tools"
+    },
+    {
+      "path": "../../core/agent"
+    },
+    {
+      "path": "../../llm/llm"
     }
   ]
 }

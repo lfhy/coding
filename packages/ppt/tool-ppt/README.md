@@ -24,7 +24,7 @@ PPT 创作模式的七个模型工具：`ppt_create`、`ppt_open`、`ppt_read`�
 | `ppt_read` | 读整份页面与元素数据 | `dir` |
 | `ppt_edit` | 应用 ops（页与元素的增删改、页面属性、文稿属性） | `ops` · `base_revision` · `dir` |
 | `ppt_undo` / `ppt_redo` | 版本前后移动 | `steps` · `dir` |
-| `ppt_check` | 规则质检（出界、零尺寸、溢出、对比度） | `dir` |
+| `ppt_check` | 规则质检（出界、零尺寸、溢出、对比度、空页、文字密度）；`ai: true` 追加模型审阅 | `dir` · `ai` |
 | `ppt_import` | 把工作区里的 .pptx 逆向成工程 | `source` · `dir` · `title` |
 | `ppt_export` | 导出 .pptx 到 `export/`（error 级质检会拦住） | `dir` · `skip_check` |
 
@@ -49,6 +49,7 @@ PPT 创作模式的七个模型工具：`ppt_create`、`ppt_open`、`ppt_read`�
 ## 已知限制与暂缓工作
 
 - 没有单页图片化预览；面板用 DOM 直渲，模型要看画面只能自行合成截图。
-- 质检只有规则层（几何、溢出、对比度、空页与文字密度），没有把成品页送给多模态模型的 AI 层。
+- AI 审阅看的是工程大纲（页名、文字、元素数量、转场），没有页面的像素预览：它评的是结构与讲述，不是配色在屏幕上的实际感受。
+- AI 审阅只出建议、不改工程也不阻断导出；没有可用模型路由时如实返回 `performed: false` 与原因。
 - 字体只嵌入单文件 TrueType，不处理 `.ttc` 与 CFF/OTF，也不子集化。
 - 导入对图表、SmartArt、OLE 与动画只能报告 `dropped`，不能降级成占位形状。

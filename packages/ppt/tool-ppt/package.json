@@ -36,14 +36,18 @@
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "workspace:^",
+    "coding-agent": "workspace:^",
     "coding-invariants": "workspace:^",
+    "coding-llm": "workspace:^",
     "coding-session": "workspace:^",
     "coding-tools": "workspace:^"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "workspace:^",
     "@deepseek-ai/schemastery": "workspace:^",
+    "coding-agent": "workspace:^",
     "coding-invariants": "workspace:^",
+    "coding-llm": "workspace:^",
     "coding-session": "workspace:^",
     "coding-tools": "workspace:^"
   }

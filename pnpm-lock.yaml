@@ -7187,9 +7187,15 @@ importers:
       '@deepseek-ai/cordis':
         specifier: workspace:^
         version: link:../../../vendor/cordis
+      coding-agent:
+        specifier: workspace:^
+        version: link:../../core/agent
       coding-invariants:
         specifier: workspace:^
         version: link:../../runtime-diagnostics/invariants
+      coding-llm:
+        specifier: workspace:^
+        version: link:../../llm/llm
       coding-session:
         specifier: workspace:^
         version: link:../../core/session

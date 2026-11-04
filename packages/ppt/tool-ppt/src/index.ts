@@ -6,12 +6,14 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
+import type {} from 'coding-agent'
 import { defineTool } from 'coding-tools'
+import { outlineText, reviewOutline } from './ai-review.ts'
 import type { GenericCallView, ObjectValueSchemaSpec } from 'coding-tools'
 import type { JsonValue } from 'coding-session'
 
 export const name = 'tool-ppt'
-export const inject = ['tools']
+export const inject = ['tools', 'llm']
 
 /**
  * 工具需要的工程服务面。
@@ -153,6 +155,60 @@ function sessionOf(exec: { agent?: { session?: { header?: { id?: string } } } })
   const id = exec.agent?.session?.header?.id
   if (id === undefined || id === '') throw new Error('ppt tools require a session workspace')
   return id
+}
+
+/** AI 审阅只读取这几项，用结构类型收窄服务返回的 unknown 内容。 */
+interface DeckDigestSource {
+  readonly pages: readonly {
+    readonly name: string
+    readonly transition: string
+    readonly elements: readonly { readonly kind: string; readonly text?: { readonly content: string } }[]
+  }[]
+}
+
+function recordOf(value: unknown): Record<string, unknown> {
+  return typeof value === 'object' && value !== null ? value as Record<string, unknown> : {}
+}
+
+function deckSize(deck: unknown): string {
+  const size = recordOf(deck)['size']
+  return typeof size === 'string' ? size : '16:9'
+}
+
+function deckTheme(deck: unknown): string {
+  const theme = recordOf(deck)['theme']
+  return typeof theme === 'string' ? theme : 'ink'
+}
+
+/**
+ * 把工程压成 AI 审阅需要的大纲摘要。
+ * @param deck - 工程内容。
+ * @returns 每页的摘要。
+ */
+function digestOf(deck: { pages: readonly {
+  name: string
+  transition: string
+  elements: readonly { kind: string; text?: { content: string } }[]
+}[] }): {
+  name: string
+  texts: string[]
+  shapes: number
+  tables: number
+  charts: number
+  images: number
+  transition: string
+}[] {
+  return deck.pages.map(page => ({
+    name: page.name,
+    transition: page.transition,
+    texts: page.elements.flatMap(element => (
+      element.kind === 'text' && element.text !== undefined ? [element.text.content] : []
+    )),
+    shapes: page.elements.filter(element => element.kind === 'rect' || element.kind === 'ellipse').length,
+    tables: page.elements.filter(element => element.kind === 'table').length,
+    charts: page.elements.filter(element => element.kind === 'chart').length,
+    images: page.elements.filter(element => element.kind === 'image').length,
+  }))
 }
 
 const OPS_HELP = 'Array of edit operations, applied atomically in order. Each item is an object with "op":'
@@ -312,12 +368,22 @@ export function apply(ctx: Context): void {
       + 'estimated text overflow and low text/background contrast. Errors block ppt_export; warnings are advice.',
     parameters: {
       dir: { type: 'string', description: 'Workspace-relative project directory; omit for the open project.' },
+      ai: { type: 'boolean', description: 'Ask the session model for layout advice on top of the rule checks.' },
     },
     output: outputOf({
       type: 'object',
       additionalProperties: false,
       properties: {
         ok: { type: 'boolean', required: true },
+        ai: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            performed: { type: 'boolean', required: true },
+            suggestions: { type: 'string' },
+            reason: { type: 'string' },
+          },
+        },
         issues: {
           type: 'array',
           required: true,
@@ -337,8 +403,31 @@ export function apply(ctx: Context): void {
       },
     } as const),
     async execute(args, exec) {
-      const result = await projects().check(sessionOf(exec), args.dir)
-      return { ok: result.ok, issues: result.issues.map(issue => ({ ...issue })) }
+      const sessionId = sessionOf(exec)
+      const result = await projects().check(sessionId, args.dir)
+      const issues = result.issues.map(issue => ({ ...issue }))
+      if (args.ai !== true) return { ok: result.ok, issues }
+      const snapshot = await projects().read(sessionId, args.dir)
+      const agent = exec.agent
+      if (agent === undefined) {
+        return { ok: result.ok, issues, ai: { performed: false, reason: '这次调用没有会话模型可用' } }
+      }
+      const outline = outlineText(
+        snapshot.title,
+        deckSize(snapshot.deck),
+        deckTheme(snapshot.deck),
+        digestOf(snapshot.deck as DeckDigestSource),
+      )
+      try {
+        const suggestions = await reviewOutline(ctx, agent, outline, exec.signal)
+        return { ok: result.ok, issues, ai: { performed: true, suggestions } }
+      } catch (reason) {
+        return {
+          ok: result.ok,
+          issues,
+          ai: { performed: false, reason: reason instanceof Error ? reason.message : String(reason) },
+        }
+      }
     },
     presentCall: args => present('Check deck', 'read', args.dir),
   }))
