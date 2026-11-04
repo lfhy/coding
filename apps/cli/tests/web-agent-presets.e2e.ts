@@ -12,6 +12,7 @@ import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { settingsNamespace } from 'coding-settings'
 import { resolveSessionPreset, SETTINGS_NAMESPACE } from 'coding-agent-presets'
+import { RpcId } from 'coding-host-apiproxy'
 import { applyChildComposition, childSessionMeta } from 'coding-subagent'
 import { CallId } from 'coding-llm'
 import type {} from 'coding-compaction-basic'
@@ -64,19 +65,15 @@ async function bootWeb(
     // back on the next run, so a stored document from any other build decides
     // this test's boot. Same reason the settings row above is pinned.
     { id: 'storage-json', config: { root: storageRoot } },
-    // Host rows with side effects outside this process: a bound port, a served
-    // asset tree, a telemetry exporter. `api-gateway` and `directory-picker`
-    // stay ENABLED on purpose — the api-proxy is the host row that injects
-    // `subagents`, `workspace`, and the rest of the agent plane, so disabling
-    // it would hide exactly the breakage this file exists to catch: a service
-    // moved into the presets that a host row still waits for. The boot audit
-    // is that assertion.
+    // 关闭会绑定端口、服务静态资源或发送遥测的宿主行。`api-gateway` 与
+    // `directory-picker` 仍保留：网关注入 agent 平面的宿主服务，启动审计应能
+    // 发现这些服务被误移到预设而导致的等待状态。
     { id: 'webserver', disabled: true },
-    // The web bundle's runtime row injects `webServer`, so it cannot
-    // activate without the bound port disabled above. It owns dist serving
-    // and the URL prompt line — surface glue, not anything that decides an
-    // agent's capabilities, which is all this file asserts.
+    // 这几行依赖被禁用的 Web 服务；它们提供页面、系统打开器与工程路由，
+    // 不决定 agent 的工具组装，不能让无端口 fixture 的启动审计报假失败。
     { id: 'web-runtime', disabled: true },
+    { id: 'open-in-app', disabled: true },
+    { id: 'ppt-workbench', disabled: true },
     { id: 'session-telemetry-otel', disabled: true },
     // A deployment-level skill on the host registry's GLOBAL layer — the same
     // registration shape a repository plugin's skill root uses. The layered
@@ -142,6 +139,16 @@ async function bootWeb(
 const toolNames = (ctx: Context, agent?: Agent): string[] =>
   ctx.tools.schemas(agent).map(schema => schema.name).sort()
 
+/** 极简模式必须恰好继承宿主工具，再加它自己的两个工具。 */
+const minimalToolNames = (ctx: Context): string[] =>
+  [...toolNames(ctx), 'bash', 'str_replace_editor'].sort()
+
+/** Web 宿主按设计向每个预设共享的工具，不能混进预设私有的工具。 */
+const GLOBAL_TOOL_NAMES = [
+  'list_subagent_models', 'memory_delete', 'memory_list', 'memory_read',
+  'memory_save', 'memory_update', 'render_ui', 'validate_dsh_ui',
+] as const
+
 function toolParameterNames(ctx: Context, agent: Agent, toolName: string): string[] {
   const schema = ctx.tools.schemas(agent).find(tool => tool.name === toolName)
   if (schema === undefined) throw new Error(`missing tool schema ${toolName}`)
@@ -172,13 +179,10 @@ beforeAll(async () => {
 }, 120_000)
 
 describe('the shipped Web composition', () => {
-  it('leaves the global tool layer empty', () => {
-    // Every model-facing tool belongs to a preset, `ask_user_question`
-    // included: a tool in the global layer reaches EVERY agent regardless of
-    // which preset composed it, so a two-tool benchmark surface would really
-    // present three. A regression here means an agent-plane row came back to
-    // the host composition.
-    expect(toolNames(ctx)).toEqual([])
+  it('keeps the shared host tools on the global layer', () => {
+    // 记忆、GenUI 与模型目录是宿主能力；预设专属工具不能混入此层，
+    // 否则极简模式也会继承它们，失去按模式隔离的能力边界。
+    expect(toolNames(ctx)).toEqual(GLOBAL_TOOL_NAMES)
   })
 
   it('keeps the token meter and its context-meter projections on the host plane', async () => {
@@ -222,17 +226,46 @@ describe('the shipped Web composition', () => {
       setup: agentCtx => ctx.agentPresets.mount(agentCtx, 'standard').then(() => undefined),
     })
     try {
-      // The EXACT catalog, not a spot-check: an omission is this design's
-      // quietest failure mode, because a row that registers into the wrong
-      // layer mounts cleanly and simply contributes nothing. `glob`/`grep` are
-      // excluded for the reason the TUI composition e2e excludes them — they
-      // depend on ripgrep being present on the machine.
+      // 固定本预设完整的工具面，包含宿主共享工具。
+      // `glob`/`grep` 依赖运行环境提供 ripgrep，故不纳入此处。
       expect(toolNames(ctx, handle.agent).filter(name => name !== 'glob' && name !== 'grep')).toEqual([
-        'ask_user_question', 'bash', 'create_goal', 'edit', 'exit_plan_mode',
-        'get_goal', 'interrupt_agent', 'job_kill', 'job_list', 'job_output', 'list_agents', 'ralph', 'read', 'read_image', 'send_message', 'skill',
-        'subagent', 'subagent_fork', 'todo_write', 'update_goal', 'web_search',
-        'workflow', 'write',
+        'apply_patch', 'ask_user_question', 'bash', 'browser_auth_flush',
+        'browser_captcha', 'browser_cdp', 'browser_check', 'browser_cli',
+        'browser_click', 'browser_dialog', 'browser_doctor', 'browser_download',
+        'browser_drag', 'browser_fill', 'browser_help', 'browser_hover',
+        'browser_http', 'browser_js', 'browser_key', 'browser_login_import',
+        'browser_navigate', 'browser_page_info', 'browser_read_element',
+        'browser_screenshot', 'browser_script', 'browser_scroll', 'browser_select',
+        'browser_snapshot', 'browser_space_close', 'browser_space_open',
+        'browser_status', 'browser_tabs', 'browser_upload', 'browser_wait',
+        'browser_wait_for_human', 'browser_wait_for_response',
+        'browser_wait_for_selector', 'browser_wait_for_url', 'context_compact',
+        'create_goal', 'edit', 'exit_plan_mode', 'followup_task', 'get_goal',
+        'interrupt_agent', 'job_kill', 'job_list', 'job_output', 'list_agents',
+        'list_subagent_models', 'memory_delete', 'memory_list', 'memory_read',
+        'memory_save', 'memory_update', 'ralph', 'read', 'read_image',
+        'render_ui', 'run_code', 'send_message', 'skill', 'subagent',
+        'subagent_fork', 'todo_write', 'update_goal', 'validate_dsh_ui',
+        'web_search', 'workflow', 'write',
       ])
+    } finally {
+      await handle.dispose()
+    }
+  })
+
+  it('mounts the shipped PPT preset with its project tool schemas', async () => {
+    const handle = await ctx.agents.create({
+      sessionId: SessionId(`preset-ppt-${randomUUID()}`),
+      meta: { agentPreset: 'ppt' },
+      setup: agentCtx => ctx.agentPresets.mount(agentCtx, 'ppt').then(() => undefined),
+    })
+    try {
+      // 名单里的健康状态只检查 YAML 形状；真正挂载才会验证每行插件的必填配置。
+      expect(toolNames(ctx, handle.agent).filter(name => name.startsWith('ppt_'))).toEqual([
+        'ppt_check', 'ppt_create', 'ppt_edit', 'ppt_export', 'ppt_import',
+        'ppt_open', 'ppt_read', 'ppt_redo', 'ppt_render', 'ppt_undo',
+      ])
+      expect(resolveSessionPreset(handle.agent.session)).toBe('ppt')
     } finally {
       await handle.dispose()
     }
@@ -248,7 +281,7 @@ describe('the shipped Web composition', () => {
       expect(assembly.sections).toEqual([
         { name: 'deployment:persona', text: MINIMAL_PROMPT },
       ])
-      expect(assembly.tools.map(tool => tool.name)).toEqual(['bash', 'str_replace_editor'])
+      expect(assembly.tools.map(tool => tool.name).sort()).toEqual(minimalToolNames(ctx))
       expect(assembly.tools.find(tool => tool.name === 'bash')?.description).toBe(MINIMAL_BASH_DESCRIPTION)
       expect(JSON.stringify(assembly.tools.find(tool => tool.name === 'str_replace_editor')?.parameters))
         .toContain('Absolute path')
@@ -269,14 +302,14 @@ describe('the shipped Web composition', () => {
       setup: agentCtx => ctx.agentPresets.mount(agentCtx, 'minimal').then(() => undefined),
     })
     try {
-      expect(toolNames(ctx, minimal.agent)).toEqual(['bash', 'str_replace_editor'])
+      expect(toolNames(ctx, minimal.agent)).toEqual(minimalToolNames(ctx))
       expect(toolNames(ctx, full.agent).length).toBeGreaterThan(10)
 
       await minimal.dispose()
 
-      // Tearing the minimal session down leaves the full one whole.
+      // 结束极简会话后，标准会话与宿主共享工具仍在。
       expect(toolNames(ctx, full.agent).length).toBeGreaterThan(10)
-      expect(toolNames(ctx)).toEqual([])
+      expect(toolNames(ctx)).toEqual(GLOBAL_TOOL_NAMES)
     } finally {
       await full.dispose()
     }
@@ -328,7 +361,7 @@ describe('the shipped Web composition', () => {
 
       // 呈现方式仍按 agent 隔离：minimal 只拿到它自己的两个工具，没有 run_code 与 SDK 段。
       const minimalAssembly = await ctx.systemPrompt.assemble({ scope: minimal.agent })
-      expect(minimalAssembly.tools.map(tool => tool.name)).toEqual(['bash', 'str_replace_editor'])
+      expect(minimalAssembly.tools.map(tool => tool.name).sort()).toEqual(minimalToolNames(ctx))
       expect(minimalAssembly.sections.some(section => section.name === 'tools:sdk')).toBe(false)
     } finally {
       await minimal.dispose()
@@ -381,7 +414,7 @@ describe('the shipped Web composition', () => {
     try {
       // The host (global) view carries the deployment-level provider alone:
       // local discovery moved behind the presets with `skill-filesystem`.
-      expect((await ctx.skills.list({ cwd: proj })).map(skill => skill.name)).toEqual(['dsh-badge'])
+      expect((await ctx.skills.list({ cwd: proj })).map(skill => skill.name)).toEqual(['dsh-badge', 'genui'])
 
       // The standard agent's view merges the global layer with its preset's
       // own local discovery over the session cwd.
@@ -414,7 +447,7 @@ describe('the shipped Web composition', () => {
       // stays the preset's choice — minimal mounts no `tool-skill`, so its
       // tool table has no loader even though the global layer is readable.
       expect((await ctx.skills.list({ scope: handle.agent })).map(skill => skill.name)).toContain('dsh-badge')
-      expect(toolNames(ctx, handle.agent)).toEqual(['bash', 'str_replace_editor'])
+      expect(toolNames(ctx, handle.agent)).toEqual(minimalToolNames(ctx))
     } finally {
       await handle.dispose()
     }
@@ -532,7 +565,7 @@ describe('product Bundle and user-preset intersection', () => {
             expect(tools).toEqual(expect.arrayContaining(['job_kill', 'job_list', 'job_output']))
             for (const productTool of productTools) {
               expect(toolParameterNames(productCtx, handle.agent, productTool)).toEqual([
-                'description', 'prompt', 'run_in_background',
+                'description', 'model', 'model_provider', 'prompt', 'run_in_background',
               ])
             }
           } finally {
@@ -578,6 +611,35 @@ describe('product Bundle and user-preset intersection', () => {
 })
 
 describe('a switch survives the session', () => {
+  it('switches a blank standard agent to the shipped PPT toolset through the gateway', async () => {
+    const sessionId = SessionId(`preset-switch-ppt-${randomUUID()}`)
+    const handle = await ctx.agents.create({
+      sessionId,
+      meta: { agentPreset: 'standard' },
+      setup: agentCtx => ctx.agentPresets.mount(agentCtx, 'standard').then(() => undefined),
+    })
+    try {
+      expect(toolNames(ctx, handle.agent)).not.toContain('ppt_create')
+
+      const selected = await ctx.apiProxy.agentPresets.select({
+        rpcId: RpcId('preset-select-ppt'),
+        payload: { sessionId, agentPreset: 'ppt' },
+      })
+      expect(selected.result).toEqual({ ok: true, value: { agentPreset: 'ppt' } })
+
+      // 真实网关先重组后写事件；工具应立即换成 PPT，而头部保留创建时的模式。
+      const tools = toolNames(ctx, handle.agent)
+      expect(tools).toEqual(expect.arrayContaining(['ppt_create', 'ppt_export']))
+      expect(tools).not.toContain('subagent')
+      expect(tools).not.toContain('workflow')
+      expect(handle.agent.session.header.agentPreset).toBe('standard')
+      expect(resolveSessionPreset(handle.agent.session)).toBe('ppt')
+      expect(ctx.agentPresets.composedPreset(handle.agent.ctx)).toBe('ppt')
+    } finally {
+      await handle.dispose()
+    }
+  })
+
   it('records the choice so the log states what the agent runs', async () => {
     const handle = await ctx.agents.create({
       sessionId: SessionId('preset-switch-logged'),
@@ -812,7 +874,7 @@ describe('authoring a preset on the shipped composition', () => {
     try {
       // The same tools the shipped `minimal` composes, from a directory copied
       // through the service into a root outside the installed harness.
-      expect(toolNames(authorCtx, handle.agent)).toEqual(['bash', 'str_replace_editor'])
+      expect(toolNames(authorCtx, handle.agent)).toEqual(minimalToolNames(authorCtx))
     } finally {
       await handle.dispose()
     }
@@ -849,7 +911,7 @@ describe('the default preset as a user setting', () => {
       try {
         // `mount()` with no id resolves the effective default. Two tools, not
         // `standard`'s catalog: the setting decided the composition.
-        expect(toolNames(ctx, handle.agent)).toEqual(['bash', 'str_replace_editor'])
+        expect(toolNames(ctx, handle.agent)).toEqual(minimalToolNames(ctx))
       } finally {
         await handle.dispose()
       }

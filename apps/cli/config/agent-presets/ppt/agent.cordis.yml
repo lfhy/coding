@@ -183,6 +183,8 @@
 
 - id: tool-todo
   name: 'coding-tool-todo'
+  config:
+    allowParallelInProgress: false
 
 # `web` 服务与搜索提供方在宿主组合；这里只有模型侧工具。做行业或数据类
 # 汇报时先检索事实，比让模型编数字可靠。

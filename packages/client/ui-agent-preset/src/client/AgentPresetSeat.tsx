@@ -133,51 +133,53 @@ export function AgentPresetSeat({ load, select, introduced, useAgentPresetSeat, 
     : label
 
   return (
-    <Menu
-      open={open}
-      onClose={() => { setOpen(false) }}
-      items={state.options.map((option) => {
-        const text = presetDisplayText(option, t)
-        return {
-          id: option.id,
-          // Name and description together: the id alone never says what a
-          // preset does, which is why the roster carries display copy.
-          label: (
-            <span className={css.item}>
-              <span className={css.itemName}>{text.name}</span>
-              {/* 描述截到两行：行高一致，菜单不会一条高一条矮；被截断时才给完整文本。 */}
-              <PresetDescription
-                className={css.itemDesc}
-                maxWidth={280}
-                text={text.description ?? t('noDescription')}
-              />
-            </span>
-          ),
-        }
-      })}
-      selectedId={state.current}
-      onSelect={(id) => {
-        setOpen(false)
-        void select(id)
-      }}
-      align="start"
-      portal
-      maxHeight={PRESET_MENU_MAX_HEIGHT}
-      anchor={(
-        <button
-          type="button"
-          className={css.seat}
-          aria-haspopup="menu"
-          aria-expanded={open}
-          title={state.error ?? t('seatHint')}
-          disabled={state.busy}
-          onClick={() => { setOpen(value => !value) }}
-        >
-          <IconAgentPresetOutline16 className={introducing ? `${css.seatIcon} ${css.introIcon}` : css.seatIcon} />
-          {shownLabel}
-          <IconChevronDownOutline14 className={css.chevron} />
-        </button>
-      )}
-    />
+    <span className={css.wrapper}>
+      <Menu
+        open={open}
+        onClose={() => { setOpen(false) }}
+        items={state.options.map((option) => {
+          const text = presetDisplayText(option, t)
+          return {
+            id: option.id,
+            // 菜单同时呈现名称与描述，避免只用 id 表示预设用途。
+            label: (
+              <span className={css.item}>
+                <span className={css.itemName}>{text.name}</span>
+                {/* 描述截到两行：行高一致，菜单不会一条高一条矮；被截断时才给完整文本。 */}
+                <PresetDescription
+                  className={css.itemDesc}
+                  maxWidth={280}
+                  text={text.description ?? t('noDescription')}
+                />
+              </span>
+            ),
+          }
+        })}
+        selectedId={state.current}
+        onSelect={(id) => {
+          setOpen(false)
+          void select(id)
+        }}
+        align="start"
+        portal
+        maxHeight={PRESET_MENU_MAX_HEIGHT}
+        anchor={(
+          <button
+            type="button"
+            className={css.seat}
+            aria-haspopup="menu"
+            aria-expanded={open}
+            title={state.error ?? t('seatHint')}
+            disabled={state.busy}
+            onClick={() => { setOpen(value => !value) }}
+          >
+            <IconAgentPresetOutline16 className={introducing ? `${css.seatIcon} ${css.introIcon}` : css.seatIcon} />
+            {shownLabel}
+            <IconChevronDownOutline14 className={css.chevron} />
+          </button>
+        )}
+      />
+      {state.error !== null && <span className={css.error} role="alert">{state.error}</span>}
+    </span>
   )
 }

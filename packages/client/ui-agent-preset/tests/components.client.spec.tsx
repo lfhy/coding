@@ -67,7 +67,7 @@ function renderSeat(state: Partial<AgentPresetSeatState> = {}) {
     useAgentPresetSeat: bindSnapshotSelector(store),
     t: (key: keyof typeof en) => en[key],
   } as unknown as AgentPresetSeatProps)} />)
-  return actions
+  return { ...actions, store }
 }
 
 function renderLabel(
@@ -295,6 +295,7 @@ describe('the new-session chip', () => {
 
     expect(actions.select).toHaveBeenCalledWith('mine')
     expect(screen.getByRole('button').getAttribute('aria-expanded')).toBe('false')
+    expect(screen.queryByRole('alert')).toBeNull()
   })
 
   it('disables the trigger while a switch is in flight', () => {
@@ -303,10 +304,21 @@ describe('the new-session chip', () => {
     expect(screen.getByRole('button')).toHaveProperty('disabled', true)
   })
 
-  it('shows a refused switch on the trigger', () => {
-    renderSeat({ error: 'session has already started' })
+  it('shows a refused switch beside the trigger and clears it on the next choice', () => {
+    const { store } = renderSeat({ current: 'mine' })
+    expect(screen.queryByRole('alert')).toBeNull()
 
+    act(() => { store.set({ ...SEAT_READY, error: 'session has already started' }) })
+
+    expect(screen.getByRole('button').textContent).toContain(en.presetStandardName)
     expect(screen.getByRole('button').getAttribute('title')).toBe('session has already started')
+    expect(screen.getByRole('alert').textContent).toBe('session has already started')
+
+    act(() => { store.set({ ...SEAT_READY, current: 'mine' }) })
+
+    expect(screen.getByRole('button').textContent).toContain('mine')
+    expect(screen.getByRole('button').getAttribute('title')).toBe(en.seatHint)
+    expect(screen.queryByRole('alert')).toBeNull()
   })
 
   it('renders nothing before the roster arrives or when there is none', () => {
