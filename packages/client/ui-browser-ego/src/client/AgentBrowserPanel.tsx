@@ -37,6 +37,15 @@ export type AgentBrowserProps = PropsRuntime<'sidebar.right.pane.tab'> & PropsLo
 
 type Notice = { id: number; key: 'inputFailed' | 'navigateFailed' | 'raiseFailed' }
 
+/** 页面给出的指针反馈；三项都来自 Host 的受限投影。 */
+type HoverState = { cursor: string; title: string | null; href: string | null }
+
+/** 悬停高亮只依赖这三项；相同内容的重绘没有意义。 */
+function sameHover(left: HoverState | null, right: HoverState | null): boolean {
+  return left === right || (left !== null && right !== null
+    && left.cursor === right.cursor && left.title === right.title && left.href === right.href)
+}
+
 /** 人工画面只投递这些导航键；按键码不依赖浏览器已废弃的事件属性。 */
 const NAVIGATION_KEYS: Readonly<Record<string, number>> = {
   Enter: 13, Backspace: 8, Delete: 46, Home: 36, End: 35,
@@ -78,7 +87,7 @@ export function AgentBrowserPanel({
   const lastPage = useRef<{ targetId: string | null; url: string } | null>(null)
   const [notice, setNotice] = useState<Notice | null>(null)
   const [videoFailed, setVideoFailed] = useState(false)
-  const [hovered, setHovered] = useState<{ cursor: string; title: string | null; href: string | null } | null>(null)
+  const [hovered, setHovered] = useState<HoverState | null>(null)
   const hoverVersion = useRef(0)
   /** 悬停查询的在途标记与最新待查位置：同一时刻最多一条请求，避免按事件率排队。 */
   const hoverBusy = useRef(false)
@@ -222,7 +231,8 @@ export function AgentBrowserPanel({
         hoverQueue.current = null
         const request = hoverVersion.current
         const value = await hover(next.targetId, next.x, next.y)
-        if (hoverVersion.current === request) setHovered(value)
+        // 指针在页面内匀速移动时结果通常不变；内容相同就不重绘面板。
+        if (hoverVersion.current === request) setHovered(previous => sameHover(previous, value) ? previous : value)
       }
     } finally { hoverBusy.current = false }
   }

@@ -110,9 +110,12 @@ describe('Agent 浏览器工作台页面', () => {
     expect(sent).toEqual([{ x: 10, y: 10 }, { x: 30, y: 30 }])
     await act(async () => { resolvers[1]?.({ cursor: 'pointer', title: 'Latest target', href: null }) })
     expect(screen.getByText('Latest target')).toBeTruthy()
+    // 相同指针状态不重绘：再移动一次、返回同样内容，提示保持不变。
+    fireEvent.mouseMove(target, { clientX: 30, clientY: 30 })
+    await act(async () => { resolvers[2]?.({ cursor: 'pointer', title: 'Latest target', href: null }) })
+    expect(screen.getByText('Latest target')).toBeTruthy()
     // 离开画面后到达的结果不再覆盖提示。
     fireEvent.mouseLeave(target)
-    await act(async () => { resolvers[2]?.(null) })
     expect(screen.queryByText('Latest target')).toBeNull()
     panel.unmount()
   })

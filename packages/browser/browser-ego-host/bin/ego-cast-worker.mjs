@@ -752,8 +752,12 @@ async function captureSnapshot(sessions, targetId, maxWidth) {
 }
 //#endregion
 //#region third-party/host/worker/frame.ts
+/** PNG 单帧的体积预算（base64 字符）；UI 页面通常远低于它，照片类页面超过时改用 JPEG。 */
+const PNG_BUDGET = 12e5;
+/** base64 只接受标准字母表，避免把任意文本当图片塞进面板。 */
+const BASE64 = /^([A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/u;
 /**
-* 采集当前视口的一帧 JPEG，并附上 CSS 视口尺寸供 Host 换算人工输入坐标。
+* 采集当前视口的一帧画面（默认无损 PNG，超预算时退回 JPEG），并附上 CSS 视口尺寸供 Host 换算人工输入坐标。
 *
 * 采集按设备像素进行：面板用 `Emulation.setDeviceMetricsOverride` 把页面像素比设成
 * 显示器像素比，这里不再折算回 CSS 像素，否则 HiDPI 下 1:1 的截图会被面板放大而发虚。
@@ -770,22 +774,28 @@ async function captureFrame(sessions, targetId, options) {
 	const x = viewport?.x ?? 0, y = viewport?.y ?? 0;
 	if (![x, y].every(Number.isFinite) || x < 0 || y < 0) throw new Error("viewport unavailable");
 	const scale = Math.min(1, options.maxWidth / (vw * dpr));
-	const image = await sessions.call(targetId, "Page.captureScreenshot", {
-		format: "jpeg",
-		quality: options.quality,
-		captureBeyondViewport: false,
-		clip: {
-			x,
-			y,
-			width: vw,
-			height: vh,
-			scale
-		}
-	});
-	if (typeof image.data !== "string" || !/^([A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/u.test(image.data) || image.data.length === 0 || image.data.length > 28e5) throw new Error("frame unavailable");
+	const shot = async (format, quality) => {
+		const image = await sessions.call(targetId, "Page.captureScreenshot", {
+			format,
+			...quality === void 0 ? {} : { quality },
+			captureBeyondViewport: false,
+			clip: {
+				x,
+				y,
+				width: vw,
+				height: vh,
+				scale
+			}
+		});
+		if (typeof image.data !== "string" || !BASE64.test(image.data) || image.data.length === 0 || image.data.length > 28e5) throw new Error("frame unavailable");
+		return image.data;
+	};
+	const png = await shot("png");
+	const lossless = png.length <= PNG_BUDGET;
 	return {
 		targetId,
-		data: image.data,
+		data: lossless ? png : await shot("jpeg", options.quality),
+		mime: lossless ? "image/png" : "image/jpeg",
 		vw,
 		vh,
 		ts: Date.now()
@@ -814,40 +824,24 @@ const CURSORS = new Set([
 	"ns-resize"
 ]);
 /**
-* 页面侧真实指针移动的最小间隔（毫秒）。
+* 每个目标只保留最新坐标；同一目标同时只有一条 Input 命令在途。
 *
-* `Input.dispatchMouseEvent` 要等渲染器确认输入，实测单条约 16ms，而面板画面只有约
-* 1fps；按事件率逐条投递只会拖慢光标反馈。悬停提示与游标另外用一次 `Runtime.evaluate`
-* 直接读页面，不依赖这条命令返回。
+* 面板、Host 与 worker 都在本机：`Input.dispatchMouseEvent` 唯一的成本是等渲染器确认
+* （实测约 16ms），所以不需要额外的节流——上一确认后立刻投递最新坐标，页面拿到的移动
+* 节奏与真实指针一致（约 60Hz），同时在途永远只有一条，不会排成队列。
 */
-const MOVE_INTERVAL_MS = 80;
-/** 每个目标只保留最新坐标；同一目标同时只有一个 Input 命令在途。 */
 const pendingMoves = /* @__PURE__ */ new Map();
 const draining = /* @__PURE__ */ new Set();
-const lastMoveAt = /* @__PURE__ */ new Map();
-const flushTimers = /* @__PURE__ */ new Map();
 /**
-* 把排队的最新坐标投递成一条真实鼠标移动，受最小间隔限制。
+* 把排队的最新坐标投递成一条真实鼠标移动，并只保留一条在途命令。
 * @param sessions - 只对 Host 已核验的目标调用的 CDP 会话。
 * @param targetId - 会话目录中的目标。
 */
 function flushMove(sessions, targetId) {
 	const next = pendingMoves.get(targetId);
 	if (next === void 0 || draining.has(targetId)) return;
-	const wait = (lastMoveAt.get(targetId) ?? 0) + MOVE_INTERVAL_MS - Date.now();
-	if (wait > 0) {
-		if (flushTimers.has(targetId)) return;
-		const timer = setTimeout(() => {
-			flushTimers.delete(targetId);
-			flushMove(sessions, targetId);
-		}, wait);
-		timer.unref?.();
-		flushTimers.set(targetId, timer);
-		return;
-	}
 	pendingMoves.delete(targetId);
 	draining.add(targetId);
-	lastMoveAt.set(targetId, Date.now());
 	Promise.resolve(sessions.call(targetId, "Input.dispatchMouseEvent", {
 		type: "mouseMoved",
 		x: next.x,
@@ -859,7 +853,7 @@ function flushMove(sessions, targetId) {
 	});
 }
 /**
-* 先向当前页面投递真实鼠标移动（合并、不等待），再读取指针与悬停提示。
+* 先向当前页面投递真实鼠标移动（合并、不等待确认），再读取指针与悬停提示。
 *
 * 读取只依赖坐标与元素本身，页面尚未处理完移动也能给出稳定结果；跨源子帧无法读取时保留普通指针。
 * @param sessions - 只对 Host 已核验的目标调用的 CDP 会话。
@@ -900,13 +894,9 @@ async function hoverAt(sessions, targetId, x, y) {
 		href
 	};
 }
-/** 目标关闭后丢弃排队坐标与定时器，避免向已消失的页面继续投递输入。 */
+/** 目标关闭后丢弃排队坐标，避免向已消失的页面继续投递输入。 */
 function forgetHoverTarget(targetId) {
 	pendingMoves.delete(targetId);
-	lastMoveAt.delete(targetId);
-	const timer = flushTimers.get(targetId);
-	if (timer !== void 0) clearTimeout(timer);
-	flushTimers.delete(targetId);
 }
 //#endregion
 //#region third-party/host/worker/navigation.ts

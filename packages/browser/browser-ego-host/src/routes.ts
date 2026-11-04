@@ -76,7 +76,8 @@ function frame(value: unknown, targetId: string): Frame | null {
     || typeof data.vw !== 'number' || typeof data.vh !== 'number'
     || !Number.isSafeInteger(data.vw) || !Number.isSafeInteger(data.vh)
     || data.vw <= 0 || data.vw > 8192 || data.vh <= 0 || data.vh > 8192
-    || typeof data.ts !== 'number' || !Number.isSafeInteger(data.ts)) return null
+    || typeof data.ts !== 'number' || !Number.isSafeInteger(data.ts)
+    || (data.mime !== undefined && data.mime !== 'image/png' && data.mime !== 'image/jpeg')) return null
   return data as unknown as Frame
 }
 

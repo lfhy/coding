@@ -6,42 +6,27 @@ const CURSORS = new Set(['default', 'pointer', 'text', 'wait', 'progress', 'help
   'not-allowed', 'crosshair', 'cell', 'vertical-text', 'zoom-in', 'zoom-out', 'ew-resize', 'ns-resize'])
 
 /**
- * 页面侧真实指针移动的最小间隔（毫秒）。
+ * 每个目标只保留最新坐标；同一目标同时只有一条 Input 命令在途。
  *
- * `Input.dispatchMouseEvent` 要等渲染器确认输入，实测单条约 16ms，而面板画面只有约
- * 1fps；按事件率逐条投递只会拖慢光标反馈。悬停提示与游标另外用一次 `Runtime.evaluate`
- * 直接读页面，不依赖这条命令返回。
+ * 面板、Host 与 worker 都在本机：`Input.dispatchMouseEvent` 唯一的成本是等渲染器确认
+ * （实测约 16ms），所以不需要额外的节流——上一确认后立刻投递最新坐标，页面拿到的移动
+ * 节奏与真实指针一致（约 60Hz），同时在途永远只有一条，不会排成队列。
  */
-const MOVE_INTERVAL_MS = 80
-
-/** 每个目标只保留最新坐标；同一目标同时只有一个 Input 命令在途。 */
 const pendingMoves = new Map<string, { x: number; y: number }>()
 const draining = new Set<string>()
-const lastMoveAt = new Map<string, number>()
-const flushTimers = new Map<string, ReturnType<typeof setTimeout>>()
 
 type SessionCalls = Pick<TargetSessions, 'call'>
 
 /**
- * 把排队的最新坐标投递成一条真实鼠标移动，受最小间隔限制。
+ * 把排队的最新坐标投递成一条真实鼠标移动，并只保留一条在途命令。
  * @param sessions - 只对 Host 已核验的目标调用的 CDP 会话。
  * @param targetId - 会话目录中的目标。
  */
 function flushMove(sessions: SessionCalls, targetId: string): void {
   const next = pendingMoves.get(targetId)
   if (next === undefined || draining.has(targetId)) return
-  const wait = (lastMoveAt.get(targetId) ?? 0) + MOVE_INTERVAL_MS - Date.now()
-  if (wait > 0) {
-    if (flushTimers.has(targetId)) return
-    const timer = setTimeout(() => { flushTimers.delete(targetId); flushMove(sessions, targetId) }, wait)
-    // 尾部移动单独定时补发：面板关闭后不应阻止进程退出。
-    timer.unref?.()
-    flushTimers.set(targetId, timer)
-    return
-  }
   pendingMoves.delete(targetId)
   draining.add(targetId)
-  lastMoveAt.set(targetId, Date.now())
   void Promise.resolve(sessions.call(targetId, 'Input.dispatchMouseEvent', { type: 'mouseMoved', x: next.x, y: next.y, buttons: 0 }))
     .catch(() => { /* 目标可能已关闭；下一次移动重新投递。 */ })
     .finally(() => {
@@ -51,7 +36,7 @@ function flushMove(sessions: SessionCalls, targetId: string): void {
 }
 
 /**
- * 先向当前页面投递真实鼠标移动（合并、不等待），再读取指针与悬停提示。
+ * 先向当前页面投递真实鼠标移动（合并、不等待确认），再读取指针与悬停提示。
  *
  * 读取只依赖坐标与元素本身，页面尚未处理完移动也能给出稳定结果；跨源子帧无法读取时保留普通指针。
  * @param sessions - 只对 Host 已核验的目标调用的 CDP 会话。
@@ -92,11 +77,7 @@ export async function hoverAt(sessions: SessionCalls, targetId: string, x: numbe
   return { cursor, title, href }
 }
 
-/** 目标关闭后丢弃排队坐标与定时器，避免向已消失的页面继续投递输入。 */
+/** 目标关闭后丢弃排队坐标，避免向已消失的页面继续投递输入。 */
 export function forgetHoverTarget(targetId: string): void {
   pendingMoves.delete(targetId)
-  lastMoveAt.delete(targetId)
-  const timer = flushTimers.get(targetId)
-  if (timer !== undefined) clearTimeout(timer)
-  flushTimers.delete(targetId)
 }

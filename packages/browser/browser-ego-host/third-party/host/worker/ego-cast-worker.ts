@@ -87,6 +87,8 @@ interface ActiveBrowser {
 interface JpegFrame {
   targetId: string
   data: string
+  /** 画面类型：单帧采集默认 png，录屏与回退路径是 jpeg。 */
+  mime?: string
   vw: number | null
   vh: number | null
   ts: number
