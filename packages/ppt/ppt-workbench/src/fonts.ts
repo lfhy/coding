@@ -11,6 +11,7 @@
 import { readdir, readFile, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
+import subsetFont from 'subset-font'
 
 /** 一个可以写进 .pptx 的字体。 */
 export interface EmbeddedFont {
@@ -24,6 +25,8 @@ export interface EmbeddedFont {
   readonly readonly: boolean
   /** 字体文件路径，写进导出摘要便于排查。 */
   readonly path: string
+  /** 是否写入了子集而不是整字体。 */
+  readonly subset: boolean
 }
 
 /** 被跳过的字体与原因。 */
@@ -73,6 +76,54 @@ function u32(bytes: Uint8Array, offset: number): number {
 
 interface Tables {
   readonly [tag: string]: { offset: number; length: number }
+}
+
+const TTC_MAGIC = 0x74746366
+
+/**
+ * 从一个 `.ttc` 集合里取出第一个 face，重建成独立的 TTF。
+ * 表目录里的偏移在集合中是相对整个文件的绝对偏移，重建时按 4 字节对齐重新排布。
+ * @param bytes - 集合文件字节。
+ * @returns 单 face 的 TTF；不是集合时返回原字节。
+ */
+export function extractFirstFace(bytes: Uint8Array): Uint8Array {
+  if (u32(bytes, 0) !== TTC_MAGIC) return bytes
+  const faceCount = u32(bytes, 8)
+  if (faceCount === 0) return bytes
+  const faceOffset = u32(bytes, 12)
+  const numTables = u16(bytes, faceOffset + 4)
+  const records: { tag: number; checksum: number; offset: number; length: number }[] = []
+  for (let index = 0; index < numTables; index += 1) {
+    const record = faceOffset + 12 + index * 16
+    records.push({
+      tag: u32(bytes, record),
+      checksum: u32(bytes, record + 4),
+      offset: u32(bytes, record + 8),
+      length: u32(bytes, record + 12),
+    })
+  }
+  const searchRange = 2 ** Math.floor(Math.log2(numTables)) * 16
+  const headerSize = 12 + numTables * 16
+  let size = headerSize
+  for (const record of records) size += Math.ceil(record.length / 4) * 4
+  const out = new Uint8Array(size)
+  const view = new DataView(out.buffer)
+  view.setUint32(0, 0x00010000, false)
+  view.setUint16(4, numTables, false)
+  view.setUint16(6, searchRange, false)
+  view.setUint16(8, Math.log2(searchRange / 16), false)
+  view.setUint16(10, numTables * 16 - searchRange, false)
+  let cursor = headerSize
+  records.forEach((record, index) => {
+    const entry = 12 + index * 16
+    view.setUint32(entry, record.tag, false)
+    view.setUint32(entry + 4, record.checksum, false)
+    view.setUint32(entry + 8, cursor, false)
+    view.setUint32(entry + 12, record.length, false)
+    out.set(bytes.subarray(record.offset, record.offset + record.length), cursor)
+    cursor += Math.ceil(record.length / 4) * 4
+  })
+  return out
 }
 
 function tableDirectory(bytes: Uint8Array): Tables | null {
@@ -128,7 +179,8 @@ function familyName(bytes: Uint8Array, tables: Tables): string {
 export async function readFontFace(path: string): Promise<FontFace | null> {
   const bytes = await readFile(path).catch(() => null)
   if (bytes === null) return null
-  const data = new Uint8Array(bytes)
+  // 集合字体取第一个 face：EOT 只能封装单 face 的 glyf TrueType。
+  const data = extractFirstFace(new Uint8Array(bytes))
   const tables = tableDirectory(data)
   if (tables === null) return null
   const os2 = tables['OS/2']
@@ -284,14 +336,66 @@ export function usedFamilies(deck: { pages: readonly { elements: readonly unknow
 }
 
 /**
- * 为工程准备要嵌入的字体。
+ * 收集某个字体族在工程里实际用到的字符。
+ * @param deck - 演示文稿。
+ * @param family - 字体族名。
+ * @returns 去重后的字符（含大小写与标点），子集化按它保留字形。
+ */
+export function charactersFor(
+  deck: { pages: readonly { elements: readonly unknown[] }[] },
+  family: string,
+): string {
+  const characters = new Set<string>()
+  for (const page of deck.pages) {
+    for (const element of page.elements) {
+      const record = element as {
+        kind?: string
+        text?: { content?: string; font?: string }
+        cells?: readonly (readonly { readonly content: string }[])[]
+        [key: string]: unknown
+      }
+      if (record.kind === 'text' && record.text?.font === family
+        && typeof record.text.content === 'string') {
+        for (const character of record.text.content) characters.add(character)
+      }
+      if (record.kind === 'table') {
+        if (record.text?.font !== family) continue
+        for (const row of record.cells ?? []) {
+          for (const cell of row) for (const character of cell.content) characters.add(character)
+        }
+      }
+    }
+  }
+  return [...characters].join('')
+}
+
+/**
+ * 按实际用到的字符把字体子集化。
+ * @param bytes - 原始 TTF 字节。
+ * @param text - 需要保留的字符。
+ * @returns 子集 TTF；子集化失败（例如字体不带对应轮廓）时返回 null，调用方回退整字体。
+ */
+export async function subsetFace(bytes: Uint8Array, text: string): Promise<Uint8Array | null> {
+  if (text.trim() === '') return null
+  try {
+    const result = await subsetFont(Buffer.from(bytes), text, { targetFormat: 'truetype' })
+    return new Uint8Array(result)
+  } catch {
+    return null
+  }
+}
+
+/**
+ * 为工程准备要嵌入的字体：优先写子集，子集化失败时退回整字体。
  * @param deck - 演示文稿。
  * @param dirs - 字体目录；缺省用平台默认目录。
+ * @param options.subset - 是否尝试子集化，缺省开启（测试或排障时可关掉）。
  * @returns 可嵌入的字体与被跳过的族（含原因）。
  */
 export async function collectFonts(
   deck: { pages: readonly { elements: readonly unknown[] }[] },
   dirs: readonly string[] = systemFontDirs(),
+  options: { subset?: boolean } = {},
 ): Promise<{ fonts: EmbeddedFont[]; skipped: SkippedFont[] }> {
   const families = usedFamilies(deck)
   if (families.length === 0) return { fonts: [], skipped: [] }
@@ -309,7 +413,12 @@ export async function collectFonts(
       skipped.push({ family, reason: licence.reason })
       continue
     }
-    const bytes = wrapEot(face)
+    const characters = charactersFor(deck, family)
+    const subset = options.subset === false ? null : await subsetFace(face.bytes, characters)
+    const source: FontFace = subset === null
+      ? face
+      : { ...face, bytes: subset }
+    const bytes = wrapEot(source)
     if (bytes === null) {
       skipped.push({ family, reason: '字体不是可封装的 TrueType 轮廓' })
       continue
@@ -321,6 +430,7 @@ export async function collectFonts(
       fsType: face.fsType ?? 0,
       readonly: licence.readonly,
       path: face.path,
+      subset: subset !== null,
     })
   }
   return { fonts, skipped }

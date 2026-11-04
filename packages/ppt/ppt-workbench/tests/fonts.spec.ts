@@ -1,7 +1,7 @@
 import { readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { licenceOf, readFontFace, systemFontDirs, usedFamilies, wrapEot } from '../src/fonts.ts'
+import { collectFonts, indexFonts, licenceOf, readFontFace, systemFontDirs, usedFamilies, wrapEot } from '../src/fonts.ts'
 
 /** 找一个真实的 .ttf 用来验证封装；没有系统字体时这些用例跳过。 */
 function firstSystemTtf(): string | null {
@@ -72,5 +72,31 @@ describe('EOT 封装（真实字体）', () => {
     expect(view.getUint32(0, true)).toBe(eot.length)
     expect(view.getUint32(4, true)).toBe(face.bytes.length)
     expect(view.getUint32(8, true)).toBe(0x00020001)
+  })
+})
+
+describe('子集化嵌入（真实字体）', () => {
+  it('子集明显小于整字体，且都写成可封装的 EOT', async () => {
+    const dirs = systemFontDirs()
+    const index = await indexFonts(dirs)
+    const entry = [...index.entries()][0]
+    if (entry === undefined) return
+    const family = entry[1].family
+    const deck = {
+      pages: [{
+        elements: [{
+          kind: 'text',
+          text: { content: '季度汇报 Q3 增长 32%', font: family },
+        }],
+      }],
+    }
+    const subsetted = await collectFonts(deck, dirs, { subset: true })
+    const full = await collectFonts(deck, dirs, { subset: false })
+    const subsetFontEntry = subsetted.fonts[0]
+    const fullFontEntry = full.fonts[0]
+    expect(subsetFontEntry?.subset).toBe(true)
+    expect(fullFontEntry?.subset).toBe(false)
+    if (subsetFontEntry === undefined || fullFontEntry === undefined) return
+    expect(subsetFontEntry.bytes.length).toBeLessThan(fullFontEntry.bytes.length)
   })
 })

@@ -47,7 +47,7 @@ interface PptProjectsFace {
     path: string
     bytes: number
     revision: number
-    fonts: readonly { readonly family: string; readonly readonly: boolean }[]
+    fonts: readonly { readonly family: string; readonly readonly: boolean; readonly subset: boolean }[]
     skippedFonts: readonly { readonly family: string; readonly reason: string }[]
   }>
 }
@@ -484,6 +484,7 @@ export function apply(ctx: Context): void {
             properties: {
               family: { type: 'string', required: true },
               readonly: { type: 'boolean', required: true },
+              subset: { type: 'boolean', required: true },
             },
           },
         },
@@ -507,7 +508,11 @@ export function apply(ctx: Context): void {
         path: result.path,
         bytes: result.bytes,
         revision: result.revision,
-        fonts: result.fonts.map(font => ({ family: font.family, readonly: font.readonly })),
+        fonts: result.fonts.map(font => ({
+          family: font.family,
+          readonly: font.readonly,
+          subset: font.subset,
+        })),
         skippedFonts: result.skippedFonts.map(font => ({ family: font.family, reason: font.reason })),
       }
     },

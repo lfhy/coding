@@ -36,7 +36,8 @@
   },
   "license": "MIT",
   "dependencies": {
-    "fflate": "^0.8.2"
+    "fflate": "^0.8.2",
+    "subset-font": "^2.9.0"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "workspace:^",

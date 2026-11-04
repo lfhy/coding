@@ -53,8 +53,8 @@ export interface PptExportResult {
   readonly path: string
   readonly bytes: number
   readonly revision: number
-  /** 实际嵌入的字体族。 */
-  readonly fonts: readonly { readonly family: string; readonly readonly: boolean }[]
+  /** 实际嵌入的字体族；`subset` 表示写的是子集而不是整字体。 */
+  readonly fonts: readonly { readonly family: string; readonly readonly: boolean; readonly subset: boolean }[]
   /** 因许可或找不到文件而跳过的字体。 */
   readonly skippedFonts: readonly SkippedFont[]
 }
@@ -354,7 +354,11 @@ export default class PptProjects extends Service {
       path,
       bytes: bytes.length,
       revision: snapshot.revision,
-      fonts: collected.fonts.map(font => ({ family: font.family, readonly: font.readonly })),
+      fonts: collected.fonts.map(font => ({
+        family: font.family,
+        readonly: font.readonly,
+        subset: font.subset,
+      })),
       skippedFonts: collected.skipped,
     }
   }
