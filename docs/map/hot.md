@@ -54,6 +54,12 @@
 - **技术与边界**：输入和视图通过 slot/领域注册表组合，持久事件仍由 Session/Host 拥有；工具卡片、轨迹、命令 UI 不往 runtime 增加中央事件 switch。参见 [ui-conversation](../../packages/client/ui-conversation/README.md)、[ui-commands](../../packages/client/ui-commands/README.md) 与 [ui-trajectory](../../packages/client/ui-trajectory/README.md)。
 - **连带与验证**：改变输入提交要核对 `packages/client/runtime` 的 Session 与 Host RPC；改变持久 Chat 行须更新 `ConversationNodeDefinition` 和 keyed renderer；改模型可见内容还要核对 session 事件与 snapshot。定向运行 `pnpm exec vitest run packages/client/ui-conversation/tests packages/client/ui-commands/tests packages/client/ui-input-trigger/tests packages/client/ui-tool/tests packages/client/ui-trajectory/tests`，可见输出再跑 keyless `DSH_SNAPSHOT=replay pnpm run test:web`。
 
+## 图像生成与 AI 画布
+
+- **路线**：图片附件只负责输入和持久字节；`packages/image/image-gen` 持有设置、提供方调用和会话图库／画布数据，`packages/image/tool-image-gen` 贡献按预设选择的模型工具。`packages/client/ui-image-gen` 经设置分区、对话视图与右侧标签槽位呈现配置、画廊和 AI 画布；空白画图会话由 `ui-conversation` 放开欢迎页遮盖并允许切换视图，图像字节仍归附件服务。窄于 1024px 时画廊先于画布展示，由用户点击画廊内的入口让工作台接管主区域；宽屏首次自动打开右栏。
+- **数据与边界**：配置由 `image-generation` 命名空间持有，凭据经独立引用解析；关闭、缺少地址或模型时服务端拒绝生成与编辑，不能仅禁用浏览器按钮。工具结果先由附件服务持久化，再归入所属会话图库；浏览器路由复核连接可信度与会话身份，右侧画布的有界节点由同会话图库身份引用。画图预设只决定会话的工具与 persona，已开始的普通会话不在前端强行切换预设。
+- **连带与验收**：改提供方请求或图库字段时核对附件准入、模型工具、Host 同源路由和 UI 投影；改图像模式时同步预设名单、Codex 工具名称和菜单快照。验证服务端缺配置拒绝、批量局部失败、跨会话取图拒绝、画布并发冲突、设置保存与回读、入口进入画廊和窄屏工作台布局；定向测试后运行 `pnpm run test:gui`、`DSH_SNAPSHOT=replay pnpm run test:web`。
+
 ## 模式与预设分发（agent preset）
 
 - **路线**：随包模式是 `apps/cli/config/agent-presets/<id>/` 下的一个目录（`agent.cordis.yml`、`preset.yml`，可选 `skills/`），由 [`apps/cli/src/profile-boot.ts`](../../apps/cli/src/profile-boot.ts) 的 `SHIPPED_PRESET_ROOT` 作为 `agent-presets` 行的 `roots` 注入；[`packages/preset/agent-presets`](../../packages/preset/agent-presets/src/index.ts) 负责发现、常驻挂载与按会话切换（`list`／`resolve`／`mount`／`recompose`），模式名与描述的本地化在 [`locales.ts`](../../packages/client/ui-agent-preset/src/client/locales.ts)。`standard` 是功能完整的编码 Agent 面；`minimal` 与 `codex` 是自成一体的工具栏，`cordis`、`reverse` 与 `longrun` 复制 `standard` 的行再加本模式独有的行（`reverse` 挂 `coding-mcp-client` 与自带 `skills/`，`longrun` 加 `wait_agent` 并把委派深度收到 1）。

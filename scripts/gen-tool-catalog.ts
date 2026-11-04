@@ -66,6 +66,7 @@ import * as ToolStrReplaceEditor from 'coding-tool-str-replace-editor'
 import TerminalSessionService from 'coding-terminal'
 import * as ToolPty from 'coding-tool-terminal'
 import * as ToolGoal from 'coding-tool-goal'
+import * as ToolImageGen from 'coding-tool-image-gen'
 import * as ToolPpt from 'coding-tool-ppt'
 import * as ToolSchedule from 'coding-schedule'
 import Lsp from 'coding-lsp'
@@ -538,6 +539,19 @@ const TOOL_PACKAGES: ToolPackage[] = [
     },
     note:
       'create, edit, pause, and resume require direct-human root authority; complete and blocked also accept the exact current goal round. The default blocked lower bound is three admitted rounds.',
+  },
+  {
+    pkg: 'coding-tool-image-gen',
+    dir: 'tool-image-gen',
+    source: 'packages/image/tool-image-gen/src/index.ts',
+    requires: ['ctx.tools', 'ctx.imageGeneration', 'a calling Agent session'],
+    writes: ['tool/call', 'image-gen/created', 'durable image attachment', 'tool/result'],
+    async mount(ctx) {
+      // 目录只收集工具 schema；执行期的 Host 服务与会话归属不在此触发。
+      ctx.provide('imageGeneration', {} as never)
+      await ctx.plugin(ToolImageGen)
+    },
+    note: 'The Codex preset selects variant=codex and exposes only image_gen.imagegen; other non-minimal presets expose generate_image, generate_images, and edit_image. All operations fail closed without a configured image service.',
   },
   {
     pkg: 'coding-tool-ppt',

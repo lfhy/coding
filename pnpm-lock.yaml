@@ -288,6 +288,9 @@ importers:
       coding-tool-goal:
         specifier: workspace:^
         version: link:../../packages/goal/tool-goal
+      coding-tool-image-gen:
+        specifier: workspace:^
+        version: link:../../packages/image/tool-image-gen
       coding-tool-jobs:
         specifier: workspace:^
         version: link:../../packages/jobs/tool-jobs
@@ -1678,6 +1681,9 @@ importers:
       coding-client-ui-goal:
         specifier: workspace:^
         version: link:../../client/ui-goal
+      coding-client-ui-image-gen:
+        specifier: workspace:^
+        version: link:../../client/ui-image-gen
       coding-client-ui-input-trigger:
         specifier: workspace:^
         version: link:../../client/ui-input-trigger
@@ -1804,6 +1810,9 @@ importers:
       coding-host-webserver:
         specifier: workspace:^
         version: link:../../host/webserver
+      coding-image-gen:
+        specifier: workspace:^
+        version: link:../../image/image-gen
       coding-jobs:
         specifier: workspace:^
         version: link:../../jobs/jobs
@@ -2615,6 +2624,63 @@ importers:
       coding-invariants:
         specifier: workspace:^
         version: link:../../runtime-diagnostics/invariants
+
+  packages/client/ui-image-gen:
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@testing-library/react':
+        specifier: ^16.1.0
+        version: 16.3.2(@testing-library/dom@10.4.2)(@types/react-dom@18.3.7(@types/react@18.3.31))(@types/react@18.3.31)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      '@types/react':
+        specifier: ~18.3.1
+        version: 18.3.31
+      '@types/react-dom':
+        specifier: ~18.3.0
+        version: 18.3.7(@types/react@18.3.31)
+      coding-api-remotes:
+        specifier: workspace:^
+        version: link:../../api/remotes
+      coding-client-locale:
+        specifier: workspace:^
+        version: link:../locale
+      coding-client-runtime:
+        specifier: workspace:^
+        version: link:../runtime
+      coding-client-test-runtime:
+        specifier: workspace:^
+        version: link:../../test-support/client-runtime
+      coding-client-ui-conversation:
+        specifier: workspace:^
+        version: link:../ui-conversation
+      coding-client-ui-icons:
+        specifier: workspace:^
+        version: link:../ui-icons
+      coding-client-ui-open-in-app:
+        specifier: workspace:^
+        version: link:../ui-open-in-app
+      coding-client-ui-primitives:
+        specifier: workspace:^
+        version: link:../ui-primitives
+      coding-client-ui-settings:
+        specifier: workspace:^
+        version: link:../ui-settings
+      coding-client-ui-slots:
+        specifier: workspace:^
+        version: link:../ui-slots
+      coding-invariants:
+        specifier: workspace:^
+        version: link:../../runtime-diagnostics/invariants
+      coding-session:
+        specifier: workspace:^
+        version: link:../../core/session
+      react:
+        specifier: ^18.2.0
+        version: 18.3.1
+      react-dom:
+        specifier: ^18.2.0
+        version: 18.3.1(react@18.3.1)
 
   packages/client/ui-input-trigger:
     dependencies:
@@ -6339,6 +6405,65 @@ importers:
       coding-invariants:
         specifier: workspace:^
         version: link:../../runtime-diagnostics/invariants
+
+  packages/image/image-gen:
+    dependencies:
+      '@deepseek-ai/schemastery':
+        specifier: link:../../../vendor/schemastery
+        version: link:../../../vendor/schemastery
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      coding-attachment:
+        specifier: workspace:^
+        version: link:../../attachment/attachment
+      coding-attachment-local:
+        specifier: workspace:^
+        version: link:../../attachment/attachment-local
+      coding-client-connection:
+        specifier: workspace:^
+        version: link:../../client/connection
+      coding-credentials:
+        specifier: workspace:^
+        version: link:../../credentials/credentials
+      coding-host-webserver:
+        specifier: workspace:^
+        version: link:../../host/webserver
+      coding-invariants:
+        specifier: workspace:^
+        version: link:../../runtime-diagnostics/invariants
+      coding-session:
+        specifier: workspace:^
+        version: link:../../core/session
+      coding-session-persistence:
+        specifier: workspace:^
+        version: link:../../session/session-persistence
+      coding-settings:
+        specifier: workspace:^
+        version: link:../../settings/settings
+
+  packages/image/tool-image-gen:
+    dependencies:
+      '@deepseek-ai/schemastery':
+        specifier: link:../../../vendor/schemastery
+        version: link:../../../vendor/schemastery
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      coding-image-gen:
+        specifier: workspace:^
+        version: link:../image-gen
+      coding-invariants:
+        specifier: workspace:^
+        version: link:../../runtime-diagnostics/invariants
+      coding-llm:
+        specifier: workspace:^
+        version: link:../../llm/llm
+      coding-tools:
+        specifier: workspace:^
+        version: link:../../core/tools
 
   packages/interaction/commands:
     dependencies:
@@ -10672,6 +10797,9 @@ importers:
       coding-host-webserver:
         specifier: workspace:^
         version: link:../../packages/host/webserver
+      coding-image-gen:
+        specifier: workspace:^
+        version: link:../../packages/image/image-gen
       coding-invariants:
         specifier: workspace:^
         version: link:../../packages/runtime-diagnostics/invariants
@@ -10852,6 +10980,9 @@ importers:
       coding-token-meter:
         specifier: workspace:^
         version: link:../../packages/llm/token-meter
+      coding-tool-apply-patch:
+        specifier: workspace:^
+        version: link:../../packages/fs/tool-apply-patch
       coding-tool-ask-user:
         specifier: workspace:^
         version: link:../../packages/interaction/tool-ask-user
@@ -10867,6 +10998,9 @@ importers:
       coding-tool-call-timeout-policy:
         specifier: workspace:^
         version: link:../../packages/guard/timeout-policy
+      coding-tool-context-compact:
+        specifier: workspace:^
+        version: link:../../packages/compaction/tool-context-compact
       coding-tool-cordis:
         specifier: workspace:^
         version: link:../../packages/extensions/tool-cordis
@@ -10879,6 +11013,9 @@ importers:
       coding-tool-goal:
         specifier: workspace:^
         version: link:../../packages/goal/tool-goal
+      coding-tool-image-gen:
+        specifier: workspace:^
+        version: link:../../packages/image/tool-image-gen
       coding-tool-jobs:
         specifier: workspace:^
         version: link:../../packages/jobs/tool-jobs

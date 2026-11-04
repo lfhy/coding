@@ -276,6 +276,13 @@
     - id: ui-ppt-workbench
       name: 'coding-client-ui-ppt-workbench'
 
+    # 图像生成宿主服务持有设置、图库、画布与回环数据路由；工具随非极简预设挂载。
+    - id: image-generation
+      name: 'coding-image-gen'
+
+    - id: ui-image-generation
+      name: 'coding-client-ui-image-gen'
+
     - id: ui-subagent
       name: 'coding-client-ui-subagent'
 

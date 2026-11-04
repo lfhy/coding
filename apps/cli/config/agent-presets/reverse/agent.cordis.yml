@@ -283,6 +283,10 @@
 - id: tool-browser
   name: 'coding-tool-browser-ego'
 
+# 图片工具注册在会话预设层，不让逆向分析产物依赖其它模式的工具面。
+- id: tool-image-gen
+  name: 'coding-tool-image-gen'
+
 # ── REA MCP 服务器 ──────────────────────────────────────────────────────────
 
 # REA 只在本模式注册工具：这里的行属于 preset 的常驻组装，只有认父到它的会话能看到

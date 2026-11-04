@@ -98,6 +98,8 @@
     "coding-file-reference": "workspace:^",
     "coding-file-reference-local": "workspace:^",
     "coding-genui": "workspace:^",
+    "coding-image-gen": "workspace:^",
+    "coding-client-ui-image-gen": "workspace:^",
     "coding-ppt-workbench": "workspace:^",
     "coding-client-ui-ppt-workbench": "workspace:^",
     "coding-host-apiproxy": "workspace:^",

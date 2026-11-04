@@ -1,0 +1,43 @@
+{
+  "name": "coding-image-gen",
+  "description": "Session-scoped OpenAI-compatible image generation and durable gallery/canvas Host service",
+  "version": "0.1.0-rc.8",
+  "private": true,
+  "publishConfig": { "access": "public" },
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
+  "exports": {
+    ".": { "types": "./lib/types/index.d.ts", "default": "./lib/index.js" },
+    "./invariant": { "types": "./lib/types/invariant.d.ts", "default": "./lib/invariant.js" },
+    "./src/*": "./src/*",
+    "./package.json": "./package.json"
+  },
+  "files": ["lib/index.js", "lib/invariant.js", "lib/types/**/*.d.ts", "README.md", "NOTICE.md"],
+  "license": "MIT",
+  "scripts": { "bundle": "tsdown" },
+  "dependencies": { "@deepseek-ai/schemastery": "workspace:^" },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "workspace:^",
+    "coding-attachment": "workspace:^",
+    "coding-client-connection": "workspace:^",
+    "coding-credentials": "workspace:^",
+    "coding-host-webserver": "workspace:^",
+    "coding-invariants": "workspace:^",
+    "coding-session": "workspace:^",
+    "coding-session-persistence": "workspace:^",
+    "coding-settings": "workspace:^"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "workspace:^",
+    "coding-attachment": "workspace:^",
+    "coding-attachment-local": "workspace:^",
+    "coding-client-connection": "workspace:^",
+    "coding-credentials": "workspace:^",
+    "coding-host-webserver": "workspace:^",
+    "coding-invariants": "workspace:^",
+    "coding-session": "workspace:^",
+    "coding-session-persistence": "workspace:^",
+    "coding-settings": "workspace:^"
+  }
+}

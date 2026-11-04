@@ -214,10 +214,10 @@ describe('web e2e: agent-preset selection', () => {
     const snapshot = await captureStableAria(page, '[role="menu"]', scaffold.workspaceCwd)
 
     await compareOrRefreshGolden(MENU_EXPECTED, snapshot, MODE)
-    // Every shipped preset, each with the sentence saying what it composes —
-    // the id alone never said what a preset does.
+    // 每个随包预设都以用途文案展示，避免只凭目录标识猜测能力。
     expect(snapshot).toContain('Minimal mode')
     expect(snapshot).toContain('Creator mode')
+    expect(snapshot).toContain('Image creation mode')
     await page.keyboard.press('Escape')
   })
 

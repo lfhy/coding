@@ -332,6 +332,8 @@
     { "path": "./packages/ppt/model" },
     { "path": "./packages/ppt/ppt-workbench" },
     { "path": "./packages/ppt/tool-ppt" },
+    { "path": "./packages/image/image-gen" },
+    { "path": "./packages/image/tool-image-gen" },
     { "path": "./packages/host/apiproxy" },
     { "path": "./packages/host/directory-picker" },
     { "path": "./packages/host/directory-picker-auto" },

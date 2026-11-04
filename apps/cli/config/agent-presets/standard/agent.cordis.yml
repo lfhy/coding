@@ -274,6 +274,10 @@
 - id: tool-browser
   name: 'coding-tool-browser-ego'
 
+# 图片生成与编辑仅向本预设的会话注册，后端服务由宿主持有。
+- id: tool-image-gen
+  name: 'coding-tool-image-gen'
+
 # ── 工具呈现 ─────────────────────────────────────────────────────────────────
 
 # 标准模式同时提供两种工具形态：原生 schema 直呼，以及 Code Mode 的 `run_code`

@@ -16,6 +16,9 @@
     - button "联网搜索":
       - img
       - text: 联网搜索
+    - button "图像生成":
+      - img
+      - text: 图像生成
     - button "图片识别":
       - img
       - text: 图片识别
@@ -101,6 +104,16 @@
         - img
         - text: 查看
       - 'button "复制: PPT 创作模式"':
+        - img
+        - text: 复制
+    - listitem:
+      - 'button "设为默认: 画图模式"':
+        - text: 画图模式 内置 在对话中单张或批量生成图片、编辑已有图片，并在对话画廊和右侧 AI 画布查看与整理创作结果。
+        - code: image
+      - 'button "查看: 画图模式"':
+        - img
+        - text: 查看
+      - 'button "复制: 画图模式"':
         - img
         - text: 复制
   - heading "自定义" [level=3]

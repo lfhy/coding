@@ -18,12 +18,15 @@ Coding 是面向个人开发的开源 AI 编程桌面客户端。它将模型对
 | 桌面工作台 | 在同一窗口浏览文件树与内容预览、使用终端、查看 Git 变更和提交历史，管理工作区与会话。 |
 | 浏览器与联网搜索 | 让 Agent 打开网页、交互和验证本地开发页面，右侧工作台可实时查看并操作 Agent 浏览器；工具含标签管理、上传下载、脚本与登录态导入，高风险调用按会话审批，截图保存到会话工作区。浏览器使用本机安装的 Edge、Chrome 或 Chromium，默认 DuckDuckGo 搜索无需配置搜索密钥。 |
 | 模型渠道 | 使用内置 Free / Auto 开始对话，也可在设置中添加自己的渠道、模型和凭据，切换模型与推理档位。 |
+| 图像创作 | 在画图模式对话批量生成、编辑图片，查看画廊并在右侧 AI 画布摆放和勾画；先在「设置 → 图像生成」启用并配置服务。除极简模式外，其他模式也能使用画图和编辑工具。 |
 | 项目记忆 | 将用户偏好、项目约定和任务交接保存到仓库之外，在同一项目的新会话中载入摘要，减少重复说明。 |
 | 长任务与协作 | 维护计划、待办和目标，运行后台命令、委派可继续的子代理，按需使用工作流；进度提醒帮助 Agent 在长任务中汇报进展。 |
 | GenUI 交互回答 | 将回答中的数据与结论呈现为表格、图表、表单、流程图等可交互内容，而不只有纯文本。 |
 | 主题外观 | 设置里的「主题外观」页内置 47 套配色，卡片带界面缩略图，点一下即换肤；还能换壁纸、指定强调色、调玻璃与面板不透明度，并导入/导出可分享的主题包。 |
 
 操作方式见[界面指南](docs/user/guide/index.md)，项目记忆与交互回答的具体行为分别见[记忆说明](packages/memory/memory/README.md)和 [GenUI 说明](packages/genui/genui/README.md)。内置 GenUI 移植自 MIT 许可的 [omdsh-dev/dsh-genui](https://github.com/omdsh-dev/dsh-genui)，版权与改造范围见[来源说明](packages/genui/genui/NOTICE.md)。
+
+内置图像生成功能参考 Apache-2.0 许可的 [shanliuling/dsh-image-gen](https://github.com/shanliuling/dsh-image-gen) 进行功能移植，而不是安装或完整打包原插件；来源版本、保留范围及与原项目的差异见[图像生成功能的来源说明](packages/image/image-gen/NOTICE.md)。
 
 内置主题同样随应用提供，不需要另外安装插件：幻梦 8 套、轴伊 2 套、OpenCode 调色板 37 套，分别移植自 MIT 许可的 [RevolutionLA/dsh-dream-skin](https://github.com/RevolutionLA/dsh-dream-skin)、[tpmoonchefryan/dsh-joi-channel-theme](https://github.com/tpmoonchefryan/dsh-joi-channel-theme) 与 [FeatherHunter/dsh-opencode-palette](https://github.com/FeatherHunter/dsh-opencode-palette)。来源版本、移植内容与未移植的能力见[主题来源说明](packages/client/ui-theme/NOTICE.md)，实现与限制见 [ui-theme 说明](packages/client/ui-theme/README.md)。
 

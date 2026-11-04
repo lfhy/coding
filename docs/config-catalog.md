@@ -948,6 +948,28 @@ export interface Config {
 
 Source: [`packages/host/webserver/src/index.ts:45`](../packages/host/webserver/src/index.ts)
 
+<a id="coding-image-gen"></a>
+
+## `coding-image-gen`
+
+Requires: `sessions` · `attachments` · `credentials`
+
+```ts config-catalog
+/** 未提供完整 endpoint/model 时开关无效；apiKeyRef 为空允许本地匿名端点。 */
+export interface Config {
+  /** 默认关闭；禁用仅阻止新请求，已有会话图片仍可读取。 */
+  enabled: boolean
+  /** OpenAI-compatible `/v1` API 基址；默认空，须为公开 HTTPS 或本机回环 HTTP(S)。 */
+  endpoint: string
+  /** 生成与编辑共用的模型名称；默认空且不自动选择模型。 */
+  model: string
+  /** 凭据服务中的引用；默认 IMAGE_GEN_API_KEY，空字符串仅用于无鉴权本地服务。 */
+  apiKeyRef: string
+}
+```
+
+Source: [`packages/image/image-gen/src/index.ts:20`](../packages/image/image-gen/src/index.ts)
+
 <a id="coding-invariants"></a>
 
 ## `coding-invariants`
@@ -2776,6 +2798,22 @@ export interface Config {
 
 Source: [`packages/goal/tool-goal/src/index.ts:26`](../packages/goal/tool-goal/src/index.ts)
 
+<a id="coding-tool-image-gen"></a>
+
+## `coding-tool-image-gen`
+
+Requires: `tools` · `imageGeneration`
+
+```ts config-catalog
+/** Codex 单工具和普通三工具只可择一。 */
+export interface Config {
+  /** 默认 standard；codex 只注册 `image_gen.imagegen`，不注册标准工具。 */
+  variant?: 'standard' | 'codex'
+}
+```
+
+Source: [`packages/image/tool-image-gen/src/index.ts:14`](../packages/image/tool-image-gen/src/index.ts)
+
 <a id="coding-tool-jobs"></a>
 
 ## `coding-tool-jobs`
@@ -3603,6 +3641,7 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 - `coding-agent` ([`packages/core/agent/src/index.ts`](../packages/core/agent/src/index.ts))
 - `coding-api-gateway` — requires `typert` ([`packages/api/gateway/src/index.ts`](../packages/api/gateway/src/index.ts))
 - `coding-api-remotes` ([`packages/api/remotes/src/index.ts`](../packages/api/remotes/src/index.ts))
+- `coding-browser-ego-host` — requires `sessions` · `subprocess` ([`packages/browser/browser-ego-host/src/index.ts`](../packages/browser/browser-ego-host/src/index.ts))
 - `coding-browser-playwright` ([`packages/browser/browser-playwright/src/index.ts`](../packages/browser/browser-playwright/src/index.ts))
 - `coding-client-locale` ([`packages/client/locale/src/index.ts`](../packages/client/locale/src/index.ts))
 - `coding-client-modules` — requires `webServer` · `loader` ([`packages/client/modules/src/index.ts`](../packages/client/modules/src/index.ts))
@@ -3611,6 +3650,7 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 - `coding-client-ui-attachment` ([`packages/client/ui-attachment/src/index.ts`](../packages/client/ui-attachment/src/index.ts))
 - `coding-client-ui-brand-official` ([`packages/client/ui-brand-official/src/index.ts`](../packages/client/ui-brand-official/src/index.ts))
 - `coding-client-ui-browser` ([`packages/client/ui-browser/src/index.ts`](../packages/client/ui-browser/src/index.ts))
+- `coding-client-ui-browser-ego` ([`packages/client/ui-browser-ego/src/index.ts`](../packages/client/ui-browser-ego/src/index.ts))
 - `coding-client-ui-commands` ([`packages/client/ui-commands/src/index.ts`](../packages/client/ui-commands/src/index.ts))
 - `coding-client-ui-conversation` ([`packages/client/ui-conversation/src/index.ts`](../packages/client/ui-conversation/src/index.ts))
 - `coding-client-ui-cordis` ([`packages/extensions/ui-cordis/src/index.ts`](../packages/extensions/ui-cordis/src/index.ts))
@@ -3618,6 +3658,7 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 - `coding-client-ui-directory-picker-browse` ([`packages/client/ui-directory-picker-browse/src/index.ts`](../packages/client/ui-directory-picker-browse/src/index.ts))
 - `coding-client-ui-directory-picker-native` ([`packages/client/ui-directory-picker-native/src/index.ts`](../packages/client/ui-directory-picker-native/src/index.ts))
 - `coding-client-ui-goal` ([`packages/client/ui-goal/src/index.ts`](../packages/client/ui-goal/src/index.ts))
+- `coding-client-ui-image-gen` ([`packages/client/ui-image-gen/src/index.ts`](../packages/client/ui-image-gen/src/index.ts))
 - `coding-client-ui-input-trigger` ([`packages/client/ui-input-trigger/src/index.ts`](../packages/client/ui-input-trigger/src/index.ts))
 - `coding-client-ui-jobs` ([`packages/client/ui-jobs/src/index.ts`](../packages/client/ui-jobs/src/index.ts))
 - `coding-client-ui-layout` ([`packages/client/ui-layout/src/index.ts`](../packages/client/ui-layout/src/index.ts))
@@ -3626,6 +3667,7 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 - `coding-client-ui-open-in-app` ([`packages/client/ui-open-in-app/src/index.ts`](../packages/client/ui-open-in-app/src/index.ts))
 - `coding-client-ui-permission-presets` ([`packages/client/ui-permission-presets/src/index.ts`](../packages/client/ui-permission-presets/src/index.ts))
 - `coding-client-ui-plan` ([`packages/client/ui-plan/src/index.ts`](../packages/client/ui-plan/src/index.ts))
+- `coding-client-ui-ppt-workbench` ([`packages/client/ui-ppt-workbench/src/index.ts`](../packages/client/ui-ppt-workbench/src/index.ts))
 - `coding-client-ui-reference` ([`packages/client/ui-reference/src/index.ts`](../packages/client/ui-reference/src/index.ts))
 - `coding-client-ui-renderer` ([`packages/client/ui-renderer/src/index.ts`](../packages/client/ui-renderer/src/index.ts))
 - `coding-client-ui-settings` ([`packages/client/ui-settings/src/index.ts`](../packages/client/ui-settings/src/index.ts))
@@ -3660,6 +3702,7 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 - `coding-lsp` ([`packages/lsp/lsp/src/index.ts`](../packages/lsp/lsp/src/index.ts))
 - `coding-memory-context` — requires `agents` · `memory` ([`packages/memory/memory-context/src/index.ts`](../packages/memory/memory-context/src/index.ts))
 - `coding-memory-local` ([`packages/memory/memory-local/src/index.ts`](../packages/memory/memory-local/src/index.ts))
+- `coding-ppt-workbench` — requires `sessions` · `webServer` · `connection` ([`packages/ppt/ppt-workbench/src/index.ts`](../packages/ppt/ppt-workbench/src/index.ts))
 - `coding-schedule` — requires `agents` · `sessions` · `tools` · `sessionPersistence` ([`packages/schedule/schedule/src/index.ts`](../packages/schedule/schedule/src/index.ts))
 - `coding-session` ([`packages/core/session/src/index.ts`](../packages/core/session/src/index.ts))
 - `coding-session-checkpoint-policy` — requires `llm` · `sessionPersistence` · `sessions` · `tools` ([`packages/session/session-checkpoint-policy/src/index.ts`](../packages/session/session-checkpoint-policy/src/index.ts))
@@ -3679,10 +3722,13 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 - `coding-tool-apply-patch` — requires `tools` · `fs` · `systemPrompt` ([`packages/fs/tool-apply-patch/src/index.ts`](../packages/fs/tool-apply-patch/src/index.ts))
 - `coding-tool-ask-user` — requires `tools` · `userQuestions` ([`packages/interaction/tool-ask-user/src/index.ts`](../packages/interaction/tool-ask-user/src/index.ts))
 - `coding-tool-browser` — requires `tools` · `browserUse` · `attachments` · `systemPrompt` ([`packages/browser/tool-browser/src/index.ts`](../packages/browser/tool-browser/src/index.ts))
+- `coding-tool-browser-ego` — requires `tools` · `egoBrowser` · `attachments` ([`packages/browser/tool-browser-ego/src/index.ts`](../packages/browser/tool-browser-ego/src/index.ts))
 - `coding-tool-call-timeout-policy` — requires `tools` ([`packages/guard/timeout-policy/src/index.ts`](../packages/guard/timeout-policy/src/index.ts))
 - `coding-tool-computer-use` — requires `tools` · `skills` · `agents` · `computerUse` ([`packages/computer-use/tool-computer-use/src/index.ts`](../packages/computer-use/tool-computer-use/src/index.ts))
+- `coding-tool-context-compact` — requires `tools` · `compaction` ([`packages/compaction/tool-context-compact/src/index.ts`](../packages/compaction/tool-context-compact/src/index.ts))
 - `coding-tool-cordis` — requires `tools` · `systemPrompt` · `dynamicCordisRunner` · `cordisInspect` ([`packages/extensions/tool-cordis/src/index.ts`](../packages/extensions/tool-cordis/src/index.ts))
 - `coding-tool-memory` — requires `tools` · `memory` ([`packages/memory/tool-memory/src/index.ts`](../packages/memory/tool-memory/src/index.ts))
+- `coding-tool-ppt` — requires `tools` · `llm` · `attachments` ([`packages/ppt/tool-ppt/src/index.ts`](../packages/ppt/tool-ppt/src/index.ts))
 - `coding-user-questions` ([`packages/interaction/user-questions/src/index.ts`](../packages/interaction/user-questions/src/index.ts))
 - `coding-workspace` — requires `storageDomain` · `sessionPersistence` ([`packages/workspace/workspace/src/index.ts`](../packages/workspace/workspace/src/index.ts))
 
@@ -3736,6 +3782,7 @@ Imported as libraries by other packages; a `cordis.yml` cannot load them.
 - `coding-memory` ([`packages/memory/memory/src/index.ts`](../packages/memory/memory/src/index.ts))
 - `coding-native-command` ([`packages/util/native-command/src/index.ts`](../packages/util/native-command/src/index.ts))
 - `coding-output-retention` ([`packages/util/output-retention/src/index.ts`](../packages/util/output-retention/src/index.ts))
+- `coding-ppt-model` ([`packages/ppt/model/src/index.ts`](../packages/ppt/model/src/index.ts))
 - `coding-sandbox-windows-acl` ([`packages/sandbox/sandbox-windows-acl/src/index.ts`](../packages/sandbox/sandbox-windows-acl/src/index.ts))
 - `coding-scope` ([`packages/core/scope/src/index.ts`](../packages/core/scope/src/index.ts))
 - `coding-sdk-client` ([`packages/sdk/client/src/index.ts`](../packages/sdk/client/src/index.ts))

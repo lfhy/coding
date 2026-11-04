@@ -309,3 +309,7 @@
 
 - id: tool-browser
   name: 'coding-tool-browser-ego'
+
+# 图片生成与编辑可以交给执行者，工具注册仍限于所属会话。
+- id: tool-image-gen
+  name: 'coding-tool-image-gen'

@@ -245,6 +245,10 @@
     fetch: false
     searchTimeoutMs: 60000
 
+# 图片工具只注册到本预设的会话，服务与图片存储仍归宿主。
+- id: tool-image-gen
+  name: 'coding-tool-image-gen'
+
 # ── self-modification ───────────────────────────────────────────────────────
 
 # Read the live runtime, mount a temporary plugin, unmount it. The toolset is a

@@ -1,6 +1,6 @@
-/** Locale bundles for the agent-preset settings row, hero chip, header label, and management section. */
+/** Agent 预设设置行、新建会话入口、会话标签和管理分区共用的本地化文案。 */
 
-/** Locale keys these surfaces render. */
+/** 这些入口会读取的本地化键。 */
 export type AgentPresetSettingsKey =
   | 'title' | 'description' | 'loading' | 'error' | 'userTrust' | 'seatHint' | 'headerHint'
   | 'nav' | 'sectionIntro' | 'builtIn' | 'setDefault' | 'view'
@@ -11,6 +11,7 @@ export type AgentPresetSettingsKey =
   | 'presetReverseName' | 'presetReverseDescription'
   | 'presetLongrunName' | 'presetLongrunDescription'
   | 'presetPptName' | 'presetPptDescription'
+  | 'presetImageName' | 'presetImageDescription'
   | 'duplicate' | 'duplicateUnavailable' | 'delete' | 'presetId' | 'presetIdPlaceholder' | 'copyOf'
   | 'displayName' | 'displayNamePlaceholder'
   | 'inUse' | 'noDescription' | 'builtInGroup' | 'customGroup'
@@ -21,7 +22,7 @@ export type AgentPresetSettingsKey =
   | 'idRequired' | 'idInvalid' | 'idTaken'
   | 'deleteTitle' | 'deleteDescription' | 'deleteConfirm' | 'deleting'
 
-/** English copy. */
+/** 英文文案。 */
 export const en: Record<AgentPresetSettingsKey, string> = {
   title: 'Agent preset',
   description: 'Applies to sessions you start from now on. Running sessions keep the preset they began with.',
@@ -59,6 +60,9 @@ export const en: Record<AgentPresetSettingsKey, string> = {
   presetPptDescription:
     'Builds slide decks from the conversation: the agent creates and edits one project with ppt_* tools while the '
     + 'PPT workbench on the right shows and edits the same deck, then exports a .pptx; every revision stays undoable.',
+  presetImageName: 'Image creation mode',
+  presetImageDescription:
+    'Create images one at a time or in batches, edit existing images, and view the results in the conversation gallery and the AI canvas on the right.',
   duplicate: 'Duplicate',
   duplicateUnavailable: 'This deployment has no writable preset directory',
   delete: 'Delete',
@@ -97,7 +101,7 @@ export const en: Record<AgentPresetSettingsKey, string> = {
   deleting: 'Deleting…',
 }
 
-/** Simplified Chinese copy. */
+/** 简体中文文案。 */
 export const zh: Record<AgentPresetSettingsKey, string> = {
   title: 'Agent 预设',
   description: '对此后新建的会话生效。运行中的会话保持它开始时的预设。',
@@ -125,6 +129,8 @@ export const zh: Record<AgentPresetSettingsKey, string> = {
   presetLongrunDescription: '把长任务按阶段推进：主 Agent 拆分目标、并行派发子 Agent、等待其结算，再由独立验收 Agent 判定通过与否；未通过打回原执行者继续修，上下文交接只保留主线目标与验收状态。',
   presetPptName: 'PPT 创作模式',
   presetPptDescription: '在对话里做 PPT：模型用 ppt_* 工具建工程、改页面与配色，右侧 PPT 工作台显示并手改同一份稿子，最后导出 .pptx；每一版都能撤销与回溯。',
+  presetImageName: '画图模式',
+  presetImageDescription: '在对话中单张或批量生成图片、编辑已有图片，并在对话画廊和右侧 AI 画布查看与整理创作结果。',
   duplicate: '复制',
   duplicateUnavailable: '此部署未配置可写的预设目录',
   delete: '删除',
@@ -160,23 +166,23 @@ export const zh: Record<AgentPresetSettingsKey, string> = {
   deleting: '正在删除…',
 }
 
-/** Preset roster fields needed to resolve Web display copy. */
+/** 名单行中用于解析 Web 显示文案的字段。 */
 export interface PresetDisplaySource {
-  /** Stable preset id. */
+  /** 不随语言变化的预设标识。 */
   readonly id: string
-  /** Whether the deployment ships the preset or the user owns it. */
+  /** 区分部署随包的预设与用户自定义预设。 */
   readonly trust: 'system' | 'user'
-  /** Unlocalized name published by the preset. */
+  /** 预设文件发布的原始名称。 */
   readonly name?: string
-  /** Unlocalized description published by the preset. */
+  /** 预设文件发布的原始说明。 */
   readonly description?: string
 }
 
-/** Display copy resolved for the active Web locale. */
+/** 按当前 Web 语言解析后的展示文案。 */
 export interface PresetDisplayText {
-  /** Localized built-in name or the preset's own fallback name. */
+  /** 本地化内置名称，或预设自身的名称／标识。 */
   readonly name: string
-  /** Localized built-in description or the preset's own description. */
+  /** 本地化内置说明，或预设自身的说明。 */
   readonly description?: string
 }
 
@@ -193,13 +199,14 @@ const BUILT_IN_PRESET_KEYS: Readonly<Partial<Record<string, PresetLocaleKeys>>> 
   reverse: { name: 'presetReverseName', description: 'presetReverseDescription' },
   longrun: { name: 'presetLongrunName', description: 'presetLongrunDescription' },
   ppt: { name: 'presetPptName', description: 'presetPptDescription' },
+  image: { name: 'presetImageName', description: 'presetImageDescription' },
 }
 
 /**
- * Resolve preset display copy without making user-authored metadata translatable.
- * @param preset - roster row whose copy is being rendered.
- * @param t - active Web locale lookup.
- * @returns localized copy for a known shipped preset, otherwise file metadata.
+ * 将随包系统预设的名称和说明映射为当前语言；用户自定义预设保留文件元数据。
+ * @param preset - 待展示的名单行。
+ * @param t - 当前 Web 语言的文案查询函数。
+ * @returns 已知随包系统预设的本地化文案，或文件中的名称与说明。
  */
 export function presetDisplayText(
   preset: PresetDisplaySource,

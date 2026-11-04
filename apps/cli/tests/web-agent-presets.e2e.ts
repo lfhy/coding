@@ -74,6 +74,7 @@ async function bootWeb(
     { id: 'web-runtime', disabled: true },
     { id: 'open-in-app', disabled: true },
     { id: 'ppt-workbench', disabled: true },
+    { id: 'ui-image-generation', disabled: true },
     { id: 'session-telemetry-otel', disabled: true },
     // A deployment-level skill on the host registry's GLOBAL layer — the same
     // registration shape a repository plugin's skill root uses. The layered
@@ -212,10 +213,10 @@ describe('the shipped Web composition', () => {
     }
   })
 
-  it('supplies both shipped presets, and only those, from the system root', async () => {
+  it('supplies every shipped preset, and only those, from the system root', async () => {
     const listed = await ctx.agentPresets.list()
 
-    expect(listed.map(preset => preset.id).sort()).toEqual(['codex', 'cordis', 'longrun', 'minimal', 'ppt', 'reverse', 'standard'])
+    expect(listed.map(preset => preset.id).sort()).toEqual(['codex', 'cordis', 'image', 'longrun', 'minimal', 'ppt', 'reverse', 'standard'])
     expect(listed.every(preset => preset.trust === 'system')).toBe(true)
     expect(ctx.agentPresets.defaultId).toBe('standard')
   })
@@ -239,13 +240,13 @@ describe('the shipped Web composition', () => {
         'browser_snapshot', 'browser_space_close', 'browser_space_open',
         'browser_status', 'browser_tabs', 'browser_upload', 'browser_wait',
         'browser_wait_for_human', 'browser_wait_for_response',
-        'browser_wait_for_selector', 'browser_wait_for_url', 'context_compact',
-        'create_goal', 'edit', 'exit_plan_mode', 'followup_task', 'get_goal',
-        'interrupt_agent', 'job_kill', 'job_list', 'job_output', 'list_agents',
-        'list_subagent_models', 'memory_delete', 'memory_list', 'memory_read',
-        'memory_save', 'memory_update', 'ralph', 'read', 'read_image',
-        'render_ui', 'run_code', 'send_message', 'skill', 'subagent',
-        'subagent_fork', 'todo_write', 'update_goal', 'validate_dsh_ui',
+        'browser_wait_for_selector', 'browser_wait_for_url', 'canvas_state', 'context_compact',
+        'create_goal', 'edit', 'edit_image', 'exit_plan_mode', 'followup_task', 'generate_image',
+        'generate_images', 'get_goal', 'interrupt_agent', 'job_kill', 'job_list',
+        'job_output', 'list_agents', 'list_subagent_models', 'memory_delete',
+        'memory_list', 'memory_read', 'memory_save', 'memory_update', 'ralph',
+        'read', 'read_image', 'render_ui', 'run_code', 'send_message', 'skill',
+        'subagent', 'subagent_fork', 'todo_write', 'update_goal', 'validate_dsh_ui',
         'web_search', 'workflow', 'write',
       ])
     } finally {
@@ -266,6 +267,25 @@ describe('the shipped Web composition', () => {
         'ppt_open', 'ppt_read', 'ppt_redo', 'ppt_render', 'ppt_undo',
       ])
       expect(resolveSessionPreset(handle.agent.session)).toBe('ppt')
+    } finally {
+      await handle.dispose()
+    }
+  })
+
+  it('mounts the image preset with ordinary image and canvas tools', async () => {
+    const handle = await ctx.agents.create({
+      sessionId: SessionId(`preset-image-${randomUUID()}`),
+      meta: { agentPreset: 'image' },
+      setup: agentCtx => ctx.agentPresets.mount(agentCtx, 'image').then(() => undefined),
+    })
+    try {
+      expect(toolNames(ctx, handle.agent).filter(name =>
+        ['generate_image', 'generate_images', 'edit_image', 'canvas_state'].includes(name)))
+        .toEqual(['canvas_state', 'edit_image', 'generate_image', 'generate_images'])
+      expect(toolNames(ctx, handle.agent)).not.toContain('image_gen.imagegen')
+      expect(resolveSessionPreset(handle.agent.session)).toBe('image')
+      const assembled = await ctx.systemPrompt.assemble({ scope: handle.agent })
+      expect(assembled.sections.map(section => section.text).join('\n')).toContain('右侧 AI 画布')
     } finally {
       await handle.dispose()
     }

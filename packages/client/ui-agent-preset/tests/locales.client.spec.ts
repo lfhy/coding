@@ -1,4 +1,4 @@
-/** Web-localized copy for every shipped preset and file copy for every other row. */
+/** 随包预设按 Web 语言展示，用户自定义预设保留文件文案。 */
 
 import { describe, expect, it } from 'vitest'
 import { en, presetDisplayText, zh } from '../src/client/locales.ts'
@@ -14,6 +14,7 @@ describe('preset display copy', () => {
     ['reverse', 'presetReverseName', 'presetReverseDescription'],
     ['longrun', 'presetLongrunName', 'presetLongrunDescription'],
     ['ppt', 'presetPptName', 'presetPptDescription'],
+    ['image', 'presetImageName', 'presetImageDescription'],
   ] as const)('localizes the shipped %s preset in English and Chinese', (id, nameKey, descriptionKey) => {
     const preset = { id, trust: 'system' as const, name: 'file name', description: 'file description' }
 

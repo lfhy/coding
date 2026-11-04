@@ -1,0 +1,61 @@
+/** 图像生成功能的界面文案，与后端诊断分离。 */
+export const NS = 'image-generation'
+export type ImageKey = keyof typeof zh
+
+/** 简体中文界面文案。 */
+export const zh = {
+  nav: '图像生成', title: '图像生成', intro: '配置绘图服务后，可以在会话中创作和编辑图片。',
+  enabled: '启用图像生成', inactive: '请填写服务地址、模型，并按需配置密钥后启用。',
+  endpoint: '服务地址', model: '绘图模型', keyRef: '密钥名称', key: '服务密钥',
+  keyHint: '保存后只显示是否已配置，不会显示密钥内容。', keyReady: '密钥已配置',
+  keyMissing: '尚未配置密钥', keyLoading: '正在检查密钥…', keyError: '未能检查密钥，请重试。',
+  keyReadOnly: '此密钥无法在这里更改。', keyRefPending: '请先保存密钥名称。', noKeyNeeded: '本地服务无需密钥。',
+  save: '保存设置', saveKey: '保存密钥', saving: '保存中…',
+  failed: '保存失败，请检查后重试。', unavailable: '暂时无法读取设置，请稍后重试。',
+  readOnly: '当前设置不可更改。', invalidEndpoint: '请输入有效的安全服务地址；本机地址可使用 HTTP。',
+  invalidModel: '请输入模型名称。', invalidRef: '请输入有效的密钥名称。',
+  draw: '画图', gallery: '画廊', canvas: 'AI 画布', openCanvas: '打开 AI 画布', openFailed: '暂时无法打开画廊，请重试。',
+  galleryLoading: '正在加载图片…', galleryEmpty: '还没有生成的图片',
+  galleryHint: '在下方对话输入框描述多张画面，生成的图片将保存在这个会话中。',
+  galleryUnavailable: '暂时无法读取图片，请重试。', retry: '重试', refresh: '刷新图片',
+  prompt: '画面描述', promptPlaceholder: '描述你想创作的画面', generate: '生成图片',
+  generating: '正在创作…', generateFailed: '未能生成图片，请重试。',
+  edit: '基于此图创作', editFailed: '未能编辑图片，请重试。',
+  place: '加入画布', placed: '已加入画布', placeFailed: '无法将图片加入画布，请重试。',
+  noService: '图像生成暂不可用。可在设置中完成配置，已有图片仍可查看。',
+  imageMissing: '图片暂时无法显示', image: '生成的图片',
+  canvasLoading: '正在打开画布…', canvasEmpty: '从画廊选择图片，或使用画笔开始创作。',
+  canvasUnavailable: '暂时无法打开画布，请重试。',
+  pencil: '画笔', eraser: '橡皮', select: '选择', selectedImage: '已选择图片', clear: '清空画布',
+  remove: '移除选中内容', canvasSaveFailed: '画布未保存，请重试。',
+  canvasConflict: '画布已在别处修改。请刷新后再继续。',
+} as const
+
+/** 英文界面文案。 */
+export const en: Record<ImageKey, string> = {
+  nav: 'Image generation', title: 'Image generation', intro: 'Configure your image service to create and edit pictures in a conversation.',
+  enabled: 'Enable image generation', inactive: 'Add a service address and model, then configure a key if needed.',
+  endpoint: 'Service address', model: 'Image model', keyRef: 'Key name', key: 'Service key',
+  keyHint: 'Only the configured status is shown after saving; the key is never displayed.', keyReady: 'Key configured',
+  keyMissing: 'No key configured', keyLoading: 'Checking key…', keyError: 'Could not check the key. Please retry.',
+  keyReadOnly: 'This key cannot be changed here.', keyRefPending: 'Save the key name first.', noKeyNeeded: 'Your local service needs no key.',
+  save: 'Save settings', saveKey: 'Save key', saving: 'Saving…',
+  failed: 'Could not save. Check the details and retry.', unavailable: 'Settings are temporarily unavailable. Please retry later.',
+  readOnly: 'These settings cannot be changed.', invalidEndpoint: 'Enter a secure service address; HTTP is supported for a local service.',
+  invalidModel: 'Enter a model name.', invalidRef: 'Enter a valid key name.',
+  draw: 'Draw', gallery: 'Gallery', canvas: 'AI canvas', openCanvas: 'Open AI canvas', openFailed: 'Could not open the gallery. Please retry.',
+  galleryLoading: 'Loading images…', galleryEmpty: 'No images yet',
+  galleryHint: 'Describe multiple images in the conversation input below. They will be saved in this conversation.',
+  galleryUnavailable: 'Could not load images. Please retry.', retry: 'Retry', refresh: 'Refresh images',
+  prompt: 'Image description', promptPlaceholder: 'Describe the picture you want to create', generate: 'Generate image',
+  generating: 'Creating…', generateFailed: 'Could not create the image. Please retry.',
+  edit: 'Create from this image', editFailed: 'Could not edit the image. Please retry.',
+  place: 'Add to canvas', placed: 'Added to canvas', placeFailed: 'Could not add the image to the canvas. Please retry.',
+  noService: 'Image generation is unavailable. Complete setup in Settings; existing images remain visible.',
+  imageMissing: 'Image is temporarily unavailable', image: 'Generated image',
+  canvasLoading: 'Opening canvas…', canvasEmpty: 'Choose an image in the gallery, or start drawing.',
+  canvasUnavailable: 'Could not open the canvas. Please retry.',
+  pencil: 'Pen', eraser: 'Eraser', select: 'Select', selectedImage: 'Image selected', clear: 'Clear canvas',
+  remove: 'Remove selection', canvasSaveFailed: 'Canvas was not saved. Please retry.',
+  canvasConflict: 'The canvas changed elsewhere. Refresh before continuing.',
+}

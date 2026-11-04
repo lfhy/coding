@@ -332,6 +332,10 @@
 
       You are running in the Coding desktop app on {{model}}, with the session workspace rooted at {{cwd}}. Shell commands and patches resolve relative paths against that workspace root.
 
+      ## Image generation and editing
+
+      Use `image_gen.imagegen` to create an image from a prompt; to edit a recent image in this session, pass `num_last_images_to_include` (1–5). In Code Mode the tool may be listed as `image_gen__imagegen`. Do not use `referenced_image_paths`: direct local paths are not available for this tool. Transparent backgrounds are not supported; omit `transparent_background` or leave it false. If the needed image is absent from the current conversation, ask the user to attach it again rather than guessing a path.
+
 - id: agent-instructions
   name: 'coding-agent-instructions'
   config:
@@ -359,6 +363,12 @@
   name: 'coding-tool-jobs'
   config:
     vocabulary: write_stdin
+
+# Codex 只注册单一 generate/edit 工具；不暴露普通预设的三工具组合。
+- id: tool-image-gen
+  name: 'coding-tool-image-gen'
+  config:
+    variant: codex
 
 # ── edits and planning ──────────────────────────────────────────────────────
 

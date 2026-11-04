@@ -478,6 +478,30 @@ Source: [`packages/hooks/hook-protocol/src/types.ts:19`](../packages/hooks/hook-
 
 Source: [`packages/hooks/hook-protocol/src/types.ts:31`](../packages/hooks/hook-protocol/src/types.ts)
 
+### `image-gen/*`
+
+<a id="image-gencanvas--log-only"></a>
+
+#### `image-gen/canvas` — log-only
+
+```ts persistence-catalog
+/** CAS 校验后一次追加完整快照；该事件不进入模型历史。 */
+'image-gen/canvas': CanvasSnapshot
+```
+
+Source: [`packages/image/image-gen/src/types.ts:44`](../packages/image/image-gen/src/types.ts)
+
+<a id="image-gencreated--log-only"></a>
+
+#### `image-gen/created` — log-only
+
+```ts persistence-catalog
+/** 图片必须先由附件服务提交，再追加元数据；该事件不进入模型历史。 */
+'image-gen/created': { item: GalleryItem }
+```
+
+Source: [`packages/image/image-gen/src/types.ts:42`](../packages/image/image-gen/src/types.ts)
+
 ### `llm/*`
 
 <a id="llmretry--log-only"></a>

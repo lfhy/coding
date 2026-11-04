@@ -21,6 +21,7 @@
 |---|---|---|---|
 | 加一个模型工具 | `map/packages.md` 的 `tool-*` 行、[tool-catalog.md](tool-catalog.md) | `packages/<group>/tool-<name>/`、`packages/bundle/*/cordis.patch.yml` 的行 | `pnpm exec vitest run packages/<group>/tool-<name>/tests` |
 | 加或改客户端面板 | `map/hot.md` 的 client 条目、[packages/client/AGENTS.md](../packages/client/AGENTS.md) | `packages/client/ui-<name>/`、槽定义、bundle 的 `dsh.client` 行 | `pnpm exec vitest run packages/client/ui-<name>/tests` |
+| 改画图模式、图像设置、画廊或画布 | [map/hot.md 的图像路线](map/hot.md#图像生成与-ai-画布) | `packages/image/`、`packages/client/ui-image-gen/`、`apps/cli/config/agent-presets/image/` | 两包与 Client 定向测试 + `pnpm run test:gui` |
 | 改 PPT 模式工作台的出现或报错 | [map/hot.md 的 PPT 路线](map/hot.md#ppt-创作模式的工作台) | `packages/client/ui-ppt-workbench`、`packages/ppt/ppt-workbench` | 两包定向测试 + `pnpm run test:gui` |
 | 改浏览器启动或白屏 | [map/hot.md 的 Web 启动路线](map/hot.md#web-启动与渲染) | `apps/web`、`packages/client/web`、`modules`、`runtime`、`ui-renderer` | 相应包测试 + `DSH_SNAPSHOT=replay pnpm run test:web` |
 | 改浏览器与 Host 的连接或 RPC | [map/hot.md 的连接路线](map/hot.md#浏览器与-host-传输) | `packages/client/connection`、`packages/api/remotes`、`packages/host/apiproxy`、`packages/host/webserver` | 相应连接/网关测试 + `DSH_SNAPSHOT=replay pnpm run test:web` |

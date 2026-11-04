@@ -8,3 +8,4 @@
   - 'menuitem "Codex mode Codex prompt and tool surface: shell, apply_patch, update_plan, web search, and continuable subagents with wait_agent, plus bundled skills for project setup, Go backend, frontend, and visual style."'
   - menuitem "Reverse engineering mode All Standard mode capabilities plus the REA engine as MCP tools and bundled reverse-engineering skills, for binaries, installers, firmware, and runtime behavior."
   - 'menuitem "PPT creation mode Builds slide decks from the conversation: the agent creates and edits one project with ppt_* tools while the PPT workbench on the right shows and edits the same deck, then exports a .pptx; every revision stays undoable."'
+  - menuitem "Image creation mode Create images one at a time or in batches, edit existing images, and view the results in the conversation gallery and the AI canvas on the right."

@@ -1,0 +1,113 @@
+# `image` 预设只向宿主的工具注册表贡献画图能力；生成服务和图片存储由宿主持有。
+# 服务行须处在独立 realm 内，避免与其它预设的同名服务冲突。
+
+- id: persona
+  name: 'coding-persona'
+  config:
+    text: |-
+      你运行在 {{model}} 模型上，当前工作目录是 {{cwd}}。这是画图会话：把用户的描述变成可查看、可比较和可继续修改的图片。
+
+      # 创作方式
+
+      - 对话是主要入口。单张创作用 `generate_image`；多张候选、不同风格或成组插图用 `generate_images`，逐项写清主体、构图、色彩、风格与必须准确出现的文字。没有指定的细节可自行选合理方案，不要把一般构图选择反问给用户。
+      - 修改已有图片用 `edit_image`，说明保留什么、只改变什么；需要沿用同一人物或物体时明确要求保持原主体身份，不以相似的新形象替换。引用哪一张图以本次会话实际图片和工具提供的参数为准，不猜文件路径或图片标识。
+      - 生成结果出现在对话画廊；右侧 AI 画布供用户查看、选择和整理图片。用户可同时操作画布，回答时用图片内容和顺序指代作品，不把内部标识当作面向用户的名称。
+      - 先交付能看的一版，再根据反馈迭代；批量结果简要说明每张的区别和下一步可调整的方向。工具失败时说明哪些图片已完成、哪些未完成，不把失败项说成成功。
+
+- id: agent-instructions
+  name: 'coding-agent-instructions'
+  config:
+    maxBytes: 65536
+
+# shell 工具只消费宿主执行器；平台门控使一份预设在 POSIX 与 Windows 上均可挂载。
+- id: tool-bash
+  name: 'coding-tool-bash'
+  disabled: !!js process.platform === 'win32'
+
+- id: tool-pwsh
+  name: 'coding-tool-pwsh'
+  disabled: !!js process.platform !== 'win32'
+
+# 画图工具只在选用该预设的会话注册；宿主服务对所有预设共享。
+- id: tool-image-gen
+  name: 'coding-tool-image-gen'
+
+- id: tool-fs
+  name: 'coding-tool-fs'
+
+- id: tool-apply-patch
+  name: 'coding-tool-apply-patch'
+
+- id: tool-fs-search
+  name: 'coding-tool-fs-search'
+  config:
+    sampleOverCapGlobResults: false
+
+- id: tool-jobs
+  name: 'coding-tool-jobs'
+
+- id: skill-filesystem
+  name: 'coding-skill-filesystem'
+
+- id: skill-stylekit
+  name: 'coding-skill-stylekit'
+
+- id: tool-skill
+  name: 'coding-tool-skill'
+
+- id: tool-goal
+  name: 'coding-tool-goal'
+
+# 计划和压缩服务的生存期限于本预设，不覆盖其它会话的服务实例。
+- id: planning
+  name: cordis:group
+  group: true
+  isolate:
+    planMode: true
+  config:
+    - id: plan-mode
+      name: 'coding-plan-mode'
+      config:
+        section: |
+              You are in plan mode. Stay in plan mode until exit_plan_mode succeeds or the user switches the session mode. Imperative language to implement changes means plan the implementation, not execute it. A user's conversational agreement — including an answer confirming something you asked — approves nothing and does not end plan mode; fold the confirmed decision into the plan and submit it through exit_plan_mode.
+
+              Explore the user's request and any existing pictures without generating, editing, writing files, or changing configuration. Resolve discoverable facts by inspection; ask only for user-owned choices that cannot be inferred.
+
+              Make the plan decision-complete: state the intended subject, composition, style, number of images, what must be preserved in any edit, and how the result will be judged. When ready, call exit_plan_mode with the complete plan markdown starting with a # title, as the only and final tool call of that assistant response.
+
+- id: compaction
+  name: cordis:group
+  group: true
+  isolate:
+    compaction: true
+    toolResultPruner: true
+  config:
+    - id: compaction-basic
+      name: 'coding-compaction-basic'
+
+    - id: command-compact
+      name: 'coding-command-compact'
+
+    - id: tool-context-compact
+      name: 'coding-tool-context-compact'
+
+    - id: tool-result-pruner
+      name: 'coding-compaction-tool-result-pruner'
+      config:
+        thresholdChars: 8192
+        headChars: 4096
+        tailChars: 1024
+
+- id: tool-ask-user
+  name: 'coding-tool-ask-user'
+
+- id: tool-todo
+  name: 'coding-tool-todo'
+  config:
+    allowParallelInProgress: false
+
+- id: tool-web
+  name: 'coding-tool-web'
+  config:
+    fetch: false
+    searchTimeoutMs: 60000

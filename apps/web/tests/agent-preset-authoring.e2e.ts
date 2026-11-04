@@ -99,6 +99,7 @@ describe('web e2e: agent-preset authoring is a host-side copy', () => {
     expect(snapshot).toContain('或用「创造模式」让 Agent 帮你创建')
     expect(snapshot).not.toContain('新建预设')
     expect(snapshot).toContain('查看: 标准模式')
+    expect(snapshot).toContain('查看: 画图模式')
     expect(snapshot).not.toContain('删除: 标准模式')
     expect(snapshot).not.toContain('打开目录')
   }, 60_000)

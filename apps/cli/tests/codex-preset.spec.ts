@@ -30,6 +30,8 @@ beforeAll(async () => {
     { id: 'browser-playwright', disabled: true },
     { id: 'webserver', disabled: true },
     { id: 'ppt-workbench', disabled: true },
+    // 图像服务继续加载；客户端展示依赖被禁用的浏览器运行时。
+    { id: 'ui-image-generation', disabled: true },
     { id: 'web-runtime', disabled: true },
     { id: 'session-telemetry-otel', disabled: true },
     { id: 'modules', disabled: true },
@@ -91,6 +93,7 @@ describe('the shipped Codex preset', () => {
         'apply_patch',
         'exec_command',
         'followup_task',
+        'image_gen.imagegen',
         'interrupt_agent',
         'list_agents',
         'send_message',
@@ -111,10 +114,20 @@ describe('the shipped Codex preset', () => {
       expect(toolNames(codex.agent)).toEqual(expect.not.arrayContaining([
         'bash', 'job_kill', 'job_list', 'job_output',
         'read', 'write', 'edit', 'read_image', 'glob', 'grep',
+        'generate_image', 'generate_images', 'edit_image',
         'skill', 'subagent_fork', 'workflow', 'ralph',
         'get_goal', 'create_goal', 'update_goal', 'exit_plan_mode', 'ask_user_question',
         'todo_write',
       ]))
+      expect(toolNames(codex.agent).filter(name => name.includes('imagegen'))).toEqual(['image_gen.imagegen'])
+      const imageSchema = ctx.tools.schemas(codex.agent).find(schema => schema.name === 'image_gen.imagegen')
+      expect(Object.keys(imageSchema?.parameters.properties ?? {}).sort()).toEqual([
+        'num_last_images_to_include', 'prompt', 'referenced_image_paths', 'transparent_background',
+      ])
+      expect(imageSchema?.parameters.required).toEqual(['prompt'])
+      // 同一接口选择生成或最近图片编辑，不把未授权的绝对路径读取当作可用能力。
+      const prompt = await ctx.systemPrompt.assemble({ scope: codex.agent })
+      expect(prompt.sections.map(section => section.text).join('\n')).toContain('Do not use `referenced_image_paths`')
     } finally {
       await codex.dispose()
     }
