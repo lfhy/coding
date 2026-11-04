@@ -42,6 +42,12 @@
 - **技术与边界**：普通设置的模型分区使用三列变体，内置渠道出站由 `ModelsSection.tsx` 置于只读目录上方并由 `ChannelOutboundRow.tsx` 写入渠道分节；模型请求 User-Agent 是渠道级字段，由 `ProviderEditor.tsx` 写进渠道 profile（内置渠道不提供）；图片识别使用独立的普通分区；欢迎引导在单独的阻断式弹窗中呈现提供方与模型两列，已有可用默认模型直接完成，否则须取得可用提供方及至少一个目录模型并选择默认值才能开始。各 UI 行从共享镜像派生作用域，机密配置只传引用，真实值归 Credentials Provider；详见 [ui-settings](../../packages/client/ui-settings/README.md)、[ui-settings-models](../../packages/client/ui-settings-models/README.md) 及所属 Provider README。
 - **连带与验证**：模型导航、欢迎引导或列布局变化时同步 `ui-settings-general`、`ui-settings-models` 与用户指南；搜索配置需同步 `ui-settings-search`、所属 Web 提供方和用户指南；搜索出站与模型渠道共用 `coding-proxy-pool` 的 `OutboundConfig`（直连／内置代理池／自定义代理），`pool` 模式按池自己的出站规则解析，因此改池规则要一并验证搜索请求路径；新 namespace 同步 schema、Host RPC、设置卡片和包 README；凭据字段不能只改表单，需验证来源及遮蔽拒绝。改主题目录或外观层时同步 `ui-theme` 的包 README、`NOTICE.md` 与用户指南：新增令牌映射要在 `themes/opencode.ts` 与样式表之间对齐（catalog 规格断言主题只覆盖本包声明或消费的变量），改壁纸 `body::before` 要看真实渲染。定向运行 `pnpm exec vitest run packages/client/ui-settings/tests packages/client/ui-settings-general/tests packages/client/ui-settings-models/tests packages/client/ui-settings-search/tests packages/client/ui-theme/tests packages/host/apiproxy/tests/api-proxy-config.spec.ts`，可见界面再跑 `pnpm run test:gui`。
 
+## PPT 创作模式的工作台
+
+- **路线**：`packages/client/runtime/src/client/sessions/service.ts` 的会话摘要持有 `agentPreset` 与 `blank`；`packages/client/ui-ppt-workbench/src/client/index.ts` 只为当前已开始对话的 `ppt` 会话自动打开一个外部标签，不向工作台 `+` 菜单贡献入口。标签由 `packages/client/ui-open-in-app/src/client/sidebar-tab-service.ts` 按会话管理，面板控制器位于 `ui-ppt-workbench/src/client/controller.ts`。
+- **数据与边界**：宿主 `packages/ppt/ppt-workbench/src/index.ts` 按会话保存当前工程，`routes.ts` 经已注入的连接服务检查本机同源请求；面板可见时读取 `/api/ppt/state`，采用宿主当前工程快照并回执待处理的打开请求，不再次打开工程。关闭标签后该会话不再自动弹出；切换其他会话不共享工程指针或标签。
+- **连带与验证**：会话开始条件变化时核对 `runtime` 的 `blank` 投影、`ui-open-in-app` 的标签去重与工作台显隐；路由依赖变化同步 `ppt-workbench` 的依赖声明及测试。运行 `pnpm exec vitest run packages/client/ui-ppt-workbench/tests packages/ppt/ppt-workbench/tests`、`pnpm run test:gui`，再做真实 Host 页面验证。
+
 ## 对话输入命令与视图
 
 - **路线**：`packages/client/ui-conversation/src/client/apply.ts` 声明对话座位，`input/hub.ts` 与 `skeleton/InputBar.tsx` 管每会话输入；`packages/client/ui-input-trigger/src/client/controller.ts` 管内联触发，`packages/client/ui-commands/src/client/service.ts` 管命令目录与弹层；`packages/client/ui-tool/src/client/apply.ts` 注册工具行，`packages/client/ui-trajectory/src/client/index.ts` 注册轨迹视图。
