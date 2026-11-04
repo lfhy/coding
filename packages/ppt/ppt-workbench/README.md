@@ -24,6 +24,10 @@ PPT 创作模式的宿主能力：工程存储（`ppt/<工程目录>/deck.json`�
 - **导出**：`buildPptx` 在本地生成最小 OPC 包——每页一张 slide，文本、矩形、椭圆与连接线按基准像素换算成 EMU，主题色写进 `theme1.xml`。不依赖 Office、不调用外部进程。
 - **错误码**：路由把 `not-found` / `conflict` / `forbidden` / `bad-request` 映射成 404 / 409 / 403 / 400；模型工具看到的是同一批中文诊断。
 
+## 页面渲染与预览
+
+`render` 把每页写成自包含 HTML（`.render/slide-N.html`），再交给**这个会话自己的 Agent 浏览器**打开并截图：页面进会话正常空间，所以右侧「Agent 浏览器」标签会像别的页面一样显示它；截图与页面共用同一个标签，产物落在 `render/slide-N-v<rev>.png`。浏览器机制归 `coding-browser-ego-host`，本包只经 `ctx.get('egoBrowser').captureSessionPage` 调用，没有浏览器提供方时明确报错而不是假装渲染成功。视口按画布尺寸固定（16:9 = 1280×720），保证像素与工作台一致。
+
 ## 版式模板
 
 `add_page` 可以带 `template`（`title`、`section`、`bullets`、`two-column`、`data`、`chart`、`quote`）与 `title`／`bullets`：模板按当前主题与画布铺好文字、色块、表格或图表，元素与手放的完全等价，之后照样能拖能改。面板顶栏的下拉菜单用同一份模板清单。
@@ -43,6 +47,7 @@ PPT 创作模式的宿主能力：工程存储（`ppt/<工程目录>/deck.json`�
 | `POST /api/ppt/create` | 新建工程（标题页） |
 | `POST /api/ppt/edit` | 应用一次 ops（可带 `baseRevision`） |
 | `POST /api/ppt/undo` / `redo` | 撤销 / 重做 |
+| `POST /api/ppt/render` | 渲染页面图（同时在 Agent 浏览器里打开） |
 | `POST /api/ppt/check` | 规则质检 |
 | `POST /api/ppt/import` | 把工作区里的 .pptx 导入成工程 |
 | `POST /api/ppt/export` | 导出 .pptx（默认被 error 级质检拦住，可 `skipCheck`） |

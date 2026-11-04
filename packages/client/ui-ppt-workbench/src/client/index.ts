@@ -108,6 +108,7 @@ export function apply(ctx: ClientContext): void {
         reorderElement: (id, to) => controller.reorderElement(id, to),
         insertImage: file => controller.insertImage(file),
         checkDeck: () => controller.checkDeck(),
+        preview: pages => controller.preview(pages),
         mediaUrl: (dir, source) => {
           const query = new URLSearchParams({ sessionId, path: source })
           if (dir !== undefined) query.set('dir', dir)

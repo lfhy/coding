@@ -262,6 +262,14 @@ export function installRoutes(ctx: Context, service: PptProjects): void {
     return { ok: true, source }
   })
 
+  route('render', ['POST'], async (body) => {
+    const sessionId = sessionIdOf(body)
+    const pages = Array.isArray(body.pages)
+      ? body.pages.map(entry => optionalNumber(entry, 'pages[]') ?? 0)
+      : undefined
+    return { ok: true, pages: await service.render(sessionId, optionalString(body.dir, 'dir'), pages) }
+  })
+
   route('check', ['POST'], async (body) => {
     const sessionId = sessionIdOf(body)
     return { ok: true, check: await service.check(sessionId, optionalString(body.dir, 'dir')) }

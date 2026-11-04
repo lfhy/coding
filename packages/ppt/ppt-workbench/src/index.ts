@@ -17,6 +17,7 @@ import { checkDeck, type PptCheckResult } from './check.ts'
 import { buildPptx } from './export/pptx.ts'
 import { collectFonts, systemFontDirs, type SkippedFont } from './fonts.ts'
 import { importPptx } from './import.ts'
+import { renderPages, type PageCapture, type RenderedPage } from './render.ts'
 import { PptModelError, type SlideSizeId, type ThemeId } from 'coding-ppt-model'
 import { installRoutes } from './routes.ts'
 import {
@@ -252,6 +253,35 @@ export default class PptProjects extends Service {
    */
   redo(sessionId: string, dir: string | undefined, steps: number): Promise<PptSnapshot> {
     return redoProject(this.resolveDir(sessionId, dir), steps)
+  }
+
+  /**
+   * 把页面渲染成 PNG（工作台与导出一致的那一版）。
+   * @param sessionId - 会话身份。
+   * @param dir - 工程目录；缺省为当前工程。
+   * @param pages - 要渲染的页下标（0 起）；缺省全部。
+   * @returns 每页的 PNG 路径。
+   */
+  async render(sessionId: string, dir?: string, pages?: readonly number[]): Promise<RenderedPage[]> {
+    const absolute = this.resolveDir(sessionId, dir)
+    const snapshot = await loadProject(absolute)
+    const media: Record<string, Uint8Array | undefined> = {}
+    for (const page of snapshot.deck.pages) {
+      for (const element of page.elements) {
+        if (element.kind !== 'image' || media[element.source] !== undefined) continue
+        media[element.source] = await readProjectMedia(absolute, element.source)
+      }
+    }
+    const capture = this.ctx.get('egoBrowser') as unknown as PageCapture | undefined
+    return renderPages({
+      sessionId,
+      projectDir: absolute,
+      deck: snapshot.deck,
+      ...pages === undefined ? {} : { pages },
+      media,
+      capture,
+      revision: snapshot.revision,
+    })
   }
 
   /**

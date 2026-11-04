@@ -24,6 +24,7 @@ PPT 创作模式的七个模型工具：`ppt_create`、`ppt_open`、`ppt_read`�
 | `ppt_read` | 读整份页面与元素数据 | `dir` |
 | `ppt_edit` | 应用 ops（页与元素的增删改、页面属性、文稿属性） | `ops` · `base_revision` · `dir` |
 | `ppt_undo` / `ppt_redo` | 版本前后移动 | `steps` · `dir` |
+| `ppt_render` | 渲染页面图：在会话的 Agent 浏览器里打开并落 PNG | `dir` · `pages` |
 | `ppt_check` | 规则质检（出界、零尺寸、溢出、对比度、空页、文字密度）；`ai: true` 追加模型审阅 | `dir` · `ai` |
 | `ppt_import` | 把工作区里的 .pptx 逆向成工程 | `source` · `dir` · `title` |
 | `ppt_export` | 导出 .pptx 到 `export/`（error 级质检会拦住） | `dir` · `skip_check` |

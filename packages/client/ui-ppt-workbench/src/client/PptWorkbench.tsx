@@ -51,6 +51,7 @@ export interface PptWorkbenchInjected {
   reorderElement: (id: string, to: 'front' | 'back' | 'forward' | 'backward') => Promise<void>
   insertImage: (file: File) => Promise<void>
   checkDeck: () => Promise<void>
+  preview: (pages?: readonly number[]) => Promise<void>
   mediaUrl: (dir: string | undefined, source: string) => string
 }
 
@@ -79,7 +80,7 @@ export function PptWorkbench({
   shown, t, usePpt, show, refresh, open, create, undo, redo, exportDeck,
   selectPage, selectElement, setEditing, addPage, removePage, movePage,
   addElement, removeElement, updateElement, updatePage, updateDeck,
-  duplicateElement, reorderElement, insertImage, checkDeck, mediaUrl,
+  duplicateElement, reorderElement, insertImage, checkDeck, preview, mediaUrl,
 }: PptWorkbenchProps) {
   const state = usePpt(snapshot => snapshot)
   const [title, setTitle] = useState('')
@@ -121,6 +122,10 @@ export function PptWorkbench({
         <button type="button" className={css.action} title={t('check')} disabled={state.busy || project === null}
           onClick={() => { void checkDeck() }}>
           {t('check')}
+        </button>
+        <button type="button" className={css.action} title={t('preview')} disabled={state.busy || project === null}
+          onClick={() => { void preview() }}>
+          {t('preview')}
         </button>
         <button type="button" className={css.action} title={t('reload')} onClick={refresh}>
           <IconRefreshOutline16 size={14} />

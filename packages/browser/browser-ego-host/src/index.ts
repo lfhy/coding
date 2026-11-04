@@ -165,6 +165,59 @@ export default class EgoBrowserHost extends Service {
     } catch { return false }
   }
 
+  /**
+   * 在会话自己的 Agent 浏览器空间里打开一页本地 HTML 并截图。
+   *
+   * 页面进的是该会话的正常空间，因此右侧「Agent 浏览器」标签会像别的页面一样显示它；
+   * 截图与页面共用同一个标签，不额外开一套渲染通道。调用方负责把内容写成 `file://`
+   * 能读的本地文件。
+   * @param options - 会话、本地页面路径、视口尺寸与输出路径。
+   * @returns 截图写入成功时为 true。
+   */
+  async captureSessionPage(options: {
+    /** 会话身份；页面进入它的浏览器空间。 */
+    readonly sessionId: SessionId
+    /** 本地 HTML 的绝对路径。 */
+    readonly htmlPath: string
+    /** 视口宽度（CSS 像素），与 HTML 的画布宽度一致。 */
+    readonly width: number
+    /** 视口高度（CSS 像素）。 */
+    readonly height: number
+    /** 要写入的 PNG 绝对路径。 */
+    readonly outPath: string
+    /** 等待整页稳定的毫秒数；缺省 300。 */
+    readonly settleMs?: number
+  }): Promise<boolean> {
+    if (!this.ctx.sessions.get(options.sessionId)) return false
+    const url = `file://${options.htmlPath.replace(/\\/gu, '/')}`
+    const space = spaceNameForSession(options.sessionId)
+    const script = `await taskSpaces.useOrCreate(${JSON.stringify(space)})\n`
+      + 'const existingTabs = await browser.listTabs()\n'
+      + `const match = existingTabs.find(t => t.url === ${JSON.stringify(url)})\n`
+      + `const tab = match ?? (await ego.createTab(${JSON.stringify(url)}))\n`
+      + 'await browser.switchTab(tab.targetId)\n'
+      + "await page.waitForLoadState('load')\n"
+      + `await cdp('Emulation.setDeviceMetricsOverride', { width: ${options.width}, height: ${options.height}, `
+      + 'deviceScaleFactor: 1, mobile: false })\n'
+      + `await page.waitForTimeout(${options.settleMs ?? 300})\n`
+      + `await page.screenshot({ path: ${JSON.stringify(options.outPath)} })\n`
+      + "console.log('@@DSH_RESULT@@' + JSON.stringify({ ok: true, targetId: tab.targetId }))\n"
+    const env: NodeJS.ProcessEnv = { ...(this.browserEnv?.() ?? process.env), EGO_ISOLATE_SPACES: '1' }
+    try {
+      const handle = this.ctx.subprocess.spawn({
+        argv: [process.execPath, CLI, 'nodejs'], cwd: process.cwd(), env,
+        stdio: { stdin: { data: script }, stdout: { maxBytes: 8192 }, stderr: { maxBytes: 8192 } },
+        graceMs: 60_000,
+      })
+      const outcome = await handle.done
+      if (outcome.exitCode !== 0) return false
+      const result: unknown = parseScriptResult(handle.collected.stdout?.readFrom(0).text ?? '')
+      return Boolean(result && typeof result === 'object' && 'ok' in result && result.ok === true)
+    } catch {
+      return false
+    }
+  }
+
   /** 为人工工作台在指定会话空间新建一张空白页；首张页面复用空间自带锚页。 */
   async createBlankPage(sessionId: SessionId): Promise<string | null> {
     const previous = this.pageCreates.get(sessionId) ?? Promise.resolve(null)

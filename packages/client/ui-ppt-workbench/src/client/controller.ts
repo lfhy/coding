@@ -401,6 +401,23 @@ export class PptPanelController {
     })
   }
 
+  /**
+   * 把页面渲染成 PNG；页面同时会出现在右侧 Agent 浏览器标签里。
+   * @param pages - 页下标；缺省全部。
+   */
+  async preview(pages?: readonly number[]): Promise<void> {
+    await this.run(async () => {
+      const payload = await this.post('render', pages === undefined ? {} : { pages })
+      const rendered = (payload as { pages?: unknown } | null)?.pages
+      const count = Array.isArray(rendered) ? rendered.length : 0
+      this.patch((draft) => {
+        draft.notice = count === 0
+          ? { tone: 'error', reason: '没有渲染出任何页面' }
+          : { tone: 'exported', path: `${count} 页已在 Agent 浏览器中打开` }
+      })
+    })
+  }
+
   /** 运行一次规则质检并把结果挂到状态上。 */
   async checkDeck(): Promise<void> {
     await this.run(async () => {

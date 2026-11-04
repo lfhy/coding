@@ -1,6 +1,8 @@
 import { inflateRawSync } from 'node:zlib'
 import { describe, expect, it } from 'vitest'
 import { buildPptx } from '../src/export/pptx.ts'
+import { chartSvg, renderPageHtml } from '../src/render-html.ts'
+import { renderPages } from '../src/render.ts'
 import { crc32 } from '../src/export/zip.ts'
 import type { PptDeck } from 'coding-ppt-model'
 
@@ -271,5 +273,61 @@ describe('.pptx 导出', () => {
     const slide = entries.find(entry => entry.path === 'ppt/slides/slide1.xml')?.data.toString('utf8') ?? ''
     expect(slide).toContain('<p:sp>')
     expect(slide).not.toContain('<p:pic>')
+  })
+})
+
+describe('页面渲染（截图前的 HTML）', () => {
+  it('HTML 自带尺寸、主题底色与元素', () => {
+    const html = renderPageHtml(deck, deck.pages[0]!)
+    expect(html.startsWith('<!doctype html>')).toBe(true)
+    expect(html).toContain('width:1280px;height:720px')
+    expect(html).toContain('增长 &lt;32%&gt;')
+    expect(html).toContain('#4f8cff')
+    expect(html).toContain('font-family:-apple-system')
+  })
+
+  it('图表画成内联 SVG，图片缺字节时退化成占位块', () => {
+    const svg = chartSvg({
+      id: 'c1', kind: 'chart', x: 0, y: 0, w: 400, h: 200, chart: 'bar', stacked: false,
+      categories: ['A', 'B'], showValues: false, textColor: '#999999',
+      series: [{ name: 's', values: [1, 2], color: '#4f8cff' }],
+    }, 400, 200)
+    expect(svg).toContain('<svg')
+    expect(svg).toContain('<rect')
+    const page = {
+      id: 'p1', name: '图', background: null, transition: 'none' as const,
+      elements: [{
+        id: 'i1', kind: 'image' as const, x: 0, y: 0, w: 100, h: 100,
+        source: 'media/missing.png', fit: 'cover' as const,
+      }],
+    }
+    expect(renderPageHtml(deck, page)).toContain('background:#333')
+  })
+
+  it('调用浏览器提供方逐页截图，并把页面写进它的空间', async () => {
+    const calls: { htmlPath: string; width: number; height: number; outPath: string; sessionId: string }[] = []
+    const rendered = await renderPages({
+      sessionId: 'session-one',
+      projectDir: '/tmp/ppt-unit',
+      deck,
+      media: {},
+      revision: 3,
+      capture: {
+        captureSessionPage: async (options) => {
+          calls.push(options)
+          return true
+        },
+      },
+    })
+    expect(rendered).toHaveLength(deck.pages.length)
+    expect(calls[0]?.sessionId).toBe('session-one')
+    expect(calls[0]?.width).toBe(1280)
+    expect(calls[0]?.outPath).toContain('render/slide-1-v3.png')
+  })
+
+  it('没有浏览器提供方时明确失败', async () => {
+    await expect(renderPages({
+      sessionId: 'session-one', projectDir: '/tmp/ppt-unit', deck, media: {}, revision: 1, capture: undefined,
+    })).rejects.toThrow(/浏览器提供方/u)
   })
 })

@@ -33,6 +33,11 @@ interface PptProjectsFace {
   read: (sessionId: string, dir?: string) => Promise<PptSnapshotFace>
   edit: (sessionId: string, dir: string | undefined, ops: unknown, baseRevision?: number) => Promise<PptSnapshotFace>
   check: (sessionId: string, dir?: string) => Promise<PptCheckFace>
+  render: (sessionId: string, dir?: string, pages?: readonly number[]) => Promise<readonly {
+    readonly page: string
+    readonly name: string
+    readonly path: string
+  }[]>
   import: (sessionId: string, source: string, options: { dir?: string; title?: string }) => Promise<{
     snapshot: PptSnapshotFace
     dropped: readonly string[]
@@ -435,6 +440,45 @@ export function apply(ctx: Context): void {
       }
     },
     presentCall: args => present('Check deck', 'read', args.dir),
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'ppt_render',
+    description: 'Render pages to PNG and show them in the Agent browser panel on the right. Each page opens as a '
+      + 'browser tab in this session\'s own browser space, so the user can look at the real layout, and a PNG copy '
+      + 'lands under the project render/ directory. Use it before reporting, or when the user asks how a page looks.',
+    parameters: {
+      dir: { type: 'string', description: 'Workspace-relative project directory; omit for the open project.' },
+      pages: {
+        type: 'array',
+        items: { type: 'number' },
+        description: 'Zero-based page indices to render; omit for every page.',
+      },
+    },
+    output: outputOf({
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        pages: {
+          type: 'array',
+          required: true,
+          items: {
+            type: 'object',
+            additionalProperties: false,
+            properties: {
+              page: { type: 'string', required: true },
+              name: { type: 'string', required: true },
+              path: { type: 'string', required: true },
+            },
+          },
+        },
+      },
+    } as const),
+    async execute(args, exec) {
+      const rendered = await projects().render(sessionOf(exec), args.dir, args.pages)
+      return { pages: rendered.map(page => ({ page: page.page, name: page.name, path: page.path })) }
+    },
+    presentCall: args => present('Render pages', 'other', args.pages),
   }))
 
   ctx.tools.register(defineTool({
