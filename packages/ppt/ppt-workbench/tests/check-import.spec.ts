@@ -14,7 +14,7 @@ const deck: PptDeck = {
     elements: [
       {
         id: 't1', kind: 'text', x: 96, y: 100, w: 900, h: 120,
-        text: { content: '标题', size: 56, color: '#f5f7fa', bold: true, align: 'left', valign: 'middle' },
+        text: { content: '标题', size: 56, color: '#f5f7fa', bold: true, align: 'left', valign: 'middle', font: '' },
       },
       { id: 'r1', kind: 'rect', x: 96, y: 300, w: 200, h: 8, fill: '#4f8cff' },
     ],

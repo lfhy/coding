@@ -73,6 +73,8 @@ export interface PptText {
   readonly bold: boolean
   readonly align: TextAlign
   readonly valign: TextVAlign
+  /** 字体族名；空串表示跟随主题的默认字体。 */
+  readonly font: string
 }
 
 /** 所有元素共有的位置与尺寸。 */
@@ -83,22 +85,28 @@ export interface ElementFrame {
   readonly h: number
 }
 
+/** 可选元素属性：入场动画。 */
+export interface ElementMotion {
+  /** 入场动画；`none` 或缺省表示不带动画。 */
+  readonly animation?: ElementAnimation
+}
+
 /** 文本框。 */
-export interface PptTextElement extends ElementFrame {
+export interface PptTextElement extends ElementFrame, ElementMotion {
   readonly id: string
   readonly kind: 'text'
   readonly text: PptText
 }
 
 /** 矩形或椭圆色块。 */
-export interface PptShapeElement extends ElementFrame {
+export interface PptShapeElement extends ElementFrame, ElementMotion {
   readonly id: string
   readonly kind: 'rect' | 'ellipse'
   readonly fill: string
 }
 
 /** 水平或斜向直线段，坐标系与其它元素一致（可旋转，以帧的对角线表示）。 */
-export interface PptLineElement extends ElementFrame {
+export interface PptLineElement extends ElementFrame, ElementMotion {
   readonly id: string
   readonly kind: 'line'
   readonly color: string
@@ -107,7 +115,7 @@ export interface PptLineElement extends ElementFrame {
 }
 
 /** 图片元素：`source` 是工程目录内的相对路径（例如 `media/cover.png`）。 */
-export interface PptImageElement extends ElementFrame {
+export interface PptImageElement extends ElementFrame, ElementMotion {
   readonly id: string
   readonly kind: 'image'
   readonly source: string
@@ -127,10 +135,12 @@ export interface PptTableStyle {
   readonly color: string
   readonly bold: boolean
   readonly align: TextAlign
+  /** 字体族名；空串表示跟随主题的默认字体。 */
+  readonly font: string
 }
 
 /** 表格元素；`cells` 的维度必须等于 rows × columns。 */
-export interface PptTableElement extends ElementFrame {
+export interface PptTableElement extends ElementFrame, ElementMotion {
   readonly id: string
   readonly kind: 'table'
   readonly rows: number
@@ -145,8 +155,35 @@ export interface PptTableElement extends ElementFrame {
   readonly cells: readonly (readonly PptTableCell[])[]
 }
 
+/** 图表类型。 */
+export type PptChartKind = 'bar' | 'line' | 'pie'
+
+/** 图表里的一条系列。 */
+export interface PptChartSeries {
+  readonly name: string
+  readonly values: readonly number[]
+  readonly color: string
+}
+
+/** 图表元素：分类轴 + 一到多条系列。 */
+export interface PptChartElement extends ElementFrame, ElementMotion {
+  readonly id: string
+  readonly kind: 'chart'
+  readonly chart: PptChartKind
+  readonly categories: readonly string[]
+  readonly series: readonly PptChartSeries[]
+  /** 是否显示数值标签。 */
+  readonly showValues: boolean
+  /** 文字与网格颜色。 */
+  readonly textColor: string
+}
+
+/** 元素入场动画。 */
+export type ElementAnimation = 'none' | 'fade' | 'fly' | 'zoom' | 'wipe'
+
 /** 一页上的一个元素；数组顺序即绘制顺序（后面的盖住前面的）。 */
-export type PptElement = PptTextElement | PptShapeElement | PptLineElement | PptImageElement | PptTableElement
+export type PptElement =
+  | PptTextElement | PptShapeElement | PptLineElement | PptImageElement | PptTableElement | PptChartElement
 
 /** 元素种类。 */
 export type PptElementKind = PptElement['kind']
@@ -256,8 +293,29 @@ function parseTextStyle(value: unknown, at: string): PptText {
     bold: value.bold === true,
     align: oneOf(value.align, `${at}.align`, ['left', 'center', 'right'] as const),
     valign: oneOf(value.valign, `${at}.valign`, ['top', 'middle', 'bottom'] as const),
+    font: fontFamily(value.font, `${at}.font`),
   }
 }
+
+/**
+ * 校验字体族名：空串表示跟随主题默认字体。
+ * @param value - 候选值。
+ * @param at - 诊断里使用的位置描述。
+ * @returns 规范化后的族名。
+ */
+export function fontFamily(value: unknown, at: string): string {
+  if (value === undefined || value === null) return ''
+  if (typeof value !== 'string' || value.length > 120) throw new PptModelError(`${at} 必须是 120 字符以内的字符串`)
+  return value.trim()
+}
+
+function motion(value: Record<string, unknown>, at: string): { animation?: ElementAnimation } {
+  if (value.animation === undefined) return {}
+  return { animation: oneOf(value.animation, `${at}.animation`, MOTIONS) }
+}
+
+const MOTIONS = ['none', 'fade', 'fly', 'zoom', 'wipe'] as const
+const CHART_KINDS = ['bar', 'line', 'pie'] as const
 
 /**
  * 校验一个元素。
@@ -270,27 +328,30 @@ export function parseElement(value: unknown, at: string): PptElement {
   const id = text(value.id, `${at}.id`, 64)
   const box = frame(value, at)
   if (value.kind === 'text') {
-    return { id, kind: 'text', ...box, text: parseTextStyle(value.text, `${at}.text`) }
+    return { id, kind: 'text', ...box, ...motion(value, at), text: parseTextStyle(value.text, `${at}.text`) }
   }
   if (value.kind === 'rect' || value.kind === 'ellipse') {
-    return { id, kind: value.kind, ...box, fill: color(value.fill, `${at}.fill`) }
+    return { id, kind: value.kind, ...box, ...motion(value, at), fill: color(value.fill, `${at}.fill`) }
   }
   if (value.kind === 'line') {
     return {
-      id, kind: 'line', ...box,
+      id, kind: 'line', ...box, ...motion(value, at),
       color: color(value.color, `${at}.color`),
       width: bounded(value.width, `${at}.width`, 0.5, 40),
     }
   }
   if (value.kind === 'image') {
     return {
-      id, kind: 'image', ...box,
+      id, kind: 'image', ...box, ...motion(value, at),
       source: mediaPath(value.source, `${at}.source`),
       fit: value.fit === 'contain' ? 'contain' : 'cover',
     }
   }
   if (value.kind === 'table') {
-    return { id, kind: 'table', ...box, ...parseTable(value, at) }
+    return { id, kind: 'table', ...box, ...parseTable(value, at), ...motion(value, at) }
+  }
+  if (value.kind === 'chart') {
+    return { id, kind: 'chart', ...box, ...parseChart(value, at), ...motion(value, at) }
   }
   throw new PptModelError(`${at}.kind 必须是 text / rect / ellipse / line / image / table 之一`)
 }
@@ -316,6 +377,7 @@ function parseTableStyle(value: unknown, at: string): PptTableStyle {
     color: color(value.color, `${at}.color`),
     bold: value.bold === true,
     align: oneOf(value.align, `${at}.align`, ['left', 'center', 'right'] as const),
+    font: fontFamily(value.font, `${at}.font`),
   }
 }
 
@@ -347,6 +409,44 @@ function parseTable(value: Record<string, unknown>, at: string): Omit<PptTableEl
     headerFill: color(value.headerFill, `${at}.headerFill`),
     borderColor: color(value.borderColor, `${at}.borderColor`),
     text: parseTableStyle(value.text, `${at}.text`),
+  }
+}
+
+function parseChart(value: Record<string, unknown>, at: string): Omit<PptChartElement, 'id' | 'kind' | 'x' | 'y' | 'w' | 'h'> {
+  if (!Array.isArray(value.categories) || value.categories.length === 0) {
+    throw new PptModelError(`${at}.categories 必须是非空数组`)
+  }
+  if (value.categories.length > 50) throw new PptModelError(`${at}.categories 不能超过 50 项`)
+  const categories = value.categories.map((entry, index) => {
+    if (typeof entry !== 'string' || entry.length > 120) {
+      throw new PptModelError(`${at}.categories[${index}] 必须是 120 字符以内的字符串`)
+    }
+    return entry
+  })
+  if (!Array.isArray(value.series) || value.series.length === 0) {
+    throw new PptModelError(`${at}.series 必须是非空数组`)
+  }
+  if (value.series.length > 8) throw new PptModelError(`${at}.series 不能超过 8 条`)
+  const series = value.series.map((entry, index) => {
+    if (!isRecord(entry)) throw new PptModelError(`${at}.series[${index}] 必须是对象`)
+    if (typeof entry.name !== 'string' || entry.name.length > 120) {
+      throw new PptModelError(`${at}.series[${index}].name 必须是 120 字符以内的字符串`)
+    }
+    if (!Array.isArray(entry.values) || entry.values.length !== categories.length) {
+      throw new PptModelError(`${at}.series[${index}].values 长度必须等于分类数`)
+    }
+    return {
+      name: entry.name,
+      values: entry.values.map((item, valueIndex) => bounded(item, `${at}.series[${index}].values[${valueIndex}]`, -1e9, 1e9)),
+      color: color(entry.color, `${at}.series[${index}].color`),
+    }
+  })
+  return {
+    chart: oneOf(value.chart, `${at}.chart`, CHART_KINDS),
+    categories,
+    series,
+    showValues: value.showValues === true,
+    textColor: color(value.textColor, `${at}.textColor`),
   }
 }
 
@@ -449,5 +549,6 @@ export function defaultText(deck: PptDeck, content: string, size: number): PptTe
     bold: false,
     align: 'left',
     valign: 'top',
+    font: '',
   }
 }

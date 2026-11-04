@@ -10,7 +10,8 @@
 
 import {
   PPT_THEMES, SLIDE_SIZES,
-  type PptDeck, type PptElement, type PptImageElement, type PptPage, type PptTableElement,
+  type PptChartElement, type PptDeck, type PptElement, type PptImageElement, type PptPage,
+  type PptTableElement,
 } from 'coding-ppt-model'
 import { zip, type ZipEntry } from './zip.ts'
 
@@ -27,6 +28,7 @@ const MASTER_REL = 'http://schemas.openxmlformats.org/officeDocument/2006/relati
 const LAYOUT_REL = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout'
 const THEME_REL = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme'
 const IMAGE_REL = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/image'
+const FONT_REL = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/font'
 const XML_DECL = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
 
 const CONTENT_TYPES = 'application/vnd.openxmlformats-officedocument'
@@ -41,6 +43,16 @@ const MEDIA_TYPES: Readonly<Record<string, string>> = {
   svg: 'image/svg+xml',
 }
 
+/** 一个要写进 `ppt/fonts/` 的嵌入字体。 */
+export interface PptxFont {
+  readonly family: string
+  /** `ppt/fonts/fontN.fntdata`。 */
+  readonly part: string
+  readonly bytes: Uint8Array
+  /** 只读嵌入（Preview & Print）：目标机只能看不能改。 */
+  readonly readonly?: boolean
+}
+
 /** 导出时可选的媒体读取器。 */
 export interface PptxOptions {
   /**
@@ -49,6 +61,8 @@ export interface PptxOptions {
    * @returns 图片字节；缺失时该元素退化成主题色占位框。
    */
   readonly media?: (source: string) => Uint8Array | undefined
+  /** 要嵌入的字体（由 `collectFonts` 按 fsType 许可筛过）。 */
+  readonly fonts?: readonly PptxFont[]
 }
 
 /** 一个要写进 `ppt/media/` 的图片部件。 */
@@ -109,7 +123,8 @@ function textBody(element: Extract<PptElement, { kind: 'text' }>): string {
     if (line === '') return `<a:p>${paragraphProps}</a:p>`
     const runProps = `<a:rPr lang="zh-CN" altLang="en-US" sz="${Math.round(text.size * 75)}"`
       + `${text.bold ? ' b="1"' : ''} dirty="0"><a:solidFill><a:srgbClr val="${srgb(text.color)}"/>`
-      + '</a:solidFill><a:latin typeface="+mn-lt"/><a:ea typeface="+mn-ea"/></a:rPr>'
+      + `</a:solidFill><a:latin typeface="${text.font ? escapeXml(text.font) : '+mn-lt'}"/>`
+      + '<a:ea typeface="+mn-ea"/></a:rPr>'
     return `<a:p>${paragraphProps}<a:r>${runProps}<a:t>${escapeXml(line)}</a:t></a:r></a:p>`
   })
   return '<p:txBody><a:bodyPr wrap="square" lIns="0" tIns="0" rIns="0" bIns="0"'
@@ -157,7 +172,8 @@ function tableCell(content: string, style: PptTableElement['text'], fill: string
     ? '<a:p><a:endParaRPr lang="zh-CN"/></a:p>'
     : `<a:p><a:pPr algn="${align}"/><a:r><a:rPr lang="zh-CN" sz="${Math.round(style.size * 75)}"`
       + `${style.bold ? ' b="1"' : ''} dirty="0"><a:solidFill><a:srgbClr val="${srgb(style.color)}"/>`
-      + `</a:solidFill></a:rPr><a:t>${escapeXml(content)}</a:t></a:r></a:p>`
+      + `</a:solidFill><a:latin typeface="${style.font ? escapeXml(style.font) : '+mn-lt'}"/>`
+      + `</a:rPr><a:t>${escapeXml(content)}</a:t></a:r></a:p>`
   return '<a:tc><a:txBody><a:bodyPr/><a:lstStyle/>'
     + `${paragraph}</a:txBody><a:tcPr marL="91440" marR="91440" marT="45720" marB="45720" anchor="ctr">`
     + `<a:solidFill><a:srgbClr val="${srgb(fill)}"/></a:solidFill></a:tcPr></a:tc>`
@@ -187,6 +203,124 @@ function table(element: PptTableElement, index: number, pageBackground: string):
     + `${border}</a:graphicData></a:graphic></p:graphicFrame>`
 }
 
+const CHART_NS = 'xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" '
+  + 'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" '
+  + 'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"'
+
+function strCache(values: readonly string[]): string {
+  const points = values.map((value, index) => `<c:pt idx="${index}"><c:v>${escapeXml(value)}</c:v></c:pt>`).join('')
+  return `<c:strCache><c:ptCount val="${values.length}"/>${points}</c:strCache>`
+}
+
+function numCache(values: readonly number[]): string {
+  const points = values.map((value, index) => `<c:pt idx="${index}"><c:v>${value}</c:v></c:pt>`).join('')
+  return `<c:formatCode>General</c:formatCode><c:ptCount val="${values.length}"/>${points}`
+}
+
+function chartSeriesXml(element: PptChartElement): string {
+  return element.series.map((series, index) => {
+    const cats = `<c:cat><c:strRef><c:f>Sheet1!$A$2:$A$${element.categories.length + 1}</c:f>`
+      + `${strCache(element.categories)}</c:strRef></c:cat>`
+    const values = `<c:val><c:numRef><c:f>Sheet1!$${String.fromCharCode(66 + index)}$2:`
+      + `$${String.fromCharCode(66 + index)}$${series.values.length + 1}</c:f>`
+      + `<c:numCache>${numCache(series.values)}</c:numCache></c:numRef></c:val>`
+    const name = `<c:tx><c:strRef><c:f>Sheet1!$${String.fromCharCode(66 + index)}$1</c:f>`
+      + `${strCache([series.name])}</c:strRef></c:tx>`
+    const shapeProps = `<c:spPr><a:solidFill><a:srgbClr val="${srgb(series.color)}"/></a:solidFill></c:spPr>`
+    const labels = element.showValues
+      ? '<c:dLbls><c:showVal val="1"/></c:dLbls>'
+      : ''
+    return `<c:ser><c:idx val="${index}"/><c:order val="${index}"/>${name}${shapeProps}`
+      + `${element.chart === 'pie' ? '' : cats}${values}${labels}</c:ser>`
+  }).join('')
+}
+
+/**
+ * 生成图表部件（bar / line / pie）。
+ * @param element - 图表元素。
+ * @returns `ppt/charts/chartN.xml` 的内容。
+ */
+function chartXml(element: PptChartElement): string {
+  const series = chartSeriesXml(element)
+  const textProps = '<c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr sz="1200">'
+    + `<a:solidFill><a:srgbClr val="${srgb(element.textColor)}"/></a:solidFill></a:defRPr></a:pPr>`
+    + '<a:endParaRPr lang="zh-CN"/></a:p></c:txPr>'
+  if (element.chart === 'pie') {
+    return `${XML_DECL}\n<c:chartSpace ${CHART_NS}><c:chart><c:plotArea><c:layout/>`
+      + `<c:pieChart><c:varyColors val="1"/>${series}</c:pieChart></c:plotArea>${textProps}</c:chart>`
+      + '</c:chartSpace>'
+  }
+  if (element.chart === 'line') {
+    return `${XML_DECL}\n<c:chartSpace ${CHART_NS}><c:chart><c:plotArea><c:layout/>`
+      + `<c:lineChart><c:grouping val="standard"/><c:varyColors val="0"/>${series}`
+      + '<c:marker val="1"/><c:axId val="1"/><c:axId val="2"/></c:lineChart>'
+      + '<c:catAx><c:axId val="1"/><c:scaling><c:orientation val="minMax"/></c:scaling>'
+      + '<c:delete val="0"/><c:axPos val="b"/></c:catAx>'
+      + '<c:valAx><c:axId val="2"/><c:scaling><c:orientation val="minMax"/></c:scaling>'
+      + '<c:delete val="0"/><c:axPos val="l"/></c:valAx>'
+      + `</c:plotArea>${textProps}</c:chart></c:chartSpace>`
+  }
+  return `${XML_DECL}\n<c:chartSpace ${CHART_NS}><c:chart><c:plotArea><c:layout/>`
+    + `<c:barChart><c:barDir val="col"/><c:grouping val="clustered"/><c:varyColors val="0"/>${series}`
+    + '<c:axId val="1"/><c:axId val="2"/></c:barChart>'
+    + '<c:catAx><c:axId val="1"/><c:scaling><c:orientation val="minMax"/></c:scaling>'
+    + '<c:delete val="0"/><c:axPos val="b"/></c:catAx>'
+    + '<c:valAx><c:axId val="2"/><c:scaling><c:orientation val="minMax"/></c:scaling>'
+    + '<c:delete val="0"/><c:axPos val="l"/></c:valAx>'
+    + `</c:plotArea>${textProps}</c:chart></c:chartSpace>`
+}
+
+function chartFrame(element: PptChartElement, index: number, relId: string): string {
+  return '<p:graphicFrame><p:nvGraphicFramePr>'
+    + `<p:cNvPr id="${index + 2}" name="Chart ${index + 2}"/><p:cNvGraphicFramePr/><p:nvPr/>`
+    + '</p:nvGraphicFramePr>'
+    + `<p:xfrm><a:off x="${emu(element.x)}" y="${emu(element.y)}"/>`
+    + `<a:ext cx="${emu(element.w)}" cy="${emu(element.h)}"/></p:xfrm>`
+    + '<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/chart">'
+    + `<c:chart xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" r:id="${relId}"/>`
+    + '</a:graphicData></a:graphic></p:graphicFrame>'
+}
+
+const ANIMATION_PRESETS: Readonly<Record<string, { effect: string; presetId: string; subtype?: string }>> = {
+  fade: { effect: '<p:animEffect transition="in" filter="fade"><p:cBhvr><p:cTn id="{id}" dur="500"/>'
+    + '<p:tgtEl><p:spTgt spid="{spid}"/></p:tgtEl></p:cBhvr></p:animEffect>', presetId: '10' },
+  fly: { effect: '<p:animEffect transition="in" filter="slide(fromLeft)"><p:cBhvr><p:cTn id="{id}" dur="500"/>'
+    + '<p:tgtEl><p:spTgt spid="{spid}"/></p:tgtEl></p:cBhvr></p:animEffect>', presetId: '2' },
+  zoom: { effect: '<p:animEffect transition="in" filter="zoom(in)"><p:cBhvr><p:cTn id="{id}" dur="500"/>'
+    + '<p:tgtEl><p:spTgt spid="{spid}"/></p:tgtEl></p:cBhvr></p:animEffect>', presetId: '23' },
+  wipe: { effect: '<p:animEffect transition="in" filter="wipe(left)"><p:cBhvr><p:cTn id="{id}" dur="500"/>'
+    + '<p:tgtEl><p:spTgt spid="{spid}"/></p:tgtEl></p:cBhvr></p:animEffect>', presetId: '22' },
+}
+
+/**
+ * 生成元素入场动画的 `<p:timing>`；没有动画时返回空串。
+ * @param page - 页面。
+ * @returns timing 段落。
+ */
+function timingXml(page: PptPage): string {
+  const animated = page.elements
+    .map((element, index) => ({ element, spid: index + 2 }))
+    .filter((item): item is { element: PptElement; spid: number } => (
+      item.element.animation !== undefined && item.element.animation !== 'none'
+      && ANIMATION_PRESETS[item.element.animation] !== undefined
+    ))
+  if (animated.length === 0) return ''
+  let id = 1
+  const effects = animated.map(({ element, spid }) => {
+    const preset = ANIMATION_PRESETS[element.animation ?? 'fade'] ?? ANIMATION_PRESETS['fade']
+    if (preset === undefined) return ''
+    const effectId = id
+    id += 1
+    const body = preset.effect.replaceAll('{id}', String(effectId)).replaceAll('{spid}', String(spid))
+    return '<p:par><p:cTn id="' + String(id) + '" presetID="' + preset.presetId + '" presetClass="entr"'
+      + ' fill="hold" nodeType="withEffect">' + body + '</p:cTn></p:par>'
+  })
+  return '<p:timing><p:tnLst><p:par><p:cTn id="1" dur="indefinite" restart="never" nodeType="tmRoot"><p:childTnLst>'
+    + '<p:seq concurrent="1" nextAc="seek"><p:cTn id="2" dur="indefinite" nodeType="mainSeq"><p:childTnLst>'
+    + effects.join('')
+    + '</p:childTnLst></p:cTn></p:seq></p:childTnLst></p:cTn></p:par></p:tnLst></p:timing>'
+}
+
 function transitionXml(page: PptPage): string {
   if (page.transition === 'fade') return '<p:transition><p:fade/></p:transition>'
   if (page.transition === 'push') return '<p:transition><p:push dir="l"/></p:transition>'
@@ -204,11 +338,23 @@ function slideXml(
   deck: PptDeck,
   page: PptPage,
   media: ReadonlyMap<string, { relId: string; part: string }>,
-): { xml: string; items: string[] } {
+  charts: { next: () => { relId: string; part: string } },
+): { xml: string; items: string[]; chartParts: { part: string; xml: string }[] } {
   const theme = PPT_THEMES[deck.theme]
   const background = page.background ?? theme.background
   const items: string[] = [relationship('rId1', LAYOUT_REL, '../slideLayouts/slideLayout1.xml')]
+  const chartParts: { part: string; xml: string }[] = []
   const shapes = page.elements.map((element, index) => {
+    if (element.kind === 'chart') {
+      const { relId, part } = charts.next()
+      chartParts.push({ part, xml: chartXml(element) })
+      items.push(relationship(
+        relId,
+        'http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart',
+        `../charts/${part.split('/').pop() ?? part}`,
+      ))
+      return chartFrame(element, index, relId)
+    }
     if (element.kind === 'line') return line(element, index)
     if (element.kind === 'table') return table(element, index, background)
     if (element.kind === 'image') {
@@ -231,8 +377,10 @@ function slideXml(
       + '<p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr>'
       + '<p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/>'
       + `<a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr>${shapes}</p:spTree>`
-      + `</p:cSld>${transitionXml(page)}<p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sld>`,
+      + `</p:cSld>${transitionXml(page)}${timingXml(page)}`
+      + '<p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sld>',
     items,
+    chartParts,
   }
 }
 
@@ -281,19 +429,24 @@ function layoutXml(): string {
     + `${emptyTree()}</p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sldLayout>`
 }
 
-function presentationXml(deck: PptDeck): string {
+function presentationXml(deck: PptDeck, fonts: readonly PptxFont[]): string {
   const size = SLIDE_SIZES[deck.size]
   const ids = deck.pages.map((_, index) => `<p:sldId id="${256 + index}" r:id="rId${index + 2}"/>`).join('')
+  const embedded = fonts.length === 0 ? '' : '<p:embeddedFontLst>'
+    + fonts.map((font, index) => '<p:embeddedFont><p:font typeface="' + escapeXml(font.family) + '" charset="0"/>'
+      + `<p:regular r:id="rId${deck.pages.length + 3 + index}"/></p:embeddedFont>`).join('')
+    + '</p:embeddedFontLst>'
   return `${XML_DECL}\n<p:presentation ${NS} saveSubsetFonts="1">`
     + '<p:sldMasterIdLst><p:sldMasterId id="2147483648" r:id="rId1"/></p:sldMasterIdLst>'
     + `<p:sldIdLst>${ids}</p:sldIdLst>`
     + `<p:sldSz cx="${emu(size.width)}" cy="${emu(size.height)}"/>`
     + '<p:notesSz cx="6858000" cy="9144000"/>'
+    + embedded
     + '<p:defaultTextStyle><a:lvl1pPr><a:defRPr sz="1800"/></a:lvl1pPr></p:defaultTextStyle>'
     + '</p:presentation>'
 }
 
-function contentTypes(pages: number, media: readonly MediaRef[]): string {
+function contentTypes(pages: number, media: readonly MediaRef[], charts: number, fonts: number): string {
   const slides = Array.from({ length: pages }, (_, index) => (
     `<Override PartName="/ppt/slides/slide${index + 1}.xml" ContentType="${CONTENT_TYPES}.presentationml.slide+xml"/>`
   )).join('')
@@ -303,25 +456,43 @@ function contentTypes(pages: number, media: readonly MediaRef[]): string {
     + '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
     + '<Default Extension="xml" ContentType="application/xml"/>'
     + defaults
+    + (fonts > 0 ? '<Default Extension="fntdata" ContentType="application/x-fontdata"/>' : '')
     + `<Override PartName="/ppt/presentation.xml" ContentType="${CONTENT_TYPES}.presentationml.presentation.main+xml"/>`
     + `<Override PartName="/ppt/slideMasters/slideMaster1.xml" ContentType="${CONTENT_TYPES}.presentationml.slideMaster+xml"/>`
     + `<Override PartName="/ppt/slideLayouts/slideLayout1.xml" ContentType="${CONTENT_TYPES}.presentationml.slideLayout+xml"/>`
     + `<Override PartName="/ppt/theme/theme1.xml" ContentType="${CONTENT_TYPES}.theme+xml"/>`
+    + Array.from({ length: charts }, (_, index) => (
+      `<Override PartName="/ppt/charts/chart${index + 1}.xml" `
+      + `ContentType="${CONTENT_TYPES}.drawingml.chart+xml"/>`
+    )).join('')
     + `${slides}</Types>`
+}
+
+function chartCount(deck: PptDeck): number {
+  return deck.pages.reduce(
+    (sum, page) => sum + page.elements.filter(element => element.kind === 'chart').length,
+    0,
+  )
 }
 
 function packageRels(): string {
   return rels([relationship('rId1', `${CONTENT_TYPES}.presentationml.presentation.main+xml`, 'ppt/presentation.xml')])
 }
 
-function presentationRels(pages: number): string {
+function presentationRels(pages: number, fonts: readonly PptxFont[]): string {
   const slides = Array.from({ length: pages }, (_, index) => (
     relationship(`rId${index + 2}`, SLIDE_REL, `slides/slide${index + 1}.xml`)
+  )).join('')
+  const fontRels = fonts.map((font, index) => relationship(
+    `rId${pages + 3 + index}`,
+    FONT_REL,
+    `fonts/${font.part.split('/').pop() ?? font.part}`,
   )).join('')
   return rels([
     relationship('rId1', MASTER_REL, 'slideMasters/slideMaster1.xml'),
     slides,
     relationship(`rId${pages + 2}`, THEME_REL, 'theme/theme1.xml'),
+    fontRels,
   ])
 }
 
@@ -355,15 +526,19 @@ function collectMedia(deck: PptDeck, options: PptxOptions): MediaRef[] {
  */
 export function buildPptx(deck: PptDeck, options: PptxOptions = {}): Uint8Array {
   const encoder = new TextEncoder()
+  const fonts = options.fonts ?? []
   const media = collectMedia(deck, options)
   const byPart = new Map<string, MediaRef>()
   for (const entry of media) byPart.set(entry.part, entry)
   const partOf = new Map(media.map(entry => [entry.source, entry.part]))
   const entries: ZipEntry[] = [
-    { path: '[Content_Types].xml', data: encoder.encode(contentTypes(deck.pages.length, media)) },
+    {
+      path: '[Content_Types].xml',
+      data: encoder.encode(contentTypes(deck.pages.length, media, chartCount(deck), fonts.length)),
+    },
     { path: '_rels/.rels', data: encoder.encode(packageRels()) },
-    { path: 'ppt/presentation.xml', data: encoder.encode(presentationXml(deck)) },
-    { path: 'ppt/_rels/presentation.xml.rels', data: encoder.encode(presentationRels(deck.pages.length)) },
+    { path: 'ppt/presentation.xml', data: encoder.encode(presentationXml(deck, fonts)) },
+    { path: 'ppt/_rels/presentation.xml.rels', data: encoder.encode(presentationRels(deck.pages.length, fonts)) },
     { path: 'ppt/slideMasters/slideMaster1.xml', data: encoder.encode(masterXml()) },
     {
       path: 'ppt/slideMasters/_rels/slideMaster1.xml.rels',
@@ -379,6 +554,14 @@ export function buildPptx(deck: PptDeck, options: PptxOptions = {}): Uint8Array 
     },
     { path: 'ppt/theme/theme1.xml', data: encoder.encode(themeXml(deck)) },
   ]
+  const chartParts: { part: string; xml: string }[] = []
+  let chartSeq = 0
+  const charts = {
+    next: () => {
+      chartSeq += 1
+      return { relId: `rIdC${chartSeq}`, part: `ppt/charts/chart${chartSeq}.xml` }
+    },
+  }
   deck.pages.forEach((page, index) => {
     const used = new Map<string, { relId: string; part: string }>()
     for (const element of page.elements) {
@@ -387,10 +570,16 @@ export function buildPptx(deck: PptDeck, options: PptxOptions = {}): Uint8Array 
       if (part === undefined || !byPart.has(part)) continue
       used.set(element.source, { relId: `rId${used.size + 2}`, part })
     }
-    const slide = slideXml(deck, page, used)
+    const slide = slideXml(deck, page, used, charts)
+    chartParts.push(...slide.chartParts)
     entries.push({ path: `ppt/slides/slide${index + 1}.xml`, data: encoder.encode(slide.xml) })
     entries.push({ path: `ppt/slides/_rels/slide${index + 1}.xml.rels`, data: encoder.encode(rels(slide.items)) })
   })
+  for (const chart of chartParts) {
+    entries.push({ path: chart.part, data: encoder.encode(chart.xml) })
+    entries.push({ path: `ppt/charts/_rels/${chart.part.split('/').pop() ?? 'chart'}.rels`, data: encoder.encode(rels([])) })
+  }
   for (const entry of media) entries.push({ path: entry.part, data: entry.bytes })
+  for (const font of fonts) entries.push({ path: font.part, data: font.bytes })
   return zip(entries)
 }

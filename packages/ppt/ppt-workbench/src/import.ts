@@ -85,6 +85,7 @@ function textStyle(block: string, theme: keyof typeof PPT_THEMES = 'ink'): {
   bold: boolean
   align: TextAlign
   valign: TextVAlign
+  font: string
 } {
   const palette = PPT_THEMES[theme]
   const runProps = /<a:rPr\b[^>]*>/u.exec(block)?.[0] ?? ''
@@ -99,6 +100,7 @@ function textStyle(block: string, theme: keyof typeof PPT_THEMES = 'ink'): {
     bold: attr(runProps, 'b') === '1',
     align: alignRaw === 'ctr' ? 'center' : alignRaw === 'r' ? 'right' : 'left',
     valign: anchorRaw === 'ctr' ? 'middle' : anchorRaw === 'b' ? 'bottom' : 'top',
+    font: /<a:latin typeface="([^"]+)"/u.exec(block)?.[1] ?? '',
   }
 }
 
@@ -254,7 +256,7 @@ function parseTable(
     header: true,
     headerFill: hexColor(fill, '#4f8cff'),
     borderColor: '#9aa7b4',
-    text: { size: 20, color: '#101418', bold: false, align: 'left' },
+    text: { size: 20, color: '#101418', bold: false, align: 'left', font: '' },
     cells,
   }
 }

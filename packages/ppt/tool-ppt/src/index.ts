@@ -41,7 +41,13 @@ interface PptProjectsFace {
     sessionId: string,
     dir?: string,
     options?: { skipCheck?: boolean },
-  ) => Promise<{ path: string; bytes: number; revision: number }>
+  ) => Promise<{
+    path: string
+    bytes: number
+    revision: number
+    fonts: readonly { readonly family: string; readonly readonly: boolean }[]
+    skippedFonts: readonly { readonly family: string; readonly reason: string }[]
+  }>
 }
 
 /** 质检结果。 */
@@ -380,10 +386,41 @@ export function apply(ctx: Context): void {
         path: { type: 'string', required: true },
         bytes: { type: 'number', required: true },
         revision: { type: 'number', required: true },
+        fonts: {
+          type: 'array',
+          required: true,
+          items: {
+            type: 'object',
+            additionalProperties: false,
+            properties: {
+              family: { type: 'string', required: true },
+              readonly: { type: 'boolean', required: true },
+            },
+          },
+        },
+        skippedFonts: {
+          type: 'array',
+          required: true,
+          items: {
+            type: 'object',
+            additionalProperties: false,
+            properties: {
+              family: { type: 'string', required: true },
+              reason: { type: 'string', required: true },
+            },
+          },
+        },
       },
     } as const),
     async execute(args, exec) {
-      return projects().export(sessionOf(exec), args.dir, { skipCheck: args.skip_check === true })
+      const result = await projects().export(sessionOf(exec), args.dir, { skipCheck: args.skip_check === true })
+      return {
+        path: result.path,
+        bytes: result.bytes,
+        revision: result.revision,
+        fonts: result.fonts.map(font => ({ family: font.family, readonly: font.readonly })),
+        skippedFonts: result.skippedFonts.map(font => ({ family: font.family, reason: font.reason })),
+      }
     },
     presentCall: args => present('Export .pptx', 'other', args.dir),
   }))

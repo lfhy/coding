@@ -59,7 +59,7 @@ export type PptWorkbenchProps =
   & PropsLocale<typeof NS>
   & InjectFace<PptWorkbenchInjected>
 
-const ADD_KINDS: readonly PptElementKind[] = ['text', 'rect', 'ellipse', 'line']
+const ADD_KINDS: readonly PptElementKind[] = ['text', 'rect', 'ellipse', 'line', 'chart']
 
 /** 各元素种类在工具条上的文案键。 */
 const LABEL_OF: Readonly<Record<string, (t: PptWorkbenchProps['t']) => string>> = {
@@ -67,6 +67,7 @@ const LABEL_OF: Readonly<Record<string, (t: PptWorkbenchProps['t']) => string>> 
   rect: t => t('addRect'),
   ellipse: t => t('addEllipse'),
   line: t => t('addLine'),
+  chart: t => t('addChart'),
 }
 
 /**

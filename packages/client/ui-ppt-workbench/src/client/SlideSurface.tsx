@@ -101,11 +101,69 @@ function elementStyle(element: PptElement, box: ElementBox): CSSProperties {
     })
   } else if (element.kind === 'image') {
     style.overflow = 'hidden'
+  } else if (element.kind === 'chart') {
+    style.overflow = 'hidden'
   } else {
     style.background = element.fill
     if (element.kind === 'ellipse') style.borderRadius = '50%'
   }
   return style
+}
+
+/**
+ * 图表的画布内预览：用 DOM 画柱状、折线与饼图，数值范围按各系列的最大值归一。
+ * 它只负责「看起来对」，真实图表由导出的 chart 部件承担。
+ * @param props.element - 图表元素。
+ * @returns 图表预览。
+ */
+function ChartView({ element }: { element: Extract<PptElement, { kind: 'chart' }> }) {
+  if (element.chart === 'pie') {
+    const values = element.series[0]?.values ?? []
+    const total = values.reduce((sum, value) => sum + Math.max(value, 0), 0) || 1
+    let cursor = 0
+    const stops = values.map((value) => {
+      const start = cursor / total * 360
+      cursor += Math.max(value, 0)
+      const end = cursor / total * 360
+      return `${element.series[0]?.color ?? '#4f8cff'} ${start}deg ${end}deg`
+    })
+    return <div className={css.chart} style={{ background: `conic-gradient(${stops.join(',')})`, borderRadius: '50%' }} />
+  }
+  if (element.chart === 'line') {
+    const values = element.series[0]?.values ?? []
+    const max = Math.max(...values, 1)
+    return (
+      <div className={css.chart} style={{ display: 'flex', alignItems: 'flex-end', gap: 4, padding: 8 }}>
+        {values.map((value, index) => (
+          <div key={index} style={{
+            flex: 1,
+            height: `${Math.max(value, 0) / max * 100}%`,
+            borderTop: `4px solid ${element.series[0]?.color ?? '#4f8cff'}`,
+            background: 'transparent',
+          }} />
+        ))}
+      </div>
+    )
+  }
+  const max = Math.max(...element.series.flatMap(series => series.values), 1)
+  return (
+    <div className={css.chart} style={{ display: 'flex', alignItems: 'flex-end', gap: 6, padding: 8 }}>
+      {element.categories.map((category, index) => (
+        <div key={category + String(index)} className={css.chartGroup}>
+          {element.series.map((series, seriesIndex) => (
+            <div
+              key={series.name + String(seriesIndex)}
+              style={{
+                width: `${Math.max(6, 60 / element.series.length)}%`,
+                height: `${Math.max(series.values[index] ?? 0, 0) / max * 100}%`,
+                background: series.color,
+              }}
+            />
+          ))}
+        </div>
+      ))}
+    </div>
+  )
 }
 
 /**
@@ -249,6 +307,7 @@ export function SlideSurface({
                   />
                 )
                 : null}
+              {element.kind === 'chart' ? <ChartView element={element} /> : null}
               {element.kind === 'table'
                 ? element.cells.map((row, rowIndex) => row.map((cell, columnIndex) => (
                   <span

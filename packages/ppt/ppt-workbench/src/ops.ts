@@ -5,9 +5,10 @@
  */
 
 import {
-  bounded, color, defaultText, isRecord, mediaPath, newId, parseDeck, parseElement, PPT_THEMES, PptModelError,
-  type ElementFrame, type PptDeck, type PptElement, type PptPage, type PptText, type SlideTransition,
-  type ThemeId,
+  bounded, color, defaultText, fontFamily, isRecord, mediaPath, newId, parseDeck, parseElement, PPT_THEMES,
+  PptModelError,
+  type ElementAnimation, type ElementFrame, type PptChartSeries, type PptDeck,
+  type PptElement, type PptPage, type PptText, type SlideTransition, type ThemeId,
 } from 'coding-ppt-model'
 
 /** 新建一页。 */
@@ -64,6 +65,10 @@ export interface UpdateElementOp {
   readonly fit?: 'cover' | 'contain'
   /** 表格：整表内容替换，维度需与 rows × columns 一致。 */
   readonly cells?: readonly (readonly { readonly content: string }[])[]
+  /** 图表：替换分类与系列。 */
+  readonly chart?: { readonly categories: readonly string[]; readonly series: readonly PptChartSeries[] }
+  /** 入场动画。 */
+  readonly animation?: ElementAnimation
 }
 
 /** 元素层级调整。 */
@@ -111,6 +116,7 @@ const TRANSITIONS = ['none', 'fade', 'push'] as const
 const REORDER_TARGETS = ['front', 'back', 'forward', 'backward'] as const
 
 const ALIGNMENTS = ['left', 'center', 'right'] as const
+const MOTIONS = ['none', 'fade', 'fly', 'zoom', 'wipe'] as const
 const VALIGNMENTS = ['top', 'middle', 'bottom'] as const
 const THEMES = ['ink', 'paper', 'ocean', 'forest'] as const
 const SIZES = ['16:9', '4:3'] as const
@@ -131,6 +137,29 @@ function shortText(value: unknown, at: string, max: number): string {
 
 function optionalColor(value: unknown, at: string): string | null {
   return value === null ? null : color(value, at)
+}
+
+function parseChartPatch(value: unknown, at: string): { categories: readonly string[]; series: readonly PptChartSeries[] } {
+  if (!isRecord(value)) throw new PptModelError(`${at} 必须是对象`)
+  if (!Array.isArray(value.categories) || value.categories.length === 0) {
+    throw new PptModelError(`${at}.categories 必须是非空数组`)
+  }
+  const categories = value.categories.map((entry, index) => shortText(entry, `${at}.categories[${index}]`, 120))
+  if (!Array.isArray(value.series) || value.series.length === 0) {
+    throw new PptModelError(`${at}.series 必须是非空数组`)
+  }
+  const series = value.series.map((entry, index) => {
+    if (!isRecord(entry)) throw new PptModelError(`${at}.series[${index}] 必须是对象`)
+    if (!Array.isArray(entry.values) || entry.values.length !== categories.length) {
+      throw new PptModelError(`${at}.series[${index}].values 长度必须等于分类数`)
+    }
+    return {
+      name: shortText(entry.name, `${at}.series[${index}].name`, 120),
+      values: entry.values.map((item, valueIndex) => bounded(item, `${at}.series[${index}].values[${valueIndex}]`, -1e9, 1e9)),
+      color: color(entry.color, `${at}.series[${index}].color`),
+    }
+  })
+  return { categories, series }
 }
 
 function parseCells(value: unknown, at: string): readonly (readonly { readonly content: string }[])[] {
@@ -165,6 +194,7 @@ function parseTextPatch(value: unknown, at: string): Partial<PptText> | undefine
     ...value.bold === undefined ? {} : { bold: value.bold === true },
     ...value.align === undefined ? {} : { align: pick(ALIGNMENTS, value.align, `${at}.align`) },
     ...value.valign === undefined ? {} : { valign: pick(VALIGNMENTS, value.valign, `${at}.valign`) },
+    ...value.font === undefined ? {} : { font: fontFamily(value.font, `${at}.font`) },
   }
 }
 
@@ -219,6 +249,10 @@ function parseOp(value: unknown, at: string): PptOp {
         ...value.source === undefined ? {} : { source: mediaPath(value.source, `${at}.source`) },
         ...value.fit === undefined ? {} : { fit: pick(['cover', 'contain'] as const, value.fit, `${at}.fit`) },
         ...value.cells === undefined ? {} : { cells: parseCells(value.cells, `${at}.cells`) },
+        ...value.animation === undefined
+          ? {}
+          : { animation: pick(MOTIONS, value.animation, `${at}.animation`) },
+        ...value.chart === undefined ? {} : { chart: parseChartPatch(value.chart, `${at}.chart`) },
       }
     }
     case 'remove_element':
@@ -289,8 +323,18 @@ function normalizeElement(raw: Record<string, unknown>, deck: PptDeck): PptEleme
     source.header = source.header ?? true
     source.headerFill = source.headerFill ?? palette.accent
     source.borderColor = source.borderColor ?? palette.muted
-    source.text = { size: 24, color: palette.text, bold: false, align: 'left', ...isRecord(source.text) ? source.text : {} }
+    source.text = {
+      size: 24, color: palette.text, bold: false, align: 'left', font: '',
+      ...isRecord(source.text) ? source.text : {},
+    }
     source.cells = source.cells ?? Array.from({ length: rows }, () => Array.from({ length: columns }, () => ({ content: '' })))
+  }
+  if (source.kind === 'chart') {
+    source.chart = source.chart ?? 'bar'
+    source.categories = source.categories ?? ['一季度', '二季度', '三季度', '四季度']
+    source.series = source.series ?? [{ name: '系列 1', values: [1, 2, 3, 4], color: palette.accent }]
+    source.showValues = source.showValues ?? false
+    source.textColor = source.textColor ?? palette.muted
   }
   if (source.kind === 'image') {
     if (source.source === undefined) throw new PptModelError('图片元素必须提供 source')
@@ -326,6 +370,9 @@ function patchElement(element: PptElement, op: UpdateElementOp): PptElement {
   if (op.cells !== undefined && element.kind !== 'table') {
     throw new PptModelError('cells 只对 table 元素有效')
   }
+  if (op.chart !== undefined && element.kind !== 'chart') {
+    throw new PptModelError('chart 只对 chart 元素有效')
+  }
   const next: Record<string, unknown> = { ...element }
   if (op.frame !== undefined) {
     for (const key of ['x', 'y', 'w', 'h'] as const) {
@@ -343,6 +390,14 @@ function patchElement(element: PptElement, op: UpdateElementOp): PptElement {
     if (op.source !== undefined) next.source = op.source
     if (op.fit !== undefined) next.fit = op.fit
   }
+  if (element.kind === 'chart' && op.chart !== undefined) {
+    if (op.chart.series.some(series => series.values.length !== op.chart?.categories.length)) {
+      throw new PptModelError('图表系列的数值长度必须等于分类数')
+    }
+    next.categories = op.chart.categories
+    next.series = op.chart.series
+  }
+  if (op.animation !== undefined) next.animation = op.animation
   if (element.kind === 'table' && op.cells !== undefined) {
     if (op.cells.length !== element.rows || op.cells.some(row => row.length !== element.columns)) {
       throw new PptModelError(`cells 维度必须等于 ${element.rows} × ${element.columns}`)

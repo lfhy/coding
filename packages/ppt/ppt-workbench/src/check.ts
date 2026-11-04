@@ -19,6 +19,7 @@ export interface PptIssue {
   readonly severity: 'error' | 'warning'
   /** 稳定的规则标识，供面板分组与模型按规则修复。 */
   readonly code: 'out-of-bounds' | 'zero-size' | 'text-overflow' | 'low-contrast'
+    | 'empty-page' | 'too-much-text'
   readonly page: string
   readonly pageName: string
   /** 涉及的元素 id；页面级问题省略。 */
@@ -92,6 +93,21 @@ export function checkDeck(deck: PptDeck): PptCheckResult {
 
   for (const page of deck.pages) {
     const background = page.background ?? palette.background
+    if (page.elements.length === 0) {
+      push({
+        severity: 'warning', code: 'empty-page', page: page.id, pageName: page.name,
+        message: `第「${page.name}」页是空的：补上内容或删掉这一页`,
+      })
+    }
+    const characters = page.elements.reduce((sum, element) => (
+      sum + (element.kind === 'text' ? element.text.content.length : 0)
+    ), 0)
+    if (characters > 420) {
+      push({
+        severity: 'warning', code: 'too-much-text', page: page.id, pageName: page.name,
+        message: `第「${page.name}」页文字太多（约 ${characters} 字）：一页一个观点，考虑拆页或删减`,
+      })
+    }
     for (const element of page.elements) {
       checkGeometry(page, element, size, push)
       if (element.kind === 'text') {

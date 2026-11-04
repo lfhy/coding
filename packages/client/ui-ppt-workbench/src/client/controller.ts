@@ -473,5 +473,13 @@ function newElement(kind: PptElementKind, count: number): Record<string, unknown
     }
   }
   if (kind === 'line') return { kind, ...base, w: 640, h: 0, color: '#9aa7b4', width: 4 }
+  if (kind === 'chart') {
+    return {
+      kind, ...base, w: 720, h: 360, chart: 'bar',
+      categories: ['一季度', '二季度', '三季度', '四季度'],
+      series: [{ name: '本期', values: [32, 45, 38, 56], color: '#4f8cff' }],
+      textColor: '#9aa7b4',
+    }
+  }
   return { kind, ...base, w: 320, h: 200, fill: '#4f8cff' }
 }

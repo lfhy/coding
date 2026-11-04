@@ -9,13 +9,22 @@ import css from './Inspector.module.css'
 /** 元素属性的提交载荷。 */
 export interface ElementPatch {
   frame?: Partial<{ x: number; y: number; w: number; h: number }>
-  text?: Partial<{ content: string; size: number; color: string; bold: boolean; align: string; valign: string }>
+  text?: Partial<{
+    content: string
+    size: number
+    color: string
+    bold: boolean
+    align: string
+    valign: string
+    font: string
+  }>
   fill?: string
   color?: string
   width?: number
   source?: string
   fit?: 'cover' | 'contain'
   cells?: readonly (readonly { readonly content: string }[])[]
+  animation?: 'none' | 'fade' | 'fly' | 'zoom' | 'wipe'
 }
 
 export interface InspectorProps {
@@ -235,6 +244,20 @@ export function Inspector({
                 onCommit={(width) => { onElement({ width }) }} />
             </>
           ) : null}
+          <label className={css.field}>
+            <span>{t('animation')}</span>
+            <select
+              value={element.animation ?? 'none'}
+              disabled={busy}
+              onChange={(event) => { onElement({ animation: event.target.value as 'none' }) }}
+            >
+              <option value="none">{t('animationNone')}</option>
+              <option value="fade">{t('animationFade')}</option>
+              <option value="fly">{t('animationFly')}</option>
+              <option value="zoom">{t('animationZoom')}</option>
+              <option value="wipe">{t('animationWipe')}</option>
+            </select>
+          </label>
           <div className={css.row}>
             <button type="button" className={css.link} disabled={busy} onClick={onDuplicate}>{t('duplicate')}</button>
             <button type="button" className={css.link} disabled={busy} onClick={() => { onReorder('front') }}>{t('bringFront')}</button>

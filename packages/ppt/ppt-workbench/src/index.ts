@@ -15,6 +15,7 @@ import type {} from 'coding-session'
 import type { SessionId } from 'coding-session/types'
 import { checkDeck, type PptCheckResult } from './check.ts'
 import { buildPptx } from './export/pptx.ts'
+import { collectFonts, systemFontDirs, type SkippedFont } from './fonts.ts'
 import { importPptx } from './import.ts'
 import { PptModelError, type SlideSizeId, type ThemeId } from 'coding-ppt-model'
 import { installRoutes } from './routes.ts'
@@ -52,6 +53,10 @@ export interface PptExportResult {
   readonly path: string
   readonly bytes: number
   readonly revision: number
+  /** 实际嵌入的字体族。 */
+  readonly fonts: readonly { readonly family: string; readonly readonly: boolean }[]
+  /** 因许可或找不到文件而跳过的字体。 */
+  readonly skippedFonts: readonly SkippedFont[]
 }
 
 declare module '@deepseek-ai/cordis' {
@@ -66,6 +71,9 @@ export default class PptProjects extends Service {
   private readonly active = new Map<string, string>()
   /** 模型最近一次要求面板打开工程的时间戳。 */
   private readonly openRequests = new Map<string, PptOpenRequest>()
+
+  /** 导出时要扫描的字体目录；默认取平台字体目录。 */
+  private fontDirs: readonly string[] = systemFontDirs()
 
   constructor(ctx: Context) {
     super(ctx, 'pptProjects')
@@ -336,8 +344,18 @@ export default class PptProjects extends Service {
       const bytesOfImage = await readProjectMedia(absolute, source)
       if (bytesOfImage !== undefined) media.set(source, bytesOfImage)
     }
-    const bytes = buildPptx(snapshot.deck, { media: source => media.get(source) })
+    const collected = await collectFonts(snapshot.deck, this.fontDirs)
+    const bytes = buildPptx(snapshot.deck, {
+      media: source => media.get(source),
+      fonts: collected.fonts,
+    })
     const path = await writeExport(absolute, snapshot.revision, snapshot.title, bytes)
-    return { path, bytes: bytes.length, revision: snapshot.revision }
+    return {
+      path,
+      bytes: bytes.length,
+      revision: snapshot.revision,
+      fonts: collected.fonts.map(font => ({ family: font.family, readonly: font.readonly })),
+      skippedFonts: collected.skipped,
+    }
   }
 }

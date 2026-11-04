@@ -18,7 +18,7 @@ const deck: PptDeck = {
       elements: [
         {
           id: 't1', kind: 'text', x: 96, y: 260, w: 1088, h: 120,
-          text: { content: '增长 <32%> & 稳定', size: 64, color: '#f5f7fa', bold: true, align: 'left', valign: 'middle' },
+          text: { content: '增长 <32%> & 稳定', size: 64, color: '#f5f7fa', bold: true, align: 'left', valign: 'middle', font: '' },
         },
         { id: 'r1', kind: 'rect', x: 96, y: 400, w: 160, h: 8, fill: '#4f8cff' },
       ],
@@ -151,7 +151,7 @@ describe('.pptx 导出', () => {
           id: 'tb', kind: 'table', x: 100, y: 100, w: 600, h: 200,
           rows: 2, columns: 2, columnWeights: [2, 1], header: true,
           headerFill: '#4f8cff', borderColor: '#9aa7b4',
-          text: { size: 20, color: '#101418', bold: false, align: 'left' },
+          text: { size: 20, color: '#101418', bold: false, align: 'left', font: '' },
           cells: [[{ content: '指标' }, { content: '数值' }], [{ content: '增长' }, { content: '32%' }]],
         }],
       }],
@@ -162,6 +162,57 @@ describe('.pptx 导出', () => {
     expect(slide).toContain('<a:tbl>')
     expect(slide).toContain('<a:t>增长</a:t>')
     expect(slide).toContain('<p:transition><p:fade/></p:transition>')
+  })
+
+  it('图表写成 chart 部件与 graphicFrame', () => {
+    const withChart: PptDeck = {
+      ...deck,
+      pages: [{
+        id: 'p1', name: '图', background: null, transition: 'none',
+        elements: [{
+          id: 'c1', kind: 'chart', x: 100, y: 100, w: 720, h: 360, chart: 'bar',
+          categories: ['一季度', '二季度'], showValues: true, textColor: '#9aa7b4',
+          series: [{ name: '本期', values: [32, 45], color: '#4f8cff' }],
+        }],
+      }],
+    }
+    const entries = readZip(buildPptx(withChart))
+    const paths = entries.map(entry => entry.path)
+    expect(paths).toContain('ppt/charts/chart1.xml')
+    const chart = entries.find(entry => entry.path === 'ppt/charts/chart1.xml')?.data.toString('utf8') ?? ''
+    expect(chart).toContain('<c:barChart>')
+    expect(chart).toContain('<c:v>45</c:v>')
+    const slide = entries.find(entry => entry.path === 'ppt/slides/slide1.xml')?.data.toString('utf8') ?? ''
+    expect(slide).toContain('drawingml/2006/chart')
+    const types = entries.find(entry => entry.path === '[Content_Types].xml')?.data.toString('utf8') ?? ''
+    expect(types).toContain('.drawingml.chart+xml')
+  })
+
+  it('元素动画写出 p:timing，字体嵌入写出 fntdata 与 embeddedFontLst', () => {
+    const animated: PptDeck = {
+      ...deck,
+      pages: [{
+        id: 'p1', name: '动画', background: null, transition: 'fade',
+        elements: [{
+          id: 't1', kind: 'text', x: 96, y: 100, w: 400, h: 80, animation: 'fade',
+          text: { content: '淡入', size: 32, color: '#f5f7fa', bold: false, align: 'left', valign: 'top', font: 'Inter' },
+        }],
+      }],
+    }
+    const entries = readZip(buildPptx(animated, {
+      fonts: [{ family: 'Inter', part: 'ppt/fonts/font1.fntdata', bytes: new Uint8Array([1, 2, 3]) }],
+    }))
+    const slide = entries.find(entry => entry.path === 'ppt/slides/slide1.xml')?.data.toString('utf8') ?? ''
+    expect(slide).toContain('<p:timing>')
+    expect(slide).toContain('animEffect')
+    const presentation = entries.find(entry => entry.path === 'ppt/presentation.xml')?.data.toString('utf8') ?? ''
+    expect(presentation).toContain('<p:embeddedFontLst>')
+    expect(presentation).toContain('typeface="Inter"')
+    const rels = entries.find(entry => entry.path === 'ppt/_rels/presentation.xml.rels')
+      ?.data.toString('utf8') ?? ''
+    expect(rels).toContain('fonts/font1.fntdata')
+    const types = entries.find(entry => entry.path === '[Content_Types].xml')?.data.toString('utf8') ?? ''
+    expect(types).toContain('application/x-fontdata')
   })
 
   it('缺图时退化成占位形状，导出仍然成立', () => {

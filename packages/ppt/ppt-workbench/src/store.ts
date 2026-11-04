@@ -189,7 +189,7 @@ export async function createProject(
             x: 96, y: 260, w: 1088, h: 120,
             text: {
               content: options.title, size: 64, color: palette.text, bold: true,
-              align: 'left', valign: 'middle',
+              align: 'left', valign: 'middle', font: '',
             },
           },
           {
