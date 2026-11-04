@@ -266,9 +266,12 @@ export class PptPanelController {
     this.patch((draft) => { draft.editingId = id })
   }
 
-  /** 追加一页并切换过去。 */
-  async addPage(): Promise<void> {
-    await this.edit([{ op: 'add_page' }])
+  /**
+   * 追加一页并切换过去。
+   * @param template - 版式模板 id；缺省为空页。
+   */
+  async addPage(template?: string): Promise<void> {
+    await this.edit([template === undefined ? { op: 'add_page' } : { op: 'add_page', template }])
     const project = this.view.getSnapshot().project
     if (project !== null) this.selectPage(project.deck.pages.length - 1)
   }

@@ -212,7 +212,9 @@ function digestOf(deck: { pages: readonly {
 }
 
 const OPS_HELP = 'Array of edit operations, applied atomically in order. Each item is an object with "op":'
-  + '\n- {"op":"add_page","at":<index>,"name":<string>,"background":"#rrggbb"|null} — insert a blank page;'
+  + '\n- {"op":"add_page","at":<index>,"name":<string>,"background":"#rrggbb"|null,'
+  + '"template":"title"|"section"|"bullets"|"two-column"|"data"|"chart"|"quote","title":<string>,"bullets":[<string>]}'
+  + ' — insert a page; with "template" it comes pre-filled with that layout (bullets ≤ 6);'
   + '\n- {"op":"remove_page","page":<pageId>} — delete a page (never the last one);'
   + '\n- {"op":"move_page","page":<pageId>,"to":<index>} — reorder;'
   + '\n- {"op":"update_page","page":<pageId>,"name":<string>,"background":"#rrggbb"|null,"transition":"none"|"fade"|"push"};'

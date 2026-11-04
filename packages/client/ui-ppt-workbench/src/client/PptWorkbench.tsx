@@ -39,7 +39,7 @@ export interface PptWorkbenchInjected {
   selectPage: (index: number) => void
   selectElement: (id: string | null) => void
   setEditing: (id: string | null) => void
-  addPage: () => Promise<void>
+  addPage: (template?: string) => Promise<void>
   removePage: (pageId: string) => Promise<void>
   movePage: (pageId: string, to: number) => Promise<void>
   addElement: (kind: PptElementKind) => Promise<void>
@@ -83,6 +83,7 @@ export function PptWorkbench({
 }: PptWorkbenchProps) {
   const state = usePpt(snapshot => snapshot)
   const [title, setTitle] = useState('')
+  const [template, setTemplate] = useState('bullets')
   const fileInput = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -184,12 +185,32 @@ export function PptWorkbench({
             busy={state.busy}
             t={t}
             onSelect={selectPage}
-            onAdd={() => { void addPage() }}
+            onAdd={() => { void addPage(template === '' ? undefined : template) }}
             onRemove={(next) => { void removePage(next.id) }}
             onMove={(next, to) => { void movePage(next.id, to) }}
           />
           <main className={css.main}>
             <div className={css.addRow}>
+              <select
+                className={css.templateSelect}
+                aria-label={t('addPage')}
+                value={template}
+                disabled={state.busy}
+                onChange={(event) => { setTemplate(event.target.value) }}
+              >
+                <option value="">{t('blankPage')}</option>
+                <option value="title">{t('templateTitle')}</option>
+                <option value="section">{t('templateSection')}</option>
+                <option value="bullets">{t('templateBullets')}</option>
+                <option value="two-column">{t('templateTwoColumn')}</option>
+                <option value="data">{t('templateData')}</option>
+                <option value="chart">{t('templateChart')}</option>
+                <option value="quote">{t('templateQuote')}</option>
+              </select>
+              <button type="button" className={css.action} disabled={state.busy}
+                onClick={() => { void addPage(template === '' ? undefined : template) }}>
+                {t('addPage')}
+              </button>
               {ADD_KINDS.map(kind => (
                 <button key={kind} type="button" className={css.action} disabled={state.busy}
                   title={LABEL_OF[kind]?.(t) ?? kind}

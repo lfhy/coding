@@ -104,6 +104,23 @@ describe('工程存储', () => {
     expect(resolveProjectDir(root, 'ppt/demo')).toBe(join(root, 'ppt', 'demo'))
   })
 
+  it('按模板加页会铺好元素并写上页名', async () => {
+    const dir = join(root, 'ppt', 'tpl')
+    await createProject(dir, { title: '模板' })
+    const edited = await editProject(dir, [{
+      op: 'add_page', template: 'chart', title: '营收趋势',
+    }])
+    const page = edited.deck.pages[1]
+    expect(page?.name).toBe('图表页')
+    expect(page?.elements.some(element => element.kind === 'chart')).toBe(true)
+    const bullets = await editProject(dir, [{
+      op: 'add_page', template: 'bullets', bullets: ['甲', '乙'],
+    }])
+    const contents = (bullets.deck.pages[2]?.elements ?? [])
+      .flatMap(element => (element.kind === 'text' ? [element.text.content] : []))
+    expect(contents.some(content => content.includes('· 甲'))).toBe(true)
+  })
+
   it('历史裁剪后仍可撤销最近一步', async () => {
     const dir = join(root, 'ppt', 'deck')
     await createProject(dir, { title: '长历史' })

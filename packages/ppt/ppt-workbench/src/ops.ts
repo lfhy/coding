@@ -4,6 +4,7 @@
  * @module coding-ppt-workbench/ops
  */
 
+import { buildTemplate, PPT_TEMPLATES, templateName, type PptTemplateId } from './templates.ts'
 import {
   bounded, color, defaultText, fontFamily, isRecord, mediaPath, newId, parseDeck, parseElement, PPT_THEMES,
   PptModelError,
@@ -11,13 +12,19 @@ import {
   type PptElement, type PptPage, type PptText, type SlideTransition, type ThemeId,
 } from 'coding-ppt-model'
 
-/** 新建一页。 */
+/** 新建一页；给出 `template` 时按版式模板铺好元素。 */
 export interface AddPageOp {
   readonly op: 'add_page'
   /** 插入位置（0 起）；缺省追加到末尾。 */
   readonly at?: number
   readonly name?: string
   readonly background?: string | null
+  /** 版式模板：title / section / bullets / two-column / data / chart / quote。 */
+  readonly template?: PptTemplateId
+  /** 模板填充用的主标题。 */
+  readonly title?: string
+  /** 要点页/双栏页的条目（最多 6 条）。 */
+  readonly bullets?: readonly string[]
 }
 
 /** 删除一页；不允许删到零页。 */
@@ -117,6 +124,7 @@ const REORDER_TARGETS = ['front', 'back', 'forward', 'backward'] as const
 
 const ALIGNMENTS = ['left', 'center', 'right'] as const
 const MOTIONS = ['none', 'fade', 'fly', 'zoom', 'wipe'] as const
+const TEMPLATE_IDS: readonly PptTemplateId[] = PPT_TEMPLATES.map(entry => entry.id)
 const VALIGNMENTS = ['top', 'middle', 'bottom'] as const
 const THEMES = ['ink', 'paper', 'ocean', 'forest'] as const
 const SIZES = ['16:9', '4:3'] as const
@@ -160,6 +168,12 @@ function parseChartPatch(value: unknown, at: string): { categories: readonly str
     }
   })
   return { categories, series }
+}
+
+function parseBullets(value: unknown, at: string): string[] {
+  if (!Array.isArray(value)) throw new PptModelError(`${at} 必须是数组`)
+  if (value.length > 6) throw new PptModelError(`${at} 最多 6 条`)
+  return value.map((entry, index) => shortText(entry, `${at}[${index}]`, 500))
 }
 
 function parseCells(value: unknown, at: string): readonly (readonly { readonly content: string }[])[] {
@@ -210,6 +224,11 @@ function parseOp(value: unknown, at: string): PptOp {
         ...value.background === undefined
           ? {}
           : { background: optionalColor(value.background, `${at}.background`) },
+        ...value.template === undefined
+          ? {}
+          : { template: pick(TEMPLATE_IDS, value.template, `${at}.template`) },
+        ...value.title === undefined ? {} : { title: shortText(value.title, `${at}.title`, 200) },
+        ...value.bullets === undefined ? {} : { bullets: parseBullets(value.bullets, `${at}.bullets`) },
       }
     case 'remove_page':
       return { op, page: shortText(value.page, `${at}.page`, 64) }
@@ -423,12 +442,18 @@ export function applyOps(deck: PptDeck, ops: readonly PptOp[]): { deck: PptDeck;
       case 'add_page': {
         const at = op.at ?? pages.length
         if (at > pages.length) throw new PptModelError(`add_page 的 at 超出页数（当前 ${pages.length} 页）`)
+        const elements = op.template === undefined
+          ? []
+          : buildTemplate(op.template, deck, {
+            ...op.title === undefined ? {} : { title: op.title },
+            ...op.bullets === undefined ? {} : { bullets: op.bullets },
+          })
         const page: PptPage = {
           id: newId(),
-          name: op.name ?? `第 ${at + 1} 页`,
+          name: op.name ?? (op.template === undefined ? `第 ${at + 1} 页` : templateName(op.template)),
           background: op.background ?? null,
           transition: 'none',
-          elements: [],
+          elements,
         }
         pages = [...pages.slice(0, at), page, ...pages.slice(at)]
         touched.push(page.id)

@@ -224,3 +224,13 @@
 
 .issues > li[data-severity='error'] { color: var(--dsw-alias-state-error-primary); }
 .issues > li[data-severity='warning'] { color: var(--dsw-alias-state-warn-label); }
+
+.templateSelect {
+  height: 28px;
+  padding: 0 6px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-xs-13);
+}

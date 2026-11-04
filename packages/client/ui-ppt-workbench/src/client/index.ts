@@ -96,7 +96,7 @@ export function apply(ctx: ClientContext): void {
         selectPage: (index) => { controller.selectPage(index) },
         selectElement: (id) => { controller.selectElement(id) },
         setEditing: (id) => { controller.setEditing(id) },
-        addPage: () => controller.addPage(),
+        addPage: template => controller.addPage(template),
         removePage: pageId => controller.removePage(pageId),
         movePage: (pageId, to) => controller.movePage(pageId, to),
         addElement: kind => controller.addElement(kind),

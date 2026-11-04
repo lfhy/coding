@@ -24,6 +24,10 @@ PPT 创作模式的宿主能力：工程存储（`ppt/<工程目录>/deck.json`�
 - **导出**：`buildPptx` 在本地生成最小 OPC 包——每页一张 slide，文本、矩形、椭圆与连接线按基准像素换算成 EMU，主题色写进 `theme1.xml`。不依赖 Office、不调用外部进程。
 - **错误码**：路由把 `not-found` / `conflict` / `forbidden` / `bad-request` 映射成 404 / 409 / 403 / 400；模型工具看到的是同一批中文诊断。
 
+## 版式模板
+
+`add_page` 可以带 `template`（`title`、`section`、`bullets`、`two-column`、`data`、`chart`、`quote`）与 `title`／`bullets`：模板按当前主题与画布铺好文字、色块、表格或图表，元素与手放的完全等价，之后照样能拖能改。面板顶栏的下拉菜单用同一份模板清单。
+
 ## 质检与导入
 
 - **`checkDeck`** 在导出前跑确定性规则：元素出界、宽高为 0 是 `error`（阻断导出），文字溢出与文字/底色对比度不足是 `warning`。估算类规则宁可提示也不阻断。
