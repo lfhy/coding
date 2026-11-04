@@ -40,6 +40,12 @@ export interface IConversation {
    */
   readonly blocks: ComposerBlocks
   /**
+   * 将指定会话切换到已注册的对话视图；未装载视图或尚无会话时拒绝。
+   * @param sessionId - 待切换的会话。
+   * @param view - 已注册的视图标识。
+   */
+  selectView(sessionId: SessionId, view: string): void
+  /**
    * Send a prompt into the caller scope's session (queued turn).
    * @param text - prompt text, sent verbatim as one text block.
    * @returns completion; business failures reject (and land in promptError).
@@ -111,19 +117,23 @@ export class ConversationController extends Service implements IConversation {
   private readonly imageUrls = new Map<string, ImageUrlEntry>()
   private readonly imageGenerations = new Map<SessionId, number>()
   private readonly createdImageUrls = new Set<string>()
+  private readonly selectViewAction: ((sessionId: SessionId, view: string) => void) | undefined
   private disposed = false
 
   /**
    * @param ctx - owning root context (the plugin apply context; the service
    * registers itself and follows that fiber's lifetime).
-   * @param config - carries the SessionInputResolver and composer-block registry
-   * constructed by the plugin apply (the same instances the slot inject
-   * factories close over).
+   * @param config - 输入、发送限制以及当前会话的视图切换动作；视图选择由会话 store 持有。
    */
-  constructor(ctx: Context, config: { input: SessionInputResolver; blocks: ComposerBlocks }) {
+  constructor(ctx: Context, config: {
+    input: SessionInputResolver
+    blocks: ComposerBlocks
+    selectView?: (sessionId: SessionId, view: string) => void
+  }) {
     super(ctx, 'conversation')
     this.input = config.input
     this.blocks = config.blocks
+    this.selectViewAction = config.selectView
     ctx.effect(() => () => {
       this.disposed = true
       for (const url of this.createdImageUrls) revokePreview(url)
@@ -132,6 +142,14 @@ export class ConversationController extends Service implements IConversation {
       this.imageUrls.clear()
       this.imageGenerations.clear()
     }, 'conversation attachment URL cache')
+  }
+
+  /** 指定会话的视图切换交给会话级 store；未装载的会话或视图明确拒绝。 */
+  selectView(sessionId: SessionId, view: string): void {
+    if (this.disposed || this.selectViewAction === undefined || this.ctx.get('sessions')?.binding(sessionId) === undefined) {
+      throw new Error('conversation view is unavailable for this session')
+    }
+    this.selectViewAction(sessionId, view)
   }
 
   /**

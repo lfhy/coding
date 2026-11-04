@@ -25,6 +25,7 @@ export function ConversationRoot({
   const inputState = useInput(s => s)
   const cwd = useSessions(s => sessionId === undefined ? undefined : s.byId[sessionId]?.cwd)
   const summaryBlank = useSessions(s => sessionId === undefined ? undefined : s.byId[sessionId]?.blank)
+  const drawingSession = useSessions(s => sessionId !== undefined && s.byId[sessionId]?.agentPreset === 'image')
   const workspaces = useWorkspaces(s => s)
   // 本包不能导入的 ui-model-selection 等插件可限制会话发送，并提供本地化理由。
   const composerBlock = useComposerBlock(block => block)
@@ -94,10 +95,11 @@ export function ConversationRoot({
   // 日志回放期间尚不能确定 Hero 或底部编辑器布局，先隐藏编辑器以免跳动。
   // 列表摘要已确认空白的会话除外：它没有历史，cold、loading 与 error 状态都
   // 保持 Hero，避免启动自动选择时在历史请求期间整列闪空。
-  const settling = sessionId !== undefined && composerPhase === 'blank' && openState === 'loading'
+  // 画图会话即使尚无消息也显示画廊和常规输入栏，不盖上空白会话的欢迎页。
+  const settling = sessionId !== undefined && !drawingSession && composerPhase === 'blank' && openState === 'loading'
     && summaryBlank !== true
   const hero = sessionId === undefined
-    || (composerPhase === 'blank' && (openState === 'open' || summaryBlank === true))
+    || (!drawingSession && composerPhase === 'blank' && (openState === 'open' || summaryBlank === true))
   const zone: InputZone | undefined =
     session === undefined || inputState === undefined ? undefined : { session, input: inputState }
 

@@ -134,6 +134,9 @@ export function apply(ctx: Context): void {
 
   // Apply-time construction keeps store identity bound to this fiber.
   const chatStore = createChatStore()
+  // 视图选择动作由 owner 的会话 store 提供，不让扩展插件触碰内部 store。
+  const viewActions = new Map<SessionId, (view: string) => void>()
+  ctx.effect(() => () => { viewActions.clear() }, 'ui-conversation: view actions')
   const submissionPolicy = new ComposerSubmissionPolicy(
     ctx.settingsScope.bind<ConversationSettings>({ namespace: CONVERSATION_SETTINGS_NAMESPACE }),
   )
@@ -250,8 +253,9 @@ export function apply(ctx: Context): void {
       'conversation.view': { kind: 'list', scope: 'session' },
     },
     store: chatStore,
-    inject: (sessionId: SessionId, _actions: BoundActions<typeof chatStore>): ConversationSessionInjected => {
+    inject: (sessionId: SessionId, actions: BoundActions<typeof chatStore>): ConversationSessionInjected => {
       const conversation = concreteConversation(ctx)
+      viewActions.set(sessionId, actions.setView)
       return {
         views,
         releaseSessionImages: (id) => { conversation.releaseSessionImages(id) },
@@ -519,7 +523,16 @@ export function apply(ctx: Context): void {
   // registers itself as `conversation` and lives on its own child fiber.
   // Presentation registrants depend directly on their slot declarations;
   // this service remains only where conversation actions are required.
-  ctx.plugin(ConversationController, { input: inputHub, blocks: composerBlocks })
+  ctx.plugin(ConversationController, {
+    input: inputHub,
+    blocks: composerBlocks,
+    selectView: (sessionId, view) => {
+      if (!viewTabs().some(tab => tab.id === view)) throw new Error('conversation view is not registered')
+      const select = viewActions.get(sessionId)
+      if (select === undefined) throw new Error('conversation session view is not mounted')
+      select(view)
+    },
+  })
 
   // The plan strip rides the input dock above the queue rows (same posture).
   ctx.plugin(todoDockEntry)

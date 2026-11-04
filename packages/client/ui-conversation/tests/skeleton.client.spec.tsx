@@ -101,6 +101,8 @@ function mount(
     summaryOrigin?: 'subagent'
     /** A composer block another plugin raised for this session. */
     composerBlock?: { reason: string }
+    /** 画图模式的空会话显示画廊与常规输入栏。 */
+    agentPreset?: string
     /** Mutable view ledger used by registration-order regressions. */
     viewTabs?: ViewTab[]
   } = {},
@@ -110,6 +112,7 @@ function mount(
   const childRow = {
     id: SID, displayTitle: 'Child', parentId: root, cwd: '/projects/one',
     running: false, blank: options.summaryBlank ?? false, updatedAt: 2,
+    ...(options.agentPreset === undefined ? {} : { agentPreset: options.agentPreset }),
     ...(options.summaryOrigin === undefined ? {} : { origin: options.summaryOrigin }),
   }
   const listed = options.omitSummaryRow !== true
@@ -511,6 +514,19 @@ describe('ConversationRoot resident composer', () => {
     act(() => { b.chat.actions.setView('trajectory') })
     expect(b.view.getByTestId('view-trajectory')).toBeTruthy()
     expect(b.view.getByRole('textbox')).toBeTruthy()
+  })
+
+  it('画图模式的空白会话直接显示画廊、页头和常规输入栏', () => {
+    const b = mount(conversationSnapshot({ composerPhase: 'blank', blank: true }), undefined, undefined, {
+      agentPreset: 'image', summaryBlank: true,
+      viewTabs: [{ id: 'chat', label: 'Chat' }, { id: 'image-gallery', label: '画廊' }],
+    })
+    act(() => { b.chat.actions.setView('image-gallery') })
+    expect(b.view.getByTestId('view-image-gallery')).toBeTruthy()
+    expect(b.view.getByRole('tab', { name: '画廊' }).getAttribute('aria-selected')).toBe('true')
+    expect(b.view.container.querySelector('[data-phase]')?.getAttribute('data-phase')).toBe('active')
+    expect(b.view.getByRole('textbox')).toBeTruthy()
+    expect(b.view.queryByTestId('hero-greeting')).toBeNull()
   })
 
   it('keeps the Chat fallback selected by id when a view is inserted before it', () => {
