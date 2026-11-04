@@ -247,8 +247,12 @@ export function installRoutes(ctx: Context): void {
       const body = object(await readBody(req))
       const width = Number(body?.width)
       const height = Number(body?.height)
-      if (!body || Object.keys(body).length !== 4 || !validId(body.sessionId) || !validId(body.targetId)
+      // 像素比可选：老客户端不带该字段，等价于 1，画面语义与旧版一致。
+      const pixelRatio = body?.pixelRatio === undefined ? undefined : Number(body.pixelRatio)
+      if (!body || Object.keys(body).some(key => !['sessionId', 'targetId', 'width', 'height', 'pixelRatio'].includes(key))
+        || !validId(body.sessionId) || !validId(body.targetId)
         || !Number.isSafeInteger(width) || !Number.isSafeInteger(height)
+        || (pixelRatio !== undefined && (!Number.isFinite(pixelRatio) || pixelRatio < 1 || pixelRatio > 3))
         || width < 320 || width > 3840 || height < 200 || height > 2160
         || !webCtx.sessions.get(body.sessionId as SessionId)) { send(res, 400, { ok: false }); return }
       const sessionId = body.sessionId as SessionId
@@ -262,7 +266,8 @@ export function installRoutes(ctx: Context): void {
       if (!webCtx.sessions.get(sessionId) || !(await targetIdsForSession(sessionId)).has(body.targetId)) {
         send(res, 409, { ok: false }); return
       }
-      const viewport = await workerResize(port, { targetId: body.targetId, width, height })
+      const viewport = await workerResize(port, { targetId: body.targetId, width, height,
+        pixelRatio: pixelRatio ?? 1 })
       if (viewport === null) { send(res, 503, { ok: false }); return }
       send(res, 200, { ok: true, viewport })
     })

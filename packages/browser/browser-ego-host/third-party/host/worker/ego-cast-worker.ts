@@ -12,7 +12,7 @@ import { captureSnapshot } from './snapshot.ts'
 import { captureFrame } from './frame.ts'
 import { hoverAt } from './hover.ts'
 import { navigateTarget } from './navigation.ts'
-import { matchPanelViewport } from './panel-viewport.ts'
+import { matchPanelViewport, type PanelViewport } from './panel-viewport.ts'
 import { parseNavigation } from '../../../src/navigation.ts'
 import { FfmpegCaptureBackend } from '../../upstream/src/worker/capture-ffmpeg.ts'
 import { computeWindowBounds, widthWithDelta, clampViewportSize } from '../../upstream/src/worker/window-size.ts'
@@ -98,7 +98,7 @@ const videoClients = new Set<VideoClient>()
 const probeCache = new Map<string, { at: number; human: unknown }>()
 const frameCache = new Map<string, CachedFrame>()
 /** 导航结束后页面可能恢复原生尺寸；下一帧采集前复核目标页面仍使用面板尺寸。 */
-const panelViewports = new Map<string, { width: number; height: number }>()
+const panelViewports = new Map<string, PanelViewport>()
 let active: ActiveBrowser | null = null
 let currentStatus: Record<string, unknown> = { backend: 'cdp', state: 'idle', targetId: null, generation: 0, watchers: 0 }
 let videoInit: { generation: number; mime: string; buffer: Buffer } | null = null
@@ -400,16 +400,17 @@ async function measureChromeFrame(browser: ActiveBrowser, targetId: string): Pro
   return { width: 0, height: IS_WIN ? 132 : 88 }
 }
 
-/** 测量页面实际视口；窗口尺寸被系统限制时不能仅凭 CDP 返回成功判定已铺满。 */
-async function measureViewport(browser: ActiveBrowser, targetId: string): Promise<{ width: number; height: number } | null> {
+/** 测量页面实际视口与像素比；窗口尺寸被系统限制时不能仅凭 CDP 返回成功判定已铺满。 */
+async function measureViewport(browser: ActiveBrowser, targetId: string): Promise<PanelViewport | null> {
   try {
     const response = await browser.sessions.call(targetId, 'Runtime.evaluate', {
-      expression: '({ w: window.innerWidth, h: window.innerHeight })',
+      expression: '({ w: window.innerWidth, h: window.innerHeight, dpr: window.devicePixelRatio })',
       returnByValue: true,
-    }) as { result?: { value?: { w?: number; h?: number } } }
+    }) as { result?: { value?: { w?: number; h?: number; dpr?: number } } }
     const value = response?.result?.value
     if (value && Number.isFinite(value.w) && Number.isFinite(value.h) && (value.w as number) > 0 && (value.h as number) > 0) {
-      return { width: Math.round(value.w as number), height: Math.round(value.h as number) }
+      const dpr = Number.isFinite(value.dpr) && (value.dpr as number) > 0 ? value.dpr as number : 1
+      return { width: Math.round(value.w as number), height: Math.round(value.h as number), pixelRatio: dpr }
     }
   } catch {
     // best effort; the caller falls back to a sane aspect
@@ -496,6 +497,10 @@ async function main(): Promise<void> {
         const requestedHeight = Number(body.height)
         const requestedDy = Number(body.dy)
         const requestedAspect = Number(body.aspect)
+        // 面板显示器像素比决定采集分辨率；缺省或越界时回到 1，保持旧画面的尺寸语义。
+        const requestedPixelRatio = Number(body.pixelRatio)
+        const pixelRatio = Number.isFinite(requestedPixelRatio) && requestedPixelRatio >= 1 && requestedPixelRatio <= 3
+          ? Math.round(requestedPixelRatio * 100) / 100 : 1
         const hasWidth = Number.isFinite(requestedWidth) && requestedWidth >= 200
         const hasDelta = Number.isFinite(requestedDelta) && requestedDelta !== 0
         const hasHeight = Number.isFinite(requestedHeight) && requestedHeight >= 120
@@ -513,7 +518,7 @@ async function main(): Promise<void> {
         try {
           // 面板要求精确的页面尺寸；Chrome 的窗口最小宽度和系统屏幕限制会钳住真实窗口。
           if (hasWidth && hasHeight && typeof body.targetId === 'string') {
-            const requested = clampViewportSize(requestedWidth, requestedHeight)
+            const requested = { ...clampViewportSize(requestedWidth, requestedHeight), pixelRatio }
             const viewport = await matchPanelViewport(browser.sessions, targetId, requested,
               () => measureViewport(browser, targetId))
             if (!viewport) return sendJson(res, 503, { ok: false, error: 'viewport did not match the panel' })

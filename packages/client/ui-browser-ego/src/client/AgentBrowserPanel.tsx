@@ -142,9 +142,21 @@ export function AgentBrowserPanel({
       timer = setTimeout(() => { timer = null; attempts = 0; report() }, 250)
     })
     observer.observe(node)
+    // 换到像素比不同的显示器时布局尺寸不变，ResizeObserver 不会触发；单独重新上报一次。
+    const media = (globalThis as { matchMedia?: (query: string) => MediaQueryList }).matchMedia
+    const ratio = (globalThis as { devicePixelRatio?: number }).devicePixelRatio ?? 1
+    const resolution = typeof media === 'function' ? media.call(globalThis, `(resolution: ${ratio}dppx)`) : null
+    const onResolution = (): void => {
+      if (timer !== null) clearTimeout(timer)
+      timer = null
+      attempts = 0
+      report()
+    }
+    resolution?.addEventListener('change', onResolution)
     return () => {
       dispose()
       observer.disconnect()
+      resolution?.removeEventListener('change', onResolution)
     }
   }, [shown, selected?.targetId, pageUrl, selected?.viewportW, selected?.viewportH, resize])
   const videoTarget = selected?.targetId ?? null

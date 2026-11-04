@@ -158,7 +158,7 @@ describe('会话画面与人工输入', () => {
     expect(await controller.resize('first', 100, 640)).toBe(false)
     expect(await controller.resize('first', 900, 640)).toBe(true)
     expect(fetcher).toHaveBeenCalledWith('/api/ego/viewport', expect.objectContaining({
-      body: JSON.stringify({ sessionId: 'session-one', targetId: 'first', width: 900, height: 640 }),
+      body: JSON.stringify({ sessionId: 'session-one', targetId: 'first', width: 900, height: 640, pixelRatio: 1 }),
     }))
     const calls = (fetcher as unknown as { mock: { calls: unknown[][] } }).mock.calls.filter(call => call[0] === '/api/ego/viewport')
     expect(calls).toHaveLength(1)
@@ -188,6 +188,30 @@ describe('会话画面与人工输入', () => {
     accepted = true
     expect(await controller.resize('first', 380, 700)).toBe(true)
     expect(fetcher.mock.calls.filter(([path]) => path === '/api/ego/viewport')).toHaveLength(2)
+    controller.show(false)
+  })
+
+  it('按显示器像素比上报采集比例，越界或读不到时退回 1', async () => {
+    const fetcher = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url === '/api/ego/viewport') {
+        const payload = JSON.parse(init?.body as string) as { width: number; height: number }
+        return Response.json({ ok: true, viewport: { width: payload.width, height: payload.height } })
+      }
+      if (url.startsWith('/api/ego/frame?')) return new Response(null, { status: 404 })
+      return Response.json({ ok: true, spaces: [first] })
+    })
+    const { controller } = fixture(fetcher)
+    controller.show(true)
+    await vi.waitFor(() => { expect(controller.view.getSnapshot().phase).toBe('ready') })
+    const ratios: Array<[unknown, number]> = [[undefined, 1], [Number.NaN, 1], [0.5, 1], [4, 3], [1.5, 1.5], [2, 2]]
+    let width = 900
+    for (const [stub, expected] of ratios) {
+      vi.stubGlobal('devicePixelRatio', stub)
+      expect(await controller.resize('first', width++, 640)).toBe(true)
+      const body = JSON.parse(fetcher.mock.calls.at(-1)?.[1]?.body as string) as { pixelRatio: number }
+      expect(body.pixelRatio).toBe(expected)
+    }
+    vi.unstubAllGlobals()
     controller.show(false)
   })
 

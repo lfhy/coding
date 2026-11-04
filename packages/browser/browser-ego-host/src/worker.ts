@@ -82,10 +82,10 @@ export async function workerHover(port: number, body: { targetId: string; x: num
   } catch { return null }
 }
 
-/** 面板尺寸 → 真实窗口：只转发已核验目标与边界内尺寸，回包只取夹紧后的视口。 */
+/** 面板尺寸与像素比 → 真实窗口：只转发已核验目标、边界内尺寸与像素比，回包只取夹紧后的视口。 */
 export async function workerResize(
   port: number,
-  body: { targetId: string; width: number; height: number },
+  body: { targetId: string; width: number; height: number; pixelRatio?: number },
 ): Promise<{ width: number; height: number } | null> {
   try {
     const response = await fetch(`http://127.0.0.1:${port}/api/window-size`, {

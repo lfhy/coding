@@ -105,6 +105,10 @@ describe('会话浏览器 Host 路由', () => {
     expect((await post({ ...valid, height: 5000 })).status).toBe(400)
     expect((await post({ ...valid, width: 900.5 })).status).toBe(400)
     expect((await post({ ...valid, extra: 1 })).status).toBe(400)
+    // 像素比只接受 1–3：越界与非法值都不该走到启动 worker。
+    expect((await post({ ...valid, pixelRatio: 0.5 })).status).toBe(400)
+    expect((await post({ ...valid, pixelRatio: 4 })).status).toBe(400)
+    expect((await post({ ...valid, pixelRatio: 'x' })).status).toBe(400)
     expect(spawns).not.toHaveBeenCalled()
   })
 

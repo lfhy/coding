@@ -752,7 +752,14 @@ async function captureSnapshot(sessions, targetId, maxWidth) {
 }
 //#endregion
 //#region third-party/host/worker/frame.ts
-/** Capture a bounded JPEG with current CSS viewport dimensions for host-side input coordinates. */
+/** 单帧采集的宽度上限（设备像素）；超宽面板按比例缩小，避免大图撑爆画面预算。 */
+const MAX_DEVICE_WIDTH = 2560;
+/**
+* 采集当前视口的一帧 JPEG，并附上 CSS 视口尺寸供 Host 换算人工输入坐标。
+*
+* 采集按设备像素进行：面板用 `Emulation.setDeviceMetricsOverride` 把页面像素比设成
+* 显示器像素比，这里不再折算回 CSS 像素，否则 HiDPI 下 1:1 的截图会被面板放大而发虚。
+*/
 async function captureFrame(sessions, targetId) {
 	const viewport = (await sessions.call(targetId, "Runtime.evaluate", {
 		expression: "({ x: window.scrollX, y: window.scrollY, width: window.innerWidth, height: window.innerHeight, dpr: window.devicePixelRatio })",
@@ -764,6 +771,7 @@ async function captureFrame(sessions, targetId) {
 	const dpr = Number.isFinite(viewport?.dpr) && viewport?.dpr > 0 ? viewport.dpr : 1;
 	const x = viewport?.x ?? 0, y = viewport?.y ?? 0;
 	if (![x, y].every(Number.isFinite) || x < 0 || y < 0) throw new Error("viewport unavailable");
+	const scale = Math.min(1, MAX_DEVICE_WIDTH / (vw * dpr));
 	const image = await sessions.call(targetId, "Page.captureScreenshot", {
 		format: "jpeg",
 		quality: 55,
@@ -773,7 +781,7 @@ async function captureFrame(sessions, targetId) {
 			y,
 			width: vw,
 			height: vh,
-			scale: 1 / dpr
+			scale
 		}
 	});
 	if (typeof image.data !== "string" || !/^([A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/u.test(image.data) || image.data.length === 0 || image.data.length > 28e5) throw new Error("frame unavailable");
@@ -873,18 +881,22 @@ async function navigateTarget(sessions, command) {
 }
 //#endregion
 //#region third-party/host/worker/panel-viewport.ts
+/** 设备像素比按浮点比较，避免 1.5、1.25 这类比例的抖动反复重建视口。 */
+function samePixelRatio(left, right) {
+	return Math.abs(left - right) < .01;
+}
 /** 在页面所在的持久采集会话上设置面板视口；关闭页面后的失败由调用方处理。 */
 async function matchPanelViewport(sessions, targetId, desired, measure) {
 	const current = await measure();
-	if (current?.width === desired.width && current.height === desired.height) return current;
+	if (current !== null && current.width === desired.width && current.height === desired.height && samePixelRatio(current.pixelRatio, desired.pixelRatio)) return current;
 	await sessions.call(targetId, "Emulation.setDeviceMetricsOverride", {
 		width: desired.width,
 		height: desired.height,
-		deviceScaleFactor: 1,
+		deviceScaleFactor: desired.pixelRatio,
 		mobile: false
 	});
 	const actual = await measure();
-	return actual?.width === desired.width && actual.height === desired.height ? actual : null;
+	return actual !== null && actual.width === desired.width && actual.height === desired.height ? actual : null;
 }
 //#endregion
 //#region src/session-space.ts
@@ -2170,17 +2182,21 @@ async function measureChromeFrame(browser, targetId) {
 		height: IS_WIN ? 132 : 88
 	};
 }
-/** 测量页面实际视口；窗口尺寸被系统限制时不能仅凭 CDP 返回成功判定已铺满。 */
+/** 测量页面实际视口与像素比；窗口尺寸被系统限制时不能仅凭 CDP 返回成功判定已铺满。 */
 async function measureViewport(browser, targetId) {
 	try {
 		const value = (await browser.sessions.call(targetId, "Runtime.evaluate", {
-			expression: "({ w: window.innerWidth, h: window.innerHeight })",
+			expression: "({ w: window.innerWidth, h: window.innerHeight, dpr: window.devicePixelRatio })",
 			returnByValue: true
 		}))?.result?.value;
-		if (value && Number.isFinite(value.w) && Number.isFinite(value.h) && value.w > 0 && value.h > 0) return {
-			width: Math.round(value.w),
-			height: Math.round(value.h)
-		};
+		if (value && Number.isFinite(value.w) && Number.isFinite(value.h) && value.w > 0 && value.h > 0) {
+			const dpr = Number.isFinite(value.dpr) && value.dpr > 0 ? value.dpr : 1;
+			return {
+				width: Math.round(value.w),
+				height: Math.round(value.h),
+				pixelRatio: dpr
+			};
+		}
 	} catch {}
 	return null;
 }
@@ -2288,6 +2304,8 @@ async function main() {
 				const requestedHeight = Number(body.height);
 				const requestedDy = Number(body.dy);
 				const requestedAspect = Number(body.aspect);
+				const requestedPixelRatio = Number(body.pixelRatio);
+				const pixelRatio = Number.isFinite(requestedPixelRatio) && requestedPixelRatio >= 1 && requestedPixelRatio <= 3 ? Math.round(requestedPixelRatio * 100) / 100 : 1;
 				const hasWidth = Number.isFinite(requestedWidth) && requestedWidth >= 200;
 				const hasDelta = Number.isFinite(requestedDelta) && requestedDelta !== 0;
 				const hasHeight = Number.isFinite(requestedHeight) && requestedHeight >= 120;
@@ -2310,7 +2328,10 @@ async function main() {
 				});
 				try {
 					if (hasWidth && hasHeight && typeof body.targetId === "string") {
-						const requested = clampViewportSize(requestedWidth, requestedHeight);
+						const requested = {
+							...clampViewportSize(requestedWidth, requestedHeight),
+							pixelRatio
+						};
 						const viewport = await matchPanelViewport(browser.sessions, targetId, requested, () => measureViewport(browser, targetId));
 						if (!viewport) return sendJson(res, 503, {
 							ok: false,

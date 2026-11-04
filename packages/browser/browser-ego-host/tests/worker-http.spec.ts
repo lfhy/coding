@@ -43,7 +43,7 @@ it('封闭 worker 在真实 HTTP/CDP 连接上采帧并导航，拒绝失效目�
   let windowAvailable = true
   let windowWidth = 648
   let windowHeight = 444
-  let emulated: { width: number; height: number } | null = null
+  let emulated: { width: number; height: number; deviceScaleFactor?: number } | null = null
   let failedMetrics = false
   const currentViewport = () => emulated ?? { width: Math.max(0, windowWidth - 8), height: Math.max(0, windowHeight - 84) }
   server = createServer()
@@ -86,7 +86,7 @@ it('封闭 worker 在真实 HTTP/CDP 连接上采帧并导航，拒绝失效目�
             windowWidth = Math.max(500, bounds.width); windowHeight = bounds.height
             break
           }
-          case 'Emulation.setDeviceMetricsOverride': emulated = request.params as { width: number; height: number }; break
+          case 'Emulation.setDeviceMetricsOverride': emulated = request.params as { width: number; height: number; deviceScaleFactor?: number }; break
           case 'Emulation.clearDeviceMetricsOverride': emulated = null; break
           case 'Runtime.evaluate': result = request.params.expression?.toString().includes('document.elementFromPoint')
             ? { result: { value: { cursor: 'pointer', title: 'A link', href: 'https://example.test/next' } } }
@@ -96,7 +96,7 @@ it('封闭 worker 在真实 HTTP/CDP 连接上采帧并导航，拒绝失效目�
               : request.params.expression?.toString().includes('({ w:')
                 ? { result: { value: { w: currentViewport().width, h: currentViewport().height } } }
                 : { result: { value: { x: 5, y: 7, width: viewportAvailable ? currentViewport().width : 0,
-                  height: currentViewport().height, dpr: 2 } } }; break
+                  height: currentViewport().height, dpr: emulated?.deviceScaleFactor ?? 2 } } }; break
           case 'Page.captureScreenshot': result = { data: imageAvailable ? JPEG : '' }; break
           case 'Page.getNavigationHistory': result = { currentIndex, entries: [{ id: 1 }, { id: 2 }, { id: 3 }] }; break
           case 'Page.navigate': result = request.params.url === 'https://fail.example/' ? { errorText: 'blocked' } : { frameId: 'frame' }; break
@@ -137,18 +137,20 @@ it('封闭 worker 在真实 HTTP/CDP 连接上采帧并导航，拒绝失效目�
   expect(await (await fetch(`${api}/api/frame?targetId=owned`)).json()).toMatchObject({ vw: 682, vh: 360 })
   expect(await (await fetch(`${api}/api/spaces`)).json()).toMatchObject({ spaces: [{ viewportW: 682, viewportH: 360 }] })
   windowWidth = 648
+  // 未设置面板视口时按页面真实像素比采集：2 倍屏幕得到 1280 宽的设备像素画面。
   expect(calls.find(call => call.method === 'Page.captureScreenshot')).toMatchObject({
-    sessionId: 'fake-session', params: { format: 'jpeg', clip: { x: 5, y: 7, width: 640, height: 360, scale: 0.5 } },
+    sessionId: 'fake-session', params: { format: 'jpeg', clip: { x: 5, y: 7, width: 640, height: 360, scale: 1 } },
   })
-  const postSize = async (width: number, height: number) => {
+  const postSize = async (width: number, height: number, pixelRatio?: number) => {
     const response = await fetch(`${api}/api/window-size`, { method: 'POST',
-      headers: { 'content-type': 'application/json' }, body: JSON.stringify({ targetId: 'owned', width, height }) })
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ targetId: 'owned', width, height, ...(pixelRatio === undefined ? {} : { pixelRatio }) }) })
     return { status: response.status, body: await response.json() as { viewport: { width: number; height: number } } }
   }
   // Headless Chrome 可以把窗口宽度钳在 500；面板仍需拿到真实目标视口。
   expect(await postSize(375, 620)).toMatchObject({ status: 200, body: { viewport: { width: 375, height: 620 } } })
   expect(calls.some(call => call.method === 'Emulation.setDeviceMetricsOverride'
-    && call.params.width === 375 && call.params.height === 620)).toBe(true)
+    && call.params.width === 375 && call.params.height === 620 && call.params.deviceScaleFactor === 1)).toBe(true)
   expect(await (await fetch(`${api}/api/frame?targetId=owned`)).json()).toMatchObject({ vw: 375, vh: 620 })
   expect(await (await fetch(`${api}/api/spaces`)).json()).toMatchObject({ spaces: [{ viewportW: 375, viewportH: 620 }] })
   expect(await postSize(800, 620)).toMatchObject({ status: 200, body: { viewport: { width: 800, height: 620 } } })
@@ -161,6 +163,20 @@ it('封闭 worker 在真实 HTTP/CDP 连接上采帧并导航，拒绝失效目�
   emulated = null
   expect(await (await fetch(`${api}/api/frame?targetId=owned`)).json()).toMatchObject({ vw: 390, vh: 700 })
   expect(calls.filter(call => call.method === 'Emulation.setDeviceMetricsOverride' && call.params.width === 390)).toHaveLength(2)
+  // HiDPI 面板：同一 CSS 视口按 2 倍设备像素采集，面板放大显示时不再发虚。
+  expect(await postSize(390, 700, 2)).toMatchObject({ status: 200, body: { viewport: { width: 390, height: 700 } } })
+  expect(calls.filter(call => call.method === 'Emulation.setDeviceMetricsOverride'
+    && call.params.width === 390 && call.params.deviceScaleFactor === 2)).toHaveLength(1)
+  expect(await (await fetch(`${api}/api/frame?targetId=owned`)).json()).toMatchObject({ vw: 390, vh: 700 })
+  expect(calls.filter(call => call.method === 'Page.captureScreenshot').at(-1)).toMatchObject({
+    params: { clip: { width: 390, height: 700, scale: 1 } },
+  })
+  // 设备像素过宽时按比例收缩，单帧体积不会随显示器像素比无限增长。
+  expect(await postSize(1600, 900, 2)).toMatchObject({ status: 200 })
+  expect(await (await fetch(`${api}/api/frame?targetId=owned`)).json()).toMatchObject({ vw: 1600, vh: 900 })
+  expect(calls.filter(call => call.method === 'Page.captureScreenshot').at(-1)).toMatchObject({
+    params: { clip: { width: 1600, height: 900, scale: 0.8 } },
+  })
   const hovered = await fetch(`${api}/api/hover`, { method: 'POST',
     headers: { 'content-type': 'application/json' }, body: JSON.stringify({ targetId: 'owned', x: 10, y: 20 }) })
   expect(await hovered.json()).toMatchObject({ ok: true, cursor: 'pointer', href: 'https://example.test/next' })

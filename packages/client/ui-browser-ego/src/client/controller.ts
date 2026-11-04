@@ -33,6 +33,19 @@ function streamUrl(sessionId: string, path: string): string {
 }
 
 /**
+ * 面板所在显示器的设备像素比，取值收敛到 1–3 并保留两位小数。
+ *
+ * HiDPI 屏幕按 1 采集的画面会在面板里被放大而在文字上发虚；Host 用它作为采集页面的
+ * `deviceScaleFactor`，因此这里必须读真实比例，读不到时退回 1（等同旧行为）。
+ * @returns 上报给 Host 的像素比。
+ */
+function displayPixelRatio(): number {
+  const value = Number((globalThis as { devicePixelRatio?: unknown }).devicePixelRatio)
+  if (!Number.isFinite(value) || value < 1) return 1
+  return Math.min(3, Math.round(value * 100) / 100)
+}
+
+/**
  * 一次显隐周期只持有一条会话过滤的画面流和一条活动流；卸载、切换或隐藏会丢弃全部旧帧。
  * @param sessionId - Host 已授权且 Client 正展示的会话身份。
  * @param fetcher - 同源请求载体。
@@ -52,8 +65,8 @@ export class BrowserEgoController {
   /** 同一页面的按键与鼠标事件必须依发出顺序到达 Host，不能用请求中状态丢弃后续按键。 */
   private inputQueue: Promise<void> = Promise.resolve()
   private inputVersion = 0
-  /** 已上报的面板尺寸；导航或新采集尺寸变化时失效，不能把旧成功当成当前页面状态。 */
-  private resizeSent: { targetId: string; width: number; height: number } | null = null
+  /** 已上报的面板尺寸与像素比；导航或新采集尺寸变化时失效，不能把旧成功当成当前页面状态。 */
+  private resizeSent: { targetId: string; width: number; height: number; pixelRatio: number } | null = null
   private stream: EventSource | null = null
   private activity: EventSource | null = null
   private refreshTimer: ReturnType<typeof setTimeout> | null = null
@@ -343,10 +356,10 @@ export class BrowserEgoController {
   }
 
   /**
-   * 把面板内容区尺寸同步给 Host，由采集会话调整页面视口。
+   * 把面板内容区尺寸与显示器像素比同步给 Host，由采集会话调整页面视口。
    *
    * 只在面板可见、当前页面已就绪且没有进行中的操作时发送；尺寸由调用方去抖，
-   * 网页未变时同一尺寸只发一次；导航或实测尺寸变化后重新同步。失败只返回 false，画面与输入不受影响。
+   * 网页未变时同一尺寸与像素比只发一次；导航或实测尺寸变化后重新同步。失败只返回 false，画面与输入不受影响。
    * @param targetId - 当前显示页面的身份。
    * @param width - 面板内容区宽度（CSS 像素）。
    * @param height - 面板内容区高度（CSS 像素）。
@@ -358,14 +371,16 @@ export class BrowserEgoController {
     const view = this.view.getSnapshot()
     if (view.phase !== 'ready' || view.selectedId !== targetId || view.pending
       || !view.pages.some(page => page.targetId === targetId)) return false
+    const pixelRatio = displayPixelRatio()
     const sent = this.resizeSent
-    if (sent !== null && sent.targetId === targetId && sent.width === width && sent.height === height) return true
-    this.resizeSent = { targetId, width, height }
+    if (sent !== null && sent.targetId === targetId && sent.width === width && sent.height === height
+      && sent.pixelRatio === pixelRatio) return true
+    this.resizeSent = { targetId, width, height, pixelRatio }
     const epoch = this.epoch
     try {
       const response = await this.fetcher('/api/ego/viewport', { method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ sessionId: this.sessionId, targetId, width, height }) })
+        body: JSON.stringify({ sessionId: this.sessionId, targetId, width, height, pixelRatio }) })
       if (epoch !== this.epoch) return false
       if (!response.ok) { this.forgetResize(targetId); return false }
       const result: unknown = await response.json()

@@ -88,6 +88,37 @@ describe('Agent 浏览器工作台页面', () => {
     panel.unmount()
   })
 
+  it('显示器像素比变化时重新上报尺寸，卸载后解除监听', async () => {
+    /** jsdom 没有 ResizeObserver；这里只验证换屏后补报一次，不需要真实尺寸回调。 */
+    class ResizeObserverStub {
+      observe(): void {}
+      disconnect(): void {}
+    }
+    vi.stubGlobal('ResizeObserver', ResizeObserverStub)
+    const listeners = new Set<() => void>()
+    const media = vi.fn((query: string) => ({ media: query, matches: true,
+      addEventListener: (_type: string, listener: () => void) => { listeners.add(listener) },
+      removeEventListener: (_type: string, listener: () => void) => { listeners.delete(listener) } }))
+    vi.stubGlobal('matchMedia', media)
+    vi.stubGlobal('devicePixelRatio', 2)
+    const panel = mount(ready)
+    const stage = panel.container.querySelector('[class*="stage"]') as HTMLDivElement
+    Object.defineProperties(stage, {
+      clientWidth: { value: 380 }, clientHeight: { value: 700 },
+    })
+    panel.rerender(<AgentBrowserPanel {...panel.props} useTabInfo={() => ({
+      ...panel.props.useTabInfo(), shown: false,
+    })} />)
+    panel.rerender(<AgentBrowserPanel {...panel.props} />)
+    await act(async () => { await Promise.resolve() })
+    expect(media).toHaveBeenCalledWith('(resolution: 2dppx)')
+    expect(panel.resize).toHaveBeenCalledTimes(1)
+    await act(async () => { for (const listener of listeners) listener() })
+    expect(panel.resize).toHaveBeenCalledTimes(2)
+    panel.unmount()
+    expect(listeners.size).toBe(0)
+  })
+
   it('仅呈现当前目标的地址、画面与导航；显隐按工作台目标启停', () => {
     const view = { ...ready, pages: [page, secondPage], selectedId: 'first', frame: secondFrame,
       actions: [{ kind: 'navigate' as const, at: 1 }] }
