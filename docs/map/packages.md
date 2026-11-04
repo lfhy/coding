@@ -3,7 +3,7 @@
 
 # 包清单
 
-workspace 共 266 个包，按 group 分节。每行给出包目录、职责（README 首段）、源码入口与 `tests/` 下的 spec 文件数；标 `client` 的包导出 `./client` 浏览器半，标 `bundle` 的包是 profile/bundle 装配层。
+workspace 共 270 个包，按 group 分节。每行给出包目录、职责（README 首段）、源码入口与 `tests/` 下的 spec 文件数；标 `client` 的包导出 `./client` 浏览器半，标 `bundle` 的包是 profile/bundle 装配层。
 
 模型可见工具的名称与 schema 见 [tool-catalog.md](../tool-catalog.md)，插件可配置项见 [config-catalog.md](../config-catalog.md)，依赖边见 [module-graph.md](../module-graph.md)。
 
@@ -68,6 +68,7 @@ workspace 共 266 个包，按 group 分节。每行给出包目录、职责（R
 - `packages/client/ui-open-in-app` — 右侧工作台的标签、功能菜单与显隐按 Session 管理；文件管理器、文件预览、Git 历史、终端和外部插件内容共用顶栏 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 17）
 - `packages/client/ui-permission-presets` — 面向两种不同生命周期的浏览器权限界面 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 3）
 - `packages/client/ui-plan` — Plan mode 状态徽章，纯浏览器 surface 插件 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 2）
+- `packages/client/ui-ppt-workbench` — 右侧边栏的「PPT 工作台」标签：缩略图、画布与属性面板三栏，就地改字、拖动元素、增删页与导出 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 1）
 - `packages/client/ui-primitives` — 纯 React 原子组件（零 cordis）：StateDot、DisclosureRow、ic_ds_* 图标、Button/Pill/Men… 入口 `src/index.ts`（tests 22）
 - `packages/client/ui-reference` — 统一的 Web `@file` 与 `@session` source [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 1）
 - `packages/client/ui-renderer` — 负责 React 渲染层的浏览器 Cordis 插件 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 9）
@@ -262,6 +263,12 @@ workspace 共 266 个包，按 group 分节。每行给出包目录、职责（R
 ## packages/plan
 
 - `packages/plan/plan-mode` — 按 agent（智能体）分别记录到日志的 plan 协作状态，提供由部署方配置的引导内容、用于直接进入的 `/plan [message]` 命… [client] 入口 `src/index.ts`（tests 4）
+
+## packages/ppt
+
+- `packages/ppt/model` — PPT 工程的数据模型与校验：演示文稿（`PptDeck`）、页面（`PptPage`）、元素（`PptElement`）、主题配色与画布尺寸… 入口 `src/index.ts`
+- `packages/ppt/ppt-workbench` — PPT 创作模式的宿主能力：工程存储（`ppt/<工程目录>/deck.json`）、版本与撤销历史、`.pptx` 导出… 入口 `src/index.ts`（tests 2）
+- `packages/ppt/tool-ppt` — PPT 创作模式的七个模型工具：`ppt_create`、`ppt_open`、`ppt_read`、`ppt_edit`、`ppt_undo`… 入口 `src/index.ts`
 
 ## packages/preset
 

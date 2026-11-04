@@ -1,0 +1,344 @@
+/**
+ * PPT 工程的幻灯片数据模型：纯 JSON，宿主、模型工具与右侧工作台共用同一份契约。
+ *
+ * 坐标与尺寸都以「基准像素」表示——宽 1280、高 720（16:9）或 960×720（4:3）。导出时按
+ * 96 DPI 换算成 EMU（1 像素 = 9525 EMU），因此面板与 .pptx 的版式一致。颜色一律是
+ * `#rrggbb` 字面量；页面 `background` 为 `null` 时使用主题底色，改主题即可整体换色。
+ * @module coding-ppt-workbench/model
+ */
+
+/** 磁盘与内存中的工程格式版本；读取到其它版本即拒绝，不做迁移。 */
+export const PPT_FORMAT = 1
+
+/** 支持的画布尺寸。 */
+export type SlideSizeId = '16:9' | '4:3'
+
+/** 一种画布尺寸的基准像素。 */
+export interface SlideBaseSize {
+  readonly width: number
+  readonly height: number
+}
+
+/** 画布尺寸表；基准像素同时是编辑器与导出的坐标系。 */
+export const SLIDE_SIZES: Readonly<Record<SlideSizeId, SlideBaseSize>> = {
+  '16:9': { width: 1280, height: 720 },
+  '4:3': { width: 960, height: 720 },
+}
+
+/** 随包提供的配色主题。 */
+export type ThemeId = 'ink' | 'paper' | 'ocean' | 'forest'
+
+/** 一套主题配色；页面与元素只存具体颜色，取色时回落到这里。 */
+export interface PptTheme {
+  readonly id: ThemeId
+  readonly label: string
+  readonly background: string
+  readonly surface: string
+  readonly text: string
+  readonly muted: string
+  readonly accent: string
+}
+
+/** 四套随包主题，覆盖深色汇报、纸张、海洋与森林四类场合。 */
+export const PPT_THEMES: Readonly<Record<ThemeId, PptTheme>> = {
+  ink: {
+    id: 'ink', label: '深墨', background: '#101418', surface: '#1b222a',
+    text: '#f5f7fa', muted: '#9aa7b4', accent: '#4f8cff',
+  },
+  paper: {
+    id: 'paper', label: '纸张', background: '#faf7f1', surface: '#f0eadd',
+    text: '#23201b', muted: '#6f675c', accent: '#b5652c',
+  },
+  ocean: {
+    id: 'ocean', label: '海洋', background: '#0b2b3c', surface: '#12384c',
+    text: '#eaf6fb', muted: '#8fb6c6', accent: '#37c2d6',
+  },
+  forest: {
+    id: 'forest', label: '森林', background: '#14231b', surface: '#1d3226',
+    text: '#f0f6ef', muted: '#9db3a3', accent: '#7cc47f',
+  },
+}
+
+/** 文本对齐方式。 */
+export type TextAlign = 'left' | 'center' | 'right'
+/** 文本垂直对齐方式。 */
+export type TextVAlign = 'top' | 'middle' | 'bottom'
+
+/** 文本元素的排版属性。 */
+export interface PptText {
+  readonly content: string
+  /** 字号，单位是基准像素。 */
+  readonly size: number
+  readonly color: string
+  readonly bold: boolean
+  readonly align: TextAlign
+  readonly valign: TextVAlign
+}
+
+/** 所有元素共有的位置与尺寸。 */
+export interface ElementFrame {
+  readonly x: number
+  readonly y: number
+  readonly w: number
+  readonly h: number
+}
+
+/** 文本框。 */
+export interface PptTextElement extends ElementFrame {
+  readonly id: string
+  readonly kind: 'text'
+  readonly text: PptText
+}
+
+/** 矩形或椭圆色块。 */
+export interface PptShapeElement extends ElementFrame {
+  readonly id: string
+  readonly kind: 'rect' | 'ellipse'
+  readonly fill: string
+}
+
+/** 水平或斜向直线段，坐标系与其它元素一致（可旋转，以帧的对角线表示）。 */
+export interface PptLineElement extends ElementFrame {
+  readonly id: string
+  readonly kind: 'line'
+  readonly color: string
+  /** 线宽，单位是基准像素。 */
+  readonly width: number
+}
+
+/** 一页上的一个元素。 */
+export type PptElement = PptTextElement | PptShapeElement | PptLineElement
+
+/** 元素种类。 */
+export type PptElementKind = PptElement['kind']
+
+/** 一页幻灯片。 */
+export interface PptPage {
+  readonly id: string
+  readonly name: string
+  /** `null` 表示使用主题底色。 */
+  readonly background: string | null
+  readonly elements: readonly PptElement[]
+}
+
+/** 一份演示文稿。 */
+export interface PptDeck {
+  readonly format: number
+  readonly title: string
+  readonly size: SlideSizeId
+  readonly theme: ThemeId
+  readonly pages: readonly PptPage[]
+}
+
+/** 工程内容不合法时抛出；调用方据此拒绝写入并把原因回给模型或面板。 */
+export class PptModelError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'PptModelError'
+  }
+}
+
+const HEX_COLOR = /^#[0-9a-fA-F]{6}$/u
+const MAX_PAGES = 200
+const MAX_ELEMENTS = 200
+const MAX_TEXT = 5000
+
+/**
+ * 判断一个值是否是可以索引的普通对象。
+ * @param value - 待判断的值。
+ * @returns 为非 null 且非数组的对象时为 true。
+ */
+export function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function finite(value: unknown, what: string): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) throw new PptModelError(`${what} 必须是有限数字`)
+  return value
+}
+
+/**
+ * 校验并收敛一个数值到闭区间。
+ * @param value - 待校验的值。
+ * @param what - 诊断里使用的字段名。
+ * @param min - 允许的最小值。
+ * @param max - 允许的最大值。
+ * @returns 原值；越界或非数字时抛错。
+ */
+export function bounded(value: unknown, what: string, min: number, max: number): number {
+  const number = finite(value, what)
+  if (number < min || number > max) throw new PptModelError(`${what} 必须在 ${min} 到 ${max} 之间`)
+  return number
+}
+
+/**
+ * 校验颜色字面量。
+ * @param value - 待校验的值。
+ * @param what - 诊断里使用的字段名。
+ * @returns 规范为小写的 `#rrggbb`。
+ */
+export function color(value: unknown, what: string): string {
+  if (typeof value !== 'string' || !HEX_COLOR.test(value)) throw new PptModelError(`${what} 必须是 #rrggbb 颜色`)
+  return value.toLowerCase()
+}
+
+function text(value: unknown, what: string, max: number): string {
+  if (typeof value !== 'string') throw new PptModelError(`${what} 必须是字符串`)
+  if (value.length > max) throw new PptModelError(`${what} 不能超过 ${max} 个字符`)
+  return value
+}
+
+function oneOf<T extends string>(value: unknown, what: string, allowed: readonly T[]): T {
+  if (typeof value !== 'string' || !allowed.includes(value as T)) {
+    throw new PptModelError(`${what} 必须是 ${allowed.join(' / ')} 之一`)
+  }
+  return value as T
+}
+
+function frame(value: Record<string, unknown>, at: string): ElementFrame {
+  return {
+    x: bounded(value.x, `${at}.x`, -100_000, 100_000),
+    y: bounded(value.y, `${at}.y`, -100_000, 100_000),
+    w: bounded(value.w, `${at}.w`, 0, 100_000),
+    h: bounded(value.h, `${at}.h`, 0, 100_000),
+  }
+}
+
+function parseTextStyle(value: unknown, at: string): PptText {
+  if (!isRecord(value)) throw new PptModelError(`${at} 必须是对象`)
+  return {
+    content: text(value.content, `${at}.content`, MAX_TEXT),
+    size: bounded(value.size, `${at}.size`, 6, 400),
+    color: color(value.color, `${at}.color`),
+    bold: value.bold === true,
+    align: oneOf(value.align, `${at}.align`, ['left', 'center', 'right'] as const),
+    valign: oneOf(value.valign, `${at}.valign`, ['top', 'middle', 'bottom'] as const),
+  }
+}
+
+/**
+ * 校验一个元素。
+ * @param value - 候选元素。
+ * @param at - 诊断里使用的位置描述。
+ * @returns 归一化后的元素。
+ */
+export function parseElement(value: unknown, at: string): PptElement {
+  if (!isRecord(value)) throw new PptModelError(`${at} 必须是对象`)
+  const id = text(value.id, `${at}.id`, 64)
+  const box = frame(value, at)
+  if (value.kind === 'text') {
+    return { id, kind: 'text', ...box, text: parseTextStyle(value.text, `${at}.text`) }
+  }
+  if (value.kind === 'rect' || value.kind === 'ellipse') {
+    return { id, kind: value.kind, ...box, fill: color(value.fill, `${at}.fill`) }
+  }
+  if (value.kind === 'line') {
+    return {
+      id, kind: 'line', ...box,
+      color: color(value.color, `${at}.color`),
+      width: bounded(value.width, `${at}.width`, 0.5, 40),
+    }
+  }
+  throw new PptModelError(`${at}.kind 必须是 text / rect / ellipse / line 之一`)
+}
+
+/**
+ * 校验一页幻灯片。
+ * @param value - 候选页面。
+ * @param at - 诊断里使用的位置描述。
+ * @returns 归一化后的页面。
+ */
+export function parsePage(value: unknown, at: string): PptPage {
+  if (!isRecord(value)) throw new PptModelError(`${at} 必须是对象`)
+  if (!Array.isArray(value.elements)) throw new PptModelError(`${at}.elements 必须是数组`)
+  if (value.elements.length > MAX_ELEMENTS) {
+    throw new PptModelError(`${at}.elements 不能超过 ${MAX_ELEMENTS} 个元素`)
+  }
+  const ids = new Set<string>()
+  const elements = value.elements.map((entry, index) => {
+    const element = parseElement(entry, `${at}.elements[${index}]`)
+    if (ids.has(element.id)) throw new PptModelError(`${at} 里元素 id "${element.id}" 重复`)
+    ids.add(element.id)
+    return element
+  })
+  return {
+    id: text(value.id, `${at}.id`, 64),
+    name: text(value.name, `${at}.name`, 200),
+    background: value.background === null ? null : color(value.background, `${at}.background`),
+    elements,
+  }
+}
+
+/**
+ * 校验整份演示文稿；磁盘、HTTP 与工具入参都从这里进入模型。
+ * @param value - 候选工程。
+ * @returns 归一化后的工程。
+ */
+export function parseDeck(value: unknown): PptDeck {
+  if (!isRecord(value)) throw new PptModelError('演示文稿必须是对象')
+  if (value.format !== PPT_FORMAT) {
+    throw new PptModelError(`演示文稿格式版本必须是 ${PPT_FORMAT}`)
+  }
+  if (!Array.isArray(value.pages) || value.pages.length === 0) {
+    throw new PptModelError('演示文稿至少需要一页')
+  }
+  if (value.pages.length > MAX_PAGES) throw new PptModelError(`演示文稿不能超过 ${MAX_PAGES} 页`)
+  const ids = new Set<string>()
+  const pages = value.pages.map((entry, index) => {
+    const page = parsePage(entry, `pages[${index}]`)
+    if (ids.has(page.id)) throw new PptModelError(`页面 id "${page.id}" 重复`)
+    ids.add(page.id)
+    return page
+  })
+  return {
+    format: PPT_FORMAT,
+    title: text(value.title, 'title', 200),
+    size: oneOf(value.size, 'size', ['16:9', '4:3'] as const),
+    theme: oneOf(value.theme, 'theme', ['ink', 'paper', 'ocean', 'forest'] as const),
+    pages,
+  }
+}
+
+/**
+ * 取画布基准尺寸。
+ * @param deck - 演示文稿。
+ * @returns 该尺寸下的宽高。
+ */
+export function slideSize(deck: PptDeck): SlideBaseSize {
+  return SLIDE_SIZES[deck.size]
+}
+
+/**
+ * 取主题配色。
+ * @param deck - 演示文稿。
+ * @returns 主题定义。
+ */
+export function themeOf(deck: PptDeck): PptTheme {
+  return PPT_THEMES[deck.theme]
+}
+
+/**
+ * 生成一个稳定的元素或页面 id。
+ * @returns 32 位十六进制字符串。
+ */
+export function newId(): string {
+  return globalThis.crypto.randomUUID().replace(/-/gu, '')
+}
+
+/**
+ * 用主题默认值补全一个文本属性。
+ * @param deck - 演示文稿，用于取主题色。
+ * @param content - 文本内容。
+ * @param size - 字号（基准像素）。
+ * @returns 可直接写入元素的文本属性。
+ */
+export function defaultText(deck: PptDeck, content: string, size: number): PptText {
+  return {
+    content,
+    size,
+    color: themeOf(deck).text,
+    bold: false,
+    align: 'left',
+    valign: 'top',
+  }
+}

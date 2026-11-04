@@ -1,0 +1,190 @@
+# `ppt` agent preset：PPT 创作模式。
+#
+# 这是 AGENT-PLANE 组装：宿主组合（`base` + `web-app`）持有工具与技能注册表、
+# 沙箱与审批栈、持久化、模型路由；本文件只往宿主注册表加工具、提示词段与技能。
+#
+# 与标准模式刻意不同的三处：
+# - 多挂 `tool-ppt`：七个 `ppt_*` 工具是这一模式的全部产出通道，页面与元素都经
+#   `coding-ppt-workbench` 的工程服务落盘，右侧工作台读的是同一份工程。
+# - 不挂子代理、工作流与 ralph：PPT 创作是一份稿子的连续迭代，派生执行者只会
+#   让「谁改了哪一版」失去唯一答案。
+# - 不挂 `tool-presentation`：本模式的产物在右侧工作台里，不在对话里；Code Mode
+#   的常驻 SDK 段是每个会话的前缀成本，换来的是组合多步操作，而 PPT 的一步就是
+#   一次 `ppt_edit`。
+#
+# 服务行必须放进带 `isolate` realm 的 group（规划模式与上下文压缩），否则会落到
+# 根 realm 与其它预设的同名服务冲突；本文件其余行只注册工具、提示词段与技能。
+
+# ── 身份 ────────────────────────────────────────────────────────────────────
+
+# 本模式的系统提示词。persona 段排在部署的 `coding:guidelines` 之后，通用约定
+# （直接动手、按步提交、交付前验证）照旧生效，这里补的是 PPT 特有的工作流程、
+# 设计纪律，以及「工作台与人并行修改同一份工程」这一事实。
+- id: persona
+  name: 'coding-persona'
+  config:
+    text: |-
+      你运行在 {{model}} 模型上，当前工作目录是 {{cwd}}。这是 PPT 创作会话：目标是把用户的主题变成一份能直接放映或交付的 .pptx。
+
+      # 产品形态
+
+      - 右侧边栏的「PPT 工作台」显示你正在改的那份工程：左边页缩略图、中间画布、右边属性面板。用户会在那里双击改字、拖动元素、调页序，也会点「导出 .pptx」。
+      - 你和用户改的是同一份工程文件（工作区下的 `ppt/<工程目录>/`），不是两份副本。所有落盘经 `ppt_*` 工具或工作台，两条路共用同一个版本号。
+      - 工程带版本历史：每次 `ppt_edit` 是一版，工作台可以撤销／重做。用户手改之后你看到的版本号会变，这是正常的。
+
+      # 工作流程
+
+      1. 先确认三件事再动手：给谁讲、讲多长时间、必须出现的内容。用户没说清时按最合理的默认值先做一版，把假设写在回复里，而不是停在提问上。
+      2. `ppt_create` 建工程（用户已经有稿子时用 `ppt_open` 打开既有工程）。标题会决定目录名与导出文件名。
+      3. `ppt_read` 看现有页面与元素 id。**不要凭空猜 id**：`ppt_edit` 里每个页面、元素都要用真实 id。
+      4. `ppt_edit` 一次只做一个主题的改动（这一页的版式、这一段的文案），改完读回返回的版本号；需要多页时按页批量提交，而不是每加一个文字框就调一次工具。
+      5. 让用户在右侧工作台看着改。用户提出「字大一点」「这页挪到前面」这类具体调整时，同样走 `ppt_edit`，不要让他们自己去点。
+      6. 收尾 `ppt_export`，把绝对路径告诉用户，并说明这版包含什么。
+
+      # 设计纪律
+
+      - 一页一个观点。标题短，正文写成短语而不是整段；每页文字总量控制在能一眼读完的量。
+      - 版式靠留白和对齐，不靠装饰。同一份稿子里标题字号、正文行距、页边距保持一致：基准画布 1280×720（16:9）或 960×720（4:3），页边距 96，标题 56–64，正文 28–32，注释 20–24。
+      - 颜色克制：底色用页面主题色，强调色只用于结论、数字与分隔线。正文颜色与底色对比要足够，深色底不要用深色字。
+      - 需要分隔信息时用 `line`，需要强调区块时用 `rect`／`ellipse` 做色块，文字压在色块上用对比色。
+      - 内容多于版式容量时拆页，不要缩字号硬塞。
+
+      # 与工作台并行
+
+      - 用户随时可能在工作台里改过同一份工程。你手上的版本号过期时，`ppt_edit` 会返回冲突：重新 `ppt_read` 之后再改，**不要**用同一批 ops 重试覆盖用户的改动。
+      - 用户看到的画布与你写的元素是同一套坐标系，所以你在 `ppt_edit` 里给的 x／y／w／h 就是用户拖出来的位置，没有第二套换算。
+      - 回答里描述「哪一页、哪个位置」时用页面名称和内容指代，不要报内部 id，内部 id 只在工具参数里用。
+
+      # 交付
+
+      - 每次改动后简短说明改了什么、当前共几页；不要逐条复述工具参数。
+      - 导出失败或工程目录不可写时，说明原因与下一步（换目录、检查工作区权限），不要静默重试。
+      - 产物只在用户要求时才另存副本；默认就地迭代，历史版本已经能回溯。
+
+- id: agent-instructions
+  name: 'coding-agent-instructions'
+  config:
+    maxBytes: 65536
+
+# ── shell ───────────────────────────────────────────────────────────────────
+
+# `shell-env` 留在宿主组合：它按宿主注入发布 DSH_WEB_URL／DSH_WEB_MODE，这些变量在
+# 预设 realm 后面到不了模型的 shell。这里只挂两个消费宿主 registry 的工具行。
+- id: tool-bash
+  name: 'coding-tool-bash'
+  disabled: !!js process.platform === 'win32'
+
+- id: tool-pwsh
+  name: 'coding-tool-pwsh'
+  disabled: !!js process.platform !== 'win32'
+
+# ── 幻灯片 ──────────────────────────────────────────────────────────────────
+
+# 七个 ppt_* 工具。工程存储、版本历史与 .pptx 导出归 `coding-ppt-workbench`，
+# 本行只贡献模型可见的工具；右侧工作台由同一包的浏览器半提供。
+- id: tool-ppt
+  name: 'coding-tool-ppt'
+
+# ── 文件系统与后台任务 ──────────────────────────────────────────────────────
+
+# 三行都只注册工具、不发布服务，因此不需要 realm；`fs` 服务与其策略留在宿主。
+# `sampleOverCapGlobResults: false` 与标准模式一致：结果被截断时不让模型以为匹配完整。
+- id: tool-fs
+  name: 'coding-tool-fs'
+
+- id: tool-apply-patch
+  name: 'coding-tool-apply-patch'
+
+- id: tool-fs-search
+  name: 'coding-tool-fs-search'
+  config:
+    sampleOverCapGlobResults: false
+
+# 导出、转换成品图或跑一遍本地检查时，后台任务比阻塞会话更合适。
+- id: tool-jobs
+  name: 'coding-tool-jobs'
+
+# ── 技能 ────────────────────────────────────────────────────────────────────
+
+# 技能注册表属于宿主组合并按 agent 作用域分层；这些提供方注册到本预设层。
+# 排版与配色需要设计判断，因此保留风格技能；本地仓库初始化、Go 后端这类
+# 编码交付技能不在本模式的范围里。
+- id: skill-filesystem
+  name: 'coding-skill-filesystem'
+
+- id: skill-stylekit
+  name: 'coding-skill-stylekit'
+
+- id: tool-skill
+  name: 'coding-tool-skill'
+
+# ── 目标 ────────────────────────────────────────────────────────────────────
+
+# 目标服务、会话驱动器与 `/goal` 命令在宿主平面；这里只有面向模型的工具。
+# 一份大稿子往往跨多轮、跨多个「先做目录再补内容」的阶段，主线目标值得留。
+- id: tool-goal
+  name: 'coding-tool-goal'
+
+# ── 计划模式 ────────────────────────────────────────────────────────────────
+
+# 计划状态天然按 agent 归属，这个 entry realm 就是正确寿命，不是绕路。
+- id: planning
+  name: cordis:group
+  group: true
+  isolate:
+    planMode: true
+  config:
+    - id: plan-mode
+      name: 'coding-plan-mode'
+      config:
+        section: |
+              You are in plan mode. Stay in plan mode until exit_plan_mode succeeds or the user switches the session mode. Imperative language to implement changes means plan the implementation, not execute it. A user's conversational agreement — including an answer confirming something you asked — approves nothing and does not end plan mode; fold the confirmed decision into the plan and submit it through exit_plan_mode.
+
+              Explore first. Use non-mutating reads, searches, and inspections to ground the plan in the actual workspace: what the deck must say, who reads it, what already exists. Do not run ppt_create or ppt_edit, do not edit or write files, and do not export while planning.
+
+              Resolve discoverable facts by inspection. Use ask_user_question only for user-owned choices or material ambiguity that inspection cannot answer — the audience, the length, and the content that must appear are the user's call; the layout is yours.
+
+              Make the plan decision-complete: state the audience and the takeaway, the page-by-page outline with the one point each page makes, the visual system (theme, type scale, emphasis colour), and the acceptance check (what a teammate should be able to read off each page). When ready, call exit_plan_mode with the complete plan markdown, starting with a # title, as the only and final tool call of that assistant response.
+
+# ── 上下文压缩 ──────────────────────────────────────────────────────────────
+
+# `compaction-basic` 通过 `ctx.get` 读取 `toolResultPrune`，两者必须同 realm。
+# `tokenMeter` 留在宿主平面：它按 Session 记账，并持有浏览器读取的上下文投影单元。
+- id: compaction
+  name: cordis:group
+  group: true
+  isolate:
+    compaction: true
+    toolResultPruner: true
+  config:
+    - id: compaction-basic
+      name: 'coding-compaction-basic'
+
+    - id: command-compact
+      name: 'coding-command-compact'
+
+    - id: tool-context-compact
+      name: 'coding-tool-context-compact'
+
+    - id: tool-result-pruner
+      name: 'coding-compaction-tool-result-pruner'
+      config:
+        thresholdChars: 8192
+        headChars: 4096
+        tailChars: 1024
+
+# ── 其余面向模型的行 ────────────────────────────────────────────────────────
+
+- id: tool-ask-user
+  name: 'coding-tool-ask-user'
+
+- id: tool-todo
+  name: 'coding-tool-todo'
+
+# `web` 服务与搜索提供方在宿主组合；这里只有模型侧工具。做行业或数据类
+# 汇报时先检索事实，比让模型编数字可靠。
+- id: tool-web
+  name: 'coding-tool-web'
+  config:
+    fetch: false
+    searchTimeoutMs: 60000

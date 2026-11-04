@@ -201,6 +201,12 @@ importers:
       coding-plan-mode:
         specifier: workspace:^
         version: link:../../packages/plan/plan-mode
+      coding-ppt-model:
+        specifier: workspace:^
+        version: link:../../packages/ppt/model
+      coding-ppt-workbench:
+        specifier: workspace:^
+        version: link:../../packages/ppt/ppt-workbench
       coding-pwsh-local:
         specifier: workspace:^
         version: link:../../packages/shell/pwsh-local
@@ -285,6 +291,9 @@ importers:
       coding-tool-jobs:
         specifier: workspace:^
         version: link:../../packages/jobs/tool-jobs
+      coding-tool-ppt:
+        specifier: workspace:^
+        version: link:../../packages/ppt/tool-ppt
       coding-tool-pwsh:
         specifier: workspace:^
         version: link:../../packages/shell/tool-pwsh
@@ -1693,6 +1702,9 @@ importers:
       coding-client-ui-plan:
         specifier: workspace:^
         version: link:../../client/ui-plan
+      coding-client-ui-ppt-workbench:
+        specifier: workspace:^
+        version: link:../../client/ui-ppt-workbench
       coding-client-ui-reference:
         specifier: workspace:^
         version: link:../../client/ui-reference
@@ -1801,6 +1813,9 @@ importers:
       coding-message-feedback:
         specifier: workspace:^
         version: link:../../feedback/message-feedback
+      coding-ppt-workbench:
+        specifier: workspace:^
+        version: link:../../ppt/ppt-workbench
       coding-session-log-export:
         specifier: workspace:^
         version: link:../../session-query/session-log-export
@@ -2963,6 +2978,57 @@ importers:
       react:
         specifier: ^18.2.0
         version: 18.3.1
+
+  packages/client/ui-ppt-workbench:
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@testing-library/react':
+        specifier: ^16.1.0
+        version: 16.3.2(@testing-library/dom@10.4.2)(@types/react-dom@18.3.7(@types/react@18.3.31))(@types/react@18.3.31)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      '@types/react':
+        specifier: ~18.3.1
+        version: 18.3.31
+      '@types/react-dom':
+        specifier: ~18.3.0
+        version: 18.3.7(@types/react@18.3.31)
+      coding-client-locale:
+        specifier: workspace:^
+        version: link:../locale
+      coding-client-runtime:
+        specifier: workspace:^
+        version: link:../runtime
+      coding-client-test-runtime:
+        specifier: workspace:^
+        version: link:../../test-support/client-runtime
+      coding-client-ui-icons:
+        specifier: workspace:^
+        version: link:../ui-icons
+      coding-client-ui-open-in-app:
+        specifier: workspace:^
+        version: link:../ui-open-in-app
+      coding-client-ui-primitives:
+        specifier: workspace:^
+        version: link:../ui-primitives
+      coding-client-ui-slots:
+        specifier: workspace:^
+        version: link:../ui-slots
+      coding-invariants:
+        specifier: workspace:^
+        version: link:../../runtime-diagnostics/invariants
+      coding-ppt-model:
+        specifier: workspace:^
+        version: link:../../ppt/model
+      coding-session:
+        specifier: workspace:^
+        version: link:../../core/session
+      react:
+        specifier: ^18.2.0
+        version: 18.3.1
+      react-dom:
+        specifier: ^18.2.0
+        version: 18.3.1(react@18.3.1)
 
   packages/client/ui-primitives:
     dependencies:
@@ -7066,6 +7132,67 @@ importers:
         specifier: workspace:^
         version: link:../../interaction/user-questions
 
+  packages/ppt/model:
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      coding-invariants:
+        specifier: workspace:^
+        version: link:../../runtime-diagnostics/invariants
+
+  packages/ppt/ppt-workbench:
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@testing-library/react':
+        specifier: ^16.1.0
+        version: 16.3.2(@testing-library/dom@10.4.2)(@types/react-dom@18.3.7(@types/react@18.3.31))(@types/react@18.3.31)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      '@types/react':
+        specifier: ~18.3.1
+        version: 18.3.31
+      '@types/react-dom':
+        specifier: ~18.3.0
+        version: 18.3.7(@types/react@18.3.31)
+      coding-host-webserver:
+        specifier: workspace:^
+        version: link:../../host/webserver
+      coding-invariants:
+        specifier: workspace:^
+        version: link:../../runtime-diagnostics/invariants
+      coding-ppt-model:
+        specifier: workspace:^
+        version: link:../model
+      coding-session:
+        specifier: workspace:^
+        version: link:../../core/session
+      react:
+        specifier: ^18.2.0
+        version: 18.3.1
+      react-dom:
+        specifier: ^18.2.0
+        version: 18.3.1(react@18.3.1)
+
+  packages/ppt/tool-ppt:
+    dependencies:
+      '@deepseek-ai/schemastery':
+        specifier: link:../../../vendor/schemastery
+        version: link:../../../vendor/schemastery
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      coding-invariants:
+        specifier: workspace:^
+        version: link:../../runtime-diagnostics/invariants
+      coding-session:
+        specifier: workspace:^
+        version: link:../../core/session
+      coding-tools:
+        specifier: workspace:^
+        version: link:../../core/tools
+
   packages/preset/agent-presets:
     dependencies:
       '@deepseek-ai/schemastery':
@@ -10568,6 +10695,12 @@ importers:
       coding-plan-mode:
         specifier: workspace:^
         version: link:../../packages/plan/plan-mode
+      coding-ppt-model:
+        specifier: workspace:^
+        version: link:../../packages/ppt/model
+      coding-ppt-workbench:
+        specifier: workspace:^
+        version: link:../../packages/ppt/ppt-workbench
       coding-pwsh-local:
         specifier: workspace:^
         version: link:../../packages/shell/pwsh-local
@@ -10727,6 +10860,9 @@ importers:
       coding-tool-memory:
         specifier: workspace:^
         version: link:../../packages/memory/tool-memory
+      coding-tool-ppt:
+        specifier: workspace:^
+        version: link:../../packages/ppt/tool-ppt
       coding-tool-ralph:
         specifier: workspace:^
         version: link:../../packages/workflow/tool-ralph

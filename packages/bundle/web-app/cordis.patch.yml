@@ -266,6 +266,16 @@
     - id: genui-client
       name: 'coding-genui'
 
+    # PPT 创作模式的宿主半：工程存储、版本历史与 .pptx 导出。模型工具
+    # （coding-tool-ppt）归 ppt 预设，右侧工作台在下一行。
+    - id: ppt-workbench
+      name: 'coding-ppt-workbench'
+
+    # 右侧边栏的「PPT 工作台」标签：经 sidebarRightTabs 注册外部标签，
+    # 读写同一份工程（/api/ppt 路由）。
+    - id: ui-ppt-workbench
+      name: 'coding-client-ui-ppt-workbench'
+
     - id: ui-subagent
       name: 'coding-client-ui-subagent'
 

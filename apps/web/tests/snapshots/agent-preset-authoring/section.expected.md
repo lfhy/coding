@@ -93,6 +93,16 @@
       - 'button "复制: 逆向分析模式"':
         - img
         - text: 复制
+    - listitem:
+      - 'button "设为默认: PPT 创作模式"':
+        - text: PPT 创作模式 内置 在对话里做 PPT：模型用 ppt_* 工具建工程、改页面与配色，右侧 PPT 工作台显示并手改同一份稿子，最后导出 .pptx；每一版都能撤销与回溯。
+        - code: ppt
+      - 'button "查看: PPT 创作模式"':
+        - img
+        - text: 查看
+      - 'button "复制: PPT 创作模式"':
+        - img
+        - text: 复制
   - heading "自定义" [level=3]
   - button "用「创造模式」创作自定义预设":
     - img

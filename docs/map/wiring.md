@@ -117,6 +117,32 @@
 - `fs-local` → `coding-fs-local`
 - `str-replace-editor` → `coding-tool-str-replace-editor`
 
+## `apps/cli/config/agent-presets/ppt/agent.cordis.yml`
+
+- `persona` → `coding-persona`
+- `agent-instructions` → `coding-agent-instructions`
+- `tool-bash` → `coding-tool-bash`
+- `tool-pwsh` → `coding-tool-pwsh`
+- `tool-ppt` → `coding-tool-ppt`
+- `tool-fs` → `coding-tool-fs`
+- `tool-apply-patch` → `coding-tool-apply-patch`
+- `tool-fs-search` → `coding-tool-fs-search`
+- `tool-jobs` → `coding-tool-jobs`
+- `skill-filesystem` → `coding-skill-filesystem`
+- `skill-stylekit` → `coding-skill-stylekit`
+- `tool-skill` → `coding-tool-skill`
+- `tool-goal` → `coding-tool-goal`
+- `planning` → `cordis:group`
+- `plan-mode` → `coding-plan-mode`
+- `compaction` → `cordis:group`
+- `compaction-basic` → `coding-compaction-basic`
+- `command-compact` → `coding-command-compact`
+- `tool-context-compact` → `coding-tool-context-compact`
+- `tool-result-pruner` → `coding-compaction-tool-result-pruner`
+- `tool-ask-user` → `coding-tool-ask-user`
+- `tool-todo` → `coding-tool-todo`
+- `tool-web` → `coding-tool-web`
+
 ## `apps/cli/config/agent-presets/reverse/agent.cordis.yml`
 
 - `persona` → `coding-persona`
@@ -447,6 +473,8 @@
 - `ui-commands` → `coding-client-ui-commands`
 - `ui-skill` → `coding-client-ui-skill`
 - `genui-client` → `coding-genui`
+- `ppt-workbench` → `coding-ppt-workbench`
+- `ui-ppt-workbench` → `coding-client-ui-ppt-workbench`
 - `ui-subagent` → `coding-client-ui-subagent`
 - `ui-reference` → `coding-client-ui-reference`
 - `ui-jobs` → `coding-client-ui-jobs`

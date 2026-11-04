@@ -13,6 +13,7 @@ describe('preset display copy', () => {
     ['codex', 'presetCodexName', 'presetCodexDescription'],
     ['reverse', 'presetReverseName', 'presetReverseDescription'],
     ['longrun', 'presetLongrunName', 'presetLongrunDescription'],
+    ['ppt', 'presetPptName', 'presetPptDescription'],
   ] as const)('localizes the shipped %s preset in English and Chinese', (id, nameKey, descriptionKey) => {
     const preset = { id, trust: 'system' as const, name: 'file name', description: 'file description' }
 

@@ -1,0 +1,365 @@
+/**
+ * 编辑操作：模型工具与面板都通过同一条 ops 数组修改工程，一次调用要么整体生效、
+ * 要么整体拒绝（先校验后应用），因此不会留下半改的页面。
+ * @module coding-ppt-workbench/ops
+ */
+
+import {
+  bounded, color, defaultText, isRecord, newId, parseDeck, parseElement, PptModelError,
+  type ElementFrame, type PptDeck, type PptElement, type PptPage, type PptText, type ThemeId,
+} from 'coding-ppt-model'
+
+/** 新建一页。 */
+export interface AddPageOp {
+  readonly op: 'add_page'
+  /** 插入位置（0 起）；缺省追加到末尾。 */
+  readonly at?: number
+  readonly name?: string
+  readonly background?: string | null
+}
+
+/** 删除一页；不允许删到零页。 */
+export interface RemovePageOp {
+  readonly op: 'remove_page'
+  readonly page: string
+}
+
+/** 调整页序。 */
+export interface MovePageOp {
+  readonly op: 'move_page'
+  readonly page: string
+  /** 目标位置（0 起）。 */
+  readonly to: number
+}
+
+/** 改页面名称或底色。 */
+export interface UpdatePageOp {
+  readonly op: 'update_page'
+  readonly page: string
+  readonly name?: string
+  readonly background?: string | null
+}
+
+/** 新增元素；`element.id` 缺省时自动生成。 */
+export interface AddElementOp {
+  readonly op: 'add_element'
+  readonly page: string
+  readonly element: Record<string, unknown>
+}
+
+/** 修改元素位置、尺寸或内容；只提交给出的字段。 */
+export interface UpdateElementOp {
+  readonly op: 'update_element'
+  readonly page: string
+  readonly element: string
+  readonly frame?: Partial<ElementFrame>
+  readonly text?: Partial<PptText>
+  readonly fill?: string
+  readonly color?: string
+  readonly width?: number
+}
+
+/** 删除元素。 */
+export interface RemoveElementOp {
+  readonly op: 'remove_element'
+  readonly page: string
+  readonly element: string
+}
+
+/** 改标题、画布尺寸或主题。 */
+export interface UpdateDeckOp {
+  readonly op: 'update_deck'
+  readonly title?: string
+  readonly size?: '16:9' | '4:3'
+  readonly theme?: ThemeId
+}
+
+/** 一次编辑的任意一步。 */
+export type PptOp =
+  | AddPageOp | RemovePageOp | MovePageOp | UpdatePageOp
+  | AddElementOp | UpdateElementOp | RemoveElementOp | UpdateDeckOp
+
+const OP_NAMES = [
+  'add_page', 'remove_page', 'move_page', 'update_page',
+  'add_element', 'update_element', 'remove_element', 'update_deck',
+] as const
+
+const ALIGNMENTS = ['left', 'center', 'right'] as const
+const VALIGNMENTS = ['top', 'middle', 'bottom'] as const
+const THEMES = ['ink', 'paper', 'ocean', 'forest'] as const
+const SIZES = ['16:9', '4:3'] as const
+
+function pick<T extends string>(allowed: readonly T[], value: unknown, at: string): T {
+  if (typeof value !== 'string' || !(allowed as readonly string[]).includes(value)) {
+    throw new PptModelError(`${at} 必须是 ${allowed.join(' / ')} 之一`)
+  }
+  return value as T
+}
+
+function shortText(value: unknown, at: string, max: number): string {
+  if (typeof value !== 'string' || value.length === 0 || value.length > max) {
+    throw new PptModelError(`${at} 必须是 1 到 ${max} 个字符的字符串`)
+  }
+  return value
+}
+
+function optionalColor(value: unknown, at: string): string | null {
+  return value === null ? null : color(value, at)
+}
+
+function parseFrame(value: unknown, at: string): Partial<ElementFrame> | undefined {
+  if (value === undefined) return undefined
+  if (!isRecord(value)) throw new PptModelError(`${at} 必须是对象`)
+  return {
+    ...value.x === undefined ? {} : { x: bounded(value.x, `${at}.x`, -100_000, 100_000) },
+    ...value.y === undefined ? {} : { y: bounded(value.y, `${at}.y`, -100_000, 100_000) },
+    ...value.w === undefined ? {} : { w: bounded(value.w, `${at}.w`, 0, 100_000) },
+    ...value.h === undefined ? {} : { h: bounded(value.h, `${at}.h`, 0, 100_000) },
+  }
+}
+
+function parseTextPatch(value: unknown, at: string): Partial<PptText> | undefined {
+  if (value === undefined) return undefined
+  if (!isRecord(value)) throw new PptModelError(`${at} 必须是对象`)
+  return {
+    ...value.content === undefined ? {} : { content: shortText(value.content, `${at}.content`, 5000) },
+    ...value.size === undefined ? {} : { size: bounded(value.size, `${at}.size`, 6, 400) },
+    ...value.color === undefined ? {} : { color: color(value.color, `${at}.color`) },
+    ...value.bold === undefined ? {} : { bold: value.bold === true },
+    ...value.align === undefined ? {} : { align: pick(ALIGNMENTS, value.align, `${at}.align`) },
+    ...value.valign === undefined ? {} : { valign: pick(VALIGNMENTS, value.valign, `${at}.valign`) },
+  }
+}
+
+function parseOp(value: unknown, at: string): PptOp {
+  if (!isRecord(value)) throw new PptModelError(`${at} 必须是对象`)
+  const op = pick(OP_NAMES, value.op, `${at}.op`)
+  switch (op) {
+    case 'add_page':
+      return {
+        op,
+        ...value.at === undefined ? {} : { at: bounded(value.at, `${at}.at`, 0, 199) },
+        ...value.name === undefined ? {} : { name: shortText(value.name, `${at}.name`, 200) },
+        ...value.background === undefined
+          ? {}
+          : { background: optionalColor(value.background, `${at}.background`) },
+      }
+    case 'remove_page':
+      return { op, page: shortText(value.page, `${at}.page`, 64) }
+    case 'move_page':
+      return {
+        op,
+        page: shortText(value.page, `${at}.page`, 64),
+        to: bounded(value.to, `${at}.to`, 0, 199),
+      }
+    case 'update_page':
+      return {
+        op,
+        page: shortText(value.page, `${at}.page`, 64),
+        ...value.name === undefined ? {} : { name: shortText(value.name, `${at}.name`, 200) },
+        ...value.background === undefined
+          ? {}
+          : { background: optionalColor(value.background, `${at}.background`) },
+      }
+    case 'add_element':
+      if (!isRecord(value.element)) throw new PptModelError(`${at}.element 必须是对象`)
+      return { op, page: shortText(value.page, `${at}.page`, 64), element: { ...value.element } }
+    case 'update_element': {
+      const frame = parseFrame(value.frame, `${at}.frame`)
+      const text = parseTextPatch(value.text, `${at}.text`)
+      return {
+        op,
+        page: shortText(value.page, `${at}.page`, 64),
+        element: shortText(value.element, `${at}.element`, 64),
+        ...frame === undefined ? {} : { frame },
+        ...text === undefined ? {} : { text },
+        ...value.fill === undefined ? {} : { fill: color(value.fill, `${at}.fill`) },
+        ...value.color === undefined ? {} : { color: color(value.color, `${at}.color`) },
+        ...value.width === undefined ? {} : { width: bounded(value.width, `${at}.width`, 0.5, 40) },
+      }
+    }
+    case 'remove_element':
+      return {
+        op,
+        page: shortText(value.page, `${at}.page`, 64),
+        element: shortText(value.element, `${at}.element`, 64),
+      }
+    case 'update_deck':
+      return {
+        op,
+        ...value.title === undefined ? {} : { title: shortText(value.title, `${at}.title`, 200) },
+        ...value.size === undefined ? {} : { size: pick(SIZES, value.size, `${at}.size`) },
+        ...value.theme === undefined ? {} : { theme: pick(THEMES, value.theme, `${at}.theme`) },
+      }
+  }
+}
+
+/**
+ * 校验一次编辑请求的 ops 数组。
+ * @param value - 来自工具参数或 HTTP 请求体的值。
+ * @returns 通过校验的 ops 数组。
+ * @throws PptModelError - 结构不合法时拒绝整次编辑。
+ */
+export function parseOps(value: unknown): PptOp[] {
+  if (!Array.isArray(value) || value.length === 0) throw new PptModelError('ops 必须是非空数组')
+  if (value.length > 100) throw new PptModelError('ops 一次最多 100 步')
+  return value.map((entry, index) => parseOp(entry, `ops[${index}]`))
+}
+
+function findPage(pages: readonly PptPage[], pageId: string): number {
+  const at = pages.findIndex(page => page.id === pageId)
+  if (at < 0) throw new PptModelError(`找不到页面 "${pageId}"`)
+  return at
+}
+
+/** 取已存在的页面；`findPage` 已经确认过下标，这里只把可空性收掉。 */
+function pageAt(pages: readonly PptPage[], at: number): PptPage {
+  const page = pages[at]
+  if (page === undefined) throw new PptModelError(`页面下标 ${at} 越界`)
+  return page
+}
+
+function replacePage(pages: readonly PptPage[], at: number, page: PptPage): PptPage[] {
+  return pages.map((entry, index) => index === at ? page : entry)
+}
+
+/** 补全缺省 id 与文本默认值后校验新元素。 */
+function normalizeElement(raw: Record<string, unknown>, deck: PptDeck): PptElement {
+  const source: Record<string, unknown> = { ...raw }
+  if (source.id === undefined) source.id = newId()
+  if (source.kind === 'text') {
+    if (!isRecord(source.text)) throw new PptModelError('文本元素必须提供 text 对象')
+    const patch = defaultText(deck, '', 32)
+    const given = source.text
+    source.text = {
+      ...patch,
+      ...given,
+      ...given.content === undefined ? { content: '' } : {},
+    }
+  }
+  return parseElement(source, 'element')
+}
+
+/** 把 update_element 的字段合并到元素上，并按 kind 校验结果。 */
+function patchElement(element: PptElement, op: UpdateElementOp): PptElement {
+  if (op.fill !== undefined && element.kind !== 'rect' && element.kind !== 'ellipse') {
+    throw new PptModelError('fill 只对 rect / ellipse 元素有效')
+  }
+  if ((op.color !== undefined || op.width !== undefined) && element.kind !== 'line') {
+    throw new PptModelError('color 与 width 只对 line 元素有效')
+  }
+  if (op.text !== undefined && element.kind !== 'text') {
+    throw new PptModelError('text 只对 text 元素有效')
+  }
+  const next: Record<string, unknown> = { ...element }
+  if (op.frame !== undefined) {
+    for (const key of ['x', 'y', 'w', 'h'] as const) {
+      const value = op.frame[key]
+      if (value !== undefined) next[key] = value
+    }
+  }
+  if (element.kind === 'text' && op.text !== undefined) next.text = { ...element.text, ...op.text }
+  if ((element.kind === 'rect' || element.kind === 'ellipse') && op.fill !== undefined) next.fill = op.fill
+  if (element.kind === 'line') {
+    if (op.color !== undefined) next.color = op.color
+    if (op.width !== undefined) next.width = op.width
+  }
+  return parseElement(next, 'element')
+}
+
+/**
+ * 把一次编辑应用到工程上。
+ * @param deck - 当前工程（不会被修改）。
+ * @param ops - 已校验的编辑步骤。
+ * @returns 新工程与本次改动涉及的页面／元素 id。
+ * @throws PptModelError - 任一步引用了不存在的页面或元素时整体失败。
+ */
+export function applyOps(deck: PptDeck, ops: readonly PptOp[]): { deck: PptDeck; touched: string[] } {
+  let pages: PptPage[] = [...deck.pages]
+  let meta = { title: deck.title, size: deck.size, theme: deck.theme }
+  const touched: string[] = []
+  for (const op of ops) {
+    switch (op.op) {
+      case 'add_page': {
+        const at = op.at ?? pages.length
+        if (at > pages.length) throw new PptModelError(`add_page 的 at 超出页数（当前 ${pages.length} 页）`)
+        const page: PptPage = {
+          id: newId(),
+          name: op.name ?? `第 ${at + 1} 页`,
+          background: op.background ?? null,
+          elements: [],
+        }
+        pages = [...pages.slice(0, at), page, ...pages.slice(at)]
+        touched.push(page.id)
+        break
+      }
+      case 'remove_page': {
+        if (pages.length === 1) throw new PptModelError('不能删除最后一页')
+        const at = findPage(pages, op.page)
+        pages = [...pages.slice(0, at), ...pages.slice(at + 1)]
+        touched.push(op.page)
+        break
+      }
+      case 'move_page': {
+        const at = findPage(pages, op.page)
+        if (op.to >= pages.length) throw new PptModelError(`move_page 的 to 超出页数（当前 ${pages.length} 页）`)
+        const moved = pageAt(pages, at)
+        const rest = [...pages.slice(0, at), ...pages.slice(at + 1)]
+        pages = [...rest.slice(0, op.to), moved, ...rest.slice(op.to)]
+        touched.push(op.page)
+        break
+      }
+      case 'update_page': {
+        const at = findPage(pages, op.page)
+        const current = pageAt(pages, at)
+        pages = replacePage(pages, at, {
+          ...current,
+          ...op.name === undefined ? {} : { name: op.name },
+          ...op.background === undefined ? {} : { background: op.background },
+        })
+        touched.push(op.page)
+        break
+      }
+      case 'add_element': {
+        const at = findPage(pages, op.page)
+        const page = pageAt(pages, at)
+        if (page.elements.length >= 200) throw new PptModelError('一页最多 200 个元素')
+        const element = normalizeElement(op.element, deck)
+        if (page.elements.some(entry => entry.id === element.id)) {
+          throw new PptModelError(`页面里已有元素 "${element.id}"`)
+        }
+        pages = replacePage(pages, at, { ...page, elements: [...page.elements, element] })
+        touched.push(element.id)
+        break
+      }
+      case 'update_element': {
+        const at = findPage(pages, op.page)
+        const page = pageAt(pages, at)
+        const elementAt = page.elements.findIndex(entry => entry.id === op.element)
+        if (elementAt < 0) throw new PptModelError(`页面 "${page.id}" 里没有元素 "${op.element}"`)
+        const elements = page.elements.map((item, index) => index === elementAt ? patchElement(item, op) : item)
+        pages = replacePage(pages, at, { ...page, elements })
+        touched.push(op.element)
+        break
+      }
+      case 'remove_element': {
+        const at = findPage(pages, op.page)
+        const page = pageAt(pages, at)
+        if (!page.elements.some(entry => entry.id === op.element)) {
+          throw new PptModelError(`页面 "${page.id}" 里没有元素 "${op.element}"`)
+        }
+        pages = replacePage(pages, at, { ...page, elements: page.elements.filter(item => item.id !== op.element) })
+        touched.push(op.element)
+        break
+      }
+      case 'update_deck':
+        meta = {
+          title: op.title ?? meta.title,
+          size: op.size ?? meta.size,
+          theme: op.theme ?? meta.theme,
+        }
+        break
+    }
+  }
+  return { deck: parseDeck({ ...meta, format: 1, pages }), touched }
+}

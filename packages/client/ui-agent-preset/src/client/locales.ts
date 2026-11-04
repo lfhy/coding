@@ -10,6 +10,7 @@ export type AgentPresetSettingsKey =
   | 'presetCodexName' | 'presetCodexDescription'
   | 'presetReverseName' | 'presetReverseDescription'
   | 'presetLongrunName' | 'presetLongrunDescription'
+  | 'presetPptName' | 'presetPptDescription'
   | 'duplicate' | 'duplicateUnavailable' | 'delete' | 'presetId' | 'presetIdPlaceholder' | 'copyOf'
   | 'displayName' | 'displayNamePlaceholder'
   | 'inUse' | 'noDescription' | 'builtInGroup' | 'customGroup'
@@ -54,6 +55,10 @@ export const en: Record<AgentPresetSettingsKey, string> = {
   presetLongrunName: 'Long-run task mode',
   presetLongrunDescription:
     'Coordinates long tasks as phases: the main agent splits goals, runs subagents in parallel, waits for them, then has an independent review agent accept or reject the work; rejected goals go back to the same subagent, and handoffs keep only the main goal and acceptance state.',
+  presetPptName: 'PPT creation mode',
+  presetPptDescription:
+    'Builds slide decks from the conversation: the agent creates and edits one project with ppt_* tools while the '
+    + 'PPT workbench on the right shows and edits the same deck, then exports a .pptx; every revision stays undoable.',
   duplicate: 'Duplicate',
   duplicateUnavailable: 'This deployment has no writable preset directory',
   delete: 'Delete',
@@ -118,6 +123,8 @@ export const zh: Record<AgentPresetSettingsKey, string> = {
   presetReverseDescription: '具备标准模式的全部能力，并接入 REA 逆向引擎的 MCP 工具与随模式分发的逆向调查技能，用于二进制、安装包、固件与运行时行为分析。',
   presetLongrunName: '长线任务模式',
   presetLongrunDescription: '把长任务按阶段推进：主 Agent 拆分目标、并行派发子 Agent、等待其结算，再由独立验收 Agent 判定通过与否；未通过打回原执行者继续修，上下文交接只保留主线目标与验收状态。',
+  presetPptName: 'PPT 创作模式',
+  presetPptDescription: '在对话里做 PPT：模型用 ppt_* 工具建工程、改页面与配色，右侧 PPT 工作台显示并手改同一份稿子，最后导出 .pptx；每一版都能撤销与回溯。',
   duplicate: '复制',
   duplicateUnavailable: '此部署未配置可写的预设目录',
   delete: '删除',
@@ -185,6 +192,7 @@ const BUILT_IN_PRESET_KEYS: Readonly<Partial<Record<string, PresetLocaleKeys>>> 
   codex: { name: 'presetCodexName', description: 'presetCodexDescription' },
   reverse: { name: 'presetReverseName', description: 'presetReverseDescription' },
   longrun: { name: 'presetLongrunName', description: 'presetLongrunDescription' },
+  ppt: { name: 'presetPptName', description: 'presetPptDescription' },
 }
 
 /**
