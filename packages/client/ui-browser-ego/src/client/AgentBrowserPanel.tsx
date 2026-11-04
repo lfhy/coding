@@ -80,6 +80,9 @@ export function AgentBrowserPanel({
   const [videoFailed, setVideoFailed] = useState(false)
   const [hovered, setHovered] = useState<{ cursor: string; title: string | null; href: string | null } | null>(null)
   const hoverVersion = useRef(0)
+  /** 悬停查询的在途标记与最新待查位置：同一时刻最多一条请求，避免按事件率排队。 */
+  const hoverBusy = useRef(false)
+  const hoverQueue = useRef<{ targetId: string; x: number; y: number } | null>(null)
   const image = useRef<HTMLImageElement>(null)
   const video = useRef<HTMLVideoElement>(null)
   const stage = useRef<HTMLDivElement>(null)
@@ -104,6 +107,7 @@ export function AgentBrowserPanel({
   const videoMime = view.video.available ? view.video.mime : null
   useEffect(() => {
     hoverVersion.current++
+    hoverQueue.current = null
     setHovered(null)
   }, [shown, targetId, pageUrl, view.pending])
 
@@ -202,11 +206,25 @@ export function AgentBrowserPanel({
   function movePointer(event: MouseEvent<HTMLButtonElement>): void {
     const current = point(event)
     const currentTarget = selected?.targetId
-    const request = ++hoverVersion.current
-    if (current === null || currentTarget === undefined) { setHovered(null); return }
-    void hover(currentTarget, current.x, current.y).then((value) => {
-      if (hoverVersion.current === request) setHovered(value)
-    })
+    hoverVersion.current++
+    // 指针移动只保留最新位置：事件率远高于一次查询的往返时间，逐条发送会把请求排成一队。
+    if (current === null || currentTarget === undefined) { hoverQueue.current = null; setHovered(null); return }
+    hoverQueue.current = { targetId: currentTarget, x: current.x, y: current.y }
+    void flushHover()
+  }
+  /** 同一时刻只保留一条在途悬停查询；它返回后立即用最新位置再查一次。 */
+  async function flushHover(): Promise<void> {
+    if (hoverBusy.current) return
+    hoverBusy.current = true
+    try {
+      while (hoverQueue.current !== null) {
+        const next = hoverQueue.current
+        hoverQueue.current = null
+        const request = hoverVersion.current
+        const value = await hover(next.targetId, next.x, next.y)
+        if (hoverVersion.current === request) setHovered(value)
+      }
+    } finally { hoverBusy.current = false }
   }
   async function click(event: MouseEvent<HTMLButtonElement>): Promise<void> {
     const current = point(event)
@@ -317,7 +335,7 @@ export function AgentBrowserPanel({
         : videoMode
           ? <button type="button" className={css.frameAction} disabled={view.pending}
             aria-label={t('videoPreview')} style={{ cursor: hovered?.cursor ?? 'default' }}
-            onMouseMove={movePointer} onMouseLeave={() => { hoverVersion.current++; setHovered(null) }}
+            onMouseMove={movePointer} onMouseLeave={() => { hoverVersion.current++; hoverQueue.current = null; setHovered(null) }}
             onClick={(event) => { void click(event) }} onWheel={(event) => { void wheel(event) }}
             onKeyDown={(event) => { void key(event) }} onPaste={paste} onCompositionEnd={composed}>
             <video ref={video} className={css.video} muted autoPlay playsInline
@@ -326,7 +344,7 @@ export function AgentBrowserPanel({
           : frame === null ? <p className={css.center}>{t('noFrame')}</p>
             : <button type="button" className={css.frameAction} disabled={view.pending}
               aria-label={t('preview')} style={{ cursor: hovered?.cursor ?? 'default' }}
-              onMouseMove={movePointer} onMouseLeave={() => { hoverVersion.current++; setHovered(null) }}
+              onMouseMove={movePointer} onMouseLeave={() => { hoverVersion.current++; hoverQueue.current = null; setHovered(null) }}
               onClick={(event) => { void click(event) }} onWheel={(event) => { void wheel(event) }}
               onKeyDown={(event) => { void key(event) }} onPaste={paste} onCompositionEnd={composed}>
               <img ref={image} className={css.frame} src={frame.src} alt={t('preview')} draggable={false}

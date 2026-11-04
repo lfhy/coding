@@ -10,7 +10,7 @@ import { TargetSessions, CdpCaptureBackend } from './capture-cdp.ts'
 import { CaptureManager } from './capture-manager.ts'
 import { captureSnapshot } from './snapshot.ts'
 import { captureFrame } from './frame.ts'
-import { hoverAt } from './hover.ts'
+import { forgetHoverTarget, hoverAt } from './hover.ts'
 import { navigateTarget } from './navigation.ts'
 import { matchPanelViewport, type PanelViewport } from './panel-viewport.ts'
 import { parseNavigation } from '../../../src/navigation.ts'
@@ -305,7 +305,9 @@ async function connectLoop(): Promise<void> {
       await new Promise<void>((resolve, reject) => { ws.addEventListener('open', () => resolve(), { once: true } as AddEventListenerOptions); ws.addEventListener('error', () => reject(new Error('ws error')), { once: true } as AddEventListenerOptions) })
       const cdp = new CdpClient(ws)
       const sessions = new TargetSessions(cdp)
-      sessions.onDestroyed(targetId => { panelViewports.delete(targetId); frameCache.delete(targetId) })
+      sessions.onDestroyed(targetId => {
+        panelViewports.delete(targetId); frameCache.delete(targetId); forgetHoverTarget(targetId)
+      })
       active = { ...browser, ws, cdp, sessions }
       publishStatus({ browserConnected: true })
       await manager.browserConnected()
@@ -475,7 +477,14 @@ async function main(): Promise<void> {
           || !(await listTargets()).some(target => target.targetId === body.targetId)) {
           return sendJson(res, 400, { ok: false })
         }
-        try { return sendJson(res, 200, { ok: true, ...await hoverAt(browser.sessions, body.targetId, body.x as number, body.y as number) }) }
+        const x = body.x as number, y = body.y as number
+        // 视口边界由页面自己给出：面板按画面换算坐标，越界位置不投递输入。
+        const session = browser.sessions.get(body.targetId)
+        if (session?.viewportW != null && session.viewportH != null
+          && (x < 0 || y < 0 || x >= session.viewportW || y >= session.viewportH)) {
+          return sendJson(res, 400, { ok: false })
+        }
+        try { return sendJson(res, 200, { ok: true, ...await hoverAt(browser.sessions, body.targetId, x, y) }) }
         catch { return sendJson(res, 503, { ok: false }) }
       }
       if (req.method === 'GET' && url.pathname === '/api/snapshot') {

@@ -227,20 +227,17 @@ export function installRoutes(ctx: Context): void {
       if (!(await targetIdsForSession(sessionId)).has(body.targetId)) { send(res, 403, { ok: false }); return }
       const port = await ensureWorker(webCtx)
       if (port === null) { send(res, 503, { ok: false }); return }
-      const page = (await currentPages(sessionId, port)).find(item => item.targetId === body.targetId)
+      // 归属已由空间登记确认；视口边界交给持有页面的 worker，避免每次悬停再拉一遍页面目录。
       const x = body.x as number, y = body.y as number
-      if (!page || x < 0 || y < 0 || x >= (page.viewportW ?? 0) || y >= (page.viewportH ?? 0)) {
-        send(res, 400, { ok: false }); return
-      }
-      const result = object(await workerHover(port, { targetId: page.targetId, x, y }))
-      if (!webCtx.sessions.get(sessionId) || !(await targetIdsForSession(sessionId)).has(page.targetId)
+      const result = object(await workerHover(port, { targetId: body.targetId, x, y }))
+      if (!webCtx.sessions.get(sessionId) || !(await targetIdsForSession(sessionId)).has(body.targetId)
         || result?.ok !== true || !['default', 'pointer', 'text', 'wait', 'progress', 'help', 'move', 'grab', 'grabbing',
         'not-allowed', 'crosshair', 'cell', 'vertical-text', 'zoom-in', 'zoom-out', 'ew-resize', 'ns-resize'].includes(result.cursor as string)
         || (result.title !== null && (typeof result.title !== 'string' || result.title.length > 256))
         || (result.href !== null && (typeof result.href !== 'string' || result.href.length > 2048))) {
         send(res, 503, { ok: false }); return
       }
-      send(res, 200, { ok: true, targetId: page.targetId, cursor: result.cursor, title: result.title, href: result.href })
+      send(res, 200, { ok: true, targetId: body.targetId, cursor: result.cursor, title: result.title, href: result.href })
     })
     register('/api/ego/viewport', async (req, res) => {
       if (req.method !== 'POST') { send(res, 405, { ok: false }); return }

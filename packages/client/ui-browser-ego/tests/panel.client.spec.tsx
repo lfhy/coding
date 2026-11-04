@@ -19,17 +19,22 @@ const mime = 'video/mp4; codecs="avc1.42E01E"'
 
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.unstubAllGlobals() })
 
-function mount(view: BrowserEgoView, { shown = true, targetId = 'first', backend = 'auto' }: {
+type HoverResult = { cursor: string; title: string | null; href: string | null } | null
+
+function mount(view: BrowserEgoView, { shown = true, targetId = 'first', backend = 'auto', hover: hoverOverride }: {
   shown?: boolean
   targetId?: string | null
   backend?: EgoBrowserCapture['backend']
+  /** 需要观察在途查询时序时替换默认悬停实现。 */
+  hover?: (targetId: string, x: number, y: number) => Promise<HoverResult>
 } = {}) {
   const show = vi.fn()
   const send = vi.fn(async () => true)
   const navigate = vi.fn(async () => true)
   const raiseWindow = vi.fn(async () => true)
   const refresh = vi.fn(async () => {})
-  const hover = vi.fn(async () => ({ cursor: 'pointer', title: 'Visit website', href: 'https://example.com/' }))
+  const hover = vi.fn(hoverOverride
+    ?? (async () => ({ cursor: 'pointer', title: 'Visit website', href: 'https://example.com/' })))
   const resize = vi.fn(async () => true)
   const props = { sessionId: 'session-one',
     useTabInfo: () => ({ shown, tab: { id: `browser-${targetId ?? 'fallback'}`,
@@ -85,6 +90,30 @@ describe('Agent 浏览器工作台页面', () => {
     })} />)
     await act(async () => { await vi.advanceTimersByTimeAsync(3000) })
     expect(panel.resize).toHaveBeenCalledTimes(3)
+    panel.unmount()
+  })
+
+  it('指针连续移动只保留一条在途悬停查询，完成后补发最新位置', async () => {
+    const sent: Array<{ x: number; y: number }> = []
+    const resolvers: Array<(value: HoverResult) => void> = []
+    const panel = mount(ready, { hover: (_targetId, x, y) => new Promise((resolve) => {
+      sent.push({ x, y })
+      resolvers.push(resolve)
+    }) })
+    const target = loadFrame()
+    fireEvent.mouseMove(target, { clientX: 10, clientY: 10 })
+    fireEvent.mouseMove(target, { clientX: 20, clientY: 20 })
+    fireEvent.mouseMove(target, { clientX: 30, clientY: 30 })
+    // 事件率高于一次查询的往返时间：只有第一条在途，其余合并成最新位置。
+    expect(sent).toEqual([{ x: 10, y: 10 }])
+    await act(async () => { resolvers[0]?.({ cursor: 'pointer', title: null, href: null }) })
+    expect(sent).toEqual([{ x: 10, y: 10 }, { x: 30, y: 30 }])
+    await act(async () => { resolvers[1]?.({ cursor: 'pointer', title: 'Latest target', href: null }) })
+    expect(screen.getByText('Latest target')).toBeTruthy()
+    // 离开画面后到达的结果不再覆盖提示。
+    fireEvent.mouseLeave(target)
+    await act(async () => { resolvers[2]?.(null) })
+    expect(screen.queryByText('Latest target')).toBeNull()
     panel.unmount()
   })
 

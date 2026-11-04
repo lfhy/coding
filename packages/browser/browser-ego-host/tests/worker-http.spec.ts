@@ -180,8 +180,14 @@ it('封闭 worker 在真实 HTTP/CDP 连接上采帧并导航，拒绝失效目�
   const hovered = await fetch(`${api}/api/hover`, { method: 'POST',
     headers: { 'content-type': 'application/json' }, body: JSON.stringify({ targetId: 'owned', x: 10, y: 20 }) })
   expect(await hovered.json()).toMatchObject({ ok: true, cursor: 'pointer', href: 'https://example.test/next' })
-  expect(calls.some(call => call.method === 'Input.dispatchMouseEvent' && call.params.type === 'mouseMoved'
-    && call.params.x === 10 && call.params.y === 20)).toBe(true)
+  // 真实指针移动合并后异步投递：只断言页面最终收到该坐标。
+  await vi.waitFor(() => {
+    expect(calls.some(call => call.method === 'Input.dispatchMouseEvent'
+      && call.params.type === 'mouseMoved' && call.params.x === 10 && call.params.y === 20)).toBe(true)
+  })
+  const outside = await fetch(`${api}/api/hover`, { method: 'POST',
+    headers: { 'content-type': 'application/json' }, body: JSON.stringify({ targetId: 'owned', x: 5000, y: 20 }) })
+  expect(outside.status).toBe(400)
   viewportAvailable = false
   const badViewport = await fetch(`${api}/api/frame?targetId=owned`)
   expect(badViewport.status, stderr).toBe(503)
