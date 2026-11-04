@@ -27,7 +27,7 @@ PPT 创作模式的七个模型工具：`ppt_create`、`ppt_open`、`ppt_read`�
 | `ppt_render` | 渲染页面图：在会话的 Agent 浏览器里打开并落 PNG | `dir` · `pages` |
 | `ppt_check` | 规则质检（出界、零尺寸、溢出、对比度、空页、文字密度）；`ai: true` 追加模型审阅 | `dir` · `ai` |
 | `ppt_import` | 把工作区里的 .pptx 逆向成工程 | `source` · `dir` · `title` |
-| `ppt_export` | 导出 .pptx 到 `export/`（error 级质检会拦住） | `dir` · `skip_check` |
+| `ppt_export` | 导出 .pptx 或 PDF 到 `export/`（PDF 先渲染每页） | `dir` · `target` · `skip_check` |
 
 ## 使用本包
 
@@ -50,7 +50,7 @@ PPT 创作模式的七个模型工具：`ppt_create`、`ppt_open`、`ppt_read`�
 ## 已知限制与暂缓工作
 
 - 没有单页图片化预览；面板用 DOM 直渲，模型要看画面只能自行合成截图。
-- AI 审阅看的是工程大纲（页名、文字、元素数量、转场），没有页面的像素预览：它评的是结构与讲述，不是配色在屏幕上的实际感受。
+- AI 审阅附带最多 4 页实际渲染图（首页、第二、第三与最后一页），经附件通道准入后交给会话模型；模型不支持看图时退回纯大纲审阅。
 - AI 审阅只出建议、不改工程也不阻断导出；没有可用模型路由时如实返回 `performed: false` 与原因。
 - 字体只嵌入 glyf 轮廓的 TrueType（`.ttf`、`.ttc` 首 face）；CFF/OTF 跳过。子集化失败时回退整字体。
 - 导入对图表、SmartArt、OLE 与动画只能报告 `dropped`，不能降级成占位形状。

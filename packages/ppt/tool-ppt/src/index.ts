@@ -5,7 +5,9 @@
  * @module coding-tool-ppt
  */
 
+import { readFile } from 'node:fs/promises'
 import type { Context } from '@deepseek-ai/cordis'
+import type {} from 'coding-attachment'
 import type {} from 'coding-agent'
 import { defineTool } from 'coding-tools'
 import { outlineText, reviewOutline } from './ai-review.ts'
@@ -13,7 +15,7 @@ import type { GenericCallView, ObjectValueSchemaSpec } from 'coding-tools'
 import type { JsonValue } from 'coding-session'
 
 export const name = 'tool-ppt'
-export const inject = ['tools', 'llm']
+export const inject = ['tools', 'llm', 'attachments']
 
 /**
  * 工具需要的工程服务面。
@@ -55,6 +57,7 @@ interface PptProjectsFace {
     fonts: readonly { readonly family: string; readonly readonly: boolean; readonly subset: boolean }[]
     skippedFonts: readonly { readonly family: string; readonly reason: string }[]
   }>
+  exportPdf: (sessionId: string, dir?: string) => Promise<{ path: string; bytes: number; revision: number }>
 }
 
 /** 质检结果。 */
@@ -160,6 +163,36 @@ function sessionOf(exec: { agent?: { session?: { header?: { id?: string } } } })
   const id = exec.agent?.session?.header?.id
   if (id === undefined || id === '') throw new Error('ppt tools require a session workspace')
   return id
+}
+
+/**
+ * 渲染指定页并转成模型附件引用。
+ * @param ctx - 提供 attachments 服务的上下文。
+ * @param sessionId - 会话身份。
+ * @param dir - 工程目录。
+ * @param pages - 页下标。
+ * @returns 附件引用列表；渲染或准入失败时退化为空数组（纯文本审阅）。
+ */
+async function attachRenders(
+  ctx: Context,
+  sessionId: string,
+  dir: string | undefined,
+  pages: readonly number[],
+): Promise<{ attachment: unknown }[]> {
+  try {
+    const rendered = await projectsOf(ctx).render(sessionId, dir, pages)
+    const inputs: { data: Uint8Array; mediaType: 'image/png'; name: string }[] = []
+    for (const page of rendered) {
+      const bytes = await readFile(page.path).catch(() => undefined)
+      if (bytes === undefined) continue
+      inputs.push({ data: new Uint8Array(bytes), mediaType: 'image/png', name: `slide-${page.name}.png` })
+    }
+    if (inputs.length === 0) return []
+    const refs = await ctx.attachments.saveImages(inputs)
+    return refs.map(ref => ({ attachment: ref }))
+  } catch {
+    return []
+  }
 }
 
 /** AI 审阅只读取这几项，用结构类型收窄服务返回的 unknown 内容。 */
@@ -422,6 +455,10 @@ export function apply(ctx: Context): void {
       if (agent === undefined) {
         return { ok: result.ok, issues, ai: { performed: false, reason: '这次调用没有会话模型可用' } }
       }
+      // 最多附带 4 页画面：首页、第二页、第三页与最后一页，够模型判断版式与配色。
+      const total = digestOf(snapshot.deck as DeckDigestSource).length
+      const wanted = [...new Set([0, 1, 2, total - 1].filter(index => index >= 0 && index < total))].slice(0, 4)
+      const images = await attachRenders(ctx, sessionId, args.dir, wanted)
       const outline = outlineText(
         snapshot.title,
         deckSize(snapshot.deck),
@@ -429,7 +466,7 @@ export function apply(ctx: Context): void {
         digestOf(snapshot.deck as DeckDigestSource),
       )
       try {
-        const suggestions = await reviewOutline(ctx, agent, outline, exec.signal)
+        const suggestions = await reviewOutline(ctx, images, agent, outline, exec.signal)
         return { ok: result.ok, issues, ai: { performed: true, suggestions } }
       } catch (reason) {
         return {
@@ -516,6 +553,11 @@ export function apply(ctx: Context): void {
     parameters: {
       dir: { type: 'string', description: 'Workspace-relative project directory; omit for the open project.' },
       skip_check: { type: 'boolean', description: 'Export even when ppt_check reports blocking layout errors.' },
+      target: {
+        type: 'string',
+        enum: ['pptx', 'pdf'],
+        description: 'pptx (default) or pdf; pdf renders each page through the Agent browser first.',
+      },
     },
     output: outputOf({
       type: 'object',
@@ -552,6 +594,10 @@ export function apply(ctx: Context): void {
       },
     } as const),
     async execute(args, exec) {
+      if (args.target === 'pdf') {
+        const pdf = await projects().exportPdf(sessionOf(exec), args.dir)
+        return { path: pdf.path, bytes: pdf.bytes, revision: pdf.revision, fonts: [], skippedFonts: [] }
+      }
       const result = await projects().export(sessionOf(exec), args.dir, { skipCheck: args.skip_check === true })
       return {
         path: result.path,

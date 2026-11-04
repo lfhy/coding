@@ -422,11 +422,18 @@ export async function writeProjectMedia(dir: string, name: string, bytes: Uint8A
  * @param dir - 绝对工程目录。
  * @param revision - 导出的版本号。
  * @param title - 文件名词根。
- * @param bytes - .pptx 内容。
+ * @param bytes - 导出内容。
+ * @param extension - 文件扩展名，默认 `pptx`。
  * @returns 绝对文件路径。
  */
-export async function writeExport(dir: string, revision: number, title: string, bytes: Uint8Array): Promise<string> {
-  const target = join(dir, 'export', `${safeFileName(title)}-v${revision}.pptx`)
+export async function writeExport(
+  dir: string,
+  revision: number,
+  title: string,
+  bytes: Uint8Array,
+  extension = 'pptx',
+): Promise<string> {
+  const target = join(dir, 'export', `${safeFileName(title)}-v${revision}.${extension}`)
   await mkdir(dirname(target), { recursive: true })
   await writeFile(target, bytes)
   return target

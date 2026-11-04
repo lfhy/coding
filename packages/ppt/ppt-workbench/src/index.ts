@@ -14,6 +14,7 @@ import type {} from 'coding-host-webserver'
 import type {} from 'coding-session'
 import type { SessionId } from 'coding-session/types'
 import { checkDeck, type PptCheckResult } from './check.ts'
+import { buildPdf } from './export/pdf.ts'
 import { buildPptx } from './export/pptx.ts'
 import { collectFonts, systemFontDirs, type SkippedFont } from './fonts.ts'
 import { importPptx } from './import.ts'
@@ -253,6 +254,27 @@ export default class PptProjects extends Service {
    */
   redo(sessionId: string, dir: string | undefined, steps: number): Promise<PptSnapshot> {
     return redoProject(this.resolveDir(sessionId, dir), steps)
+  }
+
+  /**
+   * 把工程导出成 PDF：先渲染每页 PNG（会同时在 Agent 浏览器里打开），再拼成 PDF。
+   * @param sessionId - 会话身份。
+   * @param dir - 工程目录；缺省为当前工程。
+   * @returns 导出文件路径与大小。
+   */
+  async exportPdf(sessionId: string, dir?: string): Promise<{ path: string; bytes: number; revision: number }> {
+    const absolute = this.resolveDir(sessionId, dir)
+    const snapshot = await loadProject(absolute)
+    const rendered = await this.render(sessionId, dir)
+    const pages: { bytes: Uint8Array }[] = []
+    for (const page of rendered) {
+      const bytes = await readFile(page.path).catch(() => undefined)
+      if (bytes !== undefined) pages.push({ bytes: new Uint8Array(bytes) })
+    }
+    if (pages.length === 0) throw new PptModelError('没有可写入 PDF 的页面图')
+    const pdf = buildPdf(pages)
+    const path = await writeExport(absolute, snapshot.revision, snapshot.title, pdf, 'pdf')
+    return { path, bytes: pdf.length, revision: snapshot.revision }
   }
 
   /**

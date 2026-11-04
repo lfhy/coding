@@ -290,6 +290,9 @@ export function installRoutes(ctx: Context, service: PptProjects): void {
 
   route('export', ['POST'], async (body) => {
     const sessionId = sessionIdOf(body)
+    if (body.target === 'pdf') {
+      return { ok: true, export: await service.exportPdf(sessionId, optionalString(body.dir, 'dir')) }
+    }
     return {
       ok: true,
       export: await service.export(sessionId, optionalString(body.dir, 'dir'), {

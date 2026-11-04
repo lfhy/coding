@@ -1,8 +1,10 @@
+import * as zlib from 'node:zlib'
 import { inflateRawSync } from 'node:zlib'
 import { describe, expect, it } from 'vitest'
 import { buildPptx } from '../src/export/pptx.ts'
 import { chartSvg, renderPageHtml } from '../src/render-html.ts'
 import { renderPages } from '../src/render.ts'
+import { buildPdf, decodePng } from '../src/export/pdf.ts'
 import { crc32 } from '../src/export/zip.ts'
 import type { PptDeck } from 'coding-ppt-model'
 
@@ -329,5 +331,70 @@ describe('页面渲染（截图前的 HTML）', () => {
     await expect(renderPages({
       sessionId: 'session-one', projectDir: '/tmp/ppt-unit', deck, media: {}, revision: 1, capture: undefined,
     })).rejects.toThrow(/浏览器提供方/u)
+  })
+})
+
+const crc32 = (bytes: Buffer): number => {
+  let crc = 0xffffffff
+  for (const byte of bytes) {
+    crc ^= byte
+    for (let bit = 0; bit < 8; bit += 1) crc = (crc >>> 1) ^ (0xedb88320 & -(crc & 1))
+  }
+  return (crc ^ 0xffffffff) >>> 0
+}
+
+describe('PDF 导出', () => {
+  /** 造一张 2×2 的 RGBA PNG（不压缩可行：zlib 级别 0 也合法）。 */
+  function tinyPng(): Uint8Array {
+    const { deflateSync } = zlib
+    const width = 2
+    const height = 2
+    const raw = Buffer.from([
+      0, 255, 0, 0, 255, 0, 255, 0, 255,
+      0, 0, 0, 255, 255, 255, 255, 255, 255,
+    ])
+    const idat = deflateSync(raw)
+    const chunk = (type: string, data: Uint8Array): Buffer => {
+      const length = Buffer.alloc(4)
+      length.writeUInt32BE(data.length, 0)
+      const body = Buffer.concat([Buffer.from(type, 'ascii'), Buffer.from(data)])
+      const crc = Buffer.alloc(4)
+      crc.writeUInt32BE(crc32(Buffer.concat([Buffer.from(type, 'ascii'), Buffer.from(data)])), 0)
+      return Buffer.concat([length, body, crc])
+    }
+    const ihdr = Buffer.alloc(13)
+    ihdr.writeUInt32BE(width, 0)
+    ihdr.writeUInt32BE(height, 4)
+    ihdr[8] = 8
+    ihdr[9] = 6
+    return new Uint8Array(Buffer.concat([
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+      chunk('IHDR', ihdr),
+      chunk('IDAT', new Uint8Array(idat)),
+      chunk('IEND', new Uint8Array()),
+    ]))
+  }
+
+  it('解码 RGBA PNG 得到 RGB 像素', () => {
+    const decoded = decodePng(tinyPng())
+    expect(decoded.width).toBe(2)
+    expect(decoded.height).toBe(2)
+    expect(Array.from(decoded.rgb.slice(0, 3))).toEqual([255, 0, 0])
+    expect(decoded.rgb).toHaveLength(2 * 2 * 3)
+  })
+
+  it('拼出带 xref 与每页图片的 PDF', () => {
+    const pdf = buildPdf([{ bytes: tinyPng() }, { bytes: tinyPng() }])
+    const text = Buffer.from(pdf).toString('latin1')
+    expect(text.startsWith('%PDF-1.4')).toBe(true)
+    expect(text).toContain('/Type /Catalog')
+    expect(text.trimEnd().endsWith('%%EOF')).toBe(true)
+    expect(text.match(/\/Subtype \/Image/gu)).toHaveLength(2)
+    expect(text).toContain('/MediaBox [0 0 1.50 1.50]')
+    expect(text).toContain('xref')
+  })
+
+  it('没有页面时拒绝生成', () => {
+    expect(() => buildPdf([])).toThrow(/至少需要一页/u)
   })
 })

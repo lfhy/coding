@@ -53,6 +53,9 @@ export function outlineText(
   return lines.join('\n')
 }
 
+const VISION_HINT = '随消息附上若干页的实际渲染图（1280×720），先看图再读大纲；'
+  + '如果模型看不到图，就只依据大纲给建议。'
+
 const INSTRUCTION = '你是资深演示文稿审阅者。下面是一份 PPT 的页面大纲（只有结构、文字与元素数量，没有图片预览）。'
   + '请用中文给出最多 5 条可以直接执行的改进建议，每条一行、以「- 」开头，'
   + '针对具体页与具体做法（例如「第 2 页文字超过 200 字，拆成两页」「第 4 页与第 5 页配色不一致，统一为主题强调色」）。'
@@ -62,6 +65,7 @@ const INSTRUCTION = '你是资深演示文稿审阅者。下面是一份 PPT 的
  * 调用会话模型审阅工程大纲。
  * @param ctx - 提供 `llm` 服务的宿主上下文。
  * @param agent - 当前会话所属 Agent，用于取路由与会话 id。
+ * @param images - 页面渲染图的附件引用（可为空）。
  * @param outline - 大纲文本。
  * @param signal - 取消信号。
  * @returns 模型给出的建议文本。
@@ -69,6 +73,7 @@ const INSTRUCTION = '你是资深演示文稿审阅者。下面是一份 PPT 的
  */
 export async function reviewOutline(
   ctx: Context,
+  images: readonly { readonly attachment: unknown }[],
   agent: {
     options: { provider?: string; model?: string }
     session: {
@@ -90,7 +95,10 @@ export async function reviewOutline(
     model: target.model,
     messages: [
       createUserMessage({
-        content: [{ type: 'text', text: `${INSTRUCTION}\n\n${outline}` }],
+        content: [
+          { type: 'text', text: `${VISION_HINT}\n\n${INSTRUCTION}\n\n${outline}` },
+          ...images.map(image => ({ type: 'image' as const, attachment: image.attachment as never })),
+        ],
         source: { kind: 'plugin', plugin: 'coding-tool-ppt' },
       }),
     ],
