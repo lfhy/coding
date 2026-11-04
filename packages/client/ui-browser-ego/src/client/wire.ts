@@ -117,8 +117,8 @@ export function parseFrame(value: unknown): EgoFrame | null {
     || frame.data.length === 0 || frame.data.length > 2_800_000 || !BASE64.test(frame.data)
     || !viewport(frame.vw) || !viewport(frame.vh)
     || typeof frame.ts !== 'number' || !Number.isSafeInteger(frame.ts) || frame.ts < 0) return null
-  // 单帧默认是无损 PNG；缺省或未识别时按旧版 JPEG 处理。
-  const mime = frame.mime === 'image/png' ? 'image/png' : 'image/jpeg'
+  // 单帧默认是无损 WebP；缺省或未识别时按旧版 JPEG 处理。
+  const mime = frame.mime === 'image/webp' ? 'image/webp' : frame.mime === 'image/png' ? 'image/png' : 'image/jpeg'
   return { targetId: frame.targetId, src: `data:${mime};base64,${frame.data}`,
     width: frame.vw, height: frame.vh, ts: frame.ts }
 }

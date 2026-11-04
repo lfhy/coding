@@ -17,9 +17,9 @@ describe('Agent 浏览器输入边界', () => {
     expect(parseFrame({ targetId: page.targetId, data: 'YWJj', vw: 480, vh: 320, ts: 3 })).toEqual({
       targetId: page.targetId, src: 'data:image/jpeg;base64,YWJj', width: 480, height: 320, ts: 3,
     })
-    // 单帧默认无损 PNG；缺省或未知类型仍按 JPEG 解释，非图片文本一律拒绝。
-    expect(parseFrame({ targetId: page.targetId, data: 'YWJj', mime: 'image/png', vw: 480, vh: 320, ts: 3 })).toEqual({
-      targetId: page.targetId, src: 'data:image/png;base64,YWJj', width: 480, height: 320, ts: 3,
+    // 单帧默认无损 WebP；缺省或未知类型仍按 JPEG 解释，非图片文本一律拒绝。
+    expect(parseFrame({ targetId: page.targetId, data: 'YWJj', mime: 'image/webp', vw: 480, vh: 320, ts: 3 })).toEqual({
+      targetId: page.targetId, src: 'data:image/webp;base64,YWJj', width: 480, height: 320, ts: 3,
     })
     expect(parseFrame({ targetId: page.targetId, data: 'YWJj', mime: 'image/svg+xml', vw: 480, vh: 320, ts: 3 })?.src)
       .toBe('data:image/jpeg;base64,YWJj')

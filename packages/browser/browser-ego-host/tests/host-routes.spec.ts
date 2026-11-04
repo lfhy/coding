@@ -8,7 +8,7 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { markToolStart } from '../src/activity.ts'
 import EgoBrowserHost from '../src/index.ts'
-import { framePath } from '../src/routes.ts'
+import { frameInterval, framePath } from '../src/routes.ts'
 import { spaceNameForSession } from '../src/session-space.ts'
 
 let ctx: Context | undefined
@@ -97,6 +97,15 @@ describe('会话浏览器 Host 路由', () => {
     expect(framePath(undefined, 'owned')).toBe('/api/frame?targetId=owned')
     expect(framePath({ cdpQuality: 0, cdpMaxWidth: 9999 }, 'owned')).toBe('/api/frame?targetId=owned')
     expect(framePath({ cdpQuality: 80.5, cdpMaxWidth: 'wide' }, 'owned')).toBe('/api/frame?targetId=owned')
+    expect(framePath({}, 'owned', 'lossy')).toBe('/api/frame?targetId=owned&format=lossy')
+  })
+
+  it('实时取帧间隔来自帧率设置，越界时退到 15fps 且不低于 33ms', () => {
+    expect(frameInterval({ cdpFps: 20 })).toBe(50)
+    expect(frameInterval({ cdpFps: 5 })).toBe(200)
+    expect(frameInterval({ cdpFps: 30 })).toBe(33)
+    expect(frameInterval({ cdpFps: 120 })).toBe(67)
+    expect(frameInterval(undefined)).toBe(67)
   })
 
   it('只转发已归属目标的合法面板尺寸，越界、额外字段与跨会话目标被拒绝', async () => {

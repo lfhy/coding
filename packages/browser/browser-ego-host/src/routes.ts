@@ -77,7 +77,7 @@ function frame(value: unknown, targetId: string): Frame | null {
     || !Number.isSafeInteger(data.vw) || !Number.isSafeInteger(data.vh)
     || data.vw <= 0 || data.vw > 8192 || data.vh <= 0 || data.vh > 8192
     || typeof data.ts !== 'number' || !Number.isSafeInteger(data.ts)
-    || (data.mime !== undefined && data.mime !== 'image/png' && data.mime !== 'image/jpeg')) return null
+    || (data.mime !== undefined && data.mime !== 'image/webp' && data.mime !== 'image/png' && data.mime !== 'image/jpeg')) return null
   return data as unknown as Frame
 }
 
@@ -87,14 +87,26 @@ function frame(value: unknown, targetId: string): Frame | null {
  * @param targetId - 已核验属于该会话的页面目标。
  * @returns worker 封闭的取帧路径。
  */
-export function framePath(section: unknown, targetId: string): string {
+export function framePath(section: unknown, targetId: string, format?: 'lossy'): `/api/frame?${string}` {
   const config = object(section)
   const quality = Number(config?.cdpQuality)
   const maxWidth = Number(config?.cdpMaxWidth)
   const params = new URLSearchParams({ targetId })
   if (Number.isSafeInteger(quality) && quality >= 1 && quality <= 100) params.set('quality', String(quality))
   if (Number.isSafeInteger(maxWidth) && maxWidth >= 320 && maxWidth <= 2560) params.set('maxWidth', String(maxWidth))
+  if (format !== undefined) params.set('format', format)
   return `/api/frame?${params.toString()}`
+}
+
+/**
+ * 实时画面的取帧间隔（毫秒）：来自 `ego-browser` 设置的 `cdpFps`（5–30），越界时按 15fps。
+ * @param section - 设置命名空间的解析结果。
+ * @returns 两次取帧之间至少等待的时间。
+ */
+export function frameInterval(section: unknown): number {
+  const fps = Number(object(section)?.cdpFps)
+  const rate = Number.isSafeInteger(fps) && fps >= 5 && fps <= 30 ? fps : 15
+  return Math.max(33, Math.round(1000 / rate))
 }
 
 function sse(res: ServerResponse, event: 'spaces' | 'frame', value: unknown): boolean {
@@ -209,33 +221,60 @@ export function installRoutes(ctx: Context): void {
       res.write(':ok\n\n')
       let lastPages = ''
       let lastFrameAt = 0
+      let selectedId: string | null = null
       let busy = false
-      const poll = async (): Promise<void> => {
-        if (busy || res.destroyed) return
-        busy = true
+      let frameTimer: ReturnType<typeof setTimeout> | null = null
+      // 关闭标记经闭包读取，避免类型流分析把它当成常量 false。
+      const closed = (): boolean => res.destroyed
+
+      // 目录按秒刷新；画面按 cdpFps 独立取帧，两者不再互相拖累。
+      const pollPages = async (): Promise<void> => {
+        if (closed()) return
         try {
           if (!webCtx.sessions.get(sessionId)) { res.end(); return }
           const port = await ensureWorker(webCtx)
           const visible = port === null ? [] : await currentPages(sessionId, port)
-          if (!webCtx.sessions.get(sessionId)) { res.end(); return }
+          if (closed()) return
           const stamp = JSON.stringify(visible)
           if (stamp !== lastPages) { lastPages = stamp; if (!sse(res, 'spaces', visible)) return }
-          const selected = visible.find(page => page.active) ?? visible[0]
-          if (!selected || port === null) return
-          const targetIds = await targetIdsForSession(sessionId)
-          if (!targetIds.has(selected.targetId)) return
-          const result = frame(await workerGet(port, framePath(frameConfig(), selected.targetId)), selected.targetId)
-          if (result && result.ts > lastFrameAt && webCtx.sessions.get(sessionId)
-            && (await targetIdsForSession(sessionId)).has(result.targetId)) {
-            lastFrameAt = result.ts
-            sse(res, 'frame', result)
-          }
+          selectedId = (visible.find(page => page.active) ?? visible[0])?.targetId ?? null
+        } catch { /* 连接断开与 worker 重启时下一轮继续。 */ }
+      }
+
+      const pollFrame = async (): Promise<void> => {
+        const targetId = selectedId
+        if (busy || closed() || targetId === null) return
+        busy = true
+        try {
+          const port = await ensureWorker(webCtx)
+          if (port === null) return
+          const result = frame(await workerGet(port, framePath(frameConfig(), targetId, 'lossy')), targetId)
+          if (!result || closed() || result.ts <= lastFrameAt) return
+          if (!webCtx.sessions.get(sessionId) || !(await targetIdsForSession(sessionId)).has(targetId)) return
+          lastFrameAt = result.ts
+          sse(res, 'frame', result)
         } catch { /* 连接断开与 worker 重启时下一轮继续。 */ }
         finally { busy = false }
       }
-      void poll()
-      const timer = setInterval(() => { void poll() }, 1000)
-      res.once('close', () => { clearInterval(timer) })
+
+      // 自调度取帧：间隔取 cdpFps；单帧耗时超过间隔时自然降速，不会排队。
+      const loop = async (): Promise<void> => {
+        if (closed()) return
+        const startedAt = Date.now()
+        await pollFrame()
+        if (closed()) return
+        const wait = Math.max(0, frameInterval(frameConfig()) - (Date.now() - startedAt))
+        frameTimer = setTimeout(() => { frameTimer = null; void loop() }, wait)
+      }
+
+      const pagesTimer = setInterval(() => { void pollPages() }, 1000)
+      void pollPages()
+      void loop()
+      res.once('close', () => {
+        clearInterval(pagesTimer)
+        if (frameTimer !== null) clearTimeout(frameTimer)
+        frameTimer = null
+      })
     })
     register('/api/ego/hover', async (req, res) => {
       if (req.method !== 'POST') { send(res, 405, { ok: false }); return }

@@ -105,8 +105,8 @@ it('封闭 worker 在真实 HTTP/CDP 连接上采帧并导航，拒绝失效目�
                 : { result: { value: { x: 5, y: 7, width: viewportAvailable ? currentViewport().width : 0,
                   height: currentViewport().height, dpr: emulated?.deviceScaleFactor ?? 2 } } }; break
           case 'Page.captureScreenshot': result = {
-            // 照片类页面用 PNG 会很大：用超预算的假数据驱动 JPEG 回退分支。
-            data: imageAvailable ? (bigPng && request.params.format === 'png' ? 'A'.repeat(1_300_000) : JPEG) : '',
+            // 大片渐变用无损编码会很大：用超预算的假数据驱动有损回退分支。
+            data: imageAvailable ? (bigPng && request.params.quality === 100 ? 'A'.repeat(1_300_000) : JPEG) : '',
           }; break
           case 'Page.getNavigationHistory': result = { currentIndex, entries: [{ id: 1 }, { id: 2 }, { id: 3 }] }; break
           case 'Page.navigate': result = request.params.url === 'https://fail.example/' ? { errorText: 'blocked' } : { frameId: 'frame' }; break
@@ -138,7 +138,7 @@ it('封闭 worker 在真实 HTTP/CDP 连接上采帧并导航，拒绝失效目�
   expect((await missing.json() as { ok: boolean }).ok).toBe(false)
   const image = await fetch(`${api}/api/frame?targetId=owned`)
   expect(image.status, stderr).toBe(200)
-  expect(await image.json()).toMatchObject({ targetId: 'owned', data: JPEG, mime: 'image/png', vw: 640, vh: 360 })
+  expect(await image.json()).toMatchObject({ targetId: 'owned', data: JPEG, mime: 'image/webp', vw: 640, vh: 360 })
   expect(await (await fetch(`${api}/api/spaces`)).json()).toMatchObject({ spaces: [{ viewportW: 640, viewportH: 360 }] })
   failedMetrics = true
   expect(await (await fetch(`${api}/api/spaces`)).json()).toMatchObject({ spaces: [{ viewportW: 640, viewportH: 360 }] })
@@ -147,9 +147,9 @@ it('封闭 worker 在真实 HTTP/CDP 连接上采帧并导航，拒绝失效目�
   expect(await (await fetch(`${api}/api/frame?targetId=owned`)).json()).toMatchObject({ vw: 682, vh: 360 })
   expect(await (await fetch(`${api}/api/spaces`)).json()).toMatchObject({ spaces: [{ viewportW: 682, viewportH: 360 }] })
   windowWidth = 648
-  // 未设置面板视口时按页面真实像素比采集：2 倍屏幕得到 1280 宽的设备像素画面，默认无损 PNG。
+  // 未设置面板视口时按页面真实像素比采集：2 倍屏幕得到 1280 宽的设备像素画面，默认无损 WebP。
   expect(calls.find(call => call.method === 'Page.captureScreenshot')).toMatchObject({
-    sessionId: 'fake-session', params: { format: 'png', clip: { x: 5, y: 7, width: 640, height: 360, scale: 1 } },
+    sessionId: 'fake-session', params: { format: 'webp', quality: 100, clip: { x: 5, y: 7, width: 640, height: 360, scale: 1 } },
   })
   const postSize = async (width: number, height: number, pixelRatio?: number) => {
     const response = await fetch(`${api}/api/window-size`, { method: 'POST',
@@ -187,22 +187,29 @@ it('封闭 worker 在真实 HTTP/CDP 连接上采帧并导航，拒绝失效目�
   expect(calls.filter(call => call.method === 'Page.captureScreenshot').at(-1)).toMatchObject({
     params: { clip: { width: 1600, height: 900, scale: 0.8 } },
   })
-  // Host 按用户设置下发宽度上限：设备像素换算成缩放比，UI 页面走无损 PNG。
+  // Host 按用户设置下发宽度上限：设备像素换算成缩放比，UI 页面走无损 WebP。
   expect(await (await fetch(`${api}/api/frame?targetId=owned&quality=90&maxWidth=800`)).json())
-    .toMatchObject({ mime: 'image/png', vw: 1600, vh: 900 })
+    .toMatchObject({ mime: 'image/webp', vw: 1600, vh: 900 })
   expect(calls.filter(call => call.method === 'Page.captureScreenshot').at(-1)).toMatchObject({
-    params: { format: 'png', clip: { width: 1600, height: 900, scale: 0.25 } },
+    params: { format: 'webp', quality: 100, clip: { width: 1600, height: 900, scale: 0.25 } },
   })
-  // PNG 超出体积预算时按设置质量退回 JPEG。
+  // 无损帧超出体积预算时按设置质量退回有损。
   bigPng = true
   expect(await (await fetch(`${api}/api/frame?targetId=owned&quality=90&maxWidth=800`)).json())
-    .toMatchObject({ mime: 'image/jpeg', data: JPEG })
+    .toMatchObject({ mime: 'image/webp', data: JPEG })
   expect(calls.filter(call => call.method === 'Page.captureScreenshot').slice(-2)).toMatchObject([
-    { params: { format: 'png', clip: { width: 1600, height: 900, scale: 0.25 } } },
-    { params: { format: 'jpeg', quality: 90, clip: { width: 1600, height: 900, scale: 0.25 } } },
+    { params: { format: 'webp', quality: 100, clip: { width: 1600, height: 900, scale: 0.25 } } },
+    { params: { format: 'webp', quality: 90, clip: { width: 1600, height: 900, scale: 0.25 } } },
   ])
   bigPng = false
+  // 实时推流直接要有损：不尝试无损编码，质量来自设置。
+  expect(await (await fetch(`${api}/api/frame?targetId=owned&format=lossy&quality=85`)).json())
+    .toMatchObject({ mime: 'image/webp', data: JPEG })
+  expect(calls.filter(call => call.method === 'Page.captureScreenshot').at(-1)).toMatchObject({
+    params: { format: 'webp', quality: 85 },
+  })
   expect((await fetch(`${api}/api/frame?targetId=owned&quality=0`)).status).toBe(400)
+  expect((await fetch(`${api}/api/frame?targetId=owned&format=png`)).status).toBe(400)
   expect((await fetch(`${api}/api/frame?targetId=owned&unknown=1`)).status).toBe(400)
   const hovered = await fetch(`${api}/api/hover`, { method: 'POST',
     headers: { 'content-type': 'application/json' }, body: JSON.stringify({ targetId: 'owned', x: 10, y: 20 }) })

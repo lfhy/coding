@@ -2760,7 +2760,7 @@ function resolveConfig(config = {}) {
     captureBackend: oneOf(config.captureBackend, ["auto", "cdp", "ffmpeg"], "auto"),
     streamProfile: selectedProfile,
     cdpFps: finiteIn(config.cdpFps, 5, 30) ? config.cdpFps : legacyFps,
-    cdpQuality: finiteIn(config.cdpQuality, 1, 100) ? config.cdpQuality : finiteIn(config.screencastQuality, 1, 100) ? config.screencastQuality : 80,
+    cdpQuality: finiteIn(config.cdpQuality, 1, 100) ? config.cdpQuality : finiteIn(config.screencastQuality, 1, 100) ? config.screencastQuality : 92,
     // 2560 (not 1280): the agent window is 2560x1080, and a 1280 cap downsizes
     // that viewport by half — the panel then upscales it, which is the
     // "soft/garbled text" report. 2560 keeps a wide workbench at native width;

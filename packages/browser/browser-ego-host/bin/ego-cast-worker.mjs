@@ -752,12 +752,12 @@ async function captureSnapshot(sessions, targetId, maxWidth) {
 }
 //#endregion
 //#region third-party/host/worker/frame.ts
-/** PNG 单帧的体积预算（base64 字符）；UI 页面通常远低于它，照片类页面超过时改用 JPEG。 */
-const PNG_BUDGET = 12e5;
+/** 无损单帧的体积预算（base64 字符）；UI 页面通常远低于它，大片渐变或照片会超过预算。 */
+const LOSSLESS_BUDGET = 12e5;
 /** base64 只接受标准字母表，避免把任意文本当图片塞进面板。 */
 const BASE64 = /^([A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/u;
 /**
-* 采集当前视口的一帧画面（默认无损 PNG，超预算时退回 JPEG），并附上 CSS 视口尺寸供 Host 换算人工输入坐标。
+* 采集当前视口的一帧画面（默认无损 WebP，超预算时退回有损），并附上 CSS 视口尺寸供 Host 换算人工输入坐标。
 *
 * 采集按设备像素进行：面板用 `Emulation.setDeviceMetricsOverride` 把页面像素比设成
 * 显示器像素比，这里不再折算回 CSS 像素，否则 HiDPI 下 1:1 的截图会被面板放大而发虚。
@@ -774,10 +774,10 @@ async function captureFrame(sessions, targetId, options) {
 	const x = viewport?.x ?? 0, y = viewport?.y ?? 0;
 	if (![x, y].every(Number.isFinite) || x < 0 || y < 0) throw new Error("viewport unavailable");
 	const scale = Math.min(1, options.maxWidth / (vw * dpr));
-	const shot = async (format, quality) => {
+	const shot = async (lossless) => {
 		const image = await sessions.call(targetId, "Page.captureScreenshot", {
-			format,
-			...quality === void 0 ? {} : { quality },
+			format: "webp",
+			quality: lossless ? 100 : options.quality,
 			captureBeyondViewport: false,
 			clip: {
 				x,
@@ -790,12 +790,19 @@ async function captureFrame(sessions, targetId, options) {
 		if (typeof image.data !== "string" || !BASE64.test(image.data) || image.data.length === 0 || image.data.length > 28e5) throw new Error("frame unavailable");
 		return image.data;
 	};
-	const png = await shot("png");
-	const lossless = png.length <= PNG_BUDGET;
+	if (options.format === "lossy") return {
+		targetId,
+		data: await shot(false),
+		mime: "image/webp",
+		vw,
+		vh,
+		ts: Date.now()
+	};
+	const lossless = await shot(true);
 	return {
 		targetId,
-		data: lossless ? png : await shot("jpeg", options.quality),
-		mime: lossless ? "image/png" : "image/jpeg",
+		data: lossless.length <= LOSSLESS_BUDGET ? lossless : await shot(false),
+		mime: "image/webp",
 		vw,
 		vh,
 		ts: Date.now()
@@ -1795,7 +1802,7 @@ let castConfig = {
 	streamProfile: "balanced",
 	ffmpegFallbackReason: "",
 	cdpFps: 20,
-	cdpQuality: 80,
+	cdpQuality: 92,
 	cdpMaxWidth: 2560,
 	cdpBackstopIntervalMs: 3e3,
 	ffmpegFps: 20,
@@ -2282,17 +2289,20 @@ async function main() {
 				if ([...url.searchParams.keys()].some((key) => ![
 					"targetId",
 					"quality",
-					"maxWidth"
+					"maxWidth",
+					"format"
 				].includes(key))) return sendJson(res, 400, {
 					ok: false,
 					error: "unsupported query"
 				});
 				const quality = Number(url.searchParams.get("quality") ?? castConfig.cdpQuality);
 				const maxWidth = Number(url.searchParams.get("maxWidth") ?? castConfig.cdpMaxWidth);
-				if (!Number.isSafeInteger(quality) || quality < 1 || quality > 100 || !Number.isSafeInteger(maxWidth) || maxWidth < 320 || maxWidth > 2560) return sendJson(res, 400, {
+				const requestedFormat = url.searchParams.get("format");
+				if (!Number.isSafeInteger(quality) || quality < 1 || quality > 100 || !Number.isSafeInteger(maxWidth) || maxWidth < 320 || maxWidth > 2560 || requestedFormat !== null && requestedFormat !== "lossy") return sendJson(res, 400, {
 					ok: false,
-					error: "quality or maxWidth out of range"
+					error: "quality, maxWidth or format out of range"
 				});
+				const format = requestedFormat === "lossy" ? "lossy" : void 0;
 				if (!(await listTargets()).some((target) => target.targetId === targetId)) return sendJson(res, 409, {
 					ok: false,
 					error: "target is no longer available"
@@ -2307,7 +2317,8 @@ async function main() {
 					}
 					const captured = await captureFrame(browser.sessions, targetId, {
 						quality,
-						maxWidth
+						maxWidth,
+						format
 					});
 					rememberFrame(captured);
 					return sendJson(res, 200, captured);
