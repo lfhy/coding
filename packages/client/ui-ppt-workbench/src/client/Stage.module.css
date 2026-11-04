@@ -21,3 +21,5 @@
   color: var(--dsw-alias-label-tertiary);
   font: var(--dsw-font-xxs-12);
 }
+
+.stage:focus { outline: none; }

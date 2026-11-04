@@ -234,6 +234,8 @@ export function PptWorkbench({
                 onMove={(id, x, y) => { void updateElement(id, { frame: { x, y } }) }}
                 onResize={(id, box) => { void updateElement(id, { frame: box }) }}
                 mediaUrl={mediaUrlOf}
+                onDeleteSelected={() => { if (element !== null) void removeElement(element.id) }}
+                onDuplicateSelected={() => { if (element !== null) void duplicateElement(element.id) }}
               />
             )}
           </main>

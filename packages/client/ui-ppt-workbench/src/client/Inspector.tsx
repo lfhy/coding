@@ -13,6 +13,9 @@ export interface ElementPatch {
   fill?: string
   color?: string
   width?: number
+  source?: string
+  fit?: 'cover' | 'contain'
+  cells?: readonly (readonly { readonly content: string }[])[]
 }
 
 export interface InspectorProps {
@@ -113,6 +116,47 @@ function TextField({
 }
 
 /**
+ * 表格单元格编辑：以制表符分列、换行分行的文本编辑整表内容。
+ * @param props - 当前表格、忙碌状态、文案与提交回调。
+ * @returns 文本域。
+ */
+function TableCellEditor({
+  element, busy, t, onCommit,
+}: {
+  element: Extract<PptElement, { kind: 'table' }>
+  busy: boolean
+  t: Translate<PptWorkbenchKey>
+  onCommit: (cells: readonly (readonly { readonly content: string }[])[]) => void
+}) {
+  const source = element.cells.map(row => row.map(cell => cell.content).join('\t')).join('\n')
+  const [draft, setDraft] = useState(source)
+  useEffect(() => { setDraft(source) }, [source])
+  const commit = (): void => {
+    if (draft === source) return
+    const rows = draft.split('\n').map(line => line.split('\t'))
+    const cells = Array.from({ length: element.rows }, (_, rowIndex) => (
+      Array.from({ length: element.columns }, (_, columnIndex) => ({
+        content: rows[rowIndex]?.[columnIndex] ?? '',
+      }))
+    ))
+    onCommit(cells)
+  }
+  return (
+    <label className={css.field}>
+      <span>{t('cellsHint')}</span>
+      <textarea
+        className={css.cells}
+        value={draft}
+        disabled={busy}
+        rows={Math.min(element.rows + 1, 8)}
+        onChange={(event) => { setDraft(event.target.value) }}
+        onBlur={commit}
+      />
+    </label>
+  )
+}
+
+/**
  * 右侧属性面板。
  * @param props - 当前页、选中元素与提交回调。
  * @returns 属性表单。
@@ -179,6 +223,9 @@ export function Inspector({
           {element.kind === 'rect' || element.kind === 'ellipse' ? (
             <ColorField label={t('fill')} value={element.fill} disabled={busy}
               onCommit={(fill) => { onElement({ fill }) }} />
+          ) : null}
+          {element.kind === 'table' ? (
+            <TableCellEditor element={element} busy={busy} t={t} onCommit={(cells) => { onElement({ cells }) }} />
           ) : null}
           {element.kind === 'line' ? (
             <>

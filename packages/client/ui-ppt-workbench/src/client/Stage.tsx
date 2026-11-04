@@ -24,6 +24,10 @@ export interface StageProps {
   readonly onMove: (id: string, x: number, y: number) => void
   readonly onResize: (id: string, box: ElementBox) => void
   readonly mediaUrl: (source: string) => string
+  /** 选中元素时按 Delete/Backspace 删除。 */
+  readonly onDeleteSelected: () => void
+  /** 选中元素时按 Cmd/Ctrl+D 复制。 */
+  readonly onDuplicateSelected: () => void
 }
 
 const MIN_WIDTH = 240
@@ -47,6 +51,7 @@ export function fitWidth(box: { width: number; height: number }, ratio: number):
  */
 export function Stage({
   deck, page, selectedId, editingId, busy, t, onSelect, onBeginEdit, onEndEdit, onMove, onResize, mediaUrl,
+  onDeleteSelected, onDuplicateSelected,
 }: StageProps) {
   const host = useRef<HTMLDivElement>(null)
   // 观察器报告之前先按一个常见宽度铺一次，避免首帧空白。
@@ -74,7 +79,23 @@ export function Stage({
   const width = fitWidth(box, size.width / size.height)
 
   return (
-    <div ref={host} className={css.stage} data-busy={busy ? 'true' : undefined}>
+    <div
+      ref={host}
+      className={css.stage}
+      data-busy={busy ? 'true' : undefined}
+      tabIndex={-1}
+      onKeyDown={(event) => {
+        if (selectedId === null || editingId !== null) return
+        if (event.key === 'Delete' || event.key === 'Backspace') {
+          event.preventDefault()
+          onDeleteSelected()
+        }
+        if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'd') {
+          event.preventDefault()
+          onDuplicateSelected()
+        }
+      }}
+    >
       {(
         <SlideSurface
           deck={deck}
