@@ -42,22 +42,25 @@ export async function captureFrame(
   const x = viewport?.x ?? 0, y = viewport?.y ?? 0
   if (![x, y].every(Number.isFinite) || x < 0 || y < 0) throw new Error('viewport unavailable')
   const scale = Math.min(1, options.maxWidth / ((vw as number) * dpr))
-  const shot = async (lossless: boolean): Promise<string> => {
+  const shot = async (lossless: boolean): Promise<{ data: string; mime: string }> => {
     const image = await sessions.call(targetId, 'Page.captureScreenshot', {
-      // WebP 质量 100 是无损编码：同为像素精确时体积约为 PNG 的一半。
-      format: 'webp', quality: lossless ? 100 : options.quality, captureBeyondViewport: false,
+      // 静止帧用 WebP 质量 100（无损，体积约为 PNG 的一半）；实时帧用 JPEG，编码快得多。
+      format: lossless ? 'webp' : 'jpeg',
+      quality: lossless ? 100 : options.quality,
+      captureBeyondViewport: false,
       clip: { x, y, width: vw, height: vh, scale },
     }) as { data?: string }
     if (typeof image.data !== 'string' || !BASE64.test(image.data)
       || image.data.length === 0 || image.data.length > 2_800_000) throw new Error('frame unavailable')
-    return image.data
+    return { data: image.data, mime: lossless ? 'image/webp' : 'image/jpeg' }
   }
   // 静止取帧默认无损：像素与页面完全一致，渐变不会出现编码台阶。
   // 实时推流直接有损：每秒十几帧时无损编码的开销与体积都不划算。
   if (options.format === 'lossy') {
-    return { targetId, data: await shot(false), mime: 'image/webp', vw: vw as number, vh: vh as number, ts: Date.now() }
+    const lossy = await shot(false)
+    return { targetId, data: lossy.data, mime: lossy.mime, vw: vw as number, vh: vh as number, ts: Date.now() }
   }
   const lossless = await shot(true)
-  const data = lossless.length <= LOSSLESS_BUDGET ? lossless : await shot(false)
-  return { targetId, data, mime: 'image/webp', vw: vw as number, vh: vh as number, ts: Date.now() }
+  const chosen = lossless.data.length <= LOSSLESS_BUDGET ? lossless : await shot(false)
+  return { targetId, data: chosen.data, mime: chosen.mime, vw: vw as number, vh: vh as number, ts: Date.now() }
 }

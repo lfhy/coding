@@ -16,7 +16,7 @@ interface Page {
   viewportH: number | null
   humanCheck?: unknown
 }
-interface Frame { targetId: string; data: string; vw: number; vh: number; ts: number }
+interface Frame { targetId: string; data: string; mime?: string; vw: number; vh: number; ts: number }
 const MAX_BODY_BYTES = 8192
 
 function object(value: unknown): Record<string, unknown> | null {
@@ -241,6 +241,12 @@ export function installRoutes(ctx: Context): void {
         } catch { /* 连接断开与 worker 重启时下一轮继续。 */ }
       }
 
+      // 画面状态机：滚动期间低开销推流；画面连续两次不变就补一张无损帧，静止时不会出现编码台阶；
+      // 之后降频探测变化，一旦画面又变了就回到实时推流。
+      let lastLossy = ''
+      let idleTicks = 0
+      let upgraded = false
+      let stillUnavailable = false
       const pollFrame = async (): Promise<void> => {
         const targetId = selectedId
         if (busy || closed() || targetId === null) return
@@ -248,22 +254,41 @@ export function installRoutes(ctx: Context): void {
         try {
           const port = await ensureWorker(webCtx)
           if (port === null) return
-          const result = frame(await workerGet(port, framePath(frameConfig(), targetId, 'lossy')), targetId)
+          const wantStill = !upgraded && !stillUnavailable && idleTicks >= 2
+          const result = frame(await workerGet(port, framePath(frameConfig(), targetId, wantStill ? undefined : 'lossy')), targetId)
           if (!result || closed() || result.ts <= lastFrameAt) return
           if (!webCtx.sessions.get(sessionId) || !(await targetIdsForSession(sessionId)).has(targetId)) return
+          if (result.mime === 'image/webp') {
+            upgraded = true
+            lastFrameAt = result.ts
+            sse(res, 'frame', result)
+            return
+          }
+          // 无损帧超出体积预算时退回有损：这一页不再尝试升级，避免每轮多采一次。
+          if (wantStill) stillUnavailable = true
+          const changed = result.data !== lastLossy
+          lastLossy = result.data
+          if (upgraded) {
+            if (!changed) return
+            upgraded = false
+            idleTicks = 0
+          } else {
+            idleTicks = changed ? 0 : idleTicks + 1
+          }
           lastFrameAt = result.ts
           sse(res, 'frame', result)
         } catch { /* 连接断开与 worker 重启时下一轮继续。 */ }
         finally { busy = false }
       }
 
-      // 自调度取帧：间隔取 cdpFps；单帧耗时超过间隔时自然降速，不会排队。
+      // 自调度取帧：间隔取 cdpFps；单帧耗时超过间隔时自然降速，不会排队。静止后降到 4fps 探测变化。
       const loop = async (): Promise<void> => {
         if (closed()) return
         const startedAt = Date.now()
         await pollFrame()
         if (closed()) return
-        const wait = Math.max(0, frameInterval(frameConfig()) - (Date.now() - startedAt))
+        const interval = upgraded ? 250 : frameInterval(frameConfig())
+        const wait = Math.max(0, interval - (Date.now() - startedAt))
         frameTimer = setTimeout(() => { frameTimer = null; void loop() }, wait)
       }
 

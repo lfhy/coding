@@ -196,17 +196,17 @@ it('封闭 worker 在真实 HTTP/CDP 连接上采帧并导航，拒绝失效目�
   // 无损帧超出体积预算时按设置质量退回有损。
   bigPng = true
   expect(await (await fetch(`${api}/api/frame?targetId=owned&quality=90&maxWidth=800`)).json())
-    .toMatchObject({ mime: 'image/webp', data: JPEG })
+    .toMatchObject({ mime: 'image/jpeg', data: JPEG })
   expect(calls.filter(call => call.method === 'Page.captureScreenshot').slice(-2)).toMatchObject([
     { params: { format: 'webp', quality: 100, clip: { width: 1600, height: 900, scale: 0.25 } } },
-    { params: { format: 'webp', quality: 90, clip: { width: 1600, height: 900, scale: 0.25 } } },
+    { params: { format: 'jpeg', quality: 90, clip: { width: 1600, height: 900, scale: 0.25 } } },
   ])
   bigPng = false
   // 实时推流直接要有损：不尝试无损编码，质量来自设置。
   expect(await (await fetch(`${api}/api/frame?targetId=owned&format=lossy&quality=85`)).json())
-    .toMatchObject({ mime: 'image/webp', data: JPEG })
+    .toMatchObject({ mime: 'image/jpeg', data: JPEG })
   expect(calls.filter(call => call.method === 'Page.captureScreenshot').at(-1)).toMatchObject({
-    params: { format: 'webp', quality: 85 },
+    params: { format: 'jpeg', quality: 85 },
   })
   expect((await fetch(`${api}/api/frame?targetId=owned&quality=0`)).status).toBe(400)
   expect((await fetch(`${api}/api/frame?targetId=owned&format=png`)).status).toBe(400)

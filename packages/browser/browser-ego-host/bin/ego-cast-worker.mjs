@@ -776,7 +776,7 @@ async function captureFrame(sessions, targetId, options) {
 	const scale = Math.min(1, options.maxWidth / (vw * dpr));
 	const shot = async (lossless) => {
 		const image = await sessions.call(targetId, "Page.captureScreenshot", {
-			format: "webp",
+			format: lossless ? "webp" : "jpeg",
 			quality: lossless ? 100 : options.quality,
 			captureBeyondViewport: false,
 			clip: {
@@ -788,21 +788,28 @@ async function captureFrame(sessions, targetId, options) {
 			}
 		});
 		if (typeof image.data !== "string" || !BASE64.test(image.data) || image.data.length === 0 || image.data.length > 28e5) throw new Error("frame unavailable");
-		return image.data;
+		return {
+			data: image.data,
+			mime: lossless ? "image/webp" : "image/jpeg"
+		};
 	};
-	if (options.format === "lossy") return {
-		targetId,
-		data: await shot(false),
-		mime: "image/webp",
-		vw,
-		vh,
-		ts: Date.now()
-	};
+	if (options.format === "lossy") {
+		const lossy = await shot(false);
+		return {
+			targetId,
+			data: lossy.data,
+			mime: lossy.mime,
+			vw,
+			vh,
+			ts: Date.now()
+		};
+	}
 	const lossless = await shot(true);
+	const chosen = lossless.data.length <= LOSSLESS_BUDGET ? lossless : await shot(false);
 	return {
 		targetId,
-		data: lossless.length <= LOSSLESS_BUDGET ? lossless : await shot(false),
-		mime: "image/webp",
+		data: chosen.data,
+		mime: chosen.mime,
 		vw,
 		vh,
 		ts: Date.now()
