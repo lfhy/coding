@@ -10,6 +10,8 @@ import type { GitCredentialStore } from '../src/workspace-git.ts'
 
 const roots: string[] = []
 const signal = new AbortController().signal
+/** 多次真实 Git 子进程及本机 HTTPS 往返在全量并发时可能超过默认的五秒。 */
+const GIT_INTEGRATION_TIMEOUT_MS = 15_000
 function git(cwd: string, ...args: string[]) {
   return execFileSync('git', args, { cwd, encoding: 'utf8', env: { ...process.env, GIT_CONFIG_NOSYSTEM: '1' } }).trim()
 }
@@ -276,7 +278,7 @@ describe('standalone workspace Git', () => {
     git(root, 'checkout', '--detach', '-q')
     expect(await workspaceGitBranches(root, signal)).toMatchObject({ current: null })
     expect(await workspaceGitCheckout(root, signal, original)).toMatchObject({ branch: original })
-  })
+  }, GIT_INTEGRATION_TIMEOUT_MS)
 
   it('does not overwrite ignored files when switching to a branch that tracks their path', async () => {
     const root = repo()
@@ -482,7 +484,7 @@ describe('standalone workspace Git', () => {
           .rejects.toMatchObject({ code: 'GIT_AUTH_REQUIRED' })
       }
     })
-  })
+  }, GIT_INTEGRATION_TIMEOUT_MS)
 
   it('reports a remote failure that is not about credentials', async () => {
     // 远端整体不可用：显式凭据与匿名尝试都直接失败，不会提示重新输入凭据。

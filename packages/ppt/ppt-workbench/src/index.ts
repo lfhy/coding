@@ -65,9 +65,9 @@ declare module '@deepseek-ai/cordis' {
   interface Context { pptProjects: PptProjects }
 }
 
-/** 会话级工程服务；所有写入口都在这里串行化并转换错误码。 */
+/** 会话级工程服务；写入由存储层按工程串行化，路由层负责转换错误码。 */
 export default class PptProjects extends Service {
-  static inject = ['sessions']
+  static inject = ['sessions', 'webServer']
 
   /** 每个会话当前打开的工程目录（绝对路径）。 */
   private readonly active = new Map<string, string>()
@@ -152,7 +152,7 @@ export default class PptProjects extends Service {
   /**
    * 面板视角的整体状态。
    * @param sessionId - 会话身份。
-   * @returns 工程列表、当前工程与待处理的开打请求。
+   * @returns 工程列表、当前工程与待处理的打开请求。
    */
   async state(sessionId: string): Promise<PptWorkbenchState> {
     const root = this.rootOf(sessionId)
@@ -373,6 +373,7 @@ export default class PptProjects extends Service {
    * 导出当前版本为 .pptx。
    * @param sessionId - 会话身份。
    * @param dir - 工程目录；缺省为当前工程。
+   * @param options - `skipCheck` 为 true 时跳过 error 级质检。
    * @returns 导出文件路径与大小。
    */
   async export(sessionId: string, dir?: string, options: { skipCheck?: boolean } = {}): Promise<PptExportResult> {

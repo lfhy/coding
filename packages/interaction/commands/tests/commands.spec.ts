@@ -5,7 +5,14 @@ import type { Scope } from 'coding-scope'
 import type { Agent } from 'coding-agent'
 import SessionStore, { SessionId } from 'coding-session'
 import CommandRuntime, { parseCommand, type CommandDefinition } from 'coding-commands'
-import { AttachmentStore } from 'coding-attachment'
+import {
+  AttachmentId,
+  AttachmentStore,
+  type ImageAttachmentLimits,
+  type ImageAttachmentRef,
+  type SaveImageAttachment,
+  type StoredImageAttachment,
+} from 'coding-attachment'
 
 function command(name: string, text = `ran:${name}`): CommandDefinition {
   return {
@@ -468,27 +475,32 @@ describe('CommandRuntime', () => {
 describe('image attachments', () => {
   const PNG = 'AAAA'
 
-  function storeOf() {
-    let saved = 0
-    const store = {
-      imageLimits: {
-        maxImageBytes: 1024, maxImagesPerMessage: 2, maxMessageImageBytes: 1024,
-        maxImagePixels: 1_000_000, maxImageDimension: 2000, mediaTypes: ['image/png'],
-      },
-      validateImage: vi.fn(() => Promise.resolve()),
-      saveImage: vi.fn((input: { mediaType: string; name?: string }) => {
-        saved += 1
-        return Promise.resolve({
-          attachmentId: `att-${saved}`, mediaType: input.mediaType, bytes: 3, width: 1, height: 1,
-          ...input.name === undefined ? {} : { name: input.name },
-        })
-      }),
-      // The real base-class batch method over this double's limits and members.
-      saveImages(inputs: readonly unknown[]) {
-        return (AttachmentStore.prototype.saveImages as (this: unknown, batch: readonly unknown[]) => Promise<unknown[]>).call(this, inputs)
-      },
+  class RecordingStore extends AttachmentStore {
+    readonly imageLimits: ImageAttachmentLimits = {
+      maxImageBytes: 1024, maxImagesPerMessage: 2, maxMessageImageBytes: 1024,
+      maxImagePixels: 1_000_000, maxImageDimension: 2000, mediaTypes: ['image/png'],
     }
-    return store
+    private saved = 0
+
+    validateImage(_input: SaveImageAttachment): Promise<void> {
+      return Promise.resolve()
+    }
+
+    saveImage = vi.fn((input: SaveImageAttachment): Promise<ImageAttachmentRef> => {
+      this.saved += 1
+      return Promise.resolve({
+        attachmentId: AttachmentId(`att-${this.saved}`), mediaType: input.mediaType, bytes: 3, width: 1, height: 1,
+        ...input.name === undefined ? {} : { name: input.name },
+      })
+    })
+
+    readImage(_ref: ImageAttachmentRef): Promise<StoredImageAttachment> {
+      throw new Error('not used')
+    }
+  }
+
+  function storeOf(ctx: Context): RecordingStore {
+    return new RecordingStore(ctx)
   }
 
   function accepting(handler: CommandDefinition['handler']): CommandDefinition {
@@ -547,7 +559,7 @@ describe('image attachments', () => {
 
   it('admits and hands the handler frozen ordered image blocks; plain invocations stay empty', async () => {
     const ctx = await mount()
-    ctx.provide('attachments', storeOf())
+    storeOf(ctx)
     const { agent } = await mintAgentScope(ctx, 'a')
     const seen = vi.fn((invocation: { attachments: readonly unknown[] }) => {
       expect(Object.isFrozen(invocation.attachments)).toBe(true)
@@ -568,7 +580,7 @@ describe('image attachments', () => {
 
   it('settles an admission limit failure as a logged error result', async () => {
     const ctx = await mount()
-    ctx.provide('attachments', storeOf())
+    storeOf(ctx)
     const { agent } = await mintAgentScope(ctx, 'a')
     const handler = vi.fn(() => ({ kind: 'success' as const }))
     ctx.commands.register(accepting(handler))
@@ -582,12 +594,11 @@ describe('image attachments', () => {
   it('honors a cancellation that lands during admission before entering the handler', async () => {
     const ctx = await mount()
     const controller = new AbortController()
-    const store = storeOf()
-    store.saveImage.mockImplementationOnce((input: { mediaType: string }) => {
+    const store = storeOf(ctx)
+    store.saveImage.mockImplementationOnce((input: SaveImageAttachment) => {
       controller.abort('operator cancelled during admission')
-      return Promise.resolve({ attachmentId: 'att-late', mediaType: input.mediaType, bytes: 3, width: 1, height: 1 })
+      return Promise.resolve({ attachmentId: AttachmentId('att-late'), mediaType: input.mediaType, bytes: 3, width: 1, height: 1 })
     })
-    ctx.provide('attachments', store)
     const { agent } = await mintAgentScope(ctx, 'a')
     const handler = vi.fn(() => ({ kind: 'success' as const }))
     ctx.commands.register(accepting(handler))
@@ -603,9 +614,8 @@ describe('image attachments', () => {
 
   it('logs and rethrows a non-attachment admission failure', async () => {
     const ctx = await mount()
-    const store = storeOf()
+    const store = storeOf(ctx)
     store.saveImage.mockRejectedValueOnce(new Error('disk gone'))
-    ctx.provide('attachments', store)
     const { agent } = await mintAgentScope(ctx, 'a')
     ctx.commands.register(accepting(() => ({ kind: 'success' })))
     await expect(ctx.commands.execute(

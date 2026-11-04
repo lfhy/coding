@@ -5,7 +5,6 @@ import { buildPptx } from '../src/export/pptx.ts'
 import { chartSvg, renderPageHtml } from '../src/render-html.ts'
 import { renderPages } from '../src/render.ts'
 import { buildPdf, decodePng } from '../src/export/pdf.ts'
-import { crc32 } from '../src/export/zip.ts'
 import type { PptDeck } from 'coding-ppt-model'
 
 const deck: PptDeck = {
@@ -174,7 +173,7 @@ describe('.pptx 导出', () => {
       pages: [{
         id: 'p1', name: '图', background: null, transition: 'none',
         elements: [{
-          id: 'c1', kind: 'chart', x: 100, y: 100, w: 720, h: 360, chart: 'bar',
+          id: 'c1', kind: 'chart', x: 100, y: 100, w: 720, h: 360, chart: 'bar', stacked: false,
           categories: ['一季度', '二季度'], showValues: true, textColor: '#9aa7b4',
           series: [{ name: '本期', values: [32, 45], color: '#4f8cff' }],
         }],

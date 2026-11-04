@@ -98,9 +98,13 @@
   width: 100%;
   min-height: 64px;
   padding: 4px 6px;
+  overflow: auto;
   border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 6px;
   background: var(--dsw-alias-bg-layer-2);
+  /* 表格内容超出可见行数时文本域自行滚动，滑块沿用抬升表面配对。 */
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
   color: var(--dsw-alias-label-primary);
   font: var(--dsw-font-mono);
   resize: vertical;

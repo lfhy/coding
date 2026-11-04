@@ -29,6 +29,7 @@ beforeAll(async () => {
     ...loadOverlayPatches('dsh-codex-preset', join(ROOT, 'packages/bundle/web-app/cordis.patch.yml')),
     { id: 'browser-playwright', disabled: true },
     { id: 'webserver', disabled: true },
+    { id: 'ppt-workbench', disabled: true },
     { id: 'web-runtime', disabled: true },
     { id: 'session-telemetry-otel', disabled: true },
     { id: 'modules', disabled: true },

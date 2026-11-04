@@ -338,12 +338,15 @@ describe('WorkerThreadCodeRuntime Remote-SSH routing', () => {
 
   it('provider dispose 同样等待远端终态确认', async () => {
     const cwd = await marker()
+    const polling = Promise.withResolvers<undefined>()
     const canceled = Promise.withResolvers<undefined>()
     const releaseCancel = Promise.withResolvers<undefined>()
     await bridge(async (path) => {
       switch (path) {
         case '/v1/code/start': return { id: 'd'.repeat(32) }
-        case '/v1/code/next': return await new Promise(() => {})
+        case '/v1/code/next':
+          polling.resolve(undefined)
+          return await new Promise(() => {})
         case '/v1/code/cancel':
           canceled.resolve(undefined)
           await releaseCancel.promise
@@ -355,7 +358,7 @@ describe('WorkerThreadCodeRuntime Remote-SSH routing', () => {
     try {
       const fiber = await ctx.plugin(WorkerThreadCodeRuntime, {})
       const running = ctx.codeRuntime.run({ program: 'await new Promise(() => {})', cwd, bindings: [] })
-      await new Promise(resolve => setTimeout(resolve, 20))
+      await polling.promise
       let disposed = false
       const disposing = fiber.dispose().then(() => { disposed = true })
       await canceled.promise

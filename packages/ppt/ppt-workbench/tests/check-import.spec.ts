@@ -55,7 +55,7 @@ describe('规则质检', () => {
           id: 't1', kind: 'text', x: 96, y: 100, w: 300, h: 60,
           text: {
             content: '这一段文字明显放不进这个又窄又矮的文本框里，需要拆成两页或者缩小字号',
-            size: 40, color: '#1a1a1a', bold: false, align: 'left', valign: 'top',
+            size: 40, color: '#1a1a1a', bold: false, align: 'left', valign: 'top', font: '',
           },
         }],
       }],

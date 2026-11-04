@@ -44,7 +44,9 @@ describe('gen-tool-catalog collectToolCatalog', () => {
       'cordis_inspect_query', 'cordis_inspect_self', 'cordis_run', 'cordis_stop', 'cordis_undefine', 'create_goal',
       'edit', 'exit_plan_mode', 'followup_task', 'followup_task', 'get_goal', 'glob', 'grep', 'interrupt_agent',
       'interrupt_agent', 'job_kill', 'job_list', 'job_output', 'list_agents', 'list_agents', 'lsp',
-      'memory_delete', 'memory_list', 'memory_read', 'memory_save', 'memory_update', 'pwsh', 'pwsh', 'ralph',
+      'memory_delete', 'memory_list', 'memory_read', 'memory_save', 'memory_update', 'ppt_check', 'ppt_create',
+      'ppt_edit', 'ppt_export', 'ppt_import', 'ppt_open', 'ppt_read', 'ppt_redo', 'ppt_render', 'ppt_undo',
+      'pwsh', 'pwsh', 'ralph',
       'read', 'read_image', 'report', 'run_code', 'schedule_create', 'schedule_delete', 'schedule_list',
       'send_message', 'send_message', 'session_event_read', 'session_event_search', 'session_event_trace',
       'session_search', 'session_trace', 'skill', 'spawn_teammate', 'str_replace_editor', 'subagent',
@@ -103,6 +105,9 @@ describe('gen-tool-catalog collectToolCatalog', () => {
     const catalog = await collectToolCatalog()
     const bash = catalog.find(entry => entry.pkg === 'coding-tool-bash')
     expect(bash?.sources.bash).toBe('packages/shell/tool-bash/src/index.ts')
+    const ppt = catalog.find(entry => entry.pkg === 'coding-tool-ppt')
+    expect(ppt?.schemas).toHaveLength(10)
+    expect(ppt?.sources.ppt_render).toBe('packages/ppt/tool-ppt/src/index.ts')
     const control = catalog.find(entry => entry.pkg === 'coding-tool-subagent-control')
     expect(control?.sources).toEqual({
       interrupt_agent: 'packages/subagent/tool-subagent-control/src/index.ts',

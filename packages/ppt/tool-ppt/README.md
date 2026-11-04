@@ -2,7 +2,7 @@
 
 ## 概述
 
-PPT 创作模式的七个模型工具：`ppt_create`、`ppt_open`、`ppt_read`、`ppt_edit`、`ppt_undo`、`ppt_redo`、`ppt_export`。工具只做参数校验、会话解析与结果投影；工程存储、版本历史与 `.pptx` 导出归 [`coding-ppt-workbench`](../ppt-workbench/README.md)，它提供 `pptProjects` 服务。
+PPT 创作模式的十个模型工具：`ppt_create`、`ppt_open`、`ppt_read`、`ppt_edit`、`ppt_undo`、`ppt_redo`、`ppt_render`、`ppt_check`、`ppt_import`、`ppt_export`。工具只做参数校验、会话解析与结果投影；工程存储、版本历史与导出归 [`coding-ppt-workbench`](../ppt-workbench/README.md)，它提供 `pptProjects` 服务。
 
 本包按 agent 组装：它属于 `ppt` 预设，不属于宿主组合。这样其它模式的请求前缀里不会出现 PPT 的工具 schema，而 PPT 模式的会话与工作台仍然读写同一份工程。
 
@@ -37,7 +37,7 @@ PPT 创作模式的七个模型工具：`ppt_create`、`ppt_open`、`ppt_read`�
 
 ### 模型看到什么
 
-七个工具的名字、描述与参数 schema，都在 `ppt` 模式会话的请求前缀里；其它模式看不到它们。工具结果是一行 JSON：工程摘要（目录、标题、版本、页数、能否撤销/重做）或 `ppt_read` 的完整页面数据，导出则给出绝对路径与字节数。错误同样是工具结果，带具体原因。
+十个工具的名字、描述与参数 schema，都在 `ppt` 模式会话的请求前缀里；其它模式看不到它们。工具结果是一行 JSON：工程摘要（目录、标题、版本、页数、能否撤销/重做）、`ppt_read` 的完整页面数据、`ppt_render` 的页面图片路径、`ppt_check` 的问题列表、`ppt_import` 的丢失内容列表，或导出的绝对路径与字节数。错误同样是工具结果，带具体原因。
 
 ### token 影响
 
@@ -49,7 +49,7 @@ PPT 创作模式的七个模型工具：`ppt_create`、`ppt_open`、`ppt_read`�
 
 ## 已知限制与暂缓工作
 
-- 没有单页图片化预览；面板用 DOM 直渲，模型要看画面只能自行合成截图。
+- `ppt_render` 可指定单页或多页，依赖会话的 Agent 浏览器打开页面并保存 PNG；没有浏览器提供方时无法渲染，PDF 导出也会失败。
 - AI 审阅附带最多 4 页实际渲染图（首页、第二、第三与最后一页），经附件通道准入后交给会话模型；模型不支持看图时退回纯大纲审阅。
 - AI 审阅只出建议、不改工程也不阻断导出；没有可用模型路由时如实返回 `performed: false` 与原因。
 - 字体只嵌入 glyf 轮廓的 TrueType（`.ttf`、`.ttc` 首 face）；CFF/OTF 跳过。子集化失败时回退整字体。

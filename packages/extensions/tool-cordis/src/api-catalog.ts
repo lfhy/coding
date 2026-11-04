@@ -767,6 +767,30 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [],
         returns: '每次调用都复核调用会话的工具定义。',
       },
+      {
+        signature: 'async raiseWindow(): Promise<boolean>',
+        description: '把 Agent 浏览器换成真实可见窗口（用户在面板里主动要求时使用）。\n\n默认的无窗口模式无法完成登录扫码或人机验证，因此这一步由用户触发； 运行时的 `--open` 会把无窗口实例换成同 profile 的有窗口实例，标签页随 profile 恢复。命令成功只表示请求被接受，具体页面仍以面板轮询为准。',
+        parameters: [],
+        returns: '浏览器进程正常退出（退出码 0）时为 true。',
+      },
+      {
+        signature: 'async createSessionPage(sessionId: SessionId, url: string): Promise<boolean>',
+        description: '仅为空会话创建自己的任务空间页面；CLI 在该空间创建或使用空白锚页，不选全局标签。',
+        parameters: [{ name: 'sessionId', description: '已在 sessions 服务中确认存在的会话。' }, { name: 'url', description: 'Host 已验证的绝对导航地址。' }],
+        returns: '页面归属写入会话空间并确认仍存在时为 true。',
+      },
+      {
+        signature: 'async captureSessionPage(options: { /** 会话身份；页面进入它的浏览器空间。 */ readonly sessionId: SessionId /** 本地 HTML 的绝对路径。 */ readonly htmlPath: string /** 视口宽度（CSS 像素），与 HTML 的画布宽度一致。 */ readonly width: number /** 视口高度（CSS 像素）。 */ readonly height: number /** 要写入的 PNG 绝对路径。 */ readonly outPath: string /** 等待整页稳定的毫秒数；缺省 300。 */ readonly settleMs?: number }): Promise<boolean>',
+        description: '在会话自己的 Agent 浏览器空间里打开一页本地 HTML 并截图。\n\n页面进的是该会话的正常空间，因此右侧「Agent 浏览器」标签会像别的页面一样显示它； 截图与页面共用同一个标签，不额外开一套渲染通道。调用方负责把内容写成 `file://` 能读的本地文件。',
+        parameters: [{ name: 'options', description: '会话、本地页面路径、视口尺寸与输出路径。' }],
+        returns: '截图写入成功时为 true。',
+      },
+      {
+        signature: 'async createBlankPage(sessionId: SessionId): Promise<string | null>',
+        description: '为人工工作台在指定会话空间新建一张空白页；同会话的请求串行执行，首张页面复用空间锚页。',
+        parameters: [{ name: 'sessionId', description: '页面所属的会话。' }],
+        returns: '复核归属后的目标 id；会话不存在、页面已满或创建失败时为 null。',
+      },
     ],
   },
   {
@@ -1250,6 +1274,128 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Select whether plan mode should be active. Between turns the method appends the change immediately because no in-turn pre-step will run until another prompt starts a turn. The open-turn fold is the idle signal: agent status stays `running` through post-turn checkpointing, when no further in-turn pre-step runs. During an open turn the selection remains pending until the next accepted in-turn pre-step. Repeated selection of the current or already-pending state is a no-op.',
         parameters: [{ name: 'agent', description: 'The agent to switch.' }, { name: 'active', description: 'Whether plan mode should be active.' }],
         returns: 'what happened: `committed` (logged now), `queued` (awaiting the next accepted in-turn pre-step), `cancelled` (an opposite pending selection was cleared; the logged state already matches), or `noop` (already in that state).',
+      },
+    ],
+  },
+  {
+    key: 'pptProjects',
+    summary: '会话级工程服务；写入由存储层按工程串行化，路由层负责转换错误码。',
+    description: '会话级工程服务；写入由存储层按工程串行化，路由层负责转换错误码。',
+    methods: [
+      {
+        signature: 'rootOf(sessionId: string): string',
+        description: '会话的工作区目录。',
+        parameters: [{ name: 'sessionId', description: '会话身份。' }],
+        returns: '绝对工作目录。',
+        throws: ['PptModelError - 会话不存在或没有工作目录时。'],
+      },
+      {
+        signature: 'resolveDir(sessionId: string, dir?: string): string',
+        description: '把工程目录解析到工作区内。',
+        parameters: [{ name: 'sessionId', description: '会话身份。' }, { name: 'dir', description: '相对工作区的目录；缺省用会话当前打开的工程。' }],
+        returns: '绝对目录。',
+        throws: ['PptModelError - 目录越界或没有可用的当前工程时。'],
+      },
+      {
+        signature: 'activeDir(sessionId: string): string | undefined',
+        description: '会话当前打开的工程目录（相对工作区）。',
+        parameters: [{ name: 'sessionId', description: '会话身份。' }],
+        returns: '相对目录；没有打开时为 undefined。',
+      },
+      {
+        signature: 'focus(sessionId: string, dir: string): string',
+        description: '记住会话要显示的工程，并让面板下一次轮询时切换过去。',
+        parameters: [{ name: 'sessionId', description: '会话身份。' }, { name: 'dir', description: '绝对工程目录。' }],
+        returns: '相对工作区的目录。',
+      },
+      {
+        signature: 'async state(sessionId: string): Promise<PptWorkbenchState>',
+        description: '面板视角的整体状态。',
+        parameters: [{ name: 'sessionId', description: '会话身份。' }],
+        returns: '工程列表、当前工程与待处理的打开请求。',
+      },
+      {
+        signature: 'ackOpenRequest(sessionId: string, at: number): void',
+        description: '面板确认已处理某次打开请求。',
+        parameters: [{ name: 'sessionId', description: '会话身份。' }, { name: 'at', description: '请求时间戳；与当前请求不一致时忽略，避免重复消费新请求。' }],
+      },
+      {
+        signature: 'create(sessionId: string, options: { title: string dir?: string size?: SlideSizeId theme?: ThemeId }): Promise<PptSnapshot>',
+        description: '新建工程并设为当前工程。',
+        parameters: [{ name: 'sessionId', description: '会话身份。' }, { name: 'options', description: '标题、目录、尺寸与主题。' }],
+        returns: '新工程快照。',
+      },
+      {
+        signature: 'async open(sessionId: string, dir: string): Promise<PptSnapshot>',
+        description: '打开既有工程（模型 `ppt_open` 与面板点击共用）。',
+        parameters: [{ name: 'sessionId', description: '会话身份。' }, { name: 'dir', description: '相对或绝对目录。' }],
+        returns: '工程快照。',
+      },
+      {
+        signature: 'read(sessionId: string, dir?: string): Promise<PptSnapshot>',
+        description: '读取工程。',
+        parameters: [{ name: 'sessionId', description: '会话身份。' }, { name: 'dir', description: '相对或绝对目录；缺省为当前工程。' }],
+        returns: '工程快照。',
+      },
+      {
+        signature: 'edit(sessionId: string, dir: string | undefined, ops: unknown, baseRevision?: number): Promise<PptSnapshot>',
+        description: '应用一次编辑。',
+        parameters: [{ name: 'sessionId', description: '会话身份。' }, { name: 'dir', description: '工程目录；缺省为当前工程。' }, { name: 'ops', description: '未校验的编辑步骤。' }, { name: 'baseRevision', description: '乐观锁基准版本。' }],
+        returns: '写入后的快照。',
+      },
+      {
+        signature: 'undo(sessionId: string, dir: string | undefined, steps: number): Promise<PptSnapshot>',
+        description: '撤销。',
+        parameters: [{ name: 'sessionId', description: '会话身份。' }, { name: 'dir', description: '工程目录；缺省为当前工程。' }, { name: 'steps', description: '步数。' }],
+        returns: '撤销后的快照。',
+      },
+      {
+        signature: 'redo(sessionId: string, dir: string | undefined, steps: number): Promise<PptSnapshot>',
+        description: '重做。',
+        parameters: [{ name: 'sessionId', description: '会话身份。' }, { name: 'dir', description: '工程目录；缺省为当前工程。' }, { name: 'steps', description: '步数。' }],
+        returns: '重做后的快照。',
+      },
+      {
+        signature: 'async exportPdf(sessionId: string, dir?: string): Promise<{ path: string; bytes: number; revision: number }>',
+        description: '把工程导出成 PDF：先渲染每页 PNG（会同时在 Agent 浏览器里打开），再拼成 PDF。',
+        parameters: [{ name: 'sessionId', description: '会话身份。' }, { name: 'dir', description: '工程目录；缺省为当前工程。' }],
+        returns: '导出文件路径与大小。',
+      },
+      {
+        signature: 'async render(sessionId: string, dir?: string, pages?: readonly number[]): Promise<RenderedPage[]>',
+        description: '把页面渲染成 PNG（工作台与导出一致的那一版）。',
+        parameters: [{ name: 'sessionId', description: '会话身份。' }, { name: 'dir', description: '工程目录；缺省为当前工程。' }, { name: 'pages', description: '要渲染的页下标（0 起）；缺省全部。' }],
+        returns: '每页的 PNG 路径。',
+      },
+      {
+        signature: 'media(sessionId: string, dir: string | undefined, source: string): Promise<Uint8Array | undefined>',
+        description: '读取工程内的一张图片，供面板显示。',
+        parameters: [{ name: 'sessionId', description: '会话身份。' }, { name: 'dir', description: '工程目录；缺省为当前工程。' }, { name: 'source', description: '工程的 `media/<file>` 相对路径。' }],
+        returns: '图片字节；越界或不存在时为 undefined。',
+      },
+      {
+        signature: 'upload(sessionId: string, dir: string | undefined, name: string, bytes: Uint8Array): Promise<string>',
+        description: '把上传的图片写进工程并返回可写进元素的相对路径。',
+        parameters: [{ name: 'sessionId', description: '会话身份。' }, { name: 'dir', description: '工程目录；缺省为当前工程。' }, { name: 'name', description: '上传时的文件名（取扩展名）。' }, { name: 'bytes', description: '图片字节。' }],
+        returns: '`media/<file>` 相对路径。',
+      },
+      {
+        signature: 'async check(sessionId: string, dir?: string): Promise<PptCheckResult>',
+        description: '规则质检。',
+        parameters: [{ name: 'sessionId', description: '会话身份。' }, { name: 'dir', description: '工程目录；缺省为当前工程。' }],
+        returns: '质检结果。',
+      },
+      {
+        signature: 'async import(sessionId: string, source: string, options: { dir?: string; title?: string }): Promise<{ snapshot: PptSnapshot dropped: readonly string[] }>',
+        description: '把工作区里的 .pptx 导入成工程。',
+        parameters: [{ name: 'sessionId', description: '会话身份。' }, { name: 'source', description: '工作区相对的 .pptx 路径。' }, { name: 'options', description: '目标目录与标题（都缺省时按源文件名生成）。' }],
+        returns: '新工程快照与未能表达的类别。',
+      },
+      {
+        signature: 'async export(sessionId: string, dir?: string, options: { skipCheck?: boolean } = {}): Promise<PptExportResult>',
+        description: '导出当前版本为 .pptx。',
+        parameters: [{ name: 'sessionId', description: '会话身份。' }, { name: 'dir', description: '工程目录；缺省为当前工程。' }, { name: 'options', description: '`skipCheck` 为 true 时跳过 error 级质检。' }],
+        returns: '导出文件路径与大小。',
       },
     ],
   },
@@ -3641,6 +3787,22 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface EditGoalRequest {\n    readonly objective?: string;\n    readonly maxGoalRounds?: number;\n}',
   },
   {
+    name: 'ElementAnimation',
+    declaration: 'export type ElementAnimation = \'none\' | \'fade\' | \'fly\' | \'zoom\' | \'wipe\';',
+  },
+  {
+    name: 'ElementFrame',
+    declaration: 'export interface ElementFrame {\n    readonly x: number;\n    readonly y: number;\n    readonly w: number;\n    readonly h: number;\n}',
+  },
+  {
+    name: 'ElementMotion',
+    declaration: 'export interface ElementMotion {\n    readonly animation?: ElementAnimation;\n    readonly emphasis?: EmphasisAnimation;\n    readonly exitAnimation?: ElementAnimation;\n    readonly pathAnimation?: PathAnimation;\n}',
+  },
+  {
+    name: 'EmphasisAnimation',
+    declaration: 'export type EmphasisAnimation = \'none\' | \'pulse\' | \'grow\';',
+  },
+  {
     name: 'EncodedImageAttachment',
     declaration: 'export interface EncodedImageAttachment {\n    mediaType: ImageMediaType;\n    data: string;\n    name?: string;\n}',
   },
@@ -4121,12 +4283,100 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface OneShotSubagentDescriptorData extends SubagentDescriptorBase {\n    readonly mode: \'one-shot\';\n    readonly label?: string;\n}',
   },
   {
+    name: 'PathAnimation',
+    declaration: 'export type PathAnimation = \'none\' | \'right\' | \'left\' | \'up\' | \'down\';',
+  },
+  {
     name: 'PermissionSelect',
     declaration: 'export interface PermissionSelect {\n    options: PresetOption[];\n    currentValue: string;\n}',
   },
   {
     name: 'PostToolDecision',
     declaration: 'export type PostToolDecision = {\n    kind: \'accept\';\n    content?: ContentBlock[];\n    value?: never;\n    additionalContexts?: UserMessage[];\n} | {\n    kind: \'accept\';\n    value: JsonValue;\n    content?: never;\n    additionalContexts?: UserMessage[];\n} | {\n    kind: \'block\';\n    feedback: ContentBlock[];\n    additionalContexts?: UserMessage[];\n};',
+  },
+  {
+    name: 'PptChartElement',
+    declaration: 'export interface PptChartElement extends ElementFrame, ElementMotion {\n    readonly id: string;\n    readonly kind: \'chart\';\n    readonly chart: PptChartKind;\n    readonly categories: readonly string[];\n    readonly series: readonly PptChartSeries[];\n    readonly showValues: boolean;\n    readonly stacked: boolean;\n    readonly textColor: string;\n}',
+  },
+  {
+    name: 'PptChartKind',
+    declaration: 'export type PptChartKind = \'bar\' | \'line\' | \'pie\';',
+  },
+  {
+    name: 'PptChartSeries',
+    declaration: 'export interface PptChartSeries {\n    readonly name: string;\n    readonly values: readonly number[];\n    readonly color: string;\n    readonly axis?: \'primary\' | \'secondary\';\n    readonly as?: \'bar\' | \'line\';\n}',
+  },
+  {
+    name: 'PptCheckResult',
+    declaration: 'export interface PptCheckResult {\n    readonly ok: boolean;\n    readonly issues: readonly PptIssue[];\n}',
+  },
+  {
+    name: 'PptDeck',
+    declaration: 'export interface PptDeck {\n    readonly format: number;\n    readonly title: string;\n    readonly size: SlideSizeId;\n    readonly theme: ThemeId;\n    readonly pages: readonly PptPage[];\n}',
+  },
+  {
+    name: 'PptElement',
+    declaration: 'export type PptElement = PptTextElement | PptShapeElement | PptLineElement | PptImageElement | PptTableElement | PptChartElement;',
+  },
+  {
+    name: 'PptExportResult',
+    declaration: 'export interface PptExportResult {\n    readonly path: string;\n    readonly bytes: number;\n    readonly revision: number;\n    readonly fonts: readonly {\n        readonly family: string;\n        readonly readonly: boolean;\n        readonly subset: boolean;\n    }[];\n    readonly skippedFonts: readonly SkippedFont[];\n}',
+  },
+  {
+    name: 'PptImageElement',
+    declaration: 'export interface PptImageElement extends ElementFrame, ElementMotion {\n    readonly id: string;\n    readonly kind: \'image\';\n    readonly source: string;\n    readonly fit: \'cover\' | \'contain\';\n}',
+  },
+  {
+    name: 'PptIssue',
+    declaration: 'export interface PptIssue {\n    readonly severity: \'error\' | \'warning\';\n    readonly code: \'out-of-bounds\' | \'zero-size\' | \'text-overflow\' | \'low-contrast\' | \'empty-page\' | \'too-much-text\';\n    readonly page: string;\n    readonly pageName: string;\n    readonly element?: string;\n    readonly message: string;\n}',
+  },
+  {
+    name: 'PptLineElement',
+    declaration: 'export interface PptLineElement extends ElementFrame, ElementMotion {\n    readonly id: string;\n    readonly kind: \'line\';\n    readonly color: string;\n    readonly width: number;\n}',
+  },
+  {
+    name: 'PptOpenRequest',
+    declaration: 'export interface PptOpenRequest {\n    readonly dir: string;\n    readonly at: number;\n}',
+  },
+  {
+    name: 'PptPage',
+    declaration: 'export interface PptPage {\n    readonly id: string;\n    readonly name: string;\n    readonly background: string | null;\n    readonly transition: SlideTransition;\n    readonly elements: readonly PptElement[];\n}',
+  },
+  {
+    name: 'PptProjectSummary',
+    declaration: 'export interface PptProjectSummary {\n    readonly dir: string;\n    readonly title: string;\n    readonly pages: number;\n    readonly revision: number;\n    readonly updatedAt: number;\n}',
+  },
+  {
+    name: 'PptShapeElement',
+    declaration: 'export interface PptShapeElement extends ElementFrame, ElementMotion {\n    readonly id: string;\n    readonly kind: \'rect\' | \'ellipse\';\n    readonly fill: string;\n}',
+  },
+  {
+    name: 'PptSnapshot',
+    declaration: 'export interface PptSnapshot {\n    readonly dir: string;\n    readonly title: string;\n    readonly revision: number;\n    readonly deck: PptDeck;\n    readonly pages: number;\n    readonly updatedAt: number;\n    readonly canUndo: boolean;\n    readonly canRedo: boolean;\n}',
+  },
+  {
+    name: 'PptTableCell',
+    declaration: 'export interface PptTableCell {\n    readonly content: string;\n}',
+  },
+  {
+    name: 'PptTableElement',
+    declaration: 'export interface PptTableElement extends ElementFrame, ElementMotion {\n    readonly id: string;\n    readonly kind: \'table\';\n    readonly rows: number;\n    readonly columns: number;\n    readonly columnWeights: readonly number[];\n    readonly header: boolean;\n    readonly headerFill: string;\n    readonly borderColor: string;\n    readonly text: PptTableStyle;\n    readonly cells: readonly (readonly PptTableCell[])[];\n}',
+  },
+  {
+    name: 'PptTableStyle',
+    declaration: 'export interface PptTableStyle {\n    readonly size: number;\n    readonly color: string;\n    readonly bold: boolean;\n    readonly align: TextAlign;\n    readonly font: string;\n}',
+  },
+  {
+    name: 'PptText',
+    declaration: 'export interface PptText {\n    readonly content: string;\n    readonly size: number;\n    readonly color: string;\n    readonly bold: boolean;\n    readonly align: TextAlign;\n    readonly valign: TextVAlign;\n    readonly font: string;\n}',
+  },
+  {
+    name: 'PptTextElement',
+    declaration: 'export interface PptTextElement extends ElementFrame, ElementMotion {\n    readonly id: string;\n    readonly kind: \'text\';\n    readonly text: PptText;\n}',
+  },
+  {
+    name: 'PptWorkbenchState',
+    declaration: 'export interface PptWorkbenchState {\n    readonly projects: readonly PptProjectSummary[];\n    readonly active: PptSnapshot | null;\n    readonly openRequest: PptOpenRequest | null;\n    readonly root: string;\n}',
   },
   {
     name: 'PreparedLlmCall',
@@ -4279,6 +4529,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'RemoteWorkspaceTarget',
     declaration: 'export interface RemoteWorkspaceTarget extends RemoteWorkspace {\n    remotePath: string;\n}',
+  },
+  {
+    name: 'RenderedPage',
+    declaration: 'export interface RenderedPage {\n    readonly page: string;\n    readonly name: string;\n    readonly path: string;\n}',
   },
   {
     name: 'ReplayEnvelope',
@@ -4781,6 +5035,18 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface SkillViewOptions extends SkillLookupOptions {\n    readonly scope?: ScopeKey | undefined;\n}',
   },
   {
+    name: 'SkippedFont',
+    declaration: 'export interface SkippedFont {\n    readonly family: string;\n    readonly reason: string;\n}',
+  },
+  {
+    name: 'SlideSizeId',
+    declaration: 'export type SlideSizeId = \'16:9\' | \'4:3\';',
+  },
+  {
+    name: 'SlideTransition',
+    declaration: 'export type SlideTransition = \'none\' | \'fade\' | \'push\';',
+  },
+  {
     name: 'SpawnTeammateRequest',
     declaration: 'export interface SpawnTeammateRequest {\n    readonly name: string;\n    readonly description: string;\n    readonly prompt: ContentBlock[];\n    readonly context: \'fresh\' | \'fork\';\n    readonly provider: string;\n    readonly signal: AbortSignal;\n}',
   },
@@ -5083,6 +5349,18 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'TerminalWaitReason',
     declaration: 'export type TerminalWaitReason = \'stdin_read\' | \'inferred_idle\' | \'timeout\' | \'session_exit\';',
+  },
+  {
+    name: 'TextAlign',
+    declaration: 'export type TextAlign = \'left\' | \'center\' | \'right\';',
+  },
+  {
+    name: 'TextVAlign',
+    declaration: 'export type TextVAlign = \'top\' | \'middle\' | \'bottom\';',
+  },
+  {
+    name: 'ThemeId',
+    declaration: 'export type ThemeId = \'ink\' | \'paper\' | \'ocean\' | \'forest\';',
   },
   {
     name: 'TodoItem',

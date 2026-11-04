@@ -443,20 +443,15 @@ describe('lsp-stdio end to end over a fake server', () => {
     await expect(ctx.fiber.dispose()).resolves.toBeUndefined()
   })
 
-  it('rejects at load when the command is not found', async () => {
-    const ctx = new Context()
-    await ctx.plugin(Lsp)
-    await ctx.plugin(LocalSubprocessRuntime)
-    await ctx.plugin(LocalFileSystem, { cwd: process.cwd() })
-    await expect(ctx.plugin(LspLocal, {
-      servers: {
-        missing: {
-          command: 'definitely-not-a-real-lsp-binary-xyz',
-          args: [],
-          extensionToLanguage: { '.ts': 'typescript' },
-        },
-      },
-    })).rejects.toThrow(/was not found on PATH/)
+  it('reports a missing command on query without starting a language server', async () => {
+    const ctx = await mount({}, {
+      command: 'definitely-not-a-real-lsp-binary-xyz',
+      args: [],
+      env: { PATH: join(root, 'missing-bin') },
+    })
+    const spawn = vi.spyOn(ctx.subprocess, 'spawn')
+    await expect(ctx.lsp.query(query('goToDefinition'))).rejects.toThrow(/was not found on PATH/)
+    expect(spawn).not.toHaveBeenCalled()
     await ctx.fiber.dispose()
   })
 })

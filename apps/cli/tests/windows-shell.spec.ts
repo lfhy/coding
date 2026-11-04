@@ -11,7 +11,7 @@
  */
 
 import { afterEach, describe, expect, it } from 'vitest'
-import { mkdtempSync, rmSync, readFileSync } from 'node:fs'
+import { mkdtempSync, rmSync, readFileSync, readdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -102,8 +102,11 @@ describe('the shipped shell composition (real bundle layers)', () => {
 
 describe('shipped agent presets gate both shell tools by platform', () => {
   const presetRoot = resolve(fileURLToPath(new URL('../package.json', import.meta.url)), '..', 'config', 'agent-presets')
+  const fullPresets = readdirSync(presetRoot, { withFileTypes: true })
+    .filter(entry => entry.isDirectory() && entry.name !== 'minimal')
+    .map(entry => entry.name)
 
-  it.each(['standard', 'code', 'cordis', 'codex'])('preset %s gates its shell tool rows by platform', (preset) => {
+  it.each(fullPresets)('preset %s gates its shell tool rows by platform', (preset) => {
     const entries: unknown = yaml.load(
       readFileSync(join(presetRoot, preset, 'agent.cordis.yml'), 'utf8'),
       { schema: entryListSchema },

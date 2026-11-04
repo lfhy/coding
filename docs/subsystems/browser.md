@@ -234,9 +234,45 @@ Source: [`packages/browser/browser/src/index.ts:24`](../../packages/browser/brow
  * @returns 每次调用都复核调用会话的工具定义。
  */
 toolDefinitions(): readonly ToolDefinition[]
+
+/**
+ * 把 Agent 浏览器换成真实可见窗口（用户在面板里主动要求时使用）。
+ *
+ * 默认的无窗口模式无法完成登录扫码或人机验证，因此这一步由用户触发；
+ * 运行时的 `--open` 会把无窗口实例换成同 profile 的有窗口实例，标签页随
+ * profile 恢复。命令成功只表示请求被接受，具体页面仍以面板轮询为准。
+ * @returns 浏览器进程正常退出（退出码 0）时为 true。
+ */
+async raiseWindow(): Promise<boolean>
+
+/**
+ * 仅为空会话创建自己的任务空间页面；CLI 在该空间创建或使用空白锚页，不选全局标签。
+ * @param sessionId - 已在 sessions 服务中确认存在的会话。
+ * @param url - Host 已验证的绝对导航地址。
+ * @returns 页面归属写入会话空间并确认仍存在时为 true。
+ */
+async createSessionPage(sessionId: SessionId, url: string): Promise<boolean>
+
+/**
+ * 在会话自己的 Agent 浏览器空间里打开一页本地 HTML 并截图。
+ *
+ * 页面进的是该会话的正常空间，因此右侧「Agent 浏览器」标签会像别的页面一样显示它；
+ * 截图与页面共用同一个标签，不额外开一套渲染通道。调用方负责把内容写成 `file://`
+ * 能读的本地文件。
+ * @param options - 会话、本地页面路径、视口尺寸与输出路径。
+ * @returns 截图写入成功时为 true。
+ */
+async captureSessionPage(options: { /** 会话身份；页面进入它的浏览器空间。 */ readonly sessionId: SessionId /** 本地 HTML 的绝对路径。 */ readonly htmlPath: string /** 视口宽度（CSS 像素），与 HTML 的画布宽度一致。 */ readonly width: number /** 视口高度（CSS 像素）。 */ readonly height: number /** 要写入的 PNG 绝对路径。 */ readonly outPath: string /** 等待整页稳定的毫秒数；缺省 300。 */ readonly settleMs?: number }): Promise<boolean>
+
+/**
+ * 为人工工作台在指定会话空间新建一张空白页；同会话的请求串行执行，首张页面复用空间锚页。
+ * @param sessionId - 页面所属的会话。
+ * @returns 复核归属后的目标 id；会话不存在、页面已满或创建失败时为 null。
+ */
+async createBlankPage(sessionId: SessionId): Promise<string | null>
 ```
 
-Types: [ToolDefinition](tools.md)
+Types: [SessionId](core.md) · [ToolDefinition](tools.md)
 
-Source: [`packages/browser/browser-ego-host/src/index.ts:56`](../../packages/browser/browser-ego-host/src/index.ts)
+Source: [`packages/browser/browser-ego-host/src/index.ts:62`](../../packages/browser/browser-ego-host/src/index.ts)
 <!-- END GENERATED cordis-surface -->

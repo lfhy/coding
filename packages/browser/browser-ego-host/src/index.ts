@@ -218,7 +218,11 @@ export default class EgoBrowserHost extends Service {
     }
   }
 
-  /** 为人工工作台在指定会话空间新建一张空白页；首张页面复用空间自带锚页。 */
+  /**
+   * 为人工工作台在指定会话空间新建一张空白页；同会话的请求串行执行，首张页面复用空间锚页。
+   * @param sessionId - 页面所属的会话。
+   * @returns 复核归属后的目标 id；会话不存在、页面已满或创建失败时为 null。
+   */
   async createBlankPage(sessionId: SessionId): Promise<string | null> {
     const previous = this.pageCreates.get(sessionId) ?? Promise.resolve(null)
     const next = previous.then(() => this.createBlankPageNow(sessionId))

@@ -53,6 +53,7 @@ beforeAll(async () => {
     ...loadOverlayPatches('dsh-browser-presets', join(ROOT, 'packages/bundle/web-app/cordis.patch.yml')),
     { id: 'browser-ego-host', disabled: true },
     { id: 'webserver', disabled: true },
+    { id: 'ppt-workbench', disabled: true },
     { id: 'web-runtime', disabled: true },
     { id: 'session-telemetry-otel', disabled: true },
     { id: 'modules', disabled: true },

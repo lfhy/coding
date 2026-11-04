@@ -9,7 +9,7 @@
 import { globSync, readFileSync, writeFileSync } from 'node:fs'
 import { basename, resolve } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
-import type { ToolSchema } from 'coding-llm'
+import LlmRuntime, { type ToolSchema } from 'coding-llm'
 import AgentRegistry from 'coding-agent'
 import type { Agent } from 'coding-agent'
 import { createScope } from 'coding-scope'
@@ -66,6 +66,7 @@ import * as ToolStrReplaceEditor from 'coding-tool-str-replace-editor'
 import TerminalSessionService from 'coding-terminal'
 import * as ToolPty from 'coding-tool-terminal'
 import * as ToolGoal from 'coding-tool-goal'
+import * as ToolPpt from 'coding-tool-ppt'
 import * as ToolSchedule from 'coding-schedule'
 import Lsp from 'coding-lsp'
 import * as ToolLsp from 'coding-tool-lsp'
@@ -537,6 +538,22 @@ const TOOL_PACKAGES: ToolPackage[] = [
     },
     note:
       'create, edit, pause, and resume require direct-human root authority; complete and blocked also accept the exact current goal round. The default blocked lower bound is three admitted rounds.',
+  },
+  {
+    pkg: 'coding-tool-ppt',
+    dir: 'tool-ppt',
+    source: 'packages/ppt/tool-ppt/src/index.ts',
+    requires: ['ctx.tools', 'ctx.llm and ctx.attachments (AI review)', 'ctx.pptProjects (execution time)', 'a calling Agent session'],
+    writes: ['tool/call', 'project deck and history', 'rendered PNG or exported .pptx/PDF on request', 'tool/result'],
+    async mount(ctx) {
+      await ctx.plugin(LlmRuntime)
+      await ctx.plugin(CatalogAttachmentStore)
+      await ctx.plugin(ToolPpt)
+    },
+    note:
+      'The PPT preset installs these ten tools only in its Agent scope; other presets do not receive their schemas. '
+      + 'The catalog mounts the LLM and attachment services to harvest the schema without executing project operations, '
+      + 'model review, rendering, or attachment I/O. At execution time the Host supplies ctx.pptProjects.',
   },
   {
     pkg: 'coding-schedule',

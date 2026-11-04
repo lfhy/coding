@@ -171,44 +171,50 @@ const lightTokens = definedTokens(false)
 const darkTokens = definedTokens(true)
 const allTokens = new Set([...lightTokens, ...darkTokens])
 
-/** Every scrollbar token any package stylesheet references, mapped to the files referencing it. */
+/** 各包样式表引用过的滚动条 token 及引用位置。 */
 const referencedTokens = new Map<string, string[]>()
-/** Every indirection property any package stylesheet outside ui-theme declares, mapped to its declaring rules. */
+/** ui-theme 外的样式表重新绑定过的滚动条变量及所在规则。 */
 const rebindRules: { file: string; rule: CssRule }[] = []
 /**
- * What one stylesheet contributes to the elevated-surface question: which
- * elevated surfaces it paints, whether any rule scrolls, and whether it
- * rebinds. Kept per file rather than per rule because the elevated card and the
- * descendant that actually scrolls are separate rules in the same sheet, and
- * CSS text does not express which contains which.
+ * 样式表是否绘制抬升表面，以及未显式绘制基础表面的滚动规则是否需要绑定滑块。
+ * 按文件保留候选项，因为抬升卡片和滚动子区可能落在两条 CSS 规则中。
  */
 interface SheetSurfaces {
-  /** Elevated surface tokens this sheet paints anywhere. */
+  /** 样式表绘制的抬升表面 token。 */
   elevated: Set<string>
-  /** True when some rule declares `overflow*: auto|scroll`. */
-  scrolls: boolean
+  /** 至少有一条滚动规则无法证明自己的底色属于基础表面。 */
+  scrollsWithoutOwnBaseSurface: boolean
   /**
-   * True when some rule rebinds the indirection to an ELEVATION. A rule that
-   * only hides the bar (`transparent`) does not count: it states no elevation,
-   * so a sheet that hides its bars and also scrolls on an elevated surface
-   * still owes the l2 pair for whatever draws a thumb there.
+   * 是否绑定到抬升滑块；只把滑块隐藏为 transparent 不算抬升绑定。
    */
   rebindsElevation: boolean
 }
 const sheetSurfaces = new Map<string, SheetSurfaces>()
 
-/** Properties whose `auto`/`scroll` value makes a rule a scroll container. */
+/** 取 auto/scroll 时会形成滚动区域的属性。 */
 const OVERFLOW_PROPERTIES = ['overflow', 'overflow-x', 'overflow-y']
-/** Properties that paint a surface, and so identify the elevation a rule sits on. */
+/** 用于识别表面层级的背景属性。 */
 const SURFACE_PROPERTIES = ['background', 'background-color']
+/** 滚动区域明确绘制这两种底色时，不继承同文件其他控件的表面层级。 */
+const BASE_SURFACE_VALUES = new Set(['var(--dsw-alias-bg-base)', 'var(--dsw-alias-bg-layer-1)'])
+
 /**
- * Token families that name a SURFACE — a background an element is drawn on, and
- * so something a scrollbar can sit against. `--dsw-alias-button-*`,
- * `--dsw-alias-interactive-*`, and `--dsw-alias-markdown-*` reach the same dark
- * elevation rungs while naming a control or an inline span, which no scroll
- * container renders its bar against (ChatView's floating `.toBottom` pill,
- * CodeBlock's banner). Family, not geometry: a floating button legitimately
- * carries a radius, a shadow, and a fixed size, so shape cannot separate them.
+ * 判断滚动规则是否需要依赖自身或祖先的抬升表面绑定。
+ * @param rule - 要检查的 CSS 规则。
+ * @returns 未明确绘制基础表面且声明滚动时为 true。
+ */
+function scrollsWithoutOwnBaseSurface(rule: CssRule): boolean {
+  const scrolls = rule.declarations.some(([property, value]) =>
+    OVERFLOW_PROPERTIES.includes(property) && /\b(?:auto|scroll)\b/.test(value))
+  if (!scrolls) return false
+  const background = rule.declarations.findLast(([property]) => SURFACE_PROPERTIES.includes(property))?.[1]
+  return !BASE_SURFACE_VALUES.has(background ?? '')
+}
+
+/**
+ * 只把背景表面的 token 当作滚动条的层级候选。
+ * 按钮、交互与 Markdown 色块可能与抬升表面同色，却不代表滚动区域的底色；
+ * 例如 ChatView 的悬浮按钮和 CodeBlock 的标题栏。圆角、阴影等几何也无法区分按钮与表面。
  */
 const SURFACE_TOKEN_PATTERN = /^--dsw-(?:alias-bg-|specific-)/
 
@@ -251,7 +257,7 @@ const elevatedSurfaces = elevatedRungs()
 
 for (const file of packageStylesheets()) {
   const rules = parseRules(readFileSync(file, 'utf8'))
-  const surfaces: SheetSurfaces = { elevated: new Set(), scrolls: false, rebindsElevation: false }
+  const surfaces: SheetSurfaces = { elevated: new Set(), scrollsWithoutOwnBaseSurface: false, rebindsElevation: false }
   for (const rule of rules) {
     let rebinds = false
     let rebindsElevation = false
@@ -261,7 +267,6 @@ for (const file of packageStylesheets()) {
         rebinds = true
         if (value !== HIDDEN_THUMB) rebindsElevation = true
       }
-      if (OVERFLOW_PROPERTIES.includes(property) && /\b(?:auto|scroll)\b/.test(value)) surfaces.scrolls = true
       if (SURFACE_PROPERTIES.includes(property)) ruleSurfaces.push(...varReferences(value))
       for (const token of varReferences(value)) {
         if (!token.startsWith(TOKEN_PREFIX)) continue
@@ -271,6 +276,7 @@ for (const file of packageStylesheets()) {
     for (const token of ruleSurfaces) {
       if (elevatedSurfaces.has(token)) surfaces.elevated.add(token)
     }
+    if (scrollsWithoutOwnBaseSurface(rule)) surfaces.scrollsWithoutOwnBaseSurface = true
     if (rebinds) rebindRules.push({ file, rule })
     if (rebindsElevation) surfaces.rebindsElevation = true
   }
@@ -571,23 +577,39 @@ describe('elevated surface rebinds', () => {
     expect(elevatedSurfaces).not.toContain('--dsw-alias-bg-layer-1')
   })
 
+  it('基础表面滚动规则不受同文件的抬升控件影响', () => {
+    const rules = parseRules(`
+      .strip { overflow: auto; background: var(--dsw-alias-bg-layer-1); }
+      .canvas { overflow-y: scroll; background-color: var(--dsw-alias-bg-base); }
+      .button { background: var(--dsw-alias-bg-layer-2); }
+    `)
+    expect(rules.filter(scrollsWithoutOwnBaseSurface)).toEqual([])
+  })
+
+  it('抬升表面自身滚动或透明子区滚动仍需绑定滑块', () => {
+    const rules = parseRules(`
+      .card { background: var(--dsw-alias-bg-layer-2); }
+      .child { overflow-y: auto; }
+      .cells { overflow: auto; background: var(--dsw-alias-bg-layer-2); }
+    `)
+    expect(rules.filter(scrollsWithoutOwnBaseSurface).map(rule => rule.selectors[0])).toEqual(['.child', '.cells'])
+  })
+
+  it('Inspector 的表格文本域显式滚动并绑定 l2 滑块配对', () => {
+    const inspectorPath = new URL('../../ui-ppt-workbench/src/client/Inspector.module.css', import.meta.url)
+    const inspectorCss = readFileSync(fileURLToPath(inspectorPath), 'utf8')
+    const cells = parseRules(inspectorCss).find(rule => rule.selectors.includes('.cells'))
+    expect(cells?.declarations).toContainEqual(['overflow', 'auto'])
+    for (const [property, value] of ELEVATED_REBIND) {
+      expect(cells?.declarations).toContainEqual([property, value])
+    }
+  })
+
   it('every sheet that scrolls on an elevated surface rebinds', () => {
-    // The failure this closes: a scroll container on an elevated surface that
-    // nobody remembered to rebind renders the l1 thumb, which differs from l2
-    // only in the dark palette and only for that one surface — invisible both in
-    // review and in a light-palette screenshot. Four sheets shipped that way
-    // (ui-primitives Menu, InputBar, QuestionComposer, TodoPanel) and review
-    // caught them by hand, which is what this replaces.
-    //
-    // Surface-level, not element-level: the elevated card and the descendant
-    // that scrolls are separate rules, and CSS text does not say which contains
-    // which. What keeps that from over-reporting is the token FAMILY: only
-    // `--dsw-alias-bg-*` and `--dsw-specific-*` name a surface, so a floating
-    // button or an inline code span reaching the same rung is out of scope
-    // (ChatView's `.toBottom`, CodeBlock's banner). Geometry cannot make that
-    // call — a floating button carries a radius, a shadow, and a fixed size.
+    // 同一张样式表可能让抬升卡片与透明的滚动子区分属不同规则，仍需成对绑定。
+    // 滚动规则自行绘制基础底色时，同文件的抬升按钮并不改变滚动条层级。
     for (const [file, surfaces] of sheetSurfaces) {
-      if (!surfaces.scrolls || surfaces.rebindsElevation) continue
+      if (!surfaces.scrollsWithoutOwnBaseSurface || surfaces.rebindsElevation) continue
       expect([...surfaces.elevated], `${file} scrolls on an elevated surface without rebinding`).toEqual([])
     }
   })

@@ -141,6 +141,7 @@ export default defineConfig({
     projects: [
       {
         plugins: [pathsPlugin(), standardDecoratorPlugin()],
+        resolve: { extensions: resolveExtensions },
         test: {
           name: 'thread-safe',
           execArgv: vitestExecArgv,
@@ -159,6 +160,7 @@ export default defineConfig({
       },
       {
         plugins: [pathsPlugin(), standardDecoratorPlugin()],
+        resolve: { extensions: resolveExtensions },
         test: {
           name: 'process-bound',
           execArgv: vitestExecArgv,

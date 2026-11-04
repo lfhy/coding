@@ -66,12 +66,22 @@ function cssModulePlugin(): CssModulePlugin {
 describe('client bundle purity gate', () => {
   const resolveId = purityResolveId()
 
-  it('leaves default externals and non-scoped specifiers alone', () => {
+  it('leaves exact baseline externals and ordinary third-party imports alone', () => {
     expect(resolveId('coding-client-ui-slots')).toBeNull()
     expect(resolveId('coding-client-ui-primitives')).toBeNull()
     expect(resolveId('coding-client-runtime/client')).toBeNull()
+    expect(resolveId('@deepseek-ai/cordis')).toBeNull()
     expect(resolveId('react')).toBeNull()
     expect(resolveId('zod')).toBeNull()
+    expect(resolveId('@other-vendor/plugin')).toBeNull()
+    expect(resolveId('codingish-library')).toBeNull()
+  })
+
+  it('allows vendored libraries but not unrequested subpaths of shared modules', () => {
+    expect(resolveId('@deepseek-ai/cosmokit')).toBeNull()
+    expect(resolveId('@deepseek-ai/schemastery/core')).toBeNull()
+    expect(() => resolveId('coding-client-ui-primitives/client')).toThrow(/purity/)
+    expect(() => resolveId('coding-client-runtime/client/nested')).toThrow(/purity/)
   })
 
   it('rejects the retired web-react platform package', () => {
@@ -85,6 +95,11 @@ describe('client bundle purity gate', () => {
     expect(resolveId('coding-brand')).toBeNull()
   })
 
+  it('inlines the shared pure PPT data model but not its plugin entry', () => {
+    expect(resolveId('coding-ppt-model')).toBeNull()
+    expect(() => resolveId('coding-ppt-model/invariant')).toThrow(/purity/)
+  })
+
   it('lets exact generated Remote contributions inline without admitting their package implementation', () => {
     expect(resolveId('coding-goal/remote')).toBeNull()
     expect(() => resolveId('coding-goal')).toThrow(/purity/)
@@ -92,9 +107,10 @@ describe('client bundle purity gate', () => {
     expect(() => resolveId('coding-goal/remote/nested')).toThrow(/purity/)
   })
 
-  it('throws on any other @deepseek-ai leak', () => {
+  it('rejects unrequested coding-* and @deepseek-ai/* value imports', () => {
     expect(() => resolveId('coding-agent')).toThrow(/purity/)
     expect(() => resolveId('coding-client-web')).toThrow(/purity/)
+    expect(() => resolveId('@deepseek-ai/unrequested')).toThrow(/purity/)
   })
 
   it('inlines only the browser-safe open-in-app wire subpath', () => {

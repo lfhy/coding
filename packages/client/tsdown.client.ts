@@ -53,12 +53,11 @@ function styleInjectionModule(
 }
 
 /**
- * Wire/type layers a client bundle may inline: browser-safe contracts
- * with no runtime identity to share (no Symbol/instanceof/singleton state).
- * Everything else under @deepseek-ai/* is either a module-table entry
- * (external) or a leak the purity gate rejects.
+ * 浏览器 bundle 可内联的 wire／类型层和纯数据模块：它们不需要共享运行时身份。
+ * PPT 数据模型在 Host 与 Client 各自使用自己的副本，不经过插件模块表。
+ * 其余工作区值导入必须请求精确模块表项，否则由纯度检查拒绝。
  */
-export const INLINE_SAFE = /^(?:coding-(host-apiproxy|file-reference|session|llm|tools|brand)(\/|$)|coding-host-open-in-app\/shared$)/
+export const INLINE_SAFE = /^(?:coding-(host-apiproxy|file-reference|session|llm|tools|brand)(\/|$)|coding-host-open-in-app\/shared$|coding-ppt-model$)/
 
 /**
  * Vendored framework libraries: rescoped into @deepseek-ai, so the gate below
@@ -477,15 +476,12 @@ function clientConfig(id: string, entry: string): UserConfig {
       'import.meta.env': JSON.stringify({ MODE: process.env.NODE_ENV ?? 'production' }),
     },
     plugins: [{
-      // Bundle purity gate (build-time mirror of the module-edge rules): the
-      // baseline and package-specific requests stay external, inline-safe wire layers
-      // inline, and every other @deepseek-ai value import is a build error — a
-      // cross-plugin value import either inlines a duplicate runtime instance
-      // or requires a specifier the module table cannot answer for this package.
-      // Cross-plugin collaboration goes through cordis services instead.
+      // 构建期纯度检查与模块边规则一致：基座及插件声明的精确请求走模块表，安全 wire 层
+      // 可内联；其余 coding-* 工作区包与 @deepseek-ai/* 值导入必须拒绝，避免重复实例
+      // 或请求本插件无法从模块表取得的标识。跨插件协作应走 Cordis 服务。
       name: 'dsh-client-bundle-purity',
       resolveId(source: string) {
-        if (!source.startsWith('@deepseek-ai/')) return null
+        if (!source.startsWith('coding-') && !source.startsWith('@deepseek-ai/')) return null
         if (isRequested(source)) return null // requested module-table row: external wins
         if (VENDORED_LIBRARY.test(source)) return null // vendored library: inline, no shared identity
         if (INLINE_SAFE.test(source) || GENERATED_REMOTE.test(source)) return null // wire contribution: inline is the point
