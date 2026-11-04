@@ -3,8 +3,6 @@ export const NS = 'ppt-workbench'
 
 export const zh = {
   title: 'PPT 工作台',
-  guideTitle: 'PPT 工作台',
-  guideDescription: '在右侧编辑模型生成的幻灯片',
   loading: '正在打开工作台…',
   errorTitle: '工作台暂时不可用',
   errorRetry: '重试',
@@ -122,8 +120,6 @@ export type PptWorkbenchKey = keyof typeof zh
 
 export const en: Record<PptWorkbenchKey, string> = {
   title: 'PPT workbench',
-  guideTitle: 'PPT workbench',
-  guideDescription: 'Edit the slide deck the agent builds',
   loading: 'Opening the workbench…',
   errorTitle: 'The workbench is unavailable',
   errorRetry: 'Retry',

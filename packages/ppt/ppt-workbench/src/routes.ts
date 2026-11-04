@@ -8,14 +8,10 @@
 
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Context } from '@deepseek-ai/cordis'
+import type {} from 'coding-client-connection'
 import { PptModelError } from 'coding-ppt-model'
 import { PptStoreError, type PptSnapshot } from './store.ts'
 import type PptProjects from './index.ts'
-
-/** 连接层只需要这一个判断；不引入客户端聚合的 Context 合并。 */
-interface ConnectionFence {
-  requestRejection: (req: IncomingMessage) => number | undefined
-}
 
 const PREFIX = '/api/ppt/'
 const MAX_BODY = 16 * 1024 * 1024
@@ -57,7 +53,7 @@ function fail(reason: unknown): Reply {
  * @returns 请求可信时为 true。
  */
 function trusted(ctx: Context, req: IncomingMessage, res: ServerResponse): boolean {
-  const rejection = (Reflect.get(ctx, 'connection') as ConnectionFence | undefined)?.requestRejection(req)
+  const rejection = ctx.connection.requestRejection(req)
   if (rejection !== undefined) {
     res.writeHead(rejection)
     res.end()

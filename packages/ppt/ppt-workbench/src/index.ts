@@ -67,7 +67,7 @@ declare module '@deepseek-ai/cordis' {
 
 /** 会话级工程服务；写入由存储层按工程串行化，路由层负责转换错误码。 */
 export default class PptProjects extends Service {
-  static inject = ['sessions', 'webServer']
+  static inject = ['sessions', 'webServer', 'connection']
 
   /** 每个会话当前打开的工程目录（绝对路径）。 */
   private readonly active = new Map<string, string>()

@@ -117,18 +117,12 @@ export class PptPanelController {
     })
   }
 
-  /** 读取一次整体状态；模型要求打开别的工程时跟随过去。 */
+  /** 读取一次会话工程状态；宿主已把模型选定的工程设为当前工程。 */
   async refresh(): Promise<void> {
     try {
       const payload = await this.request(`state?${new URLSearchParams({ sessionId: this.sessionId }).toString()}`)
       const state = parseState(payload)
       if (state === null) throw new Error('state payload is malformed')
-      if (state.openRequest !== null && state.openRequest.dir !== state.active?.dir) {
-        await this.post('open', { dir: state.openRequest.dir })
-        await this.post('ack', { at: state.openRequest.at })
-        await this.refresh()
-        return
-      }
       const current = this.view.getSnapshot()
       const project = state.active
       const pageIndex = project === null ? 0 : clampPageIndex(project, current.pageIndex)
@@ -138,11 +132,20 @@ export class PptPanelController {
         draft.projects = state.projects
         draft.project = project
         draft.pageIndex = pageIndex
+        if (current.phase === 'error') draft.notice = null
+        if (project?.dir !== current.project?.dir) {
+          draft.selectedId = null
+          draft.editingId = null
+        }
         if (project !== null && current.selectedId !== null
           && !currentPage(project, pageIndex)?.elements.some(element => element.id === current.selectedId)) {
           draft.selectedId = null
         }
       })
+      if (state.openRequest !== null && project !== null) {
+        // 宿主的 active 已选中工程；读取成功后只确认，不重新打开生成另一个请求。
+        await this.post('ack', { at: state.openRequest.at }).catch(() => undefined)
+      }
     } catch (reason) {
       this.patch((draft) => {
         draft.phase = 'error'

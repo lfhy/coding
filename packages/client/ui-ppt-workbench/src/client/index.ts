@@ -1,6 +1,6 @@
 /**
  * 右侧工作台的「PPT 工作台」标签：把 `coding-ppt-workbench` 的浏览器半挂进外部标签槽位，
- * 并让 PPT 创作模式的会话在打开时自动落到这个标签上。
+ * 仅让已开始对话的 PPT 创作会话自动打开所属工作台标签。
  *
  * 面板只经 `/api/ppt/*` 与宿主往返（同一份工程服务也供模型工具使用），轮询承担
  * 「宿主 → 浏览器」的推送：模型打开别的工程、或在别处改了同一份工程，面板下一次
@@ -12,7 +12,6 @@ import type { ClientContext } from 'coding-client-runtime/client'
 import type { SessionId } from 'coding-session/types'
 import type {} from 'coding-client-locale/client'
 import type {} from 'coding-client-ui-open-in-app/client'
-import { IconDataOutline16 } from 'coding-client-ui-icons'
 import { PptPanelController } from './controller.ts'
 import { PptWorkbench, type PptWorkbenchInjected } from './PptWorkbench.tsx'
 import { en, NS, zh, type PptWorkbenchKey } from './locales.ts'
@@ -29,7 +28,7 @@ export const TAB_ID = 'ppt-workbench'
 export const TAB_KIND = 'ppt'
 /** 需要自动打开 PPT 工作台的 agent preset id。 */
 const PRESET_ID = 'ppt'
-/** 工作台尚未挂载时的重试节奏；约 6 秒后放弃，用户仍可从 `+` 菜单手动打开。 */
+/** 工作台尚未挂载时的重试节奏；约 6 秒后放弃，页面刷新后可重试。 */
 const RETRY_MS = 300
 const RETRY_LIMIT = 20
 
@@ -69,13 +68,6 @@ export function apply(ctx: ClientContext): void {
     keepMounted: true,
     priority: 'builtin',
     title: () => t('title'),
-    guide: [{
-      id: TAB_ID,
-      order: 95,
-      title: () => t('guideTitle'),
-      description: () => t('guideDescription'),
-      icon: IconDataOutline16,
-    }],
   }), 'ui-ppt: tab definition')
 
   ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register({
@@ -121,7 +113,7 @@ export function apply(ctx: ClientContext): void {
   /**
    * 打开 PPT 标签；工作台还没挂载时按固定节奏重试。
    *
-   * 自动打开只在会话进入 PPT 模式时发生一次：用户手动关掉之后不会被再次弹开。
+   * 自动打开只在已开始对话的 PPT 会话里发生一次：手动关闭后不再弹开。
    * @param sessionId - 需要显示工作台的会话。
    */
   const ensureOpen = (sessionId: SessionId): void => {
@@ -130,6 +122,9 @@ export function apply(ctx: ClientContext): void {
     const attempt = (): void => {
       retries.delete(sessionId)
       if (opened.has(sessionId)) return
+      const snapshot = ctx.sessions.list.getSnapshot()
+      const summary = snapshot.byId[sessionId]
+      if (snapshot.current !== sessionId || summary?.agentPreset !== PRESET_ID || summary.blank) return
       try {
         ctx.sidebarRight.openTabForSession(sessionId, TAB_KIND)
         opened.add(sessionId)
@@ -146,7 +141,8 @@ export function apply(ctx: ClientContext): void {
     const state = ctx.sessions.list.getSnapshot()
     const current = state.current
     if (current === undefined) return
-    if (state.byId[current]?.agentPreset !== PRESET_ID) return
+    const summary = state.byId[current]
+    if (summary?.agentPreset !== PRESET_ID || summary.blank) return
     ensureOpen(current)
   }
 

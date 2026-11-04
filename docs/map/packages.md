@@ -60,7 +60,7 @@ workspace 共 273 个包，按 group 分节。每行给出包目录、职责（R
 - `packages/client/ui-directory-picker-native` — 原生目录选择界面：原生选取交互的浏览器半边 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 1）
 - `packages/client/ui-goal` — Goal 界面插件（浏览器端部分）：`GoalBar` 条带是 `conversation.input.dock` composer 上下文堆栈… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 4）
 - `packages/client/ui-icons` — 本包是浏览器客户端图标的独立组件边界 入口 `src/index.ts`（tests 1）
-- `packages/client/ui-image-gen` — （README 缺首段） [client] 入口 `src/index.ts`、`src/client/index.ts`
+- `packages/client/ui-image-gen` — 图像生成的浏览器界面：设置里的「图像生成」分区、欢迎页和会话页头的画图入口、`image-gallery` 会话视图、以及会话右侧的「AI 画布… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 6）
 - `packages/client/ui-input-trigger` — 输入触发流水线插件：光标处的 `/` 与 `@` 检测（词边界 + guard tier 规则）、分组候选菜单… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 5）
 - `packages/client/ui-jobs` — Web 后台任务特性的归属方：向 `conversation.overview.jobs` 贡献一个会话作用域列表… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 2）
 - `packages/client/ui-layout` — 本包拥有浏览器根布局、瞬时面板几何和 `ctx.layout` [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 7）
@@ -69,7 +69,7 @@ workspace 共 273 个包，按 group 分节。每行给出包目录、职责（R
 - `packages/client/ui-open-in-app` — 右侧工作台的标签、功能菜单与显隐按 Session 管理；文件管理器、文件预览、Git 历史、终端和外部插件内容共用顶栏 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 17）
 - `packages/client/ui-permission-presets` — 面向两种不同生命周期的浏览器权限界面 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 3）
 - `packages/client/ui-plan` — Plan mode 状态徽章，纯浏览器 surface 插件 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 2）
-- `packages/client/ui-ppt-workbench` — 右侧边栏的「PPT 工作台」标签：缩略图、画布与属性面板三栏，就地改字、拖动元素、增删页与导出 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 1）
+- `packages/client/ui-ppt-workbench` — 右侧边栏的「PPT 工作台」标签：缩略图、画布与属性面板三栏，就地改字、拖动元素、增删页与导出 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 3）
 - `packages/client/ui-primitives` — 纯 React 原子组件（零 cordis）：StateDot、DisclosureRow、ic_ds_* 图标、Button/Pill/Men… 入口 `src/index.ts`（tests 22）
 - `packages/client/ui-reference` — 统一的 Web `@file` 与 `@session` source [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 1）
 - `packages/client/ui-renderer` — 负责 React 渲染层的浏览器 Cordis 插件 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 9）
@@ -218,8 +218,8 @@ workspace 共 273 个包，按 group 分节。每行给出包目录、职责（R
 
 ## packages/image
 
-- `packages/image/image-gen` — （README 缺首段） 入口 `src/index.ts`
-- `packages/image/tool-image-gen` — （README 缺首段） 入口 `src/index.ts`
+- `packages/image/image-gen` — Host 的会话级图像生成/编辑服务 入口 `src/index.ts`（tests 3）
+- `packages/image/tool-image-gen` — 模型侧图像工具包；注入 `tools` 和 `imageGeneration` 入口 `src/index.ts`（tests 1）
 
 ## packages/interaction
 
@@ -273,7 +273,7 @@ workspace 共 273 个包，按 group 分节。每行给出包目录、职责（R
 ## packages/ppt
 
 - `packages/ppt/model` — PPT 工程的数据模型与校验：演示文稿（`PptDeck`）、页面（`PptPage`）、元素（`PptElement`）、主题配色与画布尺寸… 入口 `src/index.ts`
-- `packages/ppt/ppt-workbench` — PPT 创作模式的宿主能力：工程存储（`ppt/<工程目录>/deck.json`）、版本与撤销历史、`.pptx` 导出… 入口 `src/index.ts`（tests 5）
+- `packages/ppt/ppt-workbench` — PPT 创作模式的宿主能力：工程存储（`ppt/<工程目录>/deck.json`）、版本与撤销历史、`.pptx` 导出… 入口 `src/index.ts`（tests 6）
 - `packages/ppt/tool-ppt` — PPT 创作模式的十个模型工具：`ppt_create`、`ppt_open`、`ppt_read`、`ppt_edit`、`ppt_undo`… 入口 `src/index.ts`（tests 1）
 
 ## packages/preset

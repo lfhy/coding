@@ -1,0 +1,92 @@
+import { Context } from '@deepseek-ai/cordis'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
+import { afterEach, describe, expect, it } from 'vitest'
+import Loader from '@deepseek-ai/cordis-plugin-loader'
+import Include from '@deepseek-ai/cordis-plugin-include'
+import { WebServer } from 'coding-host-webserver'
+import { HostConnectionService } from 'coding-client-connection'
+import PptProjects from '../src/index.ts'
+
+const SESSION = 'ppt-route-session'
+let ctx: Context | undefined
+let root: string | undefined
+
+afterEach(async () => {
+  await ctx?.fiber.dispose()
+  ctx = undefined
+  if (root !== undefined) await rm(root, { recursive: true, force: true })
+  root = undefined
+})
+
+/** 经 Loader 挂载真实 WebServer、连接信任栅栏与 PPT 路由，不读取本机已有会话。 */
+async function boot(): Promise<{ base: string; projects: PptProjects }> {
+  root = await mkdtemp(join(tmpdir(), 'coding-ppt-routes-'))
+  ctx = new Context()
+  ctx.baseUrl = pathToFileURL(root).href + '/'
+  ctx.provide('sessions', { get: (id: string) => id === SESSION ? { header: { cwd: root } } : undefined } as never)
+  await ctx.plugin(Loader)
+  ctx.loader.builtins.include = Include
+  ctx.loader.internal = { version: 'v2', async import(specifier: string) {
+    if (specifier === 'coding-host-webserver') return WebServer
+    if (specifier === 'coding-ppt-workbench') return PptProjects
+    if (specifier === 'test-connection') return {
+      inject: ['webServer'], apply(host: Context) { new HostConnectionService(host, []) },
+    }
+    throw new Error(`unknown test plugin: ${specifier}`)
+  } } as unknown as NonNullable<typeof ctx.loader.internal>
+  const configPath = join(root, 'cordis.yml')
+  await writeFile(configPath, [
+    '- name: coding-host-webserver',
+    '  config:',
+    '    host: 127.0.0.1',
+    '    port: 0',
+    '- name: test-connection',
+    '- name: coding-ppt-workbench',
+    '',
+  ].join('\n'))
+  await ctx.loader.create({ name: 'cordis:include', config: { path: pathToFileURL(configPath).href } })
+  await ctx.loader.await()
+  expect([...ctx.loader.entries()].filter(entry => entry.fiber === undefined && !entry.disabled)).toEqual([])
+  return { base: `http://127.0.0.1:${ctx.webServer.port}`, projects: ctx.pptProjects }
+}
+
+async function state(base: string, sessionId = SESSION, init?: RequestInit): Promise<Response> {
+  return fetch(`${base}/api/ppt/state?${new URLSearchParams({ sessionId }).toString()}`, init)
+}
+
+describe('PPT 状态路由的真实 HTTP 组合', () => {
+  it('空工程成功返回可用状态，模型新建与打开后各会话独立', async () => {
+    const { base, projects } = await boot()
+    const initial = await state(base)
+    expect(initial.status).toBe(200)
+    expect(await initial.json()).toMatchObject({ ok: true, state: {
+      root, projects: [], active: null, openRequest: null,
+    } })
+
+    const created = await projects.create(SESSION, { title: '季度汇报' })
+    const loaded = await state(base)
+    expect(loaded.status).toBe(200)
+    const payload = await loaded.json() as {
+      ok: boolean
+      state: {
+        active: { dir: string; title: string }
+        openRequest: { dir: string; at: number }
+      }
+    }
+    expect(payload.state.active).toMatchObject({ dir: created.dir, title: '季度汇报' })
+    expect(payload.state.openRequest.dir).toBe(projects.activeDir(SESSION))
+    expect(Number.isSafeInteger(payload.state.openRequest.at)).toBe(true)
+    const missing = await state(base, 'another-session')
+    expect(missing.status).toBe(400)
+    expect(await missing.json()).toMatchObject({ ok: false, error: { code: 'bad-request' } })
+  })
+
+  it('跨源请求先被拒绝，不暴露工程状态', async () => {
+    const { base } = await boot()
+    const foreign = await state(base, SESSION, { headers: { origin: 'http://elsewhere.invalid' } })
+    expect(foreign.status).toBe(403)
+  })
+})

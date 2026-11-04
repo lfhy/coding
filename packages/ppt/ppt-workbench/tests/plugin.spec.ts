@@ -4,7 +4,7 @@ import PptProjects from '../src/index.ts'
 
 describe('PPT 工程服务依赖', () => {
   it('等待 WebServer 再注册路由，卸载时撤销注册', async () => {
-    expect(PptProjects.inject).toEqual(['sessions', 'webServer'])
+    expect(PptProjects.inject).toEqual(['sessions', 'webServer', 'connection'])
     const ctx = new Context()
     const paths = new Set<string>()
     try {
@@ -19,6 +19,8 @@ describe('PPT 工程服务依赖', () => {
           return () => { paths.delete(route.path) }
         },
       } as never)
+      expect(ctx.get('pptProjects')).toBeUndefined()
+      ctx.provide('connection', { requestRejection: () => undefined } as never)
       await fiber
       expect(ctx.get('pptProjects')).toBeInstanceOf(PptProjects)
       expect([...paths]).toContain('/api/ppt/state')
