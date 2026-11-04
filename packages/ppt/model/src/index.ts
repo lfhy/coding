@@ -85,10 +85,22 @@ export interface ElementFrame {
   readonly h: number
 }
 
-/** 可选元素属性：入场动画。 */
+/** 强调动画。 */
+export type EmphasisAnimation = 'none' | 'pulse' | 'grow'
+
+/** 路径动画：相对元素自身位移。 */
+export type PathAnimation = 'none' | 'right' | 'left' | 'up' | 'down'
+
+/** 可选元素属性：入场、强调、退场与路径动画。 */
 export interface ElementMotion {
   /** 入场动画；`none` 或缺省表示不带动画。 */
   readonly animation?: ElementAnimation
+  /** 强调动画，在入场之后触发。 */
+  readonly emphasis?: EmphasisAnimation
+  /** 退场动画，在强调之后触发。 */
+  readonly exitAnimation?: ElementAnimation
+  /** 路径动画，与入场同时开始的位移。 */
+  readonly pathAnimation?: PathAnimation
 }
 
 /** 文本框。 */
@@ -315,12 +327,22 @@ export function fontFamily(value: unknown, at: string): string {
   return value.trim()
 }
 
-function motion(value: Record<string, unknown>, at: string): { animation?: ElementAnimation } {
-  if (value.animation === undefined) return {}
-  return { animation: oneOf(value.animation, `${at}.animation`, MOTIONS) }
+function motion(value: Record<string, unknown>, at: string): ElementMotion {
+  return {
+    ...value.animation === undefined ? {} : { animation: oneOf(value.animation, `${at}.animation`, MOTIONS) },
+    ...value.emphasis === undefined ? {} : { emphasis: oneOf(value.emphasis, `${at}.emphasis`, EMPHASIS) },
+    ...value.exitAnimation === undefined
+      ? {}
+      : { exitAnimation: oneOf(value.exitAnimation, `${at}.exitAnimation`, MOTIONS) },
+    ...value.pathAnimation === undefined
+      ? {}
+      : { pathAnimation: oneOf(value.pathAnimation, `${at}.pathAnimation`, PATHS) },
+  }
 }
 
 const MOTIONS = ['none', 'fade', 'fly', 'zoom', 'wipe'] as const
+const EMPHASIS = ['none', 'pulse', 'grow'] as const
+const PATHS = ['none', 'right', 'left', 'up', 'down'] as const
 const CHART_KINDS = ['bar', 'line', 'pie'] as const
 
 /**

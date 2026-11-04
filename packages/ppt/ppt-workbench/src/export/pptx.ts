@@ -309,6 +309,56 @@ function chartFrame(element: PptChartElement, index: number, relId: string): str
     + '</a:graphicData></a:graphic></p:graphicFrame>'
 }
 
+const EXPLICIT_PRESETS: Readonly<Record<string, {
+  effect: string
+  presetId: string
+  presetClass: string
+}>> = {
+  pulse: {
+    effect: '<p:animEffect transition="none" filter="pulse"><p:cBhvr><p:cTn id="{id}" dur="1000" repeatCount="2"/>'
+      + '<p:tgtEl><p:spTgt spid="{spid}"/></p:tgtEl></p:cBhvr></p:animEffect>',
+    presetId: '30',
+    presetClass: 'emph',
+  },
+  grow: {
+    effect: '<p:animScale><p:cBhvr><p:cTn id="{id}" dur="500" autoRev="1"/><p:tgtEl><p:spTgt spid="{spid}"/>'
+      + '</p:tgtEl></p:cBhvr><p:from x="100000" y="100000"/><p:to x="115000" y="115000"/></p:animScale>',
+    presetId: '31',
+    presetClass: 'emph',
+  },
+  'exit-fade': {
+    effect: '<p:animEffect transition="out" filter="fade"><p:cBhvr><p:cTn id="{id}" dur="500"/>'
+      + '<p:tgtEl><p:spTgt spid="{spid}"/></p:tgtEl></p:cBhvr></p:animEffect>',
+    presetId: '10',
+    presetClass: 'exit',
+  },
+  'exit-fly': {
+    effect: '<p:animEffect transition="out" filter="slide(toRight)"><p:cBhvr><p:cTn id="{id}" dur="500"/>'
+      + '<p:tgtEl><p:spTgt spid="{spid}"/></p:tgtEl></p:cBhvr></p:animEffect>',
+    presetId: '2',
+    presetClass: 'exit',
+  },
+  'exit-zoom': {
+    effect: '<p:animEffect transition="out" filter="zoom(out)"><p:cBhvr><p:cTn id="{id}" dur="500"/>'
+      + '<p:tgtEl><p:spTgt spid="{spid}"/></p:tgtEl></p:cBhvr></p:animEffect>',
+    presetId: '23',
+    presetClass: 'exit',
+  },
+  'exit-wipe': {
+    effect: '<p:animEffect transition="out" filter="wipe(right)"><p:cBhvr><p:cTn id="{id}" dur="500"/>'
+      + '<p:tgtEl><p:spTgt spid="{spid}"/></p:tgtEl></p:cBhvr></p:animEffect>',
+    presetId: '22',
+    presetClass: 'exit',
+  },
+}
+
+const PATHS: Readonly<Record<string, string>> = {
+  right: 'M 0 0 L 0.25 0 E',
+  left: 'M 0 0 L -0.25 0 E',
+  up: 'M 0 0 L 0 -0.25 E',
+  down: 'M 0 0 L 0 0.25 E',
+}
+
 const ANIMATION_PRESETS: Readonly<Record<string, { effect: string; presetId: string; subtype?: string }>> = {
   fade: { effect: '<p:animEffect transition="in" filter="fade"><p:cBhvr><p:cTn id="{id}" dur="500"/>'
     + '<p:tgtEl><p:spTgt spid="{spid}"/></p:tgtEl></p:cBhvr></p:animEffect>', presetId: '10' },
@@ -329,19 +379,44 @@ function timingXml(page: PptPage): string {
   const animated = page.elements
     .map((element, index) => ({ element, spid: index + 2 }))
     .filter((item): item is { element: PptElement; spid: number } => (
-      item.element.animation !== undefined && item.element.animation !== 'none'
-      && ANIMATION_PRESETS[item.element.animation] !== undefined
+      (item.element.animation !== undefined && item.element.animation !== 'none')
+      || (item.element.emphasis !== undefined && item.element.emphasis !== 'none')
+      || (item.element.exitAnimation !== undefined && item.element.exitAnimation !== 'none')
+      || (item.element.pathAnimation !== undefined && item.element.pathAnimation !== 'none')
     ))
   if (animated.length === 0) return ''
   let id = 1
-  const effects = animated.map(({ element, spid }) => {
-    const preset = ANIMATION_PRESETS[element.animation ?? 'fade'] ?? ANIMATION_PRESETS['fade']
-    if (preset === undefined) return ''
+  const effect = (body: string, presetId: string, presetClass: string): string => {
     const effectId = id
     id += 1
-    const body = preset.effect.replaceAll('{id}', String(effectId)).replaceAll('{spid}', String(spid))
-    return '<p:par><p:cTn id="' + String(id) + '" presetID="' + preset.presetId + '" presetClass="entr"'
-      + ' fill="hold" nodeType="withEffect">' + body + '</p:cTn></p:par>'
+    const filled = body.replaceAll('{id}', String(effectId))
+    return '<p:par><p:cTn id="' + String(id) + '" presetID="' + presetId + '" presetClass="' + presetClass + '"'
+      + ' fill="hold" nodeType="withEffect">' + filled + '</p:cTn></p:par>'
+  }
+  const effects = animated.map(({ element, spid }) => {
+    const parts: string[] = []
+    const entrance = ANIMATION_PRESETS[element.animation ?? 'fade'] ?? ANIMATION_PRESETS['fade']
+    if (entrance !== undefined) {
+      parts.push(effect(entrance.effect.replaceAll('{spid}', String(spid)), entrance.presetId, 'entr'))
+    }
+    const path = element.pathAnimation === undefined ? undefined : PATHS[element.pathAnimation]
+    if (path !== undefined) {
+      const motion = '<p:animMotion path="' + path + '" pathEditMode="relative" origin="layout">'
+        + '<p:cBhvr><p:cTn id="{id}" dur="500" fill="hold"/><p:tgtEl><p:spTgt spid="{spid}"/></p:tgtEl>'
+        + '</p:cBhvr></p:animMotion>'
+      parts.push(effect(motion.replaceAll('{spid}', String(spid)), '0', 'path'))
+    }
+    const emphasis = element.emphasis === undefined ? undefined : EXPLICIT_PRESETS[element.emphasis]
+    if (emphasis !== undefined) {
+      parts.push(effect(emphasis.effect.replaceAll('{spid}', String(spid)), emphasis.presetId, emphasis.presetClass))
+    }
+    const exit = element.exitAnimation === undefined || element.exitAnimation === 'none'
+      ? undefined
+      : EXPLICIT_PRESETS[`exit-${element.exitAnimation}`]
+    if (exit !== undefined) {
+      parts.push(effect(exit.effect.replaceAll('{spid}', String(spid)), exit.presetId, exit.presetClass))
+    }
+    return parts.join('')
   })
   return '<p:timing><p:tnLst><p:par><p:cTn id="1" dur="indefinite" restart="never" nodeType="tmRoot"><p:childTnLst>'
     + '<p:seq concurrent="1" nextAc="seek"><p:cTn id="2" dur="indefinite" nodeType="mainSeq"><p:childTnLst>'

@@ -239,6 +239,26 @@ describe('.pptx 导出', () => {
     expect(types).toContain('application/x-fontdata')
   })
 
+  it('强调、退场与路径动画都写进 timing', () => {
+    const animated: PptDeck = {
+      ...deck,
+      pages: [{
+        id: 'p1', name: '动画', background: null, transition: 'none',
+        elements: [{
+          id: 'r1', kind: 'rect', x: 100, y: 100, w: 200, h: 100, fill: '#4f8cff',
+          animation: 'fade', emphasis: 'pulse', exitAnimation: 'fade', pathAnimation: 'right',
+        }],
+      }],
+    }
+    const slide = readZip(buildPptx(animated))
+      .find(entry => entry.path === 'ppt/slides/slide1.xml')?.data.toString('utf8') ?? ''
+    expect(slide).toContain('presetClass="entr"')
+    expect(slide).toContain('presetClass="emph"')
+    expect(slide).toContain('presetClass="exit"')
+    expect(slide).toContain('animMotion')
+    expect(slide).toContain('M 0 0 L 0.25 0 E')
+  })
+
   it('缺图时退化成占位形状，导出仍然成立', () => {
     const withImage: PptDeck = {
       ...deck,

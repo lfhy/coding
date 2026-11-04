@@ -345,6 +345,9 @@ export class PptPanelController {
     chart?: { categories: readonly string[]; series: readonly unknown[] }
     stacked?: boolean
     animation?: 'none' | 'fade' | 'fly' | 'zoom' | 'wipe'
+    emphasis?: 'none' | 'pulse' | 'grow'
+    exitAnimation?: 'none' | 'fade' | 'fly' | 'zoom' | 'wipe'
+    pathAnimation?: 'none' | 'right' | 'left' | 'up' | 'down'
   }): Promise<void> {
     const state = this.view.getSnapshot()
     const page = currentPage(state.project, state.pageIndex)

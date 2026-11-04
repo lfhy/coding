@@ -76,6 +76,12 @@ export interface UpdateElementOp {
   readonly chart?: { readonly categories: readonly string[]; readonly series: readonly PptChartSeries[] }
   /** 入场动画。 */
   readonly animation?: ElementAnimation
+  /** 强调动画。 */
+  readonly emphasis?: 'none' | 'pulse' | 'grow'
+  /** 退场动画。 */
+  readonly exitAnimation?: ElementAnimation
+  /** 路径动画。 */
+  readonly pathAnimation?: 'none' | 'right' | 'left' | 'up' | 'down'
   /** 图表是否堆叠。 */
   readonly stacked?: boolean
 }
@@ -126,6 +132,8 @@ const REORDER_TARGETS = ['front', 'back', 'forward', 'backward'] as const
 
 const ALIGNMENTS = ['left', 'center', 'right'] as const
 const MOTIONS = ['none', 'fade', 'fly', 'zoom', 'wipe'] as const
+const EMPHASIS = ['none', 'pulse', 'grow'] as const
+const PATHS = ['none', 'right', 'left', 'up', 'down'] as const
 const TEMPLATE_IDS: readonly PptTemplateId[] = PPT_TEMPLATES.map(entry => entry.id)
 const VALIGNMENTS = ['top', 'middle', 'bottom'] as const
 const THEMES = ['ink', 'paper', 'ocean', 'forest'] as const
@@ -273,6 +281,15 @@ function parseOp(value: unknown, at: string): PptOp {
         ...value.animation === undefined
           ? {}
           : { animation: pick(MOTIONS, value.animation, `${at}.animation`) },
+        ...value.emphasis === undefined
+          ? {}
+          : { emphasis: pick(EMPHASIS, value.emphasis, `${at}.emphasis`) },
+        ...value.exitAnimation === undefined
+          ? {}
+          : { exitAnimation: pick(MOTIONS, value.exitAnimation, `${at}.exitAnimation`) },
+        ...value.pathAnimation === undefined
+          ? {}
+          : { pathAnimation: pick(PATHS, value.pathAnimation, `${at}.pathAnimation`) },
         ...value.chart === undefined ? {} : { chart: parseChartPatch(value.chart, `${at}.chart`) },
         ...value.stacked === undefined ? {} : { stacked: value.stacked === true },
       }
@@ -425,6 +442,9 @@ function patchElement(element: PptElement, op: UpdateElementOp): PptElement {
     next.series = op.chart.series
   }
   if (op.animation !== undefined) next.animation = op.animation
+  if (op.emphasis !== undefined) next.emphasis = op.emphasis
+  if (op.exitAnimation !== undefined) next.exitAnimation = op.exitAnimation
+  if (op.pathAnimation !== undefined) next.pathAnimation = op.pathAnimation
   if (element.kind === 'table' && op.cells !== undefined) {
     if (op.cells.length !== element.rows || op.cells.some(row => row.length !== element.columns)) {
       throw new PptModelError(`cells 维度必须等于 ${element.rows} × ${element.columns}`)

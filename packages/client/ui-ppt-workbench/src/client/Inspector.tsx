@@ -25,6 +25,9 @@ export interface ElementPatch {
   fit?: 'cover' | 'contain'
   cells?: readonly (readonly { readonly content: string }[])[]
   animation?: 'none' | 'fade' | 'fly' | 'zoom' | 'wipe'
+  emphasis?: 'none' | 'pulse' | 'grow'
+  exitAnimation?: 'none' | 'fade' | 'fly' | 'zoom' | 'wipe'
+  pathAnimation?: 'none' | 'right' | 'left' | 'up' | 'down'
   /** 图表：整表替换分类与系列。 */
   chart?: { categories: readonly string[]; series: readonly unknown[] }
   /** 图表是否堆叠。 */
@@ -281,6 +284,46 @@ export function Inspector({
                 onCommit={(width) => { onElement({ width }) }} />
             </>
           ) : null}
+          <label className={css.field}>
+            <span>{t('emphasis')}</span>
+            <select
+              value={element.emphasis ?? 'none'}
+              disabled={busy}
+              onChange={(event) => { onElement({ emphasis: event.target.value as 'none' }) }}
+            >
+              <option value="none">{t('animationNone')}</option>
+              <option value="pulse">{t('emphasisPulse')}</option>
+              <option value="grow">{t('emphasisGrow')}</option>
+            </select>
+          </label>
+          <label className={css.field}>
+            <span>{t('exitAnimation')}</span>
+            <select
+              value={element.exitAnimation ?? 'none'}
+              disabled={busy}
+              onChange={(event) => { onElement({ exitAnimation: event.target.value as 'none' }) }}
+            >
+              <option value="none">{t('animationNone')}</option>
+              <option value="fade">{t('animationFade')}</option>
+              <option value="fly">{t('animationFly')}</option>
+              <option value="zoom">{t('animationZoom')}</option>
+              <option value="wipe">{t('animationWipe')}</option>
+            </select>
+          </label>
+          <label className={css.field}>
+            <span>{t('pathAnimation')}</span>
+            <select
+              value={element.pathAnimation ?? 'none'}
+              disabled={busy}
+              onChange={(event) => { onElement({ pathAnimation: event.target.value as 'none' }) }}
+            >
+              <option value="none">{t('animationNone')}</option>
+              <option value="right">{t('pathRight')}</option>
+              <option value="left">{t('pathLeft')}</option>
+              <option value="up">{t('pathUp')}</option>
+              <option value="down">{t('pathDown')}</option>
+            </select>
+          </label>
           <label className={css.field}>
             <span>{t('animation')}</span>
             <select
