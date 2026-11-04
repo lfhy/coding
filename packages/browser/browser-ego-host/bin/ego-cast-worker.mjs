@@ -2289,16 +2289,17 @@ async function main() {
 					error: "no live browser"
 				});
 				const targetId = url.searchParams.get("targetId");
-				if (url.searchParams.size < 1 || url.searchParams.size > 3 || !targetId) return sendJson(res, 400, {
-					ok: false,
-					error: "targetId required"
-				});
-				if ([...url.searchParams.keys()].some((key) => ![
+				const allowedFrameKeys = [
 					"targetId",
 					"quality",
 					"maxWidth",
 					"format"
-				].includes(key))) return sendJson(res, 400, {
+				];
+				if (url.searchParams.size < 1 || url.searchParams.size > allowedFrameKeys.length || !targetId) return sendJson(res, 400, {
+					ok: false,
+					error: "targetId required"
+				});
+				if ([...url.searchParams.keys()].some((key) => !allowedFrameKeys.includes(key) || url.searchParams.getAll(key).length !== 1)) return sendJson(res, 400, {
 					ok: false,
 					error: "unsupported query"
 				});

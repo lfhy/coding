@@ -98,6 +98,8 @@ describe('会话浏览器 Host 路由', () => {
     expect(framePath({ cdpQuality: 0, cdpMaxWidth: 9999 }, 'owned')).toBe('/api/frame?targetId=owned')
     expect(framePath({ cdpQuality: 80.5, cdpMaxWidth: 'wide' }, 'owned')).toBe('/api/frame?targetId=owned')
     expect(framePath({}, 'owned', 'lossy')).toBe('/api/frame?targetId=owned&format=lossy')
+    expect(framePath({ cdpQuality: 90, cdpMaxWidth: 1200 }, 'owned', 'lossy'))
+      .toBe('/api/frame?targetId=owned&quality=90&maxWidth=1200&format=lossy')
   })
 
   it('实时取帧间隔来自帧率设置，越界时退到 15fps 且不低于 33ms', () => {

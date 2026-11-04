@@ -208,6 +208,15 @@ it('封闭 worker 在真实 HTTP/CDP 连接上采帧并导航，拒绝失效目�
   expect(calls.filter(call => call.method === 'Page.captureScreenshot').at(-1)).toMatchObject({
     params: { format: 'jpeg', quality: 85 },
   })
+  // 实时流带上两项设置和格式时必须采集成功；多余查询项仍被拒绝。
+  const live = await fetch(`${api}/api/frame?targetId=owned&quality=85&maxWidth=800&format=lossy`)
+  expect(live.status, stderr).toBe(200)
+  expect(await live.json()).toMatchObject({ mime: 'image/jpeg', data: JPEG, vw: 1600, vh: 900 })
+  expect(calls.filter(call => call.method === 'Page.captureScreenshot').at(-1)).toMatchObject({
+    params: { format: 'jpeg', quality: 85, clip: { width: 1600, height: 900, scale: 0.25 } },
+  })
+  expect((await fetch(`${api}/api/frame?targetId=owned&quality=85&maxWidth=800&format=lossy&extra=1`)).status).toBe(400)
+  expect((await fetch(`${api}/api/frame?targetId=owned&quality=85&maxWidth=800&format=lossy&format=lossy`)).status).toBe(400)
   expect((await fetch(`${api}/api/frame?targetId=owned&quality=0`)).status).toBe(400)
   expect((await fetch(`${api}/api/frame?targetId=owned&format=png`)).status).toBe(400)
   expect((await fetch(`${api}/api/frame?targetId=owned&unknown=1`)).status).toBe(400)

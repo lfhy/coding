@@ -454,8 +454,12 @@ async function main(): Promise<void> {
         const browser = active
         if (!browser) return sendJson(res, 409, { ok: false, error: 'no live browser' })
         const targetId = url.searchParams.get('targetId')
-        if (url.searchParams.size < 1 || url.searchParams.size > 3 || !targetId) return sendJson(res, 400, { ok: false, error: 'targetId required' })
-        if ([...url.searchParams.keys()].some(key => !['targetId', 'quality', 'maxWidth', 'format'].includes(key))) {
+        const allowedFrameKeys = ['targetId', 'quality', 'maxWidth', 'format']
+        if (url.searchParams.size < 1 || url.searchParams.size > allowedFrameKeys.length || !targetId) {
+          return sendJson(res, 400, { ok: false, error: 'targetId required' })
+        }
+        if ([...url.searchParams.keys()].some(key => !allowedFrameKeys.includes(key)
+          || url.searchParams.getAll(key).length !== 1)) {
           return sendJson(res, 400, { ok: false, error: 'unsupported query' })
         }
         // 画质、宽度与格式由 Host 按用户设置下发；缺省时沿用 worker 自己的配置。
