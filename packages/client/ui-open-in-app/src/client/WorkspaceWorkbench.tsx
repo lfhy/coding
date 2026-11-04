@@ -507,10 +507,7 @@ export function WorkspaceWorkbench(props: WorkspaceWorkbenchProps): React.JSX.El
           onCompleted={() => {
             const wasActive = props.shown && id === sessionId && state?.activeId === tab.id
             if (wasActive) setFocusRequest(null)
-            const closing = sessions[id]
             props.actions.closeTab(id as SessionId, tab.id)
-            // Shell 退出关闭最后一个右侧终端标签时，右侧边栏同样收起。
-            if (closing !== undefined && closing.tabs.length === 1) props.closeWorkbench(id as SessionId)
             if (wasActive) setCompletedFocus({ sessionId: id as SessionId, tabId: tab.id })
           }} />
       )))}
@@ -544,6 +541,18 @@ function WorkbenchView(props: WorkbenchViewProps): React.JSX.Element {
   const lastCompletedFocus = useRef(completedFocusTabId)
   const pendingFocus = useRef<'menu' | 'return' | null>(null)
   const previousView = useRef(view)
+  /**
+   * 当前 Session 的标签从有到无时收起右侧边栏：用户的关闭动作、外部页面目录同步移除和
+   * 定义卸载共用同一条规则。组件按 Session 重挂载，切换会话不会把新会话的空标签当成清空；
+   * 打开一个本来就没有标签的工作台也保留功能菜单。
+   */
+  const tabCountSeen = useRef(tabs.length)
+  useEffect(() => {
+    const previousCount = tabCountSeen.current
+    tabCountSeen.current = tabs.length
+    if (previousCount === 0 || tabs.length > 0 || !shown) return
+    closeWorkbench()
+  }, [closeWorkbench, shown, tabs.length])
   const showFiles = useCallback((): void => {
     pendingFocus.current = 'return'
     actions.openFileManager()
@@ -643,15 +652,11 @@ function WorkbenchView(props: WorkbenchViewProps): React.JSX.Element {
     if (opening && filesLevels[key]?.phase !== 'ready') load(entry.segments)
   }, [actions, expanded, filesLevels, load])
 
-  /**
-   * 关闭顶栏标签；它是最后一个标签时右侧边栏已无内容，直接收起而不是停在功能菜单。
-   * 只覆盖用户的关闭动作，插件卸载等被动清理不经过这里。
-   */
+  /** 关闭顶栏标签；标签清空后是否收起右侧边栏由标签数量变化统一判断。 */
   const closeTab = useCallback((id: string, close: (id: string) => void): void => {
     if (!tabs.some(tab => tab.id === id)) return
     close(id)
-    if (tabs.length === 1) closeWorkbench()
-  }, [closeWorkbench, tabs])
+  }, [tabs])
   return (
     <>
       <header className={css.topbar} data-window-drag-region="">

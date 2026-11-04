@@ -612,6 +612,43 @@ describe('WorkspaceWorkbench shell', () => {
     expect(b.instance.getSnapshot().tabs).toEqual([])
   })
 
+  it('收起被目录同步移除的最后一个外部标签，而不是只处理用户关闭', () => {
+    const definition: SidebarRightTabDefinition = { id: 'ego-browser', kind: 'ego-browser:watch',
+      title: () => 'Agent 浏览器', multiple: true, reuseAddress: true }
+    const fallback = 'sidebar://ego-browser%3Awatch'
+    const b = bench({ externalDefinitions: [definition] })
+    b.instance.actions.openExternalTab({ definitionId: definition.id, kind: definition.kind,
+      name: 'Agent 浏览器', address: `${fallback}/target`, multiple: true, reuseAddress: true })
+    render(<WorkspaceWorkbench {...b.props} />)
+    act(() => {
+      b.instance.actions.syncExternalTabs({ kind: definition.kind, definitionId: definition.id,
+        fallback: { address: fallback, name: 'Agent 浏览器' }, pages: [] })
+    })
+    expect(b.instance.getSnapshot()).toMatchObject({ view: 'menu', tabs: [] })
+    expect(b.closeWorkbench).toHaveBeenCalledExactlyOnceWith(SESSION)
+  })
+
+  it('工作台已隐藏时清空标签不再重复收起，重新打开仍先显示功能菜单', () => {
+    const b = bench({ shown: false })
+    b.instance.actions.openFileManager()
+    render(<WorkspaceWorkbench {...b.props} shown={false} />)
+    act(() => { b.instance.actions.closeTab('file-manager') })
+    expect(b.closeWorkbench).not.toHaveBeenCalled()
+    expect(b.instance.getSnapshot()).toMatchObject({ view: 'menu', activeId: null, tabs: [] })
+  })
+
+  it('切换会话不因新会话尚无标签而收起右侧边栏', () => {
+    const other = 'other-session' as SessionId
+    const b = bench()
+    b.instance.actions.openFileManager()
+    const mounted = render(<WorkspaceWorkbench {...b.props} />)
+    const switched = { ...b.props,
+      useSessions: (selector: (state: { ids: readonly SessionId[]; current: SessionId }) => unknown) =>
+        selector({ ids: [SESSION, other], current: other }) } as WorkspaceWorkbenchProps
+    mounted.rerender(<WorkspaceWorkbench {...switched} />)
+    expect(b.closeWorkbench).not.toHaveBeenCalled()
+  })
+
   it('窄屏预览独占内容，返回文件管理器仍保留目录筛选与展开', async () => {
     let resize: ResizeObserverCallback | undefined
     vi.stubGlobal('ResizeObserver', class {
