@@ -1,5 +1,22 @@
+import { readdirSync } from 'node:fs'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { licenceOf, readFontFace, usedFamilies, wrapEot } from '../src/fonts.ts'
+import { licenceOf, readFontFace, systemFontDirs, usedFamilies, wrapEot } from '../src/fonts.ts'
+
+/** 找一个真实的 .ttf 用来验证封装；没有系统字体时这些用例跳过。 */
+function firstSystemTtf(): string | null {
+  for (const dir of systemFontDirs()) {
+    let names: string[] = []
+    try {
+      names = readdirSync(dir)
+    } catch {
+      continue
+    }
+    const hit = names.find(name => name.toLowerCase().endsWith('.ttf'))
+    if (hit !== undefined) return join(dir, hit)
+  }
+  return null
+}
 
 describe('字体嵌入许可', () => {
   it('Installable 与 Editable 可嵌入，Preview 只读嵌入', () => {
@@ -39,5 +56,21 @@ describe('EOT 封装', () => {
       bytes: new Uint8Array([0x4f, 0x54, 0x54, 0x4f, 0, 0, 0, 0, 0, 0, 0, 0]),
     })).toBeNull()
     expect(await readFontFace('/does/not/exist.ttf')).toBeNull()
+  })
+})
+
+describe('EOT 封装（真实字体）', () => {
+  const path = firstSystemTtf()
+  it.skipIf(path === null)('写出与声明长度一致的 EOT 头', async () => {
+    const face = await readFontFace(path as string)
+    expect(face).not.toBeNull()
+    if (face === null) return
+    const eot = wrapEot(face)
+    expect(eot).not.toBeNull()
+    if (eot === null) return
+    const view = new DataView(eot.buffer, eot.byteOffset, eot.byteLength)
+    expect(view.getUint32(0, true)).toBe(eot.length)
+    expect(view.getUint32(4, true)).toBe(face.bytes.length)
+    expect(view.getUint32(8, true)).toBe(0x00020001)
   })
 })
