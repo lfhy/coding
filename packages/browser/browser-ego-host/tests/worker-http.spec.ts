@@ -177,6 +177,14 @@ it('封闭 worker 在真实 HTTP/CDP 连接上采帧并导航，拒绝失效目�
   expect(calls.filter(call => call.method === 'Page.captureScreenshot').at(-1)).toMatchObject({
     params: { clip: { width: 1600, height: 900, scale: 0.8 } },
   })
+  // Host 按用户设置下发单帧画质与宽度上限：质量进编码参数，宽度换算成设备像素缩放比。
+  expect(await (await fetch(`${api}/api/frame?targetId=owned&quality=90&maxWidth=800`)).json())
+    .toMatchObject({ vw: 1600, vh: 900 })
+  expect(calls.filter(call => call.method === 'Page.captureScreenshot').at(-1)).toMatchObject({
+    params: { quality: 90, clip: { width: 1600, height: 900, scale: 0.25 } },
+  })
+  expect((await fetch(`${api}/api/frame?targetId=owned&quality=0`)).status).toBe(400)
+  expect((await fetch(`${api}/api/frame?targetId=owned&unknown=1`)).status).toBe(400)
   const hovered = await fetch(`${api}/api/hover`, { method: 'POST',
     headers: { 'content-type': 'application/json' }, body: JSON.stringify({ targetId: 'owned', x: 10, y: 20 }) })
   expect(await hovered.json()).toMatchObject({ ok: true, cursor: 'pointer', href: 'https://example.test/next' })

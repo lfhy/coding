@@ -43,7 +43,7 @@ interface CastConfig {
 
 const DEFAULT_CONFIG: CastConfig = {
   captureBackend: 'auto', streamProfile: 'balanced', ffmpegFallbackReason: '',
-  cdpFps: 20, cdpQuality: 55, cdpMaxWidth: 2560, cdpBackstopIntervalMs: 3000,
+  cdpFps: 20, cdpQuality: 80, cdpMaxWidth: 2560, cdpBackstopIntervalMs: 3000,
   ffmpegFps: 20, ffmpegMaxWidth: 1280, ffmpegBitrateKbps: 4000, ffmpegEncoder: 'auto', ffmpegPath: '', ffmpegResolvedPath: '',
 }
 let castConfig: CastConfig = { ...DEFAULT_CONFIG }
@@ -452,7 +452,17 @@ async function main(): Promise<void> {
         const browser = active
         if (!browser) return sendJson(res, 409, { ok: false, error: 'no live browser' })
         const targetId = url.searchParams.get('targetId')
-        if (url.searchParams.size !== 1 || !targetId) return sendJson(res, 400, { ok: false, error: 'targetId required' })
+        if (url.searchParams.size < 1 || url.searchParams.size > 3 || !targetId) return sendJson(res, 400, { ok: false, error: 'targetId required' })
+        if ([...url.searchParams.keys()].some(key => !['targetId', 'quality', 'maxWidth'].includes(key))) {
+          return sendJson(res, 400, { ok: false, error: 'unsupported query' })
+        }
+        // 画质与宽度由 Host 按用户设置下发；缺省时沿用 worker 自己的配置。
+        const quality = Number(url.searchParams.get('quality') ?? castConfig.cdpQuality)
+        const maxWidth = Number(url.searchParams.get('maxWidth') ?? castConfig.cdpMaxWidth)
+        if (!Number.isSafeInteger(quality) || quality < 1 || quality > 100
+          || !Number.isSafeInteger(maxWidth) || maxWidth < 320 || maxWidth > 2560) {
+          return sendJson(res, 400, { ok: false, error: 'quality or maxWidth out of range' })
+        }
         if (!(await listTargets()).some(target => target.targetId === targetId)) {
           return sendJson(res, 409, { ok: false, error: 'target is no longer available' })
         }
@@ -463,7 +473,7 @@ async function main(): Promise<void> {
               () => measureViewport(browser, targetId))
             if (!applied) return sendJson(res, 503, { ok: false, error: 'viewport did not match the panel' })
           }
-          const captured = await captureFrame(browser.sessions, targetId)
+          const captured = await captureFrame(browser.sessions, targetId, { quality, maxWidth })
           rememberFrame(captured)
           return sendJson(res, 200, captured)
         }

@@ -8,6 +8,7 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { markToolStart } from '../src/activity.ts'
 import EgoBrowserHost from '../src/index.ts'
+import { framePath } from '../src/routes.ts'
 import { spaceNameForSession } from '../src/session-space.ts'
 
 let ctx: Context | undefined
@@ -87,6 +88,15 @@ describe('会话浏览器 Host 路由', () => {
     expect((await postNavigation({ sessionId: session.id, targetId: 'owned', action: 'navigate', url: 'javascript:alert(1)' })).status).toBe(400)
     expect((await postNavigation({ sessionId: session.id, targetId: 'owned', action: 'reload', cdp: 'Page.navigate' })).status).toBe(400)
     expect(spawns).not.toHaveBeenCalled()
+  })
+
+  it('单帧画质只转发设置里的合法值，缺失或越界时由 worker 用自身配置兜底', () => {
+    expect(framePath({ cdpQuality: 90, cdpMaxWidth: 1200 }, 'owned'))
+      .toBe('/api/frame?targetId=owned&quality=90&maxWidth=1200')
+    expect(framePath({}, 'owned')).toBe('/api/frame?targetId=owned')
+    expect(framePath(undefined, 'owned')).toBe('/api/frame?targetId=owned')
+    expect(framePath({ cdpQuality: 0, cdpMaxWidth: 9999 }, 'owned')).toBe('/api/frame?targetId=owned')
+    expect(framePath({ cdpQuality: 80.5, cdpMaxWidth: 'wide' }, 'owned')).toBe('/api/frame?targetId=owned')
   })
 
   it('只转发已归属目标的合法面板尺寸，越界、额外字段与跨会话目标被拒绝', async () => {

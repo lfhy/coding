@@ -752,15 +752,13 @@ async function captureSnapshot(sessions, targetId, maxWidth) {
 }
 //#endregion
 //#region third-party/host/worker/frame.ts
-/** 单帧采集的宽度上限（设备像素）；超宽面板按比例缩小，避免大图撑爆画面预算。 */
-const MAX_DEVICE_WIDTH = 2560;
 /**
 * 采集当前视口的一帧 JPEG，并附上 CSS 视口尺寸供 Host 换算人工输入坐标。
 *
 * 采集按设备像素进行：面板用 `Emulation.setDeviceMetricsOverride` 把页面像素比设成
 * 显示器像素比，这里不再折算回 CSS 像素，否则 HiDPI 下 1:1 的截图会被面板放大而发虚。
 */
-async function captureFrame(sessions, targetId) {
+async function captureFrame(sessions, targetId, options) {
 	const viewport = (await sessions.call(targetId, "Runtime.evaluate", {
 		expression: "({ x: window.scrollX, y: window.scrollY, width: window.innerWidth, height: window.innerHeight, dpr: window.devicePixelRatio })",
 		returnByValue: true
@@ -771,10 +769,10 @@ async function captureFrame(sessions, targetId) {
 	const dpr = Number.isFinite(viewport?.dpr) && viewport?.dpr > 0 ? viewport.dpr : 1;
 	const x = viewport?.x ?? 0, y = viewport?.y ?? 0;
 	if (![x, y].every(Number.isFinite) || x < 0 || y < 0) throw new Error("viewport unavailable");
-	const scale = Math.min(1, MAX_DEVICE_WIDTH / (vw * dpr));
+	const scale = Math.min(1, options.maxWidth / (vw * dpr));
 	const image = await sessions.call(targetId, "Page.captureScreenshot", {
 		format: "jpeg",
-		quality: 55,
+		quality: options.quality,
 		captureBeyondViewport: false,
 		clip: {
 			x,
@@ -1807,7 +1805,7 @@ let castConfig = {
 	streamProfile: "balanced",
 	ffmpegFallbackReason: "",
 	cdpFps: 20,
-	cdpQuality: 55,
+	cdpQuality: 80,
 	cdpMaxWidth: 2560,
 	cdpBackstopIntervalMs: 3e3,
 	ffmpegFps: 20,
@@ -2287,9 +2285,23 @@ async function main() {
 					error: "no live browser"
 				});
 				const targetId = url.searchParams.get("targetId");
-				if (url.searchParams.size !== 1 || !targetId) return sendJson(res, 400, {
+				if (url.searchParams.size < 1 || url.searchParams.size > 3 || !targetId) return sendJson(res, 400, {
 					ok: false,
 					error: "targetId required"
+				});
+				if ([...url.searchParams.keys()].some((key) => ![
+					"targetId",
+					"quality",
+					"maxWidth"
+				].includes(key))) return sendJson(res, 400, {
+					ok: false,
+					error: "unsupported query"
+				});
+				const quality = Number(url.searchParams.get("quality") ?? castConfig.cdpQuality);
+				const maxWidth = Number(url.searchParams.get("maxWidth") ?? castConfig.cdpMaxWidth);
+				if (!Number.isSafeInteger(quality) || quality < 1 || quality > 100 || !Number.isSafeInteger(maxWidth) || maxWidth < 320 || maxWidth > 2560) return sendJson(res, 400, {
+					ok: false,
+					error: "quality or maxWidth out of range"
 				});
 				if (!(await listTargets()).some((target) => target.targetId === targetId)) return sendJson(res, 409, {
 					ok: false,
@@ -2303,7 +2315,10 @@ async function main() {
 							error: "viewport did not match the panel"
 						});
 					}
-					const captured = await captureFrame(browser.sessions, targetId);
+					const captured = await captureFrame(browser.sessions, targetId, {
+						quality,
+						maxWidth
+					});
 					rememberFrame(captured);
 					return sendJson(res, 200, captured);
 				} catch {

@@ -52,7 +52,7 @@ export async function ensureWorker(ctx: Context): Promise<number | null> {
 }
 
 /** 查询已知的 worker 只读端点，绝不透传浏览器请求路径。 */
-export async function workerGet(port: number, path: '/api/health' | '/api/spaces' | `/api/frame?targetId=${string}`): Promise<unknown> {
+export async function workerGet(port: number, path: '/api/health' | '/api/spaces' | `/api/frame?${string}`): Promise<unknown> {
   try {
     const response = await fetch(`http://127.0.0.1:${port}${path}`, { signal: AbortSignal.timeout(4000) })
     return response.ok ? await response.json() as unknown : null

@@ -80,6 +80,22 @@ function frame(value: unknown, targetId: string): Frame | null {
   return data as unknown as Frame
 }
 
+/**
+ * 单帧画质与宽度上限来自 `ego-browser` 设置；越界或缺失时省略参数，由 worker 用自身配置兜底。
+ * @param section - 设置命名空间的解析结果。
+ * @param targetId - 已核验属于该会话的页面目标。
+ * @returns worker 封闭的取帧路径。
+ */
+export function framePath(section: unknown, targetId: string): string {
+  const config = object(section)
+  const quality = Number(config?.cdpQuality)
+  const maxWidth = Number(config?.cdpMaxWidth)
+  const params = new URLSearchParams({ targetId })
+  if (Number.isSafeInteger(quality) && quality >= 1 && quality <= 100) params.set('quality', String(quality))
+  if (Number.isSafeInteger(maxWidth) && maxWidth >= 320 && maxWidth <= 2560) params.set('maxWidth', String(maxWidth))
+  return `/api/frame?${params.toString()}`
+}
+
 function sse(res: ServerResponse, event: 'spaces' | 'frame', value: unknown): boolean {
   if (res.destroyed || res.writableLength > 4 * 1024 * 1024) { res.destroy(); return false }
   return res.write(`event: ${event}\ndata: ${JSON.stringify(value)}\n\n`)
@@ -144,6 +160,11 @@ export function installRoutes(ctx: Context): void {
         handler: (req, res) => { if (trusted(webCtx, req, res)) return handler(req, res) },
       }), `browser-ego-host: ${path}`)
     }
+    /** 单帧画质设置的当前值；设置服务未就绪时返回 undefined，由 worker 用自身配置兜底。 */
+    const frameConfig = (): unknown => {
+      const settings = webCtx.get('settings') as { get?: (namespace: string) => unknown } | undefined
+      return typeof settings?.get === 'function' ? settings.get('ego-browser') : undefined
+    }
     register('/api/ego/activity', (req, res) => {
       if (req.method !== 'GET') { send(res, 405, { ok: false }); return }
       res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store', connection: 'keep-alive' })
@@ -172,7 +193,7 @@ export function installRoutes(ctx: Context): void {
       if (port === null || !(await currentPages(sessionId, port)).some(page => page.targetId === targetId)) {
         send(res, 404, { ok: false }); return
       }
-      const result = frame(await workerGet(port, `/api/frame?targetId=${encodeURIComponent(targetId)}`), targetId)
+      const result = frame(await workerGet(port, framePath(frameConfig(), targetId)), targetId)
       if (!result || !webCtx.sessions.get(sessionId) || !(await targetIdsForSession(sessionId)).has(targetId)) {
         send(res, 404, { ok: false }); return
       }
@@ -202,7 +223,7 @@ export function installRoutes(ctx: Context): void {
           if (!selected || port === null) return
           const targetIds = await targetIdsForSession(sessionId)
           if (!targetIds.has(selected.targetId)) return
-          const result = frame(await workerGet(port, `/api/frame?targetId=${encodeURIComponent(selected.targetId)}`), selected.targetId)
+          const result = frame(await workerGet(port, framePath(frameConfig(), selected.targetId)), selected.targetId)
           if (result && result.ts > lastFrameAt && webCtx.sessions.get(sessionId)
             && (await targetIdsForSession(sessionId)).has(result.targetId)) {
             lastFrameAt = result.ts
