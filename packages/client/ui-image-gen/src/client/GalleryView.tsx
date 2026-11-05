@@ -1,4 +1,4 @@
-/** 会话画廊保留对话输入区；只在列表容器滚动，刷新不会抹去已显示的图片。 */
+/** 右侧工作台的画廊标签：只在列表容器滚动，刷新不会抹去已显示的图片。 */
 import { useEffect, useRef, useState } from 'react'
 import { Button, Icon, IconRefreshOutline16, Toast } from 'coding-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime } from 'coding-client-ui-slots'
@@ -6,15 +6,15 @@ import type { GalleryFace } from './gallery.ts'
 import { NS } from './locales.ts'
 import css from './GalleryView.module.css'
 
-/** 独立画廊视图注册项的 props。 */
-export type GalleryViewProps = PropsRuntime<'conversation.view'> & PropsLocale<typeof NS> & InjectFace<GalleryFace>
+/** 右侧工作台画廊标签的 props。 */
+export type GalleryViewProps = PropsRuntime<'sidebar.right.pane.tab'> & PropsLocale<typeof NS> & InjectFace<GalleryFace>
 
 /**
  * 查看当前会话的历史图片，生成或编辑后由控制器重新读取权威目录。
  * @param props - 会话索引、可见状态和保存动作。
  * @returns 画廊和绘图表单。
  */
-export function GalleryView({ useGallery, show, refresh, openCanvas, generate, place, url, t }: GalleryViewProps) {
+export function GalleryView({ shown, useGallery, show, refresh, openCanvas, generate, place, url, t }: GalleryViewProps) {
   const state = useGallery(s => s)
   const [prompt, setPrompt] = useState('')
   const [editing, setEditing] = useState<string | null>(null)
@@ -22,7 +22,7 @@ export function GalleryView({ useGallery, show, refresh, openCanvas, generate, p
   const [limit, setLimit] = useState(24)
   const scroll = useRef<HTMLDivElement>(null)
   const announce = (text: string) => { setToast(previous => ({ id: (previous?.id ?? 0) + 1, text })) }
-  useEffect(() => { show(true); return () => { show(false) } }, [show])
+  useEffect(() => { if (!shown) return; show(true); return () => { show(false) } }, [shown, show])
   useEffect(() => { if (state.items.length === 1 && scroll.current !== null) scroll.current.scrollTop = 0 }, [state.items.length])
   useEffect(() => { setLimit(24); if (scroll.current !== null) scroll.current.scrollTop = 0 }, [state.items.length === 0])
   const canGenerate = state.state?.available === true && state.phase === 'ready'

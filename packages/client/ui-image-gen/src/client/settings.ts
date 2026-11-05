@@ -44,6 +44,19 @@ export interface ImageSettingsView {
   keyFailed: boolean
 }
 
+/**
+ * 判断图像服务是否已配置并启用：入口只在为 true 时出现，避免未配置时留下无效按钮。
+ * @param view - 设置页与入口共用的快照。
+ * @returns 服务地址、模型和密钥都就绪且已启用时为 true。
+ */
+export function imageServiceReady(view: ImageSettingsView): boolean {
+  const { section, credential } = view
+  if (section.status !== 'ready' || section.value?.enabled !== true) return false
+  const { endpoint, model, apiKeyRef } = section.value
+  if (!endpoint || !model) return false
+  return credential.status === 'ready' && credential.configured && credential.ref === apiKeyRef
+}
+
 /** 渲染器把此裸 observable 绑定为组件的 `useImageSettings`。 */
 export interface ImageSettingsFace {
   hooks: { imageSettings: SnapshotStore<ImageSettingsView> }

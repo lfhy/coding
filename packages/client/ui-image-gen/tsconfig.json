@@ -14,6 +14,7 @@
     { "path": "../ui-open-in-app" },
     { "path": "../ui-primitives" },
     { "path": "../ui-settings" },
+    { "path": "../ui-sidebar" },
     { "path": "../ui-slots" }
   ]
 }

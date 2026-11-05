@@ -14,19 +14,19 @@ function bench(current?: string, blank = true, preset = 'standard') {
     connectHome: vi.fn(async () => 'home'),
   }
   const select = vi.fn(async () => ({ result: { ok: true as const, value: { agentPreset: 'image' } } }))
-  const conversation = { selectView: vi.fn() }
-  return { sessions, workspaces, select, conversation,
-    navigate: createGalleryNavigation(sessions as never, workspaces as never, { agentPresets: { select } } as never, conversation) }
+  const openPanel = vi.fn(() => true)
+  return { sessions, workspaces, select, openPanel,
+    navigate: createGalleryNavigation(sessions as never, workspaces as never, { agentPresets: { select } } as never, openPanel) }
 }
 
 describe('画图入口', () => {
   it('无会话时创建空白会话并设置画图模式与画廊', async () => {
-    const { navigate, sessions, workspaces, select, conversation } = bench()
+    const { navigate, sessions, workspaces, select, openPanel } = bench()
     await navigate()
     expect(workspaces.connectWorkspace).toHaveBeenCalledWith('workspace')
     expect(select).toHaveBeenCalledWith({ sessionId: 'new', agentPreset: 'image' })
     expect(sessions.open).toHaveBeenCalledWith('new')
-    expect(conversation.selectView).toHaveBeenCalledWith('new', 'image-gallery')
+    expect(openPanel).toHaveBeenCalledWith('new')
   })
 
   it('已有非空会话不能强切预设，空白和既有画图会话可以复用', async () => {
@@ -37,7 +37,7 @@ describe('画图入口', () => {
     const image = bench('image-session', false, 'image')
     await image.navigate()
     expect(image.select).not.toHaveBeenCalled()
-    expect(image.conversation.selectView).toHaveBeenCalledWith('image-session', 'image-gallery')
+    expect(image.openPanel).toHaveBeenCalledWith('image-session')
   })
 
   it('预设切换失败时不触碰当前会话或视图', async () => {
@@ -45,6 +45,6 @@ describe('画图入口', () => {
     benchResult.select.mockRejectedValueOnce(new Error('unavailable'))
     await expect(benchResult.navigate()).rejects.toThrow()
     expect(benchResult.sessions.open).not.toHaveBeenCalled()
-    expect(benchResult.conversation.selectView).not.toHaveBeenCalled()
+    expect(benchResult.openPanel).not.toHaveBeenCalled()
   })
 })

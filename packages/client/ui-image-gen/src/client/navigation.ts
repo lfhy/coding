@@ -1,20 +1,24 @@
-/** 画图入口只切换空白会话的模式，非空历史绝不重新组装。 */
+/** 画图入口只切换空白会话的模式，随后打开右侧画廊面板；非空历史绝不重新组装。 */
 import type { IApiClient } from 'coding-api-remotes/client'
 import type { ISessions, IWorkspaces, SessionId } from 'coding-client-runtime/client'
 
+/** 工作台尚未挂载时的重试节奏；约 1 秒后放弃，面板可由页头按钮再次打开。 */
+const RETRY_MS = 32
+const RETRY_LIMIT = 30
+
 /**
- * 新建或选择图像会话后才打开画廊；预设失败时保持当前会话不变。
+ * 新建或选择图像会话后才打开画廊面板；预设失败时保持当前会话不变。
  * @param sessions - 会话选择与摘要所有者。
  * @param workspaces - 当前工作区归属与空白创建。
  * @param api - 切换预设的 Host RPC。
- * @param conversation - 会话视图动作。
+ * @param openPanel - 在指定会话打开画廊标签，工作台未挂载时返回 false。
  * @returns 可点击入口的异步动作。
  */
 export function createGalleryNavigation(
   sessions: Pick<ISessions, 'list' | 'open' | 'noteAgentPreset'>,
   workspaces: Pick<IWorkspaces, 'list' | 'connectWorkspace' | 'connectHome'>,
   api: Pick<IApiClient, 'agentPresets'>,
-  conversation: { selectView(sessionId: SessionId, view: string): void },
+  openPanel: (sessionId: SessionId) => boolean,
 ): () => Promise<void> {
   let opening: Promise<void> | undefined
   const navigate = async (): Promise<void> => {
@@ -44,13 +48,12 @@ export function createGalleryNavigation(
       sessions.noteAgentPreset(target, 'image')
     }
     sessions.open(target)
-    // 会话 slot 的 store action 在 React 挂载后才存在；下一帧再请求 owner 切换。
-    for (let attempt = 0; attempt < 30; attempt++) {
-      try { conversation.selectView(target, 'image-gallery'); return } catch {
-        await new Promise<void>((resolve) => { setTimeout(resolve, 32) })
-      }
+    // 工作台的标签动作在会话视图挂载后才存在；下一帧起按固定节奏重试。
+    for (let attempt = 0; attempt < RETRY_LIMIT; attempt++) {
+      if (openPanel(target)) return
+      await new Promise<void>((resolve) => { setTimeout(resolve, RETRY_MS) })
     }
-    throw new Error('image gallery view unavailable')
+    throw new Error('image gallery panel unavailable')
   }
   return () => {
     opening ??= navigate().finally(() => { opening = undefined })

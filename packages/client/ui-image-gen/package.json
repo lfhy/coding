@@ -1,6 +1,6 @@
 {
   "name": "coding-client-ui-image-gen",
-  "description": "会话画廊、图像设置与右侧画布",
+  "description": "画图入口、画廊面板、图像设置与右侧画布",
   "version": "0.1.0-rc.8",
   "publishConfig": { "access": "public" },
   "repository": {
@@ -21,7 +21,8 @@
   "dsh": { "client": {
     "inject": [
       "coding-api-remotes", "coding-client-locale", "coding-client-runtime",
-      "coding-client-ui-conversation", "coding-client-ui-open-in-app", "coding-client-ui-settings"
+      "coding-client-ui-conversation", "coding-client-ui-open-in-app", "coding-client-ui-settings",
+      "coding-client-ui-sidebar"
     ],
     "platform": "web"
   } },
@@ -35,6 +36,7 @@
     "coding-client-ui-conversation": "workspace:^",
     "coding-client-ui-open-in-app": "workspace:^",
     "coding-client-ui-settings": "workspace:^",
+    "coding-client-ui-sidebar": "workspace:^",
     "coding-invariants": "workspace:^",
     "coding-session": "workspace:^"
   },
@@ -52,6 +54,7 @@
     "coding-client-ui-open-in-app": "workspace:^",
     "coding-client-ui-primitives": "workspace:^",
     "coding-client-ui-settings": "workspace:^",
+    "coding-client-ui-sidebar": "workspace:^",
     "coding-client-ui-slots": "workspace:^",
     "coding-invariants": "workspace:^",
     "coding-session": "workspace:^",

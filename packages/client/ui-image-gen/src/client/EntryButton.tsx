@@ -1,17 +1,17 @@
-/** 欢迎页和会话页头各占一个槽位，入口仅接收同会话可用性及导航回调。 */
-import { useEffect, useState } from 'react'
+/** 欢迎页与会话页头的画图入口：欢迎页在服务就绪时出现，会话页头只在画图会话出现。 */
+import { useState } from 'react'
 import { Icon, Tooltip, Toast } from 'coding-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime } from 'coding-client-ui-slots'
 import type { SnapshotStore } from 'coding-client-runtime/client'
-import type { ImageKey } from './locales.ts'
-import { NS } from './locales.ts'
-import type { ImageSettingsView } from './settings.ts'
-import { readState } from './wire.ts'
+import { NS, type ImageKey } from './locales.ts'
+import { imageServiceReady, type ImageSettingsView } from './settings.ts'
 import css from './EntryButton.module.css'
 
-/** 图像入口由 Host 可用性与 settings 快照共同控制。 */
+/** 入口所在座位决定可见范围，动作统一交给画廊面板。 */
 export interface EntryFace {
   hooks: { imageEntrySettings: SnapshotStore<ImageSettingsView> }
+  /** welcome 座位跟随欢迎页；session 座位只服务画图会话页头。 */
+  seat: 'welcome' | 'session'
   openGallery: () => Promise<void>
 }
 
@@ -19,46 +19,25 @@ type EntryProps = (PropsRuntime<'conversation.hero.actions'> | PropsRuntime<'con
   & PropsLocale<typeof NS> & InjectFace<EntryFace>
 
 /**
- * 图像入口仅在 Host 报告 available 时启动新创作；不可用时仍提供设置引导文案。
- * @param props - 当前会话订阅与导航回调。
- * @returns 语义图标按钮。
+ * 画图入口在服务未配置或当前不是画图会话时不渲染，点击后打开当前会话的画廊面板。
+ * @param props - 入口座位、设置快照与面板导航回调。
+ * @returns 语义图标按钮，失败时给出短暂提示。
  */
-export function EntryButton({ useSessions, useImageEntrySettings, openGallery, t }: EntryProps) {
-  const { section, credential } = useImageEntrySettings(s => s)
-  const current = useSessions(s => s.current)
+export function EntryButton({ useSessions, useImageEntrySettings, seat, openGallery, t }: EntryProps) {
+  const settings = useImageEntrySettings(s => s)
   const imageSession = useSessions(s => s.current !== undefined && s.byId[s.current]?.agentPreset === 'image')
-  const [available, setAvailable] = useState(false)
   const [pending, setPending] = useState(false)
   const [toast, setToast] = useState<{ id: number; text: string } | null>(null)
-  useEffect(() => {
-    if (current === undefined) {
-      setAvailable(section.status === 'ready' && section.value?.enabled === true
-        && !!section.value.endpoint && !!section.value.model && credential.status === 'ready'
-        && credential.configured && credential.ref === section.value.apiKeyRef)
-      return
-    }
-    const abort = new AbortController()
-    void readState(current, abort.signal).then((value) => { if (!abort.signal.aborted) setAvailable(value.available) })
-      .catch(() => { if (!abort.signal.aborted) setAvailable(false) })
-    return () => { abort.abort() }
-  }, [current, section.status, section.value?.enabled, section.value?.endpoint, section.value?.model,
-    section.value?.apiKeyRef, credential.status, credential.configured, credential.ref])
-  const configured = section.status === 'ready' && section.value?.enabled && section.value.endpoint && section.value.model
-    && credential.status === 'ready' && credential.configured && credential.ref === section.value.apiKeyRef
-  const enabled = imageSession || configured && available
-  const label: ImageKey = imageSession && !available ? 'gallery' : enabled ? 'draw' : 'noService'
-  const showToast = (text: string) => { setToast(previous => ({ id: (previous?.id ?? 0) + 1, text })) }
+  const label: ImageKey = 'draw'
+  if (!imageServiceReady(settings) || seat === 'session' && !imageSession) return null
   return <>
     <Tooltip label={t(label)} delayMs={500}>
       <button type="button" className={css.button} title={t(label)} aria-label={t(label)}
-        disabled={!enabled || pending} onClick={() => {
+        disabled={pending} onClick={() => {
           setPending(true)
-          void (async () => {
-            if (!imageSession && current !== undefined && !(await readState(current)).available) {
-              throw new Error('image unavailable')
-            }
-            await openGallery()
-          })().catch(() => { showToast(t('openFailed')) }).finally(() => { setPending(false) })
+          void openGallery()
+            .catch(() => { setToast(previous => ({ id: (previous?.id ?? 0) + 1, text: t('openFailed') })) })
+            .finally(() => { setPending(false) })
         }}><Icon name="model-vision" size={18} /></button>
     </Tooltip>
     {toast !== null && <Toast key={toast.id} text={toast.text} onDone={() => { setToast(null) }} />}

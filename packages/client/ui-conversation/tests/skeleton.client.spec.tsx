@@ -516,14 +516,12 @@ describe('ConversationRoot resident composer', () => {
     expect(b.view.getByRole('textbox')).toBeTruthy()
   })
 
-  it('画图模式的空白会话直接显示画廊、页头和常规输入栏', () => {
+  it('画图模式的空白会话显示页头和常规输入栏，画廊由右侧工作台承载', () => {
     const b = mount(conversationSnapshot({ composerPhase: 'blank', blank: true }), undefined, undefined, {
       agentPreset: 'image', summaryBlank: true,
-      viewTabs: [{ id: 'chat', label: 'Chat' }, { id: 'image-gallery', label: '画廊' }],
     })
-    act(() => { b.chat.actions.setView('image-gallery') })
-    expect(b.view.getByTestId('view-image-gallery')).toBeTruthy()
-    expect(b.view.getByRole('tab', { name: '画廊' }).getAttribute('aria-selected')).toBe('true')
+    expect(b.view.getByTestId('view-chat')).toBeTruthy()
+    expect(b.view.getByRole('tab', { name: 'Chat' }).getAttribute('aria-selected')).toBe('true')
     expect(b.view.container.querySelector('[data-phase]')?.getAttribute('data-phase')).toBe('active')
     expect(b.view.getByRole('textbox')).toBeTruthy()
     expect(b.view.queryByTestId('hero-greeting')).toBeNull()

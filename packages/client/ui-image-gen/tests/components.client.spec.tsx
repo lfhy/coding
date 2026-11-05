@@ -5,6 +5,7 @@ import { CanvasPanel, type CanvasPanelProps } from '../src/client/CanvasPanel.ts
 import { EntryButton } from '../src/client/EntryButton.tsx'
 import { GalleryView, type GalleryViewProps } from '../src/client/GalleryView.tsx'
 import { SettingsSection, type SettingsSectionProps } from '../src/client/SettingsSection.tsx'
+import { SidebarEntry } from '../src/client/SidebarEntry.tsx'
 import { zh } from '../src/client/locales.ts'
 
 const t = (key: keyof typeof zh) => zh[key]
@@ -47,10 +48,10 @@ describe('图像交互组件', () => {
     const openCanvas = vi.fn(() => true)
     const show = vi.fn()
     const view = { phase: 'ready', state: { enabled: true, available: true, model: 'paint' }, items: [item], generating: false, failed: false }
-    const { unmount } = render(<GalleryView {...({ t, useGallery: (pick: (state: unknown) => unknown) => pick(view),
+    const { unmount } = render(<GalleryView {...({ t, shown: true, useGallery: (pick: (state: unknown) => unknown) => pick(view),
       show, refresh: vi.fn(), openCanvas, generate, place, url: (id: string) => `/api/image-gen/image?sessionId=test&id=${id}`,
     } as unknown as GalleryViewProps)} />)
-    expect(screen.getByText(/在下方对话输入框描述多张画面/u)).toBeTruthy()
+    expect(screen.getByText(/在对话中描述画面/u)).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: '打开 AI 画布' }))
     expect(openCanvas).toHaveBeenCalledTimes(1)
     fireEvent.click(screen.getByText('加入画布'))
@@ -89,16 +90,16 @@ describe('图像交互组件', () => {
     expect(show).toHaveBeenLastCalledWith(false)
   })
 
-  it('无会话时密钥未配置入口禁用，配置就绪后可打开', async () => {
+  it('未配置画图服务时不渲染入口，配置就绪后点击打开画廊', () => {
     const openGallery = vi.fn(async () => {})
     const useSessions = (pick: (state: unknown) => unknown) => pick({ current: undefined })
-    const props = { t, useSessions, openGallery, useImageEntrySettings: (pick: (state: unknown) => unknown) => pick({
+    const unconfigured = { t, useSessions, seat: 'welcome', openGallery, useImageEntrySettings: (pick: (state: unknown) => unknown) => pick({
       section: { status: 'ready', value: { enabled: true, endpoint: 'https://images.example', model: 'paint', apiKeyRef: 'KEY' } },
       credential: { status: 'ready', configured: false, writable: true, ref: 'KEY' },
     }) }
-    const { rerender } = render(<EntryButton {...(props as unknown as React.ComponentProps<typeof EntryButton>)} />)
-    expect(screen.getByRole('button', { name: /图像生成暂不可用/u }).hasAttribute('disabled')).toBe(true)
-    rerender(<EntryButton {...({ ...props, useImageEntrySettings: (pick: (state: unknown) => unknown) => pick({
+    const { rerender } = render(<EntryButton {...(unconfigured as unknown as React.ComponentProps<typeof EntryButton>)} />)
+    expect(screen.queryByRole('button')).toBeNull()
+    rerender(<EntryButton {...({ ...unconfigured, useImageEntrySettings: (pick: (state: unknown) => unknown) => pick({
       section: { status: 'ready', value: { enabled: true, endpoint: 'https://images.example', model: 'paint', apiKeyRef: 'KEY' } },
       credential: { status: 'ready', configured: true, writable: true, ref: 'KEY' },
     }) } as unknown as React.ComponentProps<typeof EntryButton>)} />)
@@ -106,18 +107,26 @@ describe('图像交互组件', () => {
     expect(openGallery).toHaveBeenCalledTimes(1)
   })
 
-  it('关闭生成后仍可从现有画图会话进入旧画廊', () => {
+  it('会话页头入口只在画图会话显示，侧边栏入口跟随配置出现', () => {
     const openGallery = vi.fn(async () => {})
-    render(<EntryButton {...({ t, openGallery,
+    const configured = { status: 'ready', value: { enabled: true, endpoint: 'https://images.example', model: 'paint', apiKeyRef: 'KEY' } }
+    const credential = { status: 'ready', configured: true, writable: true, ref: 'KEY' }
+    const entry = (seat: 'welcome' | 'session', preset: string) => ({
+      t, seat, openGallery,
       useSessions: (pick: (state: unknown) => unknown) => pick({
-        current: 'image-session', byId: { 'image-session': { agentPreset: 'image' } },
+        current: 'session', byId: { session: { agentPreset: preset } },
       }),
-      useImageEntrySettings: (pick: (state: unknown) => unknown) => pick({
-        section: { status: 'ready', value: { enabled: false, endpoint: '', model: '', apiKeyRef: '' } },
-        credential: { status: 'ready', configured: true, writable: false, ref: '' },
-      }),
-    } as unknown as React.ComponentProps<typeof EntryButton>)} />)
-    fireEvent.click(screen.getByRole('button', { name: '画廊' }))
-    expect(openGallery).toHaveBeenCalledTimes(1)
+      useImageEntrySettings: (pick: (state: unknown) => unknown) => pick({ section: configured, credential }),
+    })
+    const { unmount } = render(<EntryButton {...(entry('session', 'image') as unknown as React.ComponentProps<typeof EntryButton>)} />)
+    expect(screen.getByRole('button', { name: '画图' })).toBeTruthy()
+    unmount()
+    render(<EntryButton {...(entry('session', 'standard') as unknown as React.ComponentProps<typeof EntryButton>)} />)
+    expect(screen.queryByRole('button')).toBeNull()
+    cleanup()
+    render(<SidebarEntry {...({ t, wide: true, openGallery,
+      useImageEntrySettings: (pick: (state: unknown) => unknown) => pick({ section: configured, credential }),
+    } as unknown as React.ComponentProps<typeof SidebarEntry>)} />)
+    expect(screen.getByRole('button', { name: '画图' })).toBeTruthy()
   })
 })

@@ -62,7 +62,7 @@ export const en: Record<AgentPresetSettingsKey, string> = {
     + 'PPT workbench on the right shows and edits the same deck, then exports a .pptx; every revision stays undoable.',
   presetImageName: 'Image creation mode',
   presetImageDescription:
-    'Create images one at a time or in batches, edit existing images, and view the results in the conversation gallery and the AI canvas on the right.',
+    'Create images one at a time or in batches, edit existing images, and view the results in the gallery and AI canvas on the right.',
   duplicate: 'Duplicate',
   duplicateUnavailable: 'This deployment has no writable preset directory',
   delete: 'Delete',
@@ -130,7 +130,7 @@ export const zh: Record<AgentPresetSettingsKey, string> = {
   presetPptName: 'PPT 创作模式',
   presetPptDescription: '在对话里做 PPT：模型用 ppt_* 工具建工程、改页面与配色，右侧 PPT 工作台显示并手改同一份稿子，最后导出 .pptx；每一版都能撤销与回溯。',
   presetImageName: '画图模式',
-  presetImageDescription: '在对话中单张或批量生成图片、编辑已有图片，并在对话画廊和右侧 AI 画布查看与整理创作结果。',
+  presetImageDescription: '在对话中单张或批量生成图片、编辑已有图片，并在右侧画廊和 AI 画布查看与整理创作结果。',
   duplicate: '复制',
   duplicateUnavailable: '此部署未配置可写的预设目录',
   delete: '删除',

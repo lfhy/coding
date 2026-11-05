@@ -2666,6 +2666,9 @@ importers:
       coding-client-ui-settings:
         specifier: workspace:^
         version: link:../ui-settings
+      coding-client-ui-sidebar:
+        specifier: workspace:^
+        version: link:../ui-sidebar
       coding-client-ui-slots:
         specifier: workspace:^
         version: link:../ui-slots

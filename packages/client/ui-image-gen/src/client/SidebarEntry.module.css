@@ -1,0 +1,44 @@
+/* 新对话行里的画图入口：展开态是与新对话同高的胶囊，收起 rail 中是 36×36 图标盒。 */
+
+.wide {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px 0 8px;
+  border: 0;
+  border-radius: 14px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.rail {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  cursor: pointer;
+}
+
+.wide:hover:not(:disabled),
+.rail:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover); }
+
+.wide:focus-visible,
+.rail:focus-visible { outline: 2px solid var(--dsw-alias-border-l3); outline-offset: 2px; }
+
+.wide:disabled,
+.rail:disabled { opacity: .5; cursor: not-allowed; }
+
+.label { font-size: 13px; }
