@@ -551,7 +551,7 @@ const TOOL_PACKAGES: ToolPackage[] = [
       ctx.provide('imageGeneration', {} as never)
       await ctx.plugin(ToolImageGen)
     },
-    note: 'The Codex preset selects variant=codex and exposes only image_gen.imagegen; other non-minimal presets expose generate_image, generate_images, and edit_image. All operations fail closed without a configured image service.',
+    note: 'The Codex preset selects variant=codex and exposes only image_gen; other non-minimal presets expose generate_image, generate_images, and edit_image. All operations fail closed without a configured image service.',
   },
   {
     pkg: 'coding-tool-ppt',

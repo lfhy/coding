@@ -37,13 +37,13 @@ async function setup(variant: 'standard' | 'codex') {
 describe('image tool variants and replayable image blocks', () => {
   it('registers only Codex imagegen, rejects unsupported references and backgrounds', async () => {
     const env = await setup('codex')
-    expect(env.ctx.tools.schemas().map(tool => tool.name)).toEqual(['image_gen.imagegen'])
-    const paths = await env.execute('image_gen.imagegen', { prompt: 'bird', referenced_image_paths: ['/tmp/secret.png'] })
+    expect(env.ctx.tools.schemas().map(tool => tool.name)).toEqual(['image_gen'])
+    const paths = await env.execute('image_gen', { prompt: 'bird', referenced_image_paths: ['/tmp/secret.png'] })
     expect(paths.isError).toBe(true)
-    const transparent = await env.execute('image_gen.imagegen', { prompt: 'bird', transparent_background: true })
+    const transparent = await env.execute('image_gen', { prompt: 'bird', transparent_background: true })
     expect(transparent.isError).toBe(true)
     expect(env.calls).toEqual([])
-    const generated = await env.execute('image_gen.imagegen', { prompt: 'bird', num_last_images_to_include: 1 })
+    const generated = await env.execute('image_gen', { prompt: 'bird', num_last_images_to_include: 1 })
     expect(generated.isError).toBe(false)
     expect(generated.content[1]).toEqual({ type: 'image', attachment: {
       attachmentId: 'asset-1', mediaType: 'image/png', bytes: 50, width: 1, height: 1,

@@ -2807,7 +2807,7 @@ Requires: `tools` · `imageGeneration`
 ```ts config-catalog
 /** Codex 单工具和普通三工具只可择一。 */
 export interface Config {
-  /** 默认 standard；codex 只注册 `image_gen.imagegen`，不注册标准工具。 */
+  /** 默认 standard；codex 只注册 `image_gen`，不注册标准工具。 */
   variant?: 'standard' | 'codex'
 }
 ```

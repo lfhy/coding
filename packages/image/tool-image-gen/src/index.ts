@@ -12,7 +12,7 @@ export const inject = ['tools', 'imageGeneration']
 
 /** Codex 单工具和普通三工具只可择一。 */
 export interface Config {
-  /** 默认 standard；codex 只注册 `image_gen.imagegen`，不注册标准工具。 */
+  /** 默认 standard；codex 只注册 `image_gen`，不注册标准工具。 */
   variant?: 'standard' | 'codex'
 }
 export const Config: z<Config> = z.object({ variant: z.union(['standard', 'codex']).default('standard') })
@@ -43,7 +43,7 @@ function renderItem(item: Record<string, unknown>): ContentBlock[] {
 export function apply(ctx: Context, config: Config = {}): void {
   if (config.variant === 'codex') {
     ctx.tools.register(defineTool({
-      name: 'image_gen.imagegen',
+      name: 'image_gen',
       description: 'Generate or edit an image in this session. Recent images may be used as references; filesystem paths are not accepted.',
       parameters: {
         prompt: promptParam,

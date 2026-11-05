@@ -282,7 +282,7 @@ describe('the shipped Web composition', () => {
       expect(toolNames(ctx, handle.agent).filter(name =>
         ['generate_image', 'generate_images', 'edit_image', 'canvas_state'].includes(name)))
         .toEqual(['canvas_state', 'edit_image', 'generate_image', 'generate_images'])
-      expect(toolNames(ctx, handle.agent)).not.toContain('image_gen.imagegen')
+      expect(toolNames(ctx, handle.agent)).not.toContain('image_gen')
       expect(resolveSessionPreset(handle.agent.session)).toBe('image')
       const assembled = await ctx.systemPrompt.assemble({ scope: handle.agent })
       expect(assembled.sections.map(section => section.text).join('\n')).toContain('右侧 AI 画布')

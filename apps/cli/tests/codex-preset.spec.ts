@@ -93,7 +93,7 @@ describe('the shipped Codex preset', () => {
         'apply_patch',
         'exec_command',
         'followup_task',
-        'image_gen.imagegen',
+        'image_gen',
         'interrupt_agent',
         'list_agents',
         'send_message',
@@ -119,8 +119,8 @@ describe('the shipped Codex preset', () => {
         'get_goal', 'create_goal', 'update_goal', 'exit_plan_mode', 'ask_user_question',
         'todo_write',
       ]))
-      expect(toolNames(codex.agent).filter(name => name.includes('imagegen'))).toEqual(['image_gen.imagegen'])
-      const imageSchema = ctx.tools.schemas(codex.agent).find(schema => schema.name === 'image_gen.imagegen')
+      expect(toolNames(codex.agent).filter(name => name.startsWith('image_gen'))).toEqual(['image_gen'])
+      const imageSchema = ctx.tools.schemas(codex.agent).find(schema => schema.name === 'image_gen')
       expect(Object.keys(imageSchema?.parameters.properties ?? {}).sort()).toEqual([
         'num_last_images_to_include', 'prompt', 'referenced_image_paths', 'transparent_background',
       ])
