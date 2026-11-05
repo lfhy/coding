@@ -240,9 +240,9 @@ describe('the shipped Web composition', () => {
         'browser_snapshot', 'browser_space_close', 'browser_space_open',
         'browser_status', 'browser_tabs', 'browser_upload', 'browser_wait',
         'browser_wait_for_human', 'browser_wait_for_response',
-        'browser_wait_for_selector', 'browser_wait_for_url', 'canvas_state', 'context_compact',
-        'create_goal', 'edit', 'edit_image', 'exit_plan_mode', 'followup_task', 'generate_image',
-        'generate_images', 'get_goal', 'interrupt_agent', 'job_kill', 'job_list',
+        'browser_wait_for_selector', 'browser_wait_for_url', 'context_compact',
+        'create_goal', 'edit', 'exit_plan_mode', 'followup_task',
+        'get_goal', 'interrupt_agent', 'job_kill', 'job_list',
         'job_output', 'list_agents', 'list_subagent_models', 'memory_delete',
         'memory_list', 'memory_read', 'memory_save', 'memory_update', 'ralph',
         'read', 'read_image', 'render_ui', 'run_code', 'send_message', 'skill',
@@ -272,21 +272,29 @@ describe('the shipped Web composition', () => {
     }
   })
 
-  it('mounts the image preset with ordinary image and canvas tools', async () => {
+  it('registers image tools only while the image service is enabled and configured', async () => {
     const handle = await ctx.agents.create({
       sessionId: SessionId(`preset-image-${randomUUID()}`),
       meta: { agentPreset: 'image' },
       setup: agentCtx => ctx.agentPresets.mount(agentCtx, 'image').then(() => undefined),
     })
     try {
-      expect(toolNames(ctx, handle.agent).filter(name =>
-        ['generate_image', 'generate_images', 'edit_image', 'canvas_state'].includes(name)))
-        .toEqual(['canvas_state', 'edit_image', 'generate_image', 'generate_images'])
+      const imageTools = () => toolNames(ctx, handle.agent).filter(name =>
+        ['generate_image', 'generate_images', 'edit_image', 'canvas_state'].includes(name))
+      expect(imageTools()).toEqual([])
+      await ctx.settings.update(settingsNamespace('image-generation'), {
+        enabled: true, endpoint: 'http://127.0.0.1:9/v1', model: 'mock', apiKeyRef: '',
+      })
+      await vi.waitFor(() => { expect(imageTools()).toEqual(['canvas_state', 'edit_image', 'generate_image', 'generate_images']) })
       expect(toolNames(ctx, handle.agent)).not.toContain('image_gen')
       expect(resolveSessionPreset(handle.agent.session)).toBe('image')
       const assembled = await ctx.systemPrompt.assemble({ scope: handle.agent })
       expect(assembled.sections.map(section => section.text).join('\n')).toContain('右侧 AI 画布')
+      expect(assembled.sections.map(section => section.text).join('\n')).toContain('工具缺席时说明图像服务未启用')
+      await ctx.settings.update(settingsNamespace('image-generation'), { enabled: false })
+      await vi.waitFor(() => { expect(imageTools()).toEqual([]) })
     } finally {
+      await ctx.settings.update(settingsNamespace('image-generation'), { enabled: false })
       await handle.dispose()
     }
   })

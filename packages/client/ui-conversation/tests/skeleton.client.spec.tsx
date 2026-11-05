@@ -101,7 +101,7 @@ function mount(
     summaryOrigin?: 'subagent'
     /** A composer block another plugin raised for this session. */
     composerBlock?: { reason: string }
-    /** 画图模式的空会话显示画廊与常规输入栏。 */
+    /** 当前会话的模式，用于验证空白状态不受预设切换影响。 */
     agentPreset?: string
     /** Mutable view ledger used by registration-order regressions. */
     viewTabs?: ViewTab[]
@@ -262,7 +262,7 @@ function mount(
   }
   const view = render(<ConversationRoot {...props} />)
   return {
-    view, chat, sink, retargetWorkspace, session, slotCalls, seatOwners, open,
+    view, chat, sink, retargetWorkspace, sessions, session, slotCalls, seatOwners, open,
     pickerOwner: () => pickerOwner,
     rerender: () => { view.rerender(<ConversationRoot {...props} />) },
   }
@@ -516,15 +516,36 @@ describe('ConversationRoot resident composer', () => {
     expect(b.view.getByRole('textbox')).toBeTruthy()
   })
 
-  it('画图模式的空白会话显示页头和常规输入栏，画廊由右侧工作台承载', () => {
+  it('空白会话切到画图模式仍保留模式选择，首条消息后才进入对话', () => {
     const b = mount(conversationSnapshot({ composerPhase: 'blank', blank: true }), undefined, undefined, {
-      agentPreset: 'image', summaryBlank: true,
+      summaryBlank: true,
     })
-    expect(b.view.getByTestId('view-chat')).toBeTruthy()
-    expect(b.view.getByRole('tab', { name: 'Chat' }).getAttribute('aria-selected')).toBe('true')
+    const box = b.view.getByRole('textbox')
+    const selectPreset = (agentPreset: string) => {
+      const state = b.sessions.getSnapshot()
+      b.sessions.set({ ...state, byId: {
+        ...state.byId,
+        [SID]: { ...state.byId[SID]!, agentPreset },
+      } })
+    }
+
+    act(() => { selectPreset('image') })
+    expect(b.view.container.querySelector('[data-phase]')?.getAttribute('data-phase')).toBe('hero')
+    expect(b.view.getByTestId('hero-greeting')).toBeTruthy()
+    expect(b.view.getByTestId('view-conversation.hero.agentPreset')).toBeTruthy()
+    expect(b.view.container.querySelector('header')?.getAttribute('aria-hidden')).toBe('true')
+    expect(b.view.queryByTestId('view-chat')).toBeNull()
+    expect(b.view.getByRole('textbox')).toBe(box)
+
+    act(() => { selectPreset('standard') })
+    expect(b.view.getByTestId('view-conversation.hero.agentPreset')).toBeTruthy()
+    act(() => { selectPreset('image') })
+    act(() => { b.session.set(conversationSnapshot({ composerPhase: 'active', blank: false })) })
+    b.rerender()
     expect(b.view.container.querySelector('[data-phase]')?.getAttribute('data-phase')).toBe('active')
-    expect(b.view.getByRole('textbox')).toBeTruthy()
     expect(b.view.queryByTestId('hero-greeting')).toBeNull()
+    expect(b.view.getByRole('tab', { name: 'Chat' }).getAttribute('aria-selected')).toBe('true')
+    expect(b.view.getByRole('textbox')).toBe(box)
   })
 
   it('keeps the Chat fallback selected by id when a view is inserted before it', () => {

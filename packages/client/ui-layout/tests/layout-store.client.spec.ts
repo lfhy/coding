@@ -23,11 +23,22 @@ const initialState = {
   narrow: false,
   narrowExpanded: false,
   workbench: {},
+  page: null,
 }
 
 beforeEach(() => { localStorage.clear() })
 
 describe('createLayoutStore', () => {
+  it('keeps an independent page transient and returns without changing panel preferences', () => {
+    const { store, actions } = createLayoutStore().create()
+    actions.openWorkbench(SESSION)
+    actions.openPage('image-gallery', SESSION)
+    expect(store.getSnapshot()).toMatchObject({ page: { kind: 'image-gallery', sessionId: SESSION },
+      workbench: { [SESSION]: { open: true } } })
+    actions.closePage()
+    expect(store.getSnapshot()).toMatchObject({ page: null, workbench: { [SESSION]: { open: true } } })
+  })
+
   it('initializes closed details and workbench with reusable size preferences', () => {
     const { store } = createLayoutStore().create()
     expect(store.getSnapshot()).toEqual(initialState)

@@ -1,18 +1,21 @@
-/* 新对话行里的画图入口：展开态是与新对话同高的胶囊，收起 rail 中是 36×36 图标盒。 */
+/* 画图入口：展开态与新对话、设置共用整行几何，收起 rail 中是 36×36 图标盒。 */
 
 .wide {
-  flex: none;
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  gap: 6px;
-  height: 28px;
+  gap: 8px;
+  width: 100%;
+  height: 42px;
+  margin-top: 2px;
   padding: 0 10px 0 8px;
+  box-sizing: border-box;
   border: 0;
-  border-radius: 14px;
+  border-radius: 12px;
   background: transparent;
-  color: var(--dsw-alias-label-secondary);
-  font-size: 13px;
-  line-height: 1;
+  color: var(--dsw-alias-label-primary);
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 22px;
   white-space: nowrap;
   cursor: pointer;
 }
@@ -24,6 +27,7 @@
   justify-content: center;
   width: 36px;
   height: 36px;
+  margin-top: 12px;
   padding: 0;
   border: 0;
   border-radius: 50%;
@@ -34,11 +38,12 @@
 
 .wide:hover:not(:disabled),
 .rail:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover); }
+.wide[aria-pressed='true'], .rail[aria-pressed='true'] { background: var(--dsw-alias-interactive-bg-active); }
 
 .wide:focus-visible,
-.rail:focus-visible { outline: 2px solid var(--dsw-alias-border-l3); outline-offset: 2px; }
+.rail:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: -2px; }
 
 .wide:disabled,
 .rail:disabled { opacity: .5; cursor: not-allowed; }
 
-.label { font-size: 13px; }
+.label { flex: 1; min-width: 0; overflow: hidden; text-align: start; text-overflow: ellipsis; }

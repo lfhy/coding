@@ -246,7 +246,13 @@ describe('the new-session chip controller', () => {
   function chip(
     presets: { id: string; trust: 'system' | 'user'; isDefault: boolean }[],
     current: { id: string; blank: boolean; agentPreset?: string } | undefined,
-    options: { writes?: Recorded[]; failSelect?: string; failList?: string; throwOn?: 'list' | 'select' } = {},
+    options: {
+      writes?: Recorded[]
+      failSelect?: string
+      failList?: string
+      throwOn?: 'list' | 'select'
+      currentSession?: () => SeatSessionSummary | undefined
+    } = {},
   ): AgentPresetSeatController {
     const api = {
       agentPresets: {
@@ -265,7 +271,7 @@ describe('the new-session chip controller', () => {
         },
       },
     } as unknown as IApiClient
-    return new AgentPresetSeatController(api, () => current as SeatSessionSummary | undefined)
+    return new AgentPresetSeatController(api, options.currentSession ?? (() => current as SeatSessionSummary | undefined))
   }
 
   const ROSTER: { id: string; trust: 'system' | 'user'; isDefault: boolean }[] = [
@@ -422,6 +428,28 @@ describe('the new-session chip controller', () => {
     // A settings push re-reads the roster; it must not silently discard what
     // the user picked for the session they are about to start.
     expect(controller.store.getSnapshot().current).toBe('minimal')
+  })
+
+  it('drops a staged image mode when the Host stops offering it', async () => {
+    const writes: Recorded[] = []
+    const current: { session: SeatSessionSummary | undefined } = { session: undefined }
+    const presets = [
+      { id: 'standard', trust: 'system' as const, isDefault: true },
+      { id: 'image', trust: 'system' as const, isDefault: false },
+    ]
+    const controller = chip(presets, undefined, { writes, currentSession: () => current.session })
+    await controller.load()
+    await controller.select('image')
+    expect(controller.store.getSnapshot().current).toBe('image')
+
+    presets.pop()
+    await controller.load()
+
+    expect(controller.store.getSnapshot().current).toBe('standard')
+    expect(controller.store.getSnapshot().options.map(option => option.id)).toEqual(['standard'])
+    current.session = { id: 's1' as never, blank: true, agentPreset: 'standard' }
+    await controller.apply()
+    expect(writes).toEqual([])
   })
 
   it('reports a refused roster read without emptying the chip', async () => {

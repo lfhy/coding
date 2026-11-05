@@ -1,7 +1,7 @@
 /** 画布只消费会话文档节点；指针局部轨迹在完成时作为一条保存操作提交。 */
 import { useEffect, useRef, useState } from 'react'
 import { Button, Icon, IconTrashOutline16 } from 'coding-client-ui-primitives'
-import type { InjectFace, PropsLocale, PropsRuntime } from 'coding-client-ui-slots'
+import type { InjectFace, PropsLocale } from 'coding-client-ui-slots'
 import type { CanvasFace } from './canvas.ts'
 import type { CanvasNode, ImageNode, StrokeNode } from './wire.ts'
 import { NS } from './locales.ts'
@@ -11,8 +11,10 @@ const WIDTH = 960
 const HEIGHT = 640
 type Tool = 'select' | 'pencil' | 'eraser'
 
-/** 右侧标签的会话画布 props。 */
-export type CanvasPanelProps = PropsRuntime<'sidebar.right.pane.tab'> & PropsLocale<typeof NS> & InjectFace<CanvasFace>
+/** 主画廊工作台的会话画布操作面。 */
+export type CanvasSurfaceProps = PropsLocale<typeof NS> & InjectFace<CanvasFace> & { shown: boolean }
+/** 画布组件测试沿用的形状。 */
+export type CanvasPanelProps = CanvasSurfaceProps
 
 /**
  * 原生 Canvas 2D 按节点顺序重放；图片解码失败仅影响该图片，不丢弃其他画迹。
@@ -85,9 +87,9 @@ function imageAt(nodes: CanvasNode[], point: { x: number; y: number }): ImageNod
 /**
  * 画笔、橡皮、清空和图片选区与会话保存同处一面板。
  * @param props - 画布状态、显隐和操作回调。
- * @returns 右侧标签内容。
+ * @returns 主工作台的画布内容。
  */
-export function CanvasPanel({ shown, useImageCanvas, show, refresh, add, select, move, remove, clear, url, t }: CanvasPanelProps) {
+export function CanvasSurface({ shown, useImageCanvas, show, refresh, add, select, move, remove, clear, url, t }: CanvasSurfaceProps) {
   const state = useImageCanvas(s => s)
   const [tool, setTool] = useState<Tool>('pencil')
   const canvas = useRef<HTMLCanvasElement>(null)
@@ -187,3 +189,6 @@ export function CanvasPanel({ shown, useImageCanvas, show, refresh, add, select,
     {selected !== undefined && <Button size="sm" disabled={state.saving} onClick={() => { void remove() }}>{t('remove')}</Button>}
   </section>
 }
+
+/** 兼容包内直接挂载画布的测试与调用方。 */
+export function CanvasPanel(props: CanvasPanelProps) { return <CanvasSurface {...props} /> }

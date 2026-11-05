@@ -547,11 +547,13 @@ const TOOL_PACKAGES: ToolPackage[] = [
     requires: ['ctx.tools', 'ctx.imageGeneration', 'a calling Agent session'],
     writes: ['tool/call', 'image-gen/created', 'durable image attachment', 'tool/result'],
     async mount(ctx) {
-      // 目录只收集工具 schema；执行期的 Host 服务与会话归属不在此触发。
-      ctx.provide('imageGeneration', {} as never)
+      // 目录采集显式模拟已配置服务；真正生成与会话归属不在此触发。
+      ctx.provide('imageGeneration', { status: () => Promise.resolve({
+        enabled: true, available: true, model: 'catalog',
+      }), watchAvailability: () => () => {} } as never)
       await ctx.plugin(ToolImageGen)
     },
-    note: 'The Codex preset selects variant=codex and exposes only image_gen; other non-minimal presets expose generate_image, generate_images, and edit_image. All operations fail closed without a configured image service.',
+    note: 'The catalog simulates an available image service to collect these schemas. The Codex preset selects variant=codex and exposes only image_gen; other non-minimal presets expose generate_image, generate_images, canvas_state, and edit_image. Unavailable deployments register none of these tools, and execution still rechecks service availability.',
   },
   {
     pkg: 'coding-tool-ppt',

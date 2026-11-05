@@ -27,10 +27,13 @@ import {
   WORKBENCH_TOP_MIN,
 } from './columns.ts'
 import type { createLayoutStore } from './stores.ts'
+import type { PageRoute } from './stores.ts'
 import css from './AppFrame.module.css'
 
 /** AppFrame 向布局服务回报工作区级工作台投影的注入面。 */
 export interface AppFrameInjected {
+  /** 发布布局当前页面供侧栏入口回显。 */
+  publishPage: (page: PageRoute | null) => void
   /** 发布当前工作区的工作台状态。 */
   publishWorkbench: (key: string, state: WorkbenchLayoutSnapshot) => void
   /** 清理已离开会话列表的工作区工作台投影。 */
@@ -42,7 +45,7 @@ export interface AppFrameInjected {
 /** AppFrame 的框架派生 props。 */
 export type AppFrameProps =
   & PropsRuntime<'root'>
-  & PropsRenderSlots<'sidebar' | 'conversation' | 'details' | 'workbench' | 'workbench.bottom' | 'shell.overlay'>
+  & PropsRenderSlots<'sidebar' | 'conversation' | 'details' | 'workbench' | 'workbench.bottom' | 'shell.overlay' | 'shell.page'>
   & PropsStore<ReturnType<typeof createLayoutStore>>
   & InjectFace<AppFrameInjected>
 
@@ -267,6 +270,7 @@ export function AppFrame({
   renderSlot,
   publishWorkbench,
   retainWorkbenchViews,
+  publishPage,
   workspaceKeyOf,
 }: AppFrameProps) {
   const rootPanels = useStore(state => state)
@@ -279,6 +283,12 @@ export function AppFrame({
     return current === undefined || state.byId[current]?.blank === true
   })
   const liveSessionIds = useSessions(state => state.ids)
+  const page = rootPanels.page
+  const pageVisible = page !== null && page.sessionId === activeSession && liveSessionIds.includes(page.sessionId)
+  useEffect(() => { publishPage(pageVisible ? page : null) }, [page, pageVisible, publishPage])
+  useEffect(() => {
+    if (page !== null && !pageVisible) actions.closePage()
+  }, [actions, page, pageVisible])
   const activeKey = activeSession === undefined ? undefined : workspaceKeyOf(activeSession)
   const panels = useMemo(() => {
     const current = activeKey === undefined ? undefined : rootPanels.workbench[activeKey]
@@ -419,29 +429,35 @@ export function AppFrame({
       data-workbench-fullscreen={workbenchFullscreen || undefined}
       data-bottom-open={bottomShown || undefined}
       data-dragging={dragging || undefined}
+      data-page-open={pageVisible || undefined}
     >
       <div id={SIDEBAR_ID} className={css.sidebarCol}>
         {renderSlot('sidebar', { collapsed: sidebarCollapsed, width: sidebarWidth, welcomeActionsVisible })}
       </div>
-      <ConversationColumn hidden={workbenchFullscreen}>
+      <ConversationColumn hidden={workbenchFullscreen || pageVisible}>
         {renderSlot('conversation', { sidebarCollapsed })}
       </ConversationColumn>
-      <DetailsColumn hidden={detailsWidth === 0}>
+      <DetailsColumn hidden={detailsWidth === 0 || pageVisible}>
         {renderSlot('details', {})}
       </DetailsColumn>
-      <WorkbenchColumn hidden={!workbenchShown}>
+      <WorkbenchColumn hidden={!workbenchShown || pageVisible}>
         {renderSlot('workbench', {
           shown: workbenchShown,
           fullscreen: workbenchFullscreen,
           bottomOpen: bottomShown,
         })}
       </WorkbenchColumn>
-      <WorkbenchBottom hidden={!bottomShown}>
+      <WorkbenchBottom hidden={!bottomShown || pageVisible}>
         {renderSlot('workbench.bottom', { sessionId: activeSession, shown: bottomShown })}
       </WorkbenchBottom>
       <div className={css.overlayLayer} data-shell-overlay>
         {renderSlot('shell.overlay', {})}
       </div>
+      {pageVisible && (
+        <div className={css.pageCol} data-shell-page>
+          {renderSlot('shell.page', { closePage: () => { actions.closePage() } }, { entryKey: page.kind })}
+        </div>
+      )}
 
       {!sidebarCollapsed && (
         <DragHandle

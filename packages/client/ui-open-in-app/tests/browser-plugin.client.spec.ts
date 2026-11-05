@@ -32,7 +32,7 @@ async function bench() {
   ctx.slots.register({
     name: 'root',
     children: {
-      'sidebar.brand.action': { kind: 'list', scope: 'root' },
+      'sidebar.top.entry': { kind: 'list', scope: 'root' },
       'conversation.hero.actions': { kind: 'list', scope: 'root' },
       'conversation.session.header.utilities': { kind: 'list', scope: 'session' },
       'conversation.view': { kind: 'list', scope: 'session' },
@@ -107,7 +107,7 @@ describe('open-in-app browser half', () => {
     expect(ctx.slots.entries('conversation.view')).toEqual([])
 
     expect(headerPanels?.component).toBe(WorkbenchPanelToggles)
-    expect(ctx.slots.entries('sidebar.brand.action')).toEqual([])
+    expect(ctx.slots.entries('sidebar.top.entry')).toEqual([])
     expect(heroActions.map(entry => entry.component)).toEqual([HeroPanelToggle, HeroPanelToggle])
     expect(heroActions.map(entry => [entry.options.id, entry.options.order]))
       .toEqual([['bottom-toggle', 0], ['files-toggle', 10]])
@@ -118,7 +118,7 @@ describe('open-in-app browser half', () => {
 
     await fiber.dispose()
     expect(ctx.slots.entries('conversation.session.header.utilities')).toEqual([])
-    expect(ctx.slots.entries('sidebar.brand.action')).toEqual([])
+    expect(ctx.slots.entries('sidebar.top.entry')).toEqual([])
     expect(ctx.slots.entries('conversation.hero.actions')).toEqual([])
     expect(ctx.slots.entries('workbench')).toEqual([])
     expect(ctx.slots.snapshot('workbench.browser')).toEqual([])

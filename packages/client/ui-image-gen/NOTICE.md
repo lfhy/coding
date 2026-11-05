@@ -1,5 +1,7 @@
-# 图像生成界面来源说明
+# 画廊界面来源与许可
 
-本包参考 [shanliuling/dsh-image-gen](https://github.com/shanliuling/dsh-image-gen) 的 Apache-2.0 许可源码，来源版本为 commit `53589d2`。参考位置包括 `src/client/gallery-view.tsx`、`studio-view.tsx`、`tl/studio-tl-canvas.tsx`、`gallery-store.ts` 与 `index.tsx`：保留「会话画廊、创作入口、右侧画布、图片从画廊落入画布」的功能构想。此处的组件、数据请求和绘制逻辑按 Coding 的 slot、Host 路由及主题样式重新实现；未复制原项目 UI、tldraw／IndexedDB 画布、完整多供应商表单，也不引用原项目的 `@deepseek-ai/dsh-*` 依赖。
+画廊主页面的图库网格、筛选、卡片操作、批量管理、工作台与灵感详情参考并移植自 [shanliuling/dsh-image-gen](https://github.com/shanliuling/dsh-image-gen) commit `53589d2acb6cb4de67b59afab84248e768e63be8` 的 `src/client/gallery-view.tsx`、`studio-view.tsx`、`browser-image-utils.ts`、`inspiration-view.tsx` 与样式；兼容渠道默认尺寸见原项目 `src/studio.ts`。原项目由 shanliuling 按 Apache-2.0 授权；完整许可文本随本包的 [UPSTREAM_LICENSE](UPSTREAM_LICENSE) 保留。
 
-原项目版权所有者与许可见[原项目的 LICENSE](https://github.com/shanliuling/dsh-image-gen/blob/53589d2/LICENSE)。本包的原创适配代码按本仓 MIT 许可发布；没有复制上游源码或素材，不把上游 Apache-2.0 许可扩展为本包或其他包的许可声明。
+本包将页面接到 Coding 的会话日志图库、同源图片路由、单一 OpenAI 兼容上游、主题 token 与 slot 机制；没有搬入原项目的多厂商选择、订阅登录或 tldraw 无限画布。收藏与隐藏是浏览器本地的逐会话视图偏好，不删除图片附件或持久会话事实。
+
+灵感元数据快照取自原项目同一 commit 的 `awesome-gpt-image-2.json` 与 `handraw-style.json`。案例的 Prompt 和标题分别来源于 [freestylefly/awesome-gpt-image-2](https://github.com/freestylefly/awesome-gpt-image-2) 与 [yang0/handraw-style](https://github.com/yang0/handraw-style)；本包不打包其图片，缩略图按原项目固定的来源版本从公开镜像按需加载。页面保留每个案例的来源链接。

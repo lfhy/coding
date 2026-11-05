@@ -187,10 +187,41 @@ const INITIAL: AgentPresetSettingsState = {
   options: [],
 }
 
+/** 合并名单读取期间的刷新信号，并在本次读取结束后补读最新 Host 状态。 */
+export class RosterReadQueue {
+  private loading: Promise<void> | undefined
+  private refreshPending = false
+
+  constructor(private readonly read: () => Promise<void>) {}
+
+  /** @returns 当前名单读取结算后完成的 Promise；并发普通读取共用它。 */
+  load(): Promise<void> {
+    if (this.loading !== undefined) return this.loading
+    const loading = this.read()
+    this.loading = loading
+    void loading.then(() => { this.finishLoad() }, () => { this.finishLoad() })
+    return loading
+  }
+
+  /** 读取中只记录一次刷新需求，确保晚到的旧答复最终被新名单取代。 */
+  refresh(): void {
+    if (this.loading !== undefined) { this.refreshPending = true; return }
+    void this.load()
+  }
+
+  private finishLoad(): void {
+    this.loading = undefined
+    if (!this.refreshPending) return
+    this.refreshPending = false
+    void this.load()
+  }
+}
+
 /** Reads the roster and persists the chosen default. */
 export class AgentPresetSettingsController {
-  /** Row snapshot the renderer subscribes to. */
+  /** 渲染器订阅的常规设置行快照。 */
   readonly store: SnapshotStore<AgentPresetSettingsState> = createSnapshotStore(INITIAL)
+  private readonly rosterRead = new RosterReadQueue(() => this.read())
 
   /**
    * @param api - the agent-preset and settings wire faces (roster and default write).
@@ -206,12 +237,19 @@ export class AgentPresetSettingsController {
   }
 
   /**
-   * Load the roster. An empty roster means the deployment composes no
-   * presets, which is a valid deployment rather than a failure — the row
-   * reports `unavailable` and renders nothing.
-   * @returns once the snapshot reflects the host.
+   * 读取 Host 名单；空名单表示部署未组装可选模式，设置行不显示。
+   * @returns 当前读取完成后结算，期间相同的普通读取共用该请求。
    */
-  async load(): Promise<void> {
+  load(): Promise<void> {
+    return this.rosterRead.load()
+  }
+
+  /** 当前读取未结束时合并更新，结束后再取一次最新 Host 名单。 */
+  refresh(): void {
+    this.rosterRead.refresh()
+  }
+
+  private async read(): Promise<void> {
     const roster = await beginRosterRead(this.api, this.store)
     if (roster === undefined) return
     const { presets } = roster

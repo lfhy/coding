@@ -8,7 +8,7 @@ import { SidebarRoot } from './SidebarRoot.tsx'
 import { en, zh, type SidebarKey } from './locales.ts'
 
 export type {
-  SidebarBrandActionOwnerProps, SidebarFooterActionOwnerProps,
+  SidebarTopEntryOwnerProps, SidebarFooterActionOwnerProps,
   SidebarRootComponentProps, SidebarRootInjected, SidebarSectionOwnerProps, SidebarSettingsOwnerProps,
 } from './contract/slots.ts'
 export type { SidebarKey } from './locales.ts'
@@ -42,10 +42,10 @@ export function apply(ctx: ClientContext): void {
       name: 'sidebar',
       locale: NS,
       // 壳层持有几何；ui-workspace 注册完整浏览区域（标题、搜索、会话列表、Workspace 对话框），
-      // ui-settings 注册底部触发器和设置面板。
+      // ui-settings 注册设置触发器和面板。
       children: {
-        // 新对话行内的常驻动作：宽侧栏与收起 rail 都渲染，靠在新对话入口之后。
-        'sidebar.brand.action': { kind: 'list', scope: 'root' },
+        // 新对话与设置之间的可选整行入口；折叠 rail 中也保持相同的顺序。
+        'sidebar.top.entry': { kind: 'list', scope: 'root' },
         'sidebar.workspaces': { kind: 'single', scope: 'root' },
         'sidebar.settings': { kind: 'single', scope: 'root' },
         'sidebar.footer.action': { kind: 'list', scope: 'root' },

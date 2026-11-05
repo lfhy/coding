@@ -48,6 +48,7 @@ describe('ui-layout client apply', () => {
     expect(slots.spec('workbench')).toEqual({ kind: 'single', scope: 'root' })
     expect(slots.spec('workbench.bottom')).toEqual({ kind: 'single', scope: 'root' })
     expect(slots.spec('shell.overlay')).toEqual({ kind: 'list', scope: 'root' })
+    expect(slots.spec('shell.page')).toEqual({ kind: 'keyed', scope: 'session' })
   })
 
   it('injects the AppFrame projection callbacks and attaches the layout actions', async () => {
@@ -59,14 +60,17 @@ describe('ui-layout client apply', () => {
       toggleSidebar: vi.fn(), setNarrow: vi.fn(), openDetails: vi.fn(), closeDetails: vi.fn(),
       openWorkbench: vi.fn(), closeWorkbench: vi.fn(), toggleWorkbench: vi.fn(),
       toggleWorkbenchFullscreen: vi.fn(), toggleWorkbenchBottom: vi.fn(), closeWorkbenchBottom: vi.fn(),
+      togglePage: vi.fn(),
       toggleHeroPanel: vi.fn(),
       retainWorkbenchSessions: vi.fn(),
+      openPage: vi.fn(), closePage: vi.fn(),
     } satisfies PanelActions
     const injected = (slots.entries('root')[0]!.inject as unknown as (
       actions: PanelActions,
     ) => AppFrameInjected)(actions)
     expect(typeof injected.publishWorkbench).toBe('function')
     expect(typeof injected.retainWorkbenchViews).toBe('function')
+    expect(typeof injected.publishPage).toBe('function')
     const layout = ctx.get('layout') as LayoutController
     layout.toggleSidebar()
     layout.openWorkbench('layout-session')

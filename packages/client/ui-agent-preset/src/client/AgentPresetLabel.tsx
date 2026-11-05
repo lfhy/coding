@@ -15,7 +15,7 @@ import { IconAgentPresetOutline16 } from 'coding-client-ui-primitives'
 // Type-only: pulls the ui-conversation SlotMap merge (the header actions).
 import type {} from 'coding-client-ui-conversation/client'
 import type { AgentPresetSettingsState } from './settings-store.ts'
-import { presetDisplayText } from './locales.ts'
+import { currentPresetDisplayText } from './locales.ts'
 import css from './AgentPresetLabel.module.css'
 
 /** Registration-side business face for the header label. */
@@ -53,8 +53,7 @@ export function AgentPresetLabel({
 
   if (preset === undefined) return null
 
-  const option = options.find(entry => entry.id === preset)
-  const text = option === undefined ? undefined : presetDisplayText(option, t)
+  const text = currentPresetDisplayText(preset, options, t)
   return (
     <span className={css.label} title={text?.description ?? t('headerHint')}>
       <IconAgentPresetOutline16 size={14} className={css.icon} />

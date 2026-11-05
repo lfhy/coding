@@ -19,7 +19,7 @@ import { IconAgentPresetOutline16, IconChevronDownOutline14, Menu } from 'coding
 // Type-only: pulls the ui-conversation SlotMap merge (the hero seat).
 import type {} from 'coding-client-ui-conversation/client'
 import type { AgentPresetSeatState } from './seat-store.ts'
-import { presetDisplayText } from './locales.ts'
+import { currentPresetDisplayText, presetDisplayText } from './locales.ts'
 import { PresetDescription } from './PresetDescription.tsx'
 import css from './AgentPresetSeat.module.css'
 
@@ -83,8 +83,7 @@ export function AgentPresetSeat({ load, select, introduced, useAgentPresetSeat, 
     void load()
   }, [load])
 
-  const chosen = state.options.find(option => option.id === state.current)
-  const chosenText = chosen === undefined ? undefined : presetDisplayText(chosen, t)
+  const chosenText = currentPresetDisplayText(state.current, state.options, t)
   const label = chosenText?.name ?? state.current
   const ready = state.options.length > 0 && state.current !== ''
 

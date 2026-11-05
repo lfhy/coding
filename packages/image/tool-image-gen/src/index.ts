@@ -39,10 +39,13 @@ function renderItem(item: Record<string, unknown>): ContentBlock[] {
   ]
 }
 
-/** 仅在服务端运行时使用 ToolRunContext 中的 Agent，不从工具参数采纳 sessionId。 */
-export function apply(ctx: Context, config: Config = {}): void {
+/** 仅使用当前调用的 Agent Session，不从模型参数采纳 sessionId。 */
+function registerVariant(
+  ctx: Context, config: Config,
+  register: (definition: Parameters<Context['tools']['register']>[0]) => void,
+): void {
   if (config.variant === 'codex') {
-    ctx.tools.register(defineTool({
+    register(defineTool({
       name: 'image_gen',
       description: 'Generate or edit an image in this session. Recent images may be used as references; filesystem paths are not accepted.',
       parameters: {
@@ -69,7 +72,7 @@ export function apply(ctx: Context, config: Config = {}): void {
     }))
     return
   }
-  ctx.tools.register(defineTool({
+  register(defineTool({
     name: 'generate_image',
     description: 'Generate one image and save it to this session’s gallery.',
     parameters: { prompt: promptParam },
@@ -79,7 +82,7 @@ export function apply(ctx: Context, config: Config = {}): void {
       return result(await ctx.imageGeneration.create(exec.agent.session, args.prompt, [], exec.signal))
     },
   }))
-  ctx.tools.register(defineTool({
+  register(defineTool({
     name: 'generate_images',
     description: 'Generate up to 10 images; each item succeeds or fails independently.',
     parameters: { prompts: { type: 'array', items: { type: 'string' }, required: true } },
@@ -111,7 +114,7 @@ export function apply(ctx: Context, config: Config = {}): void {
       return { images, failures }
     },
   }))
-  ctx.tools.register(defineTool({
+  register(defineTool({
     name: 'canvas_state',
     description: 'Read the current session canvas node summary, including image IDs usable with edit_image. Brush pixels are not visible.',
     parameters: {},
@@ -122,7 +125,7 @@ export function apply(ctx: Context, config: Config = {}): void {
       return Promise.resolve(summarizeCanvas(ctx.imageGeneration.canvas(exec.agent.session.events)))
     },
   }))
-  ctx.tools.register(defineTool({
+  register(defineTool({
     name: 'edit_image',
     description: 'Edit an image in this session’s gallery using a text prompt.',
     parameters: { prompt: promptParam, imageId: { type: 'string', required: true, description: 'ID of an image in this session’s gallery.' } },
@@ -132,4 +135,57 @@ export function apply(ctx: Context, config: Config = {}): void {
       return result(await ctx.imageGeneration.create(exec.agent.session, args.prompt, [args.imageId], exec.signal))
     },
   }))
+}
+
+/** 注册可用的工具集合；任一注册失败时撤销已完成的注册。 */
+function registerImageTools(ctx: Context, config: Config): () => void {
+  const releases: (() => void)[] = []
+  const release = (): void => { for (const dispose of releases.splice(0).reverse()) dispose() }
+  try {
+    registerVariant(ctx, config, (definition) => { releases.push(ctx.tools.register(definition)) })
+  } catch (error) {
+    release()
+    throw error
+  }
+  return release
+}
+
+/**
+ * 仅在图像服务可用时向当前 Agent 作用域注册画图工具；配置与凭据提交后重新判定。
+ * 工具执行仍由图像服务再次检查，避免设置变动与调用之间的竞态。
+ * @param ctx - 拥有工具注册效果的上下文。
+ * @param config - 标准模式或 Codex 模式的互斥工具集合。
+ * @returns 首次可用性判定完成后结算。
+ */
+export async function apply(ctx: Context, config: Config = {}): Promise<void> {
+  let generation = 0
+  let disposed = false
+  let releaseTools: (() => void) | undefined
+
+  const refresh = async (): Promise<void> => {
+    const current = ++generation
+    let available = false
+    try {
+      available = (await ctx.imageGeneration.status()).available
+    } catch (error) {
+      ctx.logger.warn('tool-image-gen: image availability check failed; omitting tools', error)
+    }
+    if (disposed || current !== generation || available === (releaseTools !== undefined)) return
+    releaseTools?.()
+    releaseTools = available ? registerImageTools(ctx, config) : undefined
+  }
+  const refreshOnChange = (): void => {
+    void refresh().catch((error: unknown) => {
+      ctx.logger.warn('tool-image-gen: failed to update image tools', error)
+    })
+  }
+
+  ctx.effect(() => () => {
+    disposed = true
+    generation++
+    releaseTools?.()
+    releaseTools = undefined
+  }, 'tool-image-gen: availability and registrations')
+  ctx.effect(() => ctx.imageGeneration.watchAvailability(refreshOnChange), 'tool-image-gen: availability notifications')
+  await refresh()
 }

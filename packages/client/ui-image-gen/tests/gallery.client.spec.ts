@@ -66,4 +66,29 @@ describe('会话图库', () => {
     expect(await gallery.generate('云')).toBe(false)
     gallery.dispose()
   })
+
+  it('选择的尺寸与质量沿 Client 控制器进入 JSON 或 multipart 路由', async () => {
+    const requests: { path: string; body: Record<string, unknown> }[] = []
+    const fetch = vi.fn(async (path: string, init: RequestInit) => {
+      if (path.includes('/state')) return json({ ...state, sizes: { '1:1': { '1K': '1024x1024' } }, maxEditReferences: 2 })
+      if (path.includes('/gallery')) return json({ enabled: true, items: [item] })
+      if (path.includes('/generate') || path.includes('/edit')) {
+        requests.push({ path, body: JSON.parse(init.body as string) as Record<string, unknown> })
+        return json({ item: { ...item, id: 'next' } })
+      }
+      throw Error('unexpected URL')
+    })
+    vi.stubGlobal('fetch', fetch)
+    const gallery = new GalleryController('one')
+    gallery.show(true)
+    await vi.waitFor(() => { expect(gallery.view.getSnapshot().phase).toBe('ready') })
+    expect(gallery.view.getSnapshot().state?.sizes).toEqual({ '1:1': { '1K': '1024x1024' } })
+    expect(await gallery.generate('方形', undefined, { size: '1024x1024', quality: 'high' })).toBe(true)
+    expect(await gallery.generate('合成', ['first', 'next'], { size: '1024x1024' })).toBe(true)
+    expect(requests).toEqual([
+      { path: '/api/image-gen/generate', body: { sessionId: 'one', prompt: '方形', size: '1024x1024', quality: 'high' } },
+      { path: '/api/image-gen/edit', body: { sessionId: 'one', prompt: '合成', imageIds: ['first', 'next'], size: '1024x1024' } },
+    ])
+    gallery.dispose()
+  })
 })

@@ -33,7 +33,7 @@ import {
   InvalidPresetIdError, PresetExistsError, PresetMountError,
   PresetNotWritableError, resolveSessionPreset, UnknownPresetError,
 } from 'coding-agent-presets'
-import type { PresetBearingSession } from 'coding-agent-presets'
+import type { AgentPreset, AgentPresets, PresetBearingSession } from 'coding-agent-presets'
 import type {} from 'coding-tools'
 import type {
   ApiProxy, ConfigurableProviderView, CredentialView, GoalRef, HistoryEntry, HostFrame,
@@ -1201,6 +1201,46 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
     throw new AgentPresetConflict(sessionId, requested, existing)
   }
 
+  /** 图像服务缺失、关闭或凭据不可用时，随包画图模式不能用于新会话。 */
+  async function imagePresetAvailable(): Promise<boolean> {
+    // 图像服务经 Client 连接依赖本包；只读取可选服务的最窄契约以避免项目引用环。
+    const service = ctx.get('imageGeneration') as { status(): Promise<{ available: boolean }> } | undefined
+    try { return (await service?.status())?.available === true } catch { return false }
+  }
+
+  const IMAGE_PRESET_UNAVAILABLE = 'image generation is unavailable; configure and enable it in Settings'
+
+  /** 为新会话选择可用默认值；会话恢复仍由其日志中记录的预设决定。 */
+  async function selectablePresets(presets: AgentPresets, configuredDefault = presets.defaultId): Promise<{
+    visible: AgentPreset[]
+    defaultId: string | undefined
+    imageUnavailable: boolean
+  }> {
+    const listed = await presets.list()
+    const shippedImage = listed.some(preset => preset.id === 'image' && preset.trust === 'system')
+    const imageUnavailable = shippedImage && !await imagePresetAvailable()
+    const visible = imageUnavailable ? listed.filter(preset => preset.id !== 'image') : listed
+    const defaultId = imageUnavailable && configuredDefault === 'image'
+      ? (visible.find(preset => preset.id === 'standard' && preset.broken === undefined)
+        ?? visible.find(preset => preset.broken === undefined))?.id
+      : configuredDefault
+    return { visible, defaultId, imageUnavailable }
+  }
+
+  /** 只约束本次新建；冷恢复与 fork 必须使用已记录的画图预设。 */
+  async function freshPresetId(requested: string | undefined): Promise<string | undefined> {
+    const presets = ctx.get('agentPresets')
+    if (presets === undefined || requested !== undefined && requested !== 'image') return requested
+    const configuredDefault = presets.defaultId
+    if (requested === undefined && configuredDefault !== 'image') return configuredDefault
+    const selectable = await selectablePresets(presets, configuredDefault)
+    if (!selectable.imageUnavailable) return requested ?? configuredDefault
+    if (requested === 'image' || selectable.defaultId === undefined) {
+      throw new PresetMountError('image', IMAGE_PRESET_UNAVAILABLE)
+    }
+    return selectable.defaultId
+  }
+
   /**
    * Resolve the preset an agent will be composed from, and the setup that
    * installs it.
@@ -1674,7 +1714,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         } catch (error: unknown) {
           throw new Error(`failed to ensure project directory "${cwd}": ${String(error)}`, { cause: error })
         }
-        const composition = await composeAgent(presetId)
+        const composition = await composeAgent(await freshPresetId(presetId))
         return (await ctx.agents.create({
           sessionId,
           agentOptions: agentOptions(),
@@ -3198,9 +3238,9 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
       async list(request) {
         const presets = ctx.get('agentPresets')
         if (presets === undefined) return ok(request, { presets: [], authorable: false, hasDocument: false })
-        const defaultId = presets.defaultId
+        const { visible, defaultId } = await selectablePresets(presets)
         return ok(request, {
-          presets: (await presets.list()).map(preset => ({
+          presets: visible.map(preset => ({
             id: preset.id,
             trust: preset.trust,
             isDefault: preset.id === defaultId,
@@ -3243,6 +3283,9 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
             })
           }
           try {
+            if (agentPreset === 'image' && (await selectablePresets(presets)).imageUnavailable) {
+              throw new PresetMountError('image', IMAGE_PRESET_UNAVAILABLE)
+            }
             const preset = await presets.recompose(agent.ctx, agentPreset)
             // Recorded only after the swap committed: the log states what the
             // agent runs, and a rejected mount leaves the previous composition.

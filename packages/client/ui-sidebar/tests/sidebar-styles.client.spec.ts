@@ -63,6 +63,7 @@ describe('SidebarRoot.module.css', () => {
     for (const selector of [
       '.railIn .iconButton',
       '.railIn .newSession',
+      ".railIn [data-slot='sidebar.top.entry'] button",
       '.railIn .settingsArea',
       '.railIn .regionArea',
     ]) {
@@ -75,23 +76,21 @@ describe('SidebarRoot.module.css', () => {
       /@keyframes rail-in\s*\{\s*from\s*\{\s*opacity: 0;\s*transform: translateX\(49px\);\s*}\s*}/,
     )
     expect(css).toMatch(/@keyframes rail-fade-in\s*\{\s*from\s*\{\s*opacity: 0;\s*}\s*}/)
+    expect(declarations(".fading [data-slot='sidebar.top.entry'] button")?.get('opacity')).toBe('0')
   })
 
   it('gives shell rail controls the same base anchor for their shared translation', () => {
     expect(declarations('.collapsed .logoRow')?.get('justify-content')).toBe('flex-start')
-    expect(declarations('.collapsed .logoRow')?.get('flex-direction')).toBe('column')
     expect(declarations('.collapsed .logoRow')?.get('align-items')).toBe('flex-start')
     expect(declarations('.collapsed .newSession')?.get('align-self')).toBe('flex-start')
     expect(declarations('.collapsed .newSession')?.get('width')).toBe('36px')
   })
 
-  it('lays the New chat row actions out horizontally wide and stacked in the rail', () => {
-    expect(declarations('.brandActions')?.get('gap')).toBe('4px')
-    expect(declarations('.brandActions')?.get('flex-direction')).toBe('row')
-    expect(declarations('.brandActions')?.get('height')).toBe('28px')
-    expect(declarations('.collapsed .brandActions')?.get('flex-direction')).toBe('column')
-    expect(declarations('.collapsed .brandActions')?.get('align-items')).toBe('center')
-    expect(declarations('.collapsed .brandActions')?.get('width')).toBe('36px')
+  it('leaves no wrapper space for an unavailable entry, and places the rail toggle after it', () => {
+    expect(root).toContain("{renderSlot('sidebar.top.entry', { wide })}")
+    expect(root).not.toContain('brandActions')
+    expect(declarations('.toggleArea')?.get('margin-top')).toBe('12px')
+    expect(declarations('.collapsed .settingsArea')?.get('margin-top')).toBe('12px')
   })
 
   it('gives the New chat entry the same row geometry as the settings entry', () => {

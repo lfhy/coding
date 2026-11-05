@@ -70,8 +70,7 @@ export function ConversationSessionHeader({
   const ancestry = useSessions(s => deriveAncestry(s, sessionId), equalBreadcrumbs)
   const composerPhase = useSession(s => s.composerPhase)
   const blank = useSession(s => s.blank)
-  const drawingSession = useSessions(s => s.byId[sessionId]?.agentPreset === 'image')
-  const hideChrome = blank && composerPhase === 'blank' && !drawingSession
+  const hideChrome = blank && composerPhase === 'blank'
 
   return (
     <header
@@ -164,7 +163,7 @@ export function ConversationSessionHeader({
  * @returns the active view area, or null while the Session remains blank.
  */
 export function ConversationSession({
-  sessionId, useSession, useSessions, useInput, inputActions, useStore, actions,
+  sessionId, useSession, useInput, inputActions, useStore, actions,
   renderSlot, views, bindDraftMirror, releaseSessionImages,
 }: ConversationSessionProps) {
   useSyncExternalStore(views.subscribe, views.version)
@@ -173,7 +172,6 @@ export function ConversationSession({
   const active = resolveActiveView(tabs, selectedId)
   const composerPhase = useSession(s => s.composerPhase)
   const blank = useSession(s => s.blank)
-  const drawingSession = useSessions(s => s.byId[sessionId]?.agentPreset === 'image')
   const inputState = useInput(s => s)
   const storedDraft = useStore(s => s.draft)
   // `?? null`: persisted snapshots from before the inspect field rehydrate without it.
@@ -191,8 +189,7 @@ export function ConversationSession({
     releaseSessionImages(sessionId)
   }, [releaseSessionImages, sessionId])
 
-  // 画图模式首条消息前也保留画廊；普通空会话仍只显示欢迎页。
-  if (blank && composerPhase === 'blank' && !drawingSession) return null
+  if (blank && composerPhase === 'blank') return null
   return (
     <div className={css.viewArea}>
       {active !== undefined && renderSlot('conversation.view', {

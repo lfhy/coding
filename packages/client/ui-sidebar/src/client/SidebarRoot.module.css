@@ -50,7 +50,8 @@
 }
 
 /* 折叠第一阶段：整块冻结宽度的内容用 150ms 就地淡出；落定后子节点卸载并切到 rail 布局。 */
-.fading > * {
+.fading > *,
+.fading [data-slot='sidebar.top.entry'] button {
   opacity: 0;
   transition: opacity 150ms var(--ds-ease-in-out);
 }
@@ -69,6 +70,7 @@
    .railIn；冷启动即为收起状态时静态渲染。 */
 .railIn .iconButton,
 .railIn .newSession,
+.railIn [data-slot='sidebar.top.entry'] button,
 .railIn .settingsArea,
 .railIn .regionArea {
   animation: rail-in 150ms var(--ds-ease-in-out) backwards;
@@ -89,7 +91,7 @@
   from { opacity: 0; }
 }
 
-/* 新对话行：展开时是新对话入口与常驻动作；收起 rail 中的控件共用同一左侧基准。 */
+/* 新对话行：收起 rail 中的控件共用同一左侧基准。 */
 .logoRow {
   flex: none;
   display: flex;
@@ -107,32 +109,19 @@
   -webkit-app-region: no-drag;
 }
 
-.brandActions {
-  flex: none;
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  gap: 4px;
-  height: 28px;
-}
-
 .collapsed .logoRow {
-  flex-direction: column;
   align-items: flex-start;
-  gap: 12px;
   height: auto;
   padding: 0;
-  margin-bottom: 12px;
   justify-content: flex-start;
 }
 
-/* 收起 rail 中动作纵向堆叠在收起按钮上方，每个图标仍是 36×36 控件盒并居中于 56px 宽度。 */
-.collapsed .brandActions {
-  flex-direction: column;
-  align-items: center;
-  gap: 12px;
+/* 入口座位不包额外布局盒；画图不可用时不占行，展开按钮仍紧跟新对话。 */
+.toggleArea {
+  flex: none;
+  display: flex;
   width: 36px;
-  height: auto;
+  margin-top: 12px;
 }
 
 .iconButton {
@@ -237,6 +226,10 @@
   margin-top: 2px;
 }
 
+.collapsed .settingsArea {
+  margin-top: 12px;
+}
+
 /* 顶部入口区与工作区列表之间的分隔线；rail 中缩成居中短线。 */
 .topDivider {
   flex: none;
@@ -300,8 +293,10 @@
 @media (prefers-reduced-motion: reduce) {
   .wide,
   .fading > *,
+  .fading [data-slot='sidebar.top.entry'] button,
   .railIn .iconButton,
   .railIn .newSession,
+  .railIn [data-slot='sidebar.top.entry'] button,
   .railIn .settingsArea,
   .railIn .footArea,
   .railIn .regionArea {

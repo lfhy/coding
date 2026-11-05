@@ -72,19 +72,19 @@ export function apply(ctx: ClientContext): void {
   })
 
   ctx.effect(() => {
-    // The roster is a live directory and the default is a settings field, so
-    // both an external settings edit and a reconnect can move this row.
+    // Host 名单会随默认模式、图像服务可用性及连接目标改变；三个已显示的
+    // 选择／管理位置读取同一份结果，不在客户端重复判定图像配置。
     const refresh = (): void => {
-      void controller.load()
-      // The section reads the same roster and marks the same default, so a
-      // change made from either surface converges both.
-      if (section.store.getSnapshot().status !== 'idle') void section.load()
+      controller.refresh()
+      if (section.store.getSnapshot().status !== 'idle') section.refresh()
+      for (const read of rosterReaders) read()
     }
     const disposers = [
       ctx.remote.$on('settings/document-updated', (ns) => {
-        if (ns !== AGENT_PRESET_SETTINGS_NS) return
+        if (ns !== AGENT_PRESET_SETTINGS_NS && ns !== 'image-generation') return
         refresh()
       }),
+      ctx.remote.$on('credentials/updated', () => { refresh() }),
       ctx.on('connection/reset', () => { refresh() }),
     ]
     return () => { for (const dispose of disposers) dispose() }
@@ -132,17 +132,8 @@ export function apply(ctx: ClientContext): void {
       // and either way the chip's pick predates it — so the stage is applied
       // when the session arrives, not when it was made.
       const stop = scope.sessions.list.subscribe(() => { void seat.apply() })
-      // The chip opens on the deployment default, so a default changed from
-      // the settings surface moves it too — otherwise the screen that starts
-      // the next session keeps offering the previous default until a reload,
-      // which is exactly the session the setting claims to govern. A staged
-      // pick survives: `load()` prefers it over the refreshed fallback.
-      const settingsMoved = scope.remote.$on('settings/document-updated', (ns) => {
-        if (ns !== AGENT_PRESET_SETTINGS_NS) return
-        void seat.load()
-      })
-      // Every tab folds the committed preset into the shared session row; the
-      // initiating tab may already have applied the RPC echo, which is idempotent.
+      // 每个标签页都将已提交的模式折入共享摘要；发起方可能已用 RPC
+      // 回执更新过摘要，这次合并是幂等的。
       const presetSelected = scope.remote.$on('agent-preset/selected', (sessionId, agentPreset) => {
         scope.sessions.noteAgentPreset(sessionId, agentPreset)
       })
@@ -177,7 +168,6 @@ export function apply(ctx: ClientContext): void {
       }, AgentPresetLabel)
       return () => {
         stop()
-        settingsMoved()
         presetSelected()
         rosterReaders.delete(readRoster)
         creatorDraft = undefined

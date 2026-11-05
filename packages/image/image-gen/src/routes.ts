@@ -4,12 +4,14 @@ import type { Context } from '@deepseek-ai/cordis'
 import type {} from 'coding-client-connection'
 import type {} from 'coding-host-webserver'
 import { SessionId } from 'coding-session/types'
+import { isImageAdmissionError, type ImageMediaType } from 'coding-attachment'
 import { CanvasConflictError, galleryItems, parseCanvasState } from './gallery.ts'
 import type { ImageGeneration } from './index.ts'
 import { ImageGenerationUnavailableError } from './index.ts'
 
 const PREFIX = '/api/image-gen'
 const BODY_LIMIT = 64 * 1024
+const IMAGE_TYPES: readonly ImageMediaType[] = ['image/png', 'image/jpeg', 'image/webp', 'image/gif']
 const SESSION_ID = /^[a-zA-Z0-9_-]{1,128}$/
 
 function json(res: ServerResponse, code: number, data: unknown): void {
@@ -58,6 +60,19 @@ async function body(req: IncomingMessage): Promise<unknown> {
   catch { throw new TypeError('请求 JSON 无效') }
 }
 
+/** 上传原图的字节预算来自附件服务，不复用 JSON 文档的 64 KiB 上限。 */
+async function imageBody(req: IncomingMessage, maxBytes: number): Promise<Buffer> {
+  const parts: Buffer[] = []
+  let size = 0
+  for await (const part of req) {
+    size += (part as Buffer).byteLength
+    if (size > maxBytes) { req.resume(); throw new TypeError('参考图片超过服务端单张字节限额') }
+    parts.push(Buffer.from(part as Uint8Array))
+  }
+  if (size === 0) throw new TypeError('参考图片不能为空')
+  return Buffer.concat(parts, size)
+}
+
 /** 为每个明确的路径装载可释放路由；不占用共享 /api 前缀。 */
 export function installImageRoutes(ctx: Context, service: ImageGeneration): void {
   ctx.inject(['webServer', 'connection'], (webCtx) => {
@@ -77,6 +92,7 @@ export function installImageRoutes(ctx: Context, service: ImageGeneration): void
           catch (error) {
             if (error instanceof CanvasConflictError) { fail(res, 409, '画布已变化，请刷新后重试'); return }
             if (error instanceof TypeError) { fail(res, 400, error.message); return }
+            if (isImageAdmissionError(error)) { fail(res, 400, '参考图片不符合当前图像准入限制'); return }
             if (error instanceof ImageGenerationUnavailableError) {
               fail(res, 503, '请先在设置中启用并配置图像生成服务'); return
             }
@@ -95,7 +111,7 @@ export function installImageRoutes(ctx: Context, service: ImageGeneration): void
     route('state', 'GET', async (_req, res, url) => {
       const id = querySession(url)
       if (url.searchParams.size !== 1 || await service.sessionEvents(id) === undefined) { fail(res, 404, '会话不存在'); return }
-      json(res, 200, await service.status())
+      json(res, 200, { ...(await service.status()), sizes: service.outputSizes(), maxEditReferences: service.maxEditReferences() })
     })
     route('gallery', 'GET', async (_req, res, url) => {
       const id = querySession(url)
@@ -111,6 +127,18 @@ export function installImageRoutes(ctx: Context, service: ImageGeneration): void
       if (!stored) { fail(res, 404, '图片不存在'); return }
       res.writeHead(200, { 'content-type': stored.ref.mediaType, 'cache-control': 'private, no-store', 'x-content-type-options': 'nosniff' })
       res.end(Buffer.from(stored.data))
+    })
+    route('import', 'POST', async (req, res, url) => {
+      const id = querySession(url)
+      if (url.searchParams.size !== 1) throw new TypeError('参考图片请求参数无效')
+      const mediaType = req.headers['content-type']?.split(';', 1)[0]?.trim().toLowerCase()
+      if (!IMAGE_TYPES.includes(mediaType as ImageMediaType)) throw new TypeError('参考图片格式不受支持')
+      const session = webCtx.sessions.get(id)
+      if (!session) { fail(res, 404, '请先打开会话后再导入参考图片'); return }
+      const limits = webCtx.attachments.imageLimits
+      const bytes = await imageBody(req, limits.maxSourceImageBytes ?? limits.maxImageBytes)
+      const item = await service.importReference(session, { data: bytes, mediaType: mediaType as ImageMediaType })
+      json(res, 200, { item })
     })
     route('canvas', 'GET', async (_req, res, url) => {
       const id = querySession(url)
@@ -134,15 +162,23 @@ export function installImageRoutes(ctx: Context, service: ImageGeneration): void
     for (const kind of ['generate', 'edit'] as const) route(kind, 'POST', async (req, res, url) => {
       if (url.searchParams.size !== 0) throw new TypeError('生成请求不能包含查询参数')
       const payload = record(await body(req))
-      if (!payload || !fields(payload, kind === 'edit' ? ['sessionId', 'prompt', 'imageId'] : ['sessionId', 'prompt'],
-        kind === 'edit' ? ['sessionId', 'prompt', 'imageId'] : ['sessionId', 'prompt'])) throw new TypeError('生成参数无效')
+      if (!payload || !fields(payload, kind === 'edit' ? ['sessionId', 'prompt', 'imageId', 'imageIds', 'size', 'quality'] : ['sessionId', 'prompt', 'size', 'quality'],
+        ['sessionId', 'prompt'])) throw new TypeError('生成参数无效')
       const id = sessionId(payload.sessionId)
       if (id === undefined || typeof payload.prompt !== 'string'
-        || (kind === 'edit' && typeof payload.imageId !== 'string')) throw new TypeError('生成参数无效')
+        || (kind === 'edit' && (Object.hasOwn(payload, 'imageId') === Object.hasOwn(payload, 'imageIds')
+          || payload.imageId !== undefined && typeof payload.imageId !== 'string'
+          || payload.imageIds !== undefined && (!Array.isArray(payload.imageIds) || payload.imageIds.length < 1
+            || payload.imageIds.length > 5 || !payload.imageIds.every(value => typeof value === 'string'))))
+        || (payload.size !== undefined && typeof payload.size !== 'string')
+        || (payload.quality !== undefined && typeof payload.quality !== 'string')) throw new TypeError('生成参数无效')
       const session = webCtx.sessions.get(id)
       if (!session) { fail(res, 404, '请先打开会话后再生成图片'); return }
-      const sources = kind === 'edit' ? [payload.imageId as string] : []
-      const item = await service.create(session, payload.prompt, sources, AbortSignal.any([AbortSignal.timeout(120_000)]))
+      const sources = kind === 'edit' ? payload.imageIds as string[] | undefined ?? [payload.imageId as string] : []
+      const item = await service.create(session, payload.prompt, sources, AbortSignal.any([AbortSignal.timeout(120_000)]), {
+        ...(payload.size === undefined ? {} : { size: payload.size }),
+        ...(payload.quality === undefined ? {} : { quality: payload.quality }),
+      })
       json(res, 200, { item })
     })
   })

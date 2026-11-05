@@ -8,7 +8,8 @@ import {
   type SnapshotStore,
 } from 'coding-client-runtime/client'
 import type { BoundActions } from 'coding-client-ui-slots'
-import type { createLayoutStore } from './stores.ts'
+import type { SessionId } from 'coding-session/types'
+import type { createLayoutStore, PageRoute } from './stores.ts'
 
 /** 框架从布局 store 绑定出的 action 集合。 */
 export type PanelActions = BoundActions<ReturnType<typeof createLayoutStore>>
@@ -50,6 +51,14 @@ export interface ILayout {
   closeWorkbenchBottom(key: string): void
   /** 欢迎页两面板入口：打开其中一个时隐藏另一面板。 */
   toggleHeroPanel(key: string, panel: 'bottom' | 'files'): void
+  /** 在主内容区打开属于指定会话的独立页面，不改变会话或工作台偏好。 */
+  openPage(kind: string, sessionId: SessionId): void
+  /** 同一会话再次点击入口会返回原界面。 */
+  togglePage(kind: string, sessionId: SessionId): void
+  /** 返回原会话界面。 */
+  closePage(): void
+  /** 供导航入口显示是否正处于主内容页。 */
+  readonly page: ObservableSnapshot<PageRoute | null>
 }
 
 /** `ctx.layout` 的具体实现。 */
@@ -57,6 +66,8 @@ export class LayoutController implements ILayout {
   #panels: PanelActions | undefined
   #views: SnapshotStore<Readonly<Record<string, WorkbenchLayoutSnapshot | undefined>>> = createSnapshotStore({})
   #sources = new Map<string, ObservableSnapshot<WorkbenchLayoutSnapshot>>()
+  #page = createSnapshotStore<PageRoute | null>(null)
+  readonly page: ObservableSnapshot<PageRoute | null> = this.#page
 
   /**
    * 接管 root entry 当前实例的绑定 actions；重新注册时新实例会替换旧引用。
@@ -166,6 +177,28 @@ export class LayoutController implements ILayout {
    */
   toggleHeroPanel(key: string, panel: 'bottom' | 'files'): void {
     this.#require().toggleHeroPanel(key, panel)
+  }
+
+  /** 在主内容区打开会话页面。 */
+  openPage(kind: string, sessionId: SessionId): void {
+    this.#require().openPage(kind, sessionId)
+  }
+
+  /** 返回原会话界面。 */
+  closePage(): void {
+    this.#require().closePage()
+  }
+
+  /** 同一页面入口可再次点击返回。 */
+  togglePage(kind: string, sessionId: SessionId): void {
+    this.#require().togglePage(kind, sessionId)
+  }
+
+  /** AppFrame 将最终路由投影给不持有根 store 的入口。 */
+  publishPage(next: PageRoute | null): void {
+    const current = this.#page.getSnapshot()
+    if (current?.kind === next?.kind && current?.sessionId === next?.sessionId) return
+    this.#page.set(next)
   }
 
   #require(): PanelActions {

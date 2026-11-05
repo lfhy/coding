@@ -26,6 +26,9 @@ function fakePanels(): PanelActions {
     closeWorkbenchBottom: vi.fn(),
     toggleHeroPanel: vi.fn(),
     retainWorkbenchSessions: vi.fn(),
+    openPage: vi.fn(),
+    closePage: vi.fn(),
+    togglePage: vi.fn(),
   }
 }
 
@@ -45,6 +48,9 @@ describe('LayoutController', () => {
     service.toggleWorkbenchBottom(SESSION)
     service.closeWorkbenchBottom(SESSION)
     service.toggleHeroPanel(SESSION, 'bottom')
+    service.openPage('image-gallery', SESSION)
+    service.closePage()
+    service.togglePage('image-gallery', SESSION)
 
     expect(panels.toggleSidebar).toHaveBeenCalledTimes(1)
     expect(panels.openDetails).toHaveBeenCalledTimes(1)
@@ -56,6 +62,9 @@ describe('LayoutController', () => {
     expect(panels.toggleWorkbenchBottom).toHaveBeenCalledWith(SESSION)
     expect(panels.closeWorkbenchBottom).toHaveBeenCalledWith(SESSION)
     expect(panels.toggleHeroPanel).toHaveBeenCalledWith(SESSION, 'bottom')
+    expect(panels.openPage).toHaveBeenCalledWith('image-gallery', SESSION)
+    expect(panels.closePage).toHaveBeenCalledOnce()
+    expect(panels.togglePage).toHaveBeenCalledWith('image-gallery', SESSION)
     expect(panels.setSidebar).not.toHaveBeenCalled()
     expect(panels.setDetails).not.toHaveBeenCalled()
     expect(panels.setWorkbench).not.toHaveBeenCalled()
@@ -72,6 +81,8 @@ describe('LayoutController', () => {
     expect(() => { service.toggleWorkbench(SESSION) }).toThrow(/panel actions not wired/)
     expect(() => { service.closeWorkbenchBottom(SESSION) }).toThrow(/panel actions not wired/)
     expect(() => { service.toggleHeroPanel(SESSION, 'files') }).toThrow(/panel actions not wired/)
+    expect(() => { service.openPage('image-gallery', SESSION) }).toThrow(/panel actions not wired/)
+    expect(() => { service.closePage() }).toThrow(/panel actions not wired/)
   })
 
   it('publishes stable per-workspace workbench snapshots for header controls', () => {

@@ -20,6 +20,7 @@ import {
   SESSION_FORMAT_VERSION, SessionId as sessionId, type SessionEvent, type SessionId,
 } from 'coding-session'
 import { snapshotSubagentDescriptor } from 'coding-subagent'
+import { settingsNamespace } from 'coding-settings'
 import {
   captureStableAria, compareOrRefreshGolden, launchWebScaffold, seedSession, watchConsole,
   webSnapshotMode, type WebScaffold,
@@ -174,6 +175,10 @@ describe('web e2e: agent-preset selection', () => {
   beforeAll(async () => {
     scaffold = await launchWebScaffold({
       agentPresets: { roots: [{ path: SHIPPED_PRESETS, trust: 'system' }], default: 'standard' },
+    })
+    // 此场景固定可用画图服务以覆盖完整随包名单；不会发起图片请求。
+    await scaffold.ctx.settings.update(settingsNamespace('image-generation'), {
+      enabled: true, endpoint: 'http://127.0.0.1:9/v1', model: 'snapshot-image', apiKeyRef: '',
     })
     // A resumed session runs what it was created with; seeding one that
     // records `minimal` is what makes the header label a claim about the

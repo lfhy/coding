@@ -11,6 +11,8 @@ export interface GalleryItem {
   width: number
   height: number
   sourceImageId?: string
+  size?: string
+  quality?: string
 }
 
 /** 顺序叠加的画笔或橡皮轨迹。 */
@@ -41,7 +43,15 @@ export interface CanvasDocument { version: 1; nodes: CanvasNode[] }
 /** 修订号由 Host 持有；写入必须带上读取时的修订号。 */
 export interface CanvasSnapshot { revision: number; state: CanvasDocument }
 /** 能力可见性由 Host 综合开关与当前配置投影。 */
-export interface ImageState { enabled: boolean; available: boolean; model: string }
+export interface ImageState {
+  enabled: boolean
+  available: boolean
+  model: string
+  sizes?: Record<string, Record<string, string>>
+  maxEditReferences?: number
+}
+/** 工作台选择器仅发送上游识别的 size 与可选 quality，不发送显示用的档位标签。 */
+export interface ImageOutput { size?: string; quality?: string }
 
 const BASE = '/api/image-gen'
 const record = (value: unknown): value is Record<string, unknown> =>
@@ -69,7 +79,17 @@ export async function readState(sessionId: string, signal?: AbortSignal): Promis
   const value = await request(`/state?${new URLSearchParams({ sessionId })}`, { signal: signal ?? null })
   if (!record(value) || typeof value.enabled !== 'boolean' || typeof value.available !== 'boolean'
     || typeof value.model !== 'string') throw new Error('invalid image state')
-  return { enabled: value.enabled, available: value.available, model: value.model }
+  const sizes = value.sizes
+  if (value.maxEditReferences !== undefined && (!Number.isSafeInteger(value.maxEditReferences)
+    || (value.maxEditReferences as number) < 1 || (value.maxEditReferences as number) > 5)) throw new Error('invalid reference limit')
+  if (sizes !== undefined && (!record(sizes) || Object.keys(sizes).length > 13
+    || !Object.entries(sizes).every(([ratio, tiers]) => /^\d{1,2}:\d{1,2}$/u.test(ratio)
+      && record(tiers) && Object.keys(tiers).length <= 4 && Object.values(tiers).every(size => typeof size === 'string')))) {
+    throw new Error('invalid image sizes')
+  }
+  return { enabled: value.enabled, available: value.available, model: value.model,
+    ...(sizes === undefined ? {} : { sizes: sizes as Record<string, Record<string, string>> }),
+    ...(value.maxEditReferences === undefined ? {} : { maxEditReferences: value.maxEditReferences as number }) }
 }
 
 /**
@@ -87,11 +107,15 @@ export async function readGallery(sessionId: string, signal?: AbortSignal): Prom
       || typeof item.mediaType !== 'string' || typeof item.createdAt !== 'number' || !Number.isFinite(item.createdAt)
       || typeof item.width !== 'number' || !Number.isFinite(item.width) || item.width < 1
       || typeof item.height !== 'number' || !Number.isFinite(item.height) || item.height < 1
-      || (item.sourceImageId !== undefined && typeof item.sourceImageId !== 'string')) throw new Error('invalid image item')
+      || (item.sourceImageId !== undefined && typeof item.sourceImageId !== 'string')
+      || (item.size !== undefined && typeof item.size !== 'string')
+      || (item.quality !== undefined && typeof item.quality !== 'string')) throw new Error('invalid image item')
     return {
       id: item.id, attachmentId: item.attachmentId, prompt: item.prompt, model: item.model,
       createdAt: item.createdAt, mediaType: item.mediaType, width: item.width, height: item.height,
       ...(typeof item.sourceImageId === 'string' ? { sourceImageId: item.sourceImageId } : {}),
+      ...(typeof item.size === 'string' ? { size: item.size } : {}),
+      ...(typeof item.quality === 'string' ? { quality: item.quality } : {}),
     }
   })
   return { enabled: value.enabled, items }
@@ -114,13 +138,35 @@ export function imageUrl(sessionId: string, id: string): string {
  * @param imageId - 可选的同会话原图 id。
  * @returns 新图片目录项，随后可刷新画廊。
  */
-export async function generateImage(sessionId: string, prompt: string, imageId?: string): Promise<GalleryItem> {
+export async function generateImage(sessionId: string, prompt: string, imageId?: string | readonly string[],
+  output: ImageOutput = {}): Promise<GalleryItem> {
   const value = await request(imageId === undefined ? '/generate' : '/edit', {
     method: 'POST', headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ sessionId, prompt, ...(imageId === undefined ? {} : { imageId }) }),
+    body: JSON.stringify({ sessionId, prompt, ...(imageId === undefined ? {} : Array.isArray(imageId)
+      ? { imageIds: imageId } : { imageId }), ...output }),
   })
   if (!record(value) || !record(value.item) || typeof value.item.id !== 'string') throw new Error('invalid generated item')
   return value.item as unknown as GalleryItem
+}
+
+/**
+ * 从本机选择的文件导入同会话图库，交由 Host 附件服务做媒体类型和像素准入。
+ * @param sessionId - 当前会话。
+ * @param file - 浏览器保留的原始 File；明文不进入会话设置或模型请求。
+ * @returns 持久引用对应的图库项。
+ */
+export async function importReference(sessionId: string, file: File): Promise<GalleryItem> {
+  const response = await fetch(`${BASE}/import?${new URLSearchParams({ sessionId })}`, {
+    method: 'POST', headers: { 'content-type': file.type }, body: file,
+  })
+  if (!response.ok) throw new Error(`reference import failed: ${response.status}`)
+  const value: unknown = await response.json()
+  const item = record(value) ? value.item : undefined
+  if (!record(item) || typeof item.id !== 'string' || typeof item.attachmentId !== 'string'
+    || typeof item.mediaType !== 'string' || typeof item.width !== 'number' || typeof item.height !== 'number') {
+    throw new Error('invalid imported image')
+  }
+  return item as unknown as GalleryItem
 }
 
 /**

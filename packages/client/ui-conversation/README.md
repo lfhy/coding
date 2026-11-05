@@ -8,7 +8,7 @@
 
 别的插件可以经 `ctx.conversation.blocks` 让某个会话的编辑器变为惰性：它设置一个携带自己本地化理由的 block，输入栏就渲染同一个禁用的 textarea，并把该理由作为 placeholder——复用无当前会话时的那套姿态。推送方向是约束而非偏好：知道某会话发不出消息的插件（ui-model-selection，在没有适配器服务其路由时）本就依赖本包，因此本包读不到它们。模型 seat 是 block 唯一保留可用的控件——这份约定里的每个 block 都靠选模型来解除，把它一起锁上会让编辑器索要它自己拦下的那件事。block 只是提示性设计；无论客户端禁用了什么，宿主都会拒绝一个它无法路由的提示词。两者同时成立时以无当前会话姿态为准，因为尚未有动作创建可寻址的 Session。
 
-视图环是一个 slot：严格会话主体注册在 `children` 表中声明会话作用域的 `'conversation.view'` 列表，并通过自身的 renderSlot share 渲染活跃配置项（`only: <active id>`）；视图标签页则从注册选项（`id`／`order`／`label`）投影而来。聊天视图是该包自身的配置项；ui-trajectory 和画图画廊等插件通过 `ctx.slots.register` 贡献标签页。扩展入口通过 `ctx.conversation.selectView(sessionId, viewId)` 切换已装载会话的已注册视图；尚未渲染的会话或已卸载视图会明确拒绝，不能越过 owner 直接写会话 store。`image` 预设的空白会话也显示页头、画廊及常规输入栏；其他空白会话仍显示欢迎页。
+视图环是一个 slot：严格会话主体注册在 `children` 表中声明会话作用域的 `'conversation.view'` 列表，并通过自身的 renderSlot share 渲染活跃配置项（`only: <active id>`）；视图标签页则从注册选项（`id`／`order`／`label`）投影而来。聊天视图是该包自身的配置项；ui-trajectory 等插件通过 `ctx.slots.register` 贡献标签页，画廊由主内容页 `shell.page` 持有。扩展入口通过 `ctx.conversation.selectView(sessionId, viewId)` 切换已装载会话的已注册视图；尚未渲染的会话或已卸载视图会明确拒绝，不能越过 owner 直接写会话 store。所有空白会话保留欢迎页和模式选择器，首条消息被接纳后才显示会话页头、视图与常规输入栏。
 
 Chat 业务行是彼此独立的注册表贡献，不是封闭的内建联合。Client 插件通过 declaration merging 增加类型化 `ChatNodeDataMap` key，在 `ctx.conversationEvents` 上注册 `ConversationNodeDefinition`，再向 `conversation.chat.node` 注册匹配的 keyed renderer；它无须修改会话 fold 或中央 renderer switch。每行的 `data-chat-node-key` 对应当前 `ChatSnapshot.nodes` 的稳定 key，供围栏等 DOM 扩展读取源码；该标记在流式输出与定稿之间保持一致。稳定事件 id、append/prepend 回放、Location data 与 renderer 约束见 [Conversation Node 实操手册](../../../docs/cookbook/adding-a-conversation-node.md)。
 

@@ -39,19 +39,19 @@ function stubAgent(session: Session): Agent {
  * `apps/cli`. Ids listed in `userIds` present as locally authored; the rest
  * ship with the deployment.
  */
-function roster(ids: readonly string[], userIds: readonly string[] = []): unknown {
+function roster(ids: readonly string[], userIds: readonly string[] = [], defaultId = ids[0]): unknown {
   const trustOf = (id: string): 'system' | 'user' => (userIds.includes(id) ? 'user' : 'system')
   const presetOf = (id: string): object =>
     ({ id, trust: trustOf(id), path: `/presets/${id}/agent.cordis.yml` })
   return {
-    defaultId: ids[0],
+    defaultId,
     list: () => Promise.resolve(ids.map(presetOf)),
     resolve: (id?: string) => {
-      const wanted = id ?? ids[0] ?? ''
+      const wanted = id ?? defaultId ?? ''
       if (!ids.includes(wanted)) return Promise.reject(new UnknownPresetError(wanted, ids))
       return Promise.resolve(presetOf(wanted))
     },
-    mount: (_ctx: Context, id?: string) => Promise.resolve(presetOf(id ?? ids[0] ?? '')),
+    mount: (_ctx: Context, id?: string) => Promise.resolve(presetOf(id ?? defaultId ?? '')),
     // What a real mount leaves behind: a service instance only the agent that
     // mounted it can be used to address. The doubles are per agent so a test
     // can tell "this session's" from "some session's".
@@ -77,7 +77,7 @@ function roster(ids: readonly string[], userIds: readonly string[] = []): unknow
     },
     // The standing scope key a cold transcript read resolves presenters in.
     standingKeyFor: (id?: string) => {
-      const wanted = id ?? ids[0] ?? ''
+      const wanted = id ?? defaultId ?? ''
       standingKeyRequests.push(wanted)
       if (!ids.includes(wanted) || failingStandingKeys.has(wanted)) {
         return Promise.reject(new UnknownPresetError(wanted, ids))
@@ -104,7 +104,12 @@ const services = new Map<string, Record<string, unknown>>()
 async function harness(
   presets?: readonly string[],
   persistence?: unknown,
-  options: { userIds?: readonly string[]; defaults?: Record<string, unknown> } = {},
+  options: {
+    userIds?: readonly string[]
+    defaults?: Record<string, unknown>
+    defaultPresetId?: string
+    imageAvailable?: boolean
+  } = {},
 ) {
   const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'dsh-apiproxy-preset-')))
   const ctx = new Context()
@@ -112,7 +117,11 @@ async function harness(
   await ctx.plugin(AgentRegistry)
   await ctx.plugin(UserQuestionService)
   ctx.provide('sessionPersistence', (persistence ?? { list: () => Promise.resolve([]) }) as never)
-  if (presets !== undefined) ctx.provide('agentPresets', roster(presets, options.userIds) as never)
+  if (presets !== undefined) ctx.provide('agentPresets', roster(presets, options.userIds, options.defaultPresetId) as never)
+  let imageAvailable = options.imageAvailable ?? false
+  if (options.imageAvailable !== undefined) {
+    ctx.provide('imageGeneration', { status: () => Promise.resolve({ available: imageAvailable }) } as never)
+  }
 
   const factory: AgentFactory = {
     async createAgent(_ownerCtx, options) {
@@ -140,7 +149,7 @@ async function harness(
     cwd,
     ...options.defaults,
   })
-  return { api, ctx, cwd }
+  return { api, ctx, cwd, setImageAvailable: (available: boolean) => { imageAvailable = available } }
 }
 
 describe('session.create with an agent preset', () => {
@@ -159,6 +168,76 @@ describe('session.create with an agent preset', () => {
     await api.sessions.create(request({ sessionId: SessionId('s2') }))
 
     expect(ctx.sessions.get(SessionId('s2'))?.header.agentPreset).toBe('standard')
+  })
+
+  it('rejects a fresh image session without a ready provider, but preserves an existing one', async () => {
+    const { api, ctx, setImageAvailable } = await harness(['standard', 'image'], undefined, { imageAvailable: true })
+    const existing = SessionId('image-existing')
+    await api.sessions.create(request({ sessionId: existing, agentPreset: 'image' }))
+    setImageAvailable(false)
+
+    const refused = await api.sessions.create(request({ sessionId: SessionId('image-new'), agentPreset: 'image' }))
+    expect(refused.result.ok).toBe(false)
+    if (refused.result.ok) throw new Error('unreachable')
+    expect(refused.result.error.code).toBe('agent-preset-invalid')
+    expect(ctx.sessions.get(SessionId('image-new'))).toBeUndefined()
+
+    const adopted = await api.sessions.create(request({ sessionId: existing, agentPreset: 'image' }))
+    expect(adopted.result.ok).toBe(true)
+  })
+
+  it('uses the same healthy non-image default reported by the roster', async () => {
+    const { api, ctx } = await harness(['minimal', 'image', 'standard'], undefined, {
+      defaultPresetId: 'image', imageAvailable: false,
+    })
+
+    const listed = await api.agentPresets.list(request({}))
+    await api.sessions.create(request({ sessionId: SessionId('image-default') }))
+
+    expect(listed.result.ok && listed.result.value.presets.find(preset => preset.isDefault)?.id).toBe('standard')
+    expect(ctx.sessions.get(SessionId('image-default'))?.header.agentPreset).toBe('standard')
+  })
+
+  it('falls back to the first healthy non-image preset when standard is absent', async () => {
+    const { api, ctx } = await harness(['image', 'minimal'], undefined, {
+      defaultPresetId: 'image', imageAvailable: false,
+    })
+
+    await api.sessions.create(request({ sessionId: SessionId('image-fallback') }))
+
+    expect(ctx.sessions.get(SessionId('image-fallback'))?.header.agentPreset).toBe('minimal')
+  })
+
+  it('fails a new session when the disabled image default has no healthy replacement', async () => {
+    const { api, ctx } = await harness(['image'], undefined, {
+      defaultPresetId: 'image', imageAvailable: false,
+    })
+
+    const listed = await api.agentPresets.list(request({}))
+    const created = await api.sessions.create(request({ sessionId: SessionId('image-only') }))
+
+    expect(listed.result.ok && listed.result.value.presets).toEqual([])
+    expect(created.result.ok).toBe(false)
+    if (created.result.ok) throw new Error('unreachable')
+    expect(created.result.error.code).toBe('agent-preset-invalid')
+    expect(ctx.sessions.get(SessionId('image-only'))).toBeUndefined()
+  })
+
+  it('forks a recorded image session after the provider becomes unavailable', async () => {
+    const { api, ctx, setImageAvailable } = await harness(['standard', 'image'], undefined, { imageAvailable: true })
+    ctx.provide('workspaceRegistry', { list: () => [] } as never)
+    const sourceId = SessionId('image-source')
+    await api.sessions.create(request({ sessionId: sourceId, agentPreset: 'image' }))
+    const source = ctx.sessions.get(sourceId)!
+    source.append('turn/start', { turn: 1 })
+    source.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    setImageAvailable(false)
+
+    const forked = await api.sessions.fork(request({ sessionId: sourceId }))
+
+    expect(forked.result.ok).toBe(true)
+    if (!forked.result.ok) throw new Error('unreachable')
+    expect(ctx.sessions.get(forked.result.value.sessionId)?.header.agentPreset).toBe('image')
   })
 
   it('rejects an unknown preset and names the ones that exist', async () => {
@@ -325,6 +404,25 @@ describe('agentPreset.list', () => {
     expect(response.result.value.authorable).toBe(true)
   })
 
+  it('hides the shipped image mode until its provider is ready', async () => {
+    const { api, setImageAvailable } = await harness(['standard', 'image'], undefined, { imageAvailable: false })
+
+    const unavailable = await api.agentPresets.list(request({}))
+    expect(unavailable.result.ok && unavailable.result.value.presets.map(preset => preset.id)).toEqual(['standard'])
+    setImageAvailable(true)
+    const available = await api.agentPresets.list(request({}))
+    expect(available.result.ok && available.result.value.presets.map(preset => preset.id)).toEqual(['standard', 'image'])
+  })
+
+  it('treats an absent image service as unavailable without hiding authored presets', async () => {
+    const { api } = await harness(['standard', 'image', 'my-image'], undefined, { userIds: ['my-image'] })
+
+    const response = await api.agentPresets.list(request({}))
+
+    expect(response.result.ok && response.result.value.presets.map(preset => preset.id))
+      .toEqual(['standard', 'my-image'])
+  })
+
   it('answers with an empty roster when the deployment composes no presets', async () => {
     const { api } = await harness()
 
@@ -352,6 +450,24 @@ describe('agentPreset.select', () => {
     expect(response.result.ok).toBe(true)
     if (!response.result.ok) throw new Error('unreachable')
     expect(response.result.value.agentPreset).toBe('minimal')
+  })
+
+  it('refuses direct image selection while unavailable and permits it once ready', async () => {
+    const { api, ctx, setImageAvailable } = await harness(['standard', 'image'], undefined, { imageAvailable: false })
+    await api.sessions.create(request({ sessionId: SessionId('image-select') }))
+
+    const refused = await api.agentPresets.select(
+      request({ sessionId: SessionId('image-select'), agentPreset: 'image' }))
+    expect(refused.result.ok).toBe(false)
+    if (refused.result.ok) throw new Error('unreachable')
+    expect(refused.result.error.code).toBe('agent-preset-invalid')
+    expect(resolveSessionPreset(ctx.sessions.get(SessionId('image-select'))!)).toBe('standard')
+
+    setImageAvailable(true)
+    const accepted = await api.agentPresets.select(
+      request({ sessionId: SessionId('image-select'), agentPreset: 'image' }))
+    expect(accepted.result.ok).toBe(true)
+    expect(resolveSessionPreset(ctx.sessions.get(SessionId('image-select'))!)).toBe('image')
   })
 
   it('records the switch in the log, and the list reads it back', async () => {

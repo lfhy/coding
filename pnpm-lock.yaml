@@ -2657,9 +2657,9 @@ importers:
       coding-client-ui-icons:
         specifier: workspace:^
         version: link:../ui-icons
-      coding-client-ui-open-in-app:
+      coding-client-ui-layout:
         specifier: workspace:^
-        version: link:../ui-open-in-app
+        version: link:../ui-layout
       coding-client-ui-primitives:
         specifier: workspace:^
         version: link:../ui-primitives

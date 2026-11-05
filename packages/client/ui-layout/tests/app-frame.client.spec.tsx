@@ -58,6 +58,7 @@ function mountFrame(options: { workspaceKeyOf?: (id: SessionId) => string } = {}
   const rawInstance = createLayoutStore().create()
   const instance = rawInstance
   const publishWorkbench = vi.fn()
+  const publishPage = vi.fn()
   const retainWorkbenchViews = vi.fn()
   const slotCalls: { key: string; props: unknown }[] = []
   const renderSlot = ((key: string, owner: object) => {
@@ -68,6 +69,7 @@ function mountFrame(options: { workspaceKeyOf?: (id: SessionId) => string } = {}
     if (key === 'workbench') return <div data-testid="workbench-content" />
     if (key === 'workbench.bottom') return <div data-testid="bottom-content" />
     if (key === 'conversation.empty') return <div data-testid="empty-content" />
+    if (key === 'shell.page') return <main data-testid="gallery-page" />
     return <div data-testid="other-content" />
   }) as AppFrameProps['renderSlot']
   const useSessions = ((sel: (s: SessionListState) => unknown) => {
@@ -105,6 +107,7 @@ function mountFrame(options: { workspaceKeyOf?: (id: SessionId) => string } = {}
       useWorkspaces={((sel: (s: WorkspaceListState) => unknown) => sel(workspaceState)) as never}
       SessionProvider={SessionProviderStub}
       publishWorkbench={publishWorkbench}
+      publishPage={publishPage}
       retainWorkbenchViews={retainWorkbenchViews}
       workspaceKeyOf={options.workspaceKeyOf ?? workspaceKeyOf}
     />
@@ -116,6 +119,7 @@ function mountFrame(options: { workspaceKeyOf?: (id: SessionId) => string } = {}
     frame,
     slotCalls,
     publishWorkbench,
+    publishPage,
     rerenderFrame: () => { utils.rerender(element()) },
     ownerFor: (key: string) => slotCalls.filter(call => call.key === key).at(-1)?.props,
     ...utils,
@@ -183,6 +187,30 @@ afterEach(() => {
 })
 
 describe('AppFrame', () => {
+  it('places an independent session page beside the sidebar and restores the mounted conversation', () => {
+    const b = mountFrame()
+    const center = b.getByTestId('center-content').parentElement
+    act(() => { b.instance.actions.openPage('image-gallery', 's-test' as SessionId) })
+    expect(b.getByTestId('gallery-page')).toBeTruthy()
+    expect(b.getByTestId('sidebar-content')).toBeTruthy()
+    expect(center?.hasAttribute('inert')).toBe(true)
+    expect(b.frame.getAttribute('data-page-open')).toBe('true')
+    const owner = b.ownerFor('shell.page') as { closePage(): void }
+    act(() => { owner.closePage() })
+    expect(b.queryByTestId('gallery-page')).toBeNull()
+    expect(center?.hasAttribute('inert')).toBe(false)
+    expect(b.getByTestId('center-content')).toBeTruthy()
+  })
+
+  it('closes a page when navigation selects another session', () => {
+    const b = mountFrame()
+    act(() => { b.instance.actions.openPage('image-gallery', 's-test' as SessionId) })
+    selectedSession.current = 's-next' as SessionId
+    b.rerenderFrame()
+    expect(b.queryByTestId('gallery-page')).toBeNull()
+    expect(b.instance.store.getSnapshot().page).toBeNull()
+  })
+
   it('renders three tracks from store state', () => {
     const { frame } = mountFrame()
     expect(tracks(frame)).toEqual([280, 0])

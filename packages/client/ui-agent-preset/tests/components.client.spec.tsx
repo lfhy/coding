@@ -287,6 +287,14 @@ describe('the new-session chip', () => {
     expect(screen.getByRole('button').textContent).toContain('arriving')
   })
 
+  it('keeps an existing image session named while hiding the unavailable mode from its menu', () => {
+    renderSeat({ current: 'image', options: [SEAT_READY.options[0]!] })
+
+    expect(screen.getByRole('button').textContent).toContain(en.presetImageName)
+    fireEvent.click(screen.getByRole('button'))
+    expect(screen.queryByRole('menuitem', { name: /Image creation mode/u })).toBeNull()
+  })
+
   it('stages the picked preset and closes the menu', () => {
     const actions = renderSeat()
     fireEvent.click(screen.getByRole('button'))
@@ -451,6 +459,12 @@ describe('the session-header label', () => {
     // The session's own summary is the authority on which preset it runs; the
     // roster only supplies the display name, and its arrival is a later frame.
     expect(screen.getByTitle(en.headerHint).textContent).toBe('standard')
+  })
+
+  it('keeps a recorded image session label localized when image is no longer selectable', () => {
+    renderLabel({ blank: false, agentPreset: 'image' }, { options: [SEAT_READY.options[0]!] })
+
+    expect(screen.getByTitle(en.presetImageDescription).textContent).toBe(en.presetImageName)
   })
 
   it('renders nothing, and reads no roster, when the session records no preset', async () => {

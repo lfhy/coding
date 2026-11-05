@@ -61,6 +61,7 @@ export class AgentPresetSeatController {
 
   /** Set while a pick is waiting for a session; cleared once applied. */
   private staged: string | undefined
+  private loadGeneration = 0
 
   constructor(
     private readonly api: Pick<IApiClient, 'agentPresets'>,
@@ -83,26 +84,31 @@ export class AgentPresetSeatController {
    * @returns once the snapshot reflects the host.
    */
   async load(): Promise<void> {
+    const generation = ++this.loadGeneration
     try {
       const response = await this.api.agentPresets.list({})
+      if (generation !== this.loadGeneration) return
       if (!response.result.ok) {
         this.set({ error: response.result.error.message })
         return
       }
       const { presets } = response.result.value
+      const options = presetOptions(presets)
+      // 预设可能在暂存后因图像服务被关闭而从可选名单消失；旧选择不可
+      // 套用到新会话。当前空白会话自己的模式仍要如实显示以便切走。
+      if (this.staged !== undefined && !options.some(option => option.id === this.staged)) {
+        this.staged = undefined
+      }
       this.fallback = presets.find(preset => preset.isDefault)?.id ?? presets[0]?.id ?? ''
       this.set({
-        options: presetOptions(presets),
-        // Staged pick first, then the composition the current session
-        // already carries, then the deployment default. The middle term is
-        // what keeps a late-landing load from regressing the display after
-        // an applied stage was consumed — the chip mounts (and loads) only
-        // once the flow's session is current, so the reply can arrive after
-        // apply() already composed it.
+        options,
+        // 暂存选择优先，其次是当前会话已运行的模式，最后是部署默认值；
+        // 名单迟到时不能把已完成切换的显示回退成默认值。
         current: this.staged ?? this.currentSession()?.agentPreset ?? this.fallback,
         error: null,
       })
     } catch (error) {
+      if (generation !== this.loadGeneration) return
       this.set({ error: messageOf(error) })
     }
   }

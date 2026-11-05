@@ -2,6 +2,7 @@
  * root entry 的瞬时布局 store。它持有导航与详情栏的全局偏好，以及按工作区键保存的工作台开关和尺寸偏好；响应式让步只影响 AppFrame 的实际几何，不改写这些偏好。模块只导出工厂，避免热重载之间共享实例。
  */
 import { defineStore, type EngineStoreHandle } from 'coding-client-runtime/client'
+import type { SessionId } from 'coding-session/types'
 import {
   clampWidth,
   DETAILS_DEFAULT,
@@ -29,6 +30,9 @@ export type WorkbenchState = {
   bottomHeight: number
 }
 
+/** 当前主内容页的临时身份。 */
+export interface PageRoute { kind: string; sessionId: SessionId }
+
 /** 布局偏好；0 宽度只用于既有 sidebar/details 的关闭语义。 */
 type LayoutState = {
   sidebar: number
@@ -37,6 +41,8 @@ type LayoutState = {
   narrowExpanded: boolean
   /** 工作台偏好按工作区键保存；会话 id 仍是合法的字符串键，单会话部署行为不变。 */
   workbench: Record<string, WorkbenchState | undefined>
+  /** 主内容区的临时页面；只属于打开它的会话。 */
+  page: PageRoute | null
 }
 
 function workbench(draft: LayoutState, key: string): WorkbenchState {
@@ -68,6 +74,9 @@ type LayoutActions = {
   closeWorkbenchBottom: (draft: LayoutState, key: string) => void
   toggleHeroPanel: (draft: LayoutState, key: string, panel: 'bottom' | 'files') => void
   retainWorkbenchSessions: (draft: LayoutState, keys: readonly string[]) => void
+  openPage: (draft: LayoutState, kind: string, sessionId: SessionId) => void
+  closePage: (draft: LayoutState) => void
+  togglePage: (draft: LayoutState, kind: string, sessionId: SessionId) => void
 }
 
 /**
@@ -82,6 +91,7 @@ export function createLayoutStore(): EngineStoreHandle<LayoutState, LayoutAction
       narrow: false,
       narrowExpanded: false,
       workbench: {},
+      page: null,
     }),
     actions: {
       setSidebar: (d, px: number) => { d.sidebar = clampWidth(px, SIDEBAR_MIN, SIDEBAR_MAX) },
@@ -189,6 +199,11 @@ export function createLayoutStore(): EngineStoreHandle<LayoutState, LayoutAction
           if (retained.has(key)) next[key] = state
         }
         d.workbench = next
+      },
+      openPage: (d, kind: string, sessionId: SessionId) => { d.page = { kind, sessionId } },
+      closePage: (d) => { d.page = null },
+      togglePage: (d, kind: string, sessionId: SessionId) => {
+        d.page = d.page?.kind === kind && d.page.sessionId === sessionId ? null : { kind, sessionId }
       },
     },
   })

@@ -1,6 +1,7 @@
 /** 单会话画廊：旧读取可取消，新图提交后重新读取 Host 权威目录。 */
 import { createSnapshotStore, type SnapshotStore } from 'coding-client-runtime/client'
-import { generateImage, imageUrl, readGallery, readState, type GalleryItem, type ImageState } from './wire.ts'
+import { generateImage, imageUrl, importReference, readGallery, readState, type GalleryItem, type ImageOutput, type ImageState } from './wire.ts'
+import type { CanvasViewState } from './canvas.ts'
 
 /** 只保留图片元数据与读取状态，原始字节由浏览器访问同会话受限地址。 */
 export interface GalleryViewState {
@@ -8,29 +9,44 @@ export interface GalleryViewState {
   state: ImageState | null
   items: GalleryItem[]
   generating: boolean
+  uploading: boolean
+  lastResultId: string | null
   failed: boolean
 }
 
 /** 画廊的只读源、请求及画布放置动作。 */
 export interface GalleryFace {
-  hooks: { gallery: SnapshotStore<GalleryViewState> }
+  hooks: { gallery: SnapshotStore<GalleryViewState>; imageCanvas: SnapshotStore<CanvasViewState> }
   show: (shown: boolean) => void
   refresh: () => void
-  openCanvas: () => boolean
-  generate: (prompt: string, imageId?: string) => Promise<boolean>
+  generate: (prompt: string, imageId?: string | readonly string[], output?: ImageOutput) => Promise<boolean>
+  importReference: (file: File) => Promise<GalleryItem | undefined>
   place: (imageId: string) => Promise<boolean>
   url: (id: string) => string
+  canvas: {
+    show: (shown: boolean) => void
+    refresh: () => void
+    add: (node: import('./wire.ts').CanvasNode) => Promise<boolean>
+    select: (id: string | null) => void
+    move: (id: string, x: number, y: number) => Promise<boolean>
+    remove: () => Promise<boolean>
+    clear: () => Promise<boolean>
+    url: (id: string) => string
+  }
 }
 
 /** 每个 Session 独占一个目录控制器，隐藏与卸载均取消请求。 */
 export class GalleryController {
-  readonly view = createSnapshotStore<GalleryViewState>({ phase: 'loading', state: null, items: [], generating: false, failed: false })
+  readonly view = createSnapshotStore<GalleryViewState>({ phase: 'loading', state: null, items: [], generating: false,
+    uploading: false, lastResultId: null, failed: false })
   private abort: AbortController | undefined
   private generation = 0
   private shown = false
   private disposed = false
   private poll: ReturnType<typeof setInterval> | undefined
   private inFlight: Promise<void> | undefined
+
+  private active(): boolean { return this.shown && !this.disposed }
 
   /** @param sessionId - 图片所属的会话。 */
   constructor(readonly sessionId: string) {}
@@ -84,20 +100,42 @@ export class GalleryController {
    * @param imageId - 编辑时的同会话图片 id。
    * @returns 请求是否成功。
    */
-  async generate(prompt: string, imageId?: string): Promise<boolean> {
-    if (!this.shown || this.disposed || this.view.getSnapshot().generating
+  async generate(prompt: string, imageId?: string | readonly string[], output?: ImageOutput): Promise<boolean> {
+    if (!this.shown || this.disposed || this.view.getSnapshot().generating || this.view.getSnapshot().uploading
       || this.view.getSnapshot().state?.available !== true || !prompt.trim()) return false
     this.view.update((draft) => { draft.generating = true; draft.failed = false })
     try {
-      await generateImage(this.sessionId, prompt.trim(), imageId)
+      const item = await generateImage(this.sessionId, prompt.trim(), imageId, output)
       if (this.poll === undefined) return false
       await this.refresh()
+      this.view.update((draft) => { draft.lastResultId = item.id })
       return true
     } catch {
       if (this.poll !== undefined) this.view.update((draft) => { draft.failed = true })
       return false
     } finally {
       if (this.poll !== undefined) this.view.update((draft) => { draft.generating = false })
+    }
+  }
+
+  /**
+   * 参考图先由 Host 附件服务准入并记入当前会话图库，再交给编辑操作引用。
+   * @param file - 用户从本机选择的单张原始图。
+   * @returns 持久图库项；失败或已卸载返回 undefined。
+   */
+  async importReference(file: File): Promise<GalleryItem | undefined> {
+    if (!this.shown || this.disposed || this.view.getSnapshot().uploading || this.view.getSnapshot().generating) return undefined
+    this.view.update((draft) => { draft.uploading = true; draft.failed = false })
+    try {
+      const item = await importReference(this.sessionId, file)
+      if (!this.active()) return undefined
+      await this.refresh()
+      return item
+    } catch {
+      if (this.active()) this.view.update((draft) => { draft.failed = true })
+      return undefined
+    } finally {
+      if (this.active()) this.view.update((draft) => { draft.uploading = false })
     }
   }
 

@@ -7,7 +7,21 @@ export const SETTINGS_NAMESPACE = 'image-generation'
 /** 不配置引用时 Host 使用的凭据名称。 */
 export const DEFAULT_KEY_REF = 'IMAGE_GEN_API_KEY'
 /** Host 持有默认值和字段级写入的用户设置。 */
-export interface ImageSettings { enabled: boolean; endpoint: string; model: string; apiKeyRef: string }
+export interface ImageSettings {
+  enabled: boolean
+  endpoint: string
+  model: string
+  apiKeyRef: string
+  sizes?: Record<string, Record<string, string>>
+  maxEditReferences?: number
+}
+
+/** 浏览器只校验 JSON 结构；有效比例、档位和像素范围由 Host 的设置校验拥有。 */
+export function validSizeTableShape(value: unknown): value is Record<string, Record<string, string>> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+    && Object.values(value as Record<string, unknown>).every(tiers => tiers !== null && typeof tiers === 'object'
+      && !Array.isArray(tiers) && Object.values(tiers as Record<string, unknown>).every(size => typeof size === 'string'))
+}
 
 /** 设置镜像不能接受非法或半截配置。 */
 export function decodeImageSettings(value: unknown): ImageSettings | undefined {
@@ -15,7 +29,13 @@ export function decodeImageSettings(value: unknown): ImageSettings | undefined {
   const fields = value as Record<string, unknown>
   if (typeof fields.enabled !== 'boolean' || typeof fields.endpoint !== 'string'
     || typeof fields.model !== 'string' || typeof fields.apiKeyRef !== 'string') return undefined
-  return { enabled: fields.enabled, endpoint: fields.endpoint, model: fields.model, apiKeyRef: fields.apiKeyRef }
+  const sizes = fields.sizes
+  if (fields.maxEditReferences !== undefined && (!Number.isSafeInteger(fields.maxEditReferences)
+    || (fields.maxEditReferences as number) < 1 || (fields.maxEditReferences as number) > 5)) return undefined
+  if (sizes !== undefined && !validSizeTableShape(sizes)) return undefined
+  return { enabled: fields.enabled, endpoint: fields.endpoint, model: fields.model, apiKeyRef: fields.apiKeyRef,
+    ...(sizes === undefined ? {} : { sizes }),
+    ...(fields.maxEditReferences === undefined ? {} : { maxEditReferences: fields.maxEditReferences as number }) }
 }
 
 /** 服务地址允许 HTTPS 与回环 HTTP，拒绝其他明文地址及嵌入的凭据。 */
@@ -31,6 +51,12 @@ export function validEndpoint(text: string): boolean {
   } catch { return false }
 }
 
+/** 本机无鉴权选项仅适用于回环地址。 */
+export function localEndpoint(text: string): boolean {
+  if (!validEndpoint(text)) return false
+  return ['localhost', '127.0.0.1', '[::1]'].includes(new URL(text).hostname.toLowerCase())
+}
+
 /** 空引用表示无需凭据；非空引用不接受密钥明文、路径或特殊字符。 */
 export function validKeyRef(value: string): boolean { return value === '' || /^[A-Za-z_][A-Za-z0-9_]*$/u.test(value) }
 
@@ -40,8 +66,6 @@ export interface ImageSettingsView {
   credential: { status: 'loading' | 'ready' | 'error'; configured: boolean; writable: boolean; ref: string }
   saving: boolean
   failed: boolean
-  keySaving: boolean
-  keyFailed: boolean
 }
 
 /**
@@ -60,9 +84,11 @@ export function imageServiceReady(view: ImageSettingsView): boolean {
 /** 渲染器把此裸 observable 绑定为组件的 `useImageSettings`。 */
 export interface ImageSettingsFace {
   hooks: { imageSettings: SnapshotStore<ImageSettingsView> }
-  save: (changes: Partial<ImageSettings>) => Promise<boolean>
-  saveKey: (value: string) => Promise<boolean>
+  save: (changes: Partial<ImageSettings>, key: string) => Promise<ImageSettingsSaveResult>
 }
+
+/** 成功写入的密钥不需在后续字段失败时重复提交。 */
+export interface ImageSettingsSaveResult { ok: boolean; keySaved: boolean }
 
 /** 一份设置 scope 可供入口与设置页共用，卸载时拒绝发布迟到的凭据结果。 */
 export class ImageSettingsController {
@@ -76,7 +102,7 @@ export class ImageSettingsController {
     this.view = createSnapshotStore<ImageSettingsView>({
       section: scope.getSnapshot(),
       credential: { ref: DEFAULT_KEY_REF, status: 'loading', configured: false, writable: false },
-      saving: false, failed: false, keySaving: false, keyFailed: false,
+      saving: false, failed: false,
     })
     this.unsubscribe = scope.subscribe(() => {
       const previous = this.view.getSnapshot().section.value?.apiKeyRef
@@ -117,53 +143,75 @@ export class ImageSettingsController {
   }
 
   /**
-   * 保存字段时按各次返回的新 revision 顺序写入；未配置可保存启用偏好，但 Host 不会报告可用。
+   * 已启用服务的配置变更先停用，再写非机密字段与密钥，最后按表单意图恢复启用。
    * @param changes - 通过表单校验的非机密字段。
-   * @returns 所有写入均被 Host 投影时为 true。
+   * @param key - 仅在本次请求中使用的密钥明文，空值表示不更改。
+   * @returns 完成状态及密钥写入确认；字段失败后可只重试尚未写入的部分。
    */
-  async save(changes: Partial<ImageSettings>): Promise<boolean> {
+  async save(changes: Partial<ImageSettings>, key = ''): Promise<ImageSettingsSaveResult> {
+    const rejected = { ok: false, keySaved: false }
     const section = this.scope.getSnapshot()
-    if (this.view.getSnapshot().saving || section.status !== 'ready' || !section.writable) return false
+    if (this.view.getSnapshot().saving || section.status !== 'ready' || !section.writable) return rejected
     if ((changes.endpoint !== undefined && changes.endpoint !== '' && !validEndpoint(changes.endpoint))
       || (changes.model !== undefined && !changes.model.trim())
-      || (changes.apiKeyRef !== undefined && !validKeyRef(changes.apiKeyRef))) return false
+      || (changes.sizes !== undefined && (typeof changes.sizes !== 'object' || Array.isArray(changes.sizes)))
+      || (changes.maxEditReferences !== undefined && (!Number.isSafeInteger(changes.maxEditReferences)
+        || changes.maxEditReferences < 1 || changes.maxEditReferences > 5))
+      || (changes.apiKeyRef !== undefined && !validKeyRef(changes.apiKeyRef))) return rejected
+    const targetRef = changes.apiKeyRef ?? section.value?.apiKeyRef ?? DEFAULT_KEY_REF
+    const targetEndpoint = changes.endpoint ?? section.value?.endpoint ?? ''
+    if (targetRef === '' && targetEndpoint !== '' && !localEndpoint(targetEndpoint)) return rejected
+    if (key.trim() && targetRef === '') return rejected
+    const configChanged = (['endpoint', 'model', 'apiKeyRef', 'sizes', 'maxEditReferences'] as const)
+      .some(field => changes[field] !== undefined && changes[field] !== section.value?.[field])
+    const intendedEnabled = changes.enabled ?? section.value?.enabled ?? false
     this.view.update((draft) => { draft.saving = true; draft.failed = false })
     let accepted = true
+    let keySaved = false
     try {
-      for (const [field, value] of Object.entries(changes)) {
+      if (configChanged && section.value?.enabled === true) {
+        await this.scope.set('enabled', false)
+        accepted = this.scope.getSnapshot().value?.enabled === false
+      }
+      for (const [field, value] of Object.entries(changes).filter(([field]) => field !== 'enabled' && accepted)) {
         if (this.disposed) { accepted = false; break }
-        if (this.scope.getSnapshot().value?.[field as keyof ImageSettings] === value) continue
+        if (JSON.stringify(this.scope.getSnapshot().value?.[field as keyof ImageSettings]) === JSON.stringify(value)) continue
         await this.scope.set(field, value)
-        if (this.scope.getSnapshot().value?.[field as keyof ImageSettings] !== value) { accepted = false; break }
+        if (JSON.stringify(this.scope.getSnapshot().value?.[field as keyof ImageSettings]) !== JSON.stringify(value)) {
+          accepted = false; break
+        }
+      }
+      if (accepted && key.trim()) {
+        await this.refreshCredential()
+        const current = this.view.getSnapshot().credential
+        if (this.scope.getSnapshot().status !== 'ready' || !this.scope.getSnapshot().writable
+          || current.status !== 'ready' || !current.writable || current.ref !== targetRef) accepted = false
+        else {
+          const response = await this.api.credentials.set({ ref: targetRef, value: key.trim() })
+          keySaved = response.result.ok && !this.disposed
+          accepted = keySaved
+          if (keySaved) await this.refreshCredential()
+        }
+      }
+      if (accepted && intendedEnabled) {
+        let credential = this.view.getSnapshot().credential
+        if (credential.ref !== targetRef || credential.status !== 'ready' || !credential.configured) {
+          await this.refreshCredential()
+          credential = this.view.getSnapshot().credential
+        }
+        accepted = credential.ref === targetRef && credential.status === 'ready' && credential.configured
+      }
+      if (accepted && this.scope.getSnapshot().value?.enabled !== intendedEnabled) {
+        await this.scope.set('enabled', intendedEnabled)
+        accepted = this.scope.getSnapshot().value?.enabled === intendedEnabled
       }
     } catch { accepted = false }
     if (!this.disposed) this.view.update((draft) => { draft.saving = false; draft.failed = !accepted })
-    return accepted
-  }
-
-  /**
-   * 密钥明文不进入状态镜像，提交后只询问当前引用是否已配置。
-   * @param value - 表单持有的密钥明文。
-   * @returns Host 接受且随后确认配置时为 true。
-   */
-  async saveKey(value: string): Promise<boolean> {
-    const credential = this.view.getSnapshot().credential
-    if (!value.trim() || this.view.getSnapshot().keySaving || credential.status !== 'ready' || !credential.writable) return false
-    this.view.update((draft) => { draft.keySaving = true; draft.keyFailed = false })
-    let accepted = false
-    try {
-      const response = await this.api.credentials.set({ ref: credential.ref, value: value.trim() })
-      if (response.result.ok && !this.disposed && credential.ref === this.view.getSnapshot().credential.ref) {
-        await this.refreshCredential()
-        accepted = this.view.getSnapshot().credential.configured && this.view.getSnapshot().credential.status === 'ready'
-      }
-    } catch { /* 保存失败仅公开安全状态。 */ }
-    if (!this.disposed) this.view.update((draft) => { draft.keySaving = false; draft.keyFailed = !accepted })
-    return accepted
+    return { ok: accepted, keySaved }
   }
 
   /** @returns 给设置组件的非机密快照与操作。 */
   inject(): ImageSettingsFace {
-    return { hooks: { imageSettings: this.view }, save: changes => this.save(changes), saveKey: value => this.saveKey(value) }
+    return { hooks: { imageSettings: this.view }, save: (changes, key) => this.save(changes, key) }
   }
 }

@@ -66,12 +66,31 @@ const ROSTER_MOVED = {
   },
 }
 
-async function bench() {
+/** Host 仅在图像服务可用时列出画图模式。 */
+const ROSTER_IMAGE = {
+  rpcId: 'r',
+  result: {
+    ok: true as const,
+    value: {
+      presets: [
+        { id: 'standard', trust: 'system', isDefault: true },
+        { id: 'image', trust: 'system', isDefault: false },
+      ],
+      authorable: true,
+      hasDocument: true,
+    },
+  },
+}
+
+type RosterResponse = typeof ROSTER_ONE | typeof ROSTER_MOVED | typeof ROSTER_AUTHORED | typeof ROSTER_IMAGE
+
+async function bench(readRoster?: (roster: RosterResponse) => Promise<RosterResponse>) {
   const ctx = new Context()
-  // The host's answer, mutable so a spec can move the default the way the
-  // settings surface does and watch who re-reads it.
-  let ROSTER: typeof ROSTER_ONE | typeof ROSTER_MOVED | typeof ROSTER_AUTHORED = ROSTER_ONE
+  // 可移动的 Host 答复用于验证默认模式或图像可用性变化后的重新读取。
+  let ROSTER: RosterResponse = ROSTER_ONE
   const moveDefault = (): void => { ROSTER = ROSTER_MOVED }
+  const showImage = (): void => { ROSTER = ROSTER_IMAGE }
+  const hideImage = (): void => { ROSTER = ROSTER_ONE }
   await ctx.plugin(SlotRegistry).await()
   const locale = new LocaleRuntime(ctx)
   locale.setLocale('zh')
@@ -83,7 +102,7 @@ async function bench() {
   ctx.provide('connection', {
     api: {
       agentPresets: {
-        list: () => { calls.push('list'); return Promise.resolve(ROSTER) },
+        list: () => { calls.push('list'); return readRoster?.(ROSTER) ?? Promise.resolve(ROSTER) },
         read: () => Promise.resolve({
           rpcId: 'r',
           result: { ok: true as const, value: { agentPreset: 'standard', trust: 'system', content: '' } },
@@ -116,7 +135,7 @@ async function bench() {
     },
   } as never)
   await ctx.plugin({ inject: [...settingsInject], apply: settingsApply }).await()
-  return { ctx, slots: ctx.get('slots') as SlotRegistry, calls, moveDefault }
+  return { ctx, slots: ctx.get('slots') as SlotRegistry, calls, moveDefault, showImage, hideImage }
 }
 
 function declareRoot(slots: SlotRegistry): () => void {
@@ -282,6 +301,91 @@ describe('ui-agent-preset apply', () => {
 
     // A reconnect can land on a host whose roster changed under the browser.
     await vi.waitFor(() => { expect(calls.length).toBe(before + 2) })
+  })
+
+  it('refreshes the mode surfaces when image settings, credentials or the connection change', async () => {
+    const { ctx, slots, calls, showImage, hideImage } = await bench()
+    showImage()
+    declareRoot(slots)
+    const conversation = declareConversation(slots)
+    ctx.provide('conversation', {} as never)
+    const state = { current: 's1', byId: { s1: { id: 's1', blank: true, agentPreset: 'image' } } }
+    ctx.provide('sessions', sessionsDouble(state) as never)
+    ctx.provide('workspaces', workspacesDouble() as never)
+    await ctx.plugin({ inject: [...inject, 'conversation', 'sessions', 'workspaces'], apply }).await()
+    const row = (slots.entries('settings.general.item')[0]!.inject as unknown as () => AgentPresetRowInjected)()
+    const section = (slots.entries('settings.section')[0]!.inject as unknown as () => AgentPresetSectionInjected)()
+    const seat = (slots.entries('conversation.hero.agentPreset')[0]!.inject as unknown as () => AgentPresetSeatInjected)()
+    await Promise.all([row.load(), section.load(), seat.load()])
+    expect(seat.hooks.agentPresetSeat.getSnapshot().options.map(option => option.id)).toEqual(['standard', 'image'])
+
+    hideImage()
+    ctx.remote.$dispatch('settings/document-updated', ['image-generation', 1])
+    await vi.waitFor(() => {
+      expect(row.hooks.agentPreset.getSnapshot().options.map(option => option.id)).toEqual(['standard'])
+      expect(section.hooks.agentPresetSection.getSnapshot().rows.map(entry => entry.id)).toEqual(['standard'])
+      expect(seat.hooks.agentPresetSeat.getSnapshot().options.map(option => option.id)).toEqual(['standard'])
+    })
+    // 已有空白会话仍如实显示当前模式，且可切回名单中的标准模式。
+    expect(seat.hooks.agentPresetSeat.getSnapshot().current).toBe('image')
+    await seat.select('standard')
+    expect(calls).toContain('select:standard')
+    expect(state.byId.s1.agentPreset).toBe('standard')
+
+    showImage()
+    ctx.remote.$dispatch('credentials/updated', ['IMAGE_GEN_API_KEY'])
+    await vi.waitFor(() => {
+      expect(row.hooks.agentPreset.getSnapshot().options.map(option => option.id)).toEqual(['standard', 'image'])
+      expect(section.hooks.agentPresetSection.getSnapshot().rows.map(entry => entry.id)).toEqual(['standard', 'image'])
+      expect(seat.hooks.agentPresetSeat.getSnapshot().options.map(option => option.id)).toEqual(['standard', 'image'])
+    })
+
+    hideImage()
+    ctx.emit('connection/reset')
+    await vi.waitFor(() => {
+      expect(seat.hooks.agentPresetSeat.getSnapshot().options.map(option => option.id)).toEqual(['standard'])
+    })
+    conversation()
+  })
+
+  it('keeps the latest roster when changes arrive during an older read', async () => {
+    let deferred = false
+    const pending: ((roster: RosterResponse) => void)[] = []
+    const { ctx, slots, showImage, hideImage } = await bench(roster => deferred
+      ? new Promise((resolve) => { pending.push(resolve) }) : Promise.resolve(roster))
+    declareRoot(slots)
+    const conversation = declareConversation(slots)
+    ctx.provide('conversation', {} as never)
+    ctx.provide('sessions', sessionsDouble({ byId: {} }) as never)
+    ctx.provide('workspaces', workspacesDouble() as never)
+    await ctx.plugin({ inject: [...inject, 'conversation', 'sessions', 'workspaces'], apply }).await()
+    const row = (slots.entries('settings.general.item')[0]!.inject as unknown as () => AgentPresetRowInjected)()
+    const section = (slots.entries('settings.section')[0]!.inject as unknown as () => AgentPresetSectionInjected)()
+    const seat = (slots.entries('conversation.hero.agentPreset')[0]!.inject as unknown as () => AgentPresetSeatInjected)()
+    await Promise.all([row.load(), section.load(), seat.load()])
+
+    deferred = true
+    showImage()
+    ctx.remote.$dispatch('settings/document-updated', ['image-generation', 1])
+    hideImage()
+    ctx.remote.$dispatch('credentials/updated', ['IMAGE_GEN_API_KEY'])
+    expect(pending).toHaveLength(4)
+
+    // 最新的 chip 答复先到；较旧的答复随后到达，不得恢复画图选项。
+    pending[3]!(ROSTER_ONE)
+    pending[2]!(ROSTER_IMAGE)
+    pending[1]!(ROSTER_IMAGE)
+    pending[0]!(ROSTER_IMAGE)
+    await vi.waitFor(() => { expect(pending).toHaveLength(6) })
+    pending[4]!(ROSTER_ONE)
+    pending[5]!(ROSTER_ONE)
+
+    await vi.waitFor(() => {
+      expect(row.hooks.agentPreset.getSnapshot().options.map(option => option.id)).toEqual(['standard'])
+      expect(section.hooks.agentPresetSection.getSnapshot().rows.map(entry => entry.id)).toEqual(['standard'])
+      expect(seat.hooks.agentPresetSeat.getSnapshot().options.map(option => option.id)).toEqual(['standard'])
+    })
+    conversation()
   })
 
   it('leaves the section alone until it has been opened once', async () => {

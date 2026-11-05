@@ -94,15 +94,46 @@ async function boot(config?: Record<string, unknown>) {
 }
 
 describe('image generation HTTP (real Loader)', () => {
+  it('imports one reference into this session before image editing, with byte and origin checks', async () => {
+    const env = await boot()
+    const importAt = (session: string, image: Uint8Array, mediaType = 'image/png', origin?: string) =>
+      fetch(`${env.base}/import?sessionId=${session}`, {
+        method: 'POST', headers: { 'content-type': mediaType, ...(origin === undefined ? {} : { origin }) }, body: Buffer.from(image),
+      })
+    expect((await importAt('one', PNG, 'image/png', 'http://evil.example')).status).toBe(403)
+    expect(env.saveImage).not.toHaveBeenCalled()
+    expect((await importAt('one', PNG, 'text/plain')).status).toBe(400)
+    expect((await importAt('one', Buffer.alloc(1025))).status).toBe(400)
+    const imported = await importAt('one', PNG)
+    expect(imported.status).toBe(200)
+    const payload = await imported.json() as { item: { id: string; model: string; prompt: string } }
+    expect(payload.item).toMatchObject({ model: 'import', prompt: '' })
+    expect(env.one.events.filter(event => event.type === 'image-gen/created')).toHaveLength(1)
+    expect((await env.get('image', 'one', `&id=${payload.item.id}`)).status).toBe(200)
+    expect((await env.get('image', 'two', `&id=${payload.item.id}`)).status).toBe(404)
+  })
+
+  it('rejects two edit references before calling a single-image provider by default', async () => {
+    const api = await upstream()
+    const env = await boot({ enabled: true, endpoint: api.url, model: 'mock-image', apiKeyRef: '' })
+    for (const id of ['0', '1']) env.one.append('image-gen/created', { item: {
+      id, attachmentId: `attachment-${id}` as never, mediaType: 'image/png', bytes: PNG.byteLength,
+      width: 1, height: 1, prompt: 'old', model: 'mock-image', createdAt: 0,
+    } })
+    await expect(env.ctx.imageGeneration.create(env.one, 'edit', ['0', '1'])).rejects.toThrow(/maxEditReferences/)
+    expect(api.calls).toEqual([])
+  })
+
   it('boots with no config and keeps generation disabled by default', async () => {
     const env = await boot()
-    expect(await (await env.get('state')).json()).toEqual({ enabled: false, available: false, model: '' })
+    expect(await (await env.get('state')).json()).toMatchObject({ enabled: false, available: false, model: '',
+      sizes: { '1:1': { '1K': '1024x1024' }, '2:3': { '1K': '1024x1536' }, '3:2': { '1K': '1536x1024' } } })
     expect((await env.post('generate', { sessionId: 'one', prompt: 'test' })).status).toBe(503)
   })
 
   it('rejects disabled and missing credentials while keeping old gallery readable', async () => {
     const env = await boot({ enabled: false, endpoint: 'http://127.0.0.1:9/v1', model: 'mock' })
-    expect(await (await env.get('state')).json()).toEqual({ enabled: false, available: false, model: 'mock' })
+    expect(await (await env.get('state')).json()).toMatchObject({ enabled: false, available: false, model: 'mock' })
     expect((await env.post('generate', { sessionId: 'one', prompt: 'test' })).status).toBe(503)
     env.one.append('image-gen/created', { item: { id: '0', attachmentId: 'attachment-1' as never,
       mediaType: 'image/png', bytes: PNG.byteLength, width: 1, height: 1, prompt: 'old', model: 'mock', createdAt: 0 } })
@@ -117,7 +148,7 @@ describe('image generation HTTP (real Loader)', () => {
   it('requires a credential reference to resolve before declaring availability or sending a request', async () => {
     const api = await upstream()
     const env = await boot({ enabled: true, endpoint: api.url, model: 'mock-image' })
-    expect(await (await env.get('state')).json()).toEqual({ enabled: true, available: false, model: 'mock-image' })
+    expect(await (await env.get('state')).json()).toMatchObject({ enabled: true, available: false, model: 'mock-image' })
     expect((await env.post('generate', { sessionId: 'one', prompt: 'draw' })).status).toBe(503)
     expect(api.calls).toEqual([])
     env.keys.set('IMAGE_GEN_API_KEY', 'secret')
@@ -153,6 +184,26 @@ describe('image generation HTTP (real Loader)', () => {
     expect(env.one.events.filter(event => event.type === 'image-gen/canvas')).toHaveLength(1)
   })
 
+  it('only sends configured ratio sizes and bounded multiple edit references', async () => {
+    const api = await upstream()
+    const env = await boot({ enabled: true, endpoint: api.url, model: 'mock-image', apiKeyRef: '',
+      maxEditReferences: 2, sizes: { '1:1': { '1K': '1024x1024' }, '16:9': { '2K': '2048x1152' } } })
+    expect(await (await env.get('state')).json()).toMatchObject({ maxEditReferences: 2,
+      sizes: { '16:9': { '2K': '2048x1152' } } })
+    const first = await env.post('generate', { sessionId: 'one', prompt: 'first', size: '2048x1152', quality: 'high' })
+    const second = await env.post('generate', { sessionId: 'one', prompt: 'second', size: '1024x1024' })
+    const firstId = (await first.json() as { item: { id: string } }).item.id
+    const secondId = (await second.json() as { item: { id: string } }).item.id
+    expect((await env.post('edit', { sessionId: 'one', prompt: 'combine', imageIds: [firstId, secondId],
+      size: '2048x1152' })).status).toBe(200)
+    expect((await env.post('edit', { sessionId: 'one', prompt: 'invalid', imageIds: [] })).status).toBe(400)
+    expect((await env.post('edit', { sessionId: 'one', prompt: 'invalid', imageId: firstId, imageIds: [secondId] })).status).toBe(400)
+    expect(api.calls).toHaveLength(3)
+    expect(await (await env.get('gallery')).json()).toMatchObject({ items: [
+      { size: '2048x1152', quality: 'high' }, { size: '1024x1024' }, { size: '2048x1152' },
+    ] })
+  })
+
   it('denies foreign origin, connection rejection and malformed body before any provider call', async () => {
     const api = await upstream()
     const env = await boot({ enabled: true, endpoint: api.url, model: 'mock-image', apiKeyRef: '' })
@@ -164,6 +215,8 @@ describe('image generation HTTP (real Loader)', () => {
     expect((await env.get('gallery')).status).toBe(403)
     env.setRejected(false)
     expect((await env.post('generate', { sessionId: 'one', prompt: 'draw', endpoint: api.url })).status).toBe(400)
+    expect((await env.post('generate', { sessionId: 'one', prompt: 'draw', size: '8192x8192' })).status).toBe(400)
+    expect((await env.post('generate', { sessionId: 'one', prompt: 'draw', quality: 'maximum' })).status).toBe(400)
     expect(api.calls).toEqual([])
   })
 })

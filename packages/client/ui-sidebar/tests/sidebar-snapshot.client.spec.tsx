@@ -32,11 +32,12 @@ async function bench(options: { locale?: 'en' } = {}) {
 }
 
 describe('sidebar shell snapshots', () => {
-  it('renders only the New chat entry in the welcome header', async () => {
+  it('keeps the optional top entry seat on the welcome page', async () => {
     const { runtime } = await bench({ locale: 'en' })
     const slot = runtime.renderSlot('sidebar', { collapsed: false, width: 300, welcomeActionsVisible: true })
     // 宽侧栏的收起按钮改由浏览区域标题行渲染，壳层自己不带开关。
     expect(slot.view.getByRole('button', { name: 'New chat' })).toBeTruthy()
+    expect(slot.container.querySelector('[data-slot="sidebar.top.entry"]')).toBeTruthy()
     expect(slot.view.queryByRole('button', { name: 'Collapse sidebar' })).toBeNull()
     expect(slot.container).toMatchSnapshot()
     await runtime.dispose()

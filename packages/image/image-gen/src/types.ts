@@ -8,6 +8,10 @@ export interface GalleryItem extends ImageAttachmentRef {
   model: string
   createdAt: number
   sourceImageId?: string
+  /** 本次请求选择的像素尺寸；实际输出尺寸仍以附件宽高为准。 */
+  size?: string
+  /** 未指定时不发送 quality，遵循上游默认行为。 */
+  quality?: string
 }
 
 /** 960×640 画布中的一条绘制笔画。 */

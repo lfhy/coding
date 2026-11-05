@@ -14,6 +14,7 @@ import { ThemePresenter } from './theme-presenter.ts'
 
 export { LayoutController } from './service.ts'
 export type { ILayout, WorkbenchLayoutSnapshot } from './service.ts'
+export type { PageRoute } from './stores.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -38,6 +39,8 @@ declare module 'coding-client-ui-slots' {
     'workbench.bottom': { kind: 'single'; scope: 'root'; owner: WorkbenchBottomOwnerProps }
     /** 全框架浮层；容器透传指针事件，由各 entry 自行恢复。 */
     'shell.overlay': { kind: 'list'; scope: 'root' }
+    /** 主内容区的独立会话页面；由根布局保持侧栏与背景会话的挂载。 */
+    'shell.page': { kind: 'keyed'; scope: 'session'; owner: ShellPageOwnerProps }
   }
 }
 
@@ -78,6 +81,11 @@ export interface WorkbenchBottomOwnerProps {
   shown: boolean
 }
 
+/** 独立页面只负责内容与返回动作，会话身份由框架标准 seat 注入。 */
+export interface ShellPageOwnerProps {
+  closePage: () => void
+}
+
 /** Cordis fiber 所需服务。 */
 export const inject = ['slots', 'theme']
 
@@ -99,6 +107,7 @@ export function apply(ctx: ClientContext): void {
         'workbench': { kind: 'single', scope: 'root' },
         'workbench.bottom': { kind: 'single', scope: 'root' },
         'shell.overlay': { kind: 'list', scope: 'root' },
+        'shell.page': { kind: 'keyed', scope: 'session' },
       },
       store: createLayoutStore,
       inject: (actions: PanelActions): AppFrameInjected => {
@@ -109,6 +118,7 @@ export function apply(ctx: ClientContext): void {
           workspaceKeyOf: sessionId => workspaces?.workspaceKeyOf?.(sessionId) ?? sessionId,
           publishWorkbench: (key, state) => { layout.publishWorkbench(key, state) },
           retainWorkbenchViews: (keys) => { layout.retainWorkbenchViews(keys) },
+          publishPage: (page) => { layout.publishPage(page) },
         }
       },
     }, AppFrame)

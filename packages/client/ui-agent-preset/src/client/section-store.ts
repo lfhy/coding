@@ -16,7 +16,7 @@
 
 import type { IApiClient } from 'coding-api-remotes/client'
 import { createSnapshotStore, type SnapshotStore } from 'coding-client-runtime/client'
-import { beginRosterRead, messageOf, writeDefaultPreset } from './settings-store.ts'
+import { beginRosterRead, messageOf, RosterReadQueue, writeDefaultPreset } from './settings-store.ts'
 
 /** Ids a preset directory may be named, mirroring the host's own rule. */
 const PRESET_ID = /^[a-z0-9][a-z0-9-]*$/
@@ -129,8 +129,9 @@ export function draftBlocker(
 
 /** Reads the roster and drives the copy dialog, viewer, and location reveals. */
 export class AgentPresetSectionController {
-  /** Page snapshot the renderer subscribes to. */
+  /** 渲染器订阅的管理页快照。 */
   readonly store: SnapshotStore<AgentPresetSectionState> = createSnapshotStore(INITIAL)
+  private readonly rosterRead = new RosterReadQueue(() => this.read())
 
   constructor(
     private readonly api: Pick<IApiClient, 'agentPresets' | 'settings'>,
@@ -156,12 +157,19 @@ export class AgentPresetSectionController {
   }
 
   /**
-   * Load the roster. An empty roster means the deployment composes no
-   * presets, which is a valid deployment rather than a failure — the section
-   * reports `unavailable` and renders nothing.
-   * @returns once the snapshot reflects the host.
+   * 读取 Host 名单；空名单表示部署未组装可管理的模式，分区不显示。
+   * @returns 当前读取完成后结算，期间相同的普通读取共用该请求。
    */
-  async load(): Promise<void> {
+  load(): Promise<void> {
+    return this.rosterRead.load()
+  }
+
+  /** 当前读取未结束时合并更新，结束后再取一次最新 Host 名单。 */
+  refresh(): void {
+    this.rosterRead.refresh()
+  }
+
+  private async read(): Promise<void> {
     const roster = await beginRosterRead(this.api, this.store)
     if (roster === undefined) return
     const { presets, authorable, hasDocument } = roster

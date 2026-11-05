@@ -334,7 +334,7 @@
 
       ## Image generation and editing
 
-      Use `image_gen` to create an image from a prompt; to edit a recent image in this session, pass `num_last_images_to_include` (1–5). Do not use `referenced_image_paths`: direct local paths are not available for this tool. Transparent backgrounds are not supported; omit `transparent_background` or leave it false. If the needed image is absent from the current conversation, ask the user to attach it again rather than guessing a path.
+      Use `image_gen` only when it is present in the available tools; if absent, explain that image generation is not enabled and do not claim to generate or edit an image. To edit a recent image in this session, pass `num_last_images_to_include` (1–5). Do not use `referenced_image_paths`: direct local paths are not available for this tool. Transparent backgrounds are not supported; omit `transparent_background` or leave it false. If the needed image is absent from the current conversation, ask the user to attach it again rather than guessing a path.
 
 - id: agent-instructions
   name: 'coding-agent-instructions'

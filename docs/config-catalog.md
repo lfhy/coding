@@ -965,10 +965,14 @@ export interface Config {
   model: string
   /** 凭据服务中的引用；默认 IMAGE_GEN_API_KEY，空字符串仅用于无鉴权本地服务。 */
   apiKeyRef: string
+  /** 编辑一次允许的参考图数量；默认 1，多图服务可设为 2 至 5。 */
+  maxEditReferences: number
+  /** 比例到分辨率档位的像素尺寸映射；空表使用原版兼容渠道的 1K 预设。 */
+  sizes?: Record<string, Record<string, string>>
 }
 ```
 
-Source: [`packages/image/image-gen/src/index.ts:20`](../packages/image/image-gen/src/index.ts)
+Source: [`packages/image/image-gen/src/index.ts:21`](../packages/image/image-gen/src/index.ts)
 
 <a id="coding-invariants"></a>
 

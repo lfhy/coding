@@ -1,6 +1,6 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
-exports[`sidebar shell snapshots > renders only the New chat entry in the welcome header 1`] = `
+exports[`sidebar shell snapshots > keeps the optional top entry seat on the welcome page 1`] = `
 <div
   data-slot="sidebar"
   style="display: contents;"
@@ -39,6 +39,10 @@ exports[`sidebar shell snapshots > renders only the New chat entry in the welcom
         </span>
       </button>
     </div>
+    <div
+      data-slot="sidebar.top.entry"
+      style="display: contents;"
+    />
     <div
       class="settingsArea"
     >
@@ -108,14 +112,14 @@ exports[`sidebar shell snapshots > renders the collapsed rail after the crossfad
           xmlns="http://www.w3.org/2000/svg"
         />
       </button>
-      <div
-        class="brandActions"
-      >
-        <div
-          data-slot="sidebar.brand.action"
-          style="display: contents;"
-        />
-      </div>
+    </div>
+    <div
+      data-slot="sidebar.top.entry"
+      style="display: contents;"
+    />
+    <div
+      class="toggleArea"
+    >
       <button
         aria-label="Open sidebar"
         class="iconButton toggle"
@@ -215,15 +219,11 @@ exports[`sidebar shell snapshots > renders the expanded column (New chat row, em
           New chat
         </span>
       </button>
-      <div
-        class="brandActions"
-      >
-        <div
-          data-slot="sidebar.brand.action"
-          style="display: contents;"
-        />
-      </div>
     </div>
+    <div
+      data-slot="sidebar.top.entry"
+      style="display: contents;"
+    />
     <div
       class="settingsArea"
     >
@@ -298,15 +298,11 @@ exports[`sidebar shell snapshots > renders the expanded column in the default lo
           新对话
         </span>
       </button>
-      <div
-        class="brandActions"
-      >
-        <div
-          data-slot="sidebar.brand.action"
-          style="display: contents;"
-        />
-      </div>
     </div>
+    <div
+      data-slot="sidebar.top.entry"
+      style="display: contents;"
+    />
     <div
       class="settingsArea"
     >

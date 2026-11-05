@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import type {
-  SidebarBrandActionOwnerProps, SidebarFooterActionOwnerProps, SidebarRootComponentProps,
+  SidebarTopEntryOwnerProps, SidebarFooterActionOwnerProps, SidebarRootComponentProps,
   SidebarSectionOwnerProps, SidebarSettingsOwnerProps,
 } from '../src/client/contract/slots.ts'
 import { SidebarRoot } from '../src/client/SidebarRoot.tsx'
@@ -27,7 +27,7 @@ function mountShell({ collapsed = false, width = 300, welcomeActionsVisible = fa
 { collapsed?: boolean; width?: number; welcomeActionsVisible?: boolean } = {}) {
   const startSession = vi.fn()
   const toggleSidebar = vi.fn()
-  let brandActionOwner: SidebarBrandActionOwnerProps | undefined
+  let topEntryOwner: SidebarTopEntryOwnerProps | undefined
   let regionOwner: SidebarSectionOwnerProps | undefined
   let settingsOwner: SidebarSettingsOwnerProps | undefined
   let footerActionOwner: SidebarFooterActionOwnerProps | undefined
@@ -40,12 +40,12 @@ function mountShell({ collapsed = false, width = 300, welcomeActionsVisible = fa
       startSession={startSession} toggleSidebar={toggleSidebar} t={t}
       renderSlot={((
         key: string,
-        owner: SidebarBrandActionOwnerProps | SidebarFooterActionOwnerProps
+        owner: SidebarTopEntryOwnerProps | SidebarFooterActionOwnerProps
           | SidebarSectionOwnerProps | SidebarSettingsOwnerProps,
       ) => {
-        if (key === 'sidebar.brand.action') {
-          brandActionOwner = owner
-          return <div data-testid="brand-action-seat" data-wide={owner.wide} />
+        if (key === 'sidebar.top.entry') {
+          topEntryOwner = owner
+          return <div data-testid="top-entry-seat" data-wide={owner.wide} />
         }
         if (key === 'sidebar.settings') {
           settingsOwner = owner
@@ -64,9 +64,9 @@ function mountShell({ collapsed = false, width = 300, welcomeActionsVisible = fa
   return {
     startSession,
     toggleSidebar,
-    brandActionOwner: () => {
-      if (brandActionOwner === undefined) throw new Error('brand action owner not rendered')
-      return brandActionOwner
+    topEntryOwner: () => {
+      if (topEntryOwner === undefined) throw new Error('top entry owner not rendered')
+      return topEntryOwner
     },
     regionOwner: () => {
       if (regionOwner === undefined) throw new Error('region owner not rendered')
@@ -88,10 +88,10 @@ function mountShell({ collapsed = false, width = 300, welcomeActionsVisible = fa
 }
 
 describe('SidebarRoot shell', () => {
-  it('omits only duplicate workbench actions on the welcome page and keeps the rail toggle', () => {
+  it('keeps the optional entry on welcome and orders it before the rail toggle', () => {
     vi.useFakeTimers()
     const b = mountShell({ welcomeActionsVisible: true })
-    expect(screen.queryByTestId('brand-action-seat')).toBeNull()
+    expect(screen.getByTestId('top-entry-seat')).toBeTruthy()
     expect(screen.getAllByRole('button', { name: 'New chat' })).toHaveLength(1)
 
     // 展开态不渲染任何收起按钮；落定到 rail 后才出现展开入口。
@@ -101,20 +101,26 @@ describe('SidebarRoot shell', () => {
     b.rerender({})
     fireEvent.click(screen.getByRole('button', { name: 'Open sidebar' }))
     expect(b.toggleSidebar).toHaveBeenCalledOnce()
-    expect(screen.queryByTestId('brand-action-seat')).toBeNull()
+    const entry = screen.getByTestId('top-entry-seat')
+    const starter = screen.getByRole('button', { name: 'New chat' })
+    const toggle = screen.getByRole('button', { name: 'Open sidebar' })
+    expect(starter.compareDocumentPosition(entry) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(entry.compareDocumentPosition(toggle) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(toggle.compareDocumentPosition(screen.getByTestId('settings-seat')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
 
     b.rerender({ welcomeActionsVisible: false })
-    expect(screen.getByTestId('brand-action-seat')).toBeTruthy()
+    expect(screen.getByTestId('top-entry-seat')).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Open sidebar' })).toBeTruthy()
   })
 
   it('routes the New chat entry and hands the collapse action to the browsing region', () => {
     const b = mountShell()
-    // 新对话行内的动作洞渲染在新对话入口之后，占用者拿到 wide。
-    expect(b.brandActionOwner().wide).toBe(true)
-    const actions = screen.getByTestId('brand-action-seat')
+    // 可选入口在新对话之后、设置之前，占用者拿到 wide。
+    expect(b.topEntryOwner().wide).toBe(true)
+    const actions = screen.getByTestId('top-entry-seat')
     const starter = screen.getByRole('button', { name: 'New chat' })
     expect(actions.compareDocumentPosition(starter) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy()
+    expect(actions.compareDocumentPosition(screen.getByTestId('settings-seat')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     fireEvent.click(starter)
     expect(b.startSession).toHaveBeenCalledOnce()
     // 宽侧栏不再自带收起按钮，收起动作交给浏览区域的标题行。
@@ -144,8 +150,8 @@ describe('SidebarRoot shell', () => {
   it('hands the region its wide flag and clamps both toggle requests to their own state', () => {
     const b = mountShell()
     expect(b.regionOwner().wide).toBe(true)
-    // 品牌行动作与设置座位共用同一个 wide 标志。
-    expect(b.brandActionOwner().wide).toBe(true)
+    // 可选入口与设置座位共用同一个 wide 标志。
+    expect(b.topEntryOwner().wide).toBe(true)
     // 设置座位跟随同一个 wide 标志（ui-settings 渲染对应行）。
     expect(b.settingsOwner().wide).toBe(true)
     expect(b.footerActionOwner().wide).toBe(true)
@@ -165,7 +171,7 @@ describe('SidebarRoot shell', () => {
     vi.advanceTimersByTime(200)
     b.rerender({})
     expect(b.regionOwner().wide).toBe(false)
-    expect(b.brandActionOwner().wide).toBe(false)
+    expect(b.topEntryOwner().wide).toBe(false)
     expect(b.footerActionOwner().wide).toBe(false)
     expect(screen.getByTestId('region')).toBeTruthy()
     b.regionOwner().expandSidebar()

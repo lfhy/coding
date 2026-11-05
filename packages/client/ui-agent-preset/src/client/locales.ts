@@ -219,3 +219,21 @@ export function presetDisplayText(
     ...preset.description === undefined ? {} : { description: preset.description },
   }
 }
+
+/**
+ * 已有画图会话在服务关闭后仍保留身份；名单隐藏该模式时也要显示其本地化名称。
+ * @param id - 会话当前或已暂存的模式标识。
+ * @param options - Host 当前允许选择的模式名单。
+ * @param t - 当前 Web 语言的文案查询函数。
+ * @returns 已知模式的展示文案；名单未就绪或未知标识返回 undefined。
+ */
+export function currentPresetDisplayText(
+  id: string,
+  options: readonly PresetDisplaySource[],
+  t: (key: AgentPresetSettingsKey) => string,
+): PresetDisplayText | undefined {
+  const option = options.find(entry => entry.id === id)
+  if (option !== undefined) return presetDisplayText(option, t)
+  if (id === 'image' && options.length > 0) return presetDisplayText({ id, trust: 'system' }, t)
+  return undefined
+}

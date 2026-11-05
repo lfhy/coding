@@ -16,6 +16,7 @@ import type { Browser, Page } from 'playwright'
 import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
 import type { Locator } from 'playwright'
+import { settingsNamespace } from 'coding-settings'
 import {
   captureStableAria, compareOrRefreshGolden, launchWebScaffold, watchConsole,
   webSnapshotMode, type WebScaffold,
@@ -67,6 +68,10 @@ describe('web e2e: agent-preset authoring is a host-side copy', () => {
         ],
         default: 'standard',
       },
+    })
+    // 管理页快照覆盖完整随包名单；本地无鉴权假端点只用于可用性判定。
+    await scaffold.ctx.settings.update(settingsNamespace('image-generation'), {
+      enabled: true, endpoint: 'http://127.0.0.1:9/v1', model: 'snapshot-image', apiKeyRef: '',
     })
     browser = await chromium.launch()
     // 无 Host 语言偏好时断言中文界面；浏览器语言也固定为中文。

@@ -1,6 +1,7 @@
 /**
  * 侧边栏 slot 契约：布局持有的 `sidebar` slot 对注册者暴露的 props 组合，以及壳层声明的洞。
- * 壳层持有栏几何（折叠状态机、顶部避让行、新对话行）；新对话行下方的顶部入口区属于
+ * 壳层持有栏几何（折叠状态机、顶部避让行、新对话行）；其后的可选入口由
+ * `sidebar.top.entry` 注册者持有，设置入口属于
  * `sidebar.settings` 注册者（ui-settings），它与工作区列表之间由壳层的分隔线隔开；
  * 标题与列表之间属于 `sidebar.workspaces` 注册者（ui-workspace），底部是
  * `sidebar.footer.action` 的可选页脚动作。
@@ -14,13 +15,11 @@ import type { WorkspaceId } from 'coding-client-runtime/client'
 declare module 'coding-client-ui-slots' {
   interface SlotMap {
     /**
-     * 新建对话行内的可选常驻动作，渲染在新对话入口之后。宽侧栏中它们与入口同排，是一个
-     * 横向图标行；收起的 56px rail 中则纵向排列，排在新建对话图标与展开按钮之间。注册者按
-     * 列表条目注册（每个条目自带 `id` 与可选 `order`），进入 `sidebar.brand.action` 的条目在
-     * 所有侧边栏宽度下都可见，因此工作台关闭时也能作为入口。组件收到 `wide`：为 `false` 时
-     * 必须提供适合 36×36 控件盒的纯图标呈现。没有注册者时该洞渲染为空，不占位。
+     * 新对话与设置之间的可选整行入口。收起的 56px rail 中入口排在新对话图标与展开按钮
+     * 之间。注册者按列表条目注册（每个条目自带 `id` 与可选 `order`），收到 `wide`：为
+     * `false` 时须提供 36×36 纯图标呈现。无条目或条目返回空内容时不占位。
      */
-    'sidebar.brand.action': { kind: 'list'; scope: 'root'; owner: SidebarBrandActionOwnerProps }
+    'sidebar.top.entry': { kind: 'list'; scope: 'root'; owner: SidebarTopEntryOwnerProps }
     /**
      * The workspace/session browsing region: section header, search, the
      * grouped/flat session list, and every workspace dialog. Declared by this
@@ -46,10 +45,10 @@ declare module 'coding-client-ui-slots' {
 }
 
 /**
- * 新建对话行常驻动作的 owner share。占用者常驻可见（含收起 rail），因此每个动作都要在
+ * 顶部可选整行入口的 owner share。占用者常驻可见（含收起 rail），因此每个动作都要在
  * `wide` 与 rail 两种形态下可用。
  */
-export interface SidebarBrandActionOwnerProps {
+export interface SidebarTopEntryOwnerProps {
   /** 侧边栏是否渲染宽内容（false = 56px rail）。 */
   wide: boolean
 }
@@ -102,7 +101,7 @@ export type SidebarRootInjected = {
 export type SidebarRootComponentProps =
   PropsRuntime<'sidebar'>
   & PropsRenderSlots<
-    | 'sidebar.brand.action'
+    | 'sidebar.top.entry'
     | 'sidebar.workspaces'
     | 'sidebar.settings'
     | 'sidebar.footer.action'

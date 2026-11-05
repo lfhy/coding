@@ -1,7 +1,7 @@
 {
   "extends": "../../../tsconfig.base.client.json",
   "compilerOptions": { "rootDir": "src", "outDir": "lib/types" },
-  "include": ["src"],
+  "include": ["src", "src/**/*.json"],
   "references": [
     { "path": "../../../vendor/cordis" },
     { "path": "../../api/remotes/tsconfig.client.json" },
@@ -11,7 +11,7 @@
     { "path": "../runtime" },
     { "path": "../ui-conversation" },
     { "path": "../ui-icons" },
-    { "path": "../ui-open-in-app" },
+    { "path": "../ui-layout" },
     { "path": "../ui-primitives" },
     { "path": "../ui-settings" },
     { "path": "../ui-sidebar" },

@@ -8,7 +8,8 @@ import { provideCmdline } from 'coding-cmdline'
 import { CallId } from 'coding-llm'
 import { SessionId } from 'coding-session'
 import type { Agent } from 'coding-agent'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
+import { settingsNamespace } from 'coding-settings'
 
 const ROOT = fileURLToPath(new URL('../../..', import.meta.url))
 const CONFIG = join(ROOT, 'apps/cli/config')
@@ -93,7 +94,6 @@ describe('the shipped Codex preset', () => {
         'apply_patch',
         'exec_command',
         'followup_task',
-        'image_gen',
         'interrupt_agent',
         'list_agents',
         'send_message',
@@ -119,16 +119,29 @@ describe('the shipped Codex preset', () => {
         'get_goal', 'create_goal', 'update_goal', 'exit_plan_mode', 'ask_user_question',
         'todo_write',
       ]))
-      expect(toolNames(codex.agent).filter(name => name.startsWith('image_gen'))).toEqual(['image_gen'])
+      expect(toolNames(codex.agent).filter(name => name.startsWith('image_gen'))).toEqual([])
+      const prompt = await ctx.systemPrompt.assemble({ scope: codex.agent })
+      expect(prompt.sections.map(section => section.text).join('\n')).toContain('only when it is present in the available tools')
+    } finally {
+      await codex.dispose()
+    }
+  }, 30_000)
+
+  it('adds only image_gen when the image service becomes available', async () => {
+    const codex = await mountCodex()
+    try {
+      await ctx.settings.update(settingsNamespace('image-generation'), {
+        enabled: true, endpoint: 'http://127.0.0.1:9/v1', model: 'mock', apiKeyRef: '',
+      })
+      await vi.waitFor(() => { expect(toolNames(codex.agent).filter(name => name.startsWith('image_gen'))).toEqual(['image_gen']) })
       const imageSchema = ctx.tools.schemas(codex.agent).find(schema => schema.name === 'image_gen')
       expect(Object.keys(imageSchema?.parameters.properties ?? {}).sort()).toEqual([
         'num_last_images_to_include', 'prompt', 'referenced_image_paths', 'transparent_background',
       ])
       expect(imageSchema?.parameters.required).toEqual(['prompt'])
       // 同一接口选择生成或最近图片编辑，不把未授权的绝对路径读取当作可用能力。
-      const prompt = await ctx.systemPrompt.assemble({ scope: codex.agent })
-      expect(prompt.sections.map(section => section.text).join('\n')).toContain('Do not use `referenced_image_paths`')
     } finally {
+      await ctx.settings.update(settingsNamespace('image-generation'), { enabled: false })
       await codex.dispose()
     }
   }, 30_000)

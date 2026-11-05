@@ -1,9 +1,71 @@
-/** OpenAI Images generations/edits 适配：只接受有界图片，不跟随重定向或转发凭据。@module coding-image-gen/openai */
+/** OpenAI Images generations/edits 适配：只接受有界图片，下载跳转不得转发提供方凭据。@module coding-image-gen/openai */
 import type { ImageMediaType, SaveImageAttachment } from 'coding-attachment'
+import { request as httpRequest } from 'node:http'
+import { request as httpsRequest } from 'node:https'
 import { isIP } from 'node:net'
 
 const MAX_ERROR_BYTES = 1024
 const IMAGE_TYPES = new Set<ImageMediaType>(['image/png', 'image/jpeg', 'image/webp', 'image/gif'])
+const DOWNLOAD_TIMEOUT_MS = 15_000
+const MAX_DOWNLOAD_REDIRECTS = 3
+
+function imageUrl(raw: string, base?: URL): URL {
+  let url: URL
+  try { url = new URL(raw, base) }
+  catch { throw new Error('图片服务返回无效图片地址') }
+  if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.hash) {
+    throw new Error('图片服务返回不受信任的图片地址')
+  }
+  return url
+}
+
+async function downloadImage(location: URL, maxBytes: number, signal: AbortSignal): Promise<Uint8Array> {
+  const timeout = AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS)
+  const combined = AbortSignal.any([signal, timeout])
+  let current = location
+  for (let redirect = 0; redirect <= MAX_DOWNLOAD_REDIRECTS; redirect++) {
+    const response = await downloadResponse(current, combined)
+    try {
+      if ([301, 302, 303, 307, 308].includes(response.statusCode ?? 0)) {
+        if (redirect === MAX_DOWNLOAD_REDIRECTS || typeof response.headers.location !== 'string') {
+          throw new Error('图片下载跳转过多或缺少目标')
+        }
+        current = imageUrl(response.headers.location, current)
+        continue
+      }
+      if (response.statusCode !== 200) throw new Error(`图片下载失败（HTTP ${response.statusCode ?? 0}）`)
+      const length = Number(response.headers['content-length'])
+      if (Number.isFinite(length) && length > maxBytes) throw new Error('图片服务返回的数据超过允许大小')
+      const chunks: Uint8Array[] = []
+      let size = 0
+      try {
+        for await (const chunk of response) {
+          size += (chunk as Buffer).byteLength
+          if (size > maxBytes) throw new Error('图片服务返回的数据超过允许大小')
+          chunks.push(chunk as Buffer)
+        }
+      } catch (error) {
+        if (error instanceof Error && error.message === '图片服务返回的数据超过允许大小') throw error
+        throw new Error('图片下载失败')
+      }
+      return Buffer.concat(chunks, size)
+    } finally {
+      response.destroy()
+    }
+  }
+  throw new Error('图片下载跳转过多')
+}
+
+async function downloadResponse(location: URL, signal: AbortSignal): Promise<import('node:http').IncomingMessage> {
+  const response = await new Promise<import('node:http').IncomingMessage>((resolve, reject) => {
+    const request = (location.protocol === 'https:' ? httpsRequest : httpRequest)(location, {
+      method: 'GET', agent: false, signal,
+    }, resolve)
+    request.on('error', reject)
+    request.end()
+  }).catch(() => { throw new Error('图片下载失败') })
+  return response
+}
 
 /** 设置中的端点是含 `/v1` 的 API 根；无鉴权本地 HTTP 仅允许回环字面量。 */
 export function imageEndpoint(base: string, kind: 'generations' | 'edits'): string {
@@ -61,8 +123,9 @@ function decodeImage(value: string, maxBytes: number): Uint8Array {
   return bytes
 }
 
-async function parseResponse(response: Response, endpoint: string, maxBytes: number, signal: AbortSignal): Promise<SaveImageAttachment> {
-  const maxJsonBytes = Math.ceil(maxBytes / 3) * 4 + 4096
+async function parseResponse(response: Response, maxBytes: number, signal: AbortSignal): Promise<SaveImageAttachment> {
+  // 兼容 data/images 等多个编码副本，但仍为 JSON 整体设定上限。
+  const maxJsonBytes = Math.ceil(maxBytes / 3) * 16 + 4096
   const payload = await boundedBody(response, response.ok ? maxJsonBytes : MAX_ERROR_BYTES)
   if (!response.ok) throw new Error(`图片服务请求失败（HTTP ${response.status}）`)
   let parsed: unknown
@@ -74,15 +137,13 @@ async function parseResponse(response: Response, endpoint: string, maxBytes: num
   let bytes: Uint8Array
   if (typeof first.b64_json === 'string' && first.b64_json.length > 0) {
     bytes = decodeImage(first.b64_json, maxBytes)
+  } else if (typeof first.url === 'string' && first.url.toLowerCase().startsWith('data:')) {
+    const match = /^data:image\/(?:png|jpeg|webp|gif);base64,([a-z0-9+/=]*)$/i.exec(first.url)
+    if (!match) throw new Error('图片服务返回无效图像数据地址')
+    bytes = decodeImage(match[1] ?? '', maxBytes)
   } else if (typeof first.url === 'string') {
-    const location = new URL(first.url)
-    const origin = new URL(endpoint)
-    if (location.origin !== origin.origin || location.username || location.password || location.hash) {
-      throw new Error('图片服务返回了不受信任的图片地址')
-    }
-    const download = await fetch(location, { redirect: 'error', signal })
-    if (!download.ok) throw new Error(`图片下载失败（HTTP ${download.status}）`)
-    bytes = await boundedBody(download, maxBytes)
+    const location = imageUrl(first.url)
+    bytes = await downloadImage(location, maxBytes, signal)
   } else {
     throw new Error('图片服务没有返回图像')
   }
@@ -98,6 +159,8 @@ export async function requestImage(options: {
   key?: string
   prompt: string
   sources: readonly SaveImageAttachment[]
+  size?: string
+  quality?: string
   maxBytes: number
   signal: AbortSignal
 }): Promise<SaveImageAttachment> {
@@ -108,12 +171,16 @@ export async function requestImage(options: {
   let body: BodyInit
   if (kind === 'generations') {
     headers['content-type'] = 'application/json'
-    body = JSON.stringify({ model: options.model, prompt: options.prompt, n: 1, response_format: 'b64_json' })
+    body = JSON.stringify({ model: options.model, prompt: options.prompt, n: 1, response_format: 'b64_json',
+      ...options.size === undefined ? {} : { size: options.size },
+      ...options.quality === undefined ? {} : { quality: options.quality } })
   } else {
     const form = new FormData()
     form.append('model', options.model)
     form.append('prompt', options.prompt)
     form.append('response_format', 'b64_json')
+    if (options.size !== undefined) form.append('size', options.size)
+    if (options.quality !== undefined) form.append('quality', options.quality)
     for (const [index, source] of options.sources.entries()) {
       form.append(options.sources.length > 1 ? 'image[]' : 'image',
         new Blob([Buffer.from(source.data)], { type: source.mediaType }), `reference-${index + 1}.${source.mediaType.slice(6)}`)
@@ -121,5 +188,5 @@ export async function requestImage(options: {
     body = form
   }
   const response = await fetch(endpoint, { method: 'POST', headers, body, redirect: 'error', signal: options.signal })
-  return parseResponse(response, endpoint, options.maxBytes, options.signal)
+  return parseResponse(response, options.maxBytes, options.signal)
 }
