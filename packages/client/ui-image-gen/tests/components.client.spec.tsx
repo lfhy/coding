@@ -13,6 +13,11 @@ import { zh } from '../src/client/locales.ts'
 const t = (key: keyof typeof zh) => zh[key]
 afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 
+function choose(label: string, option: string | RegExp): void {
+  fireEvent.click(screen.getByRole('button', { name: label }))
+  fireEvent.click(screen.getByRole('menuitem', { name: option }))
+}
+
 function workbenchSettings(value: Record<string, unknown> = {
   enabled: true, endpoint: 'https://images.example', model: 'paint', apiKeyRef: 'KEY', sizes: {}, maxEditReferences: 1,
 }) {
@@ -205,7 +210,7 @@ describe('图像交互组件', () => {
     fireEvent.change(screen.getByLabelText('尺寸映射（JSON）'), { target: { value: '{' } })
     expect(screen.getByRole('button', { name: '保存工作台参数' }).hasAttribute('disabled')).toBe(true)
     fireEvent.change(screen.getByLabelText('尺寸映射（JSON）'), { target: { value: '{"16:9":{"2K":"2048x1152"}}' } })
-    fireEvent.change(screen.getByLabelText('单次图生图参考图上限'), { target: { value: '2' } })
+    choose('单次图生图参考图上限', '2')
     fireEvent.click(screen.getByRole('button', { name: '保存工作台参数' }))
     await waitFor(() => {
       expect(settings.saveSettings).toHaveBeenCalledWith({
@@ -238,8 +243,10 @@ describe('图像交互组件', () => {
     expect(screen.queryByRole('region', { name: 'AI 画布' })).toBeNull()
     expect(screen.getByRole('button', { name: '文生图' }).getAttribute('aria-pressed')).toBe('true')
     expect(screen.queryByText(/API 已配置/u)).toBeNull()
-    expect(screen.getByRole('combobox', { name: '比例' })).toHaveProperty('value', '1:1')
-    expect(screen.getByRole('combobox', { name: '分辨率' })).toHaveProperty('value', '1K')
+    expect(screen.getByRole('button', { name: '比例' }).textContent).toContain('1:1')
+    expect(screen.getByRole('button', { name: '分辨率' }).textContent).toContain('1K')
+    expect(screen.getByRole('button', { name: '生成质量' }).textContent).toBe('渠道默认')
+    expect(screen.queryByText('渠道默认（不发送）')).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: '图生图' }))
     expect(screen.getByRole('button', { name: '开始生成' }).hasAttribute('disabled')).toBe(true)
     fireEvent.click(screen.getByRole('button', { name: '文生图' }))
@@ -314,9 +321,9 @@ describe('图像交互组件', () => {
     expect(screen.getByRole('button', { name: '图生图' }).getAttribute('aria-pressed')).toBe('true')
     fireEvent.click(screen.getByRole('button', { name: '再次生成' }))
     expect(screen.getByRole('button', { name: '文生图' }).getAttribute('aria-pressed')).toBe('true')
-    fireEvent.change(screen.getByRole('combobox', { name: '比例' }), { target: { value: '16:9' } })
-    fireEvent.change(screen.getByRole('combobox', { name: '分辨率' }), { target: { value: '2K' } })
-    fireEvent.change(screen.getByRole('combobox', { name: '生成质量' }), { target: { value: 'high' } })
+    choose('比例', /16:9/u)
+    choose('分辨率', /2K · 2048×1152/u)
+    choose('生成质量', '高')
     fireEvent.submit(screen.getByLabelText('画面描述').closest('form')!)
     expect(generate).toHaveBeenCalledWith('晨光', undefined, { size: '2048x1152', quality: 'high' })
   })

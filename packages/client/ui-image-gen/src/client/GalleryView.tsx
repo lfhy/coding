@@ -13,6 +13,7 @@ import type { createGalleryUiStore } from './gallery-ui-store.ts'
 import { InspirationView } from './InspirationView.tsx'
 import { copyImageBlob } from './image-clipboard.ts'
 import { NS } from './locales.ts'
+import { SelectMenu } from './SelectMenu.tsx'
 import { validSizeTableShape } from './settings.ts'
 import css from './GalleryView.module.css'
 
@@ -432,26 +433,27 @@ export function GalleryView({ sessionId, closePage, useGallery, useImageSettings
         <div className={css.promptFooter}><button type="button" onClick={() => { setTab('inspiration') }}>{t('findInspiration')}</button>
           <button type="button" onClick={() => { setPrompt('') }}>{t('clearPrompt')}</button><span>{prompt.length}/4000</span></div>
         <div className={css.outputFields}>
-          <label>{t('outputRatio')}
-            <select value={selectedRatio} onChange={(event) => { setOutputRatio(event.target.value); setResolution('1K') }}>
-              {ratios.map(value => <option key={value} value={value}>{value} {value === '1:1' ? t('square') : value === '3:2' ? t('landscape') : value === '2:3' ? t('portrait') : ''}</option>)}
-            </select>
-          </label>
-          <label>{t('resolution')}
-            <select value={selectedResolution} onChange={(event) => { setResolution(event.target.value) }}>
-              {Object.entries(tiers).map(([tier, size]) => <option key={tier} value={tier}>{tier} · {size.replace('x', '×')}</option>)}
-            </select>
-          </label>
+          <div className={css.outputField}>
+            <span>{t('outputRatio')}</span>
+            <SelectMenu label={t('outputRatio')} value={selectedRatio}
+              options={ratios.map(value => ({ id: value, label: `${value} ${value === '1:1' ? t('square') : value === '3:2' ? t('landscape') : value === '2:3' ? t('portrait') : ''}`.trim() }))}
+              onChange={(value) => { setOutputRatio(value); setResolution('1K') }} />
+          </div>
+          <div className={css.outputField}>
+            <span>{t('resolution')}</span>
+            <SelectMenu label={t('resolution')} value={selectedResolution}
+              options={Object.entries(tiers).map(([tier, size]) => ({ id: tier, label: `${tier} · ${size.replace('x', '×')}` }))}
+              onChange={setResolution} />
+          </div>
         </div>
         <details className={css.advancedSettings}>
           <summary>{t('sizeSettings')}</summary>
           <div className={css.advancedSettingsBody}>
             <div className={css.advancedField}>
-              <label htmlFor="image-gen-max-references">{t('maxReferences')}</label>
-              <select id="image-gen-max-references" value={referencesDraft} disabled={!settingsWritable}
-                onChange={(event) => { setMaxReferencesDraft(Number(event.target.value)) }}>
-                {[1, 2, 3, 4, 5].map(count => <option value={count} key={count}>{count}</option>)}
-              </select>
+              <span>{t('maxReferences')}</span>
+              <SelectMenu label={t('maxReferences')} value={String(referencesDraft)}
+                options={[1, 2, 3, 4, 5].map(count => ({ id: String(count), label: String(count) }))}
+                disabled={!settingsWritable} onChange={(value) => { setMaxReferencesDraft(Number(value)) }} />
               <small>{t('maxReferencesHint')}</small>
             </div>
             <div className={css.advancedField}>
@@ -470,13 +472,16 @@ export function GalleryView({ sessionId, closePage, useGallery, useImageSettings
             </div>
           </div>
         </details>
-        <label className={css.qualityField}>{t('generationQuality')}
-          <select value={quality} onChange={(event) => { setQuality(event.target.value) }}>
-            <option value="default">{t('providerDefault')}</option>
-            <option value="auto">{t('automatic')}</option><option value="low">low</option>
-            <option value="medium">medium</option><option value="high">high</option>
-          </select>
-        </label>
+        <div className={css.qualityField}>
+          <span>{t('generationQuality')}</span>
+          <SelectMenu label={t('generationQuality')} value={quality} options={[
+            { id: 'default', label: t('providerDefault') },
+            { id: 'auto', label: t('automatic') },
+            { id: 'low', label: t('lowQuality') },
+            { id: 'medium', label: t('mediumQuality') },
+            { id: 'high', label: t('highQuality') },
+          ]} onChange={setQuality} />
+        </div>
         <button className={css.generateButton} type="submit"
           disabled={!canGenerate || state.generating || state.uploading || !prompt.trim() || prompt.length > 4000 || mode === 'edit' && editing.length === 0}>
           <IconSparkle16 size={16} />{t(state.generating ? 'generating' : 'startGeneration')}
