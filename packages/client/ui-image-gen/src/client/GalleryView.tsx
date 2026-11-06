@@ -344,29 +344,31 @@ export function GalleryView({ sessionId, closePage, useGallery, useImageSettings
         </button>)}
       </div>
       <div className={css.studioCenter}>
-        <div className={css.studioToolbar}>
-          <div className={css.zoomControls} role="group" aria-label={t('zoom')}>
-            <button type="button" onClick={() => { setZoom(100) }}>{t('fitWindow')}</button>
-            <button type="button" aria-label={t('zoomOut')} title={t('zoomOut')} onClick={() => { setZoom(value => Math.max(25, value - 25)) }}>−</button>
-            <span>{zoom}%</span>
-            <button type="button" aria-label={t('zoomIn')} title={t('zoomIn')} onClick={() => { setZoom(value => Math.min(500, value + 25)) }}>+</button>
+        <div className={css.previewPane}>
+          <div className={css.studioCanvas}>
+            {state.generating ? <p className={css.studioEmpty} role="status"><IconSparkle16 size={28} />{t('generating')}</p>
+              : studioItem === undefined ? <p className={css.studioEmpty}><Icon name="model-vision" size={32} />{t('studioHint')}</p>
+                : <img className={css.previewImage} style={{ '--dsh-image-zoom': zoom / 100 } as React.CSSProperties}
+                  src={url(studioItem.id)} alt={studioItem.prompt || t('image')} />}
           </div>
-          <div className={css.toolbarActions}>
-            {studioItem !== undefined && <button type="button" onClick={() => {
-              setStudioImageId(null); setPrompt(''); setMode('generate'); setEditing([]); setZoom(100)
-            }}><IconPlusOutline16 size={16} />{t('newGeneration')}</button>}
-            <button type="button" aria-label={t('fullscreen')} title={t('fullscreen')}
-              disabled={studioItem === undefined} onClick={() => {
-                setLightboxFocus(document.activeElement instanceof HTMLElement ? document.activeElement : null)
-                setPreviewId(studioItem?.id ?? null)
-              }}><Icon name="model-vision" size={16} /></button>
+          <div className={css.previewControls}>
+            <div className={css.zoomControls} role="group" aria-label={t('zoom')}>
+              <button type="button" onClick={() => { setZoom(100) }}>{t('fitWindow')}</button>
+              <button type="button" aria-label={t('zoomOut')} title={t('zoomOut')} onClick={() => { setZoom(value => Math.max(25, value - 25)) }}>−</button>
+              <span>{zoom}%</span>
+              <button type="button" aria-label={t('zoomIn')} title={t('zoomIn')} onClick={() => { setZoom(value => Math.min(500, value + 25)) }}>+</button>
+            </div>
+            <div className={css.toolbarActions}>
+              {studioItem !== undefined && <button type="button" onClick={() => {
+                setStudioImageId(null); setPrompt(''); setMode('generate'); setEditing([]); setZoom(100)
+              }}><IconPlusOutline16 size={16} />{t('newGeneration')}</button>}
+              <button type="button" aria-label={t('fullscreen')} title={t('fullscreen')}
+                disabled={studioItem === undefined} onClick={() => {
+                  setLightboxFocus(document.activeElement instanceof HTMLElement ? document.activeElement : null)
+                  setPreviewId(studioItem?.id ?? null)
+                }}><Icon name="model-vision" size={16} /></button>
+            </div>
           </div>
-        </div>
-        <div className={css.studioCanvas}>
-          {state.generating ? <p className={css.studioEmpty} role="status"><IconSparkle16 size={28} />{t('generating')}</p>
-            : studioItem === undefined ? <p className={css.studioEmpty}><Icon name="model-vision" size={32} />{t('studioHint')}</p>
-              : <img className={css.previewImage} style={{ '--dsh-image-zoom': zoom / 100 } as React.CSSProperties}
-                src={url(studioItem.id)} alt={studioItem.prompt || t('image')} />}
         </div>
         {studioItem !== undefined && <div className={css.result}>
           <div className={css.resultStrip}><strong>{t('latestResult')}</strong><div>

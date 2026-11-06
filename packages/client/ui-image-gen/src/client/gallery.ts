@@ -71,7 +71,8 @@ export class GalleryController {
     const controller = new AbortController()
     this.abort = controller
     const generation = ++this.generation
-    if (this.view.getSnapshot().items.length === 0) this.view.update((draft) => { draft.phase = 'loading' })
+    // 后台轮询保持已有 ready 视图，避免空图库每三秒禁用输入并抢走焦点。
+    if (this.view.getSnapshot().phase !== 'ready') this.view.update((draft) => { draft.phase = 'loading' })
     const reading = Promise.all([
       readState(this.sessionId, controller.signal), readGallery(this.sessionId, controller.signal),
     ])

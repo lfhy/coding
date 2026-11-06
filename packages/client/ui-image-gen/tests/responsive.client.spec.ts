@@ -30,4 +30,8 @@ describe('窄屏画廊与画布样式', () => {
     const narrow = gallery.slice(gallery.indexOf('@media (max-width: 1100px)'))
     expect(narrow).toMatch(/minmax\(120px, 170px\) minmax\(0, 1fr\);/u)
   })
+  it('预览工具悬浮在图片区域右下角', () => {
+    expect(gallery).toMatch(/\.previewPane\s*\{[^}]*position:\s*relative;[^}]*flex:\s*1;/u)
+    expect(gallery).toMatch(/\.previewControls\s*\{[^}]*position:\s*absolute;[^}]*right:\s*12px;[^}]*bottom:\s*12px;/u)
+  })
 })

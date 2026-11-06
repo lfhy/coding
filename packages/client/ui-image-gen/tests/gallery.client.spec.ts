@@ -24,8 +24,14 @@ describe('会话图库', () => {
     gallery.show(true)
     await vi.waitFor(() => { expect(gallery.view.getSnapshot().phase).toBe('ready') })
     expect(gallery.view.getSnapshot().items).toHaveLength(0)
+    let pollingToLoading = false
+    const unsubscribe = gallery.view.subscribe(() => {
+      if (gallery.view.getSnapshot().phase === 'loading') pollingToLoading = true
+    })
     await vi.advanceTimersByTimeAsync(3_000)
     expect(gallery.view.getSnapshot().items).toEqual([item])
+    expect(pollingToLoading).toBe(false)
+    unsubscribe()
     gallery.show(false)
     expect(requests.at(-1)?.signal?.aborted).toBe(true)
     const before = fetch.mock.calls.length
