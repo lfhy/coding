@@ -38,16 +38,12 @@ export function decodeImageSettings(value: unknown): ImageSettings | undefined {
     ...(fields.maxEditReferences === undefined ? {} : { maxEditReferences: fields.maxEditReferences as number }) }
 }
 
-/** 服务地址允许 HTTPS 与回环 HTTP，拒绝其他明文地址及嵌入的凭据。 */
+/** 服务地址接受任意 HTTP(S) 主机；只拒绝凭据、查询参数和片段等非基址内容。 */
 export function validEndpoint(text: string): boolean {
   try {
-    if (!/^https?:\/\//iu.test(text)) return false
     const url = new URL(text)
-    const authority = text.slice(text.indexOf('//') + 2).split(/[/?#]/u, 1)[0]
-    const loopback = ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname.toLowerCase())
-    return (loopback || url.protocol === 'https:' && url.hostname.includes('.') && !/^\d+\.\d+\.\d+\.\d+$/u.test(url.hostname))
-      && (url.protocol === 'https:' || url.protocol === 'http:' && loopback) && !authority?.includes('@')
-      && url.username === '' && url.password === '' && !text.includes('?') && !text.includes('#')
+    return ['http:', 'https:'].includes(url.protocol) && url.hostname !== ''
+      && url.username === '' && url.password === '' && url.search === '' && url.hash === ''
   } catch { return false }
 }
 

@@ -959,7 +959,7 @@ Requires: `sessions` · `attachments` · `credentials`
 export interface Config {
   /** 默认关闭；禁用仅阻止新请求，已有会话图片仍可读取。 */
   enabled: boolean
-  /** OpenAI-compatible `/v1` API 基址；默认空，须为公开 HTTPS 或本机回环 HTTP(S)。 */
+  /** OpenAI-compatible `/v1` API 基址；默认空，可为任意 HTTP(S) 主机。 */
   endpoint: string
   /** 生成与编辑共用的模型名称；默认空且不自动选择模型。 */
   model: string

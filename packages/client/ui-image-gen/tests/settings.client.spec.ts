@@ -17,7 +17,7 @@ function setup(settings: ImageSettings = { enabled: false, endpoint: '', model: 
 }
 
 describe('图像生成设置', () => {
-  it('拒绝坏字段，并允许本机无鉴权的 HTTP 服务', () => {
+  it('拒绝坏字段，并接受任意 HTTP(S) 服务地址', () => {
     expect(decodeImageSettings({ enabled: true, endpoint: 'http://localhost:5000', model: 'image', apiKeyRef: '' }))
       .toEqual({ enabled: true, endpoint: 'http://localhost:5000', model: 'image', apiKeyRef: '' })
     expect(decodeImageSettings({ enabled: 'yes', endpoint: '', model: '', apiKeyRef: '' })).toBeUndefined()
@@ -30,10 +30,14 @@ describe('图像生成设置', () => {
     expect(validEndpoint('http://127.0.0.1:9000/v1')).toBe(true)
     expect(validEndpoint('http://localhost:9000/v1')).toBe(true)
     expect(validEndpoint('http://[::1]:9000/v1')).toBe(true)
-    expect(validEndpoint('http://remote.example/v1')).toBe(false)
-    expect(validEndpoint('https://10.0.0.2/v1')).toBe(false)
-    expect(validEndpoint('https://intranet/v1')).toBe(false)
+    expect(validEndpoint('http://remote.example/v1')).toBe(true)
+    expect(validEndpoint('http://192.168.1.10:9000/v1')).toBe(true)
+    expect(validEndpoint('https://10.0.0.2/v1')).toBe(true)
+    expect(validEndpoint('https://intranet/v1')).toBe(true)
     expect(validEndpoint('https://person:key@images.example')).toBe(false)
+    expect(validEndpoint('https://images.example/v1?apiKey=secret')).toBe(false)
+    expect(validEndpoint('https://images.example/v1#fragment')).toBe(false)
+    expect(validEndpoint('ftp://images.example/v1')).toBe(false)
     expect(localEndpoint('http://localhost:9000/v1')).toBe(true)
     expect(localEndpoint('https://images.example/v1')).toBe(false)
     expect(localEndpoint('http://remote.example/v1')).toBe(false)

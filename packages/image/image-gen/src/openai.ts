@@ -2,7 +2,6 @@
 import type { ImageMediaType, SaveImageAttachment } from 'coding-attachment'
 import { request as httpRequest } from 'node:http'
 import { request as httpsRequest } from 'node:https'
-import { isIP } from 'node:net'
 
 const MAX_ERROR_BYTES = 1024
 const IMAGE_TYPES = new Set<ImageMediaType>(['image/png', 'image/jpeg', 'image/webp', 'image/gif'])
@@ -67,16 +66,12 @@ async function downloadResponse(location: URL, signal: AbortSignal): Promise<imp
   return response
 }
 
-/** 设置中的端点是含 `/v1` 的 API 根；无鉴权本地 HTTP 仅允许回环字面量。 */
+/** 设置中的端点是含 `/v1` 的 API 根；HTTP(S) 主机由使用者自行选择与信任。 */
 export function imageEndpoint(base: string, kind: 'generations' | 'edits'): string {
   const url = new URL(base)
-  if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password || url.search || url.hash) {
-    throw new TypeError('图像端点必须是不带凭据与参数的 HTTP(S) 地址')
-  }
-  const loopback = ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)
-  // 字面量私网地址和单标签主机不作为公共 HTTPS 端点；本地只支持明确的回环名称。
-  if ((url.protocol === 'http:' && !loopback) || (!loopback && (isIP(url.hostname) !== 0 || !url.hostname.includes('.')))) {
-    throw new TypeError('图像端点必须使用公开 HTTPS 或本机回环 HTTP(S) 地址')
+  if (!['https:', 'http:'].includes(url.protocol) || url.hostname === '' || url.username || url.password
+    || url.search || url.hash) {
+    throw new TypeError('图像端点必须是主机非空且不带凭据、查询参数或片段的 HTTP(S) 地址')
   }
   const root = url.toString().replace(/\/+$/, '')
   return `${root}/images/${kind}`

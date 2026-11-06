@@ -27,9 +27,11 @@ const makeRequest = (endpoint: string, sources: Parameters<typeof requestImage>[
 })
 
 describe('OpenAI-compatible image requests', () => {
-  it('rejects insecure network endpoints and credentials in configured URLs', () => {
-    for (const endpoint of ['http://192.168.1.10/v1', 'http://example.org/v1',
-      'https://10.0.0.1/v1', 'https://localhost.evil.invalid/v1?apiKey=secret',
+  it('accepts HTTP(S) network endpoints with authentication and rejects malformed configured URLs', () => {
+    expect(imageEndpoint('http://192.168.1.10/v1', 'generations')).toBe('http://192.168.1.10/v1/images/generations')
+    expect(imageEndpoint('http://example.org/v1', 'generations')).toBe('http://example.org/v1/images/generations')
+    expect(imageEndpoint('https://10.0.0.1/v1', 'generations')).toBe('https://10.0.0.1/v1/images/generations')
+    for (const endpoint of ['https://localhost.evil.invalid/v1?apiKey=secret',
       'https://user:secret@example.org/v1', 'file:///etc/passwd']) {
       expect(() => imageEndpoint(endpoint, 'generations')).toThrow(TypeError)
     }

@@ -13,6 +13,20 @@ import { zh } from '../src/client/locales.ts'
 const t = (key: keyof typeof zh) => zh[key]
 afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 
+function workbenchSettings(value: Record<string, unknown> = {
+  enabled: true, endpoint: 'https://images.example', model: 'paint', apiKeyRef: 'KEY', sizes: {}, maxEditReferences: 1,
+}) {
+  const saveSettings = vi.fn(async (_changes: unknown, _key?: string) => ({ ok: true, keySaved: false }))
+  return {
+    useImageSettings: (pick: (view: unknown) => unknown) => pick({
+      section: { status: 'ready', writable: true, value },
+      credential: { status: 'ready', ref: 'KEY', configured: true, writable: true },
+      saving: false, failed: false,
+    }),
+    saveSettings,
+  }
+}
+
 describe('图像交互组件', () => {
   it('设置开关随完整配置启用，空引用时不出现密钥输入', () => {
     const save = vi.fn(async () => ({ ok: true, keySaved: false }))
@@ -64,15 +78,16 @@ describe('图像交互组件', () => {
       credential: { status: 'ready', ref: 'IMAGE_GEN_API_KEY', configured: false, writable: true },
       saving: false, failed: false,
     }) } as unknown as SettingsSectionProps)} />)
-    fireEvent.change(screen.getByLabelText('服务地址'), { target: { value: 'https://images.example/v1' } })
+    fireEvent.change(screen.getByLabelText('服务地址'), { target: { value: 'http://haichat.eos.3000y.store/v1' } })
     fireEvent.change(screen.getByLabelText('绘图模型'), { target: { value: 'paint' } })
     fireEvent.change(screen.getByLabelText('API 密钥'), { target: { value: 'private-key' } })
+    expect(screen.queryByRole('alert')).toBeNull()
     expect(screen.getByLabelText('启用图像生成').hasAttribute('disabled')).toBe(false)
     fireEvent.click(screen.getByLabelText('启用图像生成'))
     fireEvent.click(screen.getByRole('button', { name: '保存设置' }))
-    expect(save).toHaveBeenCalledWith({ endpoint: 'https://images.example/v1', model: 'paint', enabled: true }, 'private-key')
+    expect(save).toHaveBeenCalledWith({ endpoint: 'http://haichat.eos.3000y.store/v1', model: 'paint', enabled: true }, 'private-key')
     await waitFor(() => { expect(screen.getByLabelText('API 密钥')).toHaveProperty('value', 'private-key') })
-    expect(screen.getByLabelText('服务地址')).toHaveProperty('value', 'https://images.example/v1')
+    expect(screen.getByLabelText('服务地址')).toHaveProperty('value', 'http://haichat.eos.3000y.store/v1')
     expect(screen.getByLabelText('启用图像生成')).toHaveProperty('checked', true)
   })
 
@@ -128,6 +143,10 @@ describe('图像交互组件', () => {
       section: { status: 'ready', writable: true, value: { enabled: false, endpoint: '', model: '', apiKeyRef: '' } },
       credential: { status: 'ready', ref: '', configured: true, writable: false }, saving: false, failed: false,
     }) } as unknown as SettingsSectionProps)} />)
+    const inactiveHint = screen.getByText('请填写服务地址、模型，并按需配置密钥后启用。')
+    expect(inactiveHint.compareDocumentPosition(screen.getByText('服务地址')) & Node.DOCUMENT_POSITION_FOLLOWING)
+      .toBeTruthy()
+    expect(screen.queryByText('保存后只显示是否已配置，不会显示密钥内容。')).toBeNull()
     expect(screen.getByLabelText('启用图像生成').hasAttribute('disabled')).toBe(true)
     fireEvent.change(screen.getByLabelText('服务地址'), { target: { value: 'http://localhost:8080' } })
     fireEvent.change(screen.getByLabelText('绘图模型'), { target: { value: 'paint' } })
@@ -135,20 +154,65 @@ describe('图像交互组件', () => {
     expect(save).toHaveBeenCalledWith({ enabled: false, endpoint: 'http://localhost:8080', model: 'paint' }, '')
   })
 
-  it('设置页保存自定义比例分辨率与参考图数量，非法 JSON 不提交', () => {
+  it('服务地址只在点击保存时校验，输入过程中不显示错误', () => {
     const save = vi.fn(async () => ({ ok: true, keySaved: false }))
     render(<SettingsSection {...({ t, save, useImageSettings: (pick: (view: unknown) => unknown) => pick({
       section: { status: 'ready', writable: true,
-        value: { enabled: false, endpoint: 'http://localhost:8080/v1', model: 'paint', apiKeyRef: '', sizes: {}, maxEditReferences: 1 } },
-      credential: { status: 'ready', ref: '', configured: true, writable: false }, saving: false, failed: false,
+        value: { enabled: false, endpoint: '', model: 'paint', apiKeyRef: 'IMAGE_GEN_API_KEY' } },
+      credential: { status: 'ready', ref: 'IMAGE_GEN_API_KEY', configured: true, writable: true },
+      saving: false, failed: false,
     }) } as unknown as SettingsSectionProps)} />)
+    const input = screen.getByLabelText('服务地址')
+    fireEvent.change(input, { target: { value: 'https://' } })
+    expect(screen.queryByText(/有效的 HTTP\(S\)/u)).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: '保存设置' }))
+    expect(screen.getByText(/有效的 HTTP\(S\)/u)).toBeTruthy()
+    expect(save).not.toHaveBeenCalled()
+    fireEvent.change(input, { target: { value: 'https://images.example/v1' } })
+    expect(screen.queryByText(/有效的 HTTP\(S\)/u)).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: '保存设置' }))
+    expect(save).toHaveBeenCalledWith({ enabled: false, endpoint: 'https://images.example/v1' }, '')
+  })
+
+  it('比例、尺寸与参考图上限不再出现在设置页', () => {
+    render(<SettingsSection {...({ t, save: vi.fn(async () => ({ ok: true, keySaved: false })),
+      useImageSettings: (pick: (view: unknown) => unknown) => pick({
+        section: { status: 'ready', writable: true,
+          value: { enabled: false, endpoint: 'http://localhost:8080/v1', model: 'paint', apiKeyRef: '', sizes: {}, maxEditReferences: 1 } },
+        credential: { status: 'ready', ref: '', configured: true, writable: false }, saving: false, failed: false,
+      }) } as unknown as SettingsSectionProps)} />)
+    expect(screen.queryByText('比例与分辨率设置')).toBeNull()
+    expect(screen.queryByLabelText('尺寸映射（JSON）')).toBeNull()
+    expect(screen.queryByLabelText('单次图生图参考图上限')).toBeNull()
+  })
+
+  it('工作台内编辑并保存尺寸映射与参考图上限，非法 JSON 不提交', async () => {
+    const settings = workbenchSettings()
+    const refresh = vi.fn()
+    const ui = createGalleryUiStore().create()
+    render(<GalleryView {...({ t, sessionId: 'test', closePage: vi.fn(),
+      useGallery: (pick: (state: unknown) => unknown) => pick({ phase: 'ready',
+        state: { enabled: true, available: true, model: 'paint' }, items: [], generating: false,
+        uploading: false, lastResultId: null, failed: false }),
+      useStore: bindSnapshotSelector(ui), actions: ui.actions,
+      useImageCanvas: (pick: (state: unknown) => unknown) => pick({ phase: 'loading', nodes: [], selectedId: null, saving: false, issue: null }),
+      canvas: { show: vi.fn(), refresh: vi.fn(), add: vi.fn(), select: vi.fn(), move: vi.fn(), remove: vi.fn(),
+        clear: vi.fn(), url: vi.fn(() => '/image') },
+      show: vi.fn(), refresh, generate: vi.fn(async () => true), importReference: vi.fn(), place: vi.fn(),
+      ...settings, url: (id: string) => `/api/image-gen/image?sessionId=test&id=${id}`,
+    } as unknown as GalleryViewProps)} />)
     fireEvent.click(screen.getByText('比例与分辨率设置'))
     fireEvent.change(screen.getByLabelText('尺寸映射（JSON）'), { target: { value: '{' } })
-    expect(screen.getByRole('button', { name: '保存设置' }).hasAttribute('disabled')).toBe(true)
+    expect(screen.getByRole('button', { name: '保存工作台参数' }).hasAttribute('disabled')).toBe(true)
     fireEvent.change(screen.getByLabelText('尺寸映射（JSON）'), { target: { value: '{"16:9":{"2K":"2048x1152"}}' } })
     fireEvent.change(screen.getByLabelText('单次图生图参考图上限'), { target: { value: '2' } })
-    fireEvent.click(screen.getByRole('button', { name: '保存设置' }))
-    expect(save).toHaveBeenCalledWith({ enabled: false, sizes: { '16:9': { '2K': '2048x1152' } }, maxEditReferences: 2 }, '')
+    fireEvent.click(screen.getByRole('button', { name: '保存工作台参数' }))
+    await waitFor(() => {
+      expect(settings.saveSettings).toHaveBeenCalledWith({
+        sizes: { '16:9': { '2K': '2048x1152' } }, maxEditReferences: 2,
+      }, '')
+    })
+    expect(refresh).toHaveBeenCalled()
   })
 
   it('主内容画廊有三个子页，工作台可编辑并送入会话画布', () => {
@@ -160,6 +224,7 @@ describe('图像交互组件', () => {
       generating: false, uploading: false, lastResultId: null, failed: false }
     const ui = createGalleryUiStore().create()
     const { unmount } = render(<GalleryView {...({ t, sessionId: 'test', closePage: vi.fn(),
+      ...workbenchSettings(),
       useGallery: (pick: (state: unknown) => unknown) => pick(view), useStore: bindSnapshotSelector(ui), actions: ui.actions,
       useImageCanvas: (pick: (state: unknown) => unknown) => pick({ phase: 'loading', nodes: [], selectedId: null, saving: false, issue: null }),
       canvas: { show: vi.fn(), refresh: vi.fn(), add: vi.fn(), select: vi.fn(), move: vi.fn(), remove: vi.fn(),
@@ -200,6 +265,7 @@ describe('图像交互组件', () => {
     const upload = vi.fn(async () => image)
     const generate = vi.fn(async () => true)
     render(<GalleryView {...({ t, sessionId: 'test', closePage: vi.fn(),
+      ...workbenchSettings(),
       useGallery: (pick: (state: unknown) => unknown) => pick({ phase: 'ready',
         state: { enabled: true, available: true, model: 'paint' }, items: [], generating: false,
         uploading: false, lastResultId: null, failed: false }),
@@ -227,6 +293,8 @@ describe('图像交互组件', () => {
     const generate = vi.fn(async () => true)
     const ui = createGalleryUiStore().create()
     render(<GalleryView {...({ t, sessionId: 'test', closePage: vi.fn(),
+      ...workbenchSettings({ enabled: true, endpoint: 'https://images.example', model: 'paint', apiKeyRef: 'KEY',
+        sizes: { '1:1': { '1K': '1024x1024' }, '16:9': { '1K': '1536x864', '2K': '2048x1152' } }, maxEditReferences: 1 }),
       useGallery: (pick: (state: unknown) => unknown) => pick({ phase: 'ready',
         state: { enabled: true, available: true, model: 'paint', sizes: {
           '1:1': { '1K': '1024x1024' }, '16:9': { '1K': '1536x864', '2K': '2048x1152' },
@@ -263,6 +331,7 @@ describe('图像交互组件', () => {
     const view = { phase: 'ready', state: { enabled: true, available: true, model: 'paint' }, items,
       generating: false, uploading: false, lastResultId: null, failed: false }
     render(<GalleryView {...({ t, sessionId: 'test', closePage: vi.fn(),
+      ...workbenchSettings(),
       useGallery: (pick: (state: unknown) => unknown) => pick(view), useStore: bindSnapshotSelector(ui), actions: ui.actions,
       useImageCanvas: (pick: (state: unknown) => unknown) => pick({ phase: 'loading', nodes: [], selectedId: null, saving: false, issue: null }),
       canvas: { show: vi.fn(), refresh: vi.fn(), add: vi.fn(), select: vi.fn(), move: vi.fn(), remove: vi.fn(),

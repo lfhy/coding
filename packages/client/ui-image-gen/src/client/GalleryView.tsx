@@ -14,6 +14,7 @@ import { InspirationView } from './InspirationView.tsx'
 import { copyImageBlob } from './image-clipboard.ts'
 import { CanvasSurface } from './CanvasPanel.tsx'
 import { NS } from './locales.ts'
+import { validSizeTableShape } from './settings.ts'
 import css from './GalleryView.module.css'
 
 type Tab = 'studio' | 'inspiration' | 'gallery'
@@ -86,9 +87,10 @@ function GalleryCard({ item, src, favorite, selected, managing, t, onPreview, on
 }
 
 /** 三个子页共用的主内容画廊；打开和关闭只改变页面视图，不生成模型轮次。 */
-export function GalleryView({ sessionId, closePage, useGallery, useImageCanvas, useStore, actions, show, refresh,
-  generate, importReference, place, url, canvas, t }: GalleryViewProps) {
+export function GalleryView({ sessionId, closePage, useGallery, useImageCanvas, useImageSettings, useStore, actions,
+  show, refresh, generate, importReference, place, saveSettings: saveImageSettings, url, canvas, t }: GalleryViewProps) {
   const state = useGallery(snapshot => snapshot)
+  const imageSettings = useImageSettings(snapshot => snapshot)
   const favorites = useStore(snapshot => snapshot.favorites)
   const hidden = useStore(snapshot => snapshot.hidden)
   const inspirationFavorites = useStore(snapshot => snapshot.inspirationFavorites)
@@ -111,6 +113,8 @@ export function GalleryView({ sessionId, closePage, useGallery, useImageCanvas, 
   const [outputRatio, setOutputRatio] = useState('1:1')
   const [resolution, setResolution] = useState('1K')
   const [quality, setQuality] = useState('default')
+  const [sizeText, setSizeText] = useState<string | null>(null)
+  const [maxReferencesDraft, setMaxReferencesDraft] = useState<number | null>(null)
   const [toast, setToast] = useState<{ id: number; text: string } | null>(null)
   const [limit, setLimit] = useState(24)
   const [lightboxFocus, setLightboxFocus] = useState<HTMLElement | null>(null)
@@ -152,13 +156,27 @@ export function GalleryView({ sessionId, closePage, useGallery, useImageCanvas, 
   const currentPreview = visible.findIndex(item => item.id === previewId)
   const preview = currentPreview < 0 ? items.find(item => item.id === previewId) : visible[currentPreview]
   const canGenerate = state.state?.available === true && state.phase === 'ready'
-  const sizes = state.state?.sizes && Object.keys(state.state.sizes).length > 0 ? state.state.sizes : FALLBACK_SIZES
+  const savedSizes = imageSettings.section.value?.sizes ?? state.state?.sizes ?? {}
+  const sizes = Object.keys(savedSizes).length > 0 ? savedSizes : FALLBACK_SIZES
   const ratios = Object.keys(sizes)
   const selectedRatio = ratios.includes(outputRatio) ? outputRatio : ratios[0] ?? '1:1'
   const tiers = sizes[selectedRatio] ?? FALLBACK_SIZES['1:1'] ?? {}
   const selectedResolution = Object.hasOwn(tiers, resolution) ? resolution : Object.keys(tiers)[0] ?? '1K'
   const selectedSize = tiers[selectedResolution]
-  const maxReferences = state.state?.maxEditReferences ?? 1
+  const maxReferences = imageSettings.section.value?.maxEditReferences ?? state.state?.maxEditReferences ?? 1
+  const referencesDraft = maxReferencesDraft ?? maxReferences
+  const sizeValue = sizeText ?? JSON.stringify(savedSizes, null, 2)
+  let sizeInvalid = false
+  let draftSizes: Record<string, Record<string, string>> | undefined
+  try {
+    const parsed: unknown = JSON.parse(sizeValue)
+    if (validSizeTableShape(parsed)) draftSizes = parsed
+    else sizeInvalid = true
+  } catch { sizeInvalid = true }
+  const settingsSection = imageSettings.section
+  const settingsWritable = settingsSection.status === 'ready' && settingsSection.writable && !imageSettings.saving
+  const settingsChanged = draftSizes !== undefined
+    && (referencesDraft !== maxReferences || JSON.stringify(draftSizes) !== JSON.stringify(savedSizes))
   const studioItem = items.find(item => item.id === studioImageId)
   const select = (id: string) => {
     setSelected((previous) => {
@@ -209,6 +227,17 @@ export function GalleryView({ sessionId, closePage, useGallery, useImageCanvas, 
       .find(entry => entry.size === (item.size ?? `${item.width}x${item.height}`))
     if (found !== undefined) { setOutputRatio(found.ratio); setResolution(found.tier) }
     setQuality(item.quality ?? 'default')
+  }
+  const saveWorkbenchSettings = () => {
+    if (!settingsWritable || !settingsChanged || sizeInvalid || draftSizes === undefined) return
+    void saveImageSettings({ sizes: draftSizes, maxEditReferences: referencesDraft }, '').then(({ ok }) => {
+      if (ok) {
+        setSizeText(null)
+        setMaxReferencesDraft(null)
+        refresh()
+        announce(t('workbenchSettingsSaved'))
+      } else announce(t('workbenchSettingsFailed'))
+    })
   }
   const copyImage = (item: GalleryItem) => {
     void (async () => {
@@ -425,6 +454,33 @@ export function GalleryView({ sessionId, closePage, useGallery, useImageCanvas, 
             </select>
           </label>
         </div>
+        <details className={css.advancedSettings}>
+          <summary>{t('sizeSettings')}</summary>
+          <div className={css.advancedSettingsBody}>
+            <div className={css.advancedField}>
+              <label htmlFor="image-gen-max-references">{t('maxReferences')}</label>
+              <select id="image-gen-max-references" value={referencesDraft} disabled={!settingsWritable}
+                onChange={(event) => { setMaxReferencesDraft(Number(event.target.value)) }}>
+                {[1, 2, 3, 4, 5].map(count => <option value={count} key={count}>{count}</option>)}
+              </select>
+              <small>{t('maxReferencesHint')}</small>
+            </div>
+            <div className={css.advancedField}>
+              <label htmlFor="image-gen-sizes">{t('sizeTable')}</label>
+              <textarea id="image-gen-sizes" value={sizeValue} disabled={!settingsWritable}
+                aria-invalid={sizeInvalid || undefined} aria-describedby="image-gen-sizes-hint"
+                onChange={(event) => { setSizeText(event.target.value) }} />
+              <small id="image-gen-sizes-hint">{t('sizeTableHint')}</small>
+              {sizeInvalid && <span role="alert" className={css.fieldError}>{t('sizeTableInvalid')}</span>}
+            </div>
+            {settingsSection.status !== 'ready' && <p role="status">{t('unavailable')}</p>}
+            {settingsSection.status === 'ready' && !settingsSection.writable && <p role="status">{t('readOnly')}</p>}
+            <div className={css.advancedActions}>
+              <Button size="sm" type="button" disabled={!settingsWritable || !settingsChanged || sizeInvalid}
+                onClick={saveWorkbenchSettings}>{t(imageSettings.saving ? 'saving' : 'saveWorkbenchSettings')}</Button>
+            </div>
+          </div>
+        </details>
         <label className={css.qualityField}>{t('generationQuality')}
           <select value={quality} onChange={(event) => { setQuality(event.target.value) }}>
             <option value="default">{t('providerDefault')}</option>

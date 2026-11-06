@@ -93,8 +93,13 @@ export function apply(ctx: ClientContext): void {
     inject: (sessionId: SessionId) => {
       const gallery = galleryFor(sessionId)
       const canvas = canvasFor(sessionId)
+      const imageSettings = settings.inject()
       return {
-        hooks: { gallery: gallery.view, imageCanvas: canvas.view },
+        hooks: {
+          gallery: gallery.view, imageCanvas: canvas.view,
+          imageSettings: imageSettings.hooks.imageSettings,
+        },
+        saveSettings: imageSettings.save,
         show: (shown: boolean) => { gallery.show(shown) },
         refresh: () => { void gallery.refresh() },
         generate: (prompt: string, imageId?: string | readonly string[], output?: import('./wire.ts').ImageOutput) =>
