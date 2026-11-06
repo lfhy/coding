@@ -7,6 +7,8 @@ import css from './SelectMenu.module.css'
 export interface SelectMenuOption {
   id: string
   label: string
+  /** 触发器空间不足时可使用更短的显示文本。 */
+  displayLabel?: string
 }
 /** 受控下拉框参数。 */
 export interface SelectMenuProps {
@@ -31,7 +33,7 @@ export function SelectMenu({ label, value, options, onChange, disabled = false }
       anchor={<button type="button" className={css.trigger} aria-label={label}
         aria-haspopup="menu" aria-expanded={open && !disabled} disabled={disabled}
         onClick={() => { setOpen(value => !value) }}>
-        <span className={css.label}>{current?.label ?? value}</span>
+        <span className={css.label}>{current?.displayLabel ?? current?.label ?? value}</span>
         <IconChevronDownOutline14 className={open ? css.chevronOpen : css.chevron} size={14} />
       </button>}
       items={items}

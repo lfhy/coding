@@ -405,27 +405,29 @@ export function GalleryView({ sessionId, closePage, useGallery, useStore, action
           <button type="button" onClick={() => { setPrompt('') }}>{t('clearPrompt')}</button><span>{prompt.length}/4000</span></div>
         <div className={css.outputFields}>
           <div className={css.outputField}>
-            <span>{t('outputRatio')}</span>
-            <SelectMenu label={t('outputRatio')} value={selectedRatio}
-              options={ratios.map(value => ({ id: value, label: `${value} ${value === '1:1' ? t('square') : value === '3:2' ? t('landscape') : value === '2:3' ? t('portrait') : ''}`.trim() }))}
-              onChange={(value) => { setOutputRatio(value); setResolution('1K') }} />
+            <span>{t('outputSize')}</span>
+            <SelectMenu label={t('outputSize')} value={`${selectedRatio}::${selectedResolution}`}
+              options={Object.entries(sizes).flatMap(([ratio, ratioTiers]) => Object.entries(ratioTiers).map(([tier, size]) => ({
+                id: `${ratio}::${tier}`,
+                label: `${ratio} ${ratio === '1:1' ? t('square') : ratio === '3:2' ? t('landscape') : ratio === '2:3' ? t('portrait') : ''} · ${tier} · ${size.replace('x', '×')}`,
+                displayLabel: `${ratio} · ${tier}`,
+              })))}
+              onChange={(value) => {
+                const [ratio, tier] = value.split('::')
+                if (ratio !== undefined) setOutputRatio(ratio)
+                if (tier !== undefined) setResolution(tier)
+              }} />
           </div>
           <div className={css.outputField}>
-            <span>{t('resolution')}</span>
-            <SelectMenu label={t('resolution')} value={selectedResolution}
-              options={Object.entries(tiers).map(([tier, size]) => ({ id: tier, label: `${tier} · ${size.replace('x', '×')}` }))}
-              onChange={setResolution} />
+            <span>{t('generationQuality')}</span>
+            <SelectMenu label={t('generationQuality')} value={quality} options={[
+              { id: 'default', label: t('providerDefault') },
+              { id: 'auto', label: t('automatic') },
+              { id: 'low', label: t('lowQuality') },
+              { id: 'medium', label: t('mediumQuality') },
+              { id: 'high', label: t('highQuality') },
+            ]} onChange={setQuality} />
           </div>
-        </div>
-        <div className={css.qualityField}>
-          <span>{t('generationQuality')}</span>
-          <SelectMenu label={t('generationQuality')} value={quality} options={[
-            { id: 'default', label: t('providerDefault') },
-            { id: 'auto', label: t('automatic') },
-            { id: 'low', label: t('lowQuality') },
-            { id: 'medium', label: t('mediumQuality') },
-            { id: 'high', label: t('highQuality') },
-          ]} onChange={setQuality} />
         </div>
         <button className={css.generateButton} type="submit"
           disabled={!canGenerate || state.generating || state.uploading || !prompt.trim() || prompt.length > 4000 || mode === 'edit' && editing.length === 0}>
