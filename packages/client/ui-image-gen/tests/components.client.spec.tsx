@@ -18,20 +18,6 @@ function choose(label: string, option: string | RegExp): void {
   fireEvent.click(screen.getByRole('menuitem', { name: option }))
 }
 
-function workbenchSettings(value: Record<string, unknown> = {
-  enabled: true, endpoint: 'https://images.example', model: 'paint', apiKeyRef: 'KEY', sizes: {}, maxEditReferences: 1,
-}) {
-  const saveSettings = vi.fn(async (_changes: unknown, _key?: string) => ({ ok: true, keySaved: false }))
-  return {
-    useImageSettings: (pick: (view: unknown) => unknown) => pick({
-      section: { status: 'ready', writable: true, value },
-      credential: { status: 'ready', ref: 'KEY', configured: true, writable: true },
-      saving: false, failed: false,
-    }),
-    saveSettings,
-  }
-}
-
 describe('图像交互组件', () => {
   it('设置开关随完整配置启用，空引用时不出现密钥输入', () => {
     const save = vi.fn(async () => ({ ok: true, keySaved: false }))
@@ -191,35 +177,6 @@ describe('图像交互组件', () => {
     expect(screen.queryByLabelText('单次图生图参考图上限')).toBeNull()
   })
 
-  it('工作台内编辑并保存尺寸映射与参考图上限，非法 JSON 不提交', async () => {
-    const settings = workbenchSettings()
-    const refresh = vi.fn()
-    const ui = createGalleryUiStore().create()
-    render(<GalleryView {...({ t, sessionId: 'test', closePage: vi.fn(),
-      useGallery: (pick: (state: unknown) => unknown) => pick({ phase: 'ready',
-        state: { enabled: true, available: true, model: 'paint' }, items: [], generating: false,
-        uploading: false, lastResultId: null, failed: false }),
-      useStore: bindSnapshotSelector(ui), actions: ui.actions,
-      useImageCanvas: (pick: (state: unknown) => unknown) => pick({ phase: 'loading', nodes: [], selectedId: null, saving: false, issue: null }),
-      canvas: { show: vi.fn(), refresh: vi.fn(), add: vi.fn(), select: vi.fn(), move: vi.fn(), remove: vi.fn(),
-        clear: vi.fn(), url: vi.fn(() => '/image') },
-      show: vi.fn(), refresh, generate: vi.fn(async () => true), importReference: vi.fn(), place: vi.fn(),
-      ...settings, url: (id: string) => `/api/image-gen/image?sessionId=test&id=${id}`,
-    } as unknown as GalleryViewProps)} />)
-    fireEvent.click(screen.getByText('比例与分辨率设置'))
-    fireEvent.change(screen.getByLabelText('尺寸映射（JSON）'), { target: { value: '{' } })
-    expect(screen.getByRole('button', { name: '保存工作台参数' }).hasAttribute('disabled')).toBe(true)
-    fireEvent.change(screen.getByLabelText('尺寸映射（JSON）'), { target: { value: '{"16:9":{"2K":"2048x1152"}}' } })
-    choose('单次图生图参考图上限', '2')
-    fireEvent.click(screen.getByRole('button', { name: '保存工作台参数' }))
-    await waitFor(() => {
-      expect(settings.saveSettings).toHaveBeenCalledWith({
-        sizes: { '16:9': { '2K': '2048x1152' } }, maxEditReferences: 2,
-      }, '')
-    })
-    expect(refresh).toHaveBeenCalled()
-  })
-
   it('主内容画廊有三个子页，工作台可编辑并送入生成流程', () => {
     const item = { id: 'one', prompt: '晨光', attachmentId: 'att', createdAt: 1, model: 'paint', mediaType: 'image/png', width: 256, height: 256 }
     const generate = vi.fn(async () => true)
@@ -229,7 +186,6 @@ describe('图像交互组件', () => {
       generating: false, uploading: false, lastResultId: null, failed: false }
     const ui = createGalleryUiStore().create()
     const { unmount } = render(<GalleryView {...({ t, sessionId: 'test', closePage: vi.fn(),
-      ...workbenchSettings(),
       useGallery: (pick: (state: unknown) => unknown) => pick(view), useStore: bindSnapshotSelector(ui), actions: ui.actions,
       useImageCanvas: (pick: (state: unknown) => unknown) => pick({ phase: 'loading', nodes: [], selectedId: null, saving: false, issue: null }),
       canvas: { show: vi.fn(), refresh: vi.fn(), add: vi.fn(), select: vi.fn(), move: vi.fn(), remove: vi.fn(),
@@ -241,6 +197,8 @@ describe('图像交互组件', () => {
     expect(screen.getByRole('tab', { name: '工作台' }).getAttribute('aria-selected')).toBe('true')
     expect(screen.queryByRole('button', { name: '会话画布' })).toBeNull()
     expect(screen.queryByRole('region', { name: 'AI 画布' })).toBeNull()
+    expect(screen.queryByText('比例与分辨率设置')).toBeNull()
+    expect(screen.queryByLabelText('尺寸映射（JSON）')).toBeNull()
     expect(screen.getByRole('button', { name: '文生图' }).getAttribute('aria-pressed')).toBe('true')
     expect(screen.queryByText(/API 已配置/u)).toBeNull()
     expect(screen.getByRole('button', { name: '比例' }).textContent).toContain('1:1')
@@ -271,7 +229,6 @@ describe('图像交互组件', () => {
     const upload = vi.fn(async () => image)
     const generate = vi.fn(async () => true)
     render(<GalleryView {...({ t, sessionId: 'test', closePage: vi.fn(),
-      ...workbenchSettings(),
       useGallery: (pick: (state: unknown) => unknown) => pick({ phase: 'ready',
         state: { enabled: true, available: true, model: 'paint' }, items: [], generating: false,
         uploading: false, lastResultId: null, failed: false }),
@@ -299,8 +256,6 @@ describe('图像交互组件', () => {
     const generate = vi.fn(async () => true)
     const ui = createGalleryUiStore().create()
     render(<GalleryView {...({ t, sessionId: 'test', closePage: vi.fn(),
-      ...workbenchSettings({ enabled: true, endpoint: 'https://images.example', model: 'paint', apiKeyRef: 'KEY',
-        sizes: { '1:1': { '1K': '1024x1024' }, '16:9': { '1K': '1536x864', '2K': '2048x1152' } }, maxEditReferences: 1 }),
       useGallery: (pick: (state: unknown) => unknown) => pick({ phase: 'ready',
         state: { enabled: true, available: true, model: 'paint', sizes: {
           '1:1': { '1K': '1024x1024' }, '16:9': { '1K': '1536x864', '2K': '2048x1152' },
@@ -337,7 +292,6 @@ describe('图像交互组件', () => {
     const view = { phase: 'ready', state: { enabled: true, available: true, model: 'paint' }, items,
       generating: false, uploading: false, lastResultId: null, failed: false }
     render(<GalleryView {...({ t, sessionId: 'test', closePage: vi.fn(),
-      ...workbenchSettings(),
       useGallery: (pick: (state: unknown) => unknown) => pick(view), useStore: bindSnapshotSelector(ui), actions: ui.actions,
       useImageCanvas: (pick: (state: unknown) => unknown) => pick({ phase: 'loading', nodes: [], selectedId: null, saving: false, issue: null }),
       canvas: { show: vi.fn(), refresh: vi.fn(), add: vi.fn(), select: vi.fn(), move: vi.fn(), remove: vi.fn(),

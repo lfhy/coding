@@ -110,18 +110,6 @@
 .outputFields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .outputField, .qualityField { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .promptFooter button:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: 1px; }
-.advancedSettings { margin-top: 2px; padding-top: 10px; border-top: 1px solid var(--dsw-alias-border-l2); color: var(--dsw-alias-label-secondary); font: var(--dsw-font-xs-13); }
-.advancedSettings summary { cursor: pointer; color: var(--dsw-alias-label-primary); font: var(--dsw-font-xs-strong-13); }
-.advancedSettings summary:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: 2px; }
-.advancedSettingsBody { display: flex; flex-direction: column; gap: 10px; padding-top: 12px; }
-.advancedField { display: flex; flex-direction: column; gap: 6px; min-width: 0; color: var(--dsw-alias-label-primary); font: var(--dsw-font-xs-strong-13); }
-.advancedField textarea { width: 100%; box-sizing: border-box; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-label-primary); font: var(--dsw-font-xs-13); }
-.advancedField textarea { min-height: 112px; padding: 9px 10px; resize: vertical; }
-.advancedField textarea:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: 1px; }
-.advancedField small { color: var(--dsw-alias-label-secondary); font: var(--dsw-font-xxs-12); }
-.advancedSettingsBody p { margin: 0; }
-.fieldError { color: var(--dsw-alias-state-error-primary); font: var(--dsw-font-xxs-12); }
-.advancedActions { display: flex; justify-content: flex-end; }
 .generateButton { display: flex; align-items: center; justify-content: center; gap: 8px; flex: none; min-height: 38px; margin-top: 4px; border: 0; border-radius: 10px; background: var(--dsw-alias-state-business-primary); color: var(--dsw-alias-label-primary-inverted); cursor: pointer; font: var(--dsw-font-xs-strong-13); }
 .generateButton:hover:not(:disabled) { background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 85%, var(--dsw-alias-label-primary)); }
 .generateButton:disabled { opacity: .45; cursor: not-allowed; }

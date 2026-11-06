@@ -1,7 +1,6 @@
 /** 单会话画廊：旧读取可取消，新图提交后重新读取 Host 权威目录。 */
 import { createSnapshotStore, type SnapshotStore } from 'coding-client-runtime/client'
 import { generateImage, imageUrl, importReference, readGallery, readState, type GalleryItem, type ImageOutput, type ImageState } from './wire.ts'
-import type { ImageSettingsFace } from './settings.ts'
 
 /** 只保留图片元数据与读取状态，原始字节由浏览器访问同会话受限地址。 */
 export interface GalleryViewState {
@@ -14,18 +13,14 @@ export interface GalleryViewState {
   failed: boolean
 }
 
-/** 画廊的只读源、请求、工作台设置及画布放置动作。 */
+/** 画廊的只读源、请求与画布放置动作。 */
 export interface GalleryFace {
-  hooks: {
-    gallery: SnapshotStore<GalleryViewState>
-    imageSettings: ImageSettingsFace['hooks']['imageSettings']
-  }
+  hooks: { gallery: SnapshotStore<GalleryViewState> }
   show: (shown: boolean) => void
   refresh: () => void
   generate: (prompt: string, imageId?: string | readonly string[], output?: ImageOutput) => Promise<boolean>
   importReference: (file: File) => Promise<GalleryItem | undefined>
   place: (imageId: string) => Promise<boolean>
-  saveSettings: ImageSettingsFace['save']
   url: (id: string) => string
 }
 

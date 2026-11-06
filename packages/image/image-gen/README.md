@@ -4,7 +4,7 @@ Host 的会话级图像生成/编辑服务。图像二进制必须先经 `ctx.at
 
 ## 设置与凭据
 
-`image-generation` 设置分节提供 `enabled`（默认 `false`）、`endpoint`（默认空，OpenAI-compatible `/v1` 根地址）、`model`（默认空）、`apiKeyRef`（默认 `IMAGE_GEN_API_KEY`）、`maxEditReferences`（默认 1）和 `sizes`（默认空表）。只有开关开启、地址和模型非空，且非空凭据引用可在 `coding-credentials` 中解析时服务才可用。`apiKeyRef: ''` 表示本地无鉴权服务，请求不发送 Authorization；设置中从不保存明文密钥。请求开始时锁定同一组配置，并逐次重新读取引用。`endpoint` 接受任意 HTTP(S) 主机，包括明文 HTTP、私网和单标签主机；拒绝空主机、内嵌凭据、query 与 fragment，提供方 POST 拒绝跳转。`sizes` 与 `maxEditReferences` 仍属于此设置分节，但编辑入口在画图工作台的生成面板。配置面板的可用性不是授权：每次服务操作均重新检查，使用者应只配置自己信任的服务。
+`image-generation` 设置分节提供 `enabled`（默认 `false`）、`endpoint`（默认空，OpenAI-compatible `/v1` 根地址）、`model`（默认空）、`apiKeyRef`（默认 `IMAGE_GEN_API_KEY`）、`maxEditReferences`（默认 1）和 `sizes`（默认空表）。只有开关开启、地址和模型非空，且非空凭据引用可在 `coding-credentials` 中解析时服务才可用。`apiKeyRef: ''` 表示本地无鉴权服务，请求不发送 Authorization；设置中从不保存明文密钥。请求开始时锁定同一组配置，并逐次重新读取引用。`endpoint` 接受任意 HTTP(S) 主机，包括明文 HTTP、私网和单标签主机；拒绝空主机、内嵌凭据、query 与 fragment，提供方 POST 拒绝跳转。`sizes` 与 `maxEditReferences` 属于此设置分节，由配置文件维护，工作台只消费 Host 返回的选项。配置面板的可用性不是授权：每次服务操作均重新检查，使用者应只配置自己信任的服务。
 
 `sizes` 按比例到分辨率档位映射像素尺寸，例如 `{"1:1":{"1K":"1024x1024","2K":"2048x2048"}}`；空表使用上游兼容渠道的 1:1／2:3／3:2 三种 1K 预设。自定义比例取固定集合，档位为 1K／2K／4K，尺寸有边长和总像素预算；工作台只提供表中组合。手动请求的 `size` 必须属于当前表，`quality` 可选 `auto`／`low`／`medium`／`high`；两项在读取附件和调用上游之前验证，模型工具不传入时保持原来的上游默认行为。实际输出可能与请求尺寸不同，以附件宽高为准。
 
