@@ -1,5 +1,6 @@
 /** 生成面板的单选下拉：复用客户端 Menu 控件，触发器沿用项目表单控件样式。 */
 import { useState } from 'react'
+import type { ReactNode } from 'react'
 import { IconChevronDownOutline14, Menu, type MenuEntry } from 'coding-client-ui-primitives'
 import css from './SelectMenu.module.css'
 
@@ -9,6 +10,8 @@ export interface SelectMenuOption {
   label: string
   /** 触发器空间不足时可使用更短的显示文本。 */
   displayLabel?: string
+  /** 选项和触发器共用的前置图形。 */
+  icon?: ReactNode
 }
 /** 受控下拉框参数。 */
 export interface SelectMenuProps {
@@ -26,13 +29,18 @@ export interface SelectMenuProps {
 export function SelectMenu({ label, value, options, onChange, disabled = false }: SelectMenuProps) {
   const [open, setOpen] = useState(false)
   const current = options.find(option => option.id === value)
-  const items: readonly MenuEntry[] = options.map(option => ({ id: option.id, label: option.label }))
+  const items: readonly MenuEntry[] = options.map(option => ({
+    id: option.id,
+    label: option.label,
+    ...option.icon === undefined ? {} : { icon: option.icon },
+  }))
   return <span className={css.root}>
     <Menu
       open={open && !disabled}
       anchor={<button type="button" className={css.trigger} aria-label={label}
         aria-haspopup="menu" aria-expanded={open && !disabled} disabled={disabled}
         onClick={() => { setOpen(value => !value) }}>
+        {current?.icon !== undefined && <span className={css.triggerIcon}>{current.icon}</span>}
         <span className={css.label}>{current?.displayLabel ?? current?.label ?? value}</span>
         <IconChevronDownOutline14 className={open ? css.chevronOpen : css.chevron} size={14} />
       </button>}
@@ -44,7 +52,7 @@ export function SelectMenu({ label, value, options, onChange, disabled = false }
       }}
       onClose={() => { setOpen(false) }}
       portal
-      matchAnchorWidth
+      side="top"
       keyboardNavigation
     />
   </span>

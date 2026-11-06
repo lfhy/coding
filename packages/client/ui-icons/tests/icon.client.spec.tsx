@@ -1,7 +1,9 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it } from 'vitest'
 import { cleanup, render } from '@testing-library/react'
-import { Icon, IconPanelLeftOutline16, IconTerminalOutline16, IconThinkOutline16 } from '../src/index.ts'
+import {
+  AspectRatioGlyph, Icon, IconPanelLeftOutline16, IconTerminalOutline16, IconThinkOutline16,
+} from '../src/index.ts'
 
 afterEach(cleanup)
 
@@ -75,5 +77,15 @@ describe('语义图标适配', () => {
     expect(svg.getAttribute('viewBox')).toBe('0 0 24 24')
     expect(svg.getAttribute('width')).toBe('1em')
     expect(svg.querySelectorAll('path').length).toBeGreaterThan(0)
+  })
+
+  it('比例轮廓按宽高比绘制，自动选项使用虚线方形', () => {
+    const view = render(<AspectRatioGlyph ratio="16:9" className="ratio-glyph" />)
+    const glyph = view.container.querySelector('svg.ratio-glyph') as SVGElement
+    const rect = glyph.querySelector('rect') as SVGRectElement
+    expect(Number(rect.getAttribute('width'))).toBeGreaterThan(Number(rect.getAttribute('height')))
+    expect(rect.getAttribute('stroke-dasharray')).toBeNull()
+    const automatic = render(<AspectRatioGlyph ratio="1:1" auto />)
+    expect(automatic.container.querySelector('rect')?.getAttribute('stroke-dasharray')).toBe('2 2')
   })
 })

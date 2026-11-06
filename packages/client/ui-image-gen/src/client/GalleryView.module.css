@@ -84,11 +84,7 @@
 .studioForm { display: flex; flex-direction: column; gap: 12px; min-width: 0; overflow-y: auto; padding: 16px; border-left: 1px solid var(--dsw-alias-border-l2); font: var(--dsw-font-xs-13); }
 .studioForm p { color: var(--dsw-alias-label-secondary); }
 .studioForm > h2 { padding-bottom: 10px; border-bottom: 1px solid var(--dsw-alias-border-l2); }
-.studioMode { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
-.studioMode button { min-height: 36px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; background: transparent; color: var(--dsw-alias-label-secondary); cursor: pointer; font: var(--dsw-font-xs-strong-13); }
-.studioMode button[aria-pressed='true'] { border-color: var(--dsw-alias-state-business-primary); background: var(--dsw-alias-interactive-bg-active); color: var(--dsw-alias-state-business-primary); }
-.studioMode button:hover { background: var(--dsw-alias-interactive-bg-hover); }
-.studioMode button:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: 1px; }
+.studioMode { align-self: flex-start; }
 .studioModel { margin: 4px 0; font: var(--dsw-font-xxs-12); }
 .referenceArea { display: flex; flex-direction: column; gap: 8px; }
 .referenceHeading { display: flex; justify-content: space-between; align-items: center; font: var(--dsw-font-xs-strong-13); }

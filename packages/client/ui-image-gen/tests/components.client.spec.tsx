@@ -201,7 +201,7 @@ describe('图像交互组件', () => {
     expect(screen.queryByLabelText('尺寸映射（JSON）')).toBeNull()
     expect(screen.getByRole('button', { name: '文生图' }).getAttribute('aria-pressed')).toBe('true')
     expect(screen.queryByText(/API 已配置/u)).toBeNull()
-    expect(screen.getByRole('button', { name: '比例与分辨率' }).textContent).toContain('1:1 · 1K')
+    expect(screen.getByRole('button', { name: '比例' }).textContent).toContain('Auto · 自动')
     expect(screen.getByRole('button', { name: '生成质量' }).textContent).toBe('渠道默认')
     expect(screen.queryByText('渠道默认（不发送）')).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: '图生图' }))
@@ -216,7 +216,7 @@ describe('图像交互组件', () => {
     const prompt = screen.getByLabelText('画面描述')
     expect(prompt).toHaveProperty('value', '晨光')
     fireEvent.submit(screen.getByLabelText('画面描述').closest('form')!)
-    expect(generate).toHaveBeenCalledWith('晨光', 'one', { size: '1024x1024' })
+    expect(generate).toHaveBeenCalledWith('晨光', 'one', {})
     unmount()
     expect(show).toHaveBeenLastCalledWith(false)
   })
@@ -246,7 +246,7 @@ describe('图像交互组件', () => {
     await waitFor(() => { expect(screen.getByRole('button', { name: '移除参考图' })).toBeTruthy() })
     fireEvent.change(screen.getByLabelText('画面描述'), { target: { value: '换成蓝色背景' } })
     fireEvent.click(screen.getByRole('button', { name: '开始生成' }))
-    expect(generate).toHaveBeenCalledWith('换成蓝色背景', 'imported', { size: '1024x1024' })
+    expect(generate).toHaveBeenCalledWith('换成蓝色背景', 'imported', {})
   })
 
   it('按比例、分辨率和生成质量提交上游参数，并呈现原版结果操作区', () => {
@@ -275,10 +275,10 @@ describe('图像交互组件', () => {
     expect(screen.getByRole('button', { name: '图生图' }).getAttribute('aria-pressed')).toBe('true')
     fireEvent.click(screen.getByRole('button', { name: '再次生成' }))
     expect(screen.getByRole('button', { name: '文生图' }).getAttribute('aria-pressed')).toBe('true')
-    choose('比例与分辨率', /16:9.*2K/u)
+    choose('比例', /16:9/u)
     choose('生成质量', '高')
     fireEvent.submit(screen.getByLabelText('画面描述').closest('form')!)
-    expect(generate).toHaveBeenCalledWith('晨光', undefined, { size: '2048x1152', quality: 'high' })
+    expect(generate).toHaveBeenCalledWith('晨光', undefined, { size: '1536x864', quality: 'high' })
   })
 
   it('图库收藏、筛选与本机隐藏不改写会话目录', () => {

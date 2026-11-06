@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import {
-  Button, Icon, IconChevronLeftOutline14, IconChevronRightOutline14, IconCloseOutline16,
+  AspectRatioGlyph, Button, Icon, IconChevronLeftOutline14, IconChevronRightOutline14, IconCloseOutline16,
   IconCopyOutline16, IconDownloadOutline16, IconPlusOutline16, IconRefreshOutline16, IconSearchOutline16,
   IconSparkle16, IconTrashOutline16, Toast, writeClipboard,
 } from 'coding-client-ui-primitives'
@@ -107,8 +107,7 @@ export function GalleryView({ sessionId, closePage, useGallery, useStore, action
   const [editing, setEditing] = useState<string[]>([])
   const [zoom, setZoom] = useState(100)
   const [studioImageId, setStudioImageId] = useState<string | null>(null)
-  const [outputRatio, setOutputRatio] = useState('1:1')
-  const [resolution, setResolution] = useState('1K')
+  const [outputRatio, setOutputRatio] = useState('auto')
   const [quality, setQuality] = useState('default')
   const [toast, setToast] = useState<{ id: number; text: string } | null>(null)
   const [limit, setLimit] = useState(24)
@@ -153,10 +152,25 @@ export function GalleryView({ sessionId, closePage, useGallery, useStore, action
   const canGenerate = state.state?.available === true && state.phase === 'ready'
   const sizes = state.state?.sizes && Object.keys(state.state.sizes).length > 0 ? state.state.sizes : FALLBACK_SIZES
   const ratios = Object.keys(sizes)
-  const selectedRatio = ratios.includes(outputRatio) ? outputRatio : ratios[0] ?? '1:1'
-  const tiers = sizes[selectedRatio] ?? FALLBACK_SIZES['1:1'] ?? {}
-  const selectedResolution = Object.hasOwn(tiers, resolution) ? resolution : Object.keys(tiers)[0] ?? '1K'
-  const selectedSize = tiers[selectedResolution]
+  const selectedRatio = outputRatio === 'auto' || !ratios.includes(outputRatio) ? 'auto' : outputRatio
+  const selectedTiers = selectedRatio === 'auto' ? {} : sizes[selectedRatio] ?? {}
+  const selectedSize = selectedTiers['1K'] ?? Object.values(selectedTiers)[0]
+  const ratioShape = (ratio: string): string => {
+    if (ratio === '1:1') return t('square')
+    if (ratio === '3:2' || ratio === '4:3') return t('horizontal')
+    if (ratio === '2:3' || ratio === '3:4') return t('vertical')
+    if (ratio === '16:9') return t('wideScreen')
+    if (ratio === '9:16') return t('tallScreen')
+    return ''
+  }
+  const ratioOptions = [
+    { id: 'auto', label: `Auto · ${t('automatic')}`, icon: <AspectRatioGlyph ratio="1:1" auto /> },
+    ...ratios.map(ratio => ({
+      id: ratio,
+      label: `${ratio} · ${ratioShape(ratio)}`.trim(),
+      icon: <AspectRatioGlyph ratio={ratio} />,
+    })),
+  ]
   const maxReferences = state.state?.maxEditReferences ?? 1
   const studioItem = items.find(item => item.id === studioImageId)
   const select = (id: string) => {
@@ -203,9 +217,9 @@ export function GalleryView({ sessionId, closePage, useGallery, useStore, action
   const prepareRegeneration = (item: GalleryItem) => {
     setMode('generate')
     setPrompt(item.prompt)
-    const found = Object.entries(sizes).flatMap(([ratio, tiers]) => Object.entries(tiers).map(([tier, size]) => ({ ratio, tier, size })))
-      .find(entry => entry.size === (item.size ?? `${item.width}x${item.height}`))
-    if (found !== undefined) { setOutputRatio(found.ratio); setResolution(found.tier) }
+    const found = Object.entries(sizes)
+      .find(([, tiers]) => Object.values(tiers).includes(item.size ?? `${item.width}x${item.height}`))
+    setOutputRatio(found?.[0] ?? 'auto')
     setQuality(item.quality ?? 'default')
   }
   const copyImage = (item: GalleryItem) => {
@@ -365,9 +379,9 @@ export function GalleryView({ sessionId, closePage, useGallery, useStore, action
       </div>
       <form className={css.studioForm} onSubmit={submit}>
         <h2>{t('generationPanel')}</h2>
-        <div className={css.studioMode} role="group" aria-label={t('creationMode')}>
-          <button type="button" aria-pressed={mode === 'generate'} onClick={() => { setMode('generate') }}>{t('textToImage')}</button>
-          <button type="button" aria-pressed={mode === 'edit'} onClick={() => { setMode('edit') }}>{t('imageToImage')}</button>
+        <div className={`${css.tabs} ${css.studioMode}`} role="group" aria-label={t('creationMode')}>
+          <button type="button" className={mode === 'generate' ? css.activeTab : css.tab} aria-pressed={mode === 'generate'} onClick={() => { setMode('generate') }}>{t('textToImage')}</button>
+          <button type="button" className={mode === 'edit' ? css.activeTab : css.tab} aria-pressed={mode === 'edit'} onClick={() => { setMode('edit') }}>{t('imageToImage')}</button>
         </div>
         <p className={css.studioModel}>{t('configuredModel')}：{state.state?.model ?? t('noModel')}</p>
         {state.state?.available === false && <p role="status">{t('noService')}</p>}
@@ -406,17 +420,8 @@ export function GalleryView({ sessionId, closePage, useGallery, useStore, action
         <div className={css.outputFields}>
           <div className={css.outputField}>
             <span>{t('outputSize')}</span>
-            <SelectMenu label={t('outputSize')} value={`${selectedRatio}::${selectedResolution}`}
-              options={Object.entries(sizes).flatMap(([ratio, ratioTiers]) => Object.entries(ratioTiers).map(([tier, size]) => ({
-                id: `${ratio}::${tier}`,
-                label: `${ratio} ${ratio === '1:1' ? t('square') : ratio === '3:2' ? t('landscape') : ratio === '2:3' ? t('portrait') : ''} · ${tier} · ${size.replace('x', '×')}`,
-                displayLabel: `${ratio} · ${tier}`,
-              })))}
-              onChange={(value) => {
-                const [ratio, tier] = value.split('::')
-                if (ratio !== undefined) setOutputRatio(ratio)
-                if (tier !== undefined) setResolution(tier)
-              }} />
+            <SelectMenu label={t('outputSize')} value={selectedRatio} options={ratioOptions}
+              onChange={setOutputRatio} />
           </div>
           <div className={css.outputField}>
             <span>{t('generationQuality')}</span>
