@@ -96,8 +96,7 @@ export function apply(ctx: ClientContext): void {
       const imageSettings = settings.inject()
       return {
         hooks: {
-          gallery: gallery.view, imageCanvas: canvas.view,
-          imageSettings: imageSettings.hooks.imageSettings,
+          gallery: gallery.view, imageSettings: imageSettings.hooks.imageSettings,
         },
         saveSettings: imageSettings.save,
         show: (shown: boolean) => { gallery.show(shown) },
@@ -111,14 +110,6 @@ export function apply(ctx: ClientContext): void {
           return canvas.addImage(id, item.width, item.height)
         },
         url: (id: string) => gallery.url(id),
-        canvas: {
-          show: (shown: boolean) => { canvas.show(shown) },
-          refresh: () => { void canvas.refresh() },
-          add: (node: Parameters<typeof canvas.add>[0]) => canvas.add(node),
-          select: (id: string | null) => { canvas.select(id) },
-          move: (id: string, x: number, y: number) => canvas.move(id, x, y),
-          remove: () => canvas.remove(), clear: () => canvas.clear(), url: (id: string) => canvas.url(id),
-        },
       }
     },
   }, GalleryView))

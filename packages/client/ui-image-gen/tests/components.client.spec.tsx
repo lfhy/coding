@@ -215,7 +215,7 @@ describe('图像交互组件', () => {
     expect(refresh).toHaveBeenCalled()
   })
 
-  it('主内容画廊有三个子页，工作台可编辑并送入会话画布', () => {
+  it('主内容画廊有三个子页，工作台可编辑并送入生成流程', () => {
     const item = { id: 'one', prompt: '晨光', attachmentId: 'att', createdAt: 1, model: 'paint', mediaType: 'image/png', width: 256, height: 256 }
     const generate = vi.fn(async () => true)
     const place = vi.fn(async () => true)
@@ -234,6 +234,8 @@ describe('图像交互组件', () => {
     expect(screen.getAllByRole('tab').map(tab => tab.textContent)).toEqual(['工作台', '灵感', '图库'])
     expect(screen.queryByRole('heading', { name: '画廊' })).toBeNull()
     expect(screen.getByRole('tab', { name: '工作台' }).getAttribute('aria-selected')).toBe('true')
+    expect(screen.queryByRole('button', { name: '会话画布' })).toBeNull()
+    expect(screen.queryByRole('region', { name: 'AI 画布' })).toBeNull()
     expect(screen.getByRole('button', { name: '文生图' }).getAttribute('aria-pressed')).toBe('true')
     expect(screen.queryByText(/API 已配置/u)).toBeNull()
     expect(screen.getByRole('combobox', { name: '比例' })).toHaveProperty('value', '1:1')
@@ -246,9 +248,6 @@ describe('图像交互组件', () => {
     expect(place).toHaveBeenCalledWith('one')
     fireEvent.click(screen.getByRole('button', { name: '基于此图创作' }))
     expect(screen.getByRole('tab', { name: '工作台' }).getAttribute('aria-selected')).toBe('true')
-    fireEvent.click(screen.getByRole('button', { name: '会话画布' }))
-    expect(screen.getByRole('region', { name: 'AI 画布' })).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: '图片预览' }))
     expect(screen.getByRole('button', { name: '返回对话' })).toBeTruthy()
     const prompt = screen.getByLabelText('画面描述')
     expect(prompt).toHaveProperty('value', '晨光')

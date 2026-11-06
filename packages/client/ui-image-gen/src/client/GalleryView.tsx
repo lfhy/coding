@@ -12,7 +12,6 @@ import type { GalleryItem } from './wire.ts'
 import type { createGalleryUiStore } from './gallery-ui-store.ts'
 import { InspirationView } from './InspirationView.tsx'
 import { copyImageBlob } from './image-clipboard.ts'
-import { CanvasSurface } from './CanvasPanel.tsx'
 import { NS } from './locales.ts'
 import { validSizeTableShape } from './settings.ts'
 import css from './GalleryView.module.css'
@@ -87,8 +86,8 @@ function GalleryCard({ item, src, favorite, selected, managing, t, onPreview, on
 }
 
 /** 三个子页共用的主内容画廊；打开和关闭只改变页面视图，不生成模型轮次。 */
-export function GalleryView({ sessionId, closePage, useGallery, useImageCanvas, useImageSettings, useStore, actions,
-  show, refresh, generate, importReference, place, saveSettings: saveImageSettings, url, canvas, t }: GalleryViewProps) {
+export function GalleryView({ sessionId, closePage, useGallery, useImageSettings, useStore, actions,
+  show, refresh, generate, importReference, place, saveSettings: saveImageSettings, url, t }: GalleryViewProps) {
   const state = useGallery(snapshot => snapshot)
   const imageSettings = useImageSettings(snapshot => snapshot)
   const favorites = useStore(snapshot => snapshot.favorites)
@@ -109,7 +108,6 @@ export function GalleryView({ sessionId, closePage, useGallery, useImageCanvas, 
   const [editing, setEditing] = useState<string[]>([])
   const [zoom, setZoom] = useState(100)
   const [studioImageId, setStudioImageId] = useState<string | null>(null)
-  const [surface, setSurface] = useState<'preview' | 'canvas'>('preview')
   const [outputRatio, setOutputRatio] = useState('1:1')
   const [resolution, setResolution] = useState('1K')
   const [quality, setQuality] = useState('default')
@@ -143,7 +141,7 @@ export function GalleryView({ sessionId, closePage, useGallery, useImageCanvas, 
     if (previewId === null && lightboxFocus?.isConnected === true) lightboxFocus.focus()
   }, [previewId, lightboxFocus])
   useEffect(() => { setLimit(24); if (listRef.current !== null) listRef.current.scrollTop = 0 }, [tab, search, ratio, oldestFirst])
-  useEffect(() => { if (state.lastResultId !== null) { setStudioImageId(state.lastResultId); setSurface('preview') } }, [state.lastResultId])
+  useEffect(() => { if (state.lastResultId !== null) setStudioImageId(state.lastResultId) }, [state.lastResultId])
 
   const items = useMemo(() => state.items.filter(item => !hidden.includes(item.id)), [state.items, hidden])
   const visible = useMemo(() => items.filter((item) => {
@@ -192,7 +190,6 @@ export function GalleryView({ sessionId, closePage, useGallery, useImageCanvas, 
     setPrompt(item.prompt)
     setTab('studio')
     setStudioImageId(item.id)
-    setSurface('preview')
   }
   const copyPrompt = (item: GalleryItem) => {
     void writeClipboard(item.prompt).then((ok) => { announce(t(ok ? 'copiedPrompt' : 'copyFailed')) })
@@ -271,7 +268,7 @@ export function GalleryView({ sessionId, closePage, useGallery, useImageCanvas, 
     onSelect={() => { select(item.id) }} onEdit={() => { beginEdit(item) }} onCopy={() => { copyPrompt(item) }}
     onDownload={() => { download(item) }} onPlace={() => { addToCanvas(item) }} />
 
-  return <main className={css.root} aria-label={t('gallery')} data-image-gallery-page="" data-session-id={sessionId}>
+  return <main className={css.root} aria-label={t('gallery')} data-image-gallery-page="" data-session-id={sessionId} data-tab={tab}>
     <div className={css.tabsBar}>
       <nav className={css.tabs} role="tablist" aria-label={t('gallerySections')}>
         {(['studio', 'inspiration', 'gallery'] as const).map(key => <button key={key}
@@ -342,65 +339,55 @@ export function GalleryView({ sessionId, closePage, useGallery, useImageCanvas, 
         {items.slice().sort((a, b) => b.createdAt - a.createdAt).map(item => <button key={item.id} type="button"
           className={studioImageId === item.id ? css.recentSelected : css.recentItem}
           draggable onDragStart={(event) => { event.dataTransfer.setData('application/x-dsh-image-id', item.id) }}
-          onClick={() => { setStudioImageId(item.id); setSurface('preview'); setZoom(100) }}>
+          onClick={() => { setStudioImageId(item.id); setZoom(100) }}>
           <img src={url(item.id)} alt="" /><span>{item.prompt || t('image')}</span>
         </button>)}
       </div>
       <div className={css.studioCenter}>
         <div className={css.studioToolbar}>
-          <div className={css.surfaceSwitch} role="group" aria-label={t('workSurface')}>
-            <button type="button" aria-pressed={surface === 'preview'} onClick={() => { setSurface('preview') }}>{t('previewSurface')}</button>
-            <button type="button" aria-pressed={surface === 'canvas'} onClick={() => { setSurface('canvas') }}>{t('canvasSurface')}</button>
-          </div>
-          {surface === 'preview' && <div className={css.zoomControls} role="group" aria-label={t('zoom')}>
+          <div className={css.zoomControls} role="group" aria-label={t('zoom')}>
             <button type="button" onClick={() => { setZoom(100) }}>{t('fitWindow')}</button>
             <button type="button" aria-label={t('zoomOut')} title={t('zoomOut')} onClick={() => { setZoom(value => Math.max(25, value - 25)) }}>−</button>
             <span>{zoom}%</span>
             <button type="button" aria-label={t('zoomIn')} title={t('zoomIn')} onClick={() => { setZoom(value => Math.min(500, value + 25)) }}>+</button>
-          </div>}
+          </div>
           <div className={css.toolbarActions}>
-            {surface === 'preview' && studioItem !== undefined && <button type="button" onClick={() => {
+            {studioItem !== undefined && <button type="button" onClick={() => {
               setStudioImageId(null); setPrompt(''); setMode('generate'); setEditing([]); setZoom(100)
             }}><IconPlusOutline16 size={16} />{t('newGeneration')}</button>}
-            {surface === 'preview' && <button type="button" aria-label={t('fullscreen')} title={t('fullscreen')}
+            <button type="button" aria-label={t('fullscreen')} title={t('fullscreen')}
               disabled={studioItem === undefined} onClick={() => {
                 setLightboxFocus(document.activeElement instanceof HTMLElement ? document.activeElement : null)
                 setPreviewId(studioItem?.id ?? null)
-              }}><Icon name="model-vision" size={16} /></button>}
+              }}><Icon name="model-vision" size={16} /></button>
           </div>
         </div>
-        {surface === 'canvas' ? <div className={css.studioCanvas}>
-          <CanvasSurface shown useImageCanvas={useImageCanvas}
-            show={canvas.show} refresh={canvas.refresh} add={canvas.add} select={canvas.select} move={canvas.move}
-            remove={canvas.remove} clear={canvas.clear} url={canvas.url} t={t} />
-        </div> : <>
-          <div className={css.studioCanvas}>
-            {state.generating ? <p className={css.studioEmpty} role="status"><IconSparkle16 size={28} />{t('generating')}</p>
-              : studioItem === undefined ? <p className={css.studioEmpty}><Icon name="model-vision" size={32} />{t('studioHint')}</p>
-                : <img className={css.previewImage} style={{ '--dsh-image-zoom': zoom / 100 } as React.CSSProperties}
-                  src={url(studioItem.id)} alt={studioItem.prompt || t('image')} />}
+        <div className={css.studioCanvas}>
+          {state.generating ? <p className={css.studioEmpty} role="status"><IconSparkle16 size={28} />{t('generating')}</p>
+            : studioItem === undefined ? <p className={css.studioEmpty}><Icon name="model-vision" size={32} />{t('studioHint')}</p>
+              : <img className={css.previewImage} style={{ '--dsh-image-zoom': zoom / 100 } as React.CSSProperties}
+                src={url(studioItem.id)} alt={studioItem.prompt || t('image')} />}
+        </div>
+        {studioItem !== undefined && <div className={css.result}>
+          <div className={css.resultStrip}><strong>{t('latestResult')}</strong><div>
+            <button type="button" onClick={() => { beginEdit(studioItem) }}><IconSparkle16 size={15} />{t('continueEdit')}</button>
+            <button type="button" onClick={() => { prepareRegeneration(studioItem) }}><IconRefreshOutline16 size={15} />{t('regenerate')}</button>
+          </div></div>
+          <div className={css.resultActions}>
+            <p title={studioItem.prompt}>{studioItem.prompt || t('image')}</p>
+            <div>
+              <button type="button" aria-pressed={favorites.includes(studioItem.id)} onClick={() => { actions.toggleFavorite(studioItem.id) }}>
+                <Icon name="favorite" size={15} />{t(favorites.includes(studioItem.id) ? 'removeFavorite' : 'addFavorite')}</button>
+              <button type="button" onClick={() => { copyImage(studioItem) }}><IconCopyOutline16 size={15} />{t('copyImage')}</button>
+              <button type="button" onClick={() => { download(studioItem) }}><IconDownloadOutline16 size={15} />{t('download')}</button>
+              <button type="button" onClick={() => { setSelected(new Set([studioItem.id])); setConfirmDelete(true) }}>
+                <IconTrashOutline16 size={15} />{t('hideSelected')}</button>
+            </div>
           </div>
-          {studioItem !== undefined && <div className={css.result}>
-            <div className={css.resultStrip}><strong>{t('latestResult')}</strong><div>
-              <button type="button" onClick={() => { beginEdit(studioItem) }}><IconSparkle16 size={15} />{t('continueEdit')}</button>
-              <button type="button" onClick={() => { prepareRegeneration(studioItem) }}><IconRefreshOutline16 size={15} />{t('regenerate')}</button>
-            </div></div>
-            <div className={css.resultActions}>
-              <p title={studioItem.prompt}>{studioItem.prompt || t('image')}</p>
-              <div>
-                <button type="button" aria-pressed={favorites.includes(studioItem.id)} onClick={() => { actions.toggleFavorite(studioItem.id) }}>
-                  <Icon name="favorite" size={15} />{t(favorites.includes(studioItem.id) ? 'removeFavorite' : 'addFavorite')}</button>
-                <button type="button" onClick={() => { copyImage(studioItem) }}><IconCopyOutline16 size={15} />{t('copyImage')}</button>
-                <button type="button" onClick={() => { download(studioItem) }}><IconDownloadOutline16 size={15} />{t('download')}</button>
-                <button type="button" onClick={() => { setSelected(new Set([studioItem.id])); setConfirmDelete(true) }}>
-                  <IconTrashOutline16 size={15} />{t('hideSelected')}</button>
-              </div>
-            </div>
-            <div className={css.resultMeta}>
-              {readableDate(studioItem.createdAt)} · {studioItem.model} · {studioItem.width} × {studioItem.height}
-            </div>
-          </div>}
-        </>}
+          <div className={css.resultMeta}>
+            {readableDate(studioItem.createdAt)} · {studioItem.model} · {studioItem.width} × {studioItem.height}
+          </div>
+        </div>}
       </div>
       <form className={css.studioForm} onSubmit={submit}>
         <h2>{t('generationPanel')}</h2>

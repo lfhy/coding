@@ -1,7 +1,6 @@
 /** 单会话画廊：旧读取可取消，新图提交后重新读取 Host 权威目录。 */
 import { createSnapshotStore, type SnapshotStore } from 'coding-client-runtime/client'
 import { generateImage, imageUrl, importReference, readGallery, readState, type GalleryItem, type ImageOutput, type ImageState } from './wire.ts'
-import type { CanvasViewState } from './canvas.ts'
 import type { ImageSettingsFace } from './settings.ts'
 
 /** 只保留图片元数据与读取状态，原始字节由浏览器访问同会话受限地址。 */
@@ -19,7 +18,6 @@ export interface GalleryViewState {
 export interface GalleryFace {
   hooks: {
     gallery: SnapshotStore<GalleryViewState>
-    imageCanvas: SnapshotStore<CanvasViewState>
     imageSettings: ImageSettingsFace['hooks']['imageSettings']
   }
   show: (shown: boolean) => void
@@ -29,16 +27,6 @@ export interface GalleryFace {
   place: (imageId: string) => Promise<boolean>
   saveSettings: ImageSettingsFace['save']
   url: (id: string) => string
-  canvas: {
-    show: (shown: boolean) => void
-    refresh: () => void
-    add: (node: import('./wire.ts').CanvasNode) => Promise<boolean>
-    select: (id: string | null) => void
-    move: (id: string, x: number, y: number) => Promise<boolean>
-    remove: () => Promise<boolean>
-    clear: () => Promise<boolean>
-    url: (id: string) => string
-  }
 }
 
 /** 每个 Session 独占一个目录控制器，隐藏与卸载均取消请求。 */
