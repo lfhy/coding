@@ -1251,7 +1251,6 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     slotInject: '',
     declaredBy: 'an entry in \'conversation.session.header\' (client-ui-conversation), so it exists while that entry is mounted',
     occupants: [
-      'client-ui-image-gen EntryButton id \'image-generation\'',
       'client-ui-open-in-app OpenInAppAction id \'open-in-app\'',
       'client-ui-open-in-app WorkbenchPanelToggles id \'workbench-panels\'',
       'session-log-export SessionLogDownloadContribution id \'session-log-download\'',
@@ -1868,7 +1867,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'none',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'sidebar.footer.action\', () => ctx.slots.register(\n      { name: \'sidebar.footer.action\', id: \'my-entry\', order: 100, label: \'My entry\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-sidebar/src/client/contract/slots.ts:43',
+    source: 'packages/client/ui-sidebar/src/client/contract/slots.ts:42',
   },
   {
     key: 'sidebar.right.pane.tab',
@@ -1973,7 +1972,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'shadows-shipped-ui',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'sidebar.settings\', () => ctx.slots.register(\n      { name: \'sidebar.settings\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-sidebar/src/client/contract/slots.ts:37',
+    source: 'packages/client/ui-sidebar/src/client/contract/slots.ts:36',
   },
   {
     key: 'sidebar.top.entry',
@@ -2018,7 +2017,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'none',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'sidebar.top.entry\', () => ctx.slots.register(\n      { name: \'sidebar.top.entry\', id: \'my-entry\', order: 100, label: \'My entry\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-sidebar/src/client/contract/slots.ts:22',
+    source: 'packages/client/ui-sidebar/src/client/contract/slots.ts:21',
   },
   {
     key: 'sidebar.workspaces',
@@ -2028,7 +2027,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     doc: 'The workspace/session browsing region: section header, search, the\ngrouped/flat session list, and every workspace dialog. Declared by this\npackage\'s \'sidebar\' entry (declaring is claiming); ui-workspace\nregisters the browser.',
     registerOptions: [],
     ownerProps: [
-      '/**\n * 浏览区域的 owner share：壳层与区域之间唯一跨越边界的事实。业务数据与动作走区域\n * 自己的 inject。\n */\nexport interface SidebarSectionOwnerProps {\n  /** 壳层折叠状态：true 渲染完整浏览器，false 渲染 56px rail 的图标列。 */\n  wide: boolean\n  /** rail 图标请求展开；浏览器跟随 wide 翻转处理焦点。 */\n  expandSidebar: () => void\n  /** 宽侧栏的标题行用它渲染收起按钮；已展开时才会真正收起。 */\n  collapseSidebar: () => void\n}',
+      '/**\n * 浏览区域的 owner share：壳层与区域之间唯一跨越边界的事实。业务数据与动作走区域\n * 自己的 inject。\n */\nexport interface SidebarSectionOwnerProps {\n  /** 壳层折叠状态：true 渲染完整浏览器，false 渲染 56px rail 的图标列。 */\n  wide: boolean\n  /** rail 图标请求展开；浏览器跟随 wide 翻转处理焦点。 */\n  expandSidebar: () => void\n  /** 宽侧栏的标题行用它渲染收起按钮；已展开时才会真正收起。 */\n  collapseSidebar: () => void\n  /** 独立主内容页打开时，会话行不显示选中态。 */\n  conversationVisible: boolean\n  /** 返回对话视图，不改变当前会话。 */\n  showConversation: () => void\n}',
     ],
     ownerPropsReferences: [],
     standardProps: [
@@ -2044,7 +2043,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'shadows-shipped-ui',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'sidebar.workspaces\', () => ctx.slots.register(\n      { name: \'sidebar.workspaces\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-sidebar/src/client/contract/slots.ts:29',
+    source: 'packages/client/ui-sidebar/src/client/contract/slots.ts:28',
   },
   {
     key: 'sidebar.workspaces.directoryFlow',
@@ -2108,6 +2107,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     slotInject: '',
     declaredBy: 'an entry in \'conversation.chat.node\' (client-ui-tool), so it exists while that entry is mounted',
     occupants: [
+      'client-ui-image-gen ImageToolRow',
       'client-ui-skill SkillRow key \'skill\'',
       'client-ui-tool AskQuestionRow key \'ask_user_question\'',
       'client-ui-tool BashRow key \'bash\'',

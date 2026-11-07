@@ -1,6 +1,6 @@
 # coding-client-ui-sidebar
 
-侧边栏外壳插件：负责顶部入口区（新对话、可选整行入口与设置）、布局持有的折叠控件、可感知滚动的区域 seat，以及页脚动作 seat。[ui-workspace](../ui-workspace/README.md) 持有渲染到 `sidebar.workspaces` 的 Workspace 与 Session 浏览器；本包既不派生其中的行，也不持有其视图偏好。折叠到布局拥有的 56px 轨道仍属于本地呈现行为。约定：slot 系统标准。
+侧边栏外壳插件：负责顶部入口区（新对话、可选整行入口与设置）、布局持有的折叠控件、可感知滚动的区域 seat，以及页脚动作 seat。[ui-workspace](../ui-workspace/README.md) 持有渲染到 `sidebar.workspaces` 的 Workspace 与 Session 浏览器，包括会话行选中与返回对话行为；本包既不派生其中的行，也不持有其视图偏好。折叠到布局拥有的 56px 轨道仍属于本地呈现行为。约定：slot 系统标准。
 
 展开侧栏依次是新对话行、`sidebar.top.entry` 可选 list slot 的整行入口、设置行。三者使用相同的行几何（42px 高、12px 圆角、透明底、悬停填充，图标贴左、文案紧随）。可选入口在欢迎页也持续显示；注册者收到 `wide`，收起的 56px rail 中依次排列新对话、可选入口、展开按钮、设置，入口须适应 36px 图标盒。未注册或不可用的入口不占空间。侧栏不渲染品牌字标。
 
@@ -12,7 +12,7 @@
 
 桌面壳注入窗口拖拽样式时，展开侧栏的新对话行空白处与 macOS 交通灯右侧顶部空白可拖动窗口；交通灯本身、新对话入口、操作按钮和折叠 rail 内的交通灯区域不接管原生拖拽。浏览器缺省无拖拽区域。
 
-`SidebarRootComponentProps` 组合布局 owner share、全局 `useSessions` 和 `useWorkspaces` 钩子、`sidebar.top.entry` 这个 list slot、`sidebar.workspaces` 与 `sidebar.settings` 子 slot，以及注入的 `startSession` 与侧边栏切换回调。交给浏览区域的 owner share 只有折叠状态与两个折叠动作，区域自己不读壳层的类名。这里没有插件 store。
+`SidebarRootComponentProps` 组合布局 owner share、全局 `useSessions` 和 `useWorkspaces` 钩子、`sidebar.top.entry` 这个 list slot、`sidebar.workspaces` 与 `sidebar.settings` 子 slot，以及注入的新会话、侧栏切换、页面投影和返回对话能力。交给浏览区域的 owner share 包含折叠状态与动作、对话可见状态和返回对话回调，区域自己不读壳层的类名。这里没有插件 store。
 
 实时收起时，外壳会把展开内容固定在当前宽度，并用 150ms 将其淡出。随后，轨道里的控件——新对话、可选入口、侧栏展开、`sidebar.settings` 的设置图标，以及通过 `sidebar.workspaces` 渲染的添加和搜索——共用一次 150ms 的淡入和 49px 左移，在布局的 300ms 栏滑动结束时一起进入 56px 轨道；每个 36px 控件盒都会沿同一条路径到达轨道左侧 10px 的内边距。页脚动作 seat 只共用淡入时序，不发生横向位移。页面初始即为收起状态时会静态渲染轨道；减少动态效果模式会禁用两段过渡。
 

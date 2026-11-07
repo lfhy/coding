@@ -38,6 +38,7 @@ function mountShell({ collapsed = false, width = 300, welcomeActionsVisible = fa
       welcomeActionsVisible={current.welcomeActionsVisible}
       useSessions={neverHook} useWorkspaces={neverHook}
       startSession={startSession} toggleSidebar={toggleSidebar} t={t}
+      showConversation={vi.fn()} usePage={selector => selector(null)}
       renderSlot={((
         key: string,
         owner: SidebarTopEntryOwnerProps | SidebarFooterActionOwnerProps
@@ -136,6 +137,7 @@ describe('SidebarRoot shell', () => {
       welcomeActionsVisible={false}
       useSessions={neverHook} useWorkspaces={neverHook}
       startSession={vi.fn()} toggleSidebar={vi.fn()} t={t}
+      showConversation={vi.fn()} usePage={selector => selector(null)}
       renderSlot={((
         _key: string,
         _owner: unknown,

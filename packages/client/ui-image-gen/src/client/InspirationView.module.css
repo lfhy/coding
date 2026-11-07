@@ -4,10 +4,9 @@
 .heading h2 { margin: 3px 0 4px; font: var(--dsw-font-s-strong-14); }
 .heading p, .heading > span { margin: 0; color: var(--dsw-alias-label-secondary); font: var(--dsw-font-xs-13); }
 .filters { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 24px; border-bottom: 1px solid var(--dsw-alias-border-l2); }
-.filters label { display: flex; align-items: center; gap: 7px; color: var(--dsw-alias-label-secondary); font: var(--dsw-font-xs-13); }
-.filters select, .search input { height: 32px; min-width: 120px; padding: 0 8px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-label-primary); font: var(--dsw-font-xs-13); }
-.filters select:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: 1px; }
-.search { flex: 1; min-width: 220px; max-width: 480px; padding: 0 8px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; background: var(--dsw-alias-bg-layer-1); }
+.filterLabel { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 7px; flex: 0 1 240px; min-width: 0; max-width: 100%; color: var(--dsw-alias-label-secondary); font: var(--dsw-font-xs-13); }
+.search input { height: 32px; min-width: 120px; padding: 0 8px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-label-primary); font: var(--dsw-font-xs-13); }
+.search { display: flex; align-items: center; gap: 7px; flex: 1; min-width: 220px; max-width: 480px; padding: 0 8px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-label-secondary); font: var(--dsw-font-xs-13); }
 .search:focus-within { outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: 1px; }
 .search input { flex: 1; min-width: 0; width: 100%; padding: 0; border: 0; outline: none; }
 .content { display: grid; grid-template-columns: minmax(0, 1fr) minmax(270px, 320px); flex: 1; min-height: 0; }

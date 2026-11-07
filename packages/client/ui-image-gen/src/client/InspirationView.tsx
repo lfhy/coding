@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react'
 import { Button, Icon, IconSearchOutline16, IconSparkle16 } from 'coding-client-ui-primitives'
 import { inspirationCases, type InspirationCase } from './inspiration.ts'
 import type { ImageKey } from './locales.ts'
+import { SelectMenu } from './SelectMenu.tsx'
 import css from './InspirationView.module.css'
 
 interface InspirationViewProps {
@@ -47,16 +48,19 @@ export function InspirationView({ favorites, favoritesOnly = false, onFavorite, 
         <input value={query} onChange={(event) => { setQuery(event.target.value); setLimit(48) }}
           placeholder={t('searchInspiration')} />
       </label>
-      <label>{t('sourceFilter')} <select value={source}
-        onChange={(event) => { setSource(event.target.value); setCategory('all'); setLimit(48) }}>
-        <option value="all">{t('allSources')}</option>
-        <option value="awesome-gpt-image-2">GPT Image 2</option>
-        <option value="handraw-style">{t('handdraw')}</option>
-      </select></label>
-      <label>{t('categoryFilter')} <select value={category} onChange={(event) => { setCategory(event.target.value); setLimit(48) }}>
-        <option value="all">{t('allCategories')}</option>
-        {categories.map(value => <option key={value} value={value}>{value}</option>)}
-      </select></label>
+      <div className={css.filterLabel}><span>{t('sourceFilter')}</span>
+        <SelectMenu label={t('sourceFilter')} value={source}
+          onChange={(value) => { setSource(value); setCategory('all'); setLimit(48) }}
+          options={[
+            { id: 'all', label: t('allSources') }, { id: 'awesome-gpt-image-2', label: 'GPT Image 2' },
+            { id: 'handraw-style', label: t('handdraw') },
+          ]} />
+      </div>
+      <div className={css.filterLabel}><span>{t('categoryFilter')}</span>
+        <SelectMenu label={t('categoryFilter')} value={category}
+          onChange={(value) => { setCategory(value); setLimit(48) }}
+          options={[{ id: 'all', label: t('allCategories') }, ...categories.map(value => ({ id: value, label: value }))]} />
+      </div>
     </div>
     <div className={css.content}>
       <div className={css.list}>

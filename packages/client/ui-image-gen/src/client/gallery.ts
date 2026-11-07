@@ -35,12 +35,31 @@ export class GalleryController {
   private disposed = false
   private poll: ReturnType<typeof setInterval> | undefined
   private inFlight: Promise<void> | undefined
+  private requestedAttachmentId: string | undefined
 
   private active(): boolean { return this.shown && !this.disposed }
   private mounted(): boolean { return !this.disposed }
 
   /** @param sessionId - 图片所属的会话。 */
   constructor(readonly sessionId: string) {}
+
+  /**
+   * 从工具结果定位同会话图片；目录尚未读取时，在后续刷新成功后选中。
+   * @param attachmentId - 工具结果已保存的附件标识，不接受外部图片地址。
+   * @returns 无返回值；未知附件保持等待，不替换为其他图片。
+   */
+  openImage(attachmentId: string): void {
+    if (this.disposed) return
+    this.requestedAttachmentId = attachmentId
+    this.selectRequestedImage()
+  }
+
+  private selectRequestedImage(): void {
+    const item = this.view.getSnapshot().items.find(entry => entry.attachmentId === this.requestedAttachmentId)
+    if (item === undefined) return
+    this.requestedAttachmentId = undefined
+    this.view.update((draft) => { draft.lastResultId = item.id; draft.lastElapsedMs = null })
+  }
 
   /** 组件隐藏时取消请求；返回后重取，以包含其他入口产生的新图片。 */
   show(shown: boolean): void {
@@ -78,6 +97,7 @@ export class GalleryController {
       const [state, gallery] = await reading
       if (controller.signal.aborted || generation !== this.generation) return
       this.view.update((draft) => { draft.phase = 'ready'; draft.state = state; draft.items = gallery.items })
+      this.selectRequestedImage()
     } catch {
       if (generation !== this.generation || controller.signal.aborted) return
       this.view.update((draft) => { draft.phase = 'error' })

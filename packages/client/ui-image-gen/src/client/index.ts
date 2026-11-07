@@ -4,11 +4,9 @@ import type { ConnectionHandle } from 'coding-api-remotes/client'
 import type {} from 'coding-client-locale/client'
 import type {} from 'coding-client-ui-settings/client'
 import type {} from 'coding-client-ui-layout/client'
-import type {} from 'coding-client-ui-conversation/client'
 import type {} from 'coding-client-ui-sidebar/client'
 import type {} from 'coding-client-ui-tool/client'
 import { CanvasController } from './canvas.ts'
-import { EntryButton, type EntryFace } from './EntryButton.tsx'
 import { GalleryController } from './gallery.ts'
 import { GalleryView } from './GalleryView.tsx'
 import { ImageToolRow } from './ImageToolRow.tsx'
@@ -18,6 +16,7 @@ import { createGalleryNavigation } from './navigation.ts'
 import { SettingsSection } from './SettingsSection.tsx'
 import { SidebarEntry } from './SidebarEntry.tsx'
 import { decodeImageSettings, ImageSettingsController, SETTINGS_NAMESPACE } from './settings.ts'
+import type { GalleryItem } from './wire.ts'
 
 declare module 'coding-client-ui-slots' {
   interface LocaleNamespaceMap {
@@ -83,7 +82,11 @@ export function apply(ctx: ClientContext): void {
       yield ctx.slots.register({
         name: 'tool.call.toolview', key, locale: NS,
         inject: (sessionId: SessionId) => ({
-          openInStudio: () => { ctx.sessions.open(sessionId); ctx.layout.openPage(GALLERY_PAGE, sessionId) },
+          openInStudio: (attachmentId: GalleryItem['attachmentId']) => {
+            galleryFor(sessionId).openImage(attachmentId)
+            ctx.sessions.open(sessionId)
+            ctx.layout.openPage(GALLERY_PAGE, sessionId)
+          },
         }),
       }, ImageToolRow)
     }
@@ -97,10 +100,6 @@ export function apply(ctx: ClientContext): void {
     name: 'sidebar.top.entry', id: 'image-generation', order: 20, locale: NS,
     inject: () => ({ hooks: { imageEntrySettings: settings.view, galleryPage: ctx.layout.page }, openGallery }),
   }, SidebarEntry))
-  ctx.slots.inject('conversation.session.header.utilities', () => ctx.slots.register({
-    name: 'conversation.session.header.utilities', id: 'image-generation', order: 15, locale: NS,
-    inject: (): EntryFace => ({ hooks: { imageEntrySettings: settings.view }, openGallery }),
-  }, EntryButton))
   ctx.slots.inject('shell.page', () => ctx.slots.register({
     name: 'shell.page', key: GALLERY_PAGE, locale: NS, store: galleryUi,
     inject: (sessionId: SessionId) => {

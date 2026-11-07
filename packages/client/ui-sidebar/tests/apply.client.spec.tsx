@@ -9,7 +9,10 @@ import type { SidebarRootInjected } from 'coding-client-ui-sidebar/client'
 async function bench(declare = true) {
   const ctx = new Context()
   await ctx.plugin(SlotRegistry).await()
-  const layout = { toggleSidebar: vi.fn() }
+  const layout = {
+    toggleSidebar: vi.fn(), closePage: vi.fn(),
+    page: { getSnapshot: () => null, subscribe: () => () => {} },
+  }
   const workspaces = { startSession: vi.fn() }
   const sessions = { open: vi.fn(), clear: vi.fn() }
   ctx.provide('layout', layout)
@@ -46,7 +49,10 @@ describe('ui-sidebar apply', () => {
     expect(b.slots.entries('sidebar')[0]!.locale).toBe('sidebar')
     expect(b.slots.entries('conversation.hero.actions')).toEqual([])
     const injected = (b.slots.entries('sidebar')[0]!.inject as () => SidebarRootInjected)()
-    expect(Object.keys(injected)).toEqual(['startSession', 'toggleSidebar'])
+    expect(Object.keys(injected)).toEqual(['startSession', 'toggleSidebar', 'showConversation', 'hooks'])
+    expect(injected.hooks.page).toBe(b.layout.page)
+    injected.showConversation()
+    expect(b.layout.closePage).toHaveBeenCalledOnce()
     // 两个入口都委托给运行时共享的新建对话操作。
     injected.startSession('workspace' as never)
     expect(b.workspaces.startSession).toHaveBeenCalledWith('workspace')

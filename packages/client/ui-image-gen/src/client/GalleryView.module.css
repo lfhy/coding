@@ -14,13 +14,11 @@
 .activeTab { background: var(--dsw-alias-button-elevated-fill); color: var(--dsw-alias-label-primary); box-shadow: var(--dsw-shadow-lv1); }
 .tab:focus-visible, .activeTab:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: -2px; }
 .filters { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 10px 20px; border-bottom: 1px solid var(--dsw-alias-border-l2); }
-.filterLabel { display: flex; align-items: center; gap: 6px; color: var(--dsw-alias-label-secondary); font: var(--dsw-font-xs-13); }
-.filterLabel select, .search input { height: 32px; box-sizing: border-box; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-label-primary); font: var(--dsw-font-xs-13); }
-.filterLabel select { padding: 0 8px; cursor: pointer; }
+.filterLabel { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 6px; flex: 0 1 190px; min-width: 0; max-width: 100%; color: var(--dsw-alias-label-secondary); font: var(--dsw-font-xs-13); }
+.search input { height: 32px; box-sizing: border-box; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-label-primary); font: var(--dsw-font-xs-13); }
 .search { display: inline-flex; align-items: center; gap: 7px; flex: 1; min-width: 180px; max-width: 360px; height: 32px; padding-left: 9px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; color: var(--dsw-alias-label-secondary); background: var(--dsw-alias-bg-layer-1); }
 .search:focus-within { outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: 1px; }
 .search input { flex: 1; min-width: 0; height: 30px; padding: 0 8px 0 0; border: 0; outline: 0; }
-.filterLabel select:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: 1px; }
 .filters > .iconButton { margin-left: auto; }
 .manage, .manageActive { flex: none; height: 32px; padding: 0 10px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; background: transparent; color: var(--dsw-alias-label-primary); cursor: pointer; font: var(--dsw-font-xs-13); }
 .manage:hover, .manageActive { background: var(--dsw-alias-interactive-bg-hover); }

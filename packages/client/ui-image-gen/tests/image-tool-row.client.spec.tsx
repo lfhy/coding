@@ -93,12 +93,23 @@ describe('对话图片工具', () => {
     expect(screen.queryByRole('dialog')).toBeNull()
   })
 
-  it('终态保留在画图中查看入口，并调用所属会话的打开回调', async () => {
+  it('下载、画图入口和调用详情同排放在图片下方，耗时不混入操作栏', async () => {
     const openInStudio = vi.fn()
-    render(<ImageToolRow {...props(result(), { openInStudio })} />)
+    const inspect = vi.fn()
+    render(<ImageToolRow {...props(result(), { openInStudio, inspect })} />)
     await screen.findByRole('img')
-    fireEvent.click(screen.getByRole('button', { name: '在画图中查看' }))
+    const download = screen.getByRole('button', { name: '下载图片' })
+    const actions = download.parentElement!
+    expect(Array.from(actions.querySelectorAll('button'), button => button.textContent))
+      .toEqual(['下载图片', '在画图中查看', '调用详情'])
+    expect(actions.previousElementSibling).toBe(screen.getByRole('button', { name: '查看大图' }))
+    expect(within(actions).queryByText('耗时 4.0 秒')).toBeNull()
+    expect(screen.getByText('耗时 4.0 秒')).toBeTruthy()
+    fireEvent.click(within(actions).getByRole('button', { name: '在画图中查看' }))
     expect(openInStudio).toHaveBeenCalledOnce()
+    expect(openInStudio).toHaveBeenCalledWith(attachment().attachmentId)
+    fireEvent.click(within(actions).getByRole('button', { name: '调用详情' }))
+    expect(inspect).toHaveBeenCalledOnce()
   })
 
   it.each([
@@ -125,16 +136,25 @@ describe('对话图片工具', () => {
 
   it('批量结果直接展示每张成功图片，并按请求数量说明部分失败', async () => {
     const loadImage = vi.fn(async (ref: ImageAttachmentRef) => `blob:${ref.attachmentId}`)
+    const openInStudio = vi.fn()
     const block = result({
       call: { name: 'generate_images', argsRaw: JSON.stringify({ prompts: ['晨光', '夜景', '森林'] }) },
       content: [image('a'), { type: 'text', text: '2 images generated' }, image('b')],
     })
-    render(<ImageToolRow {...props(block, { toolName: 'generate_images', loadImage })} />)
+    render(<ImageToolRow {...props(block, { toolName: 'generate_images', loadImage, openInStudio, inspect: vi.fn() })} />)
     await waitFor(() => { expect(screen.getAllByRole('img')).toHaveLength(2) })
     expect(loadImage).toHaveBeenCalledWith(attachment('a'))
     expect(loadImage).toHaveBeenCalledWith(attachment('b'))
     expect(screen.getByText('1 张图片生成失败')).toBeTruthy()
     expect(screen.queryByText('正在创建图像')).toBeNull()
+    const downloads = screen.getAllByRole('button', { name: '下载图片' })
+    expect(downloads).toHaveLength(2)
+    expect(screen.getAllByRole('button', { name: '在画图中查看' })).toHaveLength(1)
+    expect(screen.getAllByRole('button', { name: '调用详情' })).toHaveLength(1)
+    expect(within(downloads[1]!.parentElement!).getByRole('button', { name: '在画图中查看' })).toBeTruthy()
+    expect(within(downloads[1]!.parentElement!).getByRole('button', { name: '调用详情' })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: '在画图中查看' }))
+    expect(openInStudio).toHaveBeenCalledWith(attachment('b').attachmentId)
   })
 
   it.each([
@@ -162,9 +182,12 @@ describe('对话图片工具', () => {
     const loadImage = vi.fn()
       .mockRejectedValueOnce(new Error('offline'))
       .mockResolvedValueOnce('blob:retried')
-    render(<ImageToolRow {...props(result(), { loadImage })} />)
+    const inspect = vi.fn()
+    render(<ImageToolRow {...props(result(), { loadImage, inspect })} />)
     const retry = await screen.findByRole('button', { name: /重试/u })
     expect(screen.queryByText('正在创建图像')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: '调用详情' }))
+    expect(inspect).toHaveBeenCalledOnce()
     fireEvent.click(retry)
     await waitFor(() => { expect(screen.getByRole('img').getAttribute('src')).toBe('blob:retried') })
     expect(loadImage).toHaveBeenCalledTimes(2)

@@ -32,9 +32,12 @@ export function SidebarRoot({
   width,
   startSession,
   toggleSidebar,
+  showConversation,
+  usePage,
   t,
   renderSlot,
 }: SidebarRootComponentProps) {
+  const conversationVisible = usePage(page => page === null)
   // 折叠动画期间宽内容保持挂载（用 .wide 淡出），落定后卸载，展开时立即重新挂载。
   const [settled, setSettled] = useState(collapsed)
   useEffect(() => {
@@ -152,6 +155,8 @@ export function SidebarRoot({
       <div className={css.regionArea}>
         {renderSlot('sidebar.workspaces', {
           wide,
+          conversationVisible,
+          showConversation,
           expandSidebar: () => { if (collapsed) toggleSidebar() },
           // 宽侧栏的收起按钮由浏览区域的标题行渲染；已收起时点击不重复收起。
           collapseSidebar: () => { if (!collapsed) toggleSidebar() },

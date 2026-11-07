@@ -3,7 +3,6 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { bindSnapshotSelector } from 'coding-client-test-runtime'
 import { CanvasPanel, type CanvasPanelProps } from '../src/client/CanvasPanel.tsx'
-import { EntryButton } from '../src/client/EntryButton.tsx'
 import { GalleryView, type GalleryViewProps } from '../src/client/GalleryView.tsx'
 import { createGalleryUiStore } from '../src/client/gallery-ui-store.ts'
 import { SettingsSection, type SettingsSectionProps } from '../src/client/SettingsSection.tsx'
@@ -327,6 +326,24 @@ describe('图像交互组件', () => {
       url: (id: string) => `/api/image-gen/image?sessionId=test&id=${id}`,
     } as unknown as GalleryViewProps)} />)
     fireEvent.click(screen.getByRole('tab', { name: '图库' }))
+    expect(screen.queryByRole('combobox')).toBeNull()
+    expect(screen.getByRole('button', { name: '比例' }).textContent).toBe('全部比例')
+    expect(screen.getByRole('button', { name: '排序' }).textContent).toBe('最新生成')
+    choose('比例', '1:1')
+    expect(screen.getByRole('button', { name: '查看大图：晨光' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: '查看大图：暮色' })).toBeNull()
+    choose('比例', '横向')
+    expect(screen.getByRole('button', { name: '查看大图：暮色' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: '查看大图：晨光' })).toBeNull()
+    choose('比例', '纵向')
+    expect(screen.getByText('未找到匹配结果')).toBeTruthy()
+    choose('比例', '全部比例')
+    choose('排序', '最早生成')
+    expect(screen.getAllByRole('button', { name: /^查看大图：/u }).map(button => button.getAttribute('aria-label')))
+      .toEqual(['查看大图：暮色', '查看大图：晨光'])
+    choose('排序', '最新生成')
+    expect(screen.getAllByRole('button', { name: /^查看大图：/u }).map(button => button.getAttribute('aria-label')))
+      .toEqual(['查看大图：晨光', '查看大图：暮色'])
     fireEvent.click(screen.getAllByRole('button', { name: '加入收藏' })[0]!)
     fireEvent.click(screen.getByRole('button', { name: '收藏' }))
     expect(screen.getByText('共 1 张生成图片')).toBeTruthy()
@@ -342,6 +359,66 @@ describe('图像交互组件', () => {
     fireEvent.click(screen.getByRole('button', { name: '确认' }))
     expect(screen.getByText('共 1 张生成图片')).toBeTruthy()
     expect(view.items).toHaveLength(2)
+  })
+
+  it('显式目标图片即使在本机隐藏也能在工作台预览，但不恢复图库偏好', () => {
+    const item = { id: 'hidden', prompt: '工具生成的图片', attachmentId: 'att', createdAt: 1,
+      model: 'paint', mediaType: 'image/png', width: 512, height: 512 }
+    const ui = createGalleryUiStore().create()
+    ui.actions.hide([item.id])
+    const hidden = ui.store.getSnapshot().hidden
+    const closePage = vi.fn()
+    render(<GalleryView {...({ t, sessionId: 'test', closePage,
+      useGallery: (pick: (state: unknown) => unknown) => pick({ phase: 'ready',
+        state: { enabled: true, available: true, model: 'paint' }, items: [item], generating: false,
+        uploading: false, lastResultId: item.id, failed: false }),
+      useStore: bindSnapshotSelector(ui), actions: ui.actions,
+      show: vi.fn(), refresh: vi.fn(), generate: vi.fn(async () => true), place: vi.fn(),
+      url: (id: string) => `/api/image-gen/image?sessionId=test&id=${id}`,
+    } as unknown as GalleryViewProps)} />)
+    expect(screen.getByRole('img', { name: '工具生成的图片' }).getAttribute('src'))
+      .toBe('/api/image-gen/image?sessionId=test&id=hidden')
+    expect(screen.getByText('本次结果')).toBeTruthy()
+    expect(ui.store.getSnapshot().hidden).toEqual(hidden)
+    fireEvent.click(screen.getByRole('button', { name: '全屏查看' }))
+    const preview = screen.getByRole('dialog', { name: '查看大图' })
+    expect(preview.querySelector('img')?.getAttribute('src')).toBe('/api/image-gen/image?sessionId=test&id=hidden')
+    fireEvent.click(screen.getByRole('button', { name: '关闭预览' }))
+    expect(screen.queryByRole('dialog', { name: '查看大图' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: '全屏查看' }))
+    fireEvent.keyDown(screen.getByRole('dialog', { name: '查看大图' }), { key: 'Escape' })
+    expect(screen.queryByRole('dialog', { name: '查看大图' })).toBeNull()
+    expect(closePage).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('tab', { name: '图库' }))
+    expect(screen.getByText('共 0 张生成图片')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: '查看大图：工具生成的图片' })).toBeNull()
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(closePage).toHaveBeenCalledOnce()
+  })
+
+  it('工作台确认隐藏当前图片后清除预览，再次显式打开仍能查看', () => {
+    const item = { id: 'hide-current', prompt: '准备隐藏的图片', attachmentId: 'att', createdAt: 1,
+      model: 'paint', mediaType: 'image/png', width: 512, height: 512 }
+    const ui = createGalleryUiStore().create()
+    const props = { t, sessionId: 'test', closePage: vi.fn(),
+      useGallery: (pick: (state: unknown) => unknown) => pick({ phase: 'ready',
+        state: { enabled: true, available: true, model: 'paint' }, items: [item], generating: false,
+        uploading: false, lastResultId: item.id, failed: false }),
+      useStore: bindSnapshotSelector(ui), actions: ui.actions,
+      show: vi.fn(), refresh: vi.fn(), generate: vi.fn(async () => true), place: vi.fn(),
+      url: (id: string) => `/api/image-gen/image?sessionId=test&id=${id}`,
+    } as unknown as GalleryViewProps
+    const { unmount } = render(<GalleryView {...props} />)
+    expect(screen.getByRole('img', { name: '准备隐藏的图片' })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: '从本机图库隐藏' }))
+    fireEvent.click(screen.getByRole('button', { name: '确认' }))
+    expect(screen.queryByRole('img', { name: '准备隐藏的图片' })).toBeNull()
+    expect(screen.queryByText('本次结果')).toBeNull()
+    expect(ui.store.getSnapshot().hidden).toContain(item.id)
+    unmount()
+    render(<GalleryView {...props} />)
+    expect(screen.getByRole('img', { name: '准备隐藏的图片' })).toBeTruthy()
+    expect(ui.store.getSnapshot().hidden).toContain(item.id)
   })
 
   it('单击橡皮生成一个可保存节点，选择图片可移除', () => {
@@ -385,23 +462,10 @@ describe('图像交互组件', () => {
     expect(openGallery).toHaveBeenCalledTimes(1)
   })
 
-  it('会话页头入口只在画图会话显示，侧边栏入口跟随配置出现', () => {
+  it('侧边栏画图入口在展开时显示文案，收起时保留可访问的图标按钮', () => {
     const openGallery = vi.fn(async () => {})
     const configured = { status: 'ready', value: { enabled: true, endpoint: 'https://images.example', model: 'paint', apiKeyRef: 'KEY' } }
     const credential = { status: 'ready', configured: true, writable: true, ref: 'KEY' }
-    const entry = (preset: string) => ({
-      t, openGallery,
-      useSessions: (pick: (state: unknown) => unknown) => pick({
-        current: 'session', byId: { session: { agentPreset: preset } },
-      }),
-      useImageEntrySettings: (pick: (state: unknown) => unknown) => pick({ section: configured, credential }),
-    })
-    const { unmount } = render(<EntryButton {...(entry('image') as unknown as React.ComponentProps<typeof EntryButton>)} />)
-    expect(screen.getByRole('button', { name: '画图' })).toBeTruthy()
-    unmount()
-    render(<EntryButton {...(entry('standard') as unknown as React.ComponentProps<typeof EntryButton>)} />)
-    expect(screen.queryByRole('button')).toBeNull()
-    cleanup()
     const sidebarProps = { t, wide: true, openGallery,
       useImageEntrySettings: (pick: (state: unknown) => unknown) => pick({ section: configured, credential }),
       useGalleryPage: (pick: (state: unknown) => unknown) => pick(null),

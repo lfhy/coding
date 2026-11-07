@@ -1,4 +1,4 @@
-/** 生成面板的单选下拉：复用客户端 Menu 控件，触发器沿用项目表单控件样式。 */
+/** 画图界面共用的单选下拉：复用客户端 Menu 控件，触发器沿用项目表单控件样式。 */
 import { useState } from 'react'
 import type { ReactNode } from 'react'
 import { IconChevronDownOutline14, Menu, type MenuEntry } from 'coding-client-ui-primitives'
@@ -52,7 +52,8 @@ export function SelectMenu({ label, value, options, onChange, disabled = false }
       }}
       onClose={() => { setOpen(false) }}
       portal
-      side="top"
+      side="bottom"
+      maxHeight={320}
       keyboardNavigation
     />
   </span>

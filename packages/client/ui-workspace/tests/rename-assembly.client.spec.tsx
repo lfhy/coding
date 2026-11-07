@@ -39,7 +39,10 @@ async function createRuntime(): Promise<SlotTestRuntime> {
 /** 测试自备的侧边栏壳角色：声明并渲染浏览区域，交出壳层的两个折叠动作。 */
 type FrameProps = PropsRenderSlots<'sidebar.workspaces'>
 function SidebarFrame({ renderSlot }: FrameProps) {
-  return <>{renderSlot('sidebar.workspaces', { wide: true, expandSidebar: () => {}, collapseSidebar: () => {} })}</>
+  return <>{renderSlot('sidebar.workspaces', {
+    wide: true, expandSidebar: () => {}, collapseSidebar: () => {},
+    conversationVisible: true, showConversation: () => {},
+  })}</>
 }
 
 describe('session rename through the assembled browser', () => {

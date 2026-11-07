@@ -4,7 +4,9 @@ import { describe, expect, it } from 'vitest'
 
 const canvas = readFileSync(fileURLToPath(new URL('../src/client/CanvasPanel.module.css', import.meta.url)), 'utf8')
 const gallery = readFileSync(fileURLToPath(new URL('../src/client/GalleryView.module.css', import.meta.url)), 'utf8')
+const inspiration = readFileSync(fileURLToPath(new URL('../src/client/InspirationView.module.css', import.meta.url)), 'utf8')
 const selectMenu = readFileSync(fileURLToPath(new URL('../src/client/SelectMenu.module.css', import.meta.url)), 'utf8')
+const selectMenuSource = readFileSync(fileURLToPath(new URL('../src/client/SelectMenu.tsx', import.meta.url)), 'utf8')
 const entry = readFileSync(fileURLToPath(new URL('../src/client/SidebarEntry.module.css', import.meta.url)), 'utf8')
 
 describe('窄屏画廊与画布样式', () => {
@@ -54,6 +56,20 @@ describe('窄屏画廊与画布样式', () => {
     expect(gallery).toMatch(/\.studioMode > button\s*\{[^}]*width:\s*100%;/u)
     expect(selectMenu).toMatch(/\.root\s*\{[^}]*width:\s*100%;/u)
     expect(selectMenu).toMatch(/\.root > span\s*\{[^}]*display:\s*flex;[^}]*width:\s*100%;/u)
+  })
+  it('图库与灵感筛选只约束布局，长选项沿用共享菜单的截断', () => {
+    for (const css of [gallery, inspiration]) {
+      const filterLabel = css.match(/\.filterLabel\s*\{[^}]*\}/u)?.[0]
+      expect(filterLabel).toMatch(/grid-template-columns:\s*auto minmax\(0, 1fr\);/u)
+      expect(filterLabel).toMatch(/min-width:\s*0;[^}]*max-width:\s*100%;/u)
+      expect(css).not.toMatch(/\.filters?[^\n]*select/u)
+    }
+    expect(selectMenu).toMatch(/\.label\s*\{[^}]*min-width:\s*0;[^}]*overflow:\s*hidden;[^}]*text-overflow:\s*ellipsis;/u)
+  })
+  it('画图共用下拉优先向下展开，视口避让交给共享菜单', () => {
+    expect(selectMenuSource).toContain('side="bottom"')
+    expect(selectMenuSource).toContain('maxHeight={320}')
+    expect(selectMenuSource).not.toContain('side="top"')
   })
   it('顶部不包含独立返回按钮，生成加载动画尊重减少动态效果', () => {
     expect(gallery).not.toContain('.tabBack')

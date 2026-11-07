@@ -9,6 +9,68 @@ const json = (value: unknown) => ({ ok: true, json: async () => value }) as Resp
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals() })
 
 describe('会话图库', () => {
+  it('工具入口在目录到达后定位对应附件，不默认选中第一张或其他会话的图片', async () => {
+    const target = { ...item, id: 'target', attachmentId: 'target-attachment' }
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => url.includes('/state') ? json(state)
+      : json({ enabled: true, items: url.includes('sessionId=one') ? [item, target] : [item] })))
+    const gallery = new GalleryController('one')
+    const other = new GalleryController('two')
+    gallery.openImage(target.attachmentId)
+    gallery.show(true)
+    other.show(true)
+    await vi.waitFor(() => { expect(gallery.view.getSnapshot().lastResultId).toBe('target') })
+    expect(gallery.view.getSnapshot().lastElapsedMs).toBeNull()
+    expect(other.view.getSnapshot().lastResultId).toBeNull()
+    gallery.dispose()
+    other.dispose()
+  })
+
+  it('缓存目录可立即定位，后续刷新不重复覆盖手动生成的结果和耗时', async () => {
+    const generated = { ...item, id: 'second', attachmentId: 'generated-attachment' }
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => url.includes('/state') ? json(state)
+      : url.includes('/generate') ? json({ item: generated }) : json({ enabled: true, items: [item, generated] })))
+    const gallery = new GalleryController('one')
+    gallery.show(true)
+    await vi.waitFor(() => { expect(gallery.view.getSnapshot().phase).toBe('ready') })
+    gallery.openImage(item.attachmentId)
+    expect(gallery.view.getSnapshot().lastResultId).toBe('first')
+    expect(await gallery.generate('新图')).toBe(true)
+    const elapsed = gallery.view.getSnapshot().lastElapsedMs
+    await gallery.refresh()
+    expect(gallery.view.getSnapshot()).toMatchObject({ lastResultId: 'second', lastElapsedMs: elapsed })
+    gallery.openImage(item.attachmentId)
+    expect(gallery.view.getSnapshot()).toMatchObject({ lastResultId: 'first', lastElapsedMs: null })
+    gallery.dispose()
+  })
+
+  it('待加载时以最后一次点击为准，空目录或读取失败后可继续定位', async () => {
+    const target = { ...item, id: 'target', attachmentId: 'target-attachment' }
+    let loaded = false
+    let failing = false
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      if (url.includes('/state')) return json(state)
+      if (failing) throw new Error('offline')
+      return json({ enabled: true, items: loaded ? [item, target] : [] })
+    }))
+    const gallery = new GalleryController('one')
+    gallery.openImage(item.attachmentId)
+    gallery.openImage(target.attachmentId)
+    gallery.show(true)
+    await vi.waitFor(() => { expect(gallery.view.getSnapshot().phase).toBe('ready') })
+    expect(gallery.view.getSnapshot().lastResultId).toBeNull()
+    failing = true
+    await gallery.refresh()
+    expect(gallery.view.getSnapshot().phase).toBe('error')
+    expect(gallery.view.getSnapshot().lastResultId).toBeNull()
+    failing = false
+    loaded = true
+    await gallery.refresh()
+    expect(gallery.view.getSnapshot().lastResultId).toBe('target')
+    gallery.dispose()
+    gallery.openImage(item.attachmentId)
+    expect(gallery.view.getSnapshot().lastResultId).toBe('target')
+  })
+
   it('显隐时取消旧请求；可见期间定时刷新来自对话工具的新图', async () => {
     vi.useFakeTimers()
     let count = 0

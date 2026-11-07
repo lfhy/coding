@@ -156,8 +156,11 @@ export function GalleryView({ sessionId, closePage, useGallery, useStore, action
     return phrase === '' || `${item.prompt} ${item.model}`.toLocaleLowerCase().includes(phrase)
   }).sort((left, right) => oldestFirst ? left.createdAt - right.createdAt : right.createdAt - left.createdAt),
   [items, favorites, favoritesOnly, ratio, search, oldestFirst])
+  const studioItem = state.items.find(item => item.id === studioImageId)
   const currentPreview = visible.findIndex(item => item.id === previewId)
-  const preview = currentPreview < 0 ? items.find(item => item.id === previewId) : visible[currentPreview]
+  const preview = currentPreview < 0
+    ? items.find(item => item.id === previewId) ?? (previewId === studioImageId ? studioItem : undefined)
+    : visible[currentPreview]
   const canGenerate = state.state?.available === true && state.phase === 'ready'
   const sizes = state.state?.sizes && Object.keys(state.state.sizes).length > 0 ? state.state.sizes : FALLBACK_SIZES
   const ratios = Object.keys(sizes)
@@ -181,7 +184,6 @@ export function GalleryView({ sessionId, closePage, useGallery, useStore, action
     })),
   ]
   const maxReferences = state.state?.maxEditReferences ?? 10
-  const studioItem = items.find(item => item.id === studioImageId)
   const select = (id: string) => {
     setSelected((previous) => {
       const next = new Set(previous)
@@ -280,21 +282,22 @@ export function GalleryView({ sessionId, closePage, useGallery, useStore, action
     </div>}
     {tab === 'gallery' && (!favoritesOnly || favoriteKind === 'images') && <>
       <div className={css.filters}>
-        <label className={css.filterLabel}>{t('ratioFilter')}
-          <select value={ratio} onChange={(event) => { setRatio(event.target.value as Ratio) }}>
-            <option value="all">{t('allRatios')}</option><option value="square">1:1</option>
-            <option value="landscape">{t('landscape')}</option><option value="portrait">{t('portrait')}</option>
-          </select>
-        </label>
+        <div className={css.filterLabel}><span>{t('ratioFilter')}</span>
+          <SelectMenu label={t('ratioFilter')} value={ratio} onChange={(value) => { setRatio(value as Ratio) }}
+            options={[
+              { id: 'all', label: t('allRatios') }, { id: 'square', label: '1:1' },
+              { id: 'landscape', label: t('landscape') }, { id: 'portrait', label: t('portrait') },
+            ]} />
+        </div>
         <label className={css.search}><IconSearchOutline16 size={16} />
           <span className={css.visuallyHidden}>{t('searchImages')}</span>
           <input value={search} onChange={(event) => { setSearch(event.target.value) }} placeholder={t('searchImages')} />
         </label>
-        <label className={css.filterLabel}>{t('sortBy')}
-          <select value={oldestFirst ? 'oldest' : 'newest'} onChange={(event) => { setOldestFirst(event.target.value === 'oldest') }}>
-            <option value="newest">{t('newest')}</option><option value="oldest">{t('oldest')}</option>
-          </select>
-        </label>
+        <div className={css.filterLabel}><span>{t('sortBy')}</span>
+          <SelectMenu label={t('sortBy')} value={oldestFirst ? 'oldest' : 'newest'}
+            onChange={(value) => { setOldestFirst(value === 'oldest') }}
+            options={[{ id: 'newest', label: t('newest') }, { id: 'oldest', label: t('oldest') }]} />
+        </div>
         <button type="button" className={css.iconButton} aria-label={t('refresh')} title={t('refresh')} onClick={refresh}>
           <IconRefreshOutline16 size={16} />
         </button>
@@ -487,6 +490,7 @@ export function GalleryView({ sessionId, closePage, useGallery, useStore, action
       <div className={css.dialog}><h2>{t('hideSelected')}</h2><p>{t('hideNotice')}</p><div>
         <Button size="sm" onClick={() => { setConfirmDelete(false) }}>{t('cancel')}</Button>
         <Button variant="primary" size="sm" onClick={() => {
+          if (studioImageId !== null && selected.has(studioImageId)) setStudioImageId(null)
           actions.hide([...selected]); setSelected(new Set()); setManage(false); setConfirmDelete(false); announce(t('hidden'))
         }}>{t('confirm')}</Button>
       </div></div>

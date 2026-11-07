@@ -7,8 +7,7 @@
 .preview:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: 3px; }
 .preview:disabled { cursor: default; }
 .reading { display: flex; align-items: center; justify-content: center; width: min(100vw - 48px, 480px); max-width: 100%; min-height: 160px; background: var(--dsw-alias-bg-layer-1); font: var(--dsw-font-xs-13); }
-.imageActions { display: flex; gap: 4px; }
+.imageActions { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
 .loadError { display: flex; align-items: center; gap: 8px; min-height: 96px; font: var(--dsw-font-xs-13); color: var(--dsw-alias-label-secondary); }
 .footer { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-height: 28px; }
 .elapsed { color: var(--dsw-alias-label-tertiary); font: var(--dsw-font-xxs-12); font-variant-numeric: tabular-nums; }
-.actions { display: flex; flex-wrap: wrap; gap: 4px; margin-left: auto; }

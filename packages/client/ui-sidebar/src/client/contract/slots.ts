@@ -6,10 +6,9 @@
  * 标题与列表之间属于 `sidebar.workspaces` 注册者（ui-workspace），底部是
  * `sidebar.footer.action` 的可选页脚动作。
  */
-import type { PropsLocale, PropsRenderSlots, PropsRuntime } from 'coding-client-ui-slots'
-// Type-only: pulls ui-layout's SlotMap merge (the 'sidebar' entry) into every
-// program that sees this contract, so PropsRuntime<'sidebar'> resolves.
-import type {} from 'coding-client-ui-layout/client'
+import type { PropsHooks, PropsLocale, PropsRenderSlots, PropsRuntime } from 'coding-client-ui-slots'
+// 同时引入布局所属的 sidebar slot 声明，使 PropsRuntime<'sidebar'> 能解析 owner share。
+import type { ILayout } from 'coding-client-ui-layout/client'
 import type { WorkspaceId } from 'coding-client-runtime/client'
 
 declare module 'coding-client-ui-slots' {
@@ -64,6 +63,10 @@ export interface SidebarSectionOwnerProps {
   expandSidebar: () => void
   /** 宽侧栏的标题行用它渲染收起按钮；已展开时才会真正收起。 */
   collapseSidebar: () => void
+  /** 独立主内容页打开时，会话行不显示选中态。 */
+  conversationVisible: boolean
+  /** 返回对话视图，不改变当前会话。 */
+  showConversation: () => void
 }
 
 /**
@@ -81,17 +84,19 @@ export interface SidebarFooterActionOwnerProps {
 }
 
 /**
- * 注册者私有的注入 share（来自 register 的 inject 工厂）。壳层只持有自己的控件：
- * 从新对话入口启动会话，以及折叠整列。
+ * 注册者私有的注入 share：新建会话、折叠整列，以及交给会话浏览区域的页面导航状态。
  */
 export type SidebarRootInjected = {
+  hooks: { page: ILayout['page'] }
   /**
    * 启动新会话：指定工作区时复用或创建它的空白会话并打开；未指定时先继承当前
    * Session 所属工作区，再退到最近工作区，都没有则清空为 New Session 空视图。
    */
   startSession: (workspaceId?: WorkspaceId) => void
-  /** Toggle the sidebar column through the layout service. */
+  /** 通过布局服务切换侧边栏。 */
   toggleSidebar: () => void
+  /** 返回对话视图，不改变当前会话。 */
+  showConversation: () => void
 }
 
 /**
@@ -106,4 +111,6 @@ export type SidebarRootComponentProps =
     | 'sidebar.settings'
     | 'sidebar.footer.action'
   >
-  & SidebarRootInjected & PropsLocale<'sidebar'>
+  & Omit<SidebarRootInjected, 'hooks'>
+  & PropsHooks<SidebarRootInjected['hooks']>
+  & PropsLocale<'sidebar'>
