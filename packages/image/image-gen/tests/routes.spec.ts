@@ -53,6 +53,8 @@ async function boot(config?: Record<string, unknown>) {
   contexts.push(ctx)
   ctx.baseUrl = `${pathToFileURL(dir).href}/`
   const sessions = new SessionStore(ctx)
+  const flushed = vi.fn()
+  ctx.on('session/flush', (session) => { flushed(session.id) })
   const one = sessions.create(SessionId('one'))
   const two = sessions.create(SessionId('two'))
   const refs = new Map<string, Buffer>()
@@ -89,7 +91,7 @@ async function boot(config?: Record<string, unknown>) {
   const put = (revision: number, state: unknown, session = 'one') => fetch(`${base}/canvas?sessionId=${session}`, {
     method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ revision, state }),
   })
-  return { ctx, base, get, post, put, keys, resolveCredential, one, two, readImage, saveImage,
+  return { ctx, base, get, post, put, keys, resolveCredential, one, two, readImage, saveImage, flushed,
     setRejected: (value: boolean) => { rejected = value } }
 }
 
@@ -184,6 +186,7 @@ describe('image generation HTTP (real Loader)', () => {
     expect(await (await env.get('state')).json()).toMatchObject({ enabled: true, available: true })
     const result = await env.post('generate', { sessionId: 'one', prompt: 'draw' })
     expect(result.status).toBe(200)
+    expect(env.flushed).toHaveBeenCalledWith('one')
     const generated = (await result.json() as { item: { id: string } }).item
     expect((await env.get('image', 'two', `&id=${generated.id}`)).status).toBe(404)
     expect((await env.get('image', 'one', `&id=${generated.id}`)).status).toBe(200)
