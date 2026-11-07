@@ -29,6 +29,9 @@ describe('窄屏画廊与画布样式', () => {
     )
     expect(gallery).toMatch(/\.tabs\s*\{[^}]*grid-column:\s*2;[^}]*justify-self:\s*center;/u)
     expect(gallery).toMatch(/\.tab, \.activeTab\s*\{[^}]*min-width:\s*64px;/u)
+    expect(gallery).toMatch(
+      /\.studio\s*\{[^}]*grid-template-columns:\s*minmax\(260px, 310px\) minmax\(0, 1fr\) minmax\(260px, 310px\);/u,
+    )
     expect(gallery).not.toContain(".root[data-tab='studio'] .tabsBar")
     expect(gallery).not.toContain(".root[data-tab='studio'] .tabs {")
     const narrow = gallery.slice(gallery.indexOf('@media (max-width: 1100px)'))

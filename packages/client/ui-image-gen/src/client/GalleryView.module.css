@@ -53,7 +53,7 @@
 .empty h2 { margin: 0; color: var(--dsw-alias-label-primary); font: var(--dsw-font-s-strong-14); }
 .empty p { margin: 0; }
 .batchBar { position: absolute; right: 24px; bottom: 24px; z-index: 4; display: flex; align-items: center; gap: 10px; padding: 10px 14px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 16px; background: var(--dsw-alias-bg-layer-3); box-shadow: var(--dsw-shadow-lv3); font: var(--dsw-font-xs-strong-13); }
-.studio { display: grid; grid-template-columns: minmax(160px, 210px) minmax(0, 1fr) minmax(260px, 310px); flex: 1; min-width: 0; min-height: 0; }
+.studio { display: grid; grid-template-columns: minmax(260px, 310px) minmax(0, 1fr) minmax(260px, 310px); flex: 1; min-width: 0; min-height: 0; }
 .recent { display: flex; flex-direction: column; gap: 6px; min-width: 0; overflow-y: auto; padding: 16px; border-right: 1px solid var(--dsw-alias-border-l2); }
 .recent h2, .studioForm h2 { margin: 0 0 10px; font: var(--dsw-font-s-strong-14); }
 .recent p { color: var(--dsw-alias-label-secondary); font: var(--dsw-font-xs-13); }
