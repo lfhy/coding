@@ -23,13 +23,16 @@ describe('窄屏画廊与画布样式', () => {
     expect(narrow).toMatch(/\.studioCenter\s*\{[^}]*flex:\s*none;[^}]*min-height:\s*400px;/u)
     expect(narrow).toMatch(/\.studioForm\s*\{[^}]*max-height:\s*none;[^}]*overflow:\s*visible;/u)
   })
-  it('工作台胶囊按中间预览列而不是整页宽度居中', () => {
-    const studioTabs = gallery.slice(gallery.indexOf(".root[data-tab='studio'] .tabsBar"))
-    expect(studioTabs).toMatch(/grid-template-columns:\s*minmax\(160px, 210px\)/u)
-    expect(studioTabs).toMatch(/minmax\(0, 1fr\) minmax\(260px, 310px\)/u)
-    expect(gallery).toMatch(/\.root\[data-tab='studio'\] \.tabs\s*\{[^}]*grid-column:\s*2;[^}]*justify-self:\s*center;/u)
+  it('切换工作台、灵感和图库时胶囊保持同一横向位置', () => {
+    expect(gallery).toMatch(
+      /\.tabsBar\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\) auto minmax\(0, 1fr\);[^}]*box-sizing:\s*border-box;/u,
+    )
+    expect(gallery).toMatch(/\.tabs\s*\{[^}]*grid-column:\s*2;[^}]*justify-self:\s*center;/u)
+    expect(gallery).toMatch(/\.tab, \.activeTab\s*\{[^}]*min-width:\s*64px;/u)
+    expect(gallery).not.toContain(".root[data-tab='studio'] .tabsBar")
+    expect(gallery).not.toContain(".root[data-tab='studio'] .tabs {")
     const narrow = gallery.slice(gallery.indexOf('@media (max-width: 1100px)'))
-    expect(narrow).toMatch(/minmax\(120px, 170px\) minmax\(0, 1fr\);/u)
+    expect(narrow).toMatch(/\.studio\s*\{[^}]*minmax\(120px, 170px\)/u)
   })
   it('预览工具位于本次结果工具栏，图片默认完整适配', () => {
     expect(gallery).toMatch(/\.previewControls\s*\{[^}]*display:\s*flex;[^}]*flex-wrap:\s*wrap;/u)
