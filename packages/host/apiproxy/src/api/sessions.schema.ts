@@ -220,6 +220,7 @@ export const sessionProjectionsBlockSchema = z.object({
 export const sessionListMetadataProjectionSchema: z.ZodType<SessionListMetadata> = z.object({
   blank: z.boolean(),
   lastPromptAt: z.number().nullable(),
+  agentPreset: z.string().optional(),
 })
 
 /** imageLimits 投影校验完整的上传准入限制；缺省源图限制兼容旧服务。 */

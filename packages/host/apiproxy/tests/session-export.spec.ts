@@ -129,12 +129,12 @@ describe('session export compression config', () => {
   it('defaults to level 6 and rejects values outside the integer 0-9 range', () => {
     expect(ApiProxyService.Config({})).toEqual({
       sessionExportCompressionLevel: 6,
-      coldBlankProbeMaxBytes: 1024,
+      coldBlankProbeMaxBytes: 16384,
     })
     expect(ApiProxyService.Config({ sessionExportCompressionLevel: 0 }))
-      .toEqual({ sessionExportCompressionLevel: 0, coldBlankProbeMaxBytes: 1024 })
+      .toEqual({ sessionExportCompressionLevel: 0, coldBlankProbeMaxBytes: 16384 })
     expect(ApiProxyService.Config({ sessionExportCompressionLevel: 9 }))
-      .toEqual({ sessionExportCompressionLevel: 9, coldBlankProbeMaxBytes: 1024 })
+      .toEqual({ sessionExportCompressionLevel: 9, coldBlankProbeMaxBytes: 16384 })
     for (const value of [-1, 10, 1.5]) {
       expect(() => ApiProxyService.Config({ sessionExportCompressionLevel: value } as never)).toThrow()
     }

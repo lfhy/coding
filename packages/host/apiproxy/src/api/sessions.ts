@@ -37,10 +37,12 @@ declare module 'coding-session-projection/types' {
 
 /** Persisted hints used to summarize a cold Session without reading a large log. */
 export interface SessionListMetadata {
-  /** Whether the checkpoint prefix contains no turn/start event. */
+  /** Whether the checkpoint prefix contains no turn/start event or generated image. */
   blank: boolean
   /** 检查点前最近一条追加来源真人消息的时间；替换副本不刷新。 */
   lastPromptAt: number | null
+  /** 检查点前最后一次确认的 Agent 预设；旧缓存缺省时回退会话头。 */
+  agentPreset?: string | undefined
 }
 
 declare module 'coding-llm' {

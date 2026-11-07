@@ -25,8 +25,17 @@ export function createGalleryNavigation(
     const snapshot = sessions.list.getSnapshot()
     const current = snapshot.current
     const summary = current === undefined ? undefined : snapshot.byId[current]
+    // 画图入口是模式入口：有既有画图会话时回到最近一个，而不是每次
+    // 从别的会话新建空画廊，让刚生成的图片看似消失。
+    const existingImage = Object.values(snapshot.byId)
+      .filter(item => item.agentPreset === 'image' && !item.blank)
+      .sort((left, right) => right.updatedAt - left.updatedAt)[0]
     let target: SessionId
-    if (summary !== undefined && (!summary.blank && summary.agentPreset === 'image' || summary.blank)) {
+    if (summary?.agentPreset === 'image' && !summary.blank) {
+      target = summary.id
+    } else if (existingImage !== undefined) {
+      target = existingImage.id
+    } else if (summary?.agentPreset === 'image' || summary?.blank === true) {
       target = summary.id
     } else {
       const workspace = current === undefined ? undefined

@@ -134,8 +134,8 @@ const SESSION_SEARCH_PROVIDER_CALL_LIMIT = 100
 
 /** Bound cold-log stat fan-out and settle each started batch before cancellation returns. */
 const COLD_SUMMARY_BATCH_SIZE = 16
-/** Default maximum artifact size eligible for one cold blankness read. */
-export const DEFAULT_COLD_BLANK_PROBE_MAX_BYTES = 1024
+/** Default maximum artifact size eligible for one cold metadata read. */
+export const DEFAULT_COLD_BLANK_PROBE_MAX_BYTES = 16 * 1024
 
 /** Conversation message event types (the pagination counting unit). */
 const MESSAGE_TYPES = new Set(['user/message', 'assistant/message'])
@@ -498,14 +498,19 @@ function sessionBlank(session: Session): boolean {
 
 /** 只用追加来源的真人输入刷新 Session 列表时间；模型历史替换不构成新提示。 */
 function applySessionListMetadata(state: SessionListMetadata, event: SessionEvent): SessionListMetadata {
-  const blank = state.blank && event.type !== 'turn/start'
+  // 生成图片会留下可恢复的内容，不能再把会话当成可复用的空白窗口。
+  const blank = state.blank && event.type !== 'turn/start' && (event.type as string) !== 'image-gen/created'
   const lastPromptAt = event.type === 'user/message' && isAppendSurfaceEvent(event)
     && event.data.source.kind === 'user'
     ? event.time
     : state.lastPromptAt
-  return blank === state.blank && lastPromptAt === state.lastPromptAt
+  const agentPreset = (event.type as string) === 'agent-preset/selected'
+    && typeof (event.data as { agentPreset?: unknown }).agentPreset === 'string'
+    ? (event.data as { agentPreset: string }).agentPreset
+    : state.agentPreset
+  return blank === state.blank && lastPromptAt === state.lastPromptAt && agentPreset === state.agentPreset
     ? state
-    : { blank, lastPromptAt }
+    : { blank, lastPromptAt, ...agentPreset === undefined ? {} : { agentPreset } }
 }
 
 /** Fold exact list metadata for an attached Session. */
@@ -521,7 +526,7 @@ function sessionListUpdatedAt(header: SessionHeader, metadata: SessionListMetada
 }
 
 /** Shared Session-header projection for list baselines and creation frames. */
-function sessionListFields(header: SessionHeader, events: readonly SessionEvent[] = []): {
+function sessionListFields(header: SessionHeader, events: readonly SessionEvent[] = [], knownPreset?: string): {
   parentSessionId?: SessionId
   origin?: 'subagent'
   cwd?: string
@@ -530,7 +535,7 @@ function sessionListFields(header: SessionHeader, events: readonly SessionEvent[
   // The preset comes from the log, not the header: a session that switched
   // while blank ran its turns under the newer composition, and a picker
   // showing the creation-time value would contradict what the model saw.
-  const agentPreset = resolveSessionPreset({ header, events })
+  const agentPreset = knownPreset ?? resolveSessionPreset({ header, events })
   return {
     ...header.parentSession === undefined ? {} : { parentSessionId: header.parentSession },
     ...header.origin === undefined ? {} : { origin: header.origin },
@@ -598,18 +603,19 @@ async function summarizeCold(
   blankProbeMaxBytes: number,
   signal?: AbortSignal,
 ): Promise<SessionSummary> {
-  const probed = metadata?.blank === false
+  // A cached non-blank row can still lack the preset (older projection
+  // versions or a blank-window switch). Probe small artifacts so a cold image
+  // session is identified before its first reattach.
+  const probed = metadata?.blank === false && metadata.agentPreset !== undefined
     ? undefined
     : await probeColdSessionMetadata(ctx, persistence, meta, blankProbeMaxBytes, signal)
+  const known = probed ?? metadata
   return {
     sessionId: meta.id,
-    updatedAt: sessionListUpdatedAt(meta, probed ?? metadata),
+    updatedAt: sessionListUpdatedAt(meta, known),
     running: false,
     blank: metadata?.blank === false ? false : probed?.blank ?? false,
-    // Header-only: reading the log for a blank-window preset switch would
-    // defeat the same index read, and attaching the session replaces this row
-    // with `summarize()`, which resolves the switch from the events.
-    ...sessionListFields(meta),
+    ...sessionListFields(meta, [], probed?.agentPreset ?? metadata?.agentPreset),
   }
 }
 
@@ -1337,7 +1343,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
       init: () => ({ blank: true, lastPromptAt: null }),
       apply: applySessionListMetadata,
       view: state => state,
-      stateVersion: 1,
+      stateVersion: 2,
     })
   })
 

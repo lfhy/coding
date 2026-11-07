@@ -51,6 +51,7 @@ describe('sessions.list cold merge', () => {
     const metas = [
       header('small-blank', 100),
       header('small-conversation', 200),
+      header('small-image', 250),
       header('large-unknown', 300),
       header('cached-nonblank', 400),
       header('locationless', 500, { parentSession: sid('session-parent'), origin: 'subagent' }),
@@ -77,6 +78,15 @@ describe('sessions.list cold merge', () => {
           ] as SessionEvent[],
         }
       }
+      if (id === sid('small-image')) {
+        return {
+          meta: metas[2]!,
+          events: [
+            { type: 'agent-preset/selected', seq: 0, time: 900, data: { agentPreset: 'image' } },
+            { type: 'image-gen/created', seq: 1, time: 950, data: { item: { id: '1' } } },
+          ] as unknown as SessionEvent[],
+        }
+      }
       if (id === sid('read-failure')) throw new Error('simulated read failure')
       throw new Error(`unexpected cold read: ${id}`)
     })
@@ -99,12 +109,12 @@ describe('sessions.list cold merge', () => {
           return { asOfSeq: 0, values: { sessionListMetadata: { blank: true, lastPromptAt: 900 } } }
         }
         if (meta.id === sid('cached-nonblank')) {
-          return { asOfSeq: 1, values: { sessionListMetadata: { blank: false, lastPromptAt: 1000 } } }
+          return { asOfSeq: 1, values: { sessionListMetadata: { blank: false, lastPromptAt: 1000, agentPreset: 'standard' } } }
         }
         return undefined
       },
     } as never)
-    const api = createApiProxy(ctx, { defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/tmp' })
+    const api = createApiProxy(ctx, { defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/tmp', coldBlankProbeMaxBytes: 1024 })
 
     const response = await api.sessions.list(request({}))
     expect(response.result.ok).toBe(true)
@@ -113,6 +123,9 @@ describe('sessions.list cold merge', () => {
     expect(byId['small-blank']).toMatchObject({ blank: true, updatedAt: 100, running: false })
     // A stale true hint cannot hide the turn found in the bounded read.
     expect(byId['small-conversation']).toMatchObject({ blank: false, updatedAt: 1200 })
+    // A compact cold log proves the image preset and that generated content is
+    // not a reusable blank session, even though the creation header says standard.
+    expect(byId['small-image']).toMatchObject({ blank: false, updatedAt: 250, agentPreset: 'image' })
     expect(byId['large-unknown']).toMatchObject({ blank: false, updatedAt: 300 })
     // false is monotonic, so this row skips stat/read and keeps cached recency.
     expect(byId['cached-nonblank']).toMatchObject({ blank: false, updatedAt: 1000 })
@@ -124,10 +137,11 @@ describe('sessions.list cold merge', () => {
     })
     expect(byId['vanished']).toMatchObject({ blank: false, updatedAt: 600 })
     expect(byId['read-failure']).toMatchObject({ blank: false, updatedAt: 700 })
-    expect(readFrom).toHaveBeenCalledTimes(3)
+    expect(readFrom).toHaveBeenCalledTimes(4)
     expect(readFrom.mock.calls.map(([id]) => id)).toEqual(expect.arrayContaining([
       sid('small-blank'),
       sid('small-conversation'),
+      sid('small-image'),
       sid('read-failure'),
     ]))
   })
