@@ -32,9 +32,9 @@ describe('窄屏画廊与画布样式', () => {
     expect(narrow).toMatch(/minmax\(120px, 170px\) minmax\(0, 1fr\);/u)
   })
   it('预览工具位于本次结果工具栏，图片默认完整适配', () => {
-    expect(gallery).toMatch(/\.previewControls\s*\{[^}]*display:\s*inline-flex;[^}]*border:/u)
-    expect(gallery).not.toMatch(/\.previewControls\s*\{[^}]*position:\s*absolute;/u)
-    expect(gallery).toMatch(/\.resultStripActions\s*\{[^}]*flex:\s*1 1 auto;[^}]*flex-wrap:\s*wrap;/u)
+    expect(gallery).toMatch(/\.previewControls\s*\{[^}]*display:\s*flex;[^}]*flex-wrap:\s*wrap;/u)
+    expect(gallery).not.toMatch(/\.previewControls\s*\{[^}]*(?:border|background):/u)
+    expect(gallery).toMatch(/\.resultStripActions\s*\{[^}]*justify-content:\s*flex-end;[^}]*margin-left:\s*auto;/u)
     expect(gallery).toMatch(/\.previewImage\s*\{[^}]*width:\s*auto;[^}]*height:\s*auto;/u)
     expect(gallery).toMatch(
       /\.previewImage\s*\{[^}]*max-width:\s*100%;[^}]*max-height:\s*100%;[^}]*object-fit:\s*contain;/u,

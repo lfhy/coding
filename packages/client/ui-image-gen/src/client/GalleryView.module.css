@@ -68,7 +68,7 @@
 .previewPane { position: relative; display: flex; flex: 1; min-width: 0; min-height: 0; }
 .zoomControls, .toolbarActions { display: flex; align-items: center; gap: 4px; min-width: 0; color: var(--dsw-alias-label-secondary); font: var(--dsw-font-xs-13); }
 .toolbarActions { justify-content: flex-end; }
-.previewControls { display: inline-flex; align-items: center; gap: 6px; min-width: 0; padding: 2px 4px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 10px; background: var(--dsw-alias-bg-layer-2); }
+.previewControls { display: flex; align-items: center; flex-wrap: wrap; gap: 2px; min-width: 0; }
 .previewControls button, .result button { display: inline-flex; align-items: center; justify-content: center; gap: 5px; flex: none; min-height: 28px; padding: 0 7px; border: 0; border-radius: 7px; background: transparent; color: var(--dsw-alias-label-secondary); cursor: pointer; white-space: nowrap; font: var(--dsw-font-xs-13); }
 .previewControls button:hover:not(:disabled), .result button:hover { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }
 .previewControls button:focus-visible, .result button:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: 1px; }
@@ -115,8 +115,8 @@
 .resultStrip, .resultActions { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; min-height: 40px; padding: 5px 12px; }
 .resultStrip { border-bottom: 1px solid var(--dsw-alias-border-l2); flex-wrap: wrap; row-gap: 6px; font: var(--dsw-font-xs-strong-13); }
 .resultStrip > div, .resultActions > div { display: flex; align-items: center; gap: 2px; }
-.resultStripActions { justify-content: flex-end; flex: 1 1 auto; flex-wrap: wrap; gap: 6px; min-width: 0; margin-left: auto; }
-.resultQuickActions { gap: 2px; margin-left: auto; }
+.resultStripActions { justify-content: flex-end; flex-wrap: wrap; gap: 8px; min-width: 0; margin-left: auto; }
+.resultQuickActions { gap: 2px; }
 .resultActions p { flex: 1; min-width: 0; overflow: hidden; margin: 0; white-space: nowrap; text-overflow: ellipsis; font: var(--dsw-font-xs-13); }
 .resultMeta { padding: 5px 12px 9px; color: var(--dsw-alias-label-secondary); font: var(--dsw-font-xxs-12); }
 .inspiration { display: flex; flex: 1; flex-direction: column; align-items: center; justify-content: center; gap: 10px; min-height: 0; text-align: center; color: var(--dsw-alias-label-secondary); font: var(--dsw-font-xs-13); }
