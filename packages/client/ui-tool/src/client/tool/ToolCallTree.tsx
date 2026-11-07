@@ -1,19 +1,19 @@
-/** Root/subcall Tool composition with one keyed atomic dispatch path. */
+/** 根调用与递归子调用共用同一条 keyed 原子分发路径。 */
 import { memo, useMemo, type ReactNode } from 'react'
 import type { ToolCallBlock } from 'coding-client-runtime/client'
 import type { ToolCallOwnerProps, ToolTreeProps } from '../contract/slots.ts'
 import { GenericToolCard } from './toolviews/GenericToolCard.tsx'
 import css from './ToolCallTree.module.css'
 
-/** Resolve a Tool call's wire name from either lifecycle form. */
+/** 从运行中或已完成的调用块读取 wire 工具名。 */
 function callName(node: ToolCallBlock): string {
   return 'kind' in node ? node.call?.name ?? '' : node.name
 }
 
-/** One atomic call dispatched through the Tool-owned keyed slot. */
+/** 通过工具展示 keyed slot 分发单个原子调用。 */
 const ToolCall = memo(function ToolCall({
-  renderSlot, callId, toolName, block, openFile, selected, cwd, home, inspectCall, t, children,
-}: Pick<ToolTreeProps, 'renderSlot' | 'openFile' | 'cwd' | 'inspectCall' | 't'> & {
+  renderSlot, callId, toolName, block, openFile, loadImage, selected, cwd, home, inspectCall, t, children,
+}: Pick<ToolTreeProps, 'renderSlot' | 'openFile' | 'loadImage' | 'cwd' | 'inspectCall' | 't'> & {
   callId: string
   toolName: string
   block: ToolCallBlock
@@ -26,10 +26,11 @@ const ToolCall = memo(function ToolCall({
     toolName,
     block,
     openFile,
+    loadImage,
     cwd,
     home,
     inspect: () => { inspectCall(callId) },
-  }), [callId, toolName, block, openFile, cwd, home, inspectCall])
+  }), [callId, toolName, block, openFile, loadImage, cwd, home, inspectCall])
   return (
     <div
       className={css.callRow}
@@ -47,8 +48,8 @@ const ToolCall = memo(function ToolCall({
 })
 
 const ToolCallBranch = memo(function ToolCallBranch({
-  renderSlot, block, selectedCallId, cwd, home, openFile, inspectCall, t,
-}: Pick<ToolTreeProps, 'renderSlot' | 'selectedCallId' | 'cwd' | 'openFile' | 'inspectCall' | 't'> & {
+  renderSlot, block, selectedCallId, cwd, home, openFile, loadImage, inspectCall, t,
+}: Pick<ToolTreeProps, 'renderSlot' | 'selectedCallId' | 'cwd' | 'openFile' | 'loadImage' | 'inspectCall' | 't'> & {
   block: ToolCallBlock
   home?: string | undefined
 }) {
@@ -59,6 +60,7 @@ const ToolCallBranch = memo(function ToolCallBranch({
       toolName={callName(block)}
       block={block}
       openFile={openFile}
+      loadImage={loadImage}
       selected={block.callId === selectedCallId}
       cwd={cwd}
       home={home}
@@ -76,6 +78,7 @@ const ToolCallBranch = memo(function ToolCallBranch({
               cwd={cwd}
               home={home}
               openFile={openFile}
+              loadImage={loadImage}
               inspectCall={inspectCall}
               t={t}
             />
@@ -87,13 +90,12 @@ const ToolCallBranch = memo(function ToolCallBranch({
 })
 
 /**
- * Render one root Tool call and its recursive children through the same
- * atomic keyed dispatch.
- * @param props - whole-Tool owner data and the Tool-owned child-slot share.
- * @returns the Tool call tree.
+ * 将根调用及递归子调用交给同一条原子 keyed 分发路径。
+ * @param props - 完整调用树的 owner 数据与工具拥有的子 slot share。
+ * @returns 工具调用树。
  */
 export function ToolCallTree({
-  renderSlot, node, selectedCallId, cwd, openFile, inspectCall, useHostDescription, t,
+  renderSlot, node, selectedCallId, cwd, openFile, loadImage, inspectCall, useHostDescription, t,
 }: ToolTreeProps) {
   const home = useHostDescription(description => description?.home)
   const block = node.data.root
@@ -105,6 +107,7 @@ export function ToolCallTree({
       cwd={cwd}
       home={home}
       openFile={openFile}
+      loadImage={loadImage}
       inspectCall={inspectCall}
       t={t}
     />

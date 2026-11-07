@@ -26,7 +26,7 @@ Host 的会话级图像生成/编辑服务。图像二进制必须先经 `ctx.at
 - `POST /api/image-gen/generate`，JSON `{sessionId,prompt,size?,quality?}` → `{item}`；`POST /api/image-gen/edit`，JSON `{sessionId,prompt,imageId,size?,quality?}` 或 `{sessionId,prompt,imageIds,size?,quality?}` → `{item}`，`imageId`／`imageIds` 必须属于当前会话图库，二者不可并存；多图需要 `maxEditReferences` 允许。文本上限 4000 字符，操作超时 120 秒。图库项记录请求的 `size?`／`quality?` 供再次生成还原，图片真实宽高由附件服务给出。
 - `GET /api/image-gen/canvas?sessionId=<id>` → `{revision,state:{version:1,nodes:[]}}`；`PUT` 同 URL，JSON `{revision,state}` → 新快照。传入旧修订返回 409，前端应重新读取。画布 960×640，节点最多 128、单笔最多 2000 点、总共最多 10000 点、body 最多 64 KiB。`stroke` 为 `{id,type:'stroke',points:[{x,y}],width,color:'ink',erase?}`，`image` 为 `{id,type:'image',imageId,x,y,width,height}`；节点坐标、尺寸和 ID 有界，imageId 必须属于同一 Session 图库。禁用图像服务不阻断已有画布/图库读取。
 
-Session 中的 `image-gen/created` 与 `image-gen/canvas` 都是日志事实，不进入模型消息历史。从本机上传的参考图先经附件服务准入并记录为 `model: 'import'` 的同会话图库项；它不调用模型，之后才可用该项 id 调图生图编辑。每次保存画布记录完整快照；日志可能随大量编辑增长，持续高频画布历史压缩需由后续会话保留策略解决。
+Session 中的 `image-gen/created` 与 `image-gen/canvas` 都是日志事实，不进入模型消息历史。生成、编辑与参考图导入在附件保存并追加图库记录后等待会话持久化完成，模型工具与 HTTP 入口共用这一保证；持久化失败会拒绝操作，但不回滚已追加的图库记录。从本机上传的参考图经附件服务准入并记录为 `model: 'import'` 的同会话图库项；它不调用模型，之后可用该项 id 调图生图编辑。每次保存画布记录完整快照；日志可能随大量编辑增长，持续高频画布历史压缩需由后续会话保留策略解决。
 
 ## Model Experience
 

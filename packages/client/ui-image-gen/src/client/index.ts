@@ -6,10 +6,12 @@ import type {} from 'coding-client-ui-settings/client'
 import type {} from 'coding-client-ui-layout/client'
 import type {} from 'coding-client-ui-conversation/client'
 import type {} from 'coding-client-ui-sidebar/client'
+import type {} from 'coding-client-ui-tool/client'
 import { CanvasController } from './canvas.ts'
 import { EntryButton, type EntryFace } from './EntryButton.tsx'
 import { GalleryController } from './gallery.ts'
 import { GalleryView } from './GalleryView.tsx'
+import { ImageToolRow } from './ImageToolRow.tsx'
 import { createGalleryUiStore } from './gallery-ui-store.ts'
 import { en, NS, zh, type ImageKey } from './locales.ts'
 import { createGalleryNavigation } from './navigation.ts'
@@ -74,6 +76,17 @@ export function apply(ctx: ClientContext): void {
   }, 'ui-image-gen: session controllers')
   const openGallery = createGalleryNavigation(ctx.sessions, ctx.workspaces, api, (sessionId) => {
     try { ctx.layout.togglePage(GALLERY_PAGE, sessionId); return true } catch { return false }
+  })
+
+  ctx.slots.inject('tool.call.toolview', function* () {
+    for (const key of ['generate_image', 'generate_images', 'edit_image', 'image_gen']) {
+      yield ctx.slots.register({
+        name: 'tool.call.toolview', key, locale: NS,
+        inject: (sessionId: SessionId) => ({
+          openInStudio: () => { ctx.sessions.open(sessionId); ctx.layout.openPage(GALLERY_PAGE, sessionId) },
+        }),
+      }, ImageToolRow)
+    }
   })
 
   ctx.slots.inject('settings.section', () => ctx.slots.register({

@@ -14,6 +14,8 @@
 
 ## 对接与限制
 
+对话内的 `generate_image`、`generate_images`、`edit_image` 和 `image_gen` 由本包注册专用工具视图：执行时显示点阵等待动效与耗时，不显示估算百分比；成功后直接展示结果图片，可打开大图、下载或进入同会话画图工作台。失败、中断或空结果会结束等待态，图片读取失败可单独重试；原始调用保留在调用详情中。历史结果从持久图片引用恢复，图片所属会话的图库保存同一份结果。
+
 界面经同源 `/api/image-gen` 使用 `GET /state?sessionId`（含非机密尺寸表和参考图上限）、`GET /gallery?sessionId`、`GET /image?sessionId&id`、`GET /inspiration/v1/<hash>.webp`、`POST /import?sessionId`、`POST /generate`、`POST /edit`、`GET /canvas?sessionId` 和 `PUT /canvas?sessionId`。灵感缩略图只接受构建时生成的 16 位哈希文件名，并以 immutable 静态缓存返回。参考图上传只提交原始 File，不在浏览器裁剪或把 base64 写入设置；Host 校验媒体类型、大小、动画和会话归属。画布写入携带 `{revision,state}`，文档为 `{version:1,nodes}`。节点按顺序绘制：笔迹为 `{id,type:'stroke',points:[{x,y}],width,color:'ink',erase?}`；图库图片为 `{id,type:'image',imageId,x,y,width,height}`。坐标使用固定画布像素，画布只保存节点，不跨会话引用图片。Host 限制节点数量、坐标、总字节与原图归属；目录 API 尚无服务端分页。
 
 ## 模型体验

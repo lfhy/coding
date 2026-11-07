@@ -2672,6 +2672,9 @@ importers:
       coding-client-ui-slots:
         specifier: workspace:^
         version: link:../ui-slots
+      coding-client-ui-tool:
+        specifier: workspace:^
+        version: link:../ui-tool
       coding-invariants:
         specifier: workspace:^
         version: link:../../runtime-diagnostics/invariants

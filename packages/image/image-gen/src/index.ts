@@ -138,7 +138,8 @@ export class ImageGeneration extends Service {
 
   /**
    * 把用户上传的参考图按附件策略准入并写入当前会话图库，供编辑接口引用。
-   * 此操作不发送模型请求，也不要求生图服务已启用；失败不追加图片事件。
+   * 此操作不发送模型请求，也不要求生图服务已启用；准入失败不追加图片事件。
+   * 返回前等待会话持久化；持久化失败会拒绝，但不回滚已追加的图库事实。
    * @param session - 当前仍在 Host 中的会话。
    * @param image - 原始编码字节与声明媒体类型。
    * @returns 此会话可用于 `edit_image` 的持久图库项。
@@ -151,10 +152,11 @@ export class ImageGeneration extends Service {
       id: String(session.seq), ...attachment, prompt: '', model: 'import', createdAt: Date.now(),
     }
     session.append('image-gen/created', { item })
+    await this.ctx.sessions.flush(session)
     return item
   }
 
-  /** 图片保存完成后追加可重建的图库记录；成功前不暴露内容地址。 */
+  /** 图片保存后追加图库记录并等待会话持久化；持久化失败不回滚已追加事实。 */
   async create(
     session: Session, prompt: string, sourceIds: readonly string[] = [],
     signal: AbortSignal = new AbortController().signal,
@@ -224,6 +226,7 @@ export class ImageGeneration extends Service {
       ...output.quality === undefined ? {} : { quality: output.quality },
     }
     session.append('image-gen/created', { item })
+    await this.ctx.sessions.flush(session)
     return item
   }
 

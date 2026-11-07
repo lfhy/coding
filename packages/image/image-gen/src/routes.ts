@@ -174,8 +174,6 @@ export function installImageRoutes(ctx: Context, service: ImageGeneration): void
       const limits = webCtx.attachments.imageLimits
       const bytes = await imageBody(req, limits.maxSourceImageBytes ?? limits.maxImageBytes)
       const item = await service.importReference(session, { data: bytes, mediaType: mediaType as ImageMediaType })
-      // 参考图同样需要立刻落盘，否则重启后图生图来源会丢失。
-      await webCtx.sessions.flush(session)
       json(res, 200, { item })
     })
     route('canvas', 'GET', async (_req, res, url) => {
@@ -217,8 +215,6 @@ export function installImageRoutes(ctx: Context, service: ImageGeneration): void
         ...(payload.size === undefined ? {} : { size: payload.size }),
         ...(payload.quality === undefined ? {} : { quality: payload.quality }),
       })
-      // 图片事件与附件字节一起落盘后再返回，进程退出后仍能从会话日志重建图库。
-      await webCtx.sessions.flush(session)
       json(res, 200, { item })
     })
   })

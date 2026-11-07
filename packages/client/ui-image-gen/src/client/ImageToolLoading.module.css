@@ -1,0 +1,72 @@
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: 100%;
+  min-width: 0;
+}
+
+.label {
+  color: var(--dsw-alias-label-primary);
+  font: var(--dsw-font-xs-strong-13);
+  overflow-wrap: anywhere;
+}
+
+.field {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1;
+  overflow: hidden;
+  contain: paint;
+  background: color-mix(in srgb, var(--dsw-alias-label-primary) 12%, transparent);
+  mask-image: radial-gradient(circle, var(--dsw-alias-label-primary) 1.25px, transparent 1.5px);
+  mask-size: 10px 10px;
+  mask-repeat: repeat;
+}
+
+.field::before,
+.field::after {
+  content: '';
+  position: absolute;
+  inset: 0 auto auto 0;
+  width: 72%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: radial-gradient(closest-side,
+    color-mix(in srgb, var(--dsw-alias-label-primary) 64%, transparent) 12%,
+    color-mix(in srgb, var(--dsw-alias-label-primary) 40%, transparent) 48%,
+    transparent 100%);
+  animation-timing-function: var(--ds-ease-in-out);
+  animation-iteration-count: infinite;
+}
+
+/* 等待态使用慢循环，而非界面切换时长；固定遮罩让漂移只改变圆点的明暗。 */
+.field::before {
+  transform: translate(-14%, 4%);
+  animation-name: image-tool-wave-first;
+  animation-duration: calc(var(--ds-transition-duration-slow) * 24);
+}
+
+.field::after {
+  transform: translate(56%, 36%);
+  opacity: .8;
+  animation-name: image-tool-wave-second;
+  animation-duration: calc(var(--ds-transition-duration-slow) * 32);
+}
+
+@keyframes image-tool-wave-first {
+  0%, 100% { transform: translate(-14%, 4%) scale(.96); opacity: .84; }
+  50% { transform: translate(36%, 44%) scale(1.04); opacity: 1; }
+}
+
+@keyframes image-tool-wave-second {
+  0%, 100% { transform: translate(56%, 36%) scale(1.04); opacity: .8; }
+  50% { transform: translate(12%, -6%) scale(.96); opacity: .96; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .field::before,
+  .field::after {
+    animation: none;
+  }
+}

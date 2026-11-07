@@ -1,12 +1,13 @@
 // @vitest-environment jsdom
-/** ToolCallTree-owned root/subcall markers and selection projection. */
+/** 工具调用树拥有的根／子调用标记、选择投影与图片加载接线。 */
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, render } from '@testing-library/react'
+import { cleanup, fireEvent, render } from '@testing-library/react'
+import type { ImageAttachmentRef } from 'coding-attachment'
 import type { HostDescription } from 'coding-client-connection/client'
 import type { ConversationSnapshot, ToolResultNode } from 'coding-client-runtime/client'
 import { makeTranslate } from 'coding-client-test-runtime'
 import { zh as commonZh } from 'coding-client-locale/src/locales/zh.ts'
-import type { ToolTreeProps } from '../src/client/contract/slots.ts'
+import type { ToolCallOwnerProps, ToolTreeProps } from '../src/client/contract/slots.ts'
 import { ToolCallTree } from '../src/client/tool/ToolCallTree.tsx'
 import { zh } from 'coding-client-ui-conversation/src/client/locales.ts'
 
@@ -89,5 +90,62 @@ describe('ToolCallTree', () => {
       version: '0', cwd: '/tmp', attachedSessions: 0, home: '/h', canOpenPath: false,
     })} />)
     expect(view.getByText('~/docs/a.ts')).toBeTruthy()
+  })
+
+  it('forwards the same session image loader to root and recursive atomic owners and updates it', () => {
+    const leaf = root('parent:code:1:code:1', { name: 'unknown_image_tool', argsRaw: '{}' })
+    const child = {
+      ...root('parent:code:1', { name: 'run_code', argsRaw: '{}' }),
+      subCalls: [leaf],
+    }
+    const block = { ...root('parent', { name: 'run_code', argsRaw: '{}' }), subCalls: [child] }
+    const treeProps = props(block)
+    const renderSlot = vi.fn((_key: string, _owner: ToolCallOwnerProps) => null)
+    const loadImage = vi.fn(async () => 'blob:first')
+    const view = render(
+      <ToolCallTree {...treeProps} renderSlot={renderSlot as ToolTreeProps['renderSlot']} loadImage={loadImage} />,
+    )
+    expect(renderSlot.mock.calls.map(([key, owner]) => [key, owner.callId, owner.loadImage])).toEqual([
+      ['tool.call.toolview', block.callId, loadImage],
+      ['tool.call.toolview', child.callId, loadImage],
+      ['tool.call.toolview', leaf.callId, loadImage],
+    ])
+
+    renderSlot.mockClear()
+    const replacement = vi.fn(async () => 'blob:replacement')
+    view.rerender(
+      <ToolCallTree {...treeProps} renderSlot={renderSlot as ToolTreeProps['renderSlot']} loadImage={replacement} />,
+    )
+    expect(renderSlot.mock.calls.map(([, owner]) => owner.loadImage)).toEqual([
+      replacement, replacement, replacement,
+    ])
+  })
+
+  it('loads a recursive generic fallback image and opens the shared original preview', async () => {
+    const attachment: ImageAttachmentRef = {
+      attachmentId: 'tool-image' as never, mediaType: 'image/png', bytes: 4, width: 2, height: 2,
+    }
+    const child = {
+      ...root('parent:code:1', { name: 'unknown_image_tool', argsRaw: '{}' }),
+      content: [{ type: 'image', attachment } as never],
+    }
+    const block = { ...root('parent', { name: 'run_code', argsRaw: '{}' }), subCalls: [child] }
+    const treeProps = props(block)
+    const renderSlot = vi.fn(treeProps.renderSlot)
+    const loadImage = vi.fn(async () => 'blob:tool-image')
+    const view = render(
+      <ToolCallTree {...treeProps} renderSlot={renderSlot as unknown as ToolTreeProps['renderSlot']} loadImage={loadImage} />,
+    )
+
+    expect(renderSlot.mock.calls.find(([, owner]) => owner.callId === child.callId)?.[1].loadImage).toBe(loadImage)
+    expect(loadImage).not.toHaveBeenCalled()
+    expect(view.queryByRole('img', { name: '图片' })).toBeNull()
+    fireEvent.click(view.getByRole('button', { name: /Tool call/ }))
+    const image = await view.findByRole('img', { name: '图片' })
+    expect(loadImage).toHaveBeenCalledWith(attachment)
+    expect(image.getAttribute('src')).toBe('blob:tool-image')
+    fireEvent.click(image)
+    expect(view.getByRole('dialog', { name: '原图预览' })).toBeTruthy()
+    expect(view.getByRole('button', { name: '关闭原图预览' })).toBeTruthy()
   })
 })

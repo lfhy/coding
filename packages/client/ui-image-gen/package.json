@@ -22,7 +22,7 @@
     "inject": [
       "coding-api-remotes", "coding-client-locale", "coding-client-runtime",
       "coding-client-ui-conversation", "coding-client-ui-layout", "coding-client-ui-settings",
-      "coding-client-ui-sidebar"
+      "coding-client-ui-sidebar", "coding-client-ui-tool"
     ],
     "platform": "web"
   } },
@@ -37,6 +37,7 @@
     "coding-client-ui-layout": "workspace:^",
     "coding-client-ui-settings": "workspace:^",
     "coding-client-ui-sidebar": "workspace:^",
+    "coding-client-ui-tool": "workspace:^",
     "coding-invariants": "workspace:^",
     "coding-session": "workspace:^"
   },
@@ -56,6 +57,7 @@
     "coding-client-ui-settings": "workspace:^",
     "coding-client-ui-sidebar": "workspace:^",
     "coding-client-ui-slots": "workspace:^",
+    "coding-client-ui-tool": "workspace:^",
     "coding-invariants": "workspace:^",
     "coding-session": "workspace:^",
     "react": "^18.2.0",

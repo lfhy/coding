@@ -19,6 +19,7 @@ describe('图像插件注册生命周期', () => {
       'conversation.hero.actions': { kind: 'list', scope: 'root' },
       'conversation.session.header.utilities': { kind: 'list', scope: 'session' },
       'shell.page': { kind: 'keyed', scope: 'session' },
+      'tool.call.toolview': { kind: 'keyed', scope: 'session' },
     } } as never, () => null)
     const locale = new LocaleRuntime(ctx)
     locale.setLocale('zh')
@@ -28,7 +29,8 @@ describe('图像插件注册生命周期', () => {
     scope.publish({ status: 'ready', writable: true, revision: 1,
       value: { enabled: false, endpoint: '', model: '', apiKeyRef: '' }, base: {}, user: {} })
     ctx.provide('settingsScope', { bind: () => scope.scope } as never)
-    ctx.provide('sessions', { list: { getSnapshot: () => ({ current: 'image-session',
+    const openSession = vi.fn()
+    ctx.provide('sessions', { open: openSession, list: { getSnapshot: () => ({ current: 'image-session',
       byId: { 'image-session': { id: 'image-session', agentPreset: 'image', blank: true } } }) } } as never)
     ctx.provide('workspaces', { list: { getSnapshot: () => ({ items: [] }) } } as never)
     let keyConfigured = true
@@ -52,6 +54,14 @@ describe('图像插件注册生命周期', () => {
     expect(slots.entries('conversation.hero.actions')).toHaveLength(0)
     expect(slots.entries('conversation.session.header.utilities')[0]?.options.id).toBe('image-generation')
     expect(slots.entries('shell.page').map(entry => entry.options.key)).toEqual(['image-gallery'])
+    expect(slots.entries('tool.call.toolview').map(entry => entry.options.key))
+      .toEqual(['generate_image', 'generate_images', 'edit_image', 'image_gen'])
+    const imageTool = (slots.entries('tool.call.toolview')[0]!.inject as unknown as
+      (sessionId: string) => { openInStudio: () => void })('tool-session')
+    imageTool.openInStudio()
+    expect(openSession).toHaveBeenCalledWith('tool-session')
+    expect(openPage).toHaveBeenCalledWith('image-gallery', 'tool-session')
+    openPage.mockClear()
     expect(openPage).not.toHaveBeenCalled()
 
     const entry = (slots.entries('sidebar.top.entry')[0]!.inject as unknown as () => {
@@ -80,7 +90,7 @@ describe('图像插件注册生命周期', () => {
     ctx.emit('connection/reset')
     expect(describe).toHaveBeenCalledTimes(beforeDisposed)
     for (const seat of ['settings.section', 'sidebar.top.entry', 'conversation.hero.actions',
-      'conversation.session.header.utilities', 'shell.page'] as const) {
+      'conversation.session.header.utilities', 'shell.page', 'tool.call.toolview'] as const) {
       expect(slots.entries(seat)).toHaveLength(0)
     }
     Object.defineProperty(window, 'innerWidth', { configurable: true, value: previousWidth })

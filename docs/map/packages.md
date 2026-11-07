@@ -60,7 +60,7 @@ workspace 共 273 个包，按 group 分节。每行给出包目录、职责（R
 - `packages/client/ui-directory-picker-native` — 原生目录选择界面：原生选取交互的浏览器半边 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 1）
 - `packages/client/ui-goal` — Goal 界面插件（浏览器端部分）：`GoalBar` 条带是 `conversation.input.dock` composer 上下文堆栈… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 4）
 - `packages/client/ui-icons` — 本包是浏览器客户端图标的独立组件边界 入口 `src/index.ts`（tests 1）
-- `packages/client/ui-image-gen` — 图像生成的浏览器界面：设置里的「图像生成」分区、侧边栏「新对话」下方与画图会话页头的入口，以及主内容「工作台／灵感／图库」页面 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 9）
+- `packages/client/ui-image-gen` — 图像生成的浏览器界面：设置里的「图像生成」分区、侧边栏「新对话」下方与画图会话页头的入口，以及主内容「工作台／灵感／图库」页面 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 11）
 - `packages/client/ui-input-trigger` — 输入触发流水线插件：光标处的 `/` 与 `@` 检测（词边界 + guard tier 规则）、分组候选菜单… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 5）
 - `packages/client/ui-jobs` — Web 后台任务特性的归属方：向 `conversation.overview.jobs` 贡献一个会话作用域列表… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 2）
 - `packages/client/ui-layout` — 本包拥有浏览器根布局、瞬时面板几何和 `ctx.layout` [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 7）
@@ -219,7 +219,7 @@ workspace 共 273 个包，按 group 分节。每行给出包目录、职责（R
 ## packages/image
 
 - `packages/image/image-gen` — Host 的会话级图像生成/编辑服务 入口 `src/index.ts`（tests 5）
-- `packages/image/tool-image-gen` — 模型侧图像工具包；注入 `tools` 和 `imageGeneration` 入口 `src/index.ts`（tests 1）
+- `packages/image/tool-image-gen` — 模型侧图像工具包；注入 `tools` 和 `imageGeneration` 入口 `src/index.ts`（tests 2）
 
 ## packages/interaction
 
