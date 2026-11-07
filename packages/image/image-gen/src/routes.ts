@@ -1,6 +1,9 @@
 /** 回环同源图像路由：先校验连接与会话，再读取 body、附件或调用提供方。@module coding-image-gen/routes */
 import type { IncomingMessage, ServerResponse } from 'node:http'
+import { readFile } from 'node:fs/promises'
+import { join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
+import { fileURLToPath } from 'node:url'
 import type {} from 'coding-client-connection'
 import type {} from 'coding-host-webserver'
 import { SessionId } from 'coding-session/types'
@@ -10,6 +13,8 @@ import type { ImageGeneration } from './index.ts'
 import { ImageGenerationUnavailableError } from './index.ts'
 
 const PREFIX = '/api/image-gen'
+const INSPIRATION_ASSETS = fileURLToPath(new URL('../assets/inspiration/v1/', import.meta.url))
+const INSPIRATION_ASSET = /^[a-f0-9]{16}\.webp$/u
 const BODY_LIMIT = 64 * 1024
 const IMAGE_TYPES: readonly ImageMediaType[] = ['image/png', 'image/jpeg', 'image/webp', 'image/gif']
 const SESSION_ID = /^[a-zA-Z0-9_-]{1,128}$/
@@ -108,6 +113,37 @@ export function installImageRoutes(ctx: Context, service: ImageGeneration): void
       if (id === undefined) throw new TypeError('会话标识无效')
       return id
     }
+    webCtx.effect(() => webCtx.webServer.register({
+      kind: 'prefix',
+      path: `${PREFIX}/inspiration/v1`,
+      handler: async (req, res) => {
+        if (!trusted(webCtx, req, res)) return
+        if (req.method !== 'GET' && req.method !== 'HEAD') {
+          res.writeHead(405, { allow: 'GET, HEAD' })
+          res.end()
+          return
+        }
+        const url = new URL(req.url ?? '/', 'http://127.0.0.1')
+        const name = url.pathname.slice(`${PREFIX}/inspiration/v1/`.length)
+        if (url.search !== '' || !INSPIRATION_ASSET.test(name)) {
+          res.writeHead(404)
+          res.end()
+          return
+        }
+        try {
+          const body = await readFile(join(INSPIRATION_ASSETS, name))
+          res.writeHead(200, {
+            'content-type': 'image/webp',
+            'content-length': body.byteLength,
+            'cache-control': 'public, max-age=31536000, immutable',
+          })
+          res.end(req.method === 'HEAD' ? undefined : body)
+        } catch {
+          res.writeHead(404)
+          res.end()
+        }
+      },
+    }), 'image-generation: inspiration assets')
     route('state', 'GET', async (_req, res, url) => {
       const id = querySession(url)
       if (url.searchParams.size !== 1 || await service.sessionEvents(id) === undefined) { fail(res, 404, '会话不存在'); return }

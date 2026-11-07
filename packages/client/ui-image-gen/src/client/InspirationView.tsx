@@ -64,7 +64,8 @@ export function InspirationView({ favorites, favoritesOnly = false, onFavorite, 
         {shown.length > 0 && <ul className={css.grid}>{shown.slice(0, limit).map(item => <li key={item.id}>
           <button type="button" className={selected?.id === item.id ? css.selectedCard : css.card}
             aria-pressed={selected?.id === item.id} onClick={() => { pick(item) }}>
-            <img src={item.imageUrl} alt={item.title} loading="lazy" />
+            <img src={item.imageUrl} alt={item.title} width={item.width} height={item.height}
+              loading="lazy" decoding="async" />
             <span className={css.cardTitle}>{item.title}</span>
             <span className={css.cardCategory}>{item.category}</span>
           </button>
@@ -72,7 +73,8 @@ export function InspirationView({ favorites, favoritesOnly = false, onFavorite, 
         {limit < shown.length && <Button size="sm" onClick={() => { setLimit(value => value + 48) }}>{t('loadMore')}</Button>}
       </div>
       {selected !== undefined && <aside className={css.details} aria-label={t('inspirationDetails')}>
-        <img src={selected.imageUrl} alt={selected.title} />
+        <img src={selected.imageUrl} alt={selected.title} width={selected.width} height={selected.height}
+          decoding="async" />
         <div className={css.detailHeading}><h3>{selected.title}</h3>
           <button type="button" className={css.favorite} aria-pressed={favorites.includes(selected.id)}
             aria-label={favorites.includes(selected.id) ? t('removeFavorite') : t('addFavorite')}

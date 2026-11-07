@@ -13,9 +13,9 @@
     "./src/*": "./src/*",
     "./package.json": "./package.json"
   },
-  "files": ["lib/index.js", "lib/invariant.js", "lib/types/**/*.d.ts", "README.md", "NOTICE.md"],
+  "files": ["lib/index.js", "lib/invariant.js", "lib/types/**/*.d.ts", "assets/inspiration/**/*.webp", "README.md", "NOTICE.md"],
   "license": "MIT",
-  "scripts": { "bundle": "tsdown" },
+  "scripts": { "bundle": "tsdown", "gen:inspiration": "node scripts/generate-inspiration-thumbnails.mjs" },
   "dependencies": { "@deepseek-ai/schemastery": "workspace:^" },
   "peerDependencies": {
     "@deepseek-ai/cordis": "workspace:^",

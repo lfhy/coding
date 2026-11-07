@@ -10,13 +10,14 @@ const t = (key: keyof typeof zh) => zh[key]
 afterEach(cleanup)
 
 describe('原画廊灵感索引与收藏', () => {
-  it('保留两套来源的完整案例和固定来源图片地址', () => {
+  it('保留两套来源的完整案例，并只引用本地缩略图', () => {
     const cases = inspirationCases()
     expect(cases).toHaveLength(976)
     expect(new Set(cases.map(item => item.id)).size).toBe(cases.length)
     expect(cases.some(item => item.sourceId === 'awesome-gpt-image-2')).toBe(true)
     expect(cases.some(item => item.sourceId === 'handraw-style')).toBe(true)
-    expect(cases.every(item => item.imageUrl.startsWith('https://cdn.jsdelivr.net/gh/'))).toBe(true)
+    expect(cases.every(item => /^\/api\/image-gen\/inspiration\/v1\/[a-f0-9]{16}\.webp$/u.test(item.imageUrl))).toBe(true)
+    expect(cases.every(item => item.width > 0 && item.height > 0)).toBe(true)
   })
 
   it('检索、选中、收藏并把真实 Prompt 带入工作台', () => {

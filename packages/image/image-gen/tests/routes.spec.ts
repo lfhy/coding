@@ -1,7 +1,7 @@
 /** 经真实 webServer 和 Loader 引导图像路由，模拟附件/凭据与上游服务。 */
 import { createServer } from 'node:http'
 import { once } from 'node:events'
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -94,6 +94,20 @@ async function boot(config?: Record<string, unknown>) {
 }
 
 describe('image generation HTTP (real Loader)', () => {
+  it('serves immutable local inspiration thumbnails without accepting paths', async () => {
+    const env = await boot()
+    const file = (await readdir(new URL('../assets/inspiration/v1/', import.meta.url)))
+      .find(name => /^[a-f0-9]{16}\.webp$/u.test(name))
+    expect(file).toBeDefined()
+    const response = await fetch(`${env.base}/inspiration/v1/${file}`)
+    expect(response.status).toBe(200)
+    expect(response.headers.get('content-type')).toBe('image/webp')
+    expect(response.headers.get('cache-control')).toBe('public, max-age=31536000, immutable')
+    expect((await response.arrayBuffer()).byteLength).toBeGreaterThan(0)
+    expect((await fetch(`${env.base}/inspiration/v1/%2e%2e%2fsecret.webp`)).status).toBe(404)
+    expect((await fetch(`${env.base}/inspiration/v1/${file}`, { method: 'POST' })).status).toBe(405)
+  })
+
   it('imports one reference into this session before image editing, with byte and origin checks', async () => {
     const env = await boot()
     const importAt = (session: string, image: Uint8Array, mediaType = 'image/png', origin?: string) =>

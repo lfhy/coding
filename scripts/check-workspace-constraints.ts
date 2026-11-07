@@ -156,6 +156,8 @@ const packageFileExtras: Readonly<Record<string, readonly string[]>> = {
   // 浏览器 bundle 的懒加载 CJS chunk 也必须随 npm 包交付；上游许可说明不能仅依赖仓库文档。
   'coding-genui': ['lib/*.cjs', 'lib/assets/*.js', 'SKILL.md', 'NOTICE.md'],
   'coding-attachment': ['lib/image-processing.js'],
+  // 灵感页缩略图由图像服务从包内静态目录下发，不进入 client bundle。
+  'coding-image-gen': ['assets/inspiration/**/*.webp'],
   'coding-llm-vision-fallback': ['lib/content-*.js'],
   // The CPython side ships as source .py files, published as-is rather than built.
   'coding-code-runtime-python': ['py/**/*.py'],

@@ -1,6 +1,8 @@
-/** 原画廊两份固定版本的灵感索引；仅引入元数据，图片按需从原来源的公开镜像读取。 */
+/** 原画廊两份固定版本的灵感索引；元数据与压缩缩略图随应用一并交付。 */
+import thumbnails from './inspiration/thumbnails.generated.json' with { type: 'json' }
 import awesome from './inspiration/awesome-gpt-image-2.json' with { type: 'json' }
 import handdraw from './inspiration/handraw-style.json' with { type: 'json' }
+import { inspirationImageUrl } from './wire.ts'
 
 export interface InspirationCase {
   id: string
@@ -11,23 +13,37 @@ export interface InspirationCase {
   prompt: string
   preview: string
   imageUrl: string
+  width: number
+  height: number
   sourceUrl?: string
 }
 
 interface SourceDocument { cases?: unknown }
 
 const SOURCES = [
-  { id: 'awesome-gpt-image-2', label: 'GPT Image 2 案例库',
-    prefix: 'https://cdn.jsdelivr.net/gh/freestylefly/awesome-gpt-image-2@c7d293963b21c60bf338003915438cc5c39dd3ca/data',
-    document: awesome as SourceDocument },
-  { id: 'handraw-style', label: '手绘风格手册',
-    prefix: 'https://cdn.jsdelivr.net/gh/yang0/handraw-style@50998b094866e22007001161bca12c892a3796b1',
-    document: handdraw as SourceDocument },
+  { id: 'awesome-gpt-image-2', label: 'GPT Image 2 案例库', document: awesome as SourceDocument },
+  { id: 'handraw-style', label: '手绘风格手册', document: handdraw as SourceDocument },
 ] as const
+
+interface Thumbnail {
+  file: string
+  width: number
+  height: number
+}
 
 function record(value: unknown): Record<string, unknown> | undefined {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
     ? value as Record<string, unknown> : undefined
+}
+
+function thumbnail(sourceId: string, image: string): Thumbnail {
+  const entry = record((thumbnails as Record<string, unknown>)[`${sourceId}:${image}`])
+  if (entry === undefined || typeof entry.file !== 'string' || !/^[a-f0-9]{16}\.webp$/u.test(entry.file)
+    || typeof entry.width !== 'number' || !Number.isSafeInteger(entry.width) || entry.width < 1
+    || typeof entry.height !== 'number' || !Number.isSafeInteger(entry.height) || entry.height < 1) {
+    throw new Error(`missing inspiration thumbnail: ${sourceId}:${image}`)
+  }
+  return { file: entry.file, width: entry.width, height: entry.height }
 }
 
 /**
@@ -42,6 +58,7 @@ export function inspirationCases(): readonly InspirationCase[] {
       if (entry === undefined || typeof entry.id !== 'string' && typeof entry.id !== 'number'
         || typeof entry.title !== 'string' || typeof entry.prompt !== 'string'
         || typeof entry.image !== 'string' || !/^\/images\/[A-Za-z0-9/_-]+\.(?:jpe?g|png|webp)$/u.test(entry.image)) return []
+      const preview = thumbnail(source.id, entry.image)
       return [{
         id: `${source.id}:${String(entry.id)}`,
         sourceId: source.id,
@@ -50,7 +67,9 @@ export function inspirationCases(): readonly InspirationCase[] {
         category: typeof entry.category === 'string' ? entry.category : '',
         prompt: entry.prompt,
         preview: typeof entry.promptPreview === 'string' ? entry.promptPreview : entry.prompt.slice(0, 240),
-        imageUrl: `${source.prefix}${entry.image}`,
+        imageUrl: inspirationImageUrl(preview.file),
+        width: preview.width,
+        height: preview.height,
         ...(typeof entry.sourceUrl === 'string' && /^https:\/\//u.test(entry.sourceUrl)
           ? { sourceUrl: entry.sourceUrl } : {}),
       }]

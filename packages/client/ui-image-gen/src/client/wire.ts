@@ -132,6 +132,15 @@ export function imageUrl(sessionId: string, id: string): string {
 }
 
 /**
+ * 灵感缩略图由图像服务的本地静态路由提供，避免客户端直连第三方 CDN。
+ * @param file - 构建时生成的哈希文件名。
+ * @returns 同源静态图片地址。
+ */
+export function inspirationImageUrl(file: string): string {
+  return `${BASE}/inspiration/v1/${file}`
+}
+
+/**
  * 从描述生成一张图片；服务端才拥有图像解码与持久化。
  * @param sessionId - 当前会话。
  * @param prompt - 用户描述。

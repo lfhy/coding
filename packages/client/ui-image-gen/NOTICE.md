@@ -4,4 +4,4 @@
 
 本包将页面接到 Coding 的会话日志图库、同源图片路由、单一 OpenAI 兼容上游、主题 token 与 slot 机制；没有搬入原项目的多厂商选择、订阅登录或 tldraw 无限画布。收藏与隐藏是浏览器本地的逐会话视图偏好，不删除图片附件或持久会话事实。
 
-灵感元数据快照取自原项目同一 commit 的 `awesome-gpt-image-2.json` 与 `handraw-style.json`。案例的 Prompt 和标题分别来源于 [freestylefly/awesome-gpt-image-2](https://github.com/freestylefly/awesome-gpt-image-2) 与 [yang0/handraw-style](https://github.com/yang0/handraw-style)；本包不打包其图片，缩略图按原项目固定的来源版本从公开镜像按需加载。页面保留每个案例的来源链接。
+灵感元数据快照取自原项目同一 commit 的 `awesome-gpt-image-2.json` 与 `handraw-style.json`。案例的 Prompt、标题和原始图片分别来源于固定 commit 的 [freestylefly/awesome-gpt-image-2](https://github.com/freestylefly/awesome-gpt-image-2/tree/c7d293963b21c60bf338003915438cc5c39dd3ca) 与 [yang0/handraw-style](https://github.com/yang0/handraw-style/tree/50998b094866e22007001161bca12c892a3796b1)。`coding-image-gen/assets/inspiration/` 内只保留为快速预览生成的 320px WebP 缩略图；图片版权仍归各案例原作者，页面保留每个案例的来源链接，不随本项目的主许可证重新授权。
