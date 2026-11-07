@@ -81,7 +81,7 @@ export async function readState(sessionId: string, signal?: AbortSignal): Promis
     || typeof value.model !== 'string') throw new Error('invalid image state')
   const sizes = value.sizes
   if (value.maxEditReferences !== undefined && (!Number.isSafeInteger(value.maxEditReferences)
-    || (value.maxEditReferences as number) < 1 || (value.maxEditReferences as number) > 5)) throw new Error('invalid reference limit')
+    || (value.maxEditReferences as number) < 1 || (value.maxEditReferences as number) > 10)) throw new Error('invalid reference limit')
   if (sizes !== undefined && (!record(sizes) || Object.keys(sizes).length > 13
     || !Object.entries(sizes).every(([ratio, tiers]) => /^\d{1,2}:\d{1,2}$/u.test(ratio)
       && record(tiers) && Object.keys(tiers).length <= 4 && Object.values(tiers).every(size => typeof size === 'string')))) {

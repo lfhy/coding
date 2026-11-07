@@ -6,7 +6,7 @@ const item = { id: 'first', attachmentId: 'att', prompt: '云海', model: 'model
 const state = { enabled: true, available: true, model: 'model' }
 const json = (value: unknown) => ({ ok: true, json: async () => value }) as Response
 
-afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals() })
+afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals() })
 
 describe('会话图库', () => {
   it('显隐时取消旧请求；可见期间定时刷新来自对话工具的新图', async () => {
@@ -70,6 +70,56 @@ describe('会话图库', () => {
     await vi.waitFor(() => { expect(gallery.view.getSnapshot().phase).toBe('ready') })
     expect(gallery.view.getSnapshot().items).toEqual([item])
     expect(await gallery.generate('云')).toBe(false)
+    gallery.dispose()
+  })
+
+  it('记录从提交到结果可用的生成耗时', async () => {
+    let now = 1_000
+    vi.spyOn(Date, 'now').mockImplementation(() => now)
+    const generated = { ...item, id: 'second' }
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      if (url.includes('/state')) return json(state)
+      if (url.includes('/gallery')) return json({ enabled: true, items: [item, generated] })
+      if (url.includes('/generate')) {
+        now = 13_400
+        return json({ item: generated })
+      }
+      throw Error('unexpected URL')
+    }))
+    const gallery = new GalleryController('one')
+    gallery.show(true)
+    await vi.waitFor(() => { expect(gallery.view.getSnapshot().phase).toBe('ready') })
+    expect(await gallery.generate('橘猫')).toBe(true)
+    expect(gallery.view.getSnapshot()).toMatchObject({ lastResultId: 'second', lastElapsedMs: 12_400 })
+    gallery.dispose()
+  })
+
+  it('请求期间关闭页面仍记录结果，重新打开后不保留生成中状态', async () => {
+    let now = 2_000
+    let finish!: (response: Response) => void
+    const pending = new Promise<Response>((resolve) => { finish = resolve })
+    vi.spyOn(Date, 'now').mockImplementation(() => now)
+    const generated = { ...item, id: 'hidden-result' }
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      if (url.includes('/state')) return json(state)
+      if (url.includes('/gallery')) return json({ enabled: true, items: [item, generated] })
+      if (url.includes('/generate')) return pending
+      throw Error('unexpected URL')
+    }))
+    const gallery = new GalleryController('one')
+    gallery.show(true)
+    await vi.waitFor(() => { expect(gallery.view.getSnapshot().phase).toBe('ready') })
+    const running = gallery.generate('云朵')
+    gallery.show(false)
+    now = 8_500
+    finish(json({ item: generated }))
+    expect(await running).toBe(true)
+    expect(gallery.view.getSnapshot()).toMatchObject({
+      generating: false, lastResultId: 'hidden-result', lastElapsedMs: 6_500,
+    })
+    gallery.show(true)
+    await vi.waitFor(() => { expect(gallery.view.getSnapshot().items).toHaveLength(2) })
+    expect(gallery.view.getSnapshot().generating).toBe(false)
     gallery.dispose()
   })
 

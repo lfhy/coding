@@ -35,6 +35,11 @@ function readableDate(time: number): string {
   return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(time)
 }
 
+/** 将本次生成的端到端等待时间显示为一位小数秒。 */
+function elapsed(text: string, milliseconds: number): string {
+  return text.replace('{seconds}', (milliseconds / 1000).toFixed(1))
+}
+
 interface CardProps {
   item: GalleryItem
   src: string
@@ -137,7 +142,11 @@ export function GalleryView({ sessionId, closePage, useGallery, useStore, action
     if (previewId === null && lightboxFocus?.isConnected === true) lightboxFocus.focus()
   }, [previewId, lightboxFocus])
   useEffect(() => { setLimit(24); if (listRef.current !== null) listRef.current.scrollTop = 0 }, [tab, search, ratio, oldestFirst])
-  useEffect(() => { if (state.lastResultId !== null) setStudioImageId(state.lastResultId) }, [state.lastResultId])
+  useEffect(() => {
+    if (state.lastResultId === null) return
+    setStudioImageId(state.lastResultId)
+    setZoom(100)
+  }, [state.lastResultId])
 
   const items = useMemo(() => state.items.filter(item => !hidden.includes(item.id)), [state.items, hidden])
   const visible = useMemo(() => items.filter((item) => {
@@ -164,14 +173,14 @@ export function GalleryView({ sessionId, closePage, useGallery, useStore, action
     return ''
   }
   const ratioOptions = [
-    { id: 'auto', label: `Auto · ${t('automatic')}`, icon: <AspectRatioGlyph ratio="1:1" auto /> },
+    { id: 'auto', label: `Auto · ${t('automatic')}`, displayLabel: t('automatic'), icon: <AspectRatioGlyph ratio="1:1" auto /> },
     ...ratios.map(ratio => ({
       id: ratio,
       label: `${ratio} · ${ratioShape(ratio)}`.trim(),
       icon: <AspectRatioGlyph ratio={ratio} />,
     })),
   ]
-  const maxReferences = state.state?.maxEditReferences ?? 1
+  const maxReferences = state.state?.maxEditReferences ?? 10
   const studioItem = items.find(item => item.id === studioImageId)
   const select = (id: string) => {
     setSelected((previous) => {
@@ -264,9 +273,6 @@ export function GalleryView({ sessionId, closePage, useGallery, useStore, action
           {t(key === 'studio' ? 'studioTab' : key === 'inspiration' ? 'inspirationTab' : 'galleryTab')}
         </button>)}
       </nav>
-      <button type="button" className={css.tabBack} onClick={closePage} aria-label={t('backToChat')} title={t('backToChat')}>
-        <IconChevronLeftOutline14 size={16} />
-      </button>
     </div>
     {tab === 'gallery' && favoritesOnly && <div className={css.favoriteKinds} role="group" aria-label={t('favoritesTab')}>
       <button type="button" aria-pressed={favoriteKind === 'images'} onClick={() => { setFavoriteKind('images') }}>{t('favoriteImages')}</button>
@@ -331,8 +337,11 @@ export function GalleryView({ sessionId, closePage, useGallery, useStore, action
       </div>
       <div className={css.studioCenter}>
         <div className={css.previewPane}>
-          <div className={css.studioCanvas}>
-            {state.generating ? <p className={css.studioEmpty} role="status"><IconSparkle16 size={28} />{t('generating')}</p>
+          <div className={css.studioCanvas} aria-busy={state.generating}>
+            {state.generating ? <p className={css.studioLoading} role="status">
+              <span className={css.loadingSpinner} data-image-gen-loading="" aria-hidden="true" />
+              <span>{t('generating')}</span>
+            </p>
               : studioItem === undefined ? <p className={css.studioEmpty}><Icon name="model-vision" size={32} />{t('studioHint')}</p>
                 : <img className={css.previewImage} style={{ '--dsh-image-zoom': zoom / 100 } as React.CSSProperties}
                   src={url(studioItem.id)} alt={studioItem.prompt || t('image')} />}
@@ -374,6 +383,8 @@ export function GalleryView({ sessionId, closePage, useGallery, useStore, action
           </div>
           <div className={css.resultMeta}>
             {readableDate(studioItem.createdAt)} · {studioItem.model} · {studioItem.width} × {studioItem.height}
+            {studioItem.id === state.lastResultId && typeof state.lastElapsedMs === 'number'
+              && <> · {elapsed(t('elapsedSeconds'), state.lastElapsedMs)}</>}
           </div>
         </div>}
       </div>
@@ -402,7 +413,8 @@ export function GalleryView({ sessionId, closePage, useGallery, useStore, action
               <button type="button" aria-label={t('removeReference')} onClick={() => { setEditing(previous => previous.filter(value => value !== id)) }}>×</button>
             </div>)}
             {editing.length < maxReferences && <button type="button" className={css.addReference} disabled={state.uploading}
-              onClick={() => { fileInput.current?.click() }}><IconPlusOutline16 size={16} />{t('addReference')}</button>
+              aria-label={t('addReference')} title={t('addReference')}
+              onClick={() => { fileInput.current?.click() }}><IconPlusOutline16 size={18} /></button>
             }
             <input ref={fileInput} hidden type="file" multiple={maxReferences > 1} accept="image/png,image/jpeg,image/webp,image/gif"
               aria-label={t('chooseReference')} onChange={(event) => {
@@ -410,7 +422,6 @@ export function GalleryView({ sessionId, closePage, useGallery, useStore, action
               }} />
           </div>
           {state.uploading && <p role="status">{t('importing')}</p>}
-          <p>{t('referenceHint')}</p>
         </div>}
         <label htmlFor="image-gen-prompt">{t('prompt')}</label>
         <textarea id="image-gen-prompt" value={prompt} placeholder={t('promptPlaceholder')}
@@ -436,7 +447,10 @@ export function GalleryView({ sessionId, closePage, useGallery, useStore, action
         </div>
         <button className={css.generateButton} type="submit"
           disabled={!canGenerate || state.generating || state.uploading || !prompt.trim() || prompt.length > 4000 || mode === 'edit' && editing.length === 0}>
-          <IconSparkle16 size={16} />{t(state.generating ? 'generating' : 'startGeneration')}
+          {state.generating
+            ? <span className={css.loadingSpinner} data-image-gen-loading="" aria-hidden="true" />
+            : <IconSparkle16 size={16} />}
+          {t(state.generating ? 'generating' : 'startGeneration')}
         </button>
       </form>
     </div>}

@@ -4,7 +4,7 @@
 
 `standard` 注册 `generate_image({prompt})`、`generate_images({prompts})`、`canvas_state({})` 和 `edit_image({prompt,imageId})`。批量限 1–10 个，每项失败互不影响；输出 `{images:[{index,id,attachmentId,prompt,model,createdAt,mediaType,width,height,...}],failures:[{index,error}]}`。`canvas_state` 只读当前 Session 持久画布，输出最多 32 个节点的类型、坐标、笔迹点数和图片图库 ID；可据图片节点的 imageId 调用 `edit_image`，该编辑仅接受当前会话图库 ID，不接受文件系统路径。生成图片经 Host 的 `/api/image-gen/image?sessionId=<id>&id=<item.id>` 读取。
 
-`codex` **只**注册 `image_gen`，不注册上述三工具。参数 `prompt`、`transparent_background?`、`referenced_image_paths?`、`num_last_images_to_include?`；后者取当前 Session 最后 1–5 张图作为编辑参考，数量不足时拒绝。`referenced_image_paths` 一律拒绝，防止绕开会话附件归属和现有文件系统授权；`transparent_background:true` 一律拒绝，OpenAI-compatible 通用端点不能保证输出透明。两种引用方式不会同时执行；工具参数不能指定 Session 或提供方 endpoint。
+`codex` **只**注册 `image_gen`，不注册上述三工具。参数 `prompt`、`transparent_background?`、`referenced_image_paths?`、`num_last_images_to_include?`；后者取当前 Session 最后 1–10 张图作为编辑参考，数量不足时拒绝。`referenced_image_paths` 一律拒绝，防止绕开会话附件归属和现有文件系统授权；`transparent_background:true` 一律拒绝，OpenAI-compatible 通用端点不能保证输出透明。两种引用方式不会同时执行；工具参数不能指定 Session 或提供方 endpoint。
 
 ## Model Experience
 

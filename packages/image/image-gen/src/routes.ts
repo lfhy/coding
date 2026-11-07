@@ -169,7 +169,7 @@ export function installImageRoutes(ctx: Context, service: ImageGeneration): void
         || (kind === 'edit' && (Object.hasOwn(payload, 'imageId') === Object.hasOwn(payload, 'imageIds')
           || payload.imageId !== undefined && typeof payload.imageId !== 'string'
           || payload.imageIds !== undefined && (!Array.isArray(payload.imageIds) || payload.imageIds.length < 1
-            || payload.imageIds.length > 5 || !payload.imageIds.every(value => typeof value === 'string'))))
+            || payload.imageIds.length > 10 || !payload.imageIds.every(value => typeof value === 'string'))))
         || (payload.size !== undefined && typeof payload.size !== 'string')
         || (payload.quality !== undefined && typeof payload.quality !== 'string')) throw new TypeError('生成参数无效')
       const session = webCtx.sessions.get(id)

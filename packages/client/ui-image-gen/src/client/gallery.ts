@@ -10,6 +10,7 @@ export interface GalleryViewState {
   generating: boolean
   uploading: boolean
   lastResultId: string | null
+  lastElapsedMs: number | null
   failed: boolean
 }
 
@@ -27,7 +28,7 @@ export interface GalleryFace {
 /** 每个 Session 独占一个目录控制器，隐藏与卸载均取消请求。 */
 export class GalleryController {
   readonly view = createSnapshotStore<GalleryViewState>({ phase: 'loading', state: null, items: [], generating: false,
-    uploading: false, lastResultId: null, failed: false })
+    uploading: false, lastResultId: null, lastElapsedMs: null, failed: false })
   private abort: AbortController | undefined
   private generation = 0
   private shown = false
@@ -36,6 +37,7 @@ export class GalleryController {
   private inFlight: Promise<void> | undefined
 
   private active(): boolean { return this.shown && !this.disposed }
+  private mounted(): boolean { return !this.disposed }
 
   /** @param sessionId - 图片所属的会话。 */
   constructor(readonly sessionId: string) {}
@@ -93,18 +95,23 @@ export class GalleryController {
   async generate(prompt: string, imageId?: string | readonly string[], output?: ImageOutput): Promise<boolean> {
     if (!this.shown || this.disposed || this.view.getSnapshot().generating || this.view.getSnapshot().uploading
       || this.view.getSnapshot().state?.available !== true || !prompt.trim()) return false
+    const startedAt = Date.now()
     this.view.update((draft) => { draft.generating = true; draft.failed = false })
     try {
       const item = await generateImage(this.sessionId, prompt.trim(), imageId, output)
-      if (this.poll === undefined) return false
-      await this.refresh()
-      this.view.update((draft) => { draft.lastResultId = item.id })
+      if (!this.mounted()) return false
+      this.view.update((draft) => {
+        draft.lastResultId = item.id
+        draft.lastElapsedMs = Math.max(0, Date.now() - startedAt)
+      })
+      // 页面在请求期间关闭时不发起刷新；重新显示会读取包含新图的权威目录。
+      if (this.active()) await this.refresh()
       return true
     } catch {
-      if (this.poll !== undefined) this.view.update((draft) => { draft.failed = true })
+      if (this.mounted()) this.view.update((draft) => { draft.failed = true })
       return false
     } finally {
-      if (this.poll !== undefined) this.view.update((draft) => { draft.generating = false })
+      if (this.mounted()) this.view.update((draft) => { draft.generating = false })
     }
   }
 

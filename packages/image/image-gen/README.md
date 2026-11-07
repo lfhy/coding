@@ -4,13 +4,13 @@ Host 的会话级图像生成/编辑服务。图像二进制必须先经 `ctx.at
 
 ## 设置与凭据
 
-`image-generation` 设置分节提供 `enabled`（默认 `false`）、`endpoint`（默认空，OpenAI-compatible `/v1` 根地址）、`model`（默认空）、`apiKeyRef`（默认 `IMAGE_GEN_API_KEY`）、`maxEditReferences`（默认 1）和 `sizes`（默认空表）。只有开关开启、地址和模型非空，且非空凭据引用可在 `coding-credentials` 中解析时服务才可用。`apiKeyRef: ''` 表示本地无鉴权服务，请求不发送 Authorization；设置中从不保存明文密钥。请求开始时锁定同一组配置，并逐次重新读取引用。`endpoint` 接受任意 HTTP(S) 主机，包括明文 HTTP、私网和单标签主机；拒绝空主机、内嵌凭据、query 与 fragment，提供方 POST 拒绝跳转。`sizes` 与 `maxEditReferences` 属于此设置分节，由配置文件维护，工作台只消费 Host 返回的选项。配置面板的可用性不是授权：每次服务操作均重新检查，使用者应只配置自己信任的服务。
+`image-generation` 设置分节提供 `enabled`（默认 `false`）、`endpoint`（默认空，OpenAI-compatible `/v1` 根地址）、`model`（默认空）、`apiKeyRef`（默认 `IMAGE_GEN_API_KEY`）、`maxEditReferences`（默认 10，可为 1 至 10）和 `sizes`（默认空表）。只有开关开启、地址和模型非空，且非空凭据引用可在 `coding-credentials` 中解析时服务才可用。`apiKeyRef: ''` 表示本地无鉴权服务，请求不发送 Authorization；设置中从不保存明文密钥。请求开始时锁定同一组配置，并逐次重新读取引用。`endpoint` 接受任意 HTTP(S) 主机，包括明文 HTTP、私网和单标签主机；拒绝空主机、内嵌凭据、query 与 fragment，提供方 POST 拒绝跳转。`sizes` 与 `maxEditReferences` 属于此设置分节，由配置文件维护，工作台只消费 Host 返回的选项。配置面板的可用性不是授权：每次服务操作均重新检查，使用者应只配置自己信任的服务。
 
 `sizes` 按比例到分辨率档位映射像素尺寸，例如 `{"1:1":{"1K":"1024x1024","2K":"2048x2048"}}`；空表使用上游兼容渠道的 1:1／2:3／3:2 三种 1K 预设。自定义比例取固定集合，档位为 1K／2K／4K，尺寸有边长和总像素预算；工作台只提供表中组合。手动请求的 `size` 必须属于当前表，`quality` 可选 `auto`／`low`／`medium`／`high`；两项在读取附件和调用上游之前验证，模型工具不传入时保持原来的上游默认行为。实际输出可能与请求尺寸不同，以附件宽高为准。
 
 `status()` 是 Host 模式名单与工具注册共用的可用性判定。`watchAvailability()` 在设置来源挂载、卸载、解析值提交，或当前凭据引用更新后通知调用方重读状态；订阅本身不主动通知，调用方应先订阅再读取，撤销函数负责停止通知。环境变量变化不会触发凭据更新事件，实际生成请求仍逐次重新解析凭据并拒绝不可用配置。
 
-图片 URL 可指向任意 HTTP(S) 主机（包括内网及回环），无需预先登记来源；URL 凭据与 fragment 被拒绝。每次跳转独立校验 HTTP(S) URL，最多跟随 3 次；整条下载链限时 15 秒，最终图片受源图片字节限额约束。下载不使用代理或 Bearer 凭据；签名 query 原样请求，不写日志。配置的图片服务因此能让 Host 请求其可达的内网 HTTP(S) 地址，应只向可信服务配置 `endpoint`。`maxEditReferences` 默认 1，多图兼容提供方可设为 2 至 5；Codex 工具传入 2 至 5 张参考图而超出此设置时在发请求前报错，不会静默丢图。
+图片 URL 可指向任意 HTTP(S) 主机（包括内网及回环），无需预先登记来源；URL 凭据与 fragment 被拒绝。每次跳转独立校验 HTTP(S) URL，最多跟随 3 次；整条下载链限时 15 秒，最终图片受源图片字节限额约束。下载不使用代理或 Bearer 凭据；签名 query 原样请求，不写日志。配置的图片服务因此能让 Host 请求其可达的内网 HTTP(S) 地址，应只向可信服务配置 `endpoint`。`maxEditReferences` 默认 10，可设为 1 至 10；Codex 工具传入的参考图超过此设置时在发请求前报错，不会静默丢图。
 
 `generate` 发 `POST <endpoint>/images/generations` JSON `{model,prompt,n:1,response_format:'b64_json',size?,quality?}`；`edit` 发 `/images/edits` multipart，单图 `image`，多图 `image[]`，并按选择附加 `size`／`quality`。返回读取 `data[0].b64_json`、`data[0].url` 的 base64 图片 data URL，或按上述规则下载 URL；即使服务忽略 `response_format`，也按图片签名识别格式并交给附件服务做最终准入、归一化及像素预算检查。服务不直接读工作区路径或持久保存外部 URL。
 

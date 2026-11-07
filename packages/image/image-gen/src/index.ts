@@ -27,7 +27,7 @@ export interface Config {
   model: string
   /** 凭据服务中的引用；默认 IMAGE_GEN_API_KEY，空字符串仅用于无鉴权本地服务。 */
   apiKeyRef: string
-  /** 编辑一次允许的参考图数量；默认 1，多图服务可设为 2 至 5。 */
+  /** 编辑一次允许的参考图数量；默认 10，可设为 1 至 10。 */
   maxEditReferences: number
   /** 比例到分辨率档位的像素尺寸映射；空表使用原版兼容渠道的 1K 预设。 */
   sizes?: Record<string, Record<string, string>>
@@ -38,7 +38,7 @@ export const Config: z<Config> = z.object({
   endpoint: z.string().default(''),
   model: z.string().default(''),
   apiKeyRef: z.string().role('credential-ref').default('IMAGE_GEN_API_KEY'),
-  maxEditReferences: z.number().step(1).min(1).max(5).default(1),
+  maxEditReferences: z.number().step(1).min(1).max(10).default(10),
   sizes: z.dict(z.dict(z.string())).default({}),
 })
 
@@ -49,8 +49,8 @@ function validateSettings(value: Config): void {
     throw new TypeError('图像模型名称无效')
   }
   if (value.apiKeyRef !== '') credentialRef(value.apiKeyRef)
-  if (!Number.isSafeInteger(value.maxEditReferences) || value.maxEditReferences < 1 || value.maxEditReferences > 5) {
-    throw new TypeError('图片编辑参考图数量必须介于 1 至 5')
+  if (!Number.isSafeInteger(value.maxEditReferences) || value.maxEditReferences < 1 || value.maxEditReferences > 10) {
+    throw new TypeError('图片编辑参考图数量必须介于 1 至 10')
   }
   validateOutputSizes(value.sizes ?? {})
 }
@@ -62,14 +62,14 @@ export class ImageGeneration extends Service {
   private readonly availabilityListeners = new Set<() => void>()
 
   constructor(ctx: Context, config: Config = { enabled: false, endpoint: '', model: '', apiKeyRef: 'IMAGE_GEN_API_KEY',
-    maxEditReferences: 1 }) {
+    maxEditReferences: 10 }) {
     super(ctx, 'imageGeneration')
     // Loader 有可能直接交付部分配置；先按可选字段归一化，避免缺失的引用变成 undefined。
     const source: Partial<Config> = config
     const entry: Config = {
       enabled: source.enabled ?? false, endpoint: source.endpoint ?? '', model: source.model ?? '',
       apiKeyRef: source.apiKeyRef ?? 'IMAGE_GEN_API_KEY',
-      maxEditReferences: source.maxEditReferences ?? 1,
+      maxEditReferences: source.maxEditReferences ?? 10,
       sizes: source.sizes ?? {},
     }
     validateSettings(entry)
@@ -132,7 +132,7 @@ export class ImageGeneration extends Service {
 
   /** 从最近一次会话图像事件选择参考图；选取仅由同会话日志确定。 */
   latestImages(events: readonly SessionEvent[], count: number): GalleryItem[] {
-    if (!Number.isSafeInteger(count) || count < 1 || count > 5) throw new TypeError('参考图数量必须介于 1 至 5')
+    if (!Number.isSafeInteger(count) || count < 1 || count > 10) throw new TypeError('参考图数量必须介于 1 至 10')
     return galleryItems(events).slice(-count)
   }
 
@@ -174,7 +174,7 @@ export class ImageGeneration extends Service {
     if (!this.ctx.sessions.get(session.id) || this.ctx.sessions.get(session.id) !== session) {
       throw new Error('会话不可用')
     }
-    if (sourceIds.length > 5 || new Set(sourceIds).size !== sourceIds.length) {
+    if (sourceIds.length > 10 || new Set(sourceIds).size !== sourceIds.length) {
       throw new TypeError('参考图片数量或标识无效')
     }
     if (sourceIds.length > config.maxEditReferences) throw new TypeError('参考图片超过当前图片服务单次编辑限额，请减少参考图或调整 maxEditReferences')

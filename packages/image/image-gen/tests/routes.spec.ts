@@ -64,8 +64,8 @@ async function boot(config?: Record<string, unknown>) {
   })
   const readImage = vi.fn(async (ref: ImageAttachmentRef) => ({ ref, data: refs.get(ref.attachmentId) ?? PNG }))
   ctx.provide('attachments', { saveImage, readImage, imageLimits: { maxSourceImageBytes: 1024,
-    maxImageBytes: 1024, maxImagesPerMessage: 5, maxMessageImageBytes: 5120,
-    maxSourceMessageImageBytes: 5120, mediaTypes: ['image/png'] } } as never)
+    maxImageBytes: 1024, maxImagesPerMessage: 10, maxMessageImageBytes: 10_240,
+    maxSourceMessageImageBytes: 10_240, mediaTypes: ['image/png'] } } as never)
   const keys = new Map<string, string>()
   const resolveCredential = vi.fn(async (ref: string) => keys.has(ref) ? { value: keys.get(ref)!, source: 'test' } : undefined)
   ctx.provide('credentials', { resolve: resolveCredential } as never)
@@ -113,20 +113,25 @@ describe('image generation HTTP (real Loader)', () => {
     expect((await env.get('image', 'two', `&id=${payload.item.id}`)).status).toBe(404)
   })
 
-  it('rejects two edit references before calling a single-image provider by default', async () => {
+  it('allows at most ten edit references by default', async () => {
     const api = await upstream()
     const env = await boot({ enabled: true, endpoint: api.url, model: 'mock-image', apiKeyRef: '' })
-    for (const id of ['0', '1']) env.one.append('image-gen/created', { item: {
+    const ids = Array.from({ length: 11 }, (_, index) => String(index))
+    for (const id of ids.slice(0, 10)) env.one.append('image-gen/created', { item: {
       id, attachmentId: `attachment-${id}` as never, mediaType: 'image/png', bytes: PNG.byteLength,
       width: 1, height: 1, prompt: 'old', model: 'mock-image', createdAt: 0,
     } })
-    await expect(env.ctx.imageGeneration.create(env.one, 'edit', ['0', '1'])).rejects.toThrow(/maxEditReferences/)
+    expect(env.ctx.imageGeneration.maxEditReferences()).toBe(10)
+    expect(env.ctx.imageGeneration.latestImages(env.one.events, 10)).toHaveLength(10)
+    expect(() => env.ctx.imageGeneration.latestImages(env.one.events, 11)).toThrow(/1 至 10/u)
+    await expect(env.ctx.imageGeneration.create(env.one, 'edit', ids)).rejects.toThrow(/数量或标识/u)
     expect(api.calls).toEqual([])
   })
 
   it('boots with no config and keeps generation disabled by default', async () => {
     const env = await boot()
     expect(await (await env.get('state')).json()).toMatchObject({ enabled: false, available: false, model: '',
+      maxEditReferences: 10,
       sizes: { '1:1': { '1K': '1024x1024' }, '2:3': { '1K': '1024x1536' }, '3:2': { '1K': '1536x1024' } } })
     expect((await env.post('generate', { sessionId: 'one', prompt: 'test' })).status).toBe(503)
   })

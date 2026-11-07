@@ -31,7 +31,7 @@ export function decodeImageSettings(value: unknown): ImageSettings | undefined {
     || typeof fields.model !== 'string' || typeof fields.apiKeyRef !== 'string') return undefined
   const sizes = fields.sizes
   if (fields.maxEditReferences !== undefined && (!Number.isSafeInteger(fields.maxEditReferences)
-    || (fields.maxEditReferences as number) < 1 || (fields.maxEditReferences as number) > 5)) return undefined
+    || (fields.maxEditReferences as number) < 1 || (fields.maxEditReferences as number) > 10)) return undefined
   if (sizes !== undefined && !validSizeTableShape(sizes)) return undefined
   return { enabled: fields.enabled, endpoint: fields.endpoint, model: fields.model, apiKeyRef: fields.apiKeyRef,
     ...(sizes === undefined ? {} : { sizes }),
@@ -152,7 +152,7 @@ export class ImageSettingsController {
       || (changes.model !== undefined && !changes.model.trim())
       || (changes.sizes !== undefined && (typeof changes.sizes !== 'object' || Array.isArray(changes.sizes)))
       || (changes.maxEditReferences !== undefined && (!Number.isSafeInteger(changes.maxEditReferences)
-        || changes.maxEditReferences < 1 || changes.maxEditReferences > 5))
+        || changes.maxEditReferences < 1 || changes.maxEditReferences > 10))
       || (changes.apiKeyRef !== undefined && !validKeyRef(changes.apiKeyRef))) return rejected
     const targetRef = changes.apiKeyRef ?? section.value?.apiKeyRef ?? DEFAULT_KEY_REF
     const targetEndpoint = changes.endpoint ?? section.value?.endpoint ?? ''

@@ -22,9 +22,11 @@ describe('图像生成设置', () => {
       .toEqual({ enabled: true, endpoint: 'http://localhost:5000', model: 'image', apiKeyRef: '' })
     expect(decodeImageSettings({ enabled: 'yes', endpoint: '', model: '', apiKeyRef: '' })).toBeUndefined()
     expect(decodeImageSettings({ enabled: true, endpoint: 'http://localhost/v1', model: 'image', apiKeyRef: '',
-      sizes: { '1:1': { '2K': '2048x2048' } }, maxEditReferences: 2 })).toMatchObject({
-      sizes: { '1:1': { '2K': '2048x2048' } }, maxEditReferences: 2,
+      sizes: { '1:1': { '2K': '2048x2048' } }, maxEditReferences: 10 })).toMatchObject({
+      sizes: { '1:1': { '2K': '2048x2048' } }, maxEditReferences: 10,
     })
+    expect(decodeImageSettings({ enabled: true, endpoint: 'http://localhost/v1', model: 'image', apiKeyRef: '',
+      maxEditReferences: 11 })).toBeUndefined()
     expect(decodeImageSettings({ enabled: true, endpoint: '', model: '', apiKeyRef: '', sizes: { '1:1': [] } })).toBeUndefined()
     expect(validEndpoint('https://images.example/v1')).toBe(true)
     expect(validEndpoint('http://127.0.0.1:9000/v1')).toBe(true)

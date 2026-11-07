@@ -52,7 +52,7 @@ function registerVariant(
         prompt: promptParam,
         transparent_background: { type: 'boolean', description: 'True is unsupported by this image provider.' },
         referenced_image_paths: { type: 'array', items: { type: 'string' }, description: 'Unsupported: local paths cannot be used as references.' },
-        num_last_images_to_include: { type: 'integer', description: 'Use 1 to 5 most recent images in this session as references.' },
+        num_last_images_to_include: { type: 'integer', description: 'Use 1 to 10 most recent images in this session as references.' },
       },
       output: { schema: itemOutput, render: (_args, item) => renderItem(item) },
       async execute(args, exec) {

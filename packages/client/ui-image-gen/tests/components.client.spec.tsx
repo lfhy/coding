@@ -181,11 +181,12 @@ describe('图像交互组件', () => {
     const item = { id: 'one', prompt: '晨光', attachmentId: 'att', createdAt: 1, model: 'paint', mediaType: 'image/png', width: 256, height: 256 }
     const generate = vi.fn(async () => true)
     const place = vi.fn(async () => true)
+    const closePage = vi.fn()
     const show = vi.fn()
     const view = { phase: 'ready', state: { enabled: true, available: true, model: 'paint' }, items: [item],
       generating: false, uploading: false, lastResultId: null, failed: false }
     const ui = createGalleryUiStore().create()
-    const { unmount } = render(<GalleryView {...({ t, sessionId: 'test', closePage: vi.fn(),
+    const { unmount } = render(<GalleryView {...({ t, sessionId: 'test', closePage,
       useGallery: (pick: (state: unknown) => unknown) => pick(view), useStore: bindSnapshotSelector(ui), actions: ui.actions,
       useImageCanvas: (pick: (state: unknown) => unknown) => pick({ phase: 'loading', nodes: [], selectedId: null, saving: false, issue: null }),
       canvas: { show: vi.fn(), refresh: vi.fn(), add: vi.fn(), select: vi.fn(), move: vi.fn(), remove: vi.fn(),
@@ -201,7 +202,7 @@ describe('图像交互组件', () => {
     expect(screen.queryByLabelText('尺寸映射（JSON）')).toBeNull()
     expect(screen.getByRole('button', { name: '文生图' }).getAttribute('aria-pressed')).toBe('true')
     expect(screen.queryByText(/API 已配置/u)).toBeNull()
-    expect(screen.getByRole('button', { name: '比例' }).textContent).toContain('Auto · 自动')
+    expect(screen.getByRole('button', { name: '比例' }).textContent).toContain('自动')
     expect(screen.getByRole('button', { name: '生成质量' }).textContent).toBe('渠道默认')
     expect(screen.queryByText('渠道默认（不发送）')).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: '图生图' }))
@@ -212,13 +213,37 @@ describe('图像交互组件', () => {
     expect(place).toHaveBeenCalledWith('one')
     fireEvent.click(screen.getByRole('button', { name: '基于此图创作' }))
     expect(screen.getByRole('tab', { name: '工作台' }).getAttribute('aria-selected')).toBe('true')
-    expect(screen.getByRole('button', { name: '返回对话' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: '返回对话' })).toBeNull()
     const prompt = screen.getByLabelText('画面描述')
     expect(prompt).toHaveProperty('value', '晨光')
     fireEvent.submit(screen.getByLabelText('画面描述').closest('form')!)
     expect(generate).toHaveBeenCalledWith('晨光', 'one', {})
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(closePage).toHaveBeenCalledOnce()
     unmount()
     expect(show).toHaveBeenLastCalledWith(false)
+  })
+
+  it('生成中在预览区和提交按钮显示旋转加载状态', () => {
+    const ui = createGalleryUiStore().create()
+    render(<GalleryView {...({ t, sessionId: 'test', closePage: vi.fn(),
+      useGallery: (pick: (state: unknown) => unknown) => pick({ phase: 'ready',
+        state: { enabled: true, available: true, model: 'paint' }, items: [], generating: true,
+        uploading: false, lastResultId: null, failed: false }),
+      useStore: bindSnapshotSelector(ui), actions: ui.actions,
+      useImageCanvas: (pick: (state: unknown) => unknown) => pick({ phase: 'loading', nodes: [], selectedId: null, saving: false, issue: null }),
+      canvas: { show: vi.fn(), refresh: vi.fn(), add: vi.fn(), select: vi.fn(), move: vi.fn(), remove: vi.fn(),
+        clear: vi.fn(), url: vi.fn(() => '/image') },
+      show: vi.fn(), refresh: vi.fn(), generate: vi.fn(async () => true), place: vi.fn(),
+      url: (id: string) => `/api/image-gen/image?sessionId=test&id=${id}`,
+    } as unknown as GalleryViewProps)} />)
+    const status = screen.getByRole('status')
+    expect(status.textContent).toBe('正在创作…')
+    expect(status.closest('[aria-busy="true"]')).toBeTruthy()
+    expect(status.querySelector('[data-image-gen-loading]')).toBeTruthy()
+    const button = screen.getByRole('button', { name: '正在创作…' })
+    expect(button.hasAttribute('disabled')).toBe(true)
+    expect(button.querySelector('[data-image-gen-loading]')).toBeTruthy()
   })
 
   it('图生图把本机参考图先导入会话，再用其图库 ID 发编辑请求', async () => {
@@ -229,7 +254,7 @@ describe('图像交互组件', () => {
     const generate = vi.fn(async () => true)
     render(<GalleryView {...({ t, sessionId: 'test', closePage: vi.fn(),
       useGallery: (pick: (state: unknown) => unknown) => pick({ phase: 'ready',
-        state: { enabled: true, available: true, model: 'paint' }, items: [], generating: false,
+        state: { enabled: true, available: true, model: 'paint', maxEditReferences: 10 }, items: [], generating: false,
         uploading: false, lastResultId: null, failed: false }),
       useStore: bindSnapshotSelector(ui), actions: ui.actions,
       useImageCanvas: (pick: (state: unknown) => unknown) => pick({ phase: 'loading', nodes: [], selectedId: null, saving: false, issue: null }),
@@ -239,6 +264,9 @@ describe('图像交互组件', () => {
       url: (id: string) => `/api/image-gen/image?sessionId=test&id=${id}`,
     } as unknown as GalleryViewProps)} />)
     fireEvent.click(screen.getByRole('button', { name: '图生图' }))
+    expect(screen.getByText(/参考图.*10/u)).toBeTruthy()
+    expect(screen.getByRole('button', { name: '添加参考图' }).textContent).toBe('')
+    expect(screen.queryByText(/从左侧拖入/u)).toBeNull()
     const file = new File([Uint8Array.of(137, 80, 78, 71)], 'reference.png', { type: 'image/png' })
     const input = document.querySelector<HTMLInputElement>('input[type="file"]')!
     fireEvent.change(input, { target: { files: [file] } })
@@ -258,7 +286,7 @@ describe('图像交互组件', () => {
       useGallery: (pick: (state: unknown) => unknown) => pick({ phase: 'ready',
         state: { enabled: true, available: true, model: 'paint', sizes: {
           '1:1': { '1K': '1024x1024' }, '16:9': { '1K': '1536x864', '2K': '2048x1152' },
-        } }, items: [item], generating: false, uploading: false, lastResultId: 'one', failed: false }),
+        } }, items: [item], generating: false, uploading: false, lastResultId: 'one', lastElapsedMs: 12_400, failed: false }),
       useStore: bindSnapshotSelector(ui), actions: ui.actions,
       useImageCanvas: (pick: (state: unknown) => unknown) => pick({ phase: 'loading', nodes: [], selectedId: null, saving: false, issue: null }),
       canvas: { show: vi.fn(), refresh: vi.fn(), add: vi.fn(), select: vi.fn(), move: vi.fn(), remove: vi.fn(),
@@ -267,11 +295,12 @@ describe('图像交互组件', () => {
       url: (id: string) => `/api/image-gen/image?sessionId=test&id=${id}`,
     } as unknown as GalleryViewProps)} />)
     expect(screen.getByText('本次结果')).toBeTruthy()
-    expect(screen.getByRole('button', { name: '继续编辑（垫图）' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: '继续编辑' })).toBeTruthy()
     expect(screen.getByRole('button', { name: '再次生成' })).toBeTruthy()
     expect(screen.getByRole('button', { name: '复制图片' })).toBeTruthy()
     expect(screen.getByRole('button', { name: '下载图片' })).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: '继续编辑（垫图）' }))
+    expect(screen.getByText(/耗时 12\.4 秒/u)).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: '继续编辑' }))
     expect(screen.getByRole('button', { name: '图生图' }).getAttribute('aria-pressed')).toBe('true')
     fireEvent.click(screen.getByRole('button', { name: '再次生成' }))
     expect(screen.getByRole('button', { name: '文生图' }).getAttribute('aria-pressed')).toBe('true')

@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest'
 
 const canvas = readFileSync(fileURLToPath(new URL('../src/client/CanvasPanel.module.css', import.meta.url)), 'utf8')
 const gallery = readFileSync(fileURLToPath(new URL('../src/client/GalleryView.module.css', import.meta.url)), 'utf8')
+const selectMenu = readFileSync(fileURLToPath(new URL('../src/client/SelectMenu.module.css', import.meta.url)), 'utf8')
 const entry = readFileSync(fileURLToPath(new URL('../src/client/SidebarEntry.module.css', import.meta.url)), 'utf8')
 
 describe('窄屏画廊与画布样式', () => {
@@ -33,5 +34,25 @@ describe('窄屏画廊与画布样式', () => {
   it('预览工具悬浮在图片区域右下角', () => {
     expect(gallery).toMatch(/\.previewPane\s*\{[^}]*position:\s*relative;[^}]*flex:\s*1;/u)
     expect(gallery).toMatch(/\.previewControls\s*\{[^}]*position:\s*absolute;[^}]*right:\s*12px;[^}]*bottom:\s*12px;/u)
+    expect(gallery).toMatch(/\.previewImage\s*\{[^}]*width:\s*auto;[^}]*height:\s*auto;/u)
+    expect(gallery).toMatch(
+      /\.previewImage\s*\{[^}]*max-width:\s*100%;[^}]*max-height:\s*100%;[^}]*object-fit:\s*contain;/u,
+    )
+  })
+  it('生成方式和输出参数都铺满表单列宽', () => {
+    const studioMode = gallery.slice(gallery.indexOf('.studioMode'), gallery.indexOf('\n.studioMode > button'))
+    expect(studioMode).toMatch(/display:\s*grid;/u)
+    expect(studioMode).toMatch(/grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\);/u)
+    expect(studioMode).toMatch(/align-self:\s*stretch;/u)
+    expect(gallery).toMatch(/\.studioMode > button\s*\{[^}]*width:\s*100%;/u)
+    expect(selectMenu).toMatch(/\.root\s*\{[^}]*width:\s*100%;/u)
+    expect(selectMenu).toMatch(/\.root > span\s*\{[^}]*display:\s*flex;[^}]*width:\s*100%;/u)
+  })
+  it('顶部不包含独立返回按钮，生成加载动画尊重减少动态效果', () => {
+    expect(gallery).not.toContain('.tabBack')
+    expect(gallery).toMatch(/\.loadingSpinner\s*\{[^}]*animation:\s*image-gen-loading-spin/u)
+    expect(gallery).toMatch(/@keyframes image-gen-loading-spin\s*\{[^}]*rotate\(360deg\)/u)
+    const reduced = gallery.slice(gallery.indexOf('@media (prefers-reduced-motion: reduce)'))
+    expect(reduced).toMatch(/\.loadingSpinner\s*\{[^}]*animation:\s*none;/u)
   })
 })
