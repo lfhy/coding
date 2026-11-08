@@ -418,6 +418,16 @@ export default class PptProjects extends Service {
     return this.templates.read(id)
   }
 
+  /** 读取模板 deck 引用的媒体原字节，不需要会话且不改变模板或当前工程。
+   * @param id - 模板 UUID。
+   * @param source - `media/<文件名>` 相对路径。
+   * @returns 模板媒体原始字节。
+   * @throws PptStoreError 模板不存在、路径不合法、媒体未被引用或仓库损坏时。
+   */
+  templateMedia(id: string, source: string): Promise<Uint8Array> {
+    return this.templates.readMedia(id, source)
+  }
+
   /** 将无宏 PPTX 转成可编辑模板；丢失的复杂结构在返回值中列出。
    * @param fileName - 安全的单层 .pptx 文件名。
    * @param bytes - 压缩源文件字节，上限 8 MiB；不会保存源文件本身。

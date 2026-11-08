@@ -85,6 +85,8 @@ export class SessionInputShell implements SessionInput {
   readonly state: SnapshotStore<InputState>
   /** Latest surfaced notice (null after clear); the bar renders errors as banners and information inline. */
   readonly notices: SnapshotStore<InputNotice | null> = createSnapshotStore<InputNotice | null>(null)
+  /** 每次跨插件聚焦请求递增；不进入草稿或输入机器。 */
+  readonly focusRequest: SnapshotStore<number> = createSnapshotStore(0)
   /** The public provide-channel action face (one stable identity per session). */
   readonly actions: InputActions = {
     setDraft: (text) => { this.setDraft(text) },
@@ -98,6 +100,7 @@ export class SessionInputShell implements SessionInput {
   // production (the machine's no-clock default is a constant for pure tests).
   private readonly core = new InputMachine({ now: () => Date.now() })
   private noticeSeq = 0
+  private focusSeq = 0
   private lastMirroredDraft = ''
   private imageIds: readonly DraftAttachmentId[] = []
   /** One image-only send at a time: Enter during the Host round-trip is a no-op. */
@@ -109,6 +112,11 @@ export class SessionInputShell implements SessionInput {
   constructor(private readonly deps: SessionInputDeps) {
     this.state = createSnapshotStore<InputState>(this.compose())
     deps.queue?.subscribe(() => { this.publish() })
+  }
+
+  /** 发布一次只针对本会话输入框的聚焦请求。 */
+  requestFocus(): void {
+    this.focusRequest.set(++this.focusSeq)
   }
 
   // ---- SessionInput face ----

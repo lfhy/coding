@@ -46,6 +46,12 @@ export interface IConversation {
    */
   selectView(sessionId: SessionId, view: string): void
   /**
+   * 请求已装载会话的输入框获得焦点；不改草稿，也不提交消息。
+   * @param sessionId - 当前目标会话；未知、未装载或已切走时抛错。
+   * @returns 无返回值；请求是否可见由输入框在布局提交后判断。
+   */
+  focusInput(sessionId: SessionId): void
+  /**
    * Send a prompt into the caller scope's session (queued turn).
    * @param text - prompt text, sent verbatim as one text block.
    * @returns completion; business failures reject (and land in promptError).
@@ -118,6 +124,7 @@ export class ConversationController extends Service implements IConversation {
   private readonly imageGenerations = new Map<SessionId, number>()
   private readonly createdImageUrls = new Set<string>()
   private readonly selectViewAction: ((sessionId: SessionId, view: string) => void) | undefined
+  private readonly focusInputAction: ((sessionId: SessionId) => void) | undefined
   private disposed = false
 
   /**
@@ -129,11 +136,13 @@ export class ConversationController extends Service implements IConversation {
     input: SessionInputResolver
     blocks: ComposerBlocks
     selectView?: (sessionId: SessionId, view: string) => void
+    focusInput?: (sessionId: SessionId) => void
   }) {
     super(ctx, 'conversation')
     this.input = config.input
     this.blocks = config.blocks
     this.selectViewAction = config.selectView
+    this.focusInputAction = config.focusInput
     ctx.effect(() => () => {
       this.disposed = true
       for (const url of this.createdImageUrls) revokePreview(url)
@@ -150,6 +159,14 @@ export class ConversationController extends Service implements IConversation {
       throw new Error('conversation view is unavailable for this session')
     }
     this.selectViewAction(sessionId, view)
+  }
+
+  /** @param sessionId - 已装载的目标会话。 */
+  focusInput(sessionId: SessionId): void {
+    if (this.disposed || this.focusInputAction === undefined) {
+      throw new Error('conversation.focusInput: input is unavailable')
+    }
+    this.focusInputAction(sessionId)
   }
 
   /**

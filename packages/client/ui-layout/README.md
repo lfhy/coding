@@ -24,15 +24,19 @@ kind: "package-reference"
 | `shell.overlay` | `root` | 无 owner 数据的有序 list |
 | `shell.page` | `session` | 按 `entryKey` 选择主内容页，owner 提供 `closePage()` |
 
-`ctx.layout` 提供全局的 `toggleSidebar()`、`openDetails()`、`closeDetails()`，以及接收工作区键的 `openWorkbench()`、`closeWorkbench()`、`toggleWorkbench()`、`toggleWorkbenchFullscreen()`、`toggleWorkbenchBottom()`、`closeWorkbenchBottom()` 和欢迎页专用的 `toggleHeroPanel()`。`workbench(workspaceKey)` 返回供会话页头、欢迎页与工作台顶栏面板开关订阅的显隐投影。`openPage(kind, sessionId)` 在侧栏右侧打开会话所属的主内容页，`closePage()` 返回原会话界面；切换或移除该会话会关闭页面。打开工作台会关闭详情栏；打开详情栏会暂时覆盖工作台，关闭详情栏后恢复该工作区的状态。
+`ctx.layout` 提供全局的 `toggleSidebar()`、`openDetails()`、`closeDetails()`，以及接收工作区键的 `openWorkbench()`、`closeWorkbench()`、`toggleWorkbench()`、`toggleWorkbenchFullscreen()`、`toggleWorkbenchBottom()`、`closeWorkbenchBottom()` 和欢迎页专用的 `toggleHeroPanel()`。`beginNewConversation()` 同步清除空白会话对右侧工作台的手动显隐覆盖，包括复用同一个空白会话时。`workbench(workspaceKey)` 返回供会话页头、欢迎页与工作台顶栏面板开关订阅的显隐投影。`openPage(kind, sessionId)` 在侧栏右侧打开会话所属的主内容页，`closePage()` 返回原会话界面；切换或移除该会话会关闭页面。打开工作台会关闭详情栏；打开详情栏会暂时覆盖工作台，关闭详情栏后恢复该工作区的状态。
+
+`openWorkbench(workspaceKey, sessionId?)` 的可选会话 id 标识动作目标：目标明确是同工作区的其他会话时，只更新供目标恢复的共享打开状态，不展开当前空白会话的右栏，也不清除它手动选择的最大化状态；省略 id 或指向当前空白会话时可直接展开其右栏。已知目标会话的调用方应传入 id。
 
 会话页头的底栏开关在右侧工作台关闭时只显示底栏；两个面板都显示时，关闭底栏不影响右列。页头的右侧边栏开关切换整个工作台；详情栏暂时遮挡工作台时，点击页头开关会恢复右栏。工作台的初始视图仍是功能菜单。关闭右侧工作台会保留已显示的底栏，并使其独立占据底部；宽度与底栏偏好不受影响。欢迎页的右侧边栏开关也按整个工作台显隐切换；打开目标面板时隐藏另一面板，底栏独占不占用右列。
 
-工作台与底栏偏好按工作区保存：布局用 `workspaceKeyOf(sessionId)` 解析会话所属工作区，同一工作区的不同会话共享右侧工作台与底栏的显隐、尺寸和最大化状态。没有 workspaces 服务的部署退回会话 id，行为与按 Session 保存一致。空白会话同样拥有按工作区隔离的工作台状态；欢迎页打开底栏后发送首条消息，不会重建布局状态；侧边栏的全局收起状态也不受会话阶段影响。
+工作台与底栏偏好按工作区保存：布局用 `workspaceKeyOf(sessionId)` 解析会话所属工作区，同一工作区的已开始会话共享右侧工作台与底栏的显隐、尺寸和最大化状态。没有 workspaces 服务的部署退回会话 id，行为与按 Session 保存一致。新建或进入空白会话时右侧工作台默认隐藏；默认隐藏只作用于空白会话，不写入已开始会话共享的打开、最大化和宽度偏好。欢迎页按钮仍可手动开关工作台，并沿用工作区偏好动作；底栏独立可用。首条消息被接纳后空白覆盖结束，按工作区偏好与所属功能的自动开启机制显示面板；侧边栏的全局收起状态不受会话阶段影响。
 
 布局把欢迎页操作行是否可见交给侧边栏：无会话或空白会话且对话区未被全屏工作台遮住时可见，全屏工作台接管对话区时不可见。会话页头和欢迎页的面板开关分别由 `conversation.session.header.utilities` 与 `conversation.hero.actions` 的占用者提供；全屏工作台使对话区进入 `inert` 时仍可从工作台顶栏切换终端底栏。工作台状态动作、投影和尺寸偏好统一使用工作区键，工作区内切换会话不会使页头按钮与布局状态失去同步。
 
 `shell.page` 占据侧栏之外的主内容两行与右列；侧栏仍可操作，原对话、详情和工作台子树保持挂载，但进入 `inert` 且不接收指针。页面只保存临时会话 id 和类型，不把业务数据放进布局 store；关闭后先前面板和草稿保持原状。
+
+`ctx.layout.showConversation(sessionId)` 仅对当前会话生效：关闭该会话的独立主内容页；全屏工作台存在时展开同会话的对话浮窗并保留最大化与底栏状态，普通布局则显示对话。它不切换会话、不修改草稿，也不改变工作台尺寸偏好。
 
 ## 布局行为
 

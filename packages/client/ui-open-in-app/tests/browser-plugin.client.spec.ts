@@ -81,7 +81,7 @@ async function bench() {
   return {
     ctx, fiber, openWorkbench, closeWorkbench, toggleWorkbench, toggleWorkbenchFullscreen,
     toggleWorkbenchBottom, closeWorkbenchBottom, toggleHeroPanel,
-    sessionList: list, open, connectHome, connectWorkspace, workspaceList, gitHistory,
+    sessionList: list, open, connectHome, connectWorkspace, workspaceList, workspaceKeyOf, gitHistory,
   }
 }
 
@@ -161,7 +161,7 @@ describe('open-in-app browser half', () => {
     await expect(actionFace.launch('cursor', '/w')).resolves.toBe('launched')
     actionFace.openWorkbench()
     expect(openWorkbench).toHaveBeenCalledOnce()
-    expect(openWorkbench).toHaveBeenCalledWith('workspace-browser-plugin')
+    expect(openWorkbench).toHaveBeenCalledExactlyOnceWith('workspace-browser-plugin', SESSION)
 
     const workbench = ctx.slots.entries('workbench')[0]
     const workbenchStore = (workbench?.store as ReturnType<typeof createRetainedWorkbenchStore>).create()
@@ -178,7 +178,7 @@ describe('open-in-app browser half', () => {
     expect(workbenchStore.getSnapshot().sessions[SESSION]).toMatchObject({
       view: 'files', tabs: [{ type: 'file', name: 'README.md', segments: ['README.md'] }],
     })
-    expect(openWorkbench).toHaveBeenCalledWith('workspace-browser-plugin')
+    expect(openWorkbench).toHaveBeenLastCalledWith('workspace-browser-plugin', SESSION)
     await expect(workbenchFace.readFile(SESSION, ['README.md'])).resolves.toEqual({
       path: '/w/README.md', content: { kind: 'markdown', text: '# Readme' },
     })
@@ -192,7 +192,7 @@ describe('open-in-app browser half', () => {
     workbenchFace.toggleBottom(SESSION)
     expect(closeWorkbench).toHaveBeenCalledWith('workspace-browser-plugin')
     expect(openWorkbench).toHaveBeenCalledTimes(3)
-    expect(openWorkbench).toHaveBeenCalledWith('workspace-browser-plugin')
+    expect(openWorkbench).toHaveBeenNthCalledWith(3, 'workspace-browser-plugin', SESSION)
     expect(toggleWorkbenchFullscreen).toHaveBeenCalledWith('workspace-browser-plugin')
     expect(toggleWorkbenchBottom).toHaveBeenCalledWith('workspace-browser-plugin')
 
@@ -224,6 +224,30 @@ describe('open-in-app browser half', () => {
     expect(toggleWorkbenchBottom).toHaveBeenCalledExactlyOnceWith('workspace-browser-plugin')
   })
 
+  it('后台会话打开标签时保留其身份，不把同工作区空白会话当作目标', async () => {
+    const b = await bench()
+    const background = 'background-session' as SessionId
+    b.workspaceKeyOf.mockReturnValue('workspace-browser-plugin')
+    b.sessionList.set({
+      ...b.sessionList.getSnapshot(),
+      ids: [SESSION, background],
+      byId: {
+        [SESSION]: { id: SESSION, blank: true, cwd: '/w' },
+        [background]: { id: background, blank: false, cwd: '/w' },
+      },
+    } as never)
+    const entry = b.ctx.slots.entries('workbench')[0]!
+    const store = (entry.store as ReturnType<typeof createRetainedWorkbenchStore>).create()
+    const attach = entry.inject as unknown as (actions: typeof store.actions) => WorkspaceWorkbenchInjected
+    attach(store.actions)
+    b.ctx.sidebarRightTabs.register({ id: 'ext.browser', kind: 'browser', title: () => 'Browser' })
+    b.ctx.sidebarRight.openTabForSession(background, 'browser')
+    expect(b.openWorkbench).toHaveBeenCalledExactlyOnceWith('workspace-browser-plugin', background)
+    expect(b.sessionList.getSnapshot().current).toBe(SESSION)
+    expect(store.getSnapshot().sessions[background]?.tabs).toHaveLength(1)
+    await b.fiber.dispose()
+  })
+
   it('opens only the requested panel on a blank Session and retains its id', async () => {
     const b = await bench()
     b.sessionList.set({ ...b.sessionList.getSnapshot(), byId: { [SESSION]: { id: SESSION, blank: true } } } as never)
@@ -235,10 +259,10 @@ describe('open-in-app browser half', () => {
     expect(bottomFace.workbenchSource(SESSION).getSnapshot()).toMatchObject({ open: false, bottomOpen: false })
     expect(filesFace.workbenchSource(SESSION).getSnapshot()).toMatchObject({ open: false, bottomOpen: false })
     await bottomFace.togglePanel()
-    expect(b.toggleHeroPanel).toHaveBeenCalledExactlyOnceWith('workspace-browser-plugin', 'bottom')
+    expect(b.toggleHeroPanel).toHaveBeenCalledExactlyOnceWith('workspace-browser-plugin', 'bottom', SESSION)
     expect(b.toggleWorkbenchBottom).not.toHaveBeenCalled()
     await filesFace.togglePanel()
-    expect(b.toggleHeroPanel).toHaveBeenLastCalledWith('workspace-browser-plugin', 'files')
+    expect(b.toggleHeroPanel).toHaveBeenLastCalledWith('workspace-browser-plugin', 'files', SESSION)
     expect(b.toggleHeroPanel).toHaveBeenCalledTimes(2)
     expect(b.connectHome).not.toHaveBeenCalled()
   })
@@ -253,13 +277,13 @@ describe('open-in-app browser half', () => {
     await bottomFace.togglePanel()
     expect(b.connectHome).toHaveBeenCalledOnce()
     expect(b.open).toHaveBeenLastCalledWith(SESSION)
-    expect(b.toggleHeroPanel).toHaveBeenLastCalledWith('workspace-browser-plugin', 'bottom')
+    expect(b.toggleHeroPanel).toHaveBeenLastCalledWith('workspace-browser-plugin', 'bottom', SESSION)
 
     b.workspaceList.set({ recentWorkspaceId: 'workspace-1' })
     await filesFace.togglePanel()
     expect(b.connectWorkspace).toHaveBeenCalledExactlyOnceWith('workspace-1')
     expect(b.connectHome).toHaveBeenCalledOnce()
-    expect(b.toggleHeroPanel).toHaveBeenLastCalledWith('workspace-browser-plugin', 'files')
+    expect(b.toggleHeroPanel).toHaveBeenLastCalledWith('workspace-browser-plugin', 'files', SESSION)
   })
 
   it.each([
@@ -282,7 +306,7 @@ describe('open-in-app browser half', () => {
     resolve(SESSION)
     await Promise.all([firstClick, lastClick])
     expect(b.open).toHaveBeenCalledExactlyOnceWith(SESSION)
-    expect(b.toggleHeroPanel).toHaveBeenCalledExactlyOnceWith('workspace-browser-plugin', last)
+    expect(b.toggleHeroPanel).toHaveBeenCalledExactlyOnceWith('workspace-browser-plugin', last, SESSION)
   })
 
   it('clears a failed shared connection so either button can retry', async () => {
@@ -303,7 +327,7 @@ describe('open-in-app browser half', () => {
     await filesFace.togglePanel()
     expect(b.connectHome).toHaveBeenCalledTimes(2)
     expect(b.open).toHaveBeenCalledExactlyOnceWith(SESSION)
-    expect(b.toggleHeroPanel).toHaveBeenCalledExactlyOnceWith('workspace-browser-plugin', 'files')
+    expect(b.toggleHeroPanel).toHaveBeenCalledExactlyOnceWith('workspace-browser-plugin', 'files', SESSION)
   })
 
   it('does not take selection back if the user switches sessions while connecting', async () => {

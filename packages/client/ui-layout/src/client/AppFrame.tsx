@@ -491,6 +491,10 @@ export function AppFrame({
     const current = state.current
     return current === undefined || state.byId[current]?.blank === true
   })
+  const activeBlank = useSessions((state) => {
+    const current = state.current
+    return current !== undefined && state.byId[current]?.blank === true
+  })
   const liveSessionIds = useSessions(state => state.ids)
   const page = rootPanels.page
   const pageVisible = page !== null && page.sessionId === activeSession && liveSessionIds.includes(page.sessionId)
@@ -499,6 +503,9 @@ export function AppFrame({
     if (page !== null && !pageVisible) actions.closePage()
   }, [actions, page, pageVisible])
   const activeKey = activeSession === undefined ? undefined : workspaceKeyOf(activeSession)
+  useLayoutEffect(() => {
+    actions.setActiveBlankSession(activeBlank ? activeSession : undefined, activeKey)
+  }, [actions, activeBlank, activeKey, activeSession])
   const panels = useMemo(() => {
     const current = activeKey === undefined ? undefined : rootPanels.workbench[activeKey]
     return current ?? WORKBENCH_FALLBACK
@@ -516,8 +523,13 @@ export function AppFrame({
   // 工作台布局与 Session 生命周期绑定；离开会话列表时同步释放瞬时状态与页头投影。
   useEffect(() => {
     actions.retainWorkbenchSessions(liveSessionIds.map(workspaceKeyOf))
+    actions.retainBlankSessions(liveSessionIds)
     retainWorkbenchViews(liveSessionIds.map(workspaceKeyOf))
   }, [actions, liveSessionIds, retainWorkbenchViews, workspaceKeyOf])
+
+  useLayoutEffect(() => {
+    if (activeSession !== undefined && !activeBlank) actions.clearBlankWorkbench(activeSession)
+  }, [actions, activeBlank, activeSession])
 
   useLayoutEffect(() => {
     const element = frameRef.current
@@ -548,7 +560,8 @@ export function AppFrame({
   const narrow = viewport.width < SIDEBAR_AUTO_COLLAPSE
   useEffect(() => { actions.setNarrow(narrow) }, [actions, narrow])
 
-  const workbenchShown = activeSession !== undefined && panels.open && rootPanels.details === 0
+  const workbenchShown = activeSession !== undefined && rootPanels.details === 0
+    && (activeBlank ? rootPanels.blankWorkbench[activeSession] === true : panels.open)
   const workbenchFullscreen = workbenchShown && (panels.fullscreen || narrow)
   const welcomeActionsVisible = welcomeSession && !workbenchFullscreen
   // 导航栏只服从自身开关和响应式断点；工作台不隐式抢占会话导航。
@@ -560,7 +573,7 @@ export function AppFrame({
   const detailsColumns = computeColumns(
     viewport.width,
     sidebarPreference,
-    activeSession === undefined || workbenchShown ? 0 : rootPanels.details,
+    activeSession === undefined || activeBlank || workbenchShown ? 0 : rootPanels.details,
   )
   const workbenchColumns = computeWorkbenchColumns(
     viewport.width,
@@ -572,8 +585,8 @@ export function AppFrame({
   const detailsWidth = workbenchShown ? 0 : detailsColumns.details
   const workbenchWidth = workbenchShown ? workbenchColumns.workbench : 0
   const rightWidth = detailsWidth + workbenchWidth
-  const bottomRequested = activeSession !== undefined && rootPanels.details === 0
-    && panels.bottomOpen && (workbenchShown || panels.bottomStandalone)
+  const bottomRequested = activeSession !== undefined && (rootPanels.details === 0 || activeBlank)
+    && panels.bottomOpen && (workbenchShown || panels.bottomStandalone || activeBlank)
   const bottomHeight = computeWorkbenchBottom(
     viewport.height,
     panels.bottomHeight,
@@ -612,8 +625,25 @@ export function AppFrame({
     setFloatingSession(undefined)
   }, [])
 
+  const conversationRequest = rootPanels.conversationRequest
+  useLayoutEffect(() => {
+    if (conversationRequest === null) return
+    actions.acknowledgeConversationRequest(conversationRequest.seq)
+    if (conversationRequest.sessionId !== activeSession || !liveSessionIds.includes(conversationRequest.sessionId)) return
+    if (pageVisible) actions.closePage()
+    if (workbenchFullscreen) setFloatingSession(activeSession)
+  }, [actions, activeSession, conversationRequest, liveSessionIds, pageVisible, workbenchFullscreen])
+
+  const publishedWorkbenchKey = useRef<string | undefined>(activeKey)
   useEffect(() => {
-    if (activeKey === undefined) return
+    if (publishedWorkbenchKey.current !== undefined && publishedWorkbenchKey.current !== activeKey) {
+      publishWorkbench(publishedWorkbenchKey.current, { open: false, fullscreen: false, bottomOpen: false })
+    }
+    if (activeKey === undefined) {
+      publishedWorkbenchKey.current = undefined
+      return
+    }
+    publishedWorkbenchKey.current = activeKey
     publishWorkbench(activeKey, {
       open: workbenchShown,
       fullscreen: workbenchShown && panels.fullscreen,

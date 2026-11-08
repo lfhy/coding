@@ -145,6 +145,19 @@ export class InputHub implements SessionInputResolver {
     return this.shell(id)
   }
 
+  /** 仅当前已装载会话可请求聚焦；旧会话请求不能留到以后抢焦点。 */
+  requestFocus(id: SessionId): void {
+    const sessions = this.sessions()
+    const shell = this.shells.get(id)
+    if (shell === undefined || sessions.binding(id) === undefined) {
+      throw new Error(`conversation.focusInput: session "${id}" is not loaded`)
+    }
+    if (sessions.list.getSnapshot().current !== id) {
+      throw new Error(`conversation.focusInput: session "${id}" is not current`)
+    }
+    shell.requestFocus()
+  }
+
   /**
    * Resolve the optional slash controller for composer chrome that launches
    * the shared candidate menu without typing a trigger.

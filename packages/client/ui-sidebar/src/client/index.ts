@@ -34,7 +34,10 @@ export function apply(ctx: ClientContext): void {
 
   const injectProps = (): SidebarRootInjected => ({
     // 壳层的新对话入口复用运行时共享操作：先当前 Session 的 Workspace，后最近 Workspace。
-    startSession: (workspaceId) => { ctx.workspaces.startSession(workspaceId) },
+    startSession: (workspaceId) => {
+      ctx.layout.beginNewConversation()
+      ctx.workspaces.startSession(workspaceId)
+    },
     toggleSidebar: () => { ctx.layout.toggleSidebar() },
     showConversation: () => { ctx.layout.closePage() },
     hooks: { page: ctx.layout.page },

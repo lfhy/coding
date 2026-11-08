@@ -169,6 +169,45 @@ export function installRoutes(ctx: Context, service: PptProjects): void {
     return { ok: true, state: await service.state(sessionId) }
   })
 
+  route('templates', ['GET'], async () => ({ ok: true, templates: await service.listTemplates() }))
+
+  route('templates/detail', ['GET'], async (_body, url) => ({
+    ok: true, template: await service.readTemplate(url.searchParams.get('id') ?? ''),
+  }))
+
+  // 模板媒体只作为图片提供，SVG 等可执行同源资源不经此路由输出。
+  ctx.effect(() => ctx.webServer.register({
+    kind: 'exact',
+    path: `${PREFIX}templates/media`,
+    handler: async (req, res) => {
+      if (!trusted(ctx, req, res)) return
+      if ((req.method ?? 'GET') !== 'GET') {
+        sendJson(res, 405, { ok: false, error: { code: 'method', message: '只接受 GET' } })
+        return
+      }
+      try {
+        const url = new URL(req.url ?? '/', `http://127.0.0.1:${ctx.webServer.port}`)
+        const id = url.searchParams.get('id') ?? ''
+        const source = url.searchParams.get('path') ?? ''
+        if (source === '') throw new PptStoreError('bad-request', '模板媒体 path 必须提供')
+        const type = MEDIA_TYPES[source.split('.').pop()?.toLowerCase() ?? '']
+        if (type === undefined || type === 'image/svg+xml') {
+          throw new PptStoreError('forbidden', '模板媒体只允许 PNG、JPEG、GIF 或 WebP 图片')
+        }
+        const bytes = await service.templateMedia(id, source)
+        res.writeHead(200, {
+          'content-type': type,
+          'x-content-type-options': 'nosniff',
+          'cache-control': 'no-store',
+        })
+        res.end(Buffer.from(bytes))
+      } catch (reason) {
+        const reply = fail(reason)
+        sendJson(res, reply.status, reply.body)
+      }
+    },
+  }), `pptWorkbench: GET ${PREFIX}templates/media`)
+
   route('open', ['POST'], async (body) => {
     const sessionId = sessionIdOf(body)
     const dir = optionalString(body.dir, 'dir')

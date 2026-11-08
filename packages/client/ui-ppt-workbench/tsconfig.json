@@ -18,6 +18,15 @@
       "path": "../../core/session"
     },
     {
+      "path": "../../api/remotes/tsconfig.client.json"
+    },
+    {
+      "path": "../../util/brand"
+    },
+    {
+      "path": "../connection/tsconfig.client.json"
+    },
+    {
       "path": "../../runtime-diagnostics/invariants"
     },
     {
@@ -27,13 +36,22 @@
       "path": "../runtime"
     },
     {
+      "path": "../ui-conversation"
+    },
+    {
       "path": "../ui-icons"
+    },
+    {
+      "path": "../ui-layout"
     },
     {
       "path": "../ui-open-in-app"
     },
     {
       "path": "../ui-primitives"
+    },
+    {
+      "path": "../ui-settings"
     },
     {
       "path": "../ui-slots"

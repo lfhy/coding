@@ -92,7 +92,7 @@ export function apply(ctx: ClientContext): void {
   const sidebarRightTabs = new SidebarRightTabRegistry()
   const sidebarRight = new SidebarRightController(
     sidebarRightTabs,
-    { openWorkbench: (sessionId) => { ctx.layout.openWorkbench(workspaceKey(sessionId)) } },
+    { openWorkbench: (sessionId) => { ctx.layout.openWorkbench(workspaceKey(sessionId), sessionId) } },
     () => activeSessionId(ctx),
   )
   const chatFileOpener: ChatFileOpener = {
@@ -147,7 +147,7 @@ export function apply(ctx: ClientContext): void {
       launch: (appId, path) => controller.launch(appId, path),
       choose: (appId) => { controller.choose(appId) },
       iconUrl: appId => `${OPEN_IN_APP_ICON_PREFIX}/${appId}`,
-      openWorkbench: () => { ctx.layout.openWorkbench(workspaceKey(sessionId)) },
+      openWorkbench: () => { ctx.layout.openWorkbench(workspaceKey(sessionId), sessionId) },
     }),
   }, OpenInAppAction))
 
@@ -173,7 +173,7 @@ export function apply(ctx: ClientContext): void {
           },
           terminalUrl: (sessionId, cols, rows) => controller.terminalUrl(sessionId, cols, rows),
           closeWorkbench: (sessionId) => { ctx.layout.closeWorkbench(workspaceKey(sessionId)) },
-          openWorkbench: (sessionId) => { ctx.layout.openWorkbench(workspaceKey(sessionId)) },
+          openWorkbench: (sessionId) => { ctx.layout.openWorkbench(workspaceKey(sessionId), sessionId) },
           toggleWorkbenchFullscreen: (sessionId) => { ctx.layout.toggleWorkbenchFullscreen(workspaceKey(sessionId)) },
           toggleBottom: (sessionId) => { ctx.layout.toggleWorkbenchBottom(workspaceKey(sessionId)) },
           openSidebarTab: (sessionId, kind) => { sidebarRight.openTabForSession(sessionId, kind) },
@@ -222,7 +222,7 @@ export function apply(ctx: ClientContext): void {
       if (ctx.sessions.list.getSnapshot().current !== undefined) return
       ctx.sessions.open(sessionId)
     }
-    ctx.layout.toggleHeroPanel(workspaceKey(sessionId), panel)
+    ctx.layout.toggleHeroPanel(workspaceKey(sessionId), panel, sessionId)
   }
   ctx.slots.inject('conversation.hero.actions', () => ctx.slots.register({
     name: 'conversation.hero.actions',

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { PptWorkbench, type PptWorkbenchProps } from '../src/client/PptWorkbench.tsx'
 import type { PptPanelState } from '../src/client/controller.ts'
@@ -56,6 +56,14 @@ function mount(state: PptPanelState, shown = true, locale: typeof en = en) {
     sessionId: 'session-one',
     useTabInfo: () => ({ shown, tab: { id: 'ppt-1', params: {} } }),
     usePpt: (choose: (snapshot: PptPanelState) => unknown) => choose(state),
+    useTemplateCatalog: (choose: (snapshot: unknown) => unknown) => choose({ phase: 'ready', templates: [], details: {}, error: null }),
+    catalogActions: {
+      loadTemplates: vi.fn(async () => {}), detailTemplate: vi.fn(async () => {}),
+      templateMediaUrl: vi.fn(() => '/api/ppt/templates/media'),
+      handoffPrompt: vi.fn(async () => {}),
+      cancelHandoff: vi.fn(),
+      focusPrompt: vi.fn(),
+    },
     show: vi.fn(),
     refresh: vi.fn(),
     open: vi.fn(async () => {}),
@@ -117,6 +125,8 @@ describe('PPT 工作台面板', () => {
     }, true, zh)
     fireEvent.click(screen.getByRole('button', { name: /季度汇报/u }))
     expect(panel.props.open).toHaveBeenCalledWith('ppt/demo')
+    fireEvent.click(screen.getByRole('button', { name: '模板管理' }))
+    expect(screen.getByRole('dialog', { name: 'PPT 模板管理' })).toBeTruthy()
     for (const action of ['撤销', '重做', '质检', '预览', '重新读取', '导出 .pptx']) {
       expect(screen.queryByRole('button', { name: action })).toBeNull()
     }
@@ -233,6 +243,40 @@ describe('PPT 工作台面板', () => {
     fireEvent.click(screen.getByRole('button', { name: '页面' }))
     fireEvent.click(screen.getByRole('menuitem', { name: '下移' }))
     expect(first.props.movePage).toHaveBeenCalledWith('p1', 1)
+  })
+
+  it('更多菜单打开同一只读模板管理弹窗', () => {
+    const panel = mount(ready, true, zh)
+    fireEvent.click(screen.getByRole('button', { name: '更多' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '模板管理' }))
+    const dialog = screen.getByRole('dialog', { name: 'PPT 模板管理' })
+    expect(within(dialog).getAllByRole('heading', { name: 'PPT 模板管理' })).toHaveLength(1)
+    expect(screen.getByRole('button', { name: '导入 / 创建模板' })).toBeTruthy()
+    expect(panel.props.catalogActions.loadTemplates).toHaveBeenCalledOnce()
+  })
+
+  it('空工程仍能打开模板目录并经对话交接提示词', async () => {
+    const panel = mount({ ...ready, project: null }, true, zh)
+    fireEvent.click(screen.getByRole('button', { name: '模板管理' }))
+    expect(screen.getByRole('dialog', { name: 'PPT 模板管理' })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: '导入 / 创建模板' }))
+    await waitFor(() => { expect(panel.props.catalogActions.handoffPrompt).toHaveBeenCalledOnce() })
+    expect(screen.queryByRole('dialog', { name: 'PPT 模板管理' })).toBeNull()
+    expect(panel.props.catalogActions.focusPrompt).toHaveBeenCalledOnce()
+  })
+
+  it('模板弹窗关闭时取消未完成交接，不在迟到成功后聚焦', async () => {
+    let release!: () => void
+    const waiting = new Promise<void>((resolve) => { release = resolve })
+    const panel = mount({ ...ready, project: null }, true, zh)
+    vi.mocked(panel.props.catalogActions.handoffPrompt).mockReturnValueOnce(waiting)
+    fireEvent.click(screen.getByRole('button', { name: '模板管理' }))
+    fireEvent.click(screen.getByRole('button', { name: '导入 / 创建模板' }))
+    const id = vi.mocked(panel.props.catalogActions.handoffPrompt).mock.calls[0]?.[1]
+    fireEvent.click(screen.getByRole('button', { name: '关闭' }))
+    expect(panel.props.catalogActions.cancelHandoff).toHaveBeenCalledWith(id)
+    await act(async () => { release(); await waiting })
+    expect(panel.props.catalogActions.focusPrompt).not.toHaveBeenCalled()
   })
 
   it('属性按需打开、关闭与 Escape 收起，编辑动作仍提交', () => {

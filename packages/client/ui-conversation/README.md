@@ -10,6 +10,8 @@
 
 视图环是一个 slot：严格会话主体注册在 `children` 表中声明会话作用域的 `'conversation.view'` 列表，并通过自身的 renderSlot share 渲染活跃配置项（`only: <active id>`）；视图标签页则从注册选项（`id`／`order`／`label`）投影而来。聊天视图是该包自身的配置项；ui-trajectory 等插件通过 `ctx.slots.register` 贡献标签页，画廊由主内容页 `shell.page` 持有。扩展入口通过 `ctx.conversation.selectView(sessionId, viewId)` 切换已装载会话的已注册视图；尚未渲染的会话或已卸载视图会明确拒绝，不能越过 owner 直接写会话 store。所有空白会话保留欢迎页和模式选择器，首条消息被接纳后才显示会话页头、视图与常规输入栏。
 
+`ctx.conversation.focusInput(sessionId)` 只为当前已装载的输入栏请求焦点；请求后的 animation frame 中，仍是同一可见、可编辑输入框时才将光标放到草稿末尾。会话切换、输入框卸载或被接管会取消过时请求；调用本身不写草稿、不提交消息。
+
 Chat 业务行是彼此独立的注册表贡献，不是封闭的内建联合。Client 插件通过 declaration merging 增加类型化 `ChatNodeDataMap` key，在 `ctx.conversationEvents` 上注册 `ConversationNodeDefinition`，再向 `conversation.chat.node` 注册匹配的 keyed renderer；它无须修改会话 fold 或中央 renderer switch。每行的 `data-chat-node-key` 对应当前 `ChatSnapshot.nodes` 的稳定 key，供围栏等 DOM 扩展读取源码；该标记在流式输出与定稿之间保持一致。稳定事件 id、append/prepend 回放、Location data 与 renderer 约束见 [Conversation Node 实操手册](../../../docs/cookbook/adding-a-conversation-node.md)。
 
 Chat 视图左缘的细轨为当前已加载的持久用户消息与中途引导消息按消息顺序排列标记，每条一枚；标记以 10px 行高密集排列在垂直居中、限高的轨道内，不按消息在对话中的实际高度分布。轨道过长时可独立滚动，阅读位置变化时突出对应标记并使其保持可见。悬停或键盘聚焦可预览截取后的消息文本，点击或键盘激活会把对话滚动到对应消息的稳定位置。未加载的旧消息不占标记，加载旧页后才加入；待处理的 steering 气泡不占标记。对话滚动区域宽度不足 864px 时隐藏整个轨道及跳转入口，避免弹层遮挡历史消息；加宽后重新显示。该导航只读取 Chat 视图数据，不写入会话日志或持久状态。

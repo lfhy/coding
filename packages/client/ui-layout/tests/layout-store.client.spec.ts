@@ -23,12 +23,83 @@ const initialState = {
   narrow: false,
   narrowExpanded: false,
   workbench: {},
+  blankWorkbench: {},
+  activeBlankSession: null,
   page: null,
+  conversationRequest: null,
+  conversationRequestSeq: 0,
 }
 
 beforeEach(() => { localStorage.clear() })
 
 describe('createLayoutStore', () => {
+  it('keeps a blank Hero override separate until the user explicitly toggles the right panel', () => {
+    const { store, actions } = createLayoutStore().create()
+    actions.openWorkbench('shared')
+    actions.toggleWorkbenchFullscreen('shared')
+    const previous = store.getSnapshot().workbench.shared
+    expect(store.getSnapshot().blankWorkbench).toEqual({})
+    actions.toggleHeroPanel('shared', 'files', SESSION)
+    expect(store.getSnapshot().blankWorkbench[SESSION]).toBe(true)
+    expect(store.getSnapshot().blankWorkbench[NEXT_SESSION]).toBeUndefined()
+    expect(previous).toMatchObject({ open: true, fullscreen: true })
+    actions.toggleHeroPanel('shared', 'files', SESSION)
+    expect(store.getSnapshot().blankWorkbench[SESSION]).toBe(false)
+    actions.beginNewConversation()
+    expect(store.getSnapshot().blankWorkbench).toEqual({})
+  })
+
+  it('updates the shared workspace but not another active blank override for targeted opens', () => {
+    const { store, actions } = createLayoutStore().create()
+    actions.setActiveBlankSession(NEXT_SESSION, 'shared')
+    actions.openWorkbench('shared', SESSION)
+    expect(store.getSnapshot().workbench.shared?.open).toBe(true)
+    expect(store.getSnapshot().blankWorkbench[NEXT_SESSION]).toBeUndefined()
+    actions.openWorkbench('shared', NEXT_SESSION)
+    expect(store.getSnapshot().blankWorkbench[NEXT_SESSION]).toBe(true)
+    actions.toggleWorkbenchFullscreen('shared')
+    actions.openWorkbench('shared', SESSION)
+    expect(store.getSnapshot().workbench.shared?.fullscreen).toBe(true)
+    actions.openWorkbench('shared', NEXT_SESSION)
+    expect(store.getSnapshot().workbench.shared?.fullscreen).toBe(false)
+    actions.closeWorkbench('shared')
+    expect(store.getSnapshot().blankWorkbench[NEXT_SESSION]).toBe(false)
+    actions.openWorkbench('shared')
+    expect(store.getSnapshot().blankWorkbench[NEXT_SESSION]).toBe(true)
+  })
+
+  it('preserves an independent terminal when starting a blank conversation and reopening its Hero', () => {
+    const { store, actions } = createLayoutStore().create()
+    actions.openWorkbench('shared')
+    actions.toggleWorkbenchBottom('shared')
+    const priorBottom = store.getSnapshot().workbench.shared?.bottomOpen
+    actions.beginNewConversation()
+    expect(store.getSnapshot().workbench.shared?.bottomOpen).toBe(priorBottom)
+    actions.toggleHeroPanel('shared', 'files', SESSION)
+    expect(store.getSnapshot().blankWorkbench[SESSION]).toBe(true)
+    actions.toggleHeroPanel('shared', 'bottom', SESSION)
+    expect(store.getSnapshot().blankWorkbench[SESSION]).toBe(false)
+    actions.requestShowConversation(SESSION)
+    expect(store.getSnapshot().blankWorkbench[SESSION]).toBe(false)
+    actions.retainBlankSessions([NEXT_SESSION])
+    expect(store.getSnapshot().blankWorkbench[SESSION]).toBeUndefined()
+  })
+  it('keeps only the newest conversation request and does not acknowledge its successor', () => {
+    const { store, actions } = createLayoutStore().create()
+    actions.requestShowConversation(SESSION)
+    const first = store.getSnapshot().conversationRequest
+    actions.requestShowConversation(NEXT_SESSION)
+    const second = store.getSnapshot().conversationRequest
+    expect(second).toEqual({ sessionId: NEXT_SESSION, seq: 2 })
+    actions.acknowledgeConversationRequest(first!.seq)
+    expect(store.getSnapshot().conversationRequest).toBe(second)
+    actions.acknowledgeConversationRequest(second!.seq)
+    expect(store.getSnapshot().conversationRequest).toBeNull()
+    actions.requestShowConversation(SESSION)
+    expect(store.getSnapshot().conversationRequest?.seq).toBe(3)
+    actions.clearConversationRequest()
+    expect(store.getSnapshot().conversationRequest).toBeNull()
+  })
   it('keeps an independent page transient and returns without changing panel preferences', () => {
     const { store, actions } = createLayoutStore().create()
     actions.openWorkbench(SESSION)

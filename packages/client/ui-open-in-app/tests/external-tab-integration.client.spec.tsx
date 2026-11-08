@@ -93,7 +93,7 @@ describe('外部工作台标签的真实插件与 slot 装配', () => {
     expect(firstBody.dataset.session).toBe(b.first)
     expect(firstBody.dataset.shown).toBe('true')
     expect(titled.getAttribute('aria-controls')).toBe(firstBody.closest('[role="tabpanel"]')?.id)
-    expect(b.openWorkbench).toHaveBeenLastCalledWith(b.first)
+    expect(b.openWorkbench).toHaveBeenLastCalledWith(b.first, b.first)
 
     fireEvent.click(b.workbench.view.getByRole('button', { name: '添加工作台标签' }))
     expect(b.workbench.view.getByTestId('extension-body')).toBe(firstBody)

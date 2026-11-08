@@ -620,6 +620,8 @@ export interface ComposerBarInjected {
   hooks: {
     /** Latest surfaced notice (null after none; seq keys re-render of repeats). */
     notices: ObservableSnapshot<InputNotice | null>
+    /** 会话内递增的焦点动作序号。 */
+    focusRequest: ObservableSnapshot<number>
     /** Hot plain-text reference lexicon for the decoration scan (plain-text-reference decision;
      *  see ). */
     lexicon: ObservableSnapshot<ReadonlyMap<'/' | '@', readonly string[]>>

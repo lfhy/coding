@@ -3083,6 +3083,15 @@ importers:
       '@types/react-dom':
         specifier: ~18.3.0
         version: 18.3.7(@types/react@18.3.31)
+      coding-api-remotes:
+        specifier: workspace:^
+        version: link:../../api/remotes
+      coding-brand:
+        specifier: workspace:^
+        version: link:../../util/brand
+      coding-client-connection:
+        specifier: workspace:^
+        version: link:../connection
       coding-client-locale:
         specifier: workspace:^
         version: link:../locale
@@ -3092,15 +3101,24 @@ importers:
       coding-client-test-runtime:
         specifier: workspace:^
         version: link:../../test-support/client-runtime
+      coding-client-ui-conversation:
+        specifier: workspace:^
+        version: link:../ui-conversation
       coding-client-ui-icons:
         specifier: workspace:^
         version: link:../ui-icons
+      coding-client-ui-layout:
+        specifier: workspace:^
+        version: link:../ui-layout
       coding-client-ui-open-in-app:
         specifier: workspace:^
         version: link:../ui-open-in-app
       coding-client-ui-primitives:
         specifier: workspace:^
         version: link:../ui-primitives
+      coding-client-ui-settings:
+        specifier: workspace:^
+        version: link:../ui-settings
       coding-client-ui-slots:
         specifier: workspace:^
         version: link:../ui-slots
@@ -4000,6 +4018,9 @@ importers:
       coding-client-ui-conversation:
         specifier: workspace:^
         version: link:../ui-conversation
+      coding-client-ui-layout:
+        specifier: workspace:^
+        version: link:../ui-layout
       coding-client-ui-primitives:
         specifier: workspace:^
         version: link:../ui-primitives

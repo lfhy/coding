@@ -62,8 +62,12 @@ describe('ui-layout client apply', () => {
       toggleWorkbenchFullscreen: vi.fn(), toggleWorkbenchBottom: vi.fn(), closeWorkbenchBottom: vi.fn(),
       togglePage: vi.fn(),
       toggleHeroPanel: vi.fn(),
+      beginNewConversation: vi.fn(),
+      setActiveBlankSession: vi.fn(),
+      clearBlankWorkbench: vi.fn(), retainBlankSessions: vi.fn(),
       retainWorkbenchSessions: vi.fn(),
       openPage: vi.fn(), closePage: vi.fn(),
+      requestShowConversation: vi.fn(), acknowledgeConversationRequest: vi.fn(), clearConversationRequest: vi.fn(),
     } satisfies PanelActions
     const injected = (slots.entries('root')[0]!.inject as unknown as (
       actions: PanelActions,
@@ -74,8 +78,10 @@ describe('ui-layout client apply', () => {
     const layout = ctx.get('layout') as LayoutController
     layout.toggleSidebar()
     layout.openWorkbench('layout-session')
+    layout.showConversation('layout-session' as never)
     expect(actions.toggleSidebar).toHaveBeenCalledOnce()
     expect(actions.openWorkbench).toHaveBeenCalledOnce()
+    expect(actions.requestShowConversation).toHaveBeenCalledOnce()
   })
 
   it('theme presenter applies the initial snapshot, follows theme/change, and unwinds on dispose', async () => {

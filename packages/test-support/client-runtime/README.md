@@ -6,6 +6,8 @@
 
 `TestWorkspaces.connectHome()` 默认返回测试用 Session id，不改变当前选择；测试可以为其安装 stub，验证欢迎页建会话与打开底栏的次序。
 
+`TestSessions.create(opts?)` 需要测试显式安装 `stubCreate`；桩负责建立 fixture 会话并自行 `add` 到列表，未安装时调用会报错。它不隐式复用现有空白会话，也不自动打开创建的会话。
+
 局部 DOM 快照：`declare(children)` 注册自动 frame，逐 key 的 `<div data-slot>` 包裹层即快照根；`renderSlot(key, owner)` 返回该 slot 的局部视图（container、限定范围的 Testing Library 查询、原位 `update(owner)`）；注册的快照序列化器把 CSS-module 哈希类名折回语义名（`_frame_a1b2c3` → `frame`）保持 `.snap` 只含结构，并把 `<svg>` 内部折叠为 `data-content` 指纹。需要自定义页面 frame 的套件改用 `root.declare(children, Frame)`；`mount(plugin)` 在真实 fiber 上运行并对缺失服务先行报错；`dispose()` 沿单一轴拆除视图、feature fiber、已铸 scope 与持久化 store 状态。
 
 不属于产品插件图（无 `dsh.client`）；feature 包仅以 `devDependencies` 依赖之。

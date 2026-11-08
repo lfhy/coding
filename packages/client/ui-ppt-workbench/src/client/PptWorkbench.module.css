@@ -16,6 +16,9 @@
   cursor: progress;
 }
 
+.catalogDialog { width: min(760px, 100%); min-width: 0; max-height: calc(100vh - 48px); }
+.catalogContent { min-height: 0; overflow-y: auto; }
+
 .root *,
 .root *::before,
 .root *::after {

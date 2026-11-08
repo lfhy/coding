@@ -10,7 +10,7 @@ async function bench(declare = true) {
   const ctx = new Context()
   await ctx.plugin(SlotRegistry).await()
   const layout = {
-    toggleSidebar: vi.fn(), closePage: vi.fn(),
+    toggleSidebar: vi.fn(), closePage: vi.fn(), beginNewConversation: vi.fn(),
     page: { getSnapshot: () => null, subscribe: () => () => {} },
   }
   const workspaces = { startSession: vi.fn() }
@@ -56,8 +56,14 @@ describe('ui-sidebar apply', () => {
     // 两个入口都委托给运行时共享的新建对话操作。
     injected.startSession('workspace' as never)
     expect(b.workspaces.startSession).toHaveBeenCalledWith('workspace')
+    expect(b.layout.beginNewConversation).toHaveBeenCalledOnce()
     injected.startSession()
     expect(b.workspaces.startSession).toHaveBeenLastCalledWith(undefined)
+    expect(b.layout.beginNewConversation).toHaveBeenCalledTimes(2)
+    expect(b.layout.beginNewConversation.mock.invocationCallOrder[0])
+      .toBeLessThan(b.workspaces.startSession.mock.invocationCallOrder[0]!)
+    expect(b.layout.beginNewConversation.mock.invocationCallOrder[1])
+      .toBeLessThan(b.workspaces.startSession.mock.invocationCallOrder[1]!)
     injected.toggleSidebar()
     expect(b.layout.toggleSidebar).toHaveBeenCalledOnce()
   })

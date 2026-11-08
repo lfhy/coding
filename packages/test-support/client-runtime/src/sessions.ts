@@ -185,7 +185,7 @@ export class TestSessions implements ISessions {
   /** Calls observed on the service-level face, newest last. */
   readonly calls: {
     method: 'open' | 'openSubagent' | 'setSubagentCatalogOpen' | 'refreshSubagents'
-      | 'clear' | 'search' | 'fork'
+      | 'clear' | 'search' | 'create' | 'fork'
     args: unknown[]
   }[] = []
 
@@ -194,6 +194,8 @@ export class TestSessions implements ISessions {
 
   /** Replaceable search behavior (see {@link TestSessions.stubSearch}). */
   private searchStub: ((query: string, signal: AbortSignal) => { items: SessionSearchResultItem[]; hasMore: boolean }) | undefined
+  /** 由用例注入的 Host 创建行为；测试替身不凭空制造会话。 */
+  private createStub: ((opts: NonNullable<Parameters<ISessions['create']>[0]>) => ReturnType<ISessions['create']>) | undefined
 
   /**
    * @param stabilize - the owning runtime's act wrapper.
@@ -476,6 +478,25 @@ export class TestSessions implements ISessions {
   search(query: string, signal: AbortSignal): ReturnType<ISessions['search']> {
     this.calls.push({ method: 'search', args: [query, signal] })
     return Promise.resolve({ ok: true, value: this.searchStub?.(query, signal) ?? { items: [], hasMore: false } })
+  }
+
+  /**
+   * 指定创建行为；用例须自行通过 add() 发布新会话，再返回其 id。
+   * @param impl - 用例驱动的创建行为。
+   */
+  stubCreate(impl: (opts: NonNullable<Parameters<ISessions['create']>[0]>) => ReturnType<ISessions['create']>): void {
+    this.createStub = impl
+  }
+
+  /**
+   * 记录创建意图并转交给用例；未安装桩时拒绝，不伪造 Host 创建结果。
+   * @param opts - 可选的工作区、目录和预分配 id。
+   * @returns 用例创建的会话 id。
+   */
+  async create(opts: NonNullable<Parameters<ISessions['create']>[0]> = {}): Promise<SessionId> {
+    this.calls.push({ method: 'create', args: [opts] })
+    if (this.createStub === undefined) throw new Error('test sessions: create is not stubbed — use stubCreate')
+    return await this.createStub(opts)
   }
 
   /**

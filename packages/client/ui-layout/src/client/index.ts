@@ -136,6 +136,7 @@ export function apply(ctx: ClientContext): void {
       },
     }, AppFrame)
     return () => {
+      layout.detachPanels()
       disposeRegistration()
       void disposeService()
     }

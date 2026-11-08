@@ -10,10 +10,16 @@
 
 import type { ClientContext } from 'coding-client-runtime/client'
 import type { SessionId } from 'coding-session/types'
+import type { ConnectionHandle } from 'coding-client-connection/client'
 import type {} from 'coding-client-locale/client'
 import type {} from 'coding-client-ui-open-in-app/client'
+import type {} from 'coding-client-ui-conversation/client'
+import type {} from 'coding-client-ui-layout/client'
 import { PptPanelController } from './controller.ts'
 import { PptWorkbench, type PptWorkbenchInjected } from './PptWorkbench.tsx'
+import { TemplateCatalogController } from './template-catalog.ts'
+import { TemplateSettingsSection, type TemplateCatalogInjected } from './TemplateCatalog.tsx'
+import { createTemplateNavigation } from './template-navigation.ts'
 import { en, NS, zh, type PptWorkbenchKey } from './locales.ts'
 
 declare module 'coding-client-ui-slots' {
@@ -33,7 +39,10 @@ const RETRY_MS = 300
 const RETRY_LIMIT = 20
 
 /** 依赖右侧工作台所有者、会话列表与文案服务。 */
-export const inject = ['slots', 'locale', 'sidebarRight', 'sidebarRightTabs', 'sessions']
+export const inject = [
+  'slots', 'locale', 'sidebarRight', 'sidebarRightTabs', 'sessions', 'workspaces', 'connection',
+  'conversation', 'layout',
+]
 
 /**
  * 注册标签类型、内容座位与模式联动。
@@ -45,6 +54,21 @@ export function apply(ctx: ClientContext): void {
   const controllers = new Map<string, PptPanelController>()
   const opened = new Set<string>()
   const retries = new Map<string, ReturnType<typeof setTimeout>>()
+  const catalog = new TemplateCatalogController()
+  const navigation = createTemplateNavigation(
+    ctx.sessions, ctx.workspaces, (ctx.get('connection') as ConnectionHandle).api,
+    ctx.conversation, ctx.layout,
+  )
+  ctx.effect(() => () => { catalog.dispose(); navigation.dispose() }, 'ui-ppt: template navigation')
+
+  const catalogActions: Omit<TemplateCatalogInjected, 'hooks'> = {
+    loadTemplates: () => catalog.load(),
+    detailTemplate: id => catalog.detail(id),
+    templateMediaUrl: (id, path) => catalog.mediaUrl(id, path),
+    handoffPrompt: (text, id) => navigation.handoffPrompt(text, id),
+    cancelHandoff: (id) => { navigation.cancelHandoff(id) },
+    focusPrompt: (id) => { navigation.focusPrompt(id) },
+  }
 
   const controllerFor = (sessionId: string): PptPanelController => {
     let controller = controllers.get(sessionId)
@@ -70,6 +94,11 @@ export function apply(ctx: ClientContext): void {
     title: () => t('title'),
   }), 'ui-ppt: tab definition')
 
+  ctx.slots.inject('settings.section', () => ctx.slots.register({
+    name: 'settings.section', id: 'ppt-templates', order: 18, label: () => t('catalogTitle'), locale: NS,
+    inject: () => ({ hooks: { templateCatalog: catalog.view }, ...catalogActions }),
+  }, TemplateSettingsSection))
+
   ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register({
     name: 'sidebar.right.pane.tab',
     key: TAB_ID,
@@ -77,7 +106,8 @@ export function apply(ctx: ClientContext): void {
     inject: (sessionId: SessionId): PptWorkbenchInjected => {
       const controller = controllerFor(sessionId)
       return {
-        hooks: { ppt: controller.view },
+        hooks: { ppt: controller.view, templateCatalog: catalog.view },
+        catalogActions,
         show: (visible) => { controller.show(visible) },
         refresh: () => { void controller.refresh() },
         open: dir => controller.open(dir),

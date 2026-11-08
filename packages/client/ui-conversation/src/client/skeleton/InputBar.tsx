@@ -41,6 +41,7 @@ export function InputBar({
   useSession, useInput, inputActions, keyboard, addImages, removeImage, draftImages,
   resolveSubmitMode, toggleCommandMenu, stop, command, t,
   renderSlot, useNotices, useLexicon, useMenuLauncher,
+  useFocusRequest,
   useProjection, sessionId, variant, disabled: inert = false, blocked,
   workspacePickerOpen = false, onRequestWorkspace,
   placeholder, accessory, overlay, leftItems, rightItems, footer,
@@ -49,6 +50,7 @@ export function InputBar({
   const notice = useNotices(s => s)
   const lexicon = useLexicon(s => s)
   const commandMenuOpen = useMenuLauncher(source => source === 'command')
+  const focusRequest = useFocusRequest(seq => seq)
   const promptError = useSession(s => s.promptError) ?? null
   const running = useSession(s => s.running) ?? false
   const subagent = useSession(s => s.subagent) ?? null
@@ -219,6 +221,38 @@ export function InputBar({
     el.focus({ preventScroll: true })
     revealSelectionFocus(el)
   }, [locked, sessionId])
+
+  // 跨插件请求在布局提交后的帧里执行，避开设置页关闭时的回焦；隐藏的会话
+  // 最多等待几帧，切换会话、后续请求或卸载都会撤销旧回调。
+  useLayoutEffect(() => {
+    if (focusRequest === 0 || locked) return
+    let frame = 0
+    let attempts = 0
+    let canceled = false
+    const tryFocus = (): void => {
+      if (canceled) return
+      const el = inputRef.current
+      if (el === null || !el.isConnected || el.disabled) return
+      let visible = el.getClientRects().length > 0
+      for (let node: HTMLElement | null = el; node !== null; node = node.parentElement) {
+        if (node.hidden || node.inert) { visible = false; break }
+        const style = getComputedStyle(node)
+        if (style.display === 'none' || style.visibility === 'hidden' || style.visibility === 'collapse') {
+          visible = false
+          break
+        }
+      }
+      if (visible) {
+        el.focus({ preventScroll: true })
+        el.setSelectionRange(el.value.length, el.value.length)
+        revealSelectionFocus(el)
+      } else if (++attempts < 4) {
+        frame = requestAnimationFrame(tryFocus)
+      }
+    }
+    frame = requestAnimationFrame(tryFocus)
+    return () => { canceled = true; cancelAnimationFrame(frame) }
+  }, [focusRequest, locked, sessionId])
 
   // A persisted draft arrives AFTER the unlock effect: ConversationSession
   // adopts it in its own mount effect, and a parent's mount effect runs after

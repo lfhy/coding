@@ -3,6 +3,7 @@
  */
 import { describe, expect, it, vi } from 'vitest'
 import { LayoutController } from 'coding-client-ui-layout/src/client/service.ts'
+import { createLayoutStore } from 'coding-client-ui-layout/src/client/stores.ts'
 import type { PanelActions } from 'coding-client-ui-layout/src/client/service.ts'
 import type { SessionId } from 'coding-session/types'
 
@@ -25,10 +26,17 @@ function fakePanels(): PanelActions {
     toggleWorkbenchBottom: vi.fn(),
     closeWorkbenchBottom: vi.fn(),
     toggleHeroPanel: vi.fn(),
+    beginNewConversation: vi.fn(),
+    setActiveBlankSession: vi.fn(),
+    clearBlankWorkbench: vi.fn(),
+    retainBlankSessions: vi.fn(),
     retainWorkbenchSessions: vi.fn(),
     openPage: vi.fn(),
     closePage: vi.fn(),
     togglePage: vi.fn(),
+    requestShowConversation: vi.fn(),
+    acknowledgeConversationRequest: vi.fn(),
+    clearConversationRequest: vi.fn(),
   }
 }
 
@@ -42,29 +50,37 @@ describe('LayoutController', () => {
     service.openDetails()
     service.closeDetails()
     service.openWorkbench(SESSION)
+    service.openWorkbench(SESSION, SESSION)
     service.closeWorkbench(SESSION)
     service.toggleWorkbench(SESSION)
     service.toggleWorkbenchFullscreen(SESSION)
     service.toggleWorkbenchBottom(SESSION)
     service.closeWorkbenchBottom(SESSION)
     service.toggleHeroPanel(SESSION, 'bottom')
+    service.toggleHeroPanel(SESSION, 'files', SESSION)
+    service.beginNewConversation()
     service.openPage('image-gallery', SESSION)
     service.closePage()
     service.togglePage('image-gallery', SESSION)
+    service.showConversation(SESSION)
 
     expect(panels.toggleSidebar).toHaveBeenCalledTimes(1)
     expect(panels.openDetails).toHaveBeenCalledTimes(1)
     expect(panels.closeDetails).toHaveBeenCalledTimes(1)
-    expect(panels.openWorkbench).toHaveBeenCalledTimes(1)
+    expect(panels.openWorkbench).toHaveBeenCalledWith(SESSION, undefined)
+    expect(panels.openWorkbench).toHaveBeenCalledWith(SESSION, SESSION)
     expect(panels.closeWorkbench).toHaveBeenCalledTimes(1)
     expect(panels.toggleWorkbench).toHaveBeenCalledTimes(1)
     expect(panels.toggleWorkbenchFullscreen).toHaveBeenCalledWith(SESSION)
     expect(panels.toggleWorkbenchBottom).toHaveBeenCalledWith(SESSION)
     expect(panels.closeWorkbenchBottom).toHaveBeenCalledWith(SESSION)
-    expect(panels.toggleHeroPanel).toHaveBeenCalledWith(SESSION, 'bottom')
+    expect(panels.toggleHeroPanel).toHaveBeenCalledWith(SESSION, 'bottom', undefined)
+    expect(panels.toggleHeroPanel).toHaveBeenCalledWith(SESSION, 'files', SESSION)
+    expect(panels.beginNewConversation).toHaveBeenCalledOnce()
     expect(panels.openPage).toHaveBeenCalledWith('image-gallery', SESSION)
     expect(panels.closePage).toHaveBeenCalledOnce()
     expect(panels.togglePage).toHaveBeenCalledWith('image-gallery', SESSION)
+    expect(panels.requestShowConversation).toHaveBeenCalledWith(SESSION)
     expect(panels.setSidebar).not.toHaveBeenCalled()
     expect(panels.setDetails).not.toHaveBeenCalled()
     expect(panels.setWorkbench).not.toHaveBeenCalled()
@@ -81,8 +97,10 @@ describe('LayoutController', () => {
     expect(() => { service.toggleWorkbench(SESSION) }).toThrow(/panel actions not wired/)
     expect(() => { service.closeWorkbenchBottom(SESSION) }).toThrow(/panel actions not wired/)
     expect(() => { service.toggleHeroPanel(SESSION, 'files') }).toThrow(/panel actions not wired/)
+    expect(() => { service.beginNewConversation() }).toThrow(/panel actions not wired/)
     expect(() => { service.openPage('image-gallery', SESSION) }).toThrow(/panel actions not wired/)
     expect(() => { service.closePage() }).toThrow(/panel actions not wired/)
+    expect(() => { service.showConversation(SESSION) }).toThrow(/panel actions not wired/)
   })
 
   it('publishes stable per-workspace workbench snapshots for header controls', () => {
@@ -113,5 +131,22 @@ describe('LayoutController', () => {
 
     expect(stale.toggleSidebar).not.toHaveBeenCalled()
     expect(fresh.toggleSidebar).toHaveBeenCalledTimes(1)
+    expect(stale.clearConversationRequest).toHaveBeenCalledOnce()
+    service.detachPanels()
+    expect(fresh.clearConversationRequest).toHaveBeenCalledOnce()
+    expect(() => { service.showConversation(SESSION) }).toThrow(/panel actions not wired/)
+  })
+
+  it('clears outstanding requests on dispose and does not replay them on re-register', () => {
+    const service = new LayoutController()
+    const oldRoot = createLayoutStore().create()
+    service.attachPanels(oldRoot.actions)
+    service.showConversation(SESSION)
+    expect(oldRoot.store.getSnapshot().conversationRequest?.sessionId).toBe(SESSION)
+    service.detachPanels()
+    expect(oldRoot.store.getSnapshot().conversationRequest).toBeNull()
+    const newRoot = createLayoutStore().create()
+    service.attachPanels(newRoot.actions)
+    expect(newRoot.store.getSnapshot().conversationRequest).toBeNull()
   })
 })

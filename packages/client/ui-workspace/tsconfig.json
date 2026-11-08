@@ -27,6 +27,9 @@
       "path": "../runtime"
     },
     {
+      "path": "../ui-layout"
+    },
+    {
       "path": "../ui-sidebar"
     },
     {

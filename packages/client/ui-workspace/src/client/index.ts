@@ -1,18 +1,13 @@
 /**
- * Workspace plugin, browser half. Two registrations: WorkspaceBrowser fills
- * the sidebar shell's `sidebar.workspaces` hole (the whole browsing region),
- * and WorkspacePicker fills the conversation hero's picker hole
- * (`conversation.hero.workspace` — both hero forms). Both read real Host
- * Workspaces through the global useWorkspaces hook, and each declares its
- * own `single` directory-flow child hole for the composed picker package's
- * client half (see the contract module doc). Export discipline:
- * packages/client/AGENTS.md.
+ * 工作区浏览器与欢迎页选择器分别占用侧栏和对话 slot，均通过全局 hook 读取 Host 工作区。
+ * 两者各自声明目录流子 slot，供可替换的选择器插件占用。
  */
 import type { ConnectionHandle } from 'coding-client-connection/client'
 import type { HostObservable } from 'coding-client-ui-slots'
 import type { ClientContext } from 'coding-client-runtime/client'
-// Type-only: pulls the locale plugin's Context merge (ctx.locale).
+// 类型导入补齐 locale 与 layout 对 Context 的服务声明。
 import type {} from 'coding-client-locale/client'
+import type {} from 'coding-client-ui-layout/client'
 import type { WorkspaceBrowserInjected, WorkspacePickerInjected } from './contract/slots.ts'
 import { createWorkspaceViewStore } from './stores.ts'
 import { WorkspaceBrowser } from './WorkspaceBrowser.tsx'
@@ -28,29 +23,23 @@ export type { WorkspaceKey } from './locales.ts'
 
 declare module 'coding-client-ui-slots' {
   interface LocaleNamespaceMap {
-    /** The workspace browsing region and pick/create flow copy. */
+    /** 工作区浏览与选择流程文案。 */
     workspace: WorkspaceKey
   }
 }
 
-/** Dictionary namespace owned by this plugin. */
+/** 本插件持有的字典命名空间。 */
 const NS = 'workspace'
 
 /**
- * Required services (cordis fiber inject). The target slots are declared by
- * the ui-sidebar / ui-conversation applies, whose activation order relative
- * to this one is NOT constrained: dsh.client.inject edges are informational
- * (loading/prefetch metadata, never apply sequencing) and neither owner
- * provides a waitable service. apply therefore depends on each slot
- * declaration through `slots.inject()` instead of assuming order.
+ * 必需服务。目标 slot 由侧栏和对话插件声明，其加载元数据不保证 apply 顺序；
+ * 注册仍通过 `slots.inject()` 等待各自的 slot 声明。
  */
-export const inject = ['slots', 'sessions', 'workspaces', 'locale', 'connection']
+export const inject = ['slots', 'layout', 'sessions', 'workspaces', 'locale', 'connection']
 
 /**
- * Register the browser and picker once their slot declarations are on the
- * ledger. Inject factories return plain callbacks; data reads use the
- * framework's global hooks.
- * @param ctx - client root context.
+ * 在目标 slot 声明后注册浏览器与选择器；注入只返回回调，数据由全局 hook 读取。
+ * @param ctx - Client 根上下文。
  */
 export function apply(ctx: ClientContext): void {
   const connection = ctx.get('connection') as ConnectionHandle
@@ -86,9 +75,11 @@ export function apply(ctx: ClientContext): void {
   const browserFlowSource = flowSource('sidebar.workspaces.directoryFlow')
   const pickerFlowSource = flowSource('conversation.hero.workspace.directoryFlow')
   const browserInjected = (): WorkspaceBrowserInjected => ({
-    // Explicit group actions keep their target; unscoped New Session inherits
-    // the current Session Workspace before the recent-Workspace fallback.
-    startSession: (workspaceId) => { ctx.workspaces.startSession(workspaceId) },
+    // 分组动作保留指定工作区；无指定时由运行时继承当前会话工作区，再退到最近工作区。
+    startSession: (workspaceId) => {
+      ctx.layout.beginNewConversation()
+      ctx.workspaces.startSession(workspaceId)
+    },
     open: (sessionId) => { ctx.sessions.open(sessionId) },
     searchSessions,
     searchResultLimit: ctx.sessions.searchResultLimit,

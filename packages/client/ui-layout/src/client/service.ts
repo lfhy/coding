@@ -37,8 +37,13 @@ export interface ILayout {
   closeDetails(): void
   /** 返回指定工作区的工作台状态源。 */
   workbench(key: string): ObservableSnapshot<WorkbenchLayoutSnapshot>
-  /** 打开指定工作区的工作台并关闭详情栏。 */
-  openWorkbench(key: string): void
+  /**
+   * 打开指定工作区的工作台并关闭详情栏；指定会话时，仅该会话可展开当前空白页。
+   * @param key - 工作区布局键。
+   * @param sessionId - 可选的动作目标会话；后台会话不得展开当前空白会话的右栏。
+   * @returns 无返回值。
+   */
+  openWorkbench(key: string, sessionId?: SessionId): void
   /** 关闭指定工作区的右侧工作台，保留正在显示的底栏。 */
   closeWorkbench(key: string): void
   /** 切换指定工作区的工作台；打开时同时关闭详情栏。 */
@@ -49,14 +54,31 @@ export interface ILayout {
   toggleWorkbenchBottom(key: string): void
   /** 隐藏指定工作区的终端底栏；已隐藏时不改变工作台或详情栏。 */
   closeWorkbenchBottom(key: string): void
-  /** 欢迎页两面板入口：打开其中一个时隐藏另一面板。 */
-  toggleHeroPanel(key: string, panel: 'bottom' | 'files'): void
+  /**
+   * 欢迎页两面板入口：打开其中一个时隐藏另一面板。空白会话应携带其 id，以实际可见右栏决定切换方向。
+   * @param key - 工作区布局键。
+   * @param panel - 要切换的面板。
+   * @param sessionId - 可选的空白会话 id；同工作区的不同空白会话各自拥有临时右栏覆盖。
+   * @returns 无返回值。
+   */
+  toggleHeroPanel(key: string, panel: 'bottom' | 'files', sessionId?: SessionId): void
+  /**
+   * 新建对话入口撤回空白会话的临时右栏操作，不改变共享工作台与底栏。
+   * @returns 无返回值。
+   */
+  beginNewConversation(): void
   /** 在主内容区打开属于指定会话的独立页面，不改变会话或工作台偏好。 */
   openPage(kind: string, sessionId: SessionId): void
   /** 同一会话再次点击入口会返回原界面。 */
   togglePage(kind: string, sessionId: SessionId): void
   /** 返回原会话界面。 */
   closePage(): void
+  /**
+   * 显示指定当前会话的对话；全屏工作台中打开原有悬浮对话。
+   * @param sessionId - 发起动作时所属的会话。
+   * @returns 无返回值。
+   */
+  showConversation(sessionId: SessionId): void
   /** 供导航入口显示是否正处于主内容页。 */
   readonly page: ObservableSnapshot<PageRoute | null>
 }
@@ -75,7 +97,17 @@ export class LayoutController implements ILayout {
    * @returns 无返回值。
    */
   attachPanels(actions: PanelActions): void {
+    this.#panels?.clearConversationRequest()
     this.#panels = actions
+  }
+
+  /**
+   * 卸载 root 注册时撤回旧动作与尚未消费的请求。
+   * @returns 无返回值。
+   */
+  detachPanels(): void {
+    this.#panels?.clearConversationRequest()
+    this.#panels = undefined
   }
 
   /** 返回指定工作区的工作台状态源。 */
@@ -139,9 +171,14 @@ export class LayoutController implements ILayout {
     this.#require().closeDetails()
   }
 
-  /** 打开指定工作区的工作台。 */
-  openWorkbench(key: string): void {
-    this.#require().openWorkbench(key)
+  /**
+   * 打开指定工作区的工作台，只让目标会话展开当前空白页。
+   * @param key - 工作区布局键。
+   * @param sessionId - 可选的动作目标会话。
+   * @returns 无返回值。
+   */
+  openWorkbench(key: string, sessionId?: SessionId): void {
+    this.#require().openWorkbench(key, sessionId)
   }
 
   /** 关闭指定工作区的右侧工作台，保留正在显示的底栏。 */
@@ -175,8 +212,16 @@ export class LayoutController implements ILayout {
    * @param panel - 要切换的底栏或 `files` 工作台右栏。
    * @returns 无返回值。
    */
-  toggleHeroPanel(key: string, panel: 'bottom' | 'files'): void {
-    this.#require().toggleHeroPanel(key, panel)
+  toggleHeroPanel(key: string, panel: 'bottom' | 'files', sessionId?: SessionId): void {
+    this.#require().toggleHeroPanel(key, panel, sessionId)
+  }
+
+  /**
+   * 新建对话入口重置空白会话的右栏临时覆盖，不更改工作区共享偏好。
+   * @returns 无返回值。
+   */
+  beginNewConversation(): void {
+    this.#require().beginNewConversation()
   }
 
   /** 在主内容区打开会话页面。 */
@@ -187,6 +232,15 @@ export class LayoutController implements ILayout {
   /** 返回原会话界面。 */
   closePage(): void {
     this.#require().closePage()
+  }
+
+  /**
+   * 请求根布局显示当前会话的对话；不切换会话，也不触碰草稿。
+   * @param sessionId - 发起动作时所属的会话。
+   * @returns 无返回值。
+   */
+  showConversation(sessionId: SessionId): void {
+    this.#require().requestShowConversation(sessionId)
   }
 
   /** 同一页面入口可再次点击返回。 */

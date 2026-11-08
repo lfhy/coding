@@ -63,6 +63,10 @@ const ABSENT_NOTICES = {
   getSnapshot: (): InputNotice | null => null,
   subscribe: () => () => {},
 }
+const ABSENT_FOCUS_REQUEST = {
+  getSnapshot: () => 0,
+  subscribe: () => () => {},
+}
 /** No session, therefore nothing to block; same one-identity rule as above. */
 const ABSENT_BLOCK = {
   getSnapshot: (): ComposerBlock | undefined => undefined,
@@ -277,7 +281,10 @@ export function apply(ctx: Context): void {
     inject: (): ConversationSessionHeaderInjected => ({
       views,
       open: (id) => { sessions.open(id) },
-      startSession: () => { workspaces.startSession() },
+      startSession: () => {
+        layout.beginNewConversation()
+        workspaces.startSession()
+      },
     }),
   }, ConversationSessionHeader)
 
@@ -383,7 +390,12 @@ export function apply(ctx: Context): void {
           toggleCommandMenu: undefined,
           stop: undefined,
           command: undefined,
-          hooks: { notices: ABSENT_NOTICES, lexicon: ABSENT_LEXICON, menuLauncher: ABSENT_MENU_LAUNCHER },
+          hooks: {
+            notices: ABSENT_NOTICES,
+            focusRequest: ABSENT_FOCUS_REQUEST,
+            lexicon: ABSENT_LEXICON,
+            menuLauncher: ABSENT_MENU_LAUNCHER,
+          },
         }
       }
       const conversation = concreteConversation(ctx)
@@ -440,6 +452,7 @@ export function apply(ctx: Context): void {
         },
         hooks: {
           notices: shell.notices,
+          focusRequest: shell.focusRequest,
           lexicon: shell.lexicon,
           menuLauncher: inputTriggers?.launcher ?? ABSENT_MENU_LAUNCHER,
         },
@@ -488,7 +501,10 @@ export function apply(ctx: Context): void {
             ?? workspaces.openPath(resolveWorkspacePath(cwd, path))
         },
         retryHistory: () => sessions.retry(sessionId),
-        startSession: () => { workspaces.startSession() },
+        startSession: () => {
+          layout.beginNewConversation()
+          workspaces.startSession()
+        },
         archiveSession: async (id) => { await workspaces.archiveSession(id) },
         loadOlder: () => { void scoped.loadOlder() },
         loadImage: attachment => conversation.resolveImage(sessionId, attachment),
@@ -526,6 +542,7 @@ export function apply(ctx: Context): void {
   ctx.plugin(ConversationController, {
     input: inputHub,
     blocks: composerBlocks,
+    focusInput: (sessionId) => { inputHub.requestFocus(sessionId) },
     selectView: (sessionId, view) => {
       if (!viewTabs().some(tab => tab.id === view)) throw new Error('conversation view is not registered')
       const select = viewActions.get(sessionId)

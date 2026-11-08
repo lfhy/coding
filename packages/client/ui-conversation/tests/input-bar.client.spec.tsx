@@ -185,6 +185,7 @@ function bench(over?: BenchOptions) {
     },
     toggleCommandMenu: over?.toggleCommandMenu ?? vi.fn(),
     useNotices: bindSnapshotSelector(shell.notices),
+    useFocusRequest: bindSnapshotSelector(shell.focusRequest),
     useLexicon: bindSnapshotSelector(shell.lexicon),
     useMenuLauncher: bindSnapshotSelector(menuLauncher),
     stop,
@@ -757,6 +758,118 @@ describe('running and lock semantics', () => {
     textarea.blur()
     fireEvent.mouseDown(first.view.container.querySelector('button[aria-label="发送消息"]')!)
     expect(document.activeElement).toBe(textarea)
+  })
+
+  it('重复焦点请求只聚焦当前可见输入框末尾，不改变草稿或发送', () => {
+    const b = bench({ draft: 'keep this draft' })
+    const rects = vi.spyOn(b.textarea, 'getClientRects').mockReturnValue({ length: 1 } as DOMRectList)
+    const frames: FrameRequestCallback[] = []
+    const raf = vi.spyOn(window, 'requestAnimationFrame').mockImplementation(cb => frames.push(cb))
+    const cancel = vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => {})
+    try {
+      b.textarea.setSelectionRange(0, 0)
+      b.textarea.blur()
+      act(() => { b.shell.requestFocus() })
+      act(() => { frames.shift()?.(0) })
+      expect(document.activeElement).toBe(b.textarea)
+      expect(b.textarea.selectionStart).toBe(b.textarea.value.length)
+      b.textarea.blur()
+      act(() => { b.shell.requestFocus() })
+      act(() => { frames.shift()?.(0) })
+      expect(document.activeElement).toBe(b.textarea)
+      expect(b.shell.snapshot.draft).toBe('keep this draft')
+      expect(b.sink).not.toHaveBeenCalled()
+    } finally {
+      rects.mockRestore()
+      raf.mockRestore()
+      cancel.mockRestore()
+    }
+  })
+
+  it('隐藏、inert 和禁用输入不接受焦点请求', () => {
+    const b = bench({ draft: 'untouched' })
+    const rects = vi.spyOn(b.textarea, 'getClientRects').mockReturnValue({ length: 1 } as DOMRectList)
+    const frames: FrameRequestCallback[] = []
+    const raf = vi.spyOn(window, 'requestAnimationFrame').mockImplementation(cb => frames.push(cb))
+    const cancel = vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => {})
+    try {
+      b.textarea.blur()
+      b.view.container.hidden = true
+      act(() => { b.shell.requestFocus() })
+      act(() => { frames.shift()?.(0) })
+      expect(document.activeElement).not.toBe(b.textarea)
+      b.view.container.hidden = false
+      b.view.container.inert = true
+      act(() => { b.shell.requestFocus() })
+      act(() => { frames.shift()?.(0) })
+      expect(document.activeElement).not.toBe(b.textarea)
+      b.view.container.inert = false
+      act(() => { b.session.set(snapshotOf({ removed: true })) })
+      act(() => { b.shell.requestFocus() })
+      act(() => { frames.shift()?.(0) })
+      expect(document.activeElement).not.toBe(b.textarea)
+      expect(b.shell.snapshot.draft).toBe('untouched')
+      expect(b.sink).not.toHaveBeenCalled()
+    } finally {
+      rects.mockRestore()
+      raf.mockRestore()
+      cancel.mockRestore()
+    }
+  })
+
+  it('目标输入框在短暂隐藏后变为可见时才聚焦', () => {
+    const b = bench({ draft: 'draft' })
+    const rects = vi.spyOn(b.textarea, 'getClientRects').mockReturnValue({ length: 1 } as DOMRectList)
+    const frames: FrameRequestCallback[] = []
+    const raf = vi.spyOn(window, 'requestAnimationFrame').mockImplementation(cb => frames.push(cb))
+    const cancel = vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => {})
+    try {
+      b.view.container.hidden = true
+      b.textarea.blur()
+      act(() => { b.shell.requestFocus() })
+      act(() => { frames.shift()?.(0) })
+      expect(document.activeElement).not.toBe(b.textarea)
+      b.view.container.hidden = false
+      act(() => { frames.shift()?.(0) })
+      expect(document.activeElement).toBe(b.textarea)
+      expect(b.textarea.selectionStart).toBe(5)
+    } finally {
+      rects.mockRestore()
+      raf.mockRestore()
+      cancel.mockRestore()
+    }
+  })
+
+  it('切换会话或卸载后不执行待处理焦点请求', () => {
+    const b = bench()
+    const rects = vi.spyOn(b.textarea, 'getClientRects').mockReturnValue({ length: 1 } as DOMRectList)
+    const frames: FrameRequestCallback[] = []
+    const canceled = new Set<number>()
+    const raf = vi.spyOn(window, 'requestAnimationFrame').mockImplementation((cb) => {
+      frames.push(cb)
+      return frames.length
+    })
+    const cancel = vi.spyOn(window, 'cancelAnimationFrame').mockImplementation((id) => { canceled.add(id) })
+    try {
+      b.textarea.blur()
+      act(() => { b.shell.requestFocus() })
+      const nextFocus = createSnapshotStore(0)
+      act(() => { b.view.rerender(<InputBar {...b.props} sessionId={'s2' as SessionId}
+        useFocusRequest={bindSnapshotSelector(nextFocus)} />) })
+      expect(canceled.has(1)).toBe(true)
+      // 模拟取消前已进入浏览器队列的旧回调；取消后也不应抢走新会话焦点。
+      act(() => { frames[0]?.(0) })
+      b.textarea.blur()
+      act(() => { nextFocus.set(1) })
+      act(() => { b.view.unmount() })
+      expect(canceled.has(2)).toBe(true)
+      act(() => { frames[1]?.(0) })
+      expect(document.activeElement).not.toBe(b.textarea)
+    } finally {
+      rects.mockRestore()
+      raf.mockRestore()
+      cancel.mockRestore()
+    }
   })
 
   it('typing forwards through the machine (draft state echoes back)', () => {

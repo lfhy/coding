@@ -24,9 +24,10 @@ const SID = 's1' as SessionId
 afterEach(cleanup)
 beforeEach(() => { localStorage.clear() })
 
-/** Runtime with the locale face installed (the browser entry declares `locale:` — zh default backs the t seat). */
+/** 为实际浏览器插件安装 locale 与布局服务；字典默认使用中文。 */
 async function createRuntime(): Promise<SlotTestRuntime> {
   const runtime = await SlotTestRuntime.create()
+  runtime.provide('layout', { beginNewConversation: vi.fn() })
   runtime.provide('connection', {
     hostDescription: { getSnapshot: () => undefined, subscribe: () => () => {} },
   })

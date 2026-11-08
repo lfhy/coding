@@ -7,7 +7,7 @@
  */
 
 import { useEffect, useRef, useState } from 'react'
-import { Menu } from 'coding-client-ui-primitives'
+import { Button, Menu, Modal } from 'coding-client-ui-primitives'
 import type { SnapshotStore } from 'coding-client-runtime/client'
 import type { InjectFace, PropsLocale, PropsRuntime } from 'coding-client-ui-slots'
 import {
@@ -23,6 +23,8 @@ import { Inspector } from './Inspector.tsx'
 import { NS } from './locales.ts'
 import { Stage } from './Stage.tsx'
 import { ThumbStrip } from './ThumbStrip.tsx'
+import { TemplateCatalog, type TemplateCatalogInjected } from './TemplateCatalog.tsx'
+import type { TemplateCatalogState } from './template-catalog.ts'
 import css from './PptWorkbench.module.css'
 
 /** 注册侧传给面板的全部动作。 */
@@ -30,7 +32,9 @@ export interface PptWorkbenchInjected {
   hooks: {
     /** 会话级面板状态。 */
     ppt: SnapshotStore<PptPanelState>
+    templateCatalog: SnapshotStore<TemplateCatalogState>
   }
+  catalogActions: Omit<TemplateCatalogInjected, 'hooks'>
   show: (visible: boolean) => void
   refresh: () => void
   open: (dir: string) => Promise<void>
@@ -83,12 +87,14 @@ export function PptWorkbench({
   selectPage, selectElement, setEditing, addPage, removePage, movePage,
   addElement, removeElement, updateElement, updatePage, updateDeck,
   duplicateElement, reorderElement, insertImage, checkDeck, preview, mediaUrl,
+  useTemplateCatalog, catalogActions,
 }: PptWorkbenchProps) {
   const state = usePpt(snapshot => snapshot)
   const [menu, setMenu] = useState<'new' | 'insert' | 'page' | 'more' | null>(null)
   const [showThumbs, setShowThumbs] = useState(true)
   const [showInspector, setShowInspector] = useState(false)
   const [showIssues, setShowIssues] = useState(false)
+  const [catalogOpen, setCatalogOpen] = useState(false)
   const fileInput = useRef<HTMLInputElement>(null)
   const inspectorClose = useRef<HTMLButtonElement>(null)
   const inspectorTrigger = useRef<HTMLButtonElement>(null)
@@ -127,6 +133,12 @@ export function PptWorkbench({
   const element = page === null
     ? null
     : page.elements.find(entry => entry.id === state.selectedId) ?? null
+  const catalogModal = <Modal open={catalogOpen} onClose={() => { setCatalogOpen(false) }}
+    title={t('catalogTitle')} closeLabel={t('close')} className={css.catalogDialog as string}
+    contentClassName={css.catalogContent as string} trapFocus>
+    {catalogOpen && <TemplateCatalog {...catalogActions} useTemplateCatalog={useTemplateCatalog} t={t} showTitle={false}
+      onHandoff={() => { setCatalogOpen(false) }} />}
+  </Modal>
 
   if (state.phase === 'ready' && project === null) {
     return (
@@ -139,6 +151,7 @@ export function PptWorkbench({
                 <span>{t('title')}</span>
               </div>
               <p className={css.blankHint}>{t('emptyTitle')}</p>
+              <Button variant="outline" size="sm" onClick={() => { setCatalogOpen(true) }}>{t('templateLibrary')}</Button>
             </div>
           ) : (
             <>
@@ -153,9 +166,11 @@ export function PptWorkbench({
                   </li>
                 ))}
               </ul>
+              <Button variant="outline" size="sm" onClick={() => { setCatalogOpen(true) }}>{t('templateLibrary')}</Button>
             </>
           )}
         </div>
+        {catalogModal}
       </div>
     )
   }
@@ -257,8 +272,12 @@ export function PptWorkbench({
               <IconDownloadOutline16 size={14} />{t('export')}
             </button>
             <Menu open={menu === 'more'} onClose={() => { setMenu(null) }} compact keyboardNavigation portal align="end"
-              items={[{ id: 'reload', label: t('reload') }]}
-              onSelect={() => { setMenu(null); refresh() }}
+              items={[{ id: 'templates', label: t('templateLibrary') }, { id: 'reload', label: t('reload') }]}
+              onSelect={(id) => {
+                setMenu(null)
+                if (id === 'templates') setCatalogOpen(true)
+                else refresh()
+              }}
               anchor={<button type="button" className={css.iconAction} aria-label={t('more')}
                 title={t('more')} aria-haspopup="menu" aria-expanded={menu === 'more'}
                 onClick={() => { toggleMenu('more') }}><IconEllipsisOutline16 size={16} /></button>}
@@ -385,6 +404,8 @@ export function PptWorkbench({
           )}
         </div>
       )}
+
+      {catalogModal}
 
     </div>
   )

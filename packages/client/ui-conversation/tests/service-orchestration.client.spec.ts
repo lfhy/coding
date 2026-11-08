@@ -33,6 +33,7 @@ async function bench(readAttachment?: SessionFace['readAttachment'], snapshot?: 
   const fiber = runtime.ctx.plugin(ConversationController, {
     input: hub,
     blocks: new ComposerBlockRegistry(),
+    focusInput: (id) => { hub.requestFocus(id) },
   })
   await fiber.await()
   const root = runtime.ctx.get('conversation') as ConversationController
@@ -93,6 +94,21 @@ function retryChat(): Partial<ConversationSnapshot> {
 }
 
 describe('ConversationController', () => {
+  it('公开聚焦动作只通知已装载会话，不触发发送或草稿变更', async () => {
+    const b = await bench()
+    b.shell.setDraft('preserved')
+    b.root.focusInput('s1' as never)
+    b.root.focusInput('s1' as never)
+    expect(b.shell.focusRequest.getSnapshot()).toBe(2)
+    expect(b.shell.snapshot.draft).toBe('preserved')
+    expect(b.prompt).not.toHaveBeenCalled()
+    expect(() => { b.root.focusInput('missing' as never) }).toThrow('not loaded')
+    b.runtime.sessions.clear()
+    expect(() => { b.root.focusInput('s1' as never) }).toThrow('not current')
+    await b.runtime.sessions.remove('s1')
+    expect(() => { b.root.focusInput('s1' as never) }).toThrow('not loaded')
+    await b.runtime.dispose()
+  })
   it('routes operations through the public Session binding', async () => {
     const b = await bench()
     await b.scoped.send('hello')

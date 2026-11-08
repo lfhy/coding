@@ -54,7 +54,7 @@ async function bench() {
     summary: { title: 'R', displayTitle: 'R', cwd: '/proj' },
     session: sessionFake,
   })
-  const layoutFake = { openDetails: vi.fn(), closeDetails: vi.fn() }
+  const layoutFake = { openDetails: vi.fn(), closeDetails: vi.fn(), beginNewConversation: vi.fn() }
   runtime.provide('layout', layoutFake)
   const locale = new LocaleRuntime(runtime.ctx)
   runtime.provide('locale', locale)
@@ -126,6 +126,23 @@ async function bench() {
 }
 
 describe('conversation slot inject API', () => {
+  it('新对话页头与聊天入口先撤回空白右栏再启动会话', async () => {
+    const b = await bench()
+    b.runtime.workspaces.stub('startSession', () => {
+      expect(b.layoutFake.beginNewConversation).toHaveBeenCalledTimes(
+        b.runtime.workspaces.calls.filter(call => call.method === 'startSession').length,
+      )
+    })
+    b.conversationHeaderApi(ROOT).injected.startSession()
+    b.chatViewApi(ROOT).injected.startSession()
+    expect(b.layoutFake.beginNewConversation).toHaveBeenCalledTimes(2)
+    expect(b.runtime.workspaces.calls.filter(call => call.method === 'startSession')).toEqual([
+      { method: 'startSession', args: [undefined] },
+      { method: 'startSession', args: [undefined] },
+    ])
+    await b.runtime.dispose()
+  })
+
   it('assembles the thin API side-effect-free', async () => {
     const b = await bench()
     const { injected } = b.conversationApi(ROOT)

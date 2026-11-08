@@ -1,6 +1,8 @@
 import { Context } from '@deepseek-ai/cordis'
 import { createSnapshotStore, SlotRegistry, type SessionListState } from 'coding-client-runtime/client'
 import { LocaleRuntime } from 'coding-client-locale/client'
+import { resolveSlotLabel } from 'coding-client-ui-slots'
+import type { IConversation } from 'coding-client-ui-conversation/client'
 import type { SessionId } from 'coding-session/types'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { apply as applyWorkbench, inject as workbenchInject } from '../../ui-open-in-app/src/client/index.ts'
@@ -27,6 +29,7 @@ async function bench() {
     'workbench.bottom': { kind: 'single', scope: 'root' },
     'conversation.hero.actions': { kind: 'list', scope: 'root' },
     'conversation.session.header.utilities': { kind: 'list', scope: 'session' },
+    'settings.section': { kind: 'list', scope: 'root' },
   } } as never, () => null)
   ctx.provide('locale', new LocaleRuntime(ctx))
   const openWorkbench = vi.fn()
@@ -46,6 +49,8 @@ async function bench() {
   ctx.provide('sessions', { list } as never)
   ctx.provide('workspaces', { list: { getSnapshot: () => ({ recentWorkspaceId: undefined }) } } as never)
   ctx.provide('connection', { api: { workspace: { gitHistory: vi.fn() } } } as never)
+  // 接线夹具只提供导航读取的输入面；发送与附件行为由所属包测试。
+  ctx.provide('conversation', { input: { for: vi.fn() }, focusInput: vi.fn() } as unknown as IConversation)
   const owner = ctx.plugin({ inject: [...workbenchInject], apply: applyWorkbench })
   await owner.await()
   const entry = ctx.slots.entries('workbench')[0]
@@ -61,6 +66,25 @@ function pptTabs(store: ReturnType<ReturnType<typeof createRetainedWorkbenchStor
 }
 
 describe('PPT 模式的会话级工作台接线', () => {
+  it('设置模板分区与工作台共享只读目录，插件卸载时撤销座位', async () => {
+    const b = await bench()
+    const section = b.ctx.slots.entries('settings.section').find(entry => entry.options.id === 'ppt-templates')
+    expect(resolveSlotLabel(section?.options.label)).toBe('PPT 模板管理')
+    const panel = b.ctx.slots.entries('sidebar.right.pane.tab').find(entry => entry.options.key === TAB_ID)
+    if (section?.inject === undefined || panel?.inject === undefined) throw new Error('模板座位未完成注册')
+    const settingsFace = section.inject()
+    const panelFace = (panel.inject as (id: SessionId) => Record<string, unknown>)(PPT)
+    const catalogOf = (face: Record<string, unknown>): unknown => {
+      const hooks = face['hooks']
+      if (hooks !== null && typeof hooks === 'object' && 'templateCatalog' in hooks) return hooks.templateCatalog
+      throw new Error('模板目录未注入')
+    }
+    expect(catalogOf(panelFace)).toBe(catalogOf(settingsFace))
+    expect(typeof settingsFace['handoffPrompt']).toBe('function')
+    await b.panel.dispose()
+    expect(b.ctx.slots.entries('settings.section').some(entry => entry.options.id === 'ppt-templates')).toBe(false)
+  })
+
   it('空白会话不显示，首次对话被接纳后只打开该会话一次', async () => {
     const b = await bench()
     expect(b.ctx.sidebarRightTabs.get('ppt')?.id).toBe(TAB_ID)

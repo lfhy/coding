@@ -103,7 +103,9 @@ async function safeRead(path: string, max: number): Promise<Uint8Array> {
   try {
     const info = await handle.stat()
     if (!info.isFile() || info.size > max) invalid(`${path} 不是允许的普通文件或超出大小限制`)
-    return new Uint8Array(await handle.readFile())
+    const bytes = new Uint8Array(await handle.readFile())
+    if (bytes.byteLength > max) invalid(`${path} 不是允许的普通文件或超出大小限制`)
+    return bytes
   } finally {
     await handle.close()
   }
@@ -148,9 +150,10 @@ export class PptTemplateStore {
     return directory(this.root, true)
   }
 
-  private async loadWithMedia(id: string): Promise<{
+  private async loadStructure(id: string): Promise<{
     detail: PptTemplateDetail
-    media: readonly { part: string; bytes: Uint8Array }[]
+    media: readonly { part: string; path: string; size: number }[]
+    totalBytes: number
   }> {
     const templateId = safeId(id)
     if (!await this.checkRoot()) throw new PptStoreError('not-found', `找不到模板 ${id}`)
@@ -185,23 +188,40 @@ export class PptTemplateStore {
     const entries = hasMedia ? await readdir(mediaDir) : []
     if (entries.length !== referenced.size) invalid(`模板 ${id} 的媒体清单与页面引用不一致`)
     let total = bytes.byteLength
-    const media: { part: string; bytes: Uint8Array }[] = []
+    const media: { part: string; path: string; size: number }[] = []
     for (const file of entries.sort()) {
       const source = `media/${file}`
       if (!referenced.has(source)) invalid(`模板 ${id} 有未引用的媒体文件`)
-      const image = await safeRead(join(mediaDir, file), MAX_BYTES).catch((error: unknown) => {
+      const imagePath = join(mediaDir, file)
+      const size = await regular(imagePath, MAX_BYTES).catch((error: unknown) => {
         if ((error as NodeJS.ErrnoException).code === 'ENOENT') invalid(`模板 ${id} 缺少媒体文件`)
         throw error
       })
-      total += image.byteLength
+      total += size
       if (total > MAX_BYTES) invalid(`模板 ${id} 超出大小限制`)
-      media.push({ part: source, bytes: image })
+      media.push({ part: source, path: imagePath, size })
     }
-    return { detail: { ...summary, deck }, media }
+    return { detail: { ...summary, deck }, media, totalBytes: total }
+  }
+
+  private async loadWithMedia(id: string): Promise<{
+    detail: PptTemplateDetail
+    media: readonly { part: string; bytes: Uint8Array }[]
+  }> {
+    const structure = await this.loadStructure(id)
+    const media: { part: string; bytes: Uint8Array }[] = []
+    let actualTotal = structure.totalBytes
+    for (const item of structure.media) {
+      const bytes = await safeRead(item.path, MAX_BYTES)
+      actualTotal += bytes.byteLength - item.size
+      if (actualTotal > MAX_BYTES) invalid(`模板 ${id} 超出大小限制`)
+      media.push({ part: item.part, bytes })
+    }
+    return { detail: structure.detail, media }
   }
 
   private async load(id: string): Promise<PptTemplateDetail> {
-    return (await this.loadWithMedia(id)).detail
+    return (await this.loadStructure(id)).detail
   }
 
   /**
@@ -363,10 +383,12 @@ export class PptTemplateStore {
       safeId(id)
       const path = mediaPath(source, '媒体路径')
       if (path === 'media/.') invalid('媒体路径必须指向文件')
-      const snapshot = await this.loadWithMedia(id)
-      const media = snapshot.media.find(item => item.part === path)
+      const structure = await this.loadStructure(id)
+      const media = structure.media.find(item => item.part === path)
       if (media === undefined) throw new PptStoreError('not-found', '模板没有引用该媒体')
-      return media.bytes
+      const bytes = await safeRead(media.path, MAX_BYTES)
+      if (structure.totalBytes - media.size + bytes.byteLength > MAX_BYTES) invalid(`模板 ${id} 超出大小限制`)
+      return bytes
     })
   }
 }

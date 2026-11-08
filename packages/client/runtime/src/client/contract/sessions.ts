@@ -9,7 +9,7 @@
  */
 import type { Context } from '@deepseek-ai/cordis'
 import type {
-  RpcResult, SessionId, SubagentAddress,
+  RpcResult, SessionId, SubagentAddress, WorkspaceId,
 } from 'coding-api-remotes/client'
 import type { HostObservable, SessionMaybeProvideInfo } from 'coding-client-ui-slots'
 import type { AgentContext } from '../agents/scope.ts'
@@ -84,6 +84,13 @@ export interface ISessions {
     query: string,
     signal: AbortSignal,
   ): Promise<RpcResult<{ items: SessionSearchResultItem[]; hasMore: boolean }>>
+  /**
+   * 由 Host 创建空白会话；成功时新会话已进入列表且可由 binding() 寻址，
+   * 但不会自动打开。创建失败时 Promise 拒绝。
+   * @param opts - 可选的工作区、目录和预先分配的会话 id。
+   * @returns 新会话的 id。
+   */
+  create(opts?: { workspaceId?: WorkspaceId; cwd?: string; sessionId?: SessionId }): Promise<SessionId>
   /**
    * Fork a session from a completed-turn prefix of the source; on resolution
    * the child is in the list store and `open()` can target it.

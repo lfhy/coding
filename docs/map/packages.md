@@ -69,7 +69,7 @@ workspace 共 273 个包，按 group 分节。每行给出包目录、职责（R
 - `packages/client/ui-open-in-app` — 右侧工作台的标签、功能菜单与显隐按 Session 管理；文件管理器、文件预览、Git 历史、终端和外部插件内容共用顶栏 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 17）
 - `packages/client/ui-permission-presets` — 面向两种不同生命周期的浏览器权限界面 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 3）
 - `packages/client/ui-plan` — Plan mode 状态徽章，纯浏览器 surface 插件 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 2）
-- `packages/client/ui-ppt-workbench` — 右侧边栏的「PPT 工作台」标签在打开工程后提供可收起的左侧缩略图与主画布，可就地改字、拖动元素、增删页与导出；操作收纳在顶部胶囊… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 4）
+- `packages/client/ui-ppt-workbench` — 右侧边栏的「PPT 工作台」标签在打开工程后提供可收起的左侧缩略图与主画布，可就地改字、拖动元素、增删页与导出；操作收纳在顶部胶囊… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 6）
 - `packages/client/ui-primitives` — 纯 React 原子组件（零 cordis）：StateDot、DisclosureRow、ic_ds_* 图标、Button/Pill/Men… 入口 `src/index.ts`（tests 22）
 - `packages/client/ui-reference` — 统一的 Web `@file` 与 `@session` source [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 1）
 - `packages/client/ui-renderer` — 负责 React 渲染层的浏览器 Cordis 插件 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 9）
@@ -273,7 +273,7 @@ workspace 共 273 个包，按 group 分节。每行给出包目录、职责（R
 ## packages/ppt
 
 - `packages/ppt/model` — PPT 工程的数据模型与校验：演示文稿（`PptDeck`）、页面（`PptPage`）、元素（`PptElement`）、主题配色与画布尺寸… 入口 `src/index.ts`
-- `packages/ppt/ppt-workbench` — PPT 创作模式的宿主能力：工程存储（`ppt/<工程目录>/deck.json`）、版本与撤销历史、`.pptx` 导出… 入口 `src/index.ts`（tests 10）
+- `packages/ppt/ppt-workbench` — PPT 创作模式的宿主能力：工程存储（`ppt/<工程目录>/deck.json`）、版本与撤销历史、`.pptx` 导出… 入口 `src/index.ts`（tests 12）
 - `packages/ppt/tool-ppt` — PPT 创作模式的十五个模型工具覆盖工程创建、打开、读写、撤销/重做、渲染、质检、导入与导出，以及用户模板的列出、导入、保存、改名和删除 入口 `src/index.ts`（tests 2）
 
 ## packages/preset
@@ -397,7 +397,7 @@ workspace 共 273 个包，按 group 分节。每行给出包目录、职责（R
 
 - `packages/test-support/acp-snapshot` — ACP（Agent Client Protocol）快照套件工具包：无密钥快照层（`pnpm run test:snapshot`… 入口 `src/index.ts`（tests 3）
 - `packages/test-support/agent-loop-testkit` — 为运行具体 `AgentLoop` 的测试共享挂载先决依赖 入口 `src/index.ts`（tests 1）
-- `packages/test-support/client-runtime` — 面向客户端功能测试的 jsdom slot 测试运行时：真实 Cordis `Context`、生产 `SlotRegistry` 与 UI 渲… 入口 `src/index.ts`（tests 3）
+- `packages/test-support/client-runtime` — 面向客户端功能测试的 jsdom slot 测试运行时：真实 Cordis `Context`、生产 `SlotRegistry` 与 UI 渲… 入口 `src/index.ts`（tests 4）
 - `packages/test-support/llm-mock-server` — 可编脚本的 OpenAI 兼容 HTTP／SSE（Server-Sent Events）服务器，用于在无提供方密钥的情况下测试真实 LLM… 入口 `src/index.ts`（tests 3）
 - `packages/test-support/llm-replay` — 用于无密钥快照测试的 LLM（大语言模型）回放插件 入口 `src/index.ts`（tests 1）
 - `packages/test-support/loader-smoke` — 用于测试通过 Cordis Loader 启动应用和 `cordis.yml` 的共享子进程 harness 入口 `src/index.ts`（tests 3）
