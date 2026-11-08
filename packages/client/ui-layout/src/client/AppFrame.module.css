@@ -53,11 +53,11 @@
   grid-column: auto;
   grid-row: auto;
   z-index: 10;
-  bottom: calc(var(--layout-bottom-height) + 12px);
+  bottom: calc(var(--layout-bottom-height) + var(--layout-floating-edge));
   left: calc(var(--layout-sidebar-width) + (100% - var(--layout-sidebar-width)) / 2);
   box-sizing: border-box;
-  width: min(640px, calc(100% - var(--layout-sidebar-width) - 24px));
-  height: min(700px, calc(100% - var(--layout-bottom-height) - 24px));
+  width: min(640px, calc(100% - var(--layout-sidebar-width) - var(--layout-floating-edge) - var(--layout-floating-edge)));
+  height: min(700px, calc(100% - var(--layout-bottom-height) - var(--layout-floating-edge) - var(--layout-floating-edge)));
   border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 24px;
   background: var(--dsw-alias-bg-base);
@@ -92,7 +92,8 @@
   white-space: nowrap;
 }
 
-.minimizeButton {
+.minimizeButton,
+.floatingGrip {
   display: grid;
   flex: 0 0 auto;
   place-items: center;
@@ -107,17 +108,39 @@
   -webkit-app-region: no-drag;
 }
 
+.floatingGrip {
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.centerCol[data-floating-dragging] .floatingGrip {
+  cursor: grabbing;
+}
+
+.dockHelp {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
 .minimizeButton:hover,
+.floatingGrip:hover,
 .floatingLauncher:hover {
   background: var(--dsw-alias-interactive-bg-hover);
 }
 
 .minimizeButton:active,
+.floatingGrip:active,
 .floatingLauncher:active {
   background: var(--dsw-alias-interactive-bg-active);
 }
 
 .minimizeButton:focus-visible,
+.floatingGrip:focus-visible,
 .floatingLauncher:focus-visible {
   outline: 2px solid var(--dsw-alias-border-l3);
   outline-offset: 2px;
@@ -126,14 +149,14 @@
 .floatingLauncher {
   position: absolute;
   z-index: 10;
-  bottom: calc(var(--layout-bottom-height) + 12px);
+  bottom: calc(var(--layout-bottom-height) + var(--layout-floating-edge));
   left: calc(var(--layout-sidebar-width) + (100% - var(--layout-sidebar-width)) / 2);
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
   box-sizing: border-box;
-  max-width: calc(100% - var(--layout-sidebar-width) - 24px);
+  max-width: calc(100% - var(--layout-sidebar-width) - var(--layout-floating-edge) - var(--layout-floating-edge));
   height: 48px;
   padding: 0 20px;
   border: 1px solid var(--dsw-alias-border-l2);
@@ -150,6 +173,28 @@
 .floatingLauncher[data-hidden] {
   visibility: hidden;
   pointer-events: none;
+}
+
+.frame[data-floating-dock='left'] .centerCol[data-floating-open],
+.frame[data-floating-dock='left'] .floatingLauncher {
+  left: calc(var(--layout-sidebar-width) + var(--layout-floating-edge));
+  right: auto;
+  transform: none;
+}
+
+.frame[data-floating-dock='right'] .centerCol[data-floating-open],
+.frame[data-floating-dock='right'] .floatingLauncher {
+  right: var(--layout-floating-edge);
+  left: auto;
+  transform: none;
+}
+
+.frame .centerCol[data-floating-open][data-floating-dragging] {
+  top: var(--layout-floating-top);
+  bottom: auto;
+  left: var(--layout-floating-left);
+  right: auto;
+  transform: none;
 }
 
 .launcherLabel {

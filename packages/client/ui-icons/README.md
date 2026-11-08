@@ -5,6 +5,7 @@
 原有具名的 `ic_ds_*` 图形完整迁入本包并保持各自默认尺寸；`ui-primitives` 继续转发这些导出，使旧组件无需一次性迁移。新图标先扩展 `IconName` 的语义映射，再让调用方使用统一的 `<Icon name="…" />`。`terminal-menu` 映射到本包导出的 `IconTerminalOutline16`，与工作台功能菜单的其他图标同族；模型能力开关分别使用 `model-vision` 的图片图形与 `model-reasoning` 的推理图形，图标本身不承载按钮名称；底栏开关的 `bottom-panel` 仍使用原有语义图形；`open-window` 使用设计系统的线性外开图形，供「在浏览器窗口中打开」这类把内容交给独立窗口的动作使用，不再由本包自绘。
 `favorite` 使用统一的线性心形图形，选中状态由业务按钮的颜色和 `aria-pressed` 表达。
 `undo` 与 `redo` 分别使用 Semi 的左右回转箭头，继承 `currentColor`，尺寸与布局类名通过统一的 `Icon` 属性传入。
+`drag-handle` 使用 Semi 的六点抓手，用于标示悬浮面板等区域的拖拽位置；图标只负责呈现，拖拽交互由调用方实现。
 `ppt-workbench` 使用上游 PPT 品牌标的 36×36 画布、橙色后片、蓝色前片和白色横线。它保留品牌固定颜色与渐变，不继承 `currentColor`；多个实例各有独立渐变 id。来源、改动与完整 MIT 许可见包内 [NOTICE](NOTICE) 和 [LICENSE.PptMark](LICENSE.PptMark)。
 
 ## 模型体验

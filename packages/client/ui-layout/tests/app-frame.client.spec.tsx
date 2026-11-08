@@ -34,6 +34,11 @@ const layoutLabels: Record<string, string> = {
   'floating.open.label': '打开悬浮对话',
   'floating.dialog.label': '悬浮对话',
   'floating.minimize.label': '收起悬浮对话',
+  'floating.drag.label': '拖拽对话窗口',
+  'floating.drag.hint': '当前位置：{position}。左右方向键切换位置，Home 或 End 移至两端。',
+  'floating.dock.left': '左下角',
+  'floating.dock.center': '底部居中',
+  'floating.dock.right': '右下角',
 }
 
 // 生产环境由 renderer 注入；这里保留同一 render-prop 类型以校验 branded id。
@@ -170,7 +175,10 @@ function mountFrame(options: {
       publishPage={publishPage}
       retainWorkbenchViews={retainWorkbenchViews}
       workspaceKeyOf={options.workspaceKeyOf ?? workspaceKeyOf}
-      t={key => layoutLabels[key] ?? key}
+      t={(key, params) => Object.entries(params ?? {}).reduce(
+        (message, [name, value]) => message.replaceAll(`{${name}}`, String(value)),
+        layoutLabels[key] ?? key,
+      )}
     />
   )
   const utils = render(element())
@@ -217,6 +225,46 @@ function floatingDialog(frame: HTMLElement): HTMLElement | null {
   return frame.querySelector<HTMLElement>('[role="dialog"][aria-label="悬浮对话"]')
 }
 
+function floatingHandle(frame: HTMLElement): HTMLButtonElement {
+  const handle = floatingDialog(frame)?.querySelector<HTMLButtonElement>('button[aria-label="拖拽对话窗口"]')
+  if (handle === null || handle === undefined) throw new Error('missing floating conversation drag handle')
+  return handle
+}
+
+function openFloating(b: ReturnType<typeof mountFrame>, bottom = false, workspaceKey = 's-test'): HTMLElement {
+  act(() => {
+    b.instance.actions.openWorkbench(workspaceKey)
+    b.instance.actions.toggleWorkbenchFullscreen(workspaceKey)
+    if (bottom) b.instance.actions.toggleWorkbenchBottom(workspaceKey)
+  })
+  fireEvent.click(floatingLauncher(b.frame)!)
+  const dialog = floatingDialog(b.frame)
+  if (dialog === null) throw new Error('floating conversation did not open')
+  return dialog
+}
+
+function moveFloating(handle: Element, toX: number, toY = 390, flushFrame = true): void {
+  const rect = handle.closest('#dsh-layout-floating-conversation')!.getBoundingClientRect()
+  act(() => {
+    handle.dispatchEvent(new PointerEvent('pointerdown', {
+      pointerId: 51, button: 0, clientX: rect.left + rect.width / 2,
+      clientY: rect.top + 24, bubbles: true,
+    }))
+    handle.dispatchEvent(new PointerEvent('pointermove', {
+      pointerId: 51, clientX: toX, clientY: toY, bubbles: true,
+    }))
+    if (flushFrame) vi.advanceTimersByTime(20)
+  })
+}
+
+function finishFloating(handle: Element, toX: number, toY = 390): void {
+  act(() => {
+    handle.dispatchEvent(new PointerEvent('pointerup', {
+      pointerId: 51, clientX: toX, clientY: toY, bubbles: true,
+    }))
+  })
+}
+
 function handleFor(frame: HTMLElement, side: string): HTMLElement {
   const handle = frame.querySelector<HTMLElement>(`[data-side="${side}"]`)
   if (handle === null) throw new Error(`missing ${side} handle`)
@@ -247,6 +295,19 @@ beforeEach(() => {
   window.innerWidth = frameWidth
   window.innerHeight = frameHeight
   Element.prototype.getBoundingClientRect = function () {
+    if (this.id === 'dsh-layout-floating-conversation') {
+      const frame = this.parentElement as HTMLElement
+      const sidebar = Number.parseInt(frame.style.getPropertyValue('--layout-sidebar-width'), 10) || 0
+      const bottom = Number.parseInt(frame.style.getPropertyValue('--layout-bottom-height'), 10) || 0
+      const width = Math.min(640, frameWidth - sidebar - 24)
+      const height = Math.min(700, frameHeight - bottom - 24)
+      const dock = frame.getAttribute('data-floating-dock')
+      const left = dock === 'left' ? sidebar + 12 : dock === 'right'
+        ? frameWidth - width - 12 : sidebar + (frameWidth - sidebar - width) / 2
+      const top = frameHeight - bottom - height - 12
+      return { width, height, top, left, right: left + width, bottom: top + height,
+        x: left, y: top, toJSON: () => ({}) }
+    }
     return {
       width: frameWidth, height: frameHeight, top: 0, left: 0,
       right: frameWidth, bottom: frameHeight, x: 0, y: 0, toJSON: () => ({}),
@@ -385,7 +446,7 @@ describe('AppFrame', () => {
 
   it('sidebar drag widens through rAF-batched pointer moves', () => {
     const { frame } = mountFrame()
-    const handles = frame.querySelectorAll('[class*="handle"]')
+    const handles = frame.querySelectorAll('[data-side]')
     drag(handles[0]!, 280, 350)
     expect(tracks(frame)[0]).toBe(350)
   })
@@ -393,7 +454,7 @@ describe('AppFrame', () => {
   it('details drag widens leftward (negative dx grows the panel)', () => {
     const { frame, instance } = mountFrame()
     act(() => { instance.actions.openDetails() })
-    const handles = frame.querySelectorAll('[class*="handle"]')
+    const handles = frame.querySelectorAll('[data-side]')
     drag(handles[1]!, 1560, 1500)
     expect(tracks(frame)[1]).toBe(420)
   })
@@ -403,7 +464,7 @@ describe('AppFrame', () => {
     const { frame, instance } = mountFrame()
     act(() => { instance.actions.openDetails() })
     expect(tracks(frame)).toEqual([280, 330])
-    const handles = frame.querySelectorAll('[class*="handle"]')
+    const handles = frame.querySelectorAll('[data-side]')
     drag(handles[1]!, 920, 930) // 从实际宽度缩小 10px。
     expect(instance.getSnapshot().details).toBe(320)
   })
@@ -440,13 +501,13 @@ describe('AppFrame', () => {
 
   it('drag handles disappear for collapsed columns', () => {
     const { frame, instance } = mountFrame()
-    expect(frame.querySelectorAll('[class*="handle"]')).toHaveLength(1)
+    expect(frame.querySelectorAll('[data-side]')).toHaveLength(1)
     act(() => { instance.actions.openDetails() })
-    expect(frame.querySelectorAll('[class*="handle"]')).toHaveLength(2)
+    expect(frame.querySelectorAll('[data-side]')).toHaveLength(2)
     act(() => { instance.actions.closeDetails() })
-    expect(frame.querySelectorAll('[class*="handle"]')).toHaveLength(1)
+    expect(frame.querySelectorAll('[data-side]')).toHaveLength(1)
     act(() => { instance.actions.toggleSidebar() })
-    expect(frame.querySelectorAll('[class*="handle"]')).toHaveLength(0)
+    expect(frame.querySelectorAll('[data-side]')).toHaveLength(0)
   })
 })
 
@@ -674,6 +735,239 @@ describe('AppFrame — fixed workbench', () => {
 })
 
 describe('AppFrame — maximized workbench conversation', () => {
+  it('docks a retained conversation at the nearest of three bottom anchors and reopens its launcher there', () => {
+    const b = mountFrame()
+    const center = b.getByTestId('center-content')
+    const textarea = b.getByRole('textbox', { name: '测试会话草稿' }) as HTMLTextAreaElement
+    fireEvent.change(textarea, { target: { value: '保留的草稿' } })
+    const dialog = openFloating(b)
+    const handle = floatingHandle(b.frame)
+    expect(b.frame.getAttribute('data-floating-dock')).toBe('center')
+    expect(handle.tagName).toBe('BUTTON')
+    expect(handle.hasAttribute('aria-valuetext') || handle.hasAttribute('aria-describedby')).toBe(true)
+
+    moveFloating(handle, 330)
+    finishFloating(handle, 330)
+    expect(b.frame.getAttribute('data-floating-dock')).toBe('left')
+    expect(floatingDialog(b.frame)).toBe(dialog)
+    expect(b.getByTestId('center-content')).toBe(center)
+    expect(b.getByRole('textbox', { name: '测试会话草稿' })).toBe(textarea)
+
+    fireEvent.click(b.getByRole('button', { name: '收起悬浮对话' }))
+    expect(floatingLauncher(b.frame)?.getAttribute('aria-expanded')).toBe('false')
+    expect(b.frame.getAttribute('data-floating-dock')).toBe('left')
+    fireEvent.click(floatingLauncher(b.frame)!)
+    expect(floatingDialog(b.frame)).toBe(dialog)
+    expect(textarea.value).toBe('保留的草稿')
+
+    moveFloating(floatingHandle(b.frame), 1820)
+    finishFloating(floatingHandle(b.frame), 1820)
+    expect(b.frame.getAttribute('data-floating-dock')).toBe('right')
+    moveFloating(floatingHandle(b.frame), 1100)
+    finishFloating(floatingHandle(b.frame), 1100)
+    expect(b.frame.getAttribute('data-floating-dock')).toBe('center')
+    expect(b.frame.querySelectorAll('[data-testid="center-content"]')).toHaveLength(1)
+  })
+
+  it('moves among docks with keyboard arrows, Home and End without minimizing', () => {
+    const b = mountFrame()
+    const dialog = openFloating(b)
+    const handle = floatingHandle(b.frame)
+    const hint = b.frame.querySelector<HTMLElement>(`#${handle.getAttribute('aria-describedby')}`)
+    expect(hint?.textContent).toContain('底部居中')
+    expect(hint?.textContent).toContain('方向键')
+    for (const [key, dock] of [
+      ['ArrowLeft', 'left'], ['ArrowLeft', 'left'], ['ArrowRight', 'center'],
+      ['ArrowRight', 'right'], ['ArrowRight', 'right'], ['Home', 'left'], ['End', 'right'],
+    ] as const) {
+      fireEvent.keyDown(handle, { key })
+      expect(b.frame.getAttribute('data-floating-dock')).toBe(dock)
+      expect(floatingDialog(b.frame)).toBe(dialog)
+    }
+    expect(hint?.textContent).toContain('右下角')
+  })
+
+  it('only begins a floating drag with the primary pointer on its dedicated handle', () => {
+    const b = mountFrame()
+    const dialog = openFloating(b)
+    const handle = floatingHandle(b.frame)
+    act(() => {
+      handle.dispatchEvent(new PointerEvent('pointerdown', {
+        pointerId: 51, button: 2, clientX: 1100, clientY: 390, bubbles: true,
+      }))
+      handle.dispatchEvent(new PointerEvent('pointermove', {
+        pointerId: 51, clientX: 330, clientY: 390, bubbles: true,
+      }))
+      handle.dispatchEvent(new PointerEvent('pointerup', {
+        pointerId: 51, clientX: 330, clientY: 390, bubbles: true,
+      }))
+    })
+    expect(handle.hasPointerCapture(51)).toBe(false)
+    expect(b.frame.getAttribute('data-floating-dock')).toBe('center')
+    expect(floatingDialog(b.frame)).toBe(dialog)
+    fireEvent.pointerDown(b.getByRole('button', { name: '收起悬浮对话' }), {
+      pointerId: 52, button: 0, clientX: 1100, clientY: 390,
+    })
+    expect(handle.hasPointerCapture(52)).toBe(false)
+    expect(floatingDialog(b.frame)).toBe(dialog)
+    fireEvent.click(b.getByRole('button', { name: '收起悬浮对话' }))
+    expect(floatingDialog(b.frame)).toBeNull()
+  })
+
+  it.each(['pointercancel', 'lostpointercapture', 'blur', 'Escape'] as const)(
+    '%s cancels an active drag, restores the prior dock, and keeps the dialog open', (reason) => {
+      const b = mountFrame()
+      const dialog = openFloating(b)
+      const handle = floatingHandle(b.frame)
+      moveFloating(handle, 330, 120)
+      if (reason === 'lostpointercapture') handle.releasePointerCapture(51)
+      act(() => {
+        if (reason === 'blur') window.dispatchEvent(new Event('blur'))
+        else if (reason === 'Escape') fireEvent.keyDown(handle, { key: 'Escape', cancelable: true })
+        else handle.dispatchEvent(new PointerEvent(reason, { pointerId: 51, bubbles: true }))
+      })
+      expect(handle.hasPointerCapture(51)).toBe(false)
+      expect(b.frame.getAttribute('data-floating-dock')).toBe('center')
+      expect(floatingDialog(b.frame)).toBe(dialog)
+      act(() => { vi.runOnlyPendingTimers() })
+      expect(b.frame.getAttribute('data-floating-dock')).toBe('center')
+      expect(floatingDialog(b.frame)).toBe(dialog)
+    },
+  )
+
+  it('cancels a pending gesture when its session context changes and releases capture', () => {
+    const b = mountFrame({ workspaceKeyOf: () => 'shared-workspace' })
+    const dialog = openFloating(b, false, 'shared-workspace')
+    const handle = floatingHandle(b.frame)
+    moveFloating(handle, 330, 390, false)
+    expect(handle.hasPointerCapture(51)).toBe(true)
+    selectedSession.current = 's-next' as SessionId
+    act(() => { b.rerenderFrame() })
+    expect(floatingDialog(b.frame)).toBeNull()
+    expect(handle.hasPointerCapture(51)).toBe(false)
+    act(() => { vi.runOnlyPendingTimers() })
+    expect(b.frame.getAttribute('data-floating-dock')).toBe('center')
+    expect(b.queryByTestId('center-content')).not.toBeNull()
+    expect(dialog).not.toBe(floatingDialog(b.frame))
+  })
+
+  it.each(['page', 'fullscreen', 'workbench'] as const)(
+    'releases a pending gesture when %s hides the floating conversation', (context) => {
+      const b = mountFrame()
+      openFloating(b)
+      const handle = floatingHandle(b.frame)
+      fireEvent.keyDown(handle, { key: 'Home' })
+      moveFloating(handle, 1820, 390, false)
+      expect(handle.hasPointerCapture(51)).toBe(true)
+      act(() => {
+        if (context === 'page') b.instance.actions.openPage('image-gallery', 's-test' as SessionId)
+        else if (context === 'fullscreen') b.instance.actions.toggleWorkbenchFullscreen('s-test')
+        else b.instance.actions.closeWorkbench('s-test')
+      })
+      expect(floatingDialog(b.frame)).toBeNull()
+      expect(handle.hasPointerCapture(51)).toBe(false)
+      act(() => { vi.runOnlyPendingTimers() })
+      expect(b.frame.getAttribute('data-floating-dock')).toBe('left')
+      expect(b.getByTestId('center-content')).toBeTruthy()
+    },
+  )
+
+  it('keeps the floating window above a terminal bottom row on a narrow viewport', () => {
+    frameWidth = 768
+    const b = mountFrame()
+    const dialog = openFloating(b, true)
+    const handle = floatingHandle(b.frame)
+    expect(rows(b.frame)).toBe(260)
+    moveFloating(handle, -400, 3000)
+    finishFloating(handle, -400, 3000)
+    expect(b.frame.getAttribute('data-floating-dock')).toBe('left')
+    expect(floatingDialog(b.frame)).toBe(dialog)
+    expect(b.getByTestId('bottom-content').parentElement?.hasAttribute('inert')).toBe(false)
+    expect(b.frame.style.getPropertyValue('--layout-bottom-height')).toBe('260px')
+  })
+
+  it('clamps live drag preview inside the sidebar and terminal bounds, then removes transient coordinates', () => {
+    frameWidth = 768
+    const b = mountFrame()
+    const dialog = openFloating(b, true)
+    const handle = floatingHandle(b.frame)
+    moveFloating(handle, -3000, -3000)
+    expect(dialog.getAttribute('data-floating-dragging')).toBe('true')
+    expect(dialog.style.getPropertyValue('--layout-floating-left')).toBe('68px')
+    expect(dialog.style.getPropertyValue('--layout-floating-top')).toBe('12px')
+    act(() => {
+      handle.dispatchEvent(new PointerEvent('pointermove', {
+        pointerId: 51, clientX: 3000, clientY: 3000, bubbles: true,
+      }))
+      vi.advanceTimersByTime(20)
+    })
+    expect(dialog.style.getPropertyValue('--layout-floating-left')).toBe('116px')
+    expect(dialog.style.getPropertyValue('--layout-floating-top')).toBe('108px')
+    finishFloating(handle, 3000, 3000)
+    expect(b.frame.getAttribute('data-floating-dock')).toBe('right')
+    expect(dialog.hasAttribute('data-floating-dragging')).toBe(false)
+    expect(dialog.style.getPropertyValue('--layout-floating-left')).toBe('')
+    expect(dialog.style.getPropertyValue('--layout-floating-top')).toBe('')
+  })
+
+  it('snaps from the final pointerup even when the preview frame is still pending', () => {
+    const b = mountFrame()
+    const dialog = openFloating(b)
+    const handle = floatingHandle(b.frame)
+    moveFloating(handle, 330, 390, false)
+    expect(handle.hasPointerCapture(51)).toBe(true)
+    finishFloating(handle, 330)
+    expect(handle.hasPointerCapture(51)).toBe(false)
+    expect(b.frame.getAttribute('data-floating-dock')).toBe('left')
+    expect(dialog.hasAttribute('data-floating-dragging')).toBe(false)
+    act(() => { vi.runOnlyPendingTimers() })
+    expect(b.frame.getAttribute('data-floating-dock')).toBe('left')
+  })
+
+  it('reclamps an active preview when the sidebar expands and the terminal bottom row opens without pointer movement', () => {
+    const b = mountFrame()
+    const dialog = openFloating(b)
+    const handle = floatingHandle(b.frame)
+    moveFloating(handle, -3000, 3000)
+    expect(dialog.style.getPropertyValue('--layout-floating-left')).toBe('292px')
+    expect(dialog.style.getPropertyValue('--layout-floating-top')).toBe('368px')
+
+    act(() => { b.instance.actions.setSidebar(420) })
+    expect(dialog.style.getPropertyValue('--layout-floating-left')).toBe('432px')
+    expect(dialog.style.getPropertyValue('--layout-floating-top')).toBe('368px')
+    act(() => { b.instance.actions.toggleWorkbenchBottom('s-test') })
+    expect(dialog.style.getPropertyValue('--layout-floating-left')).toBe('432px')
+    expect(dialog.style.getPropertyValue('--layout-floating-top')).toBe('108px')
+
+    finishFloating(handle, -3000, 3000)
+    expect(handle.hasPointerCapture(51)).toBe(false)
+    expect(dialog.hasAttribute('data-floating-dragging')).toBe(false)
+    expect(b.frame.getAttribute('data-floating-dock')).toBe('left')
+  })
+
+  it('reclamps an active preview after ResizeObserver narrows and shortens the frame without pointer movement', () => {
+    const b = mountFrame()
+    const dialog = openFloating(b)
+    const handle = floatingHandle(b.frame)
+    moveFloating(handle, 3000, 3000)
+    expect(dialog.style.getPropertyValue('--layout-floating-left')).toBe('1268px')
+    expect(dialog.style.getPropertyValue('--layout-floating-top')).toBe('368px')
+
+    frameWidth = 980
+    act(() => { fireResize?.(); vi.advanceTimersByTime(20) })
+    expect(dialog.style.getPropertyValue('--layout-floating-left')).toBe('328px')
+    expect(dialog.style.getPropertyValue('--layout-floating-top')).toBe('368px')
+    frameHeight = 600
+    act(() => { fireResize?.(); vi.advanceTimersByTime(20) })
+    expect(dialog.style.getPropertyValue('--layout-floating-left')).toBe('328px')
+    expect(dialog.style.getPropertyValue('--layout-floating-top')).toBe('12px')
+
+    finishFloating(handle, 3000, 3000)
+    expect(handle.hasPointerCapture(51)).toBe(false)
+    expect(dialog.hasAttribute('data-floating-dragging')).toBe(false)
+    expect(b.frame.getAttribute('data-floating-dock')).toBe('right')
+  })
+
   it('shows a collapsed launcher only when the workbench actually takes over the conversation', () => {
     const b = mountFrame()
     expect(launcherVisible(b.frame)).toBe(false)
@@ -889,7 +1183,7 @@ describe('AppFrame — narrow-viewport auto-collapse', () => {
     expect(slotCalls.filter(c => c.key === 'sidebar').at(-1)!.props).toEqual({
       collapsed: true, width: SIDEBAR_COLLAPSED, welcomeActionsVisible: false,
     })
-    expect(frame.querySelectorAll('[class*="handle"]')).toHaveLength(0)
+    expect(frame.querySelectorAll('[data-side]')).toHaveLength(0)
   })
 
   it('narrow toggle re-expands over the squeezed center and back', () => {
@@ -898,7 +1192,7 @@ describe('AppFrame — narrow-viewport auto-collapse', () => {
     act(() => { instance.actions.toggleSidebar() })
     expect(tracks(frame)).toEqual([280, 0])
     expect(frame.hasAttribute('data-sidebar-collapsed')).toBe(false)
-    expect(frame.querySelectorAll('[class*="handle"]')).toHaveLength(1)
+    expect(frame.querySelectorAll('[data-side]')).toHaveLength(1)
     act(() => { instance.actions.toggleSidebar() })
     expect(tracks(frame)).toEqual([SIDEBAR_COLLAPSED, 0])
   })
@@ -1023,7 +1317,7 @@ describe('AppFrame — guard branches', () => {
 
   it('pointer moves without capture are ignored (no width write)', () => {
     const { frame, instance } = mountFrame()
-    const handle = frame.querySelectorAll('[class*="handle"]')[0]!
+    const handle = frame.querySelectorAll('[data-side]')[0]!
     const before = instance.getSnapshot().sidebar
     // 没有 pointerdown 的 move 与 up 必须被忽略。
     act(() => {
@@ -1036,7 +1330,7 @@ describe('AppFrame — guard branches', () => {
 
   it('two moves inside one frame coalesce through the pending rAF', () => {
     const { frame, instance } = mountFrame()
-    const handle = frame.querySelectorAll('[class*="handle"]')[0]!
+    const handle = frame.querySelectorAll('[data-side]')[0]!
     act(() => { handle.dispatchEvent(new PointerEvent('pointerdown', { pointerId: 1, clientX: 280, bubbles: true })) })
     act(() => {
       // 同一帧内的第二次移动复用待处理 rAF，flush 使用最新坐标。
@@ -1050,7 +1344,7 @@ describe('AppFrame — guard branches', () => {
 
   it('pointerup with a pending rAF cancels it and commits the final position', () => {
     const { frame, instance } = mountFrame()
-    const handle = frame.querySelectorAll('[class*="handle"]')[0]!
+    const handle = frame.querySelectorAll('[data-side]')[0]!
     act(() => { handle.dispatchEvent(new PointerEvent('pointerdown', { pointerId: 1, clientX: 280, bubbles: true })) })
     act(() => {
       handle.dispatchEvent(new PointerEvent('pointermove', { pointerId: 1, clientX: 360, bubbles: true }))

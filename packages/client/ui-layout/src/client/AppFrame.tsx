@@ -6,7 +6,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, KeyboardEvent, PointerEvent, ReactNode } from 'react'
 import type { InjectFace, PropsLocale, PropsRenderSlots, PropsRuntime, PropsStore } from 'coding-client-ui-slots'
-import { IconChevronDownOutline14, IconChevronUpOutline14 } from 'coding-client-ui-icons'
+import { Icon, IconChevronDownOutline14, IconChevronUpOutline14 } from 'coding-client-ui-icons'
 import type { SessionId } from 'coding-session/types'
 import type { WorkbenchLayoutSnapshot } from './service.ts'
 import {
@@ -29,6 +29,8 @@ import {
 } from './columns.ts'
 import type { createLayoutStore } from './stores.ts'
 import type { PageRoute } from './stores.ts'
+import { clampFloatingPoint, snapFloatingDock } from './floating-dock.ts'
+import type { FloatingBounds, FloatingDock, FloatingPoint, FloatingSize } from './floating-dock.ts'
 import css from './AppFrame.module.css'
 
 /** AppFrame 向布局服务回报工作区级工作台投影的注入面。 */
@@ -56,6 +58,8 @@ const DETAILS_ID = 'dsh-layout-details'
 const WORKBENCH_ID = 'dsh-layout-workbench'
 const WORKBENCH_BOTTOM_ID = 'dsh-layout-workbench-bottom'
 const FLOATING_CONVERSATION_ID = 'dsh-layout-floating-conversation'
+const FLOATING_DOCK_HELP_ID = 'dsh-layout-floating-dock-help'
+const FLOATING_GAP = 12
 const KEYBOARD_STEP = 16
 const INNER_POPUP_SELECTOR = '[role="menu"], [role="listbox"], [role="dialog"]'
 const OPEN_POPUP_TRIGGER_SELECTOR = '[aria-haspopup][aria-expanded="true"]'
@@ -99,18 +103,129 @@ interface SurfaceProps {
 
 interface ConversationColumnProps extends SurfaceProps {
   floating: boolean
+  dock: FloatingDock
+  bounds: FloatingBounds
   title: string
   dialogLabel: string
   minimizeLabel: string
+  dragLabel: string
+  dragHint: string
   onMinimize: () => void
+  onDock: (dock: FloatingDock) => void
+}
+
+interface FloatingDrag {
+  readonly pointerId: number
+  readonly handle: HTMLButtonElement
+  readonly origin: FloatingPoint
+  readonly size: FloatingSize
+  readonly startX: number
+  readonly startY: number
+  x: number
+  y: number
+  frame: number | null
 }
 
 /** 对话列仅切换呈现位置；子 slot 与输入草稿始终位于同一棵树。 */
 function ConversationColumn({
-  children, hidden, floating, title, dialogLabel, minimizeLabel, onMinimize,
+  children, hidden, floating, dock, bounds, title, dialogLabel, minimizeLabel, dragLabel, dragHint, onMinimize, onDock,
 }: ConversationColumnProps) {
   const hiddenAttributes = hidden ? { 'aria-hidden': true, inert: '' } as const : {}
+  const columnRef = useRef<HTMLDivElement | null>(null)
   const minimizeButtonRef = useRef<HTMLButtonElement | null>(null)
+  const activeDrag = useRef<FloatingDrag | null>(null)
+  const boundsRef = useRef(bounds)
+  boundsRef.current = bounds
+  const [dragPoint, setDragPoint] = useState<FloatingPoint | null>(null)
+
+  const cancelDrag: () => void = useCallback(() => {
+    const current = activeDrag.current
+    if (current === null) return
+    activeDrag.current = null
+    if (current.frame !== null) cancelAnimationFrame(current.frame)
+    window.removeEventListener('blur', cancelDrag)
+    if (current.handle.hasPointerCapture(current.pointerId)) current.handle.releasePointerCapture(current.pointerId)
+    setDragPoint(null)
+  }, [])
+
+  useEffect(() => () => { cancelDrag() }, [cancelDrag])
+  useLayoutEffect(() => { if (!floating) cancelDrag() }, [floating, cancelDrag])
+
+  const sizeOf = useCallback((current: FloatingDrag): FloatingSize => {
+    const rect = columnRef.current?.getBoundingClientRect()
+    return rect === undefined ? current.size : { width: rect.width, height: rect.height }
+  }, [])
+  const pointOf = useCallback((current: FloatingDrag, x: number, y: number): FloatingPoint => clampFloatingPoint({
+    left: current.origin.left + x - current.startX,
+    top: current.origin.top + y - current.startY,
+  }, sizeOf(current), boundsRef.current), [sizeOf])
+
+  // 边界也可能由终端或窗口变化推进；指针静止时仍须让小窗留在新的工作区内。
+  useLayoutEffect(() => {
+    const current = activeDrag.current
+    if (current !== null) setDragPoint(pointOf(current, current.x, current.y))
+  }, [bounds.left, bounds.right, bounds.top, bounds.bottom, pointOf])
+
+  const startDrag = (event: PointerEvent<HTMLButtonElement>): void => {
+    const column = columnRef.current
+    if (!floating || event.button !== 0 || activeDrag.current !== null || column === null) return
+    const rect = column.getBoundingClientRect()
+    const frame = column.parentElement?.getBoundingClientRect()
+    if (frame === undefined) return
+    event.preventDefault()
+    event.currentTarget.focus()
+    event.currentTarget.setPointerCapture(event.pointerId)
+    const current: FloatingDrag = {
+      pointerId: event.pointerId,
+      handle: event.currentTarget,
+      origin: { left: rect.left - frame.left, top: rect.top - frame.top },
+      size: { width: rect.width, height: rect.height },
+      startX: event.clientX, startY: event.clientY,
+      x: event.clientX, y: event.clientY, frame: null,
+    }
+    activeDrag.current = current
+    setDragPoint(pointOf(current, current.x, current.y))
+    window.addEventListener('blur', cancelDrag)
+  }
+  const moveDrag = (event: PointerEvent<HTMLButtonElement>): void => {
+    const current = activeDrag.current
+    if (current?.pointerId !== event.pointerId) return
+    current.x = event.clientX
+    current.y = event.clientY
+    current.frame ??= requestAnimationFrame(() => {
+      current.frame = null
+      if (activeDrag.current === current) setDragPoint(pointOf(current, current.x, current.y))
+    })
+  }
+  const finishDrag = (event: PointerEvent<HTMLButtonElement>): void => {
+    const current = activeDrag.current
+    if (current?.pointerId !== event.pointerId) return
+    const point = pointOf(current, event.clientX, event.clientY)
+    const next = snapFloatingDock(point.left, sizeOf(current), boundsRef.current, dock)
+    cancelDrag()
+    onDock(next)
+  }
+  const cancelPointer = (event: PointerEvent<HTMLButtonElement>): void => {
+    if (activeDrag.current?.pointerId === event.pointerId) cancelDrag()
+  }
+  const moveDock = (event: KeyboardEvent<HTMLButtonElement>): void => {
+    if (event.key === 'Escape' && activeDrag.current !== null) {
+      event.preventDefault()
+      cancelDrag()
+      return
+    }
+    if (activeDrag.current !== null) return
+    let next: FloatingDock
+    switch (event.key) {
+      case 'ArrowLeft': next = dock === 'right' ? 'center' : 'left'; break
+      case 'ArrowRight': next = dock === 'left' ? 'center' : 'right'; break
+      case 'Home': next = 'left'; break
+      case 'End': next = 'right'; break
+      default: return
+    }
+    event.preventDefault()
+    onDock(next)
+  }
   useLayoutEffect(() => {
     if (floating) minimizeButtonRef.current?.focus()
   }, [floating])
@@ -123,10 +238,16 @@ function ConversationColumn({
   }
   return (
     <div
+      ref={columnRef}
       id={FLOATING_CONVERSATION_ID}
       className={css.centerCol}
+      style={dragPoint === null ? undefined : {
+        '--layout-floating-left': `${dragPoint.left}px`,
+        '--layout-floating-top': `${dragPoint.top}px`,
+      } as CSSProperties}
       data-hidden={hidden || undefined}
       data-floating-open={floating || undefined}
+      data-floating-dragging={dragPoint !== null || undefined}
       role={floating ? 'dialog' : undefined}
       aria-label={floating ? dialogLabel : undefined}
       onKeyDown={onKeyDown}
@@ -134,6 +255,13 @@ function ConversationColumn({
     >
       <div className={css.floatingHeader} aria-hidden={!floating} {...(!floating ? { inert: '' as const } : {})}>
         <span className={css.floatingTitle} title={title}>{title}</span>
+        <button type="button" className={css.floatingGrip} aria-label={dragLabel} title={dragLabel}
+          aria-describedby={FLOATING_DOCK_HELP_ID}
+          onPointerDown={startDrag} onPointerMove={moveDrag} onPointerUp={finishDrag}
+          onPointerCancel={cancelPointer} onLostPointerCapture={cancelPointer} onKeyDown={moveDock}>
+          <Icon name="drag-handle" size={16} />
+        </button>
+        <span id={FLOATING_DOCK_HELP_ID} className={css.dockHelp}>{dragHint}</span>
         <button
           ref={minimizeButtonRef}
           className={css.minimizeButton}
@@ -454,9 +582,17 @@ export function AppFrame({
   const bottomShown = bottomRequested && bottomHeight > 0
   const floatingEligible = workbenchFullscreen && !pageVisible
   const [floatingSession, setFloatingSession] = useState<SessionId | undefined>()
+  const [floatingDock, setFloatingDock] = useState<FloatingDock>('center')
+  const dockSession = useRef(activeSession)
   const floatingOpen = floatingEligible && floatingSession === activeSession
   const launcherRef = useRef<HTMLButtonElement | null>(null)
   const minimizeRef = useRef(false)
+
+  useLayoutEffect(() => {
+    if (dockSession.current === activeSession) return
+    dockSession.current = activeSession
+    setFloatingDock('center')
+  }, [activeSession])
 
   useLayoutEffect(() => {
     if (floatingSession !== undefined && (!floatingEligible || floatingSession !== activeSession)) {
@@ -528,11 +664,13 @@ export function AppFrame({
         gridTemplateRows: `minmax(0, 1fr) ${bottomHeight}px`,
         '--layout-sidebar-width': `${sidebarWidth}px`,
         '--layout-bottom-height': `${bottomHeight}px`,
+        '--layout-floating-edge': `${FLOATING_GAP}px`,
       } as CSSProperties}
       data-sidebar-collapsed={sidebarCollapsed || undefined}
       data-details-collapsed={detailsWidth === 0 || undefined}
       data-workbench-shown={workbenchShown || undefined}
       data-workbench-fullscreen={workbenchFullscreen || undefined}
+      data-floating-dock={floatingDock}
       data-bottom-open={bottomShown || undefined}
       data-dragging={dragging || undefined}
       data-page-open={pageVisible || undefined}
@@ -543,10 +681,20 @@ export function AppFrame({
       <ConversationColumn
         hidden={(workbenchFullscreen || pageVisible) && !floatingOpen}
         floating={floatingOpen}
+        dock={floatingDock}
+        bounds={{
+          left: sidebarWidth + FLOATING_GAP,
+          right: viewport.width - FLOATING_GAP,
+          top: FLOATING_GAP,
+          bottom: viewport.height - bottomHeight - FLOATING_GAP,
+        }}
         title={activeTitle ?? t('floating.open')}
         dialogLabel={t('floating.dialog.label')}
         minimizeLabel={t('floating.minimize.label')}
+        dragLabel={t('floating.drag.label')}
+        dragHint={t('floating.drag.hint', { position: t(`floating.dock.${floatingDock}`) })}
         onMinimize={minimizeConversation}
+        onDock={setFloatingDock}
       >
         {renderSlot('conversation', { sidebarCollapsed })}
       </ConversationColumn>

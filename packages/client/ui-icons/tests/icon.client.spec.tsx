@@ -96,6 +96,20 @@ describe('语义图标适配', () => {
     expect(undoSvg?.querySelector('path')?.getAttribute('d')).not.toBe(redoSvg?.querySelector('path')?.getAttribute('d'))
   })
 
+  it('拖拽手柄使用六点图形并传递尺寸、类名及无障碍隐藏状态', () => {
+    const view = render(<><Icon name="drag-handle" /><Icon name="drag-handle" size={18} className="drag-grip" /></>)
+    const [defaultHandle, customHandle] = view.container.querySelectorAll<HTMLElement>('.semi-icon')
+    expect(defaultHandle?.style.fontSize).toBe('16px')
+    expect(customHandle?.style.fontSize).toBe('18px')
+    expect(customHandle?.classList.contains('drag-grip')).toBe(true)
+    expect(customHandle?.getAttribute('aria-hidden')).toBe('true')
+    const svg = customHandle?.querySelector('svg')
+    expect(svg?.getAttribute('viewBox')).toBe('0 0 24 24')
+    expect(svg?.querySelectorAll('path')).toHaveLength(6)
+    expect(Array.from(svg?.querySelectorAll('path') ?? [], path => path.getAttribute('fill')))
+      .toEqual(Array(6).fill('currentColor'))
+  })
+
   it('PPT 品牌标按语义绘制原始双色图形并透传尺寸和类名', () => {
     const defaults = render(<Icon name="ppt-workbench" />)
     const defaultIcon = defaults.container.querySelector('svg') as SVGElement
