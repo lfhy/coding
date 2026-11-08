@@ -31,6 +31,20 @@ interface PptProjectsFace {
     size?: '16:9' | '4:3'
     theme?: 'ink' | 'paper' | 'ocean' | 'forest'
   }) => Promise<PptSnapshotFace>
+  listTemplates: () => Promise<readonly PptTemplateSummaryFace[]>
+  saveTemplate: (sessionId: string, options: { name: string; dir?: string }) => Promise<PptTemplateDetailFace>
+  importTemplateFromFile: (
+    sessionId: string,
+    source: string,
+    options: { name?: string },
+  ) => Promise<PptTemplateDetailFace>
+  renameTemplate: (id: string, name: string) => Promise<PptTemplateSummaryFace>
+  deleteTemplate: (id: string, expectedName: string) => Promise<void>
+  createFromTemplate: (
+    sessionId: string,
+    id: string,
+    options: { title?: string; dir?: string },
+  ) => Promise<PptSnapshotFace>
   open: (sessionId: string, dir: string) => Promise<PptSnapshotFace>
   read: (sessionId: string, dir?: string) => Promise<PptSnapshotFace>
   edit: (sessionId: string, dir: string | undefined, ops: unknown, baseRevision?: number) => Promise<PptSnapshotFace>
@@ -84,6 +98,20 @@ interface PptSnapshotFace {
   readonly deck: unknown
 }
 
+/** 用户级模板的模型可见摘要；模板内容只在套用后的工程中读取。 */
+interface PptTemplateSummaryFace {
+  readonly id: string
+  readonly name: string
+  readonly pages: number
+  readonly createdAt: number
+  readonly sourceName: string | null
+  readonly dropped: readonly string[]
+}
+
+interface PptTemplateDetailFace extends PptTemplateSummaryFace {
+  readonly deck: unknown
+}
+
 /**
  * 读取工程服务；未装配 PPT 工程包时给出明确诊断而不是 undefined 调用。
  * @param ctx - 宿主上下文。
@@ -122,6 +150,19 @@ const SUMMARY_SCHEMA = {
   },
 } as const
 
+const TEMPLATE_SUMMARY_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    id: { type: 'string', required: true },
+    name: { type: 'string', required: true },
+    pages: { type: 'number', required: true },
+    createdAt: { type: 'number', required: true },
+    sourceName: { oneOf: [{ type: 'string' }, { type: 'null' }], required: true },
+    dropped: { type: 'array', required: true, items: { type: 'string' } },
+  },
+} as const
+
 function summaryOf(snapshot: PptSnapshotFace): PptSummaryValue {
   return {
     dir: snapshot.dir,
@@ -130,6 +171,17 @@ function summaryOf(snapshot: PptSnapshotFace): PptSummaryValue {
     pages: snapshot.pages,
     canUndo: snapshot.canUndo,
     canRedo: snapshot.canRedo,
+  }
+}
+
+function templateSummaryOf(template: PptTemplateSummaryFace): Omit<PptTemplateSummaryFace, 'dropped'> & { dropped: string[] } {
+  return {
+    id: template.id,
+    name: template.name,
+    pages: template.pages,
+    createdAt: template.createdAt,
+    sourceName: template.sourceName,
+    dropped: [...template.dropped],
   }
 }
 
@@ -273,7 +325,7 @@ const OPS_HELP = 'Array of edit operations, applied atomically in order. Each it
   + ' One page holds at most 200 elements; a deck holds at most 200 pages.'
 
 /**
- * 注册七个 PPT 工具。
+ * 注册 PPT 模型工具。
  * @param ctx - Cordis 上下文，需提供 `tools` 与 `pptProjects`。
  */
 export function apply(ctx: Context): void {
@@ -281,14 +333,17 @@ export function apply(ctx: Context): void {
 
   ctx.tools.register(defineTool({
     name: 'ppt_create',
-    description: 'Create a new presentation project (one cover page) in the session workspace and focus it in the '
-      + 'PPT workbench on the right. Use ppt_edit afterwards to fill pages. Projects live under ppt/<slug> and '
-      + 'export to .pptx.',
+    description: 'Create a new presentation project and focus it in the PPT workbench. Without templateId, '
+      + 'title is required and the project starts with one cover page. To apply a saved full-deck user template, '
+      + 'first call ppt_templates for its id, then pass templateId; this creates a separate editable copy without '
+      + 'overwriting the template or current deck. Imported complex .pptx content may have dropped items listed '
+      + 'by ppt_templates. Do not combine templateId with size or theme. Use ppt_edit afterwards to customize.',
     parameters: {
-      title: { type: 'string', required: true, description: 'Deck title, also used for the directory name and the exported file name.' },
-      dir: { type: 'string', description: 'Workspace-relative project directory; omit to derive it from the title.' },
+      title: { type: 'string', description: 'Deck title; required without templateId, optional override when applying a template.' },
+      dir: { type: 'string', description: 'Workspace-relative project directory; omit to derive it from the title or template name.' },
       size: { type: 'string', enum: SIZES, description: 'Canvas size; 16:9 by default.' },
       theme: { type: 'string', enum: THEMES, description: 'Colour theme; ink by default.' },
+      templateId: { type: 'string', description: 'Saved full-deck user template id from ppt_templates; keeps its size and theme.' },
     },
     output: outputOf({
       type: 'object',
@@ -296,6 +351,19 @@ export function apply(ctx: Context): void {
       properties: { project: SUMMARY_SCHEMA },
     } as const),
     async execute(args, exec) {
+      if (args.templateId !== undefined) {
+        if (args.size !== undefined || args.theme !== undefined) {
+          throw new Error('使用 templateId 时不能同时指定 size 或 theme；模板保留原稿尺寸和主题')
+        }
+        const snapshot = await projects().createFromTemplate(sessionOf(exec), args.templateId, {
+          ...args.title === undefined ? {} : { title: args.title },
+          ...args.dir === undefined ? {} : { dir: args.dir },
+        })
+        return { project: summaryOf(snapshot) }
+      }
+      if (args.title === undefined || args.title.trim() === '') {
+        throw new Error('新建演示文稿需要 title；套用用户模板时请提供 ppt_templates 返回的 templateId')
+      }
       const snapshot = await projects().create(sessionOf(exec), {
         title: args.title,
         ...args.dir === undefined ? {} : { dir: args.dir },
@@ -304,7 +372,124 @@ export function apply(ctx: Context): void {
       })
       return { project: summaryOf(snapshot) }
     },
-    presentCall: args => present('Create deck', 'other', args.title),
+    presentCall: args => present('Create deck', 'other', args.title ?? args.templateId),
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'ppt_templates',
+    description: 'List saved full-deck user presentation templates and their ids, page counts and import-loss warnings. '
+      + 'These are distinct from the seven built-in single-page layouts in ppt_edit add_page. '
+      + 'Use an id as ppt_create.templateId to create a new copy; listing never opens or changes the current deck.',
+    parameters: {},
+    output: outputOf({
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        templates: { type: 'array', required: true, items: TEMPLATE_SUMMARY_SCHEMA },
+      },
+    } as const),
+    async execute() {
+      const templates = await projects().listTemplates()
+      return { templates: templates.map(templateSummaryOf) }
+    },
+    presentCall: () => present('List deck templates', 'read'),
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'ppt_save_template',
+    description: 'Save the entire open presentation project, including all pages and media, as a new user template. '
+      + 'Use dir for another workspace project. The template is stored in the Host user library, separate from '
+      + 'workspace projects; saving does not overwrite the current deck. List it later with ppt_templates and '
+      + 'apply a separate copy with ppt_create.templateId. Imported complex .pptx may have dropped content.',
+    parameters: {
+      name: { type: 'string', required: true, description: 'Name for the new full-deck user template.' },
+      dir: { type: 'string', description: 'Workspace-relative source project directory; omit for the open project.' },
+    },
+    output: outputOf({
+      type: 'object',
+      additionalProperties: false,
+      properties: { template: { ...TEMPLATE_SUMMARY_SCHEMA, required: true } },
+    } as const),
+    async execute(args, exec) {
+      if (args.name.trim() === '') throw new Error('模板名称 name 不能为空')
+      const saved = await projects().saveTemplate(sessionOf(exec), {
+        name: args.name,
+        ...args.dir === undefined ? {} : { dir: args.dir },
+      })
+      return { template: templateSummaryOf(saved) }
+    },
+    presentCall: args => present('Save deck template', 'other', args.name),
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'ppt_import_template',
+    description: 'Import a .pptx file from this session workspace directly into the current user\'s full-deck '
+      + 'template library. This does not create or focus a presentation project. Complex charts, SmartArt, OLE '
+      + 'and animations may be lost; report the returned dropped items to the user. Use ppt_templates to find '
+      + 'its id later, then ppt_create.templateId to make a separate editable copy.',
+    parameters: {
+      source: { type: 'string', required: true, description: 'Workspace-relative path of an existing .pptx file.' },
+      name: { type: 'string', description: 'Template name; omit to use the source file name.' },
+    },
+    output: outputOf({
+      type: 'object',
+      additionalProperties: false,
+      properties: { template: { ...TEMPLATE_SUMMARY_SCHEMA, required: true } },
+    } as const),
+    async execute(args, exec) {
+      if (args.name !== undefined && args.name.trim() === '') throw new Error('模板名称 name 不能为空')
+      const imported = await projects().importTemplateFromFile(sessionOf(exec), args.source, {
+        ...args.name === undefined ? {} : { name: args.name },
+      })
+      return { template: templateSummaryOf(imported) }
+    },
+    presentCall: args => present('Import deck template', 'other', args.source),
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'ppt_rename_template',
+    description: 'Rename one saved full-deck template in the current user\'s library. First call ppt_templates '
+      + 'to confirm its id. This does not rename existing presentation projects or alter their pages.',
+    parameters: {
+      id: { type: 'string', required: true, description: 'Saved user template id from ppt_templates.' },
+      name: { type: 'string', required: true, description: 'New non-empty template name.' },
+    },
+    output: outputOf({
+      type: 'object',
+      additionalProperties: false,
+      properties: { template: { ...TEMPLATE_SUMMARY_SCHEMA, required: true } },
+    } as const),
+    async execute(args) {
+      if (args.name.trim() === '') throw new Error('新模板名称 name 不能为空')
+      return { template: templateSummaryOf(await projects().renameTemplate(args.id, args.name)) }
+    },
+    presentCall: args => present('Rename deck template', 'other', args.name),
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'ppt_delete_template',
+    description: 'Permanently delete a saved template only when the user explicitly asks. First call ppt_templates '
+      + 'to confirm the id and exact current name; pass both here. The name must still match the saved template '
+      + 'exactly. Deletion affects only the current user\'s template library, not any existing project or copy.',
+    parameters: {
+      id: { type: 'string', required: true, description: 'Saved user template id confirmed with ppt_templates.' },
+      name: { type: 'string', required: true, description: 'Exact current name confirmed with ppt_templates.' },
+    },
+    output: outputOf({
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        id: { type: 'string', required: true },
+        name: { type: 'string', required: true },
+        deleted: { type: 'boolean', required: true, const: true },
+      },
+    } as const),
+    async execute(args) {
+      if (args.name.trim() === '') throw new Error('确认删除的模板名称 name 不能为空')
+      await projects().deleteTemplate(args.id, args.name)
+      return { id: args.id, name: args.name, deleted: true as const }
+    },
+    presentCall: args => present('Delete deck template', 'other', args.name),
   }))
 
   ctx.tools.register(defineTool({

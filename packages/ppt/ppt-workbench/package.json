@@ -41,14 +41,22 @@
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "workspace:^",
+    "@deepseek-ai/schemastery": "workspace:^",
+    "coding-atomic-write": "workspace:^",
+    "coding-brand": "workspace:^",
     "coding-client-connection": "workspace:^",
     "coding-host-webserver": "workspace:^",
+    "coding-home-paths": "workspace:^",
     "coding-invariants": "workspace:^",
     "coding-session": "workspace:^",
+    "coding-subprocess": "workspace:^",
     "coding-ppt-model": "workspace:^"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "workspace:^",
+    "@deepseek-ai/schemastery": "workspace:^",
+    "coding-atomic-write": "workspace:^",
+    "coding-brand": "workspace:^",
     "@deepseek-ai/cordis-plugin-include": "workspace:^",
     "@deepseek-ai/cordis-plugin-loader": "workspace:^",
     "@testing-library/react": "^16.1.0",
@@ -56,8 +64,10 @@
     "@types/react-dom": "~18.3.0",
     "coding-client-connection": "workspace:^",
     "coding-host-webserver": "workspace:^",
+    "coding-home-paths": "workspace:^",
     "coding-invariants": "workspace:^",
     "coding-session": "workspace:^",
+    "coding-subprocess": "workspace:^",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "coding-ppt-model": "workspace:^"

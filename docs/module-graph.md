@@ -1419,11 +1419,15 @@ flowchart TD
   pkg_image_gen --> pkg_session
   pkg_image_gen --> pkg_session_persistence
   pkg_image_gen --> pkg_settings
+  pkg_ppt_workbench --> pkg_atomic_write
+  pkg_ppt_workbench --> pkg_brand
   pkg_ppt_workbench --> pkg_client_connection
+  pkg_ppt_workbench --> pkg_home_paths
   pkg_ppt_workbench --> pkg_host_webserver
   pkg_ppt_workbench --> pkg_invariants
   pkg_ppt_workbench --> pkg_ppt_model
   pkg_ppt_workbench --> pkg_session
+  pkg_ppt_workbench --> pkg_subprocess
   pkg_api_remotes --> pkg_agent
   pkg_api_remotes --> pkg_agent_presets
   pkg_api_remotes --> pkg_api_gateway
@@ -2009,7 +2013,7 @@ flowchart TD
 | [`browser-ego-host`](../packages/browser/browser-ego-host) | `browser` | [`client-connection`](../packages/client/connection), [`host-webserver`](../packages/host/webserver), [`invariants`](../packages/runtime-diagnostics/invariants), [`session`](../packages/core/session), [`subprocess`](../packages/subprocess/subprocess), [`tools`](../packages/core/tools) |
 | [`acp-demo`](../packages/examples/acp-demo) | `examples` | [`acp`](../packages/acp/acp), [`agent-instructions`](../packages/context/agent-instructions), [`agent-spine-demo`](../packages/examples/agent-spine-demo), [`app-boot`](../packages/boot/app-boot), [`invariants`](../packages/runtime-diagnostics/invariants), [`memory`](../packages/memory/memory), [`session-checkpoint-policy`](../packages/session/session-checkpoint-policy), [`session-persistence-jsonl`](../packages/session/session-persistence-jsonl), [`session-query`](../packages/session-query/session-query), [`session-query-sqlite`](../packages/session-query/session-query-sqlite), [`tools`](../packages/core/tools) |
 | [`image-gen`](../packages/image/image-gen) | `image` | [`attachment`](../packages/attachment/attachment), [`client-connection`](../packages/client/connection), [`credentials`](../packages/credentials/credentials), [`host-webserver`](../packages/host/webserver), [`invariants`](../packages/runtime-diagnostics/invariants), [`session`](../packages/core/session), [`session-persistence`](../packages/session/session-persistence), [`settings`](../packages/settings/settings) |
-| [`ppt-workbench`](../packages/ppt/ppt-workbench) | `ppt` | [`client-connection`](../packages/client/connection), [`host-webserver`](../packages/host/webserver), [`invariants`](../packages/runtime-diagnostics/invariants), [`ppt-model`](../packages/ppt/model), [`session`](../packages/core/session) |
+| [`ppt-workbench`](../packages/ppt/ppt-workbench) | `ppt` | [`atomic-write`](../packages/util/atomic-write), [`brand`](../packages/util/brand), [`client-connection`](../packages/client/connection), [`home-paths`](../packages/util/home-paths), [`host-webserver`](../packages/host/webserver), [`invariants`](../packages/runtime-diagnostics/invariants), [`ppt-model`](../packages/ppt/model), [`session`](../packages/core/session), [`subprocess`](../packages/subprocess/subprocess) |
 | [`api-remotes`](../packages/api/remotes) | `api` | [`agent`](../packages/core/agent), [`agent-presets`](../packages/preset/agent-presets), [`api-gateway`](../packages/api/gateway), [`commands`](../packages/interaction/commands), [`cordis-host-runner`](../packages/extensions/cordis-host-runner), [`credentials`](../packages/credentials/credentials), [`file-reference`](../packages/context/file-reference), [`goal`](../packages/goal/goal), [`host-plugin-inventory`](../packages/host/plugin-inventory), [`invariants`](../packages/runtime-diagnostics/invariants), [`llm`](../packages/llm/llm), [`message-feedback`](../packages/feedback/message-feedback), [`session`](../packages/core/session), [`session-persistence`](../packages/session/session-persistence), [`session-reference`](../packages/context/session-reference), [`settings`](../packages/settings/settings), [`typert-registry`](../packages/typert/registry) |
 | [`tool-browser-ego`](../packages/browser/tool-browser-ego) | `browser` | [`attachment`](../packages/attachment/attachment), [`browser-ego-host`](../packages/browser/browser-ego-host), [`invariants`](../packages/runtime-diagnostics/invariants), [`llm`](../packages/llm/llm), [`sandbox-policy`](../packages/sandbox/sandbox-policy), [`session`](../packages/core/session), [`subprocess`](../packages/subprocess/subprocess), [`tools`](../packages/core/tools), [`user-approval`](../packages/interaction/user-approval) |
 | [`tool-image-gen`](../packages/image/tool-image-gen) | `image` | [`image-gen`](../packages/image/image-gen), [`invariants`](../packages/runtime-diagnostics/invariants), [`llm`](../packages/llm/llm), [`tools`](../packages/core/tools) |

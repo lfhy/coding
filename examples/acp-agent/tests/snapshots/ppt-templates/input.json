@@ -1,0 +1,7 @@
+{
+  "steps": [
+    { "op": "initialize" },
+    { "op": "newSession" },
+    { "op": "prompt", "text": "List my saved deck templates, create a source deck, save it as a template, list again, then create and read a separate copy from that saved template." }
+  ]
+}

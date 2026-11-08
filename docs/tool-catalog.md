@@ -34,7 +34,7 @@ This table connects model-visible tool names to the plugin package and service s
 | `coding-tool-terminal` | `terminal_close`, `terminal_list`, `terminal_open`, `terminal_read`, `terminal_send`, `terminal_signal` | `ctx.tools`, `ctx.terminals`, `ctx.systemPrompt`, `ctx.jobs at call time for run_in_background` | `tool/call`, `tool/result` | - | The six terminal tools are opt-in and complement one-shot shell/filesystem tools. `terminal_send(run_in_background: true)` registers with `ctx.jobs`; TUI, named key sequences, BEL, resize, auto-start, and cross-agent sharing are absent from the schema. |
 | `coding-tool-goal` | `create_goal`, `get_goal`, `update_goal` | `ctx.tools`, `ctx.agents`, `ctx.goals`, `ctx.systemPrompt`, `a calling Agent in an authorized open turn` | `tool/call`, `goal/change for mutations`, `tool/result` | - | create, edit, pause, and resume require direct-human root authority; complete and blocked also accept the exact current goal round. The default blocked lower bound is three admitted rounds. |
 | `coding-tool-image-gen` | `canvas_state`, `edit_image`, `generate_image`, `generate_images` | `ctx.tools`, `ctx.imageGeneration`, `a calling Agent session` | `tool/call`, `image-gen/created`, `durable image attachment`, `tool/result` | - | The catalog simulates an available image service to collect these schemas. The Codex preset selects variant=codex and exposes only image_gen; other non-minimal presets expose generate_image, generate_images, canvas_state, and edit_image. Unavailable deployments register none of these tools, and execution still rechecks service availability. |
-| `coding-tool-ppt` | `ppt_check`, `ppt_create`, `ppt_edit`, `ppt_export`, `ppt_import`, `ppt_open`, `ppt_read`, `ppt_redo`, `ppt_render`, `ppt_undo` | `ctx.tools`, `ctx.llm and ctx.attachments (AI review)`, `ctx.pptProjects (execution time)`, `a calling Agent session` | `tool/call`, `project deck and history`, `rendered PNG or exported .pptx/PDF on request`, `tool/result` | - | The PPT preset installs these ten tools only in its Agent scope; other presets do not receive their schemas. The catalog mounts the LLM and attachment services to harvest the schema without executing project operations, model review, rendering, or attachment I/O. At execution time the Host supplies ctx.pptProjects. |
+| `coding-tool-ppt` | `ppt_check`, `ppt_create`, `ppt_delete_template`, `ppt_edit`, `ppt_export`, `ppt_import`, `ppt_import_template`, `ppt_open`, `ppt_read`, `ppt_redo`, `ppt_rename_template`, `ppt_render`, `ppt_save_template`, `ppt_templates`, `ppt_undo` | `ctx.tools`, `ctx.llm and ctx.attachments (AI review)`, `ctx.pptProjects (execution time)`, `a calling Agent session` | `tool/call`, `project deck and history`, `rendered PNG or exported .pptx/PDF on request`, `tool/result` | - | The PPT preset installs these ten tools only in its Agent scope; other presets do not receive their schemas. The catalog mounts the LLM and attachment services to harvest the schema without executing project operations, model review, rendering, or attachment I/O. At execution time the Host supplies ctx.pptProjects. |
 | `coding-schedule` | `schedule_create`, `schedule_delete`, `schedule_list` | `ctx.tools`, `ctx.sessions`, `Session persistence`, `a future live root Agent` | `tool/call`, `schedule/change create or delete`, `tool/result` | - | Registered only inside live root Agent scopes created after the opt-in Schedule plugin loads. Version 1 accepts after_seconds, explicit absolute at, and bounded fixed-rate every_seconds, and discloses session-local delivery; management reads and mutations require the shared Session persistence barrier. |
 | `coding-tool-context-compact` | `context_compact` | `ctx.tools`, `ctx.compaction` | `tool/call`, `compaction/* transaction events for the replaced range`, `tool/result` | - | The tool only names what the remaining work must keep; range selection, the open-turn transaction, and the summary stay with the mounted backend. `compactContext` compacts by span, so unrelated nodes appended while the summary runs survive the replacement. |
 | `coding-tool-lsp` | `lsp` | `ctx.tools`, `ctx.lsp`, `ctx.systemPrompt` | `tool/call`, `tool/result` | - | The lsp tool keeps provider selection and language-server subprocesses behind ctx.lsp, so its model-visible schema stays stable across providers. Requires a registered provider (e.g. `coding-lsp-stdio`) at runtime; without one, a query returns the structured `LSP_UNAVAILABLE` error rather than changing the schema. |
@@ -3472,7 +3472,7 @@ Source: [`packages/ppt/tool-ppt/src/index.ts`](../packages/ppt/tool-ppt/src/inde
 
 ### `ppt_create`
 
-Create a new presentation project (one cover page) in the session workspace and focus it in the PPT workbench on the right. Use ppt_edit afterwards to fill pages. Projects live under ppt/<slug> and export to .pptx.
+Create a new presentation project and focus it in the PPT workbench. Without templateId, title is required and the project starts with one cover page. To apply a saved full-deck user template, first call ppt_templates for its id, then pass templateId; this creates a separate editable copy without overwriting the template or current deck. Imported complex .pptx content may have dropped items listed by ppt_templates. Do not combine templateId with size or theme. Use ppt_edit afterwards to customize.
 
 ```json
 {
@@ -3480,11 +3480,11 @@ Create a new presentation project (one cover page) in the session workspace and 
   "properties": {
     "title": {
       "type": "string",
-      "description": "Deck title, also used for the directory name and the exported file name."
+      "description": "Deck title; required without templateId, optional override when applying a template."
     },
     "dir": {
       "type": "string",
-      "description": "Workspace-relative project directory; omit to derive it from the title."
+      "description": "Workspace-relative project directory; omit to derive it from the title or template name."
     },
     "size": {
       "type": "string",
@@ -3503,10 +3503,37 @@ Create a new presentation project (one cover page) in the session workspace and 
         "ocean",
         "forest"
       ]
+    },
+    "templateId": {
+      "type": "string",
+      "description": "Saved full-deck user template id from ppt_templates; keeps its size and theme."
+    }
+  }
+}
+```
+
+Source: [`packages/ppt/tool-ppt/src/index.ts`](../packages/ppt/tool-ppt/src/index.ts)
+
+### `ppt_delete_template`
+
+Permanently delete a saved template only when the user explicitly asks. First call ppt_templates to confirm the id and exact current name; pass both here. The name must still match the saved template exactly. Deletion affects only the current user's template library, not any existing project or copy.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Saved user template id confirmed with ppt_templates."
+    },
+    "name": {
+      "type": "string",
+      "description": "Exact current name confirmed with ppt_templates."
     }
   },
   "required": [
-    "title"
+    "id",
+    "name"
   ]
 }
 ```
@@ -3612,6 +3639,31 @@ Import an existing .pptx from the workspace into a project so the deck can be ed
 
 Source: [`packages/ppt/tool-ppt/src/index.ts`](../packages/ppt/tool-ppt/src/index.ts)
 
+### `ppt_import_template`
+
+Import a .pptx file from this session workspace directly into the current user's full-deck template library. This does not create or focus a presentation project. Complex charts, SmartArt, OLE and animations may be lost; report the returned dropped items to the user. Use ppt_templates to find its id later, then ppt_create.templateId to make a separate editable copy.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "source": {
+      "type": "string",
+      "description": "Workspace-relative path of an existing .pptx file."
+    },
+    "name": {
+      "type": "string",
+      "description": "Template name; omit to use the source file name."
+    }
+  },
+  "required": [
+    "source"
+  ]
+}
+```
+
+Source: [`packages/ppt/tool-ppt/src/index.ts`](../packages/ppt/tool-ppt/src/index.ts)
+
 ### `ppt_open`
 
 Open an existing presentation project in the PPT workbench and return its summary. Do this before editing a deck you did not create in this session.
@@ -3673,6 +3725,32 @@ Step the presentation forward again after ppt_undo.
 
 Source: [`packages/ppt/tool-ppt/src/index.ts`](../packages/ppt/tool-ppt/src/index.ts)
 
+### `ppt_rename_template`
+
+Rename one saved full-deck template in the current user's library. First call ppt_templates to confirm its id. This does not rename existing presentation projects or alter their pages.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Saved user template id from ppt_templates."
+    },
+    "name": {
+      "type": "string",
+      "description": "New non-empty template name."
+    }
+  },
+  "required": [
+    "id",
+    "name"
+  ]
+}
+```
+
+Source: [`packages/ppt/tool-ppt/src/index.ts`](../packages/ppt/tool-ppt/src/index.ts)
+
 ### `ppt_render`
 
 Render pages to PNG and show them in the Agent browser panel on the right. Each page opens as a browser tab in this session's own browser space, so the user can look at the real layout, and a PNG copy lands under the project render/ directory. Use it before reporting, or when the user asks how a page looks.
@@ -3693,6 +3771,44 @@ Render pages to PNG and show them in the Agent browser panel on the right. Each 
       }
     }
   }
+}
+```
+
+Source: [`packages/ppt/tool-ppt/src/index.ts`](../packages/ppt/tool-ppt/src/index.ts)
+
+### `ppt_save_template`
+
+Save the entire open presentation project, including all pages and media, as a new user template. Use dir for another workspace project. The template is stored in the Host user library, separate from workspace projects; saving does not overwrite the current deck. List it later with ppt_templates and apply a separate copy with ppt_create.templateId. Imported complex .pptx may have dropped content.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Name for the new full-deck user template."
+    },
+    "dir": {
+      "type": "string",
+      "description": "Workspace-relative source project directory; omit for the open project."
+    }
+  },
+  "required": [
+    "name"
+  ]
+}
+```
+
+Source: [`packages/ppt/tool-ppt/src/index.ts`](../packages/ppt/tool-ppt/src/index.ts)
+
+### `ppt_templates`
+
+List saved full-deck user presentation templates and their ids, page counts and import-loss warnings. These are distinct from the seven built-in single-page layouts in ppt_edit add_page. Use an id as ppt_create.templateId to create a new copy; listing never opens or changes the current deck.
+
+```json
+{
+  "type": "object",
+  "properties": {}
 }
 ```
 

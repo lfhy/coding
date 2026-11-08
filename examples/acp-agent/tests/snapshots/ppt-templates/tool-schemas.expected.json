@@ -1,0 +1,897 @@
+{
+  "initial": [
+    {
+      "name": "bash",
+      "description": "Execute a bash command (`bash -c`) and return its stdout/stderr. Each call runs in a fresh shell: no state (cwd, variables, functions) persists between calls — pass `workdir` instead of using `cd`. Non-zero exits are reported as `[exit code: N]`. Current harness environment facts are exposed through managed `$DSH_*` variables; inspect them when needed. Commands may run under a file sandbox; a blocked file operation is reported as `[sandbox: file access denied under <mode> mode]` — a policy denial, not a bug in the command; do not retry another way. Long output is truncated to its tail; the full output is saved to a file whose path is reported when available. Set `run_in_background: true` for long-running commands: the call returns a job id immediately; read its output with `job_output` and stop it with `job_kill`. Attempting a command the sandbox may deny is safe and expected: run it and read the marker rather than assuming the denial. When a command is denied and a wider mode would let it succeed, escalate immediately in the same turn — the one sanctioned exception to a denial: retry the exact same command once with `sandbox_permissions` (the narrowest wider mode that suffices) plus a one-sentence `justification`. Do not detour through chat to ask permission first — the approval prompt raised by that retry is how the user consents. If the session states approval prompts are disabled, there is no exception: a denial is final — do not set `sandbox_permissions`. Never escalate speculatively: ground the request in a real denial — normally the one this command just hit; escalating up front is fine only when this session already denied the same access. A rejected escalation is final for that command — stop and explain, never work around it — but it does not forbid attempting or escalating other commands later.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "command": {
+            "type": "string",
+            "description": "The bash command to execute."
+          },
+          "description": {
+            "type": "string",
+            "description": "Clear, concise description of what this command does in active voice, 5-10 words (shown in the UI). Examples: \"ls\" → \"List files in current directory\"; \"git status\" → \"Show working tree status\"; \"npm install\" → \"Install package dependencies\"."
+          },
+          "timeoutMs": {
+            "type": "number",
+            "description": "Timeout in milliseconds. The executor applies its configured default and cap, and kills the command on expiry."
+          },
+          "workdir": {
+            "type": "string",
+            "description": "Working directory for this command. Defaults to the session workspace; a relative path is resolved against it."
+          },
+          "tty": {
+            "type": "boolean",
+            "description": "Run the command in a pseudo-terminal so it can read from an interactive stdin. A background tty session can only be collected with the job tools; typing into it requires a stdin-capable session controller."
+          },
+          "run_in_background": {
+            "type": "boolean",
+            "description": "Run in the background and return a job id immediately (collect with job_output, stop with job_kill). No timeout applies."
+          },
+          "sandbox_permissions": {
+            "type": "string",
+            "description": "The wider sandbox mode this command needs. Only valid as a one-shot retry of a command the sandbox just denied; requires justification and user approval. `use_default` asks for no change and equals omitting the field.",
+            "enum": [
+              "workspace-write",
+              "danger-full-access",
+              "use_default"
+            ]
+          },
+          "justification": {
+            "type": "string",
+            "description": "Required with sandbox_permissions: one sentence for the user explaining why this exact command needs the wider access."
+          }
+        },
+        "required": [
+          "command",
+          "description"
+        ]
+      }
+    },
+    {
+      "name": "context_compact",
+      "description": "Replace older conversation history with a structured checkpoint to free context. Use it when the history has stopped earning its tokens — the topic moved on, or exploration is finished and the real work is about to start. Pass `focus` to state what the remaining work needs (the concrete task, decisions and constraints that still apply, files and identifiers that matter), so the checkpoint keeps that and drops what the work has outgrown. The current step is never replaced. A busy or failed call leaves the conversation unchanged.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "focus": {
+            "type": "string",
+            "description": "What the work continuing after the checkpoint needs preserved: the concrete task, the decisions and constraints that still apply, and the files or identifiers that matter. Omit only when the whole history is equally relevant. At most 2000 characters."
+          }
+        }
+      }
+    },
+    {
+      "name": "create_goal",
+      "description": "Create one persisted same-session completion goal when the current direct human request is a long-running objective that should continue across autonomous goal rounds. You may infer that intent without requiring the user to say \"create a goal\". Do not use this for trivial single-turn work. Execution rejects non-human and subagent authority.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "objective": {
+            "type": "string",
+            "description": "The concrete completion objective inferred from the direct human request."
+          },
+          "max_goal_rounds": {
+            "type": "number",
+            "description": "Optional positive safe-integer limit on automatic continuation rounds."
+          }
+        },
+        "required": [
+          "objective"
+        ]
+      }
+    },
+    {
+      "name": "edit",
+      "description": "Edit an existing UTF-8 text file by replacing literal text.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "file_path": {
+            "type": "string",
+            "description": "Path to edit, resolved by the filesystem backend."
+          },
+          "old_string": {
+            "type": "string",
+            "description": "Literal text to replace. Must match exactly."
+          },
+          "new_string": {
+            "type": "string",
+            "description": "Literal replacement text. Use an empty string to delete the match."
+          },
+          "replace_all": {
+            "type": "boolean",
+            "description": "Replace all matches. Defaults to false; when false, old_string must appear exactly once."
+          },
+          "sandbox_permissions": {
+            "type": "string",
+            "description": "The wider sandbox mode this file operation needs. Only valid as a one-shot retry of an operation the sandbox just denied; requires justification and user approval. `use_default` asks for no change and equals omitting the field.",
+            "enum": [
+              "workspace-write",
+              "danger-full-access",
+              "use_default"
+            ]
+          },
+          "justification": {
+            "type": "string",
+            "description": "Required with sandbox_permissions: one sentence for the user explaining why this exact file operation needs the wider access."
+          }
+        },
+        "required": [
+          "file_path",
+          "old_string",
+          "new_string"
+        ]
+      }
+    },
+    {
+      "name": "followup_task",
+      "description": "Send a follow-up task to a background subagent by its subagent id. The message is queued for the next turn; it does not interrupt an in-flight model request or tool call. This confirms acceptance, not completion of the task.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "subagent_id": {
+            "type": "string",
+            "description": "The subagent id returned when the background subagent was started."
+          },
+          "message": {
+            "type": "string",
+            "description": "The message to deliver to the subagent."
+          }
+        },
+        "required": [
+          "subagent_id",
+          "message"
+        ]
+      }
+    },
+    {
+      "name": "get_goal",
+      "description": "Read the current same-session goal, including its exact id/revision, objective, phase, completed continuation rounds, round limit, blocker reason when present, and whether another continuation is armed. Call this before updating a goal.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "interrupt_agent",
+      "description": "Request cancellation of a background agent's current turn by its agent id. The target may be your direct child or a deeper agent created under you. Only the current turn stops: queued messages stay parked until a later send_message or followup_task, agents it started keep running, and the agent stays available. The call returns as soon as the stop request is accepted; interrupting an already finished agent is a no-op.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "agent_id": {
+            "type": "string",
+            "description": "The agent id of the running agent to interrupt."
+          }
+        },
+        "required": [
+          "agent_id"
+        ]
+      }
+    },
+    {
+      "name": "job_kill",
+      "description": "Request cancellation of a running background job by job id. Returns immediately; the job settles as killed once its work actually stops.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "description": "Job id returned by the tool that started the background work."
+          },
+          "reason": {
+            "type": "string",
+            "description": "Optional short reason, recorded in the log and forwarded to the job."
+          }
+        },
+        "required": [
+          "job_id"
+        ]
+      }
+    },
+    {
+      "name": "job_list",
+      "description": "List your background jobs (running and finished) with their ids, kinds, and statuses.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "job_output",
+      "description": "Read a background job. Stream jobs return only output since the previous read; final-output jobs return their result after settlement. Every response ends with `[status: ...]`. Reads are non-blocking unless `wait: true`, which waits up to the configured cap.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "description": "Job id returned by the tool that started the background work."
+          },
+          "wait": {
+            "type": "boolean",
+            "description": "Block until the job reaches a terminal status or the timeout expires. A timed-out wait returns [status: running] and leaves the job alive."
+          },
+          "timeout_ms": {
+            "type": "number",
+            "description": "Max wait in milliseconds (only meaningful with wait: true). Defaults to the configured wait timeout; capped by the configured maximum."
+          }
+        },
+        "required": [
+          "job_id"
+        ]
+      }
+    },
+    {
+      "name": "list_agents",
+      "description": "List your continuable background subagents by durable id and label. Use it to recall which ones you started, not to poll for completion — you are told when one finishes. Status comes from the live registry: running means the agent is working right now, idle means it is loaded but between turns (it may be waiting on agents it started), and ready means it exists only in storage — resumable, not terminal, and not a result waiting to be collected; a `send_message` wakes it or steers its next step by default, and a direct child remains a `send_message` candidate in every status. The snapshot is not a delivery promise — `send_message` performs the authoritative check and may still fail. Children that could not be read are reported as diagnostics instead of being silently dropped. Scope `descendants` walks the whole tree below you in stable pre-order, annotating each entry with its durable direct-parent session id and depth. You may use `send_message` only for depth-1 entries; deeper entries are candidates for `interrupt_agent` only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "scope": {
+            "type": "string",
+            "description": "children (default) lists direct children only; descendants walks the complete tree below you.",
+            "enum": [
+              "children",
+              "descendants"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "ppt_check",
+      "description": "Run the deterministic layout checks before exporting: elements outside the canvas, zero-size elements, estimated text overflow and low text/background contrast. Errors block ppt_export; warnings are advice.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "dir": {
+            "type": "string",
+            "description": "Workspace-relative project directory; omit for the open project."
+          },
+          "ai": {
+            "type": "boolean",
+            "description": "Ask the session model for layout advice on top of the rule checks."
+          }
+        }
+      }
+    },
+    {
+      "name": "ppt_create",
+      "description": "Create a new presentation project and focus it in the PPT workbench. Without templateId, title is required and the project starts with one cover page. To apply a saved full-deck user template, first call ppt_templates for its id, then pass templateId; this creates a separate editable copy without overwriting the template or current deck. Imported complex .pptx content may have dropped items listed by ppt_templates. Do not combine templateId with size or theme. Use ppt_edit afterwards to customize.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Deck title; required without templateId, optional override when applying a template."
+          },
+          "dir": {
+            "type": "string",
+            "description": "Workspace-relative project directory; omit to derive it from the title or template name."
+          },
+          "size": {
+            "type": "string",
+            "description": "Canvas size; 16:9 by default.",
+            "enum": [
+              "16:9",
+              "4:3"
+            ]
+          },
+          "theme": {
+            "type": "string",
+            "description": "Colour theme; ink by default.",
+            "enum": [
+              "ink",
+              "paper",
+              "ocean",
+              "forest"
+            ]
+          },
+          "templateId": {
+            "type": "string",
+            "description": "Saved full-deck user template id from ppt_templates; keeps its size and theme."
+          }
+        }
+      }
+    },
+    {
+      "name": "ppt_delete_template",
+      "description": "Permanently delete a saved template only when the user explicitly asks. First call ppt_templates to confirm the id and exact current name; pass both here. The name must still match the saved template exactly. Deletion affects only the current user's template library, not any existing project or copy.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Saved user template id confirmed with ppt_templates."
+          },
+          "name": {
+            "type": "string",
+            "description": "Exact current name confirmed with ppt_templates."
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ]
+      }
+    },
+    {
+      "name": "ppt_edit",
+      "description": "Apply atomic edit operations to a project. Pass base_revision from your last read or edit to reject concurrent changes instead of overwriting them.\nArray of edit operations, applied atomically in order. Each item is an object with \"op\":\n- {\"op\":\"add_page\",\"at\":<index>,\"name\":<string>,\"background\":\"#rrggbb\"|null,\"template\":\"title\"|\"section\"|\"bullets\"|\"two-column\"|\"data\"|\"chart\"|\"quote\",\"title\":<string>,\"bullets\":[<string>]} — insert a page; with \"template\" it comes pre-filled with that layout (bullets ≤ 6);\n- {\"op\":\"remove_page\",\"page\":<pageId>} — delete a page (never the last one);\n- {\"op\":\"move_page\",\"page\":<pageId>,\"to\":<index>} — reorder;\n- {\"op\":\"update_page\",\"page\":<pageId>,\"name\":<string>,\"background\":\"#rrggbb\"|null,\"transition\":\"none\"|\"fade\"|\"push\"};\n- {\"op\":\"add_element\",\"page\":<pageId>,\"element\":{...}} — element kinds: text {id?,kind:\"text\",x,y,w,h,text:{content,size,color,bold,align:\"left\"|\"center\"|\"right\",valign:\"top\"|\"middle\"|\"bottom\"}}, rect|ellipse {id?,kind,x,y,w,h,fill}, line {id?,kind:\"line\",x,y,w,h,color,width}, image {id?,kind:\"image\",x,y,w,h,source:\"media/<file>\",fit:\"cover\"|\"contain\"}, table {id?,kind:\"table\",x,y,w,h,rows,columns,cells:[[{content}]],header?,headerFill?,borderColor?,text?:{size,color,bold,align}}, chart {id?,kind:\"chart\",x,y,w,h,chart:\"bar\"|\"line\"|\"pie\",categories:[<string>],series:[{name,values:[<number>],color,axis?:\"primary\"|\"secondary\",as?:\"bar\"|\"line\"}],stacked?,showValues?,textColor?} — axis 与 as 用于次坐标轴与组合图;\n- {\"op\":\"update_element\",\"page\":<pageId>,\"element\":<elementId>,\"frame\":{x?,y?,w?,h?},\"text\":{...},\"fill\":..,\"color\":..,\"width\":..,\"source\":\"media/<file>\",\"fit\":..,\"cells\":[[{content}]]};\n- {\"op\":\"remove_element\",\"page\":<pageId>,\"element\":<elementId>};\n- {\"op\":\"reorder_element\",\"page\":<pageId>,\"element\":<elementId>,\"to\":\"front\"|\"back\"|\"forward\"|\"backward\"} — z-order;\n- {\"op\":\"duplicate_element\",\"page\":<pageId>,\"element\":<elementId>} — copy offset by 24px;\n- {\"op\":\"update_deck\",\"title\":<string>,\"size\":\"16:9\"|\"4:3\",\"theme\":\"ink\"|\"paper\"|\"ocean\"|\"forest\"}.\nCanvas coordinates are base pixels: 1280x720 for 16:9 and 960x720 for 4:3, origin at the top-left. One page holds at most 200 elements; a deck holds at most 200 pages.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ops": {
+            "description": "Edit operations, applied in order or not at all."
+          },
+          "dir": {
+            "type": "string",
+            "description": "Workspace-relative project directory; omit for the open project."
+          },
+          "base_revision": {
+            "type": "number",
+            "description": "Revision the edit was planned against."
+          }
+        },
+        "required": [
+          "ops"
+        ]
+      }
+    },
+    {
+      "name": "ppt_export",
+      "description": "Export the current revision as a .pptx file under the project directory (export/<title>-v<revision>.pptx). Report the absolute path to the user; open it with their presentation app.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "dir": {
+            "type": "string",
+            "description": "Workspace-relative project directory; omit for the open project."
+          },
+          "skip_check": {
+            "type": "boolean",
+            "description": "Export even when ppt_check reports blocking layout errors."
+          },
+          "target": {
+            "type": "string",
+            "description": "pptx (default) or pdf; pdf renders each page through the Agent browser first.",
+            "enum": [
+              "pptx",
+              "pdf"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "ppt_import",
+      "description": "Import an existing .pptx from the workspace into a project so the deck can be edited here. Text, autoshapes, lines, pictures and tables become editable elements; charts, SmartArt and animations cannot be represented and are reported back in \"dropped\".",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "source": {
+            "type": "string",
+            "description": "Workspace-relative path of the .pptx file."
+          },
+          "dir": {
+            "type": "string",
+            "description": "Workspace-relative project directory to create; defaults to the file name."
+          },
+          "title": {
+            "type": "string",
+            "description": "Deck title; defaults to the file name."
+          }
+        },
+        "required": [
+          "source"
+        ]
+      }
+    },
+    {
+      "name": "ppt_import_template",
+      "description": "Import a .pptx file from this session workspace directly into the current user's full-deck template library. This does not create or focus a presentation project. Complex charts, SmartArt, OLE and animations may be lost; report the returned dropped items to the user. Use ppt_templates to find its id later, then ppt_create.templateId to make a separate editable copy.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "source": {
+            "type": "string",
+            "description": "Workspace-relative path of an existing .pptx file."
+          },
+          "name": {
+            "type": "string",
+            "description": "Template name; omit to use the source file name."
+          }
+        },
+        "required": [
+          "source"
+        ]
+      }
+    },
+    {
+      "name": "ppt_open",
+      "description": "Open an existing presentation project in the PPT workbench and return its summary. Do this before editing a deck you did not create in this session.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "dir": {
+            "type": "string",
+            "description": "Workspace-relative project directory."
+          }
+        },
+        "required": [
+          "dir"
+        ]
+      }
+    },
+    {
+      "name": "ppt_read",
+      "description": "Read the full page and element data of a project so you can plan edits. Prefer this over guessing ids: every edit names the page and element ids it touches.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "dir": {
+            "type": "string",
+            "description": "Workspace-relative project directory; omit for the open project."
+          }
+        }
+      }
+    },
+    {
+      "name": "ppt_redo",
+      "description": "Step the presentation forward again after ppt_undo.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "dir": {
+            "type": "string",
+            "description": "Workspace-relative project directory; omit for the open project."
+          },
+          "steps": {
+            "type": "number",
+            "description": "How many steps to go forward (1–20, default 1)."
+          }
+        }
+      }
+    },
+    {
+      "name": "ppt_rename_template",
+      "description": "Rename one saved full-deck template in the current user's library. First call ppt_templates to confirm its id. This does not rename existing presentation projects or alter their pages.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Saved user template id from ppt_templates."
+          },
+          "name": {
+            "type": "string",
+            "description": "New non-empty template name."
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ]
+      }
+    },
+    {
+      "name": "ppt_render",
+      "description": "Render pages to PNG and show them in the Agent browser panel on the right. Each page opens as a browser tab in this session's own browser space, so the user can look at the real layout, and a PNG copy lands under the project render/ directory. Use it before reporting, or when the user asks how a page looks.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "dir": {
+            "type": "string",
+            "description": "Workspace-relative project directory; omit for the open project."
+          },
+          "pages": {
+            "type": "array",
+            "description": "Zero-based page indices to render; omit for every page.",
+            "items": {
+              "type": "number"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "ppt_save_template",
+      "description": "Save the entire open presentation project, including all pages and media, as a new user template. Use dir for another workspace project. The template is stored in the Host user library, separate from workspace projects; saving does not overwrite the current deck. List it later with ppt_templates and apply a separate copy with ppt_create.templateId. Imported complex .pptx may have dropped content.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Name for the new full-deck user template."
+          },
+          "dir": {
+            "type": "string",
+            "description": "Workspace-relative source project directory; omit for the open project."
+          }
+        },
+        "required": [
+          "name"
+        ]
+      }
+    },
+    {
+      "name": "ppt_templates",
+      "description": "List saved full-deck user presentation templates and their ids, page counts and import-loss warnings. These are distinct from the seven built-in single-page layouts in ppt_edit add_page. Use an id as ppt_create.templateId to create a new copy; listing never opens or changes the current deck.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "ppt_undo",
+      "description": "Step the presentation back through its edit history. Each edit call is one step unless the history has already been walked back; undo never crosses into an unrelated project.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "dir": {
+            "type": "string",
+            "description": "Workspace-relative project directory; omit for the open project."
+          },
+          "steps": {
+            "type": "number",
+            "description": "How many steps to go back (1–20, default 1)."
+          }
+        }
+      }
+    },
+    {
+      "name": "ralph",
+      "description": "Run a foreground fresh-agent Ralph loop toward one immutable objective. Use only when the direct human explicitly asks for Ralph or fresh-agent iteration. Each round opens a new child with no parent conversation or prior child session; the shared workspace is long-term memory, and only a bounded structured report crosses rounds. The call returns when a worker reports completion or a concrete blocker, or at the round limit. Ordinary long-running same-session work belongs to goal tools.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "objective": {
+            "type": "string",
+            "description": "The immutable completion objective for every fresh Ralph round."
+          },
+          "maxRounds": {
+            "type": "number",
+            "description": "Optional positive safe-integer round cap, bounded by the deployment ceiling."
+          }
+        },
+        "required": [
+          "objective"
+        ]
+      }
+    },
+    {
+      "name": "read",
+      "description": "Read a UTF-8 text file and return line-numbered content.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "file_path": {
+            "type": "string",
+            "description": "Path to read, resolved by the filesystem backend."
+          },
+          "offset": {
+            "type": "number",
+            "description": "1-based first line to return. Defaults to 1."
+          },
+          "limit": {
+            "type": "number",
+            "description": "Maximum number of lines to return in this call (up to 10000). Defaults to 10000. For a large file, set offset to the first line you need and use the continuation offset from the footer."
+          }
+        },
+        "required": [
+          "file_path"
+        ]
+      }
+    },
+    {
+      "name": "read_image",
+      "description": "Read a PNG/JPEG/WebP/GIF file and return the image itself. Requires the current model to accept image input.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "file_path": {
+            "type": "string",
+            "description": "Path to the image file, resolved by the filesystem backend."
+          }
+        },
+        "required": [
+          "file_path"
+        ]
+      }
+    },
+    {
+      "name": "send_message",
+      "description": "Send a message to a background subagent by its subagent id. The message is inserted into the next available step without interrupting an in-flight model request or tool call. If the agent is idle, the message wakes it. This confirms acceptance, not that the agent has read the message.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "subagent_id": {
+            "type": "string",
+            "description": "The subagent id returned when the background subagent was started."
+          },
+          "message": {
+            "type": "string",
+            "description": "The message to deliver to the subagent."
+          }
+        },
+        "required": [
+          "subagent_id",
+          "message"
+        ]
+      }
+    },
+    {
+      "name": "skill",
+      "description": "Load the full instructions for an available skill. Call this with the exact skill name from the session skill catalog before acting on a task that names or clearly matches that skill.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "The exact skill name from the available skills list."
+          }
+        },
+        "required": [
+          "name"
+        ]
+      }
+    },
+    {
+      "name": "subagent",
+      "description": "Delegate a self-contained task to a subagent (a separate agent that works in its own context) to offload focused, independent work — research, a scoped implementation, an analysis — so it does not consume this conversation's context. The subagent returns its result, not its intermediate steps. Give it a complete, standalone prompt: it does not see this conversation. This tool runs in the background by default, immediately returns a durable subagent id, and keeps the child conversation available for later turns. When that run settles, the runtime sends the parent a notice containing its outcome and any final assistant message; `send_message` starts a later turn in the same child conversation. Set `run_in_background: false` only when your next action depends on receiving the result.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "description": {
+            "type": "string",
+            "description": "A short (3-5 word) description of the delegated task, for display."
+          },
+          "prompt": {
+            "type": "string",
+            "description": "The complete, self-contained task for the subagent. It does not share this conversation's context, so include everything it needs."
+          },
+          "model": {
+            "type": "string",
+            "description": "Model id for this child. Omit or leave empty to use the model of the current request. Use list_subagent_models to discover available ids."
+          },
+          "model_provider": {
+            "type": "string",
+            "description": "Optional LLM provider route, not the subagent transport provider. Omit or leave empty to inherit the current request provider; if none exists, the sole registered LLM provider is used. A non-empty value requires a non-empty model."
+          },
+          "run_in_background": {
+            "type": "boolean",
+            "description": "Whether to run in the background and return a durable subagent id immediately. Defaults to true. Set false to wait for the result when your next action depends on it."
+          }
+        },
+        "required": [
+          "description",
+          "prompt"
+        ]
+      }
+    },
+    {
+      "name": "subagent_fork",
+      "description": "Delegate a task to a subagent that inherits this conversation: a child agent seeded with all completed turns so far (it does not see the current in-flight turn). Use this when the subtask builds on this conversation's context — a follow-up analysis, a review, a continuation — without consuming this conversation's context for the work itself. You receive its result, not its intermediate steps. This call waits for the subagent and returns its result.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "description": {
+            "type": "string",
+            "description": "A short (3-5 word) description of the delegated task, for display."
+          },
+          "prompt": {
+            "type": "string",
+            "description": "The task for the subagent. It already sees this conversation's completed turns, so build on them freely and state only what is new."
+          },
+          "model": {
+            "type": "string",
+            "description": "Model id for this child. Omit or leave empty to use the model of the current request. Use list_subagent_models to discover available ids."
+          },
+          "model_provider": {
+            "type": "string",
+            "description": "Optional LLM provider route, not the subagent transport provider. Omit or leave empty to inherit the current request provider; if none exists, the sole registered LLM provider is used. A non-empty value requires a non-empty model."
+          }
+        },
+        "required": [
+          "description",
+          "prompt"
+        ]
+      }
+    },
+    {
+      "name": "todo_write",
+      "description": "Record and update a structured task list for the current work. Send the ENTIRE list every call — it REPLACES the previous list (there are no partial updates, no per-item edits). Use it to plan multi-step work and show progress: add one todo per concrete step before you start. Mark every todo being actively worked on `in_progress` — several at once when work genuinely runs in parallel (e.g. concurrent subagents or background commands), one for sequential work; while work remains, at least one task should be `in_progress`. Mark a todo `completed` the moment it is done (do not batch completions), and allow no `in_progress` item only once all work is complete. Skip the list for trivial single-step tasks. Statuses: `pending` (not started), `in_progress` (being worked on now), `completed` (finished).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "todos": {
+            "type": "array",
+            "description": "The COMPLETE task list, replacing any previous list.",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "content": {
+                  "type": "string",
+                  "description": "What the task is — a short imperative line."
+                },
+                "status": {
+                  "type": "string",
+                  "description": "pending (not started) | in_progress (now) | completed (done).",
+                  "enum": [
+                    "pending",
+                    "in_progress",
+                    "completed"
+                  ]
+                }
+              },
+              "required": [
+                "content",
+                "status"
+              ]
+            }
+          }
+        },
+        "required": [
+          "todos"
+        ]
+      }
+    },
+    {
+      "name": "update_goal",
+      "description": "Update the exact current goal revision. edit, pause, and resume require a direct top-level human request. During an automatic continuation of the current goal, complete and blocked are also allowed. blocked is rejected before the configured minimum round count; the model remains responsible for judging that the same condition persisted across those rounds and must explain it in blocked_reason.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "goal_id": {
+            "type": "string",
+            "description": "Exact id returned by get_goal."
+          },
+          "revision": {
+            "type": "number",
+            "description": "Exact positive revision returned by get_goal."
+          },
+          "action": {
+            "type": "string",
+            "description": "edit | pause | resume | complete | blocked",
+            "enum": [
+              "edit",
+              "pause",
+              "resume",
+              "complete",
+              "blocked"
+            ]
+          },
+          "objective": {
+            "type": "string",
+            "description": "Replacement objective; valid only with action edit."
+          },
+          "max_goal_rounds": {
+            "type": "number",
+            "description": "Replacement cap; valid only with action edit."
+          },
+          "blocked_reason": {
+            "type": "string",
+            "description": "Concrete blocking condition; required only with action blocked."
+          }
+        },
+        "required": [
+          "goal_id",
+          "revision",
+          "action"
+        ]
+      }
+    },
+    {
+      "name": "workflow",
+      "description": "Run a JavaScript workflow script that orchestrates subagents at scale. Use this for work that fans out across many independent pieces — an audit over many files, a migration, multi-angle research, adversarial verification of findings — where you write the orchestration as a script instead of delegating turn by turn.\n\nThe workflow's identity rides the `meta` parameter as JSON: required `name` (short kebab-case) and `description` strings, optional `whenToUse` string and `phases` array (`{title, detail?, provider?, model?}`). The `script` parameter is the plain JavaScript body ONLY (NOT TypeScript, and NO `export const meta` statement — meta is a parameter, not code), running with top-level await; end with `return <value>` — the value must be JSON-serializable and is this tool's result.\n\nScript-body hooks:\n- `agent(prompt, opts?): Promise<any>` — run one subagent to completion. Without `opts.schema` it resolves to the child's final text; with `opts.schema` (an object-rooted JSON Schema using ONLY type/properties/required/additionalProperties/items/enum/const/oneOf — no pattern/format/numeric bounds) it resolves to the validated object. Resolves `null` when the child fails (filter with `.filter(Boolean)`). Other opts: `label` (display), `phase` (progress group), and independent `provider`/`model` LLM target overrides (either may be provided alone). Anything else (`effort`/`isolation`/`agentType`) is rejected loudly.\n- `pipeline(items, ...stages): Promise<any[]>` — run each item through the stages independently with NO barrier between stages (prefer this for multi-stage work). Each stage receives `(prev, item, index)`. An ordinary stage throw drops that ITEM to `null` and skips its remaining stages.\n- `parallel(thunks): Promise<any[]>` — run zero-argument functions concurrently and await ALL of them (a barrier; use only when a stage genuinely needs every prior result together). A throwing thunk resolves to `null`.\n- `phase(title)` — start a progress phase; `log(message)` — narrate progress; `args` — the tool call's `args` input, verbatim.\n\nMisused hooks (bad arguments, unknown options, unsupported schemas, tripped caps) throw errors that ALWAYS kill the script — they never dissolve into a per-item `null`.\n\nConstraints: concurrency and total-agent caps apply; no filesystem, network, timers, or Node.js APIs are provided — the agents do the work, the script only coordinates them. The run executes in the foreground: this call returns when the whole script finishes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "script": {
+            "type": "string",
+            "description": "The plain-JS workflow script body (top-level await allowed; NO `export const meta` statement; end with `return <json-value>`)."
+          },
+          "meta": {
+            "type": "object",
+            "description": "The workflow identity block (plain JSON — never code).",
+            "additionalProperties": true,
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "Short kebab-case workflow name."
+              },
+              "description": {
+                "type": "string",
+                "description": "One-line description of what the workflow does."
+              },
+              "whenToUse": {
+                "type": "string",
+                "description": "Optional guidance on when this workflow applies."
+              },
+              "phases": {
+                "type": "array",
+                "description": "Optional phase declarations matched by phase() calls.",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "title": {
+                      "type": "string",
+                      "description": "The phase title phase() calls match by exact string."
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "Optional one-line description of the phase."
+                    },
+                    "provider": {
+                      "type": "string",
+                      "description": "Optional provider override this phase is expected to use."
+                    },
+                    "model": {
+                      "type": "string",
+                      "description": "Optional model override this phase is expected to use."
+                    }
+                  },
+                  "required": [
+                    "title"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "name",
+              "description"
+            ]
+          },
+          "args": {
+            "type": "object",
+            "description": "Optional JSON input exposed to the script as the `args` global (wrap a bare list as a field, e.g. {\"files\": [...]}).",
+            "additionalProperties": true
+          }
+        },
+        "required": [
+          "script",
+          "meta"
+        ]
+      }
+    },
+    {
+      "name": "write",
+      "description": "Create or fully replace a UTF-8 text file.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "file_path": {
+            "type": "string",
+            "description": "Path to write, resolved by the filesystem backend."
+          },
+          "content": {
+            "type": "string",
+            "description": "Full UTF-8 text content to write."
+          },
+          "sandbox_permissions": {
+            "type": "string",
+            "description": "The wider sandbox mode this file operation needs. Only valid as a one-shot retry of an operation the sandbox just denied; requires justification and user approval. `use_default` asks for no change and equals omitting the field.",
+            "enum": [
+              "workspace-write",
+              "danger-full-access",
+              "use_default"
+            ]
+          },
+          "justification": {
+            "type": "string",
+            "description": "Required with sandbox_permissions: one sentence for the user explaining why this exact file operation needs the wider access."
+          }
+        },
+        "required": [
+          "file_path",
+          "content"
+        ]
+      }
+    }
+  ],
+  "changes": []
+}

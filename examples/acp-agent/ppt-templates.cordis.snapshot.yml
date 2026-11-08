@@ -1,0 +1,31 @@
+# 无密钥回放复用真实 PPT 服务装配，仅将模型适配器替换为日志回放。
+- id: base
+  name: '@deepseek-ai/cordis-plugin-include'
+  config:
+    path: ./cordis.yml
+    patches:
+      - id: llm-deepseek
+        name: 'coding-llm-deepseek'
+        disabled: true
+      - insert:
+          - id: attachment-local
+            name: 'coding-attachment-local'
+          - id: llm-replay
+            name: 'coding-llm-replay'
+            config:
+              providers:
+                - id: deepseek-official
+                  name: DeepSeek
+                  models:
+                    - id: deepseek-v4-pro
+          - id: webserver
+            name: 'coding-host-webserver'
+            config:
+              host: '127.0.0.1'
+              port: 0
+          - id: connection
+            name: 'coding-client-connection'
+          - id: ppt-workbench
+            name: 'coding-ppt-workbench'
+          - id: tool-ppt
+            name: 'coding-tool-ppt'

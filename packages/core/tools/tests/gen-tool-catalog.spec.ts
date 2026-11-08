@@ -1,5 +1,5 @@
 /**
- * Guarantee tests for the tool-schema catalog generator (`scripts/gen-tool-catalog.ts`).
+ * 工具 schema 目录生成器的注册清单与输出约定测试。
  */
 
 import { Context } from '@deepseek-ai/cordis'
@@ -37,15 +37,18 @@ describe('gen-tool-catalog collectToolCatalog', () => {
       'browser_screenshot', 'browser_script', 'browser_scroll', 'browser_scroll', 'browser_select',
       'browser_snapshot', 'browser_snapshot', 'browser_space_close', 'browser_space_open', 'browser_status',
       'browser_tabs', 'browser_upload', 'browser_upload', 'browser_viewport', 'browser_wait',
-      'browser_wait_for_human', 'browser_wait_for_response', 'browser_wait_for_selector', 'browser_wait_for_url',
+      'browser_wait_for_human', 'browser_wait_for_response', 'browser_wait_for_selector', 'browser_wait_for_url', 'canvas_state',
       'computer_click', 'computer_confirm', 'computer_drag', 'computer_list_apps', 'computer_observe',
       'computer_perform_action', 'computer_press_key', 'computer_scroll', 'computer_set_value',
       'computer_type_text', 'computer_wait', 'context_compact', 'cordis_define', 'cordis_inspect_list',
       'cordis_inspect_query', 'cordis_inspect_self', 'cordis_run', 'cordis_stop', 'cordis_undefine', 'create_goal',
-      'edit', 'exit_plan_mode', 'followup_task', 'followup_task', 'get_goal', 'glob', 'grep', 'interrupt_agent',
+      'edit', 'edit_image', 'exit_plan_mode', 'followup_task', 'followup_task', 'generate_image', 'generate_images',
+      'get_goal', 'glob', 'grep', 'interrupt_agent',
       'interrupt_agent', 'job_kill', 'job_list', 'job_output', 'list_agents', 'list_agents', 'lsp',
       'memory_delete', 'memory_list', 'memory_read', 'memory_save', 'memory_update', 'ppt_check', 'ppt_create',
-      'ppt_edit', 'ppt_export', 'ppt_import', 'ppt_open', 'ppt_read', 'ppt_redo', 'ppt_render', 'ppt_undo',
+      'ppt_delete_template', 'ppt_edit', 'ppt_export', 'ppt_import', 'ppt_import_template', 'ppt_open',
+      'ppt_read', 'ppt_redo', 'ppt_rename_template', 'ppt_render',
+      'ppt_save_template', 'ppt_templates', 'ppt_undo',
       'pwsh', 'pwsh', 'ralph',
       'read', 'read_image', 'report', 'run_code', 'schedule_create', 'schedule_delete', 'schedule_list',
       'send_message', 'send_message', 'session_event_read', 'session_event_search', 'session_event_trace',
@@ -54,7 +57,7 @@ describe('gen-tool-catalog collectToolCatalog', () => {
       'terminal_open', 'terminal_read', 'terminal_send', 'terminal_signal', 'todo_write', 'update_goal',
       'wait_agent', 'wait_agent', 'web_fetch', 'web_search', 'workflow', 'write', 'write_stdin',
     ])
-    // Every tool carries a JSON-Schema `parameters` object (what the model sees).
+    // parameters 与模型实际看到的 JSON Schema 使用同一结构。
     for (const entry of catalog) {
       for (const schema of entry.schemas) {
         expect((schema.parameters as unknown as JsonSchema).type).toBe('object')
@@ -106,8 +109,13 @@ describe('gen-tool-catalog collectToolCatalog', () => {
     const bash = catalog.find(entry => entry.pkg === 'coding-tool-bash')
     expect(bash?.sources.bash).toBe('packages/shell/tool-bash/src/index.ts')
     const ppt = catalog.find(entry => entry.pkg === 'coding-tool-ppt')
-    expect(ppt?.schemas).toHaveLength(10)
+    expect(ppt?.schemas).toHaveLength(15)
     expect(ppt?.sources.ppt_render).toBe('packages/ppt/tool-ppt/src/index.ts')
+    expect(ppt?.sources.ppt_templates).toBe('packages/ppt/tool-ppt/src/index.ts')
+    expect(ppt?.sources.ppt_save_template).toBe('packages/ppt/tool-ppt/src/index.ts')
+    expect(ppt?.sources.ppt_import_template).toBe('packages/ppt/tool-ppt/src/index.ts')
+    expect(ppt?.sources.ppt_rename_template).toBe('packages/ppt/tool-ppt/src/index.ts')
+    expect(ppt?.sources.ppt_delete_template).toBe('packages/ppt/tool-ppt/src/index.ts')
     const control = catalog.find(entry => entry.pkg === 'coding-tool-subagent-control')
     expect(control?.sources).toEqual({
       interrupt_agent: 'packages/subagent/tool-subagent-control/src/index.ts',

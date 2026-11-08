@@ -12,6 +12,9 @@
       "path": "../../../vendor/cordis"
     },
     {
+      "path": "../../../vendor/schemastery"
+    },
+    {
       "path": "../../core/session"
     },
     {
@@ -19,6 +22,18 @@
     },
     {
       "path": "../../host/webserver"
+    },
+    {
+      "path": "../../util/home-paths"
+    },
+    {
+      "path": "../../util/atomic-write"
+    },
+    {
+      "path": "../../util/brand"
+    },
+    {
+      "path": "../../subprocess/subprocess"
     },
     {
       "path": "../../runtime-diagnostics/invariants"

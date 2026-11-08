@@ -82,6 +82,8 @@ const BACKGROUND_TASK_ADMISSION_CONFIG = fileURLToPath(
 )
 const PRODUCT_SUBAGENT_CODEX_CONFIG = fileURLToPath(new URL('../product-subagent-codex.cordis.yml', import.meta.url))
 const PRODUCT_SUBAGENT_BOTH_CONFIG = fileURLToPath(new URL('../product-subagent-both.cordis.yml', import.meta.url))
+const PPT_TEMPLATES_CONFIG = fileURLToPath(new URL('../ppt-templates.cordis.yml', import.meta.url))
+const PPT_TEMPLATE_CLOCK = new URL('./fixtures/ppt-template-clock.mjs', import.meta.url).href
 const PRODUCT_SUBAGENT_RESULT_DIAGNOSTIC_CONFIG = fileURLToPath(
   new URL('../subagent-result-diagnostic.cordis.yml', import.meta.url),
 )
@@ -177,6 +179,18 @@ const SCENARIOS: Scenario[] = [
   // text-turn is the default header pin and owns the prompt and tool-schema
   // sidecars reused by alternate classes with identical component sequences.
   { name: 'text-turn', hasModelTurn: true, recorded: true, pinsHeader: true },
+  // 保存后产生的模板 UUID 由前一步工具结果提供，回放脚本从实时请求提取它。
+  {
+    name: 'ppt-templates',
+    hasModelTurn: true,
+    recorded: false,
+    overridden: true,
+    pinsHeader: true,
+    headerClass: 'ppt-templates',
+    systemPromptSource: 'product-subagent-codex',
+    configPath: PPT_TEMPLATES_CONFIG,
+    env: { NODE_OPTIONS: [process.env.NODE_OPTIONS, `--import=${PPT_TEMPLATE_CLOCK}`].filter(Boolean).join(' ') },
+  },
   // Product-subagent scenarios are authored schema-isolation fixtures: they
   // reuse the stable text-turn transcript so only Loader-composed headers and
   // tool sidecars vary. Model output and usage are not evidence here, so record
@@ -725,6 +739,41 @@ defineAcpSnapshotSuite({
   scenarios: SCENARIOS,
   mode: snapshotModeFromEnv(process.env.DSH_SNAPSHOT),
   hasPwsh,
+})
+
+it('PPT 模板工具只进入专属组装，快照日志保留文本结果', () => {
+  const schemas = (name: string): string[] => {
+    const pin = JSON.parse(readFileSync(join(SNAPSHOTS_DIR, name, 'tool-schemas.expected.json'), 'utf8')) as {
+      initial: { name: string }[]
+    }
+    return pin.initial.map(tool => tool.name).filter(name => name.startsWith('ppt_'))
+  }
+  expect(schemas('text-turn')).toEqual([])
+  expect(schemas('ppt-templates')).toEqual([
+    'ppt_check', 'ppt_create', 'ppt_delete_template', 'ppt_edit', 'ppt_export',
+    'ppt_import', 'ppt_import_template', 'ppt_open', 'ppt_read', 'ppt_redo',
+    'ppt_rename_template', 'ppt_render', 'ppt_save_template', 'ppt_templates', 'ppt_undo',
+  ])
+
+  const events = fixtureRecords('ppt-templates') as Array<{
+    type: string
+    data?: {
+      name?: string
+      message?: {
+        content?: Array<{ type: string; isError?: boolean; content?: Array<{ type: string; text?: string }> }>
+      }
+    }
+  }>
+  expect(events.filter(event => event.type === 'tool/call').map(event => event.data?.name)).toEqual([
+    'ppt_templates', 'ppt_create', 'ppt_save_template', 'ppt_templates', 'ppt_create', 'ppt_read',
+  ])
+  const toolResults = events.filter(event => event.type === 'tool/result')
+    .flatMap(event => event.data?.message?.content ?? [])
+  expect(toolResults.every(result => result.isError === false)).toBe(true)
+  const results = toolResults.flatMap(item => item.content ?? [])
+  expect(results).toHaveLength(6)
+  expect(results.every(item => item.type === 'text')).toBe(true)
+  expect(JSON.stringify(results)).not.toMatch(/data:[^;]+;base64|application\/octet-stream/u)
 })
 
 it('pins native DeepSeek image offload in the request sent by the assembled app', async () => {

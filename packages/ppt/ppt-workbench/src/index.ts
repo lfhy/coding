@@ -7,9 +7,12 @@
  * @module coding-ppt-workbench
  */
 
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
-import { dirname, join } from 'node:path'
+import { readFile } from 'node:fs/promises'
+import { basename, isAbsolute, join } from 'node:path'
 import { Service, type Context } from '@deepseek-ai/cordis'
+import z from '@deepseek-ai/schemastery'
+import { resolveDshHome } from 'coding-home-paths'
+import { remoteWorkspacePath } from 'coding-subprocess'
 import type {} from 'coding-host-webserver'
 import type {} from 'coding-session'
 import type { SessionId } from 'coding-session/types'
@@ -17,14 +20,16 @@ import { checkDeck, type PptCheckResult } from './check.ts'
 import { buildPdf } from './export/pdf.ts'
 import { buildPptx } from './export/pptx.ts'
 import { collectFonts, systemFontDirs, type SkippedFont } from './fonts.ts'
-import { importPptx } from './import.ts'
+import { importPptx, PPT_IMPORT_MAX_BYTES } from './import.ts'
 import { renderPages, type PageCapture, type RenderedPage } from './render.ts'
-import { PptModelError, type SlideSizeId, type ThemeId } from 'coding-ppt-model'
+import { parseDeck, PptModelError, type SlideSizeId, type ThemeId } from 'coding-ppt-model'
 import { installRoutes } from './routes.ts'
+import { publishProject, readWorkspaceFile, readWorkspaceMedia } from './template-project.ts'
+import { PptTemplateStore, type PptTemplateDetail, type PptTemplateSummary } from './template-store.ts'
 import {
-  createProject, createProjectFromDeck, editProject, listProjects, loadProject, readProjectMedia, redoProject,
+  createProject, editProject, listProjects, loadProject, readProjectMedia, redoProject,
   resolveProjectDir, suggestProjectDir, undoProject, writeExport, writeProjectMedia,
-  type PptProjectSummary, type PptSnapshot,
+  PptStoreError, type PptProjectSummary, type PptSnapshot,
 } from './store.ts'
 
 export type * from './store.ts'
@@ -32,6 +37,13 @@ export type * from 'coding-ppt-model'
 export type * from './ops.ts'
 export { PptModelError } from 'coding-ppt-model'
 export { PptStoreError } from './store.ts'
+export type { PptTemplateDetail, PptTemplateId, PptTemplateSummary } from './template-store.ts'
+
+/** 本机模板仓库路径；远程 marker 工作区不通过此设置转为本机工程。 */
+export interface Config {
+  /** 模板仓库的绝对路径；默认使用 Harness home 下的 `ppt-templates`。 */
+  templatesDir?: string
+}
 
 /** 模型要求面板打开某个工程的那一次请求；`at` 让面板只处理一次。 */
 export interface PptOpenRequest {
@@ -68,6 +80,9 @@ declare module '@deepseek-ai/cordis' {
 /** 会话级工程服务；写入由存储层按工程串行化，路由层负责转换错误码。 */
 export default class PptProjects extends Service {
   static inject = ['sessions', 'webServer', 'connection']
+  static Config: z<Config> = z.object({
+    templatesDir: z.string(),
+  })
 
   /** 每个会话当前打开的工程目录（绝对路径）。 */
   private readonly active = new Map<string, string>()
@@ -76,9 +91,14 @@ export default class PptProjects extends Service {
 
   /** 导出时要扫描的字体目录；默认取平台字体目录。 */
   private fontDirs: readonly string[] = systemFontDirs()
+  private readonly templates: PptTemplateStore
 
-  constructor(ctx: Context) {
+  constructor(ctx: Context, config: Config = {}) {
     super(ctx, 'pptProjects')
+    if (config.templatesDir !== undefined && !isAbsolute(config.templatesDir)) {
+      throw new PptStoreError('bad-request', 'templatesDir 必须是绝对路径')
+    }
+    this.templates = new PptTemplateStore(config.templatesDir ?? join(resolveDshHome(), 'ppt-templates'))
     installRoutes(ctx, this)
     ctx.effect(() => () => {
       this.active.clear()
@@ -346,27 +366,152 @@ export default class PptProjects extends Service {
    * @param source - 工作区相对的 .pptx 路径。
    * @param options - 目标目录与标题（都缺省时按源文件名生成）。
    * @returns 新工程快照与未能表达的类别。
+   * @throws PptStoreError 远程工作区、越界、文件超限或目标已有内容时；失败不切换当前工程。
    */
   async import(sessionId: string, source: string, options: { dir?: string; title?: string }): Promise<{
     snapshot: PptSnapshot
     dropped: readonly string[]
   }> {
-    const root = this.rootOf(sessionId)
+    const root = await this.localRoot(sessionId)
+    if (typeof source !== 'string' || !/\.pptx$/iu.test(source)) {
+      throw new PptStoreError('bad-request', '只支持导入 .pptx 文件')
+    }
     const sourcePath = resolveProjectDir(root, source)
-    const bytes = await readFile(sourcePath).catch(() => undefined)
-    if (bytes === undefined) throw new PptModelError(`找不到要导入的文件：${source}`)
-    const title = options.title ?? source.split(/[\\/]/u).pop()?.replace(/\.pptx$/iu, '') ?? '导入的演示文稿'
-    const imported = importPptx(new Uint8Array(bytes), { title })
+    const bytes = await readWorkspaceFile(root, sourcePath, PPT_IMPORT_MAX_BYTES)
+    const title = options.title ?? basename(source).replace(/\.pptx$/iu, '')
+    const imported = importPptx(bytes, { title })
     const dir = options.dir === undefined
       ? await suggestProjectDir(root, title)
       : resolveProjectDir(root, options.dir)
-    const snapshot = await createProjectFromDeck(dir, imported.deck)
-    for (const entry of imported.media) {
-      await mkdir(dirname(join(dir, entry.part)), { recursive: true })
-      await writeFile(join(dir, entry.part), entry.bytes)
-    }
+    const snapshot = await publishProject(root, dir, imported.deck, imported.media)
     this.focus(sessionId, dir)
     return { snapshot, dropped: imported.dropped }
+  }
+
+  private async localRoot(sessionId: string): Promise<string> {
+    const root = this.rootOf(sessionId)
+    try {
+      if (await remoteWorkspacePath('.', root) !== undefined) {
+        throw new PptStoreError('forbidden', 'PPT 工程导入、保存和套用暂不支持远程工作区')
+      }
+    } catch (error) {
+      if (error instanceof PptStoreError) throw error
+      throw new PptStoreError('forbidden', `无法核实本机工作区：${error instanceof Error ? error.message : String(error)}`)
+    }
+    return root
+  }
+
+  /** 列出本机用户模板；不切换任何会话的当前工程。
+   * @returns 按创建时间排列的模板摘要。
+   * @throws PptStoreError 模板仓库损坏或无法访问时。
+   */
+  listTemplates(): Promise<readonly PptTemplateSummary[]> {
+    return this.templates.list()
+  }
+
+  /** 读取模板的完整 deck；不切换当前工程。
+   * @param id - 模板 UUID。
+   * @returns 模板详情。
+   * @throws PptStoreError 模板不存在或仓库内容不合法时。
+   */
+  readTemplate(id: string): Promise<PptTemplateDetail> {
+    return this.templates.read(id)
+  }
+
+  /** 将无宏 PPTX 转成可编辑模板；丢失的复杂结构在返回值中列出。
+   * @param fileName - 安全的单层 .pptx 文件名。
+   * @param bytes - 压缩源文件字节，上限 8 MiB；不会保存源文件本身。
+   * @param options - 模板名称；缺省取去掉扩展名的文件名。
+   * @returns 持久化的模板详情。
+   * @throws PptStoreError 文件名、大小、内容或仓库不合法时。
+   */
+  async importTemplate(fileName: string, bytes: Uint8Array, options: { name?: string } = {}): Promise<PptTemplateDetail> {
+    if (typeof fileName !== 'string' || fileName.length > 200 || fileName === '.' || fileName === '..'
+      || fileName.includes('/') || fileName.includes('\\') || /[\u0000-\u001f\u007f:*?"<>|]/u.test(fileName)
+      || !/\.pptx$/iu.test(fileName)) {
+      throw new PptStoreError('bad-request', '模板来源必须是安全的 .pptx 文件名')
+    }
+    if (!(bytes instanceof Uint8Array) || bytes.byteLength === 0 || bytes.byteLength > PPT_IMPORT_MAX_BYTES) {
+      throw new PptStoreError('bad-request', 'PPTX 文件大小必须在 1 字节到 8 MiB 之间')
+    }
+    const title = basename(fileName).replace(/\.pptx$/iu, '').slice(0, 160)
+    if (title.trim() === '') throw new PptStoreError('bad-request', '模板来源文件名不能只包含扩展名')
+    const imported = importPptx(bytes, { title })
+    return this.templates.create({
+      name: options.name ?? title, deck: parseDeck(imported.deck), media: imported.media,
+      sourceName: fileName, dropped: imported.dropped,
+    })
+  }
+
+  /** 将会话工作区里的 PPTX 文件保存为用户模板，不创建工程或切换当前工程。
+   * @param sessionId - 本机会话身份。
+   * @param source - 工作区内的 .pptx 文件路径。
+   * @param options - 可选模板名称；缺省取源文件名去掉扩展名。
+   * @returns 包含来源文件名与导入限制的持久模板详情。
+   * @throws PptStoreError 远程工作区、路径越界、符号链接、文件超限或文件名不安全时。
+   */
+  async importTemplateFromFile(sessionId: string, source: string, options: { name?: string } = {}): Promise<PptTemplateDetail> {
+    const root = await this.localRoot(sessionId)
+    if (typeof source !== 'string' || !/\.pptx$/iu.test(source)) {
+      throw new PptStoreError('bad-request', '模板来源只支持 .pptx 文件')
+    }
+    const fileName = basename(source)
+    const sourcePath = resolveProjectDir(root, source)
+    const bytes = await readWorkspaceFile(root, sourcePath, PPT_IMPORT_MAX_BYTES)
+    return this.importTemplate(fileName, bytes, options)
+  }
+
+  /** 保存工程整稿和全部引用媒体的原字节；不改变当前工程。
+   * @param sessionId - 本机会话身份。
+   * @param options - 名称和可选工程目录；缺省取会话当前工程。
+   * @returns 持久化的模板详情。
+   * @throws PptStoreError 远程工作区、缺图、符号链接、越界或仓库错误时。
+   */
+  async saveTemplate(sessionId: string, options: { name: string; dir?: string }): Promise<PptTemplateDetail> {
+    const root = await this.localRoot(sessionId)
+    const dir = this.resolveDir(sessionId, options.dir)
+    await readWorkspaceFile(root, join(dir, 'deck.json'), 8 * 1024 * 1024)
+    const snapshot = await loadProject(dir)
+    const media = await readWorkspaceMedia(root, dir, snapshot.deck)
+    return this.templates.create({ name: options.name, deck: snapshot.deck, media })
+  }
+
+  /** 重命名模板但不修改 deck 或已由模板创建的工程。
+   * @param id - 模板 UUID。
+   * @param name - 新名称。
+   * @returns 新摘要。
+   * @throws PptStoreError 模板不存在或名称无效时。
+   */
+  renameTemplate(id: string, name: string): Promise<PptTemplateSummary> {
+    return this.templates.rename(id, name)
+  }
+
+  /** 删除模板库条目，不影响已创建的工程；模型应传当前名称以防重命名后误删。
+   * @param id - 模板 UUID。
+   * @param expectedName - 模型确认时看到的名称，由仓库在删除锁内核对。
+   * @returns 删除完成时兑现。
+   * @throws PptStoreError 模板不存在、名称已变化或仓库内容不合法时。
+   */
+  deleteTemplate(id: string, expectedName?: string): Promise<void> {
+    return this.templates.delete(id, expectedName)
+  }
+
+  /** 从模板创建可独立编辑的工程副本；成功发布后才切换会话焦点。
+   * @param sessionId - 本机会话身份。
+   * @param id - 模板 UUID。
+   * @param options - 新标题和目标目录；缺省用模板名生成目录。
+   * @returns 初始版本号为 1 的工程快照。
+   * @throws PptStoreError 远程工作区、目标已存在、目录越界或模板损坏时。
+   */
+  async createFromTemplate(sessionId: string, id: string, options: { title?: string; dir?: string } = {}): Promise<PptSnapshot> {
+    const root = await this.localRoot(sessionId)
+    const { detail: template, media } = await this.templates.readWithMedia(id)
+    const title = options.title ?? template.name
+    const deck = parseDeck({ ...template.deck, title })
+    const dir = options.dir === undefined ? await suggestProjectDir(root, title) : resolveProjectDir(root, options.dir)
+    const snapshot = await publishProject(root, dir, deck, media)
+    this.focus(sessionId, dir)
+    return snapshot
   }
 
   /**

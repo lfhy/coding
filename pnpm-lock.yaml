@@ -536,6 +536,9 @@ importers:
       coding-browser-playwright:
         specifier: workspace:*
         version: link:../packages/browser/browser-playwright
+      coding-client-connection:
+        specifier: workspace:*
+        version: link:../packages/client/connection
       coding-code-runtime-worker-thread:
         specifier: workspace:*
         version: link:../packages/code-runtime/code-runtime-worker-thread
@@ -596,6 +599,9 @@ importers:
       coding-hooks-codex:
         specifier: workspace:*
         version: link:../packages/hooks/hooks-codex
+      coding-host-webserver:
+        specifier: workspace:*
+        version: link:../packages/host/webserver
       coding-invariants:
         specifier: workspace:*
         version: link:../packages/runtime-diagnostics/invariants
@@ -629,6 +635,9 @@ importers:
       coding-plan-mode:
         specifier: workspace:*
         version: link:../packages/plan/plan-mode
+      coding-ppt-workbench:
+        specifier: workspace:*
+        version: link:../packages/ppt/ppt-workbench
       coding-progress-reminder:
         specifier: workspace:*
         version: link:../packages/guard/progress-reminder
@@ -782,6 +791,9 @@ importers:
       coding-tool-lsp:
         specifier: workspace:*
         version: link:../packages/lsp/tool-lsp
+      coding-tool-ppt:
+        specifier: workspace:*
+        version: link:../packages/ppt/tool-ppt
       coding-tool-pwsh:
         specifier: workspace:*
         version: link:../packages/shell/tool-pwsh
@@ -7280,6 +7292,9 @@ importers:
 
   packages/ppt/ppt-workbench:
     dependencies:
+      '@deepseek-ai/schemastery':
+        specifier: link:../../../vendor/schemastery
+        version: link:../../../vendor/schemastery
       fflate:
         specifier: ^0.8.2
         version: 0.8.3
@@ -7305,9 +7320,18 @@ importers:
       '@types/react-dom':
         specifier: ~18.3.0
         version: 18.3.7(@types/react@18.3.31)
+      coding-atomic-write:
+        specifier: workspace:^
+        version: link:../../util/atomic-write
+      coding-brand:
+        specifier: workspace:^
+        version: link:../../util/brand
       coding-client-connection:
         specifier: workspace:^
         version: link:../../client/connection
+      coding-home-paths:
+        specifier: workspace:^
+        version: link:../../util/home-paths
       coding-host-webserver:
         specifier: workspace:^
         version: link:../../host/webserver
@@ -7320,6 +7344,9 @@ importers:
       coding-session:
         specifier: workspace:^
         version: link:../../core/session
+      coding-subprocess:
+        specifier: workspace:^
+        version: link:../../subprocess/subprocess
       react:
         specifier: ^18.2.0
         version: 18.3.1

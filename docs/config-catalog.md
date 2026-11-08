@@ -870,9 +870,9 @@ export interface Config {
    */
   sessionExportCompressionLevel?: 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9
   /**
-   * Maximum physical size of a cold Session artifact eligible for blankness
-   * verification. Zero disables probes.
-   * @default 1024
+   * Maximum physical size of a cold Session artifact eligible for metadata
+   * verification (blankness and compact preset selection). Zero disables probes.
+   * @default 16384
    */
   coldBlankProbeMaxBytes?: number
 }
@@ -1654,6 +1654,22 @@ export interface PlanModeConfig {
 ```
 
 Source: [`packages/plan/plan-mode/src/index.ts:67`](../packages/plan/plan-mode/src/index.ts)
+
+<a id="coding-ppt-workbench"></a>
+
+## `coding-ppt-workbench`
+
+Requires: `sessions` · `webServer` · `connection`
+
+```ts config-catalog
+/** 本机模板仓库路径；远程 marker 工作区不通过此设置转为本机工程。 */
+export interface Config {
+  /** 模板仓库的绝对路径；默认使用 Harness home 下的 `ppt-templates`。 */
+  templatesDir?: string
+}
+```
+
+Source: [`packages/ppt/ppt-workbench/src/index.ts:43`](../packages/ppt/ppt-workbench/src/index.ts)
 
 <a id="coding-progress-reminder"></a>
 
@@ -3706,7 +3722,6 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 - `coding-lsp` ([`packages/lsp/lsp/src/index.ts`](../packages/lsp/lsp/src/index.ts))
 - `coding-memory-context` — requires `agents` · `memory` ([`packages/memory/memory-context/src/index.ts`](../packages/memory/memory-context/src/index.ts))
 - `coding-memory-local` ([`packages/memory/memory-local/src/index.ts`](../packages/memory/memory-local/src/index.ts))
-- `coding-ppt-workbench` — requires `sessions` · `webServer` · `connection` ([`packages/ppt/ppt-workbench/src/index.ts`](../packages/ppt/ppt-workbench/src/index.ts))
 - `coding-schedule` — requires `agents` · `sessions` · `tools` · `sessionPersistence` ([`packages/schedule/schedule/src/index.ts`](../packages/schedule/schedule/src/index.ts))
 - `coding-session` ([`packages/core/session/src/index.ts`](../packages/core/session/src/index.ts))
 - `coding-session-checkpoint-policy` — requires `llm` · `sessionPersistence` · `sessions` · `tools` ([`packages/session/session-checkpoint-policy/src/index.ts`](../packages/session/session-checkpoint-policy/src/index.ts))

@@ -1,0 +1,20 @@
+# ACP 快照只装配既有 Host 服务与 PPT 工具；模板目录跟随场景独立的 DSH_HOME。
+- id: base
+  name: '@deepseek-ai/cordis-plugin-include'
+  config:
+    path: ./cordis.yml
+    patches:
+      - insert:
+          - id: attachment-local
+            name: 'coding-attachment-local'
+          - id: webserver
+            name: 'coding-host-webserver'
+            config:
+              host: '127.0.0.1'
+              port: 0
+          - id: connection
+            name: 'coding-client-connection'
+          - id: ppt-workbench
+            name: 'coding-ppt-workbench'
+          - id: tool-ppt
+            name: 'coding-tool-ppt'

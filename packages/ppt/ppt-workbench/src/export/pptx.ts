@@ -153,7 +153,7 @@ function shape(element: BoxElement, index: number): string {
 
 function line(element: Extract<PptElement, { kind: 'line' }>, index: number): string {
   return `<p:cxnSp><p:nvCxnSpPr><p:cNvPr id="${index + 2}" name="Line ${index + 2}"/>`
-    + '<p:cNvCxnSpPr/><p:nvPr/></p:cNvCxnSpPr>'
+    + '<p:cNvCxnSpPr/><p:nvPr/></p:nvCxnSpPr>'
     + `<p:spPr>${xfrm(element)}<a:prstGeom prst="line"><a:avLst/></a:prstGeom>`
     + `<a:ln w="${emu(element.width)}"><a:solidFill><a:srgbClr val="${srgb(element.color)}"/>`
     + '</a:solidFill></a:ln></p:spPr></p:cxnSp>'

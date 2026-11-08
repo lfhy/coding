@@ -79,7 +79,7 @@ async function readJson(req: IncomingMessage): Promise<Record<string, unknown>> 
   for await (const chunk of req) {
     const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk))
     size += buffer.length
-    if (size > MAX_BODY) throw new PptStoreError('bad-request', '请求体超过 512KB')
+    if (size > MAX_BODY) throw new PptStoreError('bad-request', '请求体超过 16MiB')
     chunks.push(buffer)
   }
   if (chunks.length === 0) return {}
