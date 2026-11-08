@@ -79,6 +79,58 @@ describe('语义图标适配', () => {
     expect(svg.querySelectorAll('path').length).toBeGreaterThan(0)
   })
 
+  it('撤销与重做使用相向的回转箭头并传递默认/指定尺寸和类名', () => {
+    const view = render(<><Icon name="undo" /><Icon name="redo" size={18} className="history-icon" /></>)
+    const [undo, redo] = view.container.querySelectorAll<HTMLElement>('.semi-icon')
+    expect(undo?.style.fontSize).toBe('16px')
+    expect(redo?.style.fontSize).toBe('18px')
+    expect(redo?.classList.contains('history-icon')).toBe(true)
+    expect(undo?.getAttribute('aria-hidden')).toBe('true')
+    expect(redo?.getAttribute('aria-hidden')).toBe('true')
+    const undoSvg = undo?.querySelector('svg')
+    const redoSvg = redo?.querySelector('svg')
+    expect(undoSvg?.getAttribute('viewBox')).toBe('0 0 24 24')
+    expect(redoSvg?.getAttribute('viewBox')).toBe('0 0 24 24')
+    expect(undoSvg?.querySelector('path')?.getAttribute('fill')).toBe('currentColor')
+    expect(redoSvg?.querySelector('path')?.getAttribute('fill')).toBe('currentColor')
+    expect(undoSvg?.querySelector('path')?.getAttribute('d')).not.toBe(redoSvg?.querySelector('path')?.getAttribute('d'))
+  })
+
+  it('PPT 品牌标按语义绘制原始双色图形并透传尺寸和类名', () => {
+    const defaults = render(<Icon name="ppt-workbench" />)
+    const defaultIcon = defaults.container.querySelector('svg') as SVGElement
+    expect(defaultIcon.getAttribute('width')).toBe('16')
+    expect(defaultIcon.getAttribute('height')).toBe('16')
+    expect(defaultIcon.getAttribute('viewBox')).toBe('0 0 36 36')
+    expect(defaultIcon.getAttribute('aria-hidden')).toBe('true')
+
+    const view = render(<Icon name="ppt-workbench" size={20} className="ppt-brand" />)
+    const icon = view.container.querySelector('svg.ppt-brand') as SVGElement
+    expect(icon.getAttribute('width')).toBe('20')
+    expect(icon.getAttribute('height')).toBe('20')
+    expect(icon.getAttribute('aria-hidden')).toBe('true')
+    expect(icon.querySelector('g')?.getAttribute('transform')).toBe('translate(18 18) scale(1.3) translate(-18 -18)')
+    const rects = Array.from(icon.querySelectorAll('rect'))
+    expect(rects.map(rect => [rect.getAttribute('x'), rect.getAttribute('y'), rect.getAttribute('width'), rect.getAttribute('height')]))
+      .toEqual([['13.5', '8', '14', '11'], ['8', '13.5', '17', '13'], ['11.5', '17', '10', '2'], ['11.5', '21', '6.5', '2']])
+    expect(rects.slice(2).map(rect => rect.getAttribute('fill'))).toEqual(['#FFFFFF', '#FFFFFF'])
+    expect(rects[3]?.getAttribute('fill-opacity')).toBe('0.85')
+    expect(Array.from(icon.querySelectorAll('linearGradient'), gradient =>
+      Array.from(gradient.querySelectorAll('stop'), stop => stop.getAttribute('stop-color'))))
+      .toEqual([['#FF9E66', '#FA541C'], ['#69B9FF', '#324DE2']])
+  })
+
+  it('PPT 品牌标的每个实例独占渐变且填充引用正确实例', () => {
+    const view = render(<><Icon name="ppt-workbench" /><Icon name="ppt-workbench" /></>)
+    const icons = Array.from(view.container.querySelectorAll('svg'))
+    const ids = icons.map(icon => Array.from(icon.querySelectorAll('linearGradient'), gradient => gradient.id))
+    expect(new Set(ids.flat()).size).toBe(4)
+    icons.forEach((icon, index) => {
+      const fills = Array.from(icon.querySelectorAll('rect'), rect => rect.getAttribute('fill'))
+      expect(fills.slice(0, 2)).toEqual(ids[index]?.map(id => `url(#${id})`))
+    })
+  })
+
   it('比例轮廓按宽高比绘制，自动选项使用虚线方形', () => {
     const view = render(<AspectRatioGlyph ratio="16:9" className="ratio-glyph" />)
     const glyph = view.container.querySelector('svg.ratio-glyph') as SVGElement

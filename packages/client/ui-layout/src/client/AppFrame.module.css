@@ -33,6 +33,138 @@
   overflow: hidden;
 }
 
+.conversationBody {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.conversationBody > * {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* 最大化时将原对话列脱离网格，仍让同一会话树绘制消息与输入。 */
+.centerCol[data-floating-open] {
+  position: absolute;
+  grid-column: auto;
+  grid-row: auto;
+  z-index: 10;
+  bottom: calc(var(--layout-bottom-height) + 12px);
+  left: calc(var(--layout-sidebar-width) + (100% - var(--layout-sidebar-width)) / 2);
+  box-sizing: border-box;
+  width: min(640px, calc(100% - var(--layout-sidebar-width) - 24px));
+  height: min(700px, calc(100% - var(--layout-bottom-height) - 24px));
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 24px;
+  background: var(--dsw-alias-bg-base);
+  box-shadow: var(--dsw-shadow-lv3);
+  transform: translateX(-50%);
+}
+
+.floatingHeader {
+  display: none;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+  box-sizing: border-box;
+  height: 48px;
+  min-width: 0;
+  padding: 0 12px 0 20px;
+  border-bottom: 1px solid var(--dsw-alias-border-l1);
+  color: var(--dsw-alias-label-secondary);
+  -webkit-app-region: no-drag;
+}
+
+.centerCol[data-floating-open] .floatingHeader {
+  display: flex;
+}
+
+.floatingTitle {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  font: var(--dsw-font-xs-strong-13);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.minimizeButton {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+}
+
+.minimizeButton:hover,
+.floatingLauncher:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.minimizeButton:active,
+.floatingLauncher:active {
+  background: var(--dsw-alias-interactive-bg-active);
+}
+
+.minimizeButton:focus-visible,
+.floatingLauncher:focus-visible {
+  outline: 2px solid var(--dsw-alias-border-l3);
+  outline-offset: 2px;
+}
+
+.floatingLauncher {
+  position: absolute;
+  z-index: 10;
+  bottom: calc(var(--layout-bottom-height) + 12px);
+  left: calc(var(--layout-sidebar-width) + (100% - var(--layout-sidebar-width)) / 2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  box-sizing: border-box;
+  max-width: calc(100% - var(--layout-sidebar-width) - 24px);
+  height: 48px;
+  padding: 0 20px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 24px;
+  background: var(--dsw-alias-button-floating-fill);
+  box-shadow: var(--dsw-shadow-lv2);
+  color: var(--dsw-alias-label-primary);
+  font: var(--dsw-font-xs-strong-13);
+  cursor: pointer;
+  transform: translateX(-50%);
+  -webkit-app-region: no-drag;
+}
+
+.floatingLauncher[data-hidden] {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.launcherLabel {
+  flex: 0 0 auto;
+}
+
+.launcherTitle {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-xs-13);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .detailsCol,
 .workbenchCol {
   grid-column: 3;

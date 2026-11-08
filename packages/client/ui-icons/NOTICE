@@ -1,0 +1,5 @@
+PPT 工作台品牌图标 PptMark 移植自 OMSociety/dsh-ppt-maker：
+https://github.com/OMSociety/dsh-ppt-maker/blob/9d1cf6c0b6953467ede04c3edc2cd54372275cbe/client/icons.tsx#L23-L49
+来源版本：9d1cf6c0b6953467ede04c3edc2cd54372275cbe
+Copyright (c) 2026 OMSociety。原图几何、渐变与固定颜色保留；渐变 id 改为按实例生成，适配共享 Icon 的尺寸和类名。
+该资源遵循 MIT 许可，完整原始许可见 LICENSE.PptMark。

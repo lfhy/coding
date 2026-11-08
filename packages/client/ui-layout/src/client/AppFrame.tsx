@@ -5,7 +5,8 @@
  */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, KeyboardEvent, PointerEvent, ReactNode } from 'react'
-import type { InjectFace, PropsRenderSlots, PropsRuntime, PropsStore } from 'coding-client-ui-slots'
+import type { InjectFace, PropsLocale, PropsRenderSlots, PropsRuntime, PropsStore } from 'coding-client-ui-slots'
+import { IconChevronDownOutline14, IconChevronUpOutline14 } from 'coding-client-ui-icons'
 import type { SessionId } from 'coding-session/types'
 import type { WorkbenchLayoutSnapshot } from './service.ts'
 import {
@@ -48,28 +49,103 @@ export type AppFrameProps =
   & PropsRenderSlots<'sidebar' | 'conversation' | 'details' | 'workbench' | 'workbench.bottom' | 'shell.overlay' | 'shell.page'>
   & PropsStore<ReturnType<typeof createLayoutStore>>
   & InjectFace<AppFrameInjected>
+  & PropsLocale<'layout'>
 
 const SIDEBAR_ID = 'dsh-layout-sidebar'
 const DETAILS_ID = 'dsh-layout-details'
 const WORKBENCH_ID = 'dsh-layout-workbench'
 const WORKBENCH_BOTTOM_ID = 'dsh-layout-workbench-bottom'
+const FLOATING_CONVERSATION_ID = 'dsh-layout-floating-conversation'
 const KEYBOARD_STEP = 16
+const INNER_POPUP_SELECTOR = '[role="menu"], [role="listbox"], [role="dialog"]'
+const OPEN_POPUP_TRIGGER_SELECTOR = '[aria-haspopup][aria-expanded="true"]'
+
+function isPopupVisible(element: Element): boolean {
+  for (let node: Element | null = element; node !== null; node = node.parentElement) {
+    if (node.matches('[hidden], [inert], [aria-hidden="true"]')) return false
+    const style = getComputedStyle(node)
+    if (style.display === 'none' || style.visibility === 'hidden') return false
+  }
+  return true
+}
+
+/** 内层弹层可能只在 document 的原生键盘监听器里关闭，不一定取消 Escape 默认行为。 */
+function hasInnerPopup(root: HTMLElement, target: EventTarget | null): boolean {
+  if (target instanceof Element) {
+    const targetPopup = target.closest(INNER_POPUP_SELECTOR)
+    if (targetPopup !== null && targetPopup !== root && isPopupVisible(targetPopup)) return true
+  }
+
+  const candidates = root.querySelectorAll(`${INNER_POPUP_SELECTOR}, ${OPEN_POPUP_TRIGGER_SELECTOR}`)
+  if (Array.from(candidates).some(isPopupVisible)) return true
+
+  // Portal 也可能使用 region，而不是 menu/dialog；由展开触发器的标准关联识别，避免把普通展开区当成浮层。
+  const triggers = root.querySelectorAll('[aria-expanded="true"][aria-controls]')
+  return Array.from(triggers).some((trigger) => {
+    if (!isPopupVisible(trigger)) return false
+    const controls = trigger.getAttribute('aria-controls')
+    if (controls === null) return false
+    return controls.trim().split(/\s+/u).some((id) => {
+      const popup = root.ownerDocument.getElementById(id)
+      return popup !== null && !root.contains(popup) && isPopupVisible(popup)
+    })
+  })
+}
 
 interface SurfaceProps {
   children?: ReactNode
   hidden: boolean
 }
 
-/** 对话列；全屏工作台期间保持挂载但退出可访问树。 */
-function ConversationColumn({ children, hidden }: SurfaceProps) {
+interface ConversationColumnProps extends SurfaceProps {
+  floating: boolean
+  title: string
+  dialogLabel: string
+  minimizeLabel: string
+  onMinimize: () => void
+}
+
+/** 对话列仅切换呈现位置；子 slot 与输入草稿始终位于同一棵树。 */
+function ConversationColumn({
+  children, hidden, floating, title, dialogLabel, minimizeLabel, onMinimize,
+}: ConversationColumnProps) {
   const hiddenAttributes = hidden ? { 'aria-hidden': true, inert: '' } as const : {}
+  const minimizeButtonRef = useRef<HTMLButtonElement | null>(null)
+  useLayoutEffect(() => {
+    if (floating) minimizeButtonRef.current?.focus()
+  }, [floating])
+  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (floating && event.key === 'Escape' && !event.defaultPrevented
+      && !hasInnerPopup(event.currentTarget, event.target)) {
+      event.preventDefault()
+      onMinimize()
+    }
+  }
   return (
     <div
+      id={FLOATING_CONVERSATION_ID}
       className={css.centerCol}
       data-hidden={hidden || undefined}
+      data-floating-open={floating || undefined}
+      role={floating ? 'dialog' : undefined}
+      aria-label={floating ? dialogLabel : undefined}
+      onKeyDown={onKeyDown}
       {...hiddenAttributes}
     >
-      {children}
+      <div className={css.floatingHeader} aria-hidden={!floating} {...(!floating ? { inert: '' as const } : {})}>
+        <span className={css.floatingTitle} title={title}>{title}</span>
+        <button
+          ref={minimizeButtonRef}
+          className={css.minimizeButton}
+          type="button"
+          aria-label={minimizeLabel}
+          title={minimizeLabel}
+          onClick={onMinimize}
+        >
+          <IconChevronDownOutline14 />
+        </button>
+      </div>
+      <div className={css.conversationBody}>{children}</div>
     </div>
   )
 }
@@ -272,11 +348,16 @@ export function AppFrame({
   retainWorkbenchViews,
   publishPage,
   workspaceKeyOf,
+  t,
 }: AppFrameProps) {
   const rootPanels = useStore(state => state)
   const activeSession = useSessions((state) => {
     const current = state.current
     return current !== undefined && state.byId[current] !== undefined ? current : undefined
+  })
+  const activeTitle = useSessions((state) => {
+    const current = state.current
+    return current === undefined ? undefined : state.byId[current]?.displayTitle
   })
   const welcomeSession = useSessions((state) => {
     const current = state.current
@@ -371,6 +452,29 @@ export function AppFrame({
     bottomRequested,
   )
   const bottomShown = bottomRequested && bottomHeight > 0
+  const floatingEligible = workbenchFullscreen && !pageVisible
+  const [floatingSession, setFloatingSession] = useState<SessionId | undefined>()
+  const floatingOpen = floatingEligible && floatingSession === activeSession
+  const launcherRef = useRef<HTMLButtonElement | null>(null)
+  const minimizeRef = useRef(false)
+
+  useLayoutEffect(() => {
+    if (floatingSession !== undefined && (!floatingEligible || floatingSession !== activeSession)) {
+      setFloatingSession(undefined)
+    }
+  }, [activeSession, floatingEligible, floatingSession])
+
+  useLayoutEffect(() => {
+    if (minimizeRef.current && !floatingOpen) {
+      minimizeRef.current = false
+      launcherRef.current?.focus()
+    }
+  }, [floatingOpen])
+
+  const minimizeConversation = useCallback(() => {
+    minimizeRef.current = true
+    setFloatingSession(undefined)
+  }, [])
 
   useEffect(() => {
     if (activeKey === undefined) return
@@ -422,7 +526,9 @@ export function AppFrame({
       style={{
         gridTemplateColumns: `${sidebarWidth}px minmax(0, 1fr) ${rightWidth}px`,
         gridTemplateRows: `minmax(0, 1fr) ${bottomHeight}px`,
-      }}
+        '--layout-sidebar-width': `${sidebarWidth}px`,
+        '--layout-bottom-height': `${bottomHeight}px`,
+      } as CSSProperties}
       data-sidebar-collapsed={sidebarCollapsed || undefined}
       data-details-collapsed={detailsWidth === 0 || undefined}
       data-workbench-shown={workbenchShown || undefined}
@@ -434,9 +540,32 @@ export function AppFrame({
       <div id={SIDEBAR_ID} className={css.sidebarCol}>
         {renderSlot('sidebar', { collapsed: sidebarCollapsed, width: sidebarWidth, welcomeActionsVisible })}
       </div>
-      <ConversationColumn hidden={workbenchFullscreen || pageVisible}>
+      <ConversationColumn
+        hidden={(workbenchFullscreen || pageVisible) && !floatingOpen}
+        floating={floatingOpen}
+        title={activeTitle ?? t('floating.open')}
+        dialogLabel={t('floating.dialog.label')}
+        minimizeLabel={t('floating.minimize.label')}
+        onMinimize={minimizeConversation}
+      >
         {renderSlot('conversation', { sidebarCollapsed })}
       </ConversationColumn>
+      <button
+        ref={launcherRef}
+        className={css.floatingLauncher}
+        type="button"
+        aria-label={t('floating.open.label')}
+        aria-controls={FLOATING_CONVERSATION_ID}
+        aria-expanded={floatingOpen}
+        aria-hidden={!floatingEligible || floatingOpen}
+        {...(!floatingEligible || floatingOpen ? { inert: '' as const } : {})}
+        data-hidden={!floatingEligible || floatingOpen || undefined}
+        onClick={() => { if (activeSession !== undefined) setFloatingSession(activeSession) }}
+      >
+        <span className={css.launcherLabel}>{t('floating.open')}</span>
+        {activeTitle && <span className={css.launcherTitle} title={activeTitle}>{activeTitle}</span>}
+        <IconChevronUpOutline14 />
+      </button>
       <DetailsColumn hidden={detailsWidth === 0 || pageVisible}>
         {renderSlot('details', {})}
       </DetailsColumn>

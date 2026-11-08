@@ -30,8 +30,6 @@ export interface StageProps {
   readonly onDuplicateSelected: () => void
 }
 
-const MIN_WIDTH = 240
-
 /**
  * 计算在容器内等比放大的画布宽度。
  * @param box - 可用宽高。
@@ -41,7 +39,7 @@ const MIN_WIDTH = 240
 export function fitWidth(box: { width: number; height: number }, ratio: number): number {
   const byWidth = box.width
   const byHeight = box.height * ratio
-  return Math.max(MIN_WIDTH, Math.round(Math.min(byWidth, byHeight)))
+  return Math.max(0, Math.floor(Math.min(byWidth, byHeight)))
 }
 
 /**
@@ -54,8 +52,7 @@ export function Stage({
   onDeleteSelected, onDuplicateSelected,
 }: StageProps) {
   const host = useRef<HTMLDivElement>(null)
-  // 观察器报告之前先按一个常见宽度铺一次，避免首帧空白。
-  const [box, setBox] = useState({ width: 960, height: 560 })
+  const [box, setBox] = useState({ width: 0, height: 0 })
   const [draft, setDraft] = useState('')
 
   useEffect(() => {
@@ -69,7 +66,7 @@ export function Stage({
     const observer = new ResizeObserver((entries) => {
       const rect = entries[0]?.contentRect
       if (rect === undefined) return
-      setBox({ width: Math.max(rect.width - 32, MIN_WIDTH), height: Math.max(rect.height - 32, 120) })
+      setBox({ width: Math.max(rect.width, 0), height: Math.max(rect.height, 0) })
     })
     observer.observe(node)
     return () => { observer.disconnect() }
@@ -96,7 +93,7 @@ export function Stage({
         }
       }}
     >
-      {(
+      {width > 0 ? (
         <SlideSurface
           deck={deck}
           page={page}
@@ -113,8 +110,7 @@ export function Stage({
           emptyHint={t('emptyPage')}
           mediaUrl={mediaUrl}
         />
-      )}
-      <p className={css.hint}>{t('selectHint')}</p>
+      ) : null}
     </div>
   )
 }

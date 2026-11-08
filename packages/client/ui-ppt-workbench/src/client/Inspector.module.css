@@ -1,14 +1,15 @@
 .panel {
   display: flex;
-  flex: none;
+  flex: 1;
   flex-direction: column;
   gap: 12px;
-  width: 216px;
+  width: 100%;
   min-height: 0;
   padding: 12px;
   overflow: auto;
-  border-left: 1px solid var(--dsw-alias-border-l2);
-  background: var(--dsw-alias-bg-layer-1);
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
+  background: var(--dsw-alias-bg-layer-3);
 }
 
 .group {
@@ -54,6 +55,13 @@
   background: var(--dsw-alias-bg-layer-2);
   color: var(--dsw-alias-label-primary);
   font: var(--dsw-font-xs-13);
+}
+
+.field input:focus-visible,
+.field select:focus-visible,
+.cells:focus-visible {
+  outline: 2px solid var(--dsw-alias-state-business-primary);
+  outline-offset: 2px;
 }
 
 .check {

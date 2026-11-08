@@ -4,8 +4,9 @@
  * 测试通过 getBoundingClientRect 与 ResizeObserver stub 驱动宽高变化。
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { act, cleanup, render } from '@testing-library/react'
-import { useSyncExternalStore } from 'react'
+import { act, cleanup, fireEvent, render } from '@testing-library/react'
+import { useEffect, useState, useSyncExternalStore } from 'react'
+import { Menu } from 'coding-client-ui-primitives'
 import { AppFrame } from 'coding-client-ui-layout/src/client/AppFrame.tsx'
 import type { AppFrameProps } from 'coding-client-ui-layout/src/client/AppFrame.tsx'
 import {
@@ -28,6 +29,12 @@ import type {
 const selectedSession = { current: 's-test' as SessionId | undefined }
 const selectedSessionBlank = { current: false }
 const baselinesReady = { current: true }
+const layoutLabels: Record<string, string> = {
+  'floating.open': '继续对话',
+  'floating.open.label': '打开悬浮对话',
+  'floating.dialog.label': '悬浮对话',
+  'floating.minimize.label': '收起悬浮对话',
+}
 
 // 生产环境由 renderer 注入；这里保留同一 render-prop 类型以校验 branded id。
 const SessionProviderStub: AppFrameProps['SessionProvider'] = ({ children, empty }) =>
@@ -52,7 +59,51 @@ function hookOf<T>(inst: { subscribe: (fn: () => void) => () => void; getSnapsho
   return function useSelector<S>(sel: (s: T) => S): S { return sel(useSyncExternalStore(inst.subscribe, inst.getSnapshot)) }
 }
 
-function mountFrame(options: { workspaceKeyOf?: (id: SessionId) => string } = {}) {
+/** 用真实 Menu 覆盖 document Escape 监听器与浮窗 React 冒泡之间的时序。 */
+function NestedMenu({ portal }: { portal: boolean }) {
+  const [open, setOpen] = useState(false)
+  return <Menu
+    open={open}
+    portal={portal}
+    keyboardNavigation={portal}
+    anchor={<button type="button" aria-label="内部菜单" {...(portal ? { 'aria-haspopup': 'menu' as const, 'aria-expanded': open } : {})}
+      onClick={() => { setOpen(current => !current) }}>打开菜单</button>}
+    items={[{ id: 'choice', label: '菜单选项' }]}
+    onSelect={() => { setOpen(false) }}
+    onClose={() => { setOpen(false) }}
+  />
+}
+
+/** 概览弹层通过 aria-controls 关联根外 region，并在 document 阶段消费 Escape。 */
+function ControlledRegion() {
+  const [open, setOpen] = useState(false)
+  useEffect(() => {
+    if (!open) return undefined
+    const region = document.createElement('section')
+    region.id = 'test-controlled-region'
+    region.setAttribute('role', 'region')
+    region.setAttribute('aria-label', '内部协作弹层')
+    document.body.append(region)
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || event.defaultPrevented) return
+      event.preventDefault()
+      setOpen(false)
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.removeEventListener('keydown', onKeyDown)
+      region.remove()
+    }
+  }, [open])
+  return <button type="button" aria-expanded={open} aria-controls="test-controlled-region"
+    onClick={() => { setOpen(value => !value) }}>协作详情</button>
+}
+
+function mountFrame(options: {
+  workspaceKeyOf?: (id: SessionId) => string
+  menuMode?: 'inline-anchor' | 'portal-item'
+  controlledRegion?: boolean
+} = {}) {
   window.innerWidth = frameWidth
   window.innerHeight = frameHeight
   const rawInstance = createLayoutStore().create()
@@ -60,11 +111,20 @@ function mountFrame(options: { workspaceKeyOf?: (id: SessionId) => string } = {}
   const publishWorkbench = vi.fn()
   const publishPage = vi.fn()
   const retainWorkbenchViews = vi.fn()
+  const consumeEscape = { current: false }
   const slotCalls: { key: string; props: unknown }[] = []
   const renderSlot = ((key: string, owner: object) => {
     slotCalls.push({ key, props: owner })
     if (key === 'sidebar') return <div data-testid="sidebar-content" />
-    if (key === 'conversation') return <div data-testid="center-content" />
+    if (key === 'conversation') return (
+      <div data-testid="center-content">
+        <textarea aria-label="测试会话草稿" onKeyDown={(event) => {
+          if (event.key === 'Escape' && consumeEscape.current) event.preventDefault()
+        }} />
+        {options.menuMode !== undefined && <NestedMenu portal={options.menuMode === 'portal-item'} />}
+        {options.controlledRegion && <ControlledRegion />}
+      </div>
+    )
     if (key === 'details') return <div data-testid="details-content" />
     if (key === 'workbench') return <div data-testid="workbench-content" />
     if (key === 'workbench.bottom') return <div data-testid="bottom-content" />
@@ -110,6 +170,7 @@ function mountFrame(options: { workspaceKeyOf?: (id: SessionId) => string } = {}
       publishPage={publishPage}
       retainWorkbenchViews={retainWorkbenchViews}
       workspaceKeyOf={options.workspaceKeyOf ?? workspaceKeyOf}
+      t={key => layoutLabels[key] ?? key}
     />
   )
   const utils = render(element())
@@ -120,6 +181,7 @@ function mountFrame(options: { workspaceKeyOf?: (id: SessionId) => string } = {}
     slotCalls,
     publishWorkbench,
     publishPage,
+    consumeEscape,
     rerenderFrame: () => { utils.rerender(element()) },
     ownerFor: (key: string) => slotCalls.filter(call => call.key === key).at(-1)?.props,
     ...utils,
@@ -136,6 +198,23 @@ function rows(frame: HTMLElement): number {
   const match = /^minmax\(0, 1fr\) (\d+)px$/.exec(frame.style.gridTemplateRows)
   if (match === null) throw new Error(`unexpected rows: ${frame.style.gridTemplateRows}`)
   return Number(match[1])
+}
+
+function floatingLauncher(frame: HTMLElement): HTMLButtonElement | null {
+  return frame.querySelector<HTMLButtonElement>('button[aria-label="打开悬浮对话"]')
+}
+
+function launcherVisible(frame: HTMLElement): boolean {
+  const launcher = floatingLauncher(frame)
+  return launcher !== null && launcher.getAttribute('aria-hidden') !== 'true' && !launcher.hasAttribute('inert')
+}
+
+function conversationColumn(content: HTMLElement): HTMLElement | null {
+  return content.closest<HTMLElement>('#dsh-layout-floating-conversation')
+}
+
+function floatingDialog(frame: HTMLElement): HTMLElement | null {
+  return frame.querySelector<HTMLElement>('[role="dialog"][aria-label="悬浮对话"]')
 }
 
 function handleFor(frame: HTMLElement, side: string): HTMLElement {
@@ -189,7 +268,7 @@ afterEach(() => {
 describe('AppFrame', () => {
   it('places an independent session page beside the sidebar and restores the mounted conversation', () => {
     const b = mountFrame()
-    const center = b.getByTestId('center-content').parentElement
+    const center = conversationColumn(b.getByTestId('center-content'))
     act(() => { b.instance.actions.openPage('image-gallery', 's-test' as SessionId) })
     expect(b.getByTestId('gallery-page')).toBeTruthy()
     expect(b.getByTestId('sidebar-content')).toBeTruthy()
@@ -430,14 +509,14 @@ describe('AppFrame — fixed workbench', () => {
     act(() => { instance.actions.toggleWorkbenchFullscreen('s-test') })
     expect(tracks(frame)).toEqual([280, 1640])
     expect(frame.hasAttribute('data-workbench-fullscreen')).toBe(true)
-    expect(getByTestId('center-content').parentElement?.hasAttribute('inert')).toBe(true)
+    expect(conversationColumn(getByTestId('center-content'))?.hasAttribute('inert')).toBe(true)
     expect(frame.querySelector('[data-side="workbench"]')).toBeNull()
 
     act(() => { instance.actions.closeWorkbench('s-test') })
     expect(tracks(frame)).toEqual([280, 0])
     expect(rows(frame)).toBe(260)
     expect(getByTestId('workbench-content').parentElement?.hasAttribute('inert')).toBe(true)
-    expect(getByTestId('center-content').parentElement?.hasAttribute('inert')).toBe(false)
+    expect(conversationColumn(getByTestId('center-content'))?.hasAttribute('inert')).toBe(false)
   })
 
   it('keeps a blank Session bottom panel and sidebar state when its first message arrives', () => {
@@ -487,7 +566,7 @@ describe('AppFrame — fixed workbench', () => {
     act(() => { instance.actions.toggleWorkbenchBottom('s-test') })
     expect(tracks(frame)).toEqual([280, 0])
     expect(rows(frame)).toBe(260)
-    expect(getByTestId('center-content').parentElement?.hasAttribute('inert')).toBe(false)
+    expect(conversationColumn(getByTestId('center-content'))?.hasAttribute('inert')).toBe(false)
     expect(getByTestId('workbench-content').parentElement?.hasAttribute('inert')).toBe(true)
     expect(publishWorkbench).toHaveBeenLastCalledWith('s-test', {
       open: false, fullscreen: false, bottomOpen: true,
@@ -505,7 +584,7 @@ describe('AppFrame — fixed workbench', () => {
     expect(tracks(frame)).toEqual([SIDEBAR_COLLAPSED, 0])
     expect(rows(frame)).toBe(260)
     expect(getByTestId('workbench-content').parentElement?.hasAttribute('inert')).toBe(true)
-    expect(getByTestId('center-content').parentElement?.hasAttribute('inert')).toBe(false)
+    expect(conversationColumn(getByTestId('center-content'))?.hasAttribute('inert')).toBe(false)
     expect(ownerFor('sidebar')).toMatchObject({ welcomeActionsVisible: true })
     expect(ownerFor('workbench.bottom')).toEqual({ sessionId: 's-test', shown: true })
     act(() => { instance.actions.toggleHeroPanel('s-test', 'files') })
@@ -537,7 +616,7 @@ describe('AppFrame — fixed workbench', () => {
     expect(tracks(frame)).toEqual([SIDEBAR_COLLAPSED, 980 - SIDEBAR_COLLAPSED])
     expect(frame.hasAttribute('data-sidebar-collapsed')).toBe(true)
     expect(frame.hasAttribute('data-workbench-fullscreen')).toBe(true)
-    expect(getByTestId('center-content').parentElement?.hasAttribute('inert')).toBe(true)
+    expect(conversationColumn(getByTestId('center-content'))?.hasAttribute('inert')).toBe(true)
     expect(ownerFor('workbench')).toMatchObject({ shown: true, fullscreen: true })
     expect(frame.querySelector('[data-side="sidebar"]')).toBeNull()
     expect(frame.querySelector('[data-side="workbench"]')).toBeNull()
@@ -591,6 +670,199 @@ describe('AppFrame — fixed workbench', () => {
     selectedSession.current = 's-test' as SessionId
     act(() => { rerenderFrame() })
     expect(tracks(frame)).toEqual([280, 1020])
+  })
+})
+
+describe('AppFrame — maximized workbench conversation', () => {
+  it('shows a collapsed launcher only when the workbench actually takes over the conversation', () => {
+    const b = mountFrame()
+    expect(launcherVisible(b.frame)).toBe(false)
+    act(() => { b.instance.actions.openWorkbench('s-test') })
+    expect(launcherVisible(b.frame)).toBe(false)
+    act(() => { b.instance.actions.toggleWorkbenchFullscreen('s-test') })
+    const launcher = floatingLauncher(b.frame)
+    expect(launcherVisible(b.frame)).toBe(true)
+    expect(launcher?.getAttribute('aria-expanded')).toBe('false')
+    expect(launcher?.getAttribute('aria-controls')).toBe('dsh-layout-floating-conversation')
+    expect(floatingDialog(b.frame)).toBeNull()
+    expect(b.getByTestId('center-content').closest('[inert]')).not.toBeNull()
+
+    selectedSession.current = undefined
+    act(() => { b.rerenderFrame() })
+    expect(launcherVisible(b.frame)).toBe(false)
+  })
+
+  it('opens one retained conversation DOM with its draft, without changing the grid or rendering the slot twice', () => {
+    const b = mountFrame()
+    const center = b.getByTestId('center-content')
+    const textarea = b.getByRole('textbox', { name: '测试会话草稿' }) as HTMLTextAreaElement
+    fireEvent.change(textarea, { target: { value: '未发送的草稿' } })
+    act(() => {
+      b.instance.actions.openWorkbench('s-test')
+      b.instance.actions.toggleWorkbenchFullscreen('s-test')
+    })
+    const grid = b.frame.style.gridTemplateColumns
+    const gridRows = b.frame.style.gridTemplateRows
+    fireEvent.click(floatingLauncher(b.frame)!)
+
+    const dialog = floatingDialog(b.frame)
+    expect(dialog).not.toBeNull()
+    expect(dialog?.hasAttribute('aria-modal')).toBe(false)
+    expect(launcherVisible(b.frame)).toBe(false)
+    expect(dialog?.contains(center)).toBe(true)
+    expect(center.closest('[inert]')).toBeNull()
+    expect(b.frame.querySelectorAll('[data-testid="center-content"]')).toHaveLength(1)
+    expect(b.frame.querySelectorAll('textarea[aria-label="测试会话草稿"]')).toHaveLength(1)
+    expect(b.getByTestId('center-content')).toBe(center)
+    expect(b.getByRole('textbox', { name: '测试会话草稿' })).toBe(textarea)
+    expect(textarea.value).toBe('未发送的草稿')
+    expect(b.frame.style.gridTemplateColumns).toBe(grid)
+    expect(b.frame.style.gridTemplateRows).toBe(gridRows)
+
+    const launcher = floatingLauncher(b.frame)!
+    fireEvent.click(b.getByRole('button', { name: '收起悬浮对话' }))
+    expect(floatingDialog(b.frame)).toBeNull()
+    expect(document.activeElement).toBe(launcher)
+    expect(b.getByTestId('center-content')).toBe(center)
+    expect(textarea.value).toBe('未发送的草稿')
+    expect(center.closest('[inert]')).not.toBeNull()
+    expect(floatingLauncher(b.frame)?.getAttribute('aria-expanded')).toBe('false')
+
+    act(() => { b.instance.actions.toggleWorkbenchFullscreen('s-test') })
+    expect(launcherVisible(b.frame)).toBe(false)
+    expect(b.getByTestId('center-content')).toBe(center)
+    expect(textarea.value).toBe('未发送的草稿')
+    expect(center.closest('[inert]')).toBeNull()
+
+    act(() => { b.instance.actions.toggleWorkbenchFullscreen('s-test') })
+    fireEvent.click(floatingLauncher(b.frame)!)
+    expect(floatingDialog(b.frame)).not.toBeNull()
+    act(() => { b.instance.actions.toggleWorkbenchFullscreen('s-test') })
+    expect(floatingDialog(b.frame)).toBeNull()
+    act(() => { b.instance.actions.toggleWorkbenchFullscreen('s-test') })
+    expect(launcherVisible(b.frame)).toBe(true)
+    expect(floatingLauncher(b.frame)?.getAttribute('aria-expanded')).toBe('false')
+  })
+
+  it('uses the same capsule on narrow screens and leaves the terminal bottom row untouched', () => {
+    frameWidth = 768
+    const b = mountFrame()
+    act(() => {
+      b.instance.actions.openWorkbench('s-test')
+      b.instance.actions.toggleWorkbenchBottom('s-test')
+    })
+    expect(b.frame.hasAttribute('data-workbench-fullscreen')).toBe(true)
+    expect(launcherVisible(b.frame)).toBe(true)
+    const before = [b.frame.style.gridTemplateColumns, b.frame.style.gridTemplateRows]
+    expect(rows(b.frame)).toBe(260)
+    expect(b.frame.style.getPropertyValue('--layout-sidebar-width')).toBe(`${SIDEBAR_COLLAPSED}px`)
+    expect(b.frame.style.getPropertyValue('--layout-bottom-height')).toBe('260px')
+    fireEvent.click(floatingLauncher(b.frame)!)
+    expect(floatingDialog(b.frame)).not.toBeNull()
+    expect([b.frame.style.gridTemplateColumns, b.frame.style.gridTemplateRows]).toEqual(before)
+    expect(b.frame.style.getPropertyValue('--layout-bottom-height')).toBe('260px')
+    expect(b.ownerFor('workbench.bottom')).toEqual({ sessionId: 's-test', shown: true })
+    expect(b.getByTestId('bottom-content').parentElement?.hasAttribute('inert')).toBe(false)
+  })
+
+  it('resets the window when the selected session, page, or workbench context changes', () => {
+    const b = mountFrame({ workspaceKeyOf: () => 'shared-workspace' })
+    act(() => {
+      b.instance.actions.openWorkbench('shared-workspace')
+      b.instance.actions.toggleWorkbenchFullscreen('shared-workspace')
+    })
+    fireEvent.click(floatingLauncher(b.frame)!)
+    expect(floatingDialog(b.frame)).not.toBeNull()
+
+    selectedSession.current = 's-next' as SessionId
+    act(() => { b.rerenderFrame() })
+    expect(floatingDialog(b.frame)).toBeNull()
+    expect(floatingLauncher(b.frame)?.getAttribute('aria-expanded')).toBe('false')
+    fireEvent.click(floatingLauncher(b.frame)!)
+    expect(floatingDialog(b.frame)).not.toBeNull()
+
+    act(() => { b.instance.actions.openPage('image-gallery', 's-next' as SessionId) })
+    expect(floatingDialog(b.frame)).toBeNull()
+    expect(launcherVisible(b.frame)).toBe(false)
+    act(() => { b.instance.actions.closePage() })
+    expect(floatingLauncher(b.frame)?.getAttribute('aria-expanded')).toBe('false')
+    fireEvent.click(floatingLauncher(b.frame)!)
+    act(() => { b.instance.actions.closeWorkbench('shared-workspace') })
+    expect(floatingDialog(b.frame)).toBeNull()
+    expect(launcherVisible(b.frame)).toBe(false)
+  })
+
+  it('lets an expanded trigger dismiss its controlled portal region before minimizing', () => {
+    const b = mountFrame({ controlledRegion: true })
+    act(() => {
+      b.instance.actions.openWorkbench('s-test')
+      b.instance.actions.toggleWorkbenchFullscreen('s-test')
+    })
+    const launcher = floatingLauncher(b.frame)!
+    fireEvent.click(launcher)
+    const dialog = floatingDialog(b.frame)
+    const trigger = b.getByRole('button', { name: '协作详情' })
+    fireEvent.click(trigger)
+    trigger.focus()
+    const region = b.getByRole('region', { name: '内部协作弹层' })
+    expect(dialog?.contains(region)).toBe(false)
+
+    fireEvent.keyDown(trigger, { key: 'Escape', cancelable: true })
+    expect(b.queryByRole('region', { name: '内部协作弹层' })).toBeNull()
+    expect(floatingDialog(b.frame)).toBe(dialog)
+    expect(trigger.getAttribute('aria-expanded')).toBe('false')
+
+    fireEvent.keyDown(trigger, { key: 'Escape', cancelable: true })
+    expect(floatingDialog(b.frame)).toBeNull()
+    expect(document.activeElement).toBe(launcher)
+  })
+
+  it('honors a nested Escape dismissal before minimizing; an unclaimed Escape returns focus to the launcher', async () => {
+    const b = mountFrame()
+    act(() => {
+      b.instance.actions.openWorkbench('s-test')
+      b.instance.actions.toggleWorkbenchFullscreen('s-test')
+    })
+    const launcher = floatingLauncher(b.frame)!
+    fireEvent.click(launcher)
+    expect(document.activeElement).toBe(b.getByRole('button', { name: '收起悬浮对话' }))
+    const textarea = b.getByRole('textbox', { name: '测试会话草稿' })
+    b.consumeEscape.current = true
+    fireEvent.keyDown(textarea, { key: 'Escape', cancelable: true })
+    expect(floatingDialog(b.frame)).not.toBeNull()
+
+    b.consumeEscape.current = false
+    await act(async () => { fireEvent.keyDown(textarea, { key: 'Escape', cancelable: true }) })
+    expect(floatingDialog(b.frame)).toBeNull()
+    expect(document.activeElement).toBe(launcher)
+  })
+
+  it.each([
+    { mode: 'inline-anchor' as const, focus: 'anchor' },
+    { mode: 'portal-item' as const, focus: 'menuitem' },
+  ])('closes a real $mode Menu on Escape from its $focus before minimizing the conversation', async ({ mode }) => {
+    const b = mountFrame({ menuMode: mode })
+    act(() => {
+      b.instance.actions.openWorkbench('s-test')
+      b.instance.actions.toggleWorkbenchFullscreen('s-test')
+    })
+    const launcher = floatingLauncher(b.frame)!
+    fireEvent.click(launcher)
+    const dialog = floatingDialog(b.frame)
+    const anchor = b.getByRole('button', { name: '内部菜单' })
+    fireEvent.click(anchor)
+    expect(b.getByRole('menu')).toBeTruthy()
+    const firstTarget = mode === 'portal-item' ? b.getByRole('menuitem', { name: '菜单选项' }) : anchor
+    if (mode === 'inline-anchor') anchor.focus()
+    expect(document.activeElement).toBe(firstTarget)
+    fireEvent.keyDown(firstTarget, { key: 'Escape', cancelable: true })
+    expect(b.queryByRole('menu')).toBeNull()
+    expect(floatingDialog(b.frame)).toBe(dialog)
+
+    anchor.focus()
+    await act(async () => { fireEvent.keyDown(anchor, { key: 'Escape', cancelable: true }) })
+    expect(floatingDialog(b.frame)).toBeNull()
+    expect(document.activeElement).toBe(launcher)
   })
 })
 

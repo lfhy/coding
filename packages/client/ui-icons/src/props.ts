@@ -2,6 +2,6 @@
 export interface IconProps {
   /** 正方形边长，默认采用图形自身尺寸。 */
   size?: number | undefined
-  /** 布局类名；颜色由 currentColor 继承。 */
+  /** 布局类名；一般图标继承 currentColor，品牌图标保留固定颜色。 */
   className?: string | undefined
 }

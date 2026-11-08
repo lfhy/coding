@@ -1,5 +1,5 @@
 /**
- * 右侧「PPT 工作台」面板：工具条 + 缩略图 / 画布 / 属性三栏 + 状态条。
+ * PPT 工作台：顶部操作胶囊、可收起的页导航与画布。
  *
  * 组件只读注入的快照、只调注入的回调；请求、轮询与冲突处理都在控制器里，因此同一
  * 会话的多个工作台实例看到的是同一份状态。
@@ -7,11 +7,13 @@
  */
 
 import { useEffect, useRef, useState } from 'react'
+import { Menu } from 'coding-client-ui-primitives'
 import type { SnapshotStore } from 'coding-client-runtime/client'
 import type { InjectFace, PropsLocale, PropsRuntime } from 'coding-client-ui-slots'
 import {
-  IconChevronDownOutline14, IconChevronUpOutline14, IconDownloadOutline16,
-  IconPlusOutline16, IconRefreshOutline16,
+  Icon,
+  IconChevronDownOutline14, IconCloseOutline16, IconDownloadOutline16, IconEllipsisOutline16,
+  IconPanelLeftOutline16, IconPlusOutline16, IconSettingsOutline16,
 } from 'coding-client-ui-icons'
 import type { PptElementKind, SlideTransition } from 'coding-ppt-model'
 import type { PptPanelState } from './controller.ts'
@@ -77,15 +79,19 @@ const LABEL_OF: Readonly<Record<string, (t: PptWorkbenchProps['t']) => string>> 
  * @returns 工作台或空态。
  */
 export function PptWorkbench({
-  shown, t, usePpt, show, refresh, open, create, undo, redo, exportDeck,
+  shown, t, usePpt, show, refresh, open, undo, redo, exportDeck,
   selectPage, selectElement, setEditing, addPage, removePage, movePage,
   addElement, removeElement, updateElement, updatePage, updateDeck,
   duplicateElement, reorderElement, insertImage, checkDeck, preview, mediaUrl,
 }: PptWorkbenchProps) {
   const state = usePpt(snapshot => snapshot)
-  const [title, setTitle] = useState('')
-  const [template, setTemplate] = useState('bullets')
+  const [menu, setMenu] = useState<'new' | 'insert' | 'page' | 'more' | null>(null)
+  const [showThumbs, setShowThumbs] = useState(true)
+  const [showInspector, setShowInspector] = useState(false)
+  const [showIssues, setShowIssues] = useState(false)
   const fileInput = useRef<HTMLInputElement>(null)
+  const inspectorClose = useRef<HTMLButtonElement>(null)
+  const inspectorTrigger = useRef<HTMLButtonElement>(null)
 
   useEffect(() => {
     if (!shown) return undefined
@@ -93,156 +99,214 @@ export function PptWorkbench({
     return () => { show(false) }
   }, [shown, show])
 
+  useEffect(() => {
+    setMenu(null)
+    setShowInspector(false)
+    setShowIssues(false)
+  }, [state.project?.dir])
+
+  useEffect(() => {
+    if (state.issues !== null) setShowIssues(true)
+  }, [state.issues])
+
+  useEffect(() => {
+    if (!showInspector) return undefined
+    inspectorClose.current?.focus()
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      event.stopPropagation()
+      setShowInspector(false)
+      inspectorTrigger.current?.focus()
+    }
+    document.addEventListener('keydown', onKeyDown, true)
+    return () => { document.removeEventListener('keydown', onKeyDown, true) }
+  }, [showInspector])
+
   const project = state.project
   const page = currentPage(project, state.pageIndex)
   const element = page === null
     ? null
     : page.elements.find(entry => entry.id === state.selectedId) ?? null
 
+  if (state.phase === 'ready' && project === null) {
+    return (
+      <div className={css.root}>
+        <div className={css.blank}>
+          {state.projects.length === 0 ? (
+            <div className={css.blankCard}>
+              <div className={css.brand}>
+                <Icon name="ppt-workbench" size={20} />
+                <span>{t('title')}</span>
+              </div>
+              <p className={css.blankHint}>{t('emptyTitle')}</p>
+            </div>
+          ) : (
+            <>
+              <p className={css.blankTitle}>{t('projects')}</p>
+              <ul className={css.projects}>
+                {state.projects.map(item => (
+                  <li key={item.dir}>
+                    <button type="button" className={css.project} onClick={() => { void open(item.dir) }}>
+                      <span className={css.projectName}>{item.title}</span>
+                      <span className={css.projectMeta}>{t('pages', { count: item.pages })}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+        </div>
+      </div>
+    )
+  }
+
   const notice = describeNotice(state, t)
-  const addTable = (): void => { void addElement('table') }
   const mediaUrlOf = (source: string): string => mediaUrl(project?.dir, source)
+  const toggleMenu = (target: NonNullable<typeof menu>): void => {
+    setShowInspector(false)
+    setMenu(current => current === target ? null : target)
+  }
+  const newTemplates = [
+    { id: '', label: t('blankPage') },
+    { id: 'title', label: t('templateTitle') },
+    { id: 'section', label: t('templateSection') },
+    { id: 'bullets', label: t('templateBullets') },
+    { id: 'two-column', label: t('templateTwoColumn') },
+    { id: 'data', label: t('templateData') },
+    { id: 'chart', label: t('templateChart') },
+    { id: 'quote', label: t('templateQuote') },
+  ]
+  const insertItems = [
+    ...ADD_KINDS.map(kind => ({ id: kind, label: LABEL_OF[kind]?.(t) ?? kind })),
+    { id: 'image', label: t('addImage') },
+    { id: 'table', label: t('addTable') },
+  ]
 
   return (
     <div className={css.root} data-busy={state.busy ? 'true' : undefined}>
-      <header className={css.toolbar}>
-        <span className={css.deckTitle} title={project?.title ?? t('title')}>
-          {project?.title ?? t('title')}
-        </span>
-        <span className={css.badge}>{project === null ? '' : `v${project.revision}`}</span>
-        <span className={css.spacer} />
-        <button type="button" className={css.action} disabled={state.busy || project?.canUndo !== true}
-          title={t('undo')} onClick={() => { void undo() }}>
-          <IconChevronUpOutline14 size={14} />
-        </button>
-        <button type="button" className={css.action} disabled={state.busy || project?.canRedo !== true}
-          title={t('redo')} onClick={() => { void redo() }}>
-          <IconChevronDownOutline14 size={14} />
-        </button>
-        <button type="button" className={css.action} title={t('check')} disabled={state.busy || project === null}
-          onClick={() => { void checkDeck() }}>
-          {t('check')}
-        </button>
-        <button type="button" className={css.action} title={t('preview')} disabled={state.busy || project === null}
-          onClick={() => { void preview() }}>
-          {t('preview')}
-        </button>
-        <button type="button" className={css.action} title={t('reload')} onClick={refresh}>
-          <IconRefreshOutline16 size={14} />
-        </button>
-        <button type="button" className={css.primary} disabled={state.busy || project === null}
-          onClick={() => { void exportDeck() }}>
-          <IconDownloadOutline16 size={14} />
-          {t('export')}
-        </button>
-      </header>
+      {project === null ? null : (
+        <header className={css.toolbar}>
+          <div className={css.capsuleTitle}>
+            <button type="button" className={css.iconAction} aria-label={showThumbs ? t('hideThumbs') : t('showThumbs')}
+              title={showThumbs ? t('hideThumbs') : t('showThumbs')}
+              aria-pressed={showThumbs} onClick={() => { setShowThumbs(value => !value) }}>
+              <IconPanelLeftOutline16 size={16} />
+            </button>
+            <span className={css.deckTitle} title={project.title}>{project.title}</span>
+            <span className={css.badge}>{t('pages', { count: project.deck.pages.length })} · {t('revision', { count: project.revision })}</span>
+            <span className={css.feedback} data-tone={notice.tone} role="status" title={notice.text}>{notice.text}</span>
+          </div>
+          <div className={css.capsule}>
+            <Menu open={menu === 'new'} onClose={() => { setMenu(null) }} items={newTemplates}
+              keyboardNavigation compact portal
+              onSelect={(id) => { setMenu(null); void addPage(id === '' ? undefined : id) }}
+              anchor={<button type="button" className={css.action} disabled={state.busy}
+                aria-haspopup="menu" aria-expanded={menu === 'new'} onClick={() => { toggleMenu('new') }}>
+                <IconPlusOutline16 size={14} />{t('addPage')}<IconChevronDownOutline14 size={12} />
+              </button>}
+            />
+            <Menu open={menu === 'insert'} onClose={() => { setMenu(null) }} items={insertItems}
+              keyboardNavigation compact portal
+              onSelect={(id) => {
+                setMenu(null)
+                if (id === 'image') fileInput.current?.click()
+                else void addElement(id as PptElementKind)
+              }}
+              anchor={<button type="button" className={css.action} disabled={state.busy}
+                aria-haspopup="menu" aria-expanded={menu === 'insert'} onClick={() => { toggleMenu('insert') }}>
+                {t('insert')}<IconChevronDownOutline14 size={12} />
+              </button>}
+            />
+            <Menu open={menu === 'page'} onClose={() => { setMenu(null) }} compact keyboardNavigation portal
+              items={[
+                { id: 'up', label: t('movePageUp'), disabled: state.busy || state.pageIndex === 0 },
+                { id: 'down', label: t('movePageDown'), disabled: state.busy || state.pageIndex === project.deck.pages.length - 1 },
+                { type: 'separator', id: 'separator' },
+                { id: 'delete', label: t('deletePage'), danger: true, disabled: state.busy || project.deck.pages.length === 1 },
+              ]}
+              onSelect={(id) => {
+                setMenu(null)
+                if (page === null) return
+                if (id === 'delete') void removePage(page.id)
+                else void movePage(page.id, state.pageIndex + (id === 'up' ? -1 : 1))
+              }}
+              anchor={<button type="button" className={css.action} aria-haspopup="menu" aria-expanded={menu === 'page'}
+                onClick={() => { toggleMenu('page') }}>{t('pageActions')}<IconChevronDownOutline14 size={12} /></button>}
+            />
+            <span className={css.divider} />
+            <button type="button" className={css.iconAction} disabled={state.busy || !project.canUndo}
+              aria-label={t('undo')} title={t('undo')} onClick={() => { void undo() }}>
+              <Icon name="undo" size={16} />
+            </button>
+            <button type="button" className={css.iconAction} disabled={state.busy || !project.canRedo}
+              aria-label={t('redo')} title={t('redo')} onClick={() => { void redo() }}>
+              <Icon name="redo" size={16} />
+            </button>
+          </div>
+          <div className={`${css.capsule} ${css.capsuleEnd}`}>
+            <button ref={inspectorTrigger} type="button" className={css.action} aria-expanded={showInspector}
+              aria-haspopup="dialog" onClick={() => { setMenu(null); setShowInspector(value => !value) }}>
+              <IconSettingsOutline16 size={14} />{t('properties')}
+            </button>
+            <button type="button" className={css.action} disabled={state.busy}
+              onClick={() => { setShowIssues(true); void checkDeck() }}>
+              {t('check')}
+            </button>
+            <button type="button" className={css.action} disabled={state.busy} onClick={() => { void preview() }}>{t('preview')}</button>
+            <button type="button" className={css.action} disabled={state.busy} onClick={() => { void exportDeck() }}>
+              <IconDownloadOutline16 size={14} />{t('export')}
+            </button>
+            <Menu open={menu === 'more'} onClose={() => { setMenu(null) }} compact keyboardNavigation portal align="end"
+              items={[{ id: 'reload', label: t('reload') }]}
+              onSelect={() => { setMenu(null); refresh() }}
+              anchor={<button type="button" className={css.iconAction} aria-label={t('more')}
+                title={t('more')} aria-haspopup="menu" aria-expanded={menu === 'more'}
+                onClick={() => { toggleMenu('more') }}><IconEllipsisOutline16 size={16} /></button>}
+            />
+          </div>
+          <input ref={fileInput} type="file" aria-label={t('chooseImage')}
+            accept="image/png,image/jpeg,image/gif,image/webp,image/svg+xml" hidden
+            onChange={(event) => {
+              const file = event.target.files?.[0]
+              event.target.value = ''
+              if (file !== undefined) void insertImage(file)
+            }} />
+          {showIssues && state.issues !== null ? (
+            <div className={css.issuesPanel}>
+              <button type="button" className={css.issuesClose} onClick={() => { setShowIssues(false) }}
+                aria-label={t('closeCheck')}>{t('close')}</button>
+              <ul className={css.issues}>
+                {state.issues.length === 0
+                  ? <li data-severity="ok">{t('checkClean')}</li>
+                  : state.issues.map((issue, index) => (
+                    <li key={`${issue.code}-${index}`} data-severity={issue.severity}>{issue.message}</li>
+                  ))}
+              </ul>
+            </div>
+          ) : null}
+        </header>
+      )}
 
       {state.phase === 'error' ? (
         <div className={css.blank}>
           <p className={css.blankTitle}>{t('errorTitle')}</p>
+          {state.notice?.tone === 'error' ? <p className={css.errorReason} role="alert">{state.notice.reason}</p> : null}
           <button type="button" className={css.primary} onClick={refresh}>{t('errorRetry')}</button>
         </div>
       ) : state.phase === 'loading' ? (
         <div className={css.blank}><p className={css.blankTitle}>{t('loading')}</p></div>
-      ) : project === null ? (
-        <div className={css.blank}>
-          <p className={css.blankTitle}>{t('emptyTitle')}</p>
-          <p className={css.blankHint}>{t('emptyHint')}</p>
-          {state.projects.length === 0 ? null : (
-            <ul className={css.projects}>
-              {state.projects.map(item => (
-                <li key={item.dir}>
-                  <button type="button" className={css.project} onClick={() => { void open(item.dir) }}>
-                    <span className={css.projectName}>{item.title}</span>
-                    <span className={css.projectMeta}>{t('pages', { count: item.pages })}</span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-          <form
-            className={css.create}
-            onSubmit={(event) => {
-              event.preventDefault()
-              const next = title.trim()
-              if (next === '') return
-              void create(next).then(() => { setTitle('') })
-            }}
-          >
-            <input
-              type="text"
-              value={title}
-              placeholder={t('newDeckTitle')}
-              aria-label={t('newDeckTitle')}
-              onChange={(event) => { setTitle(event.target.value) }}
-            />
-            <button type="submit" className={css.primary} disabled={state.busy || title.trim() === ''}>
-              <IconPlusOutline16 size={14} />
-              {t('newDeck')}
-            </button>
-          </form>
-        </div>
-      ) : (
+      ) : project === null ? null : (
         <div className={css.body}>
-          <ThumbStrip
+          {showThumbs ? <ThumbStrip
             deck={project.deck}
             pageIndex={state.pageIndex}
             busy={state.busy}
             t={t}
             onSelect={selectPage}
-            onAdd={() => { void addPage(template === '' ? undefined : template) }}
-            onRemove={(next) => { void removePage(next.id) }}
+            onHide={() => { setShowThumbs(false) }}
             onMove={(next, to) => { void movePage(next.id, to) }}
-          />
+          /> : null}
           <main className={css.main}>
-            <div className={css.addRow}>
-              <select
-                className={css.templateSelect}
-                aria-label={t('addPage')}
-                value={template}
-                disabled={state.busy}
-                onChange={(event) => { setTemplate(event.target.value) }}
-              >
-                <option value="">{t('blankPage')}</option>
-                <option value="title">{t('templateTitle')}</option>
-                <option value="section">{t('templateSection')}</option>
-                <option value="bullets">{t('templateBullets')}</option>
-                <option value="two-column">{t('templateTwoColumn')}</option>
-                <option value="data">{t('templateData')}</option>
-                <option value="chart">{t('templateChart')}</option>
-                <option value="quote">{t('templateQuote')}</option>
-              </select>
-              <button type="button" className={css.action} disabled={state.busy}
-                onClick={() => { void addPage(template === '' ? undefined : template) }}>
-                {t('addPage')}
-              </button>
-              {ADD_KINDS.map(kind => (
-                <button key={kind} type="button" className={css.action} disabled={state.busy}
-                  title={LABEL_OF[kind]?.(t) ?? kind}
-                  onClick={() => { void addElement(kind) }}>
-                  {LABEL_OF[kind]?.(t) ?? kind}
-                </button>
-              ))}
-              <button type="button" className={css.action} disabled={state.busy}
-                title={t('addImage')} onClick={() => { fileInput.current?.click() }}>
-                {t('addImage')}
-              </button>
-              <button type="button" className={css.action} disabled={state.busy}
-                title={t('addTable')} onClick={addTable}>
-                {t('addTable')}
-              </button>
-              <input
-                ref={fileInput}
-                type="file"
-                accept="image/png,image/jpeg,image/gif,image/webp,image/svg+xml"
-                hidden
-                onChange={(event) => {
-                  const file = event.target.files?.[0]
-                  event.target.value = ''
-                  if (file !== undefined) void insertImage(file)
-                }}
-              />
-            </div>
             {page === null ? null : (
               <Stage
                 deck={project.deck}
@@ -266,65 +330,62 @@ export function PptWorkbench({
               />
             )}
           </main>
-          {page === null ? null : (
-            <Inspector
-              deck={project.deck}
-              page={page}
-              element={element}
-              busy={state.busy}
-              t={t}
-              onElement={(patch) => {
-                if (element === null) return
-                void updateElement(element.id, patch)
-              }}
-              onRemove={() => { if (element !== null) void removeElement(element.id) }}
-              onDuplicate={() => { if (element !== null) void duplicateElement(element.id) }}
-              onReorder={(to) => { if (element !== null) void reorderElement(element.id, to) }}
-              onChart={(patch) => {
-                if (element === null || element.kind !== 'chart') return
-                const series = element.series.map((entry, index) => {
-                  if (patch.combo !== undefined) {
-                    return { ...entry, as: patch.combo && index > 0 ? 'line' as const : undefined }
-                  }
-                  if (patch.secondary !== undefined) {
-                    return { ...entry, axis: patch.secondary && index > 0 ? 'secondary' as const : 'primary' as const }
-                  }
-                  return entry
-                }).map(({ as, axis, ...rest }) => ({
-                  ...rest,
-                  ...as === undefined ? {} : { as },
-                  ...axis === undefined ? {} : { axis },
-                }))
-                void updateElement(
-                  element.id,
-                  element.chart === 'pie' && patch.stacked === undefined
-                    ? {}
-                    : {
-                      chart: { categories: element.categories, series },
-                      ...patch.stacked === undefined ? {} : { stacked: patch.stacked },
-                    },
-                )
-              }}
-              onPage={(patch) => { void updatePage(patch) }}
-              onDeck={(patch) => { void updateDeck(patch) }}
-            />
+          {page === null || !showInspector ? null : (
+            <div className={css.inspectorOverlay} role="dialog" aria-label={t('properties')}>
+              <div className={css.inspectorHeading}>
+                <span>{t('properties')}</span>
+                <button ref={inspectorClose} type="button" className={css.iconAction}
+                  aria-label={t('closeProperties')} title={t('closeProperties')}
+                  onClick={() => { setShowInspector(false); inspectorTrigger.current?.focus() }}>
+                  <IconCloseOutline16 size={16} />
+                </button>
+              </div>
+              <Inspector
+                deck={project.deck}
+                page={page}
+                element={element}
+                busy={state.busy}
+                t={t}
+                onElement={(patch) => {
+                  if (element === null) return
+                  void updateElement(element.id, patch)
+                }}
+                onRemove={() => { if (element !== null) void removeElement(element.id) }}
+                onDuplicate={() => { if (element !== null) void duplicateElement(element.id) }}
+                onReorder={(to) => { if (element !== null) void reorderElement(element.id, to) }}
+                onChart={(patch) => {
+                  if (element === null || element.kind !== 'chart') return
+                  const series = element.series.map((entry, index) => {
+                    if (patch.combo !== undefined) {
+                      return { ...entry, as: patch.combo && index > 0 ? 'line' as const : undefined }
+                    }
+                    if (patch.secondary !== undefined) {
+                      return { ...entry, axis: patch.secondary && index > 0 ? 'secondary' as const : 'primary' as const }
+                    }
+                    return entry
+                  }).map(({ as, axis, ...rest }) => ({
+                    ...rest,
+                    ...as === undefined ? {} : { as },
+                    ...axis === undefined ? {} : { axis },
+                  }))
+                  void updateElement(
+                    element.id,
+                    element.chart === 'pie' && patch.stacked === undefined
+                      ? {}
+                      : {
+                        chart: { categories: element.categories, series },
+                        ...patch.stacked === undefined ? {} : { stacked: patch.stacked },
+                      },
+                  )
+                }}
+                onPage={(patch) => { void updatePage(patch) }}
+                onDeck={(patch) => { void updateDeck(patch) }}
+              />
+            </div>
           )}
         </div>
       )}
 
-      {state.issues === null ? null : (
-        <ul className={css.issues}>
-          {state.issues.length === 0
-            ? <li data-severity="ok">{t('checkClean')}</li>
-            : state.issues.map((issue, index) => (
-              <li key={`${issue.code}-${index}`} data-severity={issue.severity}>{issue.message}</li>
-            ))}
-        </ul>
-      )}
-
-      <footer className={css.status} data-tone={notice.tone}>
-        <span className={css.statusText}>{notice.text}</span>
-      </footer>
     </div>
   )
 }

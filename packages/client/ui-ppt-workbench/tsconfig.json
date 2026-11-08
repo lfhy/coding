@@ -33,6 +33,9 @@
       "path": "../ui-open-in-app"
     },
     {
+      "path": "../ui-primitives"
+    },
+    {
       "path": "../ui-slots"
     },
     {

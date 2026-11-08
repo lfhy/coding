@@ -2772,6 +2772,12 @@ importers:
       coding-client-runtime:
         specifier: workspace:^
         version: link:../runtime
+      coding-client-ui-icons:
+        specifier: workspace:^
+        version: link:../ui-icons
+      coding-client-ui-primitives:
+        specifier: workspace:^
+        version: link:../ui-primitives
       coding-client-ui-slots:
         specifier: workspace:^
         version: link:../ui-slots

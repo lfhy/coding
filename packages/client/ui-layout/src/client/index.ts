@@ -4,6 +4,7 @@
  */
 import type { ClientContext } from 'coding-client-runtime/client'
 import type { SessionId } from 'coding-session/types'
+import type {} from 'coding-client-locale/client'
 import type {} from 'coding-client-ui-theme/client'
 import type { AppFrameInjected } from './AppFrame.tsx'
 import type { PanelActions } from './service.ts'
@@ -11,6 +12,16 @@ import { AppFrame } from './AppFrame.tsx'
 import { createLayoutStore } from './stores.ts'
 import { LayoutController } from './service.ts'
 import { ThemePresenter } from './theme-presenter.ts'
+import { en, zh, type LayoutKey } from './locales.ts'
+
+declare module 'coding-client-ui-slots' {
+  interface LocaleNamespaceMap {
+    /** 布局壳悬浮对话控件文案。 */
+    layout: LayoutKey
+  }
+}
+
+const NS = 'layout'
 
 export { LayoutController } from './service.ts'
 export type { ILayout, WorkbenchLayoutSnapshot } from './service.ts'
@@ -87,7 +98,7 @@ export interface ShellPageOwnerProps {
 }
 
 /** Cordis fiber 所需服务。 */
-export const inject = ['slots', 'theme']
+export const inject = ['slots', 'theme', 'locale']
 
 /**
  * 注册 AppFrame、`ctx.layout` 和主题呈现器。
@@ -95,11 +106,13 @@ export const inject = ['slots', 'theme']
  * @returns 无返回值；生命周期由 `ctx.effect` 管理。
  */
 export function apply(ctx: ClientContext): void {
+  ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-layout: dictionaries')
   const layout = new LayoutController()
   ctx.effect(() => {
     const disposeService = ctx.reflect.provide('layout', layout)
     const disposeRegistration = ctx.slots.register({
       name: 'root',
+      locale: NS,
       children: {
         'sidebar': { kind: 'single', scope: 'root' },
         'conversation': { kind: 'single', scope: 'session-maybe' },

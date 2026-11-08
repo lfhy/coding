@@ -55,9 +55,7 @@
     "@deepseek-ai/cordis": "workspace:^",
     "coding-client-locale": "workspace:^",
     "coding-client-runtime": "workspace:^",
-    "coding-client-ui-icons": "workspace:^",
     "coding-client-ui-open-in-app": "workspace:^",
-    "coding-client-ui-slots": "workspace:^",
     "coding-invariants": "workspace:^",
     "coding-ppt-model": "workspace:^",
     "coding-session": "workspace:^"

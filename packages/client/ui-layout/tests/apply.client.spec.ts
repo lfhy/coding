@@ -33,7 +33,7 @@ async function bench() {
 
 describe('ui-layout client apply', () => {
   it('declares its service dependencies', () => {
-    expect(inject).toEqual(['slots', 'theme'])
+    expect(inject).toEqual(['slots', 'theme', 'locale'])
   })
 
   it('provides ctx.layout and declares legacy plus workbench child slots', async () => {

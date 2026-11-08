@@ -1,9 +1,7 @@
-/** 页缩略图竖条：选页、增删页与页序调整；缩略图复用画布的同一套渲染。 */
+/** 页缩略图竖条：选页与拖拽排序；缩略图复用画布的同一套渲染。 */
 import { useState } from 'react'
 import type { Translate } from 'coding-client-ui-slots'
-import {
-  IconChevronDownOutline14, IconChevronUpOutline14, IconTrashOutline16,
-} from 'coding-client-ui-icons'
+import { IconPanelLeftOutline16 } from 'coding-client-ui-icons'
 import type { PptDeck, PptPage } from 'coding-ppt-model'
 import type { PptWorkbenchKey } from './locales.ts'
 import { SlideSurface } from './SlideSurface.tsx'
@@ -15,22 +13,28 @@ export interface ThumbStripProps {
   readonly busy: boolean
   readonly t: Translate<PptWorkbenchKey>
   readonly onSelect: (index: number) => void
-  readonly onAdd: () => void
-  readonly onRemove: (page: PptPage) => void
+  readonly onHide: () => void
   readonly onMove: (page: PptPage, to: number) => void
 }
 
-const THUMB_WIDTH = 128
+const THUMB_WIDTH = 88
 
 /**
  * 左侧页列表。
  * @param props - 页序、当前页与页操作。
  * @returns 可滚动的缩略图竖条。
  */
-export function ThumbStrip({ deck, pageIndex, busy, t, onSelect, onAdd, onRemove, onMove }: ThumbStripProps) {
+export function ThumbStrip({ deck, pageIndex, busy, t, onSelect, onHide, onMove }: ThumbStripProps) {
   const [dragging, setDragging] = useState<string | null>(null)
   return (
     <aside className={css.strip} aria-label={t('title')}>
+      <div className={css.header}>
+        <span>{t('pages', { count: deck.pages.length })}</span>
+        <button type="button" className={css.hide} aria-label={t('hideThumbs')}
+          title={t('hideThumbs')} onClick={onHide}>
+          <IconPanelLeftOutline16 size={16} />
+        </button>
+      </div>
       <ul className={css.list}>
         {deck.pages.map((page, index) => (
           <li
@@ -39,14 +43,18 @@ export function ThumbStrip({ deck, pageIndex, busy, t, onSelect, onAdd, onRemove
             data-active={index === pageIndex ? 'true' : undefined}
             data-dragging={dragging === page.id ? 'true' : undefined}
             draggable={!busy}
-            onDragStart={() => { setDragging(page.id) }}
+            onDragStart={(event) => {
+              if (busy) { event.preventDefault(); return }
+              setDragging(page.id)
+            }}
             onDragEnd={() => { setDragging(null) }}
-            onDragOver={(event) => { event.preventDefault() }}
+            onDragOver={(event) => { if (!busy) event.preventDefault() }}
             onDrop={(event) => {
               event.preventDefault()
               const from = deck.pages.findIndex(entry => entry.id === dragging)
+              const source = deck.pages[from]
               setDragging(null)
-              if (from >= 0 && from !== index) onMove(page, index)
+              if (!busy && source !== undefined && from !== index) onMove(source, index)
             }}
           >
             <button
@@ -57,41 +65,11 @@ export function ThumbStrip({ deck, pageIndex, busy, t, onSelect, onAdd, onRemove
               onClick={() => { onSelect(index) }}
             >
               <span className={css.number}>{index + 1}</span>
-              <SlideSurface deck={deck} page={page} width={THUMB_WIDTH} />
+              <span className={css.preview}><SlideSurface deck={deck} page={page} width={THUMB_WIDTH} /></span>
             </button>
-            <div className={css.row}>
-              <button
-                type="button"
-                className={css.tiny}
-                disabled={busy || index === 0}
-                title={t('movePageUp')}
-                onClick={() => { onMove(page, index - 1) }}
-              >
-                <IconChevronUpOutline14 size={12} />
-              </button>
-              <button
-                type="button"
-                className={css.tiny}
-                disabled={busy || index === deck.pages.length - 1}
-                title={t('movePageDown')}
-                onClick={() => { onMove(page, index + 1) }}
-              >
-                <IconChevronDownOutline14 size={12} />
-              </button>
-              <button
-                type="button"
-                className={css.tiny}
-                disabled={busy || deck.pages.length === 1}
-                title={t('deletePage')}
-                onClick={() => { onRemove(page) }}
-              >
-                <IconTrashOutline16 size={12} />
-              </button>
-            </div>
           </li>
         ))}
       </ul>
-      <button type="button" className={css.add} disabled={busy} onClick={onAdd}>{t('addPage')}</button>
     </aside>
   )
 }
