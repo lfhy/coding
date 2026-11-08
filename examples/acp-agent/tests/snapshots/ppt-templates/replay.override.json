@@ -39,8 +39,8 @@
         "block": {
           "type": "tool-call",
           "id": "ppt-template-2",
-          "name": "ppt_create",
-          "arguments": "{\"title\":\"Source deck\",\"dir\":\"ppt/template-source\",\"theme\":\"ocean\"}"
+          "name": "ppt_prepare_template",
+          "arguments": "{\"source\":\"source.pptx\",\"name\":\"Draft from source\",\"dir\":\"ppt/template-draft\"}"
         }
       },
       {
@@ -65,32 +65,6 @@
         "block": {
           "type": "tool-call",
           "id": "ppt-template-3",
-          "name": "ppt_save_template",
-          "arguments": "{\"name\":\"Reusable deck\",\"dir\":\"ppt/template-source\"}"
-        }
-      },
-      {
-        "type": "finish",
-        "reason": {
-          "kind": "tool-calls"
-        }
-      }
-    ]
-  },
-  {
-    "kind": "chunks",
-    "chunks": [
-      {
-        "type": "block-start",
-        "index": 0,
-        "blockType": "tool-call"
-      },
-      {
-        "type": "block-end",
-        "index": 0,
-        "block": {
-          "type": "tool-call",
-          "id": "ppt-template-4",
           "name": "ppt_templates",
           "arguments": "{}"
         }
@@ -116,9 +90,35 @@
         "index": 0,
         "block": {
           "type": "tool-call",
+          "id": "ppt-template-4",
+          "name": "ppt_read",
+          "arguments": "{\"dir\":\"ppt/template-draft\"}"
+        }
+      },
+      {
+        "type": "finish",
+        "reason": {
+          "kind": "tool-calls"
+        }
+      }
+    ]
+  },
+  {
+    "kind": "chunks",
+    "chunks": [
+      {
+        "type": "block-start",
+        "index": 0,
+        "blockType": "tool-call"
+      },
+      {
+        "type": "block-end",
+        "index": 0,
+        "block": {
+          "type": "tool-call",
           "id": "ppt-template-5",
-          "name": "ppt_create",
-          "arguments": "{\"templateId\":\"{{fromRequest:\\\"id\\\":\\\"([0-9a-f-]{36})\\\"}}\",\"title\":\"Deck copy\",\"dir\":\"ppt/template-copy\"}"
+          "name": "ppt_import_evidence",
+          "arguments": "{\"source\":\"source.pptx\",\"sourceIndex\":1,\"sourceSha256\":\"{{fromRequest:\\\"sourceSha256\\\":\\\"([a-f0-9]{64})\\\"}}\"}"
         }
       },
       {
@@ -143,6 +143,136 @@
         "block": {
           "type": "tool-call",
           "id": "ppt-template-6",
+          "name": "ppt_edit",
+          "arguments": "{\"dir\":\"ppt/template-draft\",\"base_revision\":1,\"ops\":[{\"op\":\"add_element\",\"page\":\"{{fromRequest:\\\"sourceIndex\\\":1,\\\"pageId\\\":\\\"([^\\\"]+)\\\"}}\",\"element\":{\"kind\":\"chart\",\"x\":100,\"y\":210,\"w\":800,\"h\":350,\"chart\":\"bar\",\"categories\":[\"Q1\",\"Q2\"],\"showValues\":true,\"stacked\":false,\"textColor\":\"#202020\",\"series\":[{\"name\":\"Revenue\",\"values\":[42,57],\"color\":\"#4f8cff\"}]}}]}"
+        }
+      },
+      {
+        "type": "finish",
+        "reason": {
+          "kind": "tool-calls"
+        }
+      }
+    ]
+  },
+  {
+    "kind": "chunks",
+    "chunks": [
+      {
+        "type": "block-start",
+        "index": 0,
+        "blockType": "tool-call"
+      },
+      {
+        "type": "block-end",
+        "index": 0,
+        "block": {
+          "type": "tool-call",
+          "id": "ppt-template-7",
+          "name": "ppt_check",
+          "arguments": "{\"dir\":\"ppt/template-draft\"}"
+        }
+      },
+      {
+        "type": "finish",
+        "reason": {
+          "kind": "tool-calls"
+        }
+      }
+    ]
+  },
+  {
+    "kind": "chunks",
+    "chunks": [
+      {
+        "type": "block-start",
+        "index": 0,
+        "blockType": "tool-call"
+      },
+      {
+        "type": "block-end",
+        "index": 0,
+        "block": {
+          "type": "tool-call",
+          "id": "ppt-template-8",
+          "name": "ppt_save_template",
+          "arguments": "{\"name\":\"Repaired deck\",\"dir\":\"ppt/template-draft\"}"
+        }
+      },
+      {
+        "type": "finish",
+        "reason": {
+          "kind": "tool-calls"
+        }
+      }
+    ]
+  },
+  {
+    "kind": "chunks",
+    "chunks": [
+      {
+        "type": "block-start",
+        "index": 0,
+        "blockType": "tool-call"
+      },
+      {
+        "type": "block-end",
+        "index": 0,
+        "block": {
+          "type": "tool-call",
+          "id": "ppt-template-9",
+          "name": "ppt_templates",
+          "arguments": "{}"
+        }
+      },
+      {
+        "type": "finish",
+        "reason": {
+          "kind": "tool-calls"
+        }
+      }
+    ]
+  },
+  {
+    "kind": "chunks",
+    "chunks": [
+      {
+        "type": "block-start",
+        "index": 0,
+        "blockType": "tool-call"
+      },
+      {
+        "type": "block-end",
+        "index": 0,
+        "block": {
+          "type": "tool-call",
+          "id": "ppt-template-10",
+          "name": "ppt_create_from_template",
+          "arguments": "{\"templateId\":\"{{fromRequest:\\\"id\\\":\\\"([0-9a-f-]{36})\\\"}}\",\"title\":\"Deck copy\",\"dir\":\"ppt/template-copy\"}"
+        }
+      },
+      {
+        "type": "finish",
+        "reason": {
+          "kind": "tool-calls"
+        }
+      }
+    ]
+  },
+  {
+    "kind": "chunks",
+    "chunks": [
+      {
+        "type": "block-start",
+        "index": 0,
+        "blockType": "tool-call"
+      },
+      {
+        "type": "block-end",
+        "index": 0,
+        "block": {
+          "type": "tool-call",
+          "id": "ppt-template-11",
           "name": "ppt_read",
           "arguments": "{\"dir\":\"ppt/template-copy\"}"
         }
@@ -168,7 +298,7 @@
         "index": 0,
         "block": {
           "type": "text",
-          "text": "The template is saved and the separate editable copy is open."
+          "text": "The source pages were checked, the chart was repaired from the source data, and the saved template now has a separate editable copy."
         }
       },
       {

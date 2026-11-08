@@ -63,6 +63,7 @@ export function apply(ctx: ClientContext): void {
 
   const catalogActions: Omit<TemplateCatalogInjected, 'hooks'> = {
     loadTemplates: () => catalog.load(),
+    loadBuiltins: () => catalog.loadBuiltins(),
     detailTemplate: id => catalog.detail(id),
     templateMediaUrl: (id, path) => catalog.mediaUrl(id, path),
     handoffPrompt: (text, id) => navigation.handoffPrompt(text, id),

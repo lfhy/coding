@@ -2,6 +2,6 @@
   "steps": [
     { "op": "initialize" },
     { "op": "newSession" },
-    { "op": "prompt", "text": "List my saved deck templates, create a source deck, save it as a template, list again, then create and read a separate copy from that saved template." }
+    { "op": "prompt", "text": "List my saved deck templates. Prepare source.pptx as a draft template, confirm it has not entered my library, compare every source page with the draft, use the source XML and chart data to repair the missing chart, check the draft, then save it as a template and read a separate editable copy." }
   ]
 }

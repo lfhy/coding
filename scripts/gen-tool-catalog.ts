@@ -567,7 +567,7 @@ const TOOL_PACKAGES: ToolPackage[] = [
       await ctx.plugin(ToolPpt)
     },
     note:
-      'The PPT preset installs these ten tools only in its Agent scope; other presets do not receive their schemas. '
+      'The PPT preset installs this package\'s tools only in its Agent scope; other presets do not receive their schemas. '
       + 'The catalog mounts the LLM and attachment services to harvest the schema without executing project operations, '
       + 'model review, rendering, or attachment I/O. At execution time the Host supplies ctx.pptProjects.',
   },

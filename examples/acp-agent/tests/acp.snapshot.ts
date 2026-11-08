@@ -18,6 +18,7 @@ import {
 import { resolvePwshPath } from 'coding-pwsh-local'
 import { decodeStorageRecord } from 'coding-session'
 import { OFFLOADED_IMAGE_TEXT } from 'coding-llm'
+import { buildPptx } from 'coding-ppt-workbench/src/export/pptx.ts'
 
 /**
  * The acp-agent example's snapshot suite: the scenario table for
@@ -90,6 +91,28 @@ const PRODUCT_SUBAGENT_RESULT_DIAGNOSTIC_CONFIG = fileURLToPath(
 const FS_DIFF_BOUND_CONFIG = fileURLToPath(new URL('./fs-diff-bound.cordis.yml', import.meta.url))
 const SNAPSHOTS_DIR = join(dirname(fileURLToPath(import.meta.url)), 'snapshots')
 const PACKED_CHUNKS_SOURCE = 'hook-cc-pretool-deny'
+
+async function preparePptTemplateWorkspace(cwd: string): Promise<void> {
+  const deck: Parameters<typeof buildPptx>[0] = {
+    format: 1, title: 'Source deck', size: '16:9', theme: 'paper',
+    pages: [
+      { id: 'source-cover', name: 'Revenue', background: '#ffffff', transition: 'none', elements: [
+        { id: 'source-heading', kind: 'text', x: 80, y: 80, w: 800, h: 80,
+          text: { content: 'Revenue by quarter', size: 42, color: '#202020', bold: true,
+            align: 'left', valign: 'middle', font: '' } },
+        { id: 'source-chart', kind: 'chart', x: 100, y: 210, w: 800, h: 350,
+          chart: 'bar', categories: ['Q1', 'Q2'], showValues: true, stacked: false, textColor: '#202020',
+          series: [{ name: 'Revenue', values: [42, 57], color: '#4f8cff' }] },
+      ] },
+      { id: 'source-end', name: 'Summary', background: '#ffffff', transition: 'none', elements: [
+        { id: 'source-summary', kind: 'text', x: 80, y: 100, w: 800, h: 80,
+          text: { content: 'The second source slide survives import.', size: 32, color: '#202020',
+            bold: false, align: 'left', valign: 'middle', font: '' } },
+      ] },
+    ],
+  }
+  await writeFile(join(cwd, 'source.pptx'), buildPptx(deck))
+}
 
 async function prepareEditingCordisSkillWorkspace(cwd: string): Promise<void> {
   const target = join(cwd, '.dsh', 'skills', 'editing-cordis-compositions', 'SKILL.md')
@@ -179,7 +202,7 @@ const SCENARIOS: Scenario[] = [
   // text-turn is the default header pin and owns the prompt and tool-schema
   // sidecars reused by alternate classes with identical component sequences.
   { name: 'text-turn', hasModelTurn: true, recorded: true, pinsHeader: true },
-  // 保存后产生的模板 UUID 由前一步工具结果提供，回放脚本从实时请求提取它。
+  // 导入报告中的随机页 ID、源文件哈希和保存后的模板 UUID 由回放脚本从实时请求提取。
   {
     name: 'ppt-templates',
     hasModelTurn: true,
@@ -189,6 +212,7 @@ const SCENARIOS: Scenario[] = [
     headerClass: 'ppt-templates',
     systemPromptSource: 'product-subagent-codex',
     configPath: PPT_TEMPLATES_CONFIG,
+    prepareWorkspace: preparePptTemplateWorkspace,
     env: { NODE_OPTIONS: [process.env.NODE_OPTIONS, `--import=${PPT_TEMPLATE_CLOCK}`].filter(Boolean).join(' ') },
   },
   // Product-subagent scenarios are authored schema-isolation fixtures: they
@@ -750,9 +774,10 @@ it('PPT 模板工具只进入专属组装，快照日志保留文本结果', () 
   }
   expect(schemas('text-turn')).toEqual([])
   expect(schemas('ppt-templates')).toEqual([
-    'ppt_check', 'ppt_create', 'ppt_delete_template', 'ppt_edit', 'ppt_export',
-    'ppt_import', 'ppt_import_template', 'ppt_open', 'ppt_read', 'ppt_redo',
-    'ppt_rename_template', 'ppt_render', 'ppt_save_template', 'ppt_templates', 'ppt_undo',
+    'ppt_check', 'ppt_create', 'ppt_create_from_template', 'ppt_delete_template',
+    'ppt_edit', 'ppt_export', 'ppt_import', 'ppt_import_evidence', 'ppt_import_template',
+    'ppt_open', 'ppt_prepare_template', 'ppt_read', 'ppt_redo', 'ppt_rename_template',
+    'ppt_render', 'ppt_save_template', 'ppt_templates', 'ppt_undo',
   ])
 
   const events = fixtureRecords('ppt-templates') as Array<{
@@ -765,15 +790,42 @@ it('PPT 模板工具只进入专属组装，快照日志保留文本结果', () 
     }
   }>
   expect(events.filter(event => event.type === 'tool/call').map(event => event.data?.name)).toEqual([
-    'ppt_templates', 'ppt_create', 'ppt_save_template', 'ppt_templates', 'ppt_create', 'ppt_read',
+    'ppt_templates', 'ppt_prepare_template', 'ppt_templates', 'ppt_read',
+    'ppt_import_evidence', 'ppt_edit', 'ppt_check', 'ppt_save_template',
+    'ppt_templates', 'ppt_create_from_template', 'ppt_read',
   ])
   const toolResults = events.filter(event => event.type === 'tool/result')
     .flatMap(event => event.data?.message?.content ?? [])
   expect(toolResults.every(result => result.isError === false)).toBe(true)
   const results = toolResults.flatMap(item => item.content ?? [])
-  expect(results).toHaveLength(6)
+  expect(results).toHaveLength(11)
   expect(results.every(item => item.type === 'text')).toBe(true)
   expect(JSON.stringify(results)).not.toMatch(/data:[^;]+;base64|application\/octet-stream/u)
+  const decoded = results.map(item => JSON.parse(item.text ?? '') as Record<string, unknown>)
+  expect(decoded[0]).toEqual({ templates: [] })
+  expect(decoded[1]).toMatchObject({ project: { pages: 2 }, report: {
+    sourceSlides: 2, importedPages: 2, pages: [
+      { sourceIndex: 1, source: { chart: 1 }, imported: { chart: 0 }, status: 'partial', losses: ['chart'] },
+      { sourceIndex: 2, status: 'no_known_loss', textPreview: ['The second source slide survives import.'] },
+    ],
+  } })
+  expect(decoded[1]?.sourceSha256).toMatch(/^[a-f\d]{64}$/u)
+  expect(decoded[2]).toEqual({ templates: [] })
+  const prepared = decoded[3]?.deck as { pages: { elements: { kind: string }[] }[] }
+  expect(prepared.pages).toHaveLength(2)
+  expect(prepared.pages[0]?.elements.some(element => element.kind === 'chart')).toBe(false)
+  expect(decoded[4]).toMatchObject({ sourceIndex: 1, sourceSha256: decoded[1]?.sourceSha256, nextOffset: null })
+  const evidence = JSON.parse(String(decoded[4]?.content)) as { slidePart: string; charts: { xml: string }[] }
+  expect(evidence.slidePart).toBe('ppt/slides/slide1.xml')
+  expect(evidence.charts[0]?.xml).toContain('<c:v>42</c:v>')
+  expect(evidence.charts[0]?.xml).toContain('<c:v>57</c:v>')
+  expect(decoded[6]).toMatchObject({ ok: true, issues: [] })
+  expect(decoded[8]).toMatchObject({ templates: [{ name: 'Repaired deck', pages: 2 }] })
+  const copy = decoded[10]?.deck as { pages: { elements: { kind: string; chart?: string; series?: { values: number[] }[] }[] }[] }
+  expect(copy.pages).toHaveLength(2)
+  expect(copy.pages[0]?.elements).toEqual(expect.arrayContaining([
+    expect.objectContaining({ kind: 'chart', chart: 'bar', series: [{ name: 'Revenue', values: [42, 57], color: '#4f8cff' }] }),
+  ]))
 })
 
 it('pins native DeepSeek image offload in the request sent by the assembled app', async () => {

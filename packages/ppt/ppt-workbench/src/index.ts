@@ -7,6 +7,7 @@
  * @module coding-ppt-workbench
  */
 
+import { createHash } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { basename, isAbsolute, join } from 'node:path'
 import { Service, type Context } from '@deepseek-ai/cordis'
@@ -20,7 +21,10 @@ import { checkDeck, type PptCheckResult } from './check.ts'
 import { buildPdf } from './export/pdf.ts'
 import { buildPptx } from './export/pptx.ts'
 import { collectFonts, systemFontDirs, type SkippedFont } from './fonts.ts'
-import { importPptx, PPT_IMPORT_MAX_BYTES } from './import.ts'
+import {
+  extractPptxPageEvidence, importPptx, PPT_IMPORT_MAX_BYTES, slicePptxPageEvidence,
+  type PptImportReport, type PptPageEvidenceChunk,
+} from './import.ts'
 import { renderPages, type PageCapture, type RenderedPage } from './render.ts'
 import { parseDeck, PptModelError, type SlideSizeId, type ThemeId } from 'coding-ppt-model'
 import { installRoutes } from './routes.ts'
@@ -38,6 +42,7 @@ export type * from './ops.ts'
 export { PptModelError } from 'coding-ppt-model'
 export { PptStoreError } from './store.ts'
 export type { PptTemplateDetail, PptTemplateId, PptTemplateSummary } from './template-store.ts'
+export type { PptImportReport, PptPageEvidenceChunk } from './import.ts'
 
 /** 本机模板仓库路径；远程 marker 工作区不通过此设置转为本机工程。 */
 export interface Config {
@@ -88,6 +93,13 @@ export default class PptProjects extends Service {
   private readonly active = new Map<string, string>()
   /** 模型最近一次要求面板打开工程的时间戳。 */
   private readonly openRequests = new Map<string, PptOpenRequest>()
+  /** 最近一次取证的单页文本；仅在重读源文件且 SHA-256 一致后复用。 */
+  private evidenceCache: {
+    sourcePath: string
+    sourceSha256: string
+    sourceIndex: number
+    content: string
+  } | undefined
 
   /** 导出时要扫描的字体目录；默认取平台字体目录。 */
   private fontDirs: readonly string[] = systemFontDirs()
@@ -103,6 +115,7 @@ export default class PptProjects extends Service {
     ctx.effect(() => () => {
       this.active.clear()
       this.openRequests.clear()
+      this.evidenceCache = undefined
     }, 'pptWorkbench: session pointers')
   }
 
@@ -365,19 +378,17 @@ export default class PptProjects extends Service {
    * @param sessionId - 会话身份。
    * @param source - 工作区相对的 .pptx 路径。
    * @param options - 目标目录与标题（都缺省时按源文件名生成）。
-   * @returns 新工程快照与未能表达的类别。
+   * @returns 新工程快照、逐页保留报告与源文件 SHA-256；导入只创建工程，不保存模板。
    * @throws PptStoreError 远程工作区、越界、文件超限或目标已有内容时；失败不切换当前工程。
    */
   async import(sessionId: string, source: string, options: { dir?: string; title?: string }): Promise<{
     snapshot: PptSnapshot
     dropped: readonly string[]
+    report: PptImportReport
+    sourceSha256: string
   }> {
-    const root = await this.localRoot(sessionId)
-    if (typeof source !== 'string' || !/\.pptx$/iu.test(source)) {
-      throw new PptStoreError('bad-request', '只支持导入 .pptx 文件')
-    }
-    const sourcePath = resolveProjectDir(root, source)
-    const bytes = await readWorkspaceFile(root, sourcePath, PPT_IMPORT_MAX_BYTES)
+    const { root, bytes } = await this.readImportSource(sessionId, source)
+    const sourceSha256 = createHash('sha256').update(bytes).digest('hex')
     const title = options.title ?? basename(source).replace(/\.pptx$/iu, '')
     const imported = importPptx(bytes, { title })
     const dir = options.dir === undefined
@@ -385,7 +396,51 @@ export default class PptProjects extends Service {
       : resolveProjectDir(root, options.dir)
     const snapshot = await publishProject(root, dir, imported.deck, imported.media)
     this.focus(sessionId, dir)
-    return { snapshot, dropped: imported.dropped }
+    return { snapshot, dropped: imported.dropped, report: imported.report, sourceSha256 }
+  }
+
+  /** 分片读取已导入 PPTX 的源页证据，源文件变化后必须重新导入。
+   * @param sessionId - 本机会话身份。
+   * @param source - 工作区内的 .pptx 文件路径。
+   * @param options - 源页序号、导入时的 SHA-256 与可选分片窗口。
+   * @returns 经同一安全解包器提取的有界证据片段及其源哈希。
+   * @throws PptStoreError 路径不安全、源文件缺失或内容已变化时。
+   */
+  async importEvidence(sessionId: string, source: string, options: {
+    sourceIndex: number
+    sourceSha256: string
+    offset?: number
+    limit?: number
+  }): Promise<PptPageEvidenceChunk & { sourceSha256: string }> {
+    if (typeof options.sourceSha256 !== 'string' || !/^[a-f\d]{64}$/iu.test(options.sourceSha256)) {
+      throw new PptStoreError('bad-request', '源文件 SHA-256 必须是 64 位十六进制字符串')
+    }
+    const { bytes, sourcePath } = await this.readImportSource(sessionId, source)
+    const sourceSha256 = createHash('sha256').update(bytes).digest('hex')
+    if (sourceSha256 !== options.sourceSha256.toLowerCase()) {
+      throw new PptStoreError('conflict', 'PPTX 源文件内容已变化，请重新导入后再读取源页证据')
+    }
+    const { sourceIndex, offset, limit } = options
+    const previous = this.evidenceCache
+    const cacheHit = previous?.sourcePath === sourcePath && previous.sourceSha256 === sourceSha256
+      && previous.sourceIndex === sourceIndex
+    const content = cacheHit ? previous.content : extractPptxPageEvidence(bytes, sourceIndex)
+    const chunk = slicePptxPageEvidence(content, { sourceIndex, offset, limit })
+    if (!cacheHit) this.evidenceCache = { sourcePath, sourceSha256, sourceIndex, content }
+    return { ...chunk, sourceSha256 }
+  }
+
+  private async readImportSource(sessionId: string, source: string): Promise<{
+    root: string
+    sourcePath: string
+    bytes: Uint8Array
+  }> {
+    const root = await this.localRoot(sessionId)
+    if (typeof source !== 'string' || !/\.pptx$/iu.test(source)) {
+      throw new PptStoreError('bad-request', '只支持导入 .pptx 文件')
+    }
+    const sourcePath = resolveProjectDir(root, source)
+    return { root, sourcePath, bytes: await readWorkspaceFile(root, sourcePath, PPT_IMPORT_MAX_BYTES) }
   }
 
   private async localRoot(sessionId: string): Promise<string> {

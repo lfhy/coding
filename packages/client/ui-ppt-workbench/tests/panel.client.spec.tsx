@@ -56,9 +56,12 @@ function mount(state: PptPanelState, shown = true, locale: typeof en = en) {
     sessionId: 'session-one',
     useTabInfo: () => ({ shown, tab: { id: 'ppt-1', params: {} } }),
     usePpt: (choose: (snapshot: PptPanelState) => unknown) => choose(state),
-    useTemplateCatalog: (choose: (snapshot: unknown) => unknown) => choose({ phase: 'ready', templates: [], details: {}, error: null }),
+    useTemplateCatalog: (choose: (snapshot: unknown) => unknown) => choose({
+      phase: 'ready', templates: [], details: {}, error: null,
+      builtins: { phase: 'idle', deck: null, error: null },
+    }),
     catalogActions: {
-      loadTemplates: vi.fn(async () => {}), detailTemplate: vi.fn(async () => {}),
+      loadTemplates: vi.fn(async () => {}), loadBuiltins: vi.fn(async () => {}), detailTemplate: vi.fn(async () => {}),
       templateMediaUrl: vi.fn(() => '/api/ppt/templates/media'),
       handoffPrompt: vi.fn(async () => {}),
       cancelHandoff: vi.fn(),

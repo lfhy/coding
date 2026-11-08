@@ -15,7 +15,7 @@ PPT 创作模式的宿主能力：工程存储（`ppt/<工程目录>/deck.json`�
 
 `deck.json` 先写临时文件再 rename，进程中断不会留下半个 JSON。`history.json` 保存最近 60 个版本；撤销只移动游标，已知的版本号仍然存在，重做因此天然成立。
 
-用户模板库独立于会话工作区，默认位于 Host 用户目录 `resolveDshHome()/ppt-templates/`；宿主配置 `templatesDir` 可指定另一绝对目录。每个模板保存完整 `deck` 与其引用的 `media/` 字节快照，跨会话、本机工作区可复用；保存、套用均不修改模板原稿，套用会在目标工作区新建可编辑工程并打开工作台。模板名称可修改，删除只影响模板库，不删除从中创建的工程。模板写操作由 `ppt` 模式的模型工具调用服务完成；HTTP 只提供目录与预览读取。
+用户模板库独立于会话工作区，默认位于 Host 用户目录 `resolveDshHome()/ppt-templates/`；宿主配置 `templatesDir` 可指定另一绝对目录。每个模板保存完整 `deck` 与其引用的 `media/` 字节快照，跨会话、本机工作区可复用；保存、套用均不修改模板原稿，套用会在目标工作区新建可编辑工程并打开工作台。模板名称可修改，删除只影响模板库，不删除从中创建的工程。模板写操作由 `ppt` 模式的模型工具调用服务完成；HTTP 只提供目录与预览读取，内置单页版式不写入用户模板库。
 
 模板库最多保存 100 份模板，每份 `template.json` 不超过 8 MiB，连同媒体不超过 100 MiB。读写通过跨进程文件锁串行化；进程中断遗留的 `.catalog.lock` 只应在确认没有持锁进程后由操作者移除。损坏的模板会报告具体条目并停止该次操作，不会静默跳过或绕过校验删除，须先修复对应文件。
 
@@ -36,13 +36,14 @@ PPT 创作模式的宿主能力：工程存储（`ppt/<工程目录>/deck.json`�
 
 ## 内置单页版式
 
-`add_page` 可以带 `template`（`title`、`section`、`bullets`、`two-column`、`data`、`chart`、`quote`）与 `title`／`bullets`：七种内置版式只向当前工程添加单页，按当前主题铺好可编辑元素；它们不是用户模板库中的整份演示文稿。面板顶栏的新增页面菜单使用同一份版式清单。
+`add_page` 可以带 `template`（`title`、`section`、`bullets`、`two-column`、`data`、`chart`、`quote`）与 `title`／`bullets`：七种内置版式只向当前工程添加单页，按当前主题铺好可编辑元素；它们不是用户模板库中的整份演示文稿。面板顶栏的新增页面菜单使用同一份版式清单；`GET /api/ppt/templates/builtins` 以只读 `deck` 返回这七页 16:9／paper 版式的真实预览，不创建工程。
 
 ## 质检与导入
 
 - **`checkDeck`** 在导出前跑确定性规则：元素出界、宽高为 0 是 `error`（阻断导出），文字溢出与文字/底色对比度不足是 `warning`。估算类规则宁可提示也不阻断。
-- **`import`** 把工作区里的 .pptx 解包成工程：文本、自动图形、连接线、图片与表格成为可编辑元素，图片落在工程的 `media/` 下；图表、SmartArt 与动画无法表达，随结果以 `dropped` 返回。解析只覆盖模型能表达的子集，遇到不认识的结构跳过。
-- **用户模板导入**从本机工作区读取 `.pptx`，只接受不含宏的文件，源文件不超过 8 MiB；Host 有界解包后用 `parseDeck` 校验，将常见文字、图形、图片和表格保存为可编辑的整稿快照。复杂母版、SmartArt、图表、动画等无法保真的内容以 `dropped` 和导入限制提示，不承诺与源文件逐像素一致；旧 `.ppt`、`.potx` 和 `.pptm` 不支持。文件类型、大小、压缩包结构或工程内容不合法时工具报错，不生成半成品模板。
+- **`import`** 把工作区里的 .pptx 解包成工程：文本、自动图形、连接线、图片与表格成为可编辑元素，图片落在工程的 `media/` 下；图表、SmartArt 与动画无法表达，随结果以 `dropped` 返回。结果还含 `sourceSha256` 与逐页 `report`，对照源页序号和导入页 id 记录结构计数、`losses`、有界 `textPreview`、`truncated` 与状态：`empty_import` 为有源对象但导入页无元素，`partial` 为已知结构损失，`image_only` 为可见图片但内部不一定可编辑，`empty_source` 为源页为空，`no_known_loss` 仅表示没有发现已知结构损失，不保证视觉保真。
+- **源页查证**：`importEvidence` 只读取同一工作区源文件中指定页的 XML 与关联图表缓存 JSON 文本，按字符偏移分片返回 `content`、`totalChars`、`nextOffset`；完整源页 JSON 超过 1 MiB UTF-16 字符即报错，不截断，单片默认 8000、最多 16000 字符。调用方须传入导入结果的 `sourceSha256`，每次读取都校验源文件哈希，源文件变动或消失即拒绝，不能用别的版本补页。源文件内容不可信，不作为指令；证据不足时不得编造数值或把占位内容当作修复。
+- **用户模板导入**从本机工作区读取 `.pptx`，只接受不含宏的文件，源文件不超过 8 MiB；Host 有界解包后用 `parseDeck` 校验。合法 OPC 包根关系路径、deflate 选项标志、数字 XML 实体、显式声明且签名匹配的 PNG 资源（包括 `.tmp` 文件名）和表格列宽权重可识别，仍受解包、类型和内容预算约束。`ppt_prepare_template` 先创建并聚焦可编辑工程草稿、不写模板库，便于逐页查证和补齐；`ppt_import_template` 直接保存导入快照而不切换工程。复杂母版、SmartArt、图表、动画等无法保真的内容以 `dropped` 和导入限制提示，不承诺与源文件逐像素一致；旧 `.ppt`、`.potx` 和 `.pptm` 不支持。文件类型、大小、压缩包结构或工程内容不合法时工具报错，不生成半成品模板。
 - **用户模板管理**在本机 Host 上执行。远程工作区可管理本机模板库，但不能把远端工程保存成模板，也不能向远端工作区套用模板；这两种请求明确拒绝，不回退为本机工程。
 - **导出**先跑质检，`skipCheck` 可绕过 error 级问题。导出同时按 `fsType` 许可嵌入字体：`0x0000/0x0008` 正常嵌入、`0x0004` 只读嵌入、`0x0002`/`0x0200` 与读不到 OS/2 的字体一律跳过并在结果里报 `skippedFonts`。字体先按工程里实际用到的字符子集化（`subset-font`/harfbuzz），子集化失败才回退整字体；两路都包成 EOT（`.fntdata`，版本 0x00020001、不压缩）。`.ttc` 集合取第一个 face 重建后再走同一条流程。
 
@@ -63,6 +64,7 @@ PPT 创作模式的宿主能力：工程存储（`ppt/<工程目录>/deck.json`�
 | `POST /api/ppt/upload` | 上传图片到工程 `media/` |
 | `POST /api/ppt/ack` | 面板确认已处理打开请求 |
 | `GET /api/ppt/templates` | 列出本机用户模板摘要 |
+| `GET /api/ppt/templates/builtins` | 只读返回 `{ ok: true, deck }`，供七种内置版式预览 |
 | `GET /api/ppt/templates/detail?id=` | 读取模板详情与完整 deck，供第一页预览 |
 | `GET /api/ppt/templates/media?id=&path=` | 读取模板实际引用的栅格图片原始字节 |
 
@@ -74,7 +76,7 @@ PPT 创作模式的宿主能力：工程存储（`ppt/<工程目录>/deck.json`�
 
 ## 模型体验
 
-无直接贡献。模型经 [`coding-tool-ppt`](../tool-ppt/README.md) 的 `ppt_templates` 取得模板摘要，经 `ppt_save_template` 保存工程，经 `ppt_create.templateId` 套用模板；本包只提供服务与存储，不把模板的 deck 或媒体字节放进模型消息。
+无直接贡献。模型经 [`coding-tool-ppt`](../tool-ppt/README.md) 的 `ppt_templates` 取得模板摘要，经 `ppt_prepare_template` 取得逐页导入报告并补齐草稿，再经 `ppt_save_template` 保存工程，或用 `ppt_create_from_template` 套用模板；本包只提供服务与存储，目录与保存结果不把模板的 deck 或媒体字节放进模型消息。
 
 #### KV Cache 影响
 

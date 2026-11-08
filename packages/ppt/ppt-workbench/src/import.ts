@@ -9,7 +9,7 @@
 
 import { Unzip, UnzipInflate } from 'fflate'
 import {
-  PPT_THEMES, PptModelError, newId, parseDeck,
+  PPT_THEMES, SLIDE_SIZES, PptModelError, newId, parseDeck,
   type PptDeck, type PptDeck as Deck, type PptElement, type PptPage, type SlideSizeId,
   type TextAlign, type TextVAlign,
 } from 'coding-ppt-model'
@@ -22,6 +22,36 @@ export interface PptImportResult {
   readonly media: readonly { readonly part: string; readonly bytes: Uint8Array }[]
   /** 未能表达的元素类别，去重后供调用方汇报。 */
   readonly dropped: readonly string[]
+  /** 按源幻灯片顺序记录的结构保留情况；不代表视觉样式保真。 */
+  readonly report: PptImportReport
+}
+
+/** 导入不能保留的页内对象种类。 */
+export type PptPageLoss = 'chart' | 'diagram' | 'group' | 'table' | 'image' | 'text' | 'shape' | 'object'
+
+/** 源页及导入页的逐页结构对照。 */
+export interface PptImportReport {
+  readonly sourceSlides: number
+  readonly importedPages: number
+  readonly pages: readonly {
+    readonly sourceIndex: number
+    readonly pageId: string
+    readonly slidePart: string
+    readonly source: Readonly<{ text: number; image: number; table: number; chart: number; diagram: number; other: number }>
+    readonly imported: Readonly<{ text: number; image: number; table: number; chart: number }>
+    readonly status: 'no_known_loss' | 'image_only' | 'empty_source' | 'empty_import' | 'partial'
+    readonly losses: readonly PptPageLoss[]
+    readonly textPreview: readonly string[]
+    readonly truncated: boolean
+  }[]
+}
+
+/** 有界、可按偏移续读的源页 XML 证据片段。 */
+export interface PptPageEvidenceChunk {
+  readonly sourceIndex: number
+  readonly content: string
+  readonly totalChars: number
+  readonly nextOffset: number | null
 }
 
 /** 导入失败。 */
@@ -84,7 +114,7 @@ function zipDirectory(bytes: Uint8Array): Map<string, ZipMember> {
     if (next > end || local + 30 > pos || view.getUint32(local, true) !== 0x04034b50
       || view.getUint16(pos + 34, true) !== 0 || view.getUint32(pos + 20, true) === 0xffffffff
       || view.getUint32(pos + 24, true) === 0xffffffff || local === 0xffffffff
-      || (flags & ~0x0808) !== 0 || (method !== 0 && method !== 8)
+      || (flags & ~(method === 8 ? 0x080e : 0x0808)) !== 0 || (method !== 0 && method !== 8)
       || view.getUint16(local + 6, true) !== flags || view.getUint16(local + 8, true) !== method
       || view.getUint16(local + 26, true) !== nameLength) bad('ZIP 条目使用不支持的压缩方式或头部损坏')
     let name: string
@@ -159,9 +189,9 @@ function unpack(bytes: Uint8Array): Record<string, Uint8Array> {
 interface Relationship { readonly type: string; readonly target: string }
 
 function resolvePart(source: string, target: string): string {
-  if (target.startsWith('/') || target.includes('\\') || /[\u0000-\u001f\u007f:%?#]/u.test(target)) bad('PPTX 关系目标路径不安全')
-  const segments = source.split('/').slice(0, -1)
-  for (const segment of target.split('/')) {
+  if (target.includes('\\') || /[\u0000-\u001f\u007f:%?#]/u.test(target)) bad('PPTX 关系目标路径不安全')
+  const segments = target.startsWith('/') ? [] : source.split('/').slice(0, -1)
+  for (const segment of (target.startsWith('/') ? target.slice(1) : target).split('/')) {
     if (segment === '..') {
       if (segments.length === 0) bad('PPTX 关系目标越出包根目录')
       segments.pop()
@@ -267,12 +297,37 @@ function attr(xml: string, name: string): string | undefined {
 }
 
 function decodeXml(value: string): string {
-  return value
-    .replace(/&lt;/gu, '<')
-    .replace(/&gt;/gu, '>')
-    .replace(/&quot;/gu, '"')
-    .replace(/&apos;/gu, "'")
-    .replace(/&amp;/gu, '&')
+  return value.replace(/&(#(?:x[0-9a-fA-F]+|[0-9]+)|lt|gt|quot|apos|amp);/gu, (_match, entity: string) => {
+    if (entity.startsWith('#')) {
+      const digits = entity.slice(1)
+      const code = digits.startsWith('x') ? Number.parseInt(digits.slice(1), 16) : Number.parseInt(digits, 10)
+      if (code !== 9 && code !== 10 && code !== 13
+        && (code < 0x20 || code > 0x10ffff || (code >= 0xd800 && code <= 0xdfff)
+          || (code >= 0xfffe && code <= 0xffff))) bad('PPTX XML 数字实体不合法')
+      return String.fromCodePoint(code)
+    }
+    switch (entity) {
+      case 'lt': return '<'
+      case 'gt': return '>'
+      case 'quot': return '"'
+      case 'apos': return "'"
+      default: return '&'
+    }
+  })
+}
+
+/** 保留原有片段顺序，线性移除已通过结构扫描的 XML 注释。 */
+function withoutComments(xml: string): string {
+  const parts: string[] = []
+  let cursor = 0
+  while (true) {
+    const start = xml.indexOf('<!--', cursor)
+    if (start < 0) { parts.push(xml.slice(cursor)); return parts.join('') }
+    parts.push(xml.slice(cursor, start))
+    const end = xml.indexOf('-->', start + 4)
+    if (end < 0) bad('PPTX XML 注释未闭合')
+    cursor = end + 3
+  }
 }
 
 function hexColor(value: string | undefined, fallback: string): string {
@@ -305,7 +360,7 @@ function decodeText(runs: string): string {
   let paragraphs = 0
   for (const paragraph of runs.matchAll(/<a:p\b(?![^>]*\/\s*>)[^>]*>([\s\S]*?)<\/a:p>/gu)) {
     if (paragraphs++ > 0) content += '\n'
-    for (const item of (paragraph[1] ?? '').matchAll(/<a:t>([\s\S]*?)<\/a:t>/gu)) {
+    for (const item of (paragraph[1] ?? '').matchAll(/<a:t(?:\s[^>]*)?>([\s\S]*?)<\/a:t>/gu)) {
       content += decodeXml(item[1] ?? '')
       if (content.length > 5000) bad('PPTX 文本不能超过 5000 字符')
     }
@@ -351,14 +406,14 @@ function lineWidth(block: string): number {
   return Math.max(1, px(attr(line, 'w') ?? '12700'))
 }
 
-/**
- * 解包并解析一份 .pptx。
- * @param bytes - .pptx 文件内容。
- * @param options - 文稿标题。
- * @returns 导入结果。
- * @throws PptImportError - 不是合法的 .pptx、或没有任何可解析的幻灯片时。
- */
-export function importPptx(bytes: Uint8Array, options: { title: string }): PptImportResult {
+function readSource(bytes: Uint8Array): {
+  files: Record<string, Uint8Array>
+  slideBlocks: Map<string, string[]>
+  decode: (path: string) => string
+  presentation: string
+  slidePaths: string[]
+  tempPng: boolean
+} {
   const files = unpack(bytes)
   const slideBlocks = new Map<string, string[]>()
   const decode = (path: string): string => {
@@ -384,6 +439,9 @@ export function importPptx(bytes: Uint8Array, options: { title: string }): PptIm
     || /macroEnabled/iu.test(decode('[Content_Types].xml'))) {
     bad('不支持宏、ActiveX 或嵌入对象')
   }
+  const tempTypes = [...decode('[Content_Types].xml').matchAll(/<Default\b[^>]*>/gu)]
+    .map(([tag]) => tag).filter(tag => attr(tag, 'Extension') === 'tmp')
+  const tempPng = tempTypes.length === 1 && attr(tempTypes[0] ?? '', 'ContentType') === 'image/png'
   const presentation = decode('ppt/presentation.xml')
   if (presentation === '') bad('这个 .pptx 缺少演示文稿主文件')
   const numberedSlides = Object.keys(files)
@@ -405,27 +463,68 @@ export function importPptx(bytes: Uint8Array, options: { title: string }): PptIm
   })()
   if (slidePaths.length === 0) throw new PptImportError('这个 .pptx 里没有幻灯片')
   if (slidePaths.length > 200) bad('演示文稿不能超过 200 页')
+  return { files, slideBlocks, decode, presentation, slidePaths, tempPng }
+}
+
+/**
+ * 解包并解析一份 .pptx。
+ * @param bytes - .pptx 文件内容。
+ * @param options - 文稿标题。
+ * @returns 导入结果。
+ * @throws PptImportError - 不是合法的 .pptx、或没有任何可解析的幻灯片时。
+ */
+export function importPptx(bytes: Uint8Array, options: { title: string }): PptImportResult {
+  const { files, slideBlocks, decode, presentation, slidePaths, tempPng } = readSource(bytes)
 
   const dropped = new Set<string>()
   dropped.add('复杂母版与版式')
   dropped.add('动画与高级转场')
   const media: { part: string; bytes: Uint8Array }[] = []
   const mediaNames = new Map<string, string>()
+  const pageReports: PptImportReport['pages'][number][] = []
   const pages: PptPage[] = slidePaths.map((path, index) => {
     const xml = decode(path)
+    const visibleXml = withoutComments(xml)
     const rels = relationships(decode(path.replace('slides/', 'slides/_rels/') + '.rels'), path)
-    const backgroundRaw = /<a:srgbClr val="([0-9a-fA-F]{6})"/u.exec(firstElement(xml, 'p:bg'))?.[1]
+    const background = firstElement(visibleXml, 'p:bg')
+    const backgroundRaw = /<a:srgbClr val="([0-9a-fA-F]{6})"/u.exec(background)?.[1]
     const elements: PptElement[] = []
+    const source = { text: 0, image: 0, table: 0, chart: 0, diagram: 0, other: 0 }
+    const losses = new Set<PptPageLoss>()
+    const backgroundBlip = /<a:blip\b[^>]*>/u.exec(firstElement(background, 'p:bgPr'))?.[0]
+    if (backgroundBlip !== undefined) {
+      source.image += 1
+      const relId = attr(backgroundBlip, 'r:embed')
+      const size = SLIDE_SIZES[slideSize(presentation)]
+      const image = parseImage(relId, { x: 0, y: 0, w: size.width, h: size.height },
+        rels, files, media, mediaNames, dropped, tempPng)
+      if (image === null) losses.add('image')
+      else elements.push(image)
+    }
+    const groupCount = [...visibleXml.matchAll(/<p:grpSp\b/gu)].length
+    const unknownCount = [...visibleXml.matchAll(/<p:(?:contentPart|oleObj|control)\b/gu)].length
+    source.other += groupCount + unknownCount
+    if (groupCount > 0) losses.add('group')
+    if (unknownCount > 0) losses.add('object')
     for (const block of slideBlocks.get(path) ?? []) {
       if (elements.length >= 200) bad(`第 ${index + 1} 页不能超过 200 个元素`)
-      const element = parseShape(block, rels, files, media, mediaNames, dropped)
+      let category: keyof typeof source
+      if (block.startsWith('<p:pic')) category = 'image'
+      else if (block.startsWith('<p:graphicFrame')) {
+        category = block.includes('drawingml/2006/chart') ? 'chart'
+          : block.includes('drawingml/2006/diagram') ? 'diagram'
+            : block.includes('/table') ? 'table' : 'other'
+      } else category = block.startsWith('<p:sp') && /<a:t(?:\s[^>]*)?>/u.test(block) ? 'text' : 'other'
+      source[category] += 1
+      const element = parseShape(block, rels, files, media, mediaNames, dropped, tempPng)
       if (element !== null) elements.push(element)
+      else losses.add(category === 'other' ? block.startsWith('<p:graphicFrame') ? 'object' : 'shape' : category)
       if (block.startsWith('<p:graphicFrame')) {
         if (block.includes('drawingml/2006/chart')) dropped.add('图表')
         if (block.includes('drawingml/2006/diagram')) dropped.add('SmartArt')
       }
     }
-    return {
+    const page: PptPage = {
       id: newId(),
       name: `第 ${index + 1} 页`,
       background: backgroundRaw === undefined ? null : hexColor(backgroundRaw, '#ffffff'),
@@ -433,6 +532,24 @@ export function importPptx(bytes: Uint8Array, options: { title: string }): PptIm
         : /<p:transition>\s*<p:push/u.test(xml) ? 'push' : 'none',
       elements,
     }
+    const imported = { text: 0, image: 0, table: 0, chart: 0 }
+    for (const element of elements) {
+      if (element.kind === 'text' || element.kind === 'image' || element.kind === 'table' || element.kind === 'chart') {
+        imported[element.kind] += 1
+      }
+    }
+    for (const category of ['text', 'image', 'table', 'chart'] as const) {
+      if (source[category] > imported[category]) losses.add(category)
+    }
+    const preview = previewText(visibleXml)
+    const sourceCount = Object.values(source).reduce((total, count) => total + count, 0)
+    const status = sourceCount === 0 ? 'empty_source'
+      : elements.length === 0 ? 'empty_import'
+        : losses.size > 0 ? 'partial'
+          : elements.every(element => element.kind === 'image') ? 'image_only' : 'no_known_loss'
+    pageReports.push({ sourceIndex: index + 1, pageId: page.id, slidePart: path, source, imported,
+      status, losses: [...losses], textPreview: preview.text, truncated: preview.truncated })
+    return page
   })
 
   const deck: Deck = {
@@ -442,7 +559,147 @@ export function importPptx(bytes: Uint8Array, options: { title: string }): PptIm
     theme: pageTheme(pages),
     pages,
   }
-  return { deck: parseDeck(deck), media, dropped: [...dropped] }
+  const parsed = parseDeck(deck)
+  if (parsed.pages.length !== slidePaths.length) bad('PPTX 导入后页数与源文件不一致')
+  return { deck: parsed, media, dropped: [...dropped], report: {
+    sourceSlides: slidePaths.length, importedPages: parsed.pages.length, pages: pageReports,
+  } }
+}
+
+function previewText(xml: string): { text: string[]; truncated: boolean } {
+  const text: string[] = []
+  let remaining = 600
+  let truncated = false
+  for (const match of xml.matchAll(/<a:t(?:\s[^>]*)?>([\s\S]*?)<\/a:t>/gu)) {
+    const value = decodeXml(match[1] ?? '').trim()
+    if (value === '') continue
+    if (remaining === 0 || text.length === 24) { truncated = true; break }
+    const allowed = remaining
+    text.push(value.slice(0, remaining))
+    remaining -= text.at(-1)?.length ?? 0
+    if (value.length > allowed) { truncated = true; break }
+  }
+  return { text, truncated }
+}
+
+const MAX_EVIDENCE_CHARS = 1024 * 1024
+const DESIGN_REL_BASE = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/'
+
+function designEvidence(
+  files: Record<string, Uint8Array>,
+  decode: (part: string) => string,
+  slideRelations: ReadonlyMap<string, Relationship>,
+): { kind: 'layout' | 'master' | 'theme'; part: string; xml: string }[] {
+  const result: { kind: 'layout' | 'master' | 'theme'; part: string; xml: string }[] = []
+  const active = new Set<string>()
+  const visited = new Set<string>()
+  const relsOf = (part: string): Map<string, Relationship> => {
+    const slash = part.lastIndexOf('/')
+    const relsPart = `${part.slice(0, slash)}/_rels/${part.slice(slash + 1)}.rels`
+    return relationships(decode(relsPart), part)
+  }
+  const follow = (rels: ReadonlyMap<string, Relationship>, type: string): string | undefined => {
+    const targets = [...rels.values()].filter(relation => relation.type === DESIGN_REL_BASE + type)
+    if (targets.length > 1) bad(`PPTX 设计关系重复：${type}`)
+    return targets[0]?.target
+  }
+  const visit = (kind: 'layout' | 'master' | 'theme', part: string, depth: number): void => {
+    if (depth > 3 || active.has(part)) bad('PPTX 设计关系循环或层级超限')
+    if (visited.has(part)) return
+    if (!part.startsWith('ppt/') || !part.endsWith('.xml') || files[part] === undefined) {
+      bad(`PPTX 设计部件缺失或无效：${part}`)
+    }
+    active.add(part)
+    const xml = decode(part)
+    result.push({ kind, part, xml })
+    if (kind === 'layout') {
+      const master = follow(relsOf(part), 'slideMaster')
+      if (master !== undefined) visit('master', master, depth + 1)
+    } else if (kind === 'master') {
+      const theme = follow(relsOf(part), 'theme')
+      if (theme !== undefined) visit('theme', theme, depth + 1)
+    }
+    active.delete(part)
+    visited.add(part)
+  }
+  const layout = follow(slideRelations, 'slideLayout')
+  if (layout !== undefined) visit('layout', layout, 1)
+  const directTheme = follow(slideRelations, 'theme')
+  if (directTheme !== undefined) visit('theme', directTheme, 1)
+  return result
+}
+
+/**
+ * 安全解包后取得源页实际引用的原始 XML；结果是未经信任的文档数据，不能作为指令。
+ * @param bytes - 未修改的 .pptx 字节。
+ * @param sourceIndex - 从 1 开始的源页序号。
+ * @returns 至多 1 MiB UTF-16 字符的确定性 JSON 文本。
+ */
+export function extractPptxPageEvidence(bytes: Uint8Array, sourceIndex: number): string {
+  if (!Number.isSafeInteger(sourceIndex) || sourceIndex < 1) bad('PPTX 证据页码不合法')
+  const { files, decode, slidePaths } = readSource(bytes)
+  const path = slidePaths[sourceIndex - 1]
+  if (path === undefined) bad('PPTX 证据页码超出源文件范围')
+  const relations = relationships(decode(path.replace('slides/', 'slides/_rels/') + '.rels'), path)
+  const slideXml = decode(path)
+  const visibleXml = withoutComments(slideXml)
+  const usedIds = new Set([...visibleXml.matchAll(/\br:(?:id|embed|link)="([^"]+)"/gu)].map(match => match[1] ?? ''))
+  const chartIds = new Set([...visibleXml.matchAll(/<c:chart\b[^>]*\br:id="([^"]+)"/gu)].map(match => match[1] ?? ''))
+  const charts: { id: string; part: string; xml: string }[] = []
+  const linked = [...relations].filter(([id]) => usedIds.has(id)).map(([id, relation]) => {
+    if (chartIds.has(id)) {
+      if (!relation.type.endsWith('/chart')) bad(`PPTX 图表关系不合法：${id}`)
+      if (files[relation.target] === undefined || !relation.target.endsWith('.xml')) {
+        bad(`PPTX 图表源内容缺失：${relation.target}`)
+      }
+      charts.push({ id, part: relation.target, xml: decode(relation.target) })
+    }
+    return { id, type: relation.type, target: relation.target }
+  })
+  if ([...chartIds].some(id => !relations.has(id))) bad('PPTX 图表关系缺失')
+  const designParts = designEvidence(files, decode, relations)
+  if (slideXml.length + charts.reduce((total, chart) => total + chart.xml.length, 0)
+    + designParts.reduce((total, part) => total + part.xml.length, 0) > MAX_EVIDENCE_CHARS) {
+    bad('PPTX 单页证据超出 1 MiB 字符上限')
+  }
+  const content = JSON.stringify({ slidePart: path, slideXml, relationships: linked, charts, designParts })
+  if (content.length > MAX_EVIDENCE_CHARS) bad('PPTX 单页证据超出 1 MiB 字符上限')
+  return content
+}
+
+/**
+ * 从已验证的完整证据中安全切片，供 Host 缓存命中时复用相同的分页约束。
+ * @param content - extractPptxPageEvidence 返回的完整 JSON。
+ * @param options - 页码、UTF-16 字符偏移及单片字符上限。
+ * @returns 片段及下一片的偏移。
+ */
+export function slicePptxPageEvidence(
+  content: string,
+  options: { sourceIndex: number; offset?: number | undefined; limit?: number | undefined },
+): PptPageEvidenceChunk {
+  const { sourceIndex, offset = 0, limit = 8000 } = options
+  if (!Number.isSafeInteger(sourceIndex) || sourceIndex < 1
+    || !Number.isSafeInteger(offset) || offset < 0
+    || !Number.isSafeInteger(limit) || limit < 1 || limit > 16000) {
+    bad('PPTX 证据页码、偏移或片段上限不合法')
+  }
+  if (offset > content.length) bad('PPTX 证据偏移超出源文件范围')
+  const end = Math.min(content.length, offset + limit)
+  return { sourceIndex, content: content.slice(offset, end), totalChars: content.length,
+    nextOffset: end < content.length ? end : null }
+}
+
+/**
+ * 从源 PPTX 读取指定页的有界证据片段。
+ * @param bytes - 未修改的 .pptx 字节。
+ * @param options - 从 1 开始的页码、字符偏移与分片上限。
+ * @returns 拼接所有片段后得到完整的 JSON 证据。
+ */
+export function readPptxPageEvidence(
+  bytes: Uint8Array,
+  options: { sourceIndex: number; offset?: number | undefined; limit?: number | undefined },
+): PptPageEvidenceChunk {
+  return slicePptxPageEvidence(extractPptxPageEvidence(bytes, options.sourceIndex), options)
 }
 
 /** 导入时保持默认主题：模型元素带显式颜色，主题只影响后续新增元素的默认色。 */
@@ -458,38 +715,12 @@ function parseShape(
   media: { part: string; bytes: Uint8Array }[],
   mediaNames: Map<string, string>,
   dropped: Set<string>,
+  tempPng: boolean,
 ): PptElement | null {
   const box = frame(block)
   if (block.startsWith('<p:pic')) {
     const relId = /<a:blip[^>]*r:embed="([^"]+)"/u.exec(block)?.[1]
-    const relation = relId === undefined ? undefined : rels.get(relId)
-    if (relation === undefined) {
-      dropped.add('图片')
-      return null
-    }
-    if (relation.type !== IMAGE_REL || !/^ppt\/media\/[^/]+\.(?:png|jpe?g|gif|webp)$/iu.test(relation.target)) {
-      bad('PPTX 图片关系格式不受支持')
-    }
-    const part = relation.target
-    const bytes = files[part]
-    if (bytes === undefined) {
-      dropped.add('图片')
-      return null
-    }
-    const ext = part.split('.').pop()?.toLowerCase() ?? ''
-    const valid = ext === 'png' ? bytes.length >= 8 && bytes.subarray(0, 8).every((value, i) => value === [137, 80, 78, 71, 13, 10, 26, 10][i])
-      : ext === 'jpg' || ext === 'jpeg' ? bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff
-        : ext === 'gif' ? new TextDecoder().decode(bytes.subarray(0, 6)).match(/^GIF8[79]a$/u) !== null
-          : bytes.length >= 12 && new TextDecoder().decode(bytes.subarray(0, 4)) === 'RIFF'
-            && new TextDecoder().decode(bytes.subarray(8, 12)) === 'WEBP'
-    if (!valid) bad('PPTX 图片内容与格式不符')
-    let name = mediaNames.get(part)
-    if (name === undefined) {
-      name = `media/image${mediaNames.size + 1}.${ext}`
-      mediaNames.set(part, name)
-      media.push({ part: name, bytes })
-    }
-    return { id: newId(), kind: 'image', ...box, source: name, fit: 'cover' }
+    return parseImage(relId, box, rels, files, media, mediaNames, dropped, tempPng)
   }
   if (block.startsWith('<p:graphicFrame')) {
     if (block.includes('/table')) {
@@ -508,7 +739,7 @@ function parseShape(
   const shapeProps = firstElement(block, 'p:spPr')
   const fillRaw = /<a:solidFill>\s*<a:srgbClr val="([0-9a-fA-F]{6})"/u.exec(shapeProps)?.[1]
   const lineRaw = /<a:srgbClr val="([0-9a-fA-F]{6})"/u.exec(firstElement(shapeProps, 'a:ln'))?.[1]
-  const hasText = /<a:t>/u.test(block)
+  const hasText = /<a:t(?:\s[^>]*)?>/u.test(block)
   if (hasText) {
     return { id: newId(), kind: 'text', ...box, text: textStyle(block) }
   }
@@ -527,6 +758,48 @@ function parseShape(
   }
   dropped.add('形状')
   return null
+}
+
+function parseImage(
+  relId: string | undefined,
+  box: { x: number; y: number; w: number; h: number },
+  rels: ReadonlyMap<string, Relationship>,
+  files: Record<string, Uint8Array>,
+  media: { part: string; bytes: Uint8Array }[],
+  mediaNames: Map<string, string>,
+  dropped: Set<string>,
+  tempPng: boolean,
+): PptElement | null {
+  const relation = relId === undefined ? undefined : rels.get(relId)
+  if (relation === undefined) {
+    dropped.add('图片')
+    return null
+  }
+  if (relation.type !== IMAGE_REL || !/^ppt\/media\/[^/]+\.(?:png|jpe?g|gif|webp|tmp)$/iu.test(relation.target)) {
+    bad('PPTX 图片关系格式不受支持')
+  }
+  const part = relation.target
+  const bytes = files[part]
+  if (bytes === undefined) {
+    dropped.add('图片')
+    return null
+  }
+  const ext = part.split('.').pop()?.toLowerCase() ?? ''
+  if (ext === 'tmp' && !tempPng) bad('PPTX 图片关系格式不受支持')
+  const imageExt = ext === 'tmp' ? 'png' : ext
+  const valid = imageExt === 'png' ? bytes.length >= 8 && bytes.subarray(0, 8).every((value, i) => value === [137, 80, 78, 71, 13, 10, 26, 10][i])
+    : imageExt === 'jpg' || imageExt === 'jpeg' ? bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff
+      : imageExt === 'gif' ? new TextDecoder().decode(bytes.subarray(0, 6)).match(/^GIF8[79]a$/u) !== null
+        : bytes.length >= 12 && new TextDecoder().decode(bytes.subarray(0, 4)) === 'RIFF'
+          && new TextDecoder().decode(bytes.subarray(8, 12)) === 'WEBP'
+  if (!valid) bad('PPTX 图片内容与格式不符')
+  let name = mediaNames.get(part)
+  if (name === undefined) {
+    name = `media/image${mediaNames.size + 1}.${imageExt}`
+    mediaNames.set(part, name)
+    media.push({ part: name, bytes })
+  }
+  return { id: newId(), kind: 'image', ...box, source: name, fit: 'cover' }
 }
 
 function parseTable(
@@ -556,11 +829,14 @@ function parseTable(
   })
   const firstCell = rows[0] ?? ''
   const fill = /<a:solidFill>\s*<a:srgbClr val="([0-9a-fA-F]{6})"/u.exec(firstCell)?.[1]
+  const gridTotal = grid.reduce((sum, value) => sum + value, 0)
   return {
     id: newId(), kind: 'table', ...box,
     rows: cells.length,
     columns,
-    columnWeights: grid.length > 0 ? grid.map(width => Math.max(1, width)) : Array.from({ length: columns }, () => 1),
+    columnWeights: gridTotal > 0
+      ? grid.map(width => Math.max(0.1, Math.min(100, width * columns / gridTotal)))
+      : Array.from({ length: columns }, () => 1),
     header: true,
     headerFill: hexColor(fill, '#4f8cff'),
     borderColor: '#9aa7b4',

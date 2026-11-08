@@ -10,6 +10,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from 'coding-client-connection'
 import { PptModelError } from 'coding-ppt-model'
+import { BUILTIN_TEMPLATE_PREVIEW } from './builtin-templates.ts'
 import { PptStoreError, type PptSnapshot } from './store.ts'
 import type PptProjects from './index.ts'
 
@@ -140,7 +141,7 @@ export function installRoutes(ctx: Context, service: PptProjects): void {
   const route = (path: string, methods: readonly string[], handler: (
     body: Record<string, unknown>,
     url: URL,
-  ) => Promise<unknown>): void => {
+  ) => unknown): void => {
     ctx.effect(() => ctx.webServer.register({
       kind: 'exact',
       path: `${PREFIX}${path}`,
@@ -170,6 +171,8 @@ export function installRoutes(ctx: Context, service: PptProjects): void {
   })
 
   route('templates', ['GET'], async () => ({ ok: true, templates: await service.listTemplates() }))
+
+  route('templates/builtins', ['GET'], () => ({ ok: true, deck: BUILTIN_TEMPLATE_PREVIEW }))
 
   route('templates/detail', ['GET'], async (_body, url) => ({
     ok: true, template: await service.readTemplate(url.searchParams.get('id') ?? ''),

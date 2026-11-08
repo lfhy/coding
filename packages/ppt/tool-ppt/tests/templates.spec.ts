@@ -73,7 +73,13 @@ describe('PPT 用户模板工具', () => {
 
   it('以模板 ID 创建副本并保留可选标题和目录，不调用空白新建', async () => {
     const { projects, tool } = setup()
-    const create = tool('ppt_create')
+    const create = tool('ppt_create_from_template')
+    expect(create.parameters).toMatchObject({
+      required: ['templateId'],
+      properties: { templateId: { type: 'string' } },
+    })
+    expect(create.parameters).not.toHaveProperty('properties.size')
+    expect(create.parameters).not.toHaveProperty('properties.theme')
     const value = await create.execute({ templateId: 'saved-1', title: '副本', dir: 'ppt/copy' }, session)
     expect(projects.createFromTemplate).toHaveBeenCalledWith('s1', 'saved-1', { title: '副本', dir: 'ppt/copy' })
     expect(projects.create).not.toHaveBeenCalled()
@@ -84,19 +90,31 @@ describe('PPT 用户模板工具', () => {
     expect(projects.createFromTemplate).toHaveBeenLastCalledWith('s1', 'saved-1', {})
   })
 
-  it('拒绝模板和尺寸主题混用；普通新建仍需标题并维持原参数', async () => {
+  it('两个新建工具不混用模板和尺寸主题；空白新建仍需标题', async () => {
     const { projects, tool } = setup()
     const create = tool('ppt_create')
+    const copy = tool('ppt_create_from_template')
+    expect(create.parameters).toMatchObject({ required: ['title'] })
+    expect(create.parameters).not.toHaveProperty('properties.templateId')
+    await expect(copy.execute({}, session)).rejects.toThrow('templateId')
     for (const option of [{ size: '4:3' }, { theme: 'paper' }]) {
-      await expect(create.execute({ templateId: 'saved-1', ...option }, session))
-        .rejects.toThrow('不能同时指定 size 或 theme')
+      await expect(copy.execute({ templateId: 'saved-1', ...option }, session))
+        .rejects.toThrow('不能指定 size 或 theme')
     }
     expect(projects.createFromTemplate).not.toHaveBeenCalled()
-    await expect(create.execute({}, session)).rejects.toThrow('需要 title')
+    await expect(create.execute({ title: '普通稿', templateId: 'saved-1' }, session))
+      .rejects.toThrow('套用模板请使用 ppt_create_from_template')
+    await expect(create.execute({}, session)).rejects.toThrow('title')
+    await expect(create.execute({ title: ' ' }, session))
+      .rejects.toThrow('需要 title；套用模板请使用 ppt_create_from_template')
+    expect(projects.create).not.toHaveBeenCalled()
     await create.execute({ title: '普通稿', size: '16:9', theme: 'ink', dir: 'ppt/plain' }, session)
     expect(projects.create).toHaveBeenCalledWith('s1', {
       title: '普通稿', size: '16:9', theme: 'ink', dir: 'ppt/plain',
     })
+    expect(tool('ppt_templates').description).toContain('ppt_create_from_template')
+    expect(tool('ppt_save_template').description).toContain('ppt_create_from_template')
+    expect(tool('ppt_import_template').description).toContain('ppt_create_from_template')
   })
 
   it('导入工作区 .pptx 直接生成用户模板，不打开或创建工程', async () => {
@@ -110,7 +128,7 @@ describe('PPT 用户模板工具', () => {
     expect(JSON.stringify(value)).not.toContain('private full deck')
     expect(projects.create).not.toHaveBeenCalled()
     expect(projects.createFromTemplate).not.toHaveBeenCalled()
-    expect(tool('ppt_import_template').description).toContain('does not create or focus')
+    expect(tool('ppt_import_template').description).toContain('create or focus a project')
     await tool('ppt_import_template').execute({ source: 'sources/brand.pptx' }, session)
     expect(projects.importTemplateFromFile).toHaveBeenLastCalledWith('s1', 'sources/brand.pptx', {})
   })

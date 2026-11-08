@@ -2,16 +2,18 @@ import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import Include from '@deepseek-ai/cordis-plugin-include'
 import { request as httpRequest } from 'node:http'
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { HostConnectionService } from 'coding-client-connection'
 import { WebServer } from 'coding-host-webserver'
-import { PPT_FORMAT, type PptDeck } from 'coding-ppt-model'
+import { parseDeck, PPT_FORMAT, type PptDeck } from 'coding-ppt-model'
 import { afterEach, describe, expect, it } from 'vitest'
+import { checkDeck } from '../src/check.ts'
 import PptProjects from '../src/index.ts'
 import { createProjectFromDeck } from '../src/store.ts'
+import { PPT_TEMPLATES } from '../src/templates.ts'
 
 const SESSION = 'catalog-fixture-session'
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9fb8sAAAAASUVORK5CYII=', 'base64')
@@ -96,6 +98,31 @@ async function fixture(projects: PptProjects): Promise<{ id: string; deck: PptDe
 }
 
 describe('PPT 用户模板只读 HTTP 目录', () => {
+  it('内置版式预览复用七种单页元素，且不创建工程或用户模板', async () => {
+    const { base, projects } = await boot()
+    sessionExists = false
+    const first = await request(base, 'templates/builtins')
+    expect(first.status).toBe(200)
+    expect(first.headers.get('cache-control')).toBe('no-store')
+    const response = await first.json() as { ok: boolean; deck: PptDeck }
+    expect(response.ok).toBe(true)
+    const deck = parseDeck(response.deck)
+    expect(deck).toEqual(response.deck)
+    expect(deck.size).toBe('16:9')
+    expect(deck.theme).toBe('paper')
+    expect(deck.pages).toHaveLength(7)
+    expect(deck.pages.map(page => ({ id: page.id, label: page.name }))).toEqual(PPT_TEMPLATES)
+    expect(deck.pages.every(page => page.elements.length > 0 && page.elements.every(element => element.kind !== 'image'))).toBe(true)
+    expect(deck.pages.find(page => page.id === 'data')?.elements.some(element => element.kind === 'table')).toBe(true)
+    const chart = deck.pages.find(page => page.id === 'chart')?.elements.find(element => element.kind === 'chart')
+    expect(chart?.kind === 'chart' ? chart.series[0]?.values : undefined).toEqual([32, 45, 38, 56])
+    expect(checkDeck(deck).issues.filter(issue => issue.severity === 'error')).toEqual([])
+    expect(await (await request(base, 'templates/builtins')).json()).toEqual(response)
+    expect(projects.activeDir(SESSION)).toBeUndefined()
+    expect(await stat(join(root!, 'ppt')).then(() => true, () => false)).toBe(false)
+    expect(await stat(join(root!, 'templates')).then(() => true, () => false)).toBe(false)
+  })
+
   it('无会话时仍能列出摘要、读取完整详情和被引用的栅格图', async () => {
     const { base, projects } = await boot()
     const { id, deck, createdAt } = await fixture(projects)
@@ -144,7 +171,7 @@ describe('PPT 用户模板只读 HTTP 目录', () => {
   it('信任栅栏先于 id 解析，非 GET 和写入路径不可用', async () => {
     const { base, projects } = await boot()
     await fixture(projects)
-    for (const route of ['templates', 'templates/detail', 'templates/media']) {
+    for (const route of ['templates', 'templates/builtins', 'templates/detail', 'templates/media']) {
       const foreign = await request(base, route, { id: 'broken', path: 'media/a.png' }, {
         headers: { origin: 'http://evil.invalid' },
       })

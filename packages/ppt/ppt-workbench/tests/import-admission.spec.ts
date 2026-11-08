@@ -20,6 +20,17 @@ const base = (): ZipEntry[] => [
   entry('ppt/slides/slide2.xml', slide()),
 ]
 const read = (entries: readonly ZipEntry[]) => importPptx(zip(entries), { title: '导入' })
+const flagsOnFirstMember = (bytes: Uint8Array, flags: number, method = 8): Uint8Array => {
+  const result = bytes.slice()
+  const view = new DataView(result.buffer)
+  const central = view.getUint32(result.length - 22 + 16, true)
+  const local = view.getUint32(central + 42, true)
+  view.setUint16(central + 8, flags, true)
+  view.setUint16(local + 6, flags, true)
+  view.setUint16(central + 10, method, true)
+  view.setUint16(local + 8, method, true)
+  return result
+}
 
 describe('PPTX 导入准入', () => {
   it('按 presentation 关系顺序读取幻灯片，缺少关系文件时兼容编号顺序', () => {
@@ -54,6 +65,40 @@ describe('PPTX 导入准入', () => {
     expect(() => importPptx(corrupt, { title: 'x' })).toThrow(PptImportError)
   })
 
+  it('接受 deflate 级别标志，但仍拒绝加密及 stored 方法携带这些标志', () => {
+    const compressed = zip(base())
+    expect(importPptx(flagsOnFirstMember(compressed, 0x0806), { title: '导入' }).deck.pages).toHaveLength(2)
+    expect(() => importPptx(flagsOnFirstMember(compressed, 0x0801), { title: '导入' })).toThrow('不支持的压缩方式')
+    expect(() => importPptx(flagsOnFirstMember(compressed, 0x0806, 0), { title: '导入' })).toThrow('不支持的压缩方式')
+  })
+
+  it('接受包根绝对关系路径，并拒绝跨越包根与编码后的遍历', () => {
+    const entries = base()
+    entries[1] = entry('ppt/_rels/presentation.xml.rels', rels(
+      relation('rId1', 'slide', '/ppt/slides/slide2.xml')
+      + relation('rId2', 'slide', '/ppt/slides/slide1.xml'),
+    ))
+    expect(read(entries).deck.pages).toHaveLength(2)
+    entries[1] = entry('ppt/_rels/presentation.xml.rels', rels(relation('rId1', 'slide', '/../../outside.xml')))
+    expect(() => read(entries)).toThrow('关系目标越出包根目录')
+    entries[1] = entry('ppt/_rels/presentation.xml.rels', rels(relation('rId1', 'slide', '/&#46;&#46;/outside.xml')))
+    expect(() => read(entries)).toThrow('关系目标越出包根目录')
+  })
+
+  it('解码十进制和十六进制 XML 字符实体，拒绝非法 Unicode 码点', () => {
+    const entries = base()
+    entries[2] = entry('ppt/slides/slide1.xml', slide(textShape('甲&#10;乙&#x1F600;&amp;#10;&#38;lt;literal&#38;gt;')))
+    expect(read(entries).deck.pages[0]?.elements[0]).toMatchObject({
+      kind: 'text', text: { content: '甲\n乙😀&#10;&lt;literal&gt;' },
+    })
+    entries[2] = entry('ppt/slides/slide1.xml', slide(textShape('&#0;')))
+    expect(() => read(entries)).toThrow('数字实体不合法')
+    entries[2] = entry('ppt/slides/slide1.xml', slide(textShape('&#xD800;')))
+    expect(() => read(entries)).toThrow('数字实体不合法')
+    entries[2] = entry('ppt/slides/slide1.xml', slide(textShape('&#x110000;')))
+    expect(() => read(entries)).toThrow('数字实体不合法')
+  })
+
   it('拒绝宏、外部关系和 DTD 声明', () => {
     expect(() => read([...base(), entry('ppt/vbaProject.bin', '')])).toThrow('宏')
     const external = base()
@@ -77,6 +122,21 @@ describe('PPTX 导入准入', () => {
     expect(() => read(entries)).toThrow('图片内容')
     entries[entries.length - 1] = { path: 'ppt/media/photo.PNG', data: new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]) }
     entries[entries.length - 2] = entry('ppt/slides/_rels/slide1.xml.rels', rels(relation('rId1', 'image', '../../evil.png')))
+    expect(() => read(entries)).toThrow('图片关系格式')
+  })
+
+  it('仅在内容类型明确为 PNG 且字节匹配时接纳 .tmp 图片', () => {
+    const entries = base()
+    entries[2] = entry('ppt/slides/slide1.xml', slide(picture))
+    entries.push(entry('ppt/slides/_rels/slide1.xml.rels', rels(relation('rId1', 'image', '/ppt/media/image.tmp'))))
+    entries.push({ path: 'ppt/media/image.tmp', data: new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]) })
+    expect(() => read(entries)).toThrow('图片关系格式')
+    entries.push(entry('[Content_Types].xml', '<Types><Default Extension="tmp" ContentType="image/png"/></Types>'))
+    expect(read(entries).media[0]?.part).toBe('media/image1.png')
+    entries[entries.length - 2] = { path: 'ppt/media/image.tmp', data: encode('<svg/>') }
+    expect(() => read(entries)).toThrow('图片内容')
+    entries[entries.length - 2] = { path: 'ppt/media/image.tmp', data: new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]) }
+    entries[entries.length - 1] = entry('[Content_Types].xml', '<Types><Default Extension="tmp" ContentType="image/jpeg"/></Types>')
     expect(() => read(entries)).toThrow('图片关系格式')
   })
 
@@ -118,6 +178,20 @@ describe('PPTX 导入准入', () => {
     const longText = base()
     longText[2] = entry('ppt/slides/slide1.xml', slide(textShape('x'.repeat(5001))))
     expect(() => read(longText)).toThrow('5000 字符')
+  })
+
+  it('将表格绝对列宽转换为模型允许的相对权重', () => {
+    const entries = base()
+    const table = '<p:graphicFrame><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/table">'
+      + '<a:tbl><a:tblGrid><a:gridCol w="1905000"/><a:gridCol w="3810000"/></a:tblGrid>'
+      + '<a:tr><a:tc><a:p><a:r><a:t>甲</a:t></a:r></a:p></a:tc><a:tc/></a:tr>'
+      + '</a:tbl></a:graphicData></p:graphicFrame>'
+    entries[2] = entry('ppt/slides/slide1.xml', slide(table))
+    const element = read(entries).deck.pages[0]?.elements[0]
+    expect(element?.kind).toBe('table')
+    if (element?.kind !== 'table') throw new Error('表格导入失败')
+    expect(element.columnWeights[0]).toBeCloseTo(2 / 3)
+    expect(element.columnWeights[1]).toBeCloseTo(4 / 3)
   })
 
   it('标准连接线导出再导入保留 5px 笔宽', () => {

@@ -1,8 +1,9 @@
 /** ego-lite 浏览器 Host：完整移植上游 35 个安全工具定义，并保留会话与信任边界。 @module coding-browser-ego-host */
+import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { Service, type Context } from '@deepseek-ai/cordis'
 import type { ToolDefinition, ToolRunContext } from 'coding-tools'
 import type {} from 'coding-client-connection'
@@ -169,8 +170,9 @@ export default class EgoBrowserHost extends Service {
    * 在会话自己的 Agent 浏览器空间里打开一页本地 HTML 并截图。
    *
    * 页面进的是该会话的正常空间，因此右侧「Agent 浏览器」标签会像别的页面一样显示它；
-   * 截图与页面共用同一个标签，不额外开一套渲染通道。调用方负责把内容写成 `file://`
-   * 能读的本地文件。
+   * 截图与页面共用同一个标签，不额外开一套渲染通道。同路径再次捕获时导航到
+   * 唯一 URL，等待新文档完成加载后才截图；截图期间临时隐藏浏览器自身的光标标记，
+   * 随后恢复页面。调用方负责先写好本地文件。
    * @param options - 会话、本地页面路径、视口尺寸与输出路径。
    * @returns 截图写入成功时为 true。
    */
@@ -189,18 +191,40 @@ export default class EgoBrowserHost extends Service {
     readonly settleMs?: number
   }): Promise<boolean> {
     if (!this.ctx.sessions.get(options.sessionId)) return false
-    const url = `file://${options.htmlPath.replace(/\\/gu, '/')}`
+    const sourceUrl = pathToFileURL(options.htmlPath).href
+    const nonce = randomUUID()
+    const captureUrl = new URL(sourceUrl)
+    captureUrl.searchParams.set('__dsh_capture', nonce)
     const space = spaceNameForSession(options.sessionId)
     const script = `await taskSpaces.useOrCreate(${JSON.stringify(space)})\n`
       + 'const existingTabs = await browser.listTabs()\n'
-      + `const match = existingTabs.find(t => t.url === ${JSON.stringify(url)})\n`
-      + `const tab = match ?? (await ego.createTab(${JSON.stringify(url)}))\n`
+      + `const sourceUrl = new URL(${JSON.stringify(sourceUrl)})\n`
+      + `const captureUrl = ${JSON.stringify(captureUrl.href)}\n`
+      + 'const match = existingTabs.find(t => {\n'
+      + '  try { const candidate = new URL(t.url); return candidate.protocol === "file:"\n'
+      + '    && candidate.host === sourceUrl.host && candidate.pathname === sourceUrl.pathname }\n'
+      + '  catch { return false }\n'
+      + '})\n'
+      + "const tab = match ?? (await ego.createTab('about:blank'))\n"
       + 'await browser.switchTab(tab.targetId)\n'
-      + "await page.waitForLoadState('load')\n"
+      + "await page.goto(captureUrl, { waitUntil: 'commit' })\n"
+      + "if (!(await page.waitForURL(target => target.href === captureUrl, { waitUntil: 'load', timeout: 20000 })))\n"
+      + "  throw new Error('capture page did not load')\n"
       + `await cdp('Emulation.setDeviceMetricsOverride', { width: ${options.width}, height: ${options.height}, `
       + 'deviceScaleFactor: 1, mobile: false })\n'
       + `await page.waitForTimeout(${options.settleMs ?? 300})\n`
-      + `await page.screenshot({ path: ${JSON.stringify(options.outPath)} })\n`
+      + `const cursorStyleId = ${JSON.stringify(`dsh-capture-cursor-${nonce}`)}\n`
+      + 'await page.evaluate(id => {\n'
+      + "  const style = document.createElement('style')\n"
+      + '  style.id = id\n'
+      + "  style.textContent = '#ego-agent-cursor-overlay { visibility: hidden !important }'\n"
+      + '  document.head.appendChild(style)\n'
+      + '}, cursorStyleId)\n'
+      + 'try {\n'
+      + `  await page.screenshot({ path: ${JSON.stringify(options.outPath)} })\n`
+      + '} finally {\n'
+      + '  await page.evaluate(id => { document.getElementById(id)?.remove() }, cursorStyleId)\n'
+      + '}\n'
       + "console.log('@@DSH_RESULT@@' + JSON.stringify({ ok: true, targetId: tab.targetId }))\n"
     const env: NodeJS.ProcessEnv = { ...(this.browserEnv?.() ?? process.env), EGO_ISOLATE_SPACES: '1' }
     try {

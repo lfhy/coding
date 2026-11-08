@@ -30,6 +30,32 @@ export interface TemplateCatalogState {
   readonly templates: readonly TemplateSummary[]
   readonly details: Readonly<Record<string, TemplateDetail>>
   readonly error: string | null
+  readonly builtins: {
+    readonly phase: 'idle' | 'loading' | 'ready' | 'error'
+    readonly deck: PptDeck | null
+    readonly error: string | null
+  }
+}
+
+/** 页面 id 由 Host 版式生成器决定，客户端只校验并绑定现有文案。 */
+export const BUILTIN_LAYOUTS = [
+  { id: 'title', key: 'templateTitle' },
+  { id: 'section', key: 'templateSection' },
+  { id: 'bullets', key: 'templateBullets' },
+  { id: 'two-column', key: 'templateTwoColumn' },
+  { id: 'data', key: 'templateData' },
+  { id: 'chart', key: 'templateChart' },
+  { id: 'quote', key: 'templateQuote' },
+] as const
+
+/** 保证预览严格对应七种已内置版式，不把坏响应当成空目录。 */
+export function parseBuiltinLayouts(value: unknown): PptDeck | null {
+  try {
+    const deck = parseDeck(value)
+    if (deck.size !== '16:9' || deck.theme !== 'paper' || deck.pages.length !== BUILTIN_LAYOUTS.length
+      || deck.pages.some((page, index) => page.id !== BUILTIN_LAYOUTS[index]?.id || page.elements.length === 0)) return null
+    return deck
+  } catch { return null }
 }
 
 type Fetcher = (input: string, init?: RequestInit) => Promise<Response>
@@ -57,7 +83,10 @@ export function parseTemplateDetail(value: unknown): TemplateDetail | null {
   try { return { ...summary, deck: parseDeck(value.deck) } } catch { return null }
 }
 
-const INITIAL: TemplateCatalogState = { phase: 'idle', templates: [], details: {}, error: null }
+const INITIAL: TemplateCatalogState = {
+  phase: 'idle', templates: [], details: {}, error: null,
+  builtins: { phase: 'idle', deck: null, error: null },
+}
 
 /** 在一次插件生命周期内共享目录，并合并同一详情的并发读取。 */
 export class TemplateCatalogController {
@@ -65,6 +94,7 @@ export class TemplateCatalogController {
   private disposed = false
   private readonly aborters = new Set<AbortController>()
   private listRequest: Promise<void> | null = null
+  private builtinsRequest: Promise<void> | null = null
   private readonly detailRequests = new Map<PptTemplateId, Promise<void>>()
 
   constructor(private readonly fetcher: Fetcher = (input, init) => fetch(input, init)) {}
@@ -112,6 +142,30 @@ export class TemplateCatalogController {
       }
     })().finally(() => { this.listRequest = null })
     this.listRequest = task
+    return task
+  }
+
+  /** 单独读取内置单页版式；个人模板目录失败不影响这七页。 */
+  loadBuiltins(): Promise<void> {
+    if (this.disposed || this.view.getSnapshot().builtins.phase === 'ready') return Promise.resolve()
+    if (this.builtinsRequest !== null) return this.builtinsRequest
+    this.patch((draft) => { draft.builtins = { ...draft.builtins, phase: 'loading', error: null } })
+    const task = (async () => {
+      try {
+        const payload = await this.request('/builtins')
+        const deck = parseBuiltinLayouts(payload.deck)
+        if (deck === null) throw new Error('Invalid built-in layouts')
+        this.patch((draft) => { draft.builtins = { phase: 'ready', deck, error: null } })
+      } catch (error) {
+        this.patch((draft) => {
+          draft.builtins = {
+            ...draft.builtins, phase: 'error',
+            error: error instanceof Error ? error.message : String(error),
+          }
+        })
+      }
+    })().finally(() => { this.builtinsRequest = null })
+    this.builtinsRequest = task
     return task
   }
 
