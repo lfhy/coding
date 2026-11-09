@@ -29,8 +29,8 @@ const t = ((key: string, params?: Readonly<Record<string, unknown>>): string => 
     'image.openOriginal': '查看原图',
     'image.scrollLeft': '向左滚动图片',
     'image.scrollRight': '向右滚动图片',
-    'image.dropBlocked': '当前无法添加图片',
-    'image.dropTitle': '图片拖动到此处即可添加',
+    'image.dropBlocked': '当前无法添加文件',
+    'image.dropTitle': '拖动图片或文件到此处',
   }
   if (key === 'image.remove') {
     const name = params?.name
@@ -39,7 +39,7 @@ const t = ((key: string, params?: Readonly<Record<string, unknown>>): string => 
   if (key === 'image.dropDesc') {
     const count = params?.count
     const size = params?.size
-    return `最多 ${typeof count === 'number' ? String(count) : ''} 张，每张 ${typeof size === 'string' ? size : ''}`
+    return `图片最多 ${typeof count === 'number' ? String(count) : ''} 张，每张 ${typeof size === 'string' ? size : ''}；其他文件最多 32MB`
   }
   return messages[key] ?? key
 }) as ComposerAttachmentsProps['t']
@@ -58,6 +58,7 @@ function props(overrides: Partial<ComposerAttachmentsOwnerProps> = {}): Composer
     attachments: [],
     canAcceptDrop: true,
     onAddImages: () => {},
+    onAddFiles: () => {},
     onRemoveImage: () => {},
     t,
     ...overrides,
@@ -82,13 +83,28 @@ describe('ComposerAttachments', () => {
     const image = attachment('dropped').file
     const dataTransfer = { types: ['Files'], files: [image], dropEffect: 'none' }
     expect(fireEvent.dragEnter(document.body, { dataTransfer })).toBe(false)
-    expect(view.getByRole('status').textContent).toContain('图片拖动到此处即可添加')
-    expect(view.getByRole('status').textContent).toContain('最多 20 张，每张 5MB')
+    expect(view.getByRole('status').textContent).toContain('拖动图片或文件到此处')
+    expect(view.getByRole('status').textContent).toContain('图片最多 20 张，每张 5MB；其他文件最多 32MB')
     expect(fireEvent.dragOver(document.body, { dataTransfer })).toBe(false)
     expect(dataTransfer.dropEffect).toBe('copy')
     expect(fireEvent.drop(document.body, { dataTransfer })).toBe(false)
     expect(onAddImages).toHaveBeenCalledWith([image])
     expect(view.queryByRole('status')).toBeNull()
+  })
+
+  it('splits mixed drops by supported image MIME and preserves every other file', () => {
+    const onAddImages = vi.fn()
+    const onAddFiles = vi.fn()
+    render(<ComposerAttachments {...props({ onAddImages, onAddFiles })} />)
+    const image = attachment('mixed').file
+    const pptx = new File(['presentation'], 'slides.pptx', { type: 'application/vnd.openxmlformats-officedocument.presentationml.presentation' })
+    const word = new File(['document'], 'draft.docx', { type: '' })
+    const unknown = new File(['binary'], 'unknown.bin', { type: 'application/octet-stream' })
+    fireEvent.drop(document.body, {
+      dataTransfer: { types: ['Files'], files: [pptx, image, word, unknown], dropEffect: 'copy' },
+    })
+    expect(onAddImages).toHaveBeenCalledWith([image])
+    expect(onAddFiles).toHaveBeenCalledWith([pptx, word, unknown])
   })
 
   it('tracks nested file drags and clears an aborted drag', () => {
@@ -123,7 +139,7 @@ describe('ComposerAttachments', () => {
     const image = attachment('blocked').file
     const dataTransfer = { types: ['Files'], files: [image], dropEffect: 'copy' }
     fireEvent.dragEnter(document.body, { dataTransfer })
-    expect(view.getByRole('status').textContent).toBe('当前无法添加图片')
+    expect(view.getByRole('status').textContent).toBe('当前无法添加文件')
     fireEvent.dragOver(document.body, { dataTransfer })
     expect(dataTransfer.dropEffect).toBe('none')
     fireEvent.drop(document.body, { dataTransfer })

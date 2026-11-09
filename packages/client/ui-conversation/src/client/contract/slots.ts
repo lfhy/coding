@@ -30,17 +30,19 @@ export interface ComposerAttachment {
   previewUrl: string
 }
 
-/** Input state handed to the optional attachment presentation plugin. */
+/** 图片附件展示入口；非图片文件由输入栏暂存后写入草稿路径。 */
 export interface ComposerAttachmentsOwnerProps {
-  /** Browser-owned draft images in input order. */
+  /** 浏览器持有的待发送图片，顺序与草稿一致。 */
   attachments: readonly ComposerAttachment[]
-  /** Whether a document-level file drop may add images now. */
+  /** 当前可接收文件拖放。 */
   canAcceptDrop: boolean
-  /** Add one dropped batch through the composer's validation path. */
+  /** 图片走既有附件准入，保持原文件身份。 */
   onAddImages: (files: readonly File[]) => void
-  /** Remove one draft image through the conversation service. */
+  /** 非图片先存入当前工作区，再插入其真实路径；失败不得插入虚假路径。 */
+  onAddFiles: (files: readonly File[]) => void
+  /** 从会话服务移除一张待发送图片。 */
   onRemoveImage: (id: DraftAttachmentId) => void
-  /** Display-ready limits for the drop invitation. */
+  /** 拖放提示所展示的图片数量和单张大小限制。 */
   dropLimits?: { readonly count: number; readonly size: string } | undefined
 }
 
@@ -585,15 +587,17 @@ export interface ComposerBarOwnerProps {
   footer?: ReactNode
 }
 
-/** Injected share of the composer-bar entry (package-internal faces). */
+/** 输入栏注入的会话级操作；会话缺席时文件能力不可用。 */
 export interface ComposerBarInjected {
-  /** The InputBar-exclusive keyboard/DOM command face (private plane); absent with the session. */
+  /** 输入栏独占的键盘与草稿操作；会话缺席时不可用。 */
   keyboard: ComposerKeyboard | undefined
-  /** Create previews and append image ids to the session input. */
+  /** 为图片建立预览并把附件标识加入会话草稿。 */
   addImages: ((files: readonly File[]) => string | null) | undefined
-  /** Release one preview and remove its id from session input. */
+  /** 将一个非图片保存到本机会话工作区，返回实际相对路径。 */
+  addFile: ((file: File) => Promise<string>) | undefined
+  /** 释放一张图片预览并从草稿移除附件标识。 */
   removeImage: ((id: DraftAttachmentId) => void) | undefined
-  /** Resolve ordered input ids to browser-owned draft images. */
+  /** 将草稿标识解析成仍由浏览器持有的图片文件。 */
   draftImages: ((ids: readonly DraftAttachmentId[]) => readonly ComposerAttachment[]) | undefined
   /** Resolve one keyboard submission gesture against the current running state and persisted preference. */
   resolveSubmitMode: (

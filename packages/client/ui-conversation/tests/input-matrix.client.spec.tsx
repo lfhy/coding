@@ -52,6 +52,7 @@ function mountBar(shell: SessionInputShell, over?: { running?: boolean; disabled
     inputActions: shell.actions,
     keyboard: shell,
     addImages: () => null,
+    addFile: file => Promise.resolve(`.dsh-uploads/${file.name}`),
     removeImage: () => {},
     // Every id resolves so the bar's registry prune never drops a test image.
     draftImages: ids => ids.map(id => ({

@@ -9,14 +9,16 @@ import { ImageLightbox } from '../ImageLightbox.tsx'
 import { attachmentRailLabels, dropOverlayLabels, lightboxLabels } from './labels.ts'
 import css from './ComposerAttachments.module.css'
 
-/** Rail item retaining its browser-owned attachment for callbacks. */
+const INLINE_IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif']
+
+/** 待发送图片与原图预览的浏览器所有权由输入栏保留。 */
 interface ComposerRailItem extends AttachmentRailItem {
   attachment: ComposerAttachment
 }
 
-/** Draft-image rail, document drop target, and original-image preview slot entry. */
+/** 图片草稿栏、整页文件拖放与原图预览的 slot 入口。 */
 export function ComposerAttachments({
-  attachments, canAcceptDrop, onAddImages, onRemoveImage, dropLimits, t,
+  attachments, canAcceptDrop, onAddImages, onAddFiles, onRemoveImage, dropLimits, t,
 }: ComposerAttachmentsProps) {
   const [preview, setPreview] = useState<ComposerAttachment | null>(null)
   const [dragActive, setDragActive] = useState(false)
@@ -62,7 +64,16 @@ export function ComposerAttachments({
       if (dataTransfer === null) return
       event.preventDefault()
       reset()
-      if (canAcceptDrop) onAddImages([...dataTransfer.files])
+      if (canAcceptDrop) {
+        const images: File[] = []
+        const files: File[] = []
+        for (const file of dataTransfer.files) {
+          if (INLINE_IMAGE_TYPES.includes(file.type)) images.push(file)
+          else files.push(file)
+        }
+        if (images.length > 0) onAddImages(images)
+        if (files.length > 0) onAddFiles(files)
+      }
     }
     document.addEventListener('dragenter', onDragEnter)
     document.addEventListener('dragover', onDragOver)
@@ -76,7 +87,7 @@ export function ComposerAttachments({
       document.removeEventListener('drop', onDrop)
       window.removeEventListener('dragend', reset)
     }
-  }, [canAcceptDrop, onAddImages])
+  }, [canAcceptDrop, onAddImages, onAddFiles])
 
   const railItems = useMemo<ComposerRailItem[]>(() => attachments.map(attachment => ({
     id: attachment.id,

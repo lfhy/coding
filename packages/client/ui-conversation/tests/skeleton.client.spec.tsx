@@ -210,6 +210,7 @@ function mount(
           inputActions={inputActions}
           keyboard={wiring}
           addImages={() => null}
+          addFile={file => Promise.resolve(`.dsh-uploads/${file.name}`)}
           removeImage={() => {}}
           draftImages={() => []}
           resolveSubmitMode={() => 'queue'}

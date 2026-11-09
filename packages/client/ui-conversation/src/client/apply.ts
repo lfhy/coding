@@ -24,6 +24,7 @@ import type { IConversation } from './service.ts'
 import { ComposerBlockRegistry } from './input/blocks.ts'
 import type { ComposerBlock } from './input/blocks.ts'
 import { InputHub } from './input/hub.ts'
+import { stageConversationFile } from './input/stage-file.ts'
 import { ComposerSubmissionPolicy } from './input/submission-policy.ts'
 import { InputBar } from './skeleton/InputBar.tsx'
 import { EnterBehaviorRow } from './settings/EnterBehaviorRow.tsx'
@@ -383,6 +384,7 @@ export function apply(ctx: Context): void {
         return {
           keyboard: undefined,
           addImages: undefined,
+          addFile: undefined,
           removeImage: undefined,
           draftImages: undefined,
           resolveSubmitMode: (running, gesture, steeringAvailable) =>
@@ -412,13 +414,13 @@ export function apply(ctx: Context): void {
             return null
           } catch (error: unknown) {
             if (error instanceof UnsupportedImageMediaTypeError) {
-              // Positive copy: the supported list is fixed in imageMediaType,
-              // and naming it beats echoing the rejected MIME type back.
+              // 仅展示固定支持的图片格式，不把被拒绝的 MIME 类型回显给用户。
               return t('image.unsupportedType')
             }
             return error instanceof Error ? error.message : String(error)
           }
         },
+        addFile: file => stageConversationFile(sessionId, file),
         removeImage: (id) => {
           conversation.releaseDraftImage(id)
           shell.removeImage(id)

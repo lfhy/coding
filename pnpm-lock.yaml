@@ -2415,6 +2415,9 @@ importers:
       coding-compaction:
         specifier: workspace:^
         version: link:../../compaction/compaction
+      coding-file-reference:
+        specifier: workspace:^
+        version: link:../../context/file-reference
       coding-goal:
         specifier: workspace:^
         version: link:../../goal/goal

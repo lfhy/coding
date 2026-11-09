@@ -1,10 +1,4 @@
-/** The default composer body: the 'conversation.composer.bar' slot entry.
- * Machine state arrives through the standard provide channel
- * (useInput + inputActions); the keyboard/DOM command face and stop arrive
- * through this entry's own inject, whose hooks compartment binds
- * useNotices/useLexicon; layout-phase inputs (variant, placeholder,
- * region-slot content) ride the owner props. Session facts
- * (running/removed/promptError) are self-selected via useSession. */
+/** 对话输入栏从会话注入获取草稿与键盘操作；文件暂存成功后才将真实路径写入草稿。 */
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { ChangeEvent, KeyboardEvent, MouseEvent, ReactNode } from 'react'
@@ -21,7 +15,9 @@ import type {} from 'coding-goal/client'
 // wire types: apiproxy's sessions contract declares it, and client-runtime's
 // api-remotes import already places it in every client program.
 import type { Translate } from 'coding-client-ui-slots'
+import { formatFileMention } from 'coding-file-reference/grammar'
 import type { ComposerBarProps } from '../contract/slots.ts'
+import { FileStageError } from '../input/stage-file.ts'
 import { deriveDecorations } from '../input/decorations.ts'
 import type { DraftDecorations } from '../input/decorations.ts'
 import { attachmentErrorText, imageSizeText } from '../image-labels.ts'
@@ -32,13 +28,15 @@ import { PermissionSelect } from './PermissionSelect.tsx'
 import { isSafariBrowser, repairSafariTextareaLayout } from './safari.ts'
 import css from './InputBar.module.css'
 
-/** Decoration product of the no-session state (no machine, empty draft). */
+const INLINE_IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif']
+
+/** 无会话时不创建键盘机的展示数据。 */
 const INERT_DECORATIONS: DraftDecorations = { token: null, chips: [], textRefs: [], hint: null }
 
 export type InputBarProps = ComposerBarProps
 
 export function InputBar({
-  useSession, useInput, inputActions, keyboard, addImages, removeImage, draftImages,
+  useSession, useInput, inputActions, keyboard, addImages, addFile, removeImage, draftImages,
   resolveSubmitMode, toggleCommandMenu, stop, command, t,
   renderSlot, useNotices, useLexicon, useMenuLauncher,
   useFocusRequest,
@@ -69,10 +67,19 @@ export function InputBar({
     [draftImages, input?.imageIds],
   )
   const empty = draft.trim() === '' && attachments.length === 0
-  // Transient error banner (machine notices, image-intake rejections, and
-  // prompt failures): the seq keys the Toast so an identical repeated message
-  // restarts the hold-then-fade cycle instead of reusing the faded one.
+  // 暂存期间禁止发送未取得实际路径的消息，切换会话不阻塞另一会话输入。
+  // 暂时错误以序号重启相同内容的提示淡出计时，包括图片拒绝和文件暂存失败。
   const [toast, setToast] = useState<{ seq: number; text: string } | null>(null)
+  const [filePending, setFilePending] = useState(false)
+  const filePendingRef = useRef(false)
+  const activeSession = useRef(sessionId)
+  const uploadGeneration = useRef(0)
+  const pendingForCurrentSession = filePending && activeSession.current === sessionId
+  if (activeSession.current !== sessionId) {
+    activeSession.current = sessionId
+    uploadGeneration.current += 1
+    filePendingRef.current = false
+  }
   const toastSeq = useRef(0)
   const showToast = useCallback((text: string) => {
     toastSeq.current += 1
@@ -142,8 +149,8 @@ export function InputBar({
   // and keyboard users can reach the recovery action.
   const workspaceTrigger = inert && !removed && onRequestWorkspace !== undefined
   const textareaDisabled = removed || (locked && !workspaceTrigger)
-  const canSteerQueue = !locked && !machineBusy && !commandMenuOpen && empty && running && subagent === null
-    && input.queue.some(row => row.placement === 'queued')
+  const canSteerQueue = !locked && !machineBusy && !filePendingRef.current && !commandMenuOpen && empty
+    && running && subagent === null && input.queue.some(row => row.placement === 'queued')
 
   useEffect(() => {
     if (input === undefined || inputActions === undefined) return
@@ -321,6 +328,10 @@ export function InputBar({
     // Absent machine without a Workspace recovery action stays disabled; the
     // guard narrows the faces for the paths below.
     if (input === undefined || keyboard === undefined || inputActions === undefined) return
+    if (filePendingRef.current && e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      return
+    }
     // Shift+Enter is the native newline UNCONDITIONALLY — decided before the
     // IME guard so a composition-closing Shift+Enter still breaks the line.
     if (e.key === 'Enter' && e.shiftKey) return
@@ -446,7 +457,11 @@ export function InputBar({
       .filter(item => item.kind === 'file')
       .map(item => item.getAsFile())
       .filter((file): file is File => file !== null)
-    if (files.length > 0) intakeImages(files)
+    // 剪贴板的文件同样走真实路径暂存；纯图片继续沿用原有附件准入。
+    const images = files.filter(file => INLINE_IMAGE_TYPES.includes(file.type))
+    const otherFiles = files.filter(file => !INLINE_IMAGE_TYPES.includes(file.type))
+    if (images.length > 0) intakeImages(images)
+    if (otherFiles.length > 0) intakeFiles(otherFiles)
     const text = e.clipboardData.getData('text/plain')
     if (text === '') {
       if (files.length > 0) e.preventDefault()
@@ -494,7 +509,52 @@ export function InputBar({
     if (rejected !== null) showToast(rejected)
   }, [addImages, attachments, imageLimits, showToast, t])
 
-  const canAcceptDrop = !locked && !machineBusy && addImages !== undefined
+  /** 拖入文件先逐个落盘，确认路径后才写草稿；异步返回后按当前光标插入，不覆盖输入。 */
+  const intakeFiles = useCallback((files: readonly File[]): void => {
+    if (addFile === undefined || keyboard === undefined || files.length === 0 || filePendingRef.current) return
+    const generation = ++uploadGeneration.current
+    filePendingRef.current = true
+    setFilePending(true)
+    const run = async (): Promise<void> => {
+      try {
+        for (const [index, file] of files.entries()) {
+          const path = await addFile(file)
+          if (uploadGeneration.current !== generation) return
+          const mention = formatFileMention({ path, kind: 'file' }, false)
+          if (mention === undefined) throw new FileStageError(0)
+          const el = inputRef.current
+          const selection = el === null
+            ? { start: keyboard.snapshot.draft.length, end: keyboard.snapshot.draft.length }
+            : selectionOf(el)
+          const current = keyboard.snapshot.draft
+          // 同一次多文件拖放按返回顺序追加，避免浏览器 selection 在 React 提交前仍指向上一位置。
+          const start = index === 0 ? Math.min(selection.start, current.length) : current.length
+          const end = index === 0 ? Math.min(Math.max(selection.end, start), current.length) : current.length
+          const before = current.slice(0, start)
+          const after = current.slice(end)
+          const insert = `${before.length > 0 && !/\s$/u.test(before) ? ' ' : ''}${mention}${after.length > 0 && !/^\s/u.test(after) ? ' ' : ''}`
+          keyboard.pasteBegin(insert, { start, end })
+          if (el !== null) restoreCaret(el, start + insert.length)
+        }
+      } catch (error) {
+        if (uploadGeneration.current !== generation) return
+        showToast(error instanceof FileStageError && error.status === 413
+          ? t('file.tooLarge')
+          : error instanceof FileStageError && error.status === 409
+            ? t('file.localOnly')
+            : t('file.uploadFailed'))
+      } finally {
+        if (uploadGeneration.current === generation) {
+          filePendingRef.current = false
+          setFilePending(false)
+        }
+      }
+    }
+    void run()
+  }, [addFile, keyboard, showToast, t])
+
+  const canAcceptDrop = !locked && !machineBusy && !pendingForCurrentSession && !filePendingRef.current
+    && addImages !== undefined && addFile !== undefined
 
   const onSelect = (e: React.SyntheticEvent<HTMLTextAreaElement>): void => {
     // Any caret/selection gesture ends a live paste attempt (the machine
@@ -530,7 +590,7 @@ export function InputBar({
     }
     if (inputActions === undefined) return // absent machine: the button is disabled
     /* v8 ignore next -- defensive: the primary button is disabled while empty||disabled, so a click cannot reach the false arm. */
-    if (!empty && !disabled && !machineBusy) inputActions.submit()
+    if (!empty && !disabled && !machineBusy && !pendingForCurrentSession && !filePendingRef.current) inputActions.submit()
   }
 
   // The Access seat: the projection-fed permission chip (renders nothing
@@ -660,12 +720,14 @@ export function InputBar({
         onClick={workspaceTrigger ? onRequestWorkspace : undefined}
         onPointerDown={workspaceTrigger ? (e) => { e.stopPropagation() } : undefined}
       >
+        {pendingForCurrentSession && <div className={css.notice} role="status">{t('file.saving')}</div>}
         {overlay !== undefined && <div className={css.overlayAnchor}>{overlay}</div>}
         {accessory !== undefined && <div className={css.accessory}>{accessory}</div>}
         {renderSlot('conversation.input.attachments', {
           attachments,
           canAcceptDrop,
           onAddImages: intakeImages,
+          onAddFiles: intakeFiles,
           onRemoveImage: (id) => { removeImage?.(id) },
           dropLimits: imageLimits === undefined ? undefined : {
             count: imageLimits.maxImagesPerMessage,
@@ -763,7 +825,7 @@ export function InputBar({
               <ChatComposerAction
                 kind={primaryStops ? 'stop' : 'send'}
                 aria-label={primaryLabel}
-                disabled={primaryStops ? stop === undefined : empty || disabled || machineBusy}
+                disabled={primaryStops ? stop === undefined : empty || disabled || machineBusy || pendingForCurrentSession}
                 onMouseDown={keepFocus}
                 onClick={onPrimary}
               />

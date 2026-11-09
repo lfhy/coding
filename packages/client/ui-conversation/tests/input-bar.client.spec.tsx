@@ -5,7 +5,7 @@
 // decoration backdrop, error banners, status strips, and the focus-keeping mousedown.
 
 import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest'
-import { act, cleanup, fireEvent, render } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react'
 import { bindSnapshotSelector } from 'coding-client-test-runtime'
 import {
   createSnapshotStore, EMPTY_CHAT_SNAPSHOT, EMPTY_CONVERSATION_VIEWS,
@@ -22,6 +22,7 @@ import type { DraftAttachmentId } from '../src/client/input/contract.ts'
 import { InputBar } from '../src/client/skeleton/InputBar.tsx'
 import type { InputBarProps } from '../src/client/skeleton/InputBar.tsx'
 import { zh } from '../src/client/locales.ts'
+import { FileStageError } from '../src/client/input/stage-file.ts'
 
 afterEach(cleanup)
 
@@ -92,6 +93,8 @@ interface BenchOptions {
   rightItems?: React.ReactNode
   attachments?: readonly ComposerAttachment[]
   addImages?: (files: readonly File[]) => string | null
+  addFile?: (file: File) => Promise<string>
+  sessionId?: SessionId
   commandMenuOpen?: boolean
   busyEnter?: 'queue' | 'steer'
   toggleCommandMenu?: (selection: { start: number; end: number }) => void
@@ -154,8 +157,8 @@ function bench(over?: BenchOptions) {
     return null
   }) as InputBarProps['renderSlot']
   const props: InputBarProps = {
-    sessionId: SID,
-    SessionProvider: ({ children }) => children(SID),
+    sessionId: over?.sessionId ?? SID,
+    SessionProvider: ({ children }) => children(over?.sessionId ?? SID),
     useSession: bindSnapshotSelector(session),
     useSessions: bindSnapshotSelector(createSnapshotStore({
       ids: [], byId: {}, current: undefined, phase: 'ready',
@@ -173,6 +176,7 @@ function bench(over?: BenchOptions) {
     inputActions: shell.actions,
     keyboard: shell,
     addImages: over?.addImages ?? (() => null),
+    addFile: over?.addFile ?? (file => Promise.resolve(`.dsh-uploads/${file.name}`)),
     removeImage,
     draftImages: ids => ids.flatMap((id) => {
       const attachment = over?.attachments?.find(candidate => candidate.id === id)
@@ -329,6 +333,78 @@ describe('image draft rail', () => {
     expect(result.view.getByRole('alert').textContent).toContain('仅支持 PNG、JPG、WebP、GIF 格式的图片')
   })
 
+  it('saves PPT, Word and unknown files as paths without image validation, and blocks early send', async () => {
+    let finishFirst: (path: string) => void = () => { throw new Error('no upload in flight') }
+    const first = new Promise<string>((resolve) => { finishFirst = resolve })
+    const addFile = vi.fn((file: File) => file.name === '演示 slides.pptx'
+      ? first : Promise.resolve(`.dsh-uploads/${file.name}`))
+    const addImages = vi.fn(() => null)
+    const result = bench({ draft: '请解析', addFile, addImages })
+    result.textarea.setSelectionRange(result.textarea.value.length, result.textarea.value.length)
+    const files = [
+      new File(['slides'], '演示 slides.pptx', { type: 'application/vnd.openxmlformats-officedocument.presentationml.presentation' }),
+      new File(['text'], 'memo.docx', { type: '' }),
+      new File(['bytes'], 'data.bin', { type: 'application/octet-stream' }),
+    ]
+    act(() => { attachmentOwner(result.slotCalls).onAddFiles(files) })
+    expect(result.view.getByRole('status').textContent).toContain('正在保存文件到工作区')
+    fireEvent.keyDown(result.textarea, { key: 'Enter' })
+    expect(result.sink).not.toHaveBeenCalled()
+    expect(result.button.disabled).toBe(true)
+    await act(async () => { finishFirst('.dsh-uploads/演示 slides.pptx'); await first })
+    await waitFor(() => { expect(addFile).toHaveBeenCalledTimes(3) })
+    expect(result.shell.snapshot.draft).toBe('请解析 @".dsh-uploads/演示 slides.pptx" @.dsh-uploads/memo.docx @.dsh-uploads/data.bin')
+    expect(addImages).not.toHaveBeenCalled()
+    fireEvent.keyDown(result.textarea, { key: 'Enter' })
+    await waitFor(() => { expect(result.sink).toHaveBeenCalledWith(
+      result.shell.snapshot.draft, [], 'queue', expect.any(AbortSignal),
+    ) })
+  })
+
+  it('keeps a successful path but does not invent a path for failed uploads', async () => {
+    const addFile = vi.fn((file: File) => file.name === 'too-large.docx'
+      ? Promise.reject(new FileStageError(413))
+      : Promise.resolve('.dsh-uploads/kept.pptx'))
+    const result = bench({ draft: '导入', addFile })
+    result.textarea.setSelectionRange(result.textarea.value.length, result.textarea.value.length)
+    act(() => { attachmentOwner(result.slotCalls).onAddFiles([
+      new File(['ok'], 'kept.pptx'), new File(['bad'], 'too-large.docx'),
+    ]) })
+    await waitFor(() => { expect(result.view.getByRole('alert').textContent).toContain('文件不能超过 32MB') })
+    expect(result.shell.snapshot.draft).toBe('导入 @.dsh-uploads/kept.pptx')
+    expect(result.sink).not.toHaveBeenCalled()
+    expect(addFile).toHaveBeenCalledTimes(2)
+  })
+
+  it('converts a clipboard document to a saved path while preserving pasted text', async () => {
+    const addFile = vi.fn(() => Promise.resolve('.dsh-uploads/notes.docx'))
+    const result = bench({ addFile })
+    const file = new File(['notes'], 'notes.docx', { type: 'application/msword' })
+    fireEvent.paste(result.textarea, { clipboardData: {
+      items: [{ kind: 'file', type: file.type, getAsFile: () => file }],
+      getData: () => '请总结',
+    } })
+    await waitFor(() => { expect(result.shell.snapshot.draft).toBe('请总结 @.dsh-uploads/notes.docx') })
+    expect(addFile).toHaveBeenCalledWith(file)
+  })
+
+  it('ignores an old session upload and allows a fresh one after switching', async () => {
+    let finishOld: (path: string) => void = () => { throw new Error('no upload in flight') }
+    const oldUpload = new Promise<string>((resolve) => { finishOld = resolve })
+    const result = bench({ draft: '现有草稿', addFile: () => oldUpload })
+    act(() => { attachmentOwner(result.slotCalls).onAddFiles([new File(['old'], 'old.pptx')]) })
+    expect(result.view.getByRole('status').textContent).toContain('正在保存文件到工作区')
+    const newSession = 'fresh-session' as SessionId
+    const addFile = vi.fn(() => Promise.resolve('.dsh-uploads/new.docx'))
+    result.view.rerender(<InputBar {...result.props} sessionId={newSession} addFile={addFile} />)
+    expect(result.view.queryByRole('status')).toBeNull()
+    expect(result.button.disabled).toBe(false)
+    act(() => { attachmentOwner(result.slotCalls).onAddFiles([new File(['new'], 'new.docx')]) })
+    await waitFor(() => { expect(result.shell.snapshot.draft).toContain('@.dsh-uploads/new.docx') })
+    await act(async () => { finishOld('.dsh-uploads/old.pptx'); await oldUpload })
+    expect(result.shell.snapshot.draft).not.toContain('old.pptx')
+  })
+
   it('projects display-ready limits into the attachment slot', () => {
     const result = bench({
       addImages: vi.fn(() => null),
@@ -399,7 +475,7 @@ describe('image draft rail', () => {
       const paste = () => {
         fireEvent.paste(textarea, {
           clipboardData: {
-            items: [{ kind: 'file', type: 'text/plain', getAsFile: () => new File(['x'], 'note.txt', { type: 'text/plain' }) }],
+            items: [{ kind: 'file', type: 'image/png', getAsFile: () => new File(['x'], 'bad.png', { type: 'image/png' }) }],
             getData: () => '',
           },
         })

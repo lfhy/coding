@@ -50,6 +50,8 @@
 
 ## 对话输入命令与视图
 
+- **文件拖放路线**：整页拖放由 [ui-attachment](../../packages/client/ui-attachment/README.md) 按图片 MIME 分流；[ui-conversation](../../packages/client/ui-conversation/README.md) 的输入栏保留图片附件准入，其他文件经 [open-in-app](../../packages/host/open-in-app/README.md) 同源路由保存到当前本机会话工作区，再把真实相对路径作为文件引用写入草稿。剪贴板文件沿用此分流；不支持解析的文件仍可保存路径，远端工作区拒绝暂存。更改此链路时一并检查 Host 来源与路径校验、草稿提交时序、PPT 工具读取限制，并运行 Host HTTP 测试、Client GUI 测试、组装页面回放与真实页面拖放。
+
 - **路线**：`packages/client/ui-conversation/src/client/apply.ts` 声明对话座位，`input/hub.ts` 与 `skeleton/InputBar.tsx` 管每会话输入；`packages/client/ui-input-trigger/src/client/controller.ts` 管内联触发，`packages/client/ui-commands/src/client/service.ts` 管命令目录与弹层；`packages/client/ui-tool/src/client/apply.ts` 注册工具行，`packages/client/ui-trajectory/src/client/index.ts` 注册轨迹视图。
 - **技术与边界**：输入和视图通过 slot/领域注册表组合，持久事件仍由 Session/Host 拥有；工具卡片、轨迹、命令 UI 不往 runtime 增加中央事件 switch。参见 [ui-conversation](../../packages/client/ui-conversation/README.md)、[ui-commands](../../packages/client/ui-commands/README.md) 与 [ui-trajectory](../../packages/client/ui-trajectory/README.md)。
 - **连带与验证**：改变输入提交要核对 `packages/client/runtime` 的 Session 与 Host RPC；改变持久 Chat 行须更新 `ConversationNodeDefinition` 和 keyed renderer；改模型可见内容还要核对 session 事件与 snapshot。定向运行 `pnpm exec vitest run packages/client/ui-conversation/tests packages/client/ui-commands/tests packages/client/ui-input-trigger/tests packages/client/ui-tool/tests packages/client/ui-trajectory/tests`，可见输出再跑 keyless `DSH_SNAPSHOT=replay pnpm run test:web`。
