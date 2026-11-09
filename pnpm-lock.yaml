@@ -7496,24 +7496,48 @@ importers:
       '@deepseek-ai/cordis':
         specifier: workspace:^
         version: link:../../../vendor/cordis
+      '@deepseek-ai/cordis-plugin-include':
+        specifier: workspace:^
+        version: link:../../../vendor/include
+      '@deepseek-ai/cordis-plugin-loader':
+        specifier: workspace:^
+        version: link:../../../vendor/loader
       coding-agent:
         specifier: workspace:^
         version: link:../../core/agent
       coding-attachment:
         specifier: workspace:^
         version: link:../../attachment/attachment
+      coding-attachment-local:
+        specifier: workspace:^
+        version: link:../../attachment/attachment-local
+      coding-image-gen:
+        specifier: workspace:^
+        version: link:../../image/image-gen
       coding-invariants:
         specifier: workspace:^
         version: link:../../runtime-diagnostics/invariants
       coding-llm:
         specifier: workspace:^
         version: link:../../llm/llm
+      coding-ppt-workbench:
+        specifier: workspace:^
+        version: link:../ppt-workbench
       coding-session:
         specifier: workspace:^
         version: link:../../core/session
+      coding-system-prompt:
+        specifier: workspace:^
+        version: link:../../core/system-prompt
+      coding-tool-image-gen:
+        specifier: workspace:^
+        version: link:../../image/tool-image-gen
       coding-tools:
         specifier: workspace:^
         version: link:../../core/tools
+      fflate:
+        specifier: ^0.8.2
+        version: 0.8.3
 
   packages/preset/agent-presets:
     dependencies:

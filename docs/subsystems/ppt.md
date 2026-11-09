@@ -8,6 +8,7 @@
 | --- | --- | --- |
 | `SlideSizeId`、`ThemeId` | [数据模型](../../packages/ppt/model/src/index.ts) | 画布比例为 `16:9` 或 `4:3`；主题为 `ink`、`paper`、`ocean`、`forest` 或 `inference`（白底蓝橘）。画布坐标以基准像素表示。 |
 | `PptSnapshot` | [工程存储](../../packages/ppt/ppt-workbench/src/store.ts) | 完整工程 `deck`、绝对目录 `dir`、`revision` 与可撤销／重做状态；`revision` 是编辑冲突的比较值。 |
+| `PptImageElement` | [数据模型](../../packages/ppt/model/src/index.ts) | 图片 `source` 是工程内的 `media/<file>` 相对路径；文件存在本身不等于图片已加入页面。 |
 | `PptWorkbenchState` | [服务定义](../../packages/ppt/ppt-workbench/src/index.ts) | 当前会话的工作区目录、工程列表、当前工程与等待面板确认的打开请求。 |
 | `PptCheckResult` | [质检](../../packages/ppt/ppt-workbench/src/check.ts) | `ok` 表示没有阻断导出的 error 级问题；`issues` 包含页面、元素与规则标识。 |
 | `RenderedPage` | [页面渲染](../../packages/ppt/ppt-workbench/src/render.ts) | 每页的 id、名称与 PNG 绝对路径。 |
@@ -16,6 +17,10 @@
 ## 会话与版本
 
 `rootOf(sessionId)` 取会话的工作目录；工程目录由 `resolveDir` 限制在该工作区内，未打开工程又未指定目录时拒绝。创建、打开和导入工程会记录会话当前工程并通知面板；面板通过 `ackOpenRequest` 确认消费。编辑可携带 `baseRevision`，不匹配时拒绝覆盖；同一目录的写入在进程内串行。导出先执行质检，除非调用方显式设置 `skipCheck`。持久文件布局、错误映射和渲染限制由[工作台包 README](../../packages/ppt/ppt-workbench/README.md) 持有。
+
+## 图片媒体与编辑
+
+`upload(sessionId, dir, name, bytes)` 将校验后的图片字节复制到已存在的工程并返回 `media/<file>` 相对路径，不修改工程页面或修订号；调用方需读回 `PptSnapshot`，再以当前 `revision` 调 `edit` 的 `add_element` 引用该路径。`ppt_attach_gallery_image` 先经[图像服务](../../packages/image/image-gen/README.md)按本次会话图库 ID 取得图片，再调用同一个 `upload`；附件 ID、文件路径与其他会话图库 ID 不能作为来源。图片仅接受 PNG／JPEG／GIF／WebP，SVG 因同源脚本风险拒绝；格式、8 MiB 上限与写入路径安全检查归[工作台服务](../../packages/ppt/ppt-workbench/README.md#行为)；生图服务未启用时既有图库项仍可读取，生成与编辑图片不可用。媒体复制与工程编辑不是原子操作，版本冲突可能留下未引用媒体，不能覆盖已有工程改动。
 
 ## 创建与模板语义
 
@@ -169,6 +174,7 @@ media(sessionId: string, dir: string | undefined, source: string): Promise<Uint8
  * @param name - 上传时的文件名（取扩展名）。
  * @param bytes - 图片字节。
  * @returns `media/<file>` 相对路径。
+ * @throws PptStoreError 工程不存在、图片格式不符、超过 8 MiB 或媒体目录不安全时。
  */
 upload(sessionId: string, dir: string | undefined, name: string, bytes: Uint8Array): Promise<string>
 

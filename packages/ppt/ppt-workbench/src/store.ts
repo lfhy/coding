@@ -7,7 +7,7 @@
  * @module coding-ppt-workbench/store
  */
 
-import { mkdir, readFile, readdir, rename, stat, writeFile } from 'node:fs/promises'
+import { mkdir, lstat, readFile, readdir, realpath, rename, stat, writeFile } from 'node:fs/promises'
 import { dirname, join, relative, resolve, sep } from 'node:path'
 import { applyOps, parseOps, type PptOp } from './ops.ts'
 import { isRecord, parseDeck, PPT_FORMAT, PPT_THEMES, type PptDeck, type SlideSizeId, type ThemeId } from 'coding-ppt-model'
@@ -400,18 +400,64 @@ export async function readProjectMedia(dir: string, source: string): Promise<Uin
   return readFile(target).catch(() => undefined)
 }
 
+/** 上传不能通过工程或媒体目录的符号链接落到会话工作区之外。 */
+async function assertProjectMediaDir(root: string, dir: string): Promise<void> {
+  const base = resolve(root)
+  const target = resolveProjectDir(base, dir)
+  const canonical = await realpath(base)
+  let current = canonical
+  for (const segment of relative(base, target).split(sep).filter(Boolean)) {
+    current = join(current, segment)
+    const info = await lstat(current).catch((error: unknown) => {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+        throw new PptStoreError('not-found', '演示文稿工程不存在')
+      }
+      throw error
+    })
+    if (info.isSymbolicLink()) {
+      throw new PptStoreError('forbidden', '工程目录不允许符号链接')
+    }
+  }
+  const media = join(current, 'media')
+  const info = await lstat(media).catch((error: unknown) => {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined
+    throw error
+  })
+  if (info !== undefined && !info.isDirectory()) {
+    throw new PptStoreError('forbidden', '媒体目录必须是普通目录')
+  }
+}
+
 /**
  * 把上传的图片写进工程目录的 `media/`。
+ * @param root - 会话工作区目录；已有工程及其媒体目录不得指向链接。
  * @param dir - 绝对工程目录。
  * @param name - 原始文件名，用于取扩展名并生成安全的存储名。
  * @param bytes - 图片字节。
  * @returns 写入后的 `media/<file>` 相对路径。
+ * @throws PptStoreError 工程不存在、路径不安全、格式不受支持或图片超出 8 MiB 时。
  */
-export async function writeProjectMedia(dir: string, name: string, bytes: Uint8Array): Promise<string> {
-  const ext = (name.split('.').pop() ?? 'png').toLowerCase()
-  const allowed = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg']
-  const safeExt = allowed.includes(ext) ? ext : 'png'
-  const file = `up-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}.${safeExt}`
+export async function writeProjectMedia(root: string, dir: string, name: string, bytes: Uint8Array): Promise<string> {
+  const ext = (name.split('.').pop() ?? '').toLowerCase()
+  const allowed = ['png', 'jpg', 'jpeg', 'gif', 'webp']
+  if (!allowed.includes(ext)) throw new PptStoreError('bad-request', '图片格式不受支持')
+  if (bytes.byteLength < 1 || bytes.byteLength > 8 * 1024 * 1024) {
+    throw new PptStoreError('bad-request', '图片大小必须在 1 到 8388608 字节之间')
+  }
+  const signatures: Record<string, number[]> = {
+    png: [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a],
+    jpg: [0xff, 0xd8, 0xff], jpeg: [0xff, 0xd8, 0xff],
+    gif: [0x47, 0x49, 0x46, 0x38],
+    webp: [0x52, 0x49, 0x46, 0x46],
+  }
+  const signature = signatures[ext]
+  if (!signature?.every((byte, index) => bytes[index] === byte)
+    || (ext === 'webp' && Buffer.from(bytes.subarray(8, 12)).toString('ascii') !== 'WEBP')) {
+    throw new PptStoreError('bad-request', '图片内容与格式不符')
+  }
+  await assertProjectMediaDir(root, dir)
+  await loadProject(dir)
+  const file = `up-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}.${ext}`
   await mkdir(join(dir, 'media'), { recursive: true })
   await writeFile(join(dir, 'media', file), bytes)
   return `media/${file}`

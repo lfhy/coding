@@ -1,7 +1,7 @@
 /**
  * PPT 创作模式的模型工具：模型用 `ppt_create` / `ppt_create_from_template` / `ppt_open` 选工程，用 `ppt_edit` 迭代
- * 页面与元素，用 `ppt_export` 出成品。存储、版本与导出都在 `coding-ppt-workbench`，
- * 这里只做参数校验、会话解析与结果投影。
+ * 页面与元素，用 `ppt_attach_gallery_image` 复用本会话图片，用 `ppt_export` 出成品。
+ * 存储、版本与导出都在 `coding-ppt-workbench`，这里只做参数校验、会话解析与结果投影。
  * @module coding-tool-ppt
  */
 
@@ -11,6 +11,7 @@ import type {} from 'coding-attachment'
 import type {} from 'coding-agent'
 import { defineTool } from 'coding-tools'
 import { outlineText, reviewOutline } from './ai-review.ts'
+import { registerGalleryImageTool } from './gallery-image.ts'
 import type { GenericCallView, ObjectValueSchemaSpec } from 'coding-tools'
 import type { JsonValue } from 'coding-session'
 
@@ -24,7 +25,7 @@ export const inject = ['tools', 'llm', 'attachments']
  * 独立的类型程序，模型工具只依赖「服务名字 + 方法签名」这一层契约，工程包的实现
  * 归 `coding-ppt-workbench`。方法语义见该包 README 与 `src/index.ts`。
  */
-interface PptProjectsFace {
+export interface PptProjectsFace {
   create: (sessionId: string, options: {
     title: string
     dir?: string
@@ -48,6 +49,7 @@ interface PptProjectsFace {
   open: (sessionId: string, dir: string) => Promise<PptSnapshotFace>
   read: (sessionId: string, dir?: string) => Promise<PptSnapshotFace>
   edit: (sessionId: string, dir: string | undefined, ops: unknown, baseRevision?: number) => Promise<PptSnapshotFace>
+  upload: (sessionId: string, dir: string | undefined, name: string, bytes: Uint8Array) => Promise<string>
   check: (sessionId: string, dir?: string) => Promise<PptCheckFace>
   render: (sessionId: string, dir?: string, pages?: readonly number[]) => Promise<readonly {
     readonly page: string
@@ -409,6 +411,7 @@ const OPS_HELP = 'Array of edit operations, applied atomically in order. Each it
  */
 export function apply(ctx: Context): void {
   const projects = (): PptProjectsFace => projectsOf(ctx)
+  registerGalleryImageTool(ctx, projects)
 
   ctx.tools.register(defineTool({
     name: 'ppt_create',

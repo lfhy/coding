@@ -17,8 +17,6 @@ import type PptProjects from './index.ts'
 
 const PREFIX = '/api/ppt/'
 const MAX_BODY = 16 * 1024 * 1024
-/** 单张图片上限，与附件通道的默认预算一致。 */
-const MAX_IMAGE = 8 * 1024 * 1024
 const STATES: Readonly<Record<PptStoreError['code'], number>> = {
   'not-found': 404,
   conflict: 409,
@@ -296,9 +294,6 @@ export function installRoutes(ctx: Context, service: PptProjects): void {
       throw new PptStoreError('bad-request', 'name 与 base64 必须提供')
     }
     const bytes = Buffer.from(base64, 'base64')
-    if (bytes.length === 0 || bytes.length > MAX_IMAGE) {
-      throw new PptStoreError('bad-request', `图片大小必须在 1 到 ${MAX_IMAGE} 字节之间`)
-    }
     const source = await service.upload(sessionId, optionalString(body.dir, 'dir'), name, bytes)
     return { ok: true, source }
   })

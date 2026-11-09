@@ -10,6 +10,7 @@ PPT 创作模式的宿主能力：工程存储（`ppt/<工程目录>/deck.json`�
 <session cwd>/ppt/<slug>/
   deck.json            { revision, deck }  —— 唯一事实源
   history.json         { cursor, nextRevision, entries[] }  —— 撤销/重做快照
+  media/<file>         工程图片（可由本会话图库复制或在工作台上传）
   export/<title>-v<n>.pptx —— 导出产物
 ```
 
@@ -24,6 +25,7 @@ PPT 创作模式的宿主能力：工程存储（`ppt/<工程目录>/deck.json`�
 - **版本与冲突**：每次 `ppt_edit` 生成一个新版本。调用方给出 `baseRevision` 时，与当前版本不一致即返回 409，绝不覆盖别处的改动；工作台与模型工具都走这条规则。
 - **串行写入**：同一工程目录的写操作在进程内排队（`withLock`），两次编辑不会交错；跨进程的并发由版本号兜底。
 - **工作区边界**：工程目录必须落在会话工作区内，越界路径直接拒绝（`forbidden`）。
+- **图片媒体**：`upload` 供工作台上传与模型的 `ppt_attach_gallery_image` 共用，要求工程已存在，仅接受 1 字节至 8 MiB 的 PNG／JPEG／GIF／WebP，并检查格式和内容；SVG 因同源脚本风险明确拒绝。写入前检查工程与 `media/` 目录的工作区边界和符号链接，路径不安全时拒绝。它在工程 `media/` 写入一份新文件并返回 `media/<file>`，不修改 `deck.json` 或修订号；图库身份只由[模型工具](../tool-ppt/README.md#行为)在本次会话内校验，本服务不从图库取图。后续 `ppt_edit` 需引用返回的 source 才加入页面；复制与编辑不原子，冲突可能留下未引用媒体，不覆盖原有工程改动。
 - **模型与面板的交接**：模型 `ppt_create` / `ppt_open` 之后，服务将该会话当前工程指向新工程并记录一次打开请求；面板轮询（3 秒）直接采用当前快照，再回执 `ack`，不再次打开工程。
 - **导出**：`buildPptx` 在本地生成最小 OPC 包——每页一张 slide，文本、矩形、椭圆与连接线按基准像素换算成 EMU，主题色写进 `theme1.xml`。不依赖 Office、不调用外部进程。
 - **错误码**：路由把 `not-found` / `conflict` / `forbidden` / `bad-request` 映射成 404 / 409 / 403 / 400；模型工具看到的是同一批中文诊断。

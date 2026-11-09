@@ -1,10 +1,10 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
   createProject, editProject, listProjects, loadProject, redoProject, resolveProjectDir,
-  undoProject, PptStoreError,
+  undoProject, writeProjectMedia, PptStoreError,
 } from '../src/store.ts'
 
 let root = ''
@@ -18,6 +18,43 @@ afterEach(async () => {
 })
 
 describe('工程存储', () => {
+  it('媒体仅写入存在工程且格式、签名与大小合规的图片', async () => {
+    const dir = join(root, 'ppt', 'images')
+    const png = Uint8Array.from([137, 80, 78, 71, 13, 10, 26, 10, 0])
+    await expect(writeProjectMedia(root, dir, 'illustration.png', png)).rejects.toMatchObject({ code: 'not-found' })
+    await createProject(dir, { title: '配图' })
+    const source = await writeProjectMedia(root, dir, 'illustration.png', png)
+    expect(source).toMatch(/^media\/up-[\w-]+\.png$/u)
+    expect(await readFile(join(dir, source))).toEqual(Buffer.from(png))
+    expect((await loadProject(dir)).revision).toBe(1)
+    await expect(writeProjectMedia(root, dir, 'illustration.jpg', png)).rejects.toMatchObject({ code: 'bad-request' })
+    await expect(writeProjectMedia(root, dir, 'illustration.svg', Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"/>')))
+      .rejects.toMatchObject({ code: 'bad-request' })
+    await expect(writeProjectMedia(root, dir, 'illustration.bin', png)).rejects.toMatchObject({ code: 'bad-request' })
+    await expect(writeProjectMedia(root, dir, 'illustration.png', new Uint8Array(0)))
+      .rejects.toMatchObject({ code: 'bad-request' })
+    await expect(writeProjectMedia(root, dir, 'illustration.png', new Uint8Array(8 * 1024 * 1024 + 1)))
+      .rejects.toMatchObject({ code: 'bad-request' })
+  })
+
+  it('媒体写入拒绝工作区外目录、链接工程和已有的链接媒体目录', async () => {
+    const png = Uint8Array.from([137, 80, 78, 71, 13, 10, 26, 10, 0])
+    const outside = await mkdtemp(join(tmpdir(), 'ppt-media-outside-'))
+    try {
+      const dir = join(root, 'ppt', 'images')
+      await createProject(dir, { title: '配图' })
+      await expect(writeProjectMedia(root, outside, 'image.png', png)).rejects.toMatchObject({ code: 'forbidden' })
+      await symlink(outside, join(dir, 'media'))
+      await expect(writeProjectMedia(root, dir, 'image.png', png)).rejects.toMatchObject({ code: 'forbidden' })
+      await rm(join(dir, 'media'))
+      await symlink(dir, join(root, 'ppt', 'linked'))
+      await expect(writeProjectMedia(root, join(root, 'ppt', 'linked'), 'image.png', png))
+        .rejects.toMatchObject({ code: 'forbidden' })
+    } finally {
+      await rm(outside, { recursive: true, force: true })
+    }
+  })
+
   it('新建工程写入标题页并可再次读取', async () => {
     const dir = join(root, 'ppt', 'quarterly')
     const created = await createProject(dir, { title: '季度汇报' })

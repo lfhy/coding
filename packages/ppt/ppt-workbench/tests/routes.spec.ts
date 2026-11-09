@@ -1,5 +1,5 @@
 import { Context } from '@deepseek-ai/cordis'
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -58,6 +58,28 @@ async function state(base: string, sessionId = SESSION, init?: RequestInit): Pro
 }
 
 describe('PPT 状态路由的真实 HTTP 组合', () => {
+  it('上传图片由工程服务统一校验，成功路径可从媒体路由读回', async () => {
+    const { base, projects } = await boot()
+    const created = await projects.create(SESSION, { title: '配图' })
+    const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64')
+    const send = (name: string, bytes: Buffer) => fetch(`${base}/api/ppt/upload?sessionId=${SESSION}`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name, base64: bytes.toString('base64') }),
+    })
+    const uploaded = await send('art.png', png)
+    expect(uploaded.status).toBe(200)
+    const result = await uploaded.json() as { source: string }
+    expect(result.source).toMatch(/^media\/up-[\w-]+\.png$/u)
+    expect(await readFile(join(created.dir, result.source))).toEqual(png)
+    const media = await fetch(`${base}/api/ppt/media?${new URLSearchParams({
+      sessionId: SESSION, path: result.source,
+    })}`)
+    expect(media.status).toBe(200)
+    expect(Buffer.from(await media.arrayBuffer())).toEqual(png)
+    expect((await send('art.jpg', png)).status).toBe(400)
+    expect((await send('art.svg', Buffer.from('<svg/>'))).status).toBe(400)
+  })
+
   it('空工程成功返回可用状态，模型新建与打开后各会话独立', async () => {
     const { base, projects } = await boot()
     const initial = await state(base)

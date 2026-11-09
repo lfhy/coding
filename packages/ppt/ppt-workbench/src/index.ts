@@ -361,9 +361,10 @@ export default class PptProjects extends Service {
    * @param name - 上传时的文件名（取扩展名）。
    * @param bytes - 图片字节。
    * @returns `media/<file>` 相对路径。
+   * @throws PptStoreError 工程不存在、图片格式不符、超过 8 MiB 或媒体目录不安全时。
    */
   upload(sessionId: string, dir: string | undefined, name: string, bytes: Uint8Array): Promise<string> {
-    return writeProjectMedia(this.resolveDir(sessionId, dir), name, bytes)
+    return writeProjectMedia(this.rootOf(sessionId), this.resolveDir(sessionId, dir), name, bytes)
   }
 
   /**

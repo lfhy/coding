@@ -1095,12 +1095,6 @@ flowchart TD
   pkg_tool_memory --> pkg_session
   pkg_tool_memory --> pkg_system_prompt
   pkg_tool_memory --> pkg_tools
-  pkg_tool_ppt --> pkg_agent
-  pkg_tool_ppt --> pkg_attachment
-  pkg_tool_ppt --> pkg_invariants
-  pkg_tool_ppt --> pkg_llm
-  pkg_tool_ppt --> pkg_session
-  pkg_tool_ppt --> pkg_tools
   pkg_schedule --> pkg_agent
   pkg_schedule --> pkg_brand
   pkg_schedule --> pkg_invariants
@@ -1483,6 +1477,13 @@ flowchart TD
   pkg_tool_image_gen --> pkg_invariants
   pkg_tool_image_gen --> pkg_llm
   pkg_tool_image_gen --> pkg_tools
+  pkg_tool_ppt --> pkg_agent
+  pkg_tool_ppt --> pkg_attachment
+  pkg_tool_ppt --> pkg_image_gen
+  pkg_tool_ppt --> pkg_invariants
+  pkg_tool_ppt --> pkg_llm
+  pkg_tool_ppt --> pkg_session
+  pkg_tool_ppt --> pkg_tools
   pkg_client_ui_settings --> pkg_api_remotes
   pkg_client_ui_settings --> pkg_client_connection
   pkg_client_ui_settings --> pkg_client_runtime
@@ -1987,7 +1988,6 @@ flowchart TD
 | [`tool-lsp`](../packages/lsp/tool-lsp) | `lsp` | [`invariants`](../packages/runtime-diagnostics/invariants), [`llm`](../packages/llm/llm), [`lsp`](../packages/lsp/lsp), [`system-prompt`](../packages/core/system-prompt), [`timeout`](../packages/util/timeout), [`tools`](../packages/core/tools) |
 | [`mcp-client`](../packages/mcp/mcp-client) | `mcp` | [`attachment`](../packages/attachment/attachment), [`invariants`](../packages/runtime-diagnostics/invariants), [`llm`](../packages/llm/llm), [`subprocess`](../packages/subprocess/subprocess), [`timeout`](../packages/util/timeout), [`tools`](../packages/core/tools) |
 | [`tool-memory`](../packages/memory/tool-memory) | `memory` | [`agent`](../packages/core/agent), [`invariants`](../packages/runtime-diagnostics/invariants), [`memory`](../packages/memory/memory), [`session`](../packages/core/session), [`system-prompt`](../packages/core/system-prompt), [`tools`](../packages/core/tools) |
-| [`tool-ppt`](../packages/ppt/tool-ppt) | `ppt` | [`agent`](../packages/core/agent), [`attachment`](../packages/attachment/attachment), [`invariants`](../packages/runtime-diagnostics/invariants), [`llm`](../packages/llm/llm), [`session`](../packages/core/session), [`tools`](../packages/core/tools) |
 | [`schedule`](../packages/schedule/schedule) | `schedule` | [`agent`](../packages/core/agent), [`brand`](../packages/util/brand), [`invariants`](../packages/runtime-diagnostics/invariants), [`llm`](../packages/llm/llm), [`session`](../packages/core/session), [`session-persistence`](../packages/session/session-persistence), [`tools`](../packages/core/tools) |
 | [`session-checkpoint-policy`](../packages/session/session-checkpoint-policy) | `session` | [`agent`](../packages/core/agent), [`invariants`](../packages/runtime-diagnostics/invariants), [`llm`](../packages/llm/llm), [`session`](../packages/core/session), [`session-persistence`](../packages/session/session-persistence), [`tools`](../packages/core/tools) |
 | [`session-telemetry-otel`](../packages/session/session-telemetry-otel) | `session` | [`anonymous-user-id`](../packages/identity/anonymous-user-id), [`command-feedback`](../packages/feedback/command-feedback), [`invariants`](../packages/runtime-diagnostics/invariants), [`llm`](../packages/llm/llm), [`session`](../packages/core/session), [`session-telemetry`](../packages/session/session-telemetry) |
@@ -2041,6 +2041,7 @@ flowchart TD
 | [`image-gen`](../packages/image/image-gen) | `image` | [`attachment`](../packages/attachment/attachment), [`client-connection`](../packages/client/connection), [`credentials`](../packages/credentials/credentials), [`file-library`](../packages/attachment/file-library), [`host-webserver`](../packages/host/webserver), [`invariants`](../packages/runtime-diagnostics/invariants), [`session`](../packages/core/session), [`session-persistence`](../packages/session/session-persistence), [`settings`](../packages/settings/settings) |
 | [`client-runtime`](../packages/client/runtime) | `client` | [`agent`](../packages/core/agent), [`api-remotes`](../packages/api/remotes), [`attachment`](../packages/attachment/attachment), [`client-connection`](../packages/client/connection), [`commands`](../packages/interaction/commands), [`host-apiproxy`](../packages/host/apiproxy), [`invariants`](../packages/runtime-diagnostics/invariants), [`llm`](../packages/llm/llm), [`llm-retry`](../packages/llm/llm-retry), [`session`](../packages/core/session), [`session-projection`](../packages/session/session-projection), [`session-title`](../packages/session/session-title), [`tools`](../packages/core/tools), [`typert-protocol`](../packages/typert/protocol), [`typert-registry`](../packages/typert/registry) |
 | [`tool-image-gen`](../packages/image/tool-image-gen) | `image` | [`image-gen`](../packages/image/image-gen), [`invariants`](../packages/runtime-diagnostics/invariants), [`llm`](../packages/llm/llm), [`tools`](../packages/core/tools) |
+| [`tool-ppt`](../packages/ppt/tool-ppt) | `ppt` | [`agent`](../packages/core/agent), [`attachment`](../packages/attachment/attachment), [`image-gen`](../packages/image/image-gen), [`invariants`](../packages/runtime-diagnostics/invariants), [`llm`](../packages/llm/llm), [`session`](../packages/core/session), [`tools`](../packages/core/tools) |
 | [`client-ui-settings`](../packages/client/ui-settings) | `client` | [`api-remotes`](../packages/api/remotes), [`client-connection`](../packages/client/connection), [`client-runtime`](../packages/client/runtime), [`invariants`](../packages/runtime-diagnostics/invariants), [`settings`](../packages/settings/settings) |
 | [`client-locale`](../packages/client/locale) | `client` | [`api-remotes`](../packages/api/remotes), [`client-connection`](../packages/client/connection), [`client-runtime`](../packages/client/runtime), [`client-ui-settings`](../packages/client/ui-settings), [`invariants`](../packages/runtime-diagnostics/invariants), [`settings`](../packages/settings/settings) |
 | [`client-ui-files`](../packages/client/ui-files) | `client` | [`client-locale`](../packages/client/locale), [`client-runtime`](../packages/client/runtime), [`client-ui-settings`](../packages/client/ui-settings), [`invariants`](../packages/runtime-diagnostics/invariants) |

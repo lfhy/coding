@@ -263,11 +263,23 @@ describe('the shipped Web composition', () => {
     try {
       // 名单里的健康状态只检查 YAML 形状；真正挂载才会验证每行插件的必填配置。
       expect(toolNames(ctx, handle.agent).filter(name => name.startsWith('ppt_'))).toEqual([
-        'ppt_check', 'ppt_create', 'ppt_edit', 'ppt_export', 'ppt_import',
-        'ppt_open', 'ppt_read', 'ppt_redo', 'ppt_render', 'ppt_undo',
+        'ppt_attach_gallery_image', 'ppt_check', 'ppt_create', 'ppt_create_from_template', 'ppt_delete_template',
+        'ppt_edit', 'ppt_export', 'ppt_import', 'ppt_import_evidence', 'ppt_import_template', 'ppt_open',
+        'ppt_prepare_template', 'ppt_read', 'ppt_redo', 'ppt_rename_template', 'ppt_render', 'ppt_save_template',
+        'ppt_templates', 'ppt_undo',
       ])
+      const imageTools = () => toolNames(ctx, handle.agent).filter(name =>
+        ['generate_image', 'generate_images', 'edit_image', 'canvas_state'].includes(name))
+      expect(imageTools()).toEqual([])
+      await ctx.settings.update(settingsNamespace('image-generation'), {
+        enabled: true, endpoint: 'http://127.0.0.1:9/v1', model: 'mock', apiKeyRef: '',
+      })
+      await vi.waitFor(() => { expect(imageTools()).toEqual(['canvas_state', 'edit_image', 'generate_image', 'generate_images']) })
+      await ctx.settings.update(settingsNamespace('image-generation'), { enabled: false })
+      await vi.waitFor(() => { expect(imageTools()).toEqual([]) })
       expect(resolveSessionPreset(handle.agent.session)).toBe('ppt')
     } finally {
+      await ctx.settings.update(settingsNamespace('image-generation'), { enabled: false })
       await handle.dispose()
     }
   })

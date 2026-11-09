@@ -559,8 +559,9 @@ const TOOL_PACKAGES: ToolPackage[] = [
     pkg: 'coding-tool-ppt',
     dir: 'tool-ppt',
     source: 'packages/ppt/tool-ppt/src/index.ts',
-    requires: ['ctx.tools', 'ctx.llm and ctx.attachments (AI review)', 'ctx.pptProjects (execution time)', 'a calling Agent session'],
-    writes: ['tool/call', 'project deck and history', 'rendered PNG or exported .pptx/PDF on request', 'tool/result'],
+    requires: ['ctx.tools', 'ctx.llm and ctx.attachments (AI review)',
+      'ctx.imageGeneration and ctx.pptProjects (gallery attachment at execution time)', 'a calling Agent session'],
+    writes: ['tool/call', 'project deck, history or copied media', 'rendered PNG or exported .pptx/PDF on request', 'tool/result'],
     async mount(ctx) {
       await ctx.plugin(LlmRuntime)
       await ctx.plugin(CatalogAttachmentStore)
@@ -569,7 +570,8 @@ const TOOL_PACKAGES: ToolPackage[] = [
     note:
       'The PPT preset installs this package\'s tools only in its Agent scope; other presets do not receive their schemas. '
       + 'The catalog mounts the LLM and attachment services to harvest the schema without executing project operations, '
-      + 'model review, rendering, or attachment I/O. At execution time the Host supplies ctx.pptProjects.',
+      + 'model review, rendering, or attachment I/O. At execution time the Host supplies ctx.pptProjects; '
+      + 'gallery attachment reads only this session\'s image IDs through ctx.imageGeneration and copies media without editing a page.',
   },
   {
     pkg: 'coding-schedule',

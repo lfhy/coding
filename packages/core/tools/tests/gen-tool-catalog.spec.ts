@@ -45,7 +45,8 @@ describe('gen-tool-catalog collectToolCatalog', () => {
       'edit', 'edit_image', 'exit_plan_mode', 'followup_task', 'followup_task', 'generate_image', 'generate_images',
       'get_goal', 'glob', 'grep', 'interrupt_agent',
       'interrupt_agent', 'job_kill', 'job_list', 'job_output', 'list_agents', 'list_agents', 'lsp',
-      'memory_delete', 'memory_list', 'memory_read', 'memory_save', 'memory_update', 'ppt_check', 'ppt_create',
+      'memory_delete', 'memory_list', 'memory_read', 'memory_save', 'memory_update', 'ppt_attach_gallery_image',
+      'ppt_check', 'ppt_create',
       'ppt_create_from_template', 'ppt_delete_template', 'ppt_edit', 'ppt_export', 'ppt_import',
       'ppt_import_evidence', 'ppt_import_template', 'ppt_open', 'ppt_prepare_template',
       'ppt_read', 'ppt_redo', 'ppt_rename_template', 'ppt_render',
@@ -110,7 +111,8 @@ describe('gen-tool-catalog collectToolCatalog', () => {
     const bash = catalog.find(entry => entry.pkg === 'coding-tool-bash')
     expect(bash?.sources.bash).toBe('packages/shell/tool-bash/src/index.ts')
     const ppt = catalog.find(entry => entry.pkg === 'coding-tool-ppt')
-    expect(ppt?.schemas).toHaveLength(18)
+    expect(ppt?.schemas).toHaveLength(19)
+    expect(ppt?.sources.ppt_attach_gallery_image).toBe('packages/ppt/tool-ppt/src/index.ts')
     expect(ppt?.sources.ppt_create_from_template).toBe('packages/ppt/tool-ppt/src/index.ts')
     expect(ppt?.sources.ppt_prepare_template).toBe('packages/ppt/tool-ppt/src/index.ts')
     expect(ppt?.sources.ppt_import_evidence).toBe('packages/ppt/tool-ppt/src/index.ts')

@@ -1493,6 +1493,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: '把上传的图片写进工程并返回可写进元素的相对路径。',
         parameters: [{ name: 'sessionId', description: '会话身份。' }, { name: 'dir', description: '工程目录；缺省为当前工程。' }, { name: 'name', description: '上传时的文件名（取扩展名）。' }, { name: 'bytes', description: '图片字节。' }],
         returns: '`media/<file>` 相对路径。',
+        throws: ['PptStoreError 工程不存在、图片格式不符、超过 8 MiB 或媒体目录不安全时。'],
       },
       {
         signature: 'async check(sessionId: string, dir?: string): Promise<PptCheckResult>',
