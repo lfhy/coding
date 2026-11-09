@@ -822,6 +822,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: '当前快照的一页、总数和可选后续偏移。',
       },
       {
+        signature: 'async getUpload(path: string): Promise<ManagedFileRecord | undefined>',
+        description: '读取真实且仍归本库登记的上传记录；目录和文件均需通过当前身份检查。',
+        parameters: [{ name: 'path', description: 'Host 提供的绝对路径。' }],
+        returns: '已登记的上传记录；路径失效或不属于本库时为 `undefined`。',
+      },
+      {
         signature: 'async isManagedUploadPath(path: string): Promise<boolean>',
         description: '仅确认真实、仍归本库登记的上传文件，拒绝符号链接及库外路径。',
         parameters: [{ name: 'path', description: 'Host 提供的绝对路径。' }],

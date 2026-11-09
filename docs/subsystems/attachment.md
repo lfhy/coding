@@ -122,7 +122,7 @@ interface ManagedFilePage {
 }
 ```
 
-`saveUpload` 在读流前和提交记录前调用消费方的会话校验；`saveGeneratedImage` 只接受附件服务已准入的 PNG/JPEG/WebP/GIF 字节，由 `ctx.imageGeneration` 在生成图片入库前复制；`isManagedUploadPath` 仅确认真实、已登记的上传文件。浏览器读取面只有回环同源的 `GET /api/files/list` 分页路由，响应不含绝对路径或文件内容，[ui-files](../../packages/client/ui-files/README.md) 的设置分区是它的消费方。删除、重命名与配额策略未定义，见[包 README](../../packages/attachment/file-library/README.md)。
+`saveUpload` 在读流前和提交记录前调用消费方的会话校验；`saveGeneratedImage` 只接受附件服务已准入的 PNG/JPEG/WebP/GIF 字节，由 `ctx.imageGeneration` 在生成图片入库前复制；`getUpload` 对真实、已登记的上传文件返回安全保存名等记录，`isManagedUploadPath` 复用同一检查。浏览器读取面只有回环同源的 `GET /api/files/list` 分页路由，响应不含绝对路径或文件内容，[ui-files](../../packages/client/ui-files/README.md) 的设置分区是它的消费方。删除、重命名与配额策略未定义，见[包 README](../../packages/attachment/file-library/README.md)。
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
@@ -204,6 +204,13 @@ async saveGeneratedImage(input: { sessionId: string galleryId?: string attachmen
  * @returns 当前快照的一页、总数和可选后续偏移。
  */
 list(offset: number = 0, limit: number = 50): ManagedFilePage
+
+/**
+ * 读取真实且仍归本库登记的上传记录；目录和文件均需通过当前身份检查。
+ * @param path - Host 提供的绝对路径。
+ * @returns 已登记的上传记录；路径失效或不属于本库时为 `undefined`。
+ */
+async getUpload(path: string): Promise<ManagedFileRecord | undefined>
 
 /**
  * 仅确认真实、仍归本库登记的上传文件，拒绝符号链接及库外路径。

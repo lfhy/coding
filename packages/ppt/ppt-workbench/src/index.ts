@@ -395,9 +395,9 @@ export default class PptProjects extends Service {
     report: PptImportReport
     sourceSha256: string
   }> {
-    const { root, bytes } = await this.readImportSource(sessionId, source)
+    const { root, bytes, fileName } = await this.readImportSource(sessionId, source)
     const sourceSha256 = createHash('sha256').update(bytes).digest('hex')
-    const title = options.title ?? basename(source).replace(/\.pptx$/iu, '')
+    const title = options.title ?? fileName.replace(/\.pptx$/iu, '')
     const imported = importPptx(bytes, { title })
     const dir = options.dir === undefined
       ? await suggestProjectDir(root, title)
@@ -441,6 +441,7 @@ export default class PptProjects extends Service {
   private async readImportSource(sessionId: string, source: string): Promise<{
     root: string
     sourcePath: string
+    fileName: string
     bytes: Uint8Array
   }> {
     const root = await this.localRoot(sessionId)
@@ -455,19 +456,21 @@ export default class PptProjects extends Service {
       // 只有文件库登记的本机上传源可跨出工作区；工程目录仍由 root 限定。
       const library = this.ctx.get('fileLibrary') as {
         root: string
-        isManagedUploadPath(path: string): Promise<boolean>
+        getUpload(path: string): Promise<{ id: string; name: string } | undefined>
       } | undefined
-      if (library === undefined || source !== resolve(source) || !await library.isManagedUploadPath(source)) {
+      const upload = source === resolve(source) ? await library?.getUpload(source) : undefined
+      if (library === undefined || upload === undefined) {
         throw new PptStoreError('forbidden', 'PPTX 来源必须位于工作区或是已登记的本机上传文件')
       }
       sourcePath = source
       const bytes = await readWorkspaceFile(library.root, sourcePath, PPT_IMPORT_MAX_BYTES)
-      if (!await library.isManagedUploadPath(sourcePath)) {
+      if ((await library.getUpload(sourcePath))?.id !== upload.id) {
         throw new PptStoreError('forbidden', 'PPTX 上传文件已失效，请重新上传')
       }
-      return { root, sourcePath, bytes }
+      return { root, sourcePath, fileName: upload.name, bytes }
     }
-    return { root, sourcePath, bytes: await readWorkspaceFile(root, sourcePath, PPT_IMPORT_MAX_BYTES) }
+    return { root, sourcePath, fileName: basename(source),
+      bytes: await readWorkspaceFile(root, sourcePath, PPT_IMPORT_MAX_BYTES) }
   }
 
   private async localRoot(sessionId: string): Promise<string> {
@@ -544,8 +547,7 @@ export default class PptProjects extends Service {
    * @throws PptStoreError 远程工作区、路径越界、符号链接、文件超限或文件名不安全时。
    */
   async importTemplateFromFile(sessionId: string, source: string, options: { name?: string } = {}): Promise<PptTemplateDetail> {
-    const { bytes } = await this.readImportSource(sessionId, source)
-    const fileName = basename(source)
+    const { bytes, fileName } = await this.readImportSource(sessionId, source)
     return this.importTemplate(fileName, bytes, options)
   }
 

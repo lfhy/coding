@@ -50,24 +50,26 @@ describe('PPT 导入修复的宿主服务', () => {
   it('仅从已登记的本机上传绝对路径导入、取证和提取模板，工程仍写在工作区', async () => {
     libraryRoot = await mkdtemp(join(tmpdir(), 'ppt-managed-upload-'))
     await mkdir(join(libraryRoot, 'uploads'))
-    const source = join(libraryRoot, 'uploads', 'brand.pptx')
+    const uploadId = '123e4567-e89b-42d3-a456-426614174000'
+    const source = join(libraryRoot, 'uploads', `${uploadId}-brand.pptx`)
     const unregistered = join(libraryRoot, 'uploads', 'other.pptx')
     const bytes = buildPptx(deck)
     await writeFile(source, bytes)
     await writeFile(unregistered, bytes)
-    const registered = new Set([source])
+    const registered = new Map([[source, { id: uploadId, name: 'brand.pptx' }]])
     ctx.provide('fileLibrary', {
-      root: libraryRoot, isManagedUploadPath: async (path: string) => registered.has(path),
+      root: libraryRoot, getUpload: async (path: string) => registered.get(path),
     } as never)
 
     const imported = await projects.import(SESSION, source, { dir: 'ppt/from-upload' })
     expect(imported.snapshot.dir).toBe(join(root, 'ppt', 'from-upload'))
+    expect(imported.snapshot.title).toBe('brand')
     const evidence = await projects.importEvidence(SESSION, source, {
       sourceIndex: 1, sourceSha256: imported.sourceSha256,
     })
     expect(evidence.content).toContain('第一页的源文案')
     const template = await projects.importTemplateFromFile(SESSION, source)
-    expect(template.sourceName).toBe('brand.pptx')
+    expect(template).toMatchObject({ name: 'brand', sourceName: 'brand.pptx' })
     await expect(projects.import(SESSION, source, { dir: join(libraryRoot, 'project') }))
       .rejects.toMatchObject({ code: 'forbidden' })
 
@@ -77,7 +79,7 @@ describe('PPT 导入修复的宿主服务', () => {
         .rejects.toMatchObject({ code: 'forbidden' })
       await expect(projects.importTemplateFromFile(SESSION, rejected)).rejects.toMatchObject({ code: 'forbidden' })
     }
-    await expect(projects.import(SESSION, `${libraryRoot}/uploads/../uploads/brand.pptx`, {}))
+    await expect(projects.import(SESSION, `${libraryRoot}/uploads/../uploads/${uploadId}-brand.pptx`, {}))
       .rejects.toMatchObject({ code: 'forbidden' })
     await writeFile(source, new Uint8Array(8 * 1024 * 1024 + 1))
     await expect(projects.importTemplateFromFile(SESSION, source)).rejects.toMatchObject({ code: 'bad-request' })
@@ -96,7 +98,7 @@ describe('PPT 导入修复的宿主服务', () => {
     await writeFile(source, buildPptx(deck))
     let checks = 0
     ctx.provide('fileLibrary', {
-      root: libraryRoot, isManagedUploadPath: async () => ++checks === 1,
+      root: libraryRoot, getUpload: async () => ++checks === 1 ? { id: 'one', name: 'brand.pptx' } : undefined,
     } as never)
     await expect(projects.import(SESSION, source, {})).rejects.toMatchObject({ code: 'forbidden' })
     expect(checks).toBe(2)
@@ -111,10 +113,10 @@ describe('PPT 导入修复的宿主服务', () => {
     await writeFile(replacement, buildPptx(deck))
     ctx.provide('fileLibrary', {
       root: libraryRoot,
-      isManagedUploadPath: async () => {
+      getUpload: async () => {
         await rm(source)
         await symlink(replacement, source)
-        return true
+        return { id: 'one', name: 'brand.pptx' }
       },
     } as never)
     await expect(projects.import(SESSION, source, {})).rejects.toMatchObject({ code: 'forbidden' })

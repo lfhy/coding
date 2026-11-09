@@ -53,6 +53,7 @@ describe('global file library (SQLite)', () => {
     const uploadResult = await upload(first.library, '../notes.txt')
     expect(uploadResult.record).toMatchObject({ kind: 'upload', name: 'notes.txt', bytes: 3, sessionId: 'session-1' })
     expect(await readFile(uploadResult.path)).toEqual(Buffer.from([1, 2, 3]))
+    expect(await first.library.getUpload(uploadResult.path)).toEqual(uploadResult.record)
     expect(await first.library.isManagedUploadPath(uploadResult.path)).toBe(true)
     const image = await first.library.saveGeneratedImage({ sessionId: 'session-1', attachmentId: 'sha256:sample',
       mediaType: 'image/png', data: new Uint8Array([4, 5]) })
@@ -63,6 +64,7 @@ describe('global file library (SQLite)', () => {
     await first.backend.close()
     const second = await harness(first.dir)
     expect(second.library.list().items.map(row => row.id).sort()).toEqual([uploadResult.record.id, image.id].sort())
+    expect(await second.library.getUpload(uploadResult.path)).toEqual(uploadResult.record)
     expect(await second.library.isManagedUploadPath(uploadResult.path)).toBe(true)
   })
 
@@ -114,9 +116,11 @@ describe('global file library (SQLite)', () => {
     const saved = await upload(library, 'real.txt')
     const link = join(library.root, 'uploads', 'link.txt')
     await symlink(saved.path, link)
+    expect(await library.getUpload(link)).toBeUndefined()
     expect(await library.isManagedUploadPath(link)).toBe(false)
     const outside = join(dir, 'external.txt')
     await writeFile(outside, 'external')
+    expect(await library.getUpload(outside)).toBeUndefined()
     expect(await library.isManagedUploadPath(outside)).toBe(false)
     expect(await library.isManagedUploadPath(join(library.root, 'uploads', 'missing'))).toBe(false)
     expect(await library.isManagedUploadPath(saved.path)).toBe(true)

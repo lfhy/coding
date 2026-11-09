@@ -26,7 +26,7 @@
 
 `create(sessionId, { title, dir? })` 用内置白底蓝橘 16:9 六页整稿发布独立工程；显式传入 `size` 或 `theme` 任一项则创建单页标题稿。整稿的文字封面与正文左上页眉采用固定坐标，主标题和通栏横线不居中；浅灰内容块只承载正文，不保存源稿文件、正文或备注。只读默认预览不创建工程；具体几何与内置单页版式、用户模板库见[工作台包 README](../../packages/ppt/ppt-workbench/README.md#默认整稿与内置单页版式)。
 
-`importTemplateFromFile` 读取本机工作区的无宏 `.pptx`，提取可表达的几何、颜色与文字样式，将原稿正文泛化为占位内容后存入用户模板库，不创建或切换工程，也不保存源文件；返回摘要的 `sourceName` 是源文件名，`dropped` 列出已知设计／结构损失。复杂图形、母版与主题色可能不保真，套用前须检查预览。`import` 创建保留可解析源正文的工作区工程，`saveTemplate` 则将已有工程连同当前正文和媒体原样保存为模板，这两条路径都不负责去原文化。模板导入、普通导入与手工精修的使用边界见[工具包 README](../../packages/ppt/tool-ppt/README.md#行为)。
+`importTemplateFromFile` 读取本机工作区或已登记上传的无宏 `.pptx`，提取可表达的几何、颜色与文字样式，将原稿正文泛化为占位内容后存入用户模板库，不创建或切换工程，也不保存源文件；返回摘要的 `sourceName` 是工作区文件名或上传记录的安全保存名，`dropped` 列出已知设计／结构损失。`import` 省略标题时也使用同一名称，不把上传磁盘路径的随机前缀写进工程。复杂图形、母版与主题色可能不保真，套用前须检查预览。`import` 创建保留可解析源正文的工作区工程，`saveTemplate` 则将已有工程连同当前正文和媒体原样保存为模板，这两条路径都不负责去原文化。模板导入、普通导入与手工精修的使用边界见[工具包 README](../../packages/ppt/tool-ppt/README.md#行为)。
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 

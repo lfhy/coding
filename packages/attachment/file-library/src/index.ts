@@ -235,20 +235,30 @@ export class FileLibrary extends Service {
   }
 
   /**
+   * 读取真实且仍归本库登记的上传记录；目录和文件均需通过当前身份检查。
+   * @param path - Host 提供的绝对路径。
+   * @returns 已登记的上传记录；路径失效或不属于本库时为 `undefined`。
+   */
+  async getUpload(path: string): Promise<ManagedFileRecord | undefined> {
+    if (typeof path !== 'string' || !isAbsolute(path) || path.includes('\0')) return undefined
+    try {
+      const directory = await this.directory('uploads')
+      const normalized = resolve(path)
+      if (!normalized.startsWith(`${directory}${sep}`) || dirname(normalized) !== directory) return undefined
+      const info = await lstat(normalized)
+      if (!info.isFile() || info.isSymbolicLink()) return undefined
+      return [...this.domain.table('files').entries()].find(([, row]) =>
+        row.kind === 'upload' && join(this.root, row.relativePath) === normalized)?.[1]
+    } catch { return undefined }
+  }
+
+  /**
    * 仅确认真实、仍归本库登记的上传文件，拒绝符号链接及库外路径。
    * @param path - Host 提供的绝对路径。
    * @returns 是否属于已登记的上传对象。
    */
   async isManagedUploadPath(path: string): Promise<boolean> {
-    if (typeof path !== 'string' || !isAbsolute(path) || path.includes('\0')) return false
-    try {
-      const directory = await this.directory('uploads')
-      const normalized = resolve(path)
-      if (!normalized.startsWith(`${directory}${sep}`) || dirname(normalized) !== directory) return false
-      const info = await lstat(normalized)
-      if (!info.isFile() || info.isSymbolicLink()) return false
-      return [...this.domain.table('files').entries()].some(([, row]) => row.kind === 'upload' && join(this.root, row.relativePath) === normalized)
-    } catch { return false }
+    return await this.getUpload(path) !== undefined
   }
 }
 
