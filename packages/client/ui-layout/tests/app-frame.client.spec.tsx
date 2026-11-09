@@ -865,7 +865,7 @@ describe('AppFrame — fixed workbench', () => {
       instance.actions.openWorkbench('s-test')
     })
 
-    expect(tracks(frame)).toEqual([280, 1020])
+    expect(tracks(frame)).toEqual([280, 1093])
     expect(rows(frame)).toBe(0)
     expect(frame.hasAttribute('data-workbench-shown')).toBe(true)
     expect(getByTestId('details-content').parentElement?.hasAttribute('inert')).toBe(true)
@@ -892,15 +892,23 @@ describe('AppFrame — fixed workbench', () => {
 
     selectedSession.current = 's-next' as SessionId
     act(() => { rerenderFrame() })
-    expect(tracks(frame)).toEqual([280, 1020])
+    expect(tracks(frame)).toEqual([280, 1093])
     expect(publishWorkbench).toHaveBeenLastCalledWith('shared-workspace', expect.objectContaining({ open: true }))
   })
 
-  it('fits the default split at a 1110px viewport while keeping the sidebar', () => {
+  it('splits the default workbench beside the conversation at 1:2', () => {
+    frameWidth = 1280
+    const { frame, instance } = mountFrame()
+    act(() => { instance.actions.openWorkbench('s-test') })
+    // 导航栏之外 1000px：对话 333px、工作台 667px。
+    expect(tracks(frame)).toEqual([280, 667])
+  })
+
+  it('keeps the workbench usable at a 1110px viewport while the sidebar stays expanded', () => {
     frameWidth = 1110
     const { frame, instance } = mountFrame()
     act(() => { instance.actions.openWorkbench('s-test') })
-    expect(tracks(frame)).toEqual([280, 430])
+    expect(tracks(frame)).toEqual([280, 510])
   })
 
   it('responds to the external workbench controls through per-workspace layout state', () => {
@@ -951,7 +959,7 @@ describe('AppFrame — fixed workbench', () => {
     const { frame, instance, ownerFor, publishWorkbench } = mountFrame()
 
     act(() => { instance.actions.toggleHeroPanel('s-test', 'files') })
-    expect(tracks(frame)).toEqual([280, 1020])
+    expect(tracks(frame)).toEqual([280, 1093])
     expect(instance.getSnapshot().details).toBe(0)
     expect(ownerFor('workbench')).toEqual({ shown: true, fullscreen: false, bottomOpen: false })
     expect(publishWorkbench).toHaveBeenLastCalledWith('s-test', {
@@ -1033,8 +1041,8 @@ describe('AppFrame — fixed workbench', () => {
     const { frame, instance } = mountFrame()
     act(() => { instance.actions.openWorkbench('s-test') })
     drag(handleFor(frame, 'workbench'), 1500, 1440)
-    expect(instance.getSnapshot().workbench['s-test' as SessionId]?.width).toBe(1080)
-    expect(tracks(frame)).toEqual([280, 1080])
+    expect(instance.getSnapshot().workbench['s-test' as SessionId]?.width).toBe(1153)
+    expect(tracks(frame)).toEqual([280, 1153])
 
     act(() => { instance.actions.toggleWorkbenchBottom('s-test') })
     drag(handleFor(frame, 'bottom'), 820, 760, 'horizontal')
@@ -1043,15 +1051,15 @@ describe('AppFrame — fixed workbench', () => {
   })
 
   it('uses a concession-shrunk workbench width as the drag base', () => {
-    frameWidth = 1110
+    frameWidth = 1050
     const { frame, instance } = mountFrame()
     act(() => {
       instance.actions.setWorkbench('s-test', 500)
       instance.actions.openWorkbench('s-test')
     })
-    expect(tracks(frame)).toEqual([280, 430])
+    expect(tracks(frame)).toEqual([280, 450])
     drag(handleFor(frame, 'workbench'), 610, 620)
-    expect(instance.getSnapshot().workbench['s-test' as SessionId]?.width).toBe(420)
+    expect(instance.getSnapshot().workbench['s-test' as SessionId]?.width).toBe(440)
   })
 
   it('bottom yields to short heights and restores its preference after resize', () => {
@@ -1076,7 +1084,7 @@ describe('AppFrame — fixed workbench', () => {
 
     selectedSession.current = 's-test' as SessionId
     act(() => { rerenderFrame() })
-    expect(tracks(frame)).toEqual([280, 1020])
+    expect(tracks(frame)).toEqual([280, 1093])
   })
 })
 
@@ -1589,8 +1597,9 @@ describe('AppFrame — guard branches', () => {
       instance.actions.toggleWorkbenchBottom('s-test')
     })
     const workbench = handleFor(frame, 'workbench')
+    // 导航栏已被拖到 420px：主内容 1500px 的自动分配是 1000px，左移一档到 984px。
     act(() => { workbench.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true })) })
-    expect(instance.getSnapshot().workbench['s-test' as SessionId]?.width).toBe(1004)
+    expect(instance.getSnapshot().workbench['s-test' as SessionId]?.width).toBe(984)
     act(() => { workbench.dispatchEvent(new KeyboardEvent('keydown', { key: 'Home', bubbles: true })) })
     expect(instance.getSnapshot().workbench['s-test' as SessionId]?.width).toBe(WORKBENCH_MIN)
     act(() => { workbench.dispatchEvent(new KeyboardEvent('keydown', { key: 'End', bubbles: true })) })

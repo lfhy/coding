@@ -456,7 +456,7 @@ function DragHandle(props: DragHandleProps) {
   )
 }
 
-/** 单个 Session 的默认工作台状态。 */
+/** 单个 Session 的默认工作台状态；`width` 为 0 时由求解器按 1:2 分配主内容。 */
 const WORKBENCH_FALLBACK = {
   open: false,
   fullscreen: false,

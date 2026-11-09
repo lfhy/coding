@@ -23,6 +23,7 @@ import {
 export type WorkbenchState = {
   open: boolean
   fullscreen: boolean
+  /** 工作台宽度偏好；0 表示尚未手动调整，由求解器按对话 1、右侧 2 分配主内容。 */
   width: number
   bottomOpen: boolean
   /** 右侧工作台关闭时仍单独显示底栏。 */

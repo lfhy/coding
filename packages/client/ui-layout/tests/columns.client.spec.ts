@@ -97,36 +97,50 @@ describe('computeColumns — degenerate viewports', () => {
 })
 
 describe('computeWorkbenchColumns', () => {
-  it('keeps the default workbench usable beside conversation at 1110px', () => {
-    expect(computeWorkbenchColumns(1110, SIDEBAR_DEFAULT, WORKBENCH_DEFAULT, false)).toEqual({
+  it('splits the default main area 1:2 between conversation and workbench', () => {
+    // 1920 视口：导航栏之外 1640px，对话 547px、工作台 1093px。
+    expect(computeWorkbenchColumns(1920, SIDEBAR_DEFAULT, WORKBENCH_DEFAULT, false)).toEqual({
       sidebar: 280,
-      conversation: 400,
-      workbench: 430,
+      conversation: 547,
+      workbench: 1093,
+    })
+    // 默认 1280px 桌面窗口：1000px 主内容按 1:2 分为 333px 与 667px。
+    expect(computeWorkbenchColumns(1280, SIDEBAR_DEFAULT, WORKBENCH_DEFAULT, false)).toEqual({
+      sidebar: 280,
+      conversation: 333,
+      workbench: 667,
     })
   })
 
-  it('clamps preferences and protects the conversation while room remains', () => {
+  it('manual preferences win over the default split and stay clamped', () => {
+    expect(computeWorkbenchColumns(1920, SIDEBAR_DEFAULT, 900, false)).toEqual({
+      sidebar: SIDEBAR_DEFAULT,
+      conversation: 1920 - SIDEBAR_DEFAULT - 900,
+      workbench: 900,
+    })
     expect(computeWorkbenchColumns(1920, 0, 1, false)).toEqual({
       sidebar: SIDEBAR_COLLAPSED,
       conversation: 1920 - SIDEBAR_COLLAPSED - WORKBENCH_MIN,
       workbench: WORKBENCH_MIN,
     })
     expect(computeWorkbenchColumns(4000, SIDEBAR_DEFAULT, 9999, false).workbench).toBe(WORKBENCH_MAX)
-    expect(computeWorkbenchColumns(1000, SIDEBAR_DEFAULT, WORKBENCH_DEFAULT, false)).toEqual({
-      sidebar: SIDEBAR_DEFAULT,
-      conversation: 400,
-      workbench: 320,
-    })
   })
 
-  it('holds the workbench minimum before letting conversation absorb a deficit', () => {
+  it('narrow viewports press the conversation to its floor, then keep the workbench minimum', () => {
+    // 1110 视口：主内容 830px，默认分配想给工作台 553px，但对话先压到 320px。
+    expect(computeWorkbenchColumns(1110, SIDEBAR_DEFAULT, WORKBENCH_DEFAULT, false)).toEqual({
+      sidebar: 280,
+      conversation: 320,
+      workbench: 510,
+    })
+    // 900 视口：工作台保住 300px 最小宽度，对话承担剩余缺口。
     expect(computeWorkbenchColumns(900, SIDEBAR_DEFAULT, WORKBENCH_DEFAULT, false)).toEqual({
-      sidebar: SIDEBAR_DEFAULT,
+      sidebar: 280,
       conversation: 320,
       workbench: WORKBENCH_MIN,
     })
     expect(computeWorkbenchColumns(200, SIDEBAR_DEFAULT, WORKBENCH_DEFAULT, false)).toEqual({
-      sidebar: SIDEBAR_DEFAULT,
+      sidebar: 280,
       conversation: 0,
       workbench: 0,
     })

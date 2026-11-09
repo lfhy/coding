@@ -11,8 +11,8 @@ export interface WorkbenchColumns { sidebar: number; conversation: number; workb
 
 /** 详情模式中优先保护的对话区宽度。 */
 export const CENTER_MIN = 640
-/** 工作台并排模式中优先保护的对话区宽度。 */
-export const WORKBENCH_CONVERSATION_MIN = 400
+/** 工作台并排模式中优先保护的对话区宽度；默认 1:2 分配在窄窗口先压到这里。 */
+export const WORKBENCH_CONVERSATION_MIN = 320
 /** 导航栏拖拽下限。 */
 export const SIDEBAR_MIN = 264
 /** 导航栏拖拽上限。 */
@@ -29,12 +29,14 @@ export const DETAILS_MIN = 300
 export const DETAILS_MAX = 520
 /** 详情栏初始宽度。 */
 export const DETAILS_DEFAULT = 360
-/** 工作台右栏拖拽下限；与 400px 对话区共同覆盖 1110px 桌面视口。 */
+/** 工作台右栏拖拽下限；与 320px 对话区共同覆盖 1110px 桌面视口。 */
 export const WORKBENCH_MIN = 300
 /** 工作台右栏拖拽上限，覆盖超宽桌面上的预览与文件树。 */
 export const WORKBENCH_MAX = 2_400
-/** 工作台右栏初始宽度；窄窗口会由求解器让步给对话区。 */
-export const WORKBENCH_DEFAULT = 1_020
+/** 工作台右栏未手动调整时的宽度偏好；0 表示按默认比例自动分配。 */
+export const WORKBENCH_DEFAULT = 0
+/** 工作台默认占据导航栏之外主内容的比例：对话 1 份、右侧 2 份。 */
+const WORKBENCH_DEFAULT_SHARE = 2 / 3
 /** 工作台底栏拖拽下限。 */
 export const WORKBENCH_BOTTOM_MIN = 160
 /** 工作台底栏拖拽上限。 */
@@ -80,11 +82,26 @@ export function computeColumns(viewport: number, sidebar: number, details: numbe
 }
 
 /**
- * 求解导航栏、对话和工作台宽度。普通模式先收缩工作台到 300px，再让
- * 对话区承担更窄视口的剩余缺口；全屏模式让工作台占据导航栏外的全部宽度。
+ * 解析工作台宽度偏好：尚未手动调整时按主内容 2/3 自动分配（对话与右侧 1:2），
+ * 其余情况使用用户拖拽出的像素偏好；两者都限制到可拖拽范围。
+ * @param available - 导航栏之外的主内容宽度。
+ * @param workbench - 工作台宽度偏好，0 表示自动分配。
+ * @returns 取整后的工作台目标宽度。
+ */
+function resolveWorkbench(available: number, workbench: number): number {
+  if (workbench === WORKBENCH_DEFAULT) {
+    return clampWidth(available * WORKBENCH_DEFAULT_SHARE, WORKBENCH_MIN, WORKBENCH_MAX)
+  }
+  return clampWidth(workbench, WORKBENCH_MIN, WORKBENCH_MAX)
+}
+
+/**
+ * 求解导航栏、对话和工作台宽度。普通模式下工作台默认占主内容的三分之二，
+ * 空间不足时先收缩到 300px，再让对话区承担更窄视口的剩余缺口；全屏模式让
+ * 工作台占据导航栏外的全部宽度。
  * @param viewport - AppFrame 可用宽度。
  * @param sidebar - 导航栏宽度偏好，0 表示收起。
- * @param workbench - 工作台宽度偏好。
+ * @param workbench - 工作台宽度偏好，0 表示按默认比例分配。
  * @param fullscreen - 是否使用工作台全屏呈现。
  * @returns 三列实际宽度。
  */
@@ -98,7 +115,7 @@ export function computeWorkbenchColumns(
   const available = Math.max(0, viewport - s)
   if (fullscreen) return { sidebar: s, conversation: 0, workbench: available }
 
-  const preferred = clampWidth(workbench, WORKBENCH_MIN, WORKBENCH_MAX)
+  const preferred = resolveWorkbench(available, workbench)
   const protectedMaximum = available - WORKBENCH_CONVERSATION_MIN
   const resolved = protectedMaximum >= WORKBENCH_MIN
     ? Math.min(preferred, protectedMaximum)
