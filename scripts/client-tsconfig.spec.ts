@@ -1,6 +1,6 @@
-/** Regression coverage for source declarations owned by the client test aggregate. */
+/** 检查 Client 测试聚合拥有的源码声明与 Web 测试的 Host 归属。 */
 
-import { existsSync, readdirSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { dirname, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import ts from 'typescript'
@@ -22,6 +22,27 @@ function clientCssDeclarations(): string[] {
 }
 
 describe('client TypeScript aggregate', () => {
+  it('keeps Web tests that boot the Host scaffold out of the Client project', () => {
+    const readFiles = (configPath: string): Set<string> => {
+      const read = ts.readConfigFile(configPath, file => ts.sys.readFile(file))
+      if (read.error !== undefined) throw new Error(ts.flattenDiagnosticMessageText(read.error.messageText, '\n'))
+      return new Set(ts.parseJsonConfigFileContent(read.config, ts.sys, dirname(configPath)).fileNames)
+    }
+    const host = readFiles(resolve(root, 'tsconfig.host.json'))
+    const web = readFiles(resolve(root, 'apps/web/tsconfig.json'))
+    const testsDir = resolve(root, 'apps/web/tests')
+    const hostScaffoldTests = readdirSync(testsDir)
+      .filter(name => name.endsWith('.ts') || name.endsWith('.tsx'))
+      .map(name => resolve(testsDir, name))
+      .filter(file => /from ['"]\.\/scaffold\.ts['"]/.test(readFileSync(file, 'utf8')))
+
+    expect(hostScaffoldTests.length).toBeGreaterThan(0)
+    for (const file of hostScaffoldTests) {
+      expect(host.has(file), `${file} missing from the Host aggregate`).toBe(true)
+      expect(web.has(file), `${file} leaked into the Client project`).toBe(false)
+    }
+  })
+
   it('isolates GenUI Host tests in their own project and keeps Client tests in the Client aggregate', () => {
     const readFiles = (configPath: string): string[] => {
       const read = ts.readConfigFile(configPath, file => ts.sys.readFile(file))

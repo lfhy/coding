@@ -17,13 +17,12 @@
     "src",
     "tests"
   ],
-  // The web e2e lane (scaffold + replay specs) boots the host spine and reads
-  // its Context merges — host-plane programs, checked in tsconfig.host.json;
-  // this client-registered project must not also hold them (one program
-  // cannot see both sides of the cordis Context merges).
+  // Web e2e 的 scaffold 与回放测试会启动 Host 并读取其 Context 合并，
+  // 归 tsconfig.host.json 检查；本 Client 项目不能同时包含这些测试。
   "exclude": [
     "tests/scaffold.ts",
     "tests/git-overview.e2e.ts",
+    "tests/staged-file-reference.e2e.ts",
     "tests/browser-use-mirror.e2e.ts",
     "tests/search-settings.e2e.ts",
     "tests/active-conversation-panel-actions.e2e.ts",

@@ -158,8 +158,10 @@ describe('web e2e: assembled Git overview', () => {
       - Math.min(branchLabelBox.x, changesLabelBox.x, syncLabelBox.x)).toBeLessThanOrEqual(1)
     const valueEnds = [branchValueBox, changesValueBox, syncValueBox].map(box => box.x + box.width)
     expect(Math.max(...valueEnds) - Math.min(...valueEnds)).toBeLessThanOrEqual(1)
-    const centers = [branchRowBox, changesRowBox, syncRowBox].map(box => box.y + box.height / 2)
-    expect(Math.abs((centers[1] - centers[0]) - (centers[2] - centers[1]))).toBeLessThanOrEqual(1)
+    const branchCenter = branchRowBox.y + branchRowBox.height / 2
+    const changesCenter = changesRowBox.y + changesRowBox.height / 2
+    const syncCenter = syncRowBox.y + syncRowBox.height / 2
+    expect(Math.abs((changesCenter - branchCenter) - (syncCenter - changesCenter))).toBeLessThanOrEqual(1)
 
     const push = popup.getByRole('button', { name: 'Push', exact: true })
     const pull = popup.getByRole('button', { name: 'Pull', exact: true })
