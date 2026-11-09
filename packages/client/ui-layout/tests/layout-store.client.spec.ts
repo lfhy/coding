@@ -24,6 +24,8 @@ const initialState = {
   narrowExpanded: false,
   workbench: {},
   blankWorkbench: {},
+  suppressedWorkbench: {},
+  pendingNewConversation: false,
   activeBlankSession: null,
   page: null,
   conversationRequest: null,
@@ -66,6 +68,29 @@ describe('createLayoutStore', () => {
     expect(store.getSnapshot().blankWorkbench[NEXT_SESSION]).toBe(false)
     actions.openWorkbench('shared')
     expect(store.getSnapshot().blankWorkbench[NEXT_SESSION]).toBe(true)
+  })
+
+  it('isolates the next selected session without overriding an explicit early open', () => {
+    const { store, actions } = createLayoutStore().create()
+    actions.openWorkbench('shared', SESSION)
+    actions.beginNewConversation()
+    actions.selectConversation(NEXT_SESSION)
+    expect(store.getSnapshot().suppressedWorkbench[NEXT_SESSION]).toBe(true)
+    expect(store.getSnapshot().pendingNewConversation).toBe(false)
+    actions.beginNewConversation()
+    actions.openWorkbench('shared', NEXT_SESSION)
+    actions.selectConversation(NEXT_SESSION)
+    expect(store.getSnapshot().suppressedWorkbench[NEXT_SESSION]).toBe(false)
+    expect(store.getSnapshot().suppressedWorkbench[SESSION]).toBe(false)
+  })
+
+  it('does not let an old session toggle change the current blank override', () => {
+    const { store, actions } = createLayoutStore().create()
+    actions.setActiveBlankSession(NEXT_SESSION, 'shared')
+    actions.toggleWorkbench('shared', SESSION)
+    expect(store.getSnapshot().blankWorkbench[NEXT_SESSION]).toBeUndefined()
+    actions.toggleWorkbench('shared', SESSION)
+    expect(store.getSnapshot().blankWorkbench[NEXT_SESSION]).toBeUndefined()
   })
 
   it('preserves an independent terminal when starting a blank conversation and reopening its Hero', () => {

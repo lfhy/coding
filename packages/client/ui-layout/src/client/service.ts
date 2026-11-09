@@ -44,10 +44,20 @@ export interface ILayout {
    * @returns 无返回值。
    */
   openWorkbench(key: string, sessionId?: SessionId): void
-  /** 关闭指定工作区的右侧工作台，保留正在显示的底栏。 */
-  closeWorkbench(key: string): void
-  /** 切换指定工作区的工作台；打开时同时关闭详情栏。 */
-  toggleWorkbench(key: string): void
+  /**
+   * 关闭指定工作区的右侧工作台，保留正在显示的底栏。
+   * @param key - 工作区布局键。
+   * @param sessionId - 可选的发起会话；传入后该会话保持右栏关闭，不会沿用其他会话的共享打开状态。
+   * @returns 无返回值。
+   */
+  closeWorkbench(key: string, sessionId?: SessionId): void
+  /**
+   * 切换指定工作区的工作台；打开时同时关闭详情栏。
+   * @param key - 工作区布局键。
+   * @param sessionId - 可选的发起会话；首条消息后尚未打开右栏的会话首击应打开而不是先关闭。
+   * @returns 无返回值。
+   */
+  toggleWorkbench(key: string, sessionId?: SessionId): void
   /** 切换指定工作区的工作台最大化偏好。 */
   toggleWorkbenchFullscreen(key: string): void
   /** 切换指定工作区的终端底栏；右侧工作台关闭时仅显示底栏。 */
@@ -67,6 +77,8 @@ export interface ILayout {
    * @returns 无返回值。
    */
   beginNewConversation(): void
+  /** 新对话意图的同步版本；供异步欢迎页面板操作确认其手势仍有效。 */
+  readonly conversationIntent: number
   /** 在主内容区打开属于指定会话的独立页面，不改变会话或工作台偏好。 */
   openPage(kind: string, sessionId: SessionId): void
   /** 同一会话再次点击入口会返回原界面。 */
@@ -89,7 +101,11 @@ export class LayoutController implements ILayout {
   #views: SnapshotStore<Readonly<Record<string, WorkbenchLayoutSnapshot | undefined>>> = createSnapshotStore({})
   #sources = new Map<string, ObservableSnapshot<WorkbenchLayoutSnapshot>>()
   #page = createSnapshotStore<PageRoute | null>(null)
+  #conversationIntent = 0
   readonly page: ObservableSnapshot<PageRoute | null> = this.#page
+
+  /** 新对话意图的同步版本；异步欢迎页操作只可完成同版本手势。 */
+  get conversationIntent(): number { return this.#conversationIntent }
 
   /**
    * 接管 root entry 当前实例的绑定 actions；重新注册时新实例会替换旧引用。
@@ -182,13 +198,13 @@ export class LayoutController implements ILayout {
   }
 
   /** 关闭指定工作区的右侧工作台，保留正在显示的底栏。 */
-  closeWorkbench(key: string): void {
-    this.#require().closeWorkbench(key)
+  closeWorkbench(key: string, sessionId?: SessionId): void {
+    this.#require().closeWorkbench(key, sessionId)
   }
 
-  /** 切换指定工作区的工作台。 */
-  toggleWorkbench(key: string): void {
-    this.#require().toggleWorkbench(key)
+  /** 切换指定会话实际可见的工作台。 */
+  toggleWorkbench(key: string, sessionId?: SessionId): void {
+    this.#require().toggleWorkbench(key, sessionId)
   }
 
   /** 切换指定工作区的工作台最大化偏好。 */
@@ -222,6 +238,7 @@ export class LayoutController implements ILayout {
    */
   beginNewConversation(): void {
     this.#require().beginNewConversation()
+    this.#conversationIntent++
   }
 
   /** 在主内容区打开会话页面。 */

@@ -504,6 +504,7 @@ export function AppFrame({
   }, [actions, page, pageVisible])
   const activeKey = activeSession === undefined ? undefined : workspaceKeyOf(activeSession)
   useLayoutEffect(() => {
+    actions.selectConversation(activeSession)
     actions.setActiveBlankSession(activeBlank ? activeSession : undefined, activeKey)
   }, [actions, activeBlank, activeKey, activeSession])
   const panels = useMemo(() => {
@@ -561,7 +562,11 @@ export function AppFrame({
   useEffect(() => { actions.setNarrow(narrow) }, [actions, narrow])
 
   const workbenchShown = activeSession !== undefined && rootPanels.details === 0
-    && (activeBlank ? rootPanels.blankWorkbench[activeSession] === true : panels.open)
+    && (activeBlank
+      ? rootPanels.blankWorkbench[activeSession] === true
+        || rootPanels.blankWorkbench[activeSession] === undefined
+          && rootPanels.suppressedWorkbench[activeSession] === false && panels.open
+      : panels.open && rootPanels.suppressedWorkbench[activeSession] !== true)
   const workbenchFullscreen = workbenchShown && (panels.fullscreen || narrow)
   const welcomeActionsVisible = welcomeSession && !workbenchFullscreen
   // 导航栏只服从自身开关和响应式断点；工作台不隐式抢占会话导航。

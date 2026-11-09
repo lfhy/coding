@@ -143,14 +143,11 @@ export function apply(ctx: ClientContext): void {
       // a preset authored to be used is missing from the one place it is used.
       const readRoster = (): void => { void seat.load() }
       rosterReaders.add(readRoster)
-      // Stage WITHOUT applying — the still-current running session would
-      // refuse the swap and drop the stage — then start the session it lands
-      // on: the chip's list-change applier composes the blank session the
-      // workspace connect produces or reuses.
+      // 先暂存模式，等待工作区新建或复用的空白会话；运行中的会话不能切换模式。
+      // 同步撤回旧欢迎页面板的待完成操作，避免其抢占新会话。
       creatorDraft = () => {
-        // The introduce cue makes the chip announce the pick the user never
-        // made on this screen — the stage happened back in settings.
         seat.stage('cordis', true)
+        scope.get('layout')?.beginNewConversation()
         scope.workspaces.startSession()
       }
       const chip = scope.slots.register({

@@ -613,6 +613,8 @@ describe('ui-agent-preset apply', () => {
     ctx.provide('sessions', sessionsDouble({ byId: {} }) as never)
     const workspaces = workspacesDouble()
     ctx.provide('workspaces', workspaces as never)
+    const beginNewConversation = vi.fn()
+    ctx.provide('layout', { beginNewConversation } as never)
     await ctx.plugin({ inject: [...inject, 'conversation', 'sessions', 'workspaces'], apply }).await()
     const section = (slots.entries('settings.section')[0]!.inject as unknown as () => AgentPresetSectionInjected)()
     const seat = (slots.entries('conversation.hero.agentPreset')[0]!
@@ -626,6 +628,7 @@ describe('ui-agent-preset apply', () => {
     expect(section.startCreatorDraft).toBeDefined()
     expect(seat.hooks.agentPresetSeat.getSnapshot().current).toBe('cordis')
     expect(workspaces.starts).toHaveLength(1)
+    expect(beginNewConversation).toHaveBeenCalledOnce()
 
     // A cross-screen stage carries the introduce cue; the chip acknowledges
     // it once, and a repeat acknowledgement leaves the snapshot untouched.

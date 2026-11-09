@@ -51,7 +51,9 @@ async function bench() {
   const workbench = createSnapshotStore({
     open: false, fullscreen: false, bottomOpen: false,
   })
-  ctx.provide('layout', {
+  const intent = { conversationIntent: 0 }
+  ctx.provide('layout', intent)
+  Object.assign(intent, {
     toggleSidebar: vi.fn(), openDetails: vi.fn(), closeDetails: vi.fn(),
     openWorkbench, closeWorkbench, toggleWorkbench,
     toggleWorkbenchFullscreen, toggleWorkbenchBottom, closeWorkbenchBottom, toggleHeroPanel,
@@ -79,7 +81,7 @@ async function bench() {
   const fiber = ctx.plugin({ inject: [...inject], apply })
   await fiber.await()
   return {
-    ctx, fiber, openWorkbench, closeWorkbench, toggleWorkbench, toggleWorkbenchFullscreen,
+    ctx, fiber, intent, openWorkbench, closeWorkbench, toggleWorkbench, toggleWorkbenchFullscreen,
     toggleWorkbenchBottom, closeWorkbenchBottom, toggleHeroPanel,
     sessionList: list, open, connectHome, connectWorkspace, workspaceList, workspaceKeyOf, gitHistory,
   }
@@ -190,7 +192,7 @@ describe('open-in-app browser half', () => {
     workbenchFace.openWorkbench(SESSION)
     workbenchFace.toggleWorkbenchFullscreen(SESSION)
     workbenchFace.toggleBottom(SESSION)
-    expect(closeWorkbench).toHaveBeenCalledWith('workspace-browser-plugin')
+    expect(closeWorkbench).toHaveBeenCalledWith('workspace-browser-plugin', SESSION)
     expect(openWorkbench).toHaveBeenCalledTimes(3)
     expect(openWorkbench).toHaveBeenNthCalledWith(3, 'workspace-browser-plugin', SESSION)
     expect(toggleWorkbenchFullscreen).toHaveBeenCalledWith('workspace-browser-plugin')
@@ -219,8 +221,8 @@ describe('open-in-app browser half', () => {
 
     face.toggleWorkbench()
     face.toggleBottom()
-    // 页头注入动作绑定到其工作区，不在点击时读取可能改变的全局选择。
-    expect(toggleWorkbench).toHaveBeenCalledExactlyOnceWith('workspace-browser-plugin')
+    // 页头注入动作绑定到其工作区和会话，不在点击时读取可能改变的全局选择。
+    expect(toggleWorkbench).toHaveBeenCalledExactlyOnceWith('workspace-browser-plugin', SESSION)
     expect(toggleWorkbenchBottom).toHaveBeenCalledExactlyOnceWith('workspace-browser-plugin')
   })
 
@@ -343,6 +345,52 @@ describe('open-in-app browser half', () => {
     await opening
     expect(b.open).not.toHaveBeenCalled()
     expect(b.toggleHeroPanel).not.toHaveBeenCalled()
+  })
+
+  it('abandons a pending Hero panel when New Conversation supersedes its connection', async () => {
+    const b = await bench()
+    b.sessionList.set({ ...b.sessionList.getSnapshot(), current: undefined })
+    let resolveOld!: (id: SessionId) => void
+    let resolveNew!: (id: SessionId) => void
+    b.connectHome.mockImplementationOnce(() => new Promise<SessionId>((done) => { resolveOld = done }))
+      .mockImplementationOnce(() => new Promise<SessionId>((done) => { resolveNew = done }))
+    const [bottom, files] = b.ctx.slots.entries('conversation.hero.actions')
+    const bottomFace = (bottom?.inject as unknown as () => HeroPanelToggleInjected)()
+    const filesFace = (files?.inject as unknown as () => HeroPanelToggleInjected)()
+    const staleClick = filesFace.togglePanel()
+    b.intent.conversationIntent++
+    const currentClick = bottomFace.togglePanel()
+    expect(b.connectHome).toHaveBeenCalledTimes(2)
+    resolveOld(SESSION)
+    await staleClick
+    expect(b.open).not.toHaveBeenCalled()
+    expect(b.toggleHeroPanel).not.toHaveBeenCalled()
+    resolveNew(SESSION)
+    await currentClick
+    expect(b.open).toHaveBeenCalledExactlyOnceWith(SESSION)
+    expect(b.toggleHeroPanel).toHaveBeenCalledExactlyOnceWith('workspace-browser-plugin', 'bottom', SESSION)
+  })
+
+  it('keeps the newer Hero connection after the superseded request settles', async () => {
+    const b = await bench()
+    b.sessionList.set({ ...b.sessionList.getSnapshot(), current: undefined })
+    let resolveOld!: (id: SessionId) => void
+    let resolveNew!: (id: SessionId) => void
+    b.connectHome.mockImplementationOnce(() => new Promise<SessionId>((done) => { resolveOld = done }))
+      .mockImplementationOnce(() => new Promise<SessionId>((done) => { resolveNew = done }))
+    const action = b.ctx.slots.entries('conversation.hero.actions')[1]
+    const face = (action?.inject as unknown as () => HeroPanelToggleInjected)()
+    const staleClick = face.togglePanel()
+    b.intent.conversationIntent++
+    const currentClick = face.togglePanel()
+    resolveOld(SESSION)
+    await staleClick
+    const lastClick = face.togglePanel()
+    expect(b.connectHome).toHaveBeenCalledTimes(2)
+    resolveNew(SESSION)
+    await Promise.all([currentClick, lastClick])
+    expect(b.open).toHaveBeenCalledExactlyOnceWith(SESSION)
+    expect(b.toggleHeroPanel).toHaveBeenCalledExactlyOnceWith('workspace-browser-plugin', 'files', SESSION)
   })
 
   it('registers bilingual dictionaries and releases them with the fiber', async () => {

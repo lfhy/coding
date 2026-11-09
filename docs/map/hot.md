@@ -175,8 +175,8 @@
 - **入口**：`packages/client/ui-layout/src/client/index.ts`（`ctx.slots.register({ name: 'root', children, store: createLayoutStore, inject }, AppFrame)` 并 `ctx.reflect.provide('layout', layout)`）；node 半是空 apply。
 - **接线**：`packages/bundle/web-app/cordis.patch.yml` 的 `ui-layout` 行；`'root'` slot 本体由 `packages/client/runtime/src/client/slots.ts` 预置，禁止第二者注册 root。
 - **关键文件**：`packages/client/ui-layout/src/client/index.ts`、`packages/client/ui-layout/src/client/AppFrame.tsx`、`packages/client/ui-layout/src/client/service.ts`、`packages/client/ui-layout/src/client/stores.ts`。
-- **改这里要同步**：新增或改座位要同步 `SlotMap` 声明、`AppFrame` 的 `children` 表、`PropsRenderSlots` 键集、各占用包（`packages/client/ui-sidebar`、`packages/client/ui-open-in-app`）与 README 的 slot 表。
-- **不变量**：布局状态按 `SessionId` 隔离；单独显示底栏时右列为零宽，关闭右侧工作台保留已显示的底栏；工作台、底栏与详情的视觉关闭只做零尺寸加 `inert`，绝不卸载固定 React 树位置。
+- **改这里要同步**：工作台显隐动作需核对 `ui-open-in-app` 的定向会话 id，所有新对话入口需先调用 `beginNewConversation()`；新增或改座位还要同步 `SlotMap` 声明、`AppFrame` 的 `children` 表、`PropsRenderSlots` 键集、各占用包与 README 的 slot 表。
+- **不变量**：布局偏好按工作区键共享，空白会话的右栏显隐按会话覆盖；新建对话不继承旧会话右栏打开状态，只有新会话明确打开才能在首条消息后保持显示。单独显示底栏时右列为零宽，关闭右侧工作台保留已显示的底栏；视觉关闭只做零尺寸加 `inert`，不卸载固定 React 树位置。
 - **测试**：`pnpm exec vitest run packages/client/ui-layout/tests`
 
 ## packages/client/ui-slots

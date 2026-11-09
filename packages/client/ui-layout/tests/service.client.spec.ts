@@ -27,6 +27,7 @@ function fakePanels(): PanelActions {
     closeWorkbenchBottom: vi.fn(),
     toggleHeroPanel: vi.fn(),
     beginNewConversation: vi.fn(),
+    selectConversation: vi.fn(),
     setActiveBlankSession: vi.fn(),
     clearBlankWorkbench: vi.fn(),
     retainBlankSessions: vi.fn(),
@@ -51,14 +52,16 @@ describe('LayoutController', () => {
     service.closeDetails()
     service.openWorkbench(SESSION)
     service.openWorkbench(SESSION, SESSION)
-    service.closeWorkbench(SESSION)
-    service.toggleWorkbench(SESSION)
+    service.closeWorkbench(SESSION, SESSION)
+    service.toggleWorkbench(SESSION, SESSION)
     service.toggleWorkbenchFullscreen(SESSION)
     service.toggleWorkbenchBottom(SESSION)
     service.closeWorkbenchBottom(SESSION)
     service.toggleHeroPanel(SESSION, 'bottom')
     service.toggleHeroPanel(SESSION, 'files', SESSION)
+    expect(service.conversationIntent).toBe(0)
     service.beginNewConversation()
+    expect(service.conversationIntent).toBe(1)
     service.openPage('image-gallery', SESSION)
     service.closePage()
     service.togglePage('image-gallery', SESSION)
@@ -69,8 +72,8 @@ describe('LayoutController', () => {
     expect(panels.closeDetails).toHaveBeenCalledTimes(1)
     expect(panels.openWorkbench).toHaveBeenCalledWith(SESSION, undefined)
     expect(panels.openWorkbench).toHaveBeenCalledWith(SESSION, SESSION)
-    expect(panels.closeWorkbench).toHaveBeenCalledTimes(1)
-    expect(panels.toggleWorkbench).toHaveBeenCalledTimes(1)
+    expect(panels.closeWorkbench).toHaveBeenCalledWith(SESSION, SESSION)
+    expect(panels.toggleWorkbench).toHaveBeenCalledWith(SESSION, SESSION)
     expect(panels.toggleWorkbenchFullscreen).toHaveBeenCalledWith(SESSION)
     expect(panels.toggleWorkbenchBottom).toHaveBeenCalledWith(SESSION)
     expect(panels.closeWorkbenchBottom).toHaveBeenCalledWith(SESSION)

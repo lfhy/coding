@@ -172,7 +172,7 @@ export function apply(ctx: ClientContext): void {
             return response.result.value
           },
           terminalUrl: (sessionId, cols, rows) => controller.terminalUrl(sessionId, cols, rows),
-          closeWorkbench: (sessionId) => { ctx.layout.closeWorkbench(workspaceKey(sessionId)) },
+          closeWorkbench: (sessionId) => { ctx.layout.closeWorkbench(workspaceKey(sessionId), sessionId) },
           openWorkbench: (sessionId) => { ctx.layout.openWorkbench(workspaceKey(sessionId), sessionId) },
           toggleWorkbenchFullscreen: (sessionId) => { ctx.layout.toggleWorkbenchFullscreen(workspaceKey(sessionId)) },
           toggleBottom: (sessionId) => { ctx.layout.toggleWorkbenchBottom(workspaceKey(sessionId)) },
@@ -198,27 +198,31 @@ export function apply(ctx: ClientContext): void {
     locale: NS,
     inject: (sessionId: SessionId): WorkbenchPanelTogglesInjected => ({
       hooks: { workbenchLayout: ctx.layout.workbench(workspaceKey(sessionId)) },
-      toggleWorkbench: () => { ctx.layout.toggleWorkbench(workspaceKey(sessionId)) },
+      toggleWorkbench: () => { ctx.layout.toggleWorkbench(workspaceKey(sessionId), sessionId) },
       toggleBottom: () => { ctx.layout.toggleWorkbenchBottom(workspaceKey(sessionId)) },
     }),
   }, WorkbenchPanelToggles))
 
-  let connectingHeroSession: Promise<SessionId> | undefined
+  let connectingHeroSession: { intent: number; target: string | undefined; promise: Promise<SessionId> } | undefined
   let latestHeroRequest = 0
   const toggleHeroPanel = async (panel: HeroPanelToggleInjected['panel']): Promise<void> => {
     const request = ++latestHeroRequest
+    const intent = ctx.layout.conversationIntent
     let sessionId = activeSessionId(ctx)
     if (sessionId === undefined) {
-      connectingHeroSession ??= (async () => {
-        const target = ctx.workspaces.list.getSnapshot().recentWorkspaceId
-        return target === undefined
-          ? ctx.workspaces.connectHome()
-          : ctx.workspaces.connectWorkspace(target)
-      })().finally(() => { connectingHeroSession = undefined })
-      sessionId = await connectingHeroSession
-      // 共用连接期间的旧点击不得先打开会话，否则最后一次点击会被误判为外部切换。
-      if (request !== latestHeroRequest) return
-      // 异步创建期间若用户切换到另一会话，不抢占其当前视图。
+      const target = ctx.workspaces.list.getSnapshot().recentWorkspaceId
+      if (connectingHeroSession?.intent !== intent || connectingHeroSession.target !== target) {
+        const promise = target === undefined
+          ? ctx.workspaces.connectHome() : ctx.workspaces.connectWorkspace(target)
+        const connection = { intent, target, promise }
+        connectingHeroSession = connection
+        void promise.finally(() => {
+          if (connectingHeroSession === connection) connectingHeroSession = undefined
+        }).catch(() => {})
+      }
+      sessionId = await connectingHeroSession.promise
+      // 异步连接只能兑现同一新对话意图中最后一次有效的面板点击。
+      if (request !== latestHeroRequest || intent !== ctx.layout.conversationIntent) return
       if (ctx.sessions.list.getSnapshot().current !== undefined) return
       ctx.sessions.open(sessionId)
     }

@@ -123,6 +123,9 @@ describe('ui-workspace apply', () => {
     expect(b.create).toHaveBeenCalledWith({ path: '/tmp/project' })
     await picker.startSessionWithoutWorkspace()
     expect(b.startSessionWithoutWorkspace).toHaveBeenCalledOnce()
+    expect(b.beginNewConversation).toHaveBeenCalledTimes(3)
+    expect(b.beginNewConversation.mock.invocationCallOrder[2])
+      .toBeLessThan(b.startSessionWithoutWorkspace.mock.invocationCallOrder[0]!)
   })
 
   it('declares the two directory-flow holes and reports their occupancy per surface', async () => {

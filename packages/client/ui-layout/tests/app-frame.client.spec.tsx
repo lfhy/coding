@@ -387,6 +387,80 @@ describe('AppFrame', () => {
     expect(b.instance.store.getSnapshot().workbench.shared?.open).toBe(false)
   })
 
+  it('resets a reused blank even when another started conversation is selected', () => {
+    const b = mountFrame({ workspaceKeyOf: () => 'shared' })
+    selectedSession.current = 's-next' as SessionId
+    selectedSessionBlank.current = true
+    act(() => { b.rerenderFrame() })
+    act(() => { b.layout.toggleHeroPanel('shared', 'files', 's-next' as SessionId) })
+    expect(b.frame.hasAttribute('data-workbench-shown')).toBe(true)
+
+    selectedSession.current = 's-test' as SessionId
+    selectedSessionBlank.current = false
+    act(() => { b.rerenderFrame() })
+    expect(b.frame.hasAttribute('data-workbench-shown')).toBe(true)
+    act(() => { b.layout.beginNewConversation() })
+    selectedSession.current = 's-next' as SessionId
+    selectedSessionBlank.current = true
+    act(() => { b.rerenderFrame() })
+    expect(b.frame.hasAttribute('data-workbench-shown')).toBe(false)
+    selectedSessionBlank.current = false
+    act(() => { b.rerenderFrame() })
+    expect(b.frame.hasAttribute('data-workbench-shown')).toBe(false)
+  })
+
+  it('does not reveal an inherited panel if the blank phase ends before layout observes it', () => {
+    const b = mountFrame({ workspaceKeyOf: () => 'shared' })
+    act(() => { b.layout.openWorkbench('shared', 's-test' as SessionId) })
+    act(() => { b.layout.beginNewConversation() })
+    selectedSession.current = 's-next' as SessionId
+    selectedSessionBlank.current = false
+    act(() => { b.rerenderFrame() })
+    expect(b.frame.hasAttribute('data-workbench-shown')).toBe(false)
+  })
+
+  it('honors a targeted open made before the blank session first renders', () => {
+    const b = mountFrame({ workspaceKeyOf: () => 'shared' })
+    act(() => { b.layout.beginNewConversation() })
+    selectedSession.current = 's-next' as SessionId
+    selectedSessionBlank.current = true
+    act(() => { b.layout.openWorkbench('shared', 's-next' as SessionId) })
+    act(() => { b.rerenderFrame() })
+    expect(b.frame.hasAttribute('data-workbench-shown')).toBe(true)
+    selectedSessionBlank.current = false
+    act(() => { b.rerenderFrame() })
+    expect(b.frame.hasAttribute('data-workbench-shown')).toBe(true)
+  })
+
+  it('does not expose an old conversation workbench after the first message in a new conversation', () => {
+    const b = mountFrame({ workspaceKeyOf: () => 'shared' })
+    act(() => { b.layout.openWorkbench('shared', 's-test' as SessionId) })
+    act(() => { b.layout.beginNewConversation() })
+    selectedSession.current = 's-next' as SessionId
+    selectedSessionBlank.current = true
+    act(() => { b.rerenderFrame() })
+    expect(b.frame.hasAttribute('data-workbench-shown')).toBe(false)
+
+    selectedSessionBlank.current = false
+    act(() => { b.rerenderFrame() })
+    expect(b.frame.hasAttribute('data-workbench-shown')).toBe(false)
+    expect(b.publishWorkbench).toHaveBeenLastCalledWith('shared', {
+      open: false, fullscreen: false, bottomOpen: false,
+    })
+    act(() => { b.layout.toggleWorkbench('shared', 's-next' as SessionId) })
+    expect(b.frame.hasAttribute('data-workbench-shown')).toBe(true)
+    act(() => { b.layout.toggleWorkbench('shared', 's-next' as SessionId) })
+    expect(b.frame.hasAttribute('data-workbench-shown')).toBe(false)
+    selectedSession.current = 's-test' as SessionId
+    act(() => { b.rerenderFrame() })
+    expect(b.frame.hasAttribute('data-workbench-shown')).toBe(false)
+    act(() => { b.layout.openWorkbench('shared', 's-test' as SessionId) })
+    expect(b.frame.hasAttribute('data-workbench-shown')).toBe(true)
+    selectedSession.current = 's-next' as SessionId
+    act(() => { b.rerenderFrame() })
+    expect(b.frame.hasAttribute('data-workbench-shown')).toBe(false)
+  })
+
   it('shows a workbench opened by the model after the first blank message is accepted', () => {
     const b = mountFrame({ workspaceKeyOf: () => 'shared' })
     act(() => { b.instance.actions.openWorkbench('shared') })

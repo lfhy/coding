@@ -44,8 +44,12 @@ type LayoutState = {
   narrowExpanded: boolean
   /** 工作台偏好按工作区键保存；会话 id 仍是合法的字符串键，单会话部署行为不变。 */
   workbench: Record<string, WorkbenchState | undefined>
-  /** 空白会话 Hero 右栏显式操作；缺失表示默认隐藏，不改工作区共享偏好。 */
+  /** 空白阶段的右栏临时显隐；首条消息后转为该会话的显式打开或抑制状态。 */
   blankWorkbench: Record<SessionId, boolean | undefined>
+  /** 空白会话开始后仍屏蔽旧右栏；显式打开为 false，尚未见过的会话不设值。 */
+  suppressedWorkbench: Record<SessionId, boolean | undefined>
+  /** 新建意图待选中的会话；首次选中时即使空白阶段已经结束也要隔离旧偏好。 */
+  pendingNewConversation: boolean
   /** 通用工作台动作当前所属的空白会话，供没有 session 参数的顶栏动作使用。 */
   activeBlankSession: { sessionId: SessionId; key: string } | null
   /** 主内容区的临时页面；只属于打开它的会话。 */
@@ -76,14 +80,15 @@ type LayoutActions = {
   openDetails: (draft: LayoutState) => void
   closeDetails: (draft: LayoutState) => void
   openWorkbench: (draft: LayoutState, key: string, sessionId?: SessionId) => void
-  closeWorkbench: (draft: LayoutState, key: string) => void
-  toggleWorkbench: (draft: LayoutState, key: string) => void
+  closeWorkbench: (draft: LayoutState, key: string, sessionId?: SessionId) => void
+  toggleWorkbench: (draft: LayoutState, key: string, sessionId?: SessionId) => void
   toggleWorkbenchFullscreen: (draft: LayoutState, key: string) => void
   toggleWorkbenchBottom: (draft: LayoutState, key: string) => void
   closeWorkbenchBottom: (draft: LayoutState, key: string) => void
   toggleHeroPanel: (draft: LayoutState, key: string, panel: 'bottom' | 'files', sessionId?: SessionId) => void
   beginNewConversation: (draft: LayoutState) => void
   setActiveBlankSession: (draft: LayoutState, sessionId: SessionId | undefined, key?: string) => void
+  selectConversation: (draft: LayoutState, sessionId: SessionId | undefined) => void
   clearBlankWorkbench: (draft: LayoutState, sessionId: SessionId) => void
   retainBlankSessions: (draft: LayoutState, sessionIds: readonly SessionId[]) => void
   retainWorkbenchSessions: (draft: LayoutState, keys: readonly string[]) => void
@@ -108,6 +113,8 @@ export function createLayoutStore(): EngineStoreHandle<LayoutState, LayoutAction
       narrowExpanded: false,
       workbench: {},
       blankWorkbench: {},
+      suppressedWorkbench: {},
+      pendingNewConversation: false,
       activeBlankSession: null,
       page: null,
       conversationRequest: null,
@@ -140,6 +147,7 @@ export function createLayoutStore(): EngineStoreHandle<LayoutState, LayoutAction
         const state = workbench(d, key)
         state.open = true
         state.bottomStandalone = false
+        if (sessionId !== undefined) d.suppressedWorkbench[sessionId] = false
         const backgroundForBlank = d.activeBlankSession?.key === key
           && sessionId !== undefined && sessionId !== d.activeBlankSession.sessionId
         if (!backgroundForBlank) state.fullscreen = false
@@ -148,31 +156,37 @@ export function createLayoutStore(): EngineStoreHandle<LayoutState, LayoutAction
           d.blankWorkbench[d.activeBlankSession.sessionId] = true
         }
       },
-      closeWorkbench: (d, key: string) => {
+      closeWorkbench: (d, key: string, sessionId?: SessionId) => {
         const state = workbench(d, key)
         state.bottomStandalone = state.bottomOpen && (state.open || state.bottomStandalone)
         state.open = false
         state.fullscreen = false
+        if (sessionId !== undefined) d.suppressedWorkbench[sessionId] = true
         if (d.activeBlankSession?.key === key) d.blankWorkbench[d.activeBlankSession.sessionId] = false
       },
-      toggleWorkbench: (d, key: string) => {
+      toggleWorkbench: (d, key: string, sessionId?: SessionId) => {
         const state = workbench(d, key)
-        const activeBlank = d.activeBlankSession?.key === key ? d.activeBlankSession.sessionId : undefined
-        const rightVisible = activeBlank === undefined ? state.open : d.blankWorkbench[activeBlank] === true
+        const activeBlank = d.activeBlankSession?.key === key
+          && (sessionId === undefined || sessionId === d.activeBlankSession.sessionId)
+          ? d.activeBlankSession.sessionId : undefined
+        const rightVisible = activeBlank !== undefined ? d.blankWorkbench[activeBlank] === true
+          : state.open && (sessionId === undefined || d.suppressedWorkbench[sessionId] !== true)
         if (rightVisible && d.details === 0) {
           state.bottomStandalone = state.bottomOpen
           state.open = false
           state.fullscreen = false
           if (activeBlank !== undefined) d.blankWorkbench[activeBlank] = false
+          if (sessionId !== undefined) d.suppressedWorkbench[sessionId] = true
         } else {
           d.details = 0
           state.bottomStandalone = false
           // 详情栏只遮挡工作台，恢复时保留原有的最大化偏好。
-          if (!state.open) {
+          if (!state.open || sessionId !== undefined && d.suppressedWorkbench[sessionId] === true) {
             state.open = true
             state.fullscreen = false
           }
           if (activeBlank !== undefined) d.blankWorkbench[activeBlank] = true
+          if (sessionId !== undefined) d.suppressedWorkbench[sessionId] = false
         }
       },
       toggleWorkbenchFullscreen: (d, key: string) => {
@@ -211,27 +225,53 @@ export function createLayoutStore(): EngineStoreHandle<LayoutState, LayoutAction
             state.bottomOpen = true
             state.bottomStandalone = true
           }
-          if (sessionId !== undefined) d.blankWorkbench[sessionId] = false
+          if (sessionId !== undefined) {
+            d.blankWorkbench[sessionId] = false
+            d.suppressedWorkbench[sessionId] = true
+          }
         } else if (d.details === 0 && rightVisible) {
           state.open = false
           state.bottomStandalone = state.bottomOpen
           state.fullscreen = false
-          if (sessionId !== undefined) d.blankWorkbench[sessionId] = false
+          if (sessionId !== undefined) {
+            d.blankWorkbench[sessionId] = false
+            d.suppressedWorkbench[sessionId] = true
+          }
         } else {
           d.details = 0
           state.open = true
           state.fullscreen = false
           state.bottomOpen = false
           state.bottomStandalone = false
-          if (sessionId !== undefined) d.blankWorkbench[sessionId] = true
+          if (sessionId !== undefined) {
+            d.blankWorkbench[sessionId] = true
+            d.suppressedWorkbench[sessionId] = false
+          }
         }
       },
-      beginNewConversation: (d) => { d.blankWorkbench = {} },
+      beginNewConversation: (d) => {
+        for (const id of Object.keys(d.blankWorkbench)) d.suppressedWorkbench[id as SessionId] = true
+        d.blankWorkbench = {}
+        if (d.activeBlankSession !== null) d.suppressedWorkbench[d.activeBlankSession.sessionId] = true
+        d.pendingNewConversation = true
+      },
+      selectConversation: (d, sessionId: SessionId | undefined) => {
+        if (!d.pendingNewConversation || sessionId === undefined) return
+        if (d.suppressedWorkbench[sessionId] === undefined) d.suppressedWorkbench[sessionId] = true
+        d.pendingNewConversation = false
+      },
       setActiveBlankSession: (d, sessionId: SessionId | undefined, key?: string) => {
+        if (sessionId !== undefined && key !== undefined && d.activeBlankSession?.sessionId !== sessionId
+          && d.blankWorkbench[sessionId] === undefined && d.suppressedWorkbench[sessionId] === undefined) {
+          d.suppressedWorkbench[sessionId] = true
+        }
         d.activeBlankSession = sessionId === undefined || key === undefined ? null : { sessionId, key }
       },
       clearBlankWorkbench: (d, sessionId: SessionId) => {
-        if (d.blankWorkbench[sessionId] === undefined) return
+        const visible = d.blankWorkbench[sessionId]
+        if (visible === undefined) return
+        if (visible) d.suppressedWorkbench[sessionId] = false
+        else d.suppressedWorkbench[sessionId] = true
         d.blankWorkbench = Object.fromEntries(
           Object.entries(d.blankWorkbench).filter(([id]) => id !== sessionId),
         )
@@ -241,6 +281,11 @@ export function createLayoutStore(): EngineStoreHandle<LayoutState, LayoutAction
         if (Object.keys(d.blankWorkbench).some(id => !retained.has(id as SessionId))) {
           d.blankWorkbench = Object.fromEntries(
             Object.entries(d.blankWorkbench).filter(([id]) => retained.has(id as SessionId)),
+          )
+        }
+        if (Object.keys(d.suppressedWorkbench).some(id => !retained.has(id as SessionId))) {
+          d.suppressedWorkbench = Object.fromEntries(
+            Object.entries(d.suppressedWorkbench).filter(([id]) => retained.has(id as SessionId)),
           )
         }
         if (d.activeBlankSession !== null && !retained.has(d.activeBlankSession.sessionId)) d.activeBlankSession = null

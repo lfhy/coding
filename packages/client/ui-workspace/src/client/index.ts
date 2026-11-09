@@ -112,7 +112,10 @@ export function apply(ctx: ClientContext): void {
   })
   const pickerInjected = (): WorkspacePickerInjected => ({
     createWorkspace: input => ctx.workspaces.create(input),
-    startSessionWithoutWorkspace: () => ctx.workspaces.startSessionWithoutWorkspace(),
+    startSessionWithoutWorkspace: () => {
+      ctx.layout.beginNewConversation()
+      return ctx.workspaces.startSessionWithoutWorkspace()
+    },
     hooks: { directoryFlow: pickerFlowSource },
   })
   // Each registration declares its directory-flow child in the same call;

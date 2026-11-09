@@ -63,6 +63,7 @@ describe('ui-layout client apply', () => {
       togglePage: vi.fn(),
       toggleHeroPanel: vi.fn(),
       beginNewConversation: vi.fn(),
+      selectConversation: vi.fn(),
       setActiveBlankSession: vi.fn(),
       clearBlankWorkbench: vi.fn(), retainBlankSessions: vi.fn(),
       retainWorkbenchSessions: vi.fn(),
