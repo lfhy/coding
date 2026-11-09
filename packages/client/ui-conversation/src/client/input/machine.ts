@@ -47,13 +47,13 @@ function unreachable(value: never): never {
 }
 
 /**
- * Strip the claim token off a draft to yield submit args. Leading whitespace
- * (incl. newlines — leading-trigger trim) is tolerated; a bare `/name`
- * missing the token's trailing separator yields empty args. Exactly one
- * separator char is consumed; the remainder — newlines included — stays
- * verbatim (`/goal x\ny` → `x\ny`).
+ * 从完整草稿提取命令参数，容忍开头空白及未带末尾空格的命令名。
+ * 仅消耗命令后的一个分隔符，参数内的换行和空格保持原样。
+ * @param draft - 展示文本或已序列化的完整草稿。
+ * @param token - 已认领命令的 token。
+ * @returns 命令后面的参数。
  */
-function argsAfter(draft: string, token: string): string {
+export function argsAfter(draft: string, token: string): string {
   const s = draft.trimStart()
   if (s.startsWith(token)) return s.slice(token.length)
   const base = token.trimEnd()
@@ -475,7 +475,10 @@ export class InputMachine {
   private beginAttempt(mode: InputSubmitMode): SubmitAttempt {
     const controller = new AbortController()
     this.seq += 1
-    const attempt: SubmitAttempt = { seq: this.seq, signal: controller.signal, draftSnapshot: this.draft, mode }
+    const attempt: SubmitAttempt = {
+      seq: this.seq, signal: controller.signal, draftSnapshot: this.draft,
+      occurrencesSnapshot: this.occurrences, mode,
+    }
     this.inflight = { attempt, controller }
     return attempt
   }

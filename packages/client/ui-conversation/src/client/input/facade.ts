@@ -14,10 +14,11 @@ import type {
 } from 'coding-client-ui-input-trigger/client'
 import type {
   DraftAttachmentId, EditRange, EditSelection, InputActions, InputEffect, InputNotice, InputState,
-  PasteComponent, QueuedMessage, SessionInput, SubmitAttempt,
+  Occurrence, PasteComponent, QueuedMessage, SessionInput, SubmitAttempt,
 } from './contract.ts'
 import type { InputSubmitMode } from '../contract/composer-submission.ts'
-import { InputMachine, projectClipboard } from './machine.ts'
+import { InputMachine, argsAfter, projectClipboard } from './machine.ts'
+import { stagedPasteComponents } from './staged-reference.ts'
 
 /** Popup face the shell needs (dismissal only; typed structurally to avoid a value import). */
 export interface PopupDismissFace {
@@ -122,12 +123,19 @@ export class SessionInputShell implements SessionInput {
   // ---- SessionInput face ----
 
   /**
-   * Single draft write path (all mutation rides machine events).
-   * @param text - the full next draft.
-   * @param editRange - the DOM-observed edit shape, when the caller knows it
-   * (narrows the machine's occurrence math; absent → diff scan).
+   * 输入的普通编辑由状态机持有；首次恢复规范暂存路径时还原文件名展示引用。
+   * @param text - 完整新草稿；会话存储中的完整路径不得被展示名覆盖。
+   * @param editRange - 已知的 DOM 编辑区间；存在时不扫描恢复引用。
    */
   setDraft(text: string, editRange?: EditRange): void {
+    if (this.core.state.draft === '' && text !== '' && editRange === undefined) {
+      const components = stagedPasteComponents(text)
+      if (components.length > 0) {
+        this.pasteBegin(text, { start: 0, end: 0 }, components)
+        this.invalidatePaste()
+        return
+      }
+    }
     this.run(this.core.dispatch({ type: 'draft-changed', draft: text, ...(editRange !== undefined ? { editRange } : {}) }))
   }
 
@@ -455,44 +463,42 @@ export class SessionInputShell implements SessionInput {
   }
 
   /**
-   * Prompt serialization before the sink: expand each
-   * inline reference range to its owner's model form via the session controller's
-   * codec routing. Owner missing / serialize failure / disposal blocks the
-   * send — notice + draft and chips retained, never a silent downgrade to
-   * the clipboard text. Chip-free drafts skip the async detour.
+   * 提交前按来源序列化引用；缺失来源、序列化失败或取消都阻止发送，保留原草稿。
+   * @param draft - 与当前 occurrence 偏移对应的展示文本。
+   * @param signal - 本次提交的中止信号。
+   * @param occurrences - 提交开始时截取的引用位置；异步序列化不得读取后续编辑。
+   * @returns 保留普通文本的模型可见引用文本。
    */
+  private async serializeDraft(draft: string, signal: AbortSignal, occurrences: readonly Occurrence[]): Promise<string> {
+    if (occurrences.length === 0) return draft
+    const inputTriggers = this.deps.inputTriggers?.()
+    const parts = await Promise.all(occurrences.map(async (o) => {
+      if (inputTriggers === undefined) throw new Error(`no serializer for reference source "${o.source}"`)
+      return { offset: o.offset, length: o.length, text: await inputTriggers.serializeReference(o.source, o.ref, signal) }
+    }))
+    let out = ''
+    let cursor = 0
+    for (const part of parts) {
+      out += draft.slice(cursor, part.offset) + part.text
+      cursor = part.offset + part.length
+    }
+    return out + draft.slice(cursor)
+  }
+
+  /** 普通消息沿用同一次提交的引用序列化；失败不降级为展示名。 */
   private sinkSerialized(attempt: SubmitAttempt, draft: string, mode: InputSubmitMode): void {
     const imageIds = [...this.imageIds]
-    const occurrences = this.core.state.occurrences
+    const occurrences = attempt.occurrencesSnapshot
     if (occurrences.length === 0) {
       this.settleSubmit(attempt, this.deps.defaultSink(draft.trim(), imageIds, mode, attempt.signal), imageIds)
       return
     }
-    const inputTriggers = this.deps.inputTriggers?.()
-    const controller = new AbortController()
-    void Promise.all(occurrences.map(async (o) => {
-      if (inputTriggers === undefined) throw new Error(`no serializer for reference source "${o.source}"`)
-      return {
-        offset: o.offset,
-        length: o.length,
-        text: await inputTriggers.serializeReference(o.source, o.ref, controller.signal),
-      }
-    })).then(
-      (parts) => {
-        if (this.disposed) return
-        // Splice model forms over their display ranges (offsets are draft-time;
-        // parts arrive offset-sorted since the table is).
-        let out = ''
-        let cursor = 0
-        for (const part of parts) {
-          out += draft.slice(cursor, part.offset) + part.text
-          cursor = part.offset + part.length
-        }
-        out += draft.slice(cursor)
-        this.settleSubmit(attempt, this.deps.defaultSink(out.trim(), imageIds, mode, attempt.signal), imageIds)
+    void this.serializeDraft(draft, attempt.signal, occurrences).then(
+      (text) => {
+        if (this.dead(attempt)) return
+        this.settleSubmit(attempt, this.deps.defaultSink(text.trim(), imageIds, mode, attempt.signal), imageIds)
       },
       (error: unknown) => {
-        controller.abort()
         if (this.dead(attempt)) return
         const message = error instanceof Error ? error.message : String(error)
         this.run(this.core.dispatch({ type: 'submit-settled', attempt, ok: false, message }))
@@ -553,22 +559,18 @@ export class SessionInputShell implements SessionInput {
     )
   }
 
-  /**
-   * The submit transaction: claim.submit against the session scope; ok maps
-   * from the outcome kind. An accepting claim receives the serialized draft
-   * images, which are cleared and released only on a success outcome; a
-   * failure (serialize, transport, or handler error) keeps draft and images
-   * for correction.
-   */
+  /** 命令与普通消息共用规范引用序列化；图片仍只在命令接纳后释放。 */
   private beginSubmit(attempt: SubmitAttempt, claim: CommandClaim, args: string): void {
     const imageIds = claim.images === true ? [...this.imageIds] : []
+    const occurrences = attempt.occurrencesSnapshot
     Promise.resolve()
       .then(async () => {
         const images = imageIds.length > 0 ? await this.deps.commandImages.serialize(imageIds) : []
-        // Serialization may outlive the attempt (large files, session
-        // teardown); a dead attempt must not reach the Host executor.
+        const serializedArgs = occurrences.length > 0
+          ? argsAfter(await this.serializeDraft(attempt.draftSnapshot, attempt.signal, occurrences), claim.token)
+          : args
         if (this.dead(attempt)) return undefined
-        return claim.submit(args, this.deps.actx, images)
+        return claim.submit(serializedArgs, this.deps.actx, images)
       })
       .then(
         (outcome) => {

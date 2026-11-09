@@ -73,6 +73,24 @@ describe('buildConversationAnchors', () => {
     ])
   })
 
+  it('uses staged file names in navigation without changing the durable message', () => {
+    const mention = '@".dsh-uploads/123e4567-e89b-42d3-a456-426614174000-演示 slides.pptx"'
+    const text = `请解析 ${mention} 后继续`
+    expect(build(['staged'], [node('staged', 'user', 3, [{ type: 'text', text }])])).toEqual([{
+      key: 'staged', seq: 3, title: '请解析 @演示 slides.pptx 后继续', preview: '请解析 @演示 slides.pptx 后继续',
+    }])
+    expect(text).toContain(mention)
+  })
+
+  it('preserves punctuation after a bare staged path while displaying the saved file name', () => {
+    const path = '@.dsh-uploads/123e4567-e89b-42d3-a456-426614174000-notes.docx'
+    const text = `读取 ${path}，再比较 ${path}。`
+    expect(build(['bare'], [node('bare', 'user', 4, [{ type: 'text', text }])])).toEqual([{
+      key: 'bare', seq: 4, title: '读取 @notes.docx，再比较 @notes.docx。',
+      preview: '读取 @notes.docx，再比较 @notes.docx。',
+    }])
+  })
+
   it('joins text blocks for the excerpt while keeping the first line as title', () => {
     const message = node('blocks', 'user', 8, [
       { type: 'text', text: '  第一行\r\n' },

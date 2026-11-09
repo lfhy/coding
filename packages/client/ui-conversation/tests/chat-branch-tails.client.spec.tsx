@@ -142,6 +142,21 @@ describe('MessageItem arms', () => {
     expect(view.container.textContent).toContain('README.md, please.')
   })
 
+  it('shows staged file names in sent bubbles and steering while copy keeps the actual path', () => {
+    const mention = '@".dsh-uploads/123e4567-e89b-42d3-a456-426614174000-演示 slides.pptx"'
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
+    const view = render(<MessageItem t={t} node={{
+      kind: 'user', seq: 1, time: 1_000,
+      content: [{ type: 'text', text: `请解析 ${mention}，谢谢` }] as never, source: null,
+    }} />)
+    const chip = view.container.querySelector('[data-ref-chip="file"]')
+    expect(chip?.textContent).toBe('演示 slides.pptx')
+    expect(chip?.getAttribute('title')).toBe('演示 slides.pptx')
+    fireEvent.click(view.getByRole('button', { name: '复制' }))
+    expect(writeText).toHaveBeenCalledWith(`请解析 ${mention}，谢谢`)
+  })
+
   it('user bubbles expose clock / copy and neither branch nor edit; copy writes the text', () => {
     const writeText = vi.fn().mockResolvedValue(undefined)
     Object.defineProperty(navigator, 'clipboard', {

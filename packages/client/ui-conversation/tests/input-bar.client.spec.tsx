@@ -125,6 +125,8 @@ function bench(over?: BenchOptions) {
     queue: over?.queue ?? [],
   }))
   type ShellDeps = ConstructorParameters<typeof SessionInputShell>[0]
+  /** 真实引用来源把文件路径原样作为模型文本；测试中的词表只控制装饰。 */
+  const serializeReference = vi.fn((_source: string, ref: string) => Promise.resolve(ref))
   const shell = new SessionInputShell({
     actx: SCTX,
     defaultSink: sink,
@@ -134,12 +136,14 @@ function bench(over?: BenchOptions) {
       subscribe: fn => session.subscribe(fn),
     },
     ...(over?.steerQueue !== undefined ? { steerQueue: over.steerQueue } : {}),
-    // Lexicon-only stub: adjudication untouched (undefined slash methods are
-    // never reached — these benches drive plain-draft flows only).
+    // 装饰词表与引用序列化共享一个来源；不存在命令时普通消息照常发送。
     ...(lex !== undefined
       ? {
         inputTriggers: (() => ({
           lexicon: { getSnapshot: () => lex, subscribe: () => () => {} },
+          serializeReference,
+          arbitrate: () => 'pass' as const,
+          track: vi.fn(),
         })) as unknown as NonNullable<ShellDeps['inputTriggers']>,
       }
       : {}),
@@ -337,9 +341,9 @@ describe('image draft rail', () => {
     let finishFirst: (path: string) => void = () => { throw new Error('no upload in flight') }
     const first = new Promise<string>((resolve) => { finishFirst = resolve })
     const addFile = vi.fn((file: File) => file.name === '演示 slides.pptx'
-      ? first : Promise.resolve(`.dsh-uploads/${file.name}`))
+      ? first : Promise.resolve(`.dsh-uploads/123e4567-e89b-42d3-a456-426614174000-${file.name}`))
     const addImages = vi.fn(() => null)
-    const result = bench({ draft: '请解析', addFile, addImages })
+    const result = bench({ draft: '请解析', addFile, addImages, lexicon: new Map() })
     result.textarea.setSelectionRange(result.textarea.value.length, result.textarea.value.length)
     const files = [
       new File(['slides'], '演示 slides.pptx', { type: 'application/vnd.openxmlformats-officedocument.presentationml.presentation' }),
@@ -351,40 +355,44 @@ describe('image draft rail', () => {
     fireEvent.keyDown(result.textarea, { key: 'Enter' })
     expect(result.sink).not.toHaveBeenCalled()
     expect(result.button.disabled).toBe(true)
-    await act(async () => { finishFirst('.dsh-uploads/演示 slides.pptx'); await first })
+    await act(async () => { finishFirst('.dsh-uploads/123e4567-e89b-42d3-a456-426614174000-演示 slides.pptx'); await first })
     await waitFor(() => { expect(addFile).toHaveBeenCalledTimes(3) })
-    expect(result.shell.snapshot.draft).toBe('请解析 @".dsh-uploads/演示 slides.pptx" @.dsh-uploads/memo.docx @.dsh-uploads/data.bin')
+    expect(result.shell.snapshot.draft).toBe('请解析 @演示 slides.pptx @memo.docx @data.bin')
+    expect(result.textarea.value).toBe(result.shell.snapshot.draft)
+    expect([...result.view.container.querySelectorAll('[data-reference-appearance="file"]')]
+      .map(chip => chip.textContent)).toEqual(['@演示 slides.pptx', '@memo.docx', '@data.bin'])
     expect(addImages).not.toHaveBeenCalled()
     fireEvent.keyDown(result.textarea, { key: 'Enter' })
     await waitFor(() => { expect(result.sink).toHaveBeenCalledWith(
-      result.shell.snapshot.draft, [], 'queue', expect.any(AbortSignal),
+      '请解析 @".dsh-uploads/123e4567-e89b-42d3-a456-426614174000-演示 slides.pptx" @.dsh-uploads/123e4567-e89b-42d3-a456-426614174000-memo.docx @.dsh-uploads/123e4567-e89b-42d3-a456-426614174000-data.bin',
+      [], 'queue', expect.any(AbortSignal),
     ) })
   })
 
   it('keeps a successful path but does not invent a path for failed uploads', async () => {
     const addFile = vi.fn((file: File) => file.name === 'too-large.docx'
       ? Promise.reject(new FileStageError(413))
-      : Promise.resolve('.dsh-uploads/kept.pptx'))
+      : Promise.resolve('.dsh-uploads/123e4567-e89b-42d3-a456-426614174000-kept.pptx'))
     const result = bench({ draft: '导入', addFile })
     result.textarea.setSelectionRange(result.textarea.value.length, result.textarea.value.length)
     act(() => { attachmentOwner(result.slotCalls).onAddFiles([
       new File(['ok'], 'kept.pptx'), new File(['bad'], 'too-large.docx'),
     ]) })
     await waitFor(() => { expect(result.view.getByRole('alert').textContent).toContain('文件不能超过 32MB') })
-    expect(result.shell.snapshot.draft).toBe('导入 @.dsh-uploads/kept.pptx')
+    expect(result.shell.snapshot.draft).toBe('导入 @kept.pptx')
     expect(result.sink).not.toHaveBeenCalled()
     expect(addFile).toHaveBeenCalledTimes(2)
   })
 
   it('converts a clipboard document to a saved path while preserving pasted text', async () => {
-    const addFile = vi.fn(() => Promise.resolve('.dsh-uploads/notes.docx'))
+    const addFile = vi.fn(() => Promise.resolve('.dsh-uploads/123e4567-e89b-42d3-a456-426614174000-notes.docx'))
     const result = bench({ addFile })
     const file = new File(['notes'], 'notes.docx', { type: 'application/msword' })
     fireEvent.paste(result.textarea, { clipboardData: {
       items: [{ kind: 'file', type: file.type, getAsFile: () => file }],
       getData: () => '请总结',
     } })
-    await waitFor(() => { expect(result.shell.snapshot.draft).toBe('请总结 @.dsh-uploads/notes.docx') })
+    await waitFor(() => { expect(result.shell.snapshot.draft).toBe('请总结 @notes.docx') })
     expect(addFile).toHaveBeenCalledWith(file)
   })
 
@@ -400,7 +408,7 @@ describe('image draft rail', () => {
     expect(result.view.queryByRole('status')).toBeNull()
     expect(result.button.disabled).toBe(false)
     act(() => { attachmentOwner(result.slotCalls).onAddFiles([new File(['new'], 'new.docx')]) })
-    await waitFor(() => { expect(result.shell.snapshot.draft).toContain('@.dsh-uploads/new.docx') })
+    await waitFor(() => { expect(result.shell.snapshot.draft).toContain('@new.docx') })
     await act(async () => { finishOld('.dsh-uploads/old.pptx'); await oldUpload })
     expect(result.shell.snapshot.draft).not.toContain('old.pptx')
   })

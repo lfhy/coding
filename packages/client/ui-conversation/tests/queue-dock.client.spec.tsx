@@ -94,6 +94,17 @@ describe('QueueDock', () => {
     expect(container.innerHTML).toBe('')
   })
 
+  it('shows a saved file name in queue preview but edits the original path text', () => {
+    const mention = '@".dsh-uploads/123e4567-e89b-42d3-a456-426614174000-演示 slides.pptx"'
+    const text = `读取 ${mention}`
+    const snap = snapshotWith([row('i-file', text)])
+    const source = liveSession(snap)
+    const view = render(<QueueDock {...kitFor(snap)} useSession={source.useSession} />)
+    expect(view.getByText('读取 @演示 slides.pptx')).toBeTruthy()
+    fireEvent.click(view.getByLabelText('编辑排队消息'))
+    expect((view.getByLabelText('编辑排队消息') as HTMLInputElement).value).toBe(text)
+  })
+
   it('leaves pending steering to the conversation flow', () => {
     const steering = { ...row('s-1', 'interrupt'), placement: 'steering' as const }
     const snap = snapshotWith([steering])

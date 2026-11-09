@@ -50,7 +50,7 @@
 
 ## 对话输入命令与视图
 
-- **文件拖放路线**：整页拖放由 [ui-attachment](../../packages/client/ui-attachment/README.md) 按图片 MIME 分流；[ui-conversation](../../packages/client/ui-conversation/README.md) 的输入栏保留图片附件准入，其他文件经 [open-in-app](../../packages/host/open-in-app/README.md) 同源路由保存到当前本机会话工作区，再把真实相对路径作为文件引用写入草稿。剪贴板文件沿用此分流；不支持解析的文件仍可保存路径，远端工作区拒绝暂存。更改此链路时一并检查 Host 来源与路径校验、草稿提交时序、PPT 工具读取限制，并运行 Host HTTP 测试、Client GUI 测试、组装页面回放与真实页面拖放。
+- **文件拖放路线**：整页拖放由 [ui-attachment](../../packages/client/ui-attachment/README.md) 按图片 MIME 分流；[ui-conversation](../../packages/client/ui-conversation/README.md) 的输入栏保留图片附件准入，其他文件经 [open-in-app](../../packages/host/open-in-app/README.md) 同源路由保存到本机会话工作区，再把完整相对路径作为文件引用保存。`contract/staged-file-mention.ts` 识别暂存路径，`input/staged-reference.ts` 从持久草稿恢复引用，`skeleton/InputBar.tsx` 与 `chat/MessageItem.tsx` 显示安全保存名，`chat/conversation-anchors.ts` 和 `queue/QueueDock.tsx` 将其投影到预览；模型提交、复制和会话日志仍用完整路径。Host 对非法文件名字符的替换及截断意味着路径只能还原安全保存名，不能无损还原任意原名；需逐字保留原名时必须扩展持久元数据。剪贴板文件沿用图片分流；不支持解析的文件仍可保存路径，远端工作区拒绝暂存。更改此链路时一并检查 Host 来源与路径校验、草稿提交时序、PPT 工具读取限制，并以含空格文件名、重挂载、命令提交与消息回放的测试及真实页面拖放验证。
 
 - **路线**：`packages/client/ui-conversation/src/client/apply.ts` 声明对话座位，`input/hub.ts` 与 `skeleton/InputBar.tsx` 管每会话输入；`packages/client/ui-input-trigger/src/client/controller.ts` 管内联触发，`packages/client/ui-commands/src/client/service.ts` 管命令目录与弹层；`packages/client/ui-tool/src/client/apply.ts` 注册工具行，`packages/client/ui-trajectory/src/client/index.ts` 注册轨迹视图。
 - **技术与边界**：输入和视图通过 slot/领域注册表组合，持久事件仍由 Session/Host 拥有；工具卡片、轨迹、命令 UI 不往 runtime 增加中央事件 switch。参见 [ui-conversation](../../packages/client/ui-conversation/README.md)、[ui-commands](../../packages/client/ui-commands/README.md) 与 [ui-trajectory](../../packages/client/ui-trajectory/README.md)。

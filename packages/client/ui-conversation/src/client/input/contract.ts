@@ -238,6 +238,8 @@ export interface SubmitAttempt {
   readonly signal: AbortSignal
   /** Draft at enter time; settlement clears it only after acceptance. */
   readonly draftSnapshot: string
+  /** 与草稿同时截取的引用位置，异步判定与序列化期间不随编辑漂移。 */
+  readonly occurrencesSnapshot: readonly Occurrence[]
   /** Default-message delivery intent retained while slash adjudication is pending. */
   readonly mode: InputSubmitMode
 }

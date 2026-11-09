@@ -10,6 +10,7 @@ import type {
 } from 'coding-client-runtime/client'
 import { Button, ChatUserBubble, IconRefreshOutline16, JsonBlock, MessageText, StateDot } from 'coding-client-ui-primitives'
 import type { ChatNodeOwnerProps, ChatNodeViewProps, ChatViewSlotProps } from '../contract/slots.ts'
+import { stagedFileName } from '../contract/staged-file-mention.ts'
 import { ReferenceIcon } from '../reference/ReferenceIcon.tsx'
 import { CompactionItem } from './CompactionItem.tsx'
 import { ContextInjectionRow } from './ContextInjectionRow.tsx'
@@ -212,17 +213,20 @@ function projectUserText(text: string, sessionLabels: readonly string[]): ReactN
       : label.startsWith('@')
         ? label.endsWith('/') ? 'folder' : 'file'
         : undefined
+    /** 消息记录保留完整引用，仅已暂存文件在用户气泡里省略随机前缀。 */
+    const stagedLabel = referenceKind === 'file' ? stagedFileName(label) : undefined
     const displayLabel = referenceKind === undefined
       ? label
       : referenceKind === 'session'
         ? label.slice(1)
-        : label.slice(1).replace(/^"|"$/gu, '').split(/[\\/]/u).filter(Boolean).at(-1) ?? label.slice(1)
+        : stagedLabel
+          ?? (label.slice(1).replace(/^"|"$/gu, '').split(/[\\/]/u).filter(Boolean).at(-1) ?? label.slice(1))
     parts.push(
       <span
         key={tokenStart}
         className={css.refChip}
         data-ref-chip={referenceKind ?? 'skill'}
-        title={label}
+        title={stagedLabel === undefined ? label : displayLabel}
       >
         {referenceKind !== undefined && (
           <ReferenceIcon kind={referenceKind} size={16} className={css.refIcon} />

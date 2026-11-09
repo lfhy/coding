@@ -11,6 +11,7 @@ import type { DraftAttachmentId } from '../src/client/input/contract.ts'
 
 const mention = '@[Research](dsh-session:InNvdXJjZSI)'
 const spacedMention = '@[Research notes](dsh-session:InNvdXJjZSI)'
+const stagedMention = '@".dsh-uploads/123e4567-e89b-42d3-a456-426614174000-演示 slides.pptx"'
 const commandImages = {
   serialize: () => Promise.resolve([]),
   release: () => {},
@@ -33,6 +34,34 @@ function chip(shell: SessionInputShell): void {
 }
 
 describe('reference submission', () => {
+  it('restores a staged file label after remount while preserving its saved path for sending', async () => {
+    const mirror = vi.fn()
+    const first = new SessionInputShell({ actx: {} as ClientContext, defaultSink: vi.fn(), commandImages })
+    first.bindMirror(mirror)
+    first.pasteBegin(`读取 ${stagedMention} 后继续`, { start: 0, end: 0 }, [{
+      start: 3, end: 3 + stagedMention.length,
+      reference: { source: 'reference', ref: stagedMention, label: '演示 slides.pptx',
+        appearance: 'file', clipboardText: stagedMention },
+    }])
+    expect(first.snapshot.draft).toBe('读取 @演示 slides.pptx 后继续')
+    expect(mirror).toHaveBeenLastCalledWith(`读取 ${stagedMention} 后继续`)
+
+    const sink = vi.fn(() => Promise.resolve<SubmitOutcome>({ kind: 'success' }))
+    const restored = new SessionInputShell({
+      actx: {} as ClientContext, defaultSink: sink, commandImages,
+      inputTriggers: () => ({
+        track: vi.fn(), serializeReference: (_source: string, ref: string) => Promise.resolve(ref),
+      }) as unknown as InputTriggerController,
+    })
+    restored.setDraft(mirror.mock.calls.at(-1)?.[0] as string)
+    expect(restored.snapshot.draft).toBe('读取 @演示 slides.pptx 后继续')
+    expect(restored.snapshot.occurrences[0]).toMatchObject({ ref: stagedMention, label: '演示 slides.pptx' })
+    restored.submit()
+    await vi.waitFor(() => { expect(sink).toHaveBeenCalledWith(
+      `读取 ${stagedMention} 后继续`, [], 'queue', expect.any(AbortSignal),
+    ) })
+  })
+
   it('mirrors canonical reference text so a persisted draft remains resolvable after remount', async () => {
     const mirror = vi.fn()
     const first = new SessionInputShell({
@@ -143,6 +172,76 @@ describe('reference submission', () => {
       level: 'error',
       text: 'reference codec unavailable',
     })
+  })
+
+  it('serializes the enter-time file occurrence while later draft edits remain pending', async () => {
+    let resolveCodec!: (text: string) => void
+    const codec = new Promise<string>((resolve) => { resolveCodec = resolve })
+    const sink = vi.fn(() => Promise.resolve<SubmitOutcome>({ kind: 'success' }))
+    const shell = new SessionInputShell({
+      actx: {} as ClientContext, defaultSink: sink, commandImages,
+      inputTriggers: () => ({ track: vi.fn(), serializeReference: () => codec }) as unknown as InputTriggerController,
+    })
+    shell.setDraft(`读取 ${stagedMention}`)
+    shell.submit()
+    shell.setDraft(`${shell.snapshot.draft} 后续补充`)
+    resolveCodec(stagedMention)
+    await vi.waitFor(() => { expect(sink).toHaveBeenCalledWith(
+      `读取 ${stagedMention}`, [], 'queue', expect.any(AbortSignal),
+    ) })
+    expect(shell.snapshot.draft).toBe(' 后续补充')
+  })
+
+  it('serializes file paths in claimed command arguments and keeps the draft on codec failure', async () => {
+    const submit = vi.fn(() => Promise.resolve<SubmitOutcome>({ kind: 'success' }))
+    const serializeReference = vi.fn((_source: string, ref: string) => Promise.resolve(ref))
+    const shell = new SessionInputShell({
+      actx: {} as ClientContext, defaultSink: vi.fn(), commandImages,
+      inputTriggers: () => ({ serializeReference, track: vi.fn() }) as unknown as InputTriggerController,
+    })
+    shell.setDraft('/run ')
+    const claim = { token: '/run ', submit }
+    expect(shell.beginCommand(claim, { start: 0, end: 5, draftRev: shell.snapshot.draftRev })).toBe(true)
+    shell.pasteBegin(`处理 ${stagedMention}`, { start: 5, end: 5 }, [{
+      start: 3, end: 3 + stagedMention.length,
+      reference: { source: 'reference', ref: stagedMention, label: '演示 slides.pptx', clipboardText: stagedMention },
+    }])
+    expect(shell.snapshot.draft).toBe('/run 处理 @演示 slides.pptx')
+    shell.submit()
+    await vi.waitFor(() => { expect(submit).toHaveBeenCalledWith(`处理 ${stagedMention}`, expect.anything(), []) })
+    expect(serializeReference).toHaveBeenCalledWith('reference', stagedMention, expect.any(AbortSignal))
+
+    const failedSubmit = vi.fn()
+    const failed = new SessionInputShell({
+      actx: {} as ClientContext, defaultSink: vi.fn(), commandImages,
+      inputTriggers: () => ({
+        track: vi.fn(), serializeReference: () => Promise.reject(new Error('reference codec unavailable')),
+      }) as unknown as InputTriggerController,
+    })
+    failed.setDraft(`/run ${stagedMention}`)
+    expect(failed.beginCommand({ token: '/run ', submit: failedSubmit }, {
+      start: 0, end: 5, draftRev: failed.snapshot.draftRev,
+    })).toBe(true)
+    failed.submit()
+    await vi.waitFor(() => { expect(failed.notices.getSnapshot()?.text).toBe('reference codec unavailable') })
+    expect(failed.snapshot.phase).toBe('claimed')
+    expect(failedSubmit).not.toHaveBeenCalled()
+    expect(failed.snapshot.draft).toBe('/run @演示 slides.pptx')
+  })
+
+  it('serializes file paths when Enter recognizes a command', async () => {
+    const submit = vi.fn(() => Promise.resolve<SubmitOutcome>({ kind: 'success' }))
+    const shell = new SessionInputShell({
+      actx: {} as ClientContext, defaultSink: vi.fn(), commandImages,
+      inputTriggers: () => ({
+        track: vi.fn(), adjudicate: () => Promise.resolve({ claim: { token: '/run ', submit } }),
+        serializeReference: (_source: string, ref: string) => Promise.resolve(ref),
+      }) as unknown as InputTriggerController,
+    })
+    shell.setDraft(`/run ${stagedMention}`)
+    expect(shell.snapshot.draft).toBe('/run @演示 slides.pptx')
+    shell.submit()
+    await vi.waitFor(() => { expect(submit).toHaveBeenCalledWith(stagedMention, expect.anything(), []) })
   })
 
   it('aborts Host-side preparation when the input shell is disposed', () => {

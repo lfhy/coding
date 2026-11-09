@@ -273,7 +273,7 @@ workspace 共 273 个包，按 group 分节。每行给出包目录、职责（R
 ## packages/ppt
 
 - `packages/ppt/model` — PPT 工程的数据模型与校验：演示文稿（`PptDeck`）、页面（`PptPage`）、元素（`PptElement`）、主题配色与画布尺寸… 入口 `src/index.ts`
-- `packages/ppt/ppt-workbench` — PPT 创作模式的宿主能力：工程存储（`ppt/<工程目录>/deck.json`）、版本与撤销历史、`.pptx` 导出… 入口 `src/index.ts`（tests 14）
+- `packages/ppt/ppt-workbench` — PPT 创作模式的宿主能力：工程存储（`ppt/<工程目录>/deck.json`）、版本与撤销历史、`.pptx` 导出… 入口 `src/index.ts`（tests 15）
 - `packages/ppt/tool-ppt` — PPT 创作模式的十八个模型工具覆盖工程创建、打开、读写、撤销/重做、渲染、质检、导入与导出，以及用户模板的制作、套用和管理 入口 `src/index.ts`（tests 3）
 
 ## packages/preset

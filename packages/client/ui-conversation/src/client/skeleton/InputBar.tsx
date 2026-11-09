@@ -16,7 +16,9 @@ import type {} from 'coding-goal/client'
 // api-remotes import already places it in every client program.
 import type { Translate } from 'coding-client-ui-slots'
 import { formatFileMention } from 'coding-file-reference/grammar'
+import { stagedFileName } from '../contract/staged-file-mention.ts'
 import type { ComposerBarProps } from '../contract/slots.ts'
+import { stagedPasteComponents } from '../input/staged-reference.ts'
 import { FileStageError } from '../input/stage-file.ts'
 import { deriveDecorations } from '../input/decorations.ts'
 import type { DraftDecorations } from '../input/decorations.ts'
@@ -470,12 +472,11 @@ export function InputBar({
     e.preventDefault()
     const el = e.currentTarget
     const sel = selectionOf(el)
-    // Sync components stay empty at this layer: hot-snapshot matching needs
-    // the Slash roster, which lives behind keyboard.track — the paste attempt
-    // opens in the machine and the controller upgrades tokens as matches
-    // land (paste-upgrade). The DOM layer only starts the transaction.
-    keyboard.pasteBegin(text, sel)
-    const caret = sel.start + text.length
+    // 粘贴规范暂存路径时在同一事务恢复文件名；其他引用继续由触发器异步识别。
+    const components = stagedPasteComponents(text)
+    keyboard.pasteBegin(text, sel, components)
+    const caret = sel.start + components.reduce((length, component) =>
+      length + component.reference.label.length + 1 - (component.end - component.start), text.length)
     restoreCaret(el, caret)
     keyboard.track(keyboard.snapshot.draft, caret)
   }
@@ -509,7 +510,7 @@ export function InputBar({
     if (rejected !== null) showToast(rejected)
   }, [addImages, attachments, imageLimits, showToast, t])
 
-  /** 拖入文件先逐个落盘，确认路径后才写草稿；异步返回后按当前光标插入，不覆盖输入。 */
+  /** 文件落盘后才创建引用；草稿显示安全保存名，复制与提交仍使用实际暂存路径。 */
   const intakeFiles = useCallback((files: readonly File[]): void => {
     if (addFile === undefined || keyboard === undefined || files.length === 0 || filePendingRef.current) return
     const generation = ++uploadGeneration.current
@@ -522,6 +523,7 @@ export function InputBar({
           if (uploadGeneration.current !== generation) return
           const mention = formatFileMention({ path, kind: 'file' }, false)
           if (mention === undefined) throw new FileStageError(0)
+          const label = stagedFileName(mention) ?? file.name
           const el = inputRef.current
           const selection = el === null
             ? { start: keyboard.snapshot.draft.length, end: keyboard.snapshot.draft.length }
@@ -532,9 +534,14 @@ export function InputBar({
           const end = index === 0 ? Math.min(Math.max(selection.end, start), current.length) : current.length
           const before = current.slice(0, start)
           const after = current.slice(end)
-          const insert = `${before.length > 0 && !/\s$/u.test(before) ? ' ' : ''}${mention}${after.length > 0 && !/^\s/u.test(after) ? ' ' : ''}`
-          keyboard.pasteBegin(insert, { start, end })
-          if (el !== null) restoreCaret(el, start + insert.length)
+          const prefix = before.length > 0 && !/\s$/u.test(before) ? ' ' : ''
+          const suffix = after.length > 0 && !/^\s/u.test(after) ? ' ' : ''
+          const insert = `${prefix}${mention}${suffix}`
+          keyboard.pasteBegin(insert, { start, end }, [{
+            start: prefix.length, end: prefix.length + mention.length,
+            reference: { source: 'reference', ref: mention, label, appearance: 'file', clipboardText: mention },
+          }])
+          if (el !== null) restoreCaret(el, start + prefix.length + label.length + 1 + suffix.length)
         }
       } catch (error) {
         if (uploadGeneration.current !== generation) return

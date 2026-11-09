@@ -1,6 +1,7 @@
 import type {
   ChatConversationViewNode, ChatNodeStore, SteeringMessageNode, UserMessageNode,
 } from 'coding-client-runtime/client'
+import { displayStagedFiles } from '../contract/staged-file-mention.ts'
 
 const MAX_BLOCKS = 32
 const MAX_SOURCE_LENGTH = 512
@@ -29,7 +30,7 @@ function textPreview(
     source += block.text.slice(0, remaining)
   }
 
-  const trimmed = source.trim()
+  const trimmed = displayStagedFiles(source).trim()
   if (trimmed === '') {
     const label = hasImage ? fallback.image : fallback.empty
     return { title: label, preview: label }

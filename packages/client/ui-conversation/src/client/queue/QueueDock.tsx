@@ -12,6 +12,7 @@ import {
   IconEditOutline16, IconQueueOutline14, IconSendOutline14, IconTrashOutline16, Tooltip,
 } from 'coding-client-ui-primitives'
 import type { QueueAction, QueueItemId } from '../contract/queue.ts'
+import { displayStagedFiles } from '../contract/staged-file-mention.ts'
 import { NS } from '../locales.ts'
 import css from './QueueDock.module.css'
 
@@ -119,7 +120,7 @@ export function QueueDock({ useSession, updateQueue, notify, t }: QueueDockProps
                     }}
                   />
                 )
-                : <span className={css.preview}>{row.preview}</span>}
+                : <span className={css.preview}>{displayStagedFiles(row.preview)}</span>}
               {queueMutable && <div className={css.actions}>
                 {editing?.id === row.id
                   ? (

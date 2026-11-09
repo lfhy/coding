@@ -59,7 +59,7 @@ function enterSubmitting(m: InputMachine, name: string, args: string): { attempt
 }
 
 function staleAttempt(): SubmitAttempt {
-  return { seq: 9999, signal: new AbortController().signal, draftSnapshot: '', mode: 'queue' }
+  return { seq: 9999, signal: new AbortController().signal, draftSnapshot: '', occurrencesSnapshot: [], mode: 'queue' }
 }
 
 describe('input-machine: plain × enter', () => {
