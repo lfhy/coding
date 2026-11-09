@@ -21,6 +21,9 @@ export const OPEN_IN_APP_FILES_ROUTE = '/open-in-app/files'
 /** 读取一个 Session 工作区文件预览的 POST 路由。 */
 export const OPEN_IN_APP_READ_ROUTE = '/open-in-app/read'
 
+/** 将拖放文件暂存到本机 Session 工作区的 POST 路由。 */
+export const OPEN_IN_APP_ATTACH_ROUTE = '/open-in-app/attach'
+
 /** 启动一个与 WebSocket 生命周期绑定的用户终端。 */
 export const OPEN_IN_APP_TERMINAL_ROUTE = '/open-in-app/terminal'
 
@@ -101,6 +104,11 @@ export type OpenInAppReadPayload = OpenInAppReadBase & (
     readonly reason: 'binary' | 'too-large'
   }
 )
+
+/** 成功暂存文件后返回工作区相对路径，供当前草稿引用。 */
+export interface OpenInAppAttachPayload {
+  readonly path: string
+}
 
 /** 浏览器发给用户终端的封闭控制帧。 */
 export type OpenInAppTerminalClientFrame =

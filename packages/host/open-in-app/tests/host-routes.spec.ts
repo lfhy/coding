@@ -20,6 +20,7 @@ import {
 import * as OpenInApp from '../src/index.ts'
 import { internals } from '../src/internals.ts'
 import type { OpenInAppLauncher } from '../src/resolver.ts'
+import { OPEN_IN_APP_ATTACH_ROUTE } from '../src/shared.ts'
 
 let root: string | undefined
 let context: Context | undefined
@@ -68,6 +69,19 @@ function websocketStatus(url: string): Promise<number> {
       reject(new Error('upgrade unexpectedly succeeded'))
     })
     socket.once('error', () => { /* unexpected-response owns the status result. */ })
+  })
+}
+
+async function attach(base: string, fileName: string, body: BodyInit, headers: Record<string, string> = {}): Promise<Response> {
+  return fetch(`${base}${OPEN_IN_APP_ATTACH_ROUTE}`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/octet-stream',
+      'x-session-id': 'session',
+      'x-file-name': encodeURIComponent(fileName),
+      ...headers,
+    },
+    body,
   })
 }
 
@@ -210,6 +224,7 @@ describe('open-in-app host routes (real Loader composition)', () => {
     expect((await fetch(`${base}/open-in-app/target`, { method: 'POST' })).status).toBe(403)
     expect((await fetch(`${base}/open-in-app/files`, { method: 'POST' })).status).toBe(403)
     expect((await fetch(`${base}/open-in-app/read`, { method: 'POST' })).status).toBe(403)
+    expect((await attach(base, 'denied.pptx', 'payload')).status).toBe(403)
     expect(run).not.toHaveBeenCalled()
     trust.rejection = 401
     expect((await fetch(`${base}/open-in-app/apps`)).status).toBe(401)
@@ -694,6 +709,7 @@ describe('open-in-app host routes (real Loader composition)', () => {
     expect((await fetch(`${base}/open-in-app/target`, { method: 'POST' })).status).toBe(404)
     expect((await fetch(`${base}/open-in-app/files`, { method: 'POST' })).status).toBe(404)
     expect((await fetch(`${base}/open-in-app/read`, { method: 'POST' })).status).toBe(404)
+    expect((await attach(base, 'released.pptx', 'payload')).status).toBe(404)
   })
 
   it('dispatches the registered no-server terminal upgrade route', async () => {

@@ -44,7 +44,7 @@ kind: "package-reference"
 <a id="routes-and-security"></a>
 ## 路由与安全
 
-每条 HTTP 路由和 WebSocket upgrade 都先调用 composition connection 服务的 `requestRejection()`。该接口只接受 loopback Host，并在浏览器提供来源标记时要求同源；`trustedHosts` 不会扩大这组宿主原生能力，拒绝发生在读取载荷、查找 Session 或分配 PTY 之前。它是 DNS rebinding／跨站可达性栅栏，不是用户认证。POST 路由还要求精确的 `application/json` essence，把 body 限制在 64 KiB，拒绝多余或畸形字段，且不会返回继承凭据或 provider target key。
+每条 HTTP 路由和 WebSocket upgrade 都先调用 composition connection 服务的 `requestRejection()`。该接口只接受 loopback Host，并在浏览器提供来源标记时要求同源；`trustedHosts` 不会扩大这组宿主原生能力，拒绝发生在读取载荷、查找 Session 或分配 PTY 之前。它是 DNS rebinding／跨站可达性栅栏，不是用户认证。JSON POST 路由要求 `application/json` essence，把 body 限制在 64 KiB，拒绝多余或畸形字段；文件暂存路由另行限制回环来源、原始字节和 32 MiB 大小。响应不返回继承凭据或 provider target key。
 
 | 路由 | 契约 |
 |---|---|
@@ -54,6 +54,7 @@ kind: "package-reference"
 | `POST /open-in-app/open` | 启动已验证的本地应用；目标已变成远端时返回 `action: files`。 |
 | `POST /open-in-app/files` | 用 `{ sessionId, segments }` 在 Session 工作区内列出一层目录。 |
 | `POST /open-in-app/read` | 用 `{ sessionId, segments }` 返回有界文本、图片或 unsupported 预览。 |
+| `POST /open-in-app/attach` | 用 `x-session-id`、`x-file-name` 和原始字节暂存本机工作区文件，返回 `{ path }` 相对路径。 |
 | `WS /open-in-app/terminal` | 用唯一的 `sessionId`、`cols`、`rows` query 启动连接独占用户终端。 |
 
 target 与 open 路由会在读取应用可用性前检查 Remote-SSH marker。有效 marker、无效 marker 或继承的 SSH 启动都不能进入本地启动分支。该顺序保证 Windows marker 目录不会交给 Explorer，POSIX marker 也不会交给 Finder。
@@ -75,6 +76,8 @@ target 与 open 路由会在读取应用可用性前检查 Remote-SSH marker。�
 文件路由先用 `sessionId` 查找当前 live Session，再只从其 `header.cwd` 解析根；客户端除了 Session id 只能提交 provider 返回的 `segments`，不能提供根目录或展示路径。每个路径段只能精确匹配 `ctx.fs.listDir` 返回的子项，并在进入下一层或读取文件前用 `ctx.fs.contains` 复核 containment；浏览器字符串从不拼成 OS 路径。因此同一协议覆盖本地、SSH Host、Remote-SSH marker、Windows 盘符与 UNC 展示路径。
 
 只有目录 target 可以推进名称链，预览的最后一段必须仍是普通文件。列表响应包含 `displayPath`、普通 entry 元数据和 `truncated`，单层最多 2,000 项。预览在 `previewMaxBytes` 内完整读取：Markdown、代码和其他严格 UTF-8 文本返回 `kind: text`；支持的图片返回 `kind: image`、MIME 与 base64；含 NUL、无效 UTF-8 或超限文件返回 `kind: unsupported`，不返回原始内容。超限响应以 `truncated: true` 明确区分。
+
+暂存请求使用 `Content-Type: application/octet-stream`、`x-session-id: <live session id>` 和 `x-file-name: encodeURIComponent(file.name)`，body 是原始文件字节而非 JSON 或 multipart。仅本机回环同源、普通本地 Session 工作区可写；经 SSH 启动的 Host、Remote-SSH marker（包括损坏 marker）、缺少工作区和 symlink 暂存目录均拒绝。文件落在 Session `cwd` 的 `.dsh-uploads/` 下，以随机 ASCII 前缀加安全原名命名，不覆盖已有文件；允许中文与中间空格、保留 `.pptx` 等安全扩展名。文件名先合成重音，只保留 Unicode 字母数字、空格及 `._-`：emoji、组合符号、其他标点和控制字符替换为 `_`；全被替换时使用 `file` 并保留安全扩展名，连续点替换以匹配客户端路径校验。超长名字按字节截短；空名、无法解码或无可见名称仍拒绝。成功仅在完整读写后再次确认原 live Session、cwd 与暂存目录未改变，返回 `{ "path": ".dsh-uploads/<随机前缀>-<文件名>" }`；中途 Session 被删除／重绑、cwd 或暂存目录被替换时删除半成品并拒绝。返回的相对路径可插入 `@file` 引用；流的实际字节超过 32 MiB（或声明长度已超限）返回 413 且不留半成品；无本机工作区、远端或不可安全写入返回 409；无 live Session 返回 404，其他无效请求返回 4xx，错误不包含内部路径。
 
 <a id="browser-terminal"></a>
 ## 用户终端
@@ -104,7 +107,7 @@ server-to-client 帧封闭为 `ready`、`output`、`exit`、`error`，client-to-
 - **应用 catalog 在构建期固定。** 自定义 handler 需要独立的设置与命令校验契约。
 - **macOS 发现只检查已知应用根。** 改名或移出这些根的 bundle 不会被找到。
 - **图标保真度取决于平台标准 API。** Windows 提取为 32 px；Linux 跟随 hicolor/pixmaps 而非当前主题。
-- **文件协议只读且不分页。** 最多列出 2,000 个直接子项；超限预览不提供局部内容，文件 mutation 不属于本包。
+- **文件列表与预览只读且不分页。** 最多列出 2,000 个直接子项；超限预览不提供局部内容。暂存写入仅用于本机工作区拖放文件，不开放任意路径 mutation。
 - **终端不跨连接保留。** 收起底栏或视觉关闭工作台会保留当前连接，但 Session scope 卸载、浏览器网络断开或插件释放会终止进程；跨连接恢复、共享和后台保留需要独立的 Session 终端控制器。
 
 **运行时 invariant：** companion 只保留包归属，不增加关系。真实 Loader/WebServer 测试覆盖认证路由、upgrade 注册及释放；聚焦测试固定 Session containment、预览上限、封闭帧、Shell 参数和 PTY 清理。

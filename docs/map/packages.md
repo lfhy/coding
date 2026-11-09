@@ -54,7 +54,7 @@ workspace 共 273 个包，按 group 分节。每行给出包目录、职责（R
 - `packages/client/ui-browser` — 本包只供显式声明并渲染 `workbench.browser` 与 `workbench.browser.tabs` 两个会话级 slot 的自… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 9）
 - `packages/client/ui-browser-ego` — 本包向右侧工作台贡献会话级「Agent 浏览器」入口：所属会话的每个浏览器页面对应一个工作台顶栏标签… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 9）
 - `packages/client/ui-commands` — 客户端命令 API（`ctx.commandUi`）：以会话为 key 的命令目录缓存、带 `matchSpace`／`matchEnter` … [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 5）
-- `packages/client/ui-conversation` — 会话领域：骨架（标题栏／标签页／编辑器／空状态）、聊天视图（分组步骤摘要流、流式尾部隔离与轮次状态）、输入区 dock… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 40）
+- `packages/client/ui-conversation` — 会话领域：骨架（标题栏／标签页／编辑器／空状态）、聊天视图（分组步骤摘要流、流式尾部隔离与轮次状态）、输入区 dock… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 41）
 - `packages/client/ui-deliverables` — 产出文件与可点击文件引用功能的属主 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 2）
 - `packages/client/ui-directory-picker-browse` — 应用内目录浏览界面：浏览式选取交互的浏览器半边 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 2）
 - `packages/client/ui-directory-picker-native` — 原生目录选择界面：原生选取交互的浏览器半边 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 1）
@@ -208,7 +208,7 @@ workspace 共 273 个包，按 group 分节。每行给出包目录、职责（R
 - `packages/host/directory-picker-browse` — 目录选择 seam 的**应用内浏览后端**：`BrowseDirectoryPicker` 以 `browse` 能力注册 `ctx.dire… 入口 `src/index.ts`（tests 1）
 - `packages/host/directory-picker-native` — 目录选择 seam 的**原生 OS 选择器后端**：`NativeDirectoryPicker` 以 `native` 能力注册 `ctx.… 入口 `src/index.ts`（tests 5）
 - `packages/host/frontend-static` — Web 壳的 SPA dist 服务器：一个函数插件（配置为 `{distIndex}`），占据 webserver 的唯一回退席位… 入口 `src/index.ts`（tests 1）
-- `packages/host/open-in-app` — 本包决定人类如何打开和浏览一个工作区 入口 `src/index.ts`（tests 5）
+- `packages/host/open-in-app` — 本包决定人类如何打开和浏览一个工作区 入口 `src/index.ts`（tests 6）
 - `packages/host/plugin-inventory` — 当前 Cordis Loader 树的只读 Host 投影 入口 `src/index.ts`（tests 2）
 - `packages/host/webserver` — Web HTTP 与 upgrade route 注册插件（默认导出 `WebServer`… 入口 `src/index.ts`（tests 1）
 

@@ -4,10 +4,11 @@
  * `coding-client-ui-open-in-app`。
  *
  * 安全边界集中在本模块。每条路由都先调用 composition 的 connection
- * `requestRejection`，统一执行 Host/Origin 防护与浏览器认证。所有 POST
- * 请求再校验媒体类型、64 KiB body 上限和封闭载荷；工作区根只读取 Session
- * header，路径逐段匹配 provider 返回的子项，不把浏览器字符串拼成 provider
- * target。终端 upgrade 使用同一信任检查，并在 Agent 的执行世界中启动用户 PTY。
+ * `requestRejection`，统一执行 Host/Origin 防护与浏览器认证。JSON POST
+ * 校验媒体类型、64 KiB body 上限和封闭载荷；原始文件由独立有界暂存路由处理。
+ * 文件预览根只读取 Session header，路径逐段匹配 provider 返回的子项，
+ * 不把浏览器字符串拼成 provider target。终端 upgrade 使用同一信任检查，
+ * 并在 Agent 的执行世界中启动用户 PTY。
  *
  * 应用目录在插件生命周期内惰性解析一次。点击只使用已验证启动器；若启动器
  * 以 ENOENT 消失，只刷新该条目一次。远端 marker、SSH 启动或 marker 损坏
@@ -36,11 +37,13 @@ import {
   type OpenInAppInternals,
   type OpenInAppResolvedLaunch,
 } from './resolver.ts'
+import { attachWorkspaceFile } from './attach.ts'
 import { extractAppIcon, type OpenInAppIcon } from './icons.ts'
 import { internals } from './internals.ts'
 import { OpenInAppTerminalGateway } from './terminal.ts'
 import {
   OPEN_IN_APP_APPS_ROUTE,
+  OPEN_IN_APP_ATTACH_ROUTE,
   OPEN_IN_APP_FILES_ROUTE,
   OPEN_IN_APP_ICON_PREFIX,
   OPEN_IN_APP_OPEN_ROUTE,
@@ -446,6 +449,21 @@ export function apply(ctx: Context, config: Config): void {
       }
     },
   }), `open-in-app: POST ${OPEN_IN_APP_READ_ROUTE}`)
+
+  ctx.effect(() => ctx.webServer.register({
+    kind: 'exact',
+    path: OPEN_IN_APP_ATTACH_ROUTE,
+    handler: async (req, res) => {
+      if (rejected(req, res)) return
+      if (req.method !== 'POST') {
+        sendMethodNotAllowed(res, 'POST')
+        return
+      }
+      const result = await attachWorkspaceFile(ctx, req, ssh)
+      if (result.ok) sendJson(res, 200, result.payload)
+      else sendJson(res, result.status, { code: 'upload-failed', message: result.message })
+    },
+  }), `open-in-app: POST ${OPEN_IN_APP_ATTACH_ROUTE}`)
 
   const terminal = new OpenInAppTerminalGateway(ctx)
   ctx.effect(() => {
