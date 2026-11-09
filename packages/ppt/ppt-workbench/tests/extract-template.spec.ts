@@ -35,6 +35,21 @@ describe('可复用模板设计提取', () => {
     expect(first.pages).toHaveLength(6)
     expect(first.theme).toBe('inference')
     expect(first.pages[0]?.elements.some(element => element.kind === 'text' && element.text.content === '季度业务')).toBe(true)
+    const cover = first.pages[0]?.elements ?? []
+    expect(cover.filter(element => element.kind === 'rect')).toHaveLength(0)
+    expect(cover.filter(element => element.kind === 'line')).toMatchObject([
+      { x: 96, y: 414, w: 1088, color: '#16181d', width: 2 },
+    ])
+    expect(cover.find(element => element.kind === 'text' && element.text.content === '季度业务'))
+      .toMatchObject({ x: 94, y: 231, h: 110, text: { size: 72, align: 'left', valign: 'top' } })
+    for (const page of first.pages.slice(1)) {
+      expect(page.elements.slice(0, 3)).toMatchObject([
+        { kind: 'text', x: 95, y: 55, text: { size: 18, align: 'left' } },
+        { kind: 'text', x: 94, y: 81, h: 68, text: { size: 44, align: 'left', valign: 'top' } },
+        { kind: 'line', x: 96, y: 150, w: 1088, color: '#16181d' },
+      ])
+      expect(page.elements.filter(element => element.kind === 'line' && element.y === 668)).toEqual([])
+    }
     expect(first.pages.flatMap(page => page.elements).every(element => element.kind !== 'image')).toBe(true)
     expect(first.pages[0]?.id).not.toBe(second.pages[0]?.id)
     expect(first.pages[0]?.elements[0]?.id).not.toBe(second.pages[0]?.elements[0]?.id)
