@@ -22,19 +22,24 @@
 
 ## 配置与子命令
 
-- 用 `github.com/lfhy/flag` 统一解析命令行参数、TOML 配置文件、默认值与环境变量；不混用标准库 `flag`、pflag、Cobra，也不手写 `os.Args` 分支。
+- 用 `github.com/lfhy/flag` 统一解析命令行参数、TOML 配置文件、默认值与环境变量；常用写法优先 `fs.Var(&flag.FlagVar{...})` 或 `fs.New(...).Config(...).Env(...).Int()` 等链式定义，不混用标准库 `flag`、pflag、Cobra，也不手写 `os.Args` 分支。详细 API、配置路径和错误边界参照 [go-cli-config](../../../../.agents/skills/go-cli-config/SKILL.md)；只有目标依赖版本不同或使用技能未覆盖的行为时才核对锁定版本。
 - 覆盖顺序按该库实现：命令行 > 环境变量 > 配置文件 > 默认值。环境变量只给运维型配置（端口、日志级别、CI 与容器）绑定，用户会改的业务配置不绑环境变量，免得一个环境变量静默盖掉用户在设置页存的值。
 - 解析在 `conf` 或根入口做一次，得到类型化配置后交给 `cmd` 与 `core`；`cmd` 不再读环境变量或配置文件，`core` 不认识参数名。
 - 缺省值要能让服务不写任何配置就启动：数据目录、端口、路径自动落到默认位置并自行创建。
 
 ```go
 fs := flag.NewFlagSet("app", flag.ContinueOnError)
-fs.ConfigFile("config.toml")                                                 // 注册隐藏的 -c；文件不存在时跳过
-fs.IntFullVar(&port, "port", "server", "port", "APP_PORT", 8080, "服务端口") // 同时绑参数、节键与环境变量
+fs.ConfigFile("config.toml") // 默认文件缺失可跳过，显式路径缺失或文件无效会报错
+fs.Var(&flag.FlagVar{
+    Value: &port, Name: "port", ConfigSection: "server", ConfigKey: "port",
+    Env: "APP_PORT", DefaultValue: 8080, Usage: "服务端口",
+})
 fs.RegisterCommand(&ServeCmd{})
 fs.AliasCmd("serve", "s")
 if err := fs.Run(os.Args[1:]...); err != nil { /* 返回错误，交给 main 决定退出码 */ }
 ```
+
+根 `Run` 在首次调用时于命令名处停止解析，把命令名后的选项交给子命令的 `Init(args ...string) error` 解析；不要先对同一根 `FlagSet` 调用可交错解析的 `Parse`。`FlagVar` 的文件键显式写明，避免依赖隐式推导。
 
 ## HTTP
 

@@ -41,7 +41,7 @@
 
 - 追求 0 配置启动：每个配置项都有可用默认值，克隆下来按 README 的一条命令就能跑，缺省的数据目录、端口、路径自己创建。
 - 配置文件一律 TOML（`config.toml`），按 `[节]` 分组；读取时逐项校验，诊断写清哪个文件、哪个键、期望什么，不静默退回默认值。
-- Go 项目用 `github.com/lfhy/flag` 统一解析命令行参数与 TOML 配置，默认值和子命令框架也走它：`NewFlagSet` 加 `ConfigFile("config.toml")` 注册 `-c`，`IntFullVar`／`StringFullVar` 一类函数同时绑定参数、节键与环境变量，子命令实现 `Name`／`Run` 后用 `RegisterCommand` 挂到根 `FlagSet`。不混用标准库 `flag`、pflag、Cobra，也不手写 `switch os.Args[1]`。
+- Go 项目用 `github.com/lfhy/flag` 统一解析命令行参数与 TOML 配置：根 `NewFlagSet` 调用 `ConfigFile("config.toml")`，配置优先用 `fs.Var(&flag.FlagVar{...})` 显式绑定参数、节键与可选的环境变量，少量局部参数可用 `fs.New(...).Config(...).Env(...).Int()` 等链式定义；子命令实现 `Name`／`Run`，可选 `Init` 解析自身参数，注册后由根 `Run(os.Args[1:]...)` 分发，不先对根调用 `Parse`。不混用标准库 `flag`、pflag、Cobra，也不手写 `switch os.Args[1]`；详细签名和边界参照 [go-cli-config](../../../../.agents/skills/go-cli-config/SKILL.md)，不要每次重新调研。
 - 覆盖顺序按该库：命令行 > 环境变量 > 配置文件 > 默认值。环境变量只给运维型配置（端口、日志级别、CI 与容器）绑定；用户会改的业务配置不绑环境变量，只落 TOML 和设置页，否则一个环境变量会静默盖掉用户存的值。
 - 有页面就必须有系统设置页面：用户在界面里改配置并写回 TOML，不要让他手动编辑文件才能用。设置页与命令行、环境变量共用同一份解析与校验，改完即时生效或明确提示需重启。
 - `README.md` 写清配置项、默认值和覆盖顺序，并给出「不写任何配置直接启动」的命令。

@@ -67,6 +67,9 @@ describe('bundled project-init skill', () => {
       // 配置走 TOML + lfhy/flag 统一解析；环境变量不作主入口，有页面就必须有系统设置页。
       expect(loaded.content).toContain('0 配置启动')
       expect(loaded.content).toContain('github.com/lfhy/flag')
+      expect(loaded.content).toContain('fs.Var(&flag.FlagVar{...})')
+      expect(loaded.content).toContain('[go-cli-config](../../../../.agents/skills/go-cli-config/SKILL.md)，不要每次重新调研')
+      expect(loaded.content).toContain('不先对根调用 `Parse`')
       expect(loaded.content).toContain('命令行 > 环境变量 > 配置文件 > 默认值')
       expect(loaded.content).toContain('系统设置页面')
       expect(loaded.content).toContain('不要让他手动编辑文件')

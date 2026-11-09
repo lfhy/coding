@@ -1,15 +1,15 @@
 ---
 name: go-cli-config
-description: Use when building or reviewing a Go CLI, configuration loader, or subcommand; requires github.com/lfhy/flag for unified config-file, environment-variable, and command-line parsing, and covers its verified builders, slices, hidden options, aliases, and command dispatch APIs.
+description: Use when building or reviewing a Go CLI, configuration loader, or subcommand; prefer github.com/lfhy/flag FlagVar and fluent builders, with verified file/env/CLI precedence and command dispatch patterns so routine tasks need no repeated API research.
 ---
 
 # Go CLI 与配置
 
-这是本项目 CLI 和配置解析的指导，不是机械清单。需要新增或修改命令行参数、配置文件、环境变量、子命令或帮助输出时使用；先读目标目录的 `AGENTS.md`、README、现有入口和配置类型，仓库约定优先。
+这是 Go CLI 与配置解析的可复用约定，不是每次任务都重新调研 `github.com/lfhy/flag` 的清单。常用签名与行为已按该库 v1.1.2 的源码和测试核对，可直接按下文实现；先读目标项目的 `AGENTS.md`、README、`go.mod`、入口和配置类型，已有项目约定优先。只有目标锁定的库版本与这里不同、要用未列出的 API，或依赖隐式配置键、错误时机等边界行为时，才查目标版本源码或做定向测试。
 
-## 统一解析入口
+## 常用入口：FlagVar 与链式定义
 
-项目 CLI 和配置文件必须使用 `github.com/lfhy/flag`，不要混用标准库 `flag`、`pflag`、Cobra、手写 `os.Args` 分支或多个库分别解析同一参数。解析应在 `conf` 或根入口的装配边界完成一次，得到类型化配置后传给 `cmd` 和 `core`；子命令只解析自身参数，不复制全局配置加载。
+项目 CLI 和配置文件统一使用 `github.com/lfhy/flag`，不要混用标准库 `flag`、`pflag`、Cobra、手写 `os.Args` 分支或多个库解析同一参数。优先用 `fs.Var(&flag.FlagVar{...})` 集中写明来源、别名和帮助；参数少且希望直接获得类型指针时用 `fs.New(...).Default(...).Config(...).Env(...).Int()` 等链式定义。旧式 `XxxFullVar` 只在沿用现有代码或需要它的签名时使用，不作为新代码的首选。解析在 `conf` 或根装配边界完成一次，把类型化配置传给 `cmd` 和 `core`；子命令只解析自身参数。
 
 ```go
 import "github.com/lfhy/flag"
@@ -17,23 +17,25 @@ import "github.com/lfhy/flag"
 func Load(args []string) (*Config, error) {
     fs := flag.NewFlagSet("app", flag.ContinueOnError)
     fs.ConfigFile("config.toml")
-
-    var port int
-    fs.IntFullVar(&port, "port", "server", "port", "APP_PORT", 8080, "服务端口")
+    config := &Config{}
+    fs.Var(&flag.FlagVar{
+        Value: &config.Port, Name: "port", ConfigSection: "server", ConfigKey: "port",
+        Env: "APP_PORT", DefaultValue: 8080, Usage: "服务端口",
+    })
     if err := fs.Parse(args); err != nil {
         return nil, err
     }
-    return &Config{Port: port}, nil
+    return config, nil
 }
 ```
 
-根入口把 `os.Args[1:]` 传给 `Load`、根 `Run` 或 `Parse`；示例的 `args` 不能替换成静默丢弃进程参数的 `nil`。来源优先级固定为：命令行 > 环境变量 > 配置文件 > 默认值。环境变量是只读输入，解析不会回写环境变量。
+根入口把 `os.Args[1:]` 交给 `Load`（无子命令）或根 `Run`（有子命令），不要以 `nil` 丢弃进程参数。来源优先级是命令行 > 环境变量 > 配置文件 > 默认值；解析不会回写环境变量。`FlagVar` 的 `Value` 传入目标变量指针，`Name` 是命令行名称，`Aliases` 可增加别名，`ConfigSection`/`ConfigKey` 是文件节/键，`Env` 是环境变量，`DefaultValue` 是默认值，`Usage` 是帮助文案，`Hidden` 仅控制帮助展示。
 
-`IntFullVar` 的完整形状是 `IntFullVar(p, name, title, key, env, value, usage)`；它同时绑定命令行参数、配置文件的节/键和环境变量。不要把 `IntVar` 误写成自动绑定全部来源；按需使用库中对应类型的 `XxxEnvVar`、`XxxConfigVar` 或 `XxxFullVar`，并以锁定版本源码确认签名。
+旧式 `IntFullVar(p, name, title, key, env, value, usage)` 也能同时绑定全部来源；`IntVar(p, name, value, usage)` 只绑定命令行和默认值，不能误作自动绑定文件与环境变量。按需用相应的 `XxxConfigVar`／`XxxEnvVar`，不要为日常类型反复查 API 签名。
 
 ## 配置文件路径
 
-`Parse` 会自动注册隐藏的配置路径参数 `-c`。调用 `fs.ConfigFile(...)` 后，显式传入配置路径时文件不存在或解析失败会返回错误；默认路径不存在会跳过读取。未调用 `ConfigFile` 时不要依赖该“显式路径失败”保证，应按锁定版本行为核对。以下 `Name`、`Alias` 和 `SetConfigFlagName` 都必须在 `Parse` 前调用；`Name` 设置 canonical 名称，`Alias` 仅增加别名；若同时调用 `SetConfigFlagName` 和 `Name`，以最后一次执行的设置为准：
+`Parse` 会自动注册隐藏的配置路径参数 `-c`。建议调用 `fs.ConfigFile("config.toml")`：默认路径不存在会跳过读取且不创建文件，显式传入路径不存在、文件无法读取或格式错误时会返回错误；`-c=` 可显式禁用默认文件。未调用 `ConfigFile` 时虽可用 `-c` 读取已有文件，但缺失路径可能被忽略，旧的读取路径还可能创建文件或忽略读取错误，不适合作为可靠配置入口。以下 `Name`、`Alias` 和 `SetConfigFlagName` 都必须在 `Parse` 前调用；`Name` 替换默认名称，`Alias` 保留 `-c` 并增加别名；若同时调用 `SetConfigFlagName` 和 `Name`，以最后一次设置为准：
 
 ```go
 fs.ConfigFile("config.toml").Name("config")       // 只使用 -config
@@ -45,7 +47,7 @@ fs.SetConfigFlagName("conf")                       // FlagSet 级别改名
 
 ## Builder 与绑定
 
-链式 API 适合一组局部参数：
+链式 API 适合局部参数，按需组合 `.Alias()`、`.Default()`、`.Config()`、`.Env()`、`.Usage()`、`.Hidden()`，以类型方法或 `.Var(&value)` 结束：
 
 ```go
 verbose := fs.New("verbose").Alias("v").Default(false).
@@ -55,40 +57,25 @@ var endpoint string
 fs.New("endpoint").Env("APP_ENDPOINT").Default("127.0.0.1:8080").Var(&endpoint)
 ```
 
-终结的 `.Bool()`、`.Int()`、`.String()` 等方法会立即注册并返回指针；未终结的 builder 可以在解析后通过 `.Value()` 读取，`Value().Bool()` 返回值而不是指针，并且非法文本转换会 panic。对外部输入优先使用类型终结方法或显式变量绑定，让解析错误在 `Parse` 返回，而不是把不可信文本留到业务流程中。
+终结的 `.Bool()`、`.Int()`、`.String()`、`.Strings()` 等方法立即注册并返回对应类型指针；`.Var(&endpoint)` 绑定已有变量。未终结的 builder 在 `Parse` 时按文本注册，解析后 `.Value().Bool()` 等返回值而非指针，非法数值/布尔文本在读取时会 panic；外部输入优先使用类型终结方法或显式变量绑定，使已注册参数的无效值在 `Parse` 返回错误。定义阶段的 `FlagVar`/终结 builder 若遇到不支持的类型或别名冲突，在 `ContinueOnError` 下可能只输出错误并跳过注册，不能仅凭 `Parse` 成功断言定义有效；未终结 builder 的冲突会在 `Parse` 报错。
 
 `.Config("server.port")` 表示配置节 `server` 的键 `port`；`.Env("APP_PORT")` 绑定环境变量；`.Hidden()` 只是不在帮助中显示，仍然可以被解析，绝不是安全边界。参数别名可以用 builder 的 `.Alias("v")` 或 `fs.Alias("verbose", "v")`。
 
 ## 切片参数
 
-已确认的切片 API 是 `StringsVar`、`IntsVar`、`Int64sVar`、`UintsVar`、`Uint64sVar`。这些函数的默认值参数是逗号分隔的字符串，不是 `[]T`；逗号分隔值和重复传参会累加：
+优先用 `FlagVar` 或链式 `.Strings()`／`.Int64s()` 定义切片，默认值可传 `[]T`。旧式 `StringsVar`、`IntsVar`、`Int64sVar`、`UintsVar`、`Uint64sVar` 的默认值参数则是逗号分隔字符串，不是 `[]T`；也有对应的返回指针、Full/Env/Config/Hidden 变体。逗号分隔的值及重复传参会累加：
 
 ```go
 var tags []string
-var ids []int64
-fs.StringsVar(&tags, "tag", "", "标签，可重复")
-fs.Int64sVar(&ids, "id", "", "ID，可重复")
-// -tag=a,b -tag=c  -> [a b c]
-// -id=1,2 -id=3    -> [1 2 3]
+fs.Var(&flag.FlagVar{Value: &tags, Name: "tag", DefaultValue: []string{}, Usage: "标签，可重复"})
+// -tag=a,b -tag=c -> [a b c]
 ```
 
-示例使用空默认值以避免把默认项和显式项的累加语义混在一起。非空默认切片可能继续参与累加，不要声称第一次显式值必然替换默认值。
+非空默认切片会与首次显式值累加，而不是被替换（默认 `[a]` 加 `-tag=b` 得 `[a b]`）；命令行、环境变量、文件的优先级决定来源是否参与写入，不改变这种累加语义。无需默认项时使用空切片；需要直接以 `[]string`/`[]int` 传入默认值的旧式入口还有 `StringSliceVar`／`IntSliceVar`。
 
-## 反射通用入口
+## FlagVar 的边界
 
-反射入口是 `Var(&flag.FlagVar{...})`，不是标准库 `Var(value, name, usage)`。保守地传入非 nil 变量指针，并只使用已确认的字段：
-
-```go
-var ids []int64
-fs.Var(&flag.FlagVar{
-    Value:        &ids,
-    Name:         "ids",
-    DefaultValue: []int64{1, 2},
-    Usage:        "ID 列表",
-})
-```
-
-`FlagVar` 还支持参数别名、环境变量、配置节/键和隐藏标记。源码确认基础类型覆盖布尔、字符串、整数、无符号整数、浮点数和 `time.Duration`；命名切片 API 目前是 `StringsVar`、`IntsVar`、`Int64sVar`、`UintsVar`、`Uint64sVar`，`FlagVar` 反射切片按源码支持 `string`、`int*` 和 `uint*` 元素。不要宣传 `float`、`bool`、`Duration` 或任意结构体/map 切片自动解码。
+`Var` 接受 `&flag.FlagVar{...}`，不是标准库的 `Var(value, name, usage)`。`Value` 推荐传非 nil 变量指针，按需要显式填写 `ConfigSection` 与 `ConfigKey`，不要依赖隐式配置键：不填时，单段名称会映射到 `config.<name>`，连字符名称的推导尤其容易与预期不符。支持布尔、字符串、有符号/无符号整数、浮点数及 `time.Duration`；反射切片只支持元素为 `string`、`int*`、`uint*` 的类型，不支持 `float`、`bool`、`Duration` 或任意结构体/map 切片。注册时的无效 `Value` 或别名可能只打印错误而非传给之后的 `Parse`；对依赖动态定义的场景应在注册后检查 `Lookup` 或另行验证。
 
 ## 子命令分发
 
@@ -119,7 +106,7 @@ func (*ServeCmd) Name() string { return "serve" }
 
 func (s *ServeCmd) Init(args ...string) error {
     fs := flag.NewFlagSet("serve", flag.ContinueOnError)
-    fs.IntVar(&s.port, "port", 8080, "服务端口")
+    fs.New("port").Default(8080).Usage("服务端口").Var(&s.port)
     return fs.Parse(args)
 }
 
@@ -139,7 +126,7 @@ func main() {
 }
 ```
 
-调用形如 `app serve -port=9000` 或 `app s -port=9000`。`FlagSet.Run` 在尚未解析时会使用 `ParseStandard`，在首个位置参数（命令名）处停止，把后续参数交给子命令；不要先用顶层 `FlagSet.Parse` 抢先解析子命令参数。命令注册使用 `RegisterCommand`，命令别名使用 `AliasCmd`，直接分发可使用 `RunCmd`。帮助输出可以通过可选的 `Help`/`Usage` 接口提供。
+调用形如 `app serve -port=9000` 或 `app s -port=9000`。尚未解析的根 `FlagSet.Run` 会先以 `ParseStandard` 读取命令名前的全局选项，再把命令名后的参数交给子命令；已解析的根 `FlagSet.Run` 沿用之前的 `Args()`，不会重新解析传入的参数。独立 `FlagSet` 优先直接 `root.Run(os.Args[1:]...)`，不要先调用可交错解析的 `root.Parse` 抢走子命令选项。包级 `flag.Parse()` 本身在首个位置参数处停止，包级 `flag.Parse(); flag.Run()` 也可行，但不宜与独立 `FlagSet` 混用。`RegisterCommand` 注册命令、`AliasCmd` 注册命令别名，`RunCmd` 可直接分发；可选 `Help`/`Usage` 提供帮助输出。
 
 ## 配置边界与错误
 
@@ -147,7 +134,7 @@ func main() {
 
 ## 资料与版本提醒
 
-以下链接用于核对 API；示例依据公开 `main`，项目必须以实际锁定版本的源码和测试为准，不要把未编译的网络示例当成兼容性承诺。
+这些常用 API 和行为已按 `github.com/lfhy/flag` v1.1.2（`c053e17`）的源码及测试核对，日常使用直接依照上文，不必每次浏览公开 `main`。在目标模块首次引入、升级或 `replace` 此依赖时，或要使用未列出的 API、依赖注册错误、隐式配置键及特殊文件错误时，核对该模块实际锁定版本的 `go.mod`/`go.sum`、`go doc` 或对应版本源码和定向测试；本机同级仓库或 GitHub `main` 不能代替目标项目的锁定版本。源码入口可查：
 
 - [`github.com/lfhy/flag` README](https://github.com/lfhy/flag/blob/main/README.md)
 - [完整来源绑定签名](https://github.com/lfhy/flag/blob/main/flag_int.go)

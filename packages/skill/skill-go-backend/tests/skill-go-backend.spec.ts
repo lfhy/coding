@@ -49,10 +49,13 @@ describe('bundled go-backend skill', () => {
       expect(loaded.content).toContain('//go:embed all:dist')
       expect(loaded.content).toContain('web/dist')
       expect(loaded.content).toContain('回退到 `index.html`')
-      // 配置走 conf/ 与 TOML，解析统一用 lfhy/flag，子命令用 RegisterCommand。
+      // 配置走 conf/ 与 TOML，常用参数用 FlagVar/链式定义，根 Run 不抢解析子命令选项。
       expect(loaded.content).toContain('github.com/lfhy/flag')
       expect(loaded.content).toContain('命令行 > 环境变量 > 配置文件 > 默认值')
       expect(loaded.content).toContain('ConfigFile("config.toml")')
+      expect(loaded.content).toContain('fs.Var(&flag.FlagVar{...})')
+      expect(loaded.content).toContain('只有目标依赖版本不同')
+      expect(loaded.content).toContain('不要先对同一根 `FlagSet` 调用可交错解析的 `Parse`')
       expect(loaded.content).toContain('RegisterCommand')
       expect(loaded.content).toContain('不写任何配置就启动')
       expect(loaded.content).toContain('go vet ./...')
