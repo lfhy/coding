@@ -25,10 +25,16 @@ const DIALOG_EN_EXPECTED = join(SNAPSHOT_DIR, 'dialog-en.expected.md')
 const PLUGIN_ROW_SELECTOR = '[data-plugin-entry$="ui-settings"]'
 const MODE = webSnapshotMode()
 const settingsPage = (page: Page, title = '设置') => page.getByRole('main', { name: title, exact: true }).first()
+const settingsDocument = async (home: string): Promise<string> => readFile(join(home, 'settings.yaml'), 'utf8')
+  .catch((error: unknown) => {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return ''
+    throw error
+  })
 
 /** 普通设置测试不驱动首次模型引导；独立 Home 用测试凭据启动默认模型。 */
 async function launchReadyScaffold(options: { harnessHome?: string } = {}): Promise<WebScaffold> {
-  const scaffold = await launchWebScaffold({ ...options, localePreference: null, deepSeekMissingCredential: true })
+  const scaffold = await launchWebScaffold({ ...options, localePreference: null, deepSeekMissingCredential: true,
+    defaultModel: { provider: 'deepseek-official', model: 'deepseek-v4-flash' } })
   if (options.harnessHome === undefined) {
     await scaffold.ctx.credentials.set(credentialRef('DEEPSEEK_API_KEY'), 'sk-e2e-settings-chrome')
   }
@@ -107,7 +113,7 @@ describe('web e2e: settings page and General preferences', () => {
     const channels = dialog.getByRole('complementary', { name: '提供方' })
     await channels.getByRole('button', { name: /^DeepSeek/ }).click()
     const detail = dialog.getByRole('main')
-    await detail.getByRole('heading', { name: 'DeepSeek', exact: true }).waitFor({ timeout: 10_000 })
+    await dialog.getByRole('main', { name: 'DeepSeek', exact: true }).waitFor({ timeout: 10_000 })
     const [dialogBox, navBox, channelsBox, detailBox] = await Promise.all([
       dialog.boundingBox(), navigation.boundingBox(), channels.boundingBox(), detail.boundingBox(),
     ])
@@ -656,10 +662,8 @@ describe('web e2e: settings page and General preferences', () => {
       expect(await enPage.evaluate(() => navigator.language)).toBe('en-US')
       expect(await enPage.evaluate(() => localStorage.getItem('dsh.locale'))).toBeNull()
       expect(await enPage.evaluate(() => document.documentElement.lang)).toBe('zh-CN')
-      // 无用户设置写入时，默认语言读取不应创建持久化文档。
-      await expect(readFile(join(fresh.harnessHome, 'settings.yaml'), 'utf8')).rejects.toMatchObject({
-        code: 'ENOENT', path: join(fresh.harnessHome, 'settings.yaml'),
-      })
+      // 其他服务可写入设置文档；默认语言读取不得写入 locale 分节。
+      expect(await settingsDocument(fresh.harnessHome)).not.toMatch(/(?:^|\n)locale:/u)
       await enPage.getByRole('button', { name: '设置', exact: true }).click()
       const zhDialog = settingsPage(enPage)
       await zhDialog.waitFor({ timeout: 10_000 })
@@ -699,10 +703,8 @@ describe('web e2e: settings page and General preferences', () => {
       await expect.poll(() => dialog.getByRole('button', { name: '标准模式' }).isEnabled(), { timeout: 10_000 })
         .toBe(true)
       expect(await frPage.evaluate(() => document.documentElement.lang)).toBe('zh-CN')
-      // 无用户设置写入时，默认语言读取不应创建持久化文档。
-      await expect(readFile(join(fresh.harnessHome, 'settings.yaml'), 'utf8')).rejects.toMatchObject({
-        code: 'ENOENT', path: join(fresh.harnessHome, 'settings.yaml'),
-      })
+      // 其他服务可写入设置文档；默认语言读取不得写入 locale 分节。
+      expect(await settingsDocument(fresh.harnessHome)).not.toMatch(/(?:^|\n)locale:/u)
       expect(frTripwire.pageErrors).toEqual([])
       expect(frTripwire.warnings).toEqual([])
     } finally {

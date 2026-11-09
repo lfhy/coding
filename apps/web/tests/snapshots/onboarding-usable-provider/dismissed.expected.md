@@ -4,20 +4,21 @@
   - complementary "提供方":
     - img
     - textbox "搜索模型平台…"
+    - button "Free"
     - button "DeepSeek"
     - button "添加渠道":
       - img
       - text: 添加渠道
-  - main:
-    - heading "DeepSeek" [level=2]
-    - text: API 密钥
-    - textbox "API 密钥":
-      - /placeholder: 输入 API 密钥
+  - main "DeepSeek":
     - text: 渠道名称
     - textbox "渠道名称": DeepSeek
     - text: API 地址
     - textbox "API 地址":
       - /placeholder: https://api.deepseek.com
+    - text: API 密钥
+    - textbox "API 密钥":
+      - /placeholder: 输入 API 密钥
+    - group: 高级设置
     - region "模型目录":
       - text: 模型目录 正在使用适配器默认模型
       - button "获取可用模型":
@@ -53,9 +54,25 @@
         - text: 添加模型
     - button "取消"
     - button "保存"
-  - status: 此提供方尚缺 API 密钥，配置后才能使用其模型。
+  - status: 选择一个模型即可开始，之后仍可在设置中更换。
   - text: 默认模型
-  - combobox "默认模型" [disabled]:
+  - combobox "默认模型":
     - option "选择提供方和模型" [selected]
+    - option "Free · Auto (auto)"
+    - option "Free · Qwen3.5 397B A17B (OVH) (Qwen3.5-397B-A17B)"
+    - option "Free · Qwen3.8 27B (OVH) (Qwen3.8-27B)"
+    - option "Free · Qwen3.5 9B (OVH) (Qwen3.5-9B)"
+    - option "Free · GPT-OSS 120B (OVH) (gpt-oss-120b)"
+    - option "Free · GPT-OSS 20B (OVH) (gpt-oss-20b)"
+    - option "Free · Mistral Small 3.2 24B (OVH) (Mistral-Small-3.2-24B-Instruct-2506)"
+    - option "Free · Nemotron 3 Ultra 550B (Kilo) (nvidia/nemotron-3-ultra-550b-a55b:free)"
+    - option "Free · Nemotron 3.5 Lightning (Kilo) (nvidia/nemotron-3.5-lightning:free)"
+    - option "Free · North Mini Code (Kilo) (cohere/north-mini-code:free)"
+    - option "Free · Dots3 Note Preview (Kilo) (dots-studio/dots-3-note-preview:free)"
+    - option "Free · Nemotron 3 Nano Omni (Kilo) (nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free)"
+    - option "Free · Flint 1.0 (Kilo) (recursive/flint-v1.0:free)"
+    - option "Free · Beam 1.0 (Kilo) (reflection/beam-free)"
+    - option "Free · Laguna S 2.1 (Kilo) (poolside/laguna-s-2.1:free)"
+    - option "Free · Auto Free (Kilo) (kilo-auto/free)"
   - img
   - button "开始使用" [disabled]

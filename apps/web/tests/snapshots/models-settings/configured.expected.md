@@ -10,15 +10,30 @@
     - button "模型":
       - img
       - text: 模型
+    - button "主题外观":
+      - img
+      - text: 主题外观
     - button "联网搜索":
       - img
       - text: 联网搜索
+    - button "图像生成":
+      - img
+      - text: 图像生成
+    - button "文件管理":
+      - img
+      - text: 文件管理
     - button "图片识别":
       - img
       - text: 图片识别
     - button "插件":
       - img
       - text: 插件
+    - button "代理池":
+      - img
+      - text: 代理池
+    - button "PPT 模板管理":
+      - img
+      - text: PPT 模板管理
     - button "Agent 预设":
       - img
       - text: Agent 预设
@@ -27,22 +42,23 @@
   - complementary "提供方":
     - img
     - textbox "搜索模型平台…"
+    - button "Free"
     - button "DeepSeek 已配置"
     - button "minimax-cn 已配置"
     - button "添加渠道":
       - img
       - text: 添加渠道
-  - main:
+  - main "minimax-cn":
     - status: 已保存 minimax-cn。
-    - heading "minimax-cn" [level=2]
     - button "删除"
-    - text: API 密钥
-    - textbox "API 密钥":
-      - /placeholder: 已配置——输入新值可替换
     - text: API 地址
     - textbox "API 地址":
       - /placeholder: https://gateway.minimax.example/v1
       - text: https://gateway.minimax.example/v1
+    - text: API 密钥
+    - textbox "API 密钥":
+      - /placeholder: 已配置——输入新值可替换
+    - group: 高级设置
     - region "模型目录":
       - text: 模型目录 正在使用适配器默认模型
       - button "获取可用模型":

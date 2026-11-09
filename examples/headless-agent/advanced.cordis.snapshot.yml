@@ -47,3 +47,8 @@
             name: 'coding-tool-cordis'
           - id: llm-replay
             name: 'coding-llm-replay'
+            config:
+              providers:
+                - id: deepseek-official
+                  models:
+                    - id: deepseek-v4-flash

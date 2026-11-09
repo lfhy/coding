@@ -58,7 +58,7 @@ describe.skipIf(MODE === 'record')('web e2e: first-run DeepSeek credential setup
     expect(await page.getByRole('dialog').count()).toBe(1)
     expect(await page.locator('#root').evaluate(root => (root as HTMLElement).inert)).toBe(true)
     const introChannels = onboarding.getByRole('complementary', { name: '提供方' })
-    await introChannels.getByRole('button', { name: /^DeepSeek/ }).waitFor({ timeout: 10_000 })
+    await introChannels.getByRole('button', { name: /^DeepSeek/ }).click()
     const keyInput = onboarding.getByLabel('API 密钥', { exact: true })
     await keyInput.waitFor({ timeout: 10_000 })
     const initial = await captureStableAria(page, '[role="dialog"][aria-label="配置模型，开始使用"]', scaffold.workspaceCwd)
@@ -70,7 +70,8 @@ describe.skipIf(MODE === 'record')('web e2e: first-run DeepSeek credential setup
     const start = onboarding.getByRole('button', { name: '开始使用' })
     const defaultModel = onboarding.getByRole('combobox', { name: '默认模型' })
     expect(await start.isDisabled()).toBe(true)
-    expect(await defaultModel.isDisabled()).toBe(true)
+    // Free 已可供选择，但无有效默认选择时仍不能绕过引导。
+    expect(await defaultModel.isEnabled()).toBe(true)
     await page.keyboard.press('Escape')
     expect(await onboarding.count()).toBe(1)
     expect(await page.locator('#root').evaluate(root => (root as HTMLElement).inert)).toBe(true)

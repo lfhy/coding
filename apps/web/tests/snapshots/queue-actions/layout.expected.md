@@ -29,12 +29,18 @@
   - img
   - img
   - text: Context injection coding-system-prompt
+- button "Context injection skill-catalog":
+  - img
+  - img
+  - text: Context injection skill-catalog
 - paragraph: partial
 - status: Coding...
 - region "To-dos":
   - button "To-dos 1 completed · 1 in progress"
 - img
 - text: Ongoing Goal Keep the composer context panels aligned
+- button "Expand goal":
+  - img
 - button "Pause goal":
   - img
 - button "Edit goal":

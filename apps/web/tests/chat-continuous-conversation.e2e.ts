@@ -217,6 +217,7 @@ describe('web e2e: continuous conversation grown through the composer', () => {
   it.skipIf(MODE === 'record')('keeps twelve generated turns and tool rows bound to one live session', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-chat-continuous-conversation'))
     const composer = page.locator('textarea:enabled').last()
+    const transcript = page.locator('[data-conversation-scroll]')
     await composer.waitFor({ timeout: 15_000 })
     let sessionId: SessionId | undefined
 
@@ -229,7 +230,6 @@ describe('web e2e: continuous conversation grown through the composer', () => {
 
       const settled = scaffold.whenTurnSettled(60_000)
       await page.getByRole('button', { name: 'Send message', exact: true }).click()
-      await page.getByText(spec.userMarker, { exact: false }).last().waitFor({ timeout: 15_000 })
       await expect.poll(() => sessionEvents.slice(eventStart).some(event => (
         event.type === 'user/message'
         && event.data.source.kind === 'user'
@@ -247,7 +247,7 @@ describe('web e2e: continuous conversation grown through the composer', () => {
       await expect.poll(() => userRow.count(), { timeout: 10_000 }).toBe(1)
       expect(await userRow.getAttribute('data-chat-flow-kind')).toBe('user')
       expect(await userRow.textContent()).toContain(spec.userMarker)
-      await page.getByText(spec.firstMarker, { exact: false }).last().waitFor({ timeout: 15_000 })
+      await transcript.getByText(spec.firstMarker, { exact: false }).last().waitFor({ timeout: 15_000 })
       const settledSessionId = await settled
       if (sessionId === undefined) {
         sessionId = settledSessionId
@@ -256,7 +256,7 @@ describe('web e2e: continuous conversation grown through the composer', () => {
       }
 
       await expect.poll(() => page.locator('[data-streaming="true"]').count(), { timeout: 15_000 }).toBe(0)
-      await page.getByText(spec.doneMarker, { exact: false }).last().waitFor({ timeout: 15_000 })
+      await transcript.getByText(spec.doneMarker, { exact: false }).last().waitFor({ timeout: 15_000 })
       await expect.poll(() => composer.inputValue(), { timeout: 10_000 }).toBe('')
       await expect.poll(() => composer.isEnabled(), { timeout: 10_000 }).toBe(true)
 

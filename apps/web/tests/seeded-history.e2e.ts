@@ -14,7 +14,7 @@ import { readFile, writeFile, mkdir } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import type { Browser, Page } from 'playwright'
 import { chromium } from 'playwright'
-import { afterAll, beforeAll, describe, expect, it, onTestFailed, vi } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
 import { createUserMessage } from 'coding-llm'
 import type { ContentBlock, Message } from 'coding-llm'
 import { deriveEventMessage, SessionId } from 'coding-session'
@@ -181,6 +181,13 @@ describe('web e2e: seeded history renders through cold resume', () => {
   let browser: Browser
   let page: Page
   let tripwire: ReturnType<typeof watchConsole>
+
+  const restoreConversationChrome = async (): Promise<void> => {
+    const close = page.getByRole('button', { name: 'Collapse right sidebar' })
+    if (await close.count() > 0) await close.click()
+    const frame = page.locator('[style*="grid-template-columns"]').first()
+    await expect.poll(() => frame.getAttribute('data-workbench-shown'), { timeout: 5_000 }).toBeNull()
+  }
 
   beforeAll(async () => {
     scaffold = await launchWebScaffold({})
@@ -387,61 +394,45 @@ describe('web e2e: seeded history renders through cold resume', () => {
 
   it.skipIf(MODE === 'record')('file-path tool rows rebuilt from the cold log stay details-inert', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-seeded-toolrow'))
-    // Interaction over cold-resumed history: read summaries are host-open
-    // file links (not expand-in-place / not details). Runs after the golden
-    // capture; still zero model calls.
+    // 冷恢复的 read 行在应用内打开文件预览，不调用系统文件打开器。
     const fileLink = page.locator('[data-variant="read"] button').first()
     await fileLink.waitFor({ timeout: 10_000 })
     const frame = page.locator('[style*="grid-template-columns"]').first()
     expect(await frame.getAttribute('data-details-collapsed')).toBe('true')
-    const openPath = vi.spyOn(scaffold.ctx.apiProxy.host, 'openPath')
-      .mockImplementation(async (request, _signal) => ({
-        rpcId: request.rpcId,
-        result: { ok: true, value: { opened: true as const } },
-      }))
-    try {
-      await fileLink.click()
-      await expect.poll(() => frame.getAttribute('data-details-collapsed'), { timeout: 5_000 }).toBe('true')
-    } finally {
-      openPath.mockRestore()
-    }
+    await fileLink.click()
+    await page.getByRole('tab', { name: 'a.txt' }).waitFor({ timeout: 5_000 })
+    await expect.poll(() => frame.getAttribute('data-details-collapsed'), { timeout: 5_000 }).toBe('true')
     // Path label survives from the recorded args (a.txt).
     await expect.poll(() => page.getByText('a.txt', { exact: false }).count(), { timeout: 5_000 }).toBeGreaterThan(0)
+    await restoreConversationChrome()
   })
 
-  it.skipIf(MODE === 'record')('a Host open refusal keeps the reason and retries the same path', async () => {
+  it.skipIf(MODE === 'record')('a file-preview read refusal offers retry for the same segments', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-seeded-file-open-failure'))
     const fileLink = page.locator('[data-variant="read"] button').first()
     await fileLink.waitFor({ timeout: 10_000 })
-    const openPath = vi.spyOn(scaffold.ctx.apiProxy.host, 'openPath')
-      .mockImplementation(async (request, _signal) => ({
-        rpcId: request.rpcId,
-        result: {
-          ok: false as const,
-          error: { code: 'internal', message: 'xdg-open is not available', details: {} },
-        },
-      }))
+    const attempts: unknown[] = []
+    await page.route('**/open-in-app/read', async (route) => {
+      attempts.push(route.request().postDataJSON())
+      await route.fulfill({ status: 503, body: '{}' })
+    })
     try {
       await fileLink.click()
-      const dialog = page.getByRole('dialog', { name: 'Couldn’t open file' })
-      await dialog.waitFor({ timeout: 5_000 })
-      const snapshot = await captureStableAria(page, '[role="dialog"]', scaffold.workspaceCwd)
+      const preview = page.getByRole('article', { name: 'a.txt' })
+      const retry = preview.getByRole('button', { name: 'Read again' })
+      await retry.waitFor({ timeout: 5_000 })
+      const snapshot = await captureStableAria(page, 'article[aria-label="a.txt"]', scaffold.workspaceCwd)
       await compareOrRefreshGolden(FILE_OPEN_FAILURE_EXPECTED, snapshot, MODE)
-      await expect.poll(() => dialog.innerText(), { timeout: 5_000 })
-        .toContain('path open failed: xdg-open is not available')
-      await page.getByRole('button', { name: 'Retry' }).click()
-      await expect.poll(() => openPath.mock.calls.length, { timeout: 5_000 }).toBe(2)
-      expect(openPath.mock.calls[0]![0].payload).toEqual(openPath.mock.calls[1]![0].payload)
-      await page.getByRole('button', { name: 'Cancel' }).click()
-      await expect.poll(() => page.getByRole('dialog', { name: 'Couldn’t open file' }).count(), {
-        timeout: 5_000,
-      }).toBe(0)
+      const before = attempts.length
+      await retry.click()
+      await expect.poll(() => attempts.length, { timeout: 5_000 }).toBe(before + 1)
+      await retry.waitFor()
+      await retry.click()
+      await expect.poll(() => attempts.length, { timeout: 5_000 }).toBe(before + 2)
+      expect(attempts.at(-1)).toEqual(attempts.at(-2))
     } finally {
-      // Shared page: a leftover mask blocks later cases even when this one fails.
-      if (await page.getByRole('dialog', { name: 'Couldn’t open file' }).count() > 0) {
-        await page.keyboard.press('Escape')
-      }
-      openPath.mockRestore()
+      await page.unroute('**/open-in-app/read')
+      await restoreConversationChrome()
     }
   })
 

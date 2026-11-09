@@ -21,13 +21,11 @@ import { createServer } from 'node:http'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { fileURLToPath, pathToFileURL } from 'node:url'
+import { pathToFileURL } from 'node:url'
 import type { Browser, Page } from 'playwright'
 import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
 import { REPO_ROOT, connectFreshWorkspace, newEnglishPage, probeFreePort, requireDist, saveFailureShot } from './support.ts'
-
-const WEB_SURFACE_PROMPT = fileURLToPath(new URL('./snapshots/web-runtime-context/web-surface-prompt.expected.md', import.meta.url))
 
 function waitForReadyLine(child: ChildProcess): Promise<string> {
   return new Promise((resolveReady, reject) => {
@@ -125,6 +123,13 @@ async function screen(page: Page, name: string): Promise<void> {
   await page.screenshot({ path: join(REPO_ROOT, '.artifacts', `w5-${name}.png`) })
 }
 
+/** 只有要驱动 DeepSeek mock／真实渠道的场景才覆盖出厂 Free 默认。 */
+function selectDeepSeekDefault(home: string): void {
+  mkdirSync(home, { recursive: true, mode: 0o700 })
+  writeFileSync(join(home, 'settings.yaml'),
+    'agent-default-model:\n  provider: deepseek-official\n  model: deepseek-v4-flash\n', { mode: 0o600 })
+}
+
 /** First column track (px string) of the frame grid. */
 async function firstTrack(page: Page): Promise<string> {
   return (await page.locator('[class*="frame"]').evaluate(
@@ -187,7 +192,7 @@ describe('dsh web keyless CLI smoke', () => {
     }
   })
 
-  it('routes web runtime context and workspace instructions through the real CLI request', async () => {
+  it('routes workspace instructions without leaking the GUI URL into a real CLI request', async () => {
     requireDist()
     const workspace = mkdtempSync(join(tmpdir(), 'dsh-web-workspace-'))
     mkdirSync(join(workspace, '.git'))
@@ -223,6 +228,7 @@ describe('dsh web keyless CLI smoke', () => {
     await new Promise<void>(resolve => provider.listen(0, '127.0.0.1', resolve))
     const address = provider.address()
     if (address === null || typeof address === 'string') throw new Error('mock provider did not bind a TCP port')
+    selectDeepSeekDefault(join(workspace, '.dsh'))
     const tsxLoader = pathToFileURL(createRequire(join(REPO_ROOT, 'package.json')).resolve('tsx')).href
     const child = spawn(
       process.execPath,
@@ -261,9 +267,8 @@ describe('dsh web keyless CLI smoke', () => {
       const workspaceMessage = captured.messages?.find(message =>
         message.role === 'user' && message.content?.includes('web-workspace-context-probe'))
       const systemMessage = captured.messages?.find(message => message.role === 'system')
-      const expectedWebSection = readFileSync(WEB_SURFACE_PROMPT, 'utf8').trimEnd()
-        .replace('{{webUrl}}', baseUrl)
-      expect(systemMessage?.content).toContain(expectedWebSection)
+      expect(systemMessage?.content).toContain('你是 Coding 的编程 agent')
+      expect(systemMessage?.content).not.toContain(baseUrl)
       expect(workspaceMessage).toMatchInlineSnapshot(`
         {
           "content": "<system-reminder>
@@ -336,6 +341,7 @@ describe('dsh web keyless CLI smoke', () => {
     await new Promise<void>(resolve => provider.listen(0, '127.0.0.1', resolve))
     const address = provider.address()
     if (address === null || typeof address === 'string') throw new Error('mock provider did not bind a TCP port')
+    selectDeepSeekDefault(join(workspace, '.dsh'))
     const tsxLoader = pathToFileURL(createRequire(join(REPO_ROOT, 'package.json')).resolve('tsx')).href
     const child = spawn(
       process.execPath,
@@ -387,7 +393,7 @@ describe('dsh web keyless CLI smoke', () => {
     }
   }, 30_000)
 
-  it('DSH_TOOLS_MODE=code collapses the provider wire tools to run_code with the SDK prompt section', async () => {
+  it('lets the standard preset expose native tools and run_code above the process code default', async () => {
     requireDist()
     const workspace = mkdtempSync(join(tmpdir(), 'dsh-web-code-mode-'))
 
@@ -418,6 +424,7 @@ describe('dsh web keyless CLI smoke', () => {
     await new Promise<void>(resolve => provider.listen(0, '127.0.0.1', resolve))
     const address = provider.address()
     if (address === null || typeof address === 'string') throw new Error('mock provider did not bind a TCP port')
+    selectDeepSeekDefault(join(workspace, '.dsh'))
     const tsxLoader = pathToFileURL(createRequire(join(REPO_ROOT, 'package.json')).resolve('tsx')).href
     const child = spawn(
       process.execPath,
@@ -450,7 +457,9 @@ describe('dsh web keyless CLI smoke', () => {
           setTimeout(() => { reject(new Error('provider request not received in 10s')) }, 10_000).unref()
         }),
       ])
-      expect(captured.tools?.map(tool => tool.function?.name)).toEqual(['run_code'])
+      const names = captured.tools?.map(tool => tool.function?.name)
+      expect(names).toContain('run_code')
+      expect(names).toContain('bash')
       const system = captured.messages?.find(message => message.role === 'system')
       expect(system?.content).toContain('## Writing code for run_code')
       expect(system?.content).toContain('declare const tools')
@@ -477,6 +486,7 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY || notReady.length > 0)('web smoke
   beforeAll(async () => {
     requireDist()
     sessionsDir = mkdtempSync(join(tmpdir(), 'dsh-web-w5-'))
+    selectDeepSeekDefault(join(sessionsDir, '.dsh'))
     const port = await probeFreePort()
     // tsx boot mirrors the runtime half of the root dsh script. Isolate
     // the host-level Harness and shared-agent homes inside the temp world; tsx

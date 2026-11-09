@@ -1,9 +1,9 @@
 - dialog "推理等级与当前模型":
-  - strong: Default
+  - strong: Max
   - button "恢复模型默认等级" [disabled]:
     - img
   - button "当前模型 Acme Think":
     - text: Acme Think
     - img
   - text: 调整推理等级
-  - slider "调整推理等级": "0"
+  - slider "调整推理等级": "2"

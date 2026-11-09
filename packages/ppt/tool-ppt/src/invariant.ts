@@ -15,7 +15,7 @@ export const name = 'tool-ppt-invariant'
 export const inject = ['invariants']
 
 /**
- * 没有运行时不变量要检查：本包只把工具参数转给工程服务，接受与否由
+ * No runtime invariant: 本包只把工具参数转给工程服务，接受与否由
  * `coding-ppt-workbench` 的存储与校验决定，工具面行为由包内测试覆盖。
  */
 const install: InvariantInstaller = () => {}

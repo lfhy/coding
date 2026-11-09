@@ -1,5 +1,7 @@
 - img
 - text: Ongoing Goal guard rapid clear clicks
+- button "Expand goal":
+  - img
 - button "Pause goal":
   - img
 - button "Edit goal":

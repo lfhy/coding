@@ -23,6 +23,10 @@
   - img
   - img
   - text: Context injection coding-system-prompt
+- button "Context injection skill-catalog":
+  - img
+  - img
+  - text: Context injection skill-catalog
 - button "Search DeepSeek Harness snapshot search, DeepSeek Harness multi-query search":
   - img
   - img

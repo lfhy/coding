@@ -6,11 +6,15 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import LocalAttachmentStore from 'coding-attachment-local'
+import FileLibrary from 'coding-file-library'
 import WebServer from 'coding-host-webserver'
 import ImageGeneration, { type GalleryItem } from 'coding-image-gen'
 import { CallId } from 'coding-llm'
 import SessionStore, { SessionId, type Session } from 'coding-session'
 import JsonlSessionPersistence from 'coding-session-persistence-jsonl'
+import Storage from 'coding-storage'
+import { DomainFacility } from 'coding-storage-domain'
+import { SqliteStorageBackend } from 'coding-storage-sqlite'
 import SystemPrompt from 'coding-system-prompt'
 import ToolRuntime from 'coding-tools'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -68,6 +72,10 @@ async function boot(directory: string, endpoint?: string) {
   ctx.provide('credentials', { resolve: async () => undefined } as never)
   ctx.provide('connection', { requestRejection: () => undefined } as never)
   await ctx.plugin(WebServer, { host: '127.0.0.1', port: 0 })
+  await ctx.plugin(Storage)
+  ctx.storage.backend.register('sqlite', new SqliteStorageBackend({ path: ':memory:', journalMode: 'delete' }))
+  ctx.provide('storageDomain', new DomainFacility(ctx, { backend: 'sqlite' }))
+  await ctx.plugin(FileLibrary, { root: join(directory, 'files') })
   await ctx.plugin(ImageGeneration, {
     enabled: endpoint !== undefined, endpoint: endpoint ?? '', model: 'keyless-test', apiKeyRef: '', maxEditReferences: 10,
   })

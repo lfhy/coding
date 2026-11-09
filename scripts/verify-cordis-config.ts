@@ -10,7 +10,7 @@
  * packages must also be in the root TypeScript project graph.
  */
 
-import { globSync, readFileSync } from 'node:fs'
+import { existsSync, globSync, readFileSync } from 'node:fs'
 import { dirname, relative, resolve } from 'node:path'
 import { Script } from 'node:vm'
 import ts from 'typescript'
@@ -399,14 +399,14 @@ function localPackageDirectories(): Map<string, string> {
   return packages
 }
 
-function rootProjectReferences(): Set<string> {
-  // The root solution references the host and client aggregates (the two
-  // sides merge cordis Context under the same keys, so one program cannot see
-  // both — but this BFS only collects reference paths, it never forms a
-  // program). Seed the solution and follow nested aggregate references to
-  // collect the covered leaf project set.
+/**
+ * 沿 root solution 的引用图收集被 Host 或 Client 聚合覆盖的包目录；双面包的分面 tsconfig 也算同一个包。
+ * @param repoRoot - 待检查仓库根目录。
+ * @returns 已覆盖的包绝对目录。
+ */
+export function rootProjectReferences(repoRoot: string = root): Set<string> {
   const collected = new Set<string>()
-  const queue = [resolve(root, 'tsconfig.json')]
+  const queue = [resolve(repoRoot, 'tsconfig.json')]
   const seen = new Set<string>()
   for (let file = queue.pop(); file !== undefined; file = queue.pop()) {
     if (seen.has(file)) continue
@@ -419,8 +419,11 @@ function rootProjectReferences(): Set<string> {
     for (const reference of references) {
       if (typeof reference.path !== 'string') continue
       const target = resolve(dirname(file), reference.path)
-      if (target.endsWith('.json')) queue.push(target)
-      else collected.add(target)
+      if (target.endsWith('.json')) {
+        queue.push(target)
+        const packageDir = dirname(target)
+        if (existsSync(resolve(packageDir, 'package.json'))) collected.add(packageDir)
+      } else collected.add(target)
     }
   }
   return collected

@@ -10,15 +10,30 @@
     - button "Models":
       - img
       - text: Models
+    - button "Theme":
+      - img
+      - text: Theme
     - button "Web search":
       - img
       - text: Web search
+    - button "Image generation":
+      - img
+      - text: Image generation
+    - button "Files":
+      - img
+      - text: Files
     - button "Image recognition":
       - img
       - text: Image recognition
     - button "Plugins":
       - img
       - text: Plugins
+    - button "代理池":
+      - img
+      - text: 代理池
+    - button "PPT template management":
+      - img
+      - text: PPT template management
     - button "Agent presets":
       - img
       - text: Agent presets
@@ -49,3 +64,5 @@
   - button "Queue":
     - text: Queue
     - img
+  - text: Session title Choose which model names new sessions. Inheriting uses the conversation model, a custom model titles sessions on its own, and turning it off keeps only the local fallback title.
+  - status: Title model settings are unavailable in this deployment.

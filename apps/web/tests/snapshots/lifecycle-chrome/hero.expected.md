@@ -1,9 +1,11 @@
-- button "New session"
-- button "Collapse sidebar"
-- button "New session":
+- button "New chat":
   - img
-  - text: New Session
+  - text: New chat
+- button "Settings":
+  - img
+  - text: Settings
 - text: Workspaces
+- button "Collapse sidebar"
 - button "Search sessions":
   - img
 - textbox "Search sessions..."
@@ -15,9 +17,6 @@
   - treeitem "workspace" [expanded]:
     - img
     - text: workspace
-- button "Settings":
-  - img
-  - text: Settings
 - button "Show terminal panel"
 - button "Open right sidebar"
 - text: {{greeting}}

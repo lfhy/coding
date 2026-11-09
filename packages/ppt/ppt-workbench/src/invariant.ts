@@ -15,7 +15,7 @@ export const name = 'ppt-workbench-invariant'
 export const inject = ['invariants']
 
 /**
- * 没有运行时不变量要检查：`deck.json` 与 `history.json` 只有本包的存储层写，
+ * No runtime invariant: `deck.json` 与 `history.json` 只有本包的存储层写，
  * 版本号从历史游标派生，版本接受规则由包内存储测试覆盖。
  */
 const install: InvariantInstaller = () => {}

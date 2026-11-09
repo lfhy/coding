@@ -146,7 +146,8 @@ describe('web e2e: Models settings page configures a dormant provider', () => {
     if (address === null || typeof address === 'string') throw new Error('model listing has no port')
     modelBaseURL = `http://127.0.0.1:${address.port}/v1`
     // 模型设置要测试未配置的 minimax-cn；另用已就绪的 DeepSeek 路由完成首次引导。
-    scaffold = await launchWebScaffold({ localePreference: null, deepSeekMissingCredential: true })
+    scaffold = await launchWebScaffold({ localePreference: null, deepSeekMissingCredential: true,
+      defaultModel: { provider: 'deepseek-official', model: 'deepseek-v4-flash' } })
     await scaffold.ctx.credentials.set(credentialRef('DEEPSEEK_API_KEY'), 'sk-e2e-onboarding-models')
     browser = await chromium.launch()
     // 不预设 Host 语言偏好，固定中文浏览器语言以覆盖中文界面。
@@ -180,6 +181,7 @@ describe('web e2e: Models settings page configures a dormant provider', () => {
     const modelsNav = dialog.getByRole('navigation').getByRole('button', { name: '模型' })
     expect(await modelsNav.getAttribute('aria-current')).toBe('true')
     await provider('DeepSeek').waitFor({ timeout: 10_000 })
+    await provider('DeepSeek').click()
     await providerRail().getByRole('button', { name: 'DeepSeek 已配置' }).waitFor({ timeout: 10_000 })
     for (const dormant of ['anthropic', 'openai', 'minimax-cn', 'amazon-bedrock']) {
       expect(await provider(dormant).count()).toBe(0)
@@ -200,6 +202,9 @@ describe('web e2e: Models settings page configures a dormant provider', () => {
     await compareOrRefreshGolden(EMPTY_EXPECTED, await stableSnapshot('main[aria-labelledby]:has(> div > nav)'), MODE)
     for (const viewport of [{ width: 1536, height: 1024 }, { width: 768, height: 1024 }, { width: 375, height: 812 }]) {
       await page.setViewportSize(viewport)
+      if (viewport.width === 375) {
+        await dialog.getByRole('main', { name: 'DeepSeek' }).getByRole('button', { name: '提供方' }).click()
+      }
       await add.click()
       await createDialog.waitFor({ timeout: 10_000 })
       expect(await createDialog.getAttribute('aria-modal')).toBe('true')
@@ -308,7 +313,7 @@ describe('web e2e: Models settings page configures a dormant provider', () => {
     await dialog.getByRole('navigation').getByRole('button', { name: '模型', exact: true }).click()
     await expect.poll(() => provider('minimax-cn').count(), { timeout: 10_000 }).toBe(1)
     await provider('minimax-cn').click()
-    await dialog.getByRole('main').getByRole('heading', { name: 'minimax-cn', exact: true }).waitFor()
+    await dialog.getByRole('main', { name: 'minimax-cn', exact: true }).waitFor()
     const key = dialog.getByLabel('API 密钥')
     const save = dialog.getByRole('button', { name: '保存', exact: true })
 
@@ -370,7 +375,7 @@ describe('web e2e: Models settings page configures a dormant provider', () => {
     await dialog.getByRole('navigation').getByRole('button', { name: '模型', exact: true }).click()
     await expect.poll(() => provider('minimax-cn').count(), { timeout: 10_000 }).toBe(1)
     await provider('minimax-cn').click()
-    await dialog.getByRole('main').getByRole('heading', { name: 'minimax-cn', exact: true }).waitFor()
+    await dialog.getByRole('main', { name: 'minimax-cn', exact: true }).waitFor()
     const key = dialog.getByRole('textbox', { name: 'API 密钥', exact: true })
     await expect.poll(() => key.isEnabled(), { timeout: 10_000 }).toBe(true)
     expect(await key.inputValue()).toBe('')
@@ -450,7 +455,7 @@ describe('web e2e: Models settings page configures a dormant provider', () => {
     await settingsDialog.getByRole('navigation').getByRole('button', { name: '模型', exact: true }).click()
     await expect.poll(() => provider('cerebras').count(), { timeout: 10_000 }).toBe(1)
     await provider('cerebras').click()
-    await settingsDialog.getByRole('main').getByRole('heading', { name: 'cerebras', exact: true }).waitFor()
+    await settingsDialog.getByRole('main', { name: 'cerebras', exact: true }).waitFor()
     await settingsDialog.getByRole('textbox', { name: 'API 密钥', exact: true }).fill('sk-e2e-cerebras')
     await settingsDialog.getByRole('textbox', { name: 'API 地址' }).fill(modelBaseURL)
     await settingsDialog.getByRole('button', { name: '保存', exact: true }).click()
@@ -461,7 +466,7 @@ describe('web e2e: Models settings page configures a dormant provider', () => {
     await searchProviders.fill('cere')
     expect(await providerRail().getByRole('button').filter({ hasText: 'minimax-cn' }).count()).toBe(0)
     await provider('cerebras').click()
-    await settingsDialog.getByRole('heading', { name: 'cerebras' }).waitFor()
+    await settingsDialog.getByRole('main', { name: 'cerebras', exact: true }).waitFor()
     expect(await settingsDialog.getByRole('textbox', { name: 'API 地址' }).inputValue()).toBe(modelBaseURL)
     await searchProviders.fill('')
     const documentBefore = await settingsDocument()
@@ -782,7 +787,7 @@ describe('web e2e: Models settings page configures a dormant provider', () => {
     const detail = dialog.getByRole('region', { name: '视觉理解工具' })
     await detail.getByRole('heading', { name: '视觉理解工具' }).waitFor()
     expect(await dialog.getByRole('complementary', { name: '提供方' }).count()).toBe(0)
-    expect(await dialog.getByRole('heading', { name: 'cerebras' }).count()).toBe(0)
+    expect(await dialog.getByRole('main', { name: 'cerebras', exact: true }).count()).toBe(0)
     expect(await dialog.getByRole('button', { name: '保存', exact: true }).count()).toBe(0)
     expect(await dialog.getByRole('button', { name: '删除', exact: true }).count()).toBe(0)
     const panel = await dialog.boundingBox()
@@ -818,7 +823,7 @@ describe('web e2e: Models settings page configures a dormant provider', () => {
     expect((load(cleared) as Record<string, Record<string, unknown>>)['vision-understanding']?.['model']).toBeUndefined()
     await navigation.getByRole('button', { name: '模型' }).click()
     await provider('cerebras').click()
-    await dialog.getByRole('main').getByRole('heading', { name: 'cerebras' }).waitFor()
+    await dialog.getByRole('main', { name: 'cerebras', exact: true }).waitFor()
     expect(await navigation.getByRole('button', { name: '模型' }).getAttribute('aria-current')).toBe('true')
     expect(await fallback.getAttribute('aria-current')).toBeNull()
     expect(await detail.count()).toBe(0)
@@ -939,7 +944,7 @@ describe('web e2e: Models settings page configures a dormant provider', () => {
     await expect.poll(() => searchProviders.inputValue()).toBe('')
     await provider('Acme Gateway').waitFor({ timeout: 10_000 })
     await expect.poll(() => provider('Acme Gateway').getAttribute('aria-current')).toBe('true')
-    await dialog.getByRole('main').getByRole('heading', { name: 'Acme Gateway', exact: true }).waitFor()
+    await dialog.getByRole('main', { name: 'Acme Gateway', exact: true }).waitFor()
     await page.setViewportSize({ width: 375, height: 812 })
     await dialog.getByRole('main').getByRole('button', { name: '提供方', exact: true }).click()
     await provider('Acme Gateway').waitFor()
@@ -947,7 +952,7 @@ describe('web e2e: Models settings page configures a dormant provider', () => {
     expect(await searchProviders.inputValue()).toBe('')
     await provider('Acme Gateway').click()
     await page.setViewportSize({ width: 1680, height: 1000 })
-    await dialog.getByRole('main').getByRole('heading', { name: 'Acme Gateway', exact: true }).waitFor()
+    await dialog.getByRole('main', { name: 'Acme Gateway', exact: true }).waitFor()
     const document = await readFile(join(scaffold.harnessHome, 'settings.yaml'), 'utf8')
     expect(document).toContain(`${declaredRoute}:`)
     await expect.poll(async () => readFile(join(scaffold.harnessHome, '.credentials.yaml'), 'utf8'))
@@ -1035,7 +1040,7 @@ describe('web e2e: Models settings page configures a dormant provider', () => {
     await provider('DeepSeek').click()
     const assertName = async (name: string): Promise<void> => {
       await expect.poll(() => providerRail().getByRole('button').filter({ hasText: name }).count(), { timeout: 10_000 }).toBe(1)
-      await dialog.getByRole('main').getByRole('heading', { name, exact: true }).waitFor({ timeout: 10_000 })
+      await dialog.getByRole('main', { name, exact: true }).waitFor({ timeout: 10_000 })
       await expect.poll(() => dialog.getByRole('textbox', { name: '渠道名称', exact: true }).inputValue(), { timeout: 10_000 }).toBe(name)
     }
     await assertName('DeepSeek')

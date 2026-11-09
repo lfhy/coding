@@ -8,7 +8,7 @@ export const name = 'tool-browser-ego-invariant'
 /** 不变量服务是登记时的必需依赖。 */
 export const inject = ['invariants']
 
-/** 不额外添加运行时不变量：工具注册与文件访问在各自执行边界复核。 */
+/** No runtime invariant: 工具注册与文件访问在各自执行边界复核。 */
 const install: InvariantInstaller = () => {}
 
 /**

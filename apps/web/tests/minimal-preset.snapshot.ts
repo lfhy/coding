@@ -111,7 +111,15 @@ describe('minimal agent preset', () => {
         "prompt": "You are a helpful software engineer assistant.",
         "tools": [
           "bash",
+          "list_subagent_models",
+          "memory_delete",
+          "memory_list",
+          "memory_read",
+          "memory_save",
+          "memory_update",
+          "render_ui",
           "str_replace_editor",
+          "validate_dsh_ui",
         ],
       }
     `)

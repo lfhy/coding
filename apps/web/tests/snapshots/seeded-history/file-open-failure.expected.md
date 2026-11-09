@@ -1,7 +1,7 @@
-- dialog "Couldn’t open file":
-  - heading "Couldn’t open file" [level=2]
-  - button "Close":
+- article "a.txt":
+  - text: a.txt
+  - button "Refresh file":
     - img
-  - paragraph: "path open failed: xdg-open is not available"
-  - button "Cancel"
-  - button "Retry"
+  - alert:
+    - text: This file could not be read
+    - button "Read again"

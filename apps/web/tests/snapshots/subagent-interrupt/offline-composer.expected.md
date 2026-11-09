@@ -25,6 +25,10 @@
   - img
   - img
   - text: Context injection coding-system-prompt
+- button "Context injection skill-catalog":
+  - img
+  - img
+  - text: Context injection skill-catalog
 - paragraph: partial
 - status: Coding...
 - textbox "Parent session offline; sending is unavailable but you can still stop the run" [disabled]

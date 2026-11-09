@@ -92,7 +92,7 @@ describe('web e2e: fresh round trip through the real assembly', () => {
     await compareOrRefreshGolden(SYSTEM_PROMPT_EXPECTED, prefix, MODE)
   })
 
-  it('exposes the assembled Web URL to the real bash tool', async () => {
+  it('does not expose the assembled Web URL through the managed Bash environment', async () => {
     if (settledSessionId === undefined) throw new Error('the drive turn did not publish a session id')
     const agent = scaffold.ctx.agents.get(settledSessionId)
     if (agent === undefined) throw new Error(`the settled Web agent ${settledSessionId} is no longer live`)
@@ -108,7 +108,7 @@ describe('web e2e: fresh round trip through the real assembly', () => {
     })
     expect(result.isError).toBe(false)
     expect(result.content.filter(block => block.type === 'text').map(block => block.text).join(''))
-      .toBe(`${scaffold.baseUrl}\n`)
+      .toBe('\n')
   })
 
   it.skipIf(MODE === 'record')('rendered the settled turn: markdown, tool row, composer restore', async () => {

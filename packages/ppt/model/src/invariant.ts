@@ -15,7 +15,7 @@ export const name = 'ppt-model-invariant'
 export const inject = ['invariants']
 
 /**
- * 没有运行时不变量要检查：本包只有纯函数式的模型校验，输入即输出，
+ * No runtime invariant: 本包只有纯函数式的模型校验，输入即输出，
  * 不存在需要跨事件核对的状态。
  */
 const install: InvariantInstaller = () => {}

@@ -23,9 +23,16 @@
   - img
   - img
   - text: Context injection coding-system-prompt
+- button "Context injection skill-catalog":
+  - img
+  - img
+  - text: Context injection skill-catalog
 - status:
   - text: This turn failedAPI key is invalid
   - code: AUTH
+  - button "Retry":
+    - img
+    - text: Retry
 - textbox "Message the agent"
 - button "Commands":
   - img

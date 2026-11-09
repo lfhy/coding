@@ -139,19 +139,18 @@ it('accepts pasted images into the composer rail in order and removes them', asy
     expect(document.querySelector('[role="group"][aria-label="Pending images"]')).toBeNull()
   })
 
-  // An unsupported file announces a transient toast (the inline strip is
-  // gone) and the banner dismisses itself after its hold-and-fade lifetime.
+  // 文件暂存失败时显示短暂提示；图片草稿栏仍保持清空。
   fireEvent.paste(textarea, {
     clipboardData: {
       items: [{ kind: 'file', type: 'text/plain', getAsFile: () => new File(['x'], 'notes.txt', { type: 'text/plain' }) }],
       getData: () => '',
     },
   })
-  const unsupportedMessage = 'Only PNG, JPG, WebP, and GIF images are supported'
-  const toast = await screen.findByText(unsupportedMessage)
+  const uploadFailure = 'Could not save the file to your workspace; try again'
+  const toast = await screen.findByText(uploadFailure)
   expect(toast.closest('[role="alert"]')).not.toBeNull()
   await waitFor(() => {
-    expect(screen.queryByText(unsupportedMessage)).toBeNull()
+    expect(screen.queryByText(uploadFailure)).toBeNull()
   }, { timeout: 6_000 })
 })
 
@@ -169,7 +168,7 @@ it('accepts a whole-page drop under the overlay and refuses an over-limit batch 
   const dataTransfer = { types: ['Files'], files: [image], dropEffect: 'none' }
   fireEvent.dragEnter(document.body, { dataTransfer })
   const overlay = await screen.findByRole('status')
-  expect(overlay.textContent).toContain('Drag images here to add them')
+  expect(overlay.textContent).toContain('Drop images or files here')
 
   // Dropping on the transcript area (not the composer card) lands in the rail.
   fireEvent.drop(document.body, { dataTransfer })

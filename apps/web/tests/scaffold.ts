@@ -5,8 +5,8 @@
 // layer stack the profile boot composes), patched the
 // snapshot way — so a real chromium exercises the real HTTP uplink/WebSocket
 // downlink, api-gateway, agent loop, tools, and persistence. Modes ride $DSH_SNAPSHOT:
-// replay (default, keyless: normally disables the llm-deepseek row and
-// inserts dsh-llm-replay in providers mode), record (real adapter + key,
+// replay (default, keyless: disables the llm-deepseek row and installs
+// dsh-llm-replay in providers mode), record (real adapter + key,
 // harvests fixtures from live session memory), refresh (keyless replay that
 // rewrites goldens). A first-run option keeps the real adapter mounted while
 // masking its credential, without making a model call.
@@ -20,7 +20,8 @@
 // built dist; ordinary keyless modes disable llm-deepseek and fill the open
 // llm seam post-boot with installLlmReplay on the settled root ctx
 // (the plugin-row path discards the ReplayHandle; the direct install keeps
-// assertConsumed for the teardown fixture-consumption check).
+// assertConsumed for the teardown fixture-consumption check). Fixture runs
+// select their recorded DeepSeek route instead of the shipped Free default.
 import { existsSync, readFileSync } from 'node:fs'
 import { mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -85,9 +86,8 @@ const INSTALL_ANCHOR = join(REPO_ROOT, 'apps/cli/package.json')
 const SHIPPED_PRESET_DIR = join(REPO_ROOT, 'apps/cli/config/agent-presets')
 
 // Replay publishes the provider catalog the gateway routes to (providers
-// mode, never catch-all: with llm-deepseek disabled no adapter exists, so a
-// catch-all would leave resolveModelInfo unroutable and compaction-basic's
-// post-step pressure check would warn every step). The published
+// mode, never catch-all: the fixture must use its recorded route and
+// compaction-basic needs a resolvable model). The published
 // contextWindow keeps that pressure path provably inert for small fixtures.
 const REPLAY_PROVIDERS = [{
   id: 'deepseek-official',
@@ -228,6 +228,8 @@ export interface LaunchOptions {
    * keyless first-run configuration lane; the default disables the adapter.
    */
   deepSeekMissingCredential?: boolean
+  /** 测试专用的组合默认模型；未设置时回放／录制使用 DeepSeek，其他场景保留出厂 Free。 */
+  defaultModel?: { provider: string; model: string }
   /**
    * Patch the shipped DeepSeek search row to a deterministic endpoint and
    * credential reference. Browser search scenarios keep the real provider and
@@ -366,6 +368,9 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
   const extraOverlayPatches = options.extraOverlayPath === undefined
     ? []
     : loadOverlayPatches('web e2e scaffold', options.extraOverlayPath)
+  const defaultModel = options.defaultModel ?? (mode === 'record' || options.replayFixture !== undefined
+    ? { provider: 'deepseek-official', model: 'deepseek-v4-flash' }
+    : undefined)
   const composedRows = composeEntries([basePatches, surfacePatches, extraOverlayPatches])
   const webRuntimeConfig = composedRows.find(row => row.id === 'web-runtime')?.config as {
     surfaceContext?: boolean
@@ -374,6 +379,7 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
   const patches: PatchOptions[] = [
     ...basePatches,
     ...surfacePatches,
+    ...defaultModel === undefined ? [] : [{ id: 'agent-default-model', config: defaultModel }],
     ...extraOverlayPatches,
     // The roster's `roots` is an assembly fact AppCLIEntry resolves and patches
     // in, exactly like `distIndex` on the webserver row — the shipped preset

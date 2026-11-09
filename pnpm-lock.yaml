@@ -6609,6 +6609,9 @@ importers:
       '@deepseek-ai/cordis':
         specifier: workspace:^
         version: link:../../../vendor/cordis
+      coding-file-library:
+        specifier: workspace:^
+        version: link:../../attachment/file-library
       coding-image-gen:
         specifier: workspace:^
         version: link:../image-gen
@@ -6618,6 +6621,15 @@ importers:
       coding-llm:
         specifier: workspace:^
         version: link:../../llm/llm
+      coding-storage:
+        specifier: workspace:^
+        version: link:../../storage/storage
+      coding-storage-domain:
+        specifier: workspace:^
+        version: link:../../storage/storage-domain
+      coding-storage-sqlite:
+        specifier: workspace:^
+        version: link:../../storage/storage-sqlite
       coding-tools:
         specifier: workspace:^
         version: link:../../core/tools
@@ -10900,6 +10912,9 @@ importers:
       coding-agent-loop:
         specifier: workspace:^
         version: link:../../packages/core/agent-loop
+      coding-agent-presets:
+        specifier: workspace:^
+        version: link:../../packages/preset/agent-presets
       coding-agent-spine-demo:
         specifier: workspace:^
         version: link:../../packages/examples/agent-spine-demo
@@ -10909,6 +10924,12 @@ importers:
       coding-anonymous-user-id:
         specifier: workspace:^
         version: link:../../packages/identity/anonymous-user-id
+      coding-api-gateway:
+        specifier: workspace:^
+        version: link:../../packages/api/gateway
+      coding-api-remotes:
+        specifier: workspace:^
+        version: link:../../packages/api/remotes
       coding-app-boot:
         specifier: workspace:^
         version: link:../../packages/boot/app-boot
@@ -10930,6 +10951,9 @@ importers:
       coding-browser-ego-host:
         specifier: workspace:^
         version: link:../../packages/browser/browser-ego-host
+      coding-client-connection:
+        specifier: workspace:^
+        version: link:../../packages/client/connection
       coding-code-runtime:
         specifier: workspace:^
         version: link:../../packages/code-runtime/code-runtime
@@ -10963,6 +10987,9 @@ importers:
       coding-file-library:
         specifier: workspace:^
         version: link:../../packages/attachment/file-library
+      coding-file-reference:
+        specifier: workspace:^
+        version: link:../../packages/context/file-reference
       coding-fs:
         specifier: workspace:^
         version: link:../../packages/fs/fs
@@ -10993,6 +11020,12 @@ importers:
       coding-hooks-codex:
         specifier: workspace:^
         version: link:../../packages/hooks/hooks-codex
+      coding-host-apiproxy:
+        specifier: workspace:^
+        version: link:../../packages/host/apiproxy
+      coding-host-plugin-inventory:
+        specifier: workspace:^
+        version: link:../../packages/host/plugin-inventory
       coding-host-webserver:
         specifier: workspace:^
         version: link:../../packages/host/webserver
@@ -11017,6 +11050,9 @@ importers:
       coding-llm-deepseek:
         specifier: workspace:^
         version: link:../../packages/llm/llm-deepseek
+      coding-llm-opencode:
+        specifier: workspace:^
+        version: link:../../packages/llm/llm-opencode
       coding-llm-pi-ai:
         specifier: workspace:^
         version: link:../../packages/llm/llm-pi-ai
@@ -11035,6 +11071,9 @@ importers:
       coding-memory-local:
         specifier: workspace:^
         version: link:../../packages/memory/memory-local
+      coding-message-feedback:
+        specifier: workspace:^
+        version: link:../../packages/feedback/message-feedback
       coding-output-retention:
         specifier: workspace:^
         version: link:../../packages/util/output-retention
@@ -11053,6 +11092,9 @@ importers:
       coding-ppt-workbench:
         specifier: workspace:^
         version: link:../../packages/ppt/ppt-workbench
+      coding-proxy-pool:
+        specifier: workspace:^
+        version: link:../../packages/net/proxy-pool
       coding-pwsh-local:
         specifier: workspace:^
         version: link:../../packages/shell/pwsh-local
@@ -11260,6 +11302,9 @@ importers:
       coding-typert-protocol:
         specifier: workspace:^
         version: link:../../packages/typert/protocol
+      coding-typert-registry:
+        specifier: workspace:^
+        version: link:../../packages/typert/registry
       coding-user-approval:
         specifier: workspace:^
         version: link:../../packages/interaction/user-approval

@@ -62,14 +62,15 @@ describe('web e2e: plugin configuration section', () => {
     return readFile(join(scaffold.harnessHome, 'settings.yaml'), 'utf8').catch(() => '')
   }
 
-  it('shows two plugin cards and keeps search in its own section', async () => {
+  it('shows three plugin cards and keeps search in its own section', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-plugin-config-cards'))
     const dialog = await openPlugins()
 
     const cards = dialog.getByRole('tabpanel', { name: '插件配置' }).getByRole('listitem')
     await dialog.getByRole('button', { name: '展开设置: 终端' }).waitFor({ timeout: 10_000 })
-    await expect.poll(() => cards.count(), { timeout: 10_000 }).toBe(2)
+    await expect.poll(() => cards.count(), { timeout: 10_000 }).toBe(3)
     expect(await dialog.getByRole('button', { name: '展开设置: Agent 循环' }).count()).toBe(1)
+    expect(await dialog.getByRole('button', { name: '展开设置: Agent 浏览器' }).count()).toBe(1)
     expect(await dialog.getByRole('button', { name: '展开设置: 网页搜索' }).count()).toBe(0)
     expect(await dialog.getByRole('radio', { name: /DuckDuckGo|DeepSeek 官方/ }).count()).toBe(0)
     // 卡片收起时，其字段不应出现。
@@ -81,8 +82,11 @@ describe('web e2e: plugin configuration section', () => {
     await dialog.getByRole('navigation').getByRole('button', { name: '联网搜索', exact: true }).click()
     const search = dialog.getByRole('region', { name: '联网搜索' })
     await search.getByRole('heading', { name: '联网搜索' }).waitFor({ timeout: 10_000 })
-    expect(await search.getByRole('radio', { name: /DuckDuckGo/ }).count()).toBe(1)
-    expect(await search.getByRole('radio', { name: /DeepSeek 官方/ }).count()).toBe(1)
+    const source = search.getByRole('button', { name: 'DuckDuckGo', exact: true })
+    await source.waitFor()
+    await source.click()
+    expect(await page.getByRole('menuitem', { name: /DeepSeek 官方/ }).count()).toBe(1)
+    await page.keyboard.press('Escape')
     expect(await dialog.getByRole('tab', { name: '插件配置' }).count()).toBe(0)
     expect(tripwire.pageErrors).toEqual([])
   }, 60_000)

@@ -15,7 +15,7 @@ export const name = 'client-ui-ppt-workbench-invariant'
 export const inject = ['invariants']
 
 /**
- * 没有运行时不变量要检查：面板状态只经注入的快照与控制器动作流转，
+ * No runtime invariant: 面板状态只经注入的快照与控制器动作流转，
  * 会话隔离与标签释放由本包的注册测试覆盖。
  */
 const install: InvariantInstaller = () => {}

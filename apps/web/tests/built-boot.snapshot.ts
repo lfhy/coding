@@ -121,7 +121,7 @@ it('boots the built plugin graph and renders a fixture session end to end', asyn
   }, { timeout: 10_000 })
 
   fireEvent.click(screen.getByRole('button', { name: 'Collapse sidebar' }))
-  const openSidebar = screen.getByRole('button', { name: 'Open sidebar' })
+  const openSidebar = await screen.findByRole('button', { name: 'Open sidebar' })
   await waitFor(() => {
     expect(screen.queryByText('Coding')).toBeNull()
   })

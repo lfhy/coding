@@ -774,7 +774,7 @@ it('PPT 模板工具只进入专属组装，快照日志保留文本结果', () 
   }
   expect(schemas('text-turn')).toEqual([])
   expect(schemas('ppt-templates')).toEqual([
-    'ppt_check', 'ppt_create', 'ppt_create_from_template', 'ppt_delete_template',
+    'ppt_attach_gallery_image', 'ppt_check', 'ppt_create', 'ppt_create_from_template', 'ppt_delete_template',
     'ppt_edit', 'ppt_export', 'ppt_import', 'ppt_import_evidence', 'ppt_import_template',
     'ppt_open', 'ppt_prepare_template', 'ppt_read', 'ppt_redo', 'ppt_rename_template',
     'ppt_render', 'ppt_save_template', 'ppt_templates', 'ppt_undo',

@@ -28,7 +28,8 @@ describe.skipIf(MODE === 'record')('web e2e: another usable provider ends first-
   let tripwire: ReturnType<typeof watchConsole>
 
   beforeAll(async () => {
-    scaffold = await launchWebScaffold({ deepSeekMissingCredential: true, localePreference: null })
+    scaffold = await launchWebScaffold({ deepSeekMissingCredential: true, localePreference: null,
+      defaultModel: { provider: 'unavailable-e2e', model: 'missing-model' } })
     browser = await chromium.launch()
     // 不预设 Host 语言偏好，固定中文浏览器语言以覆盖中文界面。
     page = await browser.newPage({ viewport: { width: 1440, height: 960 }, locale: ZH_BROWSER_LOCALE })
@@ -52,6 +53,7 @@ describe.skipIf(MODE === 'record')('web e2e: another usable provider ends first-
     const channels = onboarding.getByRole('complementary', { name: '提供方' })
     const deepSeek = channels.getByRole('button', { name: 'DeepSeek', exact: true })
     await deepSeek.waitFor({ timeout: 10_000 })
+    await deepSeek.click()
     expect(await deepSeek.getAttribute('aria-current')).toBe('true')
     const setupKey = onboarding.getByRole('textbox', { name: 'API 密钥', exact: true })
     await setupKey.waitFor({ timeout: 10_000 })
@@ -139,7 +141,7 @@ describe.skipIf(MODE === 'record')('web e2e: another usable provider ends first-
     expect(profile.apiKeyEnv).toBe(keyRef)
     await onboarding.getByRole('complementary', { name: '提供方' })
       .getByRole('button', { name: 'E2E Gateway 已配置' }).waitFor({ timeout: 15_000 })
-    await onboarding.getByRole('main').getByRole('heading', { name: 'E2E Gateway' }).waitFor()
+    await onboarding.getByRole('main', { name: 'E2E Gateway', exact: true }).waitFor()
     expect(await onboarding.count()).toBe(1)
     const start = onboarding.getByRole('button', { name: '开始使用' })
     expect(await start.isDisabled()).toBe(true)

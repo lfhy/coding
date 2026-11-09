@@ -12,6 +12,7 @@ import {
   bundleManifestPaths,
   bundlePluginDependencyErrors,
   metadataExpressionErrors,
+  rootProjectReferences,
 } from './verify-cordis-config.ts'
 
 describe('verify-cordis-config metadata expressions', () => {
@@ -46,6 +47,23 @@ describe('verify-cordis-config metadata expressions', () => {
 })
 
 describe('workspace Bundle discovery and product dependency closures', () => {
+  it('counts split Host and Client tsconfig faces as one covered package', () => {
+    const fixture = mkdtempSync(join(tmpdir(), 'dsh-split-package-reference-'))
+    try {
+      const packageDir = join(fixture, 'packages/client/connection')
+      mkdirSync(packageDir, { recursive: true })
+      writeFileSync(join(fixture, 'tsconfig.json'), JSON.stringify({ references: [{ path: './tsconfig.host.json' }] }))
+      writeFileSync(join(fixture, 'tsconfig.host.json'), JSON.stringify({
+        references: [{ path: './packages/client/connection/tsconfig.host.json' }],
+      }))
+      writeFileSync(join(packageDir, 'package.json'), JSON.stringify({ name: 'coding-client-connection' }))
+      writeFileSync(join(packageDir, 'tsconfig.host.json'), JSON.stringify({ files: [] }))
+      expect(rootProjectReferences(fixture).has(packageDir)).toBe(true)
+    } finally {
+      rmSync(fixture, { recursive: true, force: true })
+    }
+  })
+
   it('discovers a Bundle outside packages/bundle from its manifest declaration', () => {
     const fixture = mkdtempSync(join(tmpdir(), 'dsh-bundle-discovery-'))
     try {

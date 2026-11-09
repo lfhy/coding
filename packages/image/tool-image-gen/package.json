@@ -26,9 +26,13 @@
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "workspace:^",
+    "coding-file-library": "workspace:^",
     "coding-image-gen": "workspace:^",
     "coding-invariants": "workspace:^",
     "coding-llm": "workspace:^",
-    "coding-tools": "workspace:^"
+    "coding-tools": "workspace:^",
+    "coding-storage": "workspace:^",
+    "coding-storage-domain": "workspace:^",
+    "coding-storage-sqlite": "workspace:^"
   }
 }

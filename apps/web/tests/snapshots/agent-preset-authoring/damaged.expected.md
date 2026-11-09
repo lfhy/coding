@@ -19,6 +19,9 @@
     - button "图像生成":
       - img
       - text: 图像生成
+    - button "文件管理":
+      - img
+      - text: 文件管理
     - button "图片识别":
       - img
       - text: 图片识别
@@ -28,6 +31,9 @@
     - button "代理池":
       - img
       - text: 代理池
+    - button "PPT 模板管理":
+      - img
+      - text: PPT 模板管理
     - button "Agent 预设":
       - img
       - text: Agent 预设

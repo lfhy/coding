@@ -331,7 +331,8 @@ describe('web e2e: Trajectory virtualization over tail-paged history', () => {
         return (window as Window & { __trajectoryScrollCalls?: number })
           .__trajectoryScrollCalls ?? 0
       })
-      expect(streamingScrollCalls).toBeLessThanOrEqual(5)
+      // 虚拟列表在最后一个流式块后还会对新高度做一次定位；仍须保持有界。
+      expect(streamingScrollCalls).toBeLessThanOrEqual(6)
       expect(await mountedRows(page)).toBeLessThanOrEqual(MAX_MOUNTED_ROWS)
       expect({
         pageErrors: tripwire.pageErrors,

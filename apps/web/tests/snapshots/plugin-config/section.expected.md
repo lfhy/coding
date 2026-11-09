@@ -10,15 +10,30 @@
     - button "模型":
       - img
       - text: 模型
+    - button "主题外观":
+      - img
+      - text: 主题外观
     - button "联网搜索":
       - img
       - text: 联网搜索
+    - button "图像生成":
+      - img
+      - text: 图像生成
+    - button "文件管理":
+      - img
+      - text: 文件管理
     - button "图片识别":
       - img
       - text: 图片识别
     - button "插件":
       - img
       - text: 插件
+    - button "代理池":
+      - img
+      - text: 代理池
+    - button "PPT 模板管理":
+      - img
+      - text: PPT 模板管理
     - button "Agent 预设":
       - img
       - text: Agent 预设
@@ -30,6 +45,10 @@
     - tab "插件列表"
   - tabpanel "插件配置":
     - list:
+      - listitem:
+        - 'button "展开设置: Agent 浏览器"':
+          - text: Agent 浏览器 画面采集方式、视频后端和本机浏览器选项。
+          - img
       - listitem:
         - 'button "展开设置: 终端"':
           - text: 终端 限制 agent 运行的每一条命令。

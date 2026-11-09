@@ -10,15 +10,30 @@
     - button "模型":
       - img
       - text: 模型
+    - button "主题外观":
+      - img
+      - text: 主题外观
     - button "联网搜索":
       - img
       - text: 联网搜索
+    - button "图像生成":
+      - img
+      - text: 图像生成
+    - button "文件管理":
+      - img
+      - text: 文件管理
     - button "图片识别":
       - img
       - text: 图片识别
     - button "插件":
       - img
       - text: 插件
+    - button "代理池":
+      - img
+      - text: 代理池
+    - button "PPT 模板管理":
+      - img
+      - text: PPT 模板管理
     - button "Agent 预设":
       - img
       - text: Agent 预设
@@ -30,6 +45,13 @@
     - text: 视觉模型
     - combobox "视觉模型":
       - option "未配置"
+      - option "Free / Auto"
+      - option "Free / Qwen3.5 397B A17B (OVH)"
+      - option "Free / Qwen3.8 27B (OVH)"
+      - option "Free / Qwen3.5 9B (OVH)"
+      - option "Free / Mistral Small 3.2 24B (OVH)"
+      - option "Free / Dots3 Note Preview (Kilo)"
+      - option "Free / Nemotron 3 Nano Omni (Kilo)"
       - option "minimax-cn / MiniMax-M3"
       - option "cerebras / Acme Beta" [selected]
       - option "cerebras / Orion Basic"

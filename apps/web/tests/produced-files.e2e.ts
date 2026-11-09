@@ -1,12 +1,11 @@
 // Web e2e scenario: the single-line produced-files summary a finished turn
 // ends with. Cold-seeds ten writes (zero model calls), then verifies the real
-// assembled lane keeps a precise +N and a capability-gated folder handoff.
-// The folder request is intercepted so one real browser click can exercise
-// the full client carrier without launching a native application in CI.
+// assembled lane keeps a precise +N and opens the built-in file manager for
+// the folder action, without launching a native application in CI.
 import { fileURLToPath } from 'node:url'
 import type { Browser, Page } from 'playwright'
 import { chromium } from 'playwright'
-import { afterAll, beforeAll, describe, expect, it, onTestFailed, vi } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
 import { CallId, createAssistantMessage, createToolResultMessage, createUserMessage } from 'coding-llm'
 import { SESSION_FORMAT_VERSION, Session, SessionId } from 'coding-session'
 import type {} from 'coding-session-title'
@@ -149,22 +148,9 @@ describe('web e2e: a finished turn ends with the files it produced', () => {
     expect(await showFolder.count()).toBe(1)
     expect(await page.getByText('Produced', { exact: true }).count()).toBe(1)
 
-    const openPath = vi.spyOn(scaffold.ctx.apiProxy.host, 'openPath')
-      .mockImplementation(async (request, _signal) => ({
-        rpcId: request.rpcId,
-        result: { ok: true, value: { opened: true as const } },
-      }))
-    try {
-      const [response] = await Promise.all([
-        page.waitForResponse(response => new URL(response.url()).pathname === '/api/host.openPath'),
-        showFolder.click({ clickCount: 1 }),
-      ])
-      expect(response.status()).toBe(200)
-      expect(openPath).toHaveBeenCalledTimes(1)
-      expect(openPath.mock.calls[0]![0].payload).toEqual({ path: `${scaffold.workspaceCwd}/.` })
-    } finally {
-      openPath.mockRestore()
-    }
+    await showFolder.click()
+    await page.getByRole('tab', { name: 'File manager' }).waitFor({ timeout: 10_000 })
+    await page.getByRole('complementary', { name: 'Workspace files' }).waitFor({ timeout: 10_000 })
 
     const tops = await row.locator(':scope > *').evaluateAll(elements =>
       elements.map(element => element.getBoundingClientRect().top))

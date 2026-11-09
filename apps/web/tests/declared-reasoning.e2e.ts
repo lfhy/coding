@@ -58,7 +58,7 @@ describe.skipIf(MODE === 'record')('web e2e: declared reasoning efforts reach th
   beforeAll(async () => {
     scaffold = await launchWebScaffold({ extraOverlayPath: OVERLAY, localePreference: null })
     // 可选等级完全由模型声明；max 的底层 wire 值是 ultra，off 不发送推理参数。
-    // 路由没有部署默认强度，弹层起始显示 Default。
+    // 路由没有部署默认强度；适配器对具备推理能力的模型选择最高档 Max。
     await scaffold.ctx.settings.update(settingsNamespace('llm-pi-ai'), {
       providers: {
         'acme-gateway': {
@@ -103,7 +103,7 @@ describe.skipIf(MODE === 'record')('web e2e: declared reasoning efforts reach th
     onTestFailed(() => saveFailureShot(page, 'web-e2e-declared-reasoning'))
     const trigger = page.getByRole('button', { name: /^选择模型/ })
     await trigger.waitFor({ timeout: 15_000 })
-    expect(await trigger.textContent()).toBe('Acme ThinkDefault')
+    expect(await trigger.textContent()).toBe('Acme ThinkMax')
     await trigger.click()
     const effort = page.getByRole('dialog', { name: '推理等级与当前模型' })
     await expect.poll(() => effort.getAttribute('aria-busy'), { timeout: 10_000 }).toBe('false')
@@ -111,10 +111,10 @@ describe.skipIf(MODE === 'record')('web e2e: declared reasoning efforts reach th
     await slider.waitFor()
     expect(await trigger.textContent()).toBe('选择强度')
     expect(await slider.getAttribute('min')).toBe('0')
-    expect(await slider.getAttribute('max')).toBe('3')
+    expect(await slider.getAttribute('max')).toBe('2')
     expect(await slider.getAttribute('step')).toBe('1')
-    expect(await slider.getAttribute('aria-valuetext')).toBe('Default')
-    expect(await effort.getByText('Default', { exact: true }).count()).toBe(1)
+    expect(await slider.getAttribute('aria-valuetext')).toBe('Max')
+    expect(await effort.getByText('Max', { exact: true }).count()).toBe(1)
     expect(await effort.getByText('none', { exact: true }).count()).toBe(0)
     expect(await effort.getByRole('button', { name: /当前模型\s*Acme Think/ }).count()).toBe(1)
     effortSnapshot = await captureStableAria(page, '[role="dialog"][aria-label="推理等级与当前模型"]', scaffold.workspaceCwd)
@@ -122,9 +122,15 @@ describe.skipIf(MODE === 'record')('web e2e: declared reasoning efforts reach th
       await page.screenshot({ path: join(process.env.DSH_SCREENSHOT_DIR, 'reasoning-strength-desktop.png'), fullPage: false })
     }
 
-    // Default 是独立零档；往右依次提交 off、high，不跳过关闭推理档。
+    // 从适配器默认 Max 向左经过 High、off，再选回 High；档位映射不跳过关闭推理。
     await slider.focus()
-    await slider.press('ArrowRight')
+    await slider.press('ArrowLeft')
+    await expect.poll(() => slider.getAttribute('aria-valuetext')).toBe('High')
+    await expect.poll(() => selections.at(-1), { timeout: 10_000 }).toMatchObject({
+      provider: 'acme-gateway', model: 'acme-think', reasoningEffort: 'high',
+    })
+    await expect.poll(() => effort.getAttribute('aria-busy')).toBe('false')
+    await slider.press('ArrowLeft')
     await expect.poll(() => slider.getAttribute('aria-valuetext')).toBe('none')
     await effort.getByText('none', { exact: true }).waitFor()
     await expect.poll(() => selections.at(-1), { timeout: 10_000 }).toMatchObject({
