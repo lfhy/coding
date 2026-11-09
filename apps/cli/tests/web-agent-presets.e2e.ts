@@ -268,6 +268,16 @@ describe('the shipped Web composition', () => {
         'ppt_prepare_template', 'ppt_read', 'ppt_redo', 'ppt_rename_template', 'ppt_render', 'ppt_save_template',
         'ppt_templates', 'ppt_undo',
       ])
+      const editSchema = ctx.tools.schemas(handle.agent).find(tool => tool.name === 'ppt_edit')
+      expect(editSchema?.parameters.properties).toMatchObject({ ops: {
+        oneOf: [{ type: 'array' }, { type: 'string' }],
+      } })
+      const assembled = await ctx.systemPrompt.assemble({ scope: handle.agent })
+      const prompt = assembled.sections.map(section => section.text).join('\n')
+      expect(prompt).toContain('不要用 Bash、Write 或脚本直接修改 `deck.json`、`history.json`')
+      expect(prompt).toContain('`ppt_read({dir})` 只读取，不会切换当前工程')
+      expect(prompt).toContain('`ops` 首选非空操作对象数组')
+      expect(prompt).toContain('版本冲突时重新 `ppt_read` 核对用户改动和新版本')
       const imageTools = () => toolNames(ctx, handle.agent).filter(name =>
         ['generate_image', 'generate_images', 'edit_image', 'canvas_state'].includes(name))
       expect(imageTools()).toEqual([])

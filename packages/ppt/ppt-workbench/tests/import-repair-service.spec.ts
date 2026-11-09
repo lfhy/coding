@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
+import SessionStore, { SessionId } from 'coding-session'
 import { PPT_FORMAT, type PptDeck } from 'coding-ppt-model'
 import { REMOTE_WORKSPACE_MARKER } from 'coding-subprocess'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -30,7 +31,8 @@ let projects: PptProjects
 beforeEach(async () => {
   root = await mkdtemp(join(tmpdir(), 'ppt-import-repair-'))
   ctx = new Context()
-  ctx.provide('sessions', { get: (id: string) => id === SESSION ? { header: { cwd: root } } : undefined } as never)
+  await ctx.plugin(SessionStore)
+  ctx.sessions.create(SessionId(SESSION), { meta: { cwd: root } })
   ctx.provide('webServer', { register: () => () => undefined } as never)
   ctx.provide('connection', { requestRejection: () => undefined } as never)
   await ctx.plugin(PptProjects, { templatesDir: join(root, 'templates') })

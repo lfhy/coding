@@ -8,6 +8,7 @@ import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { HostConnectionService } from 'coding-client-connection'
 import { WebServer } from 'coding-host-webserver'
+import SessionStore, { SessionId } from 'coding-session'
 import { parseDeck, PPT_FORMAT, type PptDeck } from 'coding-ppt-model'
 import { afterEach, describe, expect, it } from 'vitest'
 import { checkDeck } from '../src/check.ts'
@@ -20,14 +21,12 @@ const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR
 const svg = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>')
 let ctx: Context | undefined
 let root: string | undefined
-let sessionExists = true
 
 afterEach(async () => {
   await ctx?.fiber.dispose()
   ctx = undefined
   if (root !== undefined) await rm(root, { recursive: true, force: true })
   root = undefined
-  sessionExists = true
 })
 
 /** 用 Loader 挂载真实 HTTP、连接信任栅栏和隔离的模板仓库。 */
@@ -35,8 +34,7 @@ async function boot(): Promise<{ base: string; projects: PptProjects }> {
   root = await mkdtemp(join(tmpdir(), 'ppt-catalog-routes-'))
   ctx = new Context()
   ctx.baseUrl = pathToFileURL(root).href + '/'
-  ctx.provide('sessions', { get: (id: string) => id === SESSION && sessionExists
-    ? { header: { cwd: root } } : undefined } as never)
+  await ctx.plugin(SessionStore)
   await ctx.plugin(Loader)
   ctx.loader.builtins.include = Include
   ctx.loader.internal = { version: 'v2', async import(specifier: string) {
@@ -100,7 +98,6 @@ async function fixture(projects: PptProjects): Promise<{ id: string; deck: PptDe
 describe('PPT 用户模板只读 HTTP 目录', () => {
   it('无会话时展示默认整稿预览，不创建持久工程或模板', async () => {
     const { base, projects } = await boot()
-    sessionExists = false
     const response = await request(base, 'templates/default')
     expect(response.status).toBe(200)
     expect(response.headers.get('cache-control')).toBe('no-store')
@@ -116,7 +113,6 @@ describe('PPT 用户模板只读 HTTP 目录', () => {
 
   it('内置版式预览复用七种单页元素，且不创建工程或用户模板', async () => {
     const { base, projects } = await boot()
-    sessionExists = false
     const first = await request(base, 'templates/builtins')
     expect(first.status).toBe(200)
     expect(first.headers.get('cache-control')).toBe('no-store')
@@ -141,8 +137,12 @@ describe('PPT 用户模板只读 HTTP 目录', () => {
 
   it('无会话时仍能列出摘要、读取完整详情和被引用的栅格图', async () => {
     const { base, projects } = await boot()
+    const sessionFiber = await ctx!.plugin(Object.assign((inner: Context) => {
+      inner.sessions.create(SessionId(SESSION), { meta: { cwd: root! } })
+    }, { inject: ['sessions'] }))
     const { id, deck, createdAt } = await fixture(projects)
-    sessionExists = false
+    // 模板目录可在会话关闭后独立浏览。
+    await sessionFiber.dispose()
 
     const list = await request(base, 'templates')
     expect(list.status).toBe(200)
@@ -165,6 +165,7 @@ describe('PPT 用户模板只读 HTTP 目录', () => {
 
   it('拒绝缺失、不合法和未引用媒体，SVG 不经同源路由输出', async () => {
     const { base, projects } = await boot()
+    ctx!.sessions.create(SessionId(SESSION), { meta: { cwd: root! } })
     const { id } = await fixture(projects)
     const cases = [
       ['templates/detail', {}, 400, 'bad-request'],
@@ -186,6 +187,7 @@ describe('PPT 用户模板只读 HTTP 目录', () => {
 
   it('信任栅栏先于 id 解析，非 GET 和写入路径不可用', async () => {
     const { base, projects } = await boot()
+    ctx!.sessions.create(SessionId(SESSION), { meta: { cwd: root! } })
     await fixture(projects)
     for (const route of ['templates', 'templates/default', 'templates/builtins', 'templates/detail', 'templates/media']) {
       const foreign = await request(base, route, { id: 'broken', path: 'media/a.png' }, {

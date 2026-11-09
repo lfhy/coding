@@ -80,6 +80,13 @@ export interface PptExportResult {
   readonly skippedFonts: readonly SkippedFont[]
 }
 
+declare module 'coding-session/types' {
+  interface SessionEventMap {
+    /** 成功创建或打开后的会话选择；恢复只采用同一会话的记录，避免派生会话继承焦点。 */
+    'ppt/project-opened': { sessionId: string; dir: string }
+  }
+}
+
 declare module '@deepseek-ai/cordis' {
   interface Context { pptProjects: PptProjects }
 }
@@ -91,8 +98,6 @@ export default class PptProjects extends Service {
     templatesDir: z.string(),
   })
 
-  /** 每个会话当前打开的工程目录（绝对路径）。 */
-  private readonly active = new Map<string, string>()
   /** 模型最近一次要求面板打开工程的时间戳。 */
   private readonly openRequests = new Map<string, PptOpenRequest>()
   /** 最近一次取证的单页文本；仅在重读源文件且 SHA-256 一致后复用。 */
@@ -115,7 +120,6 @@ export default class PptProjects extends Service {
     this.templates = new PptTemplateStore(config.templatesDir ?? join(resolveDshHome(), 'ppt-templates'))
     installRoutes(ctx, this)
     ctx.effect(() => () => {
-      this.active.clear()
       this.openRequests.clear()
       this.evidenceCache = undefined
     }, 'pptWorkbench: session pointers')
@@ -145,7 +149,7 @@ export default class PptProjects extends Service {
   resolveDir(sessionId: string, dir?: string): string {
     const root = this.rootOf(sessionId)
     const target = dir ?? this.activeDir(sessionId)
-    if (target === undefined) throw new PptModelError('还没有打开任何演示文稿，请先创建或打开一个工程')
+    if (target === undefined) throw new PptModelError('还没有打开任何演示文稿，请先打开工程，或在这次调用中指定工程目录')
     return resolveProjectDir(root, target)
   }
 
@@ -155,12 +159,14 @@ export default class PptProjects extends Service {
    * @returns 相对目录；没有打开时为 undefined。
    */
   activeDir(sessionId: string): string | undefined {
-    const dir = this.active.get(sessionId)
-    if (dir === undefined) return undefined
+    const session = this.ctx.sessions.get(sessionId as SessionId)
+    if (session === undefined) return undefined
+    const event = session.events.findLast(entry => entry.type === 'ppt/project-opened'
+      && entry.data.sessionId === sessionId)
+    if (event?.type !== 'ppt/project-opened') return undefined
     try {
-      return this.relativeDir(sessionId, dir)
+      return this.relativeDir(sessionId, event.data.dir)
     } catch {
-      this.active.delete(sessionId)
       return undefined
     }
   }
@@ -171,15 +177,12 @@ export default class PptProjects extends Service {
     return absolute === root ? '.' : absolute.slice(root.length + 1)
   }
 
-  /**
-   * 记住会话要显示的工程，并让面板下一次轮询时切换过去。
-   * @param sessionId - 会话身份。
-   * @param dir - 绝对工程目录。
-   * @returns 相对工作区的目录。
-   */
-  focus(sessionId: string, dir: string): string {
+  /** 成功发布或打开工程后记录会话选择；不因读取别的目录而切换。 */
+  private focus(sessionId: string, dir: string): string {
     const relative = this.relativeDir(sessionId, dir)
-    this.active.set(sessionId, dir)
+    const session = this.ctx.sessions.get(sessionId as SessionId)
+    if (session === undefined) throw new PptModelError('会话不存在或已关闭')
+    session.append('ppt/project-opened', { sessionId, dir: relative })
     this.openRequests.set(sessionId, { dir: relative, at: Date.now() })
     return relative
   }
@@ -191,9 +194,9 @@ export default class PptProjects extends Service {
    */
   async state(sessionId: string): Promise<PptWorkbenchState> {
     const root = this.rootOf(sessionId)
-    const activeDir = this.active.get(sessionId)
-    const active = activeDir === undefined ? null : await loadProject(activeDir).catch(() => null)
-    if (active === null) this.active.delete(sessionId)
+    const activeDir = this.activeDir(sessionId)
+    const active = activeDir === undefined ? null
+      : await loadProject(resolveProjectDir(root, activeDir)).catch(() => null)
     return {
       projects: await listProjects(root),
       active,

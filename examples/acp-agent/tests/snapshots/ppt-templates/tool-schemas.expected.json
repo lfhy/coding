@@ -241,6 +241,26 @@
       }
     },
     {
+      "name": "ppt_attach_gallery_image",
+      "description": "Copy an image from this session gallery into the open presentation project. Pass the gallery image ID returned by generate_image or edit_image, not an attachment ID or a path. Returns a media source; use ppt_read to locate a page and ppt_edit with base_revision to place an image element. This does not change the deck or insert an image automatically.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "imageId": {
+            "type": "string",
+            "description": "Image ID from this session gallery."
+          },
+          "dir": {
+            "type": "string",
+            "description": "Workspace-relative project directory; omit for the open project."
+          }
+        },
+        "required": [
+          "imageId"
+        ]
+      }
+    },
+    {
       "name": "ppt_check",
       "description": "Run the deterministic layout checks before exporting: elements outside the canvas, zero-size elements, estimated text overflow and low text/background contrast. Errors block ppt_export; warnings are advice.",
       "parameters": {
@@ -343,12 +363,32 @@
     },
     {
       "name": "ppt_edit",
-      "description": "Apply atomic edit operations to a project. Pass base_revision from your last read or edit to reject concurrent changes instead of overwriting them.\nArray of edit operations, applied atomically in order. Each item is an object with \"op\":\n- {\"op\":\"add_page\",\"at\":<index>,\"name\":<string>,\"background\":\"#rrggbb\"|null,\"template\":\"title\"|\"section\"|\"bullets\"|\"two-column\"|\"data\"|\"chart\"|\"quote\",\"title\":<string>,\"bullets\":[<string>]} — insert a page; with \"template\" it comes pre-filled with that layout (bullets ≤ 6);\n- {\"op\":\"remove_page\",\"page\":<pageId>} — delete a page (never the last one);\n- {\"op\":\"move_page\",\"page\":<pageId>,\"to\":<index>} — reorder;\n- {\"op\":\"update_page\",\"page\":<pageId>,\"name\":<string>,\"background\":\"#rrggbb\"|null,\"transition\":\"none\"|\"fade\"|\"push\"};\n- {\"op\":\"add_element\",\"page\":<pageId>,\"element\":{...}} — element kinds: text {id?,kind:\"text\",x,y,w,h,text:{content,size,color,bold,align:\"left\"|\"center\"|\"right\",valign:\"top\"|\"middle\"|\"bottom\"}}, rect|ellipse {id?,kind,x,y,w,h,fill}, line {id?,kind:\"line\",x,y,w,h,color,width}, image {id?,kind:\"image\",x,y,w,h,source:\"media/<file>\",fit:\"cover\"|\"contain\"}, table {id?,kind:\"table\",x,y,w,h,rows,columns,cells:[[{content}]],header?,headerFill?,borderColor?,text?:{size,color,bold,align}}, chart {id?,kind:\"chart\",x,y,w,h,chart:\"bar\"|\"line\"|\"pie\",categories:[<string>],series:[{name,values:[<number>],color,axis?:\"primary\"|\"secondary\",as?:\"bar\"|\"line\"}],stacked?,showValues?,textColor?} — axis 与 as 用于次坐标轴与组合图;\n- {\"op\":\"update_element\",\"page\":<pageId>,\"element\":<elementId>,\"frame\":{x?,y?,w?,h?},\"text\":{...},\"fill\":..,\"color\":..,\"width\":..,\"source\":\"media/<file>\",\"fit\":..,\"cells\":[[{content}]]};\n- {\"op\":\"remove_element\",\"page\":<pageId>,\"element\":<elementId>};\n- {\"op\":\"reorder_element\",\"page\":<pageId>,\"element\":<elementId>,\"to\":\"front\"|\"back\"|\"forward\"|\"backward\"} — z-order;\n- {\"op\":\"duplicate_element\",\"page\":<pageId>,\"element\":<elementId>} — copy offset by 24px;\n- {\"op\":\"update_deck\",\"title\":<string>,\"size\":\"16:9\"|\"4:3\",\"theme\":\"ink\"|\"paper\"|\"ocean\"|\"forest\"|\"inference\"}.\nCanvas coordinates are base pixels: 1280x720 for 16:9 and 960x720 for 4:3, origin at the top-left. One page holds at most 200 elements; a deck holds at most 200 pages.",
+      "description": "Apply atomic edit operations to a project. Pass ops as a non-empty array of operation objects; for compatibility, a single JSON-encoded array string is accepted. Pass base_revision from your last read or edit to reject concurrent changes instead of overwriting them.\nArray of edit operations, applied atomically in order. Each item is an object with \"op\":\n- {\"op\":\"add_page\",\"at\":<index>,\"name\":<string>,\"background\":\"#rrggbb\"|null,\"template\":\"title\"|\"section\"|\"bullets\"|\"two-column\"|\"data\"|\"chart\"|\"quote\",\"title\":<string>,\"bullets\":[<string>]} — insert a page; with \"template\" it comes pre-filled with that layout (bullets ≤ 6);\n- {\"op\":\"remove_page\",\"page\":<pageId>} — delete a page (never the last one);\n- {\"op\":\"move_page\",\"page\":<pageId>,\"to\":<index>} — reorder;\n- {\"op\":\"update_page\",\"page\":<pageId>,\"name\":<string>,\"background\":\"#rrggbb\"|null,\"transition\":\"none\"|\"fade\"|\"push\"};\n- {\"op\":\"add_element\",\"page\":<pageId>,\"element\":{...}} — element kinds: text {id?,kind:\"text\",x,y,w,h,text:{content,size,color,bold,align:\"left\"|\"center\"|\"right\",valign:\"top\"|\"middle\"|\"bottom\"}}, rect|ellipse {id?,kind,x,y,w,h,fill}, line {id?,kind:\"line\",x,y,w,h,color,width}, image {id?,kind:\"image\",x,y,w,h,source:\"media/<file>\",fit:\"cover\"|\"contain\"}, table {id?,kind:\"table\",x,y,w,h,rows,columns,cells:[[{content}]],header?,headerFill?,borderColor?,text?:{size,color,bold,align}}, chart {id?,kind:\"chart\",x,y,w,h,chart:\"bar\"|\"line\"|\"pie\",categories:[<string>],series:[{name,values:[<number>],color,axis?:\"primary\"|\"secondary\",as?:\"bar\"|\"line\"}],stacked?,showValues?,textColor?} — axis 与 as 用于次坐标轴与组合图;\n- {\"op\":\"update_element\",\"page\":<pageId>,\"element\":<elementId>,\"frame\":{x?,y?,w?,h?},\"text\":{...},\"fill\":..,\"color\":..,\"width\":..,\"source\":\"media/<file>\",\"fit\":..,\"cells\":[[{content}]]};\n- {\"op\":\"remove_element\",\"page\":<pageId>,\"element\":<elementId>};\n- {\"op\":\"reorder_element\",\"page\":<pageId>,\"element\":<elementId>,\"to\":\"front\"|\"back\"|\"forward\"|\"backward\"} — z-order;\n- {\"op\":\"duplicate_element\",\"page\":<pageId>,\"element\":<elementId>} — copy offset by 24px;\n- {\"op\":\"update_deck\",\"title\":<string>,\"size\":\"16:9\"|\"4:3\",\"theme\":\"ink\"|\"paper\"|\"ocean\"|\"forest\"|\"inference\"}.\nCanvas coordinates are base pixels: 1280x720 for 16:9 and 960x720 for 4:3, origin at the top-left. One page holds at most 200 elements; a deck holds at most 200 pages.",
       "parameters": {
         "type": "object",
         "properties": {
           "ops": {
-            "description": "Edit operations, applied in order or not at all."
+            "oneOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "op": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "op"
+                  ]
+                }
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "description": "Non-empty array of operation objects (preferred), or one JSON-encoded array string (up to 1 MiB)."
           },
           "dir": {
             "type": "string",
@@ -509,7 +549,7 @@
     },
     {
       "name": "ppt_read",
-      "description": "Read the full page and element data of a project so you can plan edits. Prefer this over guessing ids: every edit names the page and element ids it touches.",
+      "description": "Read the full page and element data of a project so you can plan edits. Reading a directory does not select it as the open project; call ppt_open first to omit dir in later tools. Prefer this over guessing ids: every edit names the page and element ids it touches.",
       "parameters": {
         "type": "object",
         "properties": {

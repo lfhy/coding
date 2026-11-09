@@ -8,6 +8,7 @@ import Loader from '@deepseek-ai/cordis-plugin-loader'
 import Include from '@deepseek-ai/cordis-plugin-include'
 import { WebServer } from 'coding-host-webserver'
 import { HostConnectionService } from 'coding-client-connection'
+import SessionStore, { SessionId } from 'coding-session'
 import PptProjects from '../src/index.ts'
 
 const SESSION = 'ppt-route-session'
@@ -26,7 +27,8 @@ async function boot(): Promise<{ base: string; projects: PptProjects }> {
   root = await mkdtemp(join(tmpdir(), 'coding-ppt-routes-'))
   ctx = new Context()
   ctx.baseUrl = pathToFileURL(root).href + '/'
-  ctx.provide('sessions', { get: (id: string) => id === SESSION ? { header: { cwd: root } } : undefined } as never)
+  await ctx.plugin(SessionStore)
+  ctx.sessions.create(SessionId(SESSION), { meta: { cwd: root } })
   await ctx.plugin(Loader)
   ctx.loader.builtins.include = Include
   ctx.loader.internal = { version: 'v2', async import(specifier: string) {
@@ -104,6 +106,28 @@ describe('PPT 状态路由的真实 HTTP 组合', () => {
     const missing = await state(base, 'another-session')
     expect(missing.status).toBe(400)
     expect(await missing.json()).toMatchObject({ ok: false, error: { code: 'bad-request' } })
+  })
+
+  it('HTTP 编辑接受一次编码的 ops 数组并保持失败请求原子性', async () => {
+    const { base, projects } = await boot()
+    const created = await projects.create(SESSION, { title: 'HTTP 编辑' })
+    const send = (ops: unknown, baseRevision = 1) => fetch(`${base}/api/ppt/edit`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ sessionId: SESSION, ops, baseRevision }),
+    })
+    const edited = await send(JSON.stringify([{ op: 'add_page', title: '追加' }]))
+    expect(edited.status).toBe(200)
+    expect((await projects.read(SESSION)).deck.pages).toHaveLength(created.pages + 1)
+    expect((await send([{ op: 'add_page', title: '再追加' }], 2)).status).toBe(200)
+    for (const invalid of ['not json', JSON.stringify(JSON.stringify([{ op: 'add_page' }])), '{}', '[]',
+      JSON.stringify([{ op: 'bad' }]), 'x'.repeat(1024 * 1024 + 1)]) {
+      const response = await send(invalid, 3)
+      expect(response.status).toBe(400)
+    }
+    expect((await send(JSON.stringify([{ op: 'add_page' }]), 1)).status).toBe(409)
+    const latest = await projects.read(SESSION)
+    expect(latest.revision).toBe(3)
+    expect(latest.deck.pages).toHaveLength(created.pages + 2)
   })
 
   it('跨源请求先被拒绝，不暴露工程状态', async () => {

@@ -489,7 +489,7 @@ Source: [`packages/hooks/hook-protocol/src/types.ts:31`](../packages/hooks/hook-
 'image-gen/canvas': CanvasSnapshot
 ```
 
-Source: [`packages/image/image-gen/src/types.ts:44`](../packages/image/image-gen/src/types.ts)
+Source: [`packages/image/image-gen/src/types.ts:48`](../packages/image/image-gen/src/types.ts)
 
 <a id="image-gencreated--log-only"></a>
 
@@ -500,7 +500,7 @@ Source: [`packages/image/image-gen/src/types.ts:44`](../packages/image/image-gen
 'image-gen/created': { item: GalleryItem }
 ```
 
-Source: [`packages/image/image-gen/src/types.ts:42`](../packages/image/image-gen/src/types.ts)
+Source: [`packages/image/image-gen/src/types.ts:46`](../packages/image/image-gen/src/types.ts)
 
 ### `llm/*`
 
@@ -560,6 +560,19 @@ Source: [`packages/interaction/permission-presets/src/index.ts:50`](../packages/
 ```
 
 Source: [`packages/plan/plan-mode/src/index.ts:50`](../packages/plan/plan-mode/src/index.ts)
+
+### `ppt/*`
+
+<a id="pptproject-opened--log-only"></a>
+
+#### `ppt/project-opened` — log-only
+
+```ts persistence-catalog
+/** 成功创建或打开后的会话选择；恢复只采用同一会话的记录，避免派生会话继承焦点。 */
+'ppt/project-opened': { sessionId: string; dir: string }
+```
+
+Source: [`packages/ppt/ppt-workbench/src/index.ts:86`](../packages/ppt/ppt-workbench/src/index.ts)
 
 ### `request/*`
 

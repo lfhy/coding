@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { REMOTE_WORKSPACE_MARKER } from 'coding-subprocess'
+import SessionStore, { SessionId } from 'coding-session'
 import { PPT_FORMAT, type PptDeck } from 'coding-ppt-model'
 import PptProjects from '../src/index.ts'
 import { buildPptx } from '../src/export/pptx.ts'
@@ -22,14 +23,16 @@ const deck: PptDeck = {
 let root: string
 let ctx: Context
 let projects: PptProjects
+let projectFiber: Awaited<ReturnType<Context['plugin']>>
 
 beforeEach(async () => {
   root = await mkdtemp(join(tmpdir(), 'ppt-template-service-'))
   ctx = new Context()
-  ctx.provide('sessions', { get: (id: string) => id === SESSION ? { header: { cwd: root } } : undefined } as never)
+  await ctx.plugin(SessionStore)
+  ctx.sessions.create(SessionId(SESSION), { meta: { cwd: root } })
   ctx.provide('webServer', { register: () => () => undefined } as never)
   ctx.provide('connection', { requestRejection: () => undefined } as never)
-  await ctx.plugin(PptProjects, { templatesDir: join(root, 'templates') })
+  projectFiber = await ctx.plugin(PptProjects, { templatesDir: join(root, 'templates') })
   projects = ctx.pptProjects
 })
 
@@ -39,6 +42,49 @@ afterEach(async () => {
 })
 
 describe('PPT 模板服务', () => {
+  it('服务重建从本会话日志恢复当前工程，不猜测其他会话的焦点', async () => {
+    const first = await projects.create(SESSION, { title: '第一稿' })
+    const second = await projects.create(SESSION, { title: '第二稿' })
+    const session = ctx.sessions.get(SessionId(SESSION))!
+    const seed = session.events
+    const other = ctx.sessions.create(SessionId('other-ppt'), { meta: { cwd: root } })
+    expect((await projects.read(SESSION)).dir).toBe(second.dir)
+    expect((await projects.state(SESSION)).active?.dir).toBe(second.dir)
+    expect(projects.activeDir(other.id)).toBeUndefined()
+    await expect(projects.check(other.id)).rejects.toThrow('还没有打开任何演示文稿')
+    expect((await projects.read(other.id, first.dir.slice(root.length + 1))).dir).toBe(first.dir)
+    expect(projects.activeDir(other.id)).toBeUndefined()
+    expect((await projects.check(other.id, first.dir.slice(root.length + 1))).ok).toBe(true)
+    await projects.open(other.id, first.dir.slice(root.length + 1))
+    expect((await projects.read(other.id)).dir).toBe(first.dir)
+    const replay = ctx.sessions.create(SessionId('replay-ppt'), { seed, meta: { cwd: root } })
+    expect(projects.activeDir(replay.id)).toBeUndefined()
+    await projectFiber.dispose()
+    projectFiber = await ctx.plugin(PptProjects, { templatesDir: join(root, 'templates') })
+    const restored = ctx.pptProjects
+    expect(restored.activeDir(SESSION)).toBe(second.dir.slice(root.length + 1))
+    expect(restored.activeDir(other.id)).toBe(first.dir.slice(root.length + 1))
+    expect((await restored.state(SESSION)).active?.dir).toBe(second.dir)
+    expect((await restored.state(SESSION)).openRequest).toBeNull()
+    expect((await restored.check(SESSION)).ok).toBe(true)
+    const replayed = new Context()
+    try {
+      await replayed.plugin(SessionStore)
+      replayed.sessions.create(SessionId(SESSION), { seed, meta: { cwd: root } })
+      replayed.provide('webServer', { register: () => () => undefined } as never)
+      replayed.provide('connection', { requestRejection: () => undefined } as never)
+      await replayed.plugin(PptProjects, { templatesDir: join(root, 'templates') })
+      expect((await replayed.pptProjects.read(SESSION)).dir).toBe(second.dir)
+      expect((await replayed.pptProjects.check(SESSION)).ok).toBe(true)
+    } finally {
+      await replayed.fiber.dispose()
+    }
+    const fork = ctx.sessions.create(SessionId('fork-ppt'), { seed: session.events, meta: { cwd: root } })
+    expect(restored.activeDir(fork.id)).toBeUndefined()
+    expect(() => restored.resolveDir(fork.id)).toThrow('还没有打开任何演示文稿')
+    expect((await restored.read(replay.id, first.dir.slice(root.length + 1))).dir).toBe(first.dir)
+  })
+
   it('默认新建六页泛化整稿，显式主题/尺寸保留单页，副本不共用元素', async () => {
     const first = await projects.create(SESSION, { title: '春季计划' })
     const second = await projects.create(SESSION, { title: '秋季计划' })

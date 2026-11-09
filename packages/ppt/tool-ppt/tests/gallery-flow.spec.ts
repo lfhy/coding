@@ -120,6 +120,39 @@ async function imageProvider(): Promise<string> {
 }
 
 describe('图库图片接入演示稿', () => {
+  it('工具兼容单层编码 ops，仍拒绝无效数组并保持版本历史', async () => {
+    const host = await boot()
+    const session = host.sessions.create(SessionId('ppt-encoded-ops'), { meta: { cwd: root! } })
+    const other = host.sessions.create(SessionId('ppt-ops-other'), { meta: { cwd: root! } })
+    const created = await execute(host, session, 'ppt_create', { title: '编辑参数' })
+    expect(created.isError).toBe(false)
+    const initial = await host.pptProjects.read(session.id)
+    const schema = host.tools.schemas().find(tool => tool.name === 'ppt_edit')
+    expect(schema?.parameters.properties).toMatchObject({ ops: { oneOf: [{ type: 'array' }, { type: 'string' }] } })
+    const ops = [{ op: 'add_page', title: '新增页面' }]
+    const edited = await execute(host, session, 'ppt_edit', { ops: JSON.stringify(ops), base_revision: initial.revision })
+    expect(edited.isError, JSON.stringify(edited)).toBe(false)
+    const current = await host.pptProjects.read(session.id)
+    expect(current.revision).toBeGreaterThan(initial.revision)
+    expect(current.deck.pages).toHaveLength(initial.pages + 1)
+    expect((await execute(host, other, 'ppt_read', { dir: initial.dir.slice(root!.length + 1) })).isError).toBe(false)
+    expect((await execute(host, other, 'ppt_check', { ai: false })).isError).toBe(true)
+    expect((await execute(host, other, 'ppt_check', { ai: false, dir: initial.dir.slice(root!.length + 1) })).isError).toBe(false)
+    const opened = await execute(host, other, 'ppt_open', { dir: initial.dir.slice(root!.length + 1) })
+    expect(opened.isError, JSON.stringify(opened)).toBe(false)
+    expect((await execute(host, other, 'ppt_check', { ai: false })).isError).toBe(false)
+    for (const invalid of ['oops', JSON.stringify(JSON.stringify(ops)), '{}', '[]',
+      JSON.stringify([{ op: 'missing' }]), JSON.stringify(Array.from({ length: 101 }, () => ops[0])),
+      '😀'.repeat(300_000), { operations: ops }, []]) {
+      const result = await execute(host, session, 'ppt_edit', { ops: invalid, base_revision: current.revision })
+      expect(result.isError, JSON.stringify(result)).toBe(true)
+    }
+    expect((await execute(host, session, 'ppt_edit', { ops, base_revision: initial.revision })).isError).toBe(true)
+    expect((await host.pptProjects.read(session.id)).revision).toBe(current.revision)
+    expect((await execute(host, session, 'ppt_undo', {})).isError).toBe(false)
+    expect((await host.pptProjects.read(session.id)).deck).toEqual(initial.deck)
+  })
+
   it('将模型工具生成的图片加入同一份工程，工具卸载后撤销接入注册', async () => {
     const endpoint = await imageProvider()
     const host = await boot(endpoint)

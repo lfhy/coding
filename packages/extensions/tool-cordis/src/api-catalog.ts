@@ -1418,12 +1418,6 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: '相对目录；没有打开时为 undefined。',
       },
       {
-        signature: 'focus(sessionId: string, dir: string): string',
-        description: '记住会话要显示的工程，并让面板下一次轮询时切换过去。',
-        parameters: [{ name: 'sessionId', description: '会话身份。' }, { name: 'dir', description: '绝对工程目录。' }],
-        returns: '相对工作区的目录。',
-      },
-      {
         signature: 'async state(sessionId: string): Promise<PptWorkbenchState>',
         description: '面板视角的整体状态。',
         parameters: [{ name: 'sessionId', description: '会话身份。' }],

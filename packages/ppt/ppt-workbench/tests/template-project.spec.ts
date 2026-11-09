@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
+import SessionStore, { SessionId } from 'coding-session'
 import { PPT_FORMAT, type PptDeck } from 'coding-ppt-model'
 import { REMOTE_WORKSPACE_MARKER } from 'coding-subprocess'
 import PptProjects from '../src/index.ts'
@@ -62,7 +63,8 @@ describe('工程原子发布', () => {
   it('工作区文件导入只保存模板，不创建工程或更换会话焦点', async () => {
     const sessionId = 'ppt-file-import'
     const ctx = new Context()
-    ctx.provide('sessions', { get: (id: string) => id === sessionId ? { header: { cwd: root } } : undefined } as never)
+    await ctx.plugin(SessionStore)
+    ctx.sessions.create(SessionId(sessionId), { meta: { cwd: root } })
     ctx.provide('webServer', { register: () => () => undefined } as never)
     ctx.provide('connection', { requestRejection: () => undefined } as never)
     try {

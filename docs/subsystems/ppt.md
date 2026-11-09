@@ -16,7 +16,7 @@
 
 ## 会话与版本
 
-`rootOf(sessionId)` 取会话的工作目录；工程目录由 `resolveDir` 限制在该工作区内，未打开工程又未指定目录时拒绝。创建、打开和导入工程会记录会话当前工程并通知面板；面板通过 `ackOpenRequest` 确认消费。编辑可携带 `baseRevision`，不匹配时拒绝覆盖；同一目录的写入在进程内串行。导出先执行质检，除非调用方显式设置 `skipCheck`。持久文件布局、错误映射和渲染限制由[工作台包 README](../../packages/ppt/ppt-workbench/README.md) 持有。
+`rootOf(sessionId)` 取会话的工作目录；工程目录由 `resolveDir` 限制在该工作区内，未打开工程又未指定目录时拒绝。创建、打开和导入工程将当前选择写入会话事件，服务重建时仅按原会话的最后一次选择恢复，不从工程列表推断；`read(dir)` 不切换选择。面板通过 `ackOpenRequest` 确认本轮打开通知，重建后只恢复选择、不重复通知。编辑可携带 `baseRevision`，不匹配时拒绝覆盖；`ops` 为非空数组或至多 1 MiB 的单层 JSON 数组字符串，两者都经过操作校验。导出先执行质检，除非调用方显式设置 `skipCheck`。持久文件布局、错误映射和渲染限制由[工作台包 README](../../packages/ppt/ppt-workbench/README.md) 持有。
 
 ## 图片媒体与编辑
 
@@ -66,14 +66,6 @@ resolveDir(sessionId: string, dir?: string): string
  * @returns 相对目录；没有打开时为 undefined。
  */
 activeDir(sessionId: string): string | undefined
-
-/**
- * 记住会话要显示的工程，并让面板下一次轮询时切换过去。
- * @param sessionId - 会话身份。
- * @param dir - 绝对工程目录。
- * @returns 相对工作区的目录。
- */
-focus(sessionId: string, dir: string): string
 
 /**
  * 面板视角的整体状态。
@@ -287,5 +279,5 @@ async createFromTemplate(sessionId: string, id: string, options: { title?: strin
 async export(sessionId: string, dir?: string, options: { skipCheck?: boolean } = {}): Promise<PptExportResult>
 ```
 
-Source: [`packages/ppt/ppt-workbench/src/index.ts:88`](../../packages/ppt/ppt-workbench/src/index.ts)
+Source: [`packages/ppt/ppt-workbench/src/index.ts:95`](../../packages/ppt/ppt-workbench/src/index.ts)
 <!-- END GENERATED cordis-surface -->

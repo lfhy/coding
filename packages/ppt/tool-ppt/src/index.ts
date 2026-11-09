@@ -683,7 +683,8 @@ export function apply(ctx: Context): void {
 
   ctx.tools.register(defineTool({
     name: 'ppt_read',
-    description: 'Read the full page and element data of a project so you can plan edits. '
+    description: 'Read the full page and element data of a project so you can plan edits. Reading a directory does '
+      + 'not select it as the open project; call ppt_open first to omit dir in later tools. '
       + 'Prefer this over guessing ids: every edit names the page and element ids it touches.',
     parameters: {
       dir: { type: 'string', description: 'Workspace-relative project directory; omit for the open project.' },
@@ -703,10 +704,16 @@ export function apply(ctx: Context): void {
 
   ctx.tools.register(defineTool({
     name: 'ppt_edit',
-    description: 'Apply atomic edit operations to a project. Pass base_revision from your last read or edit to '
+    description: 'Apply atomic edit operations to a project. Pass ops as a non-empty array of operation objects; '
+      + 'for compatibility, a single JSON-encoded array string is accepted. '
+      + 'Pass base_revision from your last read or edit to '
       + `reject concurrent changes instead of overwriting them.\n${OPS_HELP}`,
     parameters: {
-      ops: { type: 'json', required: true, description: 'Edit operations, applied in order or not at all.' },
+      ops: { required: true, oneOf: [
+        { type: 'array', items: { type: 'object', additionalProperties: true,
+          properties: { op: { type: 'string', required: true } } } },
+        { type: 'string' },
+      ], description: 'Non-empty array of operation objects (preferred), or one JSON-encoded array string (up to 1 MiB).' },
       dir: { type: 'string', description: 'Workspace-relative project directory; omit for the open project.' },
       base_revision: { type: 'number', description: 'Revision the edit was planned against.' },
     },

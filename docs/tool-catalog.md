@@ -3596,7 +3596,7 @@ Source: [`packages/ppt/tool-ppt/src/index.ts`](../packages/ppt/tool-ppt/src/inde
 
 ### `ppt_edit`
 
-Apply atomic edit operations to a project. Pass base_revision from your last read or edit to reject concurrent changes instead of overwriting them.
+Apply atomic edit operations to a project. Pass ops as a non-empty array of operation objects; for compatibility, a single JSON-encoded array string is accepted. Pass base_revision from your last read or edit to reject concurrent changes instead of overwriting them.
 Array of edit operations, applied atomically in order. Each item is an object with "op":
 - {"op":"add_page","at":<index>,"name":<string>,"background":"#rrggbb"|null,"template":"title"|"section"|"bullets"|"two-column"|"data"|"chart"|"quote","title":<string>,"bullets":[<string>]} — insert a page; with "template" it comes pre-filled with that layout (bullets ≤ 6);
 - {"op":"remove_page","page":<pageId>} — delete a page (never the last one);
@@ -3615,7 +3615,27 @@ Canvas coordinates are base pixels: 1280x720 for 16:9 and 960x720 for 4:3, origi
   "type": "object",
   "properties": {
     "ops": {
-      "description": "Edit operations, applied in order or not at all."
+      "oneOf": [
+        {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": true,
+            "properties": {
+              "op": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "op"
+            ]
+          }
+        },
+        {
+          "type": "string"
+        }
+      ],
+      "description": "Non-empty array of operation objects (preferred), or one JSON-encoded array string (up to 1 MiB)."
     },
     "dir": {
       "type": "string",
@@ -3809,7 +3829,7 @@ Source: [`packages/ppt/tool-ppt/src/index.ts`](../packages/ppt/tool-ppt/src/inde
 
 ### `ppt_read`
 
-Read the full page and element data of a project so you can plan edits. Prefer this over guessing ids: every edit names the page and element ids it touches.
+Read the full page and element data of a project so you can plan edits. Reading a directory does not select it as the open project; call ppt_open first to omit dir in later tools. Prefer this over guessing ids: every edit names the page and element ids it touches.
 
 ```json
 {

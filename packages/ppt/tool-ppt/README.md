@@ -8,10 +8,10 @@ PPT 创作模式的十九个模型工具覆盖工程创建、打开、读写、�
 
 ## 行为
 
-- **目录参数可选**：`dir` 省略时作用于「会话当前打开的工程」；给出时按工作区相对路径解析，越界即拒绝。
+- **目录参数可选**：`dir` 省略时作用于「本会话当前打开的工程」；给出时按工作区相对路径解析，越界即拒绝。`ppt_read({dir})` 不切换当前工程；需让后续 `ppt_check`、`ppt_edit` 等省略 `dir` 时，先调用 `ppt_open({dir})`。成功打开的选择随本会话恢复，不会自动选中别的会话或磁盘上的唯一工程。
 - **导入来源**：`ppt_import`、`ppt_prepare_template`、`ppt_import_evidence` 和 `ppt_import_template` 的 `source` 接受本机会话工作区的 `.pptx` 路径，或文件库已登记的本机上传文件绝对路径；其他工作区外文件、远程工作区和超过 8 MiB 的文件均拒绝。源页查证还会复核上传登记；工程输出始终留在工作区。
 - **图库图片接入**：已挂载的 `coding-tool-image-gen` 在图像服务可用时提供 `generate_image`、`generate_images`、`edit_image` 等工具；服务不可用时不能生成或编辑图片，已有的同会话图库图片仍可接入。`ppt_attach_gallery_image({imageId,dir?})` 只接受本次会话图库项 ID，不接受附件 ID 或文件路径，也不能使用其他会话的 ID；它将图片复制到当前打开或指定的工程，返回 `media/<file>` 的 `source`，不会更改页面。接入图片与工作台上传共用 8 MiB 和 PNG／JPEG／GIF／WebP 格式校验；SVG 因同源脚本风险不可上传；路径不安全时拒绝写入。调用 `ppt_read` 取得页面 id 与最新版本后，再以 `ppt_edit` 的 `add_element` 添加引用该 `source` 的 `image` 元素；可用 `ppt_render` 预览、`ppt_export` 导出。复制与编辑不是同一次原子操作：编辑冲突或失败可能留下未引用的媒体文件，但不会覆盖工程改动。
-- **编辑是原子的**：`ppt_edit` 的 `ops` 要么整体生效，要么整体失败；`base_revision` 与当前版本不符时返回冲突，而不是覆盖别处的改动。
+- **编辑是原子的**：`ppt_edit.ops` 首选非空操作对象数组，兼容单次 JSON 编码的数组字符串（UTF-8 不超过 1 MiB），不接受二次编码、对象或非法操作；失败不生成版本。`base_revision` 与当前版本不符时返回冲突，而不是覆盖别处的改动。改稿经 `ppt_edit`，不直接覆写工程文件，否则版本历史无法与内容同步。
 - **元素种类**：文本框、矩形/椭圆、连接线、图片（`media/<file>`）、表格（行 × 列 + 单元格文本）、图表（柱状/折线/饼，分类 + 系列），另有层级调整（`reorder_element`）与复制（`duplicate_element`）。
 - **字体与动画**：文本元素可指定 `font` 族名；导出按 `fsType` 许可嵌入字体，结果里的 `fonts`／`skippedFonts` 说明嵌了谁、为什么跳过。元素可带 `animation`（fade/fly/zoom/wipe），页面可带 `transition`（none/fade/push）。
 - **导入与补页**：`ppt_import` 和 `ppt_prepare_template` 返回 `dropped`、`sourceSha256` 及逐页 `report`：源页序号、导入页 id、源/导入元素计数、状态、丢失类别和有界文字预览。用 `ppt_read` 对照每页；结构缺失时以同一源文件和哈希调用 `ppt_import_evidence` 分片查证源页 XML 与关联图表缓存，再用 `ppt_edit` 补齐有证据的内容。完整源页证据超过 1 MiB UTF-16 字符会报错，不截断；单片默认 8000、最多 16000 字符，可按 `nextOffset` 续读。源文件变动、消失或上传登记失效会拒绝旧哈希，不猜测缺失数据；源页本来为空可保留，只有图片的页可见却不等于内部文字可编辑，也不是缺页。`no_known_loss` 只表示未发现已知结构丢失，不保证视觉保真。

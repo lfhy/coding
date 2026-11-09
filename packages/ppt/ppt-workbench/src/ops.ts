@@ -320,12 +320,20 @@ function parseOp(value: unknown, at: string): PptOp {
 }
 
 /**
- * 校验一次编辑请求的 ops 数组。
+ * 校验一次编辑请求的 ops；兼容单层 JSON 编码的数组字符串，仍拒绝其他值。
  * @param value - 来自工具参数或 HTTP 请求体的值。
  * @returns 通过校验的 ops 数组。
- * @throws PptModelError - 结构不合法时拒绝整次编辑。
+ * @throws PptModelError - 结构不合法或编码超限时拒绝整次编辑。
  */
 export function parseOps(value: unknown): PptOp[] {
+  if (typeof value === 'string') {
+    if (Buffer.byteLength(value, 'utf8') > 1024 * 1024) throw new PptModelError('ops 字符串不能超过 1 MiB')
+    try {
+      value = JSON.parse(value) as unknown
+    } catch {
+      throw new PptModelError('ops 字符串必须是合法的 JSON 数组')
+    }
+  }
   if (!Array.isArray(value) || value.length === 0) throw new PptModelError('ops 必须是非空数组')
   if (value.length > 100) throw new PptModelError('ops 一次最多 100 步')
   return value.map((entry, index) => parseOp(entry, `ops[${index}]`))
