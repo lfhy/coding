@@ -23,6 +23,7 @@ const deck: PptDeck = {
 }
 
 let root: string
+let libraryRoot: string | undefined
 let ctx: Context
 let projects: PptProjects
 
@@ -39,9 +40,84 @@ beforeEach(async () => {
 afterEach(async () => {
   await ctx?.fiber.dispose()
   if (root !== undefined) await rm(root, { recursive: true, force: true })
+  if (libraryRoot !== undefined) await rm(libraryRoot, { recursive: true, force: true })
+  libraryRoot = undefined
 })
 
 describe('PPT 导入修复的宿主服务', () => {
+  it('仅从已登记的本机上传绝对路径导入、取证和提取模板，工程仍写在工作区', async () => {
+    libraryRoot = await mkdtemp(join(tmpdir(), 'ppt-managed-upload-'))
+    await mkdir(join(libraryRoot, 'uploads'))
+    const source = join(libraryRoot, 'uploads', 'brand.pptx')
+    const unregistered = join(libraryRoot, 'uploads', 'other.pptx')
+    const bytes = buildPptx(deck)
+    await writeFile(source, bytes)
+    await writeFile(unregistered, bytes)
+    const registered = new Set([source])
+    ctx.provide('fileLibrary', {
+      root: libraryRoot, isManagedUploadPath: async (path: string) => registered.has(path),
+    } as never)
+
+    const imported = await projects.import(SESSION, source, { dir: 'ppt/from-upload' })
+    expect(imported.snapshot.dir).toBe(join(root, 'ppt', 'from-upload'))
+    const evidence = await projects.importEvidence(SESSION, source, {
+      sourceIndex: 1, sourceSha256: imported.sourceSha256,
+    })
+    expect(evidence.content).toContain('第一页的源文案')
+    const template = await projects.importTemplateFromFile(SESSION, source)
+    expect(template.sourceName).toBe('brand.pptx')
+    await expect(projects.import(SESSION, source, { dir: join(libraryRoot, 'project') }))
+      .rejects.toMatchObject({ code: 'forbidden' })
+
+    for (const rejected of [unregistered, join(libraryRoot, 'uploads', 'unknown.pptx')]) {
+      await expect(projects.import(SESSION, rejected, {})).rejects.toMatchObject({ code: 'forbidden' })
+      await expect(projects.importEvidence(SESSION, rejected, { sourceIndex: 1, sourceSha256: imported.sourceSha256 }))
+        .rejects.toMatchObject({ code: 'forbidden' })
+      await expect(projects.importTemplateFromFile(SESSION, rejected)).rejects.toMatchObject({ code: 'forbidden' })
+    }
+    await expect(projects.import(SESSION, `${libraryRoot}/uploads/../uploads/brand.pptx`, {}))
+      .rejects.toMatchObject({ code: 'forbidden' })
+    await writeFile(source, new Uint8Array(8 * 1024 * 1024 + 1))
+    await expect(projects.importTemplateFromFile(SESSION, source)).rejects.toMatchObject({ code: 'bad-request' })
+    await rm(source)
+    await symlink(unregistered, source)
+    await expect(projects.import(SESSION, source, {})).rejects.toMatchObject({ code: 'forbidden' })
+    await expect(projects.importEvidence(SESSION, source, { sourceIndex: 1, sourceSha256: imported.sourceSha256 }))
+      .rejects.toMatchObject({ code: 'forbidden' })
+    await expect(projects.importTemplateFromFile(SESSION, source)).rejects.toMatchObject({ code: 'forbidden' })
+  })
+
+  it('读取期间上传登记撤销时拒绝来源', async () => {
+    libraryRoot = await mkdtemp(join(tmpdir(), 'ppt-managed-upload-'))
+    await mkdir(join(libraryRoot, 'uploads'))
+    const source = join(libraryRoot, 'uploads', 'brand.pptx')
+    await writeFile(source, buildPptx(deck))
+    let checks = 0
+    ctx.provide('fileLibrary', {
+      root: libraryRoot, isManagedUploadPath: async () => ++checks === 1,
+    } as never)
+    await expect(projects.import(SESSION, source, {})).rejects.toMatchObject({ code: 'forbidden' })
+    expect(checks).toBe(2)
+  })
+
+  it('登记检查后源文件变为符号链接时仍拒绝读取', async () => {
+    libraryRoot = await mkdtemp(join(tmpdir(), 'ppt-managed-upload-'))
+    await mkdir(join(libraryRoot, 'uploads'))
+    const source = join(libraryRoot, 'uploads', 'brand.pptx')
+    const replacement = join(libraryRoot, 'uploads', 'replacement.pptx')
+    await writeFile(source, buildPptx(deck))
+    await writeFile(replacement, buildPptx(deck))
+    ctx.provide('fileLibrary', {
+      root: libraryRoot,
+      isManagedUploadPath: async () => {
+        await rm(source)
+        await symlink(replacement, source)
+        return true
+      },
+    } as never)
+    await expect(projects.import(SESSION, source, {})).rejects.toMatchObject({ code: 'forbidden' })
+  })
+
   it('返回源页对照、工程页 ID 和真实源文件哈希，准备阶段不写模板库', async () => {
     const bytes = buildPptx(deck)
     await writeFile(join(root, 'source.pptx'), bytes)

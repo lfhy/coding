@@ -1,0 +1,56 @@
+.section {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  max-width: 960px;
+  padding: 24px;
+  color: var(--dsw-alias-label-primary);
+}
+
+.title { margin: 0; font-size: 20px; line-height: 28px; font-weight: 600; }
+.intro { margin: 8px 0 24px; font-size: 13px; line-height: 20px; color: var(--dsw-alias-label-secondary); }
+.count { margin: 0 0 8px; font-size: 12px; line-height: 18px; color: var(--dsw-alias-label-secondary); }
+
+.tableHeader, .row {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(100px, 1fr) minmax(76px, .7fr) minmax(138px, 1.2fr);
+  align-items: center;
+  column-gap: 16px;
+}
+
+.tableHeader {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.list { margin: 0; padding: 0; list-style: none; }
+.row { min-height: 52px; padding: 8px 12px; border-bottom: 1px solid var(--dsw-alias-border-l2); box-sizing: border-box; font-size: 13px; line-height: 20px; }
+.fileName { min-width: 0; overflow-wrap: anywhere; font-weight: 500; }
+.cell { min-width: 0; overflow-wrap: anywhere; color: var(--dsw-alias-label-secondary); font-variant-numeric: tabular-nums; }
+.mobileLabel, .screenReaderLabel {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.status { margin: 20px 0 0; color: var(--dsw-alias-label-secondary); font-size: 13px; line-height: 20px; }
+.failure { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 20px; color: var(--dsw-alias-state-error-primary); font-size: 13px; line-height: 20px; }
+.failure p { margin: 0; }
+.more, .failure button { min-height: 36px; padding: 6px 14px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-label-primary); font: inherit; font-size: 13px; line-height: 20px; cursor: pointer; }
+.more { margin-top: 20px; }
+.more:hover, .failure button:hover { background: var(--dsw-alias-interactive-bg-hover); }
+.more:focus-visible, .failure button:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: 2px; }
+
+@media (max-width: 620px) {
+  .section { padding: 24px 16px; }
+  .tableHeader { display: none; }
+  .row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 4px 12px; padding: 12px 0; }
+  .fileName { grid-column: 1 / -1; }
+  .cell:last-child { grid-column: 1 / -1; }
+  .mobileLabel { position: static; width: auto; height: auto; overflow: visible; clip-path: none; white-space: normal; color: var(--dsw-alias-label-secondary); }
+}

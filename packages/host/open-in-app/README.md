@@ -18,13 +18,14 @@ kind: "package-reference"
 - [用户终端](#browser-terminal)
 - [模型体验](#model-experience)
 - [已知限制与延后工作](#已知限制与延后工作)
+- [子系统类型参考](#子系统类型参考)
 
 -----
 
 <a id="use-this-package"></a>
 ## 使用本包
 
-把本包挂进携带 `webServer`、`connection`、`subprocess` 与 `fs` 的组合，通常与 [`dsh-client-ui-open-in-app`](../../client/ui-open-in-app/README.md) 并排。
+把本包挂进携带 `webServer`、`connection`、`subprocess`、`fs`、`sessions`、`agents` 与 [`fileLibrary`](../../attachment/file-library/README.md) 的组合，通常与 [`dsh-client-ui-open-in-app`](../../client/ui-open-in-app/README.md) 并排。
 
 ```yaml
 - name: 'coding-host-open-in-app'
@@ -41,6 +42,11 @@ kind: "package-reference"
 | `launchWatchMs` | 早期失败窗口；关闭时仍存活的启动器视为已启动，且不会被终止。 |
 | `previewMaxBytes` | 单个预览允许读取的完整文件字节数；默认 2 MiB，最大 32 MiB。 |
 
+<a id="子系统类型参考"></a>
+## 子系统类型参考
+
+工作区文件与终端类型见 [workspace.md](../../../docs/subsystems/workspace.md) 和 [terminal.md](../../../docs/subsystems/terminal.md)；文件引用与目录选择的类型归属见[会话引用](../../../docs/subsystems/session-reference.md)与[工作区](../../../docs/subsystems/workspace.md)页。
+
 <a id="routes-and-security"></a>
 ## 路由与安全
 
@@ -54,7 +60,7 @@ kind: "package-reference"
 | `POST /open-in-app/open` | 启动已验证的本地应用；目标已变成远端时返回 `action: files`。 |
 | `POST /open-in-app/files` | 用 `{ sessionId, segments }` 在 Session 工作区内列出一层目录。 |
 | `POST /open-in-app/read` | 用 `{ sessionId, segments }` 返回有界文本、图片或 unsupported 预览。 |
-| `POST /open-in-app/attach` | 用 `x-session-id`、`x-file-name` 和原始字节暂存本机工作区文件，返回 `{ path }` 相对路径。 |
+| `POST /open-in-app/attach` | 用 `x-session-id`、`x-file-name` 和原始字节保存文件到全局文件库，返回绝对 `{ path }`。 |
 | `WS /open-in-app/terminal` | 用唯一的 `sessionId`、`cols`、`rows` query 启动连接独占用户终端。 |
 
 target 与 open 路由会在读取应用可用性前检查 Remote-SSH marker。有效 marker、无效 marker 或继承的 SSH 启动都不能进入本地启动分支。该顺序保证 Windows marker 目录不会交给 Explorer，POSIX marker 也不会交给 Finder。
@@ -77,7 +83,7 @@ target 与 open 路由会在读取应用可用性前检查 Remote-SSH marker。�
 
 只有目录 target 可以推进名称链，预览的最后一段必须仍是普通文件。列表响应包含 `displayPath`、普通 entry 元数据和 `truncated`，单层最多 2,000 项。预览在 `previewMaxBytes` 内完整读取：Markdown、代码和其他严格 UTF-8 文本返回 `kind: text`；支持的图片返回 `kind: image`、MIME 与 base64；含 NUL、无效 UTF-8 或超限文件返回 `kind: unsupported`，不返回原始内容。超限响应以 `truncated: true` 明确区分。
 
-暂存请求使用 `Content-Type: application/octet-stream`、`x-session-id: <live session id>` 和 `x-file-name: encodeURIComponent(file.name)`，body 是原始文件字节而非 JSON 或 multipart。仅本机回环同源、普通本地 Session 工作区可写；经 SSH 启动的 Host、Remote-SSH marker（包括损坏 marker）、缺少工作区和 symlink 暂存目录均拒绝。文件落在 Session `cwd` 的 `.dsh-uploads/` 下，以随机 ASCII 前缀加安全原名命名，不覆盖已有文件；允许中文与中间空格、保留 `.pptx` 等安全扩展名。文件名先合成重音，只保留 Unicode 字母数字、空格及 `._-`：emoji、组合符号、其他标点和控制字符替换为 `_`；全被替换时使用 `file` 并保留安全扩展名，连续点替换以匹配客户端路径校验。超长名字按字节截短；空名、无法解码或无可见名称仍拒绝。成功仅在完整读写后再次确认原 live Session、cwd 与暂存目录未改变，返回 `{ "path": ".dsh-uploads/<随机前缀>-<文件名>" }`；中途 Session 被删除／重绑、cwd 或暂存目录被替换时删除半成品并拒绝。返回的相对路径可插入 `@file` 引用；流的实际字节超过 32 MiB（或声明长度已超限）返回 413 且不留半成品；无本机工作区、远端或不可安全写入返回 409；无 live Session 返回 404，其他无效请求返回 4xx，错误不包含内部路径。
+上传请求使用 `Content-Type: application/octet-stream`、`x-session-id: <live session id>` 和 `x-file-name: encodeURIComponent(file.name)`，body 是原始文件字节。仅本机回环同源、有普通本地工作区的 live Session 可上传；经 SSH 启动的 Host、Remote-SSH marker（包括损坏 marker）、缺少或替换的工作区均拒绝。文件由 `ctx.fileLibrary` 保存到解析后的 Coding home 的 `files/uploads/` 并在 SQLite 登记，工作区不创建 `.dsh-uploads/`。文件名合成重音，只保留 Unicode 字母数字、空格及 `._-`；其他字符替换为 `_`，保留安全扩展名并按 UTF-8 字节截短。空名、无法解码或无可见名称拒绝。字节写完后服务复核原 live Session、cwd 与工作区身份，登记成功才返回绝对 `{ path }`，可供本地 `@file` 引用；跨会话文件列表由文件库持有。原始流超过 32 MiB（或声明长度已超限）返回 413；无本机工作区、远端或存储失败返回 409；无 live Session 返回 404，其他无效请求返回 4xx。失败响应不包含内部路径。
 
 <a id="browser-terminal"></a>
 ## 用户终端
@@ -107,7 +113,7 @@ server-to-client 帧封闭为 `ready`、`output`、`exit`、`error`，client-to-
 - **应用 catalog 在构建期固定。** 自定义 handler 需要独立的设置与命令校验契约。
 - **macOS 发现只检查已知应用根。** 改名或移出这些根的 bundle 不会被找到。
 - **图标保真度取决于平台标准 API。** Windows 提取为 32 px；Linux 跟随 hicolor/pixmaps 而非当前主题。
-- **文件列表与预览只读且不分页。** 最多列出 2,000 个直接子项；超限预览不提供局部内容。暂存写入仅用于本机工作区拖放文件，不开放任意路径 mutation。
+- **工作区文件列表与预览只读且不分页。** 最多列出 2,000 个直接子项；超限预览不提供局部内容。上传只通过文件库保存，不开放任意工作区路径写入。
 - **终端不跨连接保留。** 收起底栏或视觉关闭工作台会保留当前连接，但 Session scope 卸载、浏览器网络断开或插件释放会终止进程；跨连接恢复、共享和后台保留需要独立的 Session 终端控制器。
 
 **运行时 invariant：** companion 只保留包归属，不增加关系。真实 Loader/WebServer 测试覆盖认证路由、upgrade 注册及释放；聚焦测试固定 Session containment、预览上限、封闭帧、Shell 参数和 PTY 清理。

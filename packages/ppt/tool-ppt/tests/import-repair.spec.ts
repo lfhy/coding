@@ -52,6 +52,28 @@ function assertJsonResult(value: unknown): asserts value is JsonValue {
 }
 
 describe('PPT 导入修复工具', () => {
+  it('四个导入工具向模型说明同一已登记上传来源，输出目录仍限工作区', async () => {
+    const { projects, tool } = setup()
+    const descriptions = [
+      'Workspace-relative .pptx path or absolute path of a registered local upload.',
+      'Same workspace-relative or registered local upload .pptx path used for import.',
+    ]
+    for (const name of ['ppt_import', 'ppt_prepare_template', 'ppt_import_template']) {
+      expect(tool(name).parameters).toMatchObject({ properties: { source: { description: descriptions[0] } } })
+    }
+    expect(tool('ppt_import_evidence').parameters).toMatchObject({
+      properties: { source: { description: descriptions[1] } },
+    })
+    expect(tool('ppt_import').parameters).toMatchObject({ properties: {
+      dir: { description: 'Workspace-relative project directory to create; defaults to the file name.' },
+    } })
+    const source = '/home/user/.coding/files/uploads/brand.pptx'
+    await tool('ppt_import').execute({ source }, session)
+    expect(projects.import).toHaveBeenCalledWith('s1', source, {})
+    await tool('ppt_import_evidence').execute({ source, sourceIndex: 1, sourceSha256 }, session)
+    expect(projects.importEvidence).toHaveBeenCalledWith('s1', source, { sourceIndex: 1, sourceSha256 })
+  })
+
   it('准备草稿，返回逐页损失与哈希，不写用户模板库', async () => {
     const { projects, tool } = setup()
     const prepare = tool('ppt_prepare_template')

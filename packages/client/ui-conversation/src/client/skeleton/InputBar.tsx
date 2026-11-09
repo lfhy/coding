@@ -522,8 +522,8 @@ export function InputBar({
           const path = await addFile(file)
           if (uploadGeneration.current !== generation) return
           const mention = formatFileMention({ path, kind: 'file' }, false)
-          if (mention === undefined) throw new FileStageError(0)
-          const label = stagedFileName(mention) ?? file.name
+          const label = mention === undefined ? undefined : stagedFileName(mention)
+          if (mention === undefined || label === undefined) throw new FileStageError(0)
           const el = inputRef.current
           const selection = el === null
             ? { start: keyboard.snapshot.draft.length, end: keyboard.snapshot.draft.length }

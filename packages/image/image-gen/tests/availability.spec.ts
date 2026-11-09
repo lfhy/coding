@@ -22,6 +22,7 @@ async function boot(config?: { enabled: boolean; endpoint: string; model: string
   const ctx = new Context()
   await ctx.plugin(SessionStore)
   ctx.provide('attachments', {} as never)
+  ctx.provide('fileLibrary', {} as never)
   const keys = new Map<string, string>()
   ctx.provide('credentials', {
     resolve: async (ref: string) => keys.has(ref) ? { value: keys.get(ref)!, source: 'test' } : undefined,

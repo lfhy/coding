@@ -9,7 +9,7 @@
 
 import { createHash } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
-import { basename, isAbsolute, join } from 'node:path'
+import { basename, isAbsolute, join, resolve } from 'node:path'
 import { Service, type Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { resolveDshHome } from 'coding-home-paths'
@@ -378,9 +378,9 @@ export default class PptProjects extends Service {
   }
 
   /**
-   * 把工作区里的 .pptx 导入成工程。
+   * 把工作区或本机已登记上传的 .pptx 导入成工程。
    * @param sessionId - 会话身份。
-   * @param source - 工作区相对的 .pptx 路径。
+   * @param source - 工作区中的 .pptx 路径，或已登记上传文件的绝对路径。
    * @param options - 目标目录与标题（都缺省时按源文件名生成）。
    * @returns 新工程快照、逐页保留报告与源文件 SHA-256；导入只创建工程，不保存模板。
    * @throws PptStoreError 远程工作区、越界、文件超限或目标已有内容时；失败不切换当前工程。
@@ -405,7 +405,7 @@ export default class PptProjects extends Service {
 
   /** 分片读取已导入 PPTX 的源页证据，源文件变化后必须重新导入。
    * @param sessionId - 本机会话身份。
-   * @param source - 工作区内的 .pptx 文件路径。
+   * @param source - 工作区中的 .pptx 路径，或已登记上传文件的绝对路径。
    * @param options - 源页序号、导入时的 SHA-256 与可选分片窗口。
    * @returns 经同一安全解包器提取的有界证据片段及其源哈希。
    * @throws PptStoreError 路径不安全、源文件缺失或内容已变化时。
@@ -443,7 +443,26 @@ export default class PptProjects extends Service {
     if (typeof source !== 'string' || !/\.pptx$/iu.test(source)) {
       throw new PptStoreError('bad-request', '只支持导入 .pptx 文件')
     }
-    const sourcePath = resolveProjectDir(root, source)
+    let sourcePath: string
+    try {
+      sourcePath = resolveProjectDir(root, source)
+    } catch (error) {
+      if (!isAbsolute(source) || !(error instanceof PptStoreError) || error.code !== 'forbidden') throw error
+      // 只有文件库登记的本机上传源可跨出工作区；工程目录仍由 root 限定。
+      const library = this.ctx.get('fileLibrary') as {
+        root: string
+        isManagedUploadPath(path: string): Promise<boolean>
+      } | undefined
+      if (library === undefined || source !== resolve(source) || !await library.isManagedUploadPath(source)) {
+        throw new PptStoreError('forbidden', 'PPTX 来源必须位于工作区或是已登记的本机上传文件')
+      }
+      sourcePath = source
+      const bytes = await readWorkspaceFile(library.root, sourcePath, PPT_IMPORT_MAX_BYTES)
+      if (!await library.isManagedUploadPath(sourcePath)) {
+        throw new PptStoreError('forbidden', 'PPTX 上传文件已失效，请重新上传')
+      }
+      return { root, sourcePath, bytes }
+    }
     return { root, sourcePath, bytes: await readWorkspaceFile(root, sourcePath, PPT_IMPORT_MAX_BYTES) }
   }
 
@@ -513,21 +532,16 @@ export default class PptProjects extends Service {
     })
   }
 
-  /** 将会话工作区里的 PPTX 文件保存为用户模板，不创建工程或切换当前工程。
+  /** 将工作区或本机已登记上传的 PPTX 保存为用户模板，不创建工程或切换当前工程。
    * @param sessionId - 本机会话身份。
-   * @param source - 工作区内的 .pptx 文件路径。
+   * @param source - 工作区中的 .pptx 路径，或已登记上传文件的绝对路径。
    * @param options - 可选模板名称；缺省取源文件名去掉扩展名。
    * @returns 包含来源文件名与导入限制的持久模板详情。
    * @throws PptStoreError 远程工作区、路径越界、符号链接、文件超限或文件名不安全时。
    */
   async importTemplateFromFile(sessionId: string, source: string, options: { name?: string } = {}): Promise<PptTemplateDetail> {
-    const root = await this.localRoot(sessionId)
-    if (typeof source !== 'string' || !/\.pptx$/iu.test(source)) {
-      throw new PptStoreError('bad-request', '模板来源只支持 .pptx 文件')
-    }
+    const { bytes } = await this.readImportSource(sessionId, source)
     const fileName = basename(source)
-    const sourcePath = resolveProjectDir(root, source)
-    const bytes = await readWorkspaceFile(root, sourcePath, PPT_IMPORT_MAX_BYTES)
     return this.importTemplate(fileName, bytes, options)
   }
 

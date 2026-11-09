@@ -6,6 +6,7 @@
     { "path": "../../../vendor/cordis" },
     { "path": "../../../vendor/schemastery" },
     { "path": "../../attachment/attachment" },
+    { "path": "../../attachment/file-library" },
     { "path": "../../client/connection/tsconfig.host.json" },
     { "path": "../../credentials/credentials" },
     { "path": "../../host/webserver" },

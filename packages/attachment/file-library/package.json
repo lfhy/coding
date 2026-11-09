@@ -1,0 +1,41 @@
+{
+  "name": "coding-file-library",
+  "description": "Private global managed files and durable metadata",
+  "version": "0.1.0-rc.8",
+  "private": true,
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
+  "exports": {
+    ".": { "types": "./lib/types/index.d.ts", "default": "./lib/index.js" },
+    "./invariant": { "types": "./lib/types/invariant.d.ts", "default": "./lib/invariant.js" },
+    "./src/*": "./src/*",
+    "./package.json": "./package.json"
+  },
+  "files": ["lib/index.js", "lib/invariant.js", "lib/types/**/*.d.ts", "README.md"],
+  "license": "MIT",
+  "scripts": { "bundle": "tsdown" },
+  "dependencies": { "@deepseek-ai/schemastery": "workspace:^", "zod": "^4.1.5" },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "workspace:^",
+    "coding-brand": "workspace:^",
+    "coding-storage-domain": "workspace:^",
+    "coding-home-paths": "workspace:^",
+    "coding-client-connection": "workspace:^",
+    "coding-host-webserver": "workspace:^",
+    "coding-invariants": "workspace:^"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "workspace:^",
+    "@deepseek-ai/cordis-plugin-loader": "workspace:^",
+    "@deepseek-ai/cordis-plugin-include": "workspace:^",
+    "coding-brand": "workspace:^",
+    "coding-storage-domain": "workspace:^",
+    "coding-storage": "workspace:^",
+    "coding-storage-sqlite": "workspace:^",
+    "coding-home-paths": "workspace:^",
+    "coding-client-connection": "workspace:^",
+    "coding-host-webserver": "workspace:^",
+    "coding-invariants": "workspace:^"
+  }
+}

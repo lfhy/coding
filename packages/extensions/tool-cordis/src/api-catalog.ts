@@ -781,7 +781,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'async captureSessionPage(options: { /** 会话身份；页面进入它的浏览器空间。 */ readonly sessionId: SessionId /** 本地 HTML 的绝对路径。 */ readonly htmlPath: string /** 视口宽度（CSS 像素），与 HTML 的画布宽度一致。 */ readonly width: number /** 视口高度（CSS 像素）。 */ readonly height: number /** 要写入的 PNG 绝对路径。 */ readonly outPath: string /** 等待整页稳定的毫秒数；缺省 300。 */ readonly settleMs?: number }): Promise<boolean>',
-        description: '在会话自己的 Agent 浏览器空间里打开一页本地 HTML 并截图。\n\n页面进的是该会话的正常空间，因此右侧「Agent 浏览器」标签会像别的页面一样显示它； 截图与页面共用同一个标签，不额外开一套渲染通道。调用方负责把内容写成 `file://` 能读的本地文件。',
+        description: '在会话自己的 Agent 浏览器空间里打开一页本地 HTML 并截图。\n\n页面进的是该会话的正常空间，因此右侧「Agent 浏览器」标签会像别的页面一样显示它； 截图与页面共用同一个标签，不额外开一套渲染通道。同路径再次捕获时导航到 唯一 URL，等待新文档完成加载后才截图；截图期间临时隐藏浏览器自身的光标标记， 随后恢复页面。调用方负责先写好本地文件。',
         parameters: [{ name: 'options', description: '会话、本地页面路径、视口尺寸与输出路径。' }],
         returns: '截图写入成功时为 true。',
       },
@@ -790,6 +790,37 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: '为人工工作台在指定会话空间新建一张空白页；同会话的请求串行执行，首张页面复用空间锚页。',
         parameters: [{ name: 'sessionId', description: '页面所属的会话。' }],
         returns: '复核归属后的目标 id；会话不存在、页面已满或创建失败时为 null。',
+      },
+    ],
+  },
+  {
+    key: 'fileLibrary',
+    summary: '受管理文件与记录分属两个介质；提交失败只回滚当前操作仍拥有的磁盘条目。',
+    description: '受管理文件与记录分属两个介质；提交失败只回滚当前操作仍拥有的磁盘条目。',
+    methods: [
+      {
+        signature: 'async saveUpload(input: { name: string sessionId: string stream: AsyncIterable<Uint8Array> verify: () => Promise<void> }): Promise<{ record: ManagedFileRecord; path: string }>',
+        description: '将上传流写入独占私有文件，校验发起会话后写入领域记录。 拒绝空文件或超过 32 MiB 的流；失败仅删除本次仍持有的文件，不回滚其他介质已持久化的事实。',
+        parameters: [{ name: 'input', description: '原名、会话身份、数据流和提交前的会话有效性检查。' }],
+        returns: '持久记录和只供 Host 内部使用的绝对路径。',
+      },
+      {
+        signature: 'async saveGeneratedImage(input: { sessionId: string galleryId?: string attachmentId: string mediaType: GeneratedImageMediaType data: Uint8Array }): Promise<ManagedFileRecord>',
+        description: '复制已准入的不可变生成图片；原附件继续由附件服务拥有。',
+        parameters: [{ name: 'input', description: '会话、图库、附件引用及已准入编码字节。' }],
+        returns: '副本的持久元数据。',
+      },
+      {
+        signature: 'list(offset: number = 0, limit: number = 50): ManagedFilePage',
+        description: '从领域快照按创建时间倒序分页；不返回本机路径。',
+        parameters: [{ name: 'offset', description: '从零开始的偏移，默认零。' }, { name: 'limit', description: '每页最多 100 条，默认 50。' }],
+        returns: '当前快照的一页、总数和可选后续偏移。',
+      },
+      {
+        signature: 'async isManagedUploadPath(path: string): Promise<boolean>',
+        description: '仅确认真实、仍归本库登记的上传文件，拒绝符号链接及库外路径。',
+        parameters: [{ name: 'path', description: 'Host 提供的绝对路径。' }],
+        returns: '是否属于已登记的上传对象。',
       },
     ],
   },
@@ -963,6 +994,85 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Create one Goal through the remote boundary.',
         parameters: [{ name: 'agent', description: 'exact live Agent resolved from the wire identity.' }, { name: 'request', description: 'objective and optional round cap.' }],
         returns: 'the created Goal identity.',
+      },
+    ],
+  },
+  {
+    key: 'imageGeneration',
+    summary: '会话身份来自 Host 的活会话或持久会话检查，而不是浏览器提供的附件 ID。',
+    description: '会话身份来自 Host 的活会话或持久会话检查，而不是浏览器提供的附件 ID。',
+    methods: [
+      {
+        signature: 'watchAvailability(listener: () => void): () => void',
+        description: '配置来源挂载、卸载或提交，以及当前凭据引用变化后通知消费方重新读取 `status()`。 注册不主动通知，调用方应先订阅再做首次读取；监听器抛错不会回滚设置或凭据提交。',
+        parameters: [{ name: 'listener', description: '可用性需重新判定时调用的同步回调。' }],
+        returns: '撤销该回调的函数。',
+      },
+      {
+        signature: 'async status(): Promise<{ enabled: boolean; available: boolean; model: string }>',
+        description: '不包含端点、引用与密钥的配置可见性摘要；无凭据的本地端点可用。',
+        parameters: [],
+        returns: '启用状态、可用性与当前模型名。',
+      },
+      {
+        signature: 'outputSizes(): Record<string, Record<string, string>>',
+        description: '返回比例与像素尺寸的非机密配置，供手动生图选择器使用。',
+        parameters: [],
+        returns: '比例到尺寸代号的像素尺寸映射。',
+      },
+      {
+        signature: 'maxEditReferences(): number',
+        description: '工作台的参考图上限与服务端本次编辑上限保持一致。',
+        parameters: [],
+        returns: '单次编辑可引用的参考图数量。',
+      },
+      {
+        signature: 'gallery(events: readonly SessionEvent[]): GalleryItem[]',
+        description: '返回此会话的不可变图库事件投影；重启后可从持久日志重建。',
+        parameters: [{ name: 'events', description: '会话持久日志中的事件。' }],
+        returns: '按事件顺序排列的图库项。',
+      },
+      {
+        signature: 'canvas(events: readonly SessionEvent[]): CanvasSnapshot',
+        description: '返回持久日志中的当前画布快照。',
+        parameters: [{ name: 'events', description: '会话持久日志中的事件。' }],
+        returns: '带修订号的画布快照。',
+      },
+      {
+        signature: 'async readImage(events: readonly SessionEvent[], id: string): Promise<{ data: Uint8Array; ref: ImageAttachmentRef } | undefined>',
+        description: '只在同一会话的图库投影内查找附件引用，跨会话 ID 永不直接读附件。',
+        parameters: [{ name: 'events', description: '会话持久日志中的事件。' }, { name: 'id', description: '请求读取的图库项 id。' }],
+        returns: '校验通过的图片字节与引用；找不到时为 `undefined`。',
+      },
+      {
+        signature: 'latestImages(events: readonly SessionEvent[], count: number): GalleryItem[]',
+        description: '从最近一次会话图像事件选择参考图；选取仅由同会话日志确定。',
+        parameters: [{ name: 'events', description: '会话持久日志中的事件。' }, { name: 'count', description: '需要的参考图数量。' }],
+        returns: '最近指定数量的图库项。',
+      },
+      {
+        signature: 'async importReference(session: Session, image: SaveImageAttachment): Promise<GalleryItem>',
+        description: '把用户上传的参考图按附件策略准入并写入当前会话图库，供编辑接口引用。 此操作不发送模型请求，也不要求生图服务已启用；准入失败不追加图片事件。 返回前等待会话持久化；持久化失败会拒绝，但不回滚已追加的图库事实。',
+        parameters: [{ name: 'session', description: '当前仍在 Host 中的会话。' }, { name: 'image', description: '原始编码字节与声明媒体类型。' }],
+        returns: '此会话可用于 `edit_image` 的持久图库项。',
+      },
+      {
+        signature: 'async create( session: Session, prompt: string, sourceIds: readonly string[] = [], signal: AbortSignal = new AbortController().signal, output: { size?: string; quality?: string } = {}, ): Promise<GalleryItem>',
+        description: '图片经附件准入后复制到全局文件库，才追加图库事实并等待会话持久化。 副本登记失败不发布图库项；会话持久化失败不回滚已追加事实或已登记副本。',
+        parameters: [{ name: 'session', description: '发起生图的会话。' }, { name: 'prompt', description: '图片描述文本。' }, { name: 'sourceIds', description: '编辑来源的图库项 id；文生图为空。' }, { name: 'signal', description: '取消上游请求的中断信号。' }, { name: 'output', description: '可选尺寸与质量覆盖。' }],
+        returns: '已持久化到会话图库的生成项。',
+      },
+      {
+        signature: 'saveCanvas(session: Session, revision: number, state: CanvasState): CanvasSnapshot',
+        description: '画布写入只由当前活会话拥有；持久读取无需启动 Agent。',
+        parameters: [{ name: 'session', description: '拥有画布事件的会话。' }, { name: 'revision', description: '调用方持有的画布修订号。' }, { name: 'state', description: '新画布状态。' }],
+        returns: '写入后的新画布快照。',
+      },
+      {
+        signature: 'async sessionEvents(id: SessionId): Promise<readonly SessionEvent[] | undefined>',
+        description: '路由只接受 live session 或已持久存在的 session id；不创建或 resume Agent。',
+        parameters: [{ name: 'id', description: '请求读取的会话 id。' }],
+        returns: '会话事件；会话不存在时为 `undefined`。',
       },
     ],
   },
@@ -1321,8 +1431,8 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'create(sessionId: string, options: { title: string dir?: string size?: SlideSizeId theme?: ThemeId }): Promise<PptSnapshot>',
-        description: '新建工程并设为当前工程。',
-        parameters: [{ name: 'sessionId', description: '会话身份。' }, { name: 'options', description: '标题、目录、尺寸与主题。' }],
+        description: '新建工程并设为当前工程；未指定尺寸或主题时使用内置整稿模板。',
+        parameters: [{ name: 'sessionId', description: '会话身份。' }, { name: 'options', description: '标题、目录、尺寸与主题；显式尺寸或主题保留单页新建。' }],
         returns: '新工程快照。',
       },
       {
@@ -1386,10 +1496,81 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: '质检结果。',
       },
       {
-        signature: 'async import(sessionId: string, source: string, options: { dir?: string; title?: string }): Promise<{ snapshot: PptSnapshot dropped: readonly string[] }>',
-        description: '把工作区里的 .pptx 导入成工程。',
-        parameters: [{ name: 'sessionId', description: '会话身份。' }, { name: 'source', description: '工作区相对的 .pptx 路径。' }, { name: 'options', description: '目标目录与标题（都缺省时按源文件名生成）。' }],
-        returns: '新工程快照与未能表达的类别。',
+        signature: 'async import(sessionId: string, source: string, options: { dir?: string; title?: string }): Promise<{ snapshot: PptSnapshot dropped: readonly string[] report: PptImportReport sourceSha256: string }>',
+        description: '把工作区或本机已登记上传的 .pptx 导入成工程。',
+        parameters: [{ name: 'sessionId', description: '会话身份。' }, { name: 'source', description: '工作区中的 .pptx 路径，或已登记上传文件的绝对路径。' }, { name: 'options', description: '目标目录与标题（都缺省时按源文件名生成）。' }],
+        returns: '新工程快照、逐页保留报告与源文件 SHA-256；导入只创建工程，不保存模板。',
+        throws: ['PptStoreError 远程工作区、越界、文件超限或目标已有内容时；失败不切换当前工程。'],
+      },
+      {
+        signature: 'async importEvidence(sessionId: string, source: string, options: { sourceIndex: number sourceSha256: string offset?: number limit?: number }): Promise<PptPageEvidenceChunk & { sourceSha256: string }>',
+        description: '分片读取已导入 PPTX 的源页证据，源文件变化后必须重新导入。',
+        parameters: [{ name: 'sessionId', description: '本机会话身份。' }, { name: 'source', description: '工作区中的 .pptx 路径，或已登记上传文件的绝对路径。' }, { name: 'options', description: '源页序号、导入时的 SHA-256 与可选分片窗口。' }],
+        returns: '经同一安全解包器提取的有界证据片段及其源哈希。',
+        throws: ['PptStoreError 路径不安全、源文件缺失或内容已变化时。'],
+      },
+      {
+        signature: 'listTemplates(): Promise<readonly PptTemplateSummary[]>',
+        description: '列出本机用户模板；不切换任何会话的当前工程。',
+        parameters: [],
+        returns: '按创建时间排列的模板摘要。',
+        throws: ['PptStoreError 模板仓库损坏或无法访问时。'],
+      },
+      {
+        signature: 'readTemplate(id: string): Promise<PptTemplateDetail>',
+        description: '读取模板的完整 deck；不切换当前工程。',
+        parameters: [{ name: 'id', description: '模板 UUID。' }],
+        returns: '模板详情。',
+        throws: ['PptStoreError 模板不存在或仓库内容不合法时。'],
+      },
+      {
+        signature: 'templateMedia(id: string, source: string): Promise<Uint8Array>',
+        description: '读取模板 deck 引用的媒体原字节，不需要会话且不改变模板或当前工程。',
+        parameters: [{ name: 'id', description: '模板 UUID。' }, { name: 'source', description: '`media/<文件名>` 相对路径。' }],
+        returns: '模板媒体原始字节。',
+        throws: ['PptStoreError 模板不存在、路径不合法、媒体未被引用或仓库损坏时。'],
+      },
+      {
+        signature: 'async importTemplate(fileName: string, bytes: Uint8Array, options: { name?: string } = {}): Promise<PptTemplateDetail>',
+        description: '将无宏 PPTX 的可编辑几何和设计提取为无源正文的用户模板；丢失的复杂结构在返回值中列出。',
+        parameters: [{ name: 'fileName', description: '安全的单层 .pptx 文件名。' }, { name: 'bytes', description: '压缩源文件字节，上限 8 MiB；不会保存源文件本身。' }, { name: 'options', description: '模板名称；缺省取去掉扩展名的文件名。' }],
+        returns: '持久化的模板详情。',
+        throws: ['PptStoreError 文件名、大小、内容或仓库不合法时。'],
+      },
+      {
+        signature: 'async importTemplateFromFile(sessionId: string, source: string, options: { name?: string } = {}): Promise<PptTemplateDetail>',
+        description: '将工作区或本机已登记上传的 PPTX 保存为用户模板，不创建工程或切换当前工程。',
+        parameters: [{ name: 'sessionId', description: '本机会话身份。' }, { name: 'source', description: '工作区中的 .pptx 路径，或已登记上传文件的绝对路径。' }, { name: 'options', description: '可选模板名称；缺省取源文件名去掉扩展名。' }],
+        returns: '包含来源文件名与导入限制的持久模板详情。',
+        throws: ['PptStoreError 远程工作区、路径越界、符号链接、文件超限或文件名不安全时。'],
+      },
+      {
+        signature: 'async saveTemplate(sessionId: string, options: { name: string; dir?: string }): Promise<PptTemplateDetail>',
+        description: '保存工程整稿和全部引用媒体的原字节；不改变当前工程。',
+        parameters: [{ name: 'sessionId', description: '本机会话身份。' }, { name: 'options', description: '名称和可选工程目录；缺省取会话当前工程。' }],
+        returns: '持久化的模板详情。',
+        throws: ['PptStoreError 远程工作区、缺图、符号链接、越界或仓库错误时。'],
+      },
+      {
+        signature: 'renameTemplate(id: string, name: string): Promise<PptTemplateSummary>',
+        description: '重命名模板但不修改 deck 或已由模板创建的工程。',
+        parameters: [{ name: 'id', description: '模板 UUID。' }, { name: 'name', description: '新名称。' }],
+        returns: '新摘要。',
+        throws: ['PptStoreError 模板不存在或名称无效时。'],
+      },
+      {
+        signature: 'deleteTemplate(id: string, expectedName?: string): Promise<void>',
+        description: '删除模板库条目，不影响已创建的工程；模型应传当前名称以防重命名后误删。',
+        parameters: [{ name: 'id', description: '模板 UUID。' }, { name: 'expectedName', description: '模型确认时看到的名称，由仓库在删除锁内核对。' }],
+        returns: '删除完成时兑现。',
+        throws: ['PptStoreError 模板不存在、名称已变化或仓库内容不合法时。'],
+      },
+      {
+        signature: 'async createFromTemplate(sessionId: string, id: string, options: { title?: string; dir?: string } = {}): Promise<PptSnapshot>',
+        description: '从模板创建可独立编辑的工程副本；成功发布后才切换会话焦点。',
+        parameters: [{ name: 'sessionId', description: '本机会话身份。' }, { name: 'id', description: '模板 UUID。' }, { name: 'options', description: '新标题和目标目录；缺省用模板名生成目录。' }],
+        returns: '初始版本号为 1 的工程快照。',
+        throws: ['PptStoreError 远程工作区、目标已存在、目录越界或模板损坏时。'],
       },
       {
         signature: 'async export(sessionId: string, dir?: string, options: { skipCheck?: boolean } = {}): Promise<PptExportResult>',
@@ -3351,6 +3532,18 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface CancelOptions {\n    keepInbox?: boolean | undefined;\n}',
   },
   {
+    name: 'CanvasImage',
+    declaration: 'export interface CanvasImage {\n    id: string;\n    type: \'image\';\n    imageId: string;\n    x: number;\n    y: number;\n    width: number;\n    height: number;\n}',
+  },
+  {
+    name: 'CanvasState',
+    declaration: 'export interface CanvasState {\n    version: 1;\n    nodes: (CanvasStroke | CanvasImage)[];\n}',
+  },
+  {
+    name: 'CanvasStroke',
+    declaration: 'export interface CanvasStroke {\n    id: string;\n    type: \'stroke\';\n    points: {\n        x: number;\n        y: number;\n    }[];\n    width: number;\n    color: string;\n    erase?: boolean;\n}',
+  },
+  {
     name: 'ClientResponse',
     declaration: 'export interface ClientResponse {\n    type: \'client-response\';\n    rpcId: RpcId;\n    result: RpcResult<unknown>;\n}',
   },
@@ -3875,6 +4068,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface FsWriteOutcome {\n    operation: \'create\' | \'update\';\n    version: FsVersion;\n    before: string | null;\n    after: string;\n}',
   },
   {
+    name: 'GeneratedImageMediaType',
+    declaration: 'export type GeneratedImageMediaType = keyof typeof EXTENSION;',
+  },
+  {
     name: 'GenerateOptions',
     declaration: 'export interface GenerateOptions {\n    provider: string;\n    model: string;\n    reasoningEffort?: ReasoningEffortId;\n    messages: Message[];\n    system?: string;\n    tools?: ToolSchema[];\n    temperature?: number;\n    maxTokens?: number;\n    stop?: string[];\n    signal?: AbortSignal;\n    sessionId?: Branded<\'SessionId\'>;\n    purpose?: \'compaction\' | \'session-title\';\n}',
   },
@@ -4143,6 +4340,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface LspRange {\n    readonly start: LspPosition;\n    readonly end: LspPosition;\n}',
   },
   {
+    name: 'ManagedFilePage',
+    declaration: 'export interface ManagedFilePage {\n    items: ManagedFileRecord[];\n    total: number;\n    nextOffset?: number;\n}',
+  },
+  {
     name: 'ManualCompactAgentContext',
     declaration: 'export interface ManualCompactAgentContext extends CompactionAgentContext {\n    runMaintenance<T>(task: (signal: AbortSignal) => Promise<T>): Promise<T>;\n}',
   },
@@ -4327,6 +4528,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface PptImageElement extends ElementFrame, ElementMotion {\n    readonly id: string;\n    readonly kind: \'image\';\n    readonly source: string;\n    readonly fit: \'cover\' | \'contain\';\n}',
   },
   {
+    name: 'PptImportReport',
+    declaration: 'export interface PptImportReport {\n    readonly sourceSlides: number;\n    readonly importedPages: number;\n    readonly pages: readonly {\n        readonly sourceIndex: number;\n        readonly pageId: string;\n        readonly slidePart: string;\n        readonly source: Readonly<{\n            text: number;\n            image: number;\n            table: number;\n            chart: number;\n            diagram: number;\n            other: number;\n        }>;\n        readonly imported: Readonly<{\n            text: number;\n            image: number;\n            table: number;\n            chart: number;\n        }>;\n        readonly status: \'no_known_loss\' | \'image_only\' | \'empty_source\' | \'empty_import\' | \'partial\';\n        readonly losses: readonly PptPageLoss[];\n        readonly textPreview: readonly string[];\n        readonly truncated: boolean;\n    }[];\n}',
+  },
+  {
     name: 'PptIssue',
     declaration: 'export interface PptIssue {\n    readonly severity: \'error\' | \'warning\';\n    readonly code: \'out-of-bounds\' | \'zero-size\' | \'text-overflow\' | \'low-contrast\' | \'empty-page\' | \'too-much-text\';\n    readonly page: string;\n    readonly pageName: string;\n    readonly element?: string;\n    readonly message: string;\n}',
   },
@@ -4341,6 +4546,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'PptPage',
     declaration: 'export interface PptPage {\n    readonly id: string;\n    readonly name: string;\n    readonly background: string | null;\n    readonly transition: SlideTransition;\n    readonly elements: readonly PptElement[];\n}',
+  },
+  {
+    name: 'PptPageEvidenceChunk',
+    declaration: 'export interface PptPageEvidenceChunk {\n    readonly sourceIndex: number;\n    readonly content: string;\n    readonly totalChars: number;\n    readonly nextOffset: number | null;\n}',
+  },
+  {
+    name: 'PptPageLoss',
+    declaration: 'export type PptPageLoss = \'chart\' | \'diagram\' | \'group\' | \'table\' | \'image\' | \'text\' | \'shape\' | \'object\';',
   },
   {
     name: 'PptProjectSummary',
@@ -4365,6 +4578,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'PptTableStyle',
     declaration: 'export interface PptTableStyle {\n    readonly size: number;\n    readonly color: string;\n    readonly bold: boolean;\n    readonly align: TextAlign;\n    readonly font: string;\n}',
+  },
+  {
+    name: 'PptTemplateDetail',
+    declaration: 'export interface PptTemplateDetail extends PptTemplateSummary {\n    readonly deck: PptDeck;\n}',
+  },
+  {
+    name: 'PptTemplateSummary',
+    declaration: 'export interface PptTemplateSummary {\n    readonly id: PptTemplateId;\n    readonly name: string;\n    readonly pages: number;\n    readonly createdAt: number;\n    readonly sourceName: string | null;\n    readonly dropped: readonly string[];\n}',
   },
   {
     name: 'PptText',
@@ -5360,7 +5581,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ThemeId',
-    declaration: 'export type ThemeId = \'ink\' | \'paper\' | \'ocean\' | \'forest\';',
+    declaration: 'export type ThemeId = \'ink\' | \'paper\' | \'ocean\' | \'forest\' | \'inference\';',
   },
   {
     name: 'TodoItem',

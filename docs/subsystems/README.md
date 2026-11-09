@@ -25,7 +25,7 @@
 | [tools.md](tools.md) | `ToolDefinition` 完整字段、schema DSL、`ToolExecution`/`ToolResult`、工具展示 UI 类型，以及受保护的执行流水线 |
 | [user-questions.md](user-questions.md) | UI 支持的人工问答 seam：`AskUserQuestionRequest`、answer/options 词汇、提供方 API、错误分类体系 |
 | [approval.md](approval.md) | 一次性用户审批 seam：`ApprovalRequest`、`ApprovalOutcome`、逐会话策略、审计事件和 answerer 约定 |
-| [attachment.md](attachment.md) | 持久图片标识与元数据、校验输入、经校验读取，以及 `AttachmentStore` seam |
+| [attachment.md](attachment.md) | 持久图片标识与元数据、校验输入、经校验读取、`AttachmentStore` seam、全局文件库 `ctx.fileLibrary` 与生成图片副本 |
 | [ppt.md](ppt.md) | 会话级演示文稿工程：画布与工程视图、修订号、质检、页面渲染和导出结果 |
 | [browser.md](browser.md) | 默认 `ctx.egoBrowser` 会话空间与工具定义，以及可选旧 `ctx.browserUse` 命令接口 |
 | [shell.md](shell.md) | bash 执行器 seam：`ShellExecRequest`/`Spec`、`ShellRunResult`、后台 `ShellProcess` 句柄 |

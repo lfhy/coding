@@ -399,11 +399,11 @@ export function apply(ctx: Context): void {
   register('fill', 'Fill an element using its ref and revision from the current browser observation; never use selectors.', {
     ref, revision, text: { type: 'string', required: true, description: 'Text to enter, at most 2000 characters.' },
   })
-  register('upload', 'Set the selected files of a file input listed in the current observation, without opening a system file chooser. Use this instead of clicking an upload button that opens one. Paths must be regular files inside the session workspace; the files become the input\'s selection in the order given.', {
+  register('upload', 'Set the selected files of a file input listed in the current observation, without opening a system file chooser. Use this instead of clicking an upload button that opens one. Paths must be regular files inside the session workspace or registered uploads; the files become the input\'s selection in the order given.', {
     ref, revision,
     files: {
       type: 'array', required: true,
-      description: `Paths of 1..${MAX_UPLOAD_FILES} regular files inside the session workspace, relative to its root or absolute, at most ${MAX_UPLOAD_PATH_CHARS} characters each.`,
+      description: `Paths of 1..${MAX_UPLOAD_FILES} regular files inside the session workspace (relative or absolute), or absolute registered upload paths, at most ${MAX_UPLOAD_PATH_CHARS} characters each.`,
       items: { type: 'string' },
     },
   })
@@ -454,8 +454,10 @@ async function executeBrowserCommand(ctx: Context, requested: BrowserCommand, ex
   }
   exec.signal.throwIfAborted()
   // 上传路径在审批前解析成绝对路径：不存在的文件不占用一次审批，审批理由也能只给文件名。
+  const fileLibrary = ctx.get('fileLibrary') as { isManagedUploadPath(path: string): Promise<boolean> } | undefined
   const command: BrowserCommand = requested.kind === 'upload'
-    ? { ...requested, files: await resolveUploadFiles(cwd, requested.files, exec.signal) }
+    ? { ...requested, files: await resolveUploadFiles(cwd, requested.files, exec.signal,
+      fileLibrary === undefined ? undefined : path => fileLibrary.isManagedUploadPath(path)) }
     : requested
   const approval = ctx.get('approval')
   if (approval === undefined) throw new Error(`${toolName}: approval service is unavailable`)

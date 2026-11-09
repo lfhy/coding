@@ -115,6 +115,7 @@ async function boot(layers: readonly LaunchEnvironmentLayerInput[] = [], filesys
   context.provide('connection', { requestRejection: () => trust.rejection } as never)
   context.provide('sessions', { get: (id: string) => sessions.get(id) } as never)
   context.provide('agents', { get: (id: string) => agents.get(id) } as never)
+  context.provide('fileLibrary', { saveUpload: () => Promise.reject(new Error('unexpected upload')) } as never)
   context.provide('subprocess', {
     resolveExecutable: () => Promise.reject(new Error('spec host resolves nothing')),
   } as never)

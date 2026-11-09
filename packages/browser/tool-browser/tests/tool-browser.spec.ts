@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, relative } from 'node:path'
 import { deflateSync } from 'node:zlib'
 import { Context } from '@deepseek-ai/cordis'
 import BrowserUseService, { BrowserUseError } from '../../browser/src/index.ts'
@@ -359,6 +359,95 @@ describe('browser action tools', () => {
     expect(asked.mock.calls[0]?.[0].reason).not.toContain(cwd)
   })
 
+  it('accepts an absolute registered upload with approval before browser execution', async () => {
+    const { ctx, call } = await setup()
+    const browser = ctx.browserUse as FakeBrowser
+    browser.currentState = activeState()
+    const managedRoot = await mkdtemp(join(tmpdir(), 'dsh-managed-upload-'))
+    directories.push(managedRoot)
+    const managedPath = join(managedRoot, 'report.pdf')
+    await writeFile(managedPath, PNG)
+    const isManagedUploadPath = vi.fn(async (path: string) => path === managedPath)
+    ctx.provide('fileLibrary', { isManagedUploadPath } as never)
+    const asked = vi.fn((_request: { reason?: string }) => Promise.resolve('allowed-once' as const))
+    ctx.on('approval/request', asked)
+
+    const result = await call({ action: 'upload', ref: 'f1', revision: 1, files: [managedPath] })
+    expect(result.isError).toBe(false)
+    expect(isManagedUploadPath).toHaveBeenCalledWith(managedPath)
+    expect(asked).toHaveBeenCalledTimes(1)
+    expect(asked.mock.calls[0]?.[0].reason).toContain('report.pdf')
+    expect(asked.mock.calls[0]?.[0].reason).not.toContain(managedRoot)
+    expect(browser.commands.mock.calls[0]?.[1]).toEqual({ kind: 'upload', ref: 'f1', revision: 1, files: [await realpath(managedPath)] })
+    expect(asked.mock.invocationCallOrder[0]).toBeLessThan(browser.commands.mock.invocationCallOrder[0]!)
+  })
+
+  it('keeps unregistered paths and symlink aliases outside the workspace denied before approval', async () => {
+    const { ctx, call, agent } = await setup()
+    const browser = ctx.browserUse as FakeBrowser
+    browser.currentState = activeState()
+    const managedRoot = await mkdtemp(join(tmpdir(), 'dsh-managed-upload-'))
+    directories.push(managedRoot)
+    const managedPath = join(managedRoot, 'owned.pdf')
+    const unregisteredPath = join(managedRoot, 'other.pdf')
+    const aliasPath = join(managedRoot, 'alias.pdf')
+    await writeFile(managedPath, PNG)
+    await writeFile(unregisteredPath, PNG)
+    await symlink(managedPath, aliasPath)
+    await symlink(managedPath, join(agent.session.header.cwd, 'workspace-alias.pdf'))
+    const isManagedUploadPath = vi.fn(async (path: string) => path === managedPath)
+    ctx.provide('fileLibrary', { isManagedUploadPath } as never)
+    const asked = vi.fn(() => Promise.resolve('allowed-once' as const))
+    ctx.on('approval/request', asked)
+
+    for (const path of [unregisteredPath, aliasPath, 'workspace-alias.pdf', relative(agent.session.header.cwd, managedPath)]) {
+      const result = await call({ action: 'upload', ref: 'f1', revision: 1, files: [path] })
+      expect(result.isError).toBe(true)
+      expect(text(result)).toContain('only files inside the session workspace or registered uploads can be uploaded')
+    }
+    expect(isManagedUploadPath.mock.calls.map(([path]) => path)).toEqual([unregisteredPath, aliasPath])
+    expect(asked).not.toHaveBeenCalled()
+    expect(browser.commands).not.toHaveBeenCalled()
+  })
+
+  it('requires a regular file even when a file-library check accepts the path', async () => {
+    const { ctx, call } = await setup()
+    const managedRoot = await mkdtemp(join(tmpdir(), 'dsh-managed-upload-'))
+    directories.push(managedRoot)
+    const directoryPath = join(managedRoot, 'folder')
+    await mkdir(directoryPath)
+    const isManagedUploadPath = vi.fn(async () => true)
+    ctx.provide('fileLibrary', { isManagedUploadPath } as never)
+    const request = vi.spyOn(ctx.approval, 'request')
+
+    const result = await call({ action: 'upload', ref: 'f1', revision: 1, files: [directoryPath] })
+    expect(result.isError).toBe(true)
+    expect(text(result)).toContain('not a regular file')
+    expect(isManagedUploadPath).toHaveBeenCalledWith(directoryPath)
+    expect(request).not.toHaveBeenCalled()
+    expect((ctx.browserUse as FakeBrowser).commands).not.toHaveBeenCalled()
+  })
+
+  it('stops a registered upload cancelled during file-library verification', async () => {
+    const { ctx, call } = await setup()
+    const managedRoot = await mkdtemp(join(tmpdir(), 'dsh-managed-upload-'))
+    directories.push(managedRoot)
+    const managedPath = join(managedRoot, 'report.pdf')
+    await writeFile(managedPath, PNG)
+    const controller = new AbortController()
+    const isManagedUploadPath = vi.fn(async () => {
+      controller.abort(new Error('cancelled during upload verification'))
+      return true
+    })
+    ctx.provide('fileLibrary', { isManagedUploadPath } as never)
+    const request = vi.spyOn(ctx.approval, 'request')
+
+    const result = await call({ action: 'upload', ref: 'f1', revision: 1, files: [managedPath] }, controller.signal)
+    expect(result.isError).toBe(true)
+    expect(request).not.toHaveBeenCalled()
+    expect((ctx.browserUse as FakeBrowser).commands).not.toHaveBeenCalled()
+  })
+
   it('rejects uploads that leave the workspace, are not regular files, or do not exist', async () => {
     const { ctx, call, agent } = await setup(true, { mode: 'danger-full-access', policy: 'never' })
     const browser = ctx.browserUse as FakeBrowser
@@ -368,7 +457,8 @@ describe('browser action tools', () => {
     await mkdir(join(cwd, 'folder'))
 
     for (const [files, expected] of [
-      [['escape.txt'], 'browser_upload: only files inside the session workspace can be uploaded: escape.txt'],
+      [['escape.txt'], 'browser_upload: only files inside the session workspace or registered uploads can be uploaded: escape.txt'],
+      [['/etc/hosts'], 'browser_upload: only files inside the session workspace or registered uploads can be uploaded: /etc/hosts'],
       [['folder'], 'browser_upload: not a regular file: folder'],
       [['missing.txt'], 'browser_upload: no such file: missing.txt'],
     ] as const) {
@@ -410,6 +500,19 @@ describe('browser action tools', () => {
     expect(result.isError).toBe(true)
     expect(text(result)).toContain('this session has no workspace directory')
     expect(browser.commands).not.toHaveBeenCalled()
+  })
+
+  it('does not admit a registered upload without a session workspace', async () => {
+    const { ctx, call, agent } = await setup(true, { mode: 'danger-full-access', policy: 'never' })
+    const isManagedUploadPath = vi.fn(async () => true)
+    ctx.provide('fileLibrary', { isManagedUploadPath } as never)
+    delete (agent.session.header as { cwd?: string }).cwd
+
+    const result = await call({ action: 'upload', ref: 'f1', revision: 1, files: ['/tmp/registered.pdf'] })
+    expect(result.isError).toBe(true)
+    expect(text(result)).toContain('this session has no workspace directory')
+    expect(isManagedUploadPath).not.toHaveBeenCalled()
+    expect((ctx.browserUse as FakeBrowser).commands).not.toHaveBeenCalled()
   })
 
   it('reports a stale file input with its provider reason and without replaying the upload', async () => {
@@ -1193,6 +1296,20 @@ describe('browser action tools', () => {
     expect(result.isError).toBe(true)
     expect(text(result)).toMatch(/remote workspace|remote workspaces/)
     expect(asked).not.toHaveBeenCalled()
+    expect((ctx.browserUse as FakeBrowser).commands).not.toHaveBeenCalled()
+  })
+
+  it('does not admit registered uploads from a remote workspace', async () => {
+    const { ctx, call, agent } = await setup(true, { mode: 'danger-full-access', policy: 'never' })
+    await writeFile(join(agent.session.header.cwd, '.coding-remote-workspace.json'), JSON.stringify({
+      version: 3, remoteRoot: '/srv/project', connectionId: 'test', generation: 1, mode: 'basic',
+    }))
+    const isManagedUploadPath = vi.fn(async () => true)
+    ctx.provide('fileLibrary', { isManagedUploadPath } as never)
+    const result = await call({ action: 'upload', ref: 'f1', revision: 1, files: ['/tmp/registered.pdf'] })
+    expect(result.isError).toBe(true)
+    expect(text(result)).toContain('remote workspaces')
+    expect(isManagedUploadPath).not.toHaveBeenCalled()
     expect((ctx.browserUse as FakeBrowser).commands).not.toHaveBeenCalled()
   })
 

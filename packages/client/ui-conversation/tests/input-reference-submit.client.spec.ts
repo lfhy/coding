@@ -1,8 +1,4 @@
-/**
- * Reference-submit transaction coverage: chips serialize through their
- * owner, stay resident through Host rejection, and clear only after an
- * accepted prompt.
- */
+/** 引用提交保留完整路径；Host 拒绝后引用仍在，只有成功提交才清除。 */
 import { describe, expect, it, vi } from 'vitest'
 import type { ClientContext } from 'coding-client-runtime/client'
 import type { InputTriggerController, SubmitOutcome } from 'coding-client-ui-input-trigger/client'
@@ -11,7 +7,7 @@ import type { DraftAttachmentId } from '../src/client/input/contract.ts'
 
 const mention = '@[Research](dsh-session:InNvdXJjZSI)'
 const spacedMention = '@[Research notes](dsh-session:InNvdXJjZSI)'
-const stagedMention = '@".dsh-uploads/123e4567-e89b-42d3-a456-426614174000-演示 slides.pptx"'
+const stagedMention = '@"/Users/demo/Coding Home/files/uploads/123e4567-e89b-42d3-a456-426614174000-演示 slides.pptx"'
 const commandImages = {
   serialize: () => Promise.resolve([]),
   release: () => {},

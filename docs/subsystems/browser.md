@@ -257,8 +257,9 @@ async createSessionPage(sessionId: SessionId, url: string): Promise<boolean>
  * 在会话自己的 Agent 浏览器空间里打开一页本地 HTML 并截图。
  *
  * 页面进的是该会话的正常空间，因此右侧「Agent 浏览器」标签会像别的页面一样显示它；
- * 截图与页面共用同一个标签，不额外开一套渲染通道。调用方负责把内容写成 `file://`
- * 能读的本地文件。
+ * 截图与页面共用同一个标签，不额外开一套渲染通道。同路径再次捕获时导航到
+ * 唯一 URL，等待新文档完成加载后才截图；截图期间临时隐藏浏览器自身的光标标记，
+ * 随后恢复页面。调用方负责先写好本地文件。
  * @param options - 会话、本地页面路径、视口尺寸与输出路径。
  * @returns 截图写入成功时为 true。
  */
@@ -274,5 +275,5 @@ async createBlankPage(sessionId: SessionId): Promise<string | null>
 
 Types: [SessionId](core.md) · [ToolDefinition](tools.md)
 
-Source: [`packages/browser/browser-ego-host/src/index.ts:62`](../../packages/browser/browser-ego-host/src/index.ts)
+Source: [`packages/browser/browser-ego-host/src/index.ts:63`](../../packages/browser/browser-ego-host/src/index.ts)
 <!-- END GENERATED cordis-surface -->

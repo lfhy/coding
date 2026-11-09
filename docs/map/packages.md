@@ -3,7 +3,7 @@
 
 # 包清单
 
-workspace 共 273 个包，按 group 分节。每行给出包目录、职责（README 首段）、源码入口与 `tests/` 下的 spec 文件数；标 `client` 的包导出 `./client` 浏览器半，标 `bundle` 的包是 profile/bundle 装配层。
+workspace 共 275 个包，按 group 分节。每行给出包目录、职责（README 首段）、源码入口与 `tests/` 下的 spec 文件数；标 `client` 的包导出 `./client` 浏览器半，标 `bundle` 的包是 profile/bundle 装配层。
 
 模型可见工具的名称与 schema 见 [tool-catalog.md](../tool-catalog.md)，插件可配置项见 [config-catalog.md](../config-catalog.md)，依赖边见 [module-graph.md](../module-graph.md)。
 
@@ -20,6 +20,7 @@ workspace 共 273 个包，按 group 分节。每行给出包目录、职责（R
 
 - `packages/attachment/attachment` — 持久附件服务边界 入口 `src/index.ts`（tests 3）
 - `packages/attachment/attachment-local` — 这是 `coding-attachment` 的私有本地实现 入口 `src/index.ts`（tests 3）
+- `packages/attachment/file-library` — 全局受管理文件服务 `ctx.fileLibrary` 入口 `src/index.ts`（tests 2）
 
 ## packages/boot
 
@@ -39,7 +40,7 @@ workspace 共 273 个包，按 group 分节。每行给出包目录、职责（R
 
 - `packages/bundle/base` — 以 profile 组合包形式交付的共享 dsh 核心：`cordis.patch.yml` 在空的 profile 根之上插入全部基础插件行—… [bundle] 入口 `src/index.ts`（tests 1）
 - `packages/bundle/headless` — dsh 一次性任务组合包 [bundle] 入口 `src/index.ts`（tests 2）
-- `packages/bundle/web-app` — dsh 浏览器表层组合包 [bundle] 入口 `src/index.ts`（tests 5）
+- `packages/bundle/web-app` — dsh 浏览器表层组合包 [bundle] 入口 `src/index.ts`（tests 6）
 
 ## packages/client
 
@@ -58,6 +59,7 @@ workspace 共 273 个包，按 group 分节。每行给出包目录、职责（R
 - `packages/client/ui-deliverables` — 产出文件与可点击文件引用功能的属主 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 2）
 - `packages/client/ui-directory-picker-browse` — 应用内目录浏览界面：浏览式选取交互的浏览器半边 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 2）
 - `packages/client/ui-directory-picker-native` — 原生目录选择界面：原生选取交互的浏览器半边 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 1）
+- `packages/client/ui-files` — 「设置 → 文件管理」列出当前 Host 管理的全局上传文件和生成图片 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 3）
 - `packages/client/ui-goal` — Goal 界面插件（浏览器端部分）：`GoalBar` 条带是 `conversation.input.dock` composer 上下文堆栈… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 4）
 - `packages/client/ui-icons` — 本包是浏览器客户端图标的独立组件边界 入口 `src/index.ts`（tests 1）
 - `packages/client/ui-image-gen` — 图像生成的浏览器界面：设置里的「图像生成」分区、侧边栏「新对话」下方的画图入口，以及主内容「工作台／灵感／图库」页面 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 11）

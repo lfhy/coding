@@ -22,6 +22,7 @@
     "coding-attachment": "workspace:^",
     "coding-client-connection": "workspace:^",
     "coding-credentials": "workspace:^",
+    "coding-file-library": "workspace:^",
     "coding-host-webserver": "workspace:^",
     "coding-invariants": "workspace:^",
     "coding-session": "workspace:^",
@@ -34,10 +35,14 @@
     "coding-attachment-local": "workspace:^",
     "coding-client-connection": "workspace:^",
     "coding-credentials": "workspace:^",
+    "coding-file-library": "workspace:^",
     "coding-host-webserver": "workspace:^",
     "coding-invariants": "workspace:^",
     "coding-session": "workspace:^",
     "coding-session-persistence": "workspace:^",
-    "coding-settings": "workspace:^"
+    "coding-settings": "workspace:^",
+    "coding-storage": "workspace:^",
+    "coding-storage-domain": "workspace:^",
+    "coding-storage-sqlite": "workspace:^"
   }
 }

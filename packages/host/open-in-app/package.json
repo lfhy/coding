@@ -50,6 +50,7 @@
   "peerDependencies": {
     "@deepseek-ai/cordis": "workspace:^",
     "coding-agent": "workspace:^",
+    "coding-file-library": "workspace:^",
     "coding-fs": "workspace:^",
     "coding-host-webserver": "workspace:^",
     "coding-invariants": "workspace:^",
@@ -59,11 +60,15 @@
     "@deepseek-ai/cordis": "workspace:^",
     "@deepseek-ai/cordis-plugin-loader": "workspace:^",
     "coding-agent": "workspace:^",
+    "coding-file-library": "workspace:^",
     "coding-fs": "workspace:^",
     "coding-fs-local": "workspace:^",
     "coding-host-webserver": "workspace:^",
     "coding-invariants": "workspace:^",
     "coding-session": "workspace:^",
+    "coding-storage": "workspace:^",
+    "coding-storage-domain": "workspace:^",
+    "coding-storage-sqlite": "workspace:^",
     "@types/ws": "^8.18.1"
   }
 }

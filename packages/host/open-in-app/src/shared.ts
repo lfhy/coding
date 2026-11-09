@@ -21,7 +21,7 @@ export const OPEN_IN_APP_FILES_ROUTE = '/open-in-app/files'
 /** 读取一个 Session 工作区文件预览的 POST 路由。 */
 export const OPEN_IN_APP_READ_ROUTE = '/open-in-app/read'
 
-/** 将拖放文件暂存到本机 Session 工作区的 POST 路由。 */
+/** 将本地拖放文件保存到全局文件库的 POST 路由。 */
 export const OPEN_IN_APP_ATTACH_ROUTE = '/open-in-app/attach'
 
 /** 启动一个与 WebSocket 生命周期绑定的用户终端。 */
@@ -105,7 +105,7 @@ export type OpenInAppReadPayload = OpenInAppReadBase & (
   }
 )
 
-/** 成功暂存文件后返回工作区相对路径，供当前草稿引用。 */
+/** 成功保存文件后返回绝对物理路径，供当前草稿引用。 */
 export interface OpenInAppAttachPayload {
   readonly path: string
 }

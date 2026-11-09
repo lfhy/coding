@@ -9,12 +9,13 @@ PPT 创作模式的十八个模型工具覆盖工程创建、打开、读写、�
 ## 行为
 
 - **目录参数可选**：`dir` 省略时作用于「会话当前打开的工程」；给出时按工作区相对路径解析，越界即拒绝。
+- **导入来源**：`ppt_import`、`ppt_prepare_template`、`ppt_import_evidence` 和 `ppt_import_template` 的 `source` 接受本机会话工作区的 `.pptx` 路径，或文件库已登记的本机上传文件绝对路径；其他工作区外文件、远程工作区和超过 8 MiB 的文件均拒绝。源页查证还会复核上传登记；工程输出始终留在工作区。
 - **编辑是原子的**：`ppt_edit` 的 `ops` 要么整体生效，要么整体失败；`base_revision` 与当前版本不符时返回冲突，而不是覆盖别处的改动。
 - **元素种类**：文本框、矩形/椭圆、连接线、图片（`media/<file>`）、表格（行 × 列 + 单元格文本）、图表（柱状/折线/饼，分类 + 系列），另有层级调整（`reorder_element`）与复制（`duplicate_element`）。
 - **字体与动画**：文本元素可指定 `font` 族名；导出按 `fsType` 许可嵌入字体，结果里的 `fonts`／`skippedFonts` 说明嵌了谁、为什么跳过。元素可带 `animation`（fade/fly/zoom/wipe），页面可带 `transition`（none/fade/push）。
-- **导入与补页**：`ppt_import` 和 `ppt_prepare_template` 返回 `dropped`、`sourceSha256` 及逐页 `report`：源页序号、导入页 id、源/导入元素计数、状态、丢失类别和有界文字预览。用 `ppt_read` 对照每页；结构缺失时以同一源文件和哈希调用 `ppt_import_evidence` 分片查证源页 XML 与关联图表缓存，再用 `ppt_edit` 补齐有证据的内容。完整源页证据超过 1 MiB UTF-16 字符会报错，不截断；单片默认 8000、最多 16000 字符，可按 `nextOffset` 续读。源文件变动或消失会拒绝旧哈希，不猜测缺失数据；源页本来为空可保留，只有图片的页可见却不等于内部文字可编辑，也不是缺页。`no_known_loss` 只表示未发现已知结构丢失，不保证视觉保真。
+- **导入与补页**：`ppt_import` 和 `ppt_prepare_template` 返回 `dropped`、`sourceSha256` 及逐页 `report`：源页序号、导入页 id、源/导入元素计数、状态、丢失类别和有界文字预览。用 `ppt_read` 对照每页；结构缺失时以同一源文件和哈希调用 `ppt_import_evidence` 分片查证源页 XML 与关联图表缓存，再用 `ppt_edit` 补齐有证据的内容。完整源页证据超过 1 MiB UTF-16 字符会报错，不截断；单片默认 8000、最多 16000 字符，可按 `nextOffset` 续读。源文件变动、消失或上传登记失效会拒绝旧哈希，不猜测缺失数据；源页本来为空可保留，只有图片的页可见却不等于内部文字可编辑，也不是缺页。`no_known_loss` 只表示未发现已知结构丢失，不保证视觉保真。
 - **用户模板与新稿**：`ppt_create` 必须给 `title`；`size`、`theme` 均省略时基于内置白底蓝橘六页整稿创建独立可编辑工程，显式传入任一参数则创建单页标题稿，详情见[宿主默认整稿](../ppt-workbench/README.md#默认整稿与内置单页版式)。`ppt_create_from_template` 用 `ppt_templates` 返回的 id 复制用户模板整稿并打开工作台；`title` 缺省为模板名，尺寸和主题来自模板，不接收 `size`、`theme`。用户模板保存完整演示文稿及媒体，与七种内置单页版式及默认整稿都不同；`ppt_save_template` 将当前工程或指定 `dir` 原样另存为新模板，保留已有正文，不改变现稿。远程工作区不能保存或套用本机模板。
-- **模板制作与管理**：`ppt_import_template` 从本机工作区的无宏 `.pptx` 自动提取可编辑结构与视觉风格，把原稿业务正文泛化为可替换占位后存入用户模板库；结果提供源文件名 `sourceName` 和已知设计／结构损失 `dropped`，不创建或切换工程。`ppt_prepare_template` 则把原稿导入为保留正文的可编辑草稿并聚焦工作台、不写模板库；需要人工补齐或精细提炼时，按逐页 `report` 用 `ppt_read` 和同一源文件的 `ppt_import_evidence` 核对设计与缺失内容，`ppt_edit` 泛化正文并补齐有证据的结构，`ppt_check` 后才 `ppt_save_template`，最后以 `ppt_templates` 核实。不要把用户原文直接保存为通用模板、把占位当成源稿事实，或编造无法核实的数字；若减少源页数须说明。`ppt_rename_template` 按 id 改名，`ppt_delete_template` 须传入匹配的 id 与当前名称。导入的复杂图形和主题色不能保证保真，交付前检查预览并报告损失；远程工作区不支持模板导入。
+- **模板制作与管理**：`ppt_import_template` 从上述本机来源的无宏 `.pptx` 自动提取可编辑结构与视觉风格，把原稿业务正文泛化为可替换占位后存入用户模板库；结果提供源文件名 `sourceName` 和已知设计／结构损失 `dropped`，不创建或切换工程。`ppt_prepare_template` 则把原稿导入为保留正文的可编辑草稿并聚焦工作台、不写模板库；需要人工补齐或精细提炼时，按逐页 `report` 用 `ppt_read` 和同一源文件的 `ppt_import_evidence` 核对设计与缺失内容，`ppt_edit` 泛化正文并补齐有证据的结构，`ppt_check` 后才 `ppt_save_template`，最后以 `ppt_templates` 核实。不要把用户原文直接保存为通用模板、把占位当成源稿事实，或编造无法核实的数字；若减少源页数须说明。`ppt_rename_template` 按 id 改名，`ppt_delete_template` 须传入匹配的 id 与当前名称。导入的复杂图形和主题色不能保证保真，交付前检查预览并报告损失；远程工作区不支持模板导入。
 - **失败诊断**：参数、目录、版本与工程内容的问题都以工具错误返回中文原因（例如「找不到页面 "p2"」「工程已被修改：当前版本 4，请求基于 3」），模型据此重读再改。
 
 ## 工具面
@@ -36,7 +37,7 @@ PPT 创作模式的十八个模型工具覆盖工程创建、打开、读写、�
 | `ppt_undo` / `ppt_redo` | 版本前后移动 | `steps` · `dir` |
 | `ppt_render` | 渲染页面图：在会话的 Agent 浏览器里打开并落 PNG | `dir` · `pages` |
 | `ppt_check` | 规则质检（出界、零尺寸、溢出、对比度、空页、文字密度）；`ai: true` 追加模型审阅 | `dir` · `ai` |
-| `ppt_import` | 保留可解析源正文，把工作区 .pptx 转为工程并返回逐页报告与源文件哈希 | `source` · `dir` · `title` |
+| `ppt_import` | 保留可解析源正文，把本机 `.pptx` 转为工作区工程并返回逐页报告与源文件哈希 | `source` · `dir` · `title` |
 | `ppt_export` | 导出 .pptx 或 PDF 到 `export/`（PDF 先渲染每页） | `dir` · `target` · `skip_check` |
 
 ## 使用本包

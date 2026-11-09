@@ -1,16 +1,20 @@
 /** 通过真实 Loader 和 HTTP 覆盖拖放文件暂存的来源、工作区及字节安全边界。 */
 
-import { mkdtemp, readFile, readdir, rename, rm, symlink, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, readdir, realpath, rename, rm, symlink, writeFile } from 'node:fs/promises'
 import { connect } from 'node:net'
 import { tmpdir } from 'node:os'
-import { basename, join } from 'node:path'
+import { basename, isAbsolute, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import Include from '@deepseek-ai/cordis-plugin-include'
 import FsLocal from 'coding-fs-local'
 import WebServer from 'coding-host-webserver'
+import Storage from 'coding-storage'
+import * as StorageSqlite from 'coding-storage-sqlite'
+import * as StorageDomain from 'coding-storage-domain'
+import FileLibrary from 'coding-file-library'
 import { REMOTE_WORKSPACE_MARKER } from 'coding-subprocess'
 import {
   createLaunchEnvironmentSnapshot, DSH_LAUNCH_ENVIRONMENT_KEY, type LaunchEnvironmentLayerInput,
@@ -20,12 +24,21 @@ import { internals } from '../src/internals.ts'
 import { OPEN_IN_APP_ATTACH_ROUTE } from '../src/shared.ts'
 
 let root: string | undefined
+let libraryHome: string | undefined
 let context: Context | undefined
 const sessions = new Map<string, { header: { id: string; cwd?: string } }>()
 let trustRejection: 401 | 403 | undefined
 let trustChecks = 0
 
-const uploadDirectory = (): string => join(root as string, '.dsh-uploads')
+const uploadDirectory = (): string => join(libraryHome as string, 'files', 'uploads')
+
+function managedFiles(): ReturnType<Context['fileLibrary']['list']> {
+  return (context as Context).fileLibrary.list()
+}
+
+async function noWorkspaceUploads(): Promise<void> {
+  await expect(readdir(join(root as string, '.dsh-uploads'))).rejects.toMatchObject({ code: 'ENOENT' })
+}
 
 function attach(base: string, fileName: string, body: BodyInit, headers: Record<string, string> = {}): Promise<Response> {
   return fetch(`${base}${OPEN_IN_APP_ATTACH_ROUTE}`, {
@@ -75,15 +88,26 @@ function pausedUpload(base: string, first: string, last: string): {
 
 async function boot(layers: readonly LaunchEnvironmentLayerInput[] = []): Promise<string> {
   root = await mkdtemp(join(tmpdir(), 'dsh-open-in-app-attach-'))
+  libraryHome = await realpath(await mkdtemp(join(tmpdir(), 'dsh-file-library-')))
   const configPath = join(root, 'cordis.yml')
   await writeFile(configPath, [
     "- name: 'coding-fs-local'",
     '  config:',
     `    cwd: ${JSON.stringify(root)}`,
+    "- name: 'coding-storage'",
+    "- name: 'coding-storage-sqlite'",
+    '  config:',
+    `    path: ${JSON.stringify(join(libraryHome, 'files.db'))}`,
+    "- name: 'coding-storage-domain'",
+    '  config:',
+    "    backend: 'sqlite'",
     "- name: 'coding-host-webserver'",
     '  config:',
     "    host: '127.0.0.1'",
     '    port: 0',
+    "- name: 'coding-file-library'",
+    '  config:',
+    `    root: ${JSON.stringify(join(libraryHome, 'files'))}`,
     "- name: 'coding-host-open-in-app'",
     '  config:',
     '    probeTimeoutMs: 5000',
@@ -107,7 +131,11 @@ async function boot(layers: readonly LaunchEnvironmentLayerInput[] = []): Promis
   context.loader.builtins.include = Include
   const modules = new Map<string, unknown>([
     ['coding-fs-local', FsLocal],
+    ['coding-storage', Storage],
+    ['coding-storage-sqlite', StorageSqlite],
+    ['coding-storage-domain', StorageDomain],
     ['coding-host-webserver', WebServer],
+    ['coding-file-library', FileLibrary],
     ['coding-host-open-in-app', OpenInApp],
   ])
   context.loader.internal = {
@@ -130,7 +158,9 @@ afterEach(async () => {
   await context?.fiber.dispose()
   context = undefined
   if (root !== undefined) await rm(root, { recursive: true, force: true })
+  if (libraryHome !== undefined) await rm(libraryHome, { recursive: true, force: true })
   root = undefined
+  libraryHome = undefined
   internals.catalog = {}
   sessions.clear()
   trustRejection = undefined
@@ -180,7 +210,7 @@ describe('open-in-app file attachment (real Loader and HTTP)', () => {
     await expect(readdir(uploadDirectory())).rejects.toMatchObject({ code: 'ENOENT' })
   })
 
-  it('stores exact binary bytes with distinct names and a relative mention-safe path', async () => {
+  it('stores exact binary bytes with distinct absolute paths and global metadata', async () => {
     const base = await boot()
     const bytes = Buffer.from([0, 255, 64, 10, 97, 0])
     const first = await attach(base, '介绍 slides.pptx', bytes)
@@ -191,11 +221,15 @@ describe('open-in-app file attachment (real Loader and HTTP)', () => {
     const firstPayload = await first.json() as { path: string }
     const secondPayload = await second.json() as { path: string }
     for (const { path } of [firstPayload, secondPayload]) {
-      expect(path).toMatch(/^\.dsh-uploads\/[a-f0-9-]+-介绍 slides\.pptx$/u)
+      expect(isAbsolute(path)).toBe(true)
+      expect(path).toMatch(/\/files\/uploads\/[a-f0-9-]+-介绍 slides\.pptx$/u)
       expect(path).not.toMatch(/["\u0000-\u001f\u007f-\u009f]/u)
-      expect(await readFile(join(root as string, path))).toEqual(bytes)
+      expect(await readFile(path)).toEqual(bytes)
     }
     expect(firstPayload.path).not.toBe(secondPayload.path)
+    expect(managedFiles().items.map(item => item.name)).toEqual(['介绍 slides.pptx', '介绍 slides.pptx'])
+    expect(managedFiles().items.every(item => item.sessionId === 'session' && item.kind === 'upload')).toBe(true)
+    await noWorkspaceUploads()
   })
 
   it('normalizes unsafe names into mention-safe paths without losing file bytes or extensions', async () => {
@@ -225,13 +259,41 @@ describe('open-in-app file attachment (real Loader and HTTP)', () => {
       const response = await attach(base, name, bytes)
       expect(response.status).toBe(200)
       const payload = await response.json() as { path: string }
-      expect(payload.path).toMatch(/^\.dsh-uploads\/[a-f0-9-]+-/u)
+      expect(payload.path).toMatch(/\/files\/uploads\/[a-f0-9-]+-/u)
       expect(basename(payload.path)).toMatch(new RegExp(`-${suffix.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')}$`, 'u'))
-      expect(payload.path).toMatch(/^\.dsh-uploads\/[a-zA-Z0-9._\p{L}\p{N} -]+$/u)
+      expect(basename(payload.path)).toMatch(/^[a-zA-Z0-9._\p{L}\p{N} -]+$/u)
       expect(payload.path).not.toContain('..')
       expect(Buffer.byteLength(basename(payload.path).split('-').slice(5).join('-'), 'utf8')).toBeLessThanOrEqual(120)
-      expect(await readFile(join(root as string, payload.path))).toEqual(bytes)
+      expect(await readFile(payload.path)).toEqual(bytes)
     }
+    await noWorkspaceUploads()
+  })
+
+  it('lists uploads from different live sessions in one global file index', async () => {
+    const base = await boot()
+    sessions.set('second', { header: { id: 'second', cwd: root as string } })
+    expect((await attach(base, 'first.pptx', 'first')).status).toBe(200)
+    expect((await attach(base, 'second.txt', 'second', { 'x-session-id': 'second' })).status).toBe(200)
+    expect(managedFiles().items.map(item => [item.name, item.sessionId])).toEqual(expect.arrayContaining([
+      ['second.txt', 'second'], ['first.pptx', 'session'],
+    ]))
+    expect(managedFiles().total).toBe(2)
+    await noWorkspaceUploads()
+  })
+
+  it('keeps storage failures private and publishes no upload response', async () => {
+    const base = await boot()
+    const domain = (context as Context).storageDomain.get('files')
+    expect(domain).toBeDefined()
+    const unavailable = vi.spyOn(domain!.table('files'), 'put')
+      .mockRejectedValueOnce(new Error(`sqlite failure at ${String(libraryHome)}`))
+    const response = await attach(base, 'failure.pptx', 'data')
+    expect(response.status).toBe(409)
+    expect(await response.text()).not.toContain(libraryHome as string)
+    expect(managedFiles().items).toEqual([])
+    expect(await readdir(uploadDirectory())).toEqual([])
+    unavailable.mockRestore()
+    await noWorkspaceUploads()
   })
 
   it('rejects only missing or undecodable file names and invalid headers', async () => {
@@ -281,6 +343,8 @@ describe('open-in-app file attachment (real Loader and HTTP)', () => {
     expect(response.status).toBe(status)
     expect(await response.text()).not.toContain(root as string)
     expect(await readdir(uploadDirectory())).toEqual([])
+    expect(managedFiles().items).toEqual([])
+    await noWorkspaceUploads()
   })
 
   it('refuses SSH launch, valid and malformed remote markers', async () => {
@@ -298,16 +362,17 @@ describe('open-in-app file attachment (real Loader and HTTP)', () => {
     await expect(readdir(uploadDirectory())).rejects.toMatchObject({ code: 'ENOENT' })
   })
 
-  it('refuses an upload directory replaced before commit without leaving partial bytes', async () => {
+  it('refuses a global upload directory replaced before commit without publishing metadata', async () => {
     const base = await boot()
     const pending = pausedUpload(base, 'first half', 'second half')
     await pending.started
     await expect.poll(async () => (await readdir(uploadDirectory())).length).toBe(1)
-    const displaced = join(root as string, 'displaced-uploads')
+    const displaced = join(libraryHome as string, 'displaced-uploads')
     await rename(uploadDirectory(), displaced)
     const response = await pending.finish()
     expect(response.status).toBe(409)
-    expect(await readdir(displaced)).toEqual([])
+    expect(managedFiles().items).toEqual([])
+    await noWorkspaceUploads()
   })
 
   it('refuses an upload directory replaced by a symlink before commit without following it', async () => {
@@ -316,14 +381,15 @@ describe('open-in-app file attachment (real Loader and HTTP)', () => {
     await pending.started
     await expect.poll(async () => (await readdir(uploadDirectory())).length).toBe(1)
     const elsewhere = await mkdtemp(join(tmpdir(), 'dsh-attachment-outside-'))
-    const displaced = join(root as string, 'displaced-uploads')
+    const displaced = join(libraryHome as string, 'displaced-uploads')
     try {
       await rename(uploadDirectory(), displaced)
       await symlink(elsewhere, uploadDirectory(), 'dir')
       const response = await pending.finish()
       expect(response.status).toBe(409)
-      expect(await readdir(displaced)).toEqual([])
+      expect(managedFiles().items).toEqual([])
       expect(await readdir(elsewhere)).toEqual([])
+      await noWorkspaceUploads()
     } finally {
       await rm(elsewhere, { recursive: true, force: true })
     }
@@ -341,7 +407,7 @@ describe('open-in-app file attachment (real Loader and HTTP)', () => {
     }
   })
 
-  it('refuses a symlink workspace parent before creating an upload directory', async () => {
+  it('refuses a symlink workspace parent before writing to the global library', async () => {
     const base = await boot()
     const outside = await mkdtemp(join(tmpdir(), 'dsh-attachment-parent-'))
     try {
@@ -350,6 +416,7 @@ describe('open-in-app file attachment (real Loader and HTTP)', () => {
       sessions.set('session', { header: { id: 'session', cwd: alias } })
       expect((await attach(base, 'file.pptx', 'data')).status).toBe(409)
       expect(await readdir(outside)).toEqual([])
+      await expect(readdir(uploadDirectory())).rejects.toMatchObject({ code: 'ENOENT' })
     } finally {
       await rm(outside, { recursive: true, force: true })
     }
@@ -386,6 +453,8 @@ describe('open-in-app file attachment (real Loader and HTTP)', () => {
     })
     expect(declaredStatus).toMatch(/^HTTP\/1\.1 413/u)
     expect(await readdir(uploadDirectory())).toEqual(before)
+    expect(managedFiles().items).toHaveLength(1)
+    await noWorkspaceUploads()
   })
 
   it('removes a partially written file after a client disconnects mid-body', async () => {

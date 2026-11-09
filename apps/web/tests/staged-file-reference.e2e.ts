@@ -1,5 +1,5 @@
 // 真实 Web/Host 组装：拖入演示文稿、粘贴未知格式文件后只展示保存名，
-// 提交与持久消息仍携带可读取的工作区路径；回放模型不访问外部服务。
+// 提交与持久消息仍携带 Home 文件库的绝对路径；回放模型不访问外部服务。
 import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -43,7 +43,7 @@ async function intakeFile(page: Page, name: string, entry: 'drop' | 'paste'): Pr
   }, { name, entry })
 }
 
-describe.skipIf(webSnapshotMode() === 'record')('web e2e: staged file display and durable paths', () => {
+describe.skipIf(webSnapshotMode() === 'record')('web e2e: staged file display and managed paths', () => {
   let scaffold: WebScaffold
   let browser: Browser
   let page: Page
@@ -99,17 +99,23 @@ describe.skipIf(webSnapshotMode() === 'record')('web e2e: staged file display an
       .toEqual(['@演示 slides.pptx', '@notes.xyz'])
     expect(await input.inputValue()).not.toContain('.dsh-uploads/')
 
-    const saved = await readdir(join(scaffold.workspaceCwd, 'workspace', '.dsh-uploads'))
+    const uploadRoot = join(scaffold.harnessHome, 'files', 'uploads')
+    const saved = await readdir(uploadRoot)
     expect(saved).toHaveLength(2)
     const deck = saved.find(name => name.endsWith('-演示 slides.pptx'))
     const notes = saved.find(name => name.endsWith('-notes.xyz'))
     expect(deck).toMatch(/^[a-f\d-]{36}-演示 slides\.pptx$/u)
     expect(notes).toMatch(/^[a-f\d-]{36}-notes\.xyz$/u)
+    if (deck === undefined || notes === undefined) throw new Error('uploaded file missing')
     for (const name of saved) {
-      expect(await readFile(join(scaffold.workspaceCwd, 'workspace', '.dsh-uploads', name), 'utf8'))
+      expect(await readFile(join(uploadRoot, name), 'utf8'))
         .toBe('saved content')
     }
-    const canonical = `Review @".dsh-uploads/${deck}" and @.dsh-uploads/${notes}`
+    await expect(readdir(join(scaffold.workspaceCwd, 'workspace', '.dsh-uploads')))
+      .rejects.toMatchObject({ code: 'ENOENT' })
+    const deckPath = join(uploadRoot, deck).replaceAll('\\', '/')
+    const notesPath = join(uploadRoot, notes).replaceAll('\\', '/')
+    const canonical = `Review @"${deckPath}" and @${notesPath}`
     const settled = scaffold.whenTurnSettled()
     await input.press('Enter')
     const id = await settled
@@ -121,6 +127,24 @@ describe.skipIf(webSnapshotMode() === 'record')('web e2e: staged file display an
       ? event.data.content.flatMap(block => block.type === 'text' ? [block.text] : [])
       : [])
     expect(sent).toContain(canonical)
+    const response = await page.request.get(`${scaffold.baseUrl}/api/files/list?offset=0&limit=50`)
+    expect(response.status()).toBe(200)
+    const listed = await response.text()
+    expect(listed).not.toContain(scaffold.harnessHome)
+    const files = JSON.parse(listed) as { total: number; items: unknown[] }
+    expect(files.total).toBe(2)
+    expect(files.items).toHaveLength(2)
+    expect(files.items).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        kind: 'upload', name: '演示 slides.pptx', relativePath: `uploads/${deck}`,
+        mediaType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+        bytes: Buffer.byteLength('saved content'), sessionId: id,
+      }),
+      expect.objectContaining({
+        kind: 'upload', name: 'notes.xyz', relativePath: `uploads/${notes}`,
+        mediaType: 'application/octet-stream', bytes: Buffer.byteLength('saved content'), sessionId: id,
+      }),
+    ]))
     const bubble = page.locator('[data-chat-flow-kind="user"] [data-ref-chip="file"]')
     await expect.poll(() => bubble.allTextContents(), { timeout: 15_000 })
       .toEqual(['演示 slides.pptx', 'notes.xyz'])

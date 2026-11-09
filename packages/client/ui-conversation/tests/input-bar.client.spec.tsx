@@ -180,7 +180,7 @@ function bench(over?: BenchOptions) {
     inputActions: shell.actions,
     keyboard: shell,
     addImages: over?.addImages ?? (() => null),
-    addFile: over?.addFile ?? (file => Promise.resolve(`.dsh-uploads/${file.name}`)),
+    addFile: over?.addFile ?? (file => Promise.resolve(`/Users/demo/files/uploads/123e4567-e89b-42d3-a456-426614174000-${file.name}`)),
     removeImage,
     draftImages: ids => ids.flatMap((id) => {
       const attachment = over?.attachments?.find(candidate => candidate.id === id)
@@ -341,7 +341,7 @@ describe('image draft rail', () => {
     let finishFirst: (path: string) => void = () => { throw new Error('no upload in flight') }
     const first = new Promise<string>((resolve) => { finishFirst = resolve })
     const addFile = vi.fn((file: File) => file.name === '演示 slides.pptx'
-      ? first : Promise.resolve(`.dsh-uploads/123e4567-e89b-42d3-a456-426614174000-${file.name}`))
+      ? first : Promise.resolve(`/Users/demo/Coding Home/files/uploads/123e4567-e89b-42d3-a456-426614174000-${file.name}`))
     const addImages = vi.fn(() => null)
     const result = bench({ draft: '请解析', addFile, addImages, lexicon: new Map() })
     result.textarea.setSelectionRange(result.textarea.value.length, result.textarea.value.length)
@@ -355,7 +355,7 @@ describe('image draft rail', () => {
     fireEvent.keyDown(result.textarea, { key: 'Enter' })
     expect(result.sink).not.toHaveBeenCalled()
     expect(result.button.disabled).toBe(true)
-    await act(async () => { finishFirst('.dsh-uploads/123e4567-e89b-42d3-a456-426614174000-演示 slides.pptx'); await first })
+    await act(async () => { finishFirst('/Users/demo/Coding Home/files/uploads/123e4567-e89b-42d3-a456-426614174000-演示 slides.pptx'); await first })
     await waitFor(() => { expect(addFile).toHaveBeenCalledTimes(3) })
     expect(result.shell.snapshot.draft).toBe('请解析 @演示 slides.pptx @memo.docx @data.bin')
     expect(result.textarea.value).toBe(result.shell.snapshot.draft)
@@ -364,7 +364,7 @@ describe('image draft rail', () => {
     expect(addImages).not.toHaveBeenCalled()
     fireEvent.keyDown(result.textarea, { key: 'Enter' })
     await waitFor(() => { expect(result.sink).toHaveBeenCalledWith(
-      '请解析 @".dsh-uploads/123e4567-e89b-42d3-a456-426614174000-演示 slides.pptx" @.dsh-uploads/123e4567-e89b-42d3-a456-426614174000-memo.docx @.dsh-uploads/123e4567-e89b-42d3-a456-426614174000-data.bin',
+      '请解析 @"/Users/demo/Coding Home/files/uploads/123e4567-e89b-42d3-a456-426614174000-演示 slides.pptx" @"/Users/demo/Coding Home/files/uploads/123e4567-e89b-42d3-a456-426614174000-memo.docx" @"/Users/demo/Coding Home/files/uploads/123e4567-e89b-42d3-a456-426614174000-data.bin"',
       [], 'queue', expect.any(AbortSignal),
     ) })
   })
@@ -372,7 +372,7 @@ describe('image draft rail', () => {
   it('keeps a successful path but does not invent a path for failed uploads', async () => {
     const addFile = vi.fn((file: File) => file.name === 'too-large.docx'
       ? Promise.reject(new FileStageError(413))
-      : Promise.resolve('.dsh-uploads/123e4567-e89b-42d3-a456-426614174000-kept.pptx'))
+      : Promise.resolve('/Users/demo/files/uploads/123e4567-e89b-42d3-a456-426614174000-kept.pptx'))
     const result = bench({ draft: '导入', addFile })
     result.textarea.setSelectionRange(result.textarea.value.length, result.textarea.value.length)
     act(() => { attachmentOwner(result.slotCalls).onAddFiles([
@@ -384,8 +384,16 @@ describe('image draft rail', () => {
     expect(addFile).toHaveBeenCalledTimes(2)
   })
 
+  it('rejects a file response outside the staged Home path without creating a reference', async () => {
+    const result = bench({ draft: '保持原文', addFile: () => Promise.resolve('/tmp/local-secret.docx') })
+    act(() => { attachmentOwner(result.slotCalls).onAddFiles([new File(['bytes'], 'local-secret.docx')]) })
+    await waitFor(() => { expect(result.view.getByRole('alert').textContent).toContain('文件未能保存') })
+    expect(result.shell.snapshot.draft).toBe('保持原文')
+    expect(result.view.container.querySelector('[data-reference-appearance="file"]')).toBeNull()
+  })
+
   it('converts a clipboard document to a saved path while preserving pasted text', async () => {
-    const addFile = vi.fn(() => Promise.resolve('.dsh-uploads/123e4567-e89b-42d3-a456-426614174000-notes.docx'))
+    const addFile = vi.fn(() => Promise.resolve('/Users/demo/files/uploads/123e4567-e89b-42d3-a456-426614174000-notes.docx'))
     const result = bench({ addFile })
     const file = new File(['notes'], 'notes.docx', { type: 'application/msword' })
     fireEvent.paste(result.textarea, { clipboardData: {
@@ -403,13 +411,13 @@ describe('image draft rail', () => {
     act(() => { attachmentOwner(result.slotCalls).onAddFiles([new File(['old'], 'old.pptx')]) })
     expect(result.view.getByRole('status').textContent).toContain('正在保存文件到工作区')
     const newSession = 'fresh-session' as SessionId
-    const addFile = vi.fn(() => Promise.resolve('.dsh-uploads/new.docx'))
+    const addFile = vi.fn(() => Promise.resolve('/Users/demo/files/uploads/123e4567-e89b-42d3-a456-426614174000-new.docx'))
     result.view.rerender(<InputBar {...result.props} sessionId={newSession} addFile={addFile} />)
     expect(result.view.queryByRole('status')).toBeNull()
     expect(result.button.disabled).toBe(false)
     act(() => { attachmentOwner(result.slotCalls).onAddFiles([new File(['new'], 'new.docx')]) })
     await waitFor(() => { expect(result.shell.snapshot.draft).toContain('@new.docx') })
-    await act(async () => { finishOld('.dsh-uploads/old.pptx'); await oldUpload })
+    await act(async () => { finishOld('/Users/demo/files/uploads/123e4567-e89b-42d3-a456-426614174000-old.pptx'); await oldUpload })
     expect(result.shell.snapshot.draft).not.toContain('old.pptx')
   })
 

@@ -675,6 +675,21 @@ export interface Config {
 
 Source: [`packages/experimental/tool-agent-team/src/index.ts:17`](../packages/experimental/tool-agent-team/src/index.ts)
 
+<a id="coding-file-library"></a>
+
+## `coding-file-library`
+
+Requires: `storageDomain`
+
+```ts config-catalog
+export interface Config {
+  /** 显式覆盖受管理文件根目录；默认使用已解析 Coding home 下的 `files`，仅供测试与部署隔离使用。 */
+  readonly root?: string
+}
+```
+
+Source: [`packages/attachment/file-library/src/index.ts:24`](../packages/attachment/file-library/src/index.ts)
+
 <a id="coding-file-reference-local"></a>
 
 ## `coding-file-reference-local`
@@ -914,7 +929,7 @@ Source: [`packages/host/frontend-static/src/index.ts:28`](../packages/host/front
 
 ## `coding-host-open-in-app`
 
-Requires: `webServer` · `connection` · `subprocess` · `fs` · `sessions` · `agents`
+Requires: `webServer` · `connection` · `subprocess` · `fs` · `sessions` · `agents` · `fileLibrary`
 
 ```ts config-catalog
 /** open-in-app Host 配置。 */
@@ -930,7 +945,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/host/open-in-app/src/index.ts:71`](../packages/host/open-in-app/src/index.ts)
+Source: [`packages/host/open-in-app/src/index.ts:75`](../packages/host/open-in-app/src/index.ts)
 
 <a id="coding-host-webserver"></a>
 
@@ -952,7 +967,7 @@ Source: [`packages/host/webserver/src/index.ts:45`](../packages/host/webserver/s
 
 ## `coding-image-gen`
 
-Requires: `sessions` · `attachments` · `credentials`
+Requires: `sessions` · `attachments` · `credentials` · `fileLibrary`
 
 ```ts config-catalog
 /** 未提供完整 endpoint/model 时开关无效；apiKeyRef 为空允许本地匿名端点。 */
@@ -972,7 +987,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/image/image-gen/src/index.ts:21`](../packages/image/image-gen/src/index.ts)
+Source: [`packages/image/image-gen/src/index.ts:22`](../packages/image/image-gen/src/index.ts)
 
 <a id="coding-invariants"></a>
 
@@ -1669,7 +1684,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/ppt/ppt-workbench/src/index.ts:43`](../packages/ppt/ppt-workbench/src/index.ts)
+Source: [`packages/ppt/ppt-workbench/src/index.ts:50`](../packages/ppt/ppt-workbench/src/index.ts)
 
 <a id="coding-progress-reminder"></a>
 
@@ -3677,6 +3692,7 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 - `coding-client-ui-deliverables` — requires `systemPrompt` ([`packages/client/ui-deliverables/src/index.ts`](../packages/client/ui-deliverables/src/index.ts))
 - `coding-client-ui-directory-picker-browse` ([`packages/client/ui-directory-picker-browse/src/index.ts`](../packages/client/ui-directory-picker-browse/src/index.ts))
 - `coding-client-ui-directory-picker-native` ([`packages/client/ui-directory-picker-native/src/index.ts`](../packages/client/ui-directory-picker-native/src/index.ts))
+- `coding-client-ui-files` ([`packages/client/ui-files/src/index.ts`](../packages/client/ui-files/src/index.ts))
 - `coding-client-ui-goal` ([`packages/client/ui-goal/src/index.ts`](../packages/client/ui-goal/src/index.ts))
 - `coding-client-ui-image-gen` ([`packages/client/ui-image-gen/src/index.ts`](../packages/client/ui-image-gen/src/index.ts))
 - `coding-client-ui-input-trigger` ([`packages/client/ui-input-trigger/src/index.ts`](../packages/client/ui-input-trigger/src/index.ts))

@@ -85,9 +85,9 @@ async state(sessionId: string): Promise<PptWorkbenchState>
 ackOpenRequest(sessionId: string, at: number): void
 
 /**
- * 新建工程并设为当前工程。
+ * 新建工程并设为当前工程；未指定尺寸或主题时使用内置整稿模板。
  * @param sessionId - 会话身份。
- * @param options - 标题、目录、尺寸与主题。
+ * @param options - 标题、目录、尺寸与主题；显式尺寸或主题保留单页新建。
  * @returns 新工程快照。
  */
 create(sessionId: string, options: { title: string dir?: string size?: SlideSizeId theme?: ThemeId }): Promise<PptSnapshot>
@@ -181,13 +181,95 @@ upload(sessionId: string, dir: string | undefined, name: string, bytes: Uint8Arr
 async check(sessionId: string, dir?: string): Promise<PptCheckResult>
 
 /**
- * 把工作区里的 .pptx 导入成工程。
+ * 把工作区或本机已登记上传的 .pptx 导入成工程。
  * @param sessionId - 会话身份。
- * @param source - 工作区相对的 .pptx 路径。
+ * @param source - 工作区中的 .pptx 路径，或已登记上传文件的绝对路径。
  * @param options - 目标目录与标题（都缺省时按源文件名生成）。
- * @returns 新工程快照与未能表达的类别。
+ * @returns 新工程快照、逐页保留报告与源文件 SHA-256；导入只创建工程，不保存模板。
+ * @throws PptStoreError 远程工作区、越界、文件超限或目标已有内容时；失败不切换当前工程。
  */
-async import(sessionId: string, source: string, options: { dir?: string; title?: string }): Promise<{ snapshot: PptSnapshot dropped: readonly string[] }>
+async import(sessionId: string, source: string, options: { dir?: string; title?: string }): Promise<{ snapshot: PptSnapshot dropped: readonly string[] report: PptImportReport sourceSha256: string }>
+
+/** 分片读取已导入 PPTX 的源页证据，源文件变化后必须重新导入。
+ * @param sessionId - 本机会话身份。
+ * @param source - 工作区中的 .pptx 路径，或已登记上传文件的绝对路径。
+ * @param options - 源页序号、导入时的 SHA-256 与可选分片窗口。
+ * @returns 经同一安全解包器提取的有界证据片段及其源哈希。
+ * @throws PptStoreError 路径不安全、源文件缺失或内容已变化时。
+ */
+async importEvidence(sessionId: string, source: string, options: { sourceIndex: number sourceSha256: string offset?: number limit?: number }): Promise<PptPageEvidenceChunk & { sourceSha256: string }>
+
+/** 列出本机用户模板；不切换任何会话的当前工程。
+ * @returns 按创建时间排列的模板摘要。
+ * @throws PptStoreError 模板仓库损坏或无法访问时。
+ */
+listTemplates(): Promise<readonly PptTemplateSummary[]>
+
+/** 读取模板的完整 deck；不切换当前工程。
+ * @param id - 模板 UUID。
+ * @returns 模板详情。
+ * @throws PptStoreError 模板不存在或仓库内容不合法时。
+ */
+readTemplate(id: string): Promise<PptTemplateDetail>
+
+/** 读取模板 deck 引用的媒体原字节，不需要会话且不改变模板或当前工程。
+ * @param id - 模板 UUID。
+ * @param source - `media/<文件名>` 相对路径。
+ * @returns 模板媒体原始字节。
+ * @throws PptStoreError 模板不存在、路径不合法、媒体未被引用或仓库损坏时。
+ */
+templateMedia(id: string, source: string): Promise<Uint8Array>
+
+/** 将无宏 PPTX 的可编辑几何和设计提取为无源正文的用户模板；丢失的复杂结构在返回值中列出。
+ * @param fileName - 安全的单层 .pptx 文件名。
+ * @param bytes - 压缩源文件字节，上限 8 MiB；不会保存源文件本身。
+ * @param options - 模板名称；缺省取去掉扩展名的文件名。
+ * @returns 持久化的模板详情。
+ * @throws PptStoreError 文件名、大小、内容或仓库不合法时。
+ */
+async importTemplate(fileName: string, bytes: Uint8Array, options: { name?: string } = {}): Promise<PptTemplateDetail>
+
+/** 将工作区或本机已登记上传的 PPTX 保存为用户模板，不创建工程或切换当前工程。
+ * @param sessionId - 本机会话身份。
+ * @param source - 工作区中的 .pptx 路径，或已登记上传文件的绝对路径。
+ * @param options - 可选模板名称；缺省取源文件名去掉扩展名。
+ * @returns 包含来源文件名与导入限制的持久模板详情。
+ * @throws PptStoreError 远程工作区、路径越界、符号链接、文件超限或文件名不安全时。
+ */
+async importTemplateFromFile(sessionId: string, source: string, options: { name?: string } = {}): Promise<PptTemplateDetail>
+
+/** 保存工程整稿和全部引用媒体的原字节；不改变当前工程。
+ * @param sessionId - 本机会话身份。
+ * @param options - 名称和可选工程目录；缺省取会话当前工程。
+ * @returns 持久化的模板详情。
+ * @throws PptStoreError 远程工作区、缺图、符号链接、越界或仓库错误时。
+ */
+async saveTemplate(sessionId: string, options: { name: string; dir?: string }): Promise<PptTemplateDetail>
+
+/** 重命名模板但不修改 deck 或已由模板创建的工程。
+ * @param id - 模板 UUID。
+ * @param name - 新名称。
+ * @returns 新摘要。
+ * @throws PptStoreError 模板不存在或名称无效时。
+ */
+renameTemplate(id: string, name: string): Promise<PptTemplateSummary>
+
+/** 删除模板库条目，不影响已创建的工程；模型应传当前名称以防重命名后误删。
+ * @param id - 模板 UUID。
+ * @param expectedName - 模型确认时看到的名称，由仓库在删除锁内核对。
+ * @returns 删除完成时兑现。
+ * @throws PptStoreError 模板不存在、名称已变化或仓库内容不合法时。
+ */
+deleteTemplate(id: string, expectedName?: string): Promise<void>
+
+/** 从模板创建可独立编辑的工程副本；成功发布后才切换会话焦点。
+ * @param sessionId - 本机会话身份。
+ * @param id - 模板 UUID。
+ * @param options - 新标题和目标目录；缺省用模板名生成目录。
+ * @returns 初始版本号为 1 的工程快照。
+ * @throws PptStoreError 远程工作区、目标已存在、目录越界或模板损坏时。
+ */
+async createFromTemplate(sessionId: string, id: string, options: { title?: string; dir?: string } = {}): Promise<PptSnapshot>
 
 /**
  * 导出当前版本为 .pptx。
@@ -199,5 +281,5 @@ async import(sessionId: string, source: string, options: { dir?: string; title?:
 async export(sessionId: string, dir?: string, options: { skipCheck?: boolean } = {}): Promise<PptExportResult>
 ```
 
-Source: [`packages/ppt/ppt-workbench/src/index.ts:69`](../../packages/ppt/ppt-workbench/src/index.ts)
+Source: [`packages/ppt/ppt-workbench/src/index.ts:88`](../../packages/ppt/ppt-workbench/src/index.ts)
 <!-- END GENERATED cordis-surface -->

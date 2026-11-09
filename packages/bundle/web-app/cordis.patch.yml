@@ -54,10 +54,17 @@
       config:
         root: !!js dshHomePath('storages')
 
+    - id: storage-sqlite
+      name: 'coding-storage-sqlite'
+      config:
+        path: !!js dshHomePath('files.sqlite')
+
     - id: storage-domain
       name: 'coding-storage-domain'
       config:
         backend: json
+        routes:
+          files: sqlite
 
     - id: message-feedback
       name: 'coding-message-feedback'
@@ -67,6 +74,9 @@
     # Browser Session export: `/export` command plus the shared download dialog.
     - id: session-log-download
       name: 'coding-session-log-export'
+
+    - id: file-library
+      name: 'coding-file-library'
 
     # 本地工作区显示应用打开入口；Remote-SSH／SSH Host 切到内置文件页。
     - id: open-in-app
@@ -210,6 +220,9 @@
 
     - id: ui-settings-general
       name: 'coding-client-ui-settings-general'
+
+    - id: ui-files
+      name: 'coding-client-ui-files'
 
     - id: ui-settings-models
       name: 'coding-client-ui-settings-models'

@@ -143,7 +143,7 @@ describe('MessageItem arms', () => {
   })
 
   it('shows staged file names in sent bubbles and steering while copy keeps the actual path', () => {
-    const mention = '@".dsh-uploads/123e4567-e89b-42d3-a456-426614174000-演示 slides.pptx"'
+    const mention = '@"/Users/demo/Coding Home/files/uploads/123e4567-e89b-42d3-a456-426614174000-演示 slides.pptx"'
     const writeText = vi.fn().mockResolvedValue(undefined)
     Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
     const view = render(<MessageItem t={t} node={{

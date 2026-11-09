@@ -21,6 +21,7 @@ import { isAbsolute } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from 'coding-agent'
 import type {} from 'coding-fs'
+import type {} from 'coding-file-library'
 import type {} from 'coding-host-webserver'
 import type {} from 'coding-session'
 import {
@@ -67,8 +68,8 @@ export type * from './shared.ts'
 
 /** Cordis function-plugin 名称。 */
 export const name = 'open-in-app'
-/** 路由载体、认证栅栏、Session/Agent 身份与跨执行世界执行能力。 */
-export const inject = ['webServer', 'connection', 'subprocess', 'fs', 'sessions', 'agents']
+/** 路由载体、认证栅栏、Session/Agent 身份、文件库与跨执行世界执行能力。 */
+export const inject = ['webServer', 'connection', 'subprocess', 'fs', 'sessions', 'agents', 'fileLibrary']
 
 /** open-in-app Host 配置。 */
 export interface Config {
@@ -98,7 +99,7 @@ interface OpenInAppConnection {
 
 /** 从 composition 取得浏览器侧 connection 服务的 Host 信任接口。 */
 function connectionOf(ctx: Context): OpenInAppConnection {
-  return Reflect.get(ctx, 'connection') as OpenInAppConnection
+  return Reflect.get(ctx, 'connection')
 }
 
 const MAX_BODY_BYTES = 64 * 1024

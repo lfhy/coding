@@ -1040,6 +1040,46 @@ importers:
         specifier: workspace:^
         version: link:../../runtime-diagnostics/invariants
 
+  packages/attachment/file-library:
+    dependencies:
+      '@deepseek-ai/schemastery':
+        specifier: link:../../../vendor/schemastery
+        version: link:../../../vendor/schemastery
+      zod:
+        specifier: ^4.1.5
+        version: 4.4.3
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/cordis-plugin-include':
+        specifier: workspace:^
+        version: link:../../../vendor/include
+      '@deepseek-ai/cordis-plugin-loader':
+        specifier: workspace:^
+        version: link:../../../vendor/loader
+      coding-client-connection:
+        specifier: workspace:^
+        version: link:../../client/connection
+      coding-home-paths:
+        specifier: workspace:^
+        version: link:../../util/home-paths
+      coding-host-webserver:
+        specifier: workspace:^
+        version: link:../../host/webserver
+      coding-invariants:
+        specifier: workspace:^
+        version: link:../../runtime-diagnostics/invariants
+      coding-storage:
+        specifier: workspace:^
+        version: link:../../storage/storage
+      coding-storage-domain:
+        specifier: workspace:^
+        version: link:../../storage/storage-domain
+      coding-storage-sqlite:
+        specifier: workspace:^
+        version: link:../../storage/storage-sqlite
+
   packages/boot/app-boot:
     dependencies:
       js-yaml:
@@ -1690,6 +1730,9 @@ importers:
       coding-client-ui-directory-picker-native:
         specifier: workspace:^
         version: link:../../client/ui-directory-picker-native
+      coding-client-ui-files:
+        specifier: workspace:^
+        version: link:../../client/ui-files
       coding-client-ui-goal:
         specifier: workspace:^
         version: link:../../client/ui-goal
@@ -1789,6 +1832,9 @@ importers:
       coding-cordis-host-runner:
         specifier: workspace:^
         version: link:../../extensions/cordis-host-runner
+      coding-file-library:
+        specifier: workspace:^
+        version: link:../../attachment/file-library
       coding-file-reference:
         specifier: workspace:^
         version: link:../../context/file-reference
@@ -1858,6 +1904,9 @@ importers:
       coding-storage-json:
         specifier: workspace:^
         version: link:../../storage/storage-json
+      coding-storage-sqlite:
+        specifier: workspace:^
+        version: link:../../storage/storage-sqlite
       coding-subprocess:
         specifier: workspace:^
         version: link:../../subprocess/subprocess
@@ -2557,6 +2606,39 @@ importers:
       coding-client-ui-workspace:
         specifier: workspace:^
         version: link:../ui-workspace
+      coding-invariants:
+        specifier: workspace:^
+        version: link:../../runtime-diagnostics/invariants
+      react:
+        specifier: ^18.2.0
+        version: 18.3.1
+      react-dom:
+        specifier: ^18.2.0
+        version: 18.3.1(react@18.3.1)
+
+  packages/client/ui-files:
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@testing-library/react':
+        specifier: ^16.1.0
+        version: 16.3.2(@testing-library/dom@10.4.2)(@types/react-dom@18.3.7(@types/react@18.3.31))(@types/react@18.3.31)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      '@types/react':
+        specifier: ~18.3.1
+        version: 18.3.31
+      coding-client-locale:
+        specifier: workspace:^
+        version: link:../locale
+      coding-client-runtime:
+        specifier: workspace:^
+        version: link:../runtime
+      coding-client-ui-settings:
+        specifier: workspace:^
+        version: link:../ui-settings
+      coding-client-ui-slots:
+        specifier: workspace:^
+        version: link:../ui-slots
       coding-invariants:
         specifier: workspace:^
         version: link:../../runtime-diagnostics/invariants
@@ -6388,6 +6470,9 @@ importers:
       coding-agent:
         specifier: workspace:^
         version: link:../../core/agent
+      coding-file-library:
+        specifier: workspace:^
+        version: link:../../attachment/file-library
       coding-fs:
         specifier: workspace:^
         version: link:../../fs/fs
@@ -6403,6 +6488,15 @@ importers:
       coding-session:
         specifier: workspace:^
         version: link:../../core/session
+      coding-storage:
+        specifier: workspace:^
+        version: link:../../storage/storage
+      coding-storage-domain:
+        specifier: workspace:^
+        version: link:../../storage/storage-domain
+      coding-storage-sqlite:
+        specifier: workspace:^
+        version: link:../../storage/storage-sqlite
 
   packages/host/plugin-inventory:
     dependencies:
@@ -6475,6 +6569,9 @@ importers:
       coding-credentials:
         specifier: workspace:^
         version: link:../../credentials/credentials
+      coding-file-library:
+        specifier: workspace:^
+        version: link:../../attachment/file-library
       coding-host-webserver:
         specifier: workspace:^
         version: link:../../host/webserver
@@ -6490,6 +6587,15 @@ importers:
       coding-settings:
         specifier: workspace:^
         version: link:../../settings/settings
+      coding-storage:
+        specifier: workspace:^
+        version: link:../../storage/storage
+      coding-storage-domain:
+        specifier: workspace:^
+        version: link:../../storage/storage-domain
+      coding-storage-sqlite:
+        specifier: workspace:^
+        version: link:../../storage/storage-sqlite
 
   packages/image/tool-image-gen:
     dependencies:

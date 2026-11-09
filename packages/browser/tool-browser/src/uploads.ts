@@ -1,4 +1,4 @@
-/** 浏览器上传文件的模型输入边界：路径形状、会话工作区归属与常规文件检查。 @module coding-tool-browser/uploads */
+/** 浏览器上传文件的模型输入边界：路径形状、会话工作区或文件库归属与常规文件检查。 @module coding-tool-browser/uploads */
 
 import type { Stats } from 'node:fs'
 import { realpath, stat } from 'node:fs/promises'
@@ -33,15 +33,16 @@ export function validateUploadPaths(raw: unknown): string[] {
 
 /**
  * 把模型给出的路径解析成提供方可直接打开的本机绝对路径。
- * 工作区归属按真实路径判断：符号链接逃出会话工作区、目录、设备文件与不存在的路径都在审批前拒绝，
- * 使浏览器上传不能成为读取工作区外文件（例如凭据文件）的通道。
+ * 工作区归属按真实路径判断；工作区外仅接受文件库确认登记的绝对上传路径。
+ * 工作区符号链接不能借目标为受管理文件取得权限；目录、设备文件与不存在的路径都在审批前拒绝。
  * @param cwd - 调用会话不可变的工作区根；会话没有工作区时拒绝。
  * @param files - 已通过形状检查的路径，可以是工作区相对路径或绝对路径。
  * @param signal - 调用方取消信号；每次 I/O 前检查。
+ * @param isManagedUploadPath - 可选的 Host 文件库归属检查；缺席时只接受工作区文件。
  * @returns 与输入顺序一致的绝对路径，供提供方交给文件输入控件。
  */
 export async function resolveUploadFiles(cwd: string | undefined, files: readonly string[],
-  signal: AbortSignal): Promise<string[]> {
+  signal: AbortSignal, isManagedUploadPath?: (path: string) => Promise<boolean>): Promise<string[]> {
   if (cwd === undefined) {
     throw new Error('browser_upload: this session has no workspace directory; uploads must come from the session workspace')
   }
@@ -58,8 +59,13 @@ export async function resolveUploadFiles(cwd: string | undefined, files: readonl
       throw new Error(`browser_upload: no such file: ${file}`)
     }
     const within = relative(root, target)
-    if (within === '' || isAbsolute(within) || within === '..' || within.startsWith(`..${sep}`)) {
-      throw new Error(`browser_upload: only files inside the session workspace can be uploaded: ${file}`)
+    if (within === '') throw new Error(`browser_upload: only files inside the session workspace can be uploaded: ${file}`)
+    if (isAbsolute(within) || within === '..' || within.startsWith(`..${sep}`)) {
+      signal.throwIfAborted()
+      if (!isAbsolute(file) || !isManagedUploadPath || !await isManagedUploadPath(file)) {
+        throw new Error(`browser_upload: only files inside the session workspace or registered uploads can be uploaded: ${file}`)
+      }
+      signal.throwIfAborted()
     }
     let info: Stats
     try { info = await stat(target) } catch {

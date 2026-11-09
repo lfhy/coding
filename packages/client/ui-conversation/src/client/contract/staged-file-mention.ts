@@ -1,10 +1,26 @@
 /**
- * 从本机暂存文件的规范引用恢复展示名；只识别带随机前缀的单段文件路径。
+ * 从本机暂存文件的规范引用恢复展示名；只识别 Home 上传目录中的绝对路径。
  * 路径本身始终留在剪贴板、会话日志与模型输入中，不从显示名反推文件位置。
  */
 
-/** 暂存路由的目录与 UUID 格式；只用于识别该路由生成的文件引用。 */
-const STAGED_PATH = /^\.dsh-uploads\/[a-f\d]{8}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{12}-([\p{L}\p{N} ._-]+)$/u
+/** Host 使用正斜杠表示 POSIX 或 Windows 的规范绝对路径。 */
+const STAGED_PATH = new RegExp(
+  ['(?:\\/|[A-Za-z]:\\\/)', '(?:[^/]+\\\/)*', 'files\\\/uploads\\\/',
+    '[a-f\\d]{8}-[a-f\\d]{4}-4[a-f\\d]{3}-[89ab][a-f\\d]{3}-[a-f\\d]{12}-',
+    '([\\p{L}\\p{N} ._-]+)$'].join(''), 'iu')
+
+/**
+ * 校验 Host 发布的暂存路径，并提取安全保存名；不接纳其他浏览器本地路径。
+ * @param path - Host 返回的完整本机路径。
+ * @returns 安全保存名，路径不规范时返回 undefined。
+ */
+export function stagedFilePathName(path: string): string | undefined {
+  if (path.includes('..') || /["'\\\p{Cc}\p{Cf}]/u.test(path)
+    || path.split('/').some(segment => segment === '.')) return undefined
+  const name = STAGED_PATH.exec(path)?.[1]
+  if (name === undefined || /^[. ]|[. ]$/u.test(name)) return undefined
+  return name
+}
 
 export interface StagedFileMention {
   readonly start: number
@@ -23,7 +39,7 @@ export function stagedFileName(mention: string): string | undefined {
   if (!quoted && (!mention.startsWith('@') || /["'()\[\]{}<>]/u.test(mention))) return undefined
   const path = quoted ? mention.slice(2, -1) : mention.slice(1)
   if (!quoted && /\s/u.test(path)) return undefined
-  return STAGED_PATH.exec(path)?.[1]
+  return stagedFilePathName(path)
 }
 
 /**
@@ -33,7 +49,7 @@ export function stagedFileName(mention: string): string | undefined {
  */
 export function stagedFileMentions(text: string): StagedFileMention[] {
   const references: StagedFileMention[] = []
-  const pattern = /(^|\s)(@"[^"\n]+"|@\.dsh-uploads\/[^\s,;:!?，。；：！？"'()\[\]{}<>]+)/gu
+  const pattern = /(^|\s)(@"[^"\n]+"(?=$|[\s,;:!?，。；：！？)\]}<>])|@(?:\/|[A-Za-z]:\/)[^\s,;:!?，。；：！？"'()\[\]{}<>]+)/gu
   let match: RegExpExecArray | null
   while ((match = pattern.exec(text)) !== null) {
     const mention = match[2] ?? ''

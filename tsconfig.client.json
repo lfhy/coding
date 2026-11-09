@@ -91,6 +91,7 @@
     { "path": "./packages/client/ui-model-selection" },
     { "path": "./packages/client/ui-agent-preset" },
     { "path": "./packages/client/ui-open-in-app" },
+    { "path": "./packages/client/ui-files" },
     { "path": "./packages/client/ui-browser" },
     { "path": "./packages/client/ui-browser-ego" },
     { "path": "./packages/client/ui-permission-presets" },

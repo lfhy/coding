@@ -95,7 +95,7 @@ describe('QueueDock', () => {
   })
 
   it('shows a saved file name in queue preview but edits the original path text', () => {
-    const mention = '@".dsh-uploads/123e4567-e89b-42d3-a456-426614174000-演示 slides.pptx"'
+    const mention = '@"/Users/demo/Coding Home/files/uploads/123e4567-e89b-42d3-a456-426614174000-演示 slides.pptx"'
     const text = `读取 ${mention}`
     const snap = snapshotWith([row('i-file', text)])
     const source = liveSession(snap)

@@ -1,9 +1,10 @@
-/** Host 图像能力：设置快照、逐次凭据、附件准入与会话日志归属。@module coding-image-gen */
+/** Host 图像能力：设置快照、逐次凭据、附件准入、全局文件副本与会话日志归属。@module coding-image-gen */
 import { Context, Service } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { credentialRef } from 'coding-credentials'
 import { installSettingsSection, settingsNamespace } from 'coding-settings'
 import type { ImageAttachmentRef, SaveImageAttachment } from 'coding-attachment'
+import type {} from 'coding-file-library'
 import type { Session, SessionEvent, SessionId } from 'coding-session'
 import { CanvasConflictError, canvasSnapshot, galleryItems } from './gallery.ts'
 import { imageEndpoint, requestImage } from './openai.ts'
@@ -57,7 +58,7 @@ function validateSettings(value: Config): void {
 
 /** 会话身份来自 Host 的活会话或持久会话检查，而不是浏览器提供的附件 ID。 */
 export class ImageGeneration extends Service {
-  static inject = ['sessions', 'attachments', 'credentials']
+  static inject = ['sessions', 'attachments', 'credentials', 'fileLibrary']
   private current: () => Config
   private readonly availabilityListeners = new Set<() => void>()
 
@@ -102,7 +103,10 @@ export class ImageGeneration extends Service {
     }
   }
 
-  /** 不包含端点、引用与密钥的配置可见性摘要；无凭据的本地端点可用。 */
+  /**
+   * 不包含端点、引用与密钥的配置可见性摘要；无凭据的本地端点可用。
+   * @returns 启用状态、可用性与当前模型名。
+   */
   async status(): Promise<{ enabled: boolean; available: boolean; model: string }> {
     const { enabled, endpoint, model, apiKeyRef } = this.current()
     const configured = enabled && endpoint.trim() !== '' && model.trim() !== ''
@@ -110,19 +114,38 @@ export class ImageGeneration extends Service {
     return { enabled, available: configured && credentialReady, model }
   }
 
-  /** 返回比例与像素尺寸的非机密配置，供手动生图选择器使用。 */
+  /**
+   * 返回比例与像素尺寸的非机密配置，供手动生图选择器使用。
+   * @returns 比例到尺寸代号的像素尺寸映射。
+   */
   outputSizes(): Record<string, Record<string, string>> { return outputSizes(this.current().sizes) }
 
-  /** 工作台的参考图上限与服务端本次编辑上限保持一致。 */
+  /**
+   * 工作台的参考图上限与服务端本次编辑上限保持一致。
+   * @returns 单次编辑可引用的参考图数量。
+   */
   maxEditReferences(): number { return this.current().maxEditReferences }
 
-  /** 返回此会话的不可变图库事件投影；重启后可从持久日志重建。 */
+  /**
+   * 返回此会话的不可变图库事件投影；重启后可从持久日志重建。
+   * @param events - 会话持久日志中的事件。
+   * @returns 按事件顺序排列的图库项。
+   */
   gallery(events: readonly SessionEvent[]): GalleryItem[] { return galleryItems(events) }
 
-  /** 返回持久日志中的当前画布快照。 */
+  /**
+   * 返回持久日志中的当前画布快照。
+   * @param events - 会话持久日志中的事件。
+   * @returns 带修订号的画布快照。
+   */
   canvas(events: readonly SessionEvent[]): CanvasSnapshot { return canvasSnapshot(events) }
 
-  /** 只在同一会话的图库投影内查找附件引用，跨会话 ID 永不直接读附件。 */
+  /**
+   * 只在同一会话的图库投影内查找附件引用，跨会话 ID 永不直接读附件。
+   * @param events - 会话持久日志中的事件。
+   * @param id - 请求读取的图库项 id。
+   * @returns 校验通过的图片字节与引用；找不到时为 `undefined`。
+   */
   async readImage(events: readonly SessionEvent[], id: string): Promise<{ data: Uint8Array; ref: ImageAttachmentRef } | undefined> {
     const item = galleryItems(events).find(entry => entry.id === id)
     if (!item) return undefined
@@ -130,7 +153,12 @@ export class ImageGeneration extends Service {
     return stored
   }
 
-  /** 从最近一次会话图像事件选择参考图；选取仅由同会话日志确定。 */
+  /**
+   * 从最近一次会话图像事件选择参考图；选取仅由同会话日志确定。
+   * @param events - 会话持久日志中的事件。
+   * @param count - 需要的参考图数量。
+   * @returns 最近指定数量的图库项。
+   */
   latestImages(events: readonly SessionEvent[], count: number): GalleryItem[] {
     if (!Number.isSafeInteger(count) || count < 1 || count > 10) throw new TypeError('参考图数量必须介于 1 至 10')
     return galleryItems(events).slice(-count)
@@ -156,7 +184,16 @@ export class ImageGeneration extends Service {
     return item
   }
 
-  /** 图片保存后追加图库记录并等待会话持久化；持久化失败不回滚已追加事实。 */
+  /**
+   * 图片经附件准入后复制到全局文件库，才追加图库事实并等待会话持久化。
+   * 副本登记失败不发布图库项；会话持久化失败不回滚已追加事实或已登记副本。
+   * @param session - 发起生图的会话。
+   * @param prompt - 图片描述文本。
+   * @param sourceIds - 编辑来源的图库项 id；文生图为空。
+   * @param signal - 取消上游请求的中断信号。
+   * @param output - 可选尺寸与质量覆盖。
+   * @returns 已持久化到会话图库的生成项。
+   */
   async create(
     session: Session, prompt: string, sourceIds: readonly string[] = [],
     signal: AbortSignal = new AbortController().signal,
@@ -219,6 +256,13 @@ export class ImageGeneration extends Service {
     const attachment = await this.ctx.attachments.saveImage(image)
     signal.throwIfAborted()
     if (this.ctx.sessions.get(session.id) !== session) throw new Error('会话已关闭')
+    const stored = await this.ctx.attachments.readImage(attachment, signal)
+    await this.ctx.fileLibrary.saveGeneratedImage({
+      sessionId: session.id, attachmentId: attachment.attachmentId,
+      mediaType: stored.ref.mediaType, data: stored.data,
+    })
+    signal.throwIfAborted()
+    if (this.ctx.sessions.get(session.id) !== session) throw new Error('会话已关闭')
     const item: GalleryItem = {
       id: String(session.seq), ...attachment, prompt: prompt.trim(), model: config.model, createdAt: Date.now(),
       ...sourceIds[0] === undefined ? {} : { sourceImageId: sourceIds[0] },
@@ -230,7 +274,13 @@ export class ImageGeneration extends Service {
     return item
   }
 
-  /** 画布写入只由当前活会话拥有；持久读取无需启动 Agent。 */
+  /**
+   * 画布写入只由当前活会话拥有；持久读取无需启动 Agent。
+   * @param session - 拥有画布事件的会话。
+   * @param revision - 调用方持有的画布修订号。
+   * @param state - 新画布状态。
+   * @returns 写入后的新画布快照。
+   */
   saveCanvas(session: Session, revision: number, state: CanvasState): CanvasSnapshot {
     if (this.ctx.sessions.get(session.id) !== session) throw new Error('会话已关闭')
     return this.putCanvas(session, revision, state)
@@ -244,7 +294,11 @@ export class ImageGeneration extends Service {
     return next
   }
 
-  /** 路由只接受 live session 或已持久存在的 session id；不创建或 resume Agent。 */
+  /**
+   * 路由只接受 live session 或已持久存在的 session id；不创建或 resume Agent。
+   * @param id - 请求读取的会话 id。
+   * @returns 会话事件；会话不存在时为 `undefined`。
+   */
   async sessionEvents(id: SessionId): Promise<readonly SessionEvent[] | undefined> {
     const live = this.ctx.sessions.get(id)
     if (live !== undefined) return live.events

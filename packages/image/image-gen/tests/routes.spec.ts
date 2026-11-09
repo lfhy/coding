@@ -1,7 +1,7 @@
 /** 经真实 webServer 和 Loader 引导图像路由，模拟附件/凭据与上游服务。 */
 import { createServer } from 'node:http'
 import { once } from 'node:events'
-import { mkdtemp, readdir, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -11,6 +11,10 @@ import Loader from '@deepseek-ai/cordis-plugin-loader'
 import Include from '@deepseek-ai/cordis-plugin-include'
 import WebServer from 'coding-host-webserver'
 import SessionStore from 'coding-session'
+import Storage from 'coding-storage'
+import * as StorageSqlite from 'coding-storage-sqlite'
+import * as StorageDomain from 'coding-storage-domain'
+import FileLibrary from 'coding-file-library'
 import { SessionId } from 'coding-session/types'
 import ImageGeneration from '../src/index.ts'
 import type { ImageAttachmentRef } from 'coding-attachment'
@@ -41,11 +45,17 @@ async function upstream(): Promise<{ url: string; calls: { path: string; auth: s
   return { url: `http://127.0.0.1:${address.port}/v1`, calls }
 }
 
-async function boot(config?: Record<string, unknown>) {
+async function boot(config?: Record<string, unknown>, realLibrary = false) {
   const dir = await mkdtemp(join(tmpdir(), 'coding-image-gen-'))
   dirs.push(dir)
   const path = join(dir, 'cordis.yml')
   await writeFile(path, [
+    ...realLibrary ? [
+      '- name: coding-storage',
+      '- name: coding-storage-sqlite', `  config: ${JSON.stringify({ path: join(dir, 'files.sqlite') })}`,
+      '- name: coding-storage-domain', '  config: { backend: sqlite }',
+      '- name: coding-file-library', `  config: ${JSON.stringify({ root: join(dir, 'files') })}`,
+    ] : [],
     '- name: coding-host-webserver', '  config:', '    host: 127.0.0.1', '    port: 0',
     '- name: coding-image-gen', ...config === undefined ? [] : [`  config: ${JSON.stringify(config)}`], '',
   ].join('\n'))
@@ -68,6 +78,8 @@ async function boot(config?: Record<string, unknown>) {
   ctx.provide('attachments', { saveImage, readImage, imageLimits: { maxSourceImageBytes: 1024,
     maxImageBytes: 1024, maxImagesPerMessage: 10, maxMessageImageBytes: 10_240,
     maxSourceMessageImageBytes: 10_240, mediaTypes: ['image/png'] } } as never)
+  const saveGeneratedImage = vi.fn(async (_input: { sessionId: string; attachmentId: string; mediaType: string; data: Uint8Array }) => ({}))
+  if (!realLibrary) ctx.provide('fileLibrary', { saveGeneratedImage } as never)
   const keys = new Map<string, string>()
   const resolveCredential = vi.fn(async (ref: string) => keys.has(ref) ? { value: keys.get(ref)!, source: 'test' } : undefined)
   ctx.provide('credentials', { resolve: resolveCredential } as never)
@@ -75,7 +87,11 @@ async function boot(config?: Record<string, unknown>) {
   ctx.provide('connection', { requestRejection: () => rejected ? 403 : undefined } as never)
   await ctx.plugin(Loader)
   ctx.loader.builtins.include = Include
-  const modules = new Map<string, unknown>([['coding-host-webserver', WebServer], ['coding-image-gen', ImageGeneration]])
+  const modules = new Map<string, unknown>([
+    ['coding-storage', Storage], ['coding-storage-sqlite', StorageSqlite],
+    ['coding-storage-domain', StorageDomain], ['coding-file-library', FileLibrary],
+    ['coding-host-webserver', WebServer], ['coding-image-gen', ImageGeneration],
+  ])
   ctx.loader.internal = { version: 'v2', import: async (name: string) => {
     if (!modules.has(name)) throw new Error(`unexpected module ${name}`)
     return modules.get(name)
@@ -91,7 +107,7 @@ async function boot(config?: Record<string, unknown>) {
   const put = (revision: number, state: unknown, session = 'one') => fetch(`${base}/canvas?sessionId=${session}`, {
     method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ revision, state }),
   })
-  return { ctx, base, get, post, put, keys, resolveCredential, one, two, readImage, saveImage, flushed,
+  return { ctx, dir, base, get, post, put, keys, resolveCredential, one, two, readImage, saveImage, saveGeneratedImage, flushed,
     setRejected: (value: boolean) => { rejected = value } }
 }
 
@@ -124,6 +140,7 @@ describe('image generation HTTP (real Loader)', () => {
     expect(imported.status).toBe(200)
     const payload = await imported.json() as { item: { id: string; model: string; prompt: string } }
     expect(payload.item).toMatchObject({ model: 'import', prompt: '' })
+    expect(env.saveGeneratedImage).not.toHaveBeenCalled()
     expect(env.one.events.filter(event => event.type === 'image-gen/created')).toHaveLength(1)
     expect((await env.get('image', 'one', `&id=${payload.item.id}`)).status).toBe(200)
     expect((await env.get('image', 'two', `&id=${payload.item.id}`)).status).toBe(404)
@@ -178,6 +195,9 @@ describe('image generation HTTP (real Loader)', () => {
     expect(await (await env.get('state')).json()).toMatchObject({ available: true })
     expect((await env.post('generate', { sessionId: 'one', prompt: 'draw' })).status).toBe(200)
     expect(api.calls).toEqual([{ path: '/v1/images/generations', auth: 'Bearer secret' }])
+    expect(env.saveGeneratedImage).toHaveBeenCalledWith({
+      sessionId: 'one', attachmentId: 'attachment-1', mediaType: 'image/png', data: PNG,
+    })
   })
 
   it('generates and edits only this session image, and validates canvas CAS', async () => {
@@ -193,6 +213,7 @@ describe('image generation HTTP (real Loader)', () => {
     expect((await env.post('edit', { sessionId: 'two', prompt: 'edit', imageId: generated.id })).status).toBe(400)
     const edited = await env.post('edit', { sessionId: 'one', prompt: 'edit', imageId: generated.id })
     expect(edited.status).toBe(200)
+    expect(env.saveGeneratedImage).toHaveBeenCalledTimes(2)
     expect(api.calls.map(call => call.path)).toEqual(['/v1/images/generations', '/v1/images/edits'])
     expect(api.calls.every(call => call.auth === undefined)).toBe(true)
     const state = { version: 1, nodes: [{ id: 'photo', type: 'image', imageId: generated.id, x: 1, y: 1, width: 50, height: 50 },
@@ -204,6 +225,58 @@ describe('image generation HTTP (real Loader)', () => {
     expect((await env.put(0, state, 'two')).status).toBe(400)
     expect(await (await env.get('canvas')).json()).toEqual({ revision: 1, state })
     expect(env.one.events.filter(event => event.type === 'image-gen/canvas')).toHaveLength(1)
+  })
+
+  it('registers a real durable generated copy that the global library lists', async () => {
+    const api = await upstream()
+    const env = await boot({ enabled: true, endpoint: api.url, model: 'mock-image', apiKeyRef: '' }, true)
+    const result = await env.post('generate', { sessionId: 'one', prompt: 'draw' })
+    expect(result.status).toBe(200)
+    const item = (await result.json() as { item: { id: string; attachmentId: string } }).item
+    const page = env.ctx.fileLibrary.list()
+    expect(page).toMatchObject({ total: 1, items: [{ kind: 'generated-image', sessionId: 'one',
+      attachmentId: item.attachmentId, mediaType: 'image/png', bytes: PNG.byteLength }] })
+    const record = page.items[0]!
+    expect(record.relativePath).toMatch(/^generated\/[a-f0-9-]+\.png$/u)
+    expect(await readFile(join(env.dir, 'files', record.relativePath))).toEqual(PNG)
+    expect(env.one.events.filter(event => event.type === 'image-gen/created')).toHaveLength(1)
+
+    await env.ctx.fiber.dispose()
+    const reopened = new Context()
+    contexts.push(reopened)
+    await reopened.plugin(Storage)
+    await reopened.plugin(StorageSqlite, { path: join(env.dir, 'files.sqlite') })
+    await reopened.plugin(StorageDomain, { backend: 'sqlite' })
+    await reopened.plugin(FileLibrary, { root: join(env.dir, 'files') })
+    expect(reopened.fileLibrary.list()).toMatchObject({ total: 1, items: [{ id: record.id }] })
+  })
+
+  it('does not publish or flush a generated gallery item if managed registration fails', async () => {
+    const api = await upstream()
+    const env = await boot({ enabled: true, endpoint: api.url, model: 'mock-image', apiKeyRef: '' })
+    env.saveGeneratedImage.mockRejectedValueOnce(new Error('managed copy failed'))
+    const failed = await env.post('generate', { sessionId: 'one', prompt: 'draw' })
+    expect(failed.status).toBe(502)
+    expect(env.saveImage).toHaveBeenCalledTimes(1)
+    expect(env.readImage).toHaveBeenCalledTimes(1)
+    expect(env.one.events.filter(event => event.type === 'image-gen/created')).toHaveLength(0)
+    expect(env.flushed).not.toHaveBeenCalled()
+    expect((await env.get('gallery')).status).toBe(200)
+    expect(await (await env.get('gallery')).json()).toMatchObject({ items: [] })
+  })
+
+  it('registers the attachment readback bytes before publishing the gallery event', async () => {
+    const api = await upstream()
+    const env = await boot({ enabled: true, endpoint: api.url, model: 'mock-image', apiKeyRef: '' })
+    const normalized = Buffer.from('normalized attachment bytes')
+    env.readImage.mockImplementationOnce(async ref => ({ ref, data: normalized }))
+    env.saveGeneratedImage.mockImplementationOnce(async (input) => {
+      expect(input.data).toEqual(normalized)
+      expect(env.one.events.filter(event => event.type === 'image-gen/created')).toHaveLength(0)
+      return {}
+    })
+    expect((await env.post('generate', { sessionId: 'one', prompt: 'draw' })).status).toBe(200)
+    expect(env.one.events.filter(event => event.type === 'image-gen/created')).toHaveLength(1)
   })
 
   it('only sends configured ratio sizes and bounded multiple edit references', async () => {
