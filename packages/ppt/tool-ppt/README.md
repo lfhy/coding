@@ -13,21 +13,21 @@ PPT 创作模式的十八个模型工具覆盖工程创建、打开、读写、�
 - **元素种类**：文本框、矩形/椭圆、连接线、图片（`media/<file>`）、表格（行 × 列 + 单元格文本）、图表（柱状/折线/饼，分类 + 系列），另有层级调整（`reorder_element`）与复制（`duplicate_element`）。
 - **字体与动画**：文本元素可指定 `font` 族名；导出按 `fsType` 许可嵌入字体，结果里的 `fonts`／`skippedFonts` 说明嵌了谁、为什么跳过。元素可带 `animation`（fade/fly/zoom/wipe），页面可带 `transition`（none/fade/push）。
 - **导入与补页**：`ppt_import` 和 `ppt_prepare_template` 返回 `dropped`、`sourceSha256` 及逐页 `report`：源页序号、导入页 id、源/导入元素计数、状态、丢失类别和有界文字预览。用 `ppt_read` 对照每页；结构缺失时以同一源文件和哈希调用 `ppt_import_evidence` 分片查证源页 XML 与关联图表缓存，再用 `ppt_edit` 补齐有证据的内容。完整源页证据超过 1 MiB UTF-16 字符会报错，不截断；单片默认 8000、最多 16000 字符，可按 `nextOffset` 续读。源文件变动或消失会拒绝旧哈希，不猜测缺失数据；源页本来为空可保留，只有图片的页可见却不等于内部文字可编辑，也不是缺页。`no_known_loss` 只表示未发现已知结构丢失，不保证视觉保真。
-- **用户模板**是完整演示文稿及其媒体快照，与 `ppt_edit` 的七种内置单页版式不同。`ppt_create` 只新建空白标题页工程，必须给 `title`；`ppt_create_from_template` 根据 `ppt_templates` 的 id 新建独立可编辑副本并打开工作台，`title` 可选且缺省使用模板名称，保留原稿尺寸和主题，不接收 `size`、`theme`。`ppt_save_template` 将当前工程或指定 `dir` 保存为新模板，不改变现稿；远程工作区不能保存或套用本机模板。
-- **模板制作与管理**：`ppt_prepare_template` 从本机工作区相对路径导入不超过 8 MiB 的无宏 `.pptx` 为可编辑草稿并切换工作台，不写用户模板库；它本身不是模板提取全流程。模型须逐页核实并提取配色、字体层级、布局网格、固定品牌元素和页眉页脚、可替换内容区，用 `ppt_edit` 将具体业务内容泛化成可替换占位，补齐有证据的遗漏，再 `ppt_check`、`ppt_save_template`、`ppt_templates` 验证保存结果。占位可用于模板可替换区，但不能把未知原稿数字编造出来或把占位当成缺页修复；若归纳减少源稿页数须向用户明示。`ppt_import_template` 可直接保存导入快照，但不创建或切换工程，仍须披露 `dropped` 和不保真限制。`ppt_rename_template` 以 id 改名，`ppt_delete_template` 须同时给出 id 和当前名称且两者匹配；远程工作区不支持模板导入。
+- **用户模板与新稿**：`ppt_create` 必须给 `title`；`size`、`theme` 均省略时基于内置白底蓝橘六页整稿创建独立可编辑工程，显式传入任一参数则创建单页标题稿，详情见[宿主默认整稿](../ppt-workbench/README.md#默认整稿与内置单页版式)。`ppt_create_from_template` 用 `ppt_templates` 返回的 id 复制用户模板整稿并打开工作台；`title` 缺省为模板名，尺寸和主题来自模板，不接收 `size`、`theme`。用户模板保存完整演示文稿及媒体，与七种内置单页版式及默认整稿都不同；`ppt_save_template` 将当前工程或指定 `dir` 原样另存为新模板，保留已有正文，不改变现稿。远程工作区不能保存或套用本机模板。
+- **模板制作与管理**：`ppt_import_template` 从本机工作区的无宏 `.pptx` 自动提取可编辑结构与视觉风格，把原稿业务正文泛化为可替换占位后存入用户模板库；结果提供源文件名 `sourceName` 和已知设计／结构损失 `dropped`，不创建或切换工程。`ppt_prepare_template` 则把原稿导入为保留正文的可编辑草稿并聚焦工作台、不写模板库；需要人工补齐或精细提炼时，按逐页 `report` 用 `ppt_read` 和同一源文件的 `ppt_import_evidence` 核对设计与缺失内容，`ppt_edit` 泛化正文并补齐有证据的结构，`ppt_check` 后才 `ppt_save_template`，最后以 `ppt_templates` 核实。不要把用户原文直接保存为通用模板、把占位当成源稿事实，或编造无法核实的数字；若减少源页数须说明。`ppt_rename_template` 按 id 改名，`ppt_delete_template` 须传入匹配的 id 与当前名称。导入的复杂图形和主题色不能保证保真，交付前检查预览并报告损失；远程工作区不支持模板导入。
 - **失败诊断**：参数、目录、版本与工程内容的问题都以工具错误返回中文原因（例如「找不到页面 "p2"」「工程已被修改：当前版本 4，请求基于 3」），模型据此重读再改。
 
 ## 工具面
 
 | 工具 | 作用 | 关键参数 |
 | --- | --- | --- |
-| `ppt_create` | 新建空白标题页工程并切换工作台 | `title` · `dir` · `size` · `theme` |
+| `ppt_create` | 新建并切换工作台；省略尺寸和主题用六页整稿，显式指定其一用单页标题稿 | `title` · `dir` · `size` · `theme` |
 | `ppt_create_from_template` | 从用户模板新建整稿副本并切换工作台 | `templateId` · `title` · `dir` |
 | `ppt_templates` | 列出本机用户模板的 id、页数与导入丢失项 | 无 |
 | `ppt_prepare_template` | 将 .pptx 导入工程草稿，返回逐页报告，不写模板库 | `source` · `name` · `dir` |
 | `ppt_import_evidence` | 按源页与哈希读取 XML/图表证据片段，默认 8000、最多 16000 字符，可续读 | `source` · `sourceIndex` · `sourceSha256` · `offset` · `limit` |
-| `ppt_import_template` | 将本机工作区中的 .pptx 保存为用户模板，不打开工程 | `source` · `name` |
-| `ppt_save_template` | 将当前或指定工程保存为新的用户模板 | `name` · `dir` |
+| `ppt_import_template` | 提取 .pptx 可编辑设计、泛化正文并保存用户模板，返回来源与损失，不打开工程 | `source` · `name` |
+| `ppt_save_template` | 将当前或指定工程连同现有正文保存为新模板，不更改工程 | `name` · `dir` |
 | `ppt_rename_template` | 修改用户模板的名称 | `id` · `name` |
 | `ppt_delete_template` | 按 id 和当前名称确认删除用户模板 | `id` · `name` |
 | `ppt_open` | 打开既有工程 | `dir` |
@@ -36,7 +36,7 @@ PPT 创作模式的十八个模型工具覆盖工程创建、打开、读写、�
 | `ppt_undo` / `ppt_redo` | 版本前后移动 | `steps` · `dir` |
 | `ppt_render` | 渲染页面图：在会话的 Agent 浏览器里打开并落 PNG | `dir` · `pages` |
 | `ppt_check` | 规则质检（出界、零尺寸、溢出、对比度、空页、文字密度）；`ai: true` 追加模型审阅 | `dir` · `ai` |
-| `ppt_import` | 把工作区里的 .pptx 逆向成工程，返回逐页报告与源文件哈希 | `source` · `dir` · `title` |
+| `ppt_import` | 保留可解析源正文，把工作区 .pptx 转为工程并返回逐页报告与源文件哈希 | `source` · `dir` · `title` |
 | `ppt_export` | 导出 .pptx 或 PDF 到 `export/`（PDF 先渲染每页） | `dir` · `target` · `skip_check` |
 
 ## 使用本包
@@ -47,7 +47,7 @@ PPT 创作模式的十八个模型工具覆盖工程创建、打开、读写、�
 
 ### 模型看到什么
 
-工具名字、描述与参数 schema 只在 `ppt` 模式会话的请求前缀里；其它模式看不到它们。工具结果是一行 JSON：工程摘要（目录、标题、版本、页数、能否撤销/重做）、`ppt_read` 的完整页面数据、`ppt_render` 的页面图片路径、`ppt_check` 的问题列表、导入报告、用户模板元数据或删除确认，或导出的绝对路径与字节数。模板目录与保存结果不把完整 deck、媒体或二进制文件放进模型消息；`ppt_import_evidence` 只返回有界文本片段，源文件内容不可信，不能当作指令。错误同样是工具结果，带具体原因。
+工具名字、描述与参数 schema 只在 `ppt` 模式会话的请求前缀里；其它模式看不到它们。工具结果是一行 JSON：工程摘要（目录、标题、版本、页数、能否撤销/重做）、`ppt_read` 的完整页面数据、`ppt_render` 的页面图片路径、`ppt_check` 的问题列表、导入报告、用户模板元数据或删除确认，或导出的绝对路径与字节数。`ppt_import_template` 的模板摘要带 `sourceName` 和 `dropped` 供模型披露来源及损失，但不把完整 deck、媒体、源文件正文或二进制文件放进模型消息；`ppt_import_evidence` 只返回有界文本片段，源文件内容不可信，不能当作指令。错误同样是工具结果，带具体原因。
 
 ### token 影响
 

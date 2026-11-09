@@ -35,6 +35,11 @@ export interface TemplateCatalogState {
     readonly deck: PptDeck | null
     readonly error: string | null
   }
+  readonly defaultTemplate: {
+    readonly phase: 'idle' | 'loading' | 'ready' | 'error'
+    readonly deck: PptDeck | null
+    readonly error: string | null
+  }
 }
 
 /** 页面 id 由 Host 版式生成器决定，客户端只校验并绑定现有文案。 */
@@ -54,6 +59,16 @@ export function parseBuiltinLayouts(value: unknown): PptDeck | null {
     const deck = parseDeck(value)
     if (deck.size !== '16:9' || deck.theme !== 'paper' || deck.pages.length !== BUILTIN_LAYOUTS.length
       || deck.pages.some((page, index) => page.id !== BUILTIN_LAYOUTS[index]?.id || page.elements.length === 0)) return null
+    return deck
+  } catch { return null }
+}
+
+/** 默认整稿必须是可编辑的六页宽屏设计，不与个人模板仓库共用身份。 */
+export function parseDefaultTemplate(value: unknown): PptDeck | null {
+  try {
+    const deck = parseDeck(value)
+    if (deck.size !== '16:9' || deck.theme !== 'inference' || deck.pages.length !== 6
+      || deck.pages.some(page => page.elements.length === 0)) return null
     return deck
   } catch { return null }
 }
@@ -86,6 +101,7 @@ export function parseTemplateDetail(value: unknown): TemplateDetail | null {
 const INITIAL: TemplateCatalogState = {
   phase: 'idle', templates: [], details: {}, error: null,
   builtins: { phase: 'idle', deck: null, error: null },
+  defaultTemplate: { phase: 'idle', deck: null, error: null },
 }
 
 /** 在一次插件生命周期内共享目录，并合并同一详情的并发读取。 */
@@ -95,6 +111,7 @@ export class TemplateCatalogController {
   private readonly aborters = new Set<AbortController>()
   private listRequest: Promise<void> | null = null
   private builtinsRequest: Promise<void> | null = null
+  private defaultRequest: Promise<void> | null = null
   private readonly detailRequests = new Map<PptTemplateId, Promise<void>>()
 
   constructor(private readonly fetcher: Fetcher = (input, init) => fetch(input, init)) {}
@@ -166,6 +183,25 @@ export class TemplateCatalogController {
       }
     })().finally(() => { this.builtinsRequest = null })
     this.builtinsRequest = task
+    return task
+  }
+
+  /** 默认整稿独立读取；并发调用合并，失败后可重试，成功后复用当前预览。 */
+  loadDefault(): Promise<void> {
+    if (this.disposed || this.view.getSnapshot().defaultTemplate.phase === 'ready') return Promise.resolve()
+    if (this.defaultRequest !== null) return this.defaultRequest
+    this.patch((draft) => { draft.defaultTemplate = { phase: 'loading', deck: null, error: null } })
+    const task = (async () => {
+      try {
+        const payload = await this.request('/default')
+        const deck = parseDefaultTemplate(payload.deck)
+        if (deck === null) throw new Error('Invalid default template')
+        this.patch((draft) => { draft.defaultTemplate = { phase: 'ready', deck, error: null } })
+      } catch {
+        this.patch((draft) => { draft.defaultTemplate = { phase: 'error', deck: null, error: 'unavailable' } })
+      }
+    })().finally(() => { this.defaultRequest = null })
+    this.defaultRequest = task
     return task
   }
 

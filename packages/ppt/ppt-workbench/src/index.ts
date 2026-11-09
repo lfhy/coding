@@ -18,6 +18,8 @@ import type {} from 'coding-host-webserver'
 import type {} from 'coding-session'
 import type { SessionId } from 'coding-session/types'
 import { checkDeck, type PptCheckResult } from './check.ts'
+import { createDefaultDeck } from './default-template.ts'
+import { extractTemplateDesign } from './extract-template.ts'
 import { buildPdf } from './export/pdf.ts'
 import { buildPptx } from './export/pptx.ts'
 import { collectFonts, systemFontDirs, type SkippedFont } from './fonts.ts'
@@ -210,9 +212,9 @@ export default class PptProjects extends Service {
   }
 
   /**
-   * 新建工程并设为当前工程。
+   * 新建工程并设为当前工程；未指定尺寸或主题时使用内置整稿模板。
    * @param sessionId - 会话身份。
-   * @param options - 标题、目录、尺寸与主题。
+   * @param options - 标题、目录、尺寸与主题；显式尺寸或主题保留单页新建。
    * @returns 新工程快照。
    */
   create(sessionId: string, options: {
@@ -226,7 +228,9 @@ export default class PptProjects extends Service {
       const dir = options.dir === undefined
         ? await suggestProjectDir(root, options.title)
         : resolveProjectDir(root, options.dir)
-      const snapshot = await createProject(dir, options)
+      const snapshot = options.size === undefined && options.theme === undefined
+        ? await publishProject(root, dir, parseDeck(createDefaultDeck(options.title)), [])
+        : await createProject(dir, options)
       this.focus(sessionId, dir)
       return snapshot
     })()
@@ -483,7 +487,7 @@ export default class PptProjects extends Service {
     return this.templates.readMedia(id, source)
   }
 
-  /** 将无宏 PPTX 转成可编辑模板；丢失的复杂结构在返回值中列出。
+  /** 将无宏 PPTX 的可编辑几何和设计提取为无源正文的用户模板；丢失的复杂结构在返回值中列出。
    * @param fileName - 安全的单层 .pptx 文件名。
    * @param bytes - 压缩源文件字节，上限 8 MiB；不会保存源文件本身。
    * @param options - 模板名称；缺省取去掉扩展名的文件名。
@@ -501,10 +505,11 @@ export default class PptProjects extends Service {
     }
     const title = basename(fileName).replace(/\.pptx$/iu, '').slice(0, 160)
     if (title.trim() === '') throw new PptStoreError('bad-request', '模板来源文件名不能只包含扩展名')
-    const imported = importPptx(bytes, { title })
+    const imported = importPptx(bytes, { title, design: true })
+    const deck = extractTemplateDesign(imported.deck, options.name ?? title)
     return this.templates.create({
-      name: options.name ?? title, deck: parseDeck(imported.deck), media: imported.media,
-      sourceName: fileName, dropped: imported.dropped,
+      name: options.name ?? title, deck, media: [],
+      sourceName: fileName, dropped: [...imported.dropped, ...imported.media.length > 0 ? ['原稿图片'] : []],
     })
   }
 

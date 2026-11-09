@@ -59,9 +59,11 @@ function mount(state: PptPanelState, shown = true, locale: typeof en = en) {
     useTemplateCatalog: (choose: (snapshot: unknown) => unknown) => choose({
       phase: 'ready', templates: [], details: {}, error: null,
       builtins: { phase: 'idle', deck: null, error: null },
+      defaultTemplate: { phase: 'idle', deck: null, error: null },
     }),
     catalogActions: {
-      loadTemplates: vi.fn(async () => {}), loadBuiltins: vi.fn(async () => {}), detailTemplate: vi.fn(async () => {}),
+      loadTemplates: vi.fn(async () => {}), loadBuiltins: vi.fn(async () => {}), loadDefault: vi.fn(async () => {}),
+      detailTemplate: vi.fn(async () => {}),
       templateMediaUrl: vi.fn(() => '/api/ppt/templates/media'),
       handoffPrompt: vi.fn(async () => {}),
       cancelHandoff: vi.fn(),
@@ -296,6 +298,20 @@ describe('PPT 工作台面板', () => {
     fireEvent.click(screen.getByRole('button', { name: '属性' }))
     fireEvent.keyDown(document, { key: 'Escape' })
     expect(screen.queryByRole('dialog', { name: '属性' })).toBeNull()
+  })
+
+  it('默认整稿的主题可以在属性面板中选中和提交', () => {
+    const project = deck()
+    const panel = mount({ ...ready, project: { ...project, deck: { ...project.deck, theme: 'inference' } } }, true, zh)
+    fireEvent.click(screen.getByRole('button', { name: '属性' }))
+    const theme = screen.getByRole('combobox', { name: '主题' }) as HTMLSelectElement
+    expect(theme.value).toBe('inference')
+    expect(screen.getByRole('option', { name: '简明汇报' })).toBeTruthy()
+    fireEvent.change(theme, { target: { value: 'forest' } })
+    expect(panel.props.updateDeck).toHaveBeenCalledWith({ theme: 'forest' })
+    fireEvent.change(theme, { target: { value: 'inference' } })
+    expect(panel.props.updateDeck).toHaveBeenCalledWith({ theme: 'inference' })
+    expect(en.themeInference).toBe('Clear briefing')
   })
 
   it('从属性切到插入菜单后 Escape 不留下悬浮操作层', () => {

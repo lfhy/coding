@@ -44,6 +44,58 @@ describe('PPTX 导入准入', () => {
     expect(read(entries.filter(item => !item.path.includes('_rels'))).deck.pages).toHaveLength(2)
   })
 
+  it('设计导入解析源主题色、字体和按路径坐标缩放的直线，普通导入仍保留正文', () => {
+    const entries = base()
+    const sourceText = '<p:sp><p:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="952500" cy="952500"/>'
+      + '</a:xfrm></p:spPr><p:txBody><a:p><a:r><a:rPr sz="1800"><a:solidFill>'
+      + '<a:schemeClr val="accent1"/></a:solidFill><a:latin typeface="+mn-lt"/></a:rPr>'
+      + '<a:t>原稿正文</a:t></a:r></a:p></p:txBody></p:sp>'
+    const customLine = '<p:sp><p:spPr><a:xfrm><a:off x="952500" y="1905000"/>'
+      + '<a:ext cx="1905000" cy="952500"/></a:xfrm><a:custGeom><a:pathLst>'
+      + '<a:path w="914400" h="914400"><a:moveTo><a:pt x="0" y="0"/></a:moveTo>'
+      + '<a:lnTo><a:pt x="914400" y="0"/></a:lnTo></a:path></a:pathLst></a:custGeom>'
+      + '<a:noFill/><a:ln w="25400"><a:solidFill><a:schemeClr val="accent1"/>'
+      + '</a:solidFill></a:ln></p:spPr></p:sp>'
+    entries[2] = entry('ppt/slides/slide1.xml', slide(sourceText + customLine))
+    entries.push(entry('ppt/slides/_rels/slide1.xml.rels', rels(relation('rId1', 'slideLayout', '../slideLayouts/slideLayout1.xml'))))
+    entries.push(entry('ppt/slideLayouts/slideLayout1.xml', '<p:sldLayout/>'))
+    entries.push(entry('ppt/slideLayouts/_rels/slideLayout1.xml.rels', rels(relation('rId1', 'slideMaster', '../slideMasters/slideMaster1.xml'))))
+    entries.push(entry('ppt/slideMasters/slideMaster1.xml', '<p:sldMaster><p:clrMap tx1="dk1" bg1="lt1"/></p:sldMaster>'))
+    entries.push(entry('ppt/slideMasters/_rels/slideMaster1.xml.rels', rels(relation('rId1', 'theme', '../theme/theme1.xml'))))
+    entries.push(entry('ppt/theme/theme1.xml', '<a:theme><a:themeElements><a:clrScheme>'
+      + '<a:lt1><a:srgbClr val="FFFFFF"/></a:lt1><a:accent1><a:srgbClr val="1D4ED8"/></a:accent1>'
+      + '</a:clrScheme><a:fontScheme><a:minorFont><a:latin typeface="Arial"/></a:minorFont>'
+      + '</a:fontScheme></a:themeElements></a:theme>'))
+    const bytes = zip(entries)
+    const design = importPptx(bytes, { title: '提取设计', design: true })
+    expect(design.deck.pages[0]?.elements).toMatchObject([
+      { kind: 'text', text: { color: '#1d4ed8', font: 'Arial', content: '原稿正文' } },
+      { kind: 'line', x: 100, y: 200, w: 200, h: 0, width: 3, color: '#1d4ed8' },
+    ])
+    expect(design.dropped).not.toContain('自定义路径')
+    expect(read(entries).deck.pages[0]?.elements).toMatchObject([
+      { kind: 'text', text: { content: '原稿正文' } }, { kind: 'rect', x: 100, y: 200, w: 200, h: 100 },
+    ])
+    const filled = base()
+    filled[2] = entry('ppt/slides/slide1.xml', slide('<p:sp><p:spPr><a:xfrm>'
+      + '<a:off x="0" y="0"/><a:ext cx="952500" cy="952500"/></a:xfrm>'
+      + '<a:custGeom><a:pathLst><a:path w="914400" h="914400">'
+      + '<a:moveTo><a:pt x="0" y="0"/></a:moveTo><a:lnTo><a:pt x="914400" y="914400"/>'
+      + '</a:lnTo></a:path></a:pathLst></a:custGeom><a:solidFill><a:srgbClr val="123456"/>'
+      + '</a:solidFill></p:spPr></p:sp>'))
+    expect(read(filled).deck.pages[0]?.elements[0]).toMatchObject({ kind: 'rect', fill: '#123456' })
+    const extracted = importPptx(zip(filled), { title: '提取设计', design: true })
+    expect(extracted.deck.pages[0]?.elements).toHaveLength(0)
+    expect(extracted.dropped).toContain('自定义路径')
+    const multiPath = base()
+    multiPath[2] = entry('ppt/slides/slide1.xml', slide(customLine.replace('</a:pathLst>',
+      '<a:path w="914400" h="914400"><a:moveTo><a:pt x="0" y="0"/></a:moveTo>'
+      + '<a:lnTo><a:pt x="914400" y="0"/></a:lnTo></a:path></a:pathLst>')))
+    const multiResult = importPptx(zip(multiPath), { title: '多段设计', design: true })
+    expect(multiResult.deck.pages[0]?.elements).toHaveLength(0)
+    expect(multiResult.dropped).toContain('自定义路径')
+  })
+
   it('限制输入、实际 XML 解压量、总解压量和条目数', () => {
     expect(() => importPptx(new Uint8Array(PPT_IMPORT_MAX_BYTES + 1), { title: 'x' })).toThrow('8 MiB')
     expect(() => read([...base(), entry('ppt/theme/huge.xml', ' '.repeat(4 * 1024 * 1024 + 1))])).toThrow('安全预算')

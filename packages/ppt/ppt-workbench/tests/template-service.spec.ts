@@ -39,6 +39,18 @@ afterEach(async () => {
 })
 
 describe('PPT 模板服务', () => {
+  it('默认新建六页泛化整稿，显式主题/尺寸保留单页，副本不共用元素', async () => {
+    const first = await projects.create(SESSION, { title: '春季计划' })
+    const second = await projects.create(SESSION, { title: '秋季计划' })
+    const custom = await projects.create(SESSION, { title: '旧式空稿', size: '4:3', theme: 'ink' })
+    expect(first.deck.pages).toHaveLength(6)
+    expect(first.deck.theme).toBe('inference')
+    expect(second.deck.pages[0]?.id).not.toBe(first.deck.pages[0]?.id)
+    expect(custom.deck.pages).toHaveLength(1)
+    expect(custom.deck.theme).toBe('ink')
+    expect((await loadProject(first.dir)).deck).toEqual(first.deck)
+  })
+
   it('导入 PPTX 后持久保存来源，管理模板不改当前工程', async () => {
     const current = await projects.create(SESSION, { title: '正在编辑' })
     const source: PptDeck = { ...deck, pages: [{ ...deck.pages[0]!, elements: [] }] }
@@ -58,6 +70,25 @@ describe('PPT 模板服务', () => {
     expect(await projects.listTemplates()).toEqual([])
     await expect(projects.readTemplate(template.id)).rejects.toMatchObject({ code: 'not-found' })
     expect((await projects.read(SESSION)).dir).toBe(current.dir)
+  })
+
+  it('源文件模板仅留可编辑设计，不保存正文或媒体字节', async () => {
+    const input: PptDeck = { ...deck, pages: [{ ...deck.pages[0]!, elements: [
+      { id: 'secret', kind: 'text', x: 90, y: 130, w: 800, h: 90,
+        text: { content: '机密客户数据', size: 42, color: '#16181d', bold: true,
+          align: 'left', valign: 'middle', font: 'Arial' } },
+      ...deck.pages[0]!.elements,
+    ] }] }
+    const saved = await projects.importTemplate('private.pptx', buildPptx(input), { name: '通用设计' })
+    const content = JSON.stringify(saved.deck)
+    expect(saved.sourceName).toBe('private.pptx')
+    expect(saved.deck.pages[0]?.elements.some(element => element.kind === 'image')).toBe(false)
+    expect(content).not.toContain('机密客户数据')
+    expect(content).not.toContain('logo.png')
+    expect(saved.deck.pages[0]?.elements[0]).toMatchObject({ kind: 'text', text: { size: 42, color: '#16181d' } })
+    const copied = await projects.createFromTemplate(SESSION, saved.id, { title: '新稿' })
+    expect(copied.deck.pages[0]?.elements.some(element => element.kind === 'text'
+      && element.text.content === '机密客户数据')).toBe(false)
   })
 
   it('保存当前工程和媒体快照，套用时复制媒体而不覆盖目标或原稿', async () => {

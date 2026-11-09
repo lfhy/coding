@@ -29,7 +29,7 @@ interface PptProjectsFace {
     title: string
     dir?: string
     size?: '16:9' | '4:3'
-    theme?: 'ink' | 'paper' | 'ocean' | 'forest'
+    theme?: 'ink' | 'paper' | 'ocean' | 'forest' | 'inference'
   }) => Promise<PptSnapshotFace>
   listTemplates: () => Promise<readonly PptTemplateSummaryFace[]>
   saveTemplate: (sessionId: string, options: { name: string; dir?: string }) => Promise<PptTemplateDetailFace>
@@ -148,7 +148,7 @@ function projectsOf(ctx: Context): PptProjectsFace {
   return service
 }
 
-const THEMES = ['ink', 'paper', 'ocean', 'forest'] as const
+const THEMES = ['ink', 'paper', 'ocean', 'forest', 'inference'] as const
 const SIZES = ['16:9', '4:3'] as const
 
 /** 工具结果里的工程摘要；不携带整份页面内容。 */
@@ -399,7 +399,7 @@ const OPS_HELP = 'Array of edit operations, applied atomically in order. Each it
   + '\n- {"op":"remove_element","page":<pageId>,"element":<elementId>};'
   + '\n- {"op":"reorder_element","page":<pageId>,"element":<elementId>,"to":"front"|"back"|"forward"|"backward"} — z-order;'
   + '\n- {"op":"duplicate_element","page":<pageId>,"element":<elementId>} — copy offset by 24px;'
-  + '\n- {"op":"update_deck","title":<string>,"size":"16:9"|"4:3","theme":"ink"|"paper"|"ocean"|"forest"}.'
+  + '\n- {"op":"update_deck","title":<string>,"size":"16:9"|"4:3","theme":"ink"|"paper"|"ocean"|"forest"|"inference"}.'
   + '\nCanvas coordinates are base pixels: 1280x720 for 16:9 and 960x720 for 4:3, origin at the top-left.'
   + ' One page holds at most 200 elements; a deck holds at most 200 pages.'
 
@@ -412,14 +412,15 @@ export function apply(ctx: Context): void {
 
   ctx.tools.register(defineTool({
     name: 'ppt_create',
-    description: 'Create a blank presentation project with one cover page and focus it in the PPT workbench. '
-      + 'A title is required. To copy a saved full-deck user template instead, call ppt_templates then '
+    description: 'Create an editable presentation and focus it in the PPT workbench. Without size or theme '
+      + 'it starts from the built-in six-page design; explicit size or theme starts one cover page. '
+      + 'A title is required. To copy a saved user template instead, call ppt_templates then '
       + 'ppt_create_from_template. Use ppt_edit afterwards to customize.',
     parameters: {
-      title: { type: 'string', required: true, description: 'Deck title for a blank presentation.' },
+      title: { type: 'string', required: true, description: 'Presentation title.' },
       dir: { type: 'string', description: 'Workspace-relative project directory; omit to derive it from the title.' },
-      size: { type: 'string', enum: SIZES, description: 'Canvas size; 16:9 by default.' },
-      theme: { type: 'string', enum: THEMES, description: 'Colour theme; ink by default.' },
+      size: { type: 'string', enum: SIZES, description: 'Canvas size; specifying one starts a one-page deck.' },
+      theme: { type: 'string', enum: THEMES, description: 'Colour theme; specifying one starts a one-page deck.' },
     },
     output: outputOf({
       type: 'object',
@@ -428,10 +429,10 @@ export function apply(ctx: Context): void {
     } as const),
     async execute(args, exec) {
       if (Object.hasOwn(args, 'templateId')) {
-        throw new Error('ppt_create 只新建空白演示文稿；套用模板请使用 ppt_create_from_template，并传入 ppt_templates 返回的 templateId')
+        throw new Error('ppt_create 不能传 templateId；套用模板请使用 ppt_create_from_template，并传入 ppt_templates 返回的 templateId')
       }
       if (args.title.trim() === '') {
-        throw new Error('ppt_create 新建空白演示文稿需要 title；套用模板请使用 ppt_create_from_template')
+        throw new Error('ppt_create 新建演示文稿需要 title；套用模板请使用 ppt_create_from_template')
       }
       const snapshot = await projects().create(sessionOf(exec), {
         title: args.title,
@@ -589,11 +590,11 @@ export function apply(ctx: Context): void {
 
   ctx.tools.register(defineTool({
     name: 'ppt_import_template',
-    description: 'Save a direct, unrepaired .pptx import snapshot to the user template library only if the user '
-      + 'explicitly accepts that result. This does not extract design elements into a reusable editable template, '
-      + 'create or focus a project; complex content may be dropped and must be reported. For AI template '
-      + 'extraction use ppt_prepare_template, inspect and edit its draft, check it, then ppt_save_template. '
-      + 'Use ppt_templates and ppt_create_from_template to copy a saved template.',
+    description: 'Extract editable layout, colors and typography from a workspace .pptx into a reusable user '
+      + 'template. Source text is replaced with generic placeholders; source images are omitted. This does not '
+      + 'create or focus a project. Report dropped structures and check the preview before using the result. '
+      + 'For exact visual reconstruction inspect evidence with ppt_prepare_template and rebuild manually; '
+      + 'use ppt_templates and ppt_create_from_template to copy a saved template.',
     parameters: {
       source: { type: 'string', required: true, description: 'Workspace-relative path of an existing .pptx file.' },
       name: { type: 'string', description: 'Template name; omit to use the source file name.' },

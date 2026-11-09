@@ -43,9 +43,21 @@ const builtinDeck: PptDeck = {
     }],
   })),
 }
+const defaultDeck: PptDeck = {
+  format: 1, title: '占位标题', size: '16:9', theme: 'inference',
+  pages: Array.from({ length: 6 }, (_, index) => ({
+    id: `default-${index}`, name: `第 ${index + 1} 页`, background: null, transition: 'none' as const,
+    elements: [{
+      id: `default-text-${index}`, kind: 'text' as const, x: 80, y: 80, w: 500, h: 80,
+      text: { content: index === 0 ? '可替换的封面标题' : `占位内容 ${index}`, size: 48, color: '#16181d',
+        bold: true, align: 'left' as const, valign: 'top' as const, font: '' },
+    }],
+  })),
+}
 const ready: TemplateCatalogState = {
   phase: 'ready', templates: [summary], details: { [ID]: { ...summary, deck } }, error: null,
   builtins: { phase: 'ready', deck: builtinDeck, error: null },
+  defaultTemplate: { phase: 'ready', deck: defaultDeck, error: null },
 }
 const dictionary: Record<string, string> = zh
 const t: TranslateNS<typeof NS> = (key, params) => (dictionary[key] ?? key)
@@ -56,7 +68,8 @@ function face(state: TemplateCatalogState = ready) {
   const catalog = createSnapshotStore<TemplateCatalogState>(state)
   const actions = {
     t, useTemplateCatalog: bindSnapshotSelector(catalog),
-    loadTemplates: vi.fn(async () => {}), loadBuiltins: vi.fn(async () => {}), detailTemplate: vi.fn(async () => {}),
+    loadTemplates: vi.fn(async () => {}), loadBuiltins: vi.fn(async () => {}), loadDefault: vi.fn(async () => {}),
+    detailTemplate: vi.fn(async () => {}),
     templateMediaUrl: vi.fn(() => `/api/ppt/templates/media?id=${ID}&path=picture.png`),
     handoffPrompt: vi.fn(async (_text: string, _id: TemplateHandoffId) => {}),
     cancelHandoff: vi.fn((_id: TemplateHandoffId) => {}),
@@ -109,6 +122,25 @@ describe('只读 PPT 模板目录', () => {
       .toEqual(actions.handoffPrompt.mock.calls.map(([, id]) => id))
   })
 
+  it('默认整稿先于单页版式展示，第一页预览及创建入口与个人模板分离', async () => {
+    const actions = face()
+    const view = render(<TemplateCatalog {...actions} />)
+    const sections = Array.from(view.container.querySelectorAll('section'))
+    expect(sections.map(section => section.getAttribute('aria-label'))).toEqual([
+      '默认整稿设计', '内置单页版式', '我的模板',
+    ])
+    expect(screen.getByLabelText('默认设计第一页预览').textContent).toContain('可替换的封面标题')
+    expect(screen.getByText('六页可编辑的宽屏演示文稿，新建演示文稿时默认采用这份设计。')).toBeTruthy()
+    expect(screen.getByText('6 页')).toBeTruthy()
+    expect(screen.queryByText('占位内容 1')).toBeNull()
+    expect(screen.queryByText(zh.useDefaultTemplatePrompt)).toBeNull()
+    expect(actions.loadDefault).toHaveBeenCalledOnce()
+    fireEvent.click(screen.getByRole('button', { name: '用默认设计创建' }))
+    await waitFor(() => { expect(actions.handoffPrompt).toHaveBeenCalledWith(zh.useDefaultTemplatePrompt, expect.any(String)) })
+    expect(actions.focusPrompt).toHaveBeenCalledWith(actions.handoffPrompt.mock.calls[0]?.[1])
+    expect(en.useDefaultTemplatePrompt).toContain('without specifying a canvas size or theme')
+  })
+
   it('第一页预览宽度跟随可用内宽，设置保留自身标题', () => {
     availablePreviewWidth = 236
     const actions = face()
@@ -116,8 +148,10 @@ describe('只读 PPT 模板目录', () => {
     expect(screen.getByRole('heading', { name: 'PPT 模板管理' })).toBeTruthy()
     const preview = screen.getByLabelText('第一页预览')
     expect((preview.firstElementChild as HTMLElement).style.width).toBe('236px')
+    expect((screen.getByLabelText('默认设计第一页预览').firstElementChild as HTMLElement).style.width).toBe('236px')
     act(() => { FixedResizeObserver.resize(172) })
     expect((preview.firstElementChild as HTMLElement).style.width).toBe('172px')
+    expect((screen.getByLabelText('默认设计第一页预览').firstElementChild as HTMLElement).style.width).toBe('172px')
     expect((screen.getByLabelText('图表页版式预览').firstElementChild as HTMLElement).style.width).toBe('172px')
   })
 
@@ -189,6 +223,39 @@ describe('只读 PPT 模板目录', () => {
     expect(actions.cancelHandoff).toHaveBeenCalledWith(id)
     await act(async () => { release(); await waiting })
     expect(close).not.toHaveBeenCalled()
+    expect(actions.focusPrompt).not.toHaveBeenCalled()
+  })
+
+  it('默认预览加载和失败不影响个人模板与单页版式，可单独重试', () => {
+    const loading = face({ ...ready, defaultTemplate: { phase: 'loading', deck: null, error: null } })
+    const view = render(<TemplateCatalog {...loading} />)
+    expect(screen.getByRole('status').textContent).toBe('正在读取默认设计预览…')
+    expect(screen.getByRole('button', { name: '使用此模板' })).toBeTruthy()
+    view.unmount()
+    const failed = face({ ...ready, defaultTemplate: { phase: 'error', deck: null, error: 'raw response' } })
+    render(<TemplateCatalog {...failed} />)
+    expect(screen.getByRole('alert').textContent).toBe('默认设计预览暂时不可用，请重试。')
+    expect(screen.queryByText('raw response')).toBeNull()
+    expect(screen.queryByRole('button', { name: '用默认设计创建' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: '重试默认设计' }))
+    expect(failed.loadDefault).toHaveBeenCalledTimes(2)
+    expect(failed.loadBuiltins).toHaveBeenCalledOnce()
+    expect(failed.loadTemplates).toHaveBeenCalledOnce()
+    expect(screen.getByRole('button', { name: '使用此模板' })).toBeTruthy()
+  })
+
+  it('默认设计交接期间禁用其他模板动作，卸载会取消请求', async () => {
+    let release!: () => void
+    const waiting = new Promise<void>((resolve) => { release = resolve })
+    const actions = face()
+    actions.handoffPrompt.mockReturnValueOnce(waiting)
+    const view = render(<TemplateCatalog {...actions} />)
+    fireEvent.click(screen.getByRole('button', { name: '用默认设计创建' }))
+    expect(screen.getByRole('button', { name: '用封面版式创建' }).hasAttribute('disabled')).toBe(true)
+    const id = actions.handoffPrompt.mock.calls[0]?.[1]
+    view.unmount()
+    expect(actions.cancelHandoff).toHaveBeenCalledWith(id)
+    await act(async () => { release(); await waiting })
     expect(actions.focusPrompt).not.toHaveBeenCalled()
   })
 
@@ -277,6 +344,65 @@ describe('目录 HTTP 边界', () => {
     await invalid.loadBuiltins()
     expect(invalid.view.getSnapshot().builtins.phase).toBe('error')
     expect(invalid.view.getSnapshot().builtins.deck).toBeNull()
+  })
+
+  it('默认整稿独立于个人目录加载，合并并发请求且成功后不重复读取', async () => {
+    const paths: string[] = []
+    const catalog = new TemplateCatalogController(async (path) => {
+      paths.push(path)
+      if (path.endsWith('/default')) return Response.json({ ok: true, deck: defaultDeck })
+      return Response.json({ ok: false, error: { message: '个人目录不可用' } }, { status: 500 })
+    })
+    await Promise.all([catalog.loadDefault(), catalog.loadDefault(), catalog.load()])
+    expect(paths.filter(path => path.endsWith('/default'))).toHaveLength(1)
+    expect(catalog.view.getSnapshot().defaultTemplate.deck).toEqual(defaultDeck)
+    expect(catalog.view.getSnapshot().defaultTemplate.phase).toBe('ready')
+    expect(catalog.view.getSnapshot().phase).toBe('error')
+    await catalog.loadDefault()
+    expect(paths.filter(path => path.endsWith('/default'))).toHaveLength(1)
+  })
+
+  it.each([
+    { ...defaultDeck, size: '4:3' },
+    { ...defaultDeck, theme: 'paper' },
+    { ...defaultDeck, pages: defaultDeck.pages.slice(0, 5) },
+    { ...defaultDeck, pages: [{ ...defaultDeck.pages[0], elements: [] }, ...defaultDeck.pages.slice(1)] },
+  ])('拒绝不符合六页宽屏设计的预览，失败后允许重新读取', async (invalidDeck) => {
+    const fetcher = vi.fn()
+      .mockResolvedValueOnce(Response.json({ ok: true, deck: invalidDeck }))
+      .mockResolvedValueOnce(Response.json({ ok: true, deck: defaultDeck }))
+    const catalog = new TemplateCatalogController(fetcher)
+    await catalog.loadDefault()
+    expect(catalog.view.getSnapshot().defaultTemplate).toEqual({ phase: 'error', deck: null, error: 'unavailable' })
+    await catalog.loadDefault()
+    expect(catalog.view.getSnapshot().defaultTemplate.deck).toEqual(defaultDeck)
+    expect(fetcher).toHaveBeenCalledTimes(2)
+  })
+
+  it('默认整稿读取失败只给通用错误且可重试', async () => {
+    const fetcher = vi.fn()
+      .mockResolvedValueOnce(Response.json({ ok: false, error: { message: '内部错误细节' } }, { status: 500 }))
+      .mockResolvedValueOnce(Response.json({ ok: true, deck: defaultDeck }))
+    const catalog = new TemplateCatalogController(fetcher)
+    await catalog.loadDefault()
+    expect(catalog.view.getSnapshot().defaultTemplate).toEqual({ phase: 'error', deck: null, error: 'unavailable' })
+    await catalog.loadDefault()
+    expect(catalog.view.getSnapshot().defaultTemplate.phase).toBe('ready')
+  })
+
+  it('销毁时中止默认设计请求，不发布迟到内容', async () => {
+    let release!: (response: Response) => void
+    const pending = new Promise<Response>((resolve) => { release = resolve })
+    const fetcher = vi.fn(async (_path: string, _init?: RequestInit) => pending)
+    const catalog = new TemplateCatalogController(fetcher)
+    const task = catalog.loadDefault()
+    catalog.dispose()
+    expect(fetcher.mock.calls[0]?.[1]?.signal?.aborted).toBe(true)
+    release(Response.json({ ok: true, deck: defaultDeck }))
+    await task
+    expect(catalog.view.getSnapshot().defaultTemplate.deck).toBeNull()
+    await catalog.loadDefault()
+    expect(fetcher).toHaveBeenCalledOnce()
   })
 
   it('销毁时中止内置版式请求，不发布迟到页面', async () => {

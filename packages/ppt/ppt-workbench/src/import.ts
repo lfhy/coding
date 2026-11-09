@@ -13,7 +13,9 @@ import {
   type PptDeck, type PptDeck as Deck, type PptElement, type PptPage, type SlideSizeId,
   type TextAlign, type TextVAlign,
 } from 'coding-ppt-model'
+import { axisAlignedCustomPath } from './custom-path.ts'
 import { crc32 } from './export/zip.ts'
+import { sourceDesign, type SourceDesign } from './source-design.ts'
 
 /** 导入结果。 */
 export interface PptImportResult {
@@ -369,7 +371,7 @@ function decodeText(runs: string): string {
   return content.trim()
 }
 
-function textStyle(block: string, theme: keyof typeof PPT_THEMES = 'ink'): {
+function textStyle(block: string, design?: SourceDesign): {
   content: string
   size: number
   color: string
@@ -378,20 +380,25 @@ function textStyle(block: string, theme: keyof typeof PPT_THEMES = 'ink'): {
   valign: TextVAlign
   font: string
 } {
-  const palette = PPT_THEMES[theme]
+  const palette = PPT_THEMES.ink
   const runProps = /<a:rPr\b[^>]*>/u.exec(block)?.[0] ?? ''
   const size = Number(attr(runProps, 'sz') ?? 1800) / 75
-  const colorValue = /<a:srgbClr val="([0-9a-fA-F]{6})"/u.exec(block)?.[1]
+  const run = /<a:rPr\b[^>]*>([\s\S]*?)<\/a:rPr>/u.exec(block)?.[0]
+    ?? /<a:defRPr\b[^>]*>([\s\S]*?)<\/a:defRPr>/u.exec(block)?.[0] ?? ''
+  const colorValue = design?.color(run)
+    ?? /<a:srgbClr val="([0-9a-fA-F]{6})"/u.exec(block)?.[1]
   const alignRaw = /<a:pPr[^>]*algn="(\w+)"/u.exec(block)?.[1]
   const anchorRaw = attr(/<a:bodyPr\b[^>]*>/u.exec(block)?.[0] ?? '', 'anchor')
   return {
     content: decodeText(block),
     size: Math.min(Math.max(Math.round(size), 6), 400),
-    color: hexColor(colorValue, palette.text),
+    color: colorValue?.startsWith('#') ? colorValue
+      : hexColor(colorValue, design?.background === '#ffffff' ? '#16181d' : palette.text),
     bold: attr(runProps, 'b') === '1',
     align: alignRaw === 'ctr' ? 'center' : alignRaw === 'r' ? 'right' : 'left',
     valign: anchorRaw === 'ctr' ? 'middle' : anchorRaw === 'b' ? 'bottom' : 'top',
-    font: /<a:latin typeface="([^"]+)"/u.exec(block)?.[1] ?? '',
+    font: /<a:latin typeface="([^"]+)"/u.exec(block)?.[1]?.replace(/^\+(?:mn|mj)-lt$/u, design?.font ?? '')
+      ?? design?.font ?? '',
   }
 }
 
@@ -469,11 +476,11 @@ function readSource(bytes: Uint8Array): {
 /**
  * 解包并解析一份 .pptx。
  * @param bytes - .pptx 文件内容。
- * @param options - 文稿标题。
+ * @param options - 文稿标题；`design` 仅读取源配色和字体，不修复不能表达的图形。
  * @returns 导入结果。
  * @throws PptImportError - 不是合法的 .pptx、或没有任何可解析的幻灯片时。
  */
-export function importPptx(bytes: Uint8Array, options: { title: string }): PptImportResult {
+export function importPptx(bytes: Uint8Array, options: { title: string; design?: boolean }): PptImportResult {
   const { files, slideBlocks, decode, presentation, slidePaths, tempPng } = readSource(bytes)
 
   const dropped = new Set<string>()
@@ -486,6 +493,7 @@ export function importPptx(bytes: Uint8Array, options: { title: string }): PptIm
     const xml = decode(path)
     const visibleXml = withoutComments(xml)
     const rels = relationships(decode(path.replace('slides/', 'slides/_rels/') + '.rels'), path)
+    const design = options.design === true ? sourceDesign(designEvidence(files, decode, rels)) : undefined
     const background = firstElement(visibleXml, 'p:bg')
     const backgroundRaw = /<a:srgbClr val="([0-9a-fA-F]{6})"/u.exec(background)?.[1]
     const elements: PptElement[] = []
@@ -516,7 +524,7 @@ export function importPptx(bytes: Uint8Array, options: { title: string }): PptIm
             : block.includes('/table') ? 'table' : 'other'
       } else category = block.startsWith('<p:sp') && /<a:t(?:\s[^>]*)?>/u.test(block) ? 'text' : 'other'
       source[category] += 1
-      const element = parseShape(block, rels, files, media, mediaNames, dropped, tempPng)
+      const element = parseShape(block, rels, files, media, mediaNames, dropped, tempPng, design)
       if (element !== null) elements.push(element)
       else losses.add(category === 'other' ? block.startsWith('<p:graphicFrame') ? 'object' : 'shape' : category)
       if (block.startsWith('<p:graphicFrame')) {
@@ -527,7 +535,8 @@ export function importPptx(bytes: Uint8Array, options: { title: string }): PptIm
     const page: PptPage = {
       id: newId(),
       name: `第 ${index + 1} 页`,
-      background: backgroundRaw === undefined ? null : hexColor(backgroundRaw, '#ffffff'),
+      background: options.design === true ? design?.color(background) ?? design?.background ?? '#ffffff'
+        : backgroundRaw === undefined ? null : hexColor(backgroundRaw, '#ffffff'),
       transition: /<p:transition>\s*<p:fade/u.test(xml) ? 'fade'
         : /<p:transition>\s*<p:push/u.test(xml) ? 'push' : 'none',
       elements,
@@ -556,7 +565,7 @@ export function importPptx(bytes: Uint8Array, options: { title: string }): PptIm
     format: 1,
     title: options.title,
     size: slideSize(presentation),
-    theme: pageTheme(pages),
+    theme: options.design === true ? 'inference' : pageTheme(pages),
     pages,
   }
   const parsed = parseDeck(deck)
@@ -716,6 +725,7 @@ function parseShape(
   mediaNames: Map<string, string>,
   dropped: Set<string>,
   tempPng: boolean,
+  design?: SourceDesign,
 ): PptElement | null {
   const box = frame(block)
   if (block.startsWith('<p:pic')) {
@@ -733,7 +743,8 @@ function parseShape(
   }
   if (block.startsWith('<p:cxnSp')) {
     const lineRaw = /<a:srgbClr val="([0-9a-fA-F]{6})"/u.exec(firstElement(block, 'a:ln'))?.[1]
-    return { id: newId(), kind: 'line', ...box, color: hexColor(lineRaw, '#9aa7b4'), width: lineWidth(block) }
+    return { id: newId(), kind: 'line', ...box, color: design?.color(firstElement(block, 'a:ln'))
+      ?? hexColor(lineRaw, '#9aa7b4'), width: lineWidth(block) }
   }
   const preset = /<a:prstGeom prst="([^"]+)"/u.exec(block)?.[1]
   const shapeProps = firstElement(block, 'p:spPr')
@@ -741,20 +752,32 @@ function parseShape(
   const lineRaw = /<a:srgbClr val="([0-9a-fA-F]{6})"/u.exec(firstElement(shapeProps, 'a:ln'))?.[1]
   const hasText = /<a:t(?:\s[^>]*)?>/u.test(block)
   if (hasText) {
-    return { id: newId(), kind: 'text', ...box, text: textStyle(block) }
+    return { id: newId(), kind: 'text', ...box, text: textStyle(block, design) }
   }
   if (preset === 'line' || preset === 'straightConnector1') {
     return {
       id: newId(), kind: 'line', ...box,
-      color: hexColor(lineRaw, '#9aa7b4'),
+      color: design?.color(firstElement(shapeProps, 'a:ln')) ?? hexColor(lineRaw, '#9aa7b4'),
       width: lineWidth(shapeProps),
     }
   }
   if (preset === 'ellipse') {
-    return { id: newId(), kind: 'ellipse', ...box, fill: hexColor(fillRaw, '#4f8cff') }
+    return { id: newId(), kind: 'ellipse', ...box, fill: design?.color(firstElement(shapeProps, 'a:solidFill'))
+      ?? hexColor(fillRaw, '#4f8cff') }
+  }
+  if (shapeProps.includes('<a:custGeom') && design !== undefined) {
+    const customLine = axisAlignedCustomPath(shapeProps, box)
+    if (customLine !== null) {
+      return { id: newId(), kind: 'line', ...customLine,
+        color: design.color(firstElement(shapeProps, 'a:ln')) ?? hexColor(lineRaw, '#9aa7b4'),
+        width: lineWidth(shapeProps) }
+    }
+    dropped.add('自定义路径')
+    return null
   }
   if (fillRaw !== undefined || preset === 'rect' || preset === undefined) {
-    return { id: newId(), kind: 'rect', ...box, fill: hexColor(fillRaw, '#4f8cff') }
+    return { id: newId(), kind: 'rect', ...box, fill: design?.color(firstElement(shapeProps, 'a:solidFill'))
+      ?? hexColor(fillRaw, '#4f8cff') }
   }
   dropped.add('形状')
   return null

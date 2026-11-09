@@ -98,6 +98,22 @@ async function fixture(projects: PptProjects): Promise<{ id: string; deck: PptDe
 }
 
 describe('PPT 用户模板只读 HTTP 目录', () => {
+  it('无会话时展示默认整稿预览，不创建持久工程或模板', async () => {
+    const { base, projects } = await boot()
+    sessionExists = false
+    const response = await request(base, 'templates/default')
+    expect(response.status).toBe(200)
+    expect(response.headers.get('cache-control')).toBe('no-store')
+    const payload = await response.json() as { ok: boolean; deck: PptDeck }
+    const preview = parseDeck(payload.deck)
+    expect(preview.theme).toBe('inference')
+    expect(preview.pages).toHaveLength(6)
+    expect(checkDeck(preview).ok).toBe(true)
+    expect(projects.activeDir(SESSION)).toBeUndefined()
+    expect(await stat(join(root!, 'ppt')).then(() => true, () => false)).toBe(false)
+    expect(await stat(join(root!, 'templates')).then(() => true, () => false)).toBe(false)
+  })
+
   it('内置版式预览复用七种单页元素，且不创建工程或用户模板', async () => {
     const { base, projects } = await boot()
     sessionExists = false
@@ -171,7 +187,7 @@ describe('PPT 用户模板只读 HTTP 目录', () => {
   it('信任栅栏先于 id 解析，非 GET 和写入路径不可用', async () => {
     const { base, projects } = await boot()
     await fixture(projects)
-    for (const route of ['templates', 'templates/builtins', 'templates/detail', 'templates/media']) {
+    for (const route of ['templates', 'templates/default', 'templates/builtins', 'templates/detail', 'templates/media']) {
       const foreign = await request(base, route, { id: 'broken', path: 'media/a.png' }, {
         headers: { origin: 'http://evil.invalid' },
       })

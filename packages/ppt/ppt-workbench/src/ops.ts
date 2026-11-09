@@ -136,7 +136,7 @@ const EMPHASIS = ['none', 'pulse', 'grow'] as const
 const PATHS = ['none', 'right', 'left', 'up', 'down'] as const
 const TEMPLATE_IDS: readonly PptTemplateId[] = PPT_TEMPLATES.map(entry => entry.id)
 const VALIGNMENTS = ['top', 'middle', 'bottom'] as const
-const THEMES = ['ink', 'paper', 'ocean', 'forest'] as const
+const THEMES = ['ink', 'paper', 'ocean', 'forest', 'inference'] as const
 const SIZES = ['16:9', '4:3'] as const
 
 function pick<T extends string>(allowed: readonly T[], value: unknown, at: string): T {

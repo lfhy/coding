@@ -363,6 +363,7 @@ export function Inspector({
             <option value="paper">{t('themePaper')}</option>
             <option value="ocean">{t('themeOcean')}</option>
             <option value="forest">{t('themeForest')}</option>
+            <option value="inference">{t('themeInference')}</option>
           </select>
         </label>
         <label className={css.field}>

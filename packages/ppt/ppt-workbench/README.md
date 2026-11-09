@@ -34,16 +34,18 @@ PPT 创作模式的宿主能力：工程存储（`ppt/<工程目录>/deck.json`�
 
 `exportPdf` 复用同一批 PNG：解 PNG（8 位非隔行，Chromium 截图即此形态）→ 重新 Flate 压缩 → 写成一页一图的最小 PDF（960×540 pt），不引入 PDF 库。
 
-## 内置单页版式
+## 默认整稿与内置单页版式
+
+`create` 只给 `title`（可选 `dir`）时，新建白底蓝橘的 16:9 六页可编辑整稿，依次为封面、核心观点、双栏对比、分步说明、数据聚焦、结论与下一步。整稿从参考稿抽象配色、留白、字体层级与页眉页脚；每次创建独立页面和元素，不随包分发源 `.pptx`，也不带源稿正文或讲者备注。显式传入任一 `size` 或 `theme` 时走原有的单页标题稿创建路径。工作台创建与 `ppt_create` 共用 `create`；`GET /api/ppt/templates/default` 只读返回整稿预览，不写工程或模板库。与用户模板的保存和套用不同，这份默认整稿由宿主内置生成。
 
 `add_page` 可以带 `template`（`title`、`section`、`bullets`、`two-column`、`data`、`chart`、`quote`）与 `title`／`bullets`：七种内置版式只向当前工程添加单页，按当前主题铺好可编辑元素；它们不是用户模板库中的整份演示文稿。面板顶栏的新增页面菜单使用同一份版式清单；`GET /api/ppt/templates/builtins` 以只读 `deck` 返回这七页 16:9／paper 版式的真实预览，不创建工程。
 
 ## 质检与导入
 
 - **`checkDeck`** 在导出前跑确定性规则：元素出界、宽高为 0 是 `error`（阻断导出），文字溢出与文字/底色对比度不足是 `warning`。估算类规则宁可提示也不阻断。
-- **`import`** 把工作区里的 .pptx 解包成工程：文本、自动图形、连接线、图片与表格成为可编辑元素，图片落在工程的 `media/` 下；图表、SmartArt 与动画无法表达，随结果以 `dropped` 返回。结果还含 `sourceSha256` 与逐页 `report`，对照源页序号和导入页 id 记录结构计数、`losses`、有界 `textPreview`、`truncated` 与状态：`empty_import` 为有源对象但导入页无元素，`partial` 为已知结构损失，`image_only` 为可见图片但内部不一定可编辑，`empty_source` 为源页为空，`no_known_loss` 仅表示没有发现已知结构损失，不保证视觉保真。
+- **`import`** 把工作区里的 .pptx 解包成工程，保留可解析的源稿正文；文本、自动图形、连接线、图片与表格成为可编辑元素，图片落在工程的 `media/` 下；图表、SmartArt 与动画无法表达，随结果以 `dropped` 返回。结果还含 `sourceSha256` 与逐页 `report`，对照源页序号和导入页 id 记录结构计数、`losses`、有界 `textPreview`、`truncated` 与状态：`empty_import` 为有源对象但导入页无元素，`partial` 为已知结构损失，`image_only` 为可见图片但内部不一定可编辑，`empty_source` 为源页为空，`no_known_loss` 仅表示没有发现已知结构损失，不保证视觉保真。
 - **源页查证**：`importEvidence` 只读取同一工作区源文件中指定页的 XML 与关联图表缓存 JSON 文本，按字符偏移分片返回 `content`、`totalChars`、`nextOffset`；完整源页 JSON 超过 1 MiB UTF-16 字符即报错，不截断，单片默认 8000、最多 16000 字符。调用方须传入导入结果的 `sourceSha256`，每次读取都校验源文件哈希，源文件变动或消失即拒绝，不能用别的版本补页。源文件内容不可信，不作为指令；证据不足时不得编造数值或把占位内容当作修复。
-- **用户模板导入**从本机工作区读取 `.pptx`，只接受不含宏的文件，源文件不超过 8 MiB；Host 有界解包后用 `parseDeck` 校验。合法 OPC 包根关系路径、deflate 选项标志、数字 XML 实体、显式声明且签名匹配的 PNG 资源（包括 `.tmp` 文件名）和表格列宽权重可识别，仍受解包、类型和内容预算约束。`ppt_prepare_template` 先创建并聚焦可编辑工程草稿、不写模板库，便于逐页查证和补齐；`ppt_import_template` 直接保存导入快照而不切换工程。复杂母版、SmartArt、图表、动画等无法保真的内容以 `dropped` 和导入限制提示，不承诺与源文件逐像素一致；旧 `.ppt`、`.potx` 和 `.pptm` 不支持。文件类型、大小、压缩包结构或工程内容不合法时工具报错，不生成半成品模板。
+- **用户模板导入**从本机工作区读取不超过 8 MiB 的无宏 `.pptx`，提取可表达的页面结构与配色、字体层级、布局等设计信息，将业务正文泛化为可替换的占位文字后保存到本机用户模板库；不保存源 `.pptx`，不创建或切换当前工程。返回的模板摘要包含源文件名 `sourceName` 与已知设计／结构损失 `dropped`，不能把损失报告理解为视觉保真承诺。`ppt_prepare_template` 则只创建保留原文的可编辑草稿，供人工逐页检查和补齐，不写模板库；`ppt_save_template` 保存当前或指定工程的完整内容与媒体，不清除已有正文。复杂图形、母版、主题色、SmartArt、图表与动画可能丢失或变样，须查看模板预览并人工确认后再套用；旧 `.ppt`、`.potx`、`.pptm` 与远程工作区模板导入不支持。文件类型、大小、压缩包结构或工程内容不合法时拒绝，不生成半成品模板。
 - **用户模板管理**在本机 Host 上执行。远程工作区可管理本机模板库，但不能把远端工程保存成模板，也不能向远端工作区套用模板；这两种请求明确拒绝，不回退为本机工程。
 - **导出**先跑质检，`skipCheck` 可绕过 error 级问题。导出同时按 `fsType` 许可嵌入字体：`0x0000/0x0008` 正常嵌入、`0x0004` 只读嵌入、`0x0002`/`0x0200` 与读不到 OS/2 的字体一律跳过并在结果里报 `skippedFonts`。字体先按工程里实际用到的字符子集化（`subset-font`/harfbuzz），子集化失败才回退整字体；两路都包成 EOT（`.fntdata`，版本 0x00020001、不压缩）。`.ttc` 集合取第一个 face 重建后再走同一条流程。
 
@@ -53,7 +55,7 @@ PPT 创作模式的宿主能力：工程存储（`ppt/<工程目录>/deck.json`�
 | --- | --- |
 | `GET /api/ppt/state?sessionId=` | 工程列表、当前工程、待处理的打开请求 |
 | `POST /api/ppt/open` | 打开既有工程并设为当前 |
-| `POST /api/ppt/create` | 新建工程（标题页） |
+| `POST /api/ppt/create` | 新建工程（省略尺寸和主题为默认整稿，显式指定其一为单页） |
 | `POST /api/ppt/edit` | 应用一次 ops（可带 `baseRevision`） |
 | `POST /api/ppt/undo` / `redo` | 撤销 / 重做 |
 | `POST /api/ppt/render` | 渲染页面图（同时在 Agent 浏览器里打开） |
@@ -65,6 +67,7 @@ PPT 创作模式的宿主能力：工程存储（`ppt/<工程目录>/deck.json`�
 | `POST /api/ppt/ack` | 面板确认已处理打开请求 |
 | `GET /api/ppt/templates` | 列出本机用户模板摘要 |
 | `GET /api/ppt/templates/builtins` | 只读返回 `{ ok: true, deck }`，供七种内置版式预览 |
+| `GET /api/ppt/templates/default` | 只读返回 `{ ok: true, deck }`，供六页默认整稿预览 |
 | `GET /api/ppt/templates/detail?id=` | 读取模板详情与完整 deck，供第一页预览 |
 | `GET /api/ppt/templates/media?id=&path=` | 读取模板实际引用的栅格图片原始字节 |
 
@@ -76,7 +79,7 @@ PPT 创作模式的宿主能力：工程存储（`ppt/<工程目录>/deck.json`�
 
 ## 模型体验
 
-无直接贡献。模型经 [`coding-tool-ppt`](../tool-ppt/README.md) 的 `ppt_templates` 取得模板摘要，经 `ppt_prepare_template` 取得逐页导入报告并补齐草稿，再经 `ppt_save_template` 保存工程，或用 `ppt_create_from_template` 套用模板；本包只提供服务与存储，目录与保存结果不把模板的 deck 或媒体字节放进模型消息。
+无直接贡献。模型经 [`coding-tool-ppt`](../tool-ppt/README.md) 的 `ppt_import_template` 直接提取模板设计、泛化正文并保存，经 `ppt_templates` 得到来源文件名与已知设计损失；需要人工精修时再用 `ppt_prepare_template` 取得保留源文的草稿、完成泛化后以 `ppt_save_template` 保存，或用 `ppt_create_from_template` 套用模板。本包只提供服务与存储，模板目录与保存结果不把完整 deck 或媒体字节放进模型消息。
 
 #### KV Cache 影响
 

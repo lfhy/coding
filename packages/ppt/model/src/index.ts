@@ -26,7 +26,7 @@ export const SLIDE_SIZES: Readonly<Record<SlideSizeId, SlideBaseSize>> = {
 }
 
 /** 随包提供的配色主题。 */
-export type ThemeId = 'ink' | 'paper' | 'ocean' | 'forest'
+export type ThemeId = 'ink' | 'paper' | 'ocean' | 'forest' | 'inference'
 
 /** 一套主题配色；页面与元素只存具体颜色，取色时回落到这里。 */
 export interface PptTheme {
@@ -39,7 +39,7 @@ export interface PptTheme {
   readonly accent: string
 }
 
-/** 四套随包主题，覆盖深色汇报、纸张、海洋与森林四类场合。 */
+/** 随包主题覆盖深色、纸张、海洋、森林和白底蓝橘汇报。 */
 export const PPT_THEMES: Readonly<Record<ThemeId, PptTheme>> = {
   ink: {
     id: 'ink', label: '深墨', background: '#101418', surface: '#1b222a',
@@ -56,6 +56,10 @@ export const PPT_THEMES: Readonly<Record<ThemeId, PptTheme>> = {
   forest: {
     id: 'forest', label: '森林', background: '#14231b', surface: '#1d3226',
     text: '#f0f6ef', muted: '#9db3a3', accent: '#7cc47f',
+  },
+  inference: {
+    id: 'inference', label: '简明汇报', background: '#ffffff', surface: '#f4f3ef',
+    text: '#16181d', muted: '#6b6f76', accent: '#1d4ed8',
   },
 }
 
@@ -538,7 +542,7 @@ export function parseDeck(value: unknown): PptDeck {
     format: PPT_FORMAT,
     title: text(value.title, 'title', 200),
     size: oneOf(value.size, 'size', ['16:9', '4:3'] as const),
-    theme: oneOf(value.theme, 'theme', ['ink', 'paper', 'ocean', 'forest'] as const),
+    theme: oneOf(value.theme, 'theme', ['ink', 'paper', 'ocean', 'forest', 'inference'] as const),
     pages,
   }
 }

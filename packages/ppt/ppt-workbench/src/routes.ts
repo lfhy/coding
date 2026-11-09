@@ -11,6 +11,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type {} from 'coding-client-connection'
 import { PptModelError } from 'coding-ppt-model'
 import { BUILTIN_TEMPLATE_PREVIEW } from './builtin-templates.ts'
+import { createDefaultDeck } from './default-template.ts'
 import { PptStoreError, type PptSnapshot } from './store.ts'
 import type PptProjects from './index.ts'
 
@@ -174,6 +175,8 @@ export function installRoutes(ctx: Context, service: PptProjects): void {
 
   route('templates/builtins', ['GET'], () => ({ ok: true, deck: BUILTIN_TEMPLATE_PREVIEW }))
 
+  route('templates/default', ['GET'], () => ({ ok: true, deck: createDefaultDeck('演示文稿标题') }))
+
   route('templates/detail', ['GET'], async (_body, url) => ({
     ok: true, template: await service.readTemplate(url.searchParams.get('id') ?? ''),
   }))
@@ -222,15 +225,15 @@ export function installRoutes(ctx: Context, service: PptProjects): void {
     const sessionId = sessionIdOf(body)
     const title = optionalString(body.title, 'title')
     if (title === undefined) throw new PptStoreError('bad-request', 'title 必须提供')
-    const size = body.size === '4:3' ? '4:3' : body.size === '16:9' || body.size === undefined ? '16:9' : null
+    const size = body.size === '4:3' || body.size === '16:9' || body.size === undefined ? body.size : null
     if (size === null) throw new PptStoreError('bad-request', 'size 必须是 16:9 或 4:3')
     const theme = body.theme === 'ink' || body.theme === 'paper' || body.theme === 'ocean'
-      || body.theme === 'forest' || body.theme === undefined ? body.theme : null
-    if (theme === null) throw new PptStoreError('bad-request', 'theme 必须是 ink / paper / ocean / forest 之一')
+      || body.theme === 'forest' || body.theme === 'inference' || body.theme === undefined ? body.theme : null
+    if (theme === null) throw new PptStoreError('bad-request', 'theme 必须是 ink / paper / ocean / forest / inference 之一')
     const dir = optionalString(body.dir, 'dir')
     return snapshotBody(await service.create(sessionId, {
       title,
-      size,
+      ...size === undefined ? {} : { size },
       ...theme === undefined ? {} : { theme },
       ...dir === undefined ? {} : { dir },
     }))

@@ -6,7 +6,7 @@
 
 | 类型 | 归属 | 调用方需知道的字段 |
 | --- | --- | --- |
-| `SlideSizeId`、`ThemeId` | [数据模型](../../packages/ppt/model/src/index.ts) | 画布比例为 `16:9` 或 `4:3`；主题为 `ink`、`paper`、`ocean` 或 `forest`。画布坐标以基准像素表示。 |
+| `SlideSizeId`、`ThemeId` | [数据模型](../../packages/ppt/model/src/index.ts) | 画布比例为 `16:9` 或 `4:3`；主题为 `ink`、`paper`、`ocean`、`forest` 或 `inference`（白底蓝橘）。画布坐标以基准像素表示。 |
 | `PptSnapshot` | [工程存储](../../packages/ppt/ppt-workbench/src/store.ts) | 完整工程 `deck`、绝对目录 `dir`、`revision` 与可撤销／重做状态；`revision` 是编辑冲突的比较值。 |
 | `PptWorkbenchState` | [服务定义](../../packages/ppt/ppt-workbench/src/index.ts) | 当前会话的工作区目录、工程列表、当前工程与等待面板确认的打开请求。 |
 | `PptCheckResult` | [质检](../../packages/ppt/ppt-workbench/src/check.ts) | `ok` 表示没有阻断导出的 error 级问题；`issues` 包含页面、元素与规则标识。 |
@@ -16,6 +16,12 @@
 ## 会话与版本
 
 `rootOf(sessionId)` 取会话的工作目录；工程目录由 `resolveDir` 限制在该工作区内，未打开工程又未指定目录时拒绝。创建、打开和导入工程会记录会话当前工程并通知面板；面板通过 `ackOpenRequest` 确认消费。编辑可携带 `baseRevision`，不匹配时拒绝覆盖；同一目录的写入在进程内串行。导出先执行质检，除非调用方显式设置 `skipCheck`。持久文件布局、错误映射和渲染限制由[工作台包 README](../../packages/ppt/ppt-workbench/README.md) 持有。
+
+## 创建与模板语义
+
+`create(sessionId, { title, dir? })` 用内置白底蓝橘 16:9 六页整稿发布独立工程；显式传入 `size` 或 `theme` 任一项则创建单页标题稿。整稿抽象参考稿的视觉结构，不保存源稿文件、正文或备注。只读默认预览不创建工程；内置单页版式和用户模板库分别由[工作台包 README](../../packages/ppt/ppt-workbench/README.md#默认整稿与内置单页版式)说明。
+
+`importTemplateFromFile` 读取本机工作区的无宏 `.pptx`，提取可表达的几何、颜色与文字样式，将原稿正文泛化为占位内容后存入用户模板库，不创建或切换工程，也不保存源文件；返回摘要的 `sourceName` 是源文件名，`dropped` 列出已知设计／结构损失。复杂图形、母版与主题色可能不保真，套用前须检查预览。`import` 创建保留可解析源正文的工作区工程，`saveTemplate` 则将已有工程连同当前正文和媒体原样保存为模板，这两条路径都不负责去原文化。模板导入、普通导入与手工精修的使用边界见[工具包 README](../../packages/ppt/tool-ppt/README.md#行为)。
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 

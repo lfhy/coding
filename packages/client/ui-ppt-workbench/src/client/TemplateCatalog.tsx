@@ -16,6 +16,7 @@ export interface TemplateCatalogInjected {
   hooks: { templateCatalog: SnapshotStore<TemplateCatalogState> }
   loadTemplates: () => Promise<void>
   loadBuiltins: () => Promise<void>
+  loadDefault: () => Promise<void>
   detailTemplate: (id: PptTemplateId) => Promise<void>
   templateMediaUrl: (id: PptTemplateId, path: string) => string
   handoffPrompt: (text: string, id: TemplateHandoffId) => Promise<void>
@@ -28,8 +29,8 @@ export type TemplateCatalogProps = PropsLocale<typeof NS> & InjectFace<TemplateC
   showTitle?: boolean
 }
 
-/** 每张卡按自身内容宽度渲染同一 Host 页面，窄容器无需水平滚动。 */
-function BuiltinLayoutPreview({ deck, page, label }: { deck: PptDeck; page: PptPage; label: string }) {
+/** 预览按容器内宽渲染宿主页面；无媒体地址时不加载外部内容。 */
+function LayoutPreview({ deck, page, label }: { deck: PptDeck; page: PptPage; label: string }) {
   const ref = useRef<HTMLDivElement>(null)
   const [width, setWidth] = useState(0)
   useEffect(() => {
@@ -48,7 +49,7 @@ function BuiltinLayoutPreview({ deck, page, label }: { deck: PptDeck; page: PptP
 
 /** 选择模板只预览；唯一写意图交给对话草稿，不调用模板写接口。 */
 export function TemplateCatalog({
-  t, useTemplateCatalog, loadTemplates, loadBuiltins, detailTemplate, templateMediaUrl,
+  t, useTemplateCatalog, loadTemplates, loadBuiltins, loadDefault, detailTemplate, templateMediaUrl,
   handoffPrompt, cancelHandoff, focusPrompt, onHandoff, showTitle = true,
 }: TemplateCatalogProps) {
   const state = useTemplateCatalog(snapshot => snapshot)
@@ -70,6 +71,7 @@ export function TemplateCatalog({
   }, [cancelHandoff])
   useEffect(() => { void loadTemplates() }, [loadTemplates])
   useEffect(() => { void loadBuiltins() }, [loadBuiltins])
+  useEffect(() => { void loadDefault() }, [loadDefault])
   const activeId = state.phase === 'error' ? null
     : selectedId !== null && state.templates.some(item => item.id === selectedId)
       ? selectedId : state.templates[0]?.id ?? null
@@ -77,6 +79,8 @@ export function TemplateCatalog({
   const selected = state.templates.find(item => item.id === activeId)
   const detail = activeId === null ? undefined : state.details[activeId]
   const preview = detail?.deck.pages[0]
+  const defaultDeck = state.defaultTemplate.deck
+  const defaultPage = defaultDeck?.pages[0]
   useEffect(() => {
     const node = previewRef.current
     if (node === null) return undefined
@@ -121,6 +125,26 @@ export function TemplateCatalog({
       </Button>
     </div>
     {handoffError !== null && <p role="alert" className={css.error}>{handoffError}</p>}
+    <section className={css.defaultTemplate} aria-label={t('defaultTemplateTitle')}>
+      <h3>{t('defaultTemplateTitle')}</h3>
+      <p>{t('defaultTemplateIntro')}</p>
+      {state.defaultTemplate.phase === 'loading' && <p role="status">{t('defaultTemplateLoading')}</p>}
+      {state.defaultTemplate.phase === 'error' && <div>
+        <p role="alert" className={css.error}>{t('defaultTemplateError')}</p>
+        <Button variant="outline" size="sm" onClick={() => { void loadDefault() }}>{t('defaultTemplateRetry')}</Button>
+      </div>}
+      {defaultDeck !== null && defaultPage !== undefined && <div className={css.defaultCard}>
+        <LayoutPreview deck={defaultDeck} page={defaultPage} label={t('defaultTemplatePreview')} />
+        <div className={css.defaultInfo}>
+          <strong>{t('defaultTemplateName')}</strong>
+          <span className={css.meta}>{t('pages', { count: defaultDeck.pages.length })}</span>
+          <Button variant="outline" size="sm" disabled={handoffBusy}
+            onClick={() => { void handoff(t('useDefaultTemplatePrompt')) }}>
+            {t('useDefaultTemplateAction')}
+          </Button>
+        </div>
+      </div>}
+    </section>
     <section className={css.builtins} aria-label={t('builtinsTitle')}>
       <h3>{t('builtinsTitle')}</h3>
       <p>{t('builtinsIntro')}</p>
@@ -134,7 +158,7 @@ export function TemplateCatalog({
           const name = t(layout.key)
           const page = state.builtins.deck?.pages[index]
           return page === undefined || state.builtins.deck === null ? null : <li key={layout.id} className={css.builtinCard}>
-            <BuiltinLayoutPreview deck={state.builtins.deck} page={page}
+            <LayoutPreview deck={state.builtins.deck} page={page}
               label={t('builtinPreview', { name })} />
             <strong>{name}</strong>
             <Button variant="outline" size="sm" disabled={handoffBusy}

@@ -76,7 +76,7 @@ describe('PPT 导入修复工具', () => {
     expect(prepare.description).toContain('a full-page image is not editable content')
     expect(prepare.description).toContain('Never invent source values')
     expect(tool('ppt_save_template').description).toContain('does not extract a design')
-    expect(tool('ppt_import_template').description).toContain('does not extract design elements')
+    expect(tool('ppt_import_template').description).toContain('Source text is replaced with generic placeholders')
     await prepare.execute({ source: 'sources/brand.pptx' }, session)
     expect(projects.import).toHaveBeenLastCalledWith('s1', 'sources/brand.pptx', {})
     await expect(prepare.execute({}, session)).rejects.toThrow('source')
