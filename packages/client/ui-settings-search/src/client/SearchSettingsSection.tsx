@@ -231,7 +231,7 @@ export function SearchSettingsSection(props: SearchSettingsSectionProps) {
           {state.failed ? <p role="alert" className={css.error}>{t('failed')}</p> : null}
           {SOURCE_FIELDS[provider].includes('apiKeyEnv') ? <div className={css.secret}>
             <div className={css.fieldHeading}><label htmlFor="search-api-key">{t('apiKey')}</label></div>
-            <p className={css.hint} role="status">{keyRefPending ? t('keyRefPending') : credential.status === 'loading' ? t('keyLoading') : credential.status === 'error' ? t('keyError') : credential.configured ? t('keySet') : t('keyMissing')}</p>
+            <p className={css.hint} role="status">{keyRefPending ? t('keyRefPending') : credential.status === 'loading' ? t('keyLoading') : credential.status === 'error' ? t('keyError') : credential.configured ? t('keySet') : t(provider === 'tavily' ? 'tavilyKeyMissing' : 'keyMissing')}</p>
             <input id="search-api-key" className={css.input} type="password" autoComplete="off"
               value={key} disabled={keyRefPending || credential.status !== 'ready' || !credential.writable || state.keySaving}
               onChange={(event) => { keyVersion.current++; setKeyDraft({ owner: keyOwner, value: event.target.value }) }} aria-describedby="search-api-key-hint" />

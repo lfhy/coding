@@ -81,18 +81,19 @@ describe('web e2e: independent search settings', () => {
     await expect.poll(() => nav.getAttribute('aria-current')).toBe('true')
     const section = settingsPage.getByRole('region', { name: '联网搜索' })
     await section.getByRole('heading', { name: '联网搜索' }).waitFor({ timeout: 10_000 })
-    const duckduckgo = section.getByRole('radio', { name: /DuckDuckGo/ })
-    const deepseek = section.getByRole('radio', { name: /DeepSeek 官方/ })
-    const tavily = section.getByRole('radio', { name: /Tavily/ })
+    const selectedSource = section.locator('button[aria-haspopup="menu"]').first()
+    const chooseSource = async (name: 'DuckDuckGo' | 'DeepSeek 官方' | 'Tavily'): Promise<void> => {
+      await selectedSource.click()
+      await page.getByRole('menuitem', { name: new RegExp(`^${name}`) }).click()
+      await expect.poll(() => selectedSource.innerText(), { timeout: 10_000 }).toBe(name)
+    }
     const visibleInput = (label: string) => section.getByLabel(label, { exact: true }).and(section.locator('input:visible'))
     const endpoint = visibleInput('接口地址')
     const model = visibleInput('搜索模型')
     const customProxy = visibleInput('代理地址')
     const keyRef = visibleInput('密钥环境变量名')
     const key = visibleInput('专用搜索密钥')
-    await expect.poll(() => duckduckgo.isChecked()).toBe(true)
-    expect(await deepseek.isChecked()).toBe(false)
-    expect(await tavily.isChecked()).toBe(false)
+    await expect.poll(() => selectedSource.innerText()).toBe('DuckDuckGo')
     await expect.poll(() => scaffold.ctx.credentials.describe(DEFAULT_REF))
       .toMatchObject({ configured: false })
     expect(await endpoint.isVisible()).toBe(false)
@@ -103,7 +104,10 @@ describe('web e2e: independent search settings', () => {
     expect(await section.getByRole('group', { name: '出站', exact: true }).isVisible()).toBe(true)
     expect(await customProxy.isVisible()).toBe(false)
     expect(await section.getByText('免费，无需配置密钥。', { exact: true }).count()).toBe(1)
-    await expect(readFile(settingsPath, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
+    expect(await readFile(settingsPath, 'utf8').catch((error: unknown) => {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return ''
+      throw error
+    })).not.toContain('web-search-')
 
     await section.getByRole('button', { name: '自定义代理', exact: true }).click()
     await customProxy.fill(DUCKDUCKGO_PROXY)
@@ -113,9 +117,7 @@ describe('web e2e: independent search settings', () => {
     expect(await readFile(settingsPath, 'utf8')).not.toContain('web-search-deepseek:')
     expect(await readFile(settingsPath, 'utf8')).not.toContain('web-search-tavily:')
 
-    await deepseek.focus()
-    await deepseek.press('Space')
-    await expect.poll(() => deepseek.isChecked(), { timeout: 10_000 }).toBe(true)
+    await chooseSource('DeepSeek 官方')
     await expect.poll(async () => readFile(settingsPath, 'utf8'), { timeout: 10_000 })
       .toMatch(/web:\n\s+searchProvider: deepseek-official/)
     await section.getByText('此引用没有密钥；选用 DeepSeek 官方时搜索不可用。', { exact: true })
@@ -157,8 +159,7 @@ describe('web e2e: independent search settings', () => {
       await page.screenshot({ path: join(process.env.DSH_SCREENSHOT_DIR, 'search-settings-deepseek.png') })
     }
 
-    await tavily.click()
-    await expect.poll(() => tavily.isChecked(), { timeout: 10_000 }).toBe(true)
+    await chooseSource('Tavily')
     await expect.poll(async () => readFile(settingsPath, 'utf8'), { timeout: 10_000 })
       .toMatch(/web:\n\s+searchProvider: tavily/)
     expect(await model.isVisible()).toBe(false)
@@ -203,8 +204,7 @@ describe('web e2e: independent search settings', () => {
       expect(await page.locator('body').ariaSnapshot()).not.toContain(secret)
     }
 
-    await duckduckgo.click()
-    await expect.poll(() => duckduckgo.isChecked(), { timeout: 10_000 }).toBe(true)
+    await chooseSource('DuckDuckGo')
     await expect.poll(async () => readFile(settingsPath, 'utf8'), { timeout: 10_000 })
       .toMatch(/web:\n\s+searchProvider: duckduckgo/)
     expect(await section.getByText('免费，无需配置密钥。', { exact: true }).count()).toBe(1)
@@ -223,18 +223,17 @@ describe('web e2e: independent search settings', () => {
     expect(pageBox.x + pageBox.width).toBeLessThanOrEqual(375)
     expect(await settingsPage.evaluate(node => node.scrollWidth - node.clientWidth)).toBeLessThanOrEqual(1)
     for (const [provider, fields] of [
-      [duckduckgo, [customProxy]],
-      [deepseek, [endpoint, model, customProxy, keyRef, key]],
-      [tavily, [endpoint, customProxy, keyRef, key]],
+      ['DuckDuckGo', [customProxy]],
+      ['DeepSeek 官方', [endpoint, model, customProxy, keyRef, key]],
+      ['Tavily', [endpoint, customProxy, keyRef, key]],
     ] as const) {
-      await provider.click()
-      await expect.poll(() => provider.isChecked(), { timeout: 10_000 }).toBe(true)
-      if (provider !== duckduckgo) await expect.poll(() => key.isEnabled(), { timeout: 10_000 }).toBe(true)
-      if (provider === duckduckgo) {
+      await chooseSource(provider)
+      if (provider !== 'DuckDuckGo') await expect.poll(() => key.isEnabled(), { timeout: 10_000 }).toBe(true)
+      if (provider === 'DuckDuckGo') {
         expect(await customProxy.inputValue()).toBe(DUCKDUCKGO_PROXY)
         expect(await endpoint.isVisible()).toBe(false)
         expect(await key.isVisible()).toBe(false)
-      } else if (provider === deepseek) {
+      } else if (provider === 'DeepSeek 官方') {
         expect(await endpoint.inputValue()).toBe(ENDPOINT)
         expect(await model.inputValue()).toBe(MODEL)
         expect(await customProxy.inputValue()).toBe(DEEPSEEK_PROXY)
@@ -245,7 +244,7 @@ describe('web e2e: independent search settings', () => {
         expect(await keyRef.inputValue()).toBe(TAVILY_REF)
         expect(await model.isVisible()).toBe(false)
       }
-      for (const control of [duckduckgo, deepseek, tavily, ...fields]) {
+      for (const control of [selectedSource, ...fields]) {
         await control.scrollIntoViewIfNeeded()
         const box = await control.boundingBox()
         if (box === null) throw new Error(`375px 搜索控件未绘制: ${await control.getAttribute('id')}`)

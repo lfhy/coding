@@ -27,7 +27,7 @@ export const zh = {
   keyRef: '密钥环境变量名', keyRefHint: '仅保存凭据引用；留空使用该来源的默认引用。',
   tavilyKeyRefHint: '仅保存凭据引用；留空恢复默认 TAVILY_API_KEY。',
   apiKey: '专用搜索密钥', apiKeyHint: '密钥存入凭据服务；留空保持已保存密钥。',
-  keySet: '此引用已配置密钥。', keyMissing: '此引用没有密钥；选用该来源时搜索不可用。',
+  keySet: '此引用已配置密钥。', keyMissing: '此引用没有密钥；选用 DeepSeek 官方时搜索不可用。',
   tavilyKeyMissing: '此引用没有密钥；选用 Tavily 时搜索不可用。',
   keyLoading: '正在检查密钥…', keyError: '无法检查密钥状态，请重试。', keyReadOnly: '此密钥由环境提供，无法在此覆盖。', keyRefPending: '请先保存密钥环境变量名，再为该引用保存密钥。',
   save: '保存', saving: '保存中…', saveKey: '保存密钥', reset: '恢复默认',
