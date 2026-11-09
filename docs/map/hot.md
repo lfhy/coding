@@ -45,8 +45,8 @@
 ## PPT 创作模式的工作台
 
 - **路线**：`packages/client/runtime/src/client/sessions/service.ts` 的会话摘要持有 `agentPreset` 与 `blank`；`packages/client/ui-ppt-workbench/src/client/index.ts` 只为当前已开始对话的 `ppt` 会话自动打开一个外部标签，不向工作台 `+` 菜单贡献入口。标签由 `packages/client/ui-open-in-app/src/client/sidebar-tab-service.ts` 按会话管理，面板控制器位于 `ui-ppt-workbench/src/client/controller.ts`。
-- **数据与边界**：宿主 `packages/ppt/ppt-workbench/src/index.ts` 按会话保存当前工程，`routes.ts` 经已注入的连接服务检查本机同源请求；面板可见时读取 `/api/ppt/state`，采用宿主当前工程快照并回执待处理的打开请求，不再次打开工程。关闭标签后该会话不再自动弹出；切换其他会话不共享工程指针或标签。
-- **连带与验证**：会话开始条件变化时核对 `runtime` 的 `blank` 投影、`ui-open-in-app` 的标签去重与工作台显隐；路由依赖变化同步 `ppt-workbench` 的依赖声明及测试。运行 `pnpm exec vitest run packages/client/ui-ppt-workbench/tests packages/ppt/ppt-workbench/tests`、`pnpm run test:gui`，再做真实 Host 页面验证。
+- **数据与边界**：宿主 `packages/ppt/ppt-workbench/src/index.ts` 按会话保存当前工程；`default-template.ts` 生成六页可编辑默认整稿，`source-design.ts` 和 `extract-template.ts` 将导入稿的可表达设计提取、正文泛化为用户模板，`import.ts` 的普通工程导入仍保留原文。`routes.ts` 经已注入的连接服务检查本机同源请求，并只读提供默认整稿预览。面板可见时读取 `/api/ppt/state`，采用宿主当前工程快照并回执待处理的打开请求，不再次打开工程。关闭标签后该会话不再自动弹出；切换其他会话不共享工程指针或标签。用户整稿模板由 `template-store.ts` 持久化；内置单页版式预览由 `builtin-templates.ts` 提供。
+- **连带与验证**：默认新建、省略参数和设计提取联动 `model` 主题、Host 路由、`tool-ppt` 描述、Client 模板目录及 Inspector、用户指南；源图片和正文不能进入提取后的模板，原始导入仍保留原文。运行 `pnpm exec vitest run packages/client/ui-ppt-workbench/tests packages/ppt/ppt-workbench/tests packages/ppt/tool-ppt/tests` 和 `pnpm run test:gui`，再用真实 Host 页面检查预览与交接。会话开始条件变化时另核对 `runtime` 的 `blank` 投影、`ui-open-in-app` 的标签去重与工作台显隐。
 
 ## 对话输入命令与视图
 
