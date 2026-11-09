@@ -19,7 +19,10 @@ export interface ManagedFilesPage {
   nextOffset?: number
 }
 
-/** 对每页响应在网络边界验证，拒绝意外路径和不完整字段。 */
+/** 对每页响应在网络边界验证，拒绝绝对路径和不完整字段。
+ * @param value - Host 返回的未可信 JSON。
+ * @returns 可供设置页展示的分页记录。
+ */
 export function parseManagedFilesPage(value: unknown): ManagedFilesPage {
   if (!isObject(value) || !Array.isArray(value.items) || !nonnegativeInteger(value.total)
     || (value.nextOffset !== undefined && !nonnegativeInteger(value.nextOffset))) {
@@ -46,7 +49,12 @@ function nonempty(value: unknown): value is string { return typeof value === 'st
 function optionalString(value: unknown): boolean { return value === undefined || typeof value === 'string' }
 function nonnegativeInteger(value: unknown): value is number { return Number.isSafeInteger(value) && (value as number) >= 0 }
 
-/** 读取 Host 管理的全局文件目录；AbortSignal 归当前挂载的分区持有。 */
+/** 读取 Host 管理的全局文件记录；AbortSignal 归当前挂载的分区持有。
+ * @param offset - 当前页在 Host 记录快照中的偏移。
+ * @param limit - 请求的最大页长。
+ * @param signal - 分区卸载时取消本次读取的信号。
+ * @returns 经网络边界校验的分页记录；HTTP 或格式错误会拒绝。
+ */
 export async function listManagedFiles(offset: number, limit: number, signal: AbortSignal): Promise<ManagedFilesPage> {
   const query = new URLSearchParams({ offset: String(offset), limit: String(limit) })
   const response = await fetch(`/api/files/list?${query}`, { method: 'GET', signal })

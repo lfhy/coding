@@ -20,9 +20,10 @@ declare module '@deepseek-ai/cordis' {
   interface Context { fileLibrary: FileLibrary }
 }
 
-/** 单个用户上传或生成图片副本的最大原始字节数。 */
+/** 单个不可信用户上传流的最大原始字节数。 */
 export const MAX_MANAGED_FILE_BYTES = 32 * 1024 * 1024
 
+/** 文件库的部署根目录；省略时跟随当前 Coding home。 */
 export interface Config {
   /** 显式覆盖受管理文件根目录；默认使用已解析 Coding home 下的 `files`，仅供测试与部署隔离使用。 */
   readonly root?: string
@@ -90,13 +91,18 @@ export class FileLibrary extends Service {
   static inject = ['storageDomain']
   static Config: z<Config> = z.object({ root: z.string() })
 
+  /** 用于磁盘对象的绝对目录；浏览器列表不会得到该路径。 */
   readonly root: string
   private domain!: Domain<typeof fileDomainSpec>
   private rootIdentity!: { dev: number; ino: number }
 
   constructor(ctx: Context, config: Config = {}) {
+    const root = config.root ?? join(resolveDshHome(), 'files')
+    if (root === '' || /["\u0000-\u001f\u007f]/u.test(root)) {
+      throw new TypeError('文件库根目录不能为空，也不能包含双引号或控制字符')
+    }
     super(ctx, 'fileLibrary')
-    this.root = resolve(config.root ?? join(resolveDshHome(), 'files'))
+    this.root = resolve(root)
     installFileRoutes(ctx, this)
   }
 
@@ -138,11 +144,11 @@ export class FileLibrary extends Service {
     await input.verify()
     const extension = name.split('.').at(-1)?.toLowerCase() ?? ''
     return this.save('upload', name, `uploads/${randomUUID()}-${name}`, input.stream, { sessionId }, input.verify,
-      UPLOAD_MEDIA[extension] ?? 'application/octet-stream')
+      UPLOAD_MEDIA[extension] ?? 'application/octet-stream', MAX_MANAGED_FILE_BYTES)
   }
 
   /**
-   * 复制已准入的不可变生成图片；原附件继续由附件服务拥有。
+   * 复制已由附件服务准入的不可变生成图片；原附件继续由附件服务拥有，字节限额仍由附件提供方控制。
    * @param input - 会话、图库、附件引用及已准入编码字节。
    * @returns 副本的持久元数据。
    */
@@ -169,7 +175,7 @@ export class FileLibrary extends Service {
 
   private async save(kind: ManagedFileRecord['kind'], name: string, relativePath: string,
     stream: AsyncIterable<Uint8Array>, metadata: Partial<Pick<ManagedFileRecord, 'sessionId' | 'galleryId' | 'attachmentId'>>,
-    verify: () => Promise<void>, mediaType = 'application/octet-stream'): Promise<{ record: ManagedFileRecord; path: string }> {
+    verify: () => Promise<void>, mediaType = 'application/octet-stream', maxBytes?: number): Promise<{ record: ManagedFileRecord; path: string }> {
     const directory = await this.directory(kind === 'upload' ? 'uploads' : 'generated')
     const folder = await lstat(directory)
     const path = join(directory, basename(relativePath))
@@ -181,7 +187,8 @@ export class FileLibrary extends Service {
         for await (const chunk of stream) {
           if (!(chunk instanceof Uint8Array)) throw new TypeError('文件流包含无效字节')
           bytes += chunk.byteLength
-          if (bytes > MAX_MANAGED_FILE_BYTES) throw new TypeError('文件超过 32 MiB 上限')
+          if (!Number.isSafeInteger(bytes)) throw new TypeError('文件字节数超出安全整数范围')
+          if (maxBytes !== undefined && bytes > maxBytes) throw new TypeError('文件超过 32 MiB 上限')
           await handle.writeFile(chunk)
         }
         if (bytes === 0) throw new TypeError('文件不能为空')

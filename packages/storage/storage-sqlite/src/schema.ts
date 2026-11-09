@@ -7,7 +7,7 @@
  */
 
 import { DatabaseSync } from 'node:sqlite'
-import { mkdir, open } from 'node:fs/promises'
+import { lstat, mkdir, open } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
 import { StorageError } from 'coding-storage'
 
@@ -34,11 +34,8 @@ export type JournalMode = 'wal' | 'delete' | 'truncate' | 'persist'
    packages stay untouched this phase (see the domain KV storage design record's
    reuse audit). */
 /**
- * Exclusively create a missing database file with owner-only permissions.
- * Existing files retain their modes, and errors other than `EEXIST` propagate.
- * `DatabaseSync` reopens by path, so this does not protect confidentiality or
- * integrity when another principal can replace the database entry in its
- * parent directory.
+ * 以仅所有者可访问的权限独占创建缺失的数据库文件；既有文件交由打开前校验。
+ * `DatabaseSync` 随后按路径重新打开，父目录允许其他用户替换目录项时仍有竞态。
  */
 async function createDatabaseFile(path: string): Promise<void> {
   try {
@@ -50,19 +47,42 @@ async function createDatabaseFile(path: string): Promise<void> {
 }
 
 /**
- * Open the database and apply its schema and pragmas. Missing directories and
- * database files are created owner-only (`:memory:` skips filesystem setup).
- * A zero `user_version` is stamped with {@link STORAGE_SQLITE_SCHEMA_VERSION};
- * every other non-current version rejects rather than being migrated in place.
- * @param path - the SQLite database file to open, or `:memory:`.
- * @param journalMode - validated journal pragma.
- * @returns the open handle with pragmas applied and the unit metadata tables ensured.
+ * POSIX 上拒绝软链接、非普通文件、非当前用户持有或允许群组／其他用户访问的数据库路径。
+ * Windows 不提供 POSIX 权限位保证，文件隐私取决于继承的 ACL。
+ * @param path - 已存在或刚创建的数据库路径。
+ */
+async function validateDatabaseFile(path: string): Promise<void> {
+  if (process.platform === 'win32') return
+  const file = await lstat(path)
+  if (file.isSymbolicLink()) {
+    throw new StorageError('malformed-medium', `storage database at "${path}" is a symbolic link; use a private regular file`)
+  }
+  if (!file.isFile()) {
+    throw new StorageError('malformed-medium', `storage database at "${path}" is not a regular file; use a private regular file`)
+  }
+  const uid = process.getuid?.()
+  if (uid !== undefined && file.uid !== uid) {
+    throw new StorageError('malformed-medium', `storage database at "${path}" is not owned by the current user; use a file owned by this user`)
+  }
+  if ((file.mode & 0o077) !== 0) {
+    throw new StorageError('malformed-medium', `storage database at "${path}" permits group or other access; restrict it to owner-only permissions (chmod 600)`)
+  }
+}
+
+/**
+ * 打开数据库，配置 schema 和 pragma。缺失目录和文件以仅所有者可访问的权限创建；
+ * POSIX 上打开前校验文件类型、所有权与权限（`:memory:` 跳过文件系统准备）。
+ * 零 `user_version` 会标记为 {@link STORAGE_SQLITE_SCHEMA_VERSION}，其他非当前版本拒绝迁移。
+ * @param path - SQLite 数据库文件路径，或 `:memory:`。
+ * @param journalMode - 已校验的 journal pragma。
+ * @returns 已配置 pragma 且建好单元元数据表的连接。
  */
 export async function openDatabase(path: string, journalMode: JournalMode): Promise<DatabaseSync> {
   const actual = path === ':memory:' ? path : resolve(path)
   if (actual !== ':memory:') {
     await mkdir(dirname(actual), { recursive: true, mode: 0o700 })
     await createDatabaseFile(actual)
+    await validateDatabaseFile(actual)
   }
   const db = new DatabaseSync(actual)
   try {

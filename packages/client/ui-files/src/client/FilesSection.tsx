@@ -20,7 +20,23 @@ interface PageState {
   failed: boolean
 }
 
+interface PageRequest {
+  offset: number
+  attempt: number
+  expectedTotal?: number
+}
+
 const PAGE_SIZE = 50
+
+/** 分页重叠时保留首次出现的记录，避免重复行与 React key 冲突。 */
+function uniqueFiles(items: ManagedFileRecord[]): ManagedFileRecord[] {
+  const ids = new Set<string>()
+  return items.filter((item) => {
+    if (ids.has(item.id)) return false
+    ids.add(item.id)
+    return true
+  })
+}
 
 /** 把文件大小转换为易扫读的数量；保留原始字节数供屏幕阅读器读取。 */
 function formatSize(bytes: number, locale: string): string {
@@ -33,7 +49,7 @@ function formatSize(bytes: number, locale: string): string {
 
 /** 呈现 Host 管理的全局文件列表；离开分区即取消尚未完成的请求。 */
 export function FilesSection({ list, t }: FilesSectionProps) {
-  const [request, setRequest] = useState({ offset: 0, attempt: 0 })
+  const [request, setRequest] = useState<PageRequest>({ offset: 0, attempt: 0 })
   const [page, setPage] = useState<PageState>({ items: [], total: 0, loading: true, failed: false })
   useEffect(() => {
     const aborter = new AbortController()
@@ -44,8 +60,12 @@ export function FilesSection({ list, t }: FilesSectionProps) {
           setPage(previous => ({ ...previous, loading: false, failed: true }))
           return
         }
+        if (request.expectedTotal !== undefined && result.total !== request.expectedTotal) {
+          setRequest({ offset: 0, attempt: request.attempt + 1 })
+          return
+        }
         setPage(previous => ({
-          items: request.offset === 0 ? result.items : [...previous.items, ...result.items],
+          items: uniqueFiles(request.offset === 0 ? result.items : [...previous.items, ...result.items]),
           total: result.total, ...(result.nextOffset === undefined ? {} : { nextOffset: result.nextOffset }),
           loading: false, failed: false,
         }))
@@ -66,7 +86,7 @@ export function FilesSection({ list, t }: FilesSectionProps) {
   const loadMore = () => {
     if (page.loading || page.nextOffset === undefined) return
     setPage(previous => ({ ...previous, loading: true, failed: false }))
-    setRequest({ offset: page.nextOffset, attempt: 0 })
+    setRequest({ offset: page.nextOffset, attempt: 0, expectedTotal: page.total })
   }
 
   return (

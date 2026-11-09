@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import { mkdir, mkdtemp, readFile, readdir, rename, rm, symlink, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, readdir, rename, rm, stat, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import Storage from 'coding-storage'
@@ -66,6 +66,20 @@ describe('global file library (SQLite)', () => {
     expect(await second.library.isManagedUploadPath(uploadResult.path)).toBe(true)
   })
 
+  it('copies an admitted generated image larger than the upload limit', async () => {
+    const first = await harness()
+    const data = Buffer.alloc(MAX_MANAGED_FILE_BYTES + 1, 7)
+    const saved = await first.library.saveGeneratedImage({ sessionId: 'one', attachmentId: 'sha256:large',
+      mediaType: 'image/png', data })
+    expect(saved.bytes).toBe(data.byteLength)
+    expect((await stat(join(first.library.root, saved.relativePath))).size).toBe(data.byteLength)
+    await first.ctx.fiber.dispose()
+    contexts.splice(contexts.indexOf(first.ctx), 1)
+    await first.backend.close()
+    const second = await harness(first.dir)
+    expect(second.library.list().items[0]?.bytes).toBe(data.byteLength)
+  })
+
   it('bounds pagination and checks both stream and late session validation', async () => {
     const { library } = await harness()
     for (let i = 0; i < 101; i++) await upload(library, `file-${i}`)
@@ -116,6 +130,16 @@ describe('global file library (SQLite)', () => {
     ctx.storage.backend.register('sqlite', backend)
     ctx.provide('storageDomain', new DomainFacility(ctx, { backend: 'sqlite' }))
     await expect(ctx.plugin(FileLibrary, { root: join(symlinkHome, 'files') })).rejects.toThrow(/真实目录/)
+  })
+
+  it('rejects root characters that cannot be represented in @file syntax before creating directories', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'coding-file-library-invalid-root-'))
+    homes.push(dir)
+    const ctx = new Context()
+    contexts.push(ctx)
+    expect(() => new FileLibrary(ctx, { root: join(dir, 'bad"files') })).toThrow(TypeError)
+    expect(() => new FileLibrary(ctx, { root: join(dir, 'bad\nfiles') })).toThrow(TypeError)
+    expect(await readdir(dir)).toEqual([])
   })
 
   it('rolls back only its own new file when the metadata backend rejects', async () => {

@@ -1,6 +1,6 @@
 # 持久图片附件与全局文件库
 
-附件页面承载两个共享同一 subsystem 的能力：[dsh-attachment](../../packages/attachment/attachment) 的不可变图片附件 seam，以及 [dsh-file-library](../../packages/attachment/file-library) 的全局受管理文件服务。二者通过「持久字节先落地、引用后发布」的原则衔接：附件服务拥有会话图片与图库事件的准入，文件库为上传原件和已准入生成图片提供独立副本及跨会话元数据，生成图片由 [`ctx.imageGeneration`](../../packages/image/image-gen/README.md) 在附件准入后复制进文件库。上传原件则经 [open-in-app](../../packages/host/open-in-app/README.md) 的同源拖放路由进入文件库，供本地会话引用。
+附件页面承载两个共享同一 subsystem 的能力：[coding-attachment](../../packages/attachment/attachment) 的不可变图片附件 seam，以及 [coding-file-library](../../packages/attachment/file-library) 的全局受管理文件服务。二者通过「持久字节先落地、引用后发布」的原则衔接：附件服务拥有会话图片与图库事件的准入，文件库为上传原件和已准入生成图片提供独立副本及跨会话元数据，生成图片由 [`ctx.imageGeneration`](../../packages/image/image-gen/README.md) 在附件准入后复制进文件库。上传原件则经 [open-in-app](../../packages/host/open-in-app/README.md) 的同源拖放路由进入文件库，供本地会话引用。
 
 来源：[`packages/attachment/attachment/src/types.ts`](../../packages/attachment/attachment/src/types.ts) · [`packages/attachment/file-library/src/types.ts`](../../packages/attachment/file-library/src/types.ts)
 
@@ -97,21 +97,21 @@ interface StoredImageAttachment {
 
 ## 全局文件库
 
-[`ctx.fileLibrary`](#ctxfilelibrary--filelibrary) 把两类持久字节收进独立于会话工作区的受管理目录：`open-in-app` 拖放上传的原件，以及 `ctx.imageGeneration` 在附件准入后复制的生成图片。元数据走 `ctx.storageDomain` 的 `files` v1 领域（装配层将其路由到独立 SQLite 后端），文件系统侧使用 owner-only 目录、独占创建、符号链接与身份复核；两个介质没有跨介质原子提交，失败只回滚当前操作仍拥有的磁盘条目。文件库不取代会话附件：原附件仍由附件服务拥有，图库事件仍由会话日志拥有。
+[`ctx.fileLibrary`](#ctxfilelibrary--filelibrary) 把两类持久字节收进独立于会话工作区的受管理目录：`open-in-app` 拖放上传的原件，以及 `ctx.imageGeneration` 在附件准入后复制的生成图片。元数据走 `ctx.storageDomain` 的 `files` v1 领域（装配层将其路由到独立 SQLite 后端），文件系统侧在 POSIX 上校验当前用户独占目录权限，Windows 依赖继承 ACL；文件仍独占创建并进行符号链接与身份复核；两个介质没有跨介质原子提交，失败只回滚当前操作仍拥有的磁盘条目。文件库不取代会话附件：原附件仍由附件服务拥有，图库事件仍由会话日志拥有。
 
 ```ts type-equiv
 /** 上传原件与生成图片的受管理文件元数据。 */
 interface ManagedFileRecord {
-  id: string
+  id: FileId
   kind: 'upload' | 'generated-image'
   name: string
   relativePath: string
   mediaType: string
   bytes: number
   createdAt: string
-  sessionId?: string
-  galleryId?: string
-  attachmentId?: string
+  sessionId?: string | undefined
+  galleryId?: string | undefined
+  attachmentId?: string | undefined
 }
 
 /** 按创建时间倒序分页，不包含本机绝对路径。 */
@@ -191,7 +191,7 @@ Source: [`packages/attachment/attachment/src/index.ts:33`](../../packages/attach
 async saveUpload(input: { name: string sessionId: string stream: AsyncIterable<Uint8Array> verify: () => Promise<void> }): Promise<{ record: ManagedFileRecord; path: string }>
 
 /**
- * 复制已准入的不可变生成图片；原附件继续由附件服务拥有。
+ * 复制已由附件服务准入的不可变生成图片；原附件继续由附件服务拥有，字节限额仍由附件提供方控制。
  * @param input - 会话、图库、附件引用及已准入编码字节。
  * @returns 副本的持久元数据。
  */
@@ -213,7 +213,7 @@ list(offset: number = 0, limit: number = 50): ManagedFilePage
 async isManagedUploadPath(path: string): Promise<boolean>
 ```
 
-Source: [`packages/attachment/file-library/src/index.ts:87`](../../packages/attachment/file-library/src/index.ts)
+Source: [`packages/attachment/file-library/src/index.ts:90`](../../packages/attachment/file-library/src/index.ts)
 
 <a id="ctximagegeneration--imagegeneration"></a>
 

@@ -384,12 +384,37 @@ describe('image draft rail', () => {
     expect(addFile).toHaveBeenCalledTimes(2)
   })
 
-  it('rejects a file response outside the staged Home path without creating a reference', async () => {
+  it('rejects a file response outside the managed uploads directory without creating a reference', async () => {
     const result = bench({ draft: '保持原文', addFile: () => Promise.resolve('/tmp/local-secret.docx') })
     act(() => { attachmentOwner(result.slotCalls).onAddFiles([new File(['bytes'], 'local-secret.docx')]) })
     await waitFor(() => { expect(result.view.getByRole('alert').textContent).toContain('文件未能保存') })
     expect(result.shell.snapshot.draft).toBe('保持原文')
     expect(result.view.container.querySelector('[data-reference-appearance="file"]')).toBeNull()
+  })
+
+  it('quotes an apostrophe in a custom managed root and keeps the full path on send', async () => {
+    const path = "/tmp/O'Neil/work..backup/managed/uploads/123e4567-e89b-42d3-a456-426614174000-notes.docx"
+    const result = bench({ addFile: () => Promise.resolve(path), lexicon: new Map() })
+    act(() => { attachmentOwner(result.slotCalls).onAddFiles([new File(['notes'], 'notes.docx')]) })
+    await waitFor(() => { expect(result.shell.snapshot.draft).toBe('@notes.docx') })
+    fireEvent.keyDown(result.textarea, { key: 'Enter' })
+    await waitFor(() => { expect(result.sink).toHaveBeenCalledWith(
+      `@"${path}"`, [], 'queue', expect.any(AbortSignal),
+    ) })
+  })
+
+  it.each([
+    '/tmp/a(b)/managed/uploads/123e4567-e89b-42d3-a456-426614174000-notes.docx',
+    'C:/Users/a(b)/managed/uploads/123e4567-e89b-42d3-a456-426614174000-notes.docx',
+  ])('quotes a punctuation-bearing managed path on send: %s', async (path) => {
+    const result = bench({ addFile: () => Promise.resolve(path), lexicon: new Map() })
+    act(() => { attachmentOwner(result.slotCalls).onAddFiles([new File(['notes'], 'notes.docx')]) })
+    await waitFor(() => { expect(result.shell.snapshot.draft).toBe('@notes.docx') })
+    expect(result.shell.snapshot.occurrences[0]?.ref).toBe(`@"${path}"`)
+    fireEvent.keyDown(result.textarea, { key: 'Enter' })
+    await waitFor(() => { expect(result.sink).toHaveBeenCalledWith(
+      `@"${path}"`, [], 'queue', expect.any(AbortSignal),
+    ) })
   })
 
   it('converts a clipboard document to a saved path while preserving pasted text', async () => {

@@ -521,7 +521,7 @@ export function InputBar({
         for (const [index, file] of files.entries()) {
           const path = await addFile(file)
           if (uploadGeneration.current !== generation) return
-          const mention = formatFileMention({ path, kind: 'file' }, false)
+          const mention = formatFileMention({ path, kind: 'file' }, true)
           const label = mention === undefined ? undefined : stagedFileName(mention)
           if (mention === undefined || label === undefined) throw new FileStageError(0)
           const el = inputRef.current

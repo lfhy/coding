@@ -13,6 +13,16 @@ flowchart LR
   pkg_host_runtime["host-runtime"]
   pkg_llm_pi_ai["llm-pi-ai"]
   pkg_llm_opencode["llm-opencode"]
+  pkg_file_library["file-library"]
+  svc_fileLibrary["ctx.fileLibrary<br/>Global managed files"]
+  pkg_host_open_in_app["host-open-in-app"]
+  pkg_image_gen["image-gen"]
+  pkg_ppt_workbench["ppt-workbench"]
+  pkg_tool_browser["tool-browser"]
+  svc_imageGeneration["ctx.imageGeneration<br/>Session image generation and gallery"]
+  pkg_tool_image_gen["tool-image-gen"]
+  svc_pptProjects["ctx.pptProjects<br/>Session presentation projects"]
+  pkg_tool_ppt["tool-ppt"]
   pkg_llm["llm"]
   svc_llm["ctx.llm<br/>LLM adapter registry"]
   pkg_llm_deepseek["llm-deepseek"]
@@ -180,7 +190,6 @@ flowchart LR
   svc_browserUse["ctx.browserUse<br/>Optional legacy session browser contract"]
   pkg_browser_playwright["browser-playwright"]
   pkg_browser_electron["browser-electron"]
-  pkg_tool_browser["tool-browser"]
   pkg_memory["memory"]
   svc_memory["ctx.memory<br/>Project-scoped cross-session memory"]
   pkg_memory_local["memory-local"]
@@ -263,6 +272,7 @@ flowchart LR
   pkg_directory_picker_browse --> svc_directoryPicker
   pkg_directory_picker_native --> svc_directoryPicker
   pkg_e2b --> svc_e2b
+  pkg_file_library --> svc_fileLibrary
   pkg_file_reference --> svc_fileReferences
   pkg_file_reference_local --> svc_fileReferences
   pkg_fs --> svc_fs
@@ -270,6 +280,7 @@ flowchart LR
   pkg_fs_local --> svc_fs
   pkg_fs_sandbox --> svc_fs
   pkg_goal --> svc_goals
+  pkg_image_gen --> svc_imageGeneration
   pkg_invariants --> svc_invariants
   pkg_jobs --> svc_jobs
   pkg_jobs_local --> svc_jobs
@@ -287,6 +298,7 @@ flowchart LR
   pkg_modules --> svc_clientModules
   pkg_permission_presets --> svc_permissionPresets
   pkg_plan_mode --> svc_planMode
+  pkg_ppt_workbench --> svc_pptProjects
   pkg_proxy_pool --> svc_proxyPool
   pkg_pwsh_local --> svc_shell
   pkg_sandbox --> svc_sandbox
@@ -378,7 +390,12 @@ flowchart LR
   svc_e2b --> pkg_fs_e2b
   svc_e2b --> pkg_subprocess_e2b
   svc_egoBrowser --> pkg_tool_browser_ego
+  svc_fileLibrary --> pkg_host_open_in_app
+  svc_fileLibrary --> pkg_image_gen
+  svc_fileLibrary --> pkg_ppt_workbench
+  svc_fileLibrary --> pkg_tool_browser
   svc_fs --> pkg_tool_fs
+  svc_imageGeneration --> pkg_tool_image_gen
   svc_invariants --> pkg_agent
   svc_invariants --> pkg_agent_loop
   svc_invariants --> pkg_scope
@@ -392,6 +409,7 @@ flowchart LR
   svc_lsp --> pkg_tool_lsp
   svc_memory --> pkg_memory_context
   svc_memory --> pkg_tool_memory
+  svc_pptProjects --> pkg_tool_ppt
   svc_proxyPool --> pkg_host_apiproxy
   svc_proxyPool --> pkg_llm_deepseek
   svc_proxyPool --> pkg_llm_opencode
@@ -444,6 +462,7 @@ flowchart LR
   svc_skills --> pkg_tool_skill
   svc_spillStore --> pkg_spill_policy
   svc_storage --> pkg_storage_domain
+  svc_storageDomain --> pkg_file_library
   svc_storageDomain --> pkg_message_feedback
   svc_storageDomain --> pkg_workspace
   svc_subagents --> pkg_tool_ralph
@@ -491,6 +510,9 @@ flowchart LR
 | ctx key | Role | Owner | Implementations | Direct consumers | Companion plugins | Note |
 | --- | --- | --- | --- | --- | --- | --- |
 | `ctx.attachments` | `seam` | [`attachment`](../packages/attachment/attachment) | [`attachment-local`](../packages/attachment/attachment-local) | `host-runtime`, [`llm-pi-ai`](../packages/llm/llm-pi-ai), [`llm-opencode`](../packages/llm/llm-opencode) | - | The host commits accepted images before session events; provider adapters resolve authorized durable references into provider-native content. |
+| `ctx.fileLibrary` | `core` | [`file-library`](../packages/attachment/file-library) | - | [`host-open-in-app`](../packages/host/open-in-app), [`image-gen`](../packages/image/image-gen), [`ppt-workbench`](../packages/ppt/ppt-workbench), [`tool-browser`](../packages/browser/tool-browser) | - | Stores local uploads and generated-image copies under the resolved Coding home; the SQLite metadata index feeds a read-only Settings list, while session logs still own image gallery references. |
+| `ctx.imageGeneration` | `core` | [`image-gen`](../packages/image/image-gen) | - | [`tool-image-gen`](../packages/image/tool-image-gen) | - | Admits generated images through durable attachments, registers a managed copy, and appends session gallery events only after both writes succeed. |
+| `ctx.pptProjects` | `core` | [`ppt-workbench`](../packages/ppt/ppt-workbench) | - | [`tool-ppt`](../packages/ppt/tool-ppt) | - | Keeps editable projects within the local session workspace and accepts registered managed uploads only as bounded PPTX import sources. |
 | `ctx.llm` | `seam` | [`llm`](../packages/llm/llm) | [`llm-deepseek`](../packages/llm/llm-deepseek), [`llm-pi-ai`](../packages/llm/llm-pi-ai), [`llm-opencode`](../packages/llm/llm-opencode), [`llm-replay`](../packages/test-support/llm-replay) | [`agent-loop`](../packages/core/agent-loop), [`compaction-basic`](../packages/compaction/compaction-basic) | - | Adapters register provider implementations; the loop and compaction call the provider-neutral stream service. |
 | `ctx.visionUnderstanding` | `core` | [`llm-vision-fallback`](../packages/llm/llm-vision-fallback) | - | `apiproxy` | - | An explicit image-capable route describes durable attachment references before a text-only request; apiproxy reads only whether that route is configured, while the request-history listener owns validation and replayable replacements. |
 | `ctx.tokenMeter` | `core` | [`token-meter`](../packages/llm/token-meter) | - | [`compaction-basic`](../packages/compaction/compaction-basic) | - | Owns isolated per-session replay folds; pressure consumers share immutable revisioned measurements. |
@@ -504,7 +526,7 @@ flowchart LR
 | `ctx.credentials` | `seam` | [`credentials`](../packages/credentials/credentials) | [`credentials-local`](../packages/credentials/credentials-local) | [`llm-deepseek`](../packages/llm/llm-deepseek), [`llm-pi-ai`](../packages/llm/llm-pi-ai), [`llm-opencode`](../packages/llm/llm-opencode), `apiproxy` | - | Configuration carries references to secrets; providers own the values. Consumers resolve per operation, so a rotated credential reaches the very next request; the web gateway exposes value-free views and write-only storage. |
 | `ctx.sessionTelemetry` | `seam` | [`session-telemetry`](../packages/session/session-telemetry) | [`session-telemetry-otel`](../packages/session/session-telemetry-otel) | - | - | The seam captures, redacts, and hands session records to one backend; nothing else consumes the service — its output leaves the process. |
 | `ctx.storage` | `seam` | [`storage`](../packages/storage/storage) | [`storage-json`](../packages/storage/storage-json), [`storage-sqlite`](../packages/storage/storage-sqlite) | [`storage-domain`](../packages/storage/storage-domain) | - | Backends register side by side under names; data forms (domain first) mount on the hub and translate typed operations into opaque KV-unit primitives. |
-| `ctx.storageDomain` | `core` | [`storage-domain`](../packages/storage/storage-domain) | - | [`workspace`](../packages/workspace/workspace), [`message-feedback`](../packages/feedback/message-feedback) | - | Waits for every configured backend, then publishes the domain form as one lifecycle-bound service for typed durable state. |
+| `ctx.storageDomain` | `core` | [`storage-domain`](../packages/storage/storage-domain) | - | [`workspace`](../packages/workspace/workspace), [`message-feedback`](../packages/feedback/message-feedback), [`file-library`](../packages/attachment/file-library) | - | Waits for every configured backend, then publishes the domain form as one lifecycle-bound service for typed durable state. |
 | `ctx.messageFeedback` | `core` | [`message-feedback`](../packages/feedback/message-feedback) | - | - | - | Owns local per-assistant-message feedback, lifecycle and target validation, per-item compare-and-set, and the Host unary Remote contract without entering Session history or telemetry. |
 | `ctx.workspaceRegistry` | `core` | [`workspace`](../packages/workspace/workspace) | - | `apiproxy` | - | Owns WorkspaceId-branded records over the domain facility; stable sessionIds accounts drive Host RPC and GUI projections. |
 | `ctx.sessionQuery` | `seam` | [`session-query`](../packages/session-query/session-query) | [`session-query-sqlite`](../packages/session-query/session-query-sqlite) | [`session-reference`](../packages/context/session-reference), [`tool-session-query`](../packages/session-query/tool-session-query) | - | The interface supplies exact reads, filters, and traces; its concrete backend adds full-text reconciliation, ranking, snippets, and cursor generations, while the model consumer owns workspace authority and cursor-free rendering. |

@@ -7,7 +7,7 @@ import type { DraftAttachmentId } from '../src/client/input/contract.ts'
 
 const mention = '@[Research](dsh-session:InNvdXJjZSI)'
 const spacedMention = '@[Research notes](dsh-session:InNvdXJjZSI)'
-const stagedMention = '@"/Users/demo/Coding Home/files/uploads/123e4567-e89b-42d3-a456-426614174000-演示 slides.pptx"'
+const stagedMention = '@"/tmp/a(b)[c]{d}<e>,f/managed/uploads/123e4567-e89b-42d3-a456-426614174000-演示 slides.pptx"'
 const commandImages = {
   serialize: () => Promise.resolve([]),
   release: () => {},

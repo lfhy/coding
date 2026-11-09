@@ -1,8 +1,8 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { chmod, lstat, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import Storage, { storageBackendServiceKey } from 'coding-storage'
 import type { KvUnitDescriptor } from 'coding-storage'
@@ -77,6 +77,7 @@ describe('sqlite backend specifics', () => {
     const db = new DatabaseSync(path)
     db.exec('PRAGMA user_version = 999')
     db.close()
+    if (process.platform !== 'win32') await chmod(path, 0o600)
 
     const backend = backendAt(path)
     await expect(backend.kv.open(DESCRIPTOR)).rejects.toMatchObject({
@@ -132,6 +133,7 @@ describe('sqlite backend specifics', () => {
     setup.exec('CREATE TABLE squatter (x TEXT)')
     setup.exec('CREATE INDEX unit_globals ON squatter(x)')
     setup.close()
+    if (process.platform !== 'win32') await chmod(path, 0o600)
 
     const broken = backendAt(path)
     await expect(broken.kv.open(DESCRIPTOR)).rejects.toThrow(/already an index/)
@@ -224,15 +226,86 @@ describe('sqlite backend specifics', () => {
     await backend.close()
   })
 
-  it('preserves the mode of an existing database file', async () => {
+  it('rejects an existing world-readable database without writing to it', async () => {
     if (process.platform === 'win32') return
     const path = await freshDbPath()
     await writeFile(path, '', { mode: 0o644 })
     await chmod(path, 0o644)
     const backend = backendAt(path)
+    const rejected = backend.kv.open(DESCRIPTOR)
+    await expect(rejected).rejects.toMatchObject({
+      name: 'StorageError',
+      code: 'malformed-medium',
+    })
+    await expect(rejected).rejects.toThrow(/group or other access.*chmod 600/)
+    await backend.close()
+    expect(await readFile(path)).toHaveLength(0)
+    expect((await lstat(path)).mode & 0o777).toBe(0o644)
+  })
+
+  it('rejects a symlink without writing to its target', async () => {
+    if (process.platform === 'win32') return
+    const path = await freshDbPath()
+    const target = join(dirname(path), 'target.db')
+    await writeFile(target, '', { mode: 0o600 })
+    await symlink(target, path)
+    const backend = backendAt(path)
+    const rejected = backend.kv.open(DESCRIPTOR)
+    await expect(rejected).rejects.toMatchObject({
+      name: 'StorageError',
+      code: 'malformed-medium',
+    })
+    await expect(rejected).rejects.toThrow(/symbolic link/)
+    await backend.close()
+    expect(await readFile(target)).toHaveLength(0)
+    expect((await lstat(path)).isSymbolicLink()).toBe(true)
+  })
+
+  it('rejects an existing file owned by a different user before writing', async () => {
+    if (process.platform === 'win32' || process.getuid === undefined) return
+    const path = await freshDbPath()
+    await writeFile(path, '', { mode: 0o600 })
+    await chmod(path, 0o600)
+    const uid = process.getuid()
+    const getuid = vi.spyOn(process, 'getuid').mockReturnValue(uid + 1)
+    try {
+      const backend = backendAt(path)
+      const rejected = backend.kv.open(DESCRIPTOR)
+      await expect(rejected).rejects.toMatchObject({ name: 'StorageError', code: 'malformed-medium' })
+      await expect(rejected).rejects.toThrow(/not owned by the current user/)
+      await backend.close()
+    } finally {
+      getuid.mockRestore()
+    }
+    expect(await readFile(path)).toHaveLength(0)
+  })
+
+  it('rejects a directory database path without writing into it', async () => {
+    if (process.platform === 'win32') return
+    const path = await freshDbPath()
+    await mkdir(path)
+    const backend = backendAt(path)
+    const rejected = backend.kv.open(DESCRIPTOR)
+    await expect(rejected).rejects.toMatchObject({
+      name: 'StorageError',
+      code: 'malformed-medium',
+    })
+    await expect(rejected).rejects.toThrow(/not a regular file/)
+    await backend.close()
+    expect((await lstat(path)).isDirectory()).toBe(true)
+    expect(await readdir(path)).toEqual([])
+  })
+
+  it('opens an existing private database file', async () => {
+    if (process.platform === 'win32') return
+    const path = await freshDbPath()
+    await writeFile(path, '', { mode: 0o600 })
+    await chmod(path, 0o600)
+    const backend = backendAt(path)
     const unit = await backend.kv.open(DESCRIPTOR)
     await unit.putRecord('records', 'k', 1)
     await backend.close()
+    expect((await lstat(path)).mode & 0o777).toBe(0o600)
   })
 
   it('registers on the storage hub as backend sqlite and closes on dispose', async () => {

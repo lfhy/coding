@@ -799,6 +799,11 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     description: '受管理文件与记录分属两个介质；提交失败只回滚当前操作仍拥有的磁盘条目。',
     methods: [
       {
+        signature: 'readonly root: string',
+        description: '用于磁盘对象的绝对目录；浏览器列表不会得到该路径。',
+        parameters: [],
+      },
+      {
         signature: 'async saveUpload(input: { name: string sessionId: string stream: AsyncIterable<Uint8Array> verify: () => Promise<void> }): Promise<{ record: ManagedFileRecord; path: string }>',
         description: '将上传流写入独占私有文件，校验发起会话后写入领域记录。 拒绝空文件或超过 32 MiB 的流；失败仅删除本次仍持有的文件，不回滚其他介质已持久化的事实。',
         parameters: [{ name: 'input', description: '原名、会话身份、数据流和提交前的会话有效性检查。' }],
@@ -806,7 +811,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'async saveGeneratedImage(input: { sessionId: string galleryId?: string attachmentId: string mediaType: GeneratedImageMediaType data: Uint8Array }): Promise<ManagedFileRecord>',
-        description: '复制已准入的不可变生成图片；原附件继续由附件服务拥有。',
+        description: '复制已由附件服务准入的不可变生成图片；原附件继续由附件服务拥有，字节限额仍由附件提供方控制。',
         parameters: [{ name: 'input', description: '会话、图库、附件引用及已准入编码字节。' }],
         returns: '副本的持久元数据。',
       },

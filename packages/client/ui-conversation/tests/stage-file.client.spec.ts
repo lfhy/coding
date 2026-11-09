@@ -14,11 +14,12 @@ function response(status: number, payload: unknown): Response {
 }
 
 describe('stageConversationFile', () => {
-  it('sends original bytes and encoded name, and accepts a safe Home path', async () => {
-    const fetch = vi.fn(() => Promise.resolve(response(200, { path: '/Users/demo/Coding Home/files/uploads/123e4567-e89b-42d3-a456-426614174000-演示 slides.pptx' })))
+  it('sends original bytes and encoded name, and accepts a custom managed-root path', async () => {
+    const path = "/tmp/O'Neil/work..backup/managed/uploads/123e4567-e89b-42d3-a456-426614174000-演示 slides.pptx"
+    const fetch = vi.fn(() => Promise.resolve(response(200, { path })))
     vi.stubGlobal('fetch', fetch)
     const original = file('演示 slides.pptx', 3)
-    expect(await stageConversationFile('session-1', original)).toBe('/Users/demo/Coding Home/files/uploads/123e4567-e89b-42d3-a456-426614174000-演示 slides.pptx')
+    expect(await stageConversationFile('session-1', original)).toBe(path)
     expect(fetch).toHaveBeenCalledWith('/open-in-app/attach', {
       method: 'POST',
       headers: {
@@ -56,13 +57,16 @@ describe('stageConversationFile', () => {
 
   it.each([
     '.dsh-uploads/123e4567-e89b-42d3-a456-426614174000-old.docx',
+    'relative/uploads/123e4567-e89b-42d3-a456-426614174000-file.docx',
+    '//server/share/uploads/123e4567-e89b-42d3-a456-426614174000-file.docx',
     '/Users/demo/files/uploads/not-a-uuid.docx',
     '/Users/demo/files/uploads/123e4567-e89b-42d3-a456-426614174000-unsafe!.docx',
     '/Users/demo/files/uploads/123e4567-e89b-42d3-a456-426614174000-a..b.docx',
     '/Users/demo/../files/uploads/123e4567-e89b-42d3-a456-426614174000-file.docx',
+    '/Users/demo/./files/uploads/123e4567-e89b-42d3-a456-426614174000-file.docx',
     '/Users/demo/files/uploads/123e4567-e89b-42d3-a456-426614174000-file.docx\n',
     'C:\\Users\\demo\\files\\uploads\\123e4567-e89b-42d3-a456-426614174000-file.docx',
-    '/Users/demo/files/other/123e4567-e89b-42d3-a456-426614174000-file.docx',
+    '/Users/demo/other/123e4567-e89b-42d3-a456-426614174000-file.docx',
   ])('rejects an untrusted response path: %s', async (path) => {
     vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(response(200, { path }))))
     await expect(stageConversationFile('session', file('source.docx', 0))).rejects.toEqual(new FileStageError(0))
@@ -71,8 +75,8 @@ describe('stageConversationFile', () => {
 
 describe('staged file mention projection', () => {
   it('keeps canonical offsets and paths while hiding the Home and UUID in previews', () => {
-    const posix = '@"/Users/demo/Coding Home/files/uploads/123e4567-e89b-42d3-a456-426614174000-演示 slides.pptx"'
-    const windows = '@C:/Users/demo/files/uploads/123e4567-e89b-42d3-a456-426614174000-notes.docx'
+    const posix = '@"/tmp/O\'Neil/work..backup/managed/uploads/123e4567-e89b-42d3-a456-426614174000-演示 slides.pptx"'
+    const windows = '@"C:/Users/a(b)/managed/uploads/123e4567-e89b-42d3-a456-426614174000-notes.docx"'
     const text = `读取 ${posix}，再比较 ${windows}。`
     expect(stagedFileMentions(text)).toEqual([
       { start: 3, end: 3 + posix.length, mention: posix, label: '演示 slides.pptx' },

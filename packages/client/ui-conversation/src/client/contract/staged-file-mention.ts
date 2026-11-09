@@ -1,11 +1,11 @@
 /**
- * 从本机暂存文件的规范引用恢复展示名；只识别 Home 上传目录中的绝对路径。
+ * 从本机暂存文件的规范引用恢复展示名；只识别托管根上传目录中的绝对路径。
  * 路径本身始终留在剪贴板、会话日志与模型输入中，不从显示名反推文件位置。
  */
 
 /** Host 使用正斜杠表示 POSIX 或 Windows 的规范绝对路径。 */
 const STAGED_PATH = new RegExp(
-  ['(?:\\/|[A-Za-z]:\\\/)', '(?:[^/]+\\\/)*', 'files\\\/uploads\\\/',
+  ['^(?:\\/|[A-Za-z]:\\\/)', '(?:[^/]+\\\/)*', 'uploads\\\/',
     '[a-f\\d]{8}-[a-f\\d]{4}-4[a-f\\d]{3}-[89ab][a-f\\d]{3}-[a-f\\d]{12}-',
     '([\\p{L}\\p{N} ._-]+)$'].join(''), 'iu')
 
@@ -15,10 +15,10 @@ const STAGED_PATH = new RegExp(
  * @returns 安全保存名，路径不规范时返回 undefined。
  */
 export function stagedFilePathName(path: string): string | undefined {
-  if (path.includes('..') || /["'\\\p{Cc}\p{Cf}]/u.test(path)
-    || path.split('/').some(segment => segment === '.')) return undefined
+  if (/["\\\p{Cc}\p{Cf}]/u.test(path)
+    || path.split('/').some(segment => segment === '.' || segment === '..')) return undefined
   const name = STAGED_PATH.exec(path)?.[1]
-  if (name === undefined || /^[. ]|[. ]$/u.test(name)) return undefined
+  if (name === undefined || name.includes('..') || /^[. ]|[. ]$/u.test(name)) return undefined
   return name
 }
 

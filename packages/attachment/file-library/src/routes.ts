@@ -33,7 +33,10 @@ function parameter(value: string | null, fallback: number): number {
   return parsed
 }
 
-/** 按服务的插件生命周期注册可撤销的只读路由。 */
+/** 按服务的插件生命周期注册可撤销的只读路由。
+ * @param ctx - 持有可选 Web 服务及连接信任检查的上下文。
+ * @param service - 只在通过来源检查后读取的文件库。
+ */
 export function installFileRoutes(ctx: Context, service: FileLibrary): void {
   ctx.inject(['webServer', 'connection'], (webCtx) => {
     webCtx.effect(() => webCtx.webServer.register({

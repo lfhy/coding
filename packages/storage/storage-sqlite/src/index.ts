@@ -23,13 +23,11 @@ export const inject = ['storage']
 /** Plugin configuration. */
 export interface Config {
   /**
-   * Filesystem path to the SQLite database file. The special value `:memory:`
-   * opens an in-process database (tests). On filesystems with POSIX modes,
-   * missing directories and databases are created owner-only; existing path
-   * modes are preserved. Filesystem setup errors other than an existing
-   * database fail the open. The backend does not protect confidentiality or
-   * integrity when another principal can replace the database entry in its
-   * parent directory.
+   * SQLite 数据库文件路径，特殊值 `:memory:` 打开进程内数据库（测试）。
+   * 缺失目录和文件以仅所有者可访问的权限创建；
+   * POSIX 上既有文件必须是当前用户持有、权限仅限所有者的普通文件，不能是软链接。
+   * Windows 文件隐私取决于继承的 ACL。父目录允许其他用户替换目录项时，
+   * 打开前检查无法消除 `DatabaseSync` 按路径重新打开时的竞态。
    */
   path: string
   /**

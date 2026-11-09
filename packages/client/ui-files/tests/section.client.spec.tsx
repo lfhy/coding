@@ -65,6 +65,27 @@ describe('FilesSection', () => {
     expect(list.mock.calls.map(call => call[0])).toEqual([0, 1, 1])
   })
 
+  it('分页期间新增文件时从第一页重读，最终不遗漏或重复文件', async () => {
+    const newest = { ...first, id: 'c', name: 'newest.txt', relativePath: 'uploads/newest.txt' }
+    const list = vi.fn<FilesSectionInjected['list']>()
+      .mockResolvedValueOnce({ items: [first], total: 2, nextOffset: 1 })
+      .mockResolvedValueOnce({ items: [first], total: 3, nextOffset: 2 })
+      .mockResolvedValueOnce({ items: [newest], total: 3, nextOffset: 1 })
+      .mockResolvedValueOnce({ items: [first, first], total: 3, nextOffset: 2 })
+      .mockResolvedValueOnce({ items: [second], total: 3 })
+    view(list)
+    fireEvent.click(await screen.findByRole('button', { name: '加载更多' }))
+    expect(await screen.findByText(newest.name)).toBeTruthy()
+    expect(screen.queryByText(first.name)).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: '加载更多' }))
+    expect(await screen.findByText(first.name)).toBeTruthy()
+    expect(screen.getAllByText(first.name)).toHaveLength(1)
+    fireEvent.click(screen.getByRole('button', { name: '加载更多' }))
+    expect(await screen.findByText(second.name)).toBeTruthy()
+    expect(screen.getAllByRole('listitem')).toHaveLength(3)
+    expect(list.mock.calls.map(call => call[0])).toEqual([0, 1, 0, 1, 2])
+  })
+
   it('卸载时取消正在读取的请求', () => {
     const list = vi.fn((_offset: number, _limit: number, _signal: AbortSignal) => new Promise<ManagedFilesPage>(() => {}))
     const mounted = view(list)

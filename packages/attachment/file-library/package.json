@@ -25,6 +25,10 @@
     "coding-host-webserver": "workspace:^",
     "coding-invariants": "workspace:^"
   },
+  "peerDependenciesMeta": {
+    "coding-client-connection": { "optional": true },
+    "coding-host-webserver": { "optional": true }
+  },
   "devDependencies": {
     "@deepseek-ai/cordis": "workspace:^",
     "@deepseek-ai/cordis-plugin-loader": "workspace:^",

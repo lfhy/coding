@@ -91,7 +91,7 @@ describe.skipIf(webSnapshotMode() === 'record')('web e2e: staged file display an
     await intakeFile(page, '演示 slides.pptx', 'drop')
     await expect.poll(() => input.inputValue(), { timeout: 15_000 }).toBe('Review @演示 slides.pptx')
     await input.press('End')
-    await input.type(' and ')
+    await input.pressSequentially(' and ')
     await intakeFile(page, 'notes.xyz', 'paste')
     await expect.poll(() => input.inputValue(), { timeout: 15_000 })
       .toBe('Review @演示 slides.pptx and @notes.xyz')
@@ -115,7 +115,7 @@ describe.skipIf(webSnapshotMode() === 'record')('web e2e: staged file display an
       .rejects.toMatchObject({ code: 'ENOENT' })
     const deckPath = join(uploadRoot, deck).replaceAll('\\', '/')
     const notesPath = join(uploadRoot, notes).replaceAll('\\', '/')
-    const canonical = `Review @"${deckPath}" and @${notesPath}`
+    const canonical = `Review @"${deckPath}" and @"${notesPath}"`
     const settled = scaffold.whenTurnSettled()
     await input.press('Enter')
     const id = await settled
