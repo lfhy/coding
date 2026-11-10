@@ -183,7 +183,6 @@ describe('ui-settings-general apply', () => {
     expect(b.slots.entries('settings.action')).toEqual([])
     expect(b.slots.entries('settings.general.item')).toEqual([])
     expect(b.rebuildMetadata).not.toHaveBeenCalled()
-    expect(b.slots.entries('settings.general.item')).toEqual([])
     expect(b.settingsDescribe).not.toHaveBeenCalled()
     await fiber.dispose()
     for (const [name] of SEATS) expect(b.slots.entries(name)).toEqual([])
@@ -194,7 +193,8 @@ describe('ui-settings-general apply', () => {
     declare(b.slots)
     await b.ctx.plugin({ inject: [...inject], apply }).await()
     const entry = b.slots.entries('settings.general.item')[0]!
-    const { rebuildMetadata } = (entry.inject as () => SessionMetadataRepairInjected)()
+    // slot 注册表抹除了每个 inject 的具体返回类型；测试在该行恢复局部契约。
+    const { rebuildMetadata } = (entry.inject as unknown as () => SessionMetadataRepairInjected)()
     const signal = new AbortController().signal
     expect(b.rebuildMetadata).not.toHaveBeenCalled()
     await expect(rebuildMetadata(signal)).resolves.toEqual({ total: 0, rebuilt: 0, skippedLive: 0, failures: [] })

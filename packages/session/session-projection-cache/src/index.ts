@@ -209,9 +209,16 @@ export class SessionProjectionCache extends Service {
    * @returns 重建出的日志末尾投影切面。
    */
   async rebuild(id: SessionId, signal?: AbortSignal): Promise<ProjectionSnapshot> {
+    if (this.ctx.sessions.get(id) !== undefined) {
+      throw new Error(`cannot rebuild metadata for live session "${id}"`)
+    }
     const whole = await this.ctx.sessionPersistence.readFrom(id, 0, signal)
     signal?.throwIfAborted()
     const restored = this.ctx.sessionProjections.restore({}, whole.events, 0)
+    // 冷读期间若另一请求恢复了会话，不得用较早的切面覆盖其实时检查点。
+    if (this.ctx.sessions.get(id) !== undefined) {
+      throw new Error(`cannot rebuild metadata for live session "${id}"`)
+    }
     await this.put(id, identityOf(whole.meta), restored.checkpoint)
     return restored.snapshot
   }

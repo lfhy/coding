@@ -461,6 +461,28 @@ describe('SessionProjectionCache rebuild', () => {
     expect(storedRows(samePool, SessionId('missing'))?.['cache-test/marks']?.val).toEqual({ marks: ['old'] })
   })
 
+  it('refuses a live session before reading its stored log', async () => {
+    const id = SessionId('already-live')
+    const { cache, ctx, persistence, pool } = await harness({ logs: new Map([[id, storedLog([['old']])]]) })
+    ctx.sessions.create(id)
+    await expect(cache.rebuild(id)).rejects.toThrow('cannot rebuild metadata for live session')
+    expect(persistence.readFrom).not.toHaveBeenCalled()
+    expect(storedRows(pool, id)).toBeUndefined()
+  })
+
+  it('refuses a cold result when its session attaches during the read', async () => {
+    const id = SessionId('attached-during-rebuild')
+    const { cache, ctx, persistence, pool } = await harness({ logs: new Map([[id, storedLog([['old']])]]) })
+    const readFrom = persistence.readFrom.getMockImplementation()!
+    persistence.readFrom.mockImplementationOnce(async (readId, fromSeq) => {
+      const result = await readFrom(readId, fromSeq)
+      ctx.sessions.create(id)
+      return result
+    })
+    await expect(cache.rebuild(id)).rejects.toThrow('cannot rebuild metadata for live session')
+    expect(storedRows(pool, id)).toBeUndefined()
+  })
+
   it('propagates cancellation before any cache write lands', async () => {
     const pool = new MemoryMediaPool()
     const logs = new Map([['cancel', storedLog([['a']])]])

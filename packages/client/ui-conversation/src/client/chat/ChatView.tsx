@@ -751,7 +751,7 @@ export function ChatView({
           onClose={() => {}}
           closeLabel={t('close')}
           title={t('chat.loadError.title')}
-          description={openError !== null ? t('chat.loadError', { message: openError.message, code: openError.code }) : t('chat.loadError.description')}
+          description={t('chat.loadError', { message: openError.message, code: openError.code })}
           footer={(
             <>
               <Button variant="outline" className={css.modalAction} onClick={archiveFailedSession}>{t('chat.loadError.archive')}</Button>

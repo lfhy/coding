@@ -70,6 +70,19 @@ describe('session.rebuildMetadata', () => {
     expect(rebuild).toHaveBeenCalledTimes(1)
   })
 
+  it('counts a session that attaches during rebuild as skipped, not corrupt', async () => {
+    const { ctx, api } = await setup()
+    const id = sid('attached-during-rebuild')
+    ctx.provide('sessionPersistence', { list: async () => [meta(id)] } as never)
+    ctx.provide('sessionProjectionCache', { rebuild: async () => {
+      ctx.sessions.create(id, { meta: { cwd: '/project' } })
+      throw new Error('cannot rebuild metadata for live session')
+    } } as never)
+    expect((await api.sessions.rebuildMetadata(request(), new AbortController().signal)).result).toEqual({
+      ok: true, value: { total: 1, rebuilt: 0, skippedLive: 1, failures: [] },
+    })
+  })
+
   it('stops on caller cancellation instead of treating it as a corrupt session', async () => {
     const { ctx, api } = await setup()
     const controller = new AbortController()

@@ -2192,6 +2192,10 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
             rebuilt++
           } catch {
             if (isAborted(signal)) return cancelled()
+            if (ctx.sessions.get(meta.id) !== undefined) {
+              skippedLive++
+              continue
+            }
             failures.push({ sessionId: meta.id, message: '无法从持久日志重建该会话元数据' })
           }
         }

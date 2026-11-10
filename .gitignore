@@ -49,6 +49,9 @@ apps/web/dist/
 worktrees/
 .agents/worktrees/
 .typert-*/
+# Typert 测试在 tests 目录内创建的临时 fixture 与生成模块。
+packages/typert/generator/tests/.explicit-service-*/
+packages/typert/generator/tests/.generated-model-*/
 
 # package 内 src 只放源码。本地误用包内 tsconfig 就地编译时，tsc 会把 .js 和
 # sourcemap 写到源码旁；正常构建输出在 lib/、dist/。手写的 *.d.ts 声明应正常入库。
