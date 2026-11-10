@@ -30,6 +30,8 @@ make dev
 
 macOS 菜单和托盘提供窗口操作，红色关闭按钮只隐藏窗口，再次激活或从托盘可恢复；菜单退出或 `Cmd+Q` 才退出应用。显式退出时，main 立即隐藏并销毁窗口，向 helper 发送显式 `shutdown {}`；helper 收敛自己持有的远程连接、bridge 与本次启动的 Host，main 有界等待其响应，再关闭 helper 并退出进程。重复退出请求共用一次清理，退出中不重新启动 helper。窗口关闭后复开先等待旧 helper 关闭，才重新发现 Host。helper 异常断管或收到信号后也只尝试停止原本由它启动的 Host；Host 已被替换或身份无法核验时不发送停止信号，更不会扫描共享 Home 误停其他 Host。
 
+helper 的启动取消、协议失败和 fallback 关闭都保留 12 秒清理宽限，之后才强停本次 helper，并最多再等待 1 秒回收。Host 替换由[共享启动器](../internal/hostlaunch/README.md)串行退休旧 owner：收到退出请求不等于退出完成，发现记录消失也不代表共享 Home 已释放；旧 owner 未退出时新 Host 不启动。
+
 桌面浏览器由 Host 中的 [ego 提供方](../../packages/browser/browser-ego-host/)启动并隔离会话，模型操作由[浏览器工具](../../packages/browser/tool-browser-ego/)登记和审批。工作台的[Agent 浏览器面板](../../packages/client/ui-browser-ego/README.md)通过同源 Host 接口查看页面和实时画面，并发送基础人工操作；它不使用 Electron guest，也不通过主进程向页面暴露浏览器控制入口。桌面 preload 只暴露受限 Remote-SSH 方法，不把 Host 浏览器的进程、会话或凭据交给 renderer。浏览器需要本机可用的 Edge、Chrome 或 Chromium，不会由 Electron 自带的渲染进程替代。
 
 Host 浏览器和页面在 Host 侧管理，不依赖 Electron 浏览器桥的令牌或独立 guest。面板显示时按会话订阅页面与实时 JPEG 画面，只能对当前会话内、仍有效的页面发送基础人工输入；隐藏时停止画面流与输入，重新打开后取得最新画面。模型浏览器工具继续遵守会话审批和本机文件边界；远程工作区不支持浏览器操作。不要将上游页面快照、调试输出或浏览器内部状态直接用作工作台文案。

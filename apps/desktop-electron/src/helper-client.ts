@@ -7,8 +7,8 @@ const MAX_PENDING = 16
 const MAX_REQUESTS = 65_536
 const STARTUP_MS = 45_000
 const STOP_MS = 1_000
-// 启动取消时 helper 可能已持有 Host；为其 11 秒所有权清理兜底留出宽限。
-const STARTUP_CANCEL_STOP_MS = 12_000
+// 任意断管、协议失败或关闭时 helper 都可能持有 Host；必须给其 11 秒清理预算留出宽限。
+const HELPER_CLEANUP_STOP_MS = 12_000
 const METHODS = new Set([
   'RemoteSSHConnect', 'RemoteSSHListDirectories', 'RemoteSSHSelectDirectory',
   'RemoteSSHClose', 'RemoteSSHCancelConnect', 'RemoteSSHRejectHostKey', 'shutdown',
@@ -134,7 +134,7 @@ export async function launchHelper(options: HelperLaunchOptions): Promise<Helper
   const startup = new Promise<void>((resolve, reject) => { resolveReady = resolve; rejectReady = reject })
   const timer = setTimeout(() => { void fail(new Error('Helper readiness timed out')) }, STARTUP_MS)
 
-  function fail(error: Error, reason: 'exited' | 'protocol' | 'closed' = 'exited', terminateGraceMS = STOP_MS): Promise<void> {
+  function fail(error: Error, reason: 'exited' | 'protocol' | 'closed' = 'exited'): Promise<void> {
     if (closed) return closePromise ?? Promise.resolve()
     closed = true
     closeReason = reason
@@ -148,7 +148,7 @@ export async function launchHelper(options: HelperLaunchOptions): Promise<Helper
     pending.clear()
     listeners.clear()
     activateListeners.clear()
-    closePromise = stopChild(child, terminateGraceMS)
+    closePromise = stopChild(child, HELPER_CLEANUP_STOP_MS)
     for (const listener of closeListeners) {
       try { listener(reason) } catch { /* 观察者异常不能改变子进程清理。 */ }
     }
@@ -230,7 +230,7 @@ export async function launchHelper(options: HelperLaunchOptions): Promise<Helper
   child.stderr.on('data', () => {})
   child.stderr.on('error', () => { void fail(stoppedError()) })
   options.signal?.addEventListener('abort', onAbort, { once: true })
-  function onAbort(): void { void fail(new Error('Helper launch cancelled'), 'closed', STARTUP_CANCEL_STOP_MS) }
+  function onAbort(): void { void fail(new Error('Helper launch cancelled'), 'closed') }
   if (options.signal?.aborted) onAbort()
 
   const client: HelperClient = {

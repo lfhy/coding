@@ -1588,6 +1588,10 @@ describe('ChatView', () => {
     })
     const view = render(<h.ChatView {...h.props} />)
     expect(view.getByText(/历史加载失败：boom/)).toBeTruthy()
+    // Modal should show the actual error text as description when available
+    expect(screen.getByRole('dialog', { name: /无法加载会话历史/ })).toBeTruthy()
+    const dialog = screen.getByRole('dialog', { name: /无法加载会话历史/ })
+    expect(dialog.textContent).toContain('历史加载失败')
     const loading = makeHarness({ openState: 'loading' })
     const lv = render(<loading.ChatView {...loading.props} />)
     expect(lv.getByText('载入历史…')).toBeTruthy()

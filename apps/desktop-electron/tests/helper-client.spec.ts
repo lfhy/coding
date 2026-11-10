@@ -365,17 +365,22 @@ describe('Electron Go helper stdio', () => {
     await expect(shutdown).resolves.toBeNull()
   })
 
-  it('escalates an unresponsive child to SIGKILL within bounded time', async () => {
+  it.each(['protocol', 'close'] as const)('为 %s 清理保留完整 Host 停机预算，然后有界强停 helper', async (failure) => {
     vi.useFakeTimers()
     try {
       child.kill.mockImplementation(() => true)
       const waiting = launchHelper(options)
-      const rejected = expect(waiting).rejects.toThrow('Invalid helper stdout protocol')
-      child.send({ type: 'ready', protocol: 2, origin: 'http://127.0.0.1:4242' })
-      await vi.advanceTimersByTimeAsync(2_100)
-      await rejected
-      expect(child.kill).toHaveBeenCalledWith('SIGTERM')
-      expect(child.kill).toHaveBeenCalledWith('SIGKILL')
+      child.ready()
+      client = await waiting
+      if (failure === 'protocol') child.send({ type: 'unexpected', protocol: 1 })
+      const stopped = client.close()
+      expect(child.kill).toHaveBeenCalledExactlyOnceWith('SIGTERM')
+      await vi.advanceTimersByTimeAsync(11_999)
+      expect(child.kill).toHaveBeenCalledTimes(1)
+      await vi.advanceTimersByTimeAsync(1)
+      expect(child.kill).toHaveBeenLastCalledWith('SIGKILL')
+      await vi.advanceTimersByTimeAsync(1_000)
+      await stopped
     } finally {
       vi.useRealTimers()
     }
