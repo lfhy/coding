@@ -807,7 +807,12 @@ describe('WorkspaceWorkbench shell', () => {
       fireEvent.click(screen.getByRole('tab', { name: new RegExp(name.replace('.', '\\.')) }))
       const article = screen.getByRole('article', { name })
       expect(article.hidden).toBe(false)
-      if (name === 'code.ts') expect(within(article).getByText('const x = 1')).toBeDefined()
+      if (name === 'code.ts') {
+        const pre = article.querySelector('pre.shiki')
+        expect(pre?.textContent).toBe('const x = 1\n')
+        expect(pre?.querySelectorAll('span[style]').length).toBeGreaterThan(1)
+        expect(within(article).queryByRole('button', { name: '复制' })).toBeNull()
+      }
       if (name === 'notes.txt') {
         expect(within(article).getByText((_, element) => element?.tagName === 'PRE'
           && element.textContent === 'plain\ntext')).toBeDefined()

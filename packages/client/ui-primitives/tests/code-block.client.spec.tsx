@@ -72,6 +72,22 @@ describe('CodeBlock', () => {
     expect(view.getByText('plain text')).toBeTruthy()
   })
 
+  it('renders bare source with highlighted tokens and the original trailing newline', () => {
+    const view = render(<CodeBlock code={'const a = 1\n'} lang="ts" bare />)
+    const pre = view.container.querySelector('pre.shiki')
+    expect(pre?.textContent).toBe('const a = 1\n')
+    expect(pre?.querySelectorAll('span[style]').length).toBeGreaterThan(1)
+    expect(view.container.querySelector('button')).toBeNull()
+    expect(view.container.querySelector('.md-code-block')).toBeNull()
+  })
+
+  it('renders unknown bare source verbatim without a banner', () => {
+    const view = render(<CodeBlock code={'<tag>\n'} lang="unknown" bare />)
+    expect(view.container.querySelector('pre')?.textContent).toBe('<tag>\n')
+    expect(view.container.querySelector('pre.shiki')).toBeNull()
+    expect(view.container.querySelector('button')).toBeNull()
+  })
+
   it('shows the language banner and copies the pre textContent', async () => {
     vi.useFakeTimers()
     const writeText = vi.fn().mockResolvedValue(undefined)

@@ -397,6 +397,11 @@
   white-space: pre;
 }
 
+.source :global(pre) {
+  width: max-content;
+  min-width: 100%;
+}
+
 .markdown {
   max-width: 920px;
   margin: 0 auto;

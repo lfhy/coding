@@ -194,6 +194,23 @@ describe('OpenInAppController workspace files', () => {
     }
   })
 
+  it('derives a case-insensitive syntax hint from the Host filename without trusting its path', async () => {
+    for (const [name, language] of [
+      ['App.TSX', 'tsx'], ['Theme.CSS', 'css'], ['build.YML', 'yaml'],
+      ['main.kt', 'kotlin'], ['header.hpp', 'cpp'], ['Makefile', undefined],
+    ] as const) {
+      const controller = new OpenInAppController(async () => jsonResponse({
+        displayPath: '/w/unrelated', name, truncated: false,
+        kind: 'text', format: 'code', text: 'const a = 1\n',
+      }), ROUTES)
+      await expect(controller.readFile(SESSION, [name])).resolves.toEqual({
+        path: '/w/unrelated', content: {
+          kind: 'code', text: 'const a = 1\n', ...(language === undefined ? {} : { language }),
+        },
+      })
+    }
+  })
+
   it('rejects failed and malformed file responses', async () => {
     await expect(new OpenInAppController(async () => jsonResponse({}, 500), ROUTES)
       .readFile(SESSION, [])).rejects.toThrow('workspace file failed: HTTP 500')

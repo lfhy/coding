@@ -111,6 +111,18 @@ function filesPayload(value: Record<string, unknown>, parentSegments: readonly s
   }
 }
 
+const PREVIEW_LANGUAGE_ALIASES = new Map([
+  ['kt', 'kotlin'], ['kts', 'kotlin'], ['h', 'c'], ['hpp', 'cpp'], ['htm', 'html'], ['yml', 'yaml'],
+])
+
+/** 根据 Host 验证过的文件名生成语法提示；未知扩展名由高亮器回退为纯文本。 */
+function previewLanguage(name: string): string | undefined {
+  const dot = name.lastIndexOf('.')
+  if (dot <= 0) return undefined
+  const extension = name.slice(dot + 1).toLowerCase()
+  return PREVIEW_LANGUAGE_ALIASES.get(extension) ?? extension
+}
+
 /** 校验单文件读取响应。 */
 function readPayload(value: Record<string, unknown>): WorkspaceFilePayload {
   if (typeof value.displayPath !== 'string' || typeof value.name !== 'string'
@@ -120,8 +132,10 @@ function readPayload(value: Record<string, unknown>): WorkspaceFilePayload {
   let content: WorkspaceFileContent
   if (value.kind === 'text' && typeof value.text === 'string') {
     if (value.format === 'markdown') content = { kind: 'markdown', text: value.text }
-    else if (value.format === 'code') content = { kind: 'code', text: value.text }
-    else if (value.format === 'text') content = { kind: 'text', text: value.text }
+    else if (value.format === 'code') {
+      const language = previewLanguage(value.name)
+      content = { kind: 'code', text: value.text, ...(language === undefined ? {} : { language }) }
+    } else if (value.format === 'text') content = { kind: 'text', text: value.text }
     else throw new Error('open-in-app host returned invalid file content')
   } else if (value.kind === 'image' && typeof value.mime === 'string'
     && value.mime.startsWith('image/') && typeof value.dataBase64 === 'string') {

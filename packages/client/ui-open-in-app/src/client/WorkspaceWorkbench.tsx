@@ -25,6 +25,7 @@ import {
   IconRefreshOutline16,
   IconPlusOutline16,
   IconSearchOutline16,
+  CodeBlock,
   MarkdownText,
   Tooltip,
 } from 'coding-client-ui-primitives'
@@ -348,7 +349,7 @@ function PreviewContent({ payload, name, t }: {
     return <div className={css.markdown}><MarkdownText text={content.text} /></div>
   }
   if (content.kind === 'code') {
-    return <pre className={css.source}><code data-language={content.language}>{content.text}</code></pre>
+    return <CodeBlock bare className={css.source} code={content.text} lang={content.language} />
   }
   if (content.kind === 'text') return <pre className={css.source}>{content.text}</pre>
   if (content.kind === 'image') {

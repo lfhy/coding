@@ -91,6 +91,32 @@
   padding: 0;
 }
 
+/* 预览区拥有自己的背景、内边距和滚动；无横幅模式只提供 token 树。 */
+.bare,
+.bare:not(:last-child) {
+  margin: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.bare :where(pre) {
+  padding: 0;
+  overflow: visible;
+  white-space: pre;
+  word-break: normal;
+  border-radius: 0;
+  background: transparent;
+  font: inherit;
+}
+
+.bare :where(pre.shiki) {
+  background: transparent !important;
+}
+
+.bare :where(pre) code {
+  font: inherit;
+}
+
 .plain {
   color: var(--dsw-alias-label-primary);
 }
