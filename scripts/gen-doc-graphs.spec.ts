@@ -116,7 +116,7 @@ describe('browser capability diagrams', () => {
     expect(composition).not.toContain('| `tool-browser` | `coding-tool-browser-ego` |')
   })
 
-  it.each(['standard', 'longrun', 'reverse'])('mounts the ego browser tool in the %s session preset', (preset) => {
+  it.each(['standard', 'longrun', 'reverse', 'webclone'])('mounts the ego browser tool in the %s session preset', (preset) => {
     const config = readFileSync(resolve(import.meta.dirname, `../apps/cli/config/agent-presets/${preset}/agent.cordis.yml`), 'utf8')
     expect(config).toMatch(/- id: tool-browser\n  name: 'coding-tool-browser-ego'/)
     expect(config).not.toContain("name: 'coding-browser-playwright'")

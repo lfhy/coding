@@ -15,6 +15,7 @@ describe('preset display copy', () => {
     ['longrun', 'presetLongrunName', 'presetLongrunDescription'],
     ['ppt', 'presetPptName', 'presetPptDescription'],
     ['image', 'presetImageName', 'presetImageDescription'],
+    ['webclone', 'presetWebcloneName', 'presetWebcloneDescription'],
   ] as const)('localizes the shipped %s preset in English and Chinese', (id, nameKey, descriptionKey) => {
     const preset = { id, trust: 'system' as const, name: 'file name', description: 'file description' }
 

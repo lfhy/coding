@@ -9,3 +9,4 @@
   - menuitem "Reverse engineering mode All Standard mode capabilities plus the REA engine as MCP tools and bundled reverse-engineering skills, for binaries, installers, firmware, and runtime behavior."
   - 'menuitem "PPT creation mode Builds slide decks from the conversation: the agent creates and edits one project with ppt_* tools while the PPT workbench on the right shows and edits the same deck, then exports a .pptx; every revision stays undoable."'
   - menuitem "Image creation mode Create images one at a time or in batches, edit existing images, and view the results in the gallery and AI canvas on the right."
+  - 'menuitem "Website cloning mode All Standard mode capabilities plus bundled website-cloning skills: give it a URL and it rebuilds the real copy, fonts, assets, and interactions as a runnable local page; when a site needs a login you sign in yourself in the Agent browser panel on the right and cloning continues."'

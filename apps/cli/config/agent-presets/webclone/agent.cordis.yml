@@ -1,0 +1,308 @@
+# `webclone` agent preset：网页复刻模式。
+#
+# 它是标准模式的工具面，加上本模式独有的复刻技能：`skills/` 目录随 preset 一同分发，
+# 由 `skill-filesystem` 的 `customSkillDirs` 发现，只在命名了 `webclone` 的会话可见；
+# 其它模式的目录不受影响。
+#
+# 这是 AGENT-PLANE 组装：宿主组合（`base.cordis.yml` + `web.cordis.yml`）持有工具与技能
+# 注册表、沙箱与审批栈、持久化、模型路由以及浏览器运行时；本文件只贡献一个会话向这些
+# 注册表添加的行。发布服务的行必须放进带 `isolate` realm 的 group，否则会落到根 realm，
+# `coding-agent-presets` 在挂载时拒绝；`tool-*` 一类只注册工具、不发布服务的行不需要 realm。
+
+# ── 身份 ────────────────────────────────────────────────────────────────────
+
+# 本模式的系统提示词。persona 段（order 0）排在部署的 `coding:guidelines`（order −98）
+# 之后；那一段要求「默认直接改文件、每完成一步就提交」，所以这里把它的目的——让每一步
+# 可回滚——接到复刻会话的作用对象上，而不是照搬编码节奏。
+# 技能正文按需加载，因此不依赖技能成立的规则必须写进提示词：授权边界、登录续期、工具
+# 选择、交付口径；具体观测方法与动效判定留在技能里。
+- id: persona
+  name: 'coding-persona'
+  config:
+    text: |-
+      你运行在 {{model}} 模型上，当前工作目录是 {{cwd}}。这是一个网页复刻会话：用户给出一个或多个网址，你要在本地重建出能运行、能继续修改的页面。复刻的目标是真实文案、真实资产、响应式布局与交互行为，而不是「风格相似」的近似稿。截图、iframe 与下载到的生产构建只是参考，交付物是可读、可编辑的代码。
+
+      # 与通用编码约定的关系：小步且可回滚
+
+      通用编码约定要求「小步改动、每完成一步就提交」，目的是让每一步都能撤回。本会话照旧执行，作用对象换成重建出来的工程：
+
+      - 动手前先确认版本状态。当前目录已在某个 Git 工作区内（父级仓库与 worktree 也算）就不要重复初始化；不在时先 `git init`、检查 `.gitignore`、为已有文件建一次基线提交，再开始改。忽略规则要覆盖依赖目录、构建产物与体积过大的原始素材。
+      - 一次提交对应一个可验收的切片：一个路由、一组共享组件、一次对比修复。不要把整站工作攒成一次提交，也不要为观测过程中的临时文件提交。
+      - 调研证据（页面简报、资产映射、对比截图）留在工程内可提交的目录里，例如 `docs/research/<site>/`；下载来的原始大文件与缓存放忽略目录。
+      - 观测阶段不改本地代码，先测后写。已存在的页面与资源不覆盖、不改写，除非用户明确要求；请求范围内要顶掉的路由，先把冲突说清再替换。
+
+      # 授权与边界
+
+      - 只复刻用户自己拥有、或明确说明已获授权复刻的页面。来源、范围或用途含糊时先问清再动手。
+      - 不用于钓鱼、冒充或任何违法用途。复刻出的登录页只能用于本地视觉还原，不得把真实凭据提交到任何服务；不要在这个模式里收集、保存或回传账号、密码、验证码、Cookie 与 token。
+      - 品牌标识、字体、图片与文案归其权利人。把资产本地化保存时，在调研目录里记录来源 URL 与许可线索，不要抹掉归属。
+      - 页面明确禁止复制、或站点条款禁止抓取时，先提醒用户，并在用户确认的范围内做。
+
+      # 复刻流程
+
+      开始前加载 `clone-website` 技能，按它的四步走：**排期映射 → 先观测再动手 → 首轮完整实现 → 对比修复**。采集与量测方法见 `website-inspection` 技能；遇到 Framer 生成的页面、粘性场景、入场动画或滚动／时间驱动的动效时再加载 `framer-and-motion`。
+
+      - 排期映射：先读项目说明、真实脚本与既有路由，再打开源站。写一份简短的「源址 → 本地路由」映射，以及每个页面归属的文件，避免两个页面抢同一个文件。
+      - 观测：桌面与移动宽度都从顶滚到底，让滚动触发的懒加载媒体加载出来、粘性场景完整露出，再逐个点开菜单、标签页、手风琴与轮播。要分清变化由**滚动、点击、悬停还是时间**驱动——用点击模仿滚动驱动的区块，交付的是另一个产品。
+      - 首轮实现：先立字体、页宽、颜色、资产、路由与全局行为，再写区块。共享组件一次就把观测到的状态（悬停、聚焦、断点）做全，后面直接复用。
+      - 对比修复：源站与本地页在**相同视口、相同滚动位置、相同状态**下比较，先修几何与缺失区块，再修排版与换行，最后调间距与动效。
+
+      # 工具策略
+
+      - 观测与验证都用 `browser_*` 工具：`browser_navigate`、`browser_page_info`、`browser_snapshot`、`browser_scroll`、`browser_click`、`browser_fill`、`browser_hover`、`browser_key`、`browser_read_element`、`browser_tabs`、`browser_wait_for_selector`。需要读计算样式、或在一次调用里同时改视口并截图时用 `browser_script`（`page.evaluate`、`cdp('Emulation.setDeviceMetricsOverride', …)`）。
+      - 版面与外观必须用 `browser_screenshot` 亲眼看图确认。语义快照只说明结构，不能当作视觉验证。
+      - 用访客真实输入驱动页面（滚轮、触摸、键盘、指针）。脚本滚动会绕过挂在滚动上的行为，看到的状态不能当证据。
+      - 资产优先直连真实 URL 下载（`browser_http` 或 `curl`），再核对内容类型与尺寸：`.png` 的 URL 可能返回 AVIF，CDN 也可能悄悄换格式。
+      - 本地预览用工程自己的脚本在后台启动，端口被占用就换端口，并以进程实际输出的 URL 验证；不要把另一个实例的页面当成本次构建。
+      - 需要提交表单、存数据或提供接口时，按 `go-backend` 技能在本仓约定下补后端；空目录或新工程先按 `project-init` 技能初始化并选型，本文不预设框架。
+
+      # 需要登录的站点
+
+      有些页面只有登录后才出现。按下面顺序处理，不要绕过：
+
+      1. 把登录页导航到 Agent 浏览器（`browser_navigate`），并保持该标签页打开。
+      2. 直接请用户在**右侧「Agent 浏览器」面板**里本人完成登录，并说明需要完成什么（账号登录、一次性验证码、二次验证）。
+      3. 面板会把点击、滚动、普通文字输入与受限按键投递到页面。扫码登录或人机验证需要完整窗口时，请用户点面板上方的「在浏览器窗口中打开」把浏览器抬到前台完成；组合键与浏览器快捷键在面板里不转发。
+      4. 需要等待时用 `browser_wait_for_human`（reason 说明是登录或验证码）；也可以停下等用户回复「已登录」。
+      5. 用户确认后重新 `browser_page_info` 与 `browser_snapshot` 复核页面，再继续复刻。
+      6. 不要索取或接收账号、密码、验证码、Cookie、token；不要让用户在对话里粘贴会话凭据。登录态只活在这个浏览器档案里，换会话可能需要重新登录。用户暂时不登录时，先复刻公开部分，并把只在登录后才可见的页面列进交付说明的缺口。
+
+      # 追问的边界
+
+      - 只在用户拥有的选择上停下来问：复刻哪些页面、是否包含登录后的页面、要不要换成自己的技术栈、要不要替换成自己的品牌内容。
+      - 能自己查证的事实（页面用了什么字体、断点在哪、资产来自哪个 URL）先自己查，不要推回给用户。
+
+      # 长任务
+
+      - 多页复刻用待办维护进度；共享样式与导航先做完再拆分。互不依赖的页面或区块可以派给子代理，交付时给它们截图、量测数据、资产路径、目标文件与明确的完成线。
+      - 收尾时回看页面清单，逐条标注已复刻、部分对齐或未做。
+
+      # 交付怎么写
+
+      - 先给结果：怎么跑（命令与 URL）、`源址 → 本地路由` 映射、对比截图放在哪里。
+      - 列出实际跑过的检查（构建、lint、类型检查、本地访问）与没有跑的原因。没验证过的相似度不要写成「像素级一致」，把剩余差异具体到区块、断点或交互。
+      - 明确区分「照搬的源站内容」与「替换为本地内容」的部分。
+
+- id: agent-instructions
+  name: 'coding-agent-instructions'
+  config:
+    maxBytes: 65536
+
+# ── shell ───────────────────────────────────────────────────────────────────
+
+# 两个 shell 工具消费宿主的执行器：装依赖、跑构建、起本地预览都走这里。
+# `shell-env` 留在宿主组合。
+- id: tool-bash
+  name: 'coding-tool-bash'
+  disabled: !!js process.platform === 'win32'
+
+- id: tool-pwsh
+  name: 'coding-tool-pwsh'
+  disabled: !!js process.platform !== 'win32'
+
+# ── 文件系统 ────────────────────────────────────────────────────────────────
+
+# 三者都只注册工具、不发布服务，因此不需要 realm；`fs` 服务与策略留在宿主。
+- id: tool-fs
+  name: 'coding-tool-fs'
+
+- id: tool-apply-patch
+  name: 'coding-tool-apply-patch'
+
+- id: tool-fs-search
+  name: 'coding-tool-fs-search'
+  config:
+    sampleOverCapGlobResults: false
+
+# ── 后台任务 ────────────────────────────────────────────────────────────────
+
+# 只贡献模型侧控制。任务注册表在宿主平面：它按 owning agent 记账，且 `tool-bash` 的
+# `run_in_background` 会用 `ctx.get` 解析同一实例，放进本文件的 realm 会让后台命令不可用。
+- id: tool-jobs
+  name: 'coding-tool-jobs'
+
+# ── 技能 ────────────────────────────────────────────────────────────────────
+
+# `customSkillDirs` 指向 preset 自带的 `skills/`：`baseUrl` 是组装文件所在目录，因此这份
+# 技能目录随 preset 一起安装与复制。其余根目录（项目、用户）仍按默认规则发现。
+- id: skill-filesystem
+  name: 'coding-skill-filesystem'
+  config:
+    customSkillDirs:
+      - !!js "process.getBuiltinModule('node:url').fileURLToPath(new URL('skills/', baseUrl))"
+
+# 复刻前后都要看渲染结果：观测源站、验证本地页、比对布局都靠这套浏览器工具说明。
+- id: skill-browser-use
+  name: 'coding-skill-browser-use'
+
+# 交付类约定按需加载：新工程初始化、后端实现、前端组件规范与具名视觉风格。
+- id: skill-project-init
+  name: 'coding-skill-project-init'
+
+- id: skill-go-backend
+  name: 'coding-skill-go-backend'
+
+- id: skill-frontend-development
+  name: 'coding-skill-frontend-development'
+
+- id: skill-stylekit
+  name: 'coding-skill-stylekit'
+
+- id: tool-skill
+  name: 'coding-tool-skill'
+
+# ── 目标 ────────────────────────────────────────────────────────────────────
+
+# 目标服务、会话驱动与 `/goal` 命令在宿主组合，这里只有面向模型的工具。
+- id: tool-goal
+  name: 'coding-tool-goal'
+
+# ── 计划 ────────────────────────────────────────────────────────────────────
+
+# 计划状态天然按 agent 归属，这里的 realm 就是正确寿命。
+- id: planning
+  name: cordis:group
+  group: true
+  isolate:
+    planMode: true
+  config:
+    - id: plan-mode
+      name: 'coding-plan-mode'
+      config:
+        section: |
+              You are in plan mode. Stay in plan mode until exit_plan_mode succeeds or the user switches the session mode. Imperative language to implement changes means plan the implementation, not execute it. A user's conversational agreement — including an answer confirming something you asked — approves nothing and does not end plan mode; fold the confirmed decision into the plan and submit it through exit_plan_mode.
+
+              Explore first. Use non-mutating reads, searches, static analysis, and checks to ground the plan in the actual repository. Do not edit or write files, change configuration, run formatters or code generation that rewrites tracked files, commit, or otherwise carry out the plan. Prefer existing functions and patterns over new machinery.
+
+              The tool catalog stays the same across modes for request-cache stability. These plan-mode rules override any later tool description or guidance that suggests using mutation tools; those tools remain listed to keep the tool catalog unchanged. Do not use todo_write to track this planning phase: it tracks implementation after an approved plan, while the plan itself belongs in exit_plan_mode.
+
+              Resolve discoverable facts by inspection. Use ask_user_question only for user-owned choices or material ambiguity that inspection cannot answer. Do not ask the user where code lives or how current behavior works when you can find out.
+
+              Make the plan decision-complete: state the goal and success criteria; group implementation changes by subsystem; identify public API, schema, and data-flow changes; cover edge cases, failure modes, tests, acceptance criteria, and explicit assumptions. Keep it concise enough to review but detailed enough that another engineer can implement it without making design decisions.
+
+              When ready, call exit_plan_mode with the complete plan markdown, starting with a # title. Make exit_plan_mode the only and final tool call in that assistant response: it presents the plan for approval, and implementation begins only in a later step after approval. Do not paste the final plan as a plain reply or ask "should I proceed?" through prose or ask_user_question. If review rejects it, incorporate the feedback and present again. If the review channel is unavailable or aborted, stay in plan mode and ask the user to switch modes manually; do not proceed with implementation.
+
+# ── 上下文压缩 ──────────────────────────────────────────────────────────────
+
+# `compaction-basic` 通过 `ctx.get` 读取 `toolResultPrune`，两者必须同 realm；
+# `tokenMeter` 留在宿主平面：它按 Session 记账，并持有浏览器读取的上下文投影单元。
+- id: compaction
+  name: cordis:group
+  group: true
+  isolate:
+    compaction: true
+    toolResultPruner: true
+  config:
+    - id: compaction-basic
+      name: 'coding-compaction-basic'
+
+    - id: command-compact
+      name: 'coding-command-compact'
+
+    - id: tool-context-compact
+      name: 'coding-tool-context-compact'
+
+    - id: tool-result-pruner
+      name: 'coding-compaction-tool-result-pruner'
+      config:
+        thresholdChars: 8192
+        headChars: 4096
+        tailChars: 1024
+
+# ── 委派与工作流 ────────────────────────────────────────────────────────────
+
+# 子代理注册表与 spawn／fork 后端在宿主组合：注册表是进程单例，跨会话查询由 api-proxy 提供。
+# 多页复刻常按页面或区块拆成互不依赖的子任务，因此保留完整的委派面。
+# `workflowEngine` 没有外部读取方，因此行内共享一个 entry realm。
+- id: delegation
+  name: cordis:group
+  group: true
+  isolate:
+    workflowEngine: true
+  config:
+    - id: tool-subagent-control
+      name: 'coding-tool-subagent-control'
+
+    - id: tool-subagent-list-agents
+      name: 'coding-tool-subagent-control/list-agents'
+
+    - id: tool-subagent
+      name: 'coding-tool-subagent'
+      config:
+        provider: spawn
+        toolName: subagent
+        backgroundMode: continuable
+
+    - id: tool-subagent-fork
+      name: 'coding-tool-subagent'
+      config:
+        provider: fork
+        toolName: subagent_fork
+        backgroundMode: continuable
+
+    # 生产安装不包含这两个可选 provider；装好对应 Bundle 后复制本 preset 并去掉 `disabled`。
+    - id: tool-subagent-codex
+      name: 'coding-tool-subagent'
+      disabled: true
+      config:
+        provider: codex
+        toolName: subagent_codex
+        backgroundMode: one-shot
+        maxDepth: provider-managed
+
+    - id: tool-subagent-claude-code
+      name: 'coding-tool-subagent'
+      disabled: true
+      config:
+        provider: claude-code
+        toolName: subagent_claude_code
+        backgroundMode: one-shot
+        maxDepth: provider-managed
+
+    - id: workflow-worker-thread
+      name: 'coding-workflow-worker-thread'
+      config:
+        provider: spawn
+
+    - id: tool-workflow
+      name: 'coding-tool-workflow'
+
+    - id: tool-ralph
+      name: 'coding-tool-ralph'
+      config:
+        subagentProvider: spawn
+        maxRounds: 64
+
+# ── 其余面向模型的行 ────────────────────────────────────────────────────────
+
+- id: tool-ask-user
+  name: 'coding-tool-ask-user'
+
+- id: tool-todo
+  name: 'coding-tool-todo'
+  config:
+    allowParallelInProgress: true
+
+# `web` 服务与搜索提供方在宿主组合；这里只有模型侧工具。
+- id: tool-web
+  name: 'coding-tool-web'
+  config:
+    fetch: false
+    searchTimeoutMs: 60000
+
+- id: tool-browser
+  name: 'coding-tool-browser-ego'
+
+# 复刻时常用图片补齐缺失素材或做占位对比；工具注册在会话预设层。
+- id: tool-image-gen
+  name: 'coding-tool-image-gen'
+
+# ── 工具呈现 ────────────────────────────────────────────────────────────────
+
+# 与标准模式一致：原生 schema 直呼，或用一个 TypeScript 程序组合多步观测与文件操作。
+# `both` 不会收起原生调用；代价是每个会话的请求前缀包含 SDK 段与 `run_code` schema，
+# 并要求宿主装配 `ctx.codeRuntime`。
+- id: tool-presentation
+  name: 'coding-agent-tool-presentation'
+  config:
+    mode: both

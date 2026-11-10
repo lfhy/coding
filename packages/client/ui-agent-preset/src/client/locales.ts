@@ -12,6 +12,7 @@ export type AgentPresetSettingsKey =
   | 'presetLongrunName' | 'presetLongrunDescription'
   | 'presetPptName' | 'presetPptDescription'
   | 'presetImageName' | 'presetImageDescription'
+  | 'presetWebcloneName' | 'presetWebcloneDescription'
   | 'duplicate' | 'duplicateUnavailable' | 'delete' | 'presetId' | 'presetIdPlaceholder' | 'copyOf'
   | 'displayName' | 'displayNamePlaceholder'
   | 'inUse' | 'noDescription' | 'builtInGroup' | 'customGroup'
@@ -63,6 +64,11 @@ export const en: Record<AgentPresetSettingsKey, string> = {
   presetImageName: 'Image creation mode',
   presetImageDescription:
     'Create images one at a time or in batches, edit existing images, and view the results in the gallery and AI canvas on the right.',
+  presetWebcloneName: 'Website cloning mode',
+  presetWebcloneDescription:
+    'All Standard mode capabilities plus bundled website-cloning skills: give it a URL and it rebuilds the real copy, '
+    + 'fonts, assets, and interactions as a runnable local page; when a site needs a login you sign in yourself in the '
+    + 'Agent browser panel on the right and cloning continues.',
   duplicate: 'Duplicate',
   duplicateUnavailable: 'This deployment has no writable preset directory',
   delete: 'Delete',
@@ -131,6 +137,8 @@ export const zh: Record<AgentPresetSettingsKey, string> = {
   presetPptDescription: '在对话里做 PPT：模型用 ppt_* 工具建工程、改页面与配色，右侧 PPT 工作台显示并手改同一份稿子，最后导出 .pptx；每一版都能撤销与回溯。',
   presetImageName: '画图模式',
   presetImageDescription: '在对话中单张或批量生成图片、编辑已有图片，并在右侧画廊和 AI 画布查看与整理创作结果。',
+  presetWebcloneName: '网页复刻模式',
+  presetWebcloneDescription: '具备标准模式的全部能力，并随模式分发网页复刻技能：给定网址就复刻真实文案、字体、资产与交互，产出本地可运行、可编辑的页面；需要登录时在右侧 Agent 浏览器面板由你本人登录后继续。',
   duplicate: '复制',
   duplicateUnavailable: '此部署未配置可写的预设目录',
   delete: '删除',
@@ -200,6 +208,7 @@ const BUILT_IN_PRESET_KEYS: Readonly<Partial<Record<string, PresetLocaleKeys>>> 
   longrun: { name: 'presetLongrunName', description: 'presetLongrunDescription' },
   ppt: { name: 'presetPptName', description: 'presetPptDescription' },
   image: { name: 'presetImageName', description: 'presetImageDescription' },
+  webclone: { name: 'presetWebcloneName', description: 'presetWebcloneDescription' },
 }
 
 /**
