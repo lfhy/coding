@@ -1,4 +1,4 @@
-/* Session-header agent-preset label: static chrome, never a control. */
+/* 页头模式标签只展示会话的固定模式，不提供切换控件。 */
 
 .label {
   display: inline-flex;

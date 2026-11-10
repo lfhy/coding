@@ -281,7 +281,6 @@ export function apply(ctx: Context): void {
     store: chatStore,
     inject: (): ConversationSessionHeaderInjected => ({
       views,
-      open: (id) => { sessions.open(id) },
       startSession: () => {
         layout.beginNewConversation()
         workspaces.startSession()

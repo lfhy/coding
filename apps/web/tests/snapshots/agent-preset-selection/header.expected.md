@@ -1,5 +1,3 @@
-- navigation "Session hierarchy":
-  - button "Seeded turn" [disabled]
 - img
 - text: Minimal mode
 - button "New session":

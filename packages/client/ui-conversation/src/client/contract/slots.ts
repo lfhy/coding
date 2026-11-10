@@ -71,22 +71,16 @@ declare module 'coding-client-ui-slots' {
      * composer chrome.
      */
     'conversation.session': { kind: 'single'; scope: 'session' }
-    /** 会话滚动区上方的标题、视图标签与动作行；替换页头会一同卸载它声明的动作 slot。 */
+    /** 会话滚动区上方的模式、视图标签与动作行；替换页头会一同卸载它声明的动作 slot。 */
     'conversation.session.header': { kind: 'single'; scope: 'session'; owner: ConversationOverviewOwnerProps }
     /**
-     * One button in the session header's action row — the additive way to put
-     * a per-session control beside the title without replacing the header.
-     * Entries render by ascending `order`; negative values are reserved for
-     * static session context that precedes interactive actions. The owner
-     * passes nothing: everything a control needs comes from the framework
-     * session kit (`sessionId`, `useSession`, `useInput`, `inputActions`) and
-     * from the registrant's own inject face, so an empty owner share means
-     * self-sufficient, not starved.
+     * 会话页头左侧的操作列表；模式标签等会话上下文占用负序号段，
+     * 普通动作按 `order` 升序排列。列表不显示会话标题或谱系。
+     * owner 不传入数据，各项从会话工具包或自身的 inject face 取值。
      */
     'conversation.session.header.actions': { kind: 'list'; scope: 'session'; owner: ConversationHeaderActionOwnerProps }
     /**
-     * Right-aligned Session utilities kept outside the title-adjacent action
-     * group, so an optional utility cannot reorder session context or lineage.
+     * 右对齐的会话工具列表，与左侧会话上下文和操作顺序相互独立。
      */
     'conversation.session.header.utilities': { kind: 'list'; scope: 'session'; owner: ConversationHeaderActionOwnerProps }
     /**
@@ -534,17 +528,15 @@ export interface ConversationSessionInjected {
   bindDraftMirror: (write: (text: string) => void) => () => void
 }
 
-/** Business callbacks injected into the strict session header seat. */
+/** 严格会话页头注入的操作。 */
 export interface ConversationSessionHeaderInjected {
-  /** Views projected from the `conversation.view` slot ledger. */
+  /** 从 `conversation.view` 注册表读取视图标签。 */
   views: {
     list: () => readonly ViewTab[]
     subscribe: (fn: () => void) => () => void
     version: () => number
   }
-  /** Select a real Session through the runtime navigation owner. */
-  open: (sessionId: SessionId) => void
-  /** Open a fresh blank session (current Session Workspace first). */
+  /** 在当前工作区开启一个空白会话。 */
   startSession: () => void
 }
 

@@ -1,6 +1,4 @@
 - banner:
-  - navigation "Session hierarchy":
-    - 'button "Using ONE run_code program: run" [disabled]'
   - img
   - text: Standard mode
   - button "New session":

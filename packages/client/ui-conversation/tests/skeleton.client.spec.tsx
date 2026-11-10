@@ -131,7 +131,6 @@ function mount(
   const useInput = bindSnapshotSelector(wiring.state)
   const inputActions = wiring.actions
   const stop = vi.fn()
-  const open = vi.fn()
   const slotCalls: string[] = []
   const viewTabs = options.viewTabs ?? [
     { id: 'chat', label: 'Chat' },
@@ -166,7 +165,6 @@ function mount(
           actions={chat.actions}
           renderSlot={renderSlot as never}
           views={views}
-          open={open}
           startSession={vi.fn()}
           overviewExpanded
           toggleOverview={vi.fn()}
@@ -264,7 +262,7 @@ function mount(
   }
   const view = render(<ConversationRoot {...props} />)
   return {
-    view, chat, sink, retargetWorkspace, sessions, session, slotCalls, seatOwners, open,
+    view, chat, sink, retargetWorkspace, sessions, session, slotCalls, seatOwners,
     pickerOwner: () => pickerOwner,
     rerender: () => { view.rerender(<ConversationRoot {...props} />) },
   }
@@ -359,16 +357,17 @@ describe('ConversationRoot resident composer', () => {
     expect(b.chat.store.getSnapshot().draft).toBe('ordinary revised')
     fireEvent.keyDown(box, { key: 'Enter' })
     expect(b.sink).toHaveBeenCalledWith('ordinary revised', [], 'queue', expect.any(AbortSignal))
-    expect((b.view.getByRole('button', { name: 'Child' }) as HTMLButtonElement).disabled).toBe(true)
-    expect(b.view.queryByText('Root')).toBeNull()
+    expect(b.view.getByRole('button', { name: '新建会话' })).toBeTruthy()
+    expect(b.view.queryByRole('navigation', { name: '会话层级' })).toBeNull()
   })
 
-  it('shows hierarchy only for subagents and opens their ordinary owner', () => {
+  it('子代理会话的页头只保留模式和操作，不重复绘制标题与谱系', () => {
     const b = mount(conversationSnapshot(), undefined, undefined, { summaryOrigin: 'subagent' })
-    const root = b.view.getByRole('button', { name: 'Root' })
-    expect((b.view.getByRole('button', { name: 'Child' }) as HTMLButtonElement).disabled).toBe(true)
-    fireEvent.click(root)
-    expect(b.open).toHaveBeenCalledWith(sid('root'))
+    const header = b.view.container.querySelector('header')!
+    expect(header.textContent).not.toContain('Root')
+    expect(header.textContent).not.toContain('Child')
+    expect(b.slotCalls).toContain('conversation.session.header.actions')
+    expect(b.view.getByRole('tab', { name: 'Chat' })).toBeTruthy()
   })
 
   it('active phase: fixed header outside the scrollport; sticky composer seat inside it', () => {

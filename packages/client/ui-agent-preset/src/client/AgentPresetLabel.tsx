@@ -1,43 +1,35 @@
-/**
- * The session header's agent-preset label.
- *
- * Read-only by construction: a session's composition is fixed once its
- * conversation starts, and a header is only worth reading after that. Offering
- * a control here would promise a switch the host refuses; naming what the
- * session runs is the honest affordance, and the choice itself lives on the
- * new-session screen ({@link AgentPresetSeat}).
- */
+/** 会话页头左侧的只读模式标签；会话开始后模式只能在新会话里重新选择。 */
 
 import { useEffect } from 'react'
 import type { SnapshotStore } from 'coding-client-runtime/client'
 import type { InjectFace, PropsLocale, PropsRuntime } from 'coding-client-ui-slots'
 import { IconAgentPresetOutline16 } from 'coding-client-ui-primitives'
-// Type-only: pulls the ui-conversation SlotMap merge (the header actions).
+// 类型导入使页头操作 slot 的定义在此包中可见。
 import type {} from 'coding-client-ui-conversation/client'
 import type { AgentPresetSettingsState } from './settings-store.ts'
 import { currentPresetDisplayText } from './locales.ts'
 import css from './AgentPresetLabel.module.css'
 
-/** Registration-side business face for the header label. */
+/** 页头模式标签的名单读取接口。 */
 export interface AgentPresetLabelInjected {
   hooks: {
-    /** Roster snapshot bound by the renderer as useAgentPresets. */
+    /** 由渲染器绑定的模式名单快照。 */
     agentPresets: SnapshotStore<AgentPresetSettingsState>
   }
-  /** Read the roster, so the label can show a name rather than an id. */
+  /** 请求模式名单，以便用显示名称代替标识。 */
   load: () => Promise<void>
 }
 
-/** Full component props. */
+/** 会话页头标签的完整属性。 */
 export type AgentPresetLabelProps =
   PropsRuntime<'conversation.session.header.actions'>
   & PropsLocale<'settings.agentPreset'>
   & InjectFace<AgentPresetLabelInjected>
 
 /**
- * Render this session's agent-preset name beside its title.
- * @param props - composed slot props.
- * @returns the label, or null when the session records no preset.
+ * 只显示当前会话的模式名称，不提供切换入口。
+ * @param props - 会话摘要与模式名单。
+ * @returns 会话记录了模式时的标签，否则不渲染。
  */
 export function AgentPresetLabel({
   sessionId, useSessions, useAgentPresets, load, t,
@@ -46,8 +38,7 @@ export function AgentPresetLabel({
   const options = useAgentPresets(state => state.options)
 
   useEffect(() => {
-    // Deployments that compose no presets never label anything, so the roster
-    // is only worth a request once a session reports one.
+    // 会话未记录模式时，不发起名单请求。
     if (preset !== undefined) void load()
   }, [preset, load])
 

@@ -1,73 +1,42 @@
-/** Strict per-session header/body content inserted into the resident conversation layout. */
+/** 在常驻对话列中渲染会话页头与主体；空白会话保留输入区节点。 */
 
 import { useEffect, useSyncExternalStore } from 'react'
 import clsx from 'clsx'
 import { IconChecklistOutline14, IconNewChatOutline16 } from 'coding-client-ui-primitives'
-import type { SessionId, SessionListState, SessionSummary } from 'coding-client-runtime/client'
 import type {
   ConversationSessionHeaderSlotProps, ConversationSessionSlotProps,
 } from '../contract/slots.ts'
 import type { ViewTab } from '../contract/views.ts'
 import css from './ConversationRoot.module.css'
 
-/** Full props composed from the strict session body contract. */
+/** 会话主体从严格会话作用域取得的完整属性。 */
 export type ConversationSessionProps = ConversationSessionSlotProps
 
-/** Full props composed from the strict session header contract. */
+/** 页头从严格会话作用域取得的完整属性。 */
 export type ConversationSessionHeaderProps = ConversationSessionHeaderSlotProps
-
-interface Breadcrumb {
-  readonly id: SessionId
-  readonly displayTitle: string
-}
 
 const DEFAULT_VIEW_ID = 'chat'
 
-/** Resolve by id and keep stale persisted selections on the stable Chat fallback. */
+/** 已保存的视图失效时，仍显示默认对话视图。 */
 function resolveActiveView(tabs: readonly ViewTab[], selectedId: string | null): ViewTab | undefined {
   const requestedId = selectedId ?? DEFAULT_VIEW_ID
   return tabs.find(view => view.id === requestedId)
     ?? tabs.find(view => view.id === DEFAULT_VIEW_ID)
 }
 
-function deriveAncestry(list: SessionListState, id: SessionId): readonly Breadcrumb[] {
-  const chain: Breadcrumb[] = []
-  const seen = new Set<SessionId>()
-  let cursor: SessionId | undefined = id
-  while (cursor !== undefined) {
-    if (seen.has(cursor)) break
-    seen.add(cursor)
-    const summary: SessionSummary | undefined = list.byId[cursor]
-    if (summary === undefined) break
-    chain.unshift({ id: summary.id, displayTitle: summary.displayTitle })
-    if (summary.origin !== 'subagent') break
-    cursor = summary.parentId
-  }
-  return chain
-}
-
-function equalBreadcrumbs(left: readonly Breadcrumb[], right: readonly Breadcrumb[]): boolean {
-  return left.length === right.length
-    && left.every((item, index) => {
-      const other = right.at(index)
-      return other !== undefined && item.id === other.id && item.displayTitle === other.displayTitle
-    })
-}
-
 /**
- * Renders Session header chrome above the resident conversation scrollport.
- * @param props - Strict Session store, view ledger, navigation, render, and locale shares.
- * @returns the hidden blank-session header or visible title and tabs.
+ * 在常驻滚动区上方渲染当前会话的模式、操作和视图切换。
+ * @param props - 会话快照、视图列表及页头操作。
+ * @returns 空白会话隐藏的页头，或已开始会话的操作行。
  */
 export function ConversationSessionHeader({
-  sessionId, useSession, useSessions, useStore, actions,
-  renderSlot, views, open, startSession, overviewExpanded, toggleOverview, t,
+  useSession, useStore, actions,
+  renderSlot, views, startSession, overviewExpanded, toggleOverview, t,
 }: ConversationSessionHeaderProps) {
   useSyncExternalStore(views.subscribe, views.version)
   const tabs = views.list()
   const selectedId = useStore(s => s.view)
   const active = resolveActiveView(tabs, selectedId)
-  const ancestry = useSessions(s => deriveAncestry(s, sessionId), equalBreadcrumbs)
   const composerPhase = useSession(s => s.composerPhase)
   const blank = useSession(s => s.blank)
   const hideChrome = blank && composerPhase === 'blank'
@@ -83,25 +52,6 @@ export function ConversationSessionHeader({
           <div className={css.activeHeaderDragStrip} data-window-drag-header-strip data-window-drag-region aria-hidden="true" />
           <div className={css.titleRow} data-window-drag-region>
             <div className={css.titleCluster}>
-              <nav className={css.crumbs} aria-label={t('session.hierarchy')}>
-                {ancestry.map((summary, index) => {
-                  const last = index === ancestry.length - 1
-                  return (
-                    <span key={summary.id} className={css.crumbSeg}>
-                      {index > 0 && <span className={css.crumbSep}>/</span>}
-                      <button
-                        type="button"
-                        className={clsx(css.crumb, last && css.crumbCurrent)}
-                        disabled={last}
-                        onClick={() => { open(summary.id) }}
-                      >
-                        {summary.displayTitle}
-                      </button>
-                    </span>
-                  )
-                })}
-                {ancestry.length === 0 && <span className={css.crumbCurrent}>{sessionId}</span>}
-              </nav>
               <div className={css.headerActions}>
                 {renderSlot('conversation.session.header.actions', {})}
               </div>
@@ -116,8 +66,7 @@ export function ConversationSessionHeader({
                 <IconNewChatOutline16 size={14} />
               </button>
             </div>
-            {/* DOM 顺序沿用“标题 → 工具 → 视图切换”，与无障碍和页头快照
-                一致；网格列把切换器放到视觉居中位置。 */}
+            {/* 操作先于视图切换以保留键盘顺序；网格列使视图切换居中。 */}
             <div className={css.headerUtilities}>
               <button
                 type="button"

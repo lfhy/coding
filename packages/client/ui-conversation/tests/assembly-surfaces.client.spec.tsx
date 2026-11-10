@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /** Conversation assembly acceptance independent of Tool presentation. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, waitFor, within } from '@testing-library/react'
+import { cleanup, fireEvent, waitFor } from '@testing-library/react'
 import { useState } from 'react'
 import { LocaleRuntime } from 'coding-client-locale/client'
 import type { ISession, SessionId } from 'coding-client-runtime/client'
@@ -215,18 +215,17 @@ describe('prompt rejection through the assembled composer', () => {
   })
 })
 
-describe('title projection across assembled surfaces', () => {
-  it('one summary update re-labels the current-session crumb', async () => {
+describe('会话页头与侧栏的职责', () => {
+  it('会话摘要改名后，页头仍不显示标题', async () => {
     const runtime = await bench()
     const view = runtime.renderRoot()
-    const hierarchy = view.getByRole('navigation', { name: '会话层级' })
-    expect(within(hierarchy).getByRole('button', { name: 'S' }).hasAttribute('disabled')).toBe(true)
+    const header = view.container.querySelector('header:not([aria-hidden="true"])')!
+    expect(header.textContent).not.toContain('S')
 
     await runtime.sessions.updateSummary(SID, { displayTitle: '修订标题', title: '修订标题' })
-    await waitFor(() => {
-      expect(within(hierarchy).getByRole('button', { name: '修订标题' }).hasAttribute('disabled')).toBe(true)
-    })
-    expect(within(hierarchy).queryByRole('button', { name: 'S' })).toBeNull()
+    expect(header.textContent).not.toContain('修订标题')
+    expect(view.queryByRole('navigation', { name: '会话层级' })).toBeNull()
+    expect(view.getByRole('button', { name: '新建会话' })).toBeTruthy()
     await runtime.dispose()
   })
 })

@@ -24,7 +24,6 @@ const BRANCHLESS_EXPECTED = fileURLToPath(new URL('./snapshots/subagent-conversa
 const STALE_CATALOG_EXPECTED = fileURLToPath(new URL('./snapshots/subagent-conversation/stale-catalog.expected.md', import.meta.url))
 const SIDEBAR_EXPECTED = fileURLToPath(new URL('./snapshots/subagent-conversation/sidebar.expected.md', import.meta.url))
 const UNAVAILABLE_GRANDCHILD_EXPECTED = fileURLToPath(new URL('./snapshots/subagent-conversation/nested.expected.md', import.meta.url))
-const FORK_EXPECTED = fileURLToPath(new URL('./snapshots/subagent-conversation/fork.expected.md', import.meta.url))
 const MODE = webSnapshotMode()
 const LABEL = 'event-sourcing researcher'
 const ONE_SHOT_LABEL = 'event-sourcing reviewer'
@@ -346,8 +345,9 @@ describe('web e2e: persisted subagent conversation and human continuation', () =
     if (scaffold.ctx.agents.get(childId) !== undefined) {
       throw new Error(`viewing the child activated it; API calls: ${apiCalls.join(', ')}`)
     }
-    const hierarchy = page.getByRole('navigation', { name: 'Session hierarchy' })
-    await hierarchy.getByRole('button', { name: LABEL, disabled: true }).waitFor()
+    const header = page.locator('[data-phase="active"] header:not([aria-hidden="true"])')
+    expect(await header.textContent()).not.toContain(LABEL)
+    expect(await page.getByRole('navigation', { name: 'Session hierarchy' }).count()).toBe(0)
     const sidebar = await captureStableAria(
       page,
       '[role="tree"][aria-label="Sessions"]',
@@ -419,9 +419,9 @@ describe('web e2e: persisted subagent conversation and human continuation', () =
     // `captureStableAria` calls two identical polls stable — including two of
     // "Loading history…". Wait for the message the golden asserts.
     await page.getByText(NESTED_PROMPT).waitFor()
-    const hierarchy = page.getByRole('navigation', { name: 'Session hierarchy' })
-    const crumbs = await hierarchy.getByRole('button').allTextContents()
-    expect(crumbs.slice(-2)).toEqual([LABEL, NESTED_LABEL])
+    const header = page.locator('[data-phase="active"] header:not([aria-hidden="true"])')
+    expect(await header.textContent()).not.toContain(NESTED_LABEL)
+    expect(await page.getByRole('navigation', { name: 'Session hierarchy' }).count()).toBe(0)
     expect(scaffold.ctx.agents.get(childId)).toBeUndefined()
     expect(scaffold.ctx.agents.get(grandchildId)).toBeUndefined()
     await compareOrRefreshGolden(
@@ -460,13 +460,12 @@ describe('web e2e: persisted subagent conversation and human continuation', () =
       { timeout: 15_000 },
     ).toBe(3)
     expect(await page.getByText('Ungrouped', { exact: true }).count()).toBe(0)
-    const hierarchy = page.getByRole('navigation', { name: 'Session hierarchy' })
-    await expect.poll(() => hierarchy.getByRole('button').count()).toBe(1)
-    await compareOrRefreshGolden(
-      FORK_EXPECTED,
-      await captureStableAria(page, '[role="tree"][aria-label="Sessions"]', scaffold.workspaceCwd),
-      MODE,
-    )
+    const header = page.locator('[data-phase="active"] header:not([aria-hidden="true"])')
+    expect(await header.textContent()).not.toContain(LABEL)
+    expect(await page.getByRole('navigation', { name: 'Session hierarchy' }).count()).toBe(0)
+    const forkTree = await captureStableAria(page, '[role="tree"][aria-label="Sessions"]', scaffold.workspaceCwd)
+    expect(forkTree).toContain('treeitem "Explain event sourcing in one (1) now" [selected]')
+    expect(forkTree).toMatch(/treeitem "Ask a research subagent to (?:now|\d+min)"/u)
   })
 
   it('cold-resumes the original subagent while its ordinary fork stays active', async () => {

@@ -1,6 +1,4 @@
 - banner:
-  - navigation "Session hierarchy":
-    - button "Use the read tool twice" [disabled]
   - button "New session":
     - img
   - button "Collapse session overview" [expanded]:

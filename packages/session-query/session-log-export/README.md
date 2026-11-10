@@ -22,7 +22,7 @@ Host 下载端点会在 `readRaw` 前 flush 活动的根 Session，因此斜杠�
   name: 'coding-session-log-export'
 ```
 
-Web bundle 将本包与 `dsh-host-apiproxy`、`dsh-commands`、`dsh-client-ui-commands` 和 `dsh-client-ui-conversation` 一起挂载。本包只把结果弹窗贡献到最右侧的 `conversation.session.header.utilities` 列表，页头因此不会在标题旁 `conversation.session.header.actions` 的模式、Subagent 和 Task 配置项之外渲染导出控件。
+Web bundle 将本包与 `dsh-host-apiproxy`、`dsh-commands`、`dsh-client-ui-commands` 和 `dsh-client-ui-conversation` 一起挂载。本包只把结果弹窗贡献到最右侧的 `conversation.session.header.utilities` 列表，不在左侧模式与会话操作的 `conversation.session.header.actions` 中添加导出控件。
 
 ## 模型体验
 

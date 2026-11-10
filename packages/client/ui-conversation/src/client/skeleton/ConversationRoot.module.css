@@ -1,8 +1,5 @@
-/* Conversation column skeleton: one-row header (breadcrumbs / centered view
-   switch / utilities) over the view area, composer InputBar at the bottom.
-   Column width/squeeze is layout's; this fills its cell. Figma: Header 39:27730;
-   the view switch is a centered segmented control rather than an underline tab
-   strip. */
+/* 对话列：左侧会话模式与操作、中间视图切换、右侧工具；输入栏位于底部。
+   列宽和压缩由布局壳负责，视图切换保持居中的分段控件。 */
 
 .root {
   position: relative;
@@ -132,7 +129,7 @@
   -webkit-app-region: no-drag;
 }
 
-/* macOS 收起 rail 后标题和按钮一起让开 x<90 的交通灯。 */
+/* macOS 收起 rail 后左侧模式和按钮一起让开 x<90 的交通灯。 */
 :global([data-sidebar-collapsed]) .titleRow {
   margin-left: max(0px, calc(var(--app-safe-area-inset-top, 0px) - 24px));
 }
@@ -144,54 +141,6 @@
   gap: 10px;
   min-width: 0;
   overflow: hidden;
-}
-
-.crumbs {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  min-width: 0;
-  overflow: hidden;
-  white-space: nowrap;
-}
-
-.crumbSeg {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  min-width: 0;
-}
-
-.crumbSep {
-  /* figma: "/" separators are 14px caption gray (75:7903), one tint lighter than crumb text. */
-  color: var(--dsw-alias-label-caption);
-  font-size: 14px;
-  line-height: 20px;
-}
-
-.crumb {
-  max-width: 220px;
-  overflow: hidden;
-  padding: 4px 8px;
-  border: none;
-  border-radius: 12px;
-  background: transparent;
-  font-size: 14px;
-  line-height: 20px;
-  color: var(--dsw-alias-label-tertiary);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  cursor: pointer;
-}
-
-.crumb:hover:not(:disabled) {
-  background: var(--dsw-alias-interactive-bg-hover);
-}
-
-.crumbCurrent {
-  font-weight: 500;
-  color: var(--dsw-alias-label-primary);
-  cursor: default;
 }
 
 .headerActions {
@@ -265,8 +214,7 @@
   display: none;
 }
 
-/* 顶栏视图切换：居中于标题行的胶囊分段控件；选中项用浮起的表面标识，
-   不再使用下方 2px 指示条。网格中列固定为 auto，标题与工具区各自截断。 */
+/* 顶栏视图切换居中；左右操作区各占等宽列，空间不足时视图切换换行。 */
 .tabs {
   display: inline-flex;
   grid-area: tabs;
@@ -318,8 +266,7 @@
   }
 }
 
-/* 窄列（右列工作台或窄窗口）放不下三段并排时，切换器独占第二行并继续居中，
-   标题与工具区留在第一行；容器查询按会话列宽度而不是视口宽度判断。 */
+/* 窄列时切换器独占第二行，模式与工具留在第一行；按会话列宽度判断。 */
 @container (max-width: 560px) {
   .titleRow {
     grid-template-areas:

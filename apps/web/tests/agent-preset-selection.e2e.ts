@@ -288,8 +288,9 @@ describe('web e2e: agent-preset selection', () => {
     await compareOrRefreshGolden(HEADER_EXPECTED, snapshot, MODE)
     expect(snapshot).toContain('Minimal mode')
     expect(snapshot).toContain('button "New session"')
-    // Static chrome, not a control: the header can only report a composition
-    // the host would refuse to change.
+    expect(snapshot).not.toContain('Seeded turn')
+    expect(snapshot).not.toContain('Session hierarchy')
+    // 模式只展示当前会话的组装，不承诺可切换。
     expect(snapshot).not.toContain('button "Minimal mode"')
     expect(snapshot).not.toContain('Subagents')
     const overview = page.getByRole('region', { name: 'Session overview' })

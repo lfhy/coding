@@ -1,6 +1,4 @@
 - banner:
-  - navigation "Session hierarchy":
-    - button "Load the editing-cordis-compositions ski" [disabled]
   - button "New session":
     - img
   - button "Collapse session overview" [expanded]:

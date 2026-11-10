@@ -1,6 +1,4 @@
 - banner:
-  - navigation "Session hierarchy":
-    - button "Use the bash tool to" [disabled]
   - img
   - text: Standard mode
   - button "New session":

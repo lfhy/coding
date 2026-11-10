@@ -1,6 +1,4 @@
 - banner:
-  - navigation "Session hierarchy":
-    - 'button "Run two shell commands: wait" [disabled]'
   - button "New session":
     - img
   - button "Collapse session overview" [expanded]:

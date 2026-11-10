@@ -18,7 +18,7 @@ afterEach(cleanup)
 const SESSION = 'header-panel-session' as SessionId
 
 describe('active conversation panel placement', () => {
-  it('renders both switches after title actions at the far right of the visible header', () => {
+  it('标题缺席时两个面板开关仍在页头最右侧', () => {
     const layout = createSnapshotStore<WorkbenchLayoutSnapshot>({
       open: false, fullscreen: false, bottomOpen: false,
     })
@@ -52,9 +52,10 @@ describe('active conversation panel placement', () => {
 
     const view = render(<ConversationSessionHeader {...props} />)
     const header = view.container.querySelector('header') as HTMLElement
-    const row = header.querySelector('nav[aria-label]')?.parentElement?.parentElement as HTMLElement
-    const utilities = row.lastElementChild as HTMLElement
+    const row = header.querySelector('[class*="titleRow"]') as HTMLElement
+    const utilities = row.querySelector('[class*="headerUtilities"]') as HTMLElement
     expect(header.getAttribute('aria-hidden')).toBeNull()
+    expect(header.textContent).not.toContain('Conversation')
     expect(row.firstElementChild?.contains(view.getByTestId('title-action'))).toBe(true)
     const overview = within(utilities).getByRole('button', { name: conversationZh['overview.expand'] })
     expect(overview.getAttribute('aria-expanded')).toBe('false')

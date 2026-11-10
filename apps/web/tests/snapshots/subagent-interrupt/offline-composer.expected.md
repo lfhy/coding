@@ -1,8 +1,4 @@
 - banner:
-  - navigation "Session hierarchy":
-    - button "Ask a research subagent to"
-    - text: /
-    - button "event-sourcing researcher" [disabled]
   - img
   - text: Standard mode
   - button "New session":

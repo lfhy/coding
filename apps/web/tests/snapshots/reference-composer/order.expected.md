@@ -1,6 +1,4 @@
 - banner:
-  - navigation "Session hierarchy":
-    - button "Reference order target" [disabled]
   - button "New session":
     - img
   - button "Collapse session overview" [expanded]:

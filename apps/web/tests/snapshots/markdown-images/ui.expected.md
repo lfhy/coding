@@ -1,6 +1,4 @@
 - banner:
-  - navigation "Session hierarchy":
-    - button "Markdown image policy" [disabled]
   - button "New session":
     - img
   - button "Collapse session overview" [expanded]:

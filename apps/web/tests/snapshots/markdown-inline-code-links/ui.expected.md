@@ -1,6 +1,4 @@
 - banner:
-  - navigation "Session hierarchy":
-    - button "Inline code links" [disabled]
   - button "New session":
     - img
   - button "Collapse session overview" [expanded]:

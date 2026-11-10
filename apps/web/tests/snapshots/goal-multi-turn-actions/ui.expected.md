@@ -1,6 +1,4 @@
 - banner:
-  - navigation "Session hierarchy":
-    - button "workspace" [disabled]
   - img
   - text: Standard mode
   - button "New session":

@@ -253,9 +253,9 @@ describe.skipIf(MODE === 'record')('web e2e: composer interrupt for a running co
 
   it('interrupts through subagent.interrupt, parks the follow-up, and resumes it FIFO', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-subagent-interrupt-flow'))
-    // Reselect the child with the truthful catalog: parent available again.
-    await page.getByRole('navigation', { name: 'Session hierarchy' })
-      .getByRole('button').first().click()
+    // 从侧栏回到父会话，重新读取可用的子代理目录。
+    await page.getByRole('tree', { name: 'Sessions' })
+      .getByRole('treeitem', { name: /Ask a research subagent to/ }).click()
     await page.getByRole('region', { name: 'Session overview' }).getByRole('button', { name: /^Subagents / }).click()
     await page.getByRole('treeitem', { name: new RegExp(LABEL) }).click()
     const input = page.getByRole('textbox', { name: 'Message the agent' })

@@ -266,10 +266,9 @@ describe('web e2e: long Chat interaction contract', () => {
     expect(child.session.events.some(event => carries(event, FIXTURE.markers.user(BRANCH_TURN + 1)))).toBe(false)
     expect(child.session.events.some(event => carries(event, FIXTURE.markers.user(FIXTURE.turns)))).toBe(false)
 
-    const currentCrumb = page.getByRole('navigation', { name: 'Session hierarchy' })
-      .getByRole('button').last()
-    await expect.poll(() => currentCrumb.textContent(), { timeout: 15_000 })
-      .toBe(`${FIXTURE.title} (1)`)
+    await expect.poll(async () => page.title(), { timeout: 15_000 })
+      .toBe(`${FIXTURE.title} (1) — Coding`)
+    expect(await page.locator('[data-phase="active"] header').textContent()).not.toContain(FIXTURE.title)
     await page.getByText(branchAssistantMarker, { exact: false }).last().waitFor({ timeout: 15_000 })
     const settled = scaffold.whenTurnSettled(60_000)
     const composer = page.locator('textarea:enabled').last()
