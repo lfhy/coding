@@ -8,7 +8,7 @@ import type {} from 'coding-file-library'
 import type { Session, SessionEvent, SessionId } from 'coding-session'
 import { CanvasConflictError, canvasSnapshot, galleryItems } from './gallery.ts'
 import { imageEndpoint, requestImage } from './openai.ts'
-import { outputSizes, validateImageOutput, validateOutputSizes } from './output-sizes.ts'
+import { outputSizes, resolveOutputSize, validateImageOutput, validateOutputSizes } from './output-sizes.ts'
 import { installImageRoutes } from './routes.ts'
 import type { CanvasSnapshot, CanvasState, GalleryItem } from './types.ts'
 
@@ -121,6 +121,16 @@ export class ImageGeneration extends Service {
   outputSizes(): Record<string, Record<string, string>> { return outputSizes(this.current().sizes) }
 
   /**
+   * 把模型给的比例与档位解析成当前尺寸表里的像素尺寸。
+   * @param aspectRatio - 形如 `16:9` 的比例；省略时由上游选择默认尺寸。
+   * @param resolution - `1K`／`2K`／`4K`；给出时必须同时给出比例。
+   * @returns 像素尺寸，或 `undefined` 表示不向上游指定尺寸。
+   */
+  sizeFor(aspectRatio?: string, resolution?: string): string | undefined {
+    return resolveOutputSize(this.current().sizes, aspectRatio, resolution)
+  }
+
+  /**
    * 工作台的参考图上限与服务端本次编辑上限保持一致。
    * @returns 单次编辑可引用的参考图数量。
    */
@@ -198,7 +208,7 @@ export class ImageGeneration extends Service {
     session: Session, prompt: string, sourceIds: readonly string[] = [],
     signal: AbortSignal = new AbortController().signal,
     output: { size?: string; quality?: string } = {},
-  ): Promise<GalleryItem> {
+  ): Promise<GalleryItem & { path: string }> {
     const current = this.current()
     const config: Config = { enabled: current.enabled, endpoint: current.endpoint,
       model: current.model, apiKeyRef: current.apiKeyRef,
@@ -257,7 +267,7 @@ export class ImageGeneration extends Service {
     signal.throwIfAborted()
     if (this.ctx.sessions.get(session.id) !== session) throw new Error('会话已关闭')
     const stored = await this.ctx.attachments.readImage(attachment, signal)
-    await this.ctx.fileLibrary.saveGeneratedImage({
+    const copy = await this.ctx.fileLibrary.saveGeneratedImage({
       sessionId: session.id, attachmentId: attachment.attachmentId,
       mediaType: stored.ref.mediaType, data: stored.data,
     })
@@ -271,7 +281,8 @@ export class ImageGeneration extends Service {
     }
     session.append('image-gen/created', { item })
     await this.ctx.sessions.flush(session)
-    return item
+    // 绝对路径只随本次返回值给出，不进会话事件：事件保持与机器无关，重放也不需要它。
+    return { ...item, path: copy.path }
   }
 
   /**

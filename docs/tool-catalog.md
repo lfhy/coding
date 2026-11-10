@@ -3387,6 +3387,14 @@ Edit an image in this session’s gallery using a text prompt.
     "imageId": {
       "type": "string",
       "description": "ID of an image in this session’s gallery."
+    },
+    "aspectRatio": {
+      "type": "string",
+      "description": "Output aspect ratio such as \"1:1\", \"16:9\", or \"2:3\"; must be one of the ratios this image service configured. Omit to keep the provider default."
+    },
+    "resolution": {
+      "type": "string",
+      "description": "Output resolution tier \"1K\", \"2K\", or \"4K\"; requires aspectRatio. Omit to use the smallest tier of the chosen ratio."
     }
   },
   "required": [
@@ -3400,7 +3408,7 @@ Source: [`packages/image/tool-image-gen/src/index.ts`](../packages/image/tool-im
 
 ### `generate_image`
 
-Generate one image and save it to this session’s gallery.
+Generate one image and save it to this session’s gallery. Pass aspectRatio for a specific output ratio and resolution for its tier; the result includes the file path and the gallery id.
 
 ```json
 {
@@ -3409,6 +3417,14 @@ Generate one image and save it to this session’s gallery.
     "prompt": {
       "type": "string",
       "description": "Describe the image to create or edit."
+    },
+    "aspectRatio": {
+      "type": "string",
+      "description": "Output aspect ratio such as \"1:1\", \"16:9\", or \"2:3\"; must be one of the ratios this image service configured. Omit to keep the provider default."
+    },
+    "resolution": {
+      "type": "string",
+      "description": "Output resolution tier \"1K\", \"2K\", or \"4K\"; requires aspectRatio. Omit to use the smallest tier of the chosen ratio."
     }
   },
   "required": [
@@ -3432,6 +3448,14 @@ Generate up to 10 images; each item succeeds or fails independently.
       "items": {
         "type": "string"
       }
+    },
+    "aspectRatio": {
+      "type": "string",
+      "description": "Output aspect ratio such as \"1:1\", \"16:9\", or \"2:3\"; must be one of the ratios this image service configured. Omit to keep the provider default."
+    },
+    "resolution": {
+      "type": "string",
+      "description": "Output resolution tier \"1K\", \"2K\", or \"4K\"; requires aspectRatio. Omit to use the smallest tier of the chosen ratio."
     }
   },
   "required": [
@@ -3604,6 +3628,7 @@ Array of edit operations, applied atomically in order. Each item is an object wi
 - {"op":"update_page","page":<pageId>,"name":<string>,"background":"#rrggbb"|null,"transition":"none"|"fade"|"push"};
 - {"op":"add_element","page":<pageId>,"element":{...}} — element kinds: text {id?,kind:"text",x,y,w,h,text:{content,size,color,bold,align:"left"|"center"|"right",valign:"top"|"middle"|"bottom"}}, rect|ellipse {id?,kind,x,y,w,h,fill}, line {id?,kind:"line",x,y,w,h,color,width}, image {id?,kind:"image",x,y,w,h,source:"media/<file>",fit:"cover"|"contain"}, table {id?,kind:"table",x,y,w,h,rows,columns,cells:[[{content}]],header?,headerFill?,borderColor?,text?:{size,color,bold,align}}, chart {id?,kind:"chart",x,y,w,h,chart:"bar"|"line"|"pie",categories:[<string>],series:[{name,values:[<number>],color,axis?:"primary"|"secondary",as?:"bar"|"line"}],stacked?,showValues?,textColor?} — axis 与 as 用于次坐标轴与组合图;
 - {"op":"update_element","page":<pageId>,"element":<elementId>,"frame":{x?,y?,w?,h?},"text":{...},"fill":..,"color":..,"width":..,"source":"media/<file>","fit":..,"cells":[[{content}]]};
+- {"op":"replace_image","page":<pageId>,"element":<imageOrRectId>,"source":"media/<file>","fit":"cover"|"contain","label":<overlaidTextId>?} — preserve size and position; label must be the adjacent, overlapping text;
 - {"op":"remove_element","page":<pageId>,"element":<elementId>};
 - {"op":"reorder_element","page":<pageId>,"element":<elementId>,"to":"front"|"back"|"forward"|"backward"} — z-order;
 - {"op":"duplicate_element","page":<pageId>,"element":<elementId>} — copy offset by 24px;

@@ -48,3 +48,41 @@ export function validateImageOutput(size?: string, quality?: string, sizes: Reco
     throw new TypeError('图像生成质量无效')
   }
 }
+
+/**
+ * 把模型给的比例与分辨率档位解析成当前尺寸表里的像素尺寸。
+ *
+ * 只给比例时取该比例下最小的档位，避免默认就请求最大的图；两项都不给返回
+ * `undefined`，交由上游选择默认值。比例或档位不在当前表里时抛错，并把可用
+ * 组合写进消息，让调用方一次就能改对，而不是反复试。
+ * @param sizes - 当前生效的比例到档位映射。
+ * @param aspectRatio - 形如 `16:9` 的比例；省略表示不限制。
+ * @param resolution - `1K`／`2K`／`4K` 档位；给出时必须同时给出比例。
+ * @returns 对应的像素尺寸，或 `undefined`。
+ */
+export function resolveOutputSize(
+  sizes: Record<string, Record<string, string>> = {},
+  aspectRatio?: string,
+  resolution?: string,
+): string | undefined {
+  const table = outputSizes(sizes)
+  if (aspectRatio === undefined && resolution === undefined) return undefined
+  const available = Object.entries(table)
+    .map(([ratio, tiers]) => `${ratio}=${Object.keys(tiers).join('/')}`)
+    .join(', ')
+  if (aspectRatio === undefined) {
+    throw new TypeError(`指定分辨率时必须同时给 aspectRatio；当前可用：${available}`)
+  }
+  const tiers = table[aspectRatio]
+  if (tiers === undefined) throw new TypeError(`不支持的图像比例 ${aspectRatio}；当前可用：${available}`)
+  const tierNames = Object.keys(tiers)
+  const smallest = tierNames[0]
+  if (resolution === undefined) {
+    // 表由 validateOutputSizes 保证每个比例至少有一个档位。
+    if (smallest === undefined) throw new TypeError(`比例 ${aspectRatio} 没有可用的分辨率档位`)
+    return tiers[smallest]
+  }
+  const size = tiers[resolution]
+  if (size === undefined) throw new TypeError(`比例 ${aspectRatio} 不支持分辨率 ${resolution}；当前可用：${tierNames.join('/')}`)
+  return size
+}

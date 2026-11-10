@@ -791,6 +791,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [{ name: 'sessionId', description: '页面所属的会话。' }],
         returns: '复核归属后的目标 id；会话不存在、页面已满或创建失败时为 null。',
       },
+      {
+        signature: 'async restoreSessionPages(sessionId: SessionId): Promise<boolean>',
+        description: '浏览器重启后仅为该会话重开它原先打开的页面。\n\n页面在会话自己的任务空间与隔离 context 中重建，网址来自运行时记录的受限列表； 其它会话的页面不会被这一调用打开。同一个会话重复调用是幂等的。',
+        parameters: [{ name: 'sessionId', description: '已在 sessions 服务中确认存在的会话。' }],
+        returns: '运行时确认恢复成功时为 true。',
+      },
     ],
   },
   {
@@ -810,10 +816,10 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: '持久记录和只供 Host 内部使用的绝对路径。',
       },
       {
-        signature: 'async saveGeneratedImage(input: { sessionId: string galleryId?: string attachmentId: string mediaType: GeneratedImageMediaType data: Uint8Array }): Promise<ManagedFileRecord>',
+        signature: 'async saveGeneratedImage(input: { sessionId: string galleryId?: string attachmentId: string mediaType: GeneratedImageMediaType data: Uint8Array }): Promise<{ record: ManagedFileRecord; path: string }>',
         description: '复制已由附件服务准入的不可变生成图片；原附件继续由附件服务拥有，字节限额仍由附件提供方控制。',
         parameters: [{ name: 'input', description: '会话、图库、附件引用及已准入编码字节。' }],
-        returns: '副本的持久元数据。',
+        returns: '副本的持久元数据，以及模型侧需要引用的绝对路径。',
       },
       {
         signature: 'list(offset: number = 0, limit: number = 50): ManagedFilePage',
@@ -1032,6 +1038,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: '比例到尺寸代号的像素尺寸映射。',
       },
       {
+        signature: 'sizeFor(aspectRatio?: string, resolution?: string): string | undefined',
+        description: '把模型给的比例与档位解析成当前尺寸表里的像素尺寸。',
+        parameters: [{ name: 'aspectRatio', description: '形如 `16:9` 的比例；省略时由上游选择默认尺寸。' }, { name: 'resolution', description: '`1K`／`2K`／`4K`；给出时必须同时给出比例。' }],
+        returns: '像素尺寸，或 `undefined` 表示不向上游指定尺寸。',
+      },
+      {
         signature: 'maxEditReferences(): number',
         description: '工作台的参考图上限与服务端本次编辑上限保持一致。',
         parameters: [],
@@ -1068,7 +1080,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: '此会话可用于 `edit_image` 的持久图库项。',
       },
       {
-        signature: 'async create( session: Session, prompt: string, sourceIds: readonly string[] = [], signal: AbortSignal = new AbortController().signal, output: { size?: string; quality?: string } = {}, ): Promise<GalleryItem>',
+        signature: 'async create( session: Session, prompt: string, sourceIds: readonly string[] = [], signal: AbortSignal = new AbortController().signal, output: { size?: string; quality?: string } = {}, ): Promise<GalleryItem & { path: string }>',
         description: '图片经附件准入后复制到全局文件库，才追加图库事实并等待会话持久化。 副本登记失败不发布图库项；会话持久化失败不回滚已追加事实或已登记副本。',
         parameters: [{ name: 'session', description: '发起生图的会话。' }, { name: 'prompt', description: '图片描述文本。' }, { name: 'sourceIds', description: '编辑来源的图库项 id；文生图为空。' }, { name: 'signal', description: '取消上游请求的中断信号。' }, { name: 'output', description: '可选尺寸与质量覆盖。' }],
         returns: '已持久化到会话图库的生成项。',
@@ -1802,6 +1814,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Cold-read one persisted session\'s projections with zero full-log load: cached rows + a persistence `readFrom` tail from the registry\'s restore floor, refolded by the registry and written back (fail-soft) so the next cold read starts closer. A cache row invalidated by a shrunk log (crash-repair truncation) triggers one full re-read from seq 0 — the ladder\'s slow rung, still no crash. Rejects when the session has no persisted log (`not found` from the persistence seam).',
         parameters: [{ name: 'id', description: 'the persisted session to read.' }, { name: 'signal', description: 'optional cancellation for the persistence reads.' }],
         returns: 'the snapshot cut at the stored log end.',
+      },
+      {
+        signature: 'async rebuild(id: SessionId, signal?: AbortSignal): Promise<ProjectionSnapshot>',
+        description: '强制冷读重建一个持久会话的投影缓存：忽略既有检查点行，从 seq 0 读取存储日志并用 `restore({}, events, 0)` 全量折叠，再整记录替换。 它绝不调用 `load`／`prepare`／`inspect`，因此不会提交合成 closer、 截断撕裂尾部或发布会话——只反映物理存储的日志前缀。供维护入口 （`session.rebuildMetadata`）修复“日志健康但缓存行丢失或可疑”的 会话；已提交的 seq 缺口仍按损坏拒绝，本方法不做日志修复。',
+        parameters: [{ name: 'id', description: '要重建的持久会话。' }, { name: 'signal', description: '取消持久化读取。' }],
+        returns: '重建出的日志末尾投影切面。',
       },
     ],
   },

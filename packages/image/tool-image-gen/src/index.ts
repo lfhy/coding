@@ -18,12 +18,23 @@ export interface Config {
 export const Config: z<Config> = z.object({ variant: z.union(['standard', 'codex']).default('standard') })
 
 const promptParam = { type: 'string', required: true, description: 'Describe the image to create or edit.' } as const
+/** 比例与档位由图像服务的尺寸表解析；不给就用服务默认，避免模型只能写进提示词里。 */
+const aspectParam = {
+  type: 'string',
+  description: 'Output aspect ratio such as "1:1", "16:9", or "2:3"; must be one of the ratios this image service configured. Omit to keep the provider default.',
+} as const
+const resolutionParam = {
+  type: 'string',
+  description: 'Output resolution tier "1K", "2K", or "4K"; requires aspectRatio. Omit to use the smallest tier of the chosen ratio.',
+} as const
 const itemOutput = { type: 'object', additionalProperties: true } as const
-const result = (item: GalleryItem): Record<string, string | number> => ({
+const result = (item: GalleryItem & { path?: string }): Record<string, string | number> => ({
   id: item.id, attachmentId: item.attachmentId, prompt: item.prompt,
   model: item.model, createdAt: item.createdAt, bytes: item.bytes,
   mediaType: item.mediaType, width: item.width, height: item.height,
   ...item.sourceImageId === undefined ? {} : { sourceImageId: item.sourceImageId },
+  // 生成图片的落盘地址：模型要把它放进页面、工程或 PPT 时不必再到文件系统里找。
+  ...item.path === undefined ? {} : { path: item.path },
 })
 /** 成功图像以持久引用进入工具结果，会话回放和后续模型请求均可重建该图片。 */
 function renderItem(item: Record<string, unknown>): ContentBlock[] {
@@ -32,8 +43,9 @@ function renderItem(item: Record<string, unknown>): ContentBlock[] {
     || typeof item.bytes !== 'number' || typeof item.width !== 'number' || typeof item.height !== 'number') {
     throw new TypeError('生成图像的附件元数据无效')
   }
+  const path = typeof item.path === 'string' && item.path !== '' ? ` File: ${item.path}.` : ''
   return [
-    { type: 'text', text: `Image created. ID: ${item.id}. Use this session's gallery to view it.` },
+    { type: 'text', text: `Image created. ID: ${item.id}.${path} Use this session's gallery to view it, and copy the file into the project when it must be part of the code.` },
     { type: 'image', attachment: { attachmentId: item.attachmentId as never,
       mediaType: item.mediaType as 'image/png', bytes: item.bytes, width: item.width, height: item.height } },
   ]
@@ -53,6 +65,8 @@ function registerVariant(
         transparent_background: { type: 'boolean', description: 'True is unsupported by this image provider.' },
         referenced_image_paths: { type: 'array', items: { type: 'string' }, description: 'Unsupported: local paths cannot be used as references.' },
         num_last_images_to_include: { type: 'integer', description: 'Use 1 to 10 most recent images in this session as references.' },
+        aspectRatio: aspectParam,
+        resolution: resolutionParam,
       },
       output: { schema: itemOutput, render: (_args, item) => renderItem(item) },
       async execute(args, exec) {
@@ -67,25 +81,33 @@ function registerVariant(
         const count = args.num_last_images_to_include
         const sources = count === undefined ? [] : ctx.imageGeneration.latestImages(session.events, count).map(image => image.id)
         if (count !== undefined && sources.length !== count) throw new Error('This session does not have enough recent images.')
-        return result(await ctx.imageGeneration.create(session, args.prompt, sources, exec.signal))
+        const size = ctx.imageGeneration.sizeFor(args.aspectRatio, args.resolution)
+        return result(await ctx.imageGeneration.create(session, args.prompt, sources, exec.signal,
+          size === undefined ? {} : { size }))
       },
     }))
     return
   }
   register(defineTool({
     name: 'generate_image',
-    description: 'Generate one image and save it to this session’s gallery.',
-    parameters: { prompt: promptParam },
+    description: 'Generate one image and save it to this session’s gallery. Pass aspectRatio for a specific output ratio and resolution for its tier; the result includes the file path and the gallery id.',
+    parameters: { prompt: promptParam, aspectRatio: aspectParam, resolution: resolutionParam },
     output: { schema: itemOutput, render: (_args, item) => renderItem(item) },
     async execute(args, exec) {
       if (!exec.agent) throw new Error('This image tool requires an active session.')
-      return result(await ctx.imageGeneration.create(exec.agent.session, args.prompt, [], exec.signal))
+      const size = ctx.imageGeneration.sizeFor(args.aspectRatio, args.resolution)
+      return result(await ctx.imageGeneration.create(exec.agent.session, args.prompt, [], exec.signal,
+        size === undefined ? {} : { size }))
     },
   }))
   register(defineTool({
     name: 'generate_images',
     description: 'Generate up to 10 images; each item succeeds or fails independently.',
-    parameters: { prompts: { type: 'array', items: { type: 'string' }, required: true } },
+    parameters: {
+      prompts: { type: 'array', items: { type: 'string' }, required: true },
+      aspectRatio: aspectParam,
+      resolution: resolutionParam,
+    },
     output: { schema: { type: 'object', additionalProperties: true },
       render: (_args, value): ContentBlock[] => {
         const images = Array.isArray(value.images) ? value.images : []
@@ -100,11 +122,15 @@ function registerVariant(
     async execute(args, exec) {
       if (!exec.agent) throw new Error('This image tool requires an active session.')
       if (args.prompts.length < 1 || args.prompts.length > 10) throw new Error('Provide 1 to 10 prompts.')
+      const size = ctx.imageGeneration.sizeFor(args.aspectRatio, args.resolution)
       const images: (Record<string, string | number> & { index: number })[] = []
       const failures: { index: number; error: string }[] = []
       for (const [index, prompt] of args.prompts.entries()) {
         exec.signal.throwIfAborted()
-        try { images.push({ index, ...result(await ctx.imageGeneration.create(exec.agent.session, prompt, [], exec.signal)) }) }
+        try {
+          images.push({ index, ...result(await ctx.imageGeneration.create(exec.agent.session, prompt, [], exec.signal,
+            size === undefined ? {} : { size })) })
+        }
         catch (error) {
           exec.signal.throwIfAborted()
           failures.push({ index, error: error instanceof Error && error.constructor.name === 'ImageGenerationUnavailableError'
@@ -128,11 +154,18 @@ function registerVariant(
   register(defineTool({
     name: 'edit_image',
     description: 'Edit an image in this session’s gallery using a text prompt.',
-    parameters: { prompt: promptParam, imageId: { type: 'string', required: true, description: 'ID of an image in this session’s gallery.' } },
+    parameters: {
+      prompt: promptParam,
+      imageId: { type: 'string', required: true, description: 'ID of an image in this session’s gallery.' },
+      aspectRatio: aspectParam,
+      resolution: resolutionParam,
+    },
     output: { schema: itemOutput, render: (_args, item) => renderItem(item) },
     async execute(args, exec) {
       if (!exec.agent) throw new Error('This image tool requires an active session.')
-      return result(await ctx.imageGeneration.create(exec.agent.session, args.prompt, [args.imageId], exec.signal))
+      const size = ctx.imageGeneration.sizeFor(args.aspectRatio, args.resolution)
+      return result(await ctx.imageGeneration.create(exec.agent.session, args.prompt, [args.imageId], exec.signal,
+        size === undefined ? {} : { size }))
     },
   }))
 }

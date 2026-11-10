@@ -16,16 +16,28 @@ async function setup(variant: 'standard' | 'codex', available = true) {
   await ctx.plugin(SystemPrompt)
   await ctx.plugin(ToolRuntime)
   const session = Session.create(SessionId('test'))
-  const create = async (_session: Session, prompt: string) => {
+  const create = async (_session: Session, prompt: string, _sources?: readonly string[], _signal?: AbortSignal,
+    output: { size?: string } = {}) => {
     if (prompt === 'bad') throw new Error('synthetic upstream failure')
-    return { ...ref, id: String(session.seq), prompt }
+    sizes.push(output.size)
+    return { ...ref, id: String(session.seq), prompt, path: `/tmp/coding-images/${String(session.seq)}.png` }
   }
+  /** 记录每次调用传入的像素尺寸，用于断言模型选择的比例真的传到了上游。 */
+  const sizes: (string | undefined)[] = []
   const calls: string[] = []
   let serviceAvailable = available
   const listeners = new Set<() => void>()
-  ctx.provide('imageGeneration', { create: async (s: Session, prompt: string) => {
+  ctx.provide('imageGeneration', { create: async (s: Session, prompt: string, sources: readonly string[] = [],
+    signal?: AbortSignal, output: { size?: string } = {}) => {
     calls.push(prompt)
-    return create(s, prompt)
+    return create(s, prompt, sources, signal, output)
+  }, sizeFor: (ratio?: string, resolution?: string) => {
+    if (ratio === undefined) {
+      if (resolution !== undefined) throw new TypeError('指定分辨率时必须同时给 aspectRatio')
+      return undefined
+    }
+    if (ratio !== '16:9') throw new TypeError(`不支持的图像比例 ${ratio}`)
+    return resolution === '2K' ? '2048x1152' : '1280x720'
   }, status: async () => ({ enabled: serviceAvailable, available: serviceAvailable, model: 'mock' }),
   watchAvailability: (listener: () => void) => {
     listeners.add(listener)
@@ -38,7 +50,7 @@ async function setup(variant: 'standard' | 'codex', available = true) {
   await apply(ctx, { variant })
   const agent = { session } as never
   const execute = (name: string, args: object) => ctx.tools.execute({ name, arguments: args, agent, signal, callId: CallId('call-1') })
-  return { ctx, session, execute, calls, listeners, setAvailable: (value: boolean) => {
+  return { ctx, session, execute, calls, sizes, listeners, setAvailable: (value: boolean) => {
     serviceAvailable = value
     for (const listener of listeners) listener()
   } }
@@ -74,6 +86,7 @@ describe('image tool variants and replayable image blocks', () => {
         listeners.add(listener)
         return () => { listeners.delete(listener) }
       },
+      sizeFor: () => undefined,
     } as never)
     const tools = ctx.tools
     const activation = apply(ctx)
@@ -103,9 +116,34 @@ describe('image tool variants and replayable image blocks', () => {
     expect(env.calls).toEqual([])
     const generated = await env.execute('image_gen', { prompt: 'bird', num_last_images_to_include: 1 })
     expect(generated.isError).toBe(false)
+    // 响应必须带可用的文件地址，模型不必再到文件系统里找图。
+    expect(String((generated.value as { path?: string }).path)).toMatch(/\.png$/u)
+    expect(JSON.stringify(generated.content[0])).toContain('/tmp/coding-images/')
     expect(generated.content[1]).toEqual({ type: 'image', attachment: {
       attachmentId: 'asset-1', mediaType: 'image/png', bytes: 50, width: 1, height: 1,
     } })
+    await env.ctx.fiber.dispose()
+  })
+
+  it('passes the ratio and tier the model asks for, and returns a usable file path', async () => {
+    const env = await setup('standard')
+    const byRatio = await env.execute('generate_image', { prompt: 'hero', aspectRatio: '16:9' })
+    expect(byRatio.isError).toBe(false)
+    // 只给比例时取该比例下最小的档位，而不是默认请求最大图。
+    expect(env.sizes).toEqual(['1280x720'])
+    expect(String((byRatio.value as { path?: string }).path)).toMatch(/\.png$/u)
+    const tiered = await env.execute('generate_images', { prompts: ['a', 'b'], aspectRatio: '16:9', resolution: '2K' })
+    expect(tiered.isError).toBe(false)
+    expect(env.sizes.slice(1)).toEqual(['2048x1152', '2048x1152'])
+    const edited = await env.execute('edit_image', { prompt: 'warmer', imageId: 'gallery-1', aspectRatio: '16:9' })
+    expect(edited.isError).toBe(false)
+    expect(env.sizes.at(-1)).toBe('1280x720')
+    // 不在尺寸表里的比例与只给分辨率都要明确失败，并说明可用组合。
+    const unknownRatio = await env.execute('generate_image', { prompt: 'hero', aspectRatio: '1:7' })
+    expect(unknownRatio.isError).toBe(true)
+    expect(JSON.stringify(unknownRatio)).toContain('不支持的图像比例')
+    const missingRatio = await env.execute('generate_image', { prompt: 'hero', resolution: '1K' })
+    expect(missingRatio.isError).toBe(true)
     await env.ctx.fiber.dispose()
   })
 

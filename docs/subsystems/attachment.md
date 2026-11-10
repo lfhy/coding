@@ -193,9 +193,9 @@ async saveUpload(input: { name: string sessionId: string stream: AsyncIterable<U
 /**
  * 复制已由附件服务准入的不可变生成图片；原附件继续由附件服务拥有，字节限额仍由附件提供方控制。
  * @param input - 会话、图库、附件引用及已准入编码字节。
- * @returns 副本的持久元数据。
+ * @returns 副本的持久元数据，以及模型侧需要引用的绝对路径。
  */
-async saveGeneratedImage(input: { sessionId: string galleryId?: string attachmentId: string mediaType: GeneratedImageMediaType data: Uint8Array }): Promise<ManagedFileRecord>
+async saveGeneratedImage(input: { sessionId: string galleryId?: string attachmentId: string mediaType: GeneratedImageMediaType data: Uint8Array }): Promise<{ record: ManagedFileRecord; path: string }>
 
 /**
  * 从领域快照按创建时间倒序分页；不返回本机路径。
@@ -248,6 +248,14 @@ async status(): Promise<{ enabled: boolean; available: boolean; model: string }>
  * @returns 比例到尺寸代号的像素尺寸映射。
  */
 outputSizes(): Record<string, Record<string, string>>
+
+/**
+ * 把模型给的比例与档位解析成当前尺寸表里的像素尺寸。
+ * @param aspectRatio - 形如 `16:9` 的比例；省略时由上游选择默认尺寸。
+ * @param resolution - `1K`／`2K`／`4K`；给出时必须同时给出比例。
+ * @returns 像素尺寸，或 `undefined` 表示不向上游指定尺寸。
+ */
+sizeFor(aspectRatio?: string, resolution?: string): string | undefined
 
 /**
  * 工作台的参考图上限与服务端本次编辑上限保持一致。
@@ -305,7 +313,7 @@ async importReference(session: Session, image: SaveImageAttachment): Promise<Gal
  * @param output - 可选尺寸与质量覆盖。
  * @returns 已持久化到会话图库的生成项。
  */
-async create( session: Session, prompt: string, sourceIds: readonly string[] = [], signal: AbortSignal = new AbortController().signal, output: { size?: string; quality?: string } = {}, ): Promise<GalleryItem>
+async create( session: Session, prompt: string, sourceIds: readonly string[] = [], signal: AbortSignal = new AbortController().signal, output: { size?: string; quality?: string } = {}, ): Promise<GalleryItem & { path: string }>
 
 /**
  * 画布写入只由当前活会话拥有；持久读取无需启动 Agent。

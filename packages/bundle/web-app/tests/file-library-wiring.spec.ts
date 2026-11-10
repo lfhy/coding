@@ -104,10 +104,11 @@ describe('Web 文件库装配', () => {
       const first = await boot()
       let recordId: string
       try {
-        const record = await first.fileLibrary.saveGeneratedImage({
+        const copy = await first.fileLibrary.saveGeneratedImage({
           sessionId: 'session-1', attachmentId: 'image-1', mediaType: 'image/png', data: new Uint8Array([1, 2, 3]),
         })
-        recordId = record.id
+        recordId = copy.record.id
+        expect(copy.path.startsWith(first.fileLibrary.root)).toBe(true)
         expect(first.fileLibrary.list()).toMatchObject({
           total: 1,
           items: [{ id: recordId, kind: 'generated-image', sessionId: 'session-1', bytes: 3 }],

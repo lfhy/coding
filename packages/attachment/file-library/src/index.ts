@@ -150,7 +150,7 @@ export class FileLibrary extends Service {
   /**
    * 复制已由附件服务准入的不可变生成图片；原附件继续由附件服务拥有，字节限额仍由附件提供方控制。
    * @param input - 会话、图库、附件引用及已准入编码字节。
-   * @returns 副本的持久元数据。
+   * @returns 副本的持久元数据，以及模型侧需要引用的绝对路径。
    */
   async saveGeneratedImage(input: {
     sessionId: string
@@ -158,7 +158,7 @@ export class FileLibrary extends Service {
     attachmentId: string
     mediaType: GeneratedImageMediaType
     data: Uint8Array
-  }): Promise<ManagedFileRecord> {
+  }): Promise<{ record: ManagedFileRecord; path: string }> {
     const sessionId = identity(input.sessionId, '会话标识')
     const galleryId = input.galleryId === undefined ? undefined : identity(input.galleryId, '图库标识')
     const attachmentId = identity(input.attachmentId, '附件标识')
@@ -170,7 +170,7 @@ export class FileLibrary extends Service {
     const record = await this.save('generated-image', name, `generated/${randomUUID()}.${extension}`,
       Readable.from([input.data]), { sessionId, ...(galleryId === undefined ? {} : { galleryId }), attachmentId },
       () => Promise.resolve(), input.mediaType)
-    return record.record
+    return record
   }
 
   private async save(kind: ManagedFileRecord['kind'], name: string, relativePath: string,

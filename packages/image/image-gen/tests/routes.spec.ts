@@ -78,7 +78,9 @@ async function boot(config?: Record<string, unknown>, realLibrary = false) {
   ctx.provide('attachments', { saveImage, readImage, imageLimits: { maxSourceImageBytes: 1024,
     maxImageBytes: 1024, maxImagesPerMessage: 10, maxMessageImageBytes: 10_240,
     maxSourceMessageImageBytes: 10_240, mediaTypes: ['image/png'] } } as never)
-  const saveGeneratedImage = vi.fn(async (_input: { sessionId: string; attachmentId: string; mediaType: string; data: Uint8Array }) => ({}))
+  const saveGeneratedImage = vi.fn(async (_input: { sessionId: string; attachmentId: string; mediaType: string; data: Uint8Array }) => ({
+    record: {}, path: '/var/lib/coding/files/generated/copy.png',
+  }))
   if (!realLibrary) ctx.provide('fileLibrary', { saveGeneratedImage } as never)
   const keys = new Map<string, string>()
   const resolveCredential = vi.fn(async (ref: string) => keys.has(ref) ? { value: keys.get(ref)!, source: 'test' } : undefined)
@@ -208,6 +210,8 @@ describe('image generation HTTP (real Loader)', () => {
     expect(result.status).toBe(200)
     expect(env.flushed).toHaveBeenCalledWith('one')
     const generated = (await result.json() as { item: { id: string } }).item
+    // 生成图的绝对路径只回给模型工具，HTTP 接口不暴露 Host 目录布局。
+    expect(generated).not.toHaveProperty('path')
     expect((await env.get('image', 'two', `&id=${generated.id}`)).status).toBe(404)
     expect((await env.get('image', 'one', `&id=${generated.id}`)).status).toBe(200)
     expect((await env.post('edit', { sessionId: 'two', prompt: 'edit', imageId: generated.id })).status).toBe(400)
@@ -273,7 +277,7 @@ describe('image generation HTTP (real Loader)', () => {
     env.saveGeneratedImage.mockImplementationOnce(async (input) => {
       expect(input.data).toEqual(normalized)
       expect(env.one.events.filter(event => event.type === 'image-gen/created')).toHaveLength(0)
-      return {}
+      return { record: {}, path: '/var/lib/coding/files/generated/copy.png' }
     })
     expect((await env.post('generate', { sessionId: 'one', prompt: 'draw' })).status).toBe(200)
     expect(env.one.events.filter(event => event.type === 'image-gen/created')).toHaveLength(1)

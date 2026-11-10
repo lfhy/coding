@@ -136,7 +136,8 @@ describe('the shipped Codex preset', () => {
       await vi.waitFor(() => { expect(toolNames(codex.agent).filter(name => name.startsWith('image_gen'))).toEqual(['image_gen']) })
       const imageSchema = ctx.tools.schemas(codex.agent).find(schema => schema.name === 'image_gen')
       expect(Object.keys(imageSchema?.parameters.properties ?? {}).sort()).toEqual([
-        'num_last_images_to_include', 'prompt', 'referenced_image_paths', 'transparent_background',
+        'aspectRatio', 'num_last_images_to_include', 'prompt', 'referenced_image_paths', 'resolution',
+        'transparent_background',
       ])
       expect(imageSchema?.parameters.required).toEqual(['prompt'])
       // 同一接口选择生成或最近图片编辑，不把未授权的绝对路径读取当作可用能力。

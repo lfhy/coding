@@ -211,10 +211,13 @@ export function installImageRoutes(ctx: Context, service: ImageGeneration): void
       const session = webCtx.sessions.get(id)
       if (!session) { fail(res, 404, '请先打开会话后再生成图片'); return }
       const sources = kind === 'edit' ? payload.imageIds as string[] | undefined ?? [payload.imageId as string] : []
-      const item = await service.create(session, payload.prompt, sources, AbortSignal.any([AbortSignal.timeout(120_000)]), {
+      const created = await service.create(session, payload.prompt, sources, AbortSignal.any([AbortSignal.timeout(120_000)]), {
         ...(payload.size === undefined ? {} : { size: payload.size }),
         ...(payload.quality === undefined ? {} : { quality: payload.quality }),
       })
+      // 生成文件的绝对路径只给模型工具用；浏览器接口不暴露 Host 目录布局。
+      const item: Record<string, unknown> = { ...created }
+      delete item.path
       json(res, 200, { item })
     })
   })

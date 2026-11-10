@@ -6,7 +6,7 @@ Host 的会话级图像生成/编辑服务。图像二进制先经 `ctx.attachme
 
 `image-generation` 设置分节提供 `enabled`（默认 `false`）、`endpoint`（默认空，OpenAI-compatible `/v1` 根地址）、`model`（默认空）、`apiKeyRef`（默认 `IMAGE_GEN_API_KEY`）、`maxEditReferences`（默认 10，可为 1 至 10）和 `sizes`（默认空表）。只有开关开启、地址和模型非空，且非空凭据引用可在 `coding-credentials` 中解析时服务才可用。`apiKeyRef: ''` 表示本地无鉴权服务，请求不发送 Authorization；设置中从不保存明文密钥。请求开始时锁定同一组配置，并逐次重新读取引用。`endpoint` 接受任意 HTTP(S) 主机，包括明文 HTTP、私网和单标签主机；拒绝空主机、内嵌凭据、query 与 fragment，提供方 POST 拒绝跳转。`sizes` 与 `maxEditReferences` 属于此设置分节，由配置文件维护，工作台只消费 Host 返回的选项。配置面板的可用性不是授权：每次服务操作均重新检查，使用者应只配置自己信任的服务。
 
-`sizes` 按比例到分辨率档位映射像素尺寸，例如 `{"1:1":{"1K":"1024x1024","2K":"2048x2048"}}`；空表使用上游兼容渠道的 1:1／2:3／3:2 三种 1K 预设。自定义比例取固定集合，档位为 1K／2K／4K，尺寸有边长和总像素预算；工作台只提供表中组合。手动请求的 `size` 必须属于当前表，`quality` 可选 `auto`／`low`／`medium`／`high`；两项在读取附件和调用上游之前验证，模型工具不传入时保持原来的上游默认行为。实际输出可能与请求尺寸不同，以附件宽高为准。
+`sizes` 按比例到分辨率档位映射像素尺寸，例如 `{"1:1":{"1K":"1024x1024","2K":"2048x2048"}}`；空表使用上游兼容渠道的 1:1／2:3／3:2 三种 1K 预设。模型工具用 `sizeFor(aspectRatio, resolution)` 把比例与档位解析成表里的像素尺寸：只给比例取该比例最小档位，只给档位报错，两项都不给返回 `undefined` 交给上游默认。自定义比例取固定集合，档位为 1K／2K／4K，尺寸有边长和总像素预算；工作台只提供表中组合。手动请求的 `size` 必须属于当前表，`quality` 可选 `auto`／`low`／`medium`／`high`；两项在读取附件和调用上游之前验证，模型工具不传入时保持原来的上游默认行为。实际输出可能与请求尺寸不同，以附件宽高为准。
 
 `status()` 是 Host 模式名单与工具注册共用的可用性判定。`watchAvailability()` 在设置来源挂载、卸载、解析值提交，或当前凭据引用更新后通知调用方重读状态；订阅本身不主动通知，调用方应先订阅再读取，撤销函数负责停止通知。环境变量变化不会触发凭据更新事件，实际生成请求仍逐次重新解析凭据并拒绝不可用配置。
 
@@ -23,7 +23,7 @@ Host 的会话级图像生成/编辑服务。图像二进制先经 `ctx.attachme
 - `GET /api/image-gen/image?sessionId=<id>&id=<item.id>` → 原始图像字节、正确 Content-Type 与 no-store；图库成员归属校验在附件读取之前执行。
 - `GET /api/image-gen/inspiration/v1/<hash>.webp` → 随包附带的 320px 灵感缩略图，Content-Type 为 `image/webp`，文件名只接受 16 位十六进制哈希并以 immutable 长期缓存；不接受目录、查询参数或路径穿越。
 - `POST /api/image-gen/import?sessionId=<id>` → `{item}`；请求体为单张 PNG/JPEG/WebP/GIF 原始字节，Content-Type 必须匹配。Host 以附件服务的源字节、图像格式、像素和动画限额校验，只有当前 live Session 可导入；禁用生成服务仍可导入并浏览参考图。写入后该图库项可作为编辑来源，不读取本机路径。
-- `POST /api/image-gen/generate`，JSON `{sessionId,prompt,size?,quality?}` → `{item}`；`POST /api/image-gen/edit`，JSON `{sessionId,prompt,imageId,size?,quality?}` 或 `{sessionId,prompt,imageIds,size?,quality?}` → `{item}`，`imageId`／`imageIds` 必须属于当前会话图库，二者不可并存；多图需要 `maxEditReferences` 允许。文本上限 4000 字符，操作超时 120 秒。图库项记录请求的 `size?`／`quality?` 供再次生成还原，图片真实宽高由附件服务给出。
+- `POST /api/image-gen/generate`，JSON `{sessionId,prompt,size?,quality?}` → `{item}`（`create()` 另带副本绝对路径 `path`，仅供模型工具使用，浏览器接口不返回该字段）；`POST /api/image-gen/edit`，JSON `{sessionId,prompt,imageId,size?,quality?}` 或 `{sessionId,prompt,imageIds,size?,quality?}` → `{item}`，`imageId`／`imageIds` 必须属于当前会话图库，二者不可并存；多图需要 `maxEditReferences` 允许。文本上限 4000 字符，操作超时 120 秒。图库项记录请求的 `size?`／`quality?` 供再次生成还原，图片真实宽高由附件服务给出。
 - `GET /api/image-gen/canvas?sessionId=<id>` → `{revision,state:{version:1,nodes:[]}}`；`PUT` 同 URL，JSON `{revision,state}` → 新快照。传入旧修订返回 409，前端应重新读取。画布 960×640，节点最多 128、单笔最多 2000 点、总共最多 10000 点、body 最多 64 KiB。`stroke` 为 `{id,type:'stroke',points:[{x,y}],width,color:'ink',erase?}`，`image` 为 `{id,type:'image',imageId,x,y,width,height}`；节点坐标、尺寸和 ID 有界，imageId 必须属于同一 Session 图库。禁用图像服务不阻断已有画布/图库读取。
 
 Session 中的 `image-gen/created` 与 `image-gen/canvas` 都是日志事实，不进入模型消息历史。生成与编辑在附件保存后，将归一化字节复制并登记为全局文件，成功后才追加图库记录并等待会话持久化；文件库登记或附件重读失败不发布图库成功，但已保存的附件不会回滚。会话持久化失败会拒绝操作，但不回滚已追加的图库记录或全局副本。模型工具与 HTTP 入口共用这一保证。从本机上传的参考图经附件服务准入并记录为 `model: 'import'` 的同会话图库项，不进入全局生成文件库；它不调用模型，之后可用该项 id 调图生图编辑。每次保存画布记录完整快照；日志可能随大量编辑增长，持续高频画布历史压缩需由后续会话保留策略解决。
