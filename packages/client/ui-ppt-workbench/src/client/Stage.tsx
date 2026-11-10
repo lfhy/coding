@@ -11,6 +11,7 @@ import type { Translate } from 'coding-client-ui-slots'
 import { SLIDE_SIZES, type PptDeck, type PptElementKind, type PptPage } from 'coding-ppt-model'
 import type { PptWorkbenchKey } from './locales.ts'
 import { SlideSurface, type ElementBox } from './SlideSurface.tsx'
+import { imageReplacementTarget } from './image-target.ts'
 import css from './Stage.module.css'
 
 export interface StageProps {
@@ -32,7 +33,7 @@ export interface StageProps {
   readonly onCutSelected: (id: string) => void
   readonly onPaste: (at?: { x: number; y: number }) => void
   readonly onInsert: (kind: PptElementKind) => void
-  readonly onChooseImage: (replaceId?: string) => void
+  readonly onChooseImage: (replaceId?: string, labelId?: string) => void
   /** 选中元素时按 Delete/Backspace 删除。 */
   readonly onDeleteSelected: (id: string) => void
   /** 选中元素时按 Cmd/Ctrl+D 复制副本。 */
@@ -66,7 +67,6 @@ export function Stage({
   const [draft, setDraft] = useState('')
   const [context, setContext] = useState<{
     id: string | null
-    kind: PptElementKind | null
     x: number
     y: number
     clientX: number
@@ -100,6 +100,7 @@ export function Stage({
 
   const size = SLIDE_SIZES[deck.size]
   const width = fitWidth(box, size.width / size.height)
+  const replacement = context?.id === null || context === null ? null : imageReplacementTarget(page, context.id)
   const contextItems: MenuEntry[] = context === null ? [] : [
     ...context.id === null ? [] : [
       { id: 'cut', label: t('cut'), icon: <IconCopyOutline16 size={14} /> },
@@ -107,7 +108,7 @@ export function Stage({
     ],
     { id: 'paste', label: t('paste'), icon: <IconCopyOutline16 size={14} />, disabled: !hasClipboard },
     { type: 'separator', id: 'edit-separator' },
-    ...context.kind === 'image' ? [{ id: 'replace', label: t('replaceImage'), icon: <Icon name="model-vision" size={14} /> }] : [],
+    ...replacement !== null ? [{ id: 'replace', label: t('replaceImage'), icon: <Icon name="model-vision" size={14} /> }] : [],
     ...context.id === null ? [
       { id: 'text', label: t('addText') }, { id: 'rect', label: t('addRect') },
       { id: 'ellipse', label: t('addEllipse') }, { id: 'line', label: t('addLine') },
@@ -125,7 +126,10 @@ export function Stage({
     if (action === 'copy' && target.id !== null) onCopySelected(target.id)
     else if (action === 'cut' && target.id !== null) onCutSelected(target.id)
     else if (action === 'paste') onPaste({ x: target.x, y: target.y })
-    else if (action === 'replace') onChooseImage(target.id ?? undefined)
+    else if (action === 'replace' && target.id !== null) {
+      const candidate = imageReplacementTarget(page, target.id)
+      if (candidate !== null) onChooseImage(candidate.id, candidate.label)
+    }
     else if (action === 'delete' && target.id !== null) onDeleteSelected(target.id)
     else if (action === 'image') onChooseImage()
     else if (action === 'text' || action === 'rect' || action === 'ellipse' || action === 'line'
@@ -186,7 +190,7 @@ export function Stage({
               if (busy || editingId !== null) return
               onSelect(id)
               host.current?.focus({ preventScroll: true })
-              setContext({ ...at, id, kind: page.elements.find(element => element.id === id)?.kind ?? null })
+              setContext({ ...at, id })
             },
           }}
           emptyHint={t('emptyPage')}

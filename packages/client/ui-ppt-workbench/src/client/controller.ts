@@ -7,6 +7,7 @@
 import { createSnapshotStore } from 'coding-client-runtime/client'
 import type { PptElement, PptElementKind, PptPage, SlideTransition } from 'coding-ppt-model'
 import { pastedElement } from './clipboard.ts'
+import { imageReplacementTarget } from './image-target.ts'
 import {
   errorOf, parseExport, parseSnapshot, parseState,
   type PptProjectView, type PptSnapshotView,
@@ -445,26 +446,31 @@ export class PptPanelController {
     await this.edit([{ op: 'reorder_element', page: page.id, element: elementId, to }])
   }
 
-  /** 上传图片并插入当前页，或仅替换所选图片的来源与保持原有几何。 */
-  async insertImage(file: File, replaceId?: string): Promise<void> {
+  /** 上传图片并插入当前页，或原位替换图片／矩形占位框及与其重合的提示文字。 */
+  async insertImage(file: File, replaceId?: string, labelId?: string): Promise<void> {
     const state = this.view.getSnapshot()
-    const page = currentPage(state.project, state.pageIndex)
-    if (page === null || state.project === null || state.busy) return
-    const image = replaceId === undefined ? null : page.elements.find(element => element.id === replaceId)
-    if (replaceId !== undefined && image?.kind !== 'image') return
-    const imageId = image?.id
+    const project = state.project
+    const page = currentPage(project, state.pageIndex)
+    if (page === null || project === null || state.busy) return
+    const target = replaceId === undefined ? null : imageReplacementTarget(page, replaceId)
+    if (replaceId !== undefined && (target === null || target.label !== labelId)) return
+    const targetId = target?.id
     await this.run(async () => {
       const buffer = new Uint8Array(await file.arrayBuffer())
-      const upload = await this.post('upload', { dir: state.project?.dir, name: file.name, base64: toBase64(buffer) })
+      const upload = await this.request(`upload?${new URLSearchParams({ sessionId: this.sessionId }).toString()}`, {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ dir: project.dir, name: file.name, base64: toBase64(buffer) }),
+      })
       const source = (upload as { source?: unknown } | null)?.source
       if (typeof source !== 'string') throw new Error('upload payload is malformed')
       const payload = await this.post('edit', {
-        dir: state.project?.dir,
-        baseRevision: state.project?.revision,
-        ops: [imageId === undefined
+        dir: project.dir,
+        baseRevision: project.revision,
+        ops: [targetId === undefined
           ? { op: 'add_element', page: page.id,
             element: { kind: 'image', source, fit: 'cover', x: 160, y: 120, w: 640, h: 360 } }
-          : { op: 'update_element', page: page.id, element: imageId, source }],
+          : { op: 'replace_image', page: page.id, element: targetId, source,
+            ...labelId === undefined ? {} : { label: labelId } }],
       })
       this.adopt(payload)
     })

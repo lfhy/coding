@@ -141,6 +141,37 @@ describe('工程存储', () => {
     }], withTable.revision)).rejects.toMatchObject({ code: 'conflict' })
   })
 
+  it('一次替换截图占位框及覆盖文字，保留层级与几何并可撤销', async () => {
+    const dir = join(root, 'ppt', 'image-placeholder')
+    const created = await createProject(dir, { title: '占位图' })
+    const page = created.deck.pages[0]!.id
+    const seeded = await editProject(dir, [
+      { op: 'add_element', page, element: { id: 'frame', kind: 'rect', x: 96, y: 188, w: 254, h: 143, fill: '#e8e5dc' } },
+      { op: 'add_element', page, element: { id: 'label', kind: 'text', x: 96, y: 188, w: 254, h: 143,
+        text: { content: '代码截图', size: 14, color: '#75736c', align: 'center', valign: 'middle' } } },
+      { op: 'add_element', page, element: { id: 'footer', kind: 'text', x: 96, y: 500, w: 254, h: 30,
+        text: { content: '保留的正文', size: 18, color: '#333333' } } },
+    ], created.revision)
+    const before = seeded.deck.pages[0]!.elements
+    const index = before.findIndex(element => element.id === 'frame')
+    await expect(editProject(dir, [{ op: 'replace_image', page, element: 'frame', label: 'footer',
+      source: 'media/shot.png' }], seeded.revision)).rejects.toThrow(/占位文字/u)
+    await expect(editProject(dir, [{ op: 'replace_image', page, element: 'footer',
+      source: 'media/shot.png' }], seeded.revision)).rejects.toThrow(/只能替换/u)
+    await expect(editProject(dir, [{ op: 'replace_image', page, element: 'frame',
+      source: '../invalid.png' }], seeded.revision)).rejects.toThrow(/media\//u)
+    expect((await loadProject(dir)).revision).toBe(seeded.revision)
+    const replaced = await editProject(dir, [{ op: 'replace_image', page, element: 'frame', label: 'label',
+      source: 'media/shot.png' }], seeded.revision)
+    const elements = replaced.deck.pages[0]!.elements
+    expect(elements[index]).toMatchObject({ id: 'frame', kind: 'image', x: 96, y: 188, w: 254, h: 143,
+      source: 'media/shot.png', fit: 'cover' })
+    expect(elements.map(element => element.id)).toEqual(before.filter(element => element.id !== 'label').map(element => element.id))
+    const undone = await undoProject(dir, 1)
+    expect(undone.revision).toBe(seeded.revision)
+    expect(undone.deck.pages[0]!.elements).toEqual(before)
+  })
+
   it('非法 ops 不产生新版本', async () => {
     const dir = join(root, 'ppt', 'deck')
     await createProject(dir, { title: '校验' })

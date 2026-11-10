@@ -59,7 +59,7 @@ export interface PptWorkbenchInjected {
   cutElement: (id: string) => Promise<void>
   pasteElement: (at?: { x: number; y: number }) => Promise<void>
   reorderElement: (id: string, to: 'front' | 'back' | 'forward' | 'backward') => Promise<void>
-  insertImage: (file: File, replaceId?: string) => Promise<void>
+  insertImage: (file: File, replaceId?: string, labelId?: string) => Promise<void>
   checkDeck: () => Promise<void>
   preview: (pages?: readonly number[]) => Promise<void>
   mediaUrl: (dir: string | undefined, source: string) => string
@@ -100,9 +100,9 @@ export function PptWorkbench({
   const [showIssues, setShowIssues] = useState(false)
   const [catalogOpen, setCatalogOpen] = useState(false)
   const fileInput = useRef<HTMLInputElement>(null)
-  const replacingImage = useRef<string | undefined>(undefined)
-  const chooseImage = (id?: string): void => {
-    replacingImage.current = id
+  const replacingImage = useRef<{ id: string; label?: string } | undefined>(undefined)
+  const chooseImage = (id?: string, label?: string): void => {
+    replacingImage.current = id === undefined ? undefined : { id, ...label === undefined ? {} : { label } }
     fileInput.current?.click()
   }
   const inspectorClose = useRef<HTMLButtonElement>(null)
@@ -298,11 +298,12 @@ export function PptWorkbench({
             onChange={(event) => {
               const file = event.target.files?.[0]
               event.target.value = ''
-              const replaceId = replacingImage.current
+              const replacement = replacingImage.current
               replacingImage.current = undefined
               if (file !== undefined) {
-                if (replaceId === undefined) void insertImage(file)
-                else void insertImage(file, replaceId)
+                if (replacement === undefined) void insertImage(file)
+                else if (replacement.label === undefined) void insertImage(file, replacement.id)
+                else void insertImage(file, replacement.id, replacement.label)
               }
             }} />
           {showIssues && state.issues !== null ? (

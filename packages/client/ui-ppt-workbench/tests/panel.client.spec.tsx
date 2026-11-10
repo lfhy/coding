@@ -397,6 +397,27 @@ describe('PPT 工作台面板', () => {
     expect(panel.props.addElement).toHaveBeenCalledWith('table')
   })
 
+  it('右键覆盖在矩形上的截图文字可替换整块，普通文字不出现替换图片', () => {
+    const rect: PptElement = { id: 'rect-1', kind: 'rect', x: 96, y: 188, w: 254, h: 143, fill: '#e8e5dc' }
+    const hint: PptElement = { id: 'hint-1', kind: 'text', x: 96, y: 188, w: 254, h: 143,
+      text: { content: '代码截图', size: 14, color: '#75736c', bold: false, align: 'center', valign: 'middle', font: '' } }
+    const text: PptElement = { id: 'body-1', kind: 'text', x: 96, y: 350, w: 254, h: 40,
+      text: { content: '普通正文', size: 20, color: '#333333', bold: false, align: 'left', valign: 'top', font: '' } }
+    const panel = mount({ ...ready, project: deckWith(rect, hint, text) }, true, zh)
+    fireEvent.contextMenu(canvasElement(panel.container, 'body-1'))
+    expect(screen.queryByRole('menuitem', { name: '替换图片' })).toBeNull()
+    fireEvent.contextMenu(canvasElement(panel.container, 'hint-1'))
+    expect(screen.getByRole('menuitem', { name: '替换图片' })).toBeTruthy()
+    fireEvent.click(screen.getByRole('menuitem', { name: '替换图片' }))
+    const replacement = new File(['image'], 'shot.png', { type: 'image/png' })
+    fireEvent.change(screen.getByLabelText('选择图片'), { target: { files: [replacement] } })
+    expect(panel.props.insertImage).toHaveBeenCalledWith(replacement, 'rect-1', 'hint-1')
+    fireEvent.contextMenu(canvasElement(panel.container, 'rect-1'))
+    fireEvent.click(screen.getByRole('menuitem', { name: '替换图片' }))
+    fireEvent.change(screen.getByLabelText('选择图片'), { target: { files: [replacement] } })
+    expect(panel.props.insertImage).toHaveBeenLastCalledWith(replacement, 'rect-1', 'hint-1')
+  })
+
   it('画布表格单元格双击编辑，失焦提交，Escape 放弃，快捷键不误删', () => {
     const table: PptElement = { id: 'table-1', kind: 'table', x: 100, y: 100, w: 420, h: 200,
       rows: 2, columns: 2, columnWeights: [1, 1], header: true, headerFill: '#eeeeee', borderColor: '#333333',

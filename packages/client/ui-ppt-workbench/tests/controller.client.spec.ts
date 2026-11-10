@@ -59,7 +59,11 @@ function editingFetcher(initial: unknown = editableProject()) {
       active = { ...snapshot, revision: snapshot.revision + 1 }
       return Response.json({ ok: true, project: active })
     }
-    if (path === '/api/ppt/upload') return Response.json({ ok: true, source: 'media/replaced.png' })
+    if (path === `/api/ppt/upload?sessionId=${SESSION}`) {
+      expect(body).toMatchObject({ dir: project.dir, name: 'new.png' })
+      expect(body).not.toHaveProperty('sessionId')
+      return Response.json({ ok: true, source: 'media/replaced.png' })
+    }
     throw new Error(`unexpected request: ${path}`)
   })
   return { fetcher, requests, failNextEdit: () => { failEdit = true }, setActive: (next: unknown) => { active = next } }
@@ -156,7 +160,7 @@ describe('PPT 面板轮询', () => {
     panel.dispose()
   })
 
-  it('剪切与单元格修改提交旧页数据，替换图片只更新图片来源', async () => {
+  it('剪切与单元格修改提交旧页数据，图片替换使用专用操作', async () => {
     const service = editingFetcher()
     const panel = new PptPanelController(SESSION, service.fetcher)
     await panel.refresh()
@@ -170,7 +174,31 @@ describe('PPT 面板轮询', () => {
     const image = { name: 'new.png', arrayBuffer: async () => Uint8Array.of(137, 80, 78).buffer } as File
     await panel.insertImage(image, 'image-1')
     expect(service.requests.filter(request => request.path === '/api/ppt/edit')[2]?.body)
-      .toMatchObject({ ops: [{ op: 'update_element', page: 'page-1', element: 'image-1', source: 'media/replaced.png' }] })
+      .toMatchObject({ ops: [{ op: 'replace_image', page: 'page-1', element: 'image-1', source: 'media/replaced.png' }] })
+    expect(service.requests.filter(request => request.path === `/api/ppt/upload?sessionId=${SESSION}`)).toHaveLength(1)
+    panel.dispose()
+  })
+
+  it('替换矩形与占位文字时一次提交，非法目标和失效标签不上传', async () => {
+    const base = editableProject()
+    const rect: PptElement = { id: 'placeholder', kind: 'rect', x: 96, y: 188, w: 254, h: 143, fill: '#e8e5dc' }
+    const label: PptElement = { id: 'label', kind: 'text', x: 96, y: 188, w: 254, h: 143,
+      text: { content: '代码截图', size: 14, color: '#75736c', bold: false, align: 'center', valign: 'middle', font: '' } }
+    const first = base.deck.pages[0]!
+    const service = editingFetcher({ ...base, deck: { ...base.deck, pages: [
+      { ...first, elements: [...first.elements, rect, label] }, ...base.deck.pages.slice(1),
+    ] } })
+    const panel = new PptPanelController(SESSION, service.fetcher)
+    await panel.refresh()
+    const image = { name: 'new.png', arrayBuffer: async () => Uint8Array.of(137, 80, 78).buffer } as File
+    await panel.insertImage(image, 'text-1')
+    await panel.insertImage(image, 'placeholder', 'text-1')
+    expect(service.requests.filter(request => request.path === `/api/ppt/upload?sessionId=${SESSION}`)).toHaveLength(0)
+    await panel.insertImage(image, 'placeholder', 'label')
+    expect(service.requests.filter(request => request.path === `/api/ppt/upload?sessionId=${SESSION}`)).toHaveLength(1)
+    expect(service.requests.find(request => request.path === '/api/ppt/edit')?.body).toMatchObject({
+      baseRevision: 1, ops: [{ op: 'replace_image', page: 'page-1', element: 'placeholder', label: 'label', source: 'media/replaced.png' }],
+    })
     panel.dispose()
   })
 })

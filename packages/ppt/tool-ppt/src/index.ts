@@ -398,6 +398,7 @@ const OPS_HELP = 'Array of edit operations, applied atomically in order. Each it
   + 'series:[{name,values:[<number>],color,axis?:"primary"|"secondary",as?:"bar"|"line"}],stacked?,showValues?,textColor?}'
   + ' — axis 与 as 用于次坐标轴与组合图;'
   + '\n- {"op":"update_element","page":<pageId>,"element":<elementId>,"frame":{x?,y?,w?,h?},"text":{...},"fill":..,"color":..,"width":..,"source":"media/<file>","fit":..,"cells":[[{content}]]};'
+  + '\n- {"op":"replace_image","page":<pageId>,"element":<imageOrRectId>,"source":"media/<file>","fit":"cover"|"contain","label":<overlaidTextId>?} — preserve size and position; label must be the adjacent, overlapping text;'
   + '\n- {"op":"remove_element","page":<pageId>,"element":<elementId>};'
   + '\n- {"op":"reorder_element","page":<pageId>,"element":<elementId>,"to":"front"|"back"|"forward"|"backward"} — z-order;'
   + '\n- {"op":"duplicate_element","page":<pageId>,"element":<elementId>} — copy offset by 24px;'

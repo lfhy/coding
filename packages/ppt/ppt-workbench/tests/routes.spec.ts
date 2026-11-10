@@ -82,6 +82,39 @@ describe('PPT 状态路由的真实 HTTP 组合', () => {
     expect((await send('art.svg', Buffer.from('<svg/>'))).status).toBe(400)
   })
 
+  it('通过真实路由上传并原位替换截图占位，拒绝失效版本而不覆盖工程', async () => {
+    const { base, projects } = await boot()
+    const created = await projects.create(SESSION, { title: '截图占位' })
+    const page = created.deck.pages[0]!.id
+    const seeded = await projects.edit(SESSION, undefined, [
+      { op: 'add_element', page, element: { id: 'frame', kind: 'rect', x: 96, y: 188, w: 254, h: 143, fill: '#e8e5dc' } },
+      { op: 'add_element', page, element: { id: 'label', kind: 'text', x: 96, y: 188, w: 254, h: 143,
+        text: { content: '代码截图', size: 14, color: '#75736c', align: 'center', valign: 'middle' } } },
+    ], created.revision)
+    const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64')
+    const uploaded = await fetch(`${base}/api/ppt/upload?sessionId=${SESSION}`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'shot.png', base64: png.toString('base64') }),
+    })
+    expect(uploaded.status).toBe(200)
+    const { source } = await uploaded.json() as { source: string }
+    const send = (baseRevision: number) => fetch(`${base}/api/ppt/edit`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ sessionId: SESSION, baseRevision,
+        ops: [{ op: 'replace_image', page, element: 'frame', label: 'label', source }] }),
+    })
+    expect((await send(created.revision)).status).toBe(409)
+    expect((await projects.read(SESSION)).revision).toBe(seeded.revision)
+    const edited = await send(seeded.revision)
+    expect(edited.status).toBe(200)
+    const elements = (await projects.read(SESSION)).deck.pages[0]!.elements
+    expect(elements.find(element => element.id === 'frame')).toMatchObject({
+      kind: 'image', x: 96, y: 188, w: 254, h: 143, source, fit: 'cover',
+    })
+    expect(elements.some(element => element.id === 'label')).toBe(false)
+    expect(await readFile(join(created.dir, source))).toEqual(png)
+  })
+
   it('空工程成功返回可用状态，模型新建与打开后各会话独立', async () => {
     const { base, projects } = await boot()
     const initial = await state(base)

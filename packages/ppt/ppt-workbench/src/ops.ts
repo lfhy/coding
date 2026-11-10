@@ -5,6 +5,7 @@
  */
 
 import { buildTemplate, PPT_TEMPLATES, templateName, type PptTemplateId } from './templates.ts'
+import { patchElement } from './element-patch.ts'
 import {
   bounded, color, defaultText, fontFamily, isRecord, mediaPath, newId, parseDeck, parseElement, PPT_THEMES,
   PptModelError,
@@ -108,6 +109,16 @@ export interface RemoveElementOp {
   readonly element: string
 }
 
+/** 用图片替换图片或矩形占位框；可同时移除覆盖在框上的占位文字，保留原 id、层级与几何。 */
+export interface ReplaceImageOp {
+  readonly op: 'replace_image'
+  readonly page: string
+  readonly element: string
+  readonly source: string
+  readonly fit?: 'cover' | 'contain'
+  readonly label?: string
+}
+
 /** 改标题、画布尺寸或主题。 */
 export interface UpdateDeckOp {
   readonly op: 'update_deck'
@@ -119,12 +130,12 @@ export interface UpdateDeckOp {
 /** 一次编辑的任意一步。 */
 export type PptOp =
   | AddPageOp | RemovePageOp | MovePageOp | UpdatePageOp
-  | AddElementOp | UpdateElementOp | RemoveElementOp
+  | AddElementOp | UpdateElementOp | RemoveElementOp | ReplaceImageOp
   | ReorderElementOp | DuplicateElementOp | UpdateDeckOp
 
 const OP_NAMES = [
   'add_page', 'remove_page', 'move_page', 'update_page',
-  'add_element', 'update_element', 'remove_element',
+  'add_element', 'update_element', 'remove_element', 'replace_image',
   'reorder_element', 'duplicate_element', 'update_deck',
 ] as const
 const TRANSITIONS = ['none', 'fade', 'push'] as const
@@ -306,6 +317,14 @@ function parseOp(value: unknown, at: string): PptOp {
         page: shortText(value.page, `${at}.page`, 64),
         element: shortText(value.element, `${at}.element`, 64),
       }
+    case 'replace_image':
+      return {
+        op, page: shortText(value.page, `${at}.page`, 64),
+        element: shortText(value.element, `${at}.element`, 64),
+        source: mediaPath(value.source, `${at}.source`),
+        ...value.fit === undefined ? {} : { fit: pick(['cover', 'contain'] as const, value.fit, `${at}.fit`) },
+        ...value.label === undefined ? {} : { label: shortText(value.label, `${at}.label`, 64) },
+      }
     case 'reorder_element':
       return {
         op,
@@ -405,67 +424,6 @@ function normalizeElement(raw: Record<string, unknown>, deck: PptDeck): PptEleme
   return parseElement(source, 'element')
 }
 
-/** 把 update_element 的字段合并到元素上，并按 kind 校验结果。 */
-function patchElement(element: PptElement, op: UpdateElementOp): PptElement {
-  if (op.fill !== undefined && element.kind !== 'rect' && element.kind !== 'ellipse') {
-    throw new PptModelError('fill 只对 rect / ellipse 元素有效')
-  }
-  if ((op.color !== undefined || op.width !== undefined) && element.kind !== 'line') {
-    throw new PptModelError('color 与 width 只对 line 元素有效')
-  }
-  if (op.text !== undefined && element.kind !== 'text') {
-    throw new PptModelError('text 只对 text 元素有效')
-  }
-  if ((op.source !== undefined || op.fit !== undefined) && element.kind !== 'image') {
-    throw new PptModelError('source 与 fit 只对 image 元素有效')
-  }
-  if (op.cells !== undefined && element.kind !== 'table') {
-    throw new PptModelError('cells 只对 table 元素有效')
-  }
-  if (op.chart !== undefined && element.kind !== 'chart') {
-    throw new PptModelError('chart 只对 chart 元素有效')
-  }
-  const next: Record<string, unknown> = { ...element }
-  if (op.frame !== undefined) {
-    for (const key of ['x', 'y', 'w', 'h'] as const) {
-      const value = op.frame[key]
-      if (value !== undefined) next[key] = value
-    }
-  }
-  if (element.kind === 'text' && op.text !== undefined) next.text = { ...element.text, ...op.text }
-  if ((element.kind === 'rect' || element.kind === 'ellipse') && op.fill !== undefined) next.fill = op.fill
-  if (element.kind === 'line') {
-    if (op.color !== undefined) next.color = op.color
-    if (op.width !== undefined) next.width = op.width
-  }
-  if (element.kind === 'image') {
-    if (op.source !== undefined) next.source = op.source
-    if (op.fit !== undefined) next.fit = op.fit
-  }
-  if (op.stacked !== undefined && element.kind !== 'chart') {
-    throw new PptModelError('stacked 只对 chart 元素有效')
-  }
-  if (element.kind === 'chart' && op.stacked !== undefined) next.stacked = op.stacked
-  if (element.kind === 'chart' && op.chart !== undefined) {
-    if (op.chart.series.some(series => series.values.length !== op.chart?.categories.length)) {
-      throw new PptModelError('图表系列的数值长度必须等于分类数')
-    }
-    next.categories = op.chart.categories
-    next.series = op.chart.series
-  }
-  if (op.animation !== undefined) next.animation = op.animation
-  if (op.emphasis !== undefined) next.emphasis = op.emphasis
-  if (op.exitAnimation !== undefined) next.exitAnimation = op.exitAnimation
-  if (op.pathAnimation !== undefined) next.pathAnimation = op.pathAnimation
-  if (element.kind === 'table' && op.cells !== undefined) {
-    if (op.cells.length !== element.rows || op.cells.some(row => row.length !== element.columns)) {
-      throw new PptModelError(`cells 维度必须等于 ${element.rows} × ${element.columns}`)
-    }
-    next.cells = op.cells
-  }
-  return parseElement(next, 'element')
-}
-
 /**
  * 把一次编辑应用到工程上。
  * @param deck - 当前工程（不会被修改）。
@@ -557,6 +515,36 @@ export function applyOps(deck: PptDeck, ops: readonly PptOp[]): { deck: PptDeck;
         }
         pages = replacePage(pages, at, { ...page, elements: page.elements.filter(item => item.id !== op.element) })
         touched.push(op.element)
+        break
+      }
+      case 'replace_image': {
+        const at = findPage(pages, op.page)
+        const page = pageAt(pages, at)
+        const source = page.elements.find(entry => entry.id === op.element)
+        if (source === undefined) throw new PptModelError(`页面 "${page.id}" 里没有元素 "${op.element}"`)
+        if (source.kind !== 'image' && source.kind !== 'rect') {
+          throw new PptModelError('只能替换图片或矩形占位框')
+        }
+        // 只移除紧贴目标且完全重合的单个覆盖文字；其他设计元素不作猜测。
+        const sourceIndex = page.elements.indexOf(source)
+        const candidate = page.elements[sourceIndex + 1]
+        const label = op.label === undefined ? undefined : candidate?.id === op.label && candidate.kind === 'text'
+          && candidate.x === source.x && candidate.y === source.y
+          && candidate.w === source.w && candidate.h === source.h ? candidate : undefined
+        if (op.label !== undefined && label === undefined) throw new PptModelError('占位文字未与图片框相邻且重合')
+        const image: PptElement = parseElement({
+          id: source.id, kind: 'image', x: source.x, y: source.y, w: source.w, h: source.h,
+          source: op.source, fit: op.fit ?? (source.kind === 'image' ? source.fit : 'cover'),
+          ...source.animation === undefined ? {} : { animation: source.animation },
+          ...source.emphasis === undefined ? {} : { emphasis: source.emphasis },
+          ...source.exitAnimation === undefined ? {} : { exitAnimation: source.exitAnimation },
+          ...source.pathAnimation === undefined ? {} : { pathAnimation: source.pathAnimation },
+        }, 'element')
+        const elements = page.elements.filter(entry => entry.id !== label?.id)
+          .map(entry => entry.id === source.id ? image : entry)
+        pages = replacePage(pages, at, { ...page, elements })
+        touched.push(source.id)
+        if (label !== undefined) touched.push(label.id)
         break
       }
       case 'reorder_element': {

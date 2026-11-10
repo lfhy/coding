@@ -71,7 +71,7 @@ workspace 共 275 个包，按 group 分节。每行给出包目录、职责（R
 - `packages/client/ui-open-in-app` — 右侧工作台的标签、功能菜单与显隐按 Session 管理；文件管理器、文件预览、Git 历史、终端和外部插件内容共用顶栏 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 17）
 - `packages/client/ui-permission-presets` — 面向两种不同生命周期的浏览器权限界面 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 3）
 - `packages/client/ui-plan` — Plan mode 状态徽章，纯浏览器 surface 插件 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 2）
-- `packages/client/ui-ppt-workbench` — 右侧边栏的「PPT 工作台」标签在打开工程后提供可收起的左侧缩略图与主画布，可就地改字、拖动元素、增删页与导出；操作收纳在顶部胶囊… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 6）
+- `packages/client/ui-ppt-workbench` — 右侧边栏的「PPT 工作台」标签在打开工程后提供可收起的左侧缩略图与主画布，可就地改字、拖动元素、增删页与导出；操作收纳在顶部胶囊… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 7）
 - `packages/client/ui-primitives` — 纯 React 原子组件（零 cordis）：StateDot、DisclosureRow、ic_ds_* 图标、Button/Pill/Men… 入口 `src/index.ts`（tests 22）
 - `packages/client/ui-reference` — 统一的 Web `@file` 与 `@session` source [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 1）
 - `packages/client/ui-renderer` — 负责 React 渲染层的浏览器 Cordis 插件 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 9）

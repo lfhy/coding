@@ -134,7 +134,7 @@ export function apply(ctx: ClientContext): void {
         cutElement: id => controller.cutElement(id),
         pasteElement: at => controller.pasteElement(at),
         reorderElement: (id, to) => controller.reorderElement(id, to),
-        insertImage: (file, replaceId) => controller.insertImage(file, replaceId),
+        insertImage: (file, replaceId, labelId) => controller.insertImage(file, replaceId, labelId),
         checkDeck: () => controller.checkDeck(),
         preview: pages => controller.preview(pages),
         mediaUrl: (dir, source) => {
