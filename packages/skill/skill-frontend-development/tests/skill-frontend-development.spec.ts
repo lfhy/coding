@@ -18,7 +18,7 @@ const motionRecipeUrls = [
   'feedback.css',
 ].map(name => new URL(`../assets/motion-recipes/${name}`, import.meta.url))
 const resourcePrefix = '${INTERNAL_SKILL_DIR}/coding-skill-frontend-development'
-const description = '在创建或修改前端、网页、组件或用户界面时使用。遵循项目已有技术栈、组件、图标库和设计规范；没有既有图标库时按需读取内置参考并默认选用 Lucide，禁止手写或内联 SVG（除非确实缺少领域图标且已走项目图标抽象）；请求失败等短暂通知必须使用共享 Toast，长流程使用分步模态框，抽屉内使用子 Tab；列表页不整页滚动，搜索与筛选工具栏留在视口内，只让列表区域内部滚动，长列表使用虚拟滚动与无限滚动加载；列表不超出屏幕宽度，长名称截断成省略号且整行不换行，行高统一，列不够时按优先级隐藏；避免文字海报和页面／图标硬切；禁止把系统或开发者提示、技能、工具调用、Agent 计划、框架／库／包标识、内部路径、调试信息或内部状态写进用户界面；完成后加载 browser-use 检查真实渲染与交互。仅在用户明确要求具名视觉方向时配合 stylekit，不能覆盖产品规范。'
+const description = '在创建或修改前端、网页、组件或用户界面时使用。遵循项目已有技术栈、组件、图标库和设计规范；没有既有图标库时按需读取内置参考并默认选用 Lucide，禁止手写或内联 SVG（除非确实缺少领域图标且已走项目图标抽象，且先用画图工具生成底板再转 SVG）；请求失败等短暂通知必须使用共享 Toast，长流程使用分步模态框，抽屉内使用子 Tab；列表页不整页滚动，搜索与筛选工具栏留在视口内，只让列表区域内部滚动，长列表使用虚拟滚动与无限滚动加载；列表不超出屏幕宽度，长名称截断成省略号且整行不换行，行高统一，列不够时按优先级隐藏；避免文字海报和页面／图标硬切；禁止把系统或开发者提示、技能、工具调用、Agent 计划、框架／库／包标识、内部路径、调试信息或内部状态写进用户界面；完成后加载 browser-use 检查真实渲染与交互。仅在用户明确要求具名视觉方向时配合 stylekit，不能覆盖产品规范。'
 
 describe('bundled frontend-development skill', () => {
   it('registers and loads its published instructions', async () => {
@@ -69,6 +69,10 @@ describe('bundled frontend-development skill', () => {
       expect(await readFile(motionIndexUrl, 'utf8')).toContain('view-switch.css')
       expect(await readFile(iconLibraryUrl, 'utf8')).toContain('Use [Lucide]')
       expect(await readFile(iconLibraryUrl, 'utf8')).toContain('Do not hand-draw or inline SVG icons')
+      // 缺插图／领域图标时先画底板再转 SVG，而不是凭空手绘路径。
+      expect(loaded.content).toContain('draw a base plate first with the image tool')
+      expect(loaded.content).toContain('Without image tools, fall back to a library icon with a label')
+      expect(await readFile(iconLibraryUrl, 'utf8')).toContain('Draw the base plate before writing the path')
       const listScrollReference = await readFile(listScrollUrl, 'utf8')
       expect(listScrollReference).toContain('the only scroll container')
       expect(listScrollReference).toContain('Do not simulate a fixed toolbar with `position: sticky`')

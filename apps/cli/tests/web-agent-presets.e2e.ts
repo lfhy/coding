@@ -281,6 +281,10 @@ describe('the shipped Web composition', () => {
       expect(prompt).toContain('`ppt_read({dir})` 只读取，不会切换当前工程')
       expect(prompt).toContain('`ops` 首选非空操作对象数组')
       expect(prompt).toContain('版本冲突时重新 `ppt_read` 核对用户改动和新版本')
+      // 完善插图时优先画图工具，并禁止用手绘 SVG 顶替。
+      expect(prompt).toContain('优先用画图工具')
+      expect(prompt).toContain('选图顺序')
+      expect(prompt).toContain('不使用手绘 SVG')
       const imageTools = () => toolNames(ctx, handle.agent).filter(name =>
         ['generate_image', 'generate_images', 'edit_image', 'canvas_state'].includes(name))
       expect(imageTools()).toEqual([])
