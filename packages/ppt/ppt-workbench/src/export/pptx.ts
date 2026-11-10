@@ -23,6 +23,7 @@ const NS = 'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" '
   + 'xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"'
 
 const REL_NS = 'http://schemas.openxmlformats.org/package/2006/relationships'
+const OFFICE_DOCUMENT_REL = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument'
 const SLIDE_REL = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide'
 const MASTER_REL = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster'
 const LAYOUT_REL = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout'
@@ -579,7 +580,7 @@ function chartCount(deck: PptDeck): number {
 }
 
 function packageRels(): string {
-  return rels([relationship('rId1', `${CONTENT_TYPES}.presentationml.presentation.main+xml`, 'ppt/presentation.xml')])
+  return rels([relationship('rId1', OFFICE_DOCUMENT_REL, 'ppt/presentation.xml')])
 }
 
 function presentationRels(pages: number, fonts: readonly PptxFont[]): string {

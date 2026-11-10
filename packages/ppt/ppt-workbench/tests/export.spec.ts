@@ -88,6 +88,10 @@ describe('.pptx 导出', () => {
 
     const types = entries.find(entry => entry.path === '[Content_Types].xml')?.data.toString('utf8') ?? ''
     expect(types).toContain('presentationml.slide+xml')
+    expect(types).toContain('ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"')
+    const rootRels = entries.find(entry => entry.path === '_rels/.rels')?.data.toString('utf8') ?? ''
+    expect(rootRels).toContain('Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="ppt/presentation.xml"')
+    expect(rootRels).not.toContain('Type="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"')
     const presentation = entries.find(entry => entry.path === 'ppt/presentation.xml')?.data.toString('utf8') ?? ''
     expect(presentation).toContain('<p:sldId id="256" r:id="rId2"/>')
     expect(presentation).toContain('cx="12192000"')
