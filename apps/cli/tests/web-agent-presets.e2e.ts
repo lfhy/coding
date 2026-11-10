@@ -285,6 +285,8 @@ describe('the shipped Web composition', () => {
       expect(prompt).toContain('优先用画图工具')
       expect(prompt).toContain('选图顺序')
       expect(prompt).toContain('不使用手绘 SVG')
+      // 插图要按画布比例生成，而不是先按默认方形出图再裁。
+      expect(prompt).toContain('aspectRatio')
       const imageTools = () => toolNames(ctx, handle.agent).filter(name =>
         ['generate_image', 'generate_images', 'edit_image', 'canvas_state'].includes(name))
       expect(imageTools()).toEqual([])

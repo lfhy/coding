@@ -181,6 +181,8 @@ describe('webclone skills ship with the preset', () => {
     expect(text).toContain('品牌 logo')
     expect(text).toContain('docs/research/<site>/')
     expect(text).toContain('工具缺席时不要说')
+    // 生成占位图时要按区块宽高比要图，避免插入后再裁切。
+    expect(text).toContain('aspectRatio')
     // 部署的 `coding:guidelines`（order −98）先于 persona 渲染：它要求小步提交，
     // persona 必须把这条要求接到复刻工程上（版本基线、可回滚的切片、忽略原始素材）。
     expect(text).toContain('git init')
