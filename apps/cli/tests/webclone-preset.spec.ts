@@ -172,9 +172,15 @@ describe('webclone skills ship with the preset', () => {
     expect(text).toContain('go:embed')
     expect(text).toContain('web/dist')
     expect(text).toContain('index.html')
-    // 画图工具在图像服务就绪时可用；提示词要说明它存在，否则模型不会用它补素材。
-    expect(text).toContain('generate_image')
-    expect(text).toContain('canvas_state')
+    // 画图工具：模型侧名称、什么时候该用、什么时候不该用、工具缺席时怎么说，都要写进提示词。
+    expect(text).toContain('`generate_image`')
+    expect(text).toContain('`canvas_state`')
+    // 插件包叫 coding-tool-image-gen，但模型工具名是下划线四件套，不能写成 image-gen。
+    expect(text).toContain('不叫 `image-gen`')
+    expect(text).toContain('真实素材永远优先')
+    expect(text).toContain('品牌 logo')
+    expect(text).toContain('docs/research/<site>/')
+    expect(text).toContain('工具缺席时不要说')
     // 部署的 `coding:guidelines`（order −98）先于 persona 渲染：它要求小步提交，
     // persona 必须把这条要求接到复刻工程上（版本基线、可回滚的切片、忽略原始素材）。
     expect(text).toContain('git init')

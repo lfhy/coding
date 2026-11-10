@@ -362,6 +362,20 @@ describe('the shipped Web composition', () => {
         })
         await vi.waitFor(() => { expect(imageTools()).toEqual(['canvas_state', 'edit_image', 'generate_image', 'generate_images']) })
         expect(resolveSessionPreset(handle.agent.session)).toBe(preset)
+        const prompt = (await ctx.systemPrompt.assemble({ scope: handle.agent })).sections
+          .map(section => section.text).join('\n')
+        if (preset === 'webclone') {
+          // 工具在列表里只是「能用」；模型还得知道什么时候该用、什么时候不该用，
+          // 这段判断必须出现在它真正读到的提示词里，而不是只写在工具 schema 里。
+          expect(prompt).toContain('`generate_image`')
+          expect(prompt).toContain('不叫 `image-gen`')
+          expect(prompt).toContain('真实素材永远优先')
+          expect(prompt).toContain('品牌 logo')
+          expect(prompt).toContain('docs/research/<site>/')
+          expect(prompt).toContain('工具缺席时不要说')
+          // standard 变体不注册 codex 的单一工具，提示词里也不该出现该名字。
+          expect(prompt).not.toContain('image_gen')
+        }
       } finally {
         await ctx.settings.update(settingsNamespace('image-generation'), { enabled: false })
         await handle.dispose()
