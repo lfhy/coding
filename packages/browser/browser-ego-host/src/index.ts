@@ -89,6 +89,7 @@ export default class EgoBrowserHost extends Service {
       sessionScopedSpaces: true,
       isolateSpaces: false,
       residentExecutor: true,
+      keepBrowserRunning: true,
     }
     applyUpstream(proxy, config)
     this.definitions = Object.freeze(collected)
@@ -279,6 +280,33 @@ export default class EgoBrowserHost extends Service {
         || !this.ctx.sessions.get(sessionId) || !(await targetIdsForSession(sessionId)).has(result.targetId)) return null
       return result.targetId
     } catch { return null }
+  }
+
+  /**
+   * 浏览器重启后仅为该会话重开它原先打开的页面。
+   *
+   * 页面在会话自己的任务空间与隔离 context 中重建，网址来自运行时记录的受限列表；
+   * 其它会话的页面不会被这一调用打开。同一个会话重复调用是幂等的。
+   * @param sessionId - 已在 sessions 服务中确认存在的会话。
+   * @returns 运行时确认恢复成功时为 true。
+   */
+  async restoreSessionPages(sessionId: SessionId): Promise<boolean> {
+    if (!this.ctx.sessions.get(sessionId)) return false
+    const space = spaceNameForSession(sessionId)
+    const script = `const restored = await ego.restoreTaskSpace(${JSON.stringify(space)})\n` +
+      'console.log(\'@@DSH_RESULT@@\' + JSON.stringify({ ok: restored }))\n'
+    const env: NodeJS.ProcessEnv = { ...(this.browserEnv?.() ?? process.env), EGO_ISOLATE_SPACES: '1' }
+    try {
+      const handle = this.ctx.subprocess.spawn({
+        argv: [process.execPath, CLI, 'nodejs'], cwd: process.cwd(), env,
+        stdio: { stdin: { data: script }, stdout: { maxBytes: 4096 }, stderr: { maxBytes: 4096 } },
+        graceMs: 30_000,
+      })
+      const outcome = await handle.done
+      if (outcome.exitCode !== 0) return false
+      const result: unknown = parseScriptResult(handle.collected.stdout?.readFrom(0).text ?? '')
+      return Boolean(result && typeof result === 'object' && 'ok' in result && result.ok === true)
+    } catch { return false }
   }
 
   /** 在执行入口记录活动历史，失败仍交给上游工具自己报告。 */

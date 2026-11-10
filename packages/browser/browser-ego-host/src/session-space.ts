@@ -72,3 +72,21 @@ export async function targetIdsForSession(sessionId: SessionId): Promise<Readonl
   const matched = (await readTaskSpaceGroups()).filter(group => group.name === spaceNameForSession(sessionId))
   return matched.length === 1 ? new Set(matched[0]?.targetIds) : new Set()
 }
+
+/**
+ * 浏览器重启后该会话是否还有等待恢复的页面；由运行时在旧目标全部失效时标记。
+ * @param sessionId - 已在 sessions 服务中确认存在的会话。
+ * @returns 存在待恢复网址时为 true，读取失败或没有登记时为 false。
+ */
+export async function pendingRestoreForSession(sessionId: SessionId): Promise<boolean> {
+  const name = spaceNameForSession(sessionId)
+  try {
+    const raw: unknown = JSON.parse(await readFile(join(egoStateDirectory(), 'task-spaces.json'), 'utf8'))
+    if (!raw || typeof raw !== 'object' || !('spaces' in raw) || !Array.isArray(raw.spaces)) return false
+    return raw.spaces.some((entry: unknown) => {
+      if (!entry || typeof entry !== 'object') return false
+      const space = entry as Record<string, unknown>
+      return space.name === name && Array.isArray(space.pendingRestore) && space.pendingRestore.length > 0
+    })
+  } catch { return false }
+}

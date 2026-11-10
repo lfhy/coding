@@ -2786,6 +2786,7 @@ function resolveConfig(config = {}) {
     // Default true: two sessions silently sharing one space was the root of
     // cross-session tab theft. Explicit opt-out keeps the old shared space.
     sessionScopedSpaces: typeof config.sessionScopedSpaces === "boolean" ? config.sessionScopedSpaces : !(config.sessionScopedSpaces === "false" || config.sessionScopedSpaces === "0" || config.sessionScopedSpaces === 0),
+    keepBrowserRunning: config.keepBrowserRunning === true,
     idleTimeoutMin: finiteIn(config.idleTimeoutMin, 0, 1440) ? config.idleTimeoutMin : 0,
     // Default false (= frame relay ON, unchanged behavior); the switch is opt-in.
     disableFrameRelay: typeof config.disableFrameRelay === "boolean" ? config.disableFrameRelay : config.disableFrameRelay === "true" || config.disableFrameRelay === "1" || config.disableFrameRelay === 1,
@@ -4149,6 +4150,10 @@ function resolveEgoEnv(cfg, { platform = process.platform, baseEnv = process.env
   if (env.EGO_ISOLATE_SPACES === void 0 && cfg?.isolateSpaces !== void 0) {
     env.EGO_ISOLATE_SPACES = cfg.isolateSpaces ? "1" : "0";
   }
+  if (cfg?.keepBrowserRunning) {
+    env.EGO_LINUX_SPACE_IDLE_MIN = "0";
+    env.EGO_KEEP_SESSION_PAGES = "1";
+  }
   if (env.EGO_LINUX_HEADLESS === void 0 && cfg?.headless !== void 0) {
     env.EGO_LINUX_HEADLESS = cfg.headless ? "1" : "0";
   }
@@ -4815,6 +4820,9 @@ function apply(ctx, config = {}) {
     get sessionScopedSpaces() {
       return resolveConfig(bridge2.source()).sessionScopedSpaces;
     },
+    get keepBrowserRunning() {
+      return resolveConfig(bridge2.source()).keepBrowserRunning;
+    },
     get idleTimeoutMin() {
       return resolveConfig(bridge2.source()).idleTimeoutMin;
     },
@@ -4895,7 +4903,7 @@ function apply(ctx, config = {}) {
     }
   });
   ctx.effect?.(() => {
-    if (cfg.idleTimeoutMin <= 0) return;
+    if (cfg.keepBrowserRunning || cfg.idleTimeoutMin <= 0) return;
     let reapedFor = 0;
     const timer = setInterval(() => {
       void (async () => {

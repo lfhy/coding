@@ -142,20 +142,50 @@ export function createTaskSpacesApi(cdp) {
     return live;
   }
 
-  /**
-   * Re-adopt a space's pages after the browser restarted.
-   *
-   * A space is identified by target ids, and those die with the browser. A
-   * restart therefore wiped every space even though Chrome had restored the
-   * very pages they described — the overview read "No spaces yet" next to a
-   * window full of tabs. Remembered urls are what survive a restart, so they
-   * are what the pages get matched back by.
-   *
-   * Only attempted when EVERY space lost EVERY tab at once, which is the
-   * signature of a restart. Closing one space's tabs by hand leaves the others
-   * alive, and must stay a deletion — otherwise a space would resurrect itself
-   * from any other tab that happened to share its url.
-   */
+  // Chrome 重启后的 context 已失效；重新进入时只从该会话记录的安全网址恢复页面。
+  function restorableUrl(url) {
+    if (url === "about:blank") return true;
+    try {
+      const parsed = new URL(url);
+      return ["http:", "https:", "file:"].includes(parsed.protocol) && !parsed.username && !parsed.password;
+    } catch { return false; }
+  }
+
+  function rememberedUrls(space, live) {
+    return (space.targetIds || []).map((id) => live.get(id)?.url)
+      .filter((url) => typeof url === "string" && restorableUrl(url)).slice(0, 30);
+  }
+
+  /** 只为重新进入的会话重建隔离 context 与页面；失败时保留记录供下次重试。 */
+  async function restoreStoppedSpaces(state, live) {
+    if (process.env.EGO_KEEP_SESSION_PAGES !== "1" || !state.spaces.length) return false;
+    const space = state.spaces.find((entry) => entry.id === effectiveSelectedId(state));
+    if (!space || !space.pendingRestore || !/^coding-ego-[a-f0-9]{64}$/.test(space.name)
+      || space.ownership === "user") return false;
+    const urls = space.pendingRestore.filter(restorableUrl).slice(0, 30);
+    if (!urls.length) return false;
+    const browserContextId = await createSeededContext();
+    const targetIds = [];
+    try {
+      for (const url of urls) {
+        const { targetId } = await cdp.call("Target.createTarget", {
+          url, ...(browserContextId ? { browserContextId } : {}),
+        });
+        if (!targetId) throw new Error("restored page has no target id");
+        targetIds.push(targetId);
+      }
+    } catch {
+      for (const targetId of targetIds) await cdp.call("Target.closeTarget", { targetId }).catch(() => {});
+      if (browserContextId) await disposeContext(browserContextId);
+      return false;
+    }
+    space.browserContextId = browserContextId;
+    space.targetIds = targetIds;
+    space.urls = urls;
+    return true;
+  }
+
+  /** 仅在所有旧目标失效时重新认领浏览器已恢复的页面。 */
   function readoptRestoredPages(state, live) {
     if (state.spaces.length === 0) return false;
     if (
@@ -167,6 +197,7 @@ export function createTaskSpacesApi(cdp) {
     const claimed = new Set();
     let changed = false;
     for (const space of state.spaces) {
+      if (process.env.EGO_KEEP_SESSION_PAGES === "1" && /^coding-ego-[a-f0-9]{64}$/.test(space.name)) continue;
       const wanted = new Set(space.urls || []);
       if (wanted.size === 0) continue;
       const matches = [...live.values()].filter(
@@ -204,6 +235,7 @@ export function createTaskSpacesApi(cdp) {
 
   async function pruneAbandoned(state, live) {
     const doomed = state.spaces.filter((space) => {
+      if (process.env.EGO_KEEP_SESSION_PAGES === "1" && /^coding-ego-[a-f0-9]{64}$/.test(space.name)) return false;
       if (space.id === effectiveSelectedId(state)) return false;
       // Ever held a real page => not abandoned, only between pages.
       if (space.lastContentAt) return false;
@@ -247,7 +279,7 @@ export function createTaskSpacesApi(cdp) {
     Number.isFinite(IDLE_MINUTES) && IDLE_MINUTES > 0 ? IDLE_MINUTES * 60000 : 0;
 
   async function pruneIdle(state) {
-    if (!IDLE_AFTER_MS) return false;
+    if (!IDLE_AFTER_MS || process.env.EGO_KEEP_SESSION_PAGES === "1") return false;
     const now = Date.now();
     // Stamping is itself a state change worth persisting: drop it and every run
     // would re-stamp from scratch, so nothing would ever reach the threshold.
@@ -310,17 +342,29 @@ export function createTaskSpacesApi(cdp) {
   async function reconcile(state) {
     const live = await livePageTargets();
     let changed = false;
+    // 只有浏览器重启动才会让所有会话的旧 target 同时失效；此时先记下待恢复的网址。
+    // 单个会话被手动关完仍按删除处理，避免已关闭的页面被重新打开。
+    const named = state.spaces.filter((space) => /^coding-ego-[a-f0-9]{64}$/.test(space.name))
+    const stale = named.filter((space) => (space.targetIds || []).every((id) => !live.has(id)))
+    if (process.env.EGO_KEEP_SESSION_PAGES === "1" && named.length > 0 && stale.length === state.spaces.length) {
+      for (const space of stale) {
+        const urls = (space.urls || []).filter(restorableUrl).slice(0, 30)
+        if (!urls.length) continue
+        space.pendingRestore = urls
+        changed = true
+      }
+    }
 
     for (const space of state.spaces) {
+      if (space.pendingRestore) continue;
       const kept = (space.targetIds || []).filter((id) => live.has(id));
       if (kept.length !== (space.targetIds || []).length) {
         space.targetIds = kept;
         changed = true;
       }
-      // Remembered while the pages are alive, so a restart has something to
-      // match them back by.
       if (kept.length > 0) {
-        const urls = kept.map((id) => live.get(id).url).filter(Boolean);
+        const urls = process.env.EGO_KEEP_SESSION_PAGES === "1"
+          ? rememberedUrls(space, live) : kept.map((id) => live.get(id).url).filter(Boolean);
         // A space that has ever held a real page is never "opened and never
         // used", however blank it looks right now — a tab is momentarily
         // about:blank on every navigation.
@@ -375,14 +419,15 @@ export function createTaskSpacesApi(cdp) {
       changed = true;
     }
 
-    const surviving = state.spaces.filter((space) => space.targetIds.length > 0);
+    // 待恢复的会话暂时没有活 target，也必须留在状态里等它再次打开。
+    const surviving = state.spaces.filter((space) => space.targetIds.length > 0 || space.pendingRestore);
     if (surviving.length !== state.spaces.length) {
       // Losing its last tab is how a space ends when the user closes tabs by
       // hand, so its context has to go the same way closeTaskSpace disposes
       // one. Dropping the record alone would strand a live context holding a
       // full copy of the seeded cookie jar until the browser restarts.
       for (const space of state.spaces) {
-        if (space.targetIds.length === 0 && space.browserContextId) {
+        if (space.targetIds.length === 0 && !space.pendingRestore && space.browserContextId) {
           await disposeContext(space.browserContextId);
         }
       }
@@ -545,6 +590,24 @@ export function createTaskSpacesApi(cdp) {
       return { taskSpaces: state.spaces.map((space) => decorate(space, live)) };
     },
 
+    /** 只恢复指定会话，不在查询目录时自动重开其它会话或已关闭的网页。 */
+    async restoreTaskSpace(name) {
+      const state = await readState();
+      const space = state.spaces.find((item) => item.name === name);
+      if (!space || !/^coding-ego-[a-f0-9]{64}$/.test(name)) return false;
+      const live = await livePageTargets();
+      if (space.targetIds.some((id) => live.has(id))) return true;
+      if (process.env.EGO_KEEP_SESSION_PAGES !== "1" || !space.pendingRestore
+        || space.ownership === "user") return false;
+      pinnedSpaceId = space.id;
+      const changed = await restoreStoppedSpaces(state, live);
+      if (changed) {
+        delete space.pendingRestore;
+        await writeState(state);
+      }
+      return changed;
+    },
+
     async createTaskSpace(name) {
       const state = await readState();
       const browserContextId = await createSeededContext();
@@ -575,6 +638,7 @@ export function createTaskSpacesApi(cdp) {
         targetIds: [targetId],
       };
       state.spaces.push(space);
+      if (process.env.EGO_BROWSER_EPOCH) state.browserEpoch = process.env.EGO_BROWSER_EPOCH;
       state.nextId += 1;
       state.selectedId = space.id;
       pinnedSpaceId = space.id;

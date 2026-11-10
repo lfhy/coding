@@ -204,6 +204,32 @@ describe('会话浏览器 Host 路由', () => {
     expect(spawns).not.toHaveBeenCalled()
   })
 
+  it('浏览器重启后只对带待恢复标记的会话发起一次页面恢复', async () => {
+    const origin = await boot()
+    const space = spaceNameForSession(session.id)
+    const restoreScripts = (): number => spawns.mock.calls
+      .filter(call => ((call[0] as { stdio?: { stdin?: { data?: string } } }).stdio?.stdin?.data ?? '')
+        .includes('ego.restoreTaskSpace')).length
+    await writeFile(join(stateDir!, 'task-spaces.json'), JSON.stringify({ spaces: [
+      { name: space, targetIds: [] },
+    ] }))
+    expect((await fetch(`${origin}/api/ego/spaces?sessionId=${session.id}`)).status).toBe(200)
+    expect(restoreScripts()).toBe(0)
+    await writeFile(join(stateDir!, 'task-spaces.json'), JSON.stringify({ spaces: [
+      { name: space, targetIds: [], pendingRestore: ['https://example.com/a'] },
+    ] }))
+    expect((await fetch(`${origin}/api/ego/spaces?sessionId=${session.id}`)).status).toBe(200)
+    expect(restoreScripts()).toBe(1)
+    const spec = spawns.mock.calls
+      .find(call => ((call[0] as { stdio?: { stdin?: { data?: string } } }).stdio?.stdin?.data ?? '')
+        .includes('ego.restoreTaskSpace'))?.[0] as { stdio?: { stdin?: { data?: string } }; env?: NodeJS.ProcessEnv }
+    expect(spec.stdio?.stdin?.data).toContain(JSON.stringify(space))
+    expect(spec.env?.EGO_ISOLATE_SPACES).toBe('1')
+    // 冷却窗口内重复轮询不再启动新的恢复进程。
+    expect((await fetch(`${origin}/api/ego/spaces?sessionId=${session.id}`)).status).toBe(200)
+    expect(restoreScripts()).toBe(1)
+  })
+
   it('活动流重连时只回放存活会话的最近一次工具调用', async () => {
     const origin = await boot()
     const missing = SessionId('not-loaded-session')

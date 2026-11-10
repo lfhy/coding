@@ -128,6 +128,8 @@ export interface ResolvedConfig {
   isolateSpaces: boolean
   /** True = each DSH session gets its own task space; false = one shared space. */
   sessionScopedSpaces: boolean
+  /** Coding Host 在运行期间保留浏览器及每个会话的页面，仅由显式关闭或退出释放。 */
+  keepBrowserRunning?: boolean
   /** Minutes without an ego_* call before the backing browser is auto-stopped. 0 = off. */
   idleTimeoutMin: number
   /** True = the live frame relay (ego-cast worker + cast routes) is turned off entirely. */

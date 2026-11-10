@@ -24,6 +24,12 @@
 - **标签页错误**：`ego_tabs` 的 `switch`/`close` 先读取当前任务空间实际存在的 id；目标不属于该空间时返回可操作的说明与现存 id 列表，`open` 失败返回底层原因。脚本只声明一次空间变量，避免整条工具调用因重复声明而失败。
 - **响应式与移动端验证**：视口覆盖由 CDP 会话语义决定，随一次 `ego-browser nodejs` 调用结束失效，因此 `ego_cdp` 单独设置 `Emulation.setDeviceMetricsOverride` 对后续调用和截图都不生效。Agent 要在别的宽度或 `mobile` 下验证，必须在同一次 `ego_script`／`ego_js` 调用里设置覆盖再取测量或 `page.screenshot`，截图尺寸是 CSS 像素（`deviceScaleFactor` 只影响布局与 `devicePixelRatio`）；面板画面与单帧由另一个 worker 的会话采集，不受该覆盖影响。设置卡的 `viewportWidth`／`viewportHeight` 则相反：每次工具调用都会在切换标签后重放固定视口，适合长时间固定在某一宽度工作。
 
+## Host 生命周期与页面保留
+
+Coding 组装在挂载时把 `keepBrowserRunning` 置为 `true`：Host 运行期间不注册上游的空闲停止定时器，并给每个浏览器子进程注入 `EGO_LINUX_SPACE_IDLE_MIN=0` 与 `EGO_KEEP_SESSION_PAGES=1`。因此「放一会儿页面自己消失」不再发生——页面的存活只取决于用户关闭、会话结束或 Host 退出，不取决于最近一次浏览器工具调用距今多久。上游设置项 `idleTimeoutMin` 仍被接受与解析，但在此组装下不生效，Agent 浏览器设置卡也不再展示它。
+
+浏览器进程仍会在 Host 卸载时正常停止。之后再次启动时，运行时会发现该会话旧的 target 全部失效，把当时的网址（仅 `http`／`https`／`file`，去掉带凭据的地址，每会话最多 30 条）记入该空间的 `pendingRestore`；面板请求本会话目录时，Host 通过 `ego.restoreTaskSpace` 在会话自己的任务空间与隔离 context 中重建这些页面，然后照常返回目录。触发范围受限：只处理 `coding-ego-<hash>` 具名会话，`user` 持有的空间一律跳过，其它会话的页面不会被这一路径打开，同一会话最多每 30 秒尝试一次。页面内容、表单、登录态与滚动位置都不保存，恢复的是地址。
+
 ## 验证
 
 从仓库根运行：

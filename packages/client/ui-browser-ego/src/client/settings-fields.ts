@@ -15,7 +15,7 @@ export const CARD_FIELD_KEYS = [
   'cdpFps', 'cdpQuality', 'cdpMaxWidth',
   'ffmpegFps', 'ffmpegMaxWidth', 'ffmpegBitrateKbps', 'ffmpegEncoder',
   'headless', 'cursorName',
-  'disableFrameRelay', 'residentExecutor', 'sessionScopedSpaces', 'idleTimeoutMin',
+  'disableFrameRelay', 'residentExecutor', 'sessionScopedSpaces',
   'viewportWidth', 'viewportHeight', 'deviceScaleFactor',
   'chromePath', 'ffmpegPath', 'egoBin', 'githubMirror',
 ] as const
@@ -119,7 +119,6 @@ export const FIELD_GROUPS: readonly FieldGroup[] = [
       { field: 'disableFrameRelay', kind: 'toggle', label: 'disableFrameRelay', hint: 'disableFrameRelayHint' },
       { field: 'residentExecutor', kind: 'toggle', label: 'residentExecutor', hint: 'residentExecutorHint' },
       { field: 'sessionScopedSpaces', kind: 'toggle', label: 'sessionScopedSpaces', hint: 'sessionScopedSpacesHint' },
-      { field: 'idleTimeoutMin', kind: 'number', label: 'idleTimeoutMin', hint: 'idleTimeoutMinHint', bounds: { min: 0, max: 1440, integer: true } },
     ],
   },
   {

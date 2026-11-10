@@ -310,6 +310,7 @@ export function resolveConfig(config: RawConfig = {}): ResolvedConfig {
     sessionScopedSpaces: typeof config.sessionScopedSpaces === 'boolean'
       ? config.sessionScopedSpaces
       : !(config.sessionScopedSpaces === 'false' || config.sessionScopedSpaces === '0' || config.sessionScopedSpaces === 0),
+    keepBrowserRunning: config.keepBrowserRunning === true,
     idleTimeoutMin: finiteIn(config.idleTimeoutMin, 0, 1440) ? config.idleTimeoutMin : 0,
     // Default false (= frame relay ON, unchanged behavior); the switch is opt-in.
     disableFrameRelay: typeof config.disableFrameRelay === 'boolean' ? config.disableFrameRelay : config.disableFrameRelay === 'true' || config.disableFrameRelay === '1' || config.disableFrameRelay === 1,

@@ -44,11 +44,11 @@
 | 画面采集 | `captureBackend`（`auto`／`cdp`／`ffmpeg`，选 `ffmpeg` 时提示依赖）、`streamProfile`（`low`／`balanced`／`high`） |
 | 单帧画面 | `cdpFps`（5–30）、`cdpQuality`（1–100）、`cdpMaxWidth`（320–2560） |
 | 视频画面 | `ffmpegFps`（5–30）、`ffmpegMaxWidth`（320–1920）、`ffmpegBitrateKbps`（500–20000）、`ffmpegEncoder`（自动／软件／各平台硬件编码） |
-| 运行方式 | `headless`（默认开：只在面板里运行，不弹窗、不抢焦点）、`cursorName`（页面光标标签，默认 `Agent`）、`disableFrameRelay`、`residentExecutor`、`sessionScopedSpaces`、`idleTimeoutMin`（0–1440） |
+| 运行方式 | `headless`（默认开：只在面板里运行，不弹窗、不抢焦点）、`cursorName`（页面光标标签，默认 `Agent`）、`disableFrameRelay`、`residentExecutor`、`sessionScopedSpaces` |
 | 页面视口 | `viewportWidth`（0–3840）、`viewportHeight`（0–2160）、`deviceScaleFactor`（0–4） |
 | 位置与下载 | `chromePath`、`ffmpegPath`、`egoBin`、`githubMirror` |
 
-数字字段超出区间或非数字时阻止保存；空文本表示恢复组合层默认值；每条字段带覆盖徽标与「恢复默认」。路径字段只接受用户输入，标签与提示不写死任何本机路径。画面的 `cdpMaxWidth`（设备像素上限）、`cdpQuality`（有损质量）与 `cdpFps`（实时推流帧率）由 Host 在每次取帧时下发给采集 worker，保存后下一次取帧即生效，不需要重启浏览器。静止帧是无损 WebP：像素与页面一致，渐变不会出现编码台阶；实时推流用 JPEG，`cdpQuality` 决定它的保真度，`cdpFps` 决定跟手程度；画面停下后 Host 会自动补一张无损帧，滚动结束就回到无损画面。
+数字字段超出区间或非数字时阻止保存；空文本表示恢复组合层默认值；每条字段带覆盖徽标与「恢复默认」。路径字段只接受用户输入，标签与提示不写死任何本机路径。Host 的 `idleTimeoutMin` 仍在设置节里被接受，但 Coding 组装在 Host 运行期间固定保留浏览器与页面，因此卡片不提供该控件。画面的 `cdpMaxWidth`（设备像素上限）、`cdpQuality`（有损质量）与 `cdpFps`（实时推流帧率）由 Host 在每次取帧时下发给采集 worker，保存后下一次取帧即生效，不需要重启浏览器。静止帧是无损 WebP：像素与页面一致，渐变不会出现编码台阶；实时推流用 JPEG，`cdpQuality` 决定它的保真度，`cdpFps` 决定跟手程度；画面停下后 Host 会自动补一张无损帧，滚动结束就回到无损画面。
 
 ## 验收
 

@@ -88,6 +88,8 @@ export async function createEgoShim({ headless = false, reconcile = true, intent
 
     // --- Task spaces --------------------------------------------------------
     listTaskSpaces: taskSpaces.listTaskSpaces,
+    // Host 只对当前会话请求恢复；普通目录查询不会重新导航页面。
+    restoreTaskSpace: taskSpaces.restoreTaskSpace,
     // Arming on Page.navigate is too late for that same navigation — the claim
     // and Page.enable race the load and usually lose. Selecting a space is the
     // first moment a tab is guaranteed to exist, and it always precedes the

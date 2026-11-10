@@ -531,6 +531,11 @@ export function resolveEgoEnv(cfg: Partial<ResolvedConfig>, { platform = process
   if (env.EGO_ISOLATE_SPACES === undefined && cfg?.isolateSpaces !== undefined) {
     env.EGO_ISOLATE_SPACES = cfg.isolateSpaces ? '1' : '0'
   }
+  // Coding 的页面由 Host 会话持有；上游按工具调用计时的空间回收不能关闭仍在浏览的页面。
+  if (cfg?.keepBrowserRunning) {
+    env.EGO_LINUX_SPACE_IDLE_MIN = '0'
+    env.EGO_KEEP_SESSION_PAGES = '1'
+  }
   // Where the agent browser lives is a product decision, so the configured
   // value is applied after the platform probe above: a windowed browser would
   // raise itself over the user's work on every navigation. Headless is a
@@ -753,6 +758,7 @@ interface EgoRuntimeConfig {
   readonly ffmpegPath: string
   readonly githubMirror: string
   readonly egoCliArgs: string
+  readonly keepBrowserRunning?: boolean
   readonly idleTimeoutMin: number
   readonly chromeArgs: string
   /** Fixed CSS viewport width for agent pages. 0 = off (browser window size). */
@@ -1580,6 +1586,7 @@ export function apply(ctx: EgoContext, config: RawConfig = {}): void {
     get deviceScaleFactor() { return resolveConfig(bridge.source() as RawConfig).deviceScaleFactor },
     get isolateSpaces() { return resolveConfig(bridge.source() as RawConfig).isolateSpaces },
     get sessionScopedSpaces() { return resolveConfig(bridge.source() as RawConfig).sessionScopedSpaces },
+    get keepBrowserRunning() { return resolveConfig(bridge.source() as RawConfig).keepBrowserRunning },
     get idleTimeoutMin() { return resolveConfig(bridge.source() as RawConfig).idleTimeoutMin },
     // Live getter: cast-server reads this on EVERY /api/ego/* request, so the
     // settings card toggle takes effect without a host restart.
@@ -1675,14 +1682,10 @@ export function apply(ctx: EgoContext, config: RawConfig = {}): void {
       )
     }
   })
-  // Idle reaper (issue #47, opt-in via the idleTimeoutMin setting): the
-  // backing Chromium is a singleton that otherwise only stops on --stop or
-  // host teardown — measured at ~425 MB idle. After N minutes without an
-  // ego_* call, gracefully --stop it; the next ego_* call cold-starts it
-  // (2-4s). Watching the panel does NOT count as activity (documented in the
-  // setting hint). Runs on a 60s interval; cleanup clears the timer.
+  // 上游空闲计时只感知工具调用，无法感知 Coding 工作台仍在查看页面。
+  // Coding Host 持有浏览器时不注册定时停止，退出时仍由卸载清理正常关闭。
   ctx.effect?.(() => {
-    if (cfg.idleTimeoutMin <= 0) return
+    if (cfg.keepBrowserRunning || cfg.idleTimeoutMin <= 0) return
     let reapedFor = 0 // the activity timestamp we already reaped for
     const timer = setInterval(() => {
       void (async () => {

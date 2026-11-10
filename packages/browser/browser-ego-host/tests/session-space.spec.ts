@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { SessionId } from 'coding-session/types'
-import { readTaskSpaceGroups, sessionSpaceArgs, spaceNameForSession, targetIdsForSession } from '../src/session-space.ts'
+import { pendingRestoreForSession, readTaskSpaceGroups, sessionSpaceArgs, spaceNameForSession, targetIdsForSession } from '../src/session-space.ts'
 import { parseInput } from '../src/routes.ts'
 import { scriptFor } from '../src/scripts.ts'
 
@@ -73,6 +73,20 @@ describe('会话空间归属', () => {
       { name: spaceNameForSession(session), targetIds: ['second'] },
     ] }))
     expect((await targetIdsForSession(session)).size).toBe(0)
+  })
+
+  it('只把标记了待恢复网址的会话认定为需要重开页面', async () => {
+    dir = await mkdtemp(join(tmpdir(), 'coding-ego-restore-'))
+    vi.stubEnv('EGO_LINUX_STATE_DIR', dir)
+    const restored = SessionId('test-session-restored')
+    const plain = SessionId('test-session-plain')
+    await writeFile(join(dir, 'task-spaces.json'), JSON.stringify({ spaces: [
+      { name: spaceNameForSession(restored), targetIds: [], pendingRestore: ['https://example.com/a'] },
+      { name: spaceNameForSession(plain), targetIds: [] },
+    ] }))
+    expect(await pendingRestoreForSession(restored)).toBe(true)
+    expect(await pendingRestoreForSession(plain)).toBe(false)
+    expect(await pendingRestoreForSession(SessionId('never-registered'))).toBe(false)
   })
 
   it('输入坐标、会话与目标缺失时拒绝生成任何 CDP 字段', () => {

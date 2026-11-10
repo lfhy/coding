@@ -4,7 +4,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { SessionId } from 'coding-session/types'
 import { recentActions, replayActivity, subscribeActivity } from './activity.ts'
 import { parseNavigation } from './navigation.ts'
-import { targetIdsForSession, validId } from './session-space.ts'
+import { pendingRestoreForSession, targetIdsForSession, validId } from './session-space.ts'
 import { ensureWorker, workerGet, workerHover, workerInput, workerPost, workerResize } from './worker.ts'
 
 interface Page {
@@ -185,13 +185,27 @@ export function installRoutes(ctx: Context): void {
       subscribeActivity(res)
       replayActivity(res, sessionId => webCtx.sessions.get(sessionId) !== undefined)
     })
+    /** 每个会话最多每 30 秒尝试恢复一次，避免面板轮询反复启动浏览器进程。 */
+    const restoreAttempts = new Map<string, number>()
     register('/api/ego/spaces', async (req, res) => {
       if (req.method !== 'GET') { send(res, 405, { ok: false }); return }
       const sessionId = getSession(webCtx, req, res)
       if (!sessionId) return
       if (new URL(req.url ?? '/', 'http://127.0.0.1').searchParams.size !== 1) { send(res, 400, { ok: false }); return }
-      const port = await ensureWorker(webCtx)
-      send(res, 200, { ok: true, spaces: port === null ? [] : await currentPages(sessionId, port), frameRelay: true })
+      let port = await ensureWorker(webCtx)
+      let pages = port === null ? [] : await currentPages(sessionId, port)
+      // 浏览器重启后旧页面随进程消失；只为正在查看的会话重开它原先的页面。
+      if (pages.length === 0 && await pendingRestoreForSession(sessionId)) {
+        const last = restoreAttempts.get(sessionId) ?? 0
+        if (Date.now() - last > 30_000) {
+          restoreAttempts.set(sessionId, Date.now())
+          if (await webCtx.egoBrowser.restoreSessionPages(sessionId)) {
+            port = await ensureWorker(webCtx)
+            pages = port === null ? [] : await currentPages(sessionId, port)
+          }
+        }
+      }
+      send(res, 200, { ok: true, spaces: pages, frameRelay: true })
     })
     register('/api/ego/frame', async (req, res) => {
       if (req.method !== 'GET') { send(res, 405, { ok: false }); return }

@@ -55,7 +55,7 @@ export interface EgoBrowserSettings {
   cursorName?: string
   /** 关闭实时画面中继：工具仍可用，但面板不再接收画面。 */
   disableFrameRelay?: boolean
-  /** 空闲多少分钟后停止后备浏览器；0 表示不停。 */
+  /** Host 仍接受该字段，但 Coding 组装固定保留浏览器，因此设置卡不提供此项。 */
   idleTimeoutMin?: number
   /** 复用常驻执行进程。 */
   residentExecutor?: boolean
