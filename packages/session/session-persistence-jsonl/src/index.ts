@@ -31,6 +31,7 @@ import {
   compressZstdFrame, createZstdFrameDecoder, decompressZstdFrame, decompressZstdPrefix, scanZstdFrames,
 } from './zstd.ts'
 import { ensureDurableDirectoryWin32, publishNewFileWin32 } from './win32.ts'
+import { acquireWriterLock } from './writer-lock.ts'
 
 export type { JsonlCompression } from './format.ts'
 
@@ -86,6 +87,22 @@ export interface Config {
 interface JsonlTornMarker {
   truncateTo: number
   recoveredEvents: SessionEvent[]
+  revision?: PersistenceRevision
+}
+
+interface WriterOwnership {
+  path: string
+  release(): Promise<void>
+  nextSeq: number
+  revision: PersistenceRevision | undefined
+  failed?: boolean
+}
+
+/** 只有已恢复并同步原始字节长度的失败才允许原 writer 重试。 */
+class RolledBackAppendError extends Error {
+  constructor(override readonly cause: unknown) {
+    super('JSONL append failed after a durable rollback', { cause })
+  }
 }
 
 interface FileRevisionIdentity {
@@ -144,6 +161,8 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
   private compression: JsonlCompression
   private coordinator: PersistenceCoordinator<JsonlTornMarker>
   private rootEncodingCheck: Promise<void> | undefined
+  private writers = new Map<SessionId, Promise<WriterOwnership>>()
+  private closed = false
 
   constructor(ctx: Context, public config: Config) {
     super(ctx)
@@ -181,11 +200,13 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
     return this.coordinator.append(id, events)
   }
 
-  override prepare(id: SessionId, signal?: AbortSignal): Promise<SessionPreparation> {
+  override async prepare(id: SessionId, signal?: AbortSignal): Promise<SessionPreparation> {
+    await this.ownStoredSession(id, signal)
     return this.coordinator.prepare(id, signal)
   }
 
-  load(id: SessionId): Promise<SessionInspection> {
+  async load(id: SessionId): Promise<SessionInspection> {
+    await this.ownStoredSession(id)
     return this.coordinator.load(id)
   }
 
@@ -341,6 +362,7 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
     signal?.throwIfAborted()
     await this.assertStoredIdentity(path, prefix.meta, expectedId, signal)
     signal?.throwIfAborted()
+    if (prefix.tornMarker !== undefined) prefix.tornMarker.revision = revision
     return { ...prefix, revision }
   }
 
@@ -418,30 +440,130 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
     }
   }
 
-  /** Durably append a batch, lazily materializing the file when not yet present. */
+  /** 在排他所有权下验证磁盘游标并持久追加；首批仍延迟实体化。 */
   async appendBatch(meta: SessionHeader, events: readonly SessionEvent[], isMaterialized: boolean): Promise<void> {
     await this.ensureRootEncoding()
-    if (isMaterialized) {
-      await this.appendLines(meta, events)
-    } else {
-      await this.materialize(meta, events)
+    const path = logPath(this.root, meta.cwd, meta.id, this.compression)
+    const writer = await this.ownSessionPath(path, meta.id)
+    await this.assertWriterRevision(path, writer)
+    if (events[0]?.seq !== writer.nextSeq) {
+      throw new Error(`append seq mismatch for "${meta.id}": stored log expects ${writer.nextSeq}, got ${events[0]?.seq}`)
     }
+    try {
+      if (isMaterialized) await this.appendLines(meta, events)
+      else await this.materialize(meta, events)
+    } catch (error) {
+      if (error instanceof RolledBackAppendError) {
+        writer.revision = await this.pathRevision(path)
+        throw error.cause
+      }
+      // 提交结果不明时不能把当前修订认作旧游标，避免重试重复追加已提交批次。
+      writer.failed = true
+      throw error
+    }
+    writer.nextSeq += events.length
+    writer.revision = await this.pathRevision(path)
   }
 
   /**
-   * Make a crash repair durable: truncate a torn tail, restore complete events
-   * decoded from it, then append synthetic closers. Two fsync'd steps — the seam
-   * does not require this to be atomic.
+   * 排他修复撕裂尾部并追加恢复事件；过期修订或游标在截断前拒绝。
    */
   async commitRepair(
     meta: SessionHeader,
     tornMarker: JsonlTornMarker | undefined,
     closers: readonly SessionEvent[],
   ): Promise<void> {
+    const path = logPath(this.root, meta.cwd, meta.id, this.compression)
+    const writer = await this.ownSessionPath(path, meta.id)
+    await this.assertWriterRevision(path, writer)
+    if (tornMarker !== undefined && tornMarker.revision !== writer.revision) {
+      throw new Error(`refusing stale JSONL repair for "${meta.id}": stored revision changed`)
+    }
+    if (closers.length > 0 && closers[0]?.seq !== writer.nextSeq) {
+      throw new Error(`refusing stale JSONL repair for "${meta.id}": stored log expects seq ${writer.nextSeq}`)
+    }
     if (tornMarker !== undefined) await this.repair(meta, tornMarker.truncateTo)
     const repairedEvents = [...(tornMarker?.recoveredEvents ?? []), ...closers]
     if (repairedEvents.length > 0) await this.appendLines(meta, repairedEvents)
+    writer.nextSeq += closers.length
+    writer.revision = await this.pathRevision(path)
     if (tornMarker !== undefined) this.ctx.logger.warn(`${this.name}: session "${meta.id}" recovered from a torn tail; incomplete tail bytes were discarded`)
+  }
+
+  /**
+   * 完全停稳后释放所有会话的内核所有权；旁路文件保留以避免 inode 替换竞态。
+   * @returns 所有持有句柄均关闭后完成。
+   */
+  async close(): Promise<void> {
+    this.closed = true
+    const writers = await Promise.allSettled(this.writers.values())
+    this.writers.clear()
+    const releases = await Promise.allSettled(writers.flatMap(writer =>
+      writer.status === 'fulfilled' ? [Promise.resolve().then(() => writer.value.release())] : []))
+    const errors = releases.flatMap(result => result.status === 'rejected' ? [result.reason as unknown] : [])
+    if (errors.length > 0) throw new AggregateError(errors, 'JSONL writer ownership release failed')
+  }
+
+  private async ownStoredSession(id: SessionId, signal?: AbortSignal): Promise<void> {
+    signal?.throwIfAborted()
+    await this.ensureRootEncoding()
+    const path = await this.findLog(id, signal)
+    if (path !== undefined) await this.ownSessionPath(path, id)
+    signal?.throwIfAborted()
+  }
+
+  private async ownSessionPath(path: string, id: SessionId): Promise<WriterOwnership> {
+    this.assertOpen()
+    let pending = this.writers.get(id)
+    if (pending === undefined) {
+      pending = this.acquireSessionPath(path, id)
+      this.writers.set(id, pending)
+      void pending.catch(() => { if (this.writers.get(id) === pending) this.writers.delete(id) })
+    }
+    const writer = await pending
+    this.assertOpen()
+    if (path !== writer.path && !await this.sameFile(
+      join(dirname(path), '.writer-lock'), join(dirname(writer.path), '.writer-lock'),
+    )) {
+      throw new Error(`JSONL session "${id}" writer ownership belongs to a different storage path`)
+    }
+    return writer
+  }
+
+  private assertOpen(): void {
+    if (this.closed) throw new Error('JSONL persistence backend is closed')
+  }
+
+  private async acquireSessionPath(path: string, id: SessionId): Promise<WriterOwnership> {
+    const dir = dirname(path)
+    if (process.platform === 'win32') await ensureDurableDirectoryWin32(dir)
+    else await mkdir(dir, { recursive: true, mode: 0o700 })
+    const release = await acquireWriterLock(join(dir, '.writer-lock'))
+    try {
+      const stored = await this.exists(path) ? await this.readPrefix(path, id) : undefined
+      return { path, release, nextSeq: stored?.events.length ?? 0, revision: stored?.revision }
+    } catch (error) {
+      await release()
+      throw error
+    }
+  }
+
+  private async pathRevision(path: string): Promise<PersistenceRevision | undefined> {
+    try {
+      return fileRevision(await stat(path, { bigint: true }))
+    } catch (error) {
+      if (isENOENT(error)) return undefined
+      throw error
+    }
+  }
+
+  private async assertWriterRevision(path: string, writer: WriterOwnership): Promise<void> {
+    if (writer.failed) {
+      throw new Error(`refusing JSONL mutation for "${path}": previous writer failed without a proven rollback; restart the backend to re-read the durable log`)
+    }
+    if (await this.pathRevision(path) !== writer.revision) {
+      throw new Error(`refusing JSONL mutation for "${path}": stored revision changed outside its writer ownership`)
+    }
   }
 
   /** List valid unique stored sessions' metadata (header line only — no full-log parse). */
@@ -645,9 +767,7 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
   /* v8 ignore stop */
 
   /**
-   * Append and fsync event lines. On a partial write or sync failure, restore the
-   * previous size before rethrowing because the unchanged cursor will retry the
-   * batch; leaving partial bytes would create duplicate sequence numbers.
+   * 追加、同步与关闭任何一步失败时恢复原字节长度；只有回滚同步成功才允许重试。
    */
   private async appendLines(meta: SessionHeader, events: readonly SessionEvent[]): Promise<void> {
     const content = await this.encodeEventBatch(events)
@@ -665,6 +785,7 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
       try {
         await handle.writeFile(content)
         await handle.sync()
+        await closeAppendHandle()
       } catch (error) {
         try {
           await closeAppendHandle()
@@ -672,7 +793,7 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
         } catch (rollbackError) {
           throw new AggregateError([error, rollbackError], `failed to roll back append to "${path}"`)
         }
-        throw error
+        throw new RolledBackAppendError(error)
       }
     } finally {
       await closeAppendHandle()

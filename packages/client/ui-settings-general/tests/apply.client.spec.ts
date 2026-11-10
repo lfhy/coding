@@ -11,6 +11,8 @@ import { CloseLabel, HeaderContent, TriggerContent } from '../src/client/chrome.
 import { GeneralSection } from '../src/client/GeneralSection.tsx'
 import { SettingsDocumentAction } from '../src/client/SettingsDocumentAction.tsx'
 import type { SettingsDocumentActionInjected } from '../src/client/SettingsDocumentAction.tsx'
+import { SessionMetadataRepair } from '../src/client/SessionMetadataRepair.tsx'
+import type { SessionMetadataRepairInjected } from '../src/client/SessionMetadataRepair.tsx'
 
 /** The seats this plugin fills for a loopback browser (slot name → expected component). */
 const SEATS = [
@@ -42,13 +44,20 @@ async function bench(isLoopback = true) {
     rpcId: 'settings-open' as never,
     result: { ok: true as const, value: { opened: true as const } },
   }))
+  const rebuildMetadata = vi.fn().mockResolvedValue({
+    rpcId: 'rebuild-metadata' as never,
+    result: { ok: true, value: { total: 0, rebuilt: 0, skippedLive: 0, failures: [] } },
+  })
   ctx.provide('connection', {
-    api: { settings: { describe: settingsDescribe, openDocument: settingsOpenDocument } },
+    api: {
+      settings: { describe: settingsDescribe, openDocument: settingsOpenDocument },
+      sessions: { rebuildMetadata },
+    },
     isLoopback,
   } as never)
   new TestRemote(ctx)
   await ctx.plugin({ inject: [...settingsInject], apply: settingsApply }).await()
-  return { ctx, slots: ctx.get('slots') as SlotRegistry, locale, settingsDescribe, settingsOpenDocument }
+  return { ctx, slots: ctx.get('slots') as SlotRegistry, locale, settingsDescribe, settingsOpenDocument, rebuildMetadata }
 }
 
 /** Declare the shell's six child slots the way ui-settings' entry does. */
@@ -90,7 +99,9 @@ describe('ui-settings-general apply', () => {
     // The nav label is a locale-following thunk; owners resolve at read time.
     expect(resolveSlotLabel(entry.options.label)).toBe('通用设置')
     expect(before.slots.spec('settings.general.item')).toEqual({ kind: 'list', scope: 'root' })
-    expect(before.slots.entries('settings.general.item')).toEqual([])
+    // 回环浏览器还有一个本包持有的元数据维护行；非回环用例另行断言缺席。
+    expect(before.slots.entries('settings.general.item').map(entry => entry.component))
+      .toEqual([SessionMetadataRepair])
     // The onboarding hole stays declared for feature-owned steps; this plugin
     // no longer seats one.
     expect(before.slots.entries('settings.onboarding')).toEqual([])
@@ -170,9 +181,31 @@ describe('ui-settings-general apply', () => {
     const fiber = b.ctx.plugin({ inject: [...inject], apply })
     await fiber.await()
     expect(b.slots.entries('settings.action')).toEqual([])
+    expect(b.slots.entries('settings.general.item')).toEqual([])
+    expect(b.rebuildMetadata).not.toHaveBeenCalled()
+    expect(b.slots.entries('settings.general.item')).toEqual([])
     expect(b.settingsDescribe).not.toHaveBeenCalled()
     await fiber.dispose()
     for (const [name] of SEATS) expect(b.slots.entries(name)).toEqual([])
+  })
+
+  it('rebuilds metadata with a pathless request and surfaces Host rejection reasons', async () => {
+    const b = await bench()
+    declare(b.slots)
+    await b.ctx.plugin({ inject: [...inject], apply }).await()
+    const entry = b.slots.entries('settings.general.item')[0]!
+    const { rebuildMetadata } = (entry.inject as () => SessionMetadataRepairInjected)()
+    const signal = new AbortController().signal
+    expect(b.rebuildMetadata).not.toHaveBeenCalled()
+    await expect(rebuildMetadata(signal)).resolves.toEqual({ total: 0, rebuilt: 0, skippedLive: 0, failures: [] })
+    expect(b.rebuildMetadata).toHaveBeenCalledWith({}, signal)
+    b.rebuildMetadata.mockResolvedValueOnce({
+      rpcId: 'metadata-rejected',
+      result: { ok: false, error: { code: 'internal', message: 'cache unavailable', details: {} } },
+    })
+    await expect(rebuildMetadata(signal)).rejects.toThrow('cache unavailable')
+    b.rebuildMetadata.mockRejectedValueOnce(new Error('connection lost'))
+    await expect(rebuildMetadata(signal)).rejects.toThrow('connection lost')
   })
 
   it('re-registers after an HMR collapse of the declaring chain (stale disposers must not block)', async () => {
@@ -189,7 +222,8 @@ describe('ui-settings-general apply', () => {
     for (const [name, component] of SEATS) {
       expect(b.slots.entries(name)[0]!.component).toBe(component)
     }
-    expect(b.slots.entries('settings.general.item')).toEqual([])
+    expect(b.slots.entries('settings.general.item').map(entry => entry.component))
+      .toEqual([SessionMetadataRepair])
     expect(b.slots.spec('settings.general.item')).toEqual({ kind: 'list', scope: 'root' })
     // The recovered registrations still ride the locale path.
     b.locale.setLocale('en')

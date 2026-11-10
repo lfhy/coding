@@ -25,6 +25,7 @@ import type { RpcResponse } from './rpc.ts'
  */
 export interface RpcMethodMap {
   'session.list': SessionsApi['list']
+  'session.rebuildMetadata': SessionsApi['rebuildMetadata']
   'session.search': SessionsApi['search']
   'session.create': SessionsApi['create']
   'session.history': SessionsApi['history']

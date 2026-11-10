@@ -98,6 +98,63 @@ afterEach(async () => {
   for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true })
 })
 
+describe('Windows session writer ownership', () => {
+  it.each([32, 5])('fails closed on a native ownership-open failure (%i)', async (code) => {
+    vi.resetModules()
+    vi.doMock('koffi', () => ({
+      default: {
+        load: () => ({
+          func: (_convention: string, name: string) => {
+            if (name === 'CreateFileW') return () => 0xFFFFFFFFFFFFFFFFn
+            if (name === 'GetLastError') return () => code
+            if (name === 'CloseHandle') return () => 1
+            throw new Error(`unexpected native call: ${name}`)
+          },
+        }),
+      },
+    }))
+    const descriptor = Object.getOwnPropertyDescriptor(process, 'platform')!
+    Object.defineProperty(process, 'platform', { value: 'win32' })
+    try {
+      const { acquireWriterLock } = await import('../src/writer-lock.ts')
+      await expect(acquireWriterLock('C:\\sessions\\id\\.writer-lock'))
+        .rejects.toThrow(`Win32 ${code}`)
+    } finally {
+      Object.defineProperty(process, 'platform', descriptor)
+    }
+  })
+
+  it('opens a non-shared persistent sidecar and releases its handle only on close', async () => {
+    const createFile = vi.fn(() => 42n)
+    const closeHandle = vi.fn(() => 1)
+    vi.resetModules()
+    vi.doMock('koffi', () => ({
+      default: {
+        load: () => ({
+          func: (_convention: string, name: string) => {
+            if (name === 'CreateFileW') return createFile
+            if (name === 'CloseHandle') return closeHandle
+            if (name === 'GetLastError') return () => 0
+            throw new Error(`unexpected native call: ${name}`)
+          },
+        }),
+      },
+    }))
+    const descriptor = Object.getOwnPropertyDescriptor(process, 'platform')!
+    Object.defineProperty(process, 'platform', { value: 'win32' })
+    try {
+      const { acquireWriterLock } = await import('../src/writer-lock.ts')
+      const release = await acquireWriterLock('C:\\sessions\\id\\.writer-lock')
+      expect(createFile).toHaveBeenCalledWith(expect.any(String), 0xC0000000, 0, null, 4, 0, null)
+      expect(closeHandle).not.toHaveBeenCalled()
+      await release()
+      expect(closeHandle).toHaveBeenCalledExactlyOnceWith(42n)
+    } finally {
+      Object.defineProperty(process, 'platform', descriptor)
+    }
+  })
+})
+
 describe('Windows durable namespace helpers', () => {
   it('keeps drive-root probes native while namespacing descendants', async () => {
     const probes: string[] = []

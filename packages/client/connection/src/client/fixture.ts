@@ -2296,6 +2296,7 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
       }),
     },
     sessions: {
+      rebuildMetadata: request => ok(request, { total: sessions.length, rebuilt: 0, skippedLive: sessions.length, failures: [] }),
       list: request => ok(request, { items: [...sessions].sort((a, b) => b.updatedAt - a.updatedAt) }),
       search: (request, signal) => {
         if (signal.aborted) {
@@ -3222,6 +3223,7 @@ export class FixtureApiClient extends AbstractApiClient {
     switch (method) {
       case 'browser.control': return this.api.browser.control(request, signal)
       case 'session.list': return this.api.sessions.list(request)
+      case 'session.rebuildMetadata': return this.api.sessions.rebuildMetadata(request, signal)
       case 'session.search': return this.api.sessions.search(request, signal)
       case 'session.create': return this.api.sessions.create(request)
       case 'session.history': return this.api.sessions.history(request)

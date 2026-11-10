@@ -400,3 +400,74 @@ describe('SessionProjectionCache cold read', () => {
       .resolves.toEqual({ asOfSeq: 2, values: {} })
   })
 })
+
+describe('SessionProjectionCache rebuild', () => {
+  /** 与冷读组共享的存储日志构造（seq 0 起，末尾带 turn/end）。 */
+  const storedLog = (marks: string[][]): SessionEvent[] => {
+    const events: SessionEvent[] = [
+      { type: 'turn/start', seq: 0, time: 0, data: { turn: 1 } },
+    ]
+    for (const m of marks) {
+      events.push({ type: 'cache-test/mark', seq: events.length, time: events.length, data: { marks: [...m] } })
+    }
+    events.push({ type: 'turn/end', seq: events.length, time: events.length, data: { turn: 1, reason: { kind: 'completed' } } })
+    return events
+  }
+
+  /** Pre-seed a plausible but stale row the rebuild must ignore. */
+  function seedStaleRow(pool: MemoryMediaPool, id: string, seq: number, val: unknown): void {
+    pool.versions.set('session_projcache', 3)
+    pool.media.set('session_projcache', {
+      tables: new Map([['sessions', new Map([[id, {
+        identity: { createdAt: 0 },
+        rows: { 'cache-test/marks': { ver: 1, seq, val } },
+      }]])]]),
+      global: null,
+    })
+  }
+
+  it('rebuilds from the whole stored log, ignoring a plausible stale checkpoint row', async () => {
+    const pool = new MemoryMediaPool()
+    const logs = new Map([['stale-cache', storedLog([['a'], ['a', 'b']])]])
+    // 一条同身份、同版本且水位仍在前缀内的陈旧行：coldSnapshot 只会补尾部，
+    // rebuild 必须证明它确实从 seq 0 重新折叠并替换整记录。
+    seedStaleRow(pool, 'stale-cache', 1, { marks: ['stale'] })
+    const { cache, persistence, pool: samePool } = await harness({ pool, logs })
+    const id = SessionId('stale-cache')
+    const snapshot = await cache.rebuild(id)
+    expect(snapshot.values['cache-test/marks']).toEqual({ marks: ['a', 'b'] })
+    expect(snapshot.asOfSeq).toBe(3)
+    expect(persistence.readFrom).toHaveBeenCalledWith(id, 0, undefined)
+    expect(storedRows(samePool, id)?.['cache-test/marks'])
+      .toEqual({ ver: 1, seq: 3, val: { marks: ['a', 'b'] } })
+  })
+
+  it('rebinds the record to the actual log identity instead of preserving an unrelated one', async () => {
+    const pool = new MemoryMediaPool()
+    const logs = new Map([['rebind', storedLog([['real']])]])
+    seedStaleRow(pool, 'rebind', 9, { marks: ['phantom'] })
+    const { cache, pool: samePool } = await harness({ pool, logs })
+    const id = SessionId('rebind')
+    await expect(cache.rebuild(id)).resolves.toMatchObject({ asOfSeq: 2 })
+    expect(storedRecord(samePool, id)?.identity).toEqual({ createdAt: 0 })
+    expect(storedRows(samePool, id)?.['cache-test/marks']).toEqual({ ver: 1, seq: 2, val: { marks: ['real'] } })
+  })
+
+  it('rejects an absent log and leaves the stored record untouched', async () => {
+    const pool = new MemoryMediaPool()
+    seedStaleRow(pool, 'missing', 1, { marks: ['old'] })
+    const { cache, pool: samePool } = await harness({ pool })
+    await expect(cache.rebuild(SessionId('missing'))).rejects.toThrow('not found')
+    expect(storedRows(samePool, SessionId('missing'))?.['cache-test/marks']?.val).toEqual({ marks: ['old'] })
+  })
+
+  it('propagates cancellation before any cache write lands', async () => {
+    const pool = new MemoryMediaPool()
+    const logs = new Map([['cancel', storedLog([['a']])]])
+    const { cache, pool: samePool } = await harness({ pool, logs })
+    const controller = new AbortController()
+    controller.abort()
+    await expect(cache.rebuild(SessionId('cancel'), controller.signal)).rejects.toThrow()
+    expect(storedRows(samePool, SessionId('cancel'))).toBeUndefined()
+  })
+})

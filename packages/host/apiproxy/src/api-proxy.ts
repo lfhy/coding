@@ -2162,6 +2162,43 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
       },
     },
     sessions: {
+      async rebuildMetadata(request, signal) {
+        type Value = { total: number; rebuilt: number; skippedLive: number; failures: { sessionId: SessionId; message: string }[] }
+        const cancelled = () => err<Value>(request, { code: 'cancelled', message: '会话元数据修复已取消', details: {} })
+        if (isAborted(signal)) return cancelled()
+        const persistence = ctx.get('sessionPersistence')
+        const cache = ctx.get('sessionProjectionCache')
+        if (persistence === undefined || cache === undefined) {
+          return err(request, { code: 'internal', message: '会话元数据修复需要持久化与投影缓存服务', details: {} })
+        }
+        let metas: SessionHeader[]
+        try {
+          metas = await persistence.list(signal)
+        } catch {
+          if (isAborted(signal)) return cancelled()
+          return err(request, { code: 'internal', message: '无法读取持久会话列表，未执行元数据修复', details: {} })
+        }
+        const failures: { sessionId: SessionId; message: string }[] = []
+        let rebuilt = 0
+        let skippedLive = 0
+        for (const meta of metas) {
+          if (isAborted(signal)) return cancelled()
+          if (ctx.sessions.get(meta.id) !== undefined) {
+            skippedLive++
+            continue
+          }
+          try {
+            await cache.rebuild(meta.id, signal)
+            rebuilt++
+          } catch {
+            if (isAborted(signal)) return cancelled()
+            failures.push({ sessionId: meta.id, message: '无法从持久日志重建该会话元数据' })
+          }
+        }
+        if (isAborted(signal)) return cancelled()
+        return ok(request, { total: metas.length, rebuilt, skippedLive, failures })
+      },
+
       // Attached sessions summarize from memory; persisted-but-unattached (cold)
       // sessions merge in from the persistence store so history survives restarts.
       // Logs without a cwd are not served; every session records its project

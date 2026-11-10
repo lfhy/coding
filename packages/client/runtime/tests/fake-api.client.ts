@@ -147,6 +147,11 @@ export class FakeApiClient implements IApiClient {
   // and inferred parameters would trip no-unsafe-argument.
   readonly sessions: IApiClient['sessions'] = {
     list: (payload: unknown) => this.record('session.list', payload, this.onList(payload)),
+    rebuildMetadata: (payload: unknown) => this.record(
+      'session.rebuildMetadata',
+      payload,
+      Promise.resolve(ok({ total: 0, rebuilt: 0, skippedLive: 0, failures: [] })),
+    ),
     search: (payload: unknown, signal?: AbortSignal) => {
       this.lastSearchSignal = signal
       return this.record('session.search', payload, this.onSearch(payload))

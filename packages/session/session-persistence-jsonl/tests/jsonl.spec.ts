@@ -1,12 +1,16 @@
 import { MessageId, createUserMessage, createMessage } from 'coding-llm'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
+import { spawn } from 'node:child_process'
+import { once } from 'node:events'
+import { pathToFileURL } from 'node:url'
 import { appendFile, mkdtemp, mkdir, rm, readFile, writeFile, readdir, stat, symlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import SessionStore, { SessionId } from 'coding-session'
 import type { Session, SessionEvent, SessionHeader } from 'coding-session'
 import JsonlSessionPersistence from 'coding-session-persistence-jsonl'
+import { acquireWriterLock } from '../src/writer-lock.ts'
 import {
   encodeSegment, eventLines, logPath, projectDir, projectKey, scanLog, sessionDir, SessionLogScanner, toHeaderLine,
 } from '../src/format.ts'
@@ -98,6 +102,87 @@ function appendClosedTurn(session: Session): void {
   }), { surfaceOp: 'append' })
   session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
 }
+
+describe('JSONL writer ownership', () => {
+  it.each(['none', 'zstd'] as const)('rejects competing recovery and append while allowing read-only history (%s)', async (compression) => {
+    const dir = await freshRoot()
+    const contexts = [new Context(), new Context()]
+    for (const ctx of contexts) {
+      await ctx.plugin(SessionStore)
+      await ctx.plugin(JsonlSessionPersistence, { root: dir, compression })
+    }
+    const [first, second] = contexts as [Context, Context]
+    const header = meta('owned-open-turn', '/work')
+    try {
+      await first.sessionPersistence.create(header)
+      await first.sessionPersistence.append(header.id, oneTurnLog().slice(0, -1))
+      const path = first.sessionPersistence.locate(header)!.path
+      const before = await readFile(path)
+      expect((await second.sessionPersistence.inspect(header.id)).events.at(-1)?.type).toBe('turn/end')
+      expect((await second.sessionPersistence.readFrom(header.id, 0)).events).toHaveLength(5)
+      expect((await second.sessionPersistence.list()).map(item => item.id)).toEqual([header.id])
+      await expect(second.sessionPersistence.load(header.id)).rejects.toThrow(/writer ownership/)
+      await expect(second.sessionPersistence.prepare(header.id)).rejects.toThrow(/writer ownership/)
+      await expect(second.sessionPersistence.append(header.id, oneTurnLog().slice(-1))).rejects.toThrow(/writer ownership/)
+      expect(await readFile(path)).toEqual(before)
+
+      await first.sessionPersistence.append(header.id, oneTurnLog().slice(-1))
+      await first.fiber.dispose()
+      // 冷检查缓存来自开放轮次；接管后必须重读已完成日志，不能提交缓存中的 closer。
+      expect((await second.sessionPersistence.load(header.id)).events).toEqual(oneTurnLog())
+    } finally {
+      for (const ctx of contexts) await ctx.fiber.dispose()
+    }
+  })
+
+  it('refuses a stale repair before truncation and a stale append before writing', async () => {
+    const dir = await freshRoot()
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(JsonlSessionPersistence, { root: dir, compression: 'none' })
+    const header = meta('stale-mutation')
+    try {
+      await ctx.sessionPersistence.create(header)
+      await ctx.sessionPersistence.append(header.id, oneTurnLog())
+      const backend = ctx.sessionPersistence as JsonlSessionPersistence
+      const path = backend.locate(header).path
+      await appendFile(path, '{"partial')
+      const before = await readFile(path)
+      const stale = await backend.loadStored(header.id)
+      await expect(backend.commitRepair(header, stale!.tornMarker, [])).rejects.toThrow(/stored revision changed/)
+      await expect(ctx.sessionPersistence.append(header.id, [
+        { type: 'turn/start', seq: 6, time: 9, data: { turn: 2 } },
+      ])).rejects.toThrow(/stored revision changed/)
+      expect(await readFile(path)).toEqual(before)
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
+  it('releases a crashed process lock without deleting or expiring its sidecar', async () => {
+    const dir = await freshRoot()
+    const path = join(dir, '.writer-lock')
+    const module = pathToFileURL(resolve('packages/session/session-persistence-jsonl/src/writer-lock.ts')).href
+    const child = spawn(process.execPath, ['--input-type=module', '-e',
+      `import { acquireWriterLock } from ${JSON.stringify(module)}; await acquireWriterLock(${JSON.stringify(path)}); process.stdout.write('locked'); setInterval(() => {}, 1000);`,
+    ], { stdio: ['ignore', 'pipe', 'pipe'] })
+    try {
+      await Promise.race([
+        once(child.stdout, 'data'),
+        once(child, 'exit').then(([code]) => { throw new Error(`lock child exited early: ${code}`) }),
+      ])
+      await expect(acquireWriterLock(path)).rejects.toThrow(/writer ownership/)
+      const exited = once(child, 'exit')
+      child.kill('SIGKILL')
+      await exited
+      expect(await stat(path)).toBeDefined()
+      const release = await acquireWriterLock(path)
+      await release()
+    } finally {
+      if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL')
+    }
+  })
+})
 
 describe('transient JSONL exclusion', () => {
   it('does not create an artifact, directory or listed record after events, flush and teardown', async () => {
@@ -606,6 +691,10 @@ describe('JsonlSessionPersistence: durability and crash semantics', () => {
     const m = meta('crash', '/proj')
     await ctx.sessionPersistence.create(m)
     await ctx.sessionPersistence.append(m.id, oneTurnLog()) // seqs 0..5, turn/end at 5
+    await ctx.fiber.dispose()
+    ctx = new Context()
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(JsonlSessionPersistence, { root, compression: 'none' })
 
     // Simulate a crash mid-second-turn: append raw lines that are NOT closed by
     // a turn/end (turn/start + step/start are fully written), plus a final
@@ -645,6 +734,10 @@ describe('JsonlSessionPersistence: durability and crash semantics', () => {
     await ctx.sessionPersistence.append(m.id, oneTurnLog())
     const before = await readFile(rawLogPath(root, undefined, m.id), 'utf8')
     const committedPrefix = before // the whole committed log
+    await ctx.fiber.dispose()
+    ctx = new Context()
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(JsonlSessionPersistence, { root, compression: 'none' })
 
     // A crash tail then a repair-append.
     await writeFile(rawLogPath(root, undefined, m.id), '\n{"partial', { flag: 'a' })
@@ -691,6 +784,48 @@ describe('JsonlSessionPersistence: durability and crash semantics', () => {
     await ctx.sessionPersistence.append(m.id, turn2)
     const loaded = await ctx.sessionPersistence.load(m.id)
     expect(loaded.events.map(e => e.seq)).toEqual([0, 1, 2, 3, 4, 5, 6, 7])
+  })
+
+  it.each([true, false])('does not duplicate a batch after fsync succeeds but close fails (rollback=%s)', async (rollbackSucceeds) => {
+    const header = meta(`close-failure-${rollbackSucceeds}`)
+    await ctx.sessionPersistence.create(header)
+    await ctx.sessionPersistence.append(header.id, oneTurnLog())
+    const backend = ctx.sessionPersistence as JsonlSessionPersistence
+    const path = backend.locate(header).path
+    const handle = await (await import('node:fs/promises')).open(path, 'r')
+    const proto = Object.getPrototypeOf(handle) as { close(): Promise<void> }
+    await handle.close()
+    const realClose = proto.close
+    let failed = false
+    const closeSpy = vi.spyOn(proto, 'close').mockImplementation(async function (this: unknown) {
+      await realClose.call(this)
+      if (!failed) {
+        failed = true
+        throw new Error('simulated append close failure after fsync')
+      }
+    })
+    const internals = backend as unknown as { rollbackAppend(path: string, size: number): Promise<void> }
+    const rollbackSpy = rollbackSucceeds ? undefined
+      : vi.spyOn(internals, 'rollbackAppend').mockRejectedValue(new Error('simulated rollback failure'))
+    const batch = [
+      { type: 'turn/start', seq: 6, time: 9, data: { turn: 2 } },
+      { type: 'turn/end', seq: 7, time: 10, data: { turn: 2, reason: { kind: 'completed' } } },
+    ] as SessionEvent[]
+    await expect(ctx.sessionPersistence.append(header.id, batch)).rejects.toThrow(
+      rollbackSucceeds ? /append close failure/ : /failed to roll back append/,
+    )
+    closeSpy.mockRestore()
+    rollbackSpy?.mockRestore()
+    const afterFailure = await readFile(path)
+    if (rollbackSucceeds) {
+      expect(scanLog(afterFailure).events).toEqual(oneTurnLog())
+      await ctx.sessionPersistence.append(header.id, batch)
+      expect(scanLog(await readFile(path)).events).toEqual([...oneTurnLog(), ...batch])
+    } else {
+      expect(scanLog(afterFailure).events).toEqual([...oneTurnLog(), ...batch])
+      await expect(ctx.sessionPersistence.append(header.id, batch)).rejects.toThrow(/without a proven rollback/)
+      expect(await readFile(path)).toEqual(afterFailure)
+    }
   })
 
   it('reports both the append failure and a failed rollback', async () => {
@@ -1509,10 +1644,11 @@ describe('JsonlSessionPersistence: edge cases', () => {
   })
 
   it('append() to a disk-only session adopts it and repairs a crash tail', async () => {
-    // Persist a session, then corrupt its tail, all through ONE backend.
+    // 崩溃尾部只能在前一个 writer 已停稳后交给新后端修复。
     const m = meta('disk-append', '/d')
     await ctx.sessionPersistence.create(m)
     await ctx.sessionPersistence.append(m.id, oneTurnLog())
+    await ctx.fiber.dispose()
     await writeFile(rawLogPath(root, '/d', m.id), '\n{"partial crash', { flag: 'a' })
 
     // A FRESH backend with no in-memory state: append directly (no prior load)

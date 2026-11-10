@@ -188,6 +188,7 @@ describe('connection node half', () => {
     // ordinary reads (carrier-level 404 from the empty proxy proves the fence
     // passed), but each privileged method stays loopback-only and 403s.
     for (const method of [
+      'session.rebuildMetadata',
       'host.pickDirectory', 'host.openPath',
       'workspace.gitStatus', 'workspace.gitBranches', 'workspace.gitHistory', 'workspace.gitCheckout', 'workspace.gitPush', 'workspace.gitPull',
       'browser.control',
@@ -213,9 +214,9 @@ describe('connection node half', () => {
     await dispose()
   })
 
-  it('keeps browser.control behind loopback Host, same Origin, and Fetch-Metadata fences', async () => {
+  it.each(['browser.control', 'session.rebuildMetadata'])('keeps %s behind loopback Host, same Origin, and Fetch-Metadata fences', async (method) => {
     const { routes, dispose } = await mounted({ trustedHosts: ['harness.example'] })
-    const path = `${API_PATH}/browser.control`
+    const path = `${API_PATH}/${method}`
     for (const headers of [
       { host: 'harness.example', origin: 'http://harness.example' },
       { host: 'evil.example', origin: 'http://evil.example' },

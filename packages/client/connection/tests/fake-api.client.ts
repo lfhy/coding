@@ -116,6 +116,7 @@ export class FakeApiClient implements IApiClient {
   // lint lane runs without built artifacts, where IApiClient's wire types
   // (apiproxy subpath) resolve to any and inferred params trip no-unsafe-argument.
   readonly sessions: IApiClient['sessions'] = {
+    rebuildMetadata: (payload: unknown) => this.record('session.rebuildMetadata', payload, Promise.resolve(ok({ total: 0, rebuilt: 0, skippedLive: 0, failures: [] }))),
     list: (payload: unknown) => this.record('session.list', payload, this.onList(payload)),
     search: (payload: unknown, signal?: AbortSignal) => {
       this.lastSearchSignal = signal

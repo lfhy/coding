@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { ApiProxy, HostFrame, MuxFrame } from '../src/api/index.ts'
-import type { ClientResponse, RpcMessage, RpcReceipt, RpcRequest } from '../src/api/rpc.ts'
+import type { ClientResponse, RpcMessage, RpcReceipt, RpcRequest, RpcResponse } from '../src/api/rpc.ts'
 import { RpcId } from '../src/api/rpc.ts'
 import { toFetchHandler } from '../src/fetch/handler.ts'
 import { AbstractApiClient, InProcessApiClient } from '../src/fetch/client.ts'
@@ -42,6 +42,9 @@ function fakeApi(overrides: Partial<{ muxFrames: MuxFrame[]; hostFrames: HostFra
       },
     },
     sessions: {
+      async rebuildMetadata(request) {
+        return { rpcId: request.rpcId, result: { ok: true, value: { total: 0, rebuilt: 0, skippedLive: 0, failures: [] } } }
+      },
       async list(request) {
         if (overrides.crashOn === 'session.list') throw new Error('impl crashed')
         return { rpcId: request.rpcId, result: { ok: true, value: { items: [] } } }
@@ -531,7 +534,7 @@ describe('unary round trip (handler ⇄ client, no network)', () => {
     expect(skills.result).toEqual({ ok: true, value: { skills: [{ name: 'commit-helper', description: 'Git commits', modelInvocable: true }] } })
   })
 
-  it('lets host.pickDirectory finish after the 30-second default unary deadline', async () => {
+  it.each(['host.pickDirectory', 'session.rebuildMetadata'] as const)('lets %s finish after the 30-second default unary deadline', async (method) => {
     vi.useFakeTimers()
     const timeoutSpy = vi.spyOn(AbortSignal, 'timeout').mockImplementation((milliseconds) => {
       const controller = new AbortController()
@@ -546,9 +549,15 @@ describe('unary round trip (handler ⇄ client, no network)', () => {
         await new Promise(resolve => setTimeout(resolve, 30_001))
         return { rpcId: request.rpcId, result: { ok: true, value: { path: '/tmp/slow' } } }
       }
-      const execution = client(api).host.pickDirectory({})
+      api.sessions.rebuildMetadata = async (request) => {
+        await new Promise(resolve => setTimeout(resolve, 30_001))
+        return { rpcId: request.rpcId, result: { ok: true, value: { total: 1, rebuilt: 1, skippedLive: 0, failures: [] } } }
+      }
+      const execution = method === 'host.pickDirectory'
+        ? client(api).host.pickDirectory({})
+        : client(api).sessions.rebuildMetadata({})
       const assertion = expect(execution).resolves.toMatchObject({
-        result: { ok: true, value: { path: '/tmp/slow' } },
+        result: { ok: true, value: method === 'host.pickDirectory' ? { path: '/tmp/slow' } : { total: 1, rebuilt: 1 } },
       })
 
       await Promise.all([
@@ -584,10 +593,10 @@ describe('unary round trip (handler ⇄ client, no network)', () => {
     })).result).toEqual({ ok: true, value: { accepted: true } })
   })
 
-  it('keeps caller and connection aborts on a deadline-exempt unary', async () => {
+  it.each(['host.pickDirectory', 'session.rebuildMetadata'] as const)('keeps caller and connection aborts on %s', async (method) => {
     const api = fakeApi()
     const started = Promise.withResolvers<AbortSignal>()
-    api.host.pickDirectory = async (request, signal) => {
+    const waitForAbort = async (request: RpcRequest<unknown>, signal: AbortSignal): Promise<RpcResponse<never>> => {
       started.resolve(signal)
       if (!signal.aborted) {
         await new Promise<void>((resolve) => {
@@ -599,8 +608,12 @@ describe('unary round trip (handler ⇄ client, no network)', () => {
         result: { ok: false, error: { code: 'cancelled', message: 'aborted', details: {} } },
       }
     }
+    api.host.pickDirectory = waitForAbort
+    api.sessions.rebuildMetadata = waitForAbort
     const controller = new AbortController()
-    const execution = client(api).host.pickDirectory({}, controller.signal)
+    const execution = method === 'host.pickDirectory'
+      ? client(api).host.pickDirectory({}, controller.signal)
+      : client(api).sessions.rebuildMetadata({}, controller.signal)
     const handlerSignal = await started.promise
 
     controller.abort(new Error('connection closed'))
@@ -660,9 +673,9 @@ describe('unary round trip (handler ⇄ client, no network)', () => {
     expect(parsed.result.error?.code).toBe('cancelled')
   })
 
-  it('propagates the carrier Request signal into host.pickDirectory', async () => {
+  it.each(['host.pickDirectory', 'session.rebuildMetadata'] as const)('propagates the carrier Request signal into %s', async (method) => {
     const api = fakeApi()
-    api.host.pickDirectory = async (request, signal) => {
+    const waitForCancellation = async (request: RpcRequest<unknown>, signal: AbortSignal): Promise<RpcResponse<never>> => {
       if (!signal.aborted) {
         await new Promise<void>((resolve) => {
           signal.addEventListener('abort', () => { resolve() }, { once: true })
@@ -673,10 +686,12 @@ describe('unary round trip (handler ⇄ client, no network)', () => {
         result: { ok: false, error: { code: 'cancelled', message: 'aborted', details: {} } },
       }
     }
+    api.host.pickDirectory = waitForCancellation
+    api.sessions.rebuildMetadata = waitForCancellation
     const handler = toFetchHandler(api)
     const controller = new AbortController()
-    const body = JSON.stringify({ type: 'client-request', rpcId: 'r-picker', method: 'host.pickDirectory', payload: {} })
-    const pending = handler.fetch(new Request('http://x/api/host.pickDirectory', {
+    const body = JSON.stringify({ type: 'client-request', rpcId: 'r-picker', method, payload: {} })
+    const pending = handler.fetch(new Request(`http://x/api/${method}`, {
       method: 'POST', headers: { 'content-type': 'application/json' }, body, signal: controller.signal,
     }))
     controller.abort()
@@ -721,6 +736,23 @@ describe('handler carrier-layer statuses', () => {
     const parsed = await response.json() as { result: { error?: { code: string; details: { issues: unknown[] } } } }
     expect(parsed.result.error?.code).toBe('bad-request')
     expect(parsed.result.error?.details.issues.length).toBeGreaterThan(0)
+  })
+
+  it('round-trips metadata repair and rejects forged scope or path payloads before dispatch', async () => {
+    const api = fakeApi()
+    const repair = vi.spyOn(api.sessions, 'rebuildMetadata')
+    const client = new InProcessApiClient(toFetchHandler(api))
+    expect((await client.sessions.rebuildMetadata({})).result).toEqual({
+      ok: true, value: { total: 0, rebuilt: 0, skippedLive: 0, failures: [] },
+    })
+    for (const payload of [{ path: '/private/log' }, { sessionId: 'chosen' }, { logs: [] }, null, []]) {
+      const body = JSON.stringify({ type: 'client-request', rpcId: 'forged', method: 'session.rebuildMetadata', payload })
+      const response = await toFetchHandler(api).fetch('http://x/api/session.rebuildMetadata', {
+        method: 'POST', headers: { 'content-type': 'application/json' }, body,
+      })
+      expect(await response.json()).toMatchObject({ rpcId: 'forged', result: { ok: false, error: { code: 'bad-request' } } })
+    }
+    expect(repair).toHaveBeenCalledTimes(1)
   })
 
   it('500s when the impl itself throws', async () => {

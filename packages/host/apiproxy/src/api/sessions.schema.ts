@@ -71,6 +71,17 @@ export const sessionListValueSchema: z.ZodType<Wire<ResponseValue<'session.list'
   items: z.array(sessionSummarySchema),
 })
 
+/** 修复元数据只接受空载荷，禁止浏览器选择路径或日志内容。 */
+export const sessionRebuildMetadataRequestSchema = z.object({}).strict() satisfies z.ZodType<Wire<RequestPayload<'session.rebuildMetadata'>>>
+
+/** 逐会话失败仅包含标识和安全说明。 */
+export const sessionRebuildMetadataValueSchema = z.object({
+  total: z.number().int().nonnegative(),
+  rebuilt: z.number().int().nonnegative(),
+  skippedLive: z.number().int().nonnegative(),
+  failures: z.array(z.object({ sessionId: sessionIdSchema, message: z.string() }).strict()),
+}).strict() satisfies z.ZodType<Wire<ResponseValue<'session.rebuildMetadata'>>>
+
 /** Fixed wire bound for one interactive sidebar query. */
 const SESSION_SEARCH_QUERY_MAX_CHARS = 500
 

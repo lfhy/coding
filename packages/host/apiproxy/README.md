@@ -2,6 +2,10 @@
 
 所有客户端共用的 API 网关由三部分组成：TypeScript API 约定（`src/api/`，不依赖 Node，可从浏览器导入）、fetch 载体对（`src/fetch/`：宿主侧的 `toFetchHandler`，以及客户端侧的 `AbstractApiClient` 与平台子类）和宿主侧实现（`src/api-proxy.ts`：`createApiProxy` 加上默认导出的 `ApiProxyService` 网关插件，其配置为 `{nativeOpen?, sessionExportCompressionLevel?, coldBlankProbeMaxBytes?}`，提供 `ctx.apiProxy`）。该包不注册任何路由；HTTP 等载体自行包装 `ctx.apiProxy`。随发行版交付的 Web 组合位于 [`packages/bundle/web-app/cordis.patch.yml`](../../bundle/web-app/cordis.patch.yml)，其默认 Agent（智能体）模型选择属于 base 组合包中的 [`coding-agent-default-model`](../../core/agent-default-model/README.md)。
 
+## 会话元数据修复
+
+`session.rebuildMetadata` 只接受空载荷，枚举持久会话并从日志完整重建投影缓存，不恢复 Agent、不改写或删除日志。每个会话执行前检查实时附着状态并跳过实时会话；单个日志或缓存写入失败不会阻断其余会话。结果包含 `total`、`rebuilt`、`skippedLive` 与逐会话 `failures`（会话 id 和固定说明，不含路径、日志内容或原始错误）。缺少持久化／投影缓存服务或无法列举会话时返回 `internal`；调用方取消时停止后续重建并返回 `cancelled`。完整扫描不受普通 unary 的 30 秒时限限制，仍接受调用方／连接取消。浏览器载体只允许回环同源调用。
+
 ## 临时（transient）会话
 
 `ctx.agents.create({transient:true})` 建立的会话只存在于内存：持久化协调器、投影缓存、全文索引和遥测都不复制其内容，也不会创建日志工件；`session.list`、`session.search` 与共享帧流不显示这些会话，`ordinaryAgentFor`、`readSessionState`、`historySourceFor`、`ensureSession` 等普通入口以 `session-not-found` 拒绝按该标识读取、恢复或驱动 Agent，其待审批与提问同样不进入 mux、不回放给订阅者。创建这类会话的插件自行持有 `AgentHandle`，并在结束时 dispose 以丢弃记录。

@@ -537,11 +537,13 @@ describe('JsonlSessionPersistence: default Zstandard encoding', () => {
 
   it('preserves complete records from a torn frame and re-encodes them with crash closers', async () => {
     const root = await freshRoot()
-    const ctx = await mount(root)
+    let ctx = await mount(root)
     const header = meta('recover-torn', '/proj')
-    const warn = vi.spyOn(ctx.logger, 'warn').mockImplementation(() => undefined)
     await ctx.sessionPersistence.create(header)
     await ctx.sessionPersistence.append(header.id, oneTurnLog())
+    await ctx.fiber.dispose()
+    ctx = await mount(root)
+    const warn = vi.spyOn(ctx.logger, 'warn').mockImplementation(() => undefined)
     const path = logPath(root, header.cwd, header.id, 'zstd')
     const committed = await readFile(path)
     const openTurn = [
@@ -573,10 +575,12 @@ describe('JsonlSessionPersistence: default Zstandard encoding', () => {
 
   it('drops a frame torn in its header before it has produced plaintext', async () => {
     const root = await freshRoot()
-    const ctx = await mount(root)
+    let ctx = await mount(root)
     const header = meta('partial-magic')
     await ctx.sessionPersistence.create(header)
     await ctx.sessionPersistence.append(header.id, oneTurnLog())
+    await ctx.fiber.dispose()
+    ctx = await mount(root)
     const path = logPath(root, header.cwd, header.id, 'zstd')
     const committed = await readFile(path)
     await appendFile(path, MAGIC.subarray(0, 2))
@@ -587,10 +591,12 @@ describe('JsonlSessionPersistence: default Zstandard encoding', () => {
 
   it('recovers complete events when EOF tears only the final frame checksum', async () => {
     const root = await freshRoot()
-    const ctx = await mount(root)
+    let ctx = await mount(root)
     const header = meta('partial-checksum')
     await ctx.sessionPersistence.create(header)
     await ctx.sessionPersistence.append(header.id, oneTurnLog())
+    await ctx.fiber.dispose()
+    ctx = await mount(root)
     const path = logPath(root, header.cwd, header.id, 'zstd')
     const secondTurn = [
       { type: 'turn/start', seq: 6, time: 7, data: { turn: 2 } },

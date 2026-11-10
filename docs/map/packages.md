@@ -76,7 +76,7 @@ workspace 共 275 个包，按 group 分节。每行给出包目录、职责（R
 - `packages/client/ui-reference` — 统一的 Web `@file` 与 `@session` source [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 1）
 - `packages/client/ui-renderer` — 负责 React 渲染层的浏览器 Cordis 插件 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 9）
 - `packages/client/ui-settings` — 设置领域的底座，本身不含任何呈现内容 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 5）
-- `packages/client/ui-settings-general` — 设置外壳与无特定功能归属文案 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 7）
+- `packages/client/ui-settings-general` — 设置外壳与无特定功能归属文案 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 8）
 - `packages/client/ui-settings-models` — 模型设置、视觉理解目标与首次使用模型配置引导插件 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 17）
 - `packages/client/ui-settings-plugin-inventory` — Web 设置中的只读**插件列表**标签页 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 3）
 - `packages/client/ui-settings-plugins` — **插件**设置分区及其**插件配置**标签页 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 5）
@@ -204,7 +204,7 @@ workspace 共 275 个包，按 group 分节。每行给出包目录、职责（R
 
 ## packages/host
 
-- `packages/host/apiproxy` — 所有客户端共用的 API 网关由三部分组成：TypeScript API 约定（`src/api/`，不依赖 Node… [client] 入口 `src/index.ts`（tests 22）
+- `packages/host/apiproxy` — 所有客户端共用的 API 网关由三部分组成：TypeScript API 约定（`src/api/`，不依赖 Node… [client] 入口 `src/index.ts`（tests 23）
 - `packages/host/directory-picker` — web GUI 宿主的工作区目录选择是一项能力 seam 入口 `src/index.ts`（tests 1）
 - `packages/host/directory-picker-auto` — 目录选择 seam 的**自适应选择器**：一个只有 node 半侧的插件，在启动时一次性判定宿主处境… 入口 `src/index.ts`（tests 2）
 - `packages/host/directory-picker-browse` — 目录选择 seam 的**应用内浏览后端**：`BrowseDirectoryPicker` 以 `browse` 能力注册 `ctx.dire… 入口 `src/index.ts`（tests 1）

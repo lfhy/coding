@@ -29,6 +29,7 @@ import {
   sessionForkValueSchema,
   sessionHistoryValueSchema,
   sessionListValueSchema,
+  sessionRebuildMetadataValueSchema,
   sessionModelsValueSchema,
   sessionPromptValueSchema,
   sessionRenameValueSchema,
@@ -106,6 +107,7 @@ export interface IApiClient {
   }
   sessions: {
     list(payload: RequestPayload<'session.list'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'session.list'>>>
+    rebuildMetadata(payload: RequestPayload<'session.rebuildMetadata'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'session.rebuildMetadata'>>>
     search(payload: RequestPayload<'session.search'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'session.search'>>>
     create(payload: RequestPayload<'session.create'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'session.create'>>>
     history(payload: RequestPayload<'session.history'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'session.history'>>>
@@ -204,6 +206,7 @@ export interface IApiClient {
  */
 const UNARY_VALUE_SCHEMAS: { [K in keyof RpcMethodMap]: z.ZodType<Wire<ResponseValue<K>>> } = {
   'session.list': sessionListValueSchema,
+  'session.rebuildMetadata': sessionRebuildMetadataValueSchema,
   'session.search': sessionSearchValueSchema,
   'session.create': sessionCreateValueSchema,
   'session.history': sessionHistoryValueSchema,
@@ -461,6 +464,8 @@ export abstract class AbstractApiClient implements IApiClient {
 
   readonly sessions: IApiClient['sessions'] = {
     list: (payload, signal) => this.callUnary('session.list', payload, signal),
+    // 全量日志重放可能超过普通请求时限，仍接受调用方取消。
+    rebuildMetadata: (payload, signal) => this.callUnary('session.rebuildMetadata', payload, signal, 'caller-signal-only'),
     search: (payload, signal) => this.callUnary('session.search', payload, signal),
     create: (payload, signal) => this.callUnary('session.create', payload, signal),
     history: (payload, signal) => this.callUnary('session.history', payload, signal),

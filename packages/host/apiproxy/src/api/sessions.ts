@@ -234,6 +234,19 @@ export interface SessionSearchItem {
 
 /** Session-domain unary methods (the map keys session.* of RpcMethodMap). */
 export interface SessionsApi {
+  /**
+   * 从持久日志重建冷会话投影缓存，不改写日志或恢复 Agent；实时会话跳过，失败按会话隔离。
+   * @param request - 空载荷请求，不能指定路径或会话范围。
+   * @param signal - 取消后停止继续重建。
+   * @returns 总数、成功数、实时跳过数与不含日志内容的逐会话失败信息。
+   */
+  rebuildMetadata(request: RpcRequest<Record<string, never>>, signal: AbortSignal): Promise<RpcResponse<{
+    total: number
+    rebuilt: number
+    skippedLive: number
+    failures: { sessionId: SessionId; message: string }[]
+  }>>
+
   /** Lists persisted sessions (updatedAt descending). v1 returns everything; cursor is a reserved seat, unimplemented. */
   list(request: RpcRequest<{ cursor?: string }>): Promise<RpcResponse<{ items: SessionSummary[] }>>
 

@@ -1,11 +1,7 @@
 /**
- * Settings shell and ownerless-copy plugin, browser half: renders the
- * `sidebar.settings` occupant — panel chrome, section navigation, and the
- * onboarding stage — and registers everything on the Settings pages that
- * belongs to no single feature: the trigger/header chrome content,
- * local-document action, General section, and `settings` dictionaries.
- * Feature-owned rows and sections stay with their features.
- * Export discipline: packages/client/AGENTS.md.
+ * 设置外壳浏览器插件：持有页面、分区导航、引导协调、通用文案与本地维护操作。
+ * 各功能自己的设置行和分区仍由其所属插件注册。
+ * 导出约束见 packages/client/AGENTS.md。
  */
 import type { ClientContext } from 'coding-client-runtime/client'
 import type { ConnectionHandle } from 'coding-api-remotes/client'
@@ -25,6 +21,7 @@ import { GeneralSection } from './GeneralSection.tsx'
 import { SettingsDocumentAction } from './SettingsDocumentAction.tsx'
 import type { SettingsDocumentActionInjected } from './SettingsDocumentAction.tsx'
 import { SettingsDocumentStore } from './settings-document-store.ts'
+import { SessionMetadataRepair } from './SessionMetadataRepair.tsx'
 import { en, zh, type SettingsKey } from './locales.ts'
 
 export type {
@@ -56,9 +53,9 @@ const NS = 'settings'
 export const inject = ['slots', 'locale', 'connection', 'settingsScope']
 
 /**
- * Register the `settings` dictionaries, the chrome content, and the General
- * section, each once its slot declaration is on the ledger.
- * @param ctx - client root context.
+ * 注册设置字典、页面和通用分区；特权维护操作仅在回环连接下注册。
+ * @param ctx - 客户端根上下文。
+ * @returns 无返回值；注册项随插件生命周期释放。
  */
 export function apply(ctx: ClientContext): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-settings-general: dictionaries')
@@ -174,4 +171,19 @@ export function apply(ctx: ClientContext): void {
     locale: NS,
     children: { 'settings.general.item': { kind: 'list', scope: 'root' } },
   }, GeneralSection))
+  if (connection.isLoopback) {
+    ctx.slots.inject('settings.general.item', () => ctx.slots.register({
+      name: 'settings.general.item',
+      id: 'session-metadata',
+      order: 100,
+      locale: NS,
+      inject: () => ({
+        rebuildMetadata: async (signal: AbortSignal) => {
+          const response = await connection.api.sessions.rebuildMetadata({}, signal)
+          if (!response.result.ok) throw new Error(response.result.error.message)
+          return response.result.value
+        },
+      }),
+    }, SessionMetadataRepair))
+  }
 }

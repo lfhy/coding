@@ -197,6 +197,25 @@ export class SessionProjectionCache extends Service {
     return restored.snapshot
   }
 
+  /**
+   * 强制冷读重建一个持久会话的投影缓存：忽略既有检查点行，从 seq 0
+   * 读取存储日志并用 `restore({}, events, 0)` 全量折叠，再整记录替换。
+   * 它绝不调用 `load`／`prepare`／`inspect`，因此不会提交合成 closer、
+   * 截断撕裂尾部或发布会话——只反映物理存储的日志前缀。供维护入口
+   * （`session.rebuildMetadata`）修复“日志健康但缓存行丢失或可疑”的
+   * 会话；已提交的 seq 缺口仍按损坏拒绝，本方法不做日志修复。
+   * @param id - 要重建的持久会话。
+   * @param signal - 取消持久化读取。
+   * @returns 重建出的日志末尾投影切面。
+   */
+  async rebuild(id: SessionId, signal?: AbortSignal): Promise<ProjectionSnapshot> {
+    const whole = await this.ctx.sessionPersistence.readFrom(id, 0, signal)
+    signal?.throwIfAborted()
+    const restored = this.ctx.sessionProjections.restore({}, whole.events, 0)
+    await this.put(id, identityOf(whole.meta), restored.checkpoint)
+    return restored.snapshot
+  }
+
   // --- write-behind (throttle + mandatory points) ---
 
   private installWritePath(): void {

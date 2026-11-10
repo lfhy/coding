@@ -46,6 +46,7 @@ function scriptedApi(overrides: {
       setOutbound: r => err(r),
     },
     sessions: {
+      rebuildMetadata: r => ok(r, { total: 0, rebuilt: 0, skippedLive: 0, failures: [] }),
       list: r => ok(r, { items: [] }),
       search: r => ok(r, { items: [], hasMore: false }),
       create: r => ok(r, { sessionId: sid('s-new') }),
