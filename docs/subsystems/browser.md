@@ -271,6 +271,16 @@ async captureSessionPage(options: { /** 会话身份；页面进入它的浏览�
  * @returns 复核归属后的目标 id；会话不存在、页面已满或创建失败时为 null。
  */
 async createBlankPage(sessionId: SessionId): Promise<string | null>
+
+/**
+ * 浏览器重启后仅为该会话重开它原先打开的页面。
+ *
+ * 页面在会话自己的任务空间与隔离 context 中重建，网址来自运行时记录的受限列表；
+ * 其它会话的页面不会被这一调用打开。同一个会话重复调用是幂等的。
+ * @param sessionId - 已在 sessions 服务中确认存在的会话。
+ * @returns 运行时确认恢复成功时为 true。
+ */
+async restoreSessionPages(sessionId: SessionId): Promise<boolean>
 ```
 
 Types: [SessionId](core.md) · [ToolDefinition](tools.md)
