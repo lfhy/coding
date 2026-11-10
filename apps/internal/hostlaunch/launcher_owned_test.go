@@ -29,9 +29,18 @@ func TestHostlaunchChildProcess(t *testing.T) {
 	var termination chan os.Signal
 	if mode == "ignore-term" {
 		signal.Ignore(syscall.SIGTERM)
-	} else if mode == "remove-record-on-term" {
+	} else if mode == "remove-record-on-term" || mode == "flush-on-term" {
 		termination = make(chan os.Signal, 1)
 		signal.Notify(termination, syscall.SIGTERM)
+	} else if mode == "track-term" {
+		terms := make(chan os.Signal, 2)
+		signal.Notify(terms, syscall.SIGTERM)
+		go func() {
+			<-terms
+			_ = os.WriteFile(filepath.Join(home, "term-received"), nil, 0o600)
+			<-terms
+			_ = os.WriteFile(filepath.Join(home, "duplicate-term"), nil, 0o600)
+		}()
 	}
 	if err := os.WriteFile(filepath.Join(home, "child.pid"), []byte(strconv.Itoa(os.Getpid())), 0o600); err != nil {
 		os.Exit(2)
@@ -59,6 +68,17 @@ func TestHostlaunchChildProcess(t *testing.T) {
 	if termination != nil {
 		<-termination
 		_ = os.Remove(filepath.Join(home, "host.json"))
+		if mode == "flush-on-term" {
+			_ = os.WriteFile(filepath.Join(home, "flush-started"), nil, 0o600)
+			for {
+				if _, err := os.Stat(filepath.Join(home, "allow-flush")); err == nil {
+					break
+				}
+				time.Sleep(time.Millisecond)
+			}
+			_ = os.WriteFile(filepath.Join(home, "flush-completed"), nil, 0o600)
+			os.Exit(0)
+		}
 	}
 	time.Sleep(30 * time.Second)
 	os.Exit(0)
@@ -148,6 +168,197 @@ func TestEnsureDrainsOutputAfterReadiness(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitForFixtureFile(t, filepath.Join(launcher.Home(), "output-drained"))
+}
+
+func TestEnsureDoesNotStartWhilePreviousOwnerHasRemovedDiscoveryRecord(t *testing.T) {
+	owner := ownedTestLauncher(t, "good", "owned-token")
+	endpoint, err := owner.Ensure(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(owner.RecordPath()); err != nil {
+		t.Fatal(err)
+	}
+	replacement, err := New(Options{
+		Home: owner.Home(), CWD: owner.Home(), PollInterval: time.Millisecond,
+		Command: []string{"command-that-must-not-be-started"}, ReplaceCompatibleHost: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Millisecond)
+	defer cancel()
+	if _, err := replacement.Ensure(ctx); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("replacement error = %v, want to wait for the previous owner", err)
+	}
+	if !processAlive(endpoint.Record.PID) {
+		t.Fatal("replacement stopped an owner without a verifiable discovery record")
+	}
+	owned := owner.owned[endpoint]
+	if err := owned.signal(os.Kill); err != nil {
+		t.Fatal(err)
+	}
+	<-owned.done
+	// 原 child 完全退出后，生命周期记录不再阻止后继启动，也无需删除用户文件。
+	replacement.options.Command = owner.options.Command
+	replacement.options.Environment = owner.options.Environment
+	t.Cleanup(func() {
+		for _, next := range replacement.owned {
+			_ = next.signal(os.Kill)
+			<-next.done
+		}
+	})
+	next, err := replacement.Ensure(t.Context())
+	if err != nil || !next.Started || next.Record.PID == endpoint.Record.PID {
+		t.Fatalf("replacement after owner exit = %#v, %v", next, err)
+	}
+}
+
+func TestEnsureGracefulHandoffWaitsForPreviousOwnerFlushAndExit(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows does not support graceful SIGTERM")
+	}
+	owner := ownedTestLauncher(t, "flush-on-term", "owned-token")
+	endpoint, err := owner.Ensure(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	options := owner.options
+	options.ReplaceCompatibleHost = true
+	// race 子进程的正常退出额外保留约一秒，轮询总预算必须覆盖该运行时宽限。
+	options.PollInterval = 20 * time.Millisecond
+	options.Environment = map[string]string{}
+	for key, value := range owner.options.Environment {
+		options.Environment[key] = value
+	}
+	options.Environment["HOSTLAUNCH_TEST_CHILD"] = "good"
+	replacement, err := New(options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		for _, next := range replacement.owned {
+			_ = next.signal(os.Kill)
+			<-next.done
+		}
+	})
+	type result struct {
+		endpoint Endpoint
+		err      error
+	}
+	completed := make(chan result, 1)
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	go func() {
+		next, err := replacement.Ensure(ctx)
+		completed <- result{next, err}
+	}()
+	waitForFixtureFile(t, filepath.Join(owner.Home(), "flush-started"))
+	select {
+	case next := <-completed:
+		t.Fatalf("replacement completed before flush release: %#v", next)
+	default:
+	}
+	if !processAlive(endpoint.Record.PID) {
+		t.Fatal("previous owner exited before flush release")
+	}
+	if err := os.WriteFile(filepath.Join(owner.Home(), "allow-flush"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	next := <-completed
+	if next.err != nil || !next.endpoint.Started || next.endpoint.Record.PID == endpoint.Record.PID {
+		t.Fatalf("replacement = %#v, %v", next.endpoint, next.err)
+	}
+	if _, err := os.Stat(filepath.Join(owner.Home(), "flush-completed")); err != nil {
+		t.Fatalf("replacement started before old flush completed: %v", err)
+	}
+	if processAlive(endpoint.Record.PID) {
+		t.Fatal("replacement overlapped the previous owner")
+	}
+}
+
+func TestEnsureRefusesChangedRecordWhilePreviousOwnerLives(t *testing.T) {
+	owner := ownedTestLauncher(t, "good", "owned-token")
+	endpoint, err := owner.Ensure(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	changed := endpoint.Record
+	changed.Token = "successor-token"
+	data, _ := json.Marshal(changed)
+	if err := os.WriteFile(owner.RecordPath(), data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	replacement, err := New(Options{Home: owner.Home(), PollInterval: time.Millisecond, ReplaceCompatibleHost: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Millisecond)
+	defer cancel()
+	if _, err := replacement.Ensure(ctx); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("replacement error = %v, want previous owner wait", err)
+	}
+	if !processAlive(endpoint.Record.PID) {
+		t.Fatal("changed discovery record authorized stopping the original owner")
+	}
+}
+
+func TestEnsureRejectsInvalidLifecycleRecord(t *testing.T) {
+	for _, data := range []string{`invalid`, `{}`, `{"type":"coding-host-ready","pid":1,"port":1}`} {
+		t.Run(data, func(t *testing.T) {
+			home := t.TempDir()
+			if err := os.WriteFile(filepath.Join(home, "host-owner.json"), []byte(data), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			launcher, err := New(Options{Home: home, Command: []string{"must-not-start"}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := launcher.Ensure(t.Context()); !errors.Is(err, ErrHostNotReplaceable) {
+				t.Fatalf("invalid lifecycle record allowed launch: %v", err)
+			}
+		})
+	}
+}
+
+func TestEnsureWaitsForRetiringOwnerWithoutRepeatingSignal(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows does not support graceful SIGTERM")
+	}
+	owner := ownedTestLauncher(t, "track-term", "owned-token")
+	endpoint, err := owner.Ensure(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := owner.writeOwner(endpoint.Record, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := owner.owned[endpoint].signal(syscall.SIGTERM); err != nil {
+		t.Fatal(err)
+	}
+	waitForFixtureFile(t, filepath.Join(owner.Home(), "term-received"))
+	replacement, err := New(Options{Home: owner.Home(), PollInterval: time.Millisecond, ReplaceCompatibleHost: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, stop := range []struct {
+		name string
+		run  func(context.Context) error
+	}{
+		{name: "replacement", run: func(ctx context.Context) error { _, err := replacement.Ensure(ctx); return err }},
+		{name: "original owner cleanup", run: func(ctx context.Context) error { return owner.StopOwned(ctx, endpoint) }},
+	} {
+		t.Run(stop.name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(t.Context(), 30*time.Millisecond)
+			defer cancel()
+			if err := stop.run(ctx); !errors.Is(err, context.DeadlineExceeded) {
+				t.Fatalf("retiring owner wait = %v", err)
+			}
+			if _, err := os.Stat(filepath.Join(owner.Home(), "duplicate-term")); !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("retiring owner received another TERM: %v", err)
+			}
+		})
+	}
 }
 
 func TestStopOwnedStopsAndReapsOriginalChildIdempotently(t *testing.T) {

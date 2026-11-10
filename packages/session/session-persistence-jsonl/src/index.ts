@@ -459,6 +459,7 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
       }
       // 提交结果不明时不能把当前修订认作旧游标，避免重试重复追加已提交批次。
       writer.failed = true
+      if (!isMaterialized && await this.pathRevision(path) === undefined) writer.failed = false
       throw error
     }
     writer.nextSeq += events.length

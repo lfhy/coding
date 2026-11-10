@@ -19,6 +19,7 @@ import { runCoordinatorContract, type CoordinatorFixture } from '../../session-p
 
 const statRace = vi.hoisted(() => ({
   path: undefined as string | undefined,
+  closePath: undefined as string | undefined,
   reads: 0,
 }))
 
@@ -26,6 +27,18 @@ vi.mock('node:fs/promises', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs/promises')>()
   return {
     ...actual,
+    open: async (...args: Parameters<typeof actual.open>) => {
+      const handle = await actual.open(...args)
+      if (String(args[0]) === statRace.closePath && args[1] === 'a') {
+        const close = handle.close.bind(handle)
+        handle.close = async () => {
+          await close()
+          statRace.closePath = undefined
+          throw new Error('simulated append close failure after fsync')
+        }
+      }
+      return handle
+    },
     stat: (async (...args: Parameters<typeof actual.stat>) => {
       const identity = await actual.stat(...args)
       if (String(args[0]) !== statRace.path || !('mtimeNs' in identity)) return identity
@@ -89,6 +102,7 @@ function rawLogPath(root: string, cwd: string | undefined, id: SessionId): strin
 
 afterEach(async () => {
   statRace.path = undefined
+  statRace.closePath = undefined
   statRace.reads = 0
   vi.restoreAllMocks()
   for (const d of dirs.splice(0)) await rm(d, { recursive: true, force: true })
@@ -792,18 +806,7 @@ describe('JsonlSessionPersistence: durability and crash semantics', () => {
     await ctx.sessionPersistence.append(header.id, oneTurnLog())
     const backend = ctx.sessionPersistence as JsonlSessionPersistence
     const path = backend.locate(header).path
-    const handle = await (await import('node:fs/promises')).open(path, 'r')
-    const proto = Object.getPrototypeOf(handle) as { close(): Promise<void> }
-    await handle.close()
-    const realClose = proto.close
-    let failed = false
-    const closeSpy = vi.spyOn(proto, 'close').mockImplementation(async function (this: unknown) {
-      await realClose.call(this)
-      if (!failed) {
-        failed = true
-        throw new Error('simulated append close failure after fsync')
-      }
-    })
+    statRace.closePath = path
     const internals = backend as unknown as { rollbackAppend(path: string, size: number): Promise<void> }
     const rollbackSpy = rollbackSucceeds ? undefined
       : vi.spyOn(internals, 'rollbackAppend').mockRejectedValue(new Error('simulated rollback failure'))
@@ -814,7 +817,6 @@ describe('JsonlSessionPersistence: durability and crash semantics', () => {
     await expect(ctx.sessionPersistence.append(header.id, batch)).rejects.toThrow(
       rollbackSucceeds ? /append close failure/ : /failed to roll back append/,
     )
-    closeSpy.mockRestore()
     rollbackSpy?.mockRestore()
     const afterFailure = await readFile(path)
     if (rollbackSucceeds) {

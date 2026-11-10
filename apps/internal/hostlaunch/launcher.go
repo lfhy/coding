@@ -50,6 +50,12 @@ type ownedHost struct {
 	exitErr  error // 只在 done 关闭后读取。
 }
 
+type lifecycleRecord struct {
+	Record
+	OwnerProtocol int  `json:"ownerProtocol"`
+	Retiring      bool `json:"retiring"`
+}
+
 func (owned *ownedHost) signal(signal os.Signal) error {
 	owned.signalMu.Lock()
 	defer owned.signalMu.Unlock()
@@ -205,6 +211,9 @@ func (l *Launcher) Ensure(ctx context.Context) (Endpoint, error) {
 	}
 	defer lock.Close()
 
+	if err := l.waitForRetiringOwner(ctx); err != nil {
+		return Endpoint{}, err
+	}
 	endpoint, state := l.discover(ctx)
 	if err := ctx.Err(); err != nil {
 		return Endpoint{}, err
@@ -215,7 +224,7 @@ func (l *Launcher) Ensure(ctx context.Context) (Endpoint, error) {
 	if state == discoveryCompatible || state == discoveryLiveIncompatible {
 		// 私有 bridge 环境不能被 host.json 表达；附着旧 Host 会保留已经失效
 		// 的 token。停止受管进程后由本次启动继承当前窗口的环境。
-		if err := l.stopExisting(ctx, endpoint.Record.PID); err != nil {
+		if err := l.stopExisting(ctx, endpoint); err != nil {
 			return Endpoint{}, err
 		}
 		_, state = l.discover(ctx)
@@ -234,13 +243,49 @@ func (l *Launcher) Ensure(ctx context.Context) (Endpoint, error) {
 // hostExitWaitTicks 限制已有 Host 响应退出请求的轮询次数。
 var hostExitWaitTicks = 100
 
+// waitForRetiringOwner 封闭 Host 在销毁中删除 host.json 到实际退出之间的窗口。
+// 生命周期记录只用于等待，不授权发信号；无法核验健康身份时绝不强停记录中的 PID。
+func (l *Launcher) waitForRetiringOwner(ctx context.Context) error {
+	data, err := os.ReadFile(filepath.Join(l.options.Home, "host-owner.json"))
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	var owner lifecycleRecord
+	if err != nil || json.Unmarshal(data, &owner) != nil || owner.OwnerProtocol != 1 || owner.Type != "coding-host-ready" ||
+		owner.PID < 1 || owner.Port < 1 || owner.Port > 65535 || owner.Token == "" {
+		return ErrHostNotReplaceable
+	}
+	if !processAlive(owner.PID) {
+		return nil
+	}
+	data, err = os.ReadFile(l.RecordPath())
+	var current Record
+	if !owner.Retiring && err == nil && json.Unmarshal(data, &current) == nil && current == owner.Record {
+		return nil
+	}
+	return l.waitExistingExit(ctx, owner.PID)
+}
+
 // stopExisting 请求已验证的 Host 退出，并等待其原始 PID 结束。探针短暂失败
 // 不代表旧进程已退出；在它仍存活时启动新 Host 会让两者共享 DSH_HOME。
-func (l *Launcher) stopExisting(ctx context.Context, pid int) error {
+func (l *Launcher) stopExisting(ctx context.Context, endpoint Endpoint) error {
+	pid := endpoint.Record.PID
 	if pid < 1 || !processAlive(pid) {
 		return nil
 	}
+	data, err := os.ReadFile(l.RecordPath())
+	var current Record
+	if err != nil || json.Unmarshal(data, &current) != nil || current != endpoint.Record {
+		return ErrHostNotReplaceable
+	}
+	if err := l.writeOwner(endpoint.Record, true); err != nil {
+		return err
+	}
 	terminateProcess(pid)
+	return l.waitExistingExit(ctx, pid)
+}
+
+func (l *Launcher) waitExistingExit(ctx context.Context, pid int) error {
 	for attempt := 0; ; attempt++ {
 		if !processAlive(pid) {
 			return nil
@@ -374,10 +419,25 @@ func (l *Launcher) StopOwned(ctx context.Context, endpoint Endpoint) error {
 		return owned.wait(stopCtx)
 	}
 	if !owned.stopping {
+		// 与后继 Ensure 共用启动锁，防止双方重复 TERM 触发 CLI 的立即强退策略。
+		lock, err := acquireLock(stopCtx, filepath.Join(l.options.Home, "host.lock"), l.options.LockTimeout, l.options.PollInterval)
+		if err != nil {
+			return err
+		}
+		defer lock.Close()
+		if hostExited(owned.done) {
+			return nil
+		}
+		data, err := os.ReadFile(filepath.Join(l.options.Home, "host-owner.json"))
+		var lifecycle lifecycleRecord
+		if err == nil && json.Unmarshal(data, &lifecycle) == nil && lifecycle.OwnerProtocol == 1 && lifecycle.Retiring && lifecycle.Record == endpoint.Record {
+			// 另一启动器已经请求这个 child 退出；此标记只允许等待，不能授权第二次信号。
+			return owned.wait(stopCtx)
+		}
 		if err := stopCtx.Err(); err != nil {
 			return err
 		}
-		data, err := os.ReadFile(l.RecordPath())
+		data, err = os.ReadFile(l.RecordPath())
 		if err != nil {
 			if owned.hasExited() {
 				return owned.wait(stopCtx)
@@ -409,6 +469,9 @@ func (l *Launcher) StopOwned(ctx context.Context, endpoint Endpoint) error {
 			return ErrHostIdentityChanged
 		}
 		if err := stopCtx.Err(); err != nil {
+			return err
+		}
+		if err := l.writeOwner(endpoint.Record, true); err != nil {
 			return err
 		}
 		if err := owned.signal(ownedStopSignal()); err != nil {
@@ -563,6 +626,11 @@ func (l *Launcher) start(ctx context.Context) (Endpoint, error) {
 		if hostExited(owned.done) || owned.hasExited() {
 			return Endpoint{}, ErrHostUnavailable
 		}
+		// host.json 属于 Host 的插件生命周期，可能先于持久化 flush 被删除。
+		// 启动器在释放启动锁前留下原始 child 身份，后继启动器必须等待其退出。
+		if err := l.writeOwner(record, false); err != nil {
+			return Endpoint{}, err
+		}
 		l.ownedMu.Lock()
 		if l.owned == nil {
 			l.owned = make(map[Endpoint]*ownedHost)
@@ -581,6 +649,25 @@ func (l *Launcher) start(ctx context.Context) (Endpoint, error) {
 	case <-readyCtx.Done():
 		return Endpoint{}, fmt.Errorf("coding: Host readiness timeout: %w", readyCtx.Err())
 	}
+}
+
+func (l *Launcher) writeOwner(record Record, retiring bool) error {
+	file, err := os.CreateTemp(l.options.Home, ".host-owner-*.tmp")
+	if err != nil {
+		return fmt.Errorf("coding: create Host lifecycle record: %w", err)
+	}
+	defer os.Remove(file.Name())
+	if err := json.NewEncoder(file).Encode(lifecycleRecord{Record: record, OwnerProtocol: 1, Retiring: retiring}); err != nil {
+		_ = file.Close()
+		return fmt.Errorf("coding: write Host lifecycle record: %w", err)
+	}
+	if err := file.Close(); err != nil {
+		return fmt.Errorf("coding: close Host lifecycle record: %w", err)
+	}
+	if err := os.Rename(file.Name(), filepath.Join(l.options.Home, "host-owner.json")); err != nil {
+		return fmt.Errorf("coding: publish Host lifecycle record: %w", err)
+	}
+	return nil
 }
 
 // waitForChildCleanup 给已经发出的强停有限回收时间，不能继承已取消的启动 context。
