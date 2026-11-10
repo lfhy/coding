@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { mkdir, mkdtemp, readFile, stat, symlink, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readdir, readFile, stat, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
@@ -23,6 +23,8 @@ import type {} from 'coding-session-projection'
 import type {} from 'coding-token-meter'
 
 const CONFIG_DIR = fileURLToPath(new URL('../config/', import.meta.url))
+/** 随包模式目录；画图工具行的静态断言逐个目录读组装文本。 */
+const PRESET_ROOT = join(CONFIG_DIR, 'agent-presets')
 const REPO_ROOT = fileURLToPath(new URL('../../..', import.meta.url))
 /** The shipped Web surface: the dsh-base and dsh-web-app bundle patches over an empty preset root. */
 const BASE_PATCH = join(REPO_ROOT, 'packages/bundle/base/cordis.patch.yml')
@@ -321,6 +323,50 @@ describe('the shipped Web composition', () => {
       await handle.dispose()
     }
   })
+
+  /**
+   * 画图工具的注册条件是图像服务就绪，不是会话模式：除极简模式外，每个随包模式的组装都必须
+   * 挂这一行。codex／longrun／reverse 不适合在 keyless 测试里挂载（reverse 会拉起 MCP 进程，
+   * 其余依赖可选提供方），因此这里对全部目录做静态断言，挂载验证放在下面按模式跑。
+   */
+  it('declares the image tool row in every shipped preset except minimal', async () => {
+    const presets = await readdir(PRESET_ROOT, { withFileTypes: true })
+    const rows = await Promise.all(presets
+      .filter(entry => entry.isDirectory())
+      .map(async (entry) => {
+        const source = await readFile(join(PRESET_ROOT, entry.name, 'agent.cordis.yml'), 'utf8')
+        return [entry.name, source.includes("name: 'coding-tool-image-gen'")] as const
+      }))
+
+    expect(rows.filter(([, declared]) => !declared).map(([id]) => id)).toEqual(['minimal'])
+  })
+
+  /**
+   * 除极简模式外，图像服务就绪时各模式的会话都要拿到画图工具：四件套按模式共享，
+   * codex 走 `variant: codex` 只注册 `image_gen`（在静态断言与它自己的预设里核对）。
+   */
+  it.each(['standard', 'cordis', 'webclone'] as const)(
+    'surfaces the standard image tools in the %s preset once the image service is ready',
+    async (preset) => {
+      const handle = await ctx.agents.create({
+        sessionId: SessionId(`preset-image-tools-${preset}-${randomUUID()}`),
+        meta: { agentPreset: preset },
+        setup: agentCtx => ctx.agentPresets.mount(agentCtx, preset).then(() => undefined),
+      })
+      const imageTools = () => toolNames(ctx, handle.agent).filter(name =>
+        ['generate_image', 'generate_images', 'edit_image', 'canvas_state'].includes(name))
+      try {
+        expect(imageTools()).toEqual([])
+        await ctx.settings.update(settingsNamespace('image-generation'), {
+          enabled: true, endpoint: 'http://127.0.0.1:9/v1', model: 'mock', apiKeyRef: '',
+        })
+        await vi.waitFor(() => { expect(imageTools()).toEqual(['canvas_state', 'edit_image', 'generate_image', 'generate_images']) })
+        expect(resolveSessionPreset(handle.agent.session)).toBe(preset)
+      } finally {
+        await ctx.settings.update(settingsNamespace('image-generation'), { enabled: false })
+        await handle.dispose()
+      }
+    })
 
   it('composes the exact RL prompt and two tools from `minimal`', async () => {
     const handle = await ctx.agents.create({

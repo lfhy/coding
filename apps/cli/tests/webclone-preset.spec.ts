@@ -168,6 +168,13 @@ describe('webclone skills ship with the preset', () => {
     // 交付类技能仍随模式提供：新工程初始化与后端实现。
     expect(text).toContain('project-init')
     expect(text).toContain('go-backend')
+    // 复刻产物默认落成 Go 后端 + `web/` 前端、由 `go:embed` 内嵌，而不是一堆静态文件。
+    expect(text).toContain('go:embed')
+    expect(text).toContain('web/dist')
+    expect(text).toContain('index.html')
+    // 画图工具在图像服务就绪时可用；提示词要说明它存在，否则模型不会用它补素材。
+    expect(text).toContain('generate_image')
+    expect(text).toContain('canvas_state')
     // 部署的 `coding:guidelines`（order −98）先于 persona 渲染：它要求小步提交，
     // persona 必须把这条要求接到复刻工程上（版本基线、可回滚的切片、忽略原始素材）。
     expect(text).toContain('git init')
