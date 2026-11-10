@@ -115,6 +115,32 @@ describe('工程存储', () => {
     expect((await loadProject(dir)).revision).toBe(2)
   })
 
+  it('表格逐格编辑允许清空单元格，仍保留其它内容且按版本拒绝冲突', async () => {
+    const dir = join(root, 'ppt', 'table-edit')
+    const created = await createProject(dir, { title: '数据' })
+    const page = created.deck.pages[0]?.id ?? ''
+    const withTable = await editProject(dir, [{
+      op: 'add_element', page, element: {
+        kind: 'table', x: 100, y: 100, w: 400, h: 200, rows: 2, columns: 2,
+        cells: [[{ content: '项目' }, { content: '状态' }], [{ content: '旧值' }, { content: '完成' }]],
+      },
+    }], created.revision)
+    const table = withTable.deck.pages[0]?.elements.find(element => element.kind === 'table')
+    if (table?.kind !== 'table') throw new Error('表格未创建')
+    const edited = await editProject(dir, [{ op: 'update_element', page, element: table.id,
+      cells: [[{ content: '项目' }, { content: '状态' }], [{ content: '' }, { content: '完成' }]],
+    }], withTable.revision)
+    expect(edited.deck.pages[0]?.elements.find(element => element.id === table.id))
+      .toMatchObject({ cells: [[{ content: '项目' }, { content: '状态' }], [{ content: '' }, { content: '完成' }]] })
+    await expect(editProject(dir, [{ op: 'update_element', page, element: table.id,
+      cells: [[{ content: '项目' }, {}], [{ content: '' }, { content: '完成' }]],
+    }], edited.revision)).rejects.toThrow(/content/u)
+    expect((await loadProject(dir)).revision).toBe(edited.revision)
+    await expect(editProject(dir, [{ op: 'update_element', page, element: table.id,
+      cells: [[{ content: '覆盖' }, { content: '' }], [{ content: '' }, { content: '' }]],
+    }], withTable.revision)).rejects.toMatchObject({ code: 'conflict' })
+  })
+
   it('非法 ops 不产生新版本', async () => {
     const dir = join(root, 'ppt', 'deck')
     await createProject(dir, { title: '校验' })

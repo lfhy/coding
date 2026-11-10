@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import type { PptElement } from 'coding-ppt-model'
 import { PptWorkbench, type PptWorkbenchProps } from '../src/client/PptWorkbench.tsx'
 import type { PptPanelState } from '../src/client/controller.ts'
 import { en, zh } from '../src/client/locales.ts'
@@ -48,7 +49,7 @@ function deck(): PptSnapshotView {
 
 const ready: PptPanelState = {
   phase: 'ready', root: '/workspace', projects: [], project: deck(),
-  pageIndex: 0, selectedId: null, editingId: null, busy: false, notice: null, issues: null,
+  pageIndex: 0, selectedId: null, editingId: null, hasClipboard: false, busy: false, notice: null, issues: null,
 }
 
 function mount(state: PptPanelState, shown = true, locale: typeof en = en) {
@@ -85,9 +86,13 @@ function mount(state: PptPanelState, shown = true, locale: typeof en = en) {
     addElement: vi.fn(async () => {}),
     removeElement: vi.fn(async () => {}),
     updateElement: vi.fn(async () => {}),
+    editCell: vi.fn(async () => {}),
     updatePage: vi.fn(async () => {}),
     updateDeck: vi.fn(async () => {}),
     duplicateElement: vi.fn(async () => {}),
+    copyElement: vi.fn(),
+    cutElement: vi.fn(async () => {}),
+    pasteElement: vi.fn(async () => {}),
     reorderElement: vi.fn(async () => {}),
     insertImage: vi.fn(async () => {}),
     checkDeck: vi.fn(async () => {}),
@@ -97,6 +102,20 @@ function mount(state: PptPanelState, shown = true, locale: typeof en = en) {
       locale[key].replace(/\{(\w+)\}/gu, (match, name: string) => (name in (params ?? {}) ? String(params?.[name]) : match)),
   } as unknown as PptWorkbenchProps
   return { ...render(<PptWorkbench {...props} />), props }
+}
+
+function deckWith(...elements: PptElement[]): PptSnapshotView {
+  const source = deck()
+  return { ...source, deck: { ...source.deck, pages: [
+    { ...source.deck.pages[0]!, elements }, source.deck.pages[1]!,
+  ] } }
+}
+
+function canvasElement(container: HTMLElement, id: string): HTMLElement {
+  const matches = container.querySelectorAll<HTMLElement>(`[data-element-id="${id}"]`)
+  const element = matches.item(matches.length - 1)
+  if (element === null) throw new Error(`画布元素 ${id} 缺失`)
+  return element
 }
 
 describe('PPT 工作台面板', () => {
@@ -336,6 +355,87 @@ describe('PPT 工作台面板', () => {
     const text = panel.container.querySelectorAll('[data-element-id="t1"]').item(1) as HTMLElement
     fireEvent.doubleClick(text)
     expect(panel.props.setEditing).toHaveBeenCalledWith('t1')
+  })
+
+  it('画布右键命中元素与空白，提供剪贴、删除、插入和图片替换', () => {
+    const image: PptElement = { id: 'img-1', kind: 'image', source: 'media/old.png', fit: 'contain',
+      x: 120, y: 140, w: 400, h: 200 }
+    const panel = mount({ ...ready, project: deckWith(image), hasClipboard: true }, true, zh)
+    const item = canvasElement(panel.container, image.id)
+    fireEvent.contextMenu(item, { clientX: 120, clientY: 140 })
+    expect(panel.props.selectElement).toHaveBeenCalledWith('img-1')
+    expect(screen.getByRole('menuitem', { name: '替换图片' })).toBeTruthy()
+    fireEvent.click(screen.getByRole('menuitem', { name: '复制' }))
+    expect(panel.props.copyElement).toHaveBeenCalledWith('img-1')
+
+    fireEvent.contextMenu(item, { clientX: 140, clientY: 150 })
+    fireEvent.click(screen.getByRole('menuitem', { name: '粘贴' }))
+    const pasteAt = vi.mocked(panel.props.pasteElement).mock.calls[0]?.[0]
+    expect(typeof pasteAt?.x).toBe('number')
+    expect(typeof pasteAt?.y).toBe('number')
+    fireEvent.contextMenu(item)
+    fireEvent.click(screen.getByRole('menuitem', { name: '剪切' }))
+    expect(panel.props.cutElement).toHaveBeenCalledWith('img-1')
+    fireEvent.contextMenu(item)
+    fireEvent.click(screen.getByRole('menuitem', { name: '删除元素' }))
+    expect(panel.props.removeElement).toHaveBeenCalledWith('img-1')
+
+    const chooser = screen.getByLabelText('选择图片') as HTMLInputElement
+    const choose = vi.spyOn(chooser, 'click')
+    fireEvent.contextMenu(item)
+    fireEvent.click(screen.getByRole('menuitem', { name: '替换图片' }))
+    expect(choose).toHaveBeenCalledOnce()
+    const replacement = new File(['image'], 'new.png', { type: 'image/png' })
+    fireEvent.change(chooser, { target: { files: [replacement] } })
+    expect(panel.props.insertImage).toHaveBeenCalledWith(replacement, 'img-1')
+
+    const surface = panel.container.querySelectorAll<HTMLElement>('[class*="surface"]').item(2)
+    expect(surface).toBeTruthy()
+    fireEvent.contextMenu(surface, { clientX: 200, clientY: 200 })
+    expect(screen.queryByRole('menuitem', { name: '剪切' })).toBeNull()
+    fireEvent.click(screen.getByRole('menuitem', { name: '表格' }))
+    expect(panel.props.addElement).toHaveBeenCalledWith('table')
+  })
+
+  it('画布表格单元格双击编辑，失焦提交，Escape 放弃，快捷键不误删', () => {
+    const table: PptElement = { id: 'table-1', kind: 'table', x: 100, y: 100, w: 420, h: 200,
+      rows: 2, columns: 2, columnWeights: [1, 1], header: true, headerFill: '#eeeeee', borderColor: '#333333',
+      text: { size: 20, color: '#111111', bold: false, align: 'left', font: '' },
+      cells: [[{ content: '项目' }, { content: '状态' }], [{ content: '原值' }, { content: '完成' }]],
+    }
+    const panel = mount({ ...ready, project: deckWith(table) }, true, zh)
+    const item = canvasElement(panel.container, table.id)
+    fireEvent.doubleClick(within(item).getByText('原值'))
+    const editor = screen.getByRole('textbox', { name: '第2行，第1列' })
+    fireEvent.change(editor, { target: { value: '新值' } })
+    fireEvent.blur(editor)
+    expect(panel.props.editCell).toHaveBeenCalledWith('table-1', 1, 0, '新值')
+    fireEvent.doubleClick(within(item).getByText('原值'))
+    fireEvent.change(screen.getByRole('textbox', { name: '第2行，第1列' }), { target: { value: '' } })
+    fireEvent.keyDown(screen.getByRole('textbox', { name: '第2行，第1列' }), { key: 'Escape' })
+    expect(panel.props.editCell).toHaveBeenCalledTimes(1)
+  })
+
+  it('画布快捷键只在非输入状态操作选中元素，缩略图不拦截右键', () => {
+    const image: PptElement = { id: 'img-1', kind: 'image', source: 'media/old.png', fit: 'contain',
+      x: 120, y: 140, w: 400, h: 200 }
+    const panel = mount({ ...ready, project: deckWith(image), selectedId: image.id, hasClipboard: true }, true, zh)
+    const item = canvasElement(panel.container, image.id)
+    fireEvent.keyDown(item, { key: 'c', ctrlKey: true })
+    fireEvent.keyDown(item, { key: 'x', ctrlKey: true })
+    fireEvent.keyDown(item, { key: 'v', metaKey: true })
+    fireEvent.keyDown(item, { key: 'd', metaKey: true })
+    expect(panel.props.copyElement).toHaveBeenCalledWith(image.id)
+    expect(panel.props.cutElement).toHaveBeenCalledWith(image.id)
+    expect(panel.props.pasteElement).toHaveBeenCalledWith(undefined)
+    expect(panel.props.duplicateElement).toHaveBeenCalledWith(image.id)
+    fireEvent.keyDown(item, { key: 'Delete' })
+    expect(panel.props.removeElement).toHaveBeenCalledWith(image.id)
+
+    const thumbnail = panel.container.querySelectorAll<HTMLElement>('[data-element-id="img-1"]').item(0)
+    const rightClick = new MouseEvent('contextmenu', { bubbles: true, cancelable: true })
+    expect(thumbnail.dispatchEvent(rightClick)).toBe(true)
+    expect(screen.queryByRole('menu')).toBeNull()
   })
 
   it('冲突提示属于警告级别并说明当前版本', () => {

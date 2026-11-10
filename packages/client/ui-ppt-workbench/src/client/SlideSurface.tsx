@@ -4,7 +4,7 @@
  * @module coding-client-ui-ppt-workbench/client/SlideSurface
  */
 
-import { useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
+import { useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from 'react'
 import { PPT_THEMES, SLIDE_SIZES, type PptDeck, type PptElement, type PptPage } from 'coding-ppt-model'
 import css from './SlideSurface.module.css'
 
@@ -19,9 +19,14 @@ export interface ElementBox {
 /** 画布交互回调；缩略图不传时不可交互。 */
 export interface SlideInteraction {
   readonly onSelect: (id: string | null) => void
+  readonly onFocusCanvas?: () => void
   readonly onBeginEdit: (id: string) => void
   readonly onMove: (id: string, x: number, y: number) => void
   readonly onResize: (id: string, box: ElementBox) => void
+  /** 双击表格单元格后由画布提交整表快照。 */
+  readonly onEditCell?: (id: string, row: number, column: number, content: string) => void
+  /** 只在可编辑画布上提供命中元素与画布坐标，缩略图继续使用浏览器默认菜单。 */
+  readonly onContextMenu?: (id: string | null, at: { x: number; y: number; clientX: number; clientY: number }) => void
 }
 
 /** 就地编辑草稿。 */
@@ -44,6 +49,8 @@ export interface SlideSurfaceProps {
   readonly emptyHint?: string
   /** 图片地址；缺省时不渲染图片内容。 */
   readonly mediaUrl?: (source: string) => string
+  /** 仅在编辑单元格时生成可访问名称。 */
+  readonly cellLabel?: (row: number, column: number) => string
 }
 
 const HANDLES = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'] as const
@@ -172,13 +179,28 @@ function ChartView({ element }: { element: Extract<PptElement, { kind: 'chart' }
  * @returns 等比缩放后的页面 DOM。
  */
 export function SlideSurface({
-  deck, page, width, selectedId, editing, interaction, emptyHint, mediaUrl,
+  deck, page, width, selectedId, editing, interaction, emptyHint, mediaUrl, cellLabel,
 }: SlideSurfaceProps) {
   const base = SLIDE_SIZES[deck.size]
   const theme = PPT_THEMES[deck.theme]
   const scale = width / base.width
   const background = page.background ?? theme.background
   const [draft, setDraft] = useState<{ id: string; box: ElementBox } | null>(null)
+  const [cellDraft, setCellDraft] = useState<{ id: string; row: number; column: number; content: string } | null>(null)
+  const cellDraftRef = useRef(cellDraft)
+  const cellFinishRef = useRef(false)
+  cellDraftRef.current = cellDraft
+  const finishCell = (save: boolean): void => {
+    if (cellFinishRef.current) return
+    cellFinishRef.current = true
+    const current = cellDraftRef.current
+    cellDraftRef.current = null
+    setCellDraft(null)
+    if (save && current !== null && page.elements.some(element => element.id === current.id && element.kind === 'table')) {
+      interaction?.onEditCell?.(current.id, current.row, current.column, current.content)
+    }
+    if (!save) interaction?.onFocusCanvas?.()
+  }
   const origin = useRef<{
     mode: 'move' | 'resize'
     handle?: Handle
@@ -189,6 +211,19 @@ export function SlideSurface({
   } | null>(null)
 
   const selected = page.elements.find(element => element.id === selectedId) ?? null
+  const surfaceRef = useRef<HTMLDivElement>(null)
+  const showContextMenu = (id: string | null, event: ReactMouseEvent<HTMLDivElement>): void => {
+    if (interaction?.onContextMenu === undefined || event.target instanceof HTMLTextAreaElement) return
+    event.preventDefault()
+    event.stopPropagation()
+    const bounds = surfaceRef.current?.getBoundingClientRect()
+    if (bounds === undefined || scale === 0) return
+    interaction.onContextMenu(id, {
+      x: Math.round((event.clientX - bounds.left) / scale),
+      y: Math.round((event.clientY - bounds.top) / scale),
+      clientX: event.clientX, clientY: event.clientY,
+    })
+  }
   const boxOf = (element: PptElement): ElementBox => (draft?.id === element.id ? draft.box : element)
 
   const beginMove = (element: PptElement) => (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -199,6 +234,7 @@ export function SlideSurface({
       box: { x: element.x, y: element.y, w: element.w, h: element.h },
     }
     interaction.onSelect(element.id)
+    interaction.onFocusCanvas?.()
   }
 
   const beginResize = (element: PptElement, handle: Handle) => (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -208,6 +244,7 @@ export function SlideSurface({
       mode: 'resize', handle, id: element.id, pointerX: event.clientX, pointerY: event.clientY,
       box: { x: element.x, y: element.y, w: element.w, h: element.h },
     }
+    interaction.onFocusCanvas?.()
   }
 
   const drag = (event: ReactPointerEvent<HTMLDivElement>): void => {
@@ -251,9 +288,11 @@ export function SlideSurface({
   return (
     <div className={css.frame} style={{ width, height: Math.round(base.height * scale) }}>
       <div
+        ref={surfaceRef}
         className={css.surface}
         style={{ width: base.width, height: base.height, transform: `scale(${scale})`, background }}
-        onPointerDown={() => { interaction?.onSelect(null) }}
+        onPointerDown={() => { interaction?.onSelect(null); interaction?.onFocusCanvas?.() }}
+        onContextMenu={(event) => { showContextMenu(null, event) }}
       >
         {page.elements.length === 0 && emptyHint !== undefined
           ? <p className={css.empty} style={{ fontSize: 28, color: theme.muted }}>{emptyHint}</p>
@@ -293,7 +332,8 @@ export function SlideSurface({
               onPointerMove={drag}
               onPointerUp={end}
               onPointerCancel={end}
-              onDoubleClick={() => interaction?.onBeginEdit(element.id)}
+              onContextMenu={(event) => { showContextMenu(element.id, event) }}
+              onDoubleClick={() => { if (element.kind === 'text') interaction?.onBeginEdit(element.id) }}
             >
               {element.kind === 'text' ? element.text.content : null}
               {element.kind === 'image' && mediaUrl !== undefined
@@ -309,20 +349,47 @@ export function SlideSurface({
                 : null}
               {element.kind === 'chart' ? <ChartView element={element} /> : null}
               {element.kind === 'table'
-                ? element.cells.map((row, rowIndex) => row.map((cell, columnIndex) => (
-                  <span
-                    key={`${rowIndex}-${columnIndex}`}
-                    className={css.cell}
-                    data-header={element.header && rowIndex === 0 ? 'true' : undefined}
-                    style={{
-                      borderColor: element.borderColor,
-                      background: element.header && rowIndex === 0 ? element.headerFill : 'transparent',
-                      justifyContent: alignOf(element.text.align),
-                    }}
-                  >
-                    {cell.content}
-                  </span>
-                )))
+                ? element.cells.map((row, rowIndex) => row.map((cell, columnIndex) => {
+                  const active = cellDraft?.id === element.id && cellDraft.row === rowIndex && cellDraft.column === columnIndex
+                  return (
+                    <span
+                      key={`${rowIndex}-${columnIndex}`}
+                      className={css.cell}
+                      data-header={element.header && rowIndex === 0 ? 'true' : undefined}
+                      onDoubleClick={(event) => {
+                        if (interaction?.onEditCell === undefined || active) return
+                        event.stopPropagation()
+                        interaction.onSelect(element.id)
+                        cellFinishRef.current = false
+                        setCellDraft({ id: element.id, row: rowIndex, column: columnIndex, content: cell.content })
+                      }}
+                      style={{
+                        borderColor: element.borderColor,
+                        background: element.header && rowIndex === 0 ? element.headerFill : 'transparent',
+                        justifyContent: alignOf(element.text.align),
+                      }}
+                    >
+                      {active ? (
+                        <textarea className={css.cellEditor} autoFocus aria-label={cellLabel?.(rowIndex + 1, columnIndex + 1)}
+                          value={cellDraft.content}
+                          onPointerDown={(event) => { event.stopPropagation() }}
+                          onDoubleClick={(event) => { event.stopPropagation() }}
+                          onChange={(event) => {
+                            const content = event.target.value
+                            cellDraftRef.current = { id: element.id, row: rowIndex, column: columnIndex, content }
+                            setCellDraft(cellDraftRef.current)
+                          }}
+                          onBlur={() => { finishCell(true) }}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Escape') { event.preventDefault(); finishCell(false) }
+                            else if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+                              event.preventDefault(); finishCell(true)
+                            }
+                          }} />
+                      ) : cell.content}
+                    </span>
+                  )
+                }))
                 : null}
             </div>
           )
@@ -348,6 +415,7 @@ export function SlideSurface({
                 onPointerMove={drag}
                 onPointerUp={end}
                 onPointerCancel={end}
+                onContextMenu={(event) => { showContextMenu(selected.id, event) }}
               />
             ))}
           </div>

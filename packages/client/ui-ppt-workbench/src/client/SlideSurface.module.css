@@ -65,6 +65,7 @@
 }
 
 .cell {
+  position: relative;
   display: flex;
   align-items: center;
   padding: 0 8px;
@@ -74,11 +75,23 @@
   white-space: pre-wrap;
 }
 
-.selection {
-  position: absolute;
-  border: 2px dashed var(--dsw-alias-state-business-primary);
-  pointer-events: none;
+.cellEditor {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  padding: 2px;
+  border: 0;
+  border-radius: 2px;
+  outline: none;
+  resize: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  user-select: text;
+  pointer-events: auto;
 }
+
+.cellEditor:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary); }
 
 .handle {
   position: absolute;

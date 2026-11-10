@@ -5,7 +5,8 @@
  */
 
 import { createSnapshotStore } from 'coding-client-runtime/client'
-import type { PptElementKind, PptPage, SlideTransition } from 'coding-ppt-model'
+import type { PptElement, PptElementKind, PptPage, SlideTransition } from 'coding-ppt-model'
+import { pastedElement } from './clipboard.ts'
 import {
   errorOf, parseExport, parseSnapshot, parseState,
   type PptProjectView, type PptSnapshotView,
@@ -29,6 +30,8 @@ export interface PptPanelState {
   readonly pageIndex: number
   readonly selectedId: string | null
   readonly editingId: string | null
+  /** 当前工程内是否有可粘贴的元素。 */
+  readonly hasClipboard: boolean
   readonly busy: boolean
   readonly notice: PptNotice | null
   /** 最近一次质检的问题列表；未检查时为 null。 */
@@ -47,7 +50,7 @@ type MutablePanelState = { -readonly [K in keyof PptPanelState]: PptPanelState[K
 
 const INITIAL: PptPanelState = {
   phase: 'loading', root: '', projects: [], project: null, pageIndex: 0,
-  selectedId: null, editingId: null, busy: false, notice: null, issues: null,
+  selectedId: null, editingId: null, hasClipboard: false, busy: false, notice: null, issues: null,
 }
 
 const POLL_MS = 3000
@@ -61,6 +64,10 @@ export class PptPanelController {
   private visible = 0
   private timer: ReturnType<typeof setInterval> | null = null
   private inflight: Promise<unknown> = Promise.resolve()
+  /** 仅在本会话内保留元素数据；粘贴时仍由当前工程版本校验。 */
+  private clipboard: PptElement | null = null
+  private pasteCount = 0
+  private clipboardDir: string | null = null
   private disposed = false
 
   constructor(
@@ -86,6 +93,8 @@ export class PptPanelController {
   /** 卸载时停止轮询，之后的异步结果一律丢弃。 */
   dispose(): void {
     this.disposed = true
+    this.clipboard = null
+    this.clipboardDir = null
     this.visible = 0
     if (this.timer !== null) clearInterval(this.timer)
     this.timer = null
@@ -134,6 +143,10 @@ export class PptPanelController {
         draft.pageIndex = pageIndex
         if (current.phase === 'error') draft.notice = null
         if (project?.dir !== current.project?.dir) {
+          this.clipboard = null
+          this.clipboardDir = null
+          this.pasteCount = 0
+          draft.hasClipboard = false
           draft.selectedId = null
           draft.editingId = null
         }
@@ -179,9 +192,15 @@ export class PptPanelController {
   private adopt(payload: unknown): void {
     const snapshot = parseSnapshot((payload as { project?: unknown } | null)?.project)
     if (snapshot === null) throw new Error('project payload is malformed')
+    if (snapshot.dir !== this.view.getSnapshot().project?.dir) {
+      this.clipboard = null
+      this.clipboardDir = null
+      this.pasteCount = 0
+    }
     this.patch((draft) => {
       draft.phase = 'ready'
       draft.project = snapshot
+      draft.hasClipboard = this.clipboard !== null
       draft.pageIndex = clampPageIndex(snapshot, draft.pageIndex)
       draft.selectedId = null
       draft.editingId = null
@@ -318,9 +337,56 @@ export class PptPanelController {
   async removeElement(elementId: string): Promise<void> {
     const state = this.view.getSnapshot()
     const page = currentPage(state.project, state.pageIndex)
-    if (page === null) return
-    this.selectElement(null)
+    if (page === null || !page.elements.some(element => element.id === elementId) || state.busy) return
     await this.edit([{ op: 'remove_element', page: page.id, element: elementId }])
+  }
+
+  /** 从当前页读取元素；丢失选择或切页后不再使用旧 id。 */
+  private elementOnPage(id: string): PptElement | null {
+    const state = this.view.getSnapshot()
+    return currentPage(state.project, state.pageIndex)?.elements.find(element => element.id === id) ?? null
+  }
+
+  /** 复制当前工程里的一个元素到会话剪贴区，不修改工程。 */
+  copyElement(id: string): void {
+    const element = this.elementOnPage(id)
+    if (element === null || this.view.getSnapshot().busy) return
+    this.clipboard = structuredClone(element)
+    this.clipboardDir = this.view.getSnapshot().project?.dir ?? null
+    this.pasteCount = 0
+    this.patch((draft) => { draft.hasClipboard = true })
+  }
+
+  /** 剪切先保存副本，只有删除成功才改变选择；失败时仍可粘贴副本。 */
+  async cutElement(id: string): Promise<void> {
+    if (this.elementOnPage(id) === null) return
+    this.copyElement(id)
+    await this.removeElement(id)
+  }
+
+  /** 粘贴仅在同一工程内生效；可指定右键画布坐标。 */
+  async pasteElement(at?: { x: number; y: number }): Promise<void> {
+    const state = this.view.getSnapshot()
+    const page = currentPage(state.project, state.pageIndex)
+    if (this.clipboard === null || state.project === null || page === null || state.busy
+      || state.project.dir !== this.clipboardDir) return
+    const before = state.project.revision
+    await this.edit([{ op: 'add_element', page: page.id,
+      element: pastedElement(this.clipboard, state.project.deck.size, this.pasteCount, at) }])
+    if (this.view.getSnapshot().project?.revision !== before) this.pasteCount += 1
+  }
+
+  /** 修改当前页的一个表格单元格；以最新快照构造整表，避免覆盖其他单元格。 */
+  async editCell(id: string, row: number, column: number, content: string): Promise<void> {
+    const state = this.view.getSnapshot()
+    const table = this.elementOnPage(id)
+    if (table?.kind !== 'table' || state.busy) return
+    const cell = table.cells[row]?.[column]
+    if (cell === undefined || cell.content === content) return
+    const cells = table.cells.map((entries, r) => entries.map((cell, c) => ({
+      content: r === row && c === column ? content : cell.content,
+    })))
+    await this.updateElement(id, { cells })
   }
 
   /**
@@ -379,14 +445,14 @@ export class PptPanelController {
     await this.edit([{ op: 'reorder_element', page: page.id, element: elementId, to }])
   }
 
-  /**
-   * 上传一张图片到工程并插入当前页。
-   * @param file - 浏览器选择的图片文件。
-   */
-  async insertImage(file: File): Promise<void> {
+  /** 上传图片并插入当前页，或仅替换所选图片的来源与保持原有几何。 */
+  async insertImage(file: File, replaceId?: string): Promise<void> {
     const state = this.view.getSnapshot()
     const page = currentPage(state.project, state.pageIndex)
-    if (page === null) return
+    if (page === null || state.project === null || state.busy) return
+    const image = replaceId === undefined ? null : page.elements.find(element => element.id === replaceId)
+    if (replaceId !== undefined && image?.kind !== 'image') return
+    const imageId = image?.id
     await this.run(async () => {
       const buffer = new Uint8Array(await file.arrayBuffer())
       const upload = await this.post('upload', { dir: state.project?.dir, name: file.name, base64: toBase64(buffer) })
@@ -395,10 +461,10 @@ export class PptPanelController {
       const payload = await this.post('edit', {
         dir: state.project?.dir,
         baseRevision: state.project?.revision,
-        ops: [{
-          op: 'add_element', page: page.id,
-          element: { kind: 'image', source, fit: 'cover', x: 160, y: 120, w: 640, h: 360 },
-        }],
+        ops: [imageId === undefined
+          ? { op: 'add_element', page: page.id,
+            element: { kind: 'image', source, fit: 'cover', x: 160, y: 120, w: 640, h: 360 } }
+          : { op: 'update_element', page: page.id, element: imageId, source }],
       })
       this.adopt(payload)
     })

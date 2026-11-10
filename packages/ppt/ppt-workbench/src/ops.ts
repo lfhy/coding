@@ -192,7 +192,11 @@ function parseCells(value: unknown, at: string): readonly (readonly { readonly c
     if (!Array.isArray(row) || row.length === 0) throw new PptModelError(`${at}[${rowIndex}] 必须是非空数组`)
     return row.map((cell, columnIndex) => {
       if (!isRecord(cell)) throw new PptModelError(`${at}[${rowIndex}][${columnIndex}] 必须是对象`)
-      return { content: shortText(cell.content ?? '', `${at}[${rowIndex}][${columnIndex}].content`, 5000) }
+      const content: unknown = cell.content
+      if (typeof content !== 'string' || content.length > 5000) {
+        throw new PptModelError(`${at}[${rowIndex}][${columnIndex}].content 必须是不超过 5000 个字符的字符串`)
+      }
+      return { content }
     })
   })
 }

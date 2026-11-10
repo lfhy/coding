@@ -51,11 +51,15 @@ export interface PptWorkbenchInjected {
   addElement: (kind: PptElementKind) => Promise<void>
   removeElement: (id: string) => Promise<void>
   updateElement: (id: string, patch: ElementPatch) => Promise<void>
+  editCell: (id: string, row: number, column: number, content: string) => Promise<void>
   updatePage: (patch: { name?: string; background?: string | null; transition?: SlideTransition }) => Promise<void>
   updateDeck: (patch: { title?: string; theme?: string; size?: '16:9' | '4:3' }) => Promise<void>
   duplicateElement: (id: string) => Promise<void>
+  copyElement: (id: string) => void
+  cutElement: (id: string) => Promise<void>
+  pasteElement: (at?: { x: number; y: number }) => Promise<void>
   reorderElement: (id: string, to: 'front' | 'back' | 'forward' | 'backward') => Promise<void>
-  insertImage: (file: File) => Promise<void>
+  insertImage: (file: File, replaceId?: string) => Promise<void>
   checkDeck: () => Promise<void>
   preview: (pages?: readonly number[]) => Promise<void>
   mediaUrl: (dir: string | undefined, source: string) => string
@@ -85,8 +89,8 @@ const LABEL_OF: Readonly<Record<string, (t: PptWorkbenchProps['t']) => string>> 
 export function PptWorkbench({
   shown, t, usePpt, show, refresh, open, undo, redo, exportDeck,
   selectPage, selectElement, setEditing, addPage, removePage, movePage,
-  addElement, removeElement, updateElement, updatePage, updateDeck,
-  duplicateElement, reorderElement, insertImage, checkDeck, preview, mediaUrl,
+  addElement, removeElement, updateElement, editCell, updatePage, updateDeck,
+  duplicateElement, copyElement, cutElement, pasteElement, reorderElement, insertImage, checkDeck, preview, mediaUrl,
   useTemplateCatalog, catalogActions,
 }: PptWorkbenchProps) {
   const state = usePpt(snapshot => snapshot)
@@ -96,6 +100,11 @@ export function PptWorkbench({
   const [showIssues, setShowIssues] = useState(false)
   const [catalogOpen, setCatalogOpen] = useState(false)
   const fileInput = useRef<HTMLInputElement>(null)
+  const replacingImage = useRef<string | undefined>(undefined)
+  const chooseImage = (id?: string): void => {
+    replacingImage.current = id
+    fileInput.current?.click()
+  }
   const inspectorClose = useRef<HTMLButtonElement>(null)
   const inspectorTrigger = useRef<HTMLButtonElement>(null)
 
@@ -107,6 +116,7 @@ export function PptWorkbench({
 
   useEffect(() => {
     setMenu(null)
+    replacingImage.current = undefined
     setShowInspector(false)
     setShowIssues(false)
   }, [state.project?.dir])
@@ -224,7 +234,7 @@ export function PptWorkbench({
               keyboardNavigation compact portal
               onSelect={(id) => {
                 setMenu(null)
-                if (id === 'image') fileInput.current?.click()
+                if (id === 'image') chooseImage()
                 else void addElement(id as PptElementKind)
               }}
               anchor={<button type="button" className={css.action} disabled={state.busy}
@@ -284,11 +294,16 @@ export function PptWorkbench({
             />
           </div>
           <input ref={fileInput} type="file" aria-label={t('chooseImage')}
-            accept="image/png,image/jpeg,image/gif,image/webp,image/svg+xml" hidden
+            accept="image/png,image/jpeg,image/gif,image/webp" hidden
             onChange={(event) => {
               const file = event.target.files?.[0]
               event.target.value = ''
-              if (file !== undefined) void insertImage(file)
+              const replaceId = replacingImage.current
+              replacingImage.current = undefined
+              if (file !== undefined) {
+                if (replaceId === undefined) void insertImage(file)
+                else void insertImage(file, replaceId)
+              }
             }} />
           {showIssues && state.issues !== null ? (
             <div className={css.issuesPanel}>
@@ -343,9 +358,16 @@ export function PptWorkbench({
                 }}
                 onMove={(id, x, y) => { void updateElement(id, { frame: { x, y } }) }}
                 onResize={(id, box) => { void updateElement(id, { frame: box }) }}
+                onEditCell={(id, row, column, content) => { void editCell(id, row, column, content) }}
                 mediaUrl={mediaUrlOf}
-                onDeleteSelected={() => { if (element !== null) void removeElement(element.id) }}
-                onDuplicateSelected={() => { if (element !== null) void duplicateElement(element.id) }}
+                hasClipboard={state.hasClipboard}
+                onCopySelected={copyElement}
+                onCutSelected={(id) => { void cutElement(id) }}
+                onPaste={(at) => { void pasteElement(at) }}
+                onInsert={(kind) => { void addElement(kind) }}
+                onChooseImage={chooseImage}
+                onDeleteSelected={(id) => { void removeElement(id) }}
+                onDuplicateSelected={(id) => { void duplicateElement(id) }}
               />
             )}
           </main>
