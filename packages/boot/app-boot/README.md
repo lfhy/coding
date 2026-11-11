@@ -20,8 +20,8 @@
 | `renderConfigDump(binName, absoluteConfigPath, layers, warn?)` | 使用 include 自己的解析器和补丁算法（`entryListSchema`/`applyEntryPatches`）离线合成基础配置与带标签的覆盖层，使结果与 `boot()` 挂载的内容一致，再渲染为 YAML，并原样保留 `!!js` 表达式；每段来源于同一文件且由相同补丁层修改的连续行之前都有一条 `# ==` 注释，标明该文件和这些补丁层，输出仍是一份可加载的文档；未匹配到行的补丁连同其层标签交给 `warn`（默认：一行 stderr），读取、解析或字段验证失败则抛出 |
 | `addHarnessSourceSection(ctx, sourceRoot)` | 添加全局 `harness:source` 提示词段落（顺序紧随 harness 身份、位于 persona 之前），告知 agent（智能体）DSH 实现代码 checkout 的磁盘路径，同时提醒它不得据此推断当前工作目录，而应使用 `pwd`；如果已启动树没有此项服务，则不执行操作并返回 `undefined`。这里的服务是 `systemPrompt`；该段落注册到它的 fiber，因此开发环境 HMR 重新加载系统提示词后，它会消失直至下次启动 |
 | `HARNESS_SOURCE_SECTION` | `'harness:source'` 段落名称，供 `addHarnessSourceSection` 注册使用 |
-| `addCodingPromptSections(ctx)` | 注册 Coding 的工作方式段 `coding:guidelines`（顺序 −98：工作方式、代码组织、待办与交接、记忆、沟通、工作区约定、边界、审阅与答复要求）。身份文案由 `dsh-system-prompt` 的默认身份段（−100）提供，这里不再重复。段名独立且顺序在 persona 之前，因此 preset 的作用域 persona 遮蔽不了工作方式；已启动树没有 `systemPrompt` 服务时不执行操作并返回 `undefined` |
-| `CODING_GUIDELINES` | 工作方式段正文；改动它等于改动模型可见文本，需同步快照 |
+| `addCodingPromptSections(ctx)` | 注册 Coding 的 `coding:guidelines` 段（顺序 −98：回答语言、工作方式、代码组织、待办与交接、记忆、沟通、工作区约定、边界、审阅与答复要求）。身份文案由 `dsh-system-prompt` 的默认身份段（−100）提供，这里不再重复。段名独立且顺序在 persona 之前，因此 preset 的作用域 persona 遮蔽不了工作方式；已启动树没有 `systemPrompt` 服务时不执行操作并返回 `undefined` |
+| `CODING_GUIDELINES` | 段正文，首子段「回答语言」固定默认简体中文回复（代码、命令、标识符、路径与必要引用保留原文），后续子段落给工作方式与交付规则；改动它等于改动模型可见文本，需同步快照 |
 | `CODING_GUIDELINES_SECTION` | 该段的名称常量，供消费方与测试引用 |
 
 Loader 结算会在导入或生命周期失败时返回拒绝结果，并携带失败的配置项与阶段；`boot()` 会 dispose 部分构造的上下文，并用 bin 名称包装该失败。结算后遗留的配置项由独立审计处理：`assertEntriesLoaded` 将已启用却没有 fiber 的配置项转换为 rejection 并列出每个未解析插件；`assertEntriesActivated` 会显式等待每个失败的 fiber，把原始错误堆栈写入启动 rejection，并列出每个等待中配置项尚未解析的服务。抛出错误前，审计会通过一个进程级检查点标记这些 rejection 的确切原因，从而让 `installFailLoud` 将 Loader 的重复通知合并为一次，而所有无关的未处理 rejection 仍然致命。

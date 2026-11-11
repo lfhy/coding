@@ -1,4 +1,4 @@
-/** 固定 Coding 工作方式的注册、无服务降级与卸载行为。 */
+/** 固定 Coding 回答语言与工作方式的注册、无服务降级与卸载行为。 */
 
 import { Context } from '@deepseek-ai/cordis'
 import SystemPrompt, { renderPrompt } from 'coding-system-prompt'
@@ -10,7 +10,7 @@ import {
 } from '../src/coding-prompt.ts'
 
 describe('addCodingPromptSections', () => {
-  it('在身份与 persona 之间注册完整工作方式，不保留禁止默认提交的旧规则', async () => {
+  it('在身份与 persona 之间注册回答语言与工作方式，不保留禁止默认提交的旧规则', async () => {
     const ctx = new Context()
     try {
       await ctx.plugin(SystemPrompt, { persona: '测试项目 persona。' })
@@ -22,11 +22,17 @@ describe('addCodingPromptSections', () => {
         .toEqual({ name: CODING_GUIDELINES_SECTION, text: CODING_GUIDELINES })
       const rendered = renderPrompt(assembly)
       const identityAt = rendered.indexOf('你是 Coding 的编程 agent，在用户自己的电脑上工作。')
+      const languageAt = rendered.indexOf('# 回答语言')
       const guidelinesAt = rendered.indexOf('# 工作方式')
       const personaAt = rendered.indexOf('测试项目 persona。')
       expect(identityAt).toBeGreaterThanOrEqual(0)
-      expect(guidelinesAt).toBeGreaterThan(identityAt)
+      expect(languageAt).toBeGreaterThan(identityAt)
+      expect(guidelinesAt).toBeGreaterThan(languageAt)
       expect(personaAt).toBeGreaterThan(guidelinesAt)
+      // 回答语言规则固定 verbatim：模型可见文本，中英混杂回复时按这里回归。
+      expect(rendered).toContain('默认使用简体中文回答，避免中英混杂；除非用户明确要求其他语言。')
+      expect(rendered).toContain('代码、命令、标识符、路径和必要引用保留原文，不翻译')
+      expect(rendered).not.toContain('用用户使用的语言回复。')
       expect(rendered).toContain('# 新项目初始化')
       expect(rendered).toContain('docs/codemap/README.md')
       expect(rendered).toContain('总入口，再按任务读相关模块地图与专项文档')
