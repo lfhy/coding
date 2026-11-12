@@ -61,6 +61,7 @@ export class BrowserEgoController {
   private listVersion = 0
   private request: AbortController | null = null
   private frameRequest: AbortController | null = null
+  private frameTimer: ReturnType<typeof setTimeout> | null = null
   private input: AbortController | null = null
   /** 同一页面的按键与鼠标事件必须依发出顺序到达 Host，不能用请求中状态丢弃后续按键。 */
   private inputQueue: Promise<void> = Promise.resolve()
@@ -286,11 +287,12 @@ export class BrowserEgoController {
     }
   }
 
-  /** 刷新被选页面的一帧；Host 再次校验 Session 与 targetId 归属。 */
+  /** 刷新被选页面的一帧；相同目标只保留一条请求，避免目录刷新饿死慢取帧。 */
   private refreshSelectedFrame(): void {
     const view = this.view.getSnapshot()
-    if (!this.shown || view.relayOff || view.selectedId === null) return
-    this.frameRequest?.abort()
+    if (!this.shown || view.relayOff || view.selectedId === null || this.frameRequest !== null) return
+    if (this.frameTimer !== null) clearTimeout(this.frameTimer)
+    this.frameTimer = null
     const request = new AbortController()
     this.frameRequest = request
     const epoch = this.epoch
@@ -310,12 +312,25 @@ export class BrowserEgoController {
         if (page?.viewportW != null && page.viewportW !== frame.width
           || page?.viewportH != null && page.viewportH !== frame.height) return
         this.view.set({ ...current, frame })
-      } catch { /* 页面可能导航或结束；下一次刷新重新取得最新目标。 */ }
-      finally { if (this.frameRequest === request) this.frameRequest = null }
+      } catch { /* 暂时失败由补帧周期恢复，页面归属与尺寸仍须重新校验。 */ }
+      finally {
+        if (this.frameRequest === request) { this.frameRequest = null; this.scheduleFrameRefresh() }
+      }
     })()
   }
 
+  /** 活动页无有效帧时重试；后台可见页不在实时流中，按秒取帧，隐藏和切页立即取消。 */
+  private scheduleFrameRefresh(): void {
+    const view = this.view.getSnapshot()
+    const page = view.pages.find(item => item.targetId === view.selectedId)
+    if (!this.shown || view.relayOff || !page || page.active && view.frame !== null
+      || this.frameRequest !== null || this.frameTimer !== null) return
+    this.frameTimer = setTimeout(() => { this.frameTimer = null; this.refreshSelectedFrame() }, 1000)
+  }
+
   private cancelFrameRefresh(): void {
+    if (this.frameTimer !== null) clearTimeout(this.frameTimer)
+    this.frameTimer = null
     this.frameRequest?.abort()
     this.frameRequest = null
   }
@@ -489,6 +504,7 @@ export class BrowserEgoController {
       frame: !relayOff && !changed && previous.frame?.targetId === selectedId ? previous.frame : null, relayOff })
     if (selectedId !== null && !relayOff && (changed || selectedId !== previous.selectedId
       || this.view.getSnapshot().frame === null)) this.refreshSelectedFrame()
+    else this.scheduleFrameRefresh()
   }
 
   private openStream(epoch: number): void {
@@ -514,6 +530,7 @@ export class BrowserEgoController {
       if (page?.viewportW != null && page.viewportW !== frame.width
         || page?.viewportH != null && page.viewportH !== frame.height) return
       this.view.set({ ...view, frame })
+      if (page?.active) this.cancelFrameRefresh()
     })
     stream.addEventListener('error', () => {
       if (!this.shown || epoch !== this.epoch || this.stream !== stream) return

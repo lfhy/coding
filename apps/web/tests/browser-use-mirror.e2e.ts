@@ -357,6 +357,42 @@ describe('web e2e: Agent Browser over the shipped Loader', () => {
     expect(tripwire.warnings).toEqual([])
   }, 120_000)
 
+  it.skipIf(MODE === 'record')('recovers a visible background page after its initial frame requests fail', async () => {
+    await openSession(page, SECOND)
+    const workbench = page.getByRole('region', { name: 'Workbench' })
+    const retained = (await spaces(page, scaffold.baseUrl, SECOND)).find(item => item.url === `${origin}/interactive`)
+    if (!retained) throw new Error('background fixture target is missing')
+    const selectedPanel = page.getByRole('region', { name: 'Agent Browser' }).filter({
+      has: page.getByRole('textbox', { name: 'Web address' }),
+    })
+    let available = false
+    let failed = 0
+    const pattern = '**/api/ego/frame?**'
+    // 只阻断当前目标的临时取帧；页面、目录和其余实时流仍走实际 Host。
+    await page.route(pattern, async (route) => {
+      if (new URL(route.request().url()).searchParams.get('targetId') !== retained.targetId || available) {
+        await route.continue()
+        return
+      }
+      failed++
+      await route.fulfill({ status: 503, contentType: 'application/json', body: '{"ok":false}' })
+    })
+    try {
+      await workbench.getByRole('tab', { name: 'Agent fixture', exact: true }).click()
+      await expect.poll(() => failed, { timeout: 10_000 }).toBeGreaterThanOrEqual(2)
+      await selectedPanel.getByText('Page view is not available yet', { exact: true }).waitFor()
+      available = true
+      const current = selectedPanel.getByRole('img', { name: 'Current page view' })
+      await expect.poll(async () => current.evaluate((image: HTMLImageElement) => image.complete && image.naturalWidth > 0),
+        { timeout: 15_000 }).toBe(true)
+      const firstImage = await current.getAttribute('src')
+      const target = (await spaces(page, scaffold.baseUrl, SECOND)).find(item => item.targetId === retained.targetId)
+      if (!target) throw new Error('background fixture disappeared')
+      await clickOnFrame(page, selectedPanel, target, 120, 60)
+      await expect.poll(() => current.getAttribute('src'), { timeout: 15_000 }).not.toBe(firstImage)
+    } finally { await page.unroute(pattern) }
+  }, 45_000)
+
   it.skipIf(MODE === 'record')('keeps the file manager reachable at desktop and narrow widths', async () => {
     const filesPage = await newEnglishPage(browser)
     const health = watchConsole(filesPage)
