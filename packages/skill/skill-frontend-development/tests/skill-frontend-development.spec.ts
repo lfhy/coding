@@ -78,7 +78,12 @@ describe('bundled frontend-development skill', () => {
       expect(loaded.content).toContain('implementation-facing instructions, prompt fragments, debugging vocabulary, or process narration')
       expect(loaded.content).toContain('not implementation prompts or internal process narration')
       expect(loaded.content).toContain('browser-use')
-      expect(loaded.content).toContain('assets/examples/index.md')
+      // 资源前缀已指向 assets 目录：正文必须给相对路径，并写明不要重复拼 assets/、不要用 shell 解析前缀。
+      expect(loaded.content).toContain('${INTERNAL_SKILL_DIR}/coding-skill-frontend-development/examples/index.md')
+      expect(loaded.content).toContain('Never append `assets/`\na second time')
+      expect(loaded.content).toContain('not an environment variable')
+      expect(loaded.content).toContain('](examples/index.md)')
+      expect(loaded.content).not.toContain('assets/examples/index.md')
       expect(loaded.content).toContain('Copyable examples')
       expect(loaded.content).toContain('map its `--ui-*` seams onto the product')
       const exampleIndex = await readFile(examplesIndexUrl, 'utf8')
