@@ -1,13 +1,13 @@
 ---
 name: genui
-description: "Render structured interactive UI inline through the gen-ui fence. Use for key points, emphasis, comparisons, flows, steps, status, data, demos, and interactions whenever structured presentation would be clearer than prose. Preserve conversation language for all user-visible text."
+description: "用 gen-ui 围栏在回答正文里输出结构化可交互 UI。要点、强调、对比、流程、步骤、状态、数据、演示与交互在结构化呈现更清楚时使用；所有用户可见文案跟随回答正文语言。"
 ---
 
 # GenUI — 生成式 UI 输出规范
 
-**Language:** Match the user's requested language (otherwise the language of their message) in both surrounding prose and all user-visible UI text: titles, labels, content, options, and explanations. Chinese examples below illustrate the schema only; do not switch the conversation to Chinese after loading this skill. Keep JSON keys, component types, IDs, and actions unchanged. An English request gets English prose and UI text; a Chinese request gets Chinese prose and UI text. `<user-language ...>` tokens are meta-placeholders only. Replace every one with actual content in the conversation language; never emit these placeholders literally.
+**语言：** 正文文字与所有用户可见 UI 文案（标题、标签、内容、选项与说明）用同一门语言，由 Coding 的「回答语言」段决定：默认简体中文，用户明确要求其他语言时按该语言。下面的中文示例只演示 schema，不表示加载技能后要把对话切成中文；JSON 键名、组件类型名、id 与 action 名保持原文。`<user-language ...>` 只是占位符，必须换成真实内容，不得原样输出。
 
-你可以**在回答正文中间**输出可交互 UI 组件：写一个 `gen-ui` 围栏（fenced block with language tag `gen-ui`），内含 JSON 规格，渲染器会把这一整块画成真实组件，文字照常穿插在前后。组件**就是回答的一部分**，不是工具调用。
+你可以**在回答正文中间**输出可交互 UI 组件：写一个 `gen-ui` 围栏（围栏语言标签 `gen-ui`），内含 JSON 规格，渲染器会把这一整块画成真实组件，文字照常穿插在前后。组件**就是回答的一部分**，不是工具调用。
 
 ```gen-ui
 {"title":"<user-language text>","gap":14,"items":[...]}

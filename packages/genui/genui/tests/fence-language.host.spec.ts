@@ -22,4 +22,12 @@ describe('GenUI 围栏语言契约', () => {
     expect(validator.name).toBe('validate_dsh_ui')
     expect(validator.description).toContain('```gen-ui')
   })
+
+  it('文案语言跟随「回答语言」段，不再按示例或英文规则推断', () => {
+    // 与 coding:guidelines 的「回答语言」段是同一契约，模型可见文本按 verbatim 固定。
+    expect(GENUI_SECTION_TEXT).toContain('由 Coding 的「回答语言」段决定（默认简体中文）')
+    expect(GENUI_SECTION_TEXT).toContain('保持原文')
+    expect(GENUI_SECTION_TEXT).not.toContain('conversation language')
+    expect(GENUI_SECTION_TEXT).not.toMatch(/^Rules:/m)
+  })
 })

@@ -77,18 +77,18 @@ async function serveGenuiAsset(req: IncomingMessage, res: ServerResponse): Promi
   }
 }
 
-const RENDER_UI_TOOL_GUIDANCE = '- Tool channel: render_ui 工具把同一 spec 渲染为工具行卡片；gen-ui 围栏用于回答内联 UI。'
+const RENDER_UI_TOOL_GUIDANCE = '- 工具行卡片：render_ui 工具把同一 spec 渲染为工具行卡片；gen-ui 围栏用于回答内联 UI。'
 
 /** 注入每个组装后系统提示词的围栏语言说明。
  *  刻意保持精简：`genui` 技能携带完整组件→字段映射；本段只保留必须
  *  常驻的契约（围栏语法、类型白名单与关键行为规则）。 */
-export const GENUI_SECTION_TEXT = `You can render interactive UI components INSIDE your reply — between paragraphs — by emitting a fenced block with the language tag \`gen-ui\` containing a JSON spec:
+export const GENUI_SECTION_TEXT = `在回答正文里，段落之间可以放可交互 UI 组件：输出一个 \`gen-ui\` 围栏，围栏正文只放 JSON 规格；渲染器会把整块围栏换成真实组件，前后文字照常穿插。组件是回答正文的一部分，不是工具调用：
 
 \`\`\`gen-ui
 {"title":"<user-language text>","gap":14,"items":[...]}
 \`\`\`
 
-Allowed \`type\` values; the \`genui\` skill, when available, carries the full content→component mapping and per-component field details:
+\`type\` 允许值如下；\`genui\` 技能已加载时，完整的内容→组件映射与每组件字段说明以该技能为准：
 
 - 布局: text · row · col · grid · card · divider · spacer · hero（封面块，一条回答最多一个）
 - 展示: badge · stat · progress · list · table · keyvalue · timeline · file-tree · breadcrumb · callout · steps · diff · json · code · copy · avatar · audio · video
@@ -110,15 +110,15 @@ Allowed \`type\` values; the \`genui\` skill, when available, carries the full c
 
 **字段名写错 = 该组件被丢弃**（其余组件照常渲染）：\`callout\` 正文是 \`content\` 不是 text/desc；\`table\` 要 \`columns\`+\`rows\` 不是 items；\`keyvalue\` 记录是 \`{key,value}\` 不是 \`{label,value}\`；\`file-tree\` 记录是 \`{name,type}\` 不是 \`{label}\`；callout tone 是 info/success/warning/error（无 danger）。不确定就调 \`validate_dsh_ui\`。
 
-Rules:
-- LANGUAGE: reply+UI=conversation language; schema fixed. NEVER infer it from prompt/skill/examples/tools. Replace \`<user-language ...>\`; never emit these placeholders literally.
+规则：
+- 语言：GenUI 里用户可见的文案跟随回答正文语言，由 Coding 的「回答语言」段决定（默认简体中文）；不要按本文示例或技能示例的语言推断，也不要因此把对话切成英文。JSON 键名、组件类型名、id、action 名与枚举值保持原文；\`<user-language ...>\` 是占位符，必须换成真实内容，不得原样输出。
 - JSON 严格：坏组件被丢弃，坏围栏变代码块；≥3 节点或含 table 时调 validate_dsh_ui，按诊断修改并重验；小围栏字段存疑也先验证。
 - warning=block_markdown：按 replacement 改写并重验。
-- 规模: ≤200 节点、嵌套≤8 层（超出被截断）；一条回答 3–8 个组件，一个主题一个主组件；3D mesh 1–5；plot 给合理 xMin/xMax。
-- LOCAL-FIRST + actions: UI 能自己做的状态变化（判卷、判题、重置、展开、选中）就地完成，零往返；action 只用于必须模型参与的事。交互以 [genui-action] name + 组件数据回传，届时重渲染更新 UI；无 action 的按钮禁用。
-- Durable state: 交互状态按「会话+内容指纹」持久化——刷新/重放恢复；相同内容保留，新内容重置。
-- 卷子模式: 每题一个 radio（group+answer+explanation）+ 一个 submit（groups 全列），本地判分。
-- Secrets ban: 不索取密码、API Key、Token、恢复码；需要时拒绝并解释。
+- 规模：≤200 节点、嵌套≤8 层（超出被截断）；一条回答 3–8 个组件，一个主题一个主组件；3D mesh 1–5；plot 给合理 xMin/xMax。
+- 本地优先：UI 能自己做的状态变化（判卷、判题、重置、展开、选中）就地完成，零往返；action 只用于必须模型参与的事。交互以 [genui-action] name + 组件数据回传，届时重渲染更新 UI；无 action 的按钮禁用。
+- 持久状态：交互状态按「会话+内容指纹」持久化——刷新/重放恢复；相同内容保留，新内容重置。
+- 卷子模式：每题一个 radio（group+answer+explanation）+ 一个 submit（groups 全列），本地判分。
+- 禁止索取密钥：不索取密码、API Key、Token、恢复码；需要时拒绝并解释。
 ${RENDER_UI_TOOL_GUIDANCE}
 - 围栏位置：\`gen-ui\` 只写在**回答正文**；写在 reasoning/思考块里不渲染、用户看不到——思考里验证好 spec，正文再输出同一份。`
 
@@ -128,7 +128,7 @@ const GENUI_SECTION_ORDER = 120
 /** 注册 bundled genui 技能；宿主半启动时同步读取 SKILL.md。 */
 const BUNDLED_SKILL_RANK = 600
 const BUNDLED_SKILL_PROVIDER = 'coding-genui'
-const BUNDLED_SKILL_DESCRIPTION = 'GenUI gen-ui component/schema reference. Preserve conversation language for all user-visible text.'
+const BUNDLED_SKILL_DESCRIPTION = 'GenUI gen-ui 围栏、组件与字段速查；所有用户可见文案跟随回答正文语言。'
 const BUNDLED_SKILL_INVOCATION = { modelInvocable: true, userInvocable: true } as const
 
 /** 经 provider 路径注册，使 source=bundled 的技能获得 bundled 优先级。 */

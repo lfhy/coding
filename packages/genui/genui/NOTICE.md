@@ -7,5 +7,6 @@
 - 会话类型导入改走 `coding-session/types` 子路径；`fence-feedback` 的消息来源收敛为本仓库 `MessageSource`。
 - 懒引擎（mermaid／three／echarts）构建挂到共享 `clientBundle` preset 的 companions；独立 HTML 导出（standalone runtime）未随包移植。
 - 上游测试按行为移植（`tests/`），持久化生命周期用例因依赖宿主 `SessionStore` 值导入放 `*.host.spec.ts`。
+- 提示词段 `genui:fence`、bundled 技能说明与 `SKILL.md` 文案改写为简体中文，用户可见文案的语言收敛到本仓库 `coding:guidelines` 的「回答语言」段；schema 契约、组件类型名与技术标识符未改。
 
 上游原样保留的部分继续适用其 MIT 条款，见同目录 [LICENSE](LICENSE)。

@@ -42,7 +42,7 @@
 
 #### What the model sees
 
-系统提示词常驻 `genui:fence` 段（围栏语法、类型白名单、行为规则），bundled `genui` 技能携带完整组件→字段映射，`render_ui`／`validate_dsh_ui` 工具 schema 见[工具目录](../../docs/tool-catalog.md)。
+系统提示词常驻 `genui:fence` 段（围栏语法、类型白名单、行为规则），bundled `genui` 技能携带完整组件→字段映射，`render_ui`／`validate_dsh_ui` 工具 schema 见[工具目录](../../docs/tool-catalog.md)。段与技能都写明用户可见文案的语言跟随 Coding 的「回答语言」段（默认简体中文），JSON 键名、组件类型名、id、action 名与枚举值保持原文，技能里的中文示例不代表切换回复语言。
 
 #### Token effect
 
