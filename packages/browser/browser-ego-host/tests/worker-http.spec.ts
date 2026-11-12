@@ -45,7 +45,8 @@ it('封闭 worker 在真实 HTTP/CDP 连接上采帧并导航，拒绝失效目�
   const calls: Array<{ method: string; params: Record<string, unknown>; sessionId?: string }> = []
   let viewportAvailable = true
   let imageAvailable = true
-  let bigPng = false
+  let losslessImage = JPEG
+  let lossyImage = JPEG
   let currentIndex = 1
   let windowAvailable = true
   let windowWidth = 648
@@ -105,8 +106,7 @@ it('封闭 worker 在真实 HTTP/CDP 连接上采帧并导航，拒绝失效目�
                 : { result: { value: { x: 5, y: 7, width: viewportAvailable ? currentViewport().width : 0,
                   height: currentViewport().height, dpr: emulated?.deviceScaleFactor ?? 2 } } }; break
           case 'Page.captureScreenshot': result = {
-            // 大片渐变用无损编码会很大：用超预算的假数据驱动有损回退分支。
-            data: imageAvailable ? (bigPng && request.params.quality === 100 ? 'A'.repeat(1_300_000) : JPEG) : '',
+            data: imageAvailable ? (request.params.format === 'webp' ? losslessImage : lossyImage) : '',
           }; break
           case 'Page.getNavigationHistory': result = { currentIndex, entries: [{ id: 1 }, { id: 2 }, { id: 3 }] }; break
           case 'Page.navigate': result = request.params.url === 'https://fail.example/' ? { errorText: 'blocked' } : { frameId: 'frame' }; break
@@ -193,15 +193,29 @@ it('封闭 worker 在真实 HTTP/CDP 连接上采帧并导航，拒绝失效目�
   expect(calls.filter(call => call.method === 'Page.captureScreenshot').at(-1)).toMatchObject({
     params: { format: 'webp', quality: 100, clip: { width: 1600, height: 900, scale: 0.25 } },
   })
-  // 无损帧超出体积预算时按设置质量退回有损。
-  bigPng = true
-  expect(await (await fetch(`${api}/api/frame?targetId=owned&quality=90&maxWidth=800`)).json())
-    .toMatchObject({ mime: 'image/jpeg', data: JPEG })
-  expect(calls.filter(call => call.method === 'Page.captureScreenshot').slice(-2)).toMatchObject([
-    { params: { format: 'webp', quality: 100, clip: { width: 1600, height: 900, scale: 0.25 } } },
-    { params: { format: 'jpeg', quality: 90, clip: { width: 1600, height: 900, scale: 0.25 } } },
-  ])
-  bigPng = false
+  for (const length of [1_300_000, 2_800_000, 2_800_004, 4_000_000]) {
+    losslessImage = 'A'.repeat(length)
+    const fallback = await fetch(`${api}/api/frame?targetId=owned&quality=90&maxWidth=800`)
+    expect(fallback.status, `无损帧长度 ${length}: ${stderr}`).toBe(200)
+    expect(await fallback.json()).toMatchObject({ mime: 'image/jpeg', data: JPEG })
+    expect(calls.filter(call => call.method === 'Page.captureScreenshot').slice(-2)).toMatchObject([
+      { params: { format: 'webp', quality: 100, clip: { width: 1600, height: 900, scale: 0.25 } } },
+      { params: { format: 'jpeg', quality: 90, clip: { width: 1600, height: 900, scale: 0.25 } } },
+    ])
+  }
+  losslessImage = 'A'.repeat(2_800_004)
+  lossyImage = 'A'.repeat(2_800_000)
+  const largestLossy = await fetch(`${api}/api/frame?targetId=owned`)
+  expect(largestLossy.status, stderr).toBe(200)
+  expect(await largestLossy.json()).toMatchObject({ mime: 'image/jpeg', data: lossyImage })
+  lossyImage += 'AAAA'
+  for (const format of ['', '&format=lossy']) {
+    const oversized = await fetch(`${api}/api/frame?targetId=owned${format}`)
+    expect(oversized.status, stderr).toBe(503)
+    expect(await oversized.json()).toMatchObject({ ok: false })
+  }
+  lossyImage = JPEG
+  losslessImage = JPEG
   // 实时推流直接要有损：不尝试无损编码，质量来自设置。
   expect(await (await fetch(`${api}/api/frame?targetId=owned&format=lossy&quality=85`)).json())
     .toMatchObject({ mime: 'image/jpeg', data: JPEG })
@@ -241,6 +255,20 @@ it('封闭 worker 在真实 HTTP/CDP 连接上采帧并导航，拒绝失效目�
   expect(badImage.status, stderr).toBe(503)
   expect((await badImage.json() as { ok: boolean }).ok).toBe(false)
   imageAvailable = true
+  for (const invalid of ['bad!', 'A', 'AA', 'AAA', '=AAA', 'AA=A', 'A===', 'AAAA====', 'AAA\n', 'AA\r\n', `${'A'.repeat(4_000_000)}!`]) {
+    losslessImage = invalid
+    const invalidImage = await fetch(`${api}/api/frame?targetId=owned`)
+    expect(invalidImage.status, stderr).toBe(503)
+    expect(await invalidImage.json()).toMatchObject({ ok: false })
+    expect(calls.filter(call => call.method === 'Page.captureScreenshot').at(-1)?.params.format).toBe('webp')
+  }
+  losslessImage = 'A'.repeat(2_800_004)
+  lossyImage = 'bad!'
+  const invalidFallback = await fetch(`${api}/api/frame?targetId=owned`)
+  expect(invalidFallback.status, stderr).toBe(503)
+  expect(await invalidFallback.json()).toMatchObject({ ok: false })
+  losslessImage = JPEG
+  lossyImage = JPEG
   const post = async (body: unknown): Promise<{ status: number; ok: boolean }> => {
     const response = await fetch(`${api}/api/navigation`, { method: 'POST',
       headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })

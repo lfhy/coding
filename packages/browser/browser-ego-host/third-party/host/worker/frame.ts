@@ -3,8 +3,8 @@ import type { TargetSessions } from './capture-cdp.ts'
 /** 无损单帧的体积预算（base64 字符）；UI 页面通常远低于它，大片渐变或照片会超过预算。 */
 const LOSSLESS_BUDGET = 1_200_000
 
-/** base64 只接受标准字母表，避免把任意文本当图片塞进面板。 */
-const BASE64 = /^([A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/u
+/** 字母表与四字符分组分开校验，避免大幅无损画面触发重复分组的正则栈溢出。 */
+const BASE64 = /^[A-Za-z0-9+/]*={0,2}(?![\s\S])/u
 
 /** 单帧采集参数；两个值都来自用户的采集设置，Host 按请求下发。 */
 export interface FrameOptions {
@@ -50,8 +50,9 @@ export async function captureFrame(
       captureBeyondViewport: false,
       clip: { x, y, width: vw, height: vh, scale },
     }) as { data?: string }
-    if (typeof image.data !== 'string' || !BASE64.test(image.data)
-      || image.data.length === 0 || image.data.length > 2_800_000) throw new Error('frame unavailable')
+    // 无损结果先用于预算判断，超限后仍需尝试 JPEG；传输上限约束最终有损帧。
+    if (typeof image.data !== 'string' || image.data.length === 0 || image.data.length % 4 !== 0
+      || (!lossless && image.data.length > 2_800_000) || !BASE64.test(image.data)) throw new Error('frame unavailable')
     return { data: image.data, mime: lossless ? 'image/webp' : 'image/jpeg' }
   }
   // 静止取帧默认无损：像素与页面完全一致，渐变不会出现编码台阶。

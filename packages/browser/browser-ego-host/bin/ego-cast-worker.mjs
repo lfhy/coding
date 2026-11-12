@@ -754,8 +754,8 @@ async function captureSnapshot(sessions, targetId, maxWidth) {
 //#region third-party/host/worker/frame.ts
 /** 无损单帧的体积预算（base64 字符）；UI 页面通常远低于它，大片渐变或照片会超过预算。 */
 const LOSSLESS_BUDGET = 12e5;
-/** base64 只接受标准字母表，避免把任意文本当图片塞进面板。 */
-const BASE64 = /^([A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/u;
+/** 字母表与四字符分组分开校验，避免大幅无损画面触发重复分组的正则栈溢出。 */
+const BASE64 = /^[A-Za-z0-9+/]*={0,2}(?![\s\S])/u;
 /**
 * 采集当前视口的一帧画面（默认无损 WebP，超预算时退回有损），并附上 CSS 视口尺寸供 Host 换算人工输入坐标。
 *
@@ -787,7 +787,7 @@ async function captureFrame(sessions, targetId, options) {
 				scale
 			}
 		});
-		if (typeof image.data !== "string" || !BASE64.test(image.data) || image.data.length === 0 || image.data.length > 28e5) throw new Error("frame unavailable");
+		if (typeof image.data !== "string" || image.data.length === 0 || image.data.length % 4 !== 0 || !lossless && image.data.length > 28e5 || !BASE64.test(image.data)) throw new Error("frame unavailable");
 		return {
 			data: image.data,
 			mime: lossless ? "image/webp" : "image/jpeg"
