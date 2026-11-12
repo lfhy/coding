@@ -386,6 +386,7 @@ export function PptWorkbench({
                 deck={project.deck}
                 page={page}
                 element={element}
+                fonts={state.fonts}
                 busy={state.busy}
                 t={t}
                 onElement={(patch) => {

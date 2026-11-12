@@ -69,6 +69,32 @@ function editingFetcher(initial: unknown = editableProject()) {
   return { fetcher, requests, failNextEdit: () => { failEdit = true }, setActive: (next: unknown) => { active = next } }
 }
 
+describe('本机字体目录', () => {
+  it('读取一次字体列表并去重，失败时保留空列表不影响画布', async () => {
+    const calls: string[] = []
+    const fetcher = vi.fn(async (path: string): Promise<Response> => {
+      calls.push(path)
+      if (path === '/api/ppt/fonts') {
+        return Response.json({ ok: true, default: '黑体', fonts: ['黑体', '黑体', '', 'Songti SC'] })
+      }
+      throw new Error(`unexpected request: ${path}`)
+    })
+    const panel = new PptPanelController(SESSION, fetcher)
+    await panel.loadFonts()
+    expect(panel.view.getSnapshot().fonts).toEqual(['黑体', 'Songti SC'])
+    panel.dispose()
+  })
+
+  it('字体目录读失败时下拉退化为只有默认黑体', async () => {
+    const fetcher = vi.fn(async (): Promise<Response> => Response.json({ ok: false }, { status: 503 }))
+    const panel = new PptPanelController(SESSION, fetcher)
+    await panel.loadFonts()
+    expect(panel.view.getSnapshot().fonts).toEqual([])
+    expect(panel.view.getSnapshot().phase).toBe('loading')
+    panel.dispose()
+  })
+})
+
 describe('PPT 面板轮询', () => {
   it('接受宿主已有的绝对工程快照并确认相对路径的打开通知，不再触发 open', async () => {
     const { fetcher, requests } = fetcherFor({ dir: 'ppt/deck', at: 17 })

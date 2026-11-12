@@ -9,7 +9,7 @@ import type { PptElement, PptElementKind, PptPage, SlideTransition } from 'codin
 import { pastedElement } from './clipboard.ts'
 import { imageReplacementTarget } from './image-target.ts'
 import {
-  errorOf, parseExport, parseSnapshot, parseState,
+  errorOf, parseExport, parseFonts, parseSnapshot, parseState,
   type PptProjectView, type PptSnapshotView,
 } from './wire.ts'
 
@@ -33,6 +33,8 @@ export interface PptPanelState {
   readonly editingId: string | null
   /** 当前工程内是否有可粘贴的元素。 */
   readonly hasClipboard: boolean
+  /** 本机已安装的字体族，供属性面板的字体下拉；读取失败时为空。 */
+  readonly fonts: readonly string[]
   readonly busy: boolean
   readonly notice: PptNotice | null
   /** 最近一次质检的问题列表；未检查时为 null。 */
@@ -51,7 +53,8 @@ type MutablePanelState = { -readonly [K in keyof PptPanelState]: PptPanelState[K
 
 const INITIAL: PptPanelState = {
   phase: 'loading', root: '', projects: [], project: null, pageIndex: 0,
-  selectedId: null, editingId: null, hasClipboard: false, busy: false, notice: null, issues: null,
+  selectedId: null, editingId: null, hasClipboard: false, fonts: [],
+  busy: false, notice: null, issues: null,
 }
 
 const POLL_MS = 3000
@@ -83,6 +86,7 @@ export class PptPanelController {
   show(shown: boolean): void {
     this.visible = Math.max(0, this.visible + (shown ? 1 : -1))
     if (this.visible > 0 && this.timer === null) {
+      if (this.view.getSnapshot().fonts.length === 0) void this.loadFonts()
       void this.refresh()
       this.timer = setInterval(() => { void this.refresh() }, POLL_MS)
     } else if (this.visible === 0 && this.timer !== null) {
@@ -125,6 +129,22 @@ export class PptPanelController {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ sessionId: this.sessionId, ...body }),
     })
+  }
+
+  /**
+   * 读取一次本机已安装的字体族。
+   *
+   * 字体目录只影响属性面板的下拉选项：读不到时保留空列表，画布仍按默认黑体渲染，
+   * 因此这里吞掉错误、不打断其它动作。
+   */
+  async loadFonts(): Promise<void> {
+    try {
+      const families = parseFonts(await this.request('fonts'))
+      if (families === null) return
+      this.patch((draft) => { draft.fonts = families })
+    } catch {
+      // 下拉退化为「只有默认黑体」，不提示也不重试到面板报错。
+    }
   }
 
   /** 读取一次会话工程状态；宿主已把模型选定的工程设为当前工程。 */

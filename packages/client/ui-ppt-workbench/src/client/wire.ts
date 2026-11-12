@@ -132,6 +132,24 @@ export function parseExport(value: unknown): PptExportView | null {
 }
 
 /**
+ * 解析本机字体目录：`fonts` 必须是字符串数组，空串与重复项被丢弃。
+ * 宿主可能返回很长的列表，这里按最多 500 个截断，避免下拉与快照无界增长。
+ * @param value - HTTP 返回的 `/api/ppt/fonts` 载荷。
+ * @returns 可用族名；结构不合法时 null。
+ */
+export function parseFonts(value: unknown): readonly string[] | null {
+  if (!isRecord(value) || value.ok !== true || !Array.isArray(value.fonts)) return null
+  const families: string[] = []
+  for (const entry of value.fonts) {
+    if (typeof entry !== 'string') return null
+    const family = entry.trim()
+    if (family !== '' && !families.includes(family)) families.push(family)
+    if (families.length === 500) break
+  }
+  return families
+}
+
+/**
  * 读取失败响应里的诊断文本。
  * @param value - 响应 JSON。
  * @param fallback - 没有可用文本时的兜底文案。

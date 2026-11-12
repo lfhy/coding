@@ -49,7 +49,7 @@ function deck(): PptSnapshotView {
 
 const ready: PptPanelState = {
   phase: 'ready', root: '/workspace', projects: [], project: deck(),
-  pageIndex: 0, selectedId: null, editingId: null, hasClipboard: false, busy: false, notice: null, issues: null,
+  pageIndex: 0, selectedId: null, editingId: null, hasClipboard: false, fonts: [], busy: false, notice: null, issues: null,
 }
 
 function mount(state: PptPanelState, shown = true, locale: typeof en = en) {
@@ -331,6 +331,21 @@ describe('PPT 工作台面板', () => {
     fireEvent.change(theme, { target: { value: 'inference' } })
     expect(panel.props.updateDeck).toHaveBeenCalledWith({ theme: 'inference' })
     expect(en.themeInference).toBe('Clear briefing')
+  })
+
+  it('字体下拉列出本机已装字体，默认显示黑体并提交所选族名', () => {
+    const project = deck()
+    const panel = mount({
+      ...ready, project, selectedId: 't1', fonts: ['黑体', 'Songti SC'],
+    }, true, zh)
+    fireEvent.click(screen.getByRole('button', { name: '属性' }))
+    const font = screen.getByRole('combobox', { name: '字体' }) as HTMLSelectElement
+    // 元素 font 为空表示跟随默认，下拉据此显示黑体；本机字体排在它后面。
+    expect(font.value).toBe('黑体')
+    expect(screen.getByRole('option', { name: '黑体（默认）' })).toBeTruthy()
+    expect(screen.getByRole('option', { name: 'Songti SC' })).toBeTruthy()
+    fireEvent.change(font, { target: { value: 'Songti SC' } })
+    expect(panel.props.updateElement).toHaveBeenCalledWith('t1', { text: { font: 'Songti SC' } })
   })
 
   it('从属性切到插入菜单后 Escape 不留下悬浮操作层', () => {

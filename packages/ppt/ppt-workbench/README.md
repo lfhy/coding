@@ -28,6 +28,7 @@ PPT 创作模式的宿主能力：工程存储（`ppt/<工程目录>/deck.json`�
 - **图片媒体**：`upload` 供工作台上传与模型的 `ppt_attach_gallery_image` 共用，要求工程已存在，仅接受 1 字节至 8 MiB 的 PNG／JPEG／GIF／WebP，并检查格式和内容；SVG 因同源脚本风险明确拒绝。写入前检查工程与 `media/` 目录的工作区边界和符号链接，路径不安全时拒绝。它在工程 `media/` 写入一份新文件并返回 `media/<file>`，不修改 `deck.json` 或修订号；图库身份只由[模型工具](../tool-ppt/README.md#行为)在本次会话内校验，本服务不从图库取图。后续 `ppt_edit` 需引用返回的 source 才加入页面；复制与编辑不原子，冲突可能留下未引用媒体，不覆盖原有工程改动。
 - **模型与面板的交接**：创建、打开或导入工程成功后，服务在该会话日志记录相对工程目录；服务重挂或会话恢复时据此选择同一份工程，派生的其他会话不继承其选择。`read(dir)` 只读，不改变当前工程；未打开时可先 `open(dir)`，也可给质检等操作显式传 `dir`，不会因工作区只有一份工程就自动选中。面板轮询（3 秒）采用当前快照，再回执内存中的打开请求；服务重挂后不重放旧请求。
 - **导出**：文本字体按元素 `font` 同时写进 `a:latin` 与 `a:ea`，空字体落到主题占位值；主题字体方案（major/minor）就是默认黑体，所以目标机缺字时由 PowerPoint 自行替换。`buildPptx` 在本地生成最小 OPC 包——根关系以 `officeDocument` 指向 `ppt/presentation.xml`，文稿部件的 MIME 类型单独写在 `[Content_Types].xml`；每页一张 slide，文本、矩形、椭圆与连接线按基准像素换算成 EMU，主题色写进 `theme1.xml`。不依赖 Office、不调用外部进程。
+- **字体下拉**：`GET /api/ppt/fonts` 只读 `name` 表里的族名——扫描平台字体目录（`systemFontDirs`），接受 `.ttf`／`.ttc`／`.otf`（集合取首 face），按大小写去重、最多 400 个，进程内只扫一次；不嵌入字节、不做许可判断。返回的 `default` 恒为默认黑体，即使本机没装也能选中；面板把当前元素字体与默认项并进候选，导入稿里的族名不会因为没装就消失。
 - **错误码**：路由把 `not-found` / `conflict` / `forbidden` / `bad-request` 映射成 404 / 409 / 403 / 400；模型工具看到的是同一批中文诊断。
 
 ## 页面渲染与预览
@@ -70,6 +71,7 @@ PPT 创作模式的宿主能力：工程存储（`ppt/<工程目录>/deck.json`�
 | `GET /api/ppt/templates` | 列出本机用户模板摘要 |
 | `GET /api/ppt/templates/builtins` | 只读返回 `{ ok: true, deck }`，供七种内置版式预览 |
 | `GET /api/ppt/templates/default` | 只读返回 `{ ok: true, deck }`，供六页默认整稿预览 |
+| `GET /api/ppt/fonts` | 只读返回 `{ ok: true, default, fonts }`：本机已安装的字体族与默认黑体，供属性面板的字体下拉 |
 | `GET /api/ppt/templates/detail?id=` | 读取模板详情与完整 deck，供第一页预览 |
 | `GET /api/ppt/templates/media?id=&path=` | 读取模板实际引用的栅格图片原始字节 |
 

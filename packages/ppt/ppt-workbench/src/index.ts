@@ -22,7 +22,7 @@ import { createDefaultDeck } from './default-template.ts'
 import { extractTemplateDesign } from './extract-template.ts'
 import { buildPdf } from './export/pdf.ts'
 import { buildPptx } from './export/pptx.ts'
-import { collectFonts, systemFontDirs, type SkippedFont } from './fonts.ts'
+import { collectFonts, listSystemFontFamilies, systemFontDirs, type SkippedFont } from './fonts.ts'
 import {
   extractPptxPageEvidence, importPptx, PPT_IMPORT_MAX_BYTES, slicePptxPageEvidence,
   type PptImportReport, type PptPageEvidenceChunk,
@@ -108,8 +108,10 @@ export default class PptProjects extends Service {
     content: string
   } | undefined
 
-  /** 导出时要扫描的字体目录；默认取平台字体目录。 */
+  /** 导出与字体下拉都要扫描的字体目录；默认取平台字体目录。 */
   private fontDirs: readonly string[] = systemFontDirs()
+  /** 面板字体下拉的族名；进程内只扫一次，字体装删后重开进程才刷新。 */
+  private fontFamilies: Promise<readonly string[]> | null = null
   private readonly templates: PptTemplateStore
 
   constructor(ctx: Context, config: Config = {}) {
@@ -492,6 +494,21 @@ export default class PptProjects extends Service {
    */
   listTemplates(): Promise<readonly PptTemplateSummary[]> {
     return this.templates.list()
+  }
+
+  /**
+   * 本机已安装的字体族，供面板字体下拉列出。
+   *
+   * 只读族名：不嵌入字节，也不判断许可。结果在进程内缓存一次，失败时不缓存、
+   * 下次调用重试，因此字体目录读坏了不会永久卡住下拉。
+   * @returns 排序去重后的族名。
+   */
+  listFonts(): Promise<readonly string[]> {
+    this.fontFamilies ??= listSystemFontFamilies(this.fontDirs).catch((reason: unknown) => {
+      this.fontFamilies = null
+      throw reason
+    })
+    return this.fontFamilies
   }
 
   /** 读取模板的完整 deck；不切换当前工程。

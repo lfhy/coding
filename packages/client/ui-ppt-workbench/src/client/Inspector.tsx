@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react'
 import type { Translate } from 'coding-client-ui-slots'
 import { IconTrashOutline16 } from 'coding-client-ui-icons'
-import type { PptDeck, PptElement, PptPage, SlideTransition } from 'coding-ppt-model'
+import { DEFAULT_FONT_FAMILY, type PptDeck, type PptElement, type PptPage, type SlideTransition } from 'coding-ppt-model'
 import type { PptWorkbenchKey } from './locales.ts'
 import css from './Inspector.module.css'
 
@@ -38,6 +38,8 @@ export interface InspectorProps {
   readonly deck: PptDeck
   readonly page: PptPage
   readonly element: PptElement | null
+  /** 本机已安装的字体族；下拉只列这些，默认项始终是黑体。 */
+  readonly fonts: readonly string[]
   readonly busy: boolean
   readonly t: Translate<PptWorkbenchKey>
   readonly onElement: (patch: ElementPatch) => void
@@ -48,6 +50,18 @@ export interface InspectorProps {
   readonly onChart: (patch: { stacked?: boolean; secondary?: boolean; combo?: boolean }) => void
   readonly onPage: (patch: { name?: string; background?: string | null; transition?: SlideTransition }) => void
   readonly onDeck: (patch: { title?: string; theme?: string; size?: '16:9' | '4:3' }) => void
+}
+
+/**
+ * 字体下拉的候选：默认黑体永远在最前，其后是已安装族名与元素当前字体。
+ * 当前字体即使没装也保留，否则导入稿会显示成别的字。
+ * @param fonts - 本机已安装的字体族。
+ * @param current - 元素上的字体族名，空串表示跟随默认。
+ * @returns 去重后的候选列表。
+ */
+function fontChoices(fonts: readonly string[], current: string): readonly string[] {
+  const family = current.trim() === '' ? DEFAULT_FONT_FAMILY : current
+  return [family, ...fonts.filter(name => name !== family)]
 }
 
 function NumberField({
@@ -180,7 +194,7 @@ function TableCellEditor({
  * @returns 属性表单。
  */
 export function Inspector({
-  deck, page, element, busy, t, onElement, onRemove, onDuplicate, onReorder, onChart, onPage, onDeck,
+  deck, page, element, fonts, busy, t, onElement, onRemove, onDuplicate, onReorder, onChart, onPage, onDeck,
 }: InspectorProps) {
   const background = page.background ?? '#000000'
   return (
@@ -213,6 +227,20 @@ export function Inspector({
             <>
               <NumberField label={t('textSize')} value={element.text.size} min={6} max={400} disabled={busy}
                 onCommit={(size) => { onElement({ text: { size } }) }} />
+              <label className={css.field}>
+                <span>{t('font')}</span>
+                <select
+                  value={element.text.font.trim() === '' ? DEFAULT_FONT_FAMILY : element.text.font}
+                  disabled={busy}
+                  onChange={(event) => { onElement({ text: { font: event.target.value } }) }}
+                >
+                  {fontChoices(fonts, element.text.font).map(name => (
+                    <option key={name} value={name}>
+                      {name === DEFAULT_FONT_FAMILY ? t('fontDefault') : name}
+                    </option>
+                  ))}
+                </select>
+              </label>
               <label className={css.check}>
                 <input
                   type="checkbox"
@@ -274,7 +302,23 @@ export function Inspector({
             </>
           ) : null}
           {element.kind === 'table' ? (
-            <TableCellEditor element={element} busy={busy} t={t} onCommit={(cells) => { onElement({ cells }) }} />
+            <>
+              <TableCellEditor element={element} busy={busy} t={t} onCommit={(cells) => { onElement({ cells }) }} />
+              <label className={css.field}>
+                <span>{t('font')}</span>
+                <select
+                  value={element.text.font.trim() === '' ? DEFAULT_FONT_FAMILY : element.text.font}
+                  disabled={busy}
+                  onChange={(event) => { onElement({ text: { font: event.target.value } }) }}
+                >
+                  {fontChoices(fonts, element.text.font).map(name => (
+                    <option key={name} value={name}>
+                      {name === DEFAULT_FONT_FAMILY ? t('fontDefault') : name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </>
           ) : null}
           {element.kind === 'line' ? (
             <>

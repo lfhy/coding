@@ -116,6 +116,19 @@ describe('PPT 用户模板只读 HTTP 目录', () => {
     expect(await stat(join(root!, 'templates')).then(() => true, () => false)).toBe(false)
   })
 
+  it('字体下拉列出本机已装字体，默认黑体单独给出', async () => {
+    const { base } = await boot()
+    const response = await request(base, 'fonts')
+    expect(response.status).toBe(200)
+    expect(response.headers.get('cache-control')).toBe('no-store')
+    const payload = await response.json() as { ok: boolean; default: string; fonts: string[] }
+    expect(payload.ok).toBe(true)
+    expect(payload.default).toBe('黑体')
+    expect(Array.isArray(payload.fonts)).toBe(true)
+    expect(payload.fonts.every(name => typeof name === 'string' && name !== '')).toBe(true)
+    expect(new Set(payload.fonts).size).toBe(payload.fonts.length)
+  })
+
   it('内置版式预览复用七种单页元素，且不创建工程或用户模板', async () => {
     const { base, projects } = await boot()
     const first = await request(base, 'templates/builtins')

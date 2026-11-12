@@ -9,7 +9,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from 'coding-client-connection'
-import { PptModelError } from 'coding-ppt-model'
+import { DEFAULT_FONT_FAMILY, PptModelError } from 'coding-ppt-model'
 import { BUILTIN_TEMPLATE_PREVIEW } from './builtin-templates.ts'
 import { createDefaultDeck } from './default-template.ts'
 import { PptStoreError, type PptSnapshot } from './store.ts'
@@ -174,6 +174,11 @@ export function installRoutes(ctx: Context, service: PptProjects): void {
   route('templates/builtins', ['GET'], () => ({ ok: true, deck: BUILTIN_TEMPLATE_PREVIEW }))
 
   route('templates/default', ['GET'], () => ({ ok: true, deck: createDefaultDeck('演示文稿标题') }))
+
+  // 字体下拉只列本机已安装的族名；默认黑体单独给出，未安装时也能选中。
+  route('fonts', ['GET'], async () => ({
+    ok: true, default: DEFAULT_FONT_FAMILY, fonts: await service.listFonts(),
+  }))
 
   route('templates/detail', ['GET'], async (_body, url) => ({
     ok: true, template: await service.readTemplate(url.searchParams.get('id') ?? ''),

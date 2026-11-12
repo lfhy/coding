@@ -1,7 +1,10 @@
-import { readdirSync } from 'node:fs'
+import { copyFileSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { collectFonts, indexFonts, licenceOf, readFontFace, systemFontDirs, usedFamilies, wrapEot } from '../src/fonts.ts'
+import {
+  collectFonts, indexFonts, licenceOf, listSystemFontFamilies, readFontFace, systemFontDirs, usedFamilies, wrapEot,
+} from '../src/fonts.ts'
 
 /** 找一个真实的 .ttf 用来验证封装；没有系统字体时这些用例跳过。 */
 function firstSystemTtf(): string | null {
@@ -98,5 +101,23 @@ describe('子集化嵌入（真实字体）', () => {
     expect(fullFontEntry?.subset).toBe(false)
     if (subsetFontEntry === undefined || fullFontEntry === undefined) return
     expect(subsetFontEntry.bytes.length).toBeLessThan(fullFontEntry.bytes.length)
+  })
+})
+
+describe('本机字体列表（字体下拉）', () => {
+  it('列出字体目录里的族名，忽略非字体文件与不存在的目录', async () => {
+    const source = firstSystemTtf()
+    if (source === null) return
+    const dir = mkdtempSync(join(tmpdir(), 'ppt-font-list-'))
+    try {
+      copyFileSync(source, join(dir, 'sample.ttf'))
+      writeFileSync(join(dir, 'readme.txt'), 'not a font')
+      const families = await listSystemFontFamilies([dir, join(dir, 'missing')])
+      expect(families).toHaveLength(1)
+      const face = await readFontFace(source)
+      expect(families[0]).toBe(face?.family)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 })

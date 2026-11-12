@@ -142,6 +142,81 @@ function tableDirectory(bytes: Uint8Array): Tables | null {
   return tables
 }
 
+const SFNT_CFF = 0x4f54544f
+const SFNT_TRUE = 0x74727565
+
+/**
+ * 读取任意 sfnt 容器的表目录：TrueType、CFF（.otf）与集合（.ttc/.otc 的首 face）。
+ * 与 {@link tableDirectory} 的差别只是不限制轮廓格式——列族名不需要 glyf。
+ * @param bytes - 文件字节。
+ * @returns 表目录；结构不认识时为 null。
+ */
+function anyTableDirectory(bytes: Uint8Array): Tables | null {
+  if (bytes.length < 12) return null
+  const head = u32(bytes, 0) === TTC_MAGIC ? u32(bytes, 12) : 0
+  const sfnt = u32(bytes, head)
+  if (sfnt !== 0x00010000 && sfnt !== SFNT_CFF && sfnt !== SFNT_TRUE) return null
+  const count = u16(bytes, head + 4)
+  const tables: Record<string, { offset: number; length: number }> = {}
+  for (let index = 0; index < count; index += 1) {
+    const record = head + 12 + index * 16
+    if (record + 16 > bytes.length) return null
+    const tag = String.fromCharCode(bytes[record] ?? 0, bytes[record + 1] ?? 0, bytes[record + 2] ?? 0, bytes[record + 3] ?? 0)
+    tables[tag] = { offset: u32(bytes, record + 8), length: u32(bytes, record + 12) }
+  }
+  return tables
+}
+
+/** 字体下拉只看族名，因此也接受 .otf 与 .ttc；嵌入那一路继续只认 glyf TrueType。 */
+const FONT_FILE = /\.(?:ttf|ttc|otf|otc)$/iu
+
+/** 列字体时最多收这么多族，避免病态字体目录把下拉撑爆。 */
+const MAX_LISTED_FAMILIES = 400
+
+/**
+ * 读一个字体文件登记的族名（name 表 nameID 1）。
+ * @param path - 字体文件路径。
+ * @returns 族名；格式不认识或读不出时为 null。
+ */
+async function familyOfFile(path: string): Promise<string | null> {
+  const bytes = await readFile(path).catch(() => null)
+  if (bytes === null) return null
+  const data = new Uint8Array(bytes)
+  const tables = anyTableDirectory(data)
+  if (tables === null) return null
+  const family = familyName(data, tables).trim()
+  return family === '' ? null : family
+}
+
+/**
+ * 列出本机已安装的字体族，供面板字体下拉使用。
+ *
+ * 只读 name 表里的族名：不嵌入字节、不做许可判断，因此 CFF 与集合字体也列得出来。
+ * 同一族名按大小写去重，结果按中文排序；目录不存在或不可读时跳过。
+ * @param dirs - 要扫描的字体目录，缺省用平台默认目录。
+ * @returns 去重后的族名；最多 {@link MAX_LISTED_FAMILIES} 个。
+ */
+export async function listSystemFontFamilies(dirs: readonly string[] = systemFontDirs()): Promise<string[]> {
+  const families = new Map<string, string>()
+  const visit = async (dir: string, depth: number): Promise<void> => {
+    const entries = await readdir(dir, { withFileTypes: true }).catch(() => [])
+    for (const entry of entries) {
+      const path = join(dir, entry.name)
+      if (entry.isDirectory()) {
+        if (depth < 3) await visit(path, depth + 1)
+        continue
+      }
+      if (!FONT_FILE.test(entry.name) || families.size >= MAX_LISTED_FAMILIES) continue
+      const family = await familyOfFile(path)
+      if (family === null) continue
+      const key = family.toLocaleLowerCase()
+      if (!families.has(key)) families.set(key, family)
+    }
+  }
+  for (const dir of dirs) await visit(dir, 0)
+  return [...families.values()].sort((left, right) => left.localeCompare(right, 'zh'))
+}
+
 function familyName(bytes: Uint8Array, tables: Tables): string {
   const table = tables['name']
   if (table === undefined) return ''
