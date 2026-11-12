@@ -3,7 +3,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
-  collectFonts, indexFonts, licenceOf, listSystemFontFamilies, readFontFace, systemFontDirs, usedFamilies, wrapEot,
+  collectFonts, coversCjk, indexFonts, licenceOf, listSystemFontFamilies, readFontFace, systemFontDirs, usedFamilies,
+  wrapEot,
 } from '../src/fonts.ts'
 
 /** 找一个真实的 .ttf 用来验证封装；没有系统字体时这些用例跳过。 */
@@ -119,5 +120,18 @@ describe('本机字体列表（字体下拉）', () => {
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
+  })
+})
+
+describe('中文字形覆盖', () => {
+  it('带汉字的字体覆盖「中」，纯西文字体不覆盖', async () => {
+    const cjkPath = '/System/Library/Fonts/Supplemental/Arial Unicode.ttf'
+    const latinPath = '/System/Library/Fonts/Supplemental/Chalkduster.ttf'
+    const cjkFace = await readFontFace(cjkPath)
+    const latinFace = await readFontFace(latinPath)
+    if (cjkFace === null || latinFace === null) return
+    // 导出据此决定 a:ea：不含中文的族只写西文，中文回落到主题黑体。
+    expect(coversCjk(cjkFace.bytes)).toBe(true)
+    expect(coversCjk(latinFace.bytes)).toBe(false)
   })
 })

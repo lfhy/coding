@@ -53,6 +53,8 @@ export interface PptxFont {
   readonly bytes: Uint8Array
   /** 只读嵌入（Preview & Print）：目标机只能看不能改。 */
   readonly readonly?: boolean
+  /** 该族是否自带中文字形；false 时中文走主题默认黑体。缺省表示未知。 */
+  readonly cjk?: boolean
 }
 
 /** 导出时可选的媒体读取器。 */
@@ -99,6 +101,24 @@ function typefaceOf(font: string, fallback: string): string {
   return font === '' ? fallback : escapeXml(font)
 }
 
+/** 元素字体 → 是否含中文的查询表；缺省（未收集到字体）表示未知。 */
+type CjkLookup = ReadonlyMap<string, boolean | undefined>
+
+/**
+ * 一个 run 的东亚字体槽。
+ *
+ * 空字体走主题（`+mn-ea`，也就是默认黑体）；明确不含中文的族只用于西文，
+ * 中文同样回落到主题黑体——否则查看端只能拿一个没有汉字的族名逐字替换，
+ * 中文会变成宋体混排甚至缺字框。
+ * @param font - 元素字体族名。
+ * @param cjkOf - 族名 → 是否含中文。
+ * @returns `a:ea` 的 typeface 取值。
+ */
+function eastAsianOf(font: string, cjkOf: CjkLookup): string {
+  if (font === '') return '+mn-ea'
+  return cjkOf.get(font) === false ? '+mn-ea' : escapeXml(font)
+}
+
 function emu(px: number): number {
   return Math.round(px * EMU_PER_PX)
 }
@@ -127,7 +147,7 @@ function extensionOf(source: string): string {
   return ext in MEDIA_TYPES ? ext : 'png'
 }
 
-function textBody(element: Extract<PptElement, { kind: 'text' }>): string {
+function textBody(element: Extract<PptElement, { kind: 'text' }>, cjkOf: CjkLookup): string {
   const { text } = element
   const anchor = text.valign === 'middle' ? 'ctr' : text.valign === 'bottom' ? 'b' : 't'
   const align = text.align === 'center' ? 'ctr' : text.align === 'right' ? 'r' : 'l'
@@ -137,7 +157,7 @@ function textBody(element: Extract<PptElement, { kind: 'text' }>): string {
     const runProps = `<a:rPr lang="zh-CN" altLang="en-US" sz="${Math.round(text.size * 75)}"`
       + `${text.bold ? ' b="1"' : ''} dirty="0"><a:solidFill><a:srgbClr val="${srgb(text.color)}"/>`
       + `</a:solidFill><a:latin typeface="${typefaceOf(text.font, '+mn-lt')}"/>`
-      + `<a:ea typeface="${typefaceOf(text.font, '+mn-ea')}"/></a:rPr>`
+      + `<a:ea typeface="${eastAsianOf(text.font, cjkOf)}"/></a:rPr>`
     return `<a:p>${paragraphProps}<a:r>${runProps}<a:t>${escapeXml(line)}</a:t></a:r></a:p>`
   })
   return '<p:txBody><a:bodyPr wrap="square" lIns="0" tIns="0" rIns="0" bIns="0"'
@@ -146,14 +166,14 @@ function textBody(element: Extract<PptElement, { kind: 'text' }>): string {
 
 type BoxElement = Extract<PptElement, { kind: 'text' | 'rect' | 'ellipse' }>
 
-function shape(element: BoxElement, index: number): string {
+function shape(element: BoxElement, index: number, cjkOf: CjkLookup): string {
   const name = `Shape ${index + 2}`
   if (element.kind === 'text') {
     return `<p:sp><p:nvSpPr><p:cNvPr id="${index + 2}" name="${escapeXml(name)}"/>`
       + '<p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr>'
       + `<p:spPr>${xfrm(element)}<a:prstGeom prst="rect"><a:avLst/></a:prstGeom>`
       + '<a:noFill/><a:ln><a:noFill/></a:ln></p:spPr>'
-      + `${textBody(element)}</p:sp>`
+      + `${textBody(element, cjkOf)}</p:sp>`
   }
   const preset = element.kind === 'ellipse' ? 'ellipse' : 'rect'
   return `<p:sp><p:nvSpPr><p:cNvPr id="${index + 2}" name="${escapeXml(name)}"/>`
@@ -179,28 +199,28 @@ function picture(element: PptImageElement, index: number, relId: string): string
     + `<p:spPr>${xfrm(element)}<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr></p:pic>`
 }
 
-function tableCell(content: string, style: PptTableElement['text'], fill: string): string {
+function tableCell(content: string, style: PptTableElement['text'], fill: string, cjkOf: CjkLookup): string {
   const align = style.align === 'center' ? 'ctr' : style.align === 'right' ? 'r' : 'l'
   const paragraph = content === ''
     ? '<a:p><a:endParaRPr lang="zh-CN"/></a:p>'
     : `<a:p><a:pPr algn="${align}"/><a:r><a:rPr lang="zh-CN" sz="${Math.round(style.size * 75)}"`
       + `${style.bold ? ' b="1"' : ''} dirty="0"><a:solidFill><a:srgbClr val="${srgb(style.color)}"/>`
       + `</a:solidFill><a:latin typeface="${typefaceOf(style.font, '+mn-lt')}"/>`
-      + `<a:ea typeface="${typefaceOf(style.font, '+mn-ea')}"/></a:rPr>`
+      + `<a:ea typeface="${eastAsianOf(style.font, cjkOf)}"/></a:rPr>`
       + `<a:t>${escapeXml(content)}</a:t></a:r></a:p>`
   return '<a:tc><a:txBody><a:bodyPr/><a:lstStyle/>'
     + `${paragraph}</a:txBody><a:tcPr marL="91440" marR="91440" marT="45720" marB="45720" anchor="ctr">`
     + `<a:solidFill><a:srgbClr val="${srgb(fill)}"/></a:solidFill></a:tcPr></a:tc>`
 }
 
-function table(element: PptTableElement, index: number, pageBackground: string): string {
+function table(element: PptTableElement, index: number, pageBackground: string, cjkOf: CjkLookup): string {
   const total = element.columnWeights.reduce((sum, weight) => sum + weight, 0)
   const columns = element.columnWeights.map(weight => Math.max(1, Math.round(element.w * weight / total)))
   const rowHeight = Math.max(1, Math.round(element.h / element.rows))
   const grid = columns.map(width => `<a:gridCol w="${emu(width)}"/>`).join('')
   const rows = element.cells.map((row, rowIndex) => {
     const fill = element.header && rowIndex === 0 ? element.headerFill : pageBackground
-    const cells = row.map(cell => tableCell(cell.content, element.text, fill)).join('')
+    const cells = row.map(cell => tableCell(cell.content, element.text, fill, cjkOf)).join('')
     return `<a:tr h="${emu(rowHeight)}">${cells}</a:tr>`
   }).join('')
   const border = `<a:lnL w="9525"><a:solidFill><a:srgbClr val="${srgb(element.borderColor)}"/></a:solidFill></a:lnL>`
@@ -456,6 +476,7 @@ function slideXml(
   page: PptPage,
   media: ReadonlyMap<string, { relId: string; part: string }>,
   charts: { next: () => { relId: string; part: string } },
+  cjkOf: CjkLookup,
 ): { xml: string; items: string[]; chartParts: { part: string; xml: string }[] } {
   const theme = PPT_THEMES[deck.theme]
   const background = page.background ?? theme.background
@@ -473,20 +494,20 @@ function slideXml(
       return chartFrame(element, index, relId)
     }
     if (element.kind === 'line') return line(element, index)
-    if (element.kind === 'table') return table(element, index, background)
+    if (element.kind === 'table') return table(element, index, background, cjkOf)
     if (element.kind === 'image') {
       const rel = media.get(element.source)
       if (rel === undefined) {
         return shape({
           id: element.id, kind: 'rect', x: element.x, y: element.y,
           w: element.w, h: element.h, fill: theme.surface,
-        }, index)
+        }, index, cjkOf)
       }
       const fileName = rel.part.slice('ppt/media/'.length)
       items.push(relationship(rel.relId, IMAGE_REL, `../media/${fileName}`))
       return picture(element, index, rel.relId)
     }
-    return shape(element, index)
+    return shape(element, index, cjkOf)
   }).join('')
   return {
     xml: `${XML_DECL}\n<p:sld ${NS}><p:cSld><p:bg><p:bgPr><a:solidFill>`
@@ -646,6 +667,7 @@ function collectMedia(deck: PptDeck, options: PptxOptions): MediaRef[] {
 export function buildPptx(deck: PptDeck, options: PptxOptions = {}): Uint8Array {
   const encoder = new TextEncoder()
   const fonts = options.fonts ?? []
+  const cjkOf: CjkLookup = new Map(fonts.map(font => [font.family, font.cjk]))
   const media = collectMedia(deck, options)
   const byPart = new Map<string, MediaRef>()
   for (const entry of media) byPart.set(entry.part, entry)
@@ -689,7 +711,7 @@ export function buildPptx(deck: PptDeck, options: PptxOptions = {}): Uint8Array 
       if (part === undefined || !byPart.has(part)) continue
       used.set(element.source, { relId: `rId${used.size + 2}`, part })
     }
-    const slide = slideXml(deck, page, used, charts)
+    const slide = slideXml(deck, page, used, charts, cjkOf)
     chartParts.push(...slide.chartParts)
     entries.push({ path: `ppt/slides/slide${index + 1}.xml`, data: encoder.encode(slide.xml) })
     entries.push({ path: `ppt/slides/_rels/slide${index + 1}.xml.rels`, data: encoder.encode(rels(slide.items)) })

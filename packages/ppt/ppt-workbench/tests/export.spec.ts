@@ -258,6 +258,28 @@ describe('.pptx 导出', () => {
     expect(types).toContain('application/x-fontdata')
   })
 
+  it('不含中文的字体只写西文槽，中文回落到主题黑体', () => {
+    const deckWith = (font: string): PptDeck => ({
+      ...deck,
+      pages: [{
+        ...deck.pages[0]!,
+        elements: [{
+          id: 't1', kind: 'text', x: 10, y: 10, w: 600, h: 80,
+          text: { content: '中文 Latin 123', size: 28, color: '#16181d', bold: false, align: 'left', valign: 'top', font },
+        }],
+      }],
+    })
+    const latinOnly = readZip(buildPptx(deckWith('Chalkduster'), {
+      fonts: [{ family: 'Chalkduster', part: 'ppt/fonts/font1.fntdata', bytes: new Uint8Array([1]), cjk: false }],
+    })).find(entry => entry.path === 'ppt/slides/slide1.xml')?.data.toString('utf8') ?? ''
+    // 西文用所选族，中文交给主题默认黑体，避免查看端拿没有汉字的族名逐字替换。
+    expect(latinOnly).toContain('<a:latin typeface="Chalkduster"/><a:ea typeface="+mn-ea"/>')
+    const withChinese = readZip(buildPptx(deckWith('HarmonyOS Sans SC'), {
+      fonts: [{ family: 'HarmonyOS Sans SC', part: 'ppt/fonts/font1.fntdata', bytes: new Uint8Array([1]), cjk: true }],
+    })).find(entry => entry.path === 'ppt/slides/slide1.xml')?.data.toString('utf8') ?? ''
+    expect(withChinese).toContain('<a:latin typeface="HarmonyOS Sans SC"/><a:ea typeface="HarmonyOS Sans SC"/>')
+  })
+
   it('强调、退场与路径动画都写进 timing', () => {
     const animated: PptDeck = {
       ...deck,

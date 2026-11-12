@@ -27,6 +27,8 @@ export interface EmbeddedFont {
   readonly path: string
   /** 是否写入了子集而不是整字体。 */
   readonly subset: boolean
+  /** 字体是否自带中文字形；导出据此决定 `a:ea` 是否用这个族。 */
+  readonly cjk: boolean
 }
 
 /** 被跳过的字体与原因。 */
@@ -389,6 +391,70 @@ export function wrapEot(face: FontFace): Uint8Array | null {
 }
 
 /**
+ * 读 cmap 判断字体是否覆盖某个码位。
+ * 只认 format 4（BMP）与 format 12（UCS-4）两种子表：其余格式在系统字体里罕见，
+ * 读不出来就当作不覆盖，让调用方回落到主题字体，而不是赌它一定有。
+ * @param bytes - 单 face 的 TrueType 字节。
+ * @param tables - 已解析的表目录。
+ * @param codePoint - 要查的码位。
+ * @returns 能映射到非 0 字形时为 true。
+ */
+function coversCodePoint(bytes: Uint8Array, tables: Tables, codePoint: number): boolean {
+  const cmap = tables['cmap']
+  if (cmap === undefined) return false
+  const count = u16(bytes, cmap.offset + 2)
+  for (let index = 0; index < count; index += 1) {
+    const record = cmap.offset + 4 + index * 8
+    const offset = cmap.offset + u32(bytes, record + 4)
+    const format = u16(bytes, offset)
+    if (format === 4 && codePoint <= 0xffff) {
+      const segCount = u16(bytes, offset + 6) / 2
+      const ends = offset + 14
+      const starts = ends + segCount * 2 + 2
+      const deltas = starts + segCount * 2
+      const rangeOffsets = deltas + segCount * 2
+      for (let seg = 0; seg < segCount; seg += 1) {
+        const end = u16(bytes, ends + seg * 2)
+        if (codePoint > end) continue
+        const start = u16(bytes, starts + seg * 2)
+        if (codePoint < start) return false
+        const delta = u16(bytes, deltas + seg * 2)
+        const rangeOffset = u16(bytes, rangeOffsets + seg * 2)
+        if (rangeOffset === 0) return ((codePoint + delta) & 0xffff) !== 0
+        const glyph = u16(bytes, rangeOffsets + seg * 2 + rangeOffset + (codePoint - start) * 2)
+        return glyph !== 0 && ((glyph + delta) & 0xffff) !== 0
+      }
+      continue
+    }
+    if (format === 12) {
+      const groups = u32(bytes, offset + 12)
+      for (let group = 0; group < groups; group += 1) {
+        const at = offset + 16 + group * 12
+        const start = u32(bytes, at)
+        const end = u32(bytes, at + 4)
+        if (codePoint < start || codePoint > end) continue
+        return u32(bytes, at + 8) !== 0
+      }
+    }
+  }
+  return false
+}
+
+/**
+ * 字体是否自带中文（常用汉字「中」）字形。
+ *
+ * 导出用它决定 `a:ea`：不含中文的字体只用于西文，中文回落到主题默认黑体，
+ * 否则查看端会拿一个没有汉字的族名逐字替换，中文可能变成宋体混排或出现缺字框。
+ * @param bytes - 单 face 的 TrueType 字节（传未子集化的整字体，字符集不影响判断）。
+ * @returns 覆盖「中」时为 true。
+ */
+export function coversCjk(bytes: Uint8Array): boolean {
+  const tables = tableDirectory(bytes)
+  if (tables === null) return false
+  return coversCodePoint(bytes, tables, 0x4e2d)
+}
+
+/**
  * 收集工程里出现过的字体族。
  * @param deck - 演示文稿。
  * @returns 需要嵌入的族名集合（空串代表主题默认字体，不嵌入）。
@@ -506,6 +572,8 @@ export async function collectFonts(
       readonly: licence.readonly,
       path: face.path,
       subset: subset !== null,
+      // 用未子集化的整字体判断覆盖，避免「这页没写汉字」把族判成不支持中文。
+      cjk: coversCjk(face.bytes),
     })
   }
   return { fonts, skipped }
