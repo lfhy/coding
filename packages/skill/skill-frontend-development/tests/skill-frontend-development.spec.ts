@@ -17,8 +17,23 @@ const motionRecipeUrls = [
   'list-stagger.css',
   'feedback.css',
 ].map(name => new URL(`../assets/motion-recipes/${name}`, import.meta.url))
+const examplesIndexUrl = new URL('../assets/examples/index.md', import.meta.url)
+const exampleUrls = [
+  'tabs/Tabs.tsx',
+  'tabs/Tabs.module.css',
+  'dialog/Dialog.tsx',
+  'dialog/Dialog.module.css',
+  'toast/Toast.tsx',
+  'toast/Toast.module.css',
+  'pages/auth-page.tsx',
+  'pages/auth-page.module.css',
+  'pages/settings-page.tsx',
+  'pages/settings-page.module.css',
+  'pages/list-page.tsx',
+  'pages/list-page.module.css',
+].map(path => new URL(`../assets/examples/${path}`, import.meta.url))
 const resourcePrefix = '${INTERNAL_SKILL_DIR}/coding-skill-frontend-development'
-const description = '在创建或修改前端、网页、组件或用户界面时使用。遵循项目已有技术栈、组件、图标库和设计规范；没有既有图标库时按需读取内置参考并默认选用 Lucide，禁止手写或内联 SVG（除非确实缺少领域图标且已走项目图标抽象，且先用画图工具生成底板再转 SVG）；请求失败等短暂通知必须使用共享 Toast，长流程使用分步模态框，抽屉内使用子 Tab；列表页不整页滚动，搜索与筛选工具栏留在视口内，只让列表区域内部滚动，长列表使用虚拟滚动与无限滚动加载；列表不超出屏幕宽度，长名称截断成省略号且整行不换行，行高统一，列不够时按优先级隐藏；避免文字海报和页面／图标硬切；禁止把系统或开发者提示、技能、工具调用、Agent 计划、框架／库／包标识、内部路径、调试信息或内部状态写进用户界面；完成后加载 browser-use 检查真实渲染与交互。仅在用户明确要求具名视觉方向时配合 stylekit，不能覆盖产品规范。'
+const description = '在创建或修改前端、网页、组件或用户界面时使用。遵循项目已有技术栈、组件、图标库和设计规范；没有既有图标库时按需读取内置参考并默认选用 Lucide，禁止手写或内联 SVG（除非确实缺少领域图标且已走项目图标抽象，且先用画图工具生成底板再转 SVG）；请求失败等短暂通知必须使用共享 Toast，长流程使用分步模态框，抽屉内使用子 Tab；列表页不整页滚动，搜索与筛选工具栏留在视口内，只让列表区域内部滚动，长列表使用虚拟滚动与无限滚动加载；列表不超出屏幕宽度，长名称截断成省略号且整行不换行，行高统一，列不够时按优先级隐藏；缺少共享组件时直接抄内置案例（子 Tab、弹层、Toast、认证页、设置页含修改密码弹窗、列表页），并保持其 ARIA 与键盘行为；避免文字海报和页面／图标硬切；禁止把系统或开发者提示、技能、工具调用、Agent 计划、框架／库／包标识、内部路径、调试信息或内部状态写进用户界面；完成后加载 browser-use 检查真实渲染与交互。仅在用户明确要求具名视觉方向时配合 stylekit，不能覆盖产品规范。'
 
 describe('bundled frontend-development skill', () => {
   it('registers and loads its published instructions', async () => {
@@ -63,6 +78,35 @@ describe('bundled frontend-development skill', () => {
       expect(loaded.content).toContain('implementation-facing instructions, prompt fragments, debugging vocabulary, or process narration')
       expect(loaded.content).toContain('not implementation prompts or internal process narration')
       expect(loaded.content).toContain('browser-use')
+      expect(loaded.content).toContain('assets/examples/index.md')
+      expect(loaded.content).toContain('Copyable examples')
+      expect(loaded.content).toContain('map its `--ui-*` seams onto the product')
+      const exampleIndex = await readFile(examplesIndexUrl, 'utf8')
+      expect(exampleIndex).toContain('tabs/Tabs.tsx')
+      expect(exampleIndex).toContain('pages/settings-page.tsx')
+      expect(exampleIndex).toContain('never keep a private copy')
+      expect(loaded.content).toContain('One shared copy per concept')
+      const [tabsUrl, tabsCssUrl, dialogUrl, dialogCssUrl, toastUrl, toastCssUrl, authUrl, authCssUrl,
+        settingsUrl, settingsCssUrl, listUrl, listCssUrl] = exampleUrls
+      expect(await readFile(tabsUrl!, 'utf8')).toContain('role="tabpanel"')
+      expect(await readFile(tabsUrl!, 'utf8')).toContain('aria-selected')
+      expect(await readFile(tabsCssUrl!, 'utf8')).toContain('--ui-border')
+      expect(await readFile(dialogUrl!, 'utf8')).toContain('aria-modal="true"')
+      expect(await readFile(dialogCssUrl!, 'utf8')).toContain('100dvh')
+      expect(await readFile(toastUrl!, 'utf8')).toContain('aria-live="polite"')
+      expect(await readFile(toastCssUrl!, 'utf8')).toContain('--ui-border')
+      // 认证页是单列居中卡片，占满视口高度、宽度 400px 上限。
+      expect(await readFile(authUrl!, 'utf8')).toContain('className={styles.page}')
+      expect(await readFile(authCssUrl!, 'utf8')).toContain('min-height: 100dvh')
+      expect(await readFile(authCssUrl!, 'utf8')).toContain('width: min(400px, 100%)')
+      // 设置页：竖向子 Tab + 修改密码按钮打开弹窗，而不是把表单平铺在页面上。
+      expect(await readFile(settingsUrl!, 'utf8')).toContain('orientation="vertical"')
+      expect(await readFile(settingsUrl!, 'utf8')).toContain('<Dialog open={changing}')
+      expect(await readFile(settingsCssUrl!, 'utf8')).toContain('--ui-accent')
+      // 列表页：页面 100dvh，工具栏在滚动区之外，行单行省略。
+      expect(await readFile(listUrl!, 'utf8')).toContain('role="list"')
+      expect(await readFile(listCssUrl!, 'utf8')).toContain('grid-template-columns: minmax(0, 1fr)')
+      expect(await readFile(listCssUrl!, 'utf8')).toContain('text-overflow: ellipsis')
       expect(loaded.content).toContain('load the `stylekit` skill')
       expect(loaded.content).toContain('followed a `stylekit` style spec')
       expect(await readFile(motionIndexUrl, 'utf8')).toContain('view-switch.css')

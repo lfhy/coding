@@ -1,0 +1,98 @@
+.page {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  gap: 16px;
+  padding: 20px;
+  background: var(--ui-bg);
+  color: var(--ui-text);
+}
+
+.header {
+  flex: 1 1 100%;
+}
+
+.title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+  border: 1px solid var(--ui-border);
+  border-radius: 12px;
+  background: var(--ui-surface);
+}
+
+.heading {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.hint {
+  margin: 0;
+  color: var(--ui-text-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding-top: 8px;
+  border-top: 1px solid var(--ui-border);
+}
+
+.rowTitle {
+  font-size: 13px;
+}
+
+.rowHint {
+  color: var(--ui-text-muted);
+  font-size: 12px;
+}
+
+.action {
+  flex: none;
+  padding: 7px 12px;
+  border: 1px solid var(--ui-border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ui-text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.action:hover {
+  border-color: var(--ui-accent);
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--ui-text-muted);
+  font-size: 12px;
+}
+
+.field input {
+  padding: 8px 10px;
+  border: 1px solid var(--ui-border);
+  border-radius: 8px;
+  background: var(--ui-bg);
+  color: var(--ui-text);
+  font: inherit;
+}
