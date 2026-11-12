@@ -333,19 +333,27 @@ describe('PPT 工作台面板', () => {
     expect(en.themeInference).toBe('Clear briefing')
   })
 
-  it('字体下拉列出本机已装字体，默认显示鸿蒙黑体并提交所选族名', () => {
+  it('字体选择器展开后按字体预览，并提交所选族名', () => {
     const project = deck()
     const panel = mount({
       ...ready, project, selectedId: 't1', fonts: ['黑体', 'Songti SC'],
     }, true, zh)
     fireEvent.click(screen.getByRole('button', { name: '属性' }))
-    const font = screen.getByRole('combobox', { name: '字体' }) as HTMLSelectElement
-    // 元素 font 为空表示跟随默认，下拉据此显示鸿蒙黑体；本机字体排在它后面。
-    expect(font.value).toBe('HarmonyOS Sans SC')
-    expect(screen.getByRole('option', { name: 'HarmonyOS Sans SC（默认）' })).toBeTruthy()
-    expect(screen.getByRole('option', { name: 'Songti SC' })).toBeTruthy()
-    fireEvent.change(font, { target: { value: 'Songti SC' } })
+    // 元素 font 为空表示跟随默认，按钮据此显示鸿蒙黑体；本机字体排在它后面。
+    const trigger = screen.getByRole('combobox', { name: '字体' })
+    expect(trigger.textContent).toContain('HarmonyOS Sans SC')
+    fireEvent.click(trigger)
+    const options = within(screen.getByRole('listbox', { name: '字体' })).getAllByRole('option')
+    expect(options.map(option => option.textContent)).toEqual([
+      '永和 Aa 123HarmonyOS Sans SC（默认）',
+      '永和 Aa 123黑体',
+      '永和 Aa 123Songti SC',
+    ])
+    // 每一项都用它自己的字体渲染示例字与族名，选之前就能看出字形。
+    expect(options[2]?.querySelector('span')?.getAttribute('style')).toContain('Songti SC')
+    fireEvent.click(options[2]!)
     expect(panel.props.updateElement).toHaveBeenCalledWith('t1', { text: { font: 'Songti SC' } })
+    expect(screen.queryByRole('listbox', { name: '字体' })).toBeNull()
   })
 
   it('从属性切到插入菜单后 Escape 不留下悬浮操作层', () => {
