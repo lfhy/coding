@@ -46,6 +46,9 @@ describe('addCodingPromptSections', () => {
       expect(rendered).toContain('主题跟随系统当前的亮暗设置')
       expect(rendered).toContain('取不到时用亮色兜底')
       expect(rendered).toContain('两套颜色分别放在独立的 themes 目录')
+      expect(rendered).toContain('用统一的子 Tab（顶部或左侧）分层，一次只显示一层')
+      expect(rendered).toContain('修改密码、删除、导出、批量替换')
+      expect(rendered).toContain('列表页的搜索与筛选工具栏固定在视口内')
       expect(rendered).not.toContain('未经要求不提交')
     } finally {
       await ctx.fiber.dispose()
