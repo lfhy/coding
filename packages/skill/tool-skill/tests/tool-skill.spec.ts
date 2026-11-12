@@ -10,6 +10,7 @@ import SystemPrompt, { renderPrompt } from 'coding-system-prompt'
 import ToolRuntime, { defineContentToolFixture } from 'coding-tools'
 import AgentRegistry, { agentEvents, Inbox, type Agent, type PreStepDecision } from 'coding-agent'
 import SkillRegistry from 'coding-skill'
+import LocalFileSystem from 'coding-fs-local'
 import * as SkillFileSystem from 'coding-skill-filesystem'
 import * as toolSkill from 'coding-tool-skill'
 
@@ -168,7 +169,7 @@ describe('dsh-tool-skill', () => {
     ctx.skills.register({ name: 'lifecycle-skill', description: 'Lifecycle', source: 'runtime', content: 'body' })
 
     const fiber = await ctx.plugin(toolSkill)
-    expect(ctx.tools.schemas().map(tool => tool.name)).toEqual(['skill'])
+    expect(ctx.tools.schemas().map(tool => tool.name)).toEqual(['skill', 'skill_read'])
     expect(await composePrefix(ctx, '/workspace')).toHaveLength(1)
     expect(ctx.tools.get('skill')?.presentCall?.({ name: 'project-skill' })).toEqual({
       card: 'generic',
@@ -181,7 +182,7 @@ describe('dsh-tool-skill', () => {
     expect(await composePrefix(ctx, '/workspace')).toEqual([])
 
     toolSkill.apply(ctx)
-    expect(ctx.tools.schemas().map(tool => tool.name)).toEqual(['skill'])
+    expect(ctx.tools.schemas().map(tool => tool.name)).toEqual(['skill', 'skill_read'])
   })
 
   it('forwards the step abort signal to skill discovery', async () => {
@@ -311,7 +312,7 @@ describe('dsh-tool-skill', () => {
     const fiber = await ctx.plugin(toolSkill)
 
     const section = (await ctx.systemPrompt.assemble()).sections.find(item => item.name === 'tool:skill')
-    expect(section?.text).toBe('Check the session skill catalog before acting, and load any skill that plausibly covers the task with the `skill` tool before your first action; follow the loaded instructions rather than the catalog summaries.')
+    expect(section?.text).toBe('Check the session skill catalog before acting, and load any skill that plausibly covers the task with the `skill` tool before your first action; follow the loaded instructions rather than the catalog summaries. Read files bundled with a skill (examples, references, assets) with the `skill_read` tool and a path relative to that skill, not with shell commands or absolute paths.')
 
     await fiber.dispose()
     expect((await ctx.systemPrompt.assemble()).sections.some(item => item.name === 'tool:skill')).toBe(false)
@@ -928,6 +929,85 @@ describe('dsh-tool-skill', () => {
     expect(opaque.content[0].text).toContain('<skill_resources>\nResources for this skill: runtime memory\nLoad referenced resources only as needed.\n</skill_resources>')
     expect(url.content[0].text).toContain('<skill_resources>\nBase URL for this skill: https://skills.example.test/url-skill\nResolve relative URLs mentioned by this skill against the base URL before using them. Load referenced resources only as needed.\n</skill_resources>')
     expect(provider.content[0].text).toContain('<skill_resources>\nResources for this skill are managed by provider "runtime".\nLoad referenced resources only as needed.\n</skill_resources>')
+  })
+
+  it('skill_read 只按技能资源根解析相对路径', async () => {
+    const home = await tempDir('tool-skill-read')
+    const root = join(home, 'resources')
+    await mkdir(join(root, 'examples'), { recursive: true })
+    await writeFile(join(root, 'examples/index.md'), '# Copyable examples\n')
+    await writeFile(join(home, 'secret.txt'), 'outside the resource root')
+    const ctx = await setup(home)
+    ctx.skills.register({
+      name: 'file-skill',
+      description: 'File skill',
+      source: 'runtime',
+      provider: 'runtime',
+      resourceBase: { kind: 'directory', path: root },
+      content: 'File instructions.',
+    })
+
+    const read = await ctx.tools.execute({
+      signal: testToolSignal, callId: CallId('r1'), name: 'skill_read',
+      arguments: { name: 'file-skill', path: './examples/index.md' },
+    })
+    expect(read.isError).toBe(false)
+    expect(read.content[0]).toEqual({ type: 'text', text: '# Copyable examples\n' })
+
+    // 目录要说清里面有什么，而不是只报「读不了」。
+    const directory = await ctx.tools.execute({
+      signal: testToolSignal, callId: CallId('r2'), name: 'skill_read',
+      arguments: { name: 'file-skill', path: 'examples' },
+    })
+    expect(directory.isError).toBe(true)
+    expect(directory.error?.message).toContain('is a directory; files: index.md')
+
+    // 绝对路径、`..` 段与未知文件都在解析前被拦下。
+    for (const path of ['/etc/passwd', '../secret.txt', 'examples/../../secret.txt']) {
+      const blocked = await ctx.tools.execute({
+        signal: testToolSignal, callId: CallId(`r-${path}`), name: 'skill_read',
+        arguments: { name: 'file-skill', path },
+      })
+      expect(blocked.isError).toBe(true)
+      expect(blocked.error?.message).toContain('relative path inside the skill resource directory')
+    }
+    const missing = await ctx.tools.execute({
+      signal: testToolSignal, callId: CallId('r3'), name: 'skill_read',
+      arguments: { name: 'file-skill', path: 'examples/none.md' },
+    })
+    expect(missing.isError).toBe(true)
+    const unknownSkill = await ctx.tools.execute({
+      signal: testToolSignal, callId: CallId('r4'), name: 'skill_read',
+      arguments: { name: 'nope', path: 'examples/index.md' },
+    })
+    expect(unknownSkill.isError).toBe(true)
+    expect(unknownSkill.error?.message).toContain('unknown or no longer available')
+  })
+
+  it('skill_read 通过虚拟前缀读取内置技能的 alias 资源', async () => {
+    const home = await tempDir('tool-skill-read-alias')
+    const root = join(home, 'bundled')
+    await mkdir(join(root, 'examples'), { recursive: true })
+    await writeFile(join(root, 'examples/index.md'), '# Alias examples\n')
+    const ctx = await setup(home)
+    await ctx.plugin(LocalFileSystem, { cwd: home })
+    const prefix = '${INTERNAL_SKILL_DIR}/demo-skill'
+    ctx.fs.registerPathAlias(prefix, root)
+    ctx.skills.register({
+      name: 'alias-skill',
+      description: 'Alias skill',
+      source: 'bundled',
+      provider: 'demo',
+      resourceBase: { kind: 'alias', path: prefix },
+      content: 'Alias instructions.',
+    })
+
+    const read = await ctx.tools.execute({
+      signal: testToolSignal, callId: CallId('a1'), name: 'skill_read',
+      arguments: { name: 'alias-skill', path: 'examples/index.md' },
+    })
+    expect(read.isError).toBe(false)
+    expect(read.content[0]).toEqual({ type: 'text', text: '# Alias examples\n' })
   })
 
   it('rejects an unknown resource-base kind at the canonical output boundary', async () => {

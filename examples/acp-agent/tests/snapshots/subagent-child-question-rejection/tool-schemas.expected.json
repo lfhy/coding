@@ -385,6 +385,27 @@
       }
     },
     {
+      "name": "skill_read",
+      "description": "Read a file bundled with a skill (examples, references, recipes, assets). The path is relative to that skill's resource root, for example \"examples/index.md\". Use this instead of file-system or shell tools when reading bundled skill files.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "The exact skill name from the available skills list."
+          },
+          "path": {
+            "type": "string",
+            "description": "File path relative to the skill resource root, e.g. \"examples/index.md\"."
+          }
+        },
+        "required": [
+          "name",
+          "path"
+        ]
+      }
+    },
+    {
       "name": "subagent",
       "description": "Delegate a self-contained task to a subagent (a separate agent that works in its own context) to offload focused, independent work — research, a scoped implementation, an analysis — so it does not consume this conversation's context. The subagent returns its result, not its intermediate steps. Give it a complete, standalone prompt: it does not see this conversation. This tool runs in the background by default, immediately returns a durable subagent id, and keeps the child conversation available for later turns. When that run settles, the runtime sends the parent a notice containing its outcome and any final assistant message; `send_message` starts a later turn in the same child conversation. Set `run_in_background: false` only when your next action depends on receiving the result.",
       "parameters": {

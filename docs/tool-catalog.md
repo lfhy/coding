@@ -39,7 +39,7 @@ This table connects model-visible tool names to the plugin package and service s
 | `coding-tool-context-compact` | `context_compact` | `ctx.tools`, `ctx.compaction` | `tool/call`, `compaction/* transaction events for the replaced range`, `tool/result` | - | The tool only names what the remaining work must keep; range selection, the open-turn transaction, and the summary stay with the mounted backend. `compactContext` compacts by span, so unrelated nodes appended while the summary runs survive the replacement. |
 | `coding-tool-lsp` | `lsp` | `ctx.tools`, `ctx.lsp`, `ctx.systemPrompt` | `tool/call`, `tool/result` | - | The lsp tool keeps provider selection and language-server subprocesses behind ctx.lsp, so its model-visible schema stays stable across providers. Requires a registered provider (e.g. `coding-lsp-stdio`) at runtime; without one, a query returns the structured `LSP_UNAVAILABLE` error rather than changing the schema. |
 | `coding-tool-ralph` | `ralph` | `ctx.tools`, `ctx.workflowEngine`, `ctx.subagents`, `ctx.systemPrompt`, `a calling Agent (exec.agent parents every fresh round)` | `tool/call`, `tool/result`, `workflow and child session events during execution` | - | A fixed foreground workflow starts one fresh structured child per round; the model selects only the immutable objective and an optional round cap. |
-| `coding-tool-skill` | `skill` | `ctx.tools`, `ctx.agents`, `ctx.skills` | `tool/call`, `tool/result`, `user/message replacement catalogs via agent.inject()` | - | - |
+| `coding-tool-skill` | `skill`, `skill_read` | `ctx.tools`, `ctx.agents`, `ctx.skills` | `tool/call`, `tool/result`, `user/message replacement catalogs via agent.inject()` | - | - |
 | `coding-tool-session-query` | `session_event_read`, `session_event_search`, `session_event_trace`, `session_search`, `session_trace` | `ctx.tools`, `ctx.systemPrompt`, `ctx.sessionQuery`, `a calling Agent for workspace authority` | `tool/call`, `tool/result` | - | The five read-only tools hide provider cursors and authorize every result from the immutable calling agent session. The package is opt-in; compositions that need enforced deadlines or bounded inline output also mount the generic timeout or spill policies. |
 | `coding-tool-subagent` | `subagent` | `ctx.tools`, `ctx.subagents`, `ctx.systemPrompt` | `tool/call`, `tool/result`, `child session events through the chosen provider` | `subagent`, `subagent_fork` | The registered tool name is the load-time `toolName` config (default `subagent`); the schema above is that default. The shipped compositions load this package once per subagent backend, so the model additionally sees `subagent_fork` bound to the fork backend. Each instance's description, `run_in_background` parameter, and system-prompt policy follow its own `backgroundMode` and `enableRunInBackground`, so the two shipped schemas are not identical: `subagent` is `continuable` and defaults omitted calls to background with automatic settlement delivery, while `subagent_fork` stays `one-shot` and defaults them to foreground — see `packages/bundle/base/cordis.patch.yml` and `examples/acp-agent/cordis.yml`. |
 | `coding-tool-subagent-control` | `followup_task`, `interrupt_agent`, `list_agents`, `send_message`, `wait_agent` | `ctx.tools`, `ctx.subagents`, `ctx.agents and ctx.sessionProjections (list_agents only); a calling Agent inbox (wait_agent only)` | `tool/call`, `tool/result`, `child session events through ctx.subagents` | - | The globally named control tools over continuable background subagents: provider-bound `tool-subagent` instances register distinct delegation tools, while this package registers `send_message` and `interrupt_agent` once, plus `list_agents` from its separately loaded `/list-agents` plugin (whose catalog rows use the sessionProjections and live Agent registries) and `wait_agent` from `/wait-agent`, which blocks on the inbox of the calling Agent instead of polling. The `wait_agent` schema above is rendered with its default budget; a deployment configures `defaultTimeoutMs`, `minTimeoutMs`, and `maxTimeoutMs`. |
@@ -4224,6 +4224,32 @@ Load the full instructions for an available skill. Call this with the exact skil
   },
   "required": [
     "name"
+  ]
+}
+```
+
+Source: [`packages/skill/tool-skill/src/index.ts`](../packages/skill/tool-skill/src/index.ts)
+
+### `skill_read`
+
+Read a file bundled with a skill (examples, references, recipes, assets). The path is relative to that skill's resource root, for example "examples/index.md". Use this instead of file-system or shell tools when reading bundled skill files.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "The exact skill name from the available skills list."
+    },
+    "path": {
+      "type": "string",
+      "description": "File path relative to the skill resource root, e.g. \"examples/index.md\"."
+    }
+  },
+  "required": [
+    "name",
+    "path"
   ]
 }
 ```

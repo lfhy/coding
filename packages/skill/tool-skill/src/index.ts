@@ -5,7 +5,10 @@
  */
 
 import { createHash } from 'node:crypto'
+import { readFile, readdir, realpath, stat } from 'node:fs/promises'
+import { join, sep } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
+import type {} from 'coding-fs'
 import z from '@deepseek-ai/schemastery'
 import type { Agent, PreStepDecision } from 'coding-agent'
 import { defineTool, type ToolDefinition } from 'coding-tools'
@@ -20,6 +23,96 @@ import {
   type SkillInvocationSource,
   type SkillSummary,
 } from 'coding-skill'
+
+/**
+ * `skill_read` 接受的最大文件字节数：内置技能的资源是示例与参考，超过这个尺寸说明读错了目标。
+ */
+const SKILL_READ_MAX_BYTES = 256 * 1024
+
+/** 资源根下一个文件的内容与字节数。 */
+interface BundledFile {
+  readonly content: string
+  readonly bytes: number
+}
+
+/**
+ * 校验技能资源的相对路径：拒绝绝对路径、盘符、`.`／`..` 段与空段。
+ * @param path - 模型给出的路径。
+ * @returns 归一化后的相对路径；不安全时 undefined。
+ */
+function skillResourcePath(path: string): string | undefined {
+  const normalized = path.trim().replace(/\\/gu, '/').replace(/^\.\//u, '')
+  if (normalized === '' || normalized.startsWith('/') || /^[A-Za-z]:/u.test(normalized)) return undefined
+  const segments = normalized.split('/')
+  if (segments.some(segment => segment === '' || segment === '.' || segment === '..')) return undefined
+  return segments.join('/')
+}
+
+/**
+ * 收尾：限制尺寸并把二进制拒掉，让模型看到的是可读文本而不是乱码。
+ * @param content - 读出的内容。
+ * @param size - 已知字节数；缺省按 UTF-8 长度计算。
+ * @returns 内容与字节数。
+ */
+function bundledFile(content: string, size?: number): BundledFile {
+  const bytes = size ?? Buffer.byteLength(content, 'utf8')
+  if (bytes > SKILL_READ_MAX_BYTES) {
+    throw new Error(`file is ${bytes} bytes; skill_read reads at most ${SKILL_READ_MAX_BYTES} bytes`)
+  }
+  if (content.includes('\u0000')) throw new Error('skill_read returns text files only; this file looks binary')
+  return { content, bytes }
+}
+
+/**
+ * 读 `directory` 型资源：直接用真实路径，并确认没有顺着符号链接跑出资源根。
+ * @param base - 资源根目录。
+ * @param relative - 资源根下的相对路径。
+ * @returns 文件内容。
+ */
+async function readBundledFile(base: string, relative: string): Promise<BundledFile> {
+  const root = await realpath(base).catch(() => undefined)
+  if (root === undefined) throw new Error(`skill resource directory is unavailable: ${base}`)
+  const target = await realpath(join(root, relative))
+  if (target !== root && !target.startsWith(`${root}${sep}`)) {
+    throw new Error(`path escapes the skill resource directory: ${relative}`)
+  }
+  const info = await stat(target)
+  if (info.isDirectory()) {
+    const entries = await readdir(target).catch(() => [] as string[])
+    throw new Error(`"${relative}" is a directory; files: ${entries.slice(0, 20).join(', ')}`)
+  }
+  if (!info.isFile()) throw new Error(`"${relative}" is not a regular file`)
+  if (info.size > SKILL_READ_MAX_BYTES) {
+    throw new Error(`file is ${info.size} bytes; skill_read reads at most ${SKILL_READ_MAX_BYTES} bytes`)
+  }
+  return bundledFile(await readFile(target, 'utf8'), info.size)
+}
+
+/**
+ * 读 `alias` 型资源：把虚拟前缀交给宿主文件系统服务解析，内置技能都走这条路。
+ * @param ctx - 宿主上下文，需带 `fs` 服务。
+ * @param base - 注册过的虚拟前缀。
+ * @param relative - 前缀下的相对路径。
+ * @param signal - 取消信号。
+ * @returns 文件内容。
+ */
+async function readAliasedFile(
+  ctx: Context,
+  base: string,
+  relative: string,
+  signal: AbortSignal | undefined,
+): Promise<BundledFile> {
+  const fs = ctx.get('fs')
+  if (fs === undefined) throw new Error('this Host has no filesystem service, so bundled skill files cannot be read')
+  const target = await fs.resolve(`${base.replace(/\/+$/u, '')}/${relative}`, signal === undefined ? {} : { signal })
+  const info = await fs.stat(target, signal)
+  if (info === undefined) throw new Error(`not found: ${relative}`)
+  if (info.type === 'directory') {
+    const entries = await fs.listDir(target, signal)
+    throw new Error(`"${relative}" is a directory; files: ${entries.slice(0, 20).map(entry => entry.name).join(', ')}`)
+  }
+  return bundledFile(await fs.readText(target, signal), info.size)
+}
 
 export const name = 'tool-skill'
 export const inject = ['agents', 'tools', 'skills', 'systemPrompt']
@@ -84,7 +177,7 @@ export function apply(ctx: Context, config: Config = {}): void {
   ctx.systemPrompt.section({
     name: 'tool:skill',
     order: 108,
-    text: 'Check the session skill catalog before acting, and load any skill that plausibly covers the task with the `skill` tool before your first action; follow the loaded instructions rather than the catalog summaries.',
+    text: 'Check the session skill catalog before acting, and load any skill that plausibly covers the task with the `skill` tool before your first action; follow the loaded instructions rather than the catalog summaries. Read files bundled with a skill (examples, references, assets) with the `skill_read` tool and a path relative to that skill, not with shell commands or absolute paths.',
   })
 
   const skillTool = defineTool({
@@ -177,6 +270,52 @@ export function apply(ctx: Context, config: Config = {}): void {
   })
   ctx.tools.register(skillTool)
   catalogToolDefinitions.add(skillTool)
+
+  const skillReadTool = defineTool({
+    name: 'skill_read',
+    description: 'Read a file bundled with a skill (examples, references, recipes, assets). The path is relative to that skill\'s resource root, for example "examples/index.md". Use this instead of file-system or shell tools when reading bundled skill files.',
+    parameters: {
+      name: { type: 'string', required: true, description: 'The exact skill name from the available skills list.' },
+      path: { type: 'string', required: true, description: 'File path relative to the skill resource root, e.g. "examples/index.md".' },
+    },
+    output: {
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          name: { type: 'string', required: true },
+          path: { type: 'string', required: true },
+          bytes: { type: 'number', required: true },
+          content: { type: 'string', required: true },
+        },
+      },
+      render: (_args: unknown, value: { content: string }) => [{ type: 'text' as const, text: value.content }],
+    },
+    async execute(args, exec) {
+      const lookup = { cwd: exec.agent?.session.header.cwd, signal: exec.signal, scope: exec.agent }
+      const skill = await ctx.skills.get(args.name, lookup)
+      if (skill === undefined) throw new Error(`skill "${args.name}" is unknown or no longer available`)
+      const relative = skillResourcePath(args.path)
+      if (relative === undefined) {
+        throw new Error(`path must be a relative path inside the skill resource directory, without "." or ".." segments: ${args.path}`)
+      }
+      if (skill.resourceBase === undefined) throw new Error(`skill "${args.name}" ships no files`)
+      if (skill.resourceBase.kind === 'url') {
+        throw new Error(`skill "${args.name}" keeps its files at ${skill.resourceBase.url}; read them over the network instead`)
+      }
+      if (skill.resourceBase.kind === 'opaque') {
+        throw new Error(`skill "${args.name}" resources are managed by its provider: ${skill.resourceBase.description}`)
+      }
+      const read = skill.resourceBase.kind === 'directory'
+        ? await readBundledFile(skill.resourceBase.path, relative)
+        : await readAliasedFile(ctx, skill.resourceBase.path, relative, exec.signal)
+      return { name: skill.name, path: relative, bytes: read.bytes, content: read.content }
+    },
+    presentCall(args) {
+      return { card: 'generic', title: `Read skill file ${args.name}/${args.path}`, kind: 'read', rawInput: args.path }
+    },
+  })
+  ctx.tools.register(skillReadTool)
 
   // 用户消息中的 /name 手势独立于模型工具可见性；用户专用技能也经此入口加载。
   // 先向下游委托，目录等背景上下文排在已加载正文之前；同一步骤若有其他实例已注入同名正文，则沿用它。

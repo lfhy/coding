@@ -32,25 +32,28 @@
   ],
   "license": "MIT",
   "peerDependencies": {
+    "@deepseek-ai/cordis": "workspace:^",
     "coding-agent": "workspace:^",
+    "coding-fs": "workspace:^",
     "coding-invariants": "workspace:^",
     "coding-llm": "workspace:^",
     "coding-skill": "workspace:^",
-    "coding-tools": "workspace:^",
-    "@deepseek-ai/cordis": "workspace:^"
+    "coding-tools": "workspace:^"
   },
   "dependencies": {
     "@deepseek-ai/schemastery": "workspace:^"
   },
   "devDependencies": {
+    "@deepseek-ai/cordis": "workspace:^",
     "coding-agent": "workspace:^",
+    "coding-fs": "workspace:^",
+    "coding-fs-local": "workspace:^",
     "coding-invariants": "workspace:^",
     "coding-llm": "workspace:^",
     "coding-scope": "workspace:^",
     "coding-session": "workspace:^",
     "coding-skill": "workspace:^",
     "coding-skill-filesystem": "workspace:^",
-    "coding-tools": "workspace:^",
-    "@deepseek-ai/cordis": "workspace:^"
+    "coding-tools": "workspace:^"
   }
 }

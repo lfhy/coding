@@ -4,11 +4,15 @@ Use this skill when creating or modifying a frontend, web page, component, or us
 
 ## Reading bundled files
 
-The resource prefix `${INTERNAL_SKILL_DIR}/coding-skill-frontend-development` already points at this skill's
-`assets/` directory. Read a bundled file by passing the prefix plus the path shown after each file name below,
-for example `${INTERNAL_SKILL_DIR}/coding-skill-frontend-development/examples/index.md`. Never append `assets/`
-a second time, and never resolve the prefix with a shell command: it is a workspace alias understood by the file
-tools, not an environment variable, so `ls` or `cat` on it reports "not found".
+Read a bundled file with the `skill_read` tool: `skill_read { "name": "frontend-development", "path": "examples/index.md" }`.
+Paths are relative to this skill's resource root, never absolute and never containing `..`.
+
+When the current host has no `skill_read` tool, fall back to the resource prefix shown in `<skill_resources>`: pass
+that prefix verbatim plus the same relative path, for example
+`${INTERNAL_SKILL_DIR}/coding-skill-frontend-development/examples/index.md`. The prefix already points at this
+skill's `assets/` directory, so never append `assets/` a second time, and never resolve it with a shell command: it
+is a workspace alias understood by the file tools, not an environment variable, so `ls` or `cat` on it reports
+"not found".
 
 ## Before editing
 

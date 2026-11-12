@@ -54,7 +54,7 @@ describe('gen-tool-catalog collectToolCatalog', () => {
       'pwsh', 'pwsh', 'ralph',
       'read', 'read_image', 'report', 'run_code', 'schedule_create', 'schedule_delete', 'schedule_list',
       'send_message', 'send_message', 'session_event_read', 'session_event_search', 'session_event_trace',
-      'session_search', 'session_trace', 'skill', 'spawn_teammate', 'str_replace_editor', 'subagent',
+      'session_search', 'session_trace', 'skill', 'skill_read', 'spawn_teammate', 'str_replace_editor', 'subagent',
       'team_task_create', 'team_task_get', 'team_task_list', 'team_task_update', 'terminal_close', 'terminal_list',
       'terminal_open', 'terminal_read', 'terminal_send', 'terminal_signal', 'todo_write', 'update_goal',
       'wait_agent', 'wait_agent', 'web_fetch', 'web_search', 'workflow', 'write', 'write_stdin',

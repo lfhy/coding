@@ -79,8 +79,9 @@ describe('bundled frontend-development skill', () => {
       expect(loaded.content).toContain('not implementation prompts or internal process narration')
       expect(loaded.content).toContain('browser-use')
       // 资源前缀已指向 assets 目录：正文必须给相对路径，并写明不要重复拼 assets/、不要用 shell 解析前缀。
+      expect(loaded.content).toContain('Read a bundled file with the `skill_read` tool')
       expect(loaded.content).toContain('${INTERNAL_SKILL_DIR}/coding-skill-frontend-development/examples/index.md')
-      expect(loaded.content).toContain('Never append `assets/`\na second time')
+      expect(loaded.content).toContain('never append `assets/` a second time')
       expect(loaded.content).toContain('not an environment variable')
       expect(loaded.content).toContain('](examples/index.md)')
       expect(loaded.content).not.toContain('assets/examples/index.md')

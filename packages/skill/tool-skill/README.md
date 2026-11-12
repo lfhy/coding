@@ -1,6 +1,6 @@
 # coding-tool-skill
 
-面向模型的 skill（技能）目录和 `skill` 工具。
+面向模型的 skill（技能）目录、`skill` 加载工具与 `skill_read` 资源读取工具。
 
 需要 `ctx.agents`、`ctx.tools`、`ctx.skills` 和 `ctx.systemPrompt`（`inject: ['agents', 'tools', 'skills', 'systemPrompt']`）。
 
@@ -24,11 +24,28 @@
 
 执行使用调用 agent 的 `session.header.cwd`，使结果随工作区变化的提供方能够解析出胜出的 skill。成功调用返回规范形式的 `{ name, provider, resourceBase?, content }`，其中不包含目录排名和提供方内部机制；其 Native 渲染器会生成一个文本结果，其中包含 `<skill_content name="...">`、`<skill_resources>` 和 `<skill_instructions>`。
 
-资源指引只会根据 `resourceBase` 解析指令显式引用的路径或 URL；脚本、参考资料和资源文件按需加载，结果不会列举 skill 目录。本地提供方可以提供目录，随包内置技能提供 `${INTERNAL_SKILL_DIR}/<发行包名>` 这种稳定虚拟前缀（由 `ctx.fs` 的路径别名展开），远程或嵌入式提供方可以提供 URL 或不透明加载指引。
+资源文件由下文的 `skill_read` 工具读取；资源指引只会根据 `resourceBase` 解析指令显式引用的路径或 URL；脚本、参考资料和资源文件按需加载，结果不会列举 skill 目录。本地提供方可以提供目录，随包内置技能提供 `${INTERNAL_SKILL_DIR}/<发行包名>` 这种稳定虚拟前缀（由 `ctx.fs` 的路径别名展开），远程或嵌入式提供方可以提供 URL 或不透明加载指引。
 
 无法解析的名称会报告 skill 未知或已不可用。无效名称和 `invocation.modelInvocable` 为 `false` 的 skill 会产生不同的错误结果。`invocation.userInvocable` 不限制这个面向模型的接口。
 
 工具执行不会添加合成上下文消息。新加载的结果已作为工具结果记录，并在下一个模型步骤可用，无需重复正文。只有目录投影会添加替换摘要。
+
+## 工具：`skill_read`
+
+读取技能资源根下的文件（示例、参考、资产），替代「自己拼 `${INTERNAL_SKILL_DIR}` 前缀再用文件或 shell 工具」的做法。
+
+| 参数 | 类型 | 说明 |
+| --- | --- | --- |
+| `name` | string（必填） | 技能目录里的精确名称。 |
+| `path` | string（必填） | 相对技能资源根的路径，例如 `examples/index.md`。 |
+
+成功时返回 `{ name, path, bytes, content }`，渲染器输出文件正文。约束与失败：
+
+- 路径必须是相对路径：绝对路径、盘符、`.`／`..` 段与空段在解析前就被拒绝，避免读到资源根之外。
+- `directory` 型资源直接用真实路径读取，并用 realpath 确认没有顺着符号链接跑出资源根；`alias` 型资源交给 `ctx.fs` 的路径别名展开（内置技能都走这条），宿主没有文件系统服务时明确报错，而不是悄悄失败。
+- 单文件上限 256 KiB，超过即报错；内容含 NUL 视为二进制拒绝，不让乱码进模型上下文。
+- 目标是目录时，错误信息会列出该目录下的前 20 个文件名，帮助模型改路径而不是反复试。
+- 未知技能、无资源（`resourceBase` 缺省）、`url` 与 `opaque` 型资源分别给出不同的中文诊断。
 
 ## 模型体验
 
@@ -38,7 +55,7 @@
 
 `tool:skill` 段的文本固定为：
 
-> Check the session skill catalog before acting, and load any skill that plausibly covers the task with the `skill` tool before your first action; follow the loaded instructions rather than the catalog summaries.
+> Check the session skill catalog before acting, and load any skill that plausibly covers the task with the `skill` tool before your first action; follow the loaded instructions rather than the catalog summaries. Read files bundled with a skill (examples, references, assets) with the `skill_read` tool and a path relative to that skill, not with shell commands or absolute paths.
 
 这一段承担目录之外的路由：它要求模型在动手之前主动查目录，并把加载时机放在第一个动作之前；目录按当前可见 skill 重新渲染，本段不随目录成员变化。`skill` 工具的 schema 说明只概述这个工具本身，「什么时候该加载」由本段与目录共同表述，两者使用同一个门槛措辞。
 

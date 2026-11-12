@@ -15,7 +15,7 @@ Check the [exit code: N] marker on every bash result; investigate failures befor
 
 Track every background job id you start. You are notified in-session when a job finishes — do not busy-poll or sleep on one; keep working on independent steps and do not duplicate a running job's work. Before giving a final answer, collect every still-relevant job with job_output (set wait: true only when you are genuinely blocked on it), and job_kill jobs that stopped mattering.
 
-Check the session skill catalog before acting, and load any skill that plausibly covers the task with the `skill` tool before your first action; follow the loaded instructions rather than the catalog summaries.
+Check the session skill catalog before acting, and load any skill that plausibly covers the task with the `skill` tool before your first action; follow the loaded instructions rather than the catalog summaries. Read files bundled with a skill (examples, references, assets) with the `skill_read` tool and a path relative to that skill, not with shell commands or absolute paths.
 
 Use goal tools for one long-running completion objective in the current session. create_goal may infer goal intent from a direct human request in any language; do not create a goal for routine single-turn work. Call get_goal before update_goal and copy its exact goal_id and revision. After session resume or fork, an active goal is disarmed: when a human asks to continue or resume in any wording or language, use update_goal action resume to rearm it. Mark complete only when the objective is actually achieved. Mark blocked only after the same blocking condition persists for at least 3 consecutive goal rounds, and report that concrete condition in blocked_reason; difficulty, uncertainty, or useful remaining work is not blocked.
 
@@ -151,6 +151,13 @@ interface ToolArgsMap {
   skill: {
     /** The exact skill name from the available skills list. */
     name: string;
+  } & Record<string, JsonValue>;
+  /** Read a file bundled with a skill (examples, references, recipes, assets). The path is relative to that skill's resource root, for example "examples/index.md". Use this instead of file-system or shell tools when reading bundled skill files. */
+  skill_read: {
+    /** The exact skill name from the available skills list. */
+    name: string;
+    /** File path relative to the skill resource root, e.g. "examples/index.md". */
+    path: string;
   } & Record<string, JsonValue>;
   /** Delegate a self-contained task to a subagent (a separate agent that works in its own context) to offload focused, independent work — research, a scoped implementation, an analysis — so it does not consume this conversation's context. The subagent returns its result, not its intermediate steps. Give it a complete, standalone prompt: it does not see this conversation. This tool runs in the background by default, immediately returns a durable subagent id, and keeps the child conversation available for later turns. When that run settles, the runtime sends the parent a notice containing its outcome and any final assistant message; `send_message` starts a later turn in the same child conversation. Set `run_in_background: false` only when your next action depends on receiving the result. */
   subagent: {
@@ -404,6 +411,12 @@ interface ToolOutputMap {
       kind: "opaque";
       description: string;
     };
+    content: string;
+  };
+  skill_read: {
+    name: string;
+    path: string;
+    bytes: number;
     content: string;
   };
   subagent: {
