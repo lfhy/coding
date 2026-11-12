@@ -105,25 +105,25 @@ describe('PPT 用户模板只读 HTTP 目录', () => {
     const preview = parseDeck(payload.deck)
     expect(preview.theme).toBe('inference')
     expect(preview.pages).toHaveLength(6)
-    // 默认整稿的文字与表格一律黑体；字体写进 deck.json，导出时同时落到 a:latin 与 a:ea。
+    // 默认整稿的文字与表格一律用默认字体；字体写进 deck.json，导出时同时落到 a:latin 与 a:ea。
     const previewFonts = preview.pages.flatMap(page => page.elements)
       .flatMap(element => element.kind === 'text' || element.kind === 'table' ? [element.text.font] : [])
     expect(previewFonts.length).toBeGreaterThan(0)
-    expect(previewFonts.every(font => font === '黑体')).toBe(true)
+    expect(previewFonts.every(font => font === 'HarmonyOS Sans SC')).toBe(true)
     expect(checkDeck(preview).ok).toBe(true)
     expect(projects.activeDir(SESSION)).toBeUndefined()
     expect(await stat(join(root!, 'ppt')).then(() => true, () => false)).toBe(false)
     expect(await stat(join(root!, 'templates')).then(() => true, () => false)).toBe(false)
   })
 
-  it('字体下拉列出本机已装字体，默认黑体单独给出', async () => {
+  it('字体下拉列出本机已装字体，默认字体单独给出', async () => {
     const { base } = await boot()
     const response = await request(base, 'fonts')
     expect(response.status).toBe(200)
     expect(response.headers.get('cache-control')).toBe('no-store')
     const payload = await response.json() as { ok: boolean; default: string; fonts: string[] }
     expect(payload.ok).toBe(true)
-    expect(payload.default).toBe('黑体')
+    expect(payload.default).toBe('HarmonyOS Sans SC')
     expect(Array.isArray(payload.fonts)).toBe(true)
     expect(payload.fonts.every(name => typeof name === 'string' && name !== '')).toBe(true)
     expect(new Set(payload.fonts).size).toBe(payload.fonts.length)
@@ -147,7 +147,7 @@ describe('PPT 用户模板只读 HTTP 目录', () => {
     const builtinFonts = deck.pages.flatMap(page => page.elements)
       .flatMap(element => element.kind === 'text' || element.kind === 'table' ? [element.text.font] : [])
     expect(builtinFonts.length).toBeGreaterThan(0)
-    expect(builtinFonts.every(font => font === '黑体')).toBe(true)
+    expect(builtinFonts.every(font => font === 'HarmonyOS Sans SC')).toBe(true)
     const chart = deck.pages.find(page => page.id === 'chart')?.elements.find(element => element.kind === 'chart')
     expect(chart?.kind === 'chart' ? chart.series[0]?.values : undefined).toEqual([32, 45, 38, 56])
     expect(checkDeck(deck).issues.filter(issue => issue.severity === 'error')).toEqual([])

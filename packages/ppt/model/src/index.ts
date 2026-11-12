@@ -26,22 +26,23 @@ export const SLIDE_SIZES: Readonly<Record<SlideSizeId, SlideBaseSize>> = {
 }
 
 /**
- * 新建文本与空 `font` 的默认字体族：PPT 默认用黑体。
+ * 新建文本与空 `font` 的默认字体族：PPT 默认用鸿蒙黑体（HarmonyOS Sans SC）。
  *
  * 它同时是导出、HTML 预览与客户端画布的默认值，显式写了 `font` 的元素以元素为准。
- * 导出时同一族名写进 `a:latin` 与 `a:ea`，目标机没有黑体时由 PowerPoint 自行替换。
+ * 字体自带中文字形，`a:latin` 与 `a:ea` 都写它；导出按许可把子集嵌进 .pptx，
+ * 目标机没装也能按嵌入的字形显示，装了就与本机渲染一致。
  */
-export const DEFAULT_FONT_FAMILY = '黑体'
+export const DEFAULT_FONT_FAMILY = 'HarmonyOS Sans SC'
 
-/** 目标机缺黑体时预览端的回落顺序；`sans-serif` 收尾，避免落回衬线字体。 */
+/** 预览端在目标机缺默认字体时的回落顺序；`sans-serif` 收尾，避免落回衬线字体。 */
 export const DEFAULT_FONT_FALLBACKS: readonly string[] = [
   'SimHei', 'Heiti SC', 'PingFang SC', 'Microsoft YaHei', 'sans-serif',
 ]
 
 /**
  * 把字体族名展开成可直接写进 CSS 的 `font-family` 值。
- * @param font - 元素上的字体族名；空串表示跟随默认黑体。
- * @returns 形如 `'黑体','SimHei',…,sans-serif` 的字体栈。
+ * @param font - 元素上的字体族名；空串表示跟随默认字体。
+ * @returns 形如 `'HarmonyOS Sans SC',SimHei,…` 的字体栈。
  */
 export function fontStack(font: string): string {
   const family = font.trim() === '' ? DEFAULT_FONT_FAMILY : font

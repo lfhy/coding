@@ -130,7 +130,7 @@ describe('中文字形覆盖', () => {
     const cjkFace = await readFontFace(cjkPath)
     const latinFace = await readFontFace(latinPath)
     if (cjkFace === null || latinFace === null) return
-    // 导出据此决定 a:ea：不含中文的族只写西文，中文回落到主题黑体。
+    // 导出据此决定 a:ea：不含中文的族只写西文，中文回落到主题默认字体。
     expect(coversCjk(cjkFace.bytes)).toBe(true)
     expect(coversCjk(latinFace.bytes)).toBe(false)
   })

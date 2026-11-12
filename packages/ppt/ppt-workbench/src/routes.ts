@@ -175,7 +175,7 @@ export function installRoutes(ctx: Context, service: PptProjects): void {
 
   route('templates/default', ['GET'], () => ({ ok: true, deck: createDefaultDeck('演示文稿标题') }))
 
-  // 字体下拉只列本机已安装的族名；默认黑体单独给出，未安装时也能选中。
+  // 字体下拉只列本机已安装的族名；默认字体单独给出，未安装时也能选中。
   route('fonts', ['GET'], async () => ({
     ok: true, default: DEFAULT_FONT_FAMILY, fonts: await service.listFonts(),
   }))

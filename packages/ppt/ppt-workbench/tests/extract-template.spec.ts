@@ -53,9 +53,9 @@ describe('可复用模板设计提取', () => {
     expect(first.pages.flatMap(page => page.elements).every(element => element.kind !== 'image')).toBe(true)
     expect(first.pages[0]?.id).not.toBe(second.pages[0]?.id)
     expect(first.pages[0]?.elements[0]?.id).not.toBe(second.pages[0]?.elements[0]?.id)
-    // 默认整稿的每个文本元素都显式带黑体，导出不必依赖目标机主题字体。
+    // 默认整稿的每个文本元素都显式带默认字体，导出不必依赖目标机装了它。
     expect(first.pages.flatMap(page => page.elements)
-      .every(element => element.kind !== 'text' || element.text.font === '黑体')).toBe(true)
+      .every(element => element.kind !== 'text' || element.text.font === 'HarmonyOS Sans SC')).toBe(true)
     expect(checkDeck(first).issues.filter(issue => issue.severity === 'error')).toEqual([])
     expect(buildPptx(first).length).toBeGreaterThan(2000)
   })

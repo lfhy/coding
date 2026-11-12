@@ -97,12 +97,12 @@ describe('.pptx 导出', () => {
     expect(presentation).toContain('cx="12192000"')
   })
 
-  it('默认字体是黑体：主题字体方案与空字体的回落都指向它', () => {
+  it('默认字体是鸿蒙黑体：主题字体方案与空字体的回落都指向它', () => {
     const entries = readZip(buildPptx(deck))
     const theme = entries.find(entry => entry.path === 'ppt/theme/theme1.xml')?.data.toString('utf8') ?? ''
-    // 空 font 的 run 写 `+mn-lt`／`+mn-ea`，主题里这两项都是默认黑体。
-    expect(theme).toContain('<a:minorFont><a:latin typeface="黑体"/><a:ea typeface="黑体"/>')
-    expect(theme).toContain('<a:majorFont><a:latin typeface="黑体"/><a:ea typeface="黑体"/>')
+    // 空 font 的 run 写 `+mn-lt`／`+mn-ea`，主题里这两项都是默认字体。
+    expect(theme).toContain('<a:minorFont><a:latin typeface="HarmonyOS Sans SC"/><a:ea typeface="HarmonyOS Sans SC"/>')
+    expect(theme).toContain('<a:majorFont><a:latin typeface="HarmonyOS Sans SC"/><a:ea typeface="HarmonyOS Sans SC"/>')
     const slide = entries.find(entry => entry.path === 'ppt/slides/slide1.xml')?.data.toString('utf8') ?? ''
     expect(slide).toContain('<a:latin typeface="+mn-lt"/><a:ea typeface="+mn-ea"/>')
   })
@@ -258,7 +258,7 @@ describe('.pptx 导出', () => {
     expect(types).toContain('application/x-fontdata')
   })
 
-  it('不含中文的字体只写西文槽，中文回落到主题黑体', () => {
+  it('不含中文的字体只写西文槽，中文回落到主题默认字体', () => {
     const deckWith = (font: string): PptDeck => ({
       ...deck,
       pages: [{
@@ -272,7 +272,7 @@ describe('.pptx 导出', () => {
     const latinOnly = readZip(buildPptx(deckWith('Chalkduster'), {
       fonts: [{ family: 'Chalkduster', part: 'ppt/fonts/font1.fntdata', bytes: new Uint8Array([1]), cjk: false }],
     })).find(entry => entry.path === 'ppt/slides/slide1.xml')?.data.toString('utf8') ?? ''
-    // 西文用所选族，中文交给主题默认黑体，避免查看端拿没有汉字的族名逐字替换。
+    // 西文用所选族，中文交给主题默认字体，避免查看端拿没有汉字的族名逐字替换。
     expect(latinOnly).toContain('<a:latin typeface="Chalkduster"/><a:ea typeface="+mn-ea"/>')
     const withChinese = readZip(buildPptx(deckWith('HarmonyOS Sans SC'), {
       fonts: [{ family: 'HarmonyOS Sans SC', part: 'ppt/fonts/font1.fntdata', bytes: new Uint8Array([1]), cjk: true }],
@@ -322,7 +322,7 @@ describe('页面渲染（截图前的 HTML）', () => {
     expect(html).toContain('width:1280px;height:720px')
     expect(html).toContain('增长 &lt;32%&gt;')
     expect(html).toContain('#4f8cff')
-    expect(html).toContain("font-family:'黑体',SimHei,'Heiti SC','PingFang SC','Microsoft YaHei',sans-serif")
+    expect(html).toContain("font-family:'HarmonyOS Sans SC',SimHei,'Heiti SC','PingFang SC','Microsoft YaHei',sans-serif")
   })
 
   it('图表画成内联 SVG，图片缺字节时退化成占位块', () => {
