@@ -2,13 +2,13 @@
  * 版式模板：新建页时按用途铺好元素，避免每次从空画布开始。
  *
  * 模板只决定「这一页有哪些元素、放在哪」，颜色与字号一律取当前主题与画布尺寸，
- * 因此换主题不会让模板失配。模板产出的元素与手放的元素完全等价，用户可以继续拖、
- * 改、删。
+ * 字体取默认黑体；因此换主题不会让模板失配。模板产出的元素与手放的元素完全等价，
+ * 用户可以继续拖、改、删。
  * @module coding-ppt-workbench/templates
  */
 
 import {
-  PPT_THEMES, SLIDE_SIZES, newId,
+  DEFAULT_FONT_FAMILY, PPT_THEMES, SLIDE_SIZES, newId,
   type PptChartElement, type PptDeck, type PptElement, type PptLineElement,
   type PptShapeElement, type PptTableElement, type PptTextElement,
 } from 'coding-ppt-model'
@@ -57,7 +57,7 @@ function text(
       bold: style.bold === true,
       align: style.align ?? 'left',
       valign: style.valign ?? 'top',
-      font: '',
+      font: DEFAULT_FONT_FAMILY,
     },
   }
 }
@@ -82,7 +82,7 @@ function table(frame: Frame, deck: PptDeck, header: readonly string[], rows: num
     cells: Array.from({ length: rows }, (_, rowIndex) => header.map(name => ({
       content: rowIndex === 0 ? name : '',
     }))),
-    text: { size: 22, color: palette.text, bold: false, align: 'left', font: '' },
+    text: { size: 22, color: palette.text, bold: false, align: 'left', font: DEFAULT_FONT_FAMILY },
   }
 }
 

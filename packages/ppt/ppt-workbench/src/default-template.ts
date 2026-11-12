@@ -1,14 +1,14 @@
 /**
  * 默认整稿模板：按参考稿的白底、左上标题、细分隔线与页脚坐标组织可编辑页面。
- * 只保留可替换内容和可编辑元素，不分发源稿的正文或讲者备注。
+ * 只保留可替换内容和可编辑元素，不分发源稿的正文或讲者备注；文字一律用默认黑体。
  */
-import { newId, PPT_FORMAT, type PptDeck, type PptElement, type PptPage } from 'coding-ppt-model'
+import { DEFAULT_FONT_FAMILY, newId, PPT_FORMAT, type PptDeck, type PptElement, type PptPage } from 'coding-ppt-model'
 
 const COLORS = {
   background: '#ffffff', surface: '#f4f3ef', text: '#16181d', secondary: '#33363d',
   muted: '#6b6f76', blue: '#1d4ed8', orange: '#c2410c', border: '#e2e0d9',
 } as const
-const FONT = 'Arial'
+const FONT = DEFAULT_FONT_FAMILY
 
 type Frame = { x: number; y: number; w: number; h: number }
 

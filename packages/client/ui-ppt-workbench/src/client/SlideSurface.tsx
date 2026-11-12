@@ -5,7 +5,7 @@
  */
 
 import { useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from 'react'
-import { PPT_THEMES, SLIDE_SIZES, type PptDeck, type PptElement, type PptPage } from 'coding-ppt-model'
+import { fontStack, PPT_THEMES, SLIDE_SIZES, type PptDeck, type PptElement, type PptPage } from 'coding-ppt-model'
 import css from './SlideSurface.module.css'
 
 /** 元素边框：位置与尺寸，单位是基准像素。 */
@@ -88,6 +88,7 @@ function elementStyle(element: PptElement, box: ElementBox): CSSProperties {
   if (element.kind === 'text') {
     Object.assign(style, {
       color: element.text.color,
+      fontFamily: fontStack(element.text.font),
       fontSize: element.text.size,
       lineHeight: 1.25,
       fontWeight: element.text.bold ? 700 : 400,
@@ -102,6 +103,7 @@ function elementStyle(element: PptElement, box: ElementBox): CSSProperties {
       gridTemplateColumns: element.columnWeights.map(weight => `${weight / total}fr`).join(' '),
       gridTemplateRows: `repeat(${element.rows}, 1fr)`,
       border: `1px solid ${element.borderColor}`,
+      fontFamily: fontStack(element.text.font),
       fontSize: element.text.size,
       color: element.text.color,
       fontWeight: element.text.bold ? 700 : 400,

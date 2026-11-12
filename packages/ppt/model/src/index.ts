@@ -25,6 +25,32 @@ export const SLIDE_SIZES: Readonly<Record<SlideSizeId, SlideBaseSize>> = {
   '4:3': { width: 960, height: 720 },
 }
 
+/**
+ * 新建文本与空 `font` 的默认字体族：PPT 默认用黑体。
+ *
+ * 它同时是导出、HTML 预览与客户端画布的默认值，显式写了 `font` 的元素以元素为准。
+ * 导出时同一族名写进 `a:latin` 与 `a:ea`，目标机没有黑体时由 PowerPoint 自行替换。
+ */
+export const DEFAULT_FONT_FAMILY = '黑体'
+
+/** 目标机缺黑体时预览端的回落顺序；`sans-serif` 收尾，避免落回衬线字体。 */
+export const DEFAULT_FONT_FALLBACKS: readonly string[] = [
+  'SimHei', 'Heiti SC', 'PingFang SC', 'Microsoft YaHei', 'sans-serif',
+]
+
+/**
+ * 把字体族名展开成可直接写进 CSS 的 `font-family` 值。
+ * @param font - 元素上的字体族名；空串表示跟随默认黑体。
+ * @returns 形如 `'黑体','SimHei',…,sans-serif` 的字体栈。
+ */
+export function fontStack(font: string): string {
+  const family = font.trim() === '' ? DEFAULT_FONT_FAMILY : font
+  // 单引号同时适用于 CSS 与 React 内联样式，放进双引号 HTML 属性里也不必转义。
+  return [family, ...DEFAULT_FONT_FALLBACKS]
+    .map(name => (/^[\w-]+$/u.test(name) ? name : `'${name}'`))
+    .join(',')
+}
+
 /** 随包提供的配色主题。 */
 export type ThemeId = 'ink' | 'paper' | 'ocean' | 'forest' | 'inference'
 
@@ -574,7 +600,7 @@ export function newId(): string {
 }
 
 /**
- * 用主题默认值补全一个文本属性。
+ * 用主题默认值补全一个文本属性：颜色取主题正文色，字体取默认黑体。
  * @param deck - 演示文稿，用于取主题色。
  * @param content - 文本内容。
  * @param size - 字号（基准像素）。
@@ -588,6 +614,6 @@ export function defaultText(deck: PptDeck, content: string, size: number): PptTe
     bold: false,
     align: 'left',
     valign: 'top',
-    font: '',
+    font: DEFAULT_FONT_FAMILY,
   }
 }

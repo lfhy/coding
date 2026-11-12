@@ -8,7 +8,7 @@
  */
 
 import {
-  PPT_THEMES, SLIDE_SIZES,
+  fontStack, PPT_THEMES, SLIDE_SIZES,
   type PptChartElement, type PptDeck, type PptElement, type PptPage,
 } from 'coding-ppt-model'
 
@@ -17,8 +17,10 @@ export interface RenderMedia {
   readonly [source: string]: Uint8Array | undefined
 }
 
-/** 未指定字体族时使用的系统字体栈；截图机器上通常都有其中一种。 */
-const DEFAULT_FONT = '-apple-system, "Helvetica Neue", "PingFang SC", "Microsoft YaHei", sans-serif'
+/**
+ * 元素字体的 CSS 值：默认黑体，缺字时退到 `fontStack` 里的中文黑体链。
+ * 截图机器与用户机器装的黑体不同，所以这里只决定「尽量黑体」，不保证同一款字形。
+ */
 
 function escapeHtml(value: string): string {
   return value
@@ -111,7 +113,7 @@ export function chartSvg(element: PptChartElement, width: number, height: number
   return `<svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">${parts.join('')}</svg>`
 }
 
-function elementHtml(element: PptElement, media: RenderMedia, fontFamily: string): string {
+function elementHtml(element: PptElement, media: RenderMedia): string {
   const box = `left:${element.x}px;top:${element.y}px;width:${element.w}px;height:${element.h}px;`
   if (element.kind === 'line') {
     const length = Math.hypot(element.w, element.h)
@@ -122,7 +124,7 @@ function elementHtml(element: PptElement, media: RenderMedia, fontFamily: string
   if (element.kind === 'text') {
     const style = `position:absolute;${box}display:flex;flex-direction:column;`
       + `justify-content:${valignOf(element.text.valign)};align-items:${alignOf(element.text.align)};`
-      + `font-family:${escapeAttr(element.text.font || fontFamily)};font-size:${element.text.size}px;`
+      + `font-family:${escapeAttr(fontStack(element.text.font))};font-size:${element.text.size}px;`
       + `line-height:1.25;color:${element.text.color};font-weight:${element.text.bold ? 700 : 400};`
       + `text-align:${element.text.align};white-space:pre-wrap;word-break:break-word;`
     return `<div style="${style}">${escapeHtml(element.text.content)}</div>`
@@ -147,7 +149,7 @@ function elementHtml(element: PptElement, media: RenderMedia, fontFamily: string
     )).join('')).join('')
     return `<div style="position:absolute;${box}display:grid;grid-template-columns:${columns};`
       + `grid-template-rows:repeat(${element.rows},1fr);border:1px solid ${element.borderColor};`
-      + `font-family:${escapeAttr(element.text.font || fontFamily)};font-size:${element.text.size}px;`
+      + `font-family:${escapeAttr(fontStack(element.text.font))};font-size:${element.text.size}px;`
       + `color:${element.text.color};font-weight:${element.text.bold ? 700 : 400}">${rows}</div>`
   }
   if (element.kind === 'chart') {
@@ -168,7 +170,7 @@ export function renderPageHtml(deck: PptDeck, page: PptPage, media: RenderMedia 
   const size = SLIDE_SIZES[deck.size]
   const palette = PPT_THEMES[deck.theme]
   const background = page.background ?? palette.background
-  const elements = page.elements.map(element => elementHtml(element, media, DEFAULT_FONT)).join('')
+  const elements = page.elements.map(element => elementHtml(element, media)).join('')
   return '<!doctype html><html><head><meta charset="utf-8"/>'
     + `<style>html,body{margin:0;padding:0;width:${size.width}px;height:${size.height}px;`
     + `background:${background};-webkit-font-smoothing:antialiased}`

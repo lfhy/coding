@@ -10,7 +10,7 @@
 import { mkdir, lstat, readFile, readdir, realpath, rename, stat, writeFile } from 'node:fs/promises'
 import { dirname, join, relative, resolve, sep } from 'node:path'
 import { applyOps, parseOps, type PptOp } from './ops.ts'
-import { isRecord, parseDeck, PPT_FORMAT, PPT_THEMES, type PptDeck, type SlideSizeId, type ThemeId } from 'coding-ppt-model'
+import { DEFAULT_FONT_FAMILY, isRecord, parseDeck, PPT_FORMAT, PPT_THEMES, type PptDeck, type SlideSizeId, type ThemeId } from 'coding-ppt-model'
 
 /** 一次编辑的快照条目；`revision` 单调递增，撤销后仍然保留。 */
 export interface PptHistoryEntry {
@@ -189,7 +189,7 @@ export async function createProject(
             x: 96, y: 260, w: 1088, h: 120,
             text: {
               content: options.title, size: 64, color: palette.text, bold: true,
-              align: 'left', valign: 'middle', font: '',
+              align: 'left', valign: 'middle', font: DEFAULT_FONT_FAMILY,
             },
           },
           {

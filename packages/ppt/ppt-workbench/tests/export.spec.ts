@@ -97,6 +97,16 @@ describe('.pptx 导出', () => {
     expect(presentation).toContain('cx="12192000"')
   })
 
+  it('默认字体是黑体：主题字体方案与空字体的回落都指向它', () => {
+    const entries = readZip(buildPptx(deck))
+    const theme = entries.find(entry => entry.path === 'ppt/theme/theme1.xml')?.data.toString('utf8') ?? ''
+    // 空 font 的 run 写 `+mn-lt`／`+mn-ea`，主题里这两项都是默认黑体。
+    expect(theme).toContain('<a:minorFont><a:latin typeface="黑体"/><a:ea typeface="黑体"/>')
+    expect(theme).toContain('<a:majorFont><a:latin typeface="黑体"/><a:ea typeface="黑体"/>')
+    const slide = entries.find(entry => entry.path === 'ppt/slides/slide1.xml')?.data.toString('utf8') ?? ''
+    expect(slide).toContain('<a:latin typeface="+mn-lt"/><a:ea typeface="+mn-ea"/>')
+  })
+
   it('每页元素转成对应形状并转义文本', () => {
     const entries = readZip(buildPptx(deck))
     const first = entries.find(entry => entry.path === 'ppt/slides/slide1.xml')?.data.toString('utf8') ?? ''
@@ -236,6 +246,8 @@ describe('.pptx 导出', () => {
     const slide = entries.find(entry => entry.path === 'ppt/slides/slide1.xml')?.data.toString('utf8') ?? ''
     expect(slide).toContain('<p:timing>')
     expect(slide).toContain('animEffect')
+    // 显式字体同时写进拉丁与东亚字体，中文字符才不会退回主题字体。
+    expect(slide).toContain('<a:latin typeface="Inter"/><a:ea typeface="Inter"/>')
     const presentation = entries.find(entry => entry.path === 'ppt/presentation.xml')?.data.toString('utf8') ?? ''
     expect(presentation).toContain('<p:embeddedFontLst>')
     expect(presentation).toContain('typeface="Inter"')
@@ -288,7 +300,7 @@ describe('页面渲染（截图前的 HTML）', () => {
     expect(html).toContain('width:1280px;height:720px')
     expect(html).toContain('增长 &lt;32%&gt;')
     expect(html).toContain('#4f8cff')
-    expect(html).toContain('font-family:-apple-system')
+    expect(html).toContain("font-family:'黑体',SimHei,'Heiti SC','PingFang SC','Microsoft YaHei',sans-serif")
   })
 
   it('图表画成内联 SVG，图片缺字节时退化成占位块', () => {

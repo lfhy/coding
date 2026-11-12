@@ -2,14 +2,15 @@
  * 把一份工程导出成 .pptx：每页对应一张 slide，元素转成 DrawingML 的文本框、预设形状、
  * 连接线、图片与表格，页面转场写成 `<p:transition>`。
  *
- * 这里生成的是 PowerPoint / Keynote / WPS 都能打开的最小 OPC 包：只写模型拥有的东西，
- * 不做母版设计、动画与字体嵌入。图片字节由调用方经 `media` 读取器提供，导出本身不碰
- * 文件系统，测试与其它载体可以喂自己的实现。
+ * 这里生成的是 PowerPoint / Keynote / WPS 都能打开的最小 OPC 包：只写模型拥有的东西——
+ * 页面几何、文本、形状、图片、表格、图表、转场与动画。文本字体按元素字体写入 `a:latin`
+ * 与 `a:ea`，空字体落到主题默认黑体；可嵌入的字体清单由调用方给出。图片字节由调用方经
+ * `media` 读取器提供，导出本身不碰文件系统，测试与其它载体可以喂自己的实现。
  * @module coding-ppt-workbench/export/pptx
  */
 
 import {
-  PPT_THEMES, SLIDE_SIZES,
+  DEFAULT_FONT_FAMILY, PPT_THEMES, SLIDE_SIZES,
   type PptChartElement, type PptDeck, type PptElement, type PptImageElement, type PptPage,
   type PptTableElement,
 } from 'coding-ppt-model'
@@ -87,6 +88,17 @@ function srgb(hex: string): string {
   return hex.replace('#', '').toUpperCase()
 }
 
+/**
+ * 一个 run 的字体属性取值：元素写了字体就用它，空字体交给主题默认字体。
+ * `a:latin` 与 `a:ea` 分开取值，中日韩字符才不会退回 PowerPoint 自己的西文字体。
+ * @param font - 元素上的字体族名；空串表示跟随主题。
+ * @param fallback - 主题占位值，例如 `+mn-lt`。
+ * @returns 可直接写进 XML 属性的 typeface。
+ */
+function typefaceOf(font: string, fallback: string): string {
+  return font === '' ? fallback : escapeXml(font)
+}
+
 function emu(px: number): number {
   return Math.round(px * EMU_PER_PX)
 }
@@ -124,8 +136,8 @@ function textBody(element: Extract<PptElement, { kind: 'text' }>): string {
     if (line === '') return `<a:p>${paragraphProps}</a:p>`
     const runProps = `<a:rPr lang="zh-CN" altLang="en-US" sz="${Math.round(text.size * 75)}"`
       + `${text.bold ? ' b="1"' : ''} dirty="0"><a:solidFill><a:srgbClr val="${srgb(text.color)}"/>`
-      + `</a:solidFill><a:latin typeface="${text.font ? escapeXml(text.font) : '+mn-lt'}"/>`
-      + '<a:ea typeface="+mn-ea"/></a:rPr>'
+      + `</a:solidFill><a:latin typeface="${typefaceOf(text.font, '+mn-lt')}"/>`
+      + `<a:ea typeface="${typefaceOf(text.font, '+mn-ea')}"/></a:rPr>`
     return `<a:p>${paragraphProps}<a:r>${runProps}<a:t>${escapeXml(line)}</a:t></a:r></a:p>`
   })
   return '<p:txBody><a:bodyPr wrap="square" lIns="0" tIns="0" rIns="0" bIns="0"'
@@ -173,8 +185,9 @@ function tableCell(content: string, style: PptTableElement['text'], fill: string
     ? '<a:p><a:endParaRPr lang="zh-CN"/></a:p>'
     : `<a:p><a:pPr algn="${align}"/><a:r><a:rPr lang="zh-CN" sz="${Math.round(style.size * 75)}"`
       + `${style.bold ? ' b="1"' : ''} dirty="0"><a:solidFill><a:srgbClr val="${srgb(style.color)}"/>`
-      + `</a:solidFill><a:latin typeface="${style.font ? escapeXml(style.font) : '+mn-lt'}"/>`
-      + `</a:rPr><a:t>${escapeXml(content)}</a:t></a:r></a:p>`
+      + `</a:solidFill><a:latin typeface="${typefaceOf(style.font, '+mn-lt')}"/>`
+      + `<a:ea typeface="${typefaceOf(style.font, '+mn-ea')}"/></a:rPr>`
+      + `<a:t>${escapeXml(content)}</a:t></a:r></a:p>`
   return '<a:tc><a:txBody><a:bodyPr/><a:lstStyle/>'
     + `${paragraph}</a:txBody><a:tcPr marL="91440" marR="91440" marT="45720" marB="45720" anchor="ctr">`
     + `<a:solidFill><a:srgbClr val="${srgb(fill)}"/></a:solidFill></a:tcPr></a:tc>`
@@ -499,12 +512,14 @@ function themeXml(deck: PptDeck): string {
   ].map(([name, value]) => `<a:${name}><a:srgbClr val="${value}"/></a:${name}>`).join('')
   const solid = '<a:solidFill><a:schemeClr val="phClr"/></a:solidFill>'
   const lineStyle = '<a:ln w="9525"><a:solidFill><a:schemeClr val="phClr"/></a:solidFill></a:ln>'
+  // 主题字体就是默认黑体：空 font 的 run 走 `+mn-lt`／`+mn-ea`，落到的也是黑体。
+  const themeFont = escapeXml(DEFAULT_FONT_FAMILY)
   return `${XML_DECL}\n<a:theme xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" name="PPT">`
     + `<a:themeElements><a:clrScheme name="PPT">${colors}</a:clrScheme>`
-    + '<a:fontScheme name="PPT"><a:majorFont><a:latin typeface="Calibri Light"/>'
-    + '<a:ea typeface=""/><a:cs typeface=""/></a:majorFont>'
-    + '<a:minorFont><a:latin typeface="Calibri"/><a:ea typeface=""/><a:cs typeface=""/>'
-    + '</a:minorFont></a:fontScheme>'
+    + `<a:fontScheme name="PPT"><a:majorFont><a:latin typeface="${themeFont}"/>`
+    + `<a:ea typeface="${themeFont}"/><a:cs typeface="${themeFont}"/></a:majorFont>`
+    + `<a:minorFont><a:latin typeface="${themeFont}"/><a:ea typeface="${themeFont}"/>`
+    + `<a:cs typeface="${themeFont}"/></a:minorFont></a:fontScheme>`
     + `<a:fmtScheme name="PPT"><a:fillStyleLst>${solid}${solid}${solid}</a:fillStyleLst>`
     + `<a:lnStyleLst>${lineStyle}${lineStyle}${lineStyle}</a:lnStyleLst>`
     + '<a:effectStyleLst><a:effectStyle><a:effectLst/></a:effectStyle>'
