@@ -49,6 +49,8 @@ describe('addCodingPromptSections', () => {
       expect(rendered).toContain('用统一的子 Tab（顶部或左侧）分层，一次只显示一层')
       expect(rendered).toContain('修改密码、删除、导出、批量替换')
       expect(rendered).toContain('列表页的搜索与筛选工具栏固定在视口内')
+      expect(rendered).toContain('认证与首屏表单：登录、注册、创建管理员、重置密码')
+      expect(rendered).toContain('不要把营销文案或功能清单塞成左栏')
       expect(rendered).not.toContain('未经要求不提交')
     } finally {
       await ctx.fiber.dispose()
