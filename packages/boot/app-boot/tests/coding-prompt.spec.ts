@@ -43,7 +43,8 @@ describe('addCodingPromptSections', () => {
       expect(rendered).toContain('调用 edit 前必须读取目标文件的最新内容')
       expect(rendered).toContain('old_string was not found')
       expect(rendered).toContain('页面是给用户使用的产品界面，不是模型或开发者的调试面板')
-      expect(rendered).toContain('默认主题是亮色，同时提供可切换的暗色模式')
+      expect(rendered).toContain('主题跟随系统当前的亮暗设置')
+      expect(rendered).toContain('取不到时用亮色兜底')
       expect(rendered).toContain('两套颜色分别放在独立的 themes 目录')
       expect(rendered).not.toContain('未经要求不提交')
     } finally {
