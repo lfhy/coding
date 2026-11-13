@@ -395,11 +395,16 @@ export function installRoutes(ctx: Context): void {
       const sessionId = body.sessionId as SessionId
       const targetId = await webCtx.egoBrowser.createBlankPage(sessionId)
       const port = targetId === null ? null : await ensureWorker(webCtx)
-      if (!targetId || port === null || !webCtx.sessions.get(sessionId)
-        || !(await currentPages(sessionId, port)).some(page => page.targetId === targetId)) {
-        send(res, 503, { ok: false }); return
+      if (!targetId || port === null) { send(res, 503, { ok: false }); return }
+      // CLI 可能先于画面 worker 连接浏览器；只等待刚创建且仍归本会话的目标进入目录。
+      for (let attempt = 0; attempt < 32; attempt++) {
+        if (!webCtx.sessions.get(sessionId) || !(await targetIdsForSession(sessionId)).has(targetId)) break
+        if ((await currentPages(sessionId, port)).some(page => page.targetId === targetId)) {
+          send(res, 200, { ok: true, targetId }); return
+        }
+        await new Promise(resolve => setTimeout(resolve, 250))
       }
-      send(res, 200, { ok: true, targetId })
+      send(res, 503, { ok: false })
     })
     register('/api/ego/navigation', async (req, res) => {
       if (req.method !== 'POST') { send(res, 405, { ok: false }); return }

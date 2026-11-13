@@ -13,7 +13,7 @@
 ## 浏览器与 Host 传输
 
 - **路线**：`packages/client/connection/src/client/connection.ts` 管重连和双下行流，`src/client/web-api-client.ts` 发 `/api` 请求；Host 端 `packages/client/connection/src/index.ts`/`api-request-trust.ts` 管路由与信任栅栏，`packages/host/webserver/src/index.ts` 管 HTTP/upgrade 注册，`packages/host/apiproxy/src/api-proxy.ts` 管方法实现，`src/api/rpc.schema.ts` 与 `browser.schema.ts` 管 wire 校验；`packages/api/remotes/src/client/index.ts` 是另一套 Typert Remote 入口，先于 API Proxy 认领自己的方法。
-- **技术与边界**：浏览器 unary/respond 用 HTTP POST，下行 `events.mux`/`events.host` 用 WebSocket；webserver 不实现业务，apiproxy 不注册 HTTP 路由。默认 Agent 浏览器的会话过滤画面流与人工输入由 [Ego Host](../../packages/browser/browser-ego-host/README.md) 单独注册 `/api/ego/*`，入口先复用 connection 信任检查并限制本机同源；旧 `browser.control` 仅供未装配的可选旧服务。另一套 Typert Remote 入口见 [remotes](../../packages/api/remotes/README.md)。
+- **技术与边界**：浏览器 unary/respond 用 HTTP POST，下行 `events.mux`/`events.host` 用 WebSocket；webserver 不实现业务，apiproxy 不注册 HTTP 路由。默认 Agent 浏览器的会话过滤画面流与人工输入由 [Ego Host](../../packages/browser/browser-ego-host/README.md) 单独注册 `/api/ego/*`，入口先复用 connection 信任检查并限制本机同源；对话正文链接由 [Agent 浏览器面板](../../packages/client/ui-browser-ego/README.md) 经 `/api/ego/pages` 与 `/api/ego/navigation` 新建页面并在导航成功后打开会话工作台。旧 `browser.control` 仅供未装配的可选旧服务。另一套 Typert Remote 入口见 [remotes](../../packages/api/remotes/README.md)。
 - **连带与验证**：协议变更同步 API schema、Client 调用、Host handler 与 keyless 回放；路由或升级变更同步信任拒绝测试，不能只验证回环成功路径。定向运行 `pnpm exec vitest run packages/client/connection/tests packages/host/apiproxy/tests packages/host/webserver/tests`，浏览器组装变化再跑 `DSH_SNAPSHOT=replay pnpm run test:web`。
 
 ## 桌面壳与 Host 启动

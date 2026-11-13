@@ -1,5 +1,6 @@
 /** 真 WebServer + Host 信任栅栏：任何拒绝都不读取载荷也不启动浏览器。 */
 import { Context } from '@deepseek-ai/cordis'
+import { createServer } from 'node:http'
 import WebServer from 'coding-host-webserver'
 import { SessionId } from 'coding-session/types'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
@@ -202,6 +203,60 @@ describe('会话浏览器 Host 路由', () => {
       body: JSON.stringify({ sessionId: session.id, targetId: 'foreign', x: 5, y: 5 }) })
     expect(badHover.status).toBe(403)
     expect(spawns).not.toHaveBeenCalled()
+  })
+
+  it('冷启动建页等待 worker 收录目标后才返回，且不转发未归属页面', async () => {
+    const origin = await boot()
+    const space = spaceNameForSession(session.id)
+    let snapshots = 0
+    const worker = createServer((_req, res) => {
+      if (_req.url === '/api/health') {
+        res.setHeader('content-type', 'application/json')
+        res.end(JSON.stringify({ workerOk: true }))
+        return
+      }
+      snapshots++
+      res.setHeader('content-type', 'application/json')
+      res.end(JSON.stringify({ spaces: snapshots < 3 ? [] : [
+        { targetId: 'created', url: 'about:blank', title: 'New tab' },
+        { targetId: 'foreign', url: 'about:blank', title: 'Other tab' },
+      ] }))
+    })
+    await new Promise<void>(resolve => worker.listen(0, '127.0.0.1', resolve))
+    try {
+      const address = worker.address()
+      if (address === null || typeof address === 'string') throw new Error('worker has no port')
+      await writeFile(join(stateDir!, 'ego-cast.json'), JSON.stringify({ port: address.port, pid: process.pid }))
+      const AsyncFunction = (async () => {}).constructor as
+        new (...args: string[]) => (...args: unknown[]) => Promise<void>
+      spawns.mockImplementation((raw: unknown) => {
+        const spec = raw as { stdio: { stdin: { data: string } } }
+        const run = new AsyncFunction('taskSpaces', 'browser', 'ego', 'page', 'console', spec.stdio.stdin.data)
+        let stdout = ''
+        return {
+          done: run({ useOrCreate: async (name: string) => { expect(name).toBe(space) } },
+            { listTabs: async () => [] }, { createTab: async () => {
+              await writeFile(join(stateDir!, 'task-spaces.json'), JSON.stringify({ spaces: [
+                { name: space, targetIds: ['created'] },
+              ] }))
+              return { targetId: 'created' }
+            } }, {}, { log: (line: string) => { stdout += `${line}\n` } }).then(() => ({ exitCode: 0 })),
+          collected: { stdout: { readFrom: () => ({ text: stdout }) } },
+        }
+      })
+      const response = await fetch(`${origin}/api/ego/pages`, { method: 'POST',
+        headers: { 'content-type': 'application/json' }, body: JSON.stringify({ sessionId: session.id }) })
+      expect(response.status).toBe(200)
+      expect(await response.json()).toEqual({ ok: true, targetId: 'created' })
+      expect(snapshots).toBeGreaterThanOrEqual(3)
+      const listed = await fetch(`${origin}/api/ego/spaces?sessionId=${session.id}`)
+      expect((await listed.json() as { spaces: { targetId: string }[] }).spaces.map(page => page.targetId)).toEqual(['created'])
+    } finally {
+      await new Promise<void>((resolve, reject) => worker.close((error) => {
+        if (error) reject(error)
+        else resolve()
+      }))
+    }
   })
 
   it('浏览器重启后只对带待恢复标记的会话发起一次页面恢复', async () => {

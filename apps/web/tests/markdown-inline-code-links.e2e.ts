@@ -1,7 +1,11 @@
-/** 对话 HTTP 链接保持 Markdown 可访问性；未装配跳转时明确反馈而不导航。 */
+/** 对话 HTTP 链接经真实 Web 组合在会话 Agent 浏览器中建页，不跳出应用。 */
+import { execFile } from 'node:child_process'
 import { createServer, type Server } from 'node:http'
-import { readFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { promisify } from 'node:util'
 import type { Browser, Page, Request } from 'playwright'
 import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
@@ -20,6 +24,8 @@ const MODE = webSnapshotMode()
 const SEED_ID = 'markdown-inline-code-links-web-e2e'
 const REFERENCE_ID = 'markdown-reference-links-web-e2e'
 const DONE = 'INLINE_CODE_LINK_DONE'
+const EGO_CLI = fileURLToPath(new URL('../../../packages/browser/browser-ego-host/runtime/ego-linux/bin/ego-browser.mjs', import.meta.url))
+const execFileAsync = promisify(execFile)
 
 /** 固定首份快照输入，同时覆盖引用式链接与危险协议的安全准入。 */
 function markdownFixture(linkUrl: string, reference = false): string {
@@ -72,7 +78,7 @@ function markdownFixture(linkUrl: string, reference = false): string {
   ].join('\n')
 }
 
-/** 目标站点单独监听；可据请求计数证明点击没有在旧浏览器或浏览器弹窗导航。 */
+/** 目标站点单独监听；仅会话浏览器导航后才应收到网页请求。 */
 async function fixtureServer(): Promise<{ server: Server; url: string; requests: () => number }> {
   let requests = 0
   const server = createServer((_request, response) => {
@@ -108,12 +114,20 @@ describe('web e2e: Markdown inline-code links', () => {
   let target: Server
   let requests: () => number
   let tripwire: ReturnType<typeof watchConsole>
+  let browserStateDir: string | undefined
+  let previousEgoEnv: { state: string | undefined; profile: string | undefined; headless: string | undefined }
 
   beforeAll(async () => {
     const fixture = await fixtureServer()
     target = fixture.server
     linkUrl = fixture.url
     requests = fixture.requests
+    previousEgoEnv = { state: process.env.EGO_LINUX_STATE_DIR, profile: process.env.EGO_LINUX_PROFILE,
+      headless: process.env.EGO_LINUX_HEADLESS }
+    browserStateDir = await mkdtemp(join(tmpdir(), 'dsh-web-chat-links-'))
+    process.env.EGO_LINUX_STATE_DIR = browserStateDir
+    process.env.EGO_LINUX_PROFILE = join(browserStateDir, 'profile')
+    process.env.EGO_LINUX_HEADLESS = '1'
     scaffold = await launchWebScaffold({ replayFixture: ROUTES, replayProvidersOnly: true })
     await scaffold.ctx.settings.update(settingsNamespace('agent-default-model'), {
       provider: 'deepseek-official', model: 'deepseek-v4-flash',
@@ -130,13 +144,26 @@ describe('web e2e: Markdown inline-code links', () => {
   afterAll(async () => {
     await browser?.close()
     await scaffold?.close()
+    if (browserStateDir !== undefined) {
+      try {
+        await execFileAsync(process.execPath, [EGO_CLI, '--stop'], { timeout: 10_000 })
+      } finally {
+        await rm(browserStateDir, { recursive: true, force: true })
+        if (previousEgoEnv.state === undefined) delete process.env.EGO_LINUX_STATE_DIR
+        else process.env.EGO_LINUX_STATE_DIR = previousEgoEnv.state
+        if (previousEgoEnv.profile === undefined) delete process.env.EGO_LINUX_PROFILE
+        else process.env.EGO_LINUX_PROFILE = previousEgoEnv.profile
+        if (previousEgoEnv.headless === undefined) delete process.env.EGO_LINUX_HEADLESS
+        else process.env.EGO_LINUX_HEADLESS = previousEgoEnv.headless
+      }
+    }
     if (target) await new Promise<void>((resolve, reject) => target.close((error) => {
       if (error) reject(error)
       else resolve()
     }))
   })
 
-  it.skipIf(MODE === 'record')('renders safe links and reports unavailable navigation without using old controls', async () => {
+  it.skipIf(MODE === 'record')('opens links in isolated session browser pages without old controls', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-markdown-inline-code-links'))
     const popups: Page[] = []
     const legacyControls: Request[] = []
@@ -153,6 +180,11 @@ describe('web e2e: Markdown inline-code links', () => {
     expect(await page.getByText(`curl ${linkUrl}`, { exact: true }).locator('a').count()).toBe(0)
     expect(await page.getByText('javascript:alert(1)', { exact: true }).locator('a').count()).toBe(0)
     const shellUrl = page.url()
+    const currentPages = async (id: string): Promise<{ targetId: string; url: string }[]> => {
+      const response = await page.request.get(`${scaffold.baseUrl}/api/ego/spaces?sessionId=${id}`)
+      expect(response.status()).toBe(200)
+      return (await response.json() as { spaces: { targetId: string; url: string }[] }).spaces
+    }
     const snapshot = (await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd))
       .split(SEED_ID).join('{{seededId}}').split(linkUrl).join('{{linkUrl}}')
       // 模型目录当前取决于组合默认模型，链接快照只固定 Markdown 与周围布局。
@@ -165,34 +197,57 @@ describe('web e2e: Markdown inline-code links', () => {
 
     await inlineCodeLink.focus()
     expect(await inlineCodeLink.evaluate(node => document.activeElement === node)).toBe(true)
+    expect(await page.getByRole('region', { name: 'Agent Browser' }).count()).toBe(0)
     await inlineCodeLink.press('Enter')
     const error = page.getByRole('dialog', { name: 'Couldn’t open link' })
-    await expect.poll(() => error.isVisible()).toBe(true)
-    expect(await error.textContent()).toContain('Browser workspace is unavailable')
-    expect(await error.textContent()).not.toContain('browser.control')
-    await error.getByRole('button', { name: 'Cancel' }).click()
+    await expect.poll(async () => (await currentPages(SEED_ID)).filter(item => item.url === linkUrl).length,
+      { timeout: 30_000 }).toBe(1)
+    const workbench = page.getByRole('region', { name: 'Workbench' })
+    const panel = page.getByRole('region', { name: 'Agent Browser' })
+    await expect.poll(() => panel.isVisible(), { timeout: 30_000 }).toBe(true)
+    const firstId = (await currentPages(SEED_ID)).find(item => item.url === linkUrl)?.targetId
+    expect(firstId).toBeTruthy()
+    await expect.poll(() => panel.getByRole('textbox', { name: 'Web address' }).inputValue(),
+      { timeout: 30_000 }).toBe(linkUrl)
+    await expect.poll(() => workbench.getByRole('tab', { name: 'Chat link preview' }).count(),
+      { timeout: 30_000 }).toBe(1)
+    expect(await error.count()).toBe(0)
     await page.getByRole('link', { name: 'Open preview' }).click()
-    await expect.poll(() => error.isVisible()).toBe(true)
-    await error.getByRole('button', { name: 'Cancel' }).click()
+    await expect.poll(async () => (await currentPages(SEED_ID)).filter(item => item.url === linkUrl).length,
+      { timeout: 30_000 }).toBe(2)
+    const sameSession = (await currentPages(SEED_ID)).filter(item => item.url === linkUrl)
+    expect(sameSession.some(item => item.targetId !== firstId)).toBe(true)
+    await expect.poll(() => workbench.getByRole('tab', { name: 'Chat link preview' }).count(),
+      { timeout: 30_000 }).toBe(2)
     expect(page.url()).toBe(shellUrl)
     expect(popups).toEqual([])
     expect(legacyControls).toEqual([])
-    expect(requests()).toBe(0)
-    expect(await page.getByRole('region', { name: 'Agent Browser' }).count()).toBe(0)
+    expect(requests()).toBeGreaterThanOrEqual(2)
 
     await openSession(page, 'Reference preview links')
     const reference = page.getByRole('link', { name: 'Open reference' })
     expect(await reference.getAttribute('href')).toBe(linkUrl)
     expect(await page.getByRole('link', { name: 'Unsafe preview' }).count()).toBe(0)
     expect(await page.getByRole('link', { name: 'Local preview' }).count()).toBe(0)
+    const denyPageCreation = '**/api/ego/pages'
+    await page.route(denyPageCreation, async route => route.fulfill({ status: 503, body: '{"ok":false}' }))
     await reference.click()
     await expect.poll(() => error.isVisible()).toBe(true)
-    expect(await error.textContent()).toContain('Browser workspace is unavailable')
-    await error.getByRole('button', { name: 'Cancel' }).click()
+    expect(await error.textContent()).toContain('Could not open this link in Agent Browser')
+    expect((await currentPages(REFERENCE_ID)).filter(item => item.url === linkUrl)).toHaveLength(0)
+    await page.unroute(denyPageCreation)
+    await error.getByRole('button', { name: 'Retry' }).click()
+    await expect.poll(async () => (await currentPages(REFERENCE_ID)).filter(item => item.url === linkUrl).length,
+      { timeout: 30_000 }).toBe(1)
+    expect(await error.count()).toBe(0)
+    expect((await currentPages(REFERENCE_ID)).every(item => !sameSession.some(previous => previous.targetId === item.targetId)))
+      .toBe(true)
+    await expect.poll(() => panel.getByRole('textbox', { name: 'Web address' }).inputValue(),
+      { timeout: 30_000 }).toBe(linkUrl)
     expect(page.url()).toBe(shellUrl)
     expect(popups).toEqual([])
     expect(legacyControls).toEqual([])
-    expect(requests()).toBe(0)
+    expect((await currentPages(SEED_ID)).filter(item => item.url === linkUrl)).toHaveLength(2)
     expect(await page.locator('vite-error-overlay').count()).toBe(0)
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])
