@@ -54,7 +54,7 @@ export function GenericToolCard({ toolName, block, cwd, home, openFile, loadImag
       icon={VARIANT_ICONS[model.variant]}
       title={model.title === 'Tool call' ? t('tool.other') : model.title}
       // terminal 呈现器的最新说明优先于工具参数，其他工具仍以已记录的友好说明优先。
-      summary={terminal?.description ?? model.displayDescription ?? search?.title ?? model.summary}
+      summary={terminal?.description ?? (toolName === 'apply_patch' ? model.summary : model.displayDescription ?? search?.title ?? model.summary)}
       // Single-file tools never expose an args body — the path link is the only
       // args interaction. A card is not an args body: a read/write/edit row is
       // single-file AND carries a card, so the card expands under the path link.

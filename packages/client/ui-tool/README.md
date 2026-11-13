@@ -14,7 +14,7 @@ Client 工具展示插件。`ui-conversation` 通过 `conversation.chat.node` �
 
 通用行把已知工具名称归类为 search、read、shell、write、edit、code 或 generic 变体。运行中、成功、失败和中断状态只来自冻结的 call/result slice。只有用户调用 Host 打开文件回调时，文件路径才相对会话 `cwd` 解析；展示代码不读取会话服务。
 
-仅没有现成友好说明的普通工具可提供可选 `summary`，Chat 的折叠工具行将它作为简短动作摘要；旧记录仍可读取历史 `display_description`。`bash`、`exec_command`、`run_code`、`spawn_agent` 等已有 `description` 的调用优先展示该字段，terminal 呈现器提供的说明则优先于调用参数。等待与目录查询、浏览器只读／关闭动作、应用／终端／画布／演示模板／提醒列表、结果汇报显示静态动作标题，不要求模型补写说明；`validate_gen_ui` 显示“校验UI语法”，`ask_user_question` 的专用工具行则按等待、回答及取消状态显示。`structured_output` 与 `mcp__` 前缀工具把根 `summary` 当作业务参数，绝不作为友好说明。没有有效说明或旧日志参数不可解析时按既有工具名称、路径或参数摘要回退，参数只在展开后的调用详情中查看；字段的校验及执行隔离由[工具注册表](../../core/tools/README.md#模型调用的操作说明)负责。
+仅没有现成友好说明的普通工具可提供可选 `summary`，Chat 的折叠工具行将它作为简短动作摘要；旧记录仍可读取历史 `display_description`。`bash`、`exec_command`、`run_code`、`spawn_agent` 等已有 `description` 的调用优先展示该字段，terminal 呈现器提供的说明则优先于调用参数。浏览器的点击、执行脚本等动作按具体操作显示标题，图片、持久终端、会话查询与代码定位等工具也显示对应动作；等待、列表、截图等固定动作不要求模型补写说明。`apply_patch` 从文件段提取目标：单文件显示目标路径，多文件显示首个路径和文件数，未包含完整目标时只显示动作标题。`validate_gen_ui` 显示“校验UI语法”，`ask_user_question` 的专用工具行则按等待、回答及取消状态显示。`structured_output` 与 `mcp__` 前缀工具把根 `summary` 当作业务参数，绝不作为友好说明。没有有效说明时只提取可识别的操作对象，不把脚本、补丁正文或完整参数显示在折叠行；参数仍可在展开后的调用详情中查看。字段的校验及执行隔离由[工具注册表](../../core/tools/README.md#模型调用的操作说明)负责。
 
 ## 原子工具视图
 

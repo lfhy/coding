@@ -110,18 +110,18 @@ describe('TrajectoryTable', () => {
       ['list_agents', 'List agents'],
       ['list_subagent_models', 'Browse models'],
       ['memory_list', 'List memory'],
-      ['browser_close', 'Close browser'],
-      ['browser_screenshot', 'Capture screenshot'],
-      ['browser_snapshot', 'View page'],
-      ['browser_auth_flush', 'Save browser sign-in'],
-      ['browser_doctor', 'Check browser'],
-      ['browser_status', 'Browser status'],
-      ['computer_list_apps', 'List apps'],
+      ['browser_close', '关闭浏览器'],
+      ['browser_screenshot', '截取网页画面'],
+      ['browser_snapshot', '查看网页'],
+      ['browser_auth_flush', '保存浏览器登录状态'],
+      ['browser_doctor', '检查浏览器环境'],
+      ['browser_status', '查看浏览器状态'],
+      ['computer_list_apps', '查看应用列表'],
       ['cordis_inspect_list', 'Browse plugin capabilities'],
       ['terminal_list', 'List terminals'],
       ['canvas_state', 'View canvas'],
-      ['ppt_templates', 'Browse presentation templates'],
-      ['schedule_list', 'List reminders'],
+      ['ppt_templates', '浏览演示模板'],
+      ['schedule_list', '查看提醒'],
       ['ask_user_question', 'Ask question'],
       ['report', 'Report result'],
     ] as const
@@ -135,6 +135,26 @@ describe('TrajectoryTable', () => {
     fireEvent.click(screen.getByRole('row', { name: /ASSISTANT/ }))
     for (const [, title] of calls) expect(screen.getByText(title)).toBeTruthy()
     expect(view.container.textContent).not.toContain('private')
+  })
+
+  it('shows the patch target and browser action in assistant calls, not their raw inputs', () => {
+    const patch = JSON.stringify({
+      input: '*** Begin Patch\n*** Update File: src/a.ts\n@@\n-secret\n+new\n*** End Patch',
+      display_description: '修复页面',
+    })
+    const turns: readonly TrajectoryTurnModel[] = [{ turn: 1, groups: [{ title: 'Step 1', cells: [{
+      index: 1, kind: 'message', text: 'Tool call only', timeSeconds: 1,
+      sourceBlocks: [
+        { type: 'tool-call', content: patch, toolName: 'apply_patch', callId: 'patch-1' },
+        { type: 'tool-call', content: '{"expression":"window.secret"}', toolName: 'browser_js', callId: 'browser-1' },
+      ],
+    }] }] }]
+    const view = render(<TrajectoryTable turns={turns} {...FOLD_PROPS} />)
+    fireEvent.click(screen.getByRole('row', { name: /ASSISTANT/ }))
+    expect(screen.getByText('Apply patch')).toBeTruthy()
+    expect(screen.getByText('src/a.ts · 修复页面')).toBeTruthy()
+    expect(screen.getByText('执行网页脚本')).toBeTruthy()
+    expect(view.container.textContent).not.toContain('secret')
   })
 
   it.each(['structured_output', 'mcp__server__tool'])('%s assistant list hides business summary', (toolName) => {

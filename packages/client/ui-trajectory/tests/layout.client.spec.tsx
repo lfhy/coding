@@ -85,7 +85,7 @@ describe('deriveTrajectoryLayout', () => {
     })
     const tool = turns[0]?.groups.flatMap(g => g.cells).find(c => c.kind === 'tool')
     expect(tool).toMatchObject({
-      text: 'bash',
+      text: 'Bash',
       inputDetail: '{"command":"ls"}',
     })
     expect(tool?.timeSeconds).toBe(1.3)
@@ -103,7 +103,7 @@ describe('deriveTrajectoryLayout', () => {
     expect(turns[0]?.groups.map(g => g.title)).toEqual(['Step 2'])
     expect(turns[0]?.groups[0]?.cells[0]).toMatchObject({
       kind: 'tool',
-      text: 'bash',
+      text: 'Bash',
       inputDetail: '{"command":"pwd"}',
       timeSeconds: null,
     })
@@ -116,8 +116,40 @@ describe('deriveTrajectoryLayout', () => {
       runningCalls: [{ callId: 'r2', name: 'exec_command', argsRaw, turn: 1, step: 1, time: 1_000, callView: null, subCalls: [] }],
     })
     const cell = turns[0]?.groups[0]?.cells[0]
-    expect(cell).toMatchObject({ text: 'exec_command', previewMarkdown: '检查当前目录', inputDetail: argsRaw })
+    expect(cell).toMatchObject({ text: 'Bash', previewMarkdown: '检查当前目录', inputDetail: argsRaw })
     expect(cell?.previewMarkdown).not.toContain('private')
+  })
+
+  it('shows patch targets in records without exposing patch content', () => {
+    const argsRaw = JSON.stringify({ input: '*** Begin Patch\n*** Update File: src/a.ts\n@@\n-secret\n+new\n*** Add File: src/b.ts\n+x\n*** End Patch' })
+    const turns = deriveTrajectoryLayout({
+      nodes: [], partial: null,
+      runningCalls: [{ callId: 'patch-1', name: 'apply_patch', argsRaw, turn: 1, step: 1, time: 1_000, callView: null, subCalls: [] }],
+    })
+    const cell = turns[0]?.groups[0]?.cells[0]
+    expect(cell).toMatchObject({ text: 'Apply patch', previewMarkdown: 'src/a.ts 等 2 个文件', inputDetail: argsRaw })
+    expect(cell?.previewMarkdown).not.toContain('secret')
+    const described = JSON.stringify({ input: '*** Begin Patch\n*** Update File: src/a.ts\n@@', display_description: '修复页面' })
+    const withDescription = deriveTrajectoryLayout({
+      nodes: [], partial: null,
+      runningCalls: [{ callId: 'patch-2', name: 'apply_patch', argsRaw: described, turn: 1, step: 1, time: 1_000, callView: null, subCalls: [] }],
+    })
+    expect(withDescription[0]?.groups[0]?.cells[0]?.previewMarkdown).toBe('src/a.ts · 修复页面')
+  })
+
+  it.each([
+    ['browser_click', '{"selector":"#private","label":"确认按钮"}', '点击网页元素', '确认按钮'],
+    ['browser_js', '{"expression":"window.secret"}', '执行网页脚本', undefined],
+    ['lsp', '{"file_path":"src/a.ts","line":1}', '查询代码定义与引用', 'src/a.ts'],
+    ['terminal_open', '{}', '打开终端', undefined],
+    ['session_search', '{}', '搜索历史会话', undefined],
+  ])('shows %s with its own action instead of the tool name or raw input', (name, argsRaw, title, preview) => {
+    const turns = deriveTrajectoryLayout({
+      nodes: [], partial: null,
+      runningCalls: [{ callId: name, name, argsRaw, turn: 1, step: 1, time: 1_000, callView: null, subCalls: [] }],
+    })
+    expect(turns[0]?.groups[0]?.cells[0]).toMatchObject({ text: title, inputDetail: argsRaw })
+    expect(turns[0]?.groups[0]?.cells[0]?.previewMarkdown).toBe(preview)
   })
 
   it.each([
@@ -126,18 +158,18 @@ describe('deriveTrajectoryLayout', () => {
     ['list_subagent_models', 'Browse models'],
     ['memory_list', 'List memory'],
     ['validate_gen_ui', '校验UI语法'],
-    ['browser_close', 'Close browser'],
-    ['browser_screenshot', 'Capture screenshot'],
-    ['browser_snapshot', 'View page'],
-    ['browser_auth_flush', 'Save browser sign-in'],
-    ['browser_doctor', 'Check browser'],
-    ['browser_status', 'Browser status'],
-    ['computer_list_apps', 'List apps'],
+    ['browser_close', '关闭浏览器'],
+    ['browser_screenshot', '截取网页画面'],
+    ['browser_snapshot', '查看网页'],
+    ['browser_auth_flush', '保存浏览器登录状态'],
+    ['browser_doctor', '检查浏览器环境'],
+    ['browser_status', '查看浏览器状态'],
+    ['computer_list_apps', '查看应用列表'],
     ['cordis_inspect_list', 'Browse plugin capabilities'],
     ['terminal_list', 'List terminals'],
     ['canvas_state', 'View canvas'],
-    ['ppt_templates', 'Browse presentation templates'],
-    ['schedule_list', 'List reminders'],
+    ['ppt_templates', '浏览演示模板'],
+    ['schedule_list', '查看提醒'],
     ['ask_user_question', 'Ask question'],
     ['report', 'Report result'],
   ])('renders %s as a static title, with raw input only in Payload', (name, title) => {
@@ -168,7 +200,7 @@ describe('deriveTrajectoryLayout', () => {
       nodes: [], partial: null,
       runningCalls: [{ callId: 'read-1', name: 'read', argsRaw, turn: 1, step: 1, time: 1_000, callView: null, subCalls: [] }],
     })
-    expect(turns[0]?.groups[0]?.cells[0]).toMatchObject({ text: 'read', previewMarkdown: '历史说明' })
+    expect(turns[0]?.groups[0]?.cells[0]).toMatchObject({ text: 'Read', previewMarkdown: '历史说明' })
   })
 
   it('appends a streaming partial without rebuilding unaffected finalized turns', () => {
@@ -576,7 +608,7 @@ describe('run_code sub-dispatch cells', () => {
     // Sequential indexes across the interleave; durations from the pair times.
     expect(cells.map(c => c.index)).toEqual([1, 2, 3, 4])
     expect(cells[2]).toMatchObject({
-      text: 'bash', inputDetail: '{"x":1}', timeSeconds: 1,
+      text: 'Bash', inputDetail: '{"x":1}', timeSeconds: 1,
     })
     expect(cells[3]).toMatchObject({ timeSeconds: 0.5 })
   })
@@ -589,7 +621,7 @@ describe('run_code sub-dispatch cells', () => {
     const turns = deriveTrajectoryLayout({ nodes: withSubCalls([running]), partial: null, runningCalls: [] })
     const sub = turns[0]!.groups.flatMap(g => g.cells).find(c => c.kind === 'subtool')
     expect(sub).toMatchObject({
-      text: 'grep', inputDetail: '{"pattern":"x"}', timeSeconds: null,
+      text: 'Search', inputDetail: '{"pattern":"x"}', timeSeconds: null,
     })
   })
 

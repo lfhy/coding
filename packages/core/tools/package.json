@@ -34,6 +34,10 @@
       "types": "./lib/types/display-description-value.d.ts",
       "default": "./lib/types/display-description-value.js"
     },
+    "./tool-action-title": {
+      "types": "./lib/types/tool-action-title.d.ts",
+      "default": "./lib/types/tool-action-title.js"
+    },
     "./src/*": "./src/*",
     "./package.json": "./package.json"
   },

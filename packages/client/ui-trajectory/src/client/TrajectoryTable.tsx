@@ -27,6 +27,7 @@ import type { TrajectoryVirtualRow } from './trajectory-virtual-rows.ts'
 import { trajectoryToolTitle, type TrajectoryTurnModel } from './layout.ts'
 import { trajectoryPreviewText } from './trajectory-preview.ts'
 import { toolDisplayDescription } from 'coding-tools/display-description'
+import { toolCallPreview } from 'coding-tools/tool-action-title'
 import css from './TrajectoryTable.module.css'
 
 const BOTTOM_FOLLOW_THRESHOLD_PX = 2
@@ -1187,7 +1188,8 @@ function AssistantToolCalls({
               {(() => {
                 try {
                   const description = toolDisplayDescription(JSON.parse(call.content), call.toolName)
-                  return description === undefined ? null : <span className={css.assistantToolCallArgs}>{description}</span>
+                  const preview = toolCallPreview(call.toolName ?? '', call.content, description)
+                  return preview === undefined ? null : <span className={css.assistantToolCallArgs}>{preview}</span>
                 } catch {
                   return null
                 }

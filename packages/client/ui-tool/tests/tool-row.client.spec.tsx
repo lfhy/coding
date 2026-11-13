@@ -129,18 +129,18 @@ describe('tool-call-model', () => {
   })
 
   it.each([
-    ['browser_close', 'Close browser'],
-    ['browser_screenshot', 'Capture screenshot'],
-    ['browser_snapshot', 'View page'],
-    ['browser_auth_flush', 'Save browser sign-in'],
-    ['browser_doctor', 'Check browser'],
-    ['browser_status', 'Browser status'],
-    ['computer_list_apps', 'List apps'],
+    ['browser_close', '关闭浏览器'],
+    ['browser_screenshot', '截取网页画面'],
+    ['browser_snapshot', '查看网页'],
+    ['browser_auth_flush', '保存浏览器登录状态'],
+    ['browser_doctor', '检查浏览器环境'],
+    ['browser_status', '查看浏览器状态'],
+    ['computer_list_apps', '查看应用列表'],
     ['cordis_inspect_list', 'Browse plugin capabilities'],
     ['terminal_list', 'List terminals'],
     ['canvas_state', 'View canvas'],
-    ['ppt_templates', 'Browse presentation templates'],
-    ['schedule_list', 'List reminders'],
+    ['ppt_templates', '浏览演示模板'],
+    ['schedule_list', '查看提醒'],
     ['report', 'Report result'],
     ['validate_gen_ui', '校验UI语法'],
   ])('shows a friendly action title for %s', (name, title) => {
@@ -212,6 +212,32 @@ describe('tool-call-model', () => {
     expect(toolRowModel('external_action', running({ argsRaw: '{"description":"不可靠的工具描述"}' })).summary).toBe('')
   })
 
+  it('shows a patch target instead of the patch body, including multiple files and incomplete input', () => {
+    const patch = (input: string) => toolRowModel('apply_patch', running({
+      name: 'apply_patch', argsRaw: JSON.stringify({ input }),
+    }))
+    expect(patch('*** Begin Patch\n*** Update File: src/app.ts\n@@\n-old\n+new\n*** End Patch').summary)
+      .toBe('src/app.ts')
+    const withDescription = JSON.stringify({
+      input: '*** Begin Patch\n*** Update File: src/app.ts\n@@\n-old\n+new\n*** End Patch',
+      display_description: '修改页面',
+    })
+    const described = running({ name: 'apply_patch', argsRaw: withDescription })
+    expect(toolRowModel('apply_patch', described).summary).toBe('src/app.ts · 修改页面')
+    const view = render(<GenericToolCard {...{
+      callId: 'c1', toolName: 'apply_patch', block: described, openFile: vi.fn(), t,
+    }} />)
+    expect(view.getByText('src/app.ts · 修改页面')).toBeTruthy()
+    expect(patch('*** Begin Patch\n*** Add File: src/a.ts\n+x\n*** Update File: src/b.ts\n@@').summary)
+      .toBe('src/a.ts 等 2 个文件')
+    expect(patch('*** Begin Patch\r\n*** Update File: src/win.ts\r\n@@\r\n-old\r\n+new\r\n*** End Patch').summary)
+      .toBe('src/win.ts')
+    expect(patch('*** Begin Patch\n+*** Update File: fake.ts\n*** End Patch').summary).toBe('')
+    expect(patch('*** Begin Patch').summary).toBe('')
+    expect(toolRowModel('apply_patch', running({ name: 'apply_patch', argsRaw: '{"input":"*** Begin' })).summary)
+      .toBe('')
+  })
+
   it('names common tools without echoing raw parameters into the collapsed row', () => {
     expect(toolRowModel('apply_patch', running({ argsRaw: '{"input":"*** Begin Patch"}' }))).toMatchObject({
       title: 'Apply patch', summary: '', variant: 'edit',
@@ -221,7 +247,17 @@ describe('tool-call-model', () => {
     expect(toolRowModel('memory_save', running({ argsRaw: '{"content":"secret"}' })))
       .toMatchObject({ title: 'Save memory', summary: '' })
     expect(toolRowModel('browser_screenshot', running({ argsRaw: '{"url":"https://example.com"}' })))
-      .toMatchObject({ title: 'Capture screenshot', summary: '' })
+      .toMatchObject({ title: '截取网页画面', summary: '' })
+    expect(toolRowModel('browser_click', running({ name: 'browser_click', argsRaw: '{"label":"确认按钮","selector":"#secret"}' })))
+      .toMatchObject({ title: '点击网页元素', summary: '确认按钮' })
+    expect(toolRowModel('browser_js', running({ name: 'browser_js', argsRaw: '{"expression":"window.secret"}' })))
+      .toMatchObject({ title: '执行网页脚本', summary: '' })
+    expect(toolRowModel('str_replace_editor', running({ name: 'str_replace_editor', argsRaw: '{"command":"view","path":"src/a.ts"}' })))
+      .toMatchObject({ title: 'Edit file', summary: 'src/a.ts' })
+    expect(toolRowModel('terminal_open', running({ name: 'terminal_open', argsRaw: '{}' })).title).toBe('打开终端')
+    expect(toolRowModel('session_search', running({ name: 'session_search', argsRaw: '{}' })).title).toBe('搜索历史会话')
+    expect(toolRowModel('lsp', running({ name: 'lsp', argsRaw: '{"file_path":"src/a.ts","line":1,"character":1}' })))
+      .toMatchObject({ title: '查询代码定义与引用', summary: 'src/a.ts' })
   })
 
   it('joins multi-query web search arguments in the summary', () => {
@@ -588,7 +624,7 @@ describe('GenericToolCard', () => {
       />,
     )
     expect(view.queryByRole('img', { name: '图片' })).toBeNull()
-    fireEvent.click(view.getByRole('button', { name: /Capture screenshot/ }))
+    fireEvent.click(view.getByRole('button', { name: /截取网页画面/ }))
     const image = await view.findByRole('img', { name: '图片' })
     expect(loadImage).toHaveBeenCalledWith(attachment)
     fireEvent.click(image)

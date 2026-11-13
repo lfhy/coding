@@ -14,6 +14,7 @@ import { abbreviateHomePath } from 'coding-client-runtime/client'
 import type { ToolCallBlock, ToolResultNode } from 'coding-client-runtime/client'
 import { imageAttachmentsIn } from './tool-result-images.ts'
 import { toolDisplayDescription } from 'coding-tools/display-description'
+import { toolActionTitle, toolCallPreview } from 'coding-tools/tool-action-title'
 
 export type { ToolCallBlock } from 'coding-client-runtime/client'
 
@@ -65,70 +66,11 @@ const TOOL_VARIANTS: Record<string, ToolRowVariant> = {
   cordis_undefine: 'others',
 }
 
-/** 通用行的静态动作标题，不从工具参数或模型返回的标题拼接。 */
-const TOOL_TITLES: Record<string, string> = {
-  apply_patch: 'Apply patch',
-  str_replace_editor: 'Edit file',
-  read_image: 'Read image',
-  write_stdin: 'Background session',
-  update_plan: 'Update plan',
-  todo_write: 'Update plan',
-  skill: 'Load skill',
-  skill_read: 'Read skill',
-  context_compact: 'Compact context',
-  memory_list: 'List memory',
-  memory_read: 'Read memory',
-  memory_save: 'Save memory',
-  memory_update: 'Update memory',
-  memory_delete: 'Delete memory',
-  list_subagent_models: 'Browse models',
-  spawn_agent: 'Delegate task',
-  subagent: 'Delegate task',
-  subagent_fork: 'Delegate task',
-  followup_task: 'Send follow-up',
-  send_message: 'Message agent',
-  list_agents: 'List agents',
-  wait_agent: 'Wait for agents',
-  interrupt_agent: 'Stop agent',
-  report: 'Report result',
-  create_goal: 'Create goal',
-  get_goal: 'Read goal',
-  update_goal: 'Update goal',
-  job_output: 'Read job output',
-  job_list: 'List jobs',
-  job_kill: 'Stop job',
-  workflow: 'Run workflow',
-  ralph: 'Continue task',
-  validate_gen_ui: '校验UI语法',
-  browser_close: 'Close browser',
-  browser_screenshot: 'Capture screenshot',
-  browser_snapshot: 'View page',
-  browser_auth_flush: 'Save browser sign-in',
-  browser_doctor: 'Check browser',
-  browser_status: 'Browser status',
-  computer_list_apps: 'List apps',
-  cordis_inspect_list: 'Browse plugin capabilities',
-  terminal_list: 'List terminals',
-  canvas_state: 'View canvas',
-  ppt_templates: 'Browse presentation templates',
-  schedule_list: 'List reminders',
-  cordis_package_inspect: 'Inspect',
-  cordis_runtime_inspect: 'Inspect',
-  cordis_run: 'Run Cordis Plugin',
-  cordis_stop: 'Stop Cordis Plugin',
-  cordis_undefine: 'Remove Cordis Plugin',
-  pwsh: 'Pwsh',
-}
-
 /** 仅为已知前缀指定动作类别；外部工具不把 wire 名当作界面文案。 */
 function titleFor(toolName: string): string | undefined {
-  return (Object.hasOwn(TOOL_TITLES, toolName) ? TOOL_TITLES[toolName] : undefined)
-    ?? (toolName.startsWith('browser_') ? 'Browser'
-      : toolName.startsWith('ppt_') ? 'Presentation'
-        : toolName.startsWith('computer_') ? 'Computer'
-          : toolName.startsWith('schedule_') ? 'Schedule'
-            : toolName.startsWith('mcp__') ? 'External tool'
-              : undefined)
+  // cordis_define 由独立工具视图负责展示，不在通用回退行重复指定标题。
+  return (toolName === 'cordis_define' ? undefined : toolActionTitle(toolName))
+    ?? (toolName.startsWith('mcp__') ? 'External tool' : undefined)
 }
 
 /**
@@ -320,8 +262,10 @@ export function toolRowModel(toolName: string, block: ToolCallBlock, cwd?: strin
     relativizeToCwd(labelSkillResourcePath(deriveSummary(toolName, variant, argsRaw)), cwd), home,
   )
   const toolTitle = titleFor(toolName)
-  const summary = displayDescription ?? legacy
-  // 空摘要只显示静态动作；原始参数仍保留在展开区，不能落到标题上。
+  const summary = toolName === 'apply_patch'
+    ? toolCallPreview(toolName, argsRaw, displayDescription) ?? ''
+    : displayDescription ?? (legacy || toolCallPreview(toolName, argsRaw) || '')
+  // 空对象与不完整参数只显示静态动作；完整输入仍保留在展开区。
   const output = done ? (resultText(block) || null) : null
   const errorSummary = state === 'error' && output !== null ? firstLine(output) : null
   return {

@@ -19,6 +19,7 @@ import type {
 } from './trajectory-record.ts'
 import { formatElapsedSeconds } from './trajectory-record.ts'
 import { toolDisplayDescription } from 'coding-tools/display-description'
+import { toolActionTitle, toolCallPreview } from 'coding-tools/tool-action-title'
 
 /** One Message or Step group inside a turn. */
 export interface TrajectoryGroupModel {
@@ -1042,32 +1043,9 @@ function expandSubCalls(
   return out
 }
 
-/** 简单目录和等待调用只需静态标题，原参数仍在 Payload 中供检查。 */
-const SIMPLE_TOOL_TITLES: Readonly<Record<string, string>> = {
-  wait_agent: 'Wait for agents',
-  list_agents: 'List agents',
-  list_subagent_models: 'Browse models',
-  memory_list: 'List memory',
-  browser_close: 'Close browser',
-  browser_screenshot: 'Capture screenshot',
-  browser_snapshot: 'View page',
-  browser_auth_flush: 'Save browser sign-in',
-  browser_doctor: 'Check browser',
-  browser_status: 'Browser status',
-  computer_list_apps: 'List apps',
-  cordis_inspect_list: 'Browse plugin capabilities',
-  terminal_list: 'List terminals',
-  canvas_state: 'View canvas',
-  ppt_templates: 'Browse presentation templates',
-  schedule_list: 'List reminders',
-  ask_user_question: 'Ask question',
-  report: 'Report result',
-  validate_gen_ui: '校验UI语法',
-}
-
-/** 返回简单工具的用户友好标题，其他工具保留原名称供调用记录识别。 */
+/** 返回已知工具的用户友好动作，未知工具保留调用记录的原名称供检查。 */
 export function trajectoryToolTitle(name: string): string {
-  return Object.hasOwn(SIMPLE_TOOL_TITLES, name) ? SIMPLE_TOOL_TITLES[name] ?? name : name
+  return toolActionTitle(name) ?? name
 }
 
 function summarizeCall(
@@ -1080,9 +1058,10 @@ function summarizeCall(
   } catch {
     // 流式参数尚未闭合或旧日志无法解析时，只显示安全的通用动作。
   }
+  const preview = toolCallPreview(name, argsRaw, description)
   return {
     text: trajectoryToolTitle(name),
-    ...(description === undefined ? {} : { previewMarkdown: description }),
+    ...(preview === undefined ? {} : { previewMarkdown: preview }),
   }
 }
 
