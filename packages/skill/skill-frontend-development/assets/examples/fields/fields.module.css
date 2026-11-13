@@ -1,0 +1,171 @@
+/* Shared field geometry: every control owns its height, radius, surface, and focus ring. */
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  position: relative;
+  min-width: 0;
+}
+
+.label {
+  color: var(--ui-text-muted);
+  font-size: 12px;
+}
+
+.control {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--ui-border);
+  border-radius: 8px;
+  background: var(--ui-surface);
+}
+
+.control:focus-within {
+  border-color: var(--ui-accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--ui-accent) 24%, transparent);
+}
+
+.field[data-invalid='true'] .control {
+  border-color: var(--ui-danger, #d9534f);
+}
+
+.input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ui-text);
+  font: inherit;
+  outline: none;
+}
+
+.input::placeholder {
+  color: var(--ui-text-muted);
+  opacity: 1;
+}
+
+.trailing {
+  flex: none;
+  color: var(--ui-text-muted);
+  font-size: 12px;
+}
+
+.search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  width: min(320px, 100%);
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--ui-border);
+  border-radius: 8px;
+  background: var(--ui-surface);
+}
+
+.search:focus-within {
+  border-color: var(--ui-accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--ui-accent) 24%, transparent);
+}
+
+.clear {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--ui-text-muted);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.clear:hover {
+  background: var(--ui-border);
+  color: var(--ui-text);
+}
+
+.select {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--ui-border);
+  border-radius: 8px;
+  background: var(--ui-surface);
+  color: var(--ui-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.select:focus-visible {
+  outline: 2px solid var(--ui-accent);
+  outline-offset: 1px;
+}
+
+.value {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.caret {
+  flex: none;
+  color: var(--ui-text-muted);
+  font-size: 10px;
+}
+
+.listbox {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 2;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  max-height: 220px;
+  overflow: auto;
+  border: 1px solid var(--ui-border);
+  border-radius: 8px;
+  background: var(--ui-surface);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 16%);
+}
+
+.option {
+  width: 100%;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ui-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.option:hover,
+.option[data-active='true'] {
+  background: var(--ui-border);
+}
+
+.error {
+  margin: 0;
+  color: var(--ui-danger, #d9534f);
+  font-size: 12px;
+}
+
+.hint {
+  margin: 0;
+  color: var(--ui-text-muted);
+  font-size: 12px;
+}

@@ -9,6 +9,7 @@ component layer, then use the project's tokens and primitives.
 | [`tabs/`](tabs/Tabs.tsx) | a page or drawer has sibling views: child tabs, one panel at a time, horizontal or vertical |
 | [`dialog/`](dialog/Dialog.tsx) | a focused decision or a short form must open over the page: create, rename, confirm, change password |
 | [`toast/`](toast/Toast.tsx) | a transient success or failure needs to be acknowledged once, globally |
+| [`fields/`](fields/TextField.tsx) | any form control: text field, search field, select. Never render a bare `<input>`, `<select>` or `type="search"` directly on a page |
 | [`pages/auth-page.tsx`](pages/auth-page.tsx) | sign in, sign up, first-run administrator, reset password |
 | [`pages/settings-page.tsx`](pages/settings-page.tsx) | settings with several sections, including a "change password" action behind a button |
 | [`pages/list-page.tsx`](pages/list-page.tsx) | a list or table page: fixed header and toolbar, one scrolling body, empty and loading states |
