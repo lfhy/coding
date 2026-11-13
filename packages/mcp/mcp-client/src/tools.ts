@@ -20,7 +20,7 @@ import { admitEncodedImages, isImageAdmissionError } from 'coding-attachment'
 import type { AttachmentStore, EncodedImageAttachment, ImageAttachmentRef, ImageMediaType } from 'coding-attachment'
 import type { ContentBlock } from 'coding-llm'
 import type { ToolDefinition, ToolExecution, ToolExecutionResult } from 'coding-tools'
-import { assertSupportedJsonSchema, DISPLAY_DESCRIPTION_KEY } from 'coding-tools'
+import { assertSupportedJsonSchema } from 'coding-tools'
 import type { JsonSchemaNode, JsonValue } from 'coding-tools'
 
 /** Resolved options relevant to tool bridging. */
@@ -51,6 +51,9 @@ const INVALID_NAME_CHARS = /[^A-Za-z0-9_-]/g
 
 /** Hex chars of the SHA-256 identity hash appended on lossy normalization. */
 const HASH_LENGTH = 12
+
+/** 旧展示字段仍在 MCP 同步边界拒绝，避免外部 schema 意外改变已有工具契约。 */
+const LEGACY_DISPLAY_DESCRIPTION_KEY = 'display_description'
 
 /** Raw result record: the bridge owns JSON-value validation after transport. */
 const RawCallToolResultSchema = z.record(z.string(), z.unknown())
@@ -149,9 +152,9 @@ export async function syncTools(
           `mcp-client(${opts.serverName}): server listed tool "${tool.name}" more than once — invalid tool list`,
         )
       }
-      if (Object.hasOwn(tool.inputSchema.properties ?? {}, DISPLAY_DESCRIPTION_KEY)) {
+      if (Object.hasOwn(tool.inputSchema.properties ?? {}, LEGACY_DISPLAY_DESCRIPTION_KEY)) {
         throw new Error(
-          `mcp-client(${opts.serverName}): tool "${tool.name}" declares reserved input field ${DISPLAY_DESCRIPTION_KEY} — invalid tool list`,
+          `mcp-client(${opts.serverName}): tool "${tool.name}" declares reserved input field ${LEGACY_DISPLAY_DESCRIPTION_KEY} — invalid tool list`,
         )
       }
       definitions.set(publicName, createDefinition(
@@ -261,6 +264,7 @@ function createDefinition(
     name: publicName,
     description,
     parameters,
+    summaryParameter: false,
     output: createOutput(rawName, structuredSchema),
     execute: createExecutor(client, ctx, rawName, taskRequired, opts, projections),
     finalizeContent(exec: Readonly<ToolExecution>, result: Readonly<ToolExecutionResult>) {

@@ -67,7 +67,7 @@ function skillRowModel(block: ToolCallViewProps['block'], t: SkillRowProps['t'])
   const output = resultText(block)
   return {
     name: typeof rawName === 'string' && rawName.trim() !== '' ? firstLine(rawName) : t('row.unnamed'),
-    displayDescription: toolDisplayDescription(args),
+    displayDescription: toolDisplayDescription(args, 'skill'),
     output,
     errorSummary: state === 'error' && output !== null ? firstLine(output) : null,
     state,

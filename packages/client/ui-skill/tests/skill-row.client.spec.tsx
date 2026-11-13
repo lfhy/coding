@@ -152,7 +152,7 @@ describe('SkillRow', () => {
     expect(blank.container.textContent).not.toContain('正在加载 skill')
   })
 
-  it('逐次展示调用说明，同时保留技能名称、错误首行与可展开结果', () => {
+  it('历史调用展示已有说明，同时保留技能名称、错误首行与可展开结果', () => {
     const description = '读取项目开发指南'
     const argsRaw = JSON.stringify({ name: 'dsh-manage-issues', display_description: ` ${description} ` })
     const view = render(<SkillRow {...props(running(argsRaw))} />)
@@ -168,5 +168,11 @@ describe('SkillRow', () => {
     }))} />)
     expect(view.container.textContent).toContain(description)
     expect(screen.getByRole('button', { name: 'skill 加载失败Skill技能加载失败' })).toBeTruthy()
+  })
+
+  it('新调用不要求额外 summary，直接展示技能名称', () => {
+    const argsRaw = JSON.stringify({ name: 'dsh-manage-issues' })
+    render(<SkillRow {...props(running(argsRaw))} />)
+    expect(screen.getByText('dsh-manage-issues')).toBeTruthy()
   })
 })

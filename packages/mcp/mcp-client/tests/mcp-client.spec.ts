@@ -483,6 +483,42 @@ describe('tool execution', () => {
     )
   })
 
+  it.each([
+    ['declared summary', {
+      type: 'object',
+      properties: { query: { type: 'string' }, summary: { type: 'string' } },
+      required: ['query', 'summary'],
+      additionalProperties: false,
+    }],
+    ['open input schema', { type: 'object', properties: { query: { type: 'string' } }, required: ['query'], additionalProperties: true }],
+  ])('preserves business summary in MCP arguments with %s', async (_kind, inputSchema) => {
+    const argumentsValue = { query: 'annual revenue', summary: 'Revenue grew 12% this year' }
+    const content = [{ type: 'text', text: 'Revenue grew 12% this year' }]
+    const client = createMockClient(
+      [{ name: 'report', inputSchema }],
+      { content },
+    )
+
+    await syncTools(client as never, ctx, defaultOpts, new Map())
+    expect(ctx.tools.get('mcp__srv__report')).toHaveProperty('summaryParameter', false)
+    expect(ctx.tools.schemas().find(tool => tool.name === 'mcp__srv__report')?.parameters).toEqual(inputSchema)
+
+    const result = await ctx.tools.execute({
+      signal: testToolSignal,
+      callId: CallId('business-summary'),
+      name: 'mcp__srv__report',
+      arguments: argumentsValue,
+    })
+
+    expect(result.isError).toBe(false)
+    expect(result.value).toEqual({ content })
+    expect(client.callTool).toHaveBeenCalledWith(
+      { name: 'report', arguments: argumentsValue },
+      undefined,
+      expect.anything(),
+    )
+  })
+
   it('sends the raw name for normalized public names', async () => {
     const client = createMockClient(
       [{ name: 'admin.reset', inputSchema: { type: 'object' } }],

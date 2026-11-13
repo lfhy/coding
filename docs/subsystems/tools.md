@@ -147,7 +147,7 @@ type InferArgs<S> = InferProperties<S, []>
 
 注册是一项受信任的同进程约定。注册表以 readonly 输入借用已类型化定义，要求它声明 `output`，校验其原始 schema，并检查 `timeoutMs` 必须为正有限值等语义要求；`schemas()` 在构建请求时生成面向模型的投影，使执行和展示共享同一份已解析定义，而不会将回调泄漏到协议上。
 
-模型可见参数投影会为每个对象根工具加入保留的可选字符串 `display_description`，工具自身不能声明同名业务参数。有效值是非空且不超过 160 个字符的单次调用动作说明；不合法时调用以 `INVALID_ARGS` 失败。调用方在会话事件中记录完整原始参数用于回放；执行分类、策略、工具主体及 Host 呈现器消费剥离后的业务参数，原生与 Code Mode 子调用遵循相同规则。详情和历史摘要的展示归各 Client 包，完整契约见[工具注册表](../../packages/core/tools/README.md#模型调用的操作说明)。
+模型可见参数投影只对缺少友好逐次说明且动作不能静态描述的对象根工具注入可选字符串 `summary`；有 `description`、任务标题或嵌套描述的工具复用业务字段，等待、列表、截图及用户提问等固定动作使用自身状态或静态文案，`render_ui` 使用卡片的 `spec.title` 与静态状态，`structured_output` 与 MCP 工具保留业务 `summary`，这些工具均不注入。注入的说明为非空且不超过 160 个字符的单次调用动作；不合法时调用以 `INVALID_ARGS` 失败。调用方在会话事件中记录原始参数用于回放；执行分类、策略、工具主体及 Host 呈现器消费剥离后的业务参数，原生与 Code Mode 子调用遵循相同规则。Client 按工具名提取展示说明，旧日志的 `display_description` 作为普通工具的兼容回退；GenUI 工具行不读取新 `summary`，仅已结算旧日志可回放历史说明。完整契约见[工具注册表](../../packages/core/tools/README.md#模型调用的操作说明)。
 
 ## `ToolRestriction` — 单个作用域对其继承内容的实时过滤器
 

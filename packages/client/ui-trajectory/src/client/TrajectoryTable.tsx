@@ -24,7 +24,7 @@ import {
   groupTrajectoryVirtualRows, trajectoryVirtualRecordKey,
 } from './trajectory-virtual-rows.ts'
 import type { TrajectoryVirtualRow } from './trajectory-virtual-rows.ts'
-import type { TrajectoryTurnModel } from './layout.ts'
+import { trajectoryToolTitle, type TrajectoryTurnModel } from './layout.ts'
 import { trajectoryPreviewText } from './trajectory-preview.ts'
 import { toolDisplayDescription } from 'coding-tools/display-description'
 import css from './TrajectoryTable.module.css'
@@ -1182,11 +1182,11 @@ function AssistantToolCalls({
             </svg>
             <span className={css.assistantToolCallText}>
               <span className={css.assistantToolCallName}>
-                {call.toolName ?? 'tool-call'}
+                {call.toolName === undefined ? 'tool-call' : trajectoryToolTitle(call.toolName)}
               </span>
               {(() => {
                 try {
-                  const description = toolDisplayDescription(JSON.parse(call.content))
+                  const description = toolDisplayDescription(JSON.parse(call.content), call.toolName)
                   return description === undefined ? null : <span className={css.assistantToolCallArgs}>{description}</span>
                 } catch {
                   return null

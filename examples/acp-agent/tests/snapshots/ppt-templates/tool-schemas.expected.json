@@ -42,10 +42,6 @@
           "justification": {
             "type": "string",
             "description": "Required with sandbox_permissions: one sentence for the user explaining why this exact command needs the wider access."
-          },
-          "display_description": {
-            "type": "string",
-            "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
           }
         },
         "required": [
@@ -63,10 +59,6 @@
           "focus": {
             "type": "string",
             "description": "What the work continuing after the checkpoint needs preserved: the concrete task, the decisions and constraints that still apply, and the files or identifiers that matter. Omit only when the whole history is equally relevant. At most 2000 characters."
-          },
-          "display_description": {
-            "type": "string",
-            "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
           }
         }
       }
@@ -84,10 +76,6 @@
           "max_goal_rounds": {
             "type": "number",
             "description": "Optional positive safe-integer limit on automatic continuation rounds."
-          },
-          "display_description": {
-            "type": "string",
-            "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
           }
         },
         "required": [
@@ -129,10 +117,6 @@
           "justification": {
             "type": "string",
             "description": "Required with sandbox_permissions: one sentence for the user explaining why this exact file operation needs the wider access."
-          },
-          "display_description": {
-            "type": "string",
-            "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
           }
         },
         "required": [
@@ -155,10 +139,6 @@
           "message": {
             "type": "string",
             "description": "The message to deliver to the subagent."
-          },
-          "display_description": {
-            "type": "string",
-            "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
           }
         },
         "required": [
@@ -172,12 +152,7 @@
       "description": "Read the current same-session goal, including its exact id/revision, objective, phase, completed continuation rounds, round limit, blocker reason when present, and whether another continuation is armed. Call this before updating a goal.",
       "parameters": {
         "type": "object",
-        "properties": {
-          "display_description": {
-            "type": "string",
-            "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
-          }
-        }
+        "properties": {}
       }
     },
     {
@@ -189,10 +164,6 @@
           "agent_id": {
             "type": "string",
             "description": "The agent id of the running agent to interrupt."
-          },
-          "display_description": {
-            "type": "string",
-            "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
           }
         },
         "required": [
@@ -213,10 +184,6 @@
           "reason": {
             "type": "string",
             "description": "Optional short reason, recorded in the log and forwarded to the job."
-          },
-          "display_description": {
-            "type": "string",
-            "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
           }
         },
         "required": [
@@ -229,12 +196,7 @@
       "description": "List your background jobs (running and finished) with their ids, kinds, and statuses.",
       "parameters": {
         "type": "object",
-        "properties": {
-          "display_description": {
-            "type": "string",
-            "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
-          }
-        }
+        "properties": {}
       }
     },
     {
@@ -254,10 +216,6 @@
           "timeout_ms": {
             "type": "number",
             "description": "Max wait in milliseconds (only meaningful with wait: true). Defaults to the configured wait timeout; capped by the configured maximum."
-          },
-          "display_description": {
-            "type": "string",
-            "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
           }
         },
         "required": [
@@ -278,10 +236,6 @@
               "children",
               "descendants"
             ]
-          },
-          "display_description": {
-            "type": "string",
-            "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
           }
         }
       }
@@ -300,9 +254,9 @@
             "type": "string",
             "description": "Workspace-relative project directory; omit for the open project."
           },
-          "display_description": {
+          "summary": {
             "type": "string",
-            "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
+            "description": "Optional short, user-friendly summary of what this call is doing now. Omit when the action is self-explanatory. Do not include secrets, raw JSON, or internal identifiers."
           }
         },
         "required": [
@@ -324,9 +278,9 @@
             "type": "boolean",
             "description": "Ask the session model for layout advice on top of the rule checks."
           },
-          "display_description": {
+          "summary": {
             "type": "string",
-            "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
+            "description": "Optional short, user-friendly summary of what this call is doing now. Omit when the action is self-explanatory. Do not include secrets, raw JSON, or internal identifiers."
           }
         }
       }
@@ -364,9 +318,9 @@
               "inference"
             ]
           },
-          "display_description": {
+          "summary": {
             "type": "string",
-            "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
+            "description": "Optional short, user-friendly summary of what this call is doing now. Omit when the action is self-explanatory. Do not include secrets, raw JSON, or internal identifiers."
           }
         },
         "required": [
@@ -392,9 +346,9 @@
             "type": "string",
             "description": "Workspace-relative project directory; omit to derive it from the title or template name."
           },
-          "display_description": {
+          "summary": {
             "type": "string",
-            "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
+            "description": "Optional short, user-friendly summary of what this call is doing now. Omit when the action is self-explanatory. Do not include secrets, raw JSON, or internal identifiers."
           }
         },
         "required": [
@@ -416,9 +370,9 @@
             "type": "string",
             "description": "Exact current name confirmed with ppt_templates."
           },
-          "display_description": {
+          "summary": {
             "type": "string",
-            "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
+            "description": "Optional short, user-friendly summary of what this call is doing now. Omit when the action is self-explanatory. Do not include secrets, raw JSON, or internal identifiers."
           }
         },
         "required": [
@@ -464,9 +418,9 @@
             "type": "number",
             "description": "Revision the edit was planned against."
           },
-          "display_description": {
+          "summary": {
             "type": "string",
-            "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
+            "description": "Optional short, user-friendly summary of what this call is doing now. Omit when the action is self-explanatory. Do not include secrets, raw JSON, or internal identifiers."
           }
         },
         "required": [
@@ -496,9 +450,9 @@
               "pdf"
             ]
           },
-          "display_description": {
+          "summary": {
             "type": "string",
-            "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
+            "description": "Optional short, user-friendly summary of what this call is doing now. Omit when the action is self-explanatory. Do not include secrets, raw JSON, or internal identifiers."
           }
         }
       }
@@ -521,9 +475,9 @@
             "type": "string",
             "description": "Deck title; defaults to the file name."
           },
-          "display_description": {
+          "summary": {
             "type": "string",
-            "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
+            "description": "Optional short, user-friendly summary of what this call is doing now. Omit when the action is self-explanatory. Do not include secrets, raw JSON, or internal identifiers."
           }
         },
         "required": [
@@ -557,9 +511,9 @@
             "type": "integer",
             "description": "Maximum characters in this excerpt; defaults to 8000, maximum 16000."
           },
-          "display_description": {
+          "summary": {
             "type": "string",
-            "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
+            "description": "Optional short, user-friendly summary of what this call is doing now. Omit when the action is self-explanatory. Do not include secrets, raw JSON, or internal identifiers."
           }
         },
         "required": [
@@ -583,9 +537,9 @@
             "type": "string",
             "description": "Template name; omit to use the source file name."
           },
-          "display_description": {
+          "summary": {
             "type": "string",
-            "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
+            "description": "Optional short, user-friendly summary of what this call is doing now. Omit when the action is self-explanatory. Do not include secrets, raw JSON, or internal identifiers."
           }
         },
         "required": [
@@ -603,9 +557,9 @@
             "type": "string",
             "description": "Workspace-relative project directory."
           },
-          "display_description": {
+          "summary": {
             "type": "string",
-            "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
+            "description": "Optional short, user-friendly summary of what this call is doing now. Omit when the action is self-explanatory. Do not include secrets, raw JSON, or internal identifiers."
           }
         },
         "required": [
@@ -631,9 +585,9 @@
             "type": "string",
             "description": "Workspace-relative draft project directory; defaults to the source file name."
           },
-          "display_description": {
+          "summary": {
             "type": "string",
-            "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
+            "description": "Optional short, user-friendly summary of what this call is doing now. Omit when the action is self-explanatory. Do not include secrets, raw JSON, or internal identifiers."
           }
         },
         "required": [
@@ -651,9 +605,9 @@
             "type": "string",
             "description": "Workspace-relative project directory; omit for the open project."
           },
-          "display_description": {
+          "summary": {
             "type": "string",
-            "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
+            "description": "Optional short, user-friendly summary of what this call is doing now. Omit when the action is self-explanatory. Do not include secrets, raw JSON, or internal identifiers."
           }
         }
       }
@@ -672,9 +626,9 @@
             "type": "number",
             "description": "How many steps to go forward (1–20, default 1)."
           },
-          "display_description": {
+          "summary": {
             "type": "string",
-            "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
+            "description": "Optional short, user-friendly summary of what this call is doing now. Omit when the action is self-explanatory. Do not include secrets, raw JSON, or internal identifiers."
           }
         }
       }
@@ -693,9 +647,9 @@
             "type": "string",
             "description": "New non-empty template name."
           },
-          "display_description": {
+          "summary": {
             "type": "string",
-            "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
+            "description": "Optional short, user-friendly summary of what this call is doing now. Omit when the action is self-explanatory. Do not include secrets, raw JSON, or internal identifiers."
           }
         },
         "required": [
@@ -721,9 +675,9 @@
               "type": "number"
             }
           },
-          "display_description": {
+          "summary": {
             "type": "string",
-            "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
+            "description": "Optional short, user-friendly summary of what this call is doing now. Omit when the action is self-explanatory. Do not include secrets, raw JSON, or internal identifiers."
           }
         }
       }
@@ -742,9 +696,9 @@
             "type": "string",
             "description": "Workspace-relative source project directory; omit for the open project."
           },
-          "display_description": {
+          "summary": {
             "type": "string",
-            "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
+            "description": "Optional short, user-friendly summary of what this call is doing now. Omit when the action is self-explanatory. Do not include secrets, raw JSON, or internal identifiers."
           }
         },
         "required": [
@@ -757,12 +711,7 @@
       "description": "List saved full-deck user presentation templates and their ids, page counts and import-loss warnings. These are distinct from the seven built-in single-page layouts in ppt_edit add_page. Use an id with ppt_create_from_template to create a new copy; listing never opens or changes the current deck.",
       "parameters": {
         "type": "object",
-        "properties": {
-          "display_description": {
-            "type": "string",
-            "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
-          }
-        }
+        "properties": {}
       }
     },
     {
@@ -779,9 +728,9 @@
             "type": "number",
             "description": "How many steps to go back (1–20, default 1)."
           },
-          "display_description": {
+          "summary": {
             "type": "string",
-            "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
+            "description": "Optional short, user-friendly summary of what this call is doing now. Omit when the action is self-explanatory. Do not include secrets, raw JSON, or internal identifiers."
           }
         }
       }
@@ -800,9 +749,9 @@
             "type": "number",
             "description": "Optional positive safe-integer round cap, bounded by the deployment ceiling."
           },
-          "display_description": {
+          "summary": {
             "type": "string",
-            "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
+            "description": "Optional short, user-friendly summary of what this call is doing now. Omit when the action is self-explanatory. Do not include secrets, raw JSON, or internal identifiers."
           }
         },
         "required": [
@@ -827,10 +776,6 @@
           "limit": {
             "type": "number",
             "description": "Maximum number of lines to return in this call (up to 10000). Defaults to 10000. For a large file, set offset to the first line you need and use the continuation offset from the footer."
-          },
-          "display_description": {
-            "type": "string",
-            "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
           }
         },
         "required": [
@@ -847,10 +792,6 @@
           "file_path": {
             "type": "string",
             "description": "Path to the image file, resolved by the filesystem backend."
-          },
-          "display_description": {
-            "type": "string",
-            "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
           }
         },
         "required": [
@@ -871,10 +812,6 @@
           "message": {
             "type": "string",
             "description": "The message to deliver to the subagent."
-          },
-          "display_description": {
-            "type": "string",
-            "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
           }
         },
         "required": [
@@ -892,10 +829,6 @@
           "name": {
             "type": "string",
             "description": "The exact skill name from the available skills list."
-          },
-          "display_description": {
-            "type": "string",
-            "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
           }
         },
         "required": [
@@ -916,10 +849,6 @@
           "path": {
             "type": "string",
             "description": "File path relative to the skill resource root, e.g. \"examples/index.md\"."
-          },
-          "display_description": {
-            "type": "string",
-            "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
           }
         },
         "required": [
@@ -953,10 +882,6 @@
           "run_in_background": {
             "type": "boolean",
             "description": "Whether to run in the background and return a durable subagent id immediately. Defaults to true. Set false to wait for the result when your next action depends on it."
-          },
-          "display_description": {
-            "type": "string",
-            "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
           }
         },
         "required": [
@@ -986,10 +911,6 @@
           "model_provider": {
             "type": "string",
             "description": "Optional LLM provider route, not the subagent transport provider. Omit or leave empty to inherit the current request provider; if none exists, the sole registered LLM provider is used. A non-empty value requires a non-empty model."
-          },
-          "display_description": {
-            "type": "string",
-            "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
           }
         },
         "required": [
@@ -1030,10 +951,6 @@
                 "status"
               ]
             }
-          },
-          "display_description": {
-            "type": "string",
-            "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
           }
         },
         "required": [
@@ -1077,10 +994,6 @@
           "blocked_reason": {
             "type": "string",
             "description": "Concrete blocking condition; required only with action blocked."
-          },
-          "display_description": {
-            "type": "string",
-            "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
           }
         },
         "required": [
@@ -1156,10 +1069,6 @@
             "type": "object",
             "description": "Optional JSON input exposed to the script as the `args` global (wrap a bare list as a field, e.g. {\"files\": [...]}).",
             "additionalProperties": true
-          },
-          "display_description": {
-            "type": "string",
-            "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
           }
         },
         "required": [
@@ -1194,10 +1103,6 @@
           "justification": {
             "type": "string",
             "description": "Required with sandbox_permissions: one sentence for the user explaining why this exact file operation needs the wider access."
-          },
-          "display_description": {
-            "type": "string",
-            "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
           }
         },
         "required": [

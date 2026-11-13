@@ -112,6 +112,33 @@ describe('in-process structured output', () => {
     await run.dispose()
   })
 
+  it('requires and captures a business summary at the structured root in Native mode', async () => {
+    const schema: ObjectJsonSchema = {
+      type: 'object',
+      properties: { summary: { type: 'string' }, answer: { type: 'number' } },
+      required: ['summary', 'answer'],
+      additionalProperties: false,
+    }
+    const answer = { summary: 'Revenue grew 12% this year', answer: 12 }
+    const { ctx, parent, adapter } = await setup([
+      toolCallResponse('c1', STRUCTURED_OUTPUT_TOOL, { answer: 12 }),
+      toolCallResponse('c2', STRUCTURED_OUTPUT_TOOL, answer),
+    ])
+    const run = await ctx.subagents.start('spawn', structuredRequest(parent, { outputSchema: schema }))
+    const result = await run.result
+
+    const childRequest = adapter.requests[0]!
+    expect(childRequest.tools!.find(tool => tool.name === STRUCTURED_OUTPUT_TOOL)?.parameters).toEqual(schema)
+    const child = ctx.agents.get(run.id)!
+    expect(ctx.tools.get(STRUCTURED_OUTPUT_TOOL, child)).toHaveProperty('summaryParameter', false)
+    const results = child.session.events.filter(event => event.type === 'tool/result')
+    expect(results).toHaveLength(2)
+    expect(results[0]!.data.message.content[0].isError).toBe(true)
+    expect(result.stopReason).toBe('completed')
+    expect(result.structured).toEqual(answer)
+    await run.dispose()
+  })
+
   it('stops the turn after a successful capture — no extra model step is spent', async () => {
     const { ctx, parent, adapter } = await setup([
       toolCallResponse('c1', STRUCTURED_OUTPUT_TOOL, { answer: 1 }),
@@ -405,6 +432,38 @@ describe('in-process structured output', () => {
     expect(request.system).toContain('recorded: true;')
     expect(request.system).toContain('Promise<ToolOutputMap[K]>')
     expect(request.system).toContain(STRUCTURED_OUTPUT_INSTRUCTION)
+    await run.dispose()
+  })
+
+  it('preserves a required business summary in the Code Mode SDK and capture', async () => {
+    const schema: ObjectJsonSchema = {
+      type: 'object',
+      properties: { summary: { type: 'string' }, answer: { type: 'number' } },
+      required: ['summary', 'answer'],
+      additionalProperties: false,
+    }
+    const answer = { summary: 'Revenue grew 12% this year', answer: 12 }
+    const { ctx, parent, adapter } = await setup([
+      toolCallResponse('c1', RUN_CODE_NAME, {
+        code: 'return await tools.structured_output({ summary: "Revenue grew 12% this year", answer: 12 })',
+        description: 'Capture the structured answer',
+      }),
+    ], {
+      toolMode: 'code',
+      codeRun: async (request) => {
+        const capture = request.bindings.at(0)?.functions[STRUCTURED_OUTPUT_TOOL]
+        if (!capture) throw new Error('structured_output binding missing')
+        await capture(answer)
+        return { logs: [], value: 'captured' }
+      },
+    })
+    const run = await ctx.subagents.start('spawn', structuredRequest(parent, { outputSchema: schema }))
+    const result = await run.result
+
+    expect(toolNames(adapter.requests[0]!)).toEqual([RUN_CODE_NAME])
+    expect(adapter.requests[0]!.system).toMatch(/structured_output: \{\s+summary: string;\s+answer: number;/)
+    expect(result.stopReason).toBe('completed')
+    expect(result.structured).toEqual(answer)
     await run.dispose()
   })
 

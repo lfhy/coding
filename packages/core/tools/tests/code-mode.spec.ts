@@ -143,17 +143,18 @@ describe('mode-aware wire contribution', () => {
     const calls = registerEcho(ctx)
     const { agent, events } = fakeAgent()
     const assembly = await systemPrompt.assemble()
-    expect(assembly.tools[0]?.parameters).toMatchObject({ properties: { display_description: { type: 'string' } } })
-    expect(assembly.sections.find(section => section.name === 'tools:sdk')?.text).toContain('display_description?: string;')
+    expect(assembly.tools[0]?.parameters).toMatchObject({ properties: { description: { type: 'string' } } })
+    expect((assembly.tools[0]?.parameters as { properties: Record<string, unknown> }).properties).not.toHaveProperty('summary')
+    expect(assembly.sections.find(section => section.name === 'tools:sdk')?.text).toContain('summary?: string;')
     runtime.behavior = async (request) => {
-      await request.bindings[0]!.functions.echo!({ value: 'ok', display_description: '读取工作区' })
+      await request.bindings[0]!.functions.echo!({ value: 'ok', summary: '读取工作区' })
       return { logs: [], value: 'done' }
     }
     const result = await runCode(ctx, 'return 1', { agent })
     expect(result.isError).toBe(false)
     expect(calls).toEqual([{ value: 'ok' }])
     for (const event of events.filter(entry => entry.type === 'tool/code-dispatch-start' || entry.type === 'tool/code-dispatch')) {
-      expect(event.data).toMatchObject({ arguments: { value: 'ok', display_description: '读取工作区' } })
+      expect(event.data).toMatchObject({ arguments: { value: 'ok', summary: '读取工作区' } })
     }
     expect(events.filter(entry => entry.type === 'tool/code-dispatch-start')).toHaveLength(1)
     expect(events.filter(entry => entry.type === 'tool/code-dispatch')).toHaveLength(1)
@@ -205,7 +206,7 @@ describe('mode-aware wire contribution', () => {
     const assembly = await systemPrompt.assemble()
     const sdk = assembly.sections.find(section => section.name === 'tools:sdk')?.text
 
-    expect(sdk).toContain('display_description?: string;')
+    expect(sdk).toContain('summary?: string;')
     expect(sdk).toContain('deep_output: string | null')
   })
 

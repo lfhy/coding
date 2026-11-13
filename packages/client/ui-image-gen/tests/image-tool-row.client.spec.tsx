@@ -67,6 +67,12 @@ describe('对话图片工具', () => {
     expect(screen.getByText('图片生成失败')).toBeTruthy()
   })
 
+  it('历史图片调用继续显示 display_description', () => {
+    const argsRaw = JSON.stringify({ prompt: '晨光中的湖泊', display_description: '历史绘图说明' })
+    render(<ImageToolRow {...props(running({ argsRaw }))} />)
+    expect(screen.getByText('历史绘图说明')).toBeTruthy()
+  })
+
   it('旧记录和不完整调用参数安全回退到已有状态', () => {
     const view = render(<ImageToolRow {...props(running({ argsRaw: '{"display_description":' }))} />)
     expect(screen.getByText('正在创建图像')).toBeTruthy()

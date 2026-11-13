@@ -30,20 +30,21 @@ describe('GenUI 工具行', () => {
     expect(storedKeys.some(key => key?.includes('panel'))).toBe(false)
   })
 
-  it('带说明的运行中调用只显示友好说明和等待状态', () => {
+  it('新调用只显示静态等待状态，不读取额外摘要或历史说明', () => {
     const running = {
       callId: 'render-test', name: 'render_ui', time: 1, turn: 1, step: 1,
-      argsRaw: JSON.stringify({ display_description: '呈现本周进度' }),
+      argsRaw: JSON.stringify({ summary: '呈现本周进度', display_description: '旧版进度说明' }),
       callView: null, subCalls: [],
     } as ToolCallViewProps['block']
     const view = render(<GenuiToolView {...props()} block={running} />)
-    expect(screen.getByText('呈现本周进度')).toBeTruthy()
     expect(screen.getByRole('status').textContent).toBe('正在创建…')
+    expect(view.container.textContent).not.toContain('呈现本周进度')
+    expect(view.container.textContent).not.toContain('旧版进度说明')
     expect(view.container.textContent).not.toContain('render_ui')
     expect(view.container.textContent).not.toContain('render-test')
   })
 
-  it('结果卡片保留渲染内容，错误和历史记录安全回退', () => {
+  it('旧日志的 display_description 保留展示，结果卡片和错误状态不变', () => {
     const complete = props()
     const block = complete.block
     if (!('kind' in block)) throw new Error('测试需要已结算的结果')
@@ -60,6 +61,33 @@ describe('GenUI 工具行', () => {
     expect(screen.getByRole('status').textContent).toBe('界面创建失败')
     expect(view.container.textContent).not.toContain('render-test')
     expect(view.container.textContent).not.toContain('render_ui')
+  })
+
+  it('已结算的新调用显示卡片自身标题，不显示额外 summary', () => {
+    const complete = props()
+    const block = complete.block
+    if (!('kind' in block)) throw new Error('测试需要已结算的结果')
+    const view = render(<GenuiToolView {...complete} block={{
+      ...block,
+      call: { name: 'render_ui', argsRaw: JSON.stringify({ summary: '非卡片摘要' }) },
+      meta: { title: '本周进度', items: [{ type: 'text', content: '进度已更新' }] },
+    }} />)
+    expect(screen.getByText('本周进度')).toBeTruthy()
+    expect(screen.getByText('进度已更新')).toBeTruthy()
+    expect(view.container.textContent).not.toContain('非卡片摘要')
+  })
+
+  it.each(['structured_output', 'mcp__rea__analyze'])('工具 %s 的业务 summary 不被误用为动作说明', (toolName) => {
+    const complete = props()
+    const block = complete.block
+    if (!('kind' in block)) throw new Error('测试需要已结算的结果')
+    const view = render(<GenuiToolView {...complete} toolName={toolName} block={{
+      ...block, meta: undefined,
+      call: { name: toolName, argsRaw: JSON.stringify({ summary: '业务内容摘要', display_description: '旧版说明' }) },
+    }} />)
+    expect(screen.getByRole('status').textContent).toBe('没有可显示的界面')
+    expect(view.container.textContent).not.toContain('业务内容摘要')
+    expect(view.container.textContent).not.toContain('旧版说明')
   })
 
   it('旧记录中断和无效参数只显示本地化状态', () => {

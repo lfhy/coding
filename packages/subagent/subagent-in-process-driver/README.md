@@ -36,7 +36,7 @@
 
 `attachStructuredRuntime(childCtx, schema)` 会在子 agent 作用域中安装完整约定：
 
-- 使用请求 schema 注册的 `structured_output` 工具会校验并暂存模型值。
+- 使用请求 schema 注册的 `structured_output` 工具会校验并暂存模型值；根字段 `summary` 若由业务 schema 声明，仍是实际结果内容，既不注入或剥离，也不作为展示摘要。
 - 一个顺序为 190 的系统提示词段会告诉子 agent，该工具调用就是终态答案。
 - 两项贡献都是普通的子 agent 作用域注册。专家级 `system-prompt/assemble` 监听器可以替换它们，因此负责为该子 agent 保留结构化输出协议。
 - `tools/result` 观察器只会在该次执行的权威最终工具结果成功后提交暂存值；Code Mode 子分派外层的 `run_code` 结果也包括在内。
@@ -64,7 +64,7 @@
 
 #### 模型看到的内容
 
-结构化运行会添加下方的结构化输出指令。它还会添加子 agent 作用域的 `structured_output` 定义，其精确描述为 `Report your final structured result. Call this exactly once, when your answer is complete; the arguments must match this tool's parameter schema exactly.`，参数使用请求的 schema。该仅运行时存在的定义不在已生成并随产品发布的[工具包索引](../../../docs/tool-catalog.md#tool-package-map)中。其规范确认值是 `{ recorded: true }`，渲染为 `Structured output recorded.`；后续调用会变为 ``Error: structured output already recorded: the run is complete, so `<tool>` is not executed``。
+结构化运行会添加下方的结构化输出指令。它还会添加子 agent 作用域的 `structured_output` 定义，其精确描述为 `Report your final structured result. Call this exactly once, when your answer is complete; the arguments must match this tool's parameter schema exactly.`，参数使用请求的 schema；不会额外注入展示用 `summary`，请求若要求根 `summary`，模型必须填写真实业务值。该仅运行时存在的定义不在已生成并随产品发布的[工具包索引](../../../docs/tool-catalog.md#tool-package-map)中。其规范确认值是 `{ recorded: true }`，渲染为 `Structured output recorded.`；后续调用会变为 ``Error: structured output already recorded: the run is complete, so `<tool>` is not executed``。
 
 ##### 结构化输出指令
 

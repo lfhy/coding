@@ -346,7 +346,7 @@ describe('SearchRow keyed card', () => {
     expect(view.getByText('3 matches in 2 files')).toBeTruthy()
   })
 
-  it('keeps a per-call description ahead of a search result title in both rows', () => {
+  it('keeps a historical per-call description ahead of a search result title in both rows', () => {
     const call = { name: 'grep', argsRaw: JSON.stringify({ pattern: 'foo', display_description: '核对匹配项' }) }
     const block = settledGrep({ call, resultView: resultMatches({ title: '3 matches in 2 files' }) })
     const dedicated = render(<SearchRow {...rowProps(block, 'grep')} />)

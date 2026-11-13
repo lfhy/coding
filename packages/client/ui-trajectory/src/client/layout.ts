@@ -1042,18 +1042,45 @@ function expandSubCalls(
   return out
 }
 
+/** 简单目录和等待调用只需静态标题，原参数仍在 Payload 中供检查。 */
+const SIMPLE_TOOL_TITLES: Readonly<Record<string, string>> = {
+  wait_agent: 'Wait for agents',
+  list_agents: 'List agents',
+  list_subagent_models: 'Browse models',
+  memory_list: 'List memory',
+  browser_close: 'Close browser',
+  browser_screenshot: 'Capture screenshot',
+  browser_snapshot: 'View page',
+  browser_auth_flush: 'Save browser sign-in',
+  browser_doctor: 'Check browser',
+  browser_status: 'Browser status',
+  computer_list_apps: 'List apps',
+  cordis_inspect_list: 'Browse plugin capabilities',
+  terminal_list: 'List terminals',
+  canvas_state: 'View canvas',
+  ppt_templates: 'Browse presentation templates',
+  schedule_list: 'List reminders',
+  ask_user_question: 'Ask question',
+  report: 'Report result',
+}
+
+/** 返回简单工具的用户友好标题，其他工具保留原名称供调用记录识别。 */
+export function trajectoryToolTitle(name: string): string {
+  return Object.hasOwn(SIMPLE_TOOL_TITLES, name) ? SIMPLE_TOOL_TITLES[name] ?? name : name
+}
+
 function summarizeCall(
   name: string,
   argsRaw: string,
 ): Pick<TrajectoryCellProps, 'text' | 'previewMarkdown'> {
   let description: string | undefined
   try {
-    description = toolDisplayDescription(JSON.parse(argsRaw))
+    description = toolDisplayDescription(JSON.parse(argsRaw), name)
   } catch {
     // 流式参数尚未闭合或旧日志无法解析时，只显示安全的通用动作。
   }
   return {
-    text: name,
+    text: trajectoryToolTitle(name),
     ...(description === undefined ? {} : { previewMarkdown: description }),
   }
 }

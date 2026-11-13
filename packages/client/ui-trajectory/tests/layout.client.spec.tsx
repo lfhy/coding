@@ -110,7 +110,7 @@ describe('deriveTrajectoryLayout', () => {
   })
 
   it('projects operation descriptions for running calls and keeps original arguments inspectable', () => {
-    const argsRaw = JSON.stringify({ command: 'echo private', display_description: '检查当前目录' })
+    const argsRaw = JSON.stringify({ command: 'echo private', description: '检查当前目录' })
     const turns = deriveTrajectoryLayout({
       nodes: [], partial: null,
       runningCalls: [{ callId: 'r2', name: 'exec_command', argsRaw, turn: 1, step: 1, time: 1_000, callView: null, subCalls: [] }],
@@ -118,6 +118,56 @@ describe('deriveTrajectoryLayout', () => {
     const cell = turns[0]?.groups[0]?.cells[0]
     expect(cell).toMatchObject({ text: 'exec_command', previewMarkdown: '检查当前目录', inputDetail: argsRaw })
     expect(cell?.previewMarkdown).not.toContain('private')
+  })
+
+  it.each([
+    ['wait_agent', 'Wait for agents'],
+    ['list_agents', 'List agents'],
+    ['list_subagent_models', 'Browse models'],
+    ['memory_list', 'List memory'],
+    ['browser_close', 'Close browser'],
+    ['browser_screenshot', 'Capture screenshot'],
+    ['browser_snapshot', 'View page'],
+    ['browser_auth_flush', 'Save browser sign-in'],
+    ['browser_doctor', 'Check browser'],
+    ['browser_status', 'Browser status'],
+    ['computer_list_apps', 'List apps'],
+    ['cordis_inspect_list', 'Browse plugin capabilities'],
+    ['terminal_list', 'List terminals'],
+    ['canvas_state', 'View canvas'],
+    ['ppt_templates', 'Browse presentation templates'],
+    ['schedule_list', 'List reminders'],
+    ['ask_user_question', 'Ask question'],
+    ['report', 'Report result'],
+  ])('renders %s as a static title, with raw input only in Payload', (name, title) => {
+    const argsRaw = JSON.stringify({ summary: '不应显示', private: 'raw input' })
+    const turns = deriveTrajectoryLayout({
+      nodes: [], partial: null,
+      runningCalls: [{ callId: name, name, argsRaw, turn: 1, step: 1, time: 1_000, callView: null, subCalls: [] }],
+    })
+    const cell = turns[0]?.groups[0]?.cells[0]
+    expect(cell).toMatchObject({ text: title, inputDetail: argsRaw })
+    expect(cell?.previewMarkdown).toBeUndefined()
+  })
+
+  it.each(['structured_output', 'mcp__server__tool'])('%s does not show business summary as a call description', (name) => {
+    const argsRaw = JSON.stringify({ summary: '业务参数', display_description: '历史说明' })
+    const turns = deriveTrajectoryLayout({
+      nodes: [], partial: null,
+      runningCalls: [{ callId: name, name, argsRaw, turn: 1, step: 1, time: 1_000, callView: null, subCalls: [] }],
+    })
+    const cell = turns[0]?.groups[0]?.cells[0]
+    expect(cell).toMatchObject({ text: name, inputDetail: argsRaw })
+    expect(cell?.previewMarkdown).toBeUndefined()
+  })
+
+  it('uses legacy display_description when a normal tool has no summary', () => {
+    const argsRaw = JSON.stringify({ display_description: '历史说明' })
+    const turns = deriveTrajectoryLayout({
+      nodes: [], partial: null,
+      runningCalls: [{ callId: 'read-1', name: 'read', argsRaw, turn: 1, step: 1, time: 1_000, callView: null, subCalls: [] }],
+    })
+    expect(turns[0]?.groups[0]?.cells[0]).toMatchObject({ text: 'read', previewMarkdown: '历史说明' })
   })
 
   it('appends a streaming partial without rebuilding unaffected finalized turns', () => {

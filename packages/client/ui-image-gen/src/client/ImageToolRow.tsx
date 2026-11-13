@@ -14,11 +14,11 @@ type ImageToolRowProps = ToolCallViewProps & PropsLocale<typeof NS>
 type State = 'running' | 'complete' | 'failed' | 'stopped'
 
 /** 历史结果缺少调用头时不从结果或标识符猜测描述。 */
-function displayDescription(block: ToolCallViewProps['block']): string | undefined {
+function displayDescription(block: ToolCallViewProps['block'], toolName: string): string | undefined {
   const raw = 'kind' in block ? block.call?.argsRaw : block.argsRaw
   if (raw === undefined) return undefined
   try {
-    return toolDisplayDescription(JSON.parse(raw) as unknown)
+    return toolDisplayDescription(JSON.parse(raw) as unknown, toolName)
   } catch {
     return undefined
   }
@@ -110,7 +110,7 @@ function ResultImage({ attachment, loadImage, openInStudio, inspect, t }: {
  * @returns 自动结束的点阵等待态或持久结果图片。
  */
 export function ImageToolRow({ block, toolName, loadImage, inspect, openInStudio, t }: ImageToolRowProps) {
-  const description = displayDescription(block)
+  const description = displayDescription(block, toolName)
   const images = useMemo(() => 'kind' in block && !block.isError
     ? block.content.flatMap(part => part.type === 'image' ? [part.attachment] : []) : [], [block])
   const state = imageState(block, images.length)

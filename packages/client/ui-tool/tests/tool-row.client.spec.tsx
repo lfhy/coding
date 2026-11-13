@@ -109,13 +109,11 @@ describe('tool-call-model', () => {
     expect(toolRowModel('bash', running({ argsRaw: '{"command":"pwd"}' })).summary).toBe('pwd')
   })
 
-  it('shows the per-call operation description for any tool without exposing input data', () => {
-    const argsRaw = JSON.stringify({ command: 'echo private', display_description: '检查当前目录' })
-    for (const name of ['exec_command', 'bash', 'unregistered_tool']) {
-      const model = toolRowModel(name, running({ name, argsRaw }))
-      expect(model.summary).toBe('检查当前目录')
-      expect(model.body).not.toBeNull()
-    }
+  it('uses summary for ordinary tools without exposing input data', () => {
+    const argsRaw = JSON.stringify({ command: 'echo private', summary: '检查当前目录' })
+    const model = toolRowModel('unregistered_tool', running({ name: 'unregistered_tool', argsRaw }))
+    expect(model.summary).toBe('检查当前目录')
+    expect(model.body).not.toBeNull()
     const view = render(<GenericToolCard {...{
       callId: 'c1', toolName: 'unregistered_tool', block: running({ name: 'unregistered_tool', argsRaw }), openFile: vi.fn(), t,
     }} />)
@@ -125,14 +123,75 @@ describe('tool-call-model', () => {
     expect(view.container.textContent).toContain('private')
   })
 
-  it('keeps a running code call expandable when it has an operation description', () => {
-    const argsRaw = JSON.stringify({ code: 'return 42', description: 'Execute program', display_description: '检查结果' })
+  it('uses the historical display_description when summary is absent', () => {
+    const argsRaw = JSON.stringify({ query: 'private', display_description: '历史操作说明' })
+    expect(toolRowModel('web_search', running({ name: 'web_search', argsRaw })).summary).toBe('历史操作说明')
+  })
+
+  it.each([
+    ['browser_close', 'Close browser'],
+    ['browser_screenshot', 'Capture screenshot'],
+    ['browser_snapshot', 'View page'],
+    ['browser_auth_flush', 'Save browser sign-in'],
+    ['browser_doctor', 'Check browser'],
+    ['browser_status', 'Browser status'],
+    ['computer_list_apps', 'List apps'],
+    ['cordis_inspect_list', 'Browse plugin capabilities'],
+    ['terminal_list', 'List terminals'],
+    ['canvas_state', 'View canvas'],
+    ['ppt_templates', 'Browse presentation templates'],
+    ['schedule_list', 'List reminders'],
+    ['report', 'Report result'],
+  ])('shows a friendly action title for %s', (name, title) => {
+    const argsRaw = JSON.stringify({ internalValue: 'private' })
+    const model = toolRowModel(name, running({ name, argsRaw }))
+    expect(model.title).toBe(title)
+    expect(model.summary).toBe('')
+    const view = render(<GenericToolCard {...{
+      callId: 'c1', toolName: name, block: running({ name, argsRaw }), openFile: vi.fn(), t,
+    }} />)
+    expect(view.getByText(title)).toBeTruthy()
+    expect(view.container.textContent).not.toContain('private')
+  })
+
+  it.each([
+    ['wait_agent', 'Wait for agents'],
+    ['list_agents', 'List agents'],
+    ['list_subagent_models', 'Browse models'],
+    ['memory_list', 'List memory'],
+  ])('uses only a static title for %s', (name, title) => {
+    for (const argsRaw of ['{}', JSON.stringify({ summary: '不应显示', display_description: '历史说明' })]) {
+      const model = toolRowModel(name, running({ name, argsRaw }))
+      expect(model.title).toBe(title)
+      expect(model.summary).toBe('')
+      expect(model.displayDescription).toBeUndefined()
+    }
+  })
+
+  it.each(['structured_output', 'mcp__server__tool'])('%s keeps summary as business data, not a friendly description', (name) => {
+    const argsRaw = JSON.stringify({ summary: '业务参数', display_description: '历史说明' })
+    const model = toolRowModel(name, running({ name, argsRaw }))
+    expect(model.summary).toBe('')
+    expect(model.displayDescription).toBeUndefined()
+    expect(model.body).toContain('"summary": "业务参数"')
+  })
+
+  it('prefers the existing description of shell, code and delegation tools over summary', () => {
+    for (const name of ['bash', 'exec_command', 'run_code', 'spawn_agent']) {
+      const argsRaw = JSON.stringify({ description: '检查已有说明', summary: '不应抢占', display_description: '历史说明' })
+      const model = toolRowModel(name, running({ name, argsRaw }))
+      expect(model.summary).toBe('检查已有说明')
+    }
+  })
+
+  it('keeps a running code call expandable when it has an existing description', () => {
+    const argsRaw = JSON.stringify({ code: 'return 42', description: 'Execute program' })
     const view = render(<GenericToolCard {...{
       callId: 'c1', toolName: 'run_code', block: running({ name: 'run_code', argsRaw }), openFile: vi.fn(), t,
     }} />)
-    expect(view.getByText('检查结果')).toBeTruthy()
+    expect(view.getByText('Execute program')).toBeTruthy()
     expect(view.container.textContent).not.toContain('return 42')
-    fireEvent.click(view.getByRole('button', { name: /检查结果/ }))
+    fireEvent.click(view.getByRole('button', { name: /Execute program/ }))
     expect(view.container.textContent).toContain('return 42')
   })
 
@@ -161,7 +220,7 @@ describe('tool-call-model', () => {
     expect(toolRowModel('memory_save', running({ argsRaw: '{"content":"secret"}' })))
       .toMatchObject({ title: 'Save memory', summary: '' })
     expect(toolRowModel('browser_screenshot', running({ argsRaw: '{"url":"https://example.com"}' })))
-      .toMatchObject({ title: 'Browser', summary: '' })
+      .toMatchObject({ title: 'Capture screenshot', summary: '' })
   })
 
   it('joins multi-query web search arguments in the summary', () => {
@@ -528,7 +587,7 @@ describe('GenericToolCard', () => {
       />,
     )
     expect(view.queryByRole('img', { name: '图片' })).toBeNull()
-    fireEvent.click(view.getByRole('button', { name: /Browser/ }))
+    fireEvent.click(view.getByRole('button', { name: /Capture screenshot/ }))
     const image = await view.findByRole('img', { name: '图片' })
     expect(loadImage).toHaveBeenCalledWith(attachment)
     fireEvent.click(image)

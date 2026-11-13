@@ -66,7 +66,7 @@ const FOLD_PROPS = {
 
 describe('TrajectoryTable', () => {
   it('shows operation descriptions in the ledger but raw arguments only after opening Payload', () => {
-    const raw = JSON.stringify({ command: 'echo private', display_description: '检查当前目录' })
+    const raw = JSON.stringify({ command: 'echo private', description: '检查当前目录' })
     const turns: readonly TrajectoryTurnModel[] = [{ turn: 1, groups: [{
       title: 'Step 1', cells: [{
         index: 1, kind: 'tool', text: 'exec_command', previewMarkdown: '检查当前目录', inputDetail: raw,
@@ -102,6 +102,49 @@ describe('TrajectoryTable', () => {
     render(<TrajectoryTable turns={turns} {...FOLD_PROPS} />)
 
     expect(screen.getByText('(tool call only)')).toBeTruthy()
+  })
+
+  it('shows simple tool titles in the assistant call list without showing raw arguments', () => {
+    const calls = [
+      ['wait_agent', 'Wait for agents'],
+      ['list_agents', 'List agents'],
+      ['list_subagent_models', 'Browse models'],
+      ['memory_list', 'List memory'],
+      ['browser_close', 'Close browser'],
+      ['browser_screenshot', 'Capture screenshot'],
+      ['browser_snapshot', 'View page'],
+      ['browser_auth_flush', 'Save browser sign-in'],
+      ['browser_doctor', 'Check browser'],
+      ['browser_status', 'Browser status'],
+      ['computer_list_apps', 'List apps'],
+      ['cordis_inspect_list', 'Browse plugin capabilities'],
+      ['terminal_list', 'List terminals'],
+      ['canvas_state', 'View canvas'],
+      ['ppt_templates', 'Browse presentation templates'],
+      ['schedule_list', 'List reminders'],
+      ['ask_user_question', 'Ask question'],
+      ['report', 'Report result'],
+    ] as const
+    const turns: readonly TrajectoryTurnModel[] = [{ turn: 1, groups: [{ title: 'Step 1', cells: [{
+      index: 1, kind: 'message', text: 'Tool call only', timeSeconds: 1,
+      sourceBlocks: calls.map(([toolName], index) => ({
+        type: 'tool-call', content: '{"summary":"private"}', toolName, callId: `call-${index}`,
+      })),
+    }] }] }]
+    const view = render(<TrajectoryTable turns={turns} {...FOLD_PROPS} />)
+    fireEvent.click(screen.getByRole('row', { name: /ASSISTANT/ }))
+    for (const [, title] of calls) expect(screen.getByText(title)).toBeTruthy()
+    expect(view.container.textContent).not.toContain('private')
+  })
+
+  it.each(['structured_output', 'mcp__server__tool'])('%s assistant list hides business summary', (toolName) => {
+    const turns: readonly TrajectoryTurnModel[] = [{ turn: 1, groups: [{ title: 'Step 1', cells: [{
+      index: 1, kind: 'message', text: 'Tool call only', timeSeconds: 1,
+      sourceBlocks: [{ type: 'tool-call', content: '{"summary":"private"}', toolName, callId: 'call-1' }],
+    }] }] }]
+    const view = render(<TrajectoryTable turns={turns} {...FOLD_PROPS} />)
+    fireEvent.click(screen.getByRole('row', { name: /ASSISTANT/ }))
+    expect(view.container.textContent).not.toContain('private')
   })
 
   it('shows assistant timing facts after keyboard selection', () => {

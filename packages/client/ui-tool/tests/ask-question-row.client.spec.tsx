@@ -45,10 +45,12 @@ function rowProps(block: unknown): Parameters<typeof AskQuestionRow>[0] {
 const answers = (entries: unknown[]): string => JSON.stringify({ answers: entries })
 
 describe('AskQuestionRow', () => {
-  it('运行中的提问优先展示逐次说明，不暴露问题输入', () => {
-    const args = JSON.stringify({ questions: [{ question: '内部问题' }], display_description: '核对需求细节' })
+  it('运行中的提问静态显示等待状态，不要求模型另写摘要', () => {
+    const args = JSON.stringify({ questions: [{ question: '内部问题' }], summary: '核对需求细节' })
     const view = render(<AskQuestionRow {...rowProps(runningCall(args))} />)
-    expect(screen.getByText('核对需求细节')).toBeTruthy()
+    expect(screen.getByText('提问')).toBeTruthy()
+    expect(screen.getByText('等待回答')).toBeTruthy()
+    expect(view.container.textContent).not.toContain('核对需求细节')
     expect(view.container.textContent).not.toContain('内部问题')
   })
 

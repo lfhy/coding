@@ -108,7 +108,7 @@ export function cordisDefineCard(block: Block): CordisDefineCard {
     pluginId: meta === null ? null : stringAt(meta, 'pluginId') as CordisDynamicPluginId | null,
     packageId: meta === null ? null : stringAt(meta, 'packageId') as CordisDynamicPackageId | null,
     name: args === null ? null : stringAt(args, 'name'),
-    displayDescription: toolDisplayDescription(args),
+    displayDescription: toolDisplayDescription(args, 'cordis_define'),
     purpose: args === null ? null : stringAt(args, 'purpose'),
     hostCode: code === null ? null : stringAt(code, 'host'),
     clientCode: code === null ? null : stringAt(code, 'client'),
@@ -138,7 +138,7 @@ export function cordisRunCard(block: Block): CordisRunCard {
     packageId: (meta === null ? argsPackageId : stringAt(meta, 'packageId') ?? argsPackageId) as CordisDynamicPackageId | null,
     pluginRunId: (meta === null ? null : stringAt(meta, 'pluginRunId')) as CordisDynamicPluginRunId | null,
     mode: rawMode === 'run' || rawMode === 'update' ? rawMode : null,
-    displayDescription: toolDisplayDescription(args),
+    displayDescription: toolDisplayDescription(args, 'cordis_run'),
     seq: settled ? block.seq : null,
     output,
     errorSummary: state === 'error' && output !== null ? firstLine(output) : null,
@@ -159,7 +159,7 @@ export function cordisActionCard(block: Block): CordisActionCard {
   const output = settled ? resultText(block) : null
   return {
     pluginId: (args === null ? null : stringAt(args, 'pluginId') ?? stringAt(args, 'id')) as CordisDynamicPluginId | null,
-    displayDescription: toolDisplayDescription(args),
+    displayDescription: toolDisplayDescription(args, settled ? block.call?.name : block.name),
     output,
     errorSummary: state === 'error' && output !== null ? firstLine(output) : null,
     state,

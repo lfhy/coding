@@ -110,10 +110,9 @@ export function BashRow({ toolName, block, sessionId, useSessions, inspect, t }:
         {status !== null && <span className={css.visuallyHidden}>{status}</span>}
         <span className={css.title}>{model.title}</span>
         <span className={css.sep} aria-hidden />
-        {/* The terminal presenter's description is the contractual
-            above-card summary; a failure's first line outranks both. */}
+        {/* terminal 呈现器的说明是卡片上方摘要；调用失败时错误首行优先。 */}
         <span className={clsx(css.summary, failureLine !== null && css.errorSummary)}>
-          {failureLine ?? model.displayDescription ?? terminal?.description ?? model.summary}
+          {failureLine ?? terminal?.description ?? model.displayDescription ?? model.summary}
         </span>
       </div>
       {open && (

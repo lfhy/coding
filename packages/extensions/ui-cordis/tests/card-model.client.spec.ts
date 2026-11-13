@@ -105,17 +105,28 @@ describe('cordisActionCard', () => {
 
 describe('工具调用展示说明', () => {
   const description = '更新页头时间显示'
-  it('定义、运行、停止都从各自冻结参数取说明', () => {
-    const defineArgs = JSON.stringify({ name: 'clock', display_description: ` ${description} ` })
-    expect(cordisDefineCard(running({ argsRaw: defineArgs })).displayDescription).toBe(description)
-    expect(cordisDefineCard(settled({ call: { name: 'cordis_define', argsRaw: defineArgs } })).displayDescription)
-      .toBe(description)
-    const runArgs = JSON.stringify({ mode: 'run', pluginId: 'clock-1', display_description: description })
+  it('定义复用已有用途，运行和停止读取各自冻结参数说明', () => {
+    const defineArgs = JSON.stringify({ name: 'clock', purpose: description })
+    expect(cordisDefineCard(running({ argsRaw: defineArgs }))).toMatchObject({
+      name: 'clock', purpose: description, displayDescription: description,
+    })
+    expect(cordisDefineCard(settled({ call: { name: 'cordis_define', argsRaw: defineArgs } }))).toMatchObject({
+      name: 'clock', purpose: description, displayDescription: description,
+    })
+    const runArgs = JSON.stringify({ mode: 'run', pluginId: 'clock-1', summary: description })
     expect(cordisRunCard(running({ argsRaw: runArgs })).displayDescription).toBe(description)
     expect(cordisRunCard(settled({ call: { name: 'cordis_run', argsRaw: runArgs } })).displayDescription)
       .toBe(description)
     expect(cordisActionCard(settled({ call: { name: 'cordis_stop', argsRaw: runArgs } })).displayDescription)
       .toBe(description)
+  })
+
+  it('旧调用仍能回退读取 display_description', () => {
+    const argsRaw = JSON.stringify({ pluginId: 'clock-1', display_description: '历史操作说明' })
+    expect(cordisActionCard(settled({ call: { name: 'cordis_undefine', argsRaw } })).displayDescription)
+      .toBe('历史操作说明')
+    const defineArgs = JSON.stringify({ name: 'clock', display_description: '历史定义说明' })
+    expect(cordisDefineCard(running({ argsRaw: defineArgs })).displayDescription).toBe('历史定义说明')
   })
 
   it('没有调用头或参数不完整时忽略说明且保留失败结果', () => {

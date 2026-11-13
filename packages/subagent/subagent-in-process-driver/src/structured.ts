@@ -73,6 +73,7 @@ export function attachStructuredRuntime(childCtx: Context, schema: ObjectJsonSch
 
   childCtx.tools.register({
     ...schemaEntry,
+    summaryParameter: false,
     output: {
       schema: {
         type: 'object',

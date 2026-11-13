@@ -103,7 +103,7 @@ async function collect(iterable: AsyncIterable<RpcRequest<MuxFrame>>, count: num
 }
 
 describe('mux live view computation', () => {
-  it('keeps recorded display descriptions while passing only business arguments to live and replay presenters', async () => {
+  it('keeps recorded summaries while passing only business arguments to live and replay presenters', async () => {
     const { ctx } = await harness()
     ctx.tools.register(tool('described', {
       presentCall: args => ({ card: 'generic', title: JSON.stringify(args) }),
@@ -115,7 +115,7 @@ describe('mux live view computation', () => {
     const session = ctx.sessions.create()
     ctx.agents.register({ id: session.id, session, status: 'idle', ctx } as Agent)
     session.append('turn/start', { turn: 1 })
-    const raw = JSON.stringify({ path: 'a.txt', display_description: '查看文件' })
+    const raw = JSON.stringify({ path: 'a.txt', summary: '查看文件' })
     session.append('tool/call', {
       turn: 1, step: 1, callId: CallId('described-call'), name: 'described', arguments: raw,
     })

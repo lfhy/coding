@@ -100,6 +100,18 @@ const TOOL_TITLES: Record<string, string> = {
   workflow: 'Run workflow',
   ralph: 'Continue task',
   validate_dsh_ui: 'Check layout',
+  browser_close: 'Close browser',
+  browser_screenshot: 'Capture screenshot',
+  browser_snapshot: 'View page',
+  browser_auth_flush: 'Save browser sign-in',
+  browser_doctor: 'Check browser',
+  browser_status: 'Browser status',
+  computer_list_apps: 'List apps',
+  cordis_inspect_list: 'Browse plugin capabilities',
+  terminal_list: 'List terminals',
+  canvas_state: 'View canvas',
+  ppt_templates: 'Browse presentation templates',
+  schedule_list: 'List reminders',
   cordis_package_inspect: 'Inspect',
   cordis_runtime_inspect: 'Inspect',
   cordis_run: 'Run Cordis Plugin',
@@ -303,7 +315,7 @@ export function toolRowModel(toolName: string, block: ToolCallBlock, cwd?: strin
   const state: ToolRowState = !done ? 'running'
     : block.error?.code === 'interrupted' ? 'stopped'
       : block.isError ? 'error' : 'ok'
-  const displayDescription = toolDisplayDescription(parseArgs(argsRaw))
+  const displayDescription = toolDisplayDescription(parseArgs(argsRaw), toolName)
   const legacy = argsRaw === '' ? '' : abbreviateHomePath(
     relativizeToCwd(labelSkillResourcePath(deriveSummary(toolName, variant, argsRaw)), cwd), home,
   )

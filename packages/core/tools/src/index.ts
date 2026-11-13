@@ -26,7 +26,7 @@ import type { CodeSdkLanguage } from './code-mode.ts'
 import { renderToolsSdk } from './ts-types.ts'
 import type { ToolSdkSchema } from './ts-types.ts'
 import { renderToolsSdkPy } from './py-types.ts'
-import { DISPLAY_DESCRIPTION_KEY, DISPLAY_DESCRIPTION_SCHEMA, toolBusinessArgs } from './display-description.ts'
+import { TOOL_SUMMARY_KEY, TOOL_SUMMARY_SCHEMA, toolBusinessArgs, supportsToolSummary } from './display-description.ts'
 
 /**
  * Language → SDK-section renderer. The registry looks up the loaded
@@ -103,7 +103,7 @@ export type { JsonValue } from 'coding-session'
 export type { CodeDispatchEventData, CodeDispatchStartEventData } from './types.ts'
 
 export { CodeRunFailedError, RUN_CODE_NAME } from './code-mode.ts'
-export { DISPLAY_DESCRIPTION_KEY, toolBusinessArgs, toolDisplayDescription } from './display-description.ts'
+export { TOOL_SUMMARY_KEY, toolBusinessArgs, toolDisplayDescription, supportsToolSummary } from './display-description.ts'
 export { jsonSchemaToTs, renderToolsSdk } from './ts-types.ts'
 export { jsonSchemaToPy, renderToolsSdkPy } from './py-types.ts'
 export { defineContentToolFixture, type ContentToolFixtureOptions } from './testing.ts'
@@ -224,6 +224,8 @@ export interface ToolOutputDefinition {
 export interface ToolDefinition extends ToolSchema {
   /** Mandatory canonical output declaration. */
   readonly output: ToolOutputDefinition
+  /** 模型工具根参数为原样业务载荷、无需展示摘要时禁止注入和剥离 `summary`。 */
+  readonly summaryParameter?: false
   /**
    * Run one accepted call and return only its canonical lossless-JSON value.
    * Async work must observe or forward `exec.signal` and settle only after its
@@ -1040,10 +1042,10 @@ export class ToolRuntime extends Service {
     assertSupportedJsonSchema(output.schema)
     const parameters = definition.parameters as JsonSchemaNode
     if (parameters.type !== 'object' || parameters.oneOf !== undefined) {
-      throw new TypeError(`tool "${name}" parameters must have an object root to support display_description`)
+      throw new TypeError(`tool "${name}" parameters must have an object root to support summary`)
     }
-    if (Object.hasOwn(parameters.properties ?? {}, DISPLAY_DESCRIPTION_KEY)) {
-      throw new TypeError(`tool "${name}" parameters already declare reserved field display_description`)
+    if (this.hasSummaryParameter(definition) && Object.hasOwn(parameters.properties ?? {}, TOOL_SUMMARY_KEY)) {
+      throw new TypeError(`tool "${name}" parameters already declare reserved field summary`)
     }
     const timeoutMs = definition.timeoutMs
     if (timeoutMs !== undefined
@@ -1253,6 +1255,11 @@ export class ToolRuntime extends Service {
   }
 
   /** Project one definition onto the model-facing schema fields. */
+  private hasSummaryParameter(definition: ToolDefinition): boolean {
+    return definition.summaryParameter !== false && supportsToolSummary(definition.name)
+  }
+
+  /** 仅为缺少现成友好说明的工具投影展示字段。 */
   private schemaOf(definition: ToolDefinition): ToolSchema {
     const { name, description, parameters } = definition
     const detached = snapshotJsonValue(parameters) as JsonSchemaNode | undefined
@@ -1260,10 +1267,12 @@ export class ToolRuntime extends Service {
       throw new Error(`tool "${name}" parameters must be lossless JSON before schema projection`)
     }
     if (detached.type !== 'object' || detached.oneOf !== undefined
-      || Object.hasOwn(detached.properties ?? {}, DISPLAY_DESCRIPTION_KEY)) {
-      throw new TypeError(`tool "${name}" parameters must have an object root without reserved field display_description`)
+      || (this.hasSummaryParameter(definition) && Object.hasOwn(detached.properties ?? {}, TOOL_SUMMARY_KEY))) {
+      throw new TypeError(`tool "${name}" parameters must have an object root without reserved field summary`)
     }
-    detached.properties = { ...detached.properties, [DISPLAY_DESCRIPTION_KEY]: { ...DISPLAY_DESCRIPTION_SCHEMA } }
+    if (this.hasSummaryParameter(definition)) {
+      detached.properties = { ...detached.properties, [TOOL_SUMMARY_KEY]: { ...TOOL_SUMMARY_SCHEMA } }
+    }
     return {
       name,
       description,
@@ -1282,7 +1291,7 @@ export class ToolRuntime extends Service {
     const tool = this.resolveExecution(exec.name, exec.agent, exec.parent !== undefined)
     if (!tool?.isConcurrencySafe) return { kind: 'exclusive' }
     try {
-      const concurrencySafe: unknown = tool.isConcurrencySafe(toolBusinessArgs(exec.arguments))
+      const concurrencySafe: unknown = tool.isConcurrencySafe(toolBusinessArgs(exec.arguments, this.hasSummaryParameter(tool)))
       return concurrencySafe === true ? { kind: 'parallel' } : { kind: 'exclusive' }
     } catch {
       return { kind: 'exclusive' }
@@ -1417,7 +1426,8 @@ export class ToolRuntime extends Service {
       if (detached === undefined) {
         throw new TypeError('tool execution arguments must be losslessly JSON-serializable')
       }
-      const execution: MutableToolRunContext = { ...base, arguments: deepFreeze(toolBusinessArgs(detached)) }
+      const hasSummary = visible !== undefined && this.hasSummaryParameter(visible)
+      const execution: MutableToolRunContext = { ...base, arguments: deepFreeze(toolBusinessArgs(detached, hasSummary)) }
       this.deferredContexts.set(execution, deferredContexts)
       this.contentFinalizers.set(execution, finalizerFor())
       this.cancellationStates.set(execution, {
