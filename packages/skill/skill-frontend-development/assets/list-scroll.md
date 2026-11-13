@@ -67,6 +67,30 @@ Fetch the first page for the current filter, then load more as the end approache
 
 If the product genuinely needs server-side paging controls instead of infinite scroll (audited exports, compliance views), keep the same scroll geometry and virtualized rows; only the fetch trigger changes to explicit navigation.
 
+## Row alignment
+
+A row is a grid of cells, and every cell in it shares one vertical center. Misalignment inside a row is the most
+common "it technically works but looks off" defect, so treat it as a bug:
+
+- One row template, one height. Give the row a grid template (`grid-template-columns: minmax(0, 1fr) 120px 140px`)
+  and `align-items: center` with a fixed height (36–44px). Do not stack flex rows with `align-items: flex-start`,
+  `baseline`, or per-cell margins, and do not let a chip, avatar, icon, or second line change the row height.
+- Every cell is a flex box with `align-items: center` and a gap: `display: flex; align-items: center; gap: 8px;
+  min-width: 0`. Leading dots, status marks, and avatars live in a fixed-size box (`flex: none; width: 16px;
+  height: 16px`) so the text beside them starts at the same x on every row.
+- Chips and badges are inline flex with their own line height: `display: inline-flex; align-items: center;
+  height: 20px; padding: 0 8px; line-height: 1; font-size: 12px`. A badge that inherits the row's line-height sits
+  low next to a 13px label — that is the classic "歪" look.
+- Text columns keep the same font size, line height, and truncation; secondary text is dimmed but not smaller in a
+  way that shifts the baseline. Numbers are right-aligned with `font-variant-numeric: tabular-nums` so digits line
+  up down the column.
+- Same rules for header cells: the header row uses the identical template and alignment, otherwise the columns
+  visibly jump between header and body.
+
+Verification: screenshot the list at 2× zoom and check that a horizontal line through the middle of any row crosses
+the middle of every cell in it — dot, label, chip, timestamp, row action — and that the same line works for the
+header. If a cell sits high or low, the row is wrong, not the cell.
+
 ## Verification
 
 In the running application: the document does not scroll, the toolbar is stationary while rows scroll, the DOM holds a bounded row count, the next page arrives before the end with visible loading and end states, a filter change resets to the top without duplicate rows, and returning to the list preserves position. At the narrowest supported width the page has no horizontal scroll, low-priority columns are hidden rather than squeezed, every row measures the same height, long names end with an ellipsis on one line, and the full value appears in the Tooltip on hover and focus. Confirm keyboard scrolling works within the list viewport.

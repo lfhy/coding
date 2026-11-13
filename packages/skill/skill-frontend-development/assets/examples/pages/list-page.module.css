@@ -72,6 +72,21 @@
   text-overflow: ellipsis;
 }
 
+.statusCell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ui-accent);
+}
+
 .status,
 .meta {
   overflow: hidden;

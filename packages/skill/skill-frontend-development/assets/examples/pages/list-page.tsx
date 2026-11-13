@@ -51,7 +51,11 @@ export function ListPage({ rows, loading = false, onSearch }: ListPageProps) {
         {visible.map(row => (
           <div key={row.id} className={styles.row} role="listitem">
             <span className={styles.name} title={row.name}>{row.name}</span>
-            <span className={styles.status}>{row.status}</span>
+            {/* 行内单元格是同一条垂直中线的：图标盒固定尺寸，文字与它的中心对齐。 */}
+            <span className={styles.statusCell}>
+              <span className={styles.dot} aria-hidden="true" />
+              <span className={styles.status}>{row.status}</span>
+            </span>
             <span className={styles.meta}>{row.updatedAt}</span>
           </div>
         ))}
