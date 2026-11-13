@@ -62,8 +62,9 @@ function assistantNode(text: string, streaming: boolean): ChatNode<'assistant-st
 }
 
 /** 只替换会话传输与时钟，保留生产的行 DOM、Markdown、解析与 React 根。 */
-function harness(initial: string, options: { sourceInitiallyMissing?: boolean } = {}) {
+function harness(initial: string, options: { sourceInitiallyMissing?: boolean; sendMessage?: (message: string) => Promise<void> } = {}) {
   let node = assistantNode(initial, true)
+  let currentSession = 'genui-stream-test'
   let sourceAvailable = options.sourceInitiallyMissing !== true
   const listeners = new Set<() => void>()
   const chat: ChatSnapshot = {
@@ -99,7 +100,7 @@ function harness(initial: string, options: { sourceInitiallyMissing?: boolean } 
   const view = render(element())
   const ctx = {
     sessions: {
-      list: { getSnapshot: () => ({ current: 'genui-stream-test' }), subscribe: () => () => {} },
+      list: { getSnapshot: () => ({ current: currentSession }), subscribe: () => () => {} },
       binding: () => ({ session: {
         getSnapshot: () => ({ chat }),
         subscribe: (listener: () => void) => {
@@ -110,7 +111,8 @@ function harness(initial: string, options: { sourceInitiallyMissing?: boolean } 
     },
   } as unknown as Context
   let stop = () => {}
-  act(() => { stop = installDomFenceRenderer(ctx, () => {}) })
+  act(() => { stop = installDomFenceRenderer(ctx, () => {}, undefined, (_session, message) =>
+    options.sendMessage?.(message) ?? Promise.resolve()) })
   let disposed = false
   const dispose = () => {
     if (disposed) return
@@ -132,11 +134,45 @@ function harness(initial: string, options: { sourceInitiallyMissing?: boolean } 
       sourceAvailable = true
       for (const listener of listeners) listener()
     },
+    switchSession(sessionId: string) { currentSession = sessionId },
+    hideSource() { sourceAvailable = false },
     dispose() { act(() => { dispose() }) },
   }
 }
 
 describe('GenUI 流式围栏', () => {
+  it('只有已定稿且来源未变化的话题才能送入原会话', async () => {
+    const sendMessage = vi.fn(async () => {})
+    const raw = JSON.stringify({ items: [{ type: 'topic-guide', id: 'next', question: '接下来讨论什么？',
+      options: [{ label: '部署', message: '请继续讨论部署方式。' }] }] })
+    const text = `\`\`\`gen-ui\n${raw}\n\`\`\``
+    const h = harness(text, { sendMessage })
+    await flushFrames()
+    const streamingChoice = screen.getByRole<HTMLButtonElement>('radio', { name: '部署' })
+    expect(streamingChoice.disabled).toBe(true)
+    fireEvent.click(streamingChoice)
+    expect(sendMessage).not.toHaveBeenCalled()
+
+    h.update(text, false)
+    await flushFrames()
+    const choice = screen.getByRole<HTMLButtonElement>('radio', { name: '部署' })
+    expect(choice.disabled).toBe(false)
+    h.switchSession('different-session')
+    fireEvent.click(choice)
+    expect(sendMessage).not.toHaveBeenCalled()
+    expect((await screen.findByRole('alert')).textContent).toContain('话题发送失败')
+
+    h.switchSession('genui-stream-test')
+    h.hideSource()
+    fireEvent.click(choice)
+    await act(async () => { await Promise.resolve() })
+    expect(sendMessage).not.toHaveBeenCalled()
+    h.publishSource()
+    fireEvent.click(choice)
+    await act(async () => { await Promise.resolve() })
+    expect(sendMessage).toHaveBeenCalledExactlyOnceWith('请继续讨论部署方式。')
+  })
+
   it.each(['gen-ui', 'dsh-ui'])('%s 在组件完成前加载，并在整条回复完成前渲染', async (language) => {
     const opening = `说明文字\n\n\`\`\`${language}\n`
     const h = harness(`${opening}{`)

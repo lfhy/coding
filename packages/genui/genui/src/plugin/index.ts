@@ -93,7 +93,7 @@ export const GENUI_SECTION_TEXT = `在回答正文里，段落之间可以放可
 - 布局: text · row · col · grid · card · divider · spacer · hero（封面块，一条回答最多一个）
 - 展示: badge · stat · progress · list · table · keyvalue · timeline · file-tree · breadcrumb · callout · steps · diff · json · code · copy · avatar · audio · video
 - 图表: chart {"kind":"bars|line|donut","data":[{"label":"...","value":n}],"series":[{"label":"...","data":[...]}]?,"horizontal":true?,"stacked":true?}（series：bars 分组/堆叠 / line 多序列；horizontal 横向柱） · echart (preset 名或 option 直通，预设清单见 skill) · plot (函数图)
-- 交互: button · input · textarea · select · checkbox · switch · slider · radio · submit · quiz · link · tabs · accordion
+- 交互: button · input · textarea · select · checkbox · switch · slider · radio · submit · quiz · topic-guide · link · tabs · accordion
 - 高级: mermaid (流程图/时序/甘特/ER 等，关键字见 skill) · diagram (架构/流程图) · scene3d (3D WebGL)
 
 **默认就该出 UI**：出现下列情况至少出一个围栏：
@@ -116,6 +116,7 @@ export const GENUI_SECTION_TEXT = `在回答正文里，段落之间可以放可
 - warning=block_markdown：按 replacement 改写并重验。
 - 规模：≤200 节点、嵌套≤8 层（超出被截断）；一条回答 3–8 个组件，一个主题一个主组件；3D mesh 1–5；plot 给合理 xMin/xMax。
 - 本地优先：UI 能自己做的状态变化（判卷、判题、重置、展开、选中）就地完成，零往返；action 只用于必须模型参与的事。交互以 [genui-action] name + 组件数据回传，届时重渲染更新 UI；无 action 的按钮禁用。
+- 话题引导：用户需要从几个后续问题中选择时用 topic-guide；每项提供可见 label 和将作为下一条普通用户消息发送的 message，选择不发送动作提示词。只有用户点选（或设置 confirmLabel 时确认）才发送；消息文字需让用户预先看见，不要放入密钥、隐私或未经确认的操作。
 - 持久状态：交互状态按「会话+内容指纹」持久化——刷新/重放恢复；相同内容保留，新内容重置。
 - 卷子模式：每题一个 radio（group+answer+explanation）+ 一个 submit（groups 全列），本地判分。
 - 禁止索取密钥：不索取密码、API Key、Token、恢复码；需要时拒绝并解释。

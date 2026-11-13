@@ -297,6 +297,8 @@ export const EN = {
   'block.filterMatch': '{shown} / {total} matched',
   'block.triggered': '✓ Sent',
   'block.triggeredPlain': 'Sent',
+  'block.topicSent': 'Sent, continuing the conversation',
+  'block.topicFailed': 'Could not send the topic. Try again.',
   'block.audio': 'Audio',
   'block.audioError': 'Audio cannot be played',
   'block.video': 'Video',

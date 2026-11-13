@@ -20,7 +20,7 @@ description: "用 gen-ui 围栏在回答正文里输出结构化可交互 UI。�
 布局：`text` `row` `col` `grid` `card` `divider` `spacer`
 展示：`stat` `badge` `progress` `list` `table` `keyvalue` `avatar` `image` `audio` `video` `timeline` `file-tree` `breadcrumb` `diff` `json` `code` `callout` `steps`
 图表：`chart`（bars/line/donut，可多序列）`plot`（数学函数图）`echart`（ECharts 全功能图表）
-交互：`button` `input` `select` `checkbox` `radio` `switch` `textarea` `tabs` `accordion` `copy`
+交互：`button` `input` `select` `checkbox` `radio` `switch` `textarea` `tabs` `accordion` `copy` `topic-guide`
 
 ### 布局
 - text: `{"type":"text","size":"display|h1|h2|h3|body|muted|caption","content":"...","align":"left|center|right"?}`（`size:"display"` 比标题大一档，作引言/开篇点题句，**一条回答 ≤1**；`center:true` 是旧写法，等价 `align:"center"`，新写一律用 `align`）
@@ -60,7 +60,7 @@ description: "用 gen-ui 围栏在回答正文里输出结构化可交互 UI。�
 **full option 模式**：传 `"option":{...}` 直接写 ECharts 原生配置（支持 ECharts 内置图表及已注册的 `wordCloud` 词云扩展；其他第三方扩展不保证可用），option 中的函数会被过滤（只接受数据）。选择原则：**chart 轻量（无额外下载）适合 ≤8 点的快速对比；echart 视觉更丰富（渐变、tooltip、图例交互、dataZoom），但会按需下载约 1MB 引擎，多序列/大屏/交互场景优先**
 
 ### 交互
-**本地优先（v2.6）**：UI 自己能做的状态变化——判卷、判题、重置、展开、选中——一律本地即时完成，**零模型往返**。action 只用于必须模型参与的事（生成新内容、执行工具、下一步建议）。**交互组件必须带 action：不带 action 的按钮渲染为禁用态，用户点不了；带 action 的按钮点击后有「已触发」本地反馈。**
+**本地优先（v2.6）**：UI 自己能做的状态变化——判卷、判题、重置、展开、选中——一律本地即时完成，**零模型往返**。action 只用于必须模型参与的事（生成新内容、执行工具、下一步建议）。普通 `button` 不带 action 时为禁用态；`topic-guide` 使用独立的用户消息发送路径，不需要 action。
 - button: `{"type":"button","label":"...","tone":"primary|danger|success|ghost","full":true?,"small":true?,"icon":"emoji?","action":"refresh"?}`
 - **秘密禁令**：不得索取或生成密码、API Key、访问令牌、恢复码等秘密输入；遇到此类需求直接拒绝并解释
 - input: `{"type":"input","label":"...","placeholder":"...","inputType":"text|email|color","value":"...","action":"name"?,"id":"field-id"?}` — `color` 使用浏览器原生取色器，值使用 `#RRGGBB`；action 在失焦**和回车**时触发（回车带 `submit:true`）；**blur 仅值有变化才发送**（聚焦又离开不产生空往返）；payload 带 `id` 帮模型定位字段；带 `id` 的值刷新后保留、并被 submit 收集进 `fields`
@@ -68,6 +68,7 @@ description: "用 gen-ui 围栏在回答正文里输出结构化可交互 UI。�
 - checkbox: `{"type":"checkbox","label":"<user-language option>","checked":true?,"action":"toggle"?,"group":"group-id"?}` — 默认保持逐次 `action` 行为；**加 `group` 进入多选聚合模式**：同组 checkbox 可反复勾选/取消，变化只在本地记录、不发逐次 action，兄弟 `submit` 一次性把该组已选 label 作为字符串数组放进 `answers`（例如 `{"styles":["<user-language option>","<user-language option>"]}`）
 - slider: `{"type":"slider","label":"...","min":0,"max":100,"step":1,"value":n?,"action":"name"?,"id":"field-id"?}` — 数值表单滑块：实时显示数值；带 `id` 跨刷新保留并进 submit 的 `fields`（拖拽经防抖合并成一次 action）
 - radio: `{"type":"radio","label":"<user-language label>","options":["<user-language option>","<user-language option>"],"selected":n?,"action":"pick"?}` — 单选；**加 `"group":"group-id"` 进入聚合模式**：选择只本地记录、不发往返；可设置 `"answer":正确下标或标签` 和 `"explanation":"<user-language explanation>"`，在纯 radio 且没有其他待发送表单状态时本地判卷
+- topic-guide: `{"type":"topic-guide","id":"next-topic","question":"<user-language question>","options":[{"label":"<user-language topic>","message":"<user-language message>"}],"confirmLabel":"<user-language action>"?}` — 在回答末尾提供后续话题。每项必须有简短标签与可供用户预先阅读的完整消息；设置 `confirmLabel` 时先选择再确认，不设置时点选即发送。只有用户主动操作才以**普通用户消息**开始下一轮，不使用 `[genui-action]`、不叠加说明或替用户隐含授权；不在消息里放密钥或未经确认的操作，选择与成功发送状态会在同一内容重放时恢复，发送失败可重试。本地状态不是严格送达凭据；回复定稿后才可发送。选项最多 8 个，消息最长 2000 字。
 - link: `{"type":"link","label":"...","href":"https://..."?}` — 仅 http(s)/mailto 协议被接受；无 `href` 时渲染为纯文本样式（不会假装可点）
 - submit: `{"type":"submit","label":"<user-language action>","action":"grade","groups":["q1","styles"],"resetAction":"redo"?}` — 聚合按钮：`groups` 引用当前 block 中的 submission member key，来源为 `radio.group`、`checkbox.group`、`input.id`、`textarea.id`、`select.id`、`slider.id`；radio 需已选择，checkbox 组需至少选择一项，普通 field 的值需在 trim 后非空。`groups` 控制提交所需成员与完成进度；未设置时，至少有一个已完成成员即可提交。纯 radio 范围含 `answer` 且本次没有范围外 payload 时可本地判卷；其余场景一次发送 `[genui-action]`，payload 继续收集当前 block 中已填写的表单状态，字段名称保持 `answers`、`fields`、`total`、`answered`
 - switch: `{"type":"switch","label":"...","checked":true?,"action":"toggle"?}`

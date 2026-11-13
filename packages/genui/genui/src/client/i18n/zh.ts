@@ -292,6 +292,8 @@ export const ZH: Record<keyof typeof EN, string> = {
   'block.filterMatch': '匹配 {shown} / {total} 项',
   'block.triggered': '✓ 已触发',
   'block.triggeredPlain': '已触发',
+  'block.topicSent': '已发送，正在继续对话',
+  'block.topicFailed': '话题发送失败，请重试',
   'block.audio': '音频',
   'block.audioError': '音频无法播放',
   'block.video': '视频',

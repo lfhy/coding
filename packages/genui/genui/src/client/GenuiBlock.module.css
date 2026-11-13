@@ -1451,6 +1451,43 @@ img.mediaPlayer { aspect-ratio: 16 / 9; object-fit: cover; background: var(--dsl
 
 /* ---------- radio / switch / textarea ---------- */
 
+/* 话题引导只占一层内容：选择、确认和错误反馈共用当前会话的外观变量。 */
+.topicGuide { display: flex; flex-direction: column; gap: var(--dsl-g-gap-md); max-width: 100%; }
+.topicQuestion { font-size: var(--dsl-g-font-title); line-height: 1.5; font-weight: 600; color: var(--dsw-alias-label-primary); }
+.topicOptions { display: flex; flex-direction: column; gap: var(--dsl-g-gap-xs); }
+.topicOption {
+  display: flex;
+  width: 100%;
+  align-items: flex-start;
+  gap: var(--dsl-g-gap-sm);
+  padding: var(--dsl-g-gap-sm) var(--dsl-g-gap-md);
+  border: 1px solid var(--dsl-g-border);
+  border-radius: var(--dsl-g-radius-control);
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+.topicOption:hover:not(:disabled) { background: var(--dsl-g-accent-soft); }
+.topicOption:focus-visible, .topicConfirm:focus-visible { outline: 2px solid var(--dsl-g-accent); outline-offset: 2px; }
+.topicOptionSelected { border-color: var(--dsl-g-accent); }
+.topicOption:disabled { cursor: default; opacity: 0.7; }
+.topicIndicator {
+  display: block;
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+  flex: 0 0 16px;
+  border: 1px solid var(--dsl-g-border-strong);
+  border-radius: 50%;
+}
+.topicOptionSelected .topicIndicator { border: 5px solid var(--dsl-g-accent); }
+.topicOptionText { display: flex; min-width: 0; flex-direction: column; gap: var(--dsl-g-gap-xs); font-size: var(--dsl-g-font-title); line-height: 1.5; }
+.topicMessage { color: var(--dsw-alias-label-secondary); font-size: var(--dsl-g-font-meta); line-height: 1.5; overflow-wrap: anywhere; }
+.topicConfirm { display: flex; align-items: center; justify-content: center; gap: var(--dsl-g-gap-sm); width: 100%; }
+.topicSent { color: var(--dsw-alias-label-secondary); font-size: var(--dsl-g-font-meta); line-height: 1.5; }
+
 .fieldGroup { display: flex; flex-direction: column; gap: var(--dsl-g-gap-sm); }
 .fieldLabel { font-size: var(--dsl-g-font-meta); color: var(--dsw-alias-label-tertiary); }
 .radio { display: flex; align-items: center; gap: var(--dsl-g-gap-sm); font-size: var(--dsl-g-font-title); color: var(--dsw-alias-label-secondary); cursor: pointer; line-height: 1.5; }

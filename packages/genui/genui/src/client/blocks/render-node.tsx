@@ -26,6 +26,7 @@ import {
 import { DiagramNode } from './diagram/index.tsx'
 import { ImageNode } from './image.tsx'
 import { SvgNode } from './svg.tsx'
+import { TopicGuideNode } from './topic-guide.tsx'
 
 import { EChartNode } from '../EChartNode.tsx'
 
@@ -270,6 +271,7 @@ export function renderNode(
         </ClickFeedbackButton>
       )
     }
+    case 'topic-guide': return <TopicGuideNode key={key} node={node} answers={answers} />
     case 'input': return <InputNode key={key} node={node} onAction={onAction} answers={answers} />
     case 'select': return <SelectNode key={key} node={node} onAction={onAction} answers={answers} />
     case 'checkbox': return <CheckboxNode key={key} node={node} onAction={onAction} answers={answers} />

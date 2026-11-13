@@ -20,6 +20,8 @@ export const GENUI_LIMITS = {
   maxListItems: 50,
   /** Maximum `select`/`radio` options. */
   maxOptions: 50,
+  /** 单个话题引导同时展示的备选话题数。 */
+  maxTopicOptions: 8,
   /** Maximum `table` rows / columns. */
   maxTableRows: 50,
   maxTableCols: 12,

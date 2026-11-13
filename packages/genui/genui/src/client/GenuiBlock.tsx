@@ -100,6 +100,7 @@ function GenuiBlockInstance({ spec, stateKey, animateEntrance = true, initialSta
   const [answers, setAnswers] = useState<Record<string, string>>(persisted?.answers ?? {})
   const [multiAnswers, setMultiAnswers] = useState<Record<string, string[]>>(persisted?.multiAnswers ?? {})
   const [fields, setFields] = useState<Record<string, string>>(persisted?.fields ?? {})
+  const [topics, setTopics] = useState<Record<string, { selected?: number; sent?: boolean }>>(persisted?.topics ?? {})
   const submissionRegistry = useMemo(() => compileSubmissionRegistry(spec), [spec])
   const [locked, setLocked] = useState(persisted?.locked === true)
   const [round, setRound] = useState(0)
@@ -135,6 +136,9 @@ function GenuiBlockInstance({ spec, stateKey, animateEntrance = true, initialSta
     // this does not change what the model receives.
     setFields(prev => (prev[id] === value ? prev : { ...prev, [id]: value }))
   }, [])
+  const setTopic = useCallback((id: string, value: { selected?: number; sent?: boolean }) => {
+    setTopics(previous => ({ ...previous, [id]: value }))
+  }, [])
   const registerSecretField = useCallback((id: string) => {
     setSecretFields(prev => (prev.has(id) ? prev : new Set(prev).add(id)))
   }, [])
@@ -146,12 +150,12 @@ function GenuiBlockInstance({ spec, stateKey, animateEntrance = true, initialSta
   }, [])
   const answersState = useMemo<AnswersState>(
     () => ({
-      answers, multiAnswers, fields, secretFields, registry: submissionRegistry, locked, round,
-      setAnswer, setMultiAnswer, setField, registerSecretField, clear, setLocked,
+      answers, multiAnswers, fields, topics, secretFields, registry: submissionRegistry, locked, round,
+      setAnswer, setMultiAnswer, setField, setTopic, registerSecretField, clear, setLocked,
     }),
     [
-      answers, multiAnswers, fields, secretFields, submissionRegistry, locked, round,
-      setAnswer, setMultiAnswer, setField, registerSecretField, clear,
+      answers, multiAnswers, fields, topics, secretFields, submissionRegistry, locked, round,
+      setAnswer, setMultiAnswer, setField, setTopic, registerSecretField, clear,
     ],
   )
   const durableState = useMemo(() => {
@@ -160,9 +164,10 @@ function GenuiBlockInstance({ spec, stateKey, animateEntrance = true, initialSta
       answers,
       ...(Object.keys(multiAnswers).length > 0 ? { multiAnswers } : {}),
       locked,
+      ...(Object.keys(topics).length > 0 ? { topics } : {}),
       ...(Object.keys(safeFields).length > 0 ? { fields: safeFields } : {}),
     }
-  }, [answers, multiAnswers, locked, fields, secretFields])
+  }, [answers, multiAnswers, locked, fields, topics, secretFields])
   useEffect(() => {
     onStateSnapshot?.(durableState)
   }, [durableState, onStateSnapshot])

@@ -6,6 +6,22 @@ import { diagnoseUnknownGenuiFields } from '../src/client/genui-runtime/diagnost
 import { validateGenuiChartSemantics as validateRenderableChartSemantics } from '../src/client/guard.ts'
 
 describe('GenUI runtime schema normalization', () => {
+  it('要求话题选项可见且消息完整，并规范化单个节点', () => {
+    const guide = { type: 'topic-guide', id: 'next', question: '继续聊什么？', options: [
+      { label: '模型', message: '请介绍这个模型。' },
+    ], confirmLabel: '继续' }
+    expect(COMPONENT_SCHEMAS['topic-guide']?.nested.options?.required).toEqual(['label', 'message'])
+    expect(processGenuiSpec({ items: [guide] }).errors).toEqual([])
+    expect(repairGenuiSpec({ items: [guide] })?.items).toEqual([guide])
+    expect(processGenuiSpec({ items: [{ ...guide, options: [{ label: '无消息', message: '   ' }] }] }).errors)
+      .toContain('items[0].options[0].message must be a non-empty string')
+    expect(validateGenuiSpec({ items: [{ ...guide, id: ' ' }] }).errors)
+      .toContain('items[0].id must be a non-empty string')
+    expect(processGenuiSpec({ items: [{ ...guide, options: [{ label: '缺少内容' }] }] }).errors.length).toBeGreaterThan(0)
+    expect(repairGenuiSpec({ items: [{ ...guide, options: Array.from({ length: 12 }, (_, index) => ({ label: `${index}`, message: '继续聊' })) }] })?.items[0])
+      .toMatchObject({ options: Array.from({ length: 8 }, (_, index) => ({ label: `${index}`, message: '继续聊' })) })
+  })
+
   it('uses registry field kinds and one-of rules during validation', () => {
     expect(validateGenuiSpec({ items: [{ type: 'card', title: 123, items: [] }] }).errors)
       .toContain('items[0].title must be a string')

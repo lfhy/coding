@@ -27,6 +27,8 @@ export interface BlockInteractionState {
   locked?: boolean
   /** field id → current value (input/textarea with an `id`). */
   fields?: Record<string, string>
+  /** 话题引导标识 → 已选序号及是否已成功发送；重放不会重新发送。 */
+  topics?: Record<string, { selected?: number; sent?: boolean }>
 }
 
 const STORE_KEY = 'dsh.genui.interaction'

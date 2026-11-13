@@ -24,6 +24,7 @@ export type GenuiNode = (
   | GenuiGrid
   | GenuiCard
   | GenuiButton
+  | GenuiTopicGuide
   | GenuiInput
   | GenuiSelect
   | GenuiCheckbox
@@ -110,6 +111,17 @@ export interface GenuiButton {
   icon?: string
   /** v2: when set, clicking sends this action back to the model. */
   action?: string
+}
+
+/** 话题引导将用户选择的可见预设文本作为下一条用户消息发送。 */
+export interface GenuiTopicGuide {
+  type: 'topic-guide'
+  /** 用于在同一界面内保存选中项的唯一标识。 */
+  id: string
+  question: string
+  options: Array<{ label: string; message: string }>
+  /** 提供该标签时先选择再确认；省略时点选即发送。 */
+  confirmLabel?: string
 }
 
 export interface GenuiInput {

@@ -49,6 +49,8 @@ export interface AnswersState {
   multiAnswers: Record<string, string[]>
   /** Field values by id (input/textarea with an `id`), collected by submit. */
   fields: Record<string, string>
+  /** 话题引导的选择与发送结果不参与普通表单提交。 */
+  topics: Record<string, { selected?: number; sent?: boolean }>
   /** Field ids whose value must never be persisted or collected (secrets). */
   secretFields: ReadonlySet<string>
   registry: SubmissionRegistry
@@ -59,6 +61,7 @@ export interface AnswersState {
   setAnswer: (group: string, choice: string) => void
   setMultiAnswer: (group: string, choice: string, checked: boolean) => void
   setField: (id: string, value: string) => void
+  setTopic: (id: string, value: { selected?: number; sent?: boolean }) => void
   registerSecretField: (id: string) => void
   clear: () => void
   setLocked: (locked: boolean) => void

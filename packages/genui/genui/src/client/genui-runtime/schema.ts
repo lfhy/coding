@@ -155,6 +155,7 @@ const chartSeriesSchema = recordSchema(['label', 'data'], {
 }, { data: chartDatumSchema })
 
 const stepsRecordSchema = recordSchema(['title'], { title: 'string', desc: 'string' })
+const topicOptionSchema = recordSchema(['label', 'message'], { label: 'string', message: 'string' })
 // `label` is what models write for the left-hand column (issue #186); the
 // record otherwise fails "requires key" and the whole keyvalue drops.
 const keyValueRecordSchema = recordSchema(['key', 'value'], { key: 'string', value: 'string' }, {}, {}, { label: 'key' })
@@ -348,6 +349,7 @@ export const COMPONENT_SCHEMAS: Readonly<Record<string, ComponentSchema>> = {
   tabs: schema(['tabs'], { ...nodeFields, tabs: 'array' }, {}, { nested: { tabs: tabHolderSchema } }),
   text: schema(['content'], { ...nodeFields, content: 'string', size: 'string', center: 'boolean', align: 'string' }, { text: 'content' }, { enums: { size: TEXT_SIZES, align: TEXT_ALIGNS } }),
   textarea: schema([], { ...nodeFields, label: 'string', placeholder: 'string', rows: 'number', value: 'string', action: 'string', id: 'string' }),
+  'topic-guide': schema(['id', 'question', 'options'], { ...nodeFields, id: 'string', question: 'string', options: 'array', confirmLabel: 'string' }, {}, { nested: { options: topicOptionSchema } }),
   timeline: schema(['items'], { ...nodeFields, items: 'array' }, {}, { nested: { items: timelineRecordSchema } }),
   video: schema(['src'], { ...nodeFields, src: 'string', alt: 'string', poster: 'string', loop: 'boolean', muted: 'boolean', aspectRatio: 'string' }, { url: 'src', link: 'src' }, { enums: { aspectRatio: MEDIA_ASPECT_RATIOS } }),
 } as const

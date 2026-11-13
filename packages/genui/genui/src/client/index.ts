@@ -14,6 +14,8 @@ import { GenuiToolView } from './toolview.tsx'
 import { mountAchievementToasts } from './achievement-toast.tsx'
 import { bridgeHostLocale } from './i18n/index.ts'
 import { assetUrl } from './asset-loader.ts'
+import { GenuiMessageContext } from './message-context.ts'
+import { toolTopicSender } from './tool-topic-sender.ts'
 
 /**
  * 低优先级预取懒引擎；不支持 prefetch 的浏览器仍由按需加载覆盖。
@@ -44,6 +46,14 @@ function sendInlineGenuiAction(ctx: Context, sessionId: SessionId, action: strin
   })
 }
 
+/** 复用会话发送入口：预设文本以普通用户消息入日志，失败交给控件恢复重试。 */
+function sendTopicMessage(ctx: Context, sessionId: SessionId, message: string): Promise<void> {
+  const conversation = ctx.sessions.scope(sessionId)?.get('conversation')
+  return conversation === undefined
+    ? Promise.reject(new Error('conversation is unavailable'))
+    : conversation.send(message)
+}
+
 /**
  * 安装围栏与工具行渲染；只组合消息内内容，不注册 dock 或 slash command。
  * @param ctx - 拥有当前插件生命周期的浏览器上下文。
@@ -56,7 +66,7 @@ export function apply(ctx: Context): () => void {
     localeDispose,
     installDomFenceRenderer(ctx, (sessionId, action, payload) => {
       sendInlineGenuiAction(ctx, sessionId, action, payload)
-    }, fileLinkAvailability),
+    }, fileLinkAvailability, (sessionId, message) => sendTopicMessage(ctx, sessionId, message)),
   ]
   prefetchGenuiAssets()
   disposers.push(mountAchievementToasts())
@@ -68,7 +78,9 @@ export function apply(ctx: Context): () => void {
     fileLinkAvailability,
     props.sessionId,
     false,
-    createElement(GenuiToolView, props),
+    createElement(GenuiMessageContext.Provider, {
+      value: toolTopicSender(ctx, props, message => sendTopicMessage(ctx, props.sessionId, message)),
+    }, createElement(GenuiToolView, props)),
   ))))
   return () => {
     for (const dispose of disposers) dispose()

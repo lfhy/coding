@@ -31,6 +31,7 @@
 | 改设置和模型凭据界面 | [map/hot.md 的设置路线](map/hot.md#设置界面与凭据) | `ui-settings*`、settings/credentials 提供方或 `apiproxy` | 对应包测试 + `pnpm run test:gui` |
 | 改全局文件上传或文件管理列表 | [map/hot.md 的文件拖放路线](map/hot.md#对话输入命令与视图)、[设置路线](map/hot.md#设置界面与凭据) | `file-library`、`open-in-app`、`ui-conversation`、`ui-files` | 四包定向测试 + `pnpm run test:gui` |
 | 改输入、命令、工具卡片或轨迹 | [map/hot.md 的对话路线](map/hot.md#对话输入命令与视图) | `ui-conversation`、`ui-input-trigger`、`ui-commands`、`ui-tool`、`ui-trajectory` | 对应包测试 + 用户可见输出的 keyless 回放 |
+| 在 GenUI 中引导下一轮话题 | [GenUI 说明](../packages/genui/genui/README.md) | `packages/genui/genui` 的组件规格、渲染、来源校验与会话发送适配；选中保留在本地，用户点选或确认后由所属会话发送预设文本 | GenUI 定向测试、Client 类型检查、GUI 回放与真实界面交互 |
 | 改会话日志事件 | [subsystems/session.md](subsystems/session.md)、`map/invariants.md` | `packages/core/session/src/types.ts`、投影与快照 | `pnpm run gen-persistence-catalog` + session 测试 |
 | 改插件装配 | `map/wiring.md` | `packages/bundle/*/cordis.patch.yml` | `dsh --profile web --dump-config` |
 | 新增或改一个 Agent 预设（模式） | [map/hot.md 的模式路线](map/hot.md#模式与预设分发agent-preset) | `apps/cli/config/agent-presets/<id>/`、`ui-agent-preset` 的 locale 词典与 `BUILT_IN_PRESET_KEYS`、名单断言与菜单快照、`python/sdk-runtime/package.json` | `pnpm run gen-code-map`、`pnpm run verify-cordis-config`、定向 vitest |

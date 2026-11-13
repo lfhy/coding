@@ -11,12 +11,15 @@ import { type Key, type ReactNode } from 'react'
 import type { Root } from 'react-dom/client'
 import { mountDomRoot } from './dom-root.ts'
 import type { Context } from '@deepseek-ai/cordis'
+import type { ChatNode } from 'coding-client-ui-conversation/client'
 import type { SessionId } from 'coding-session/types'
 import { GenuiActionContext, type GenuiActionHandler } from './action-context.ts'
+import { GenuiMessageContext, type GenuiMessageSender } from './message-context.ts'
 import { withFileLinkContext, type FileLinkAvailability } from './file-link-context.tsx'
 import { describeFenceFailure, FenceDiagnostic, renderResolvedFenceNode, type GenuiFenceContext } from './fence-render.tsx'
 import { renderSvgFence } from './svg-fence.tsx'
 import { StreamingFence } from './StreamingFence.tsx'
+import { sourceFencesOfAssistant } from './source-fence.ts'
 import { sourceLanguageOf, hostFenceIndexOf, chatSourceOf, createSourceLanguageResolver, sourceSessionOf, fenceIndexOf, anchorSeqOf } from './dom-source.ts'
 import {
   CODE_CONTEXT,
@@ -85,12 +88,14 @@ function languageOf(
  * @param ctx - client context，读取当前会话与 assistant 源码
  * @param sendAction - 把围栏 action 投递到当前会话的回调
  * @param fileLinkAvailability - 宿主文件链接能力
+ * @param sendMessage - 将用户主动选择的话题发到围栏所属会话
  * @returns 卸载函数；卸载会断开观察器并恢复所有宿主代码块
  */
 export function installDomFenceRenderer(
   ctx: Context,
   sendAction: (sessionId: SessionId, action: string, payload: Record<string, unknown>) => void,
   fileLinkAvailability: FileLinkAvailability = NO_FILE_LINK_AVAILABILITY,
+  sendMessage?: (sessionId: SessionId, message: string) => Promise<void>,
 ): () => void {
   if (typeof document === 'undefined') return () => {}
   resetSurfaceDiagnostics()
@@ -132,13 +137,46 @@ export function installDomFenceRenderer(
     return source.sessionId
   }
 
-  const wrapFenceNode = (node: ReactNode, context: GenuiFenceContext, handler: GenuiActionHandler, streaming: boolean): ReactNode => (
+  /** 发送前重新验证围栏来源，防止切换会话或宿主复用旧 DOM 后误投递。 */
+  const topicSenderFor = (context: GenuiFenceContext, block: Element, streaming: boolean): GenuiMessageSender | undefined => {
+    const sessionId = context.sessionId as SessionId | undefined
+    if (sessionId === undefined || sendMessage === undefined || streaming) return undefined
+    const row = rowOf(block)
+    const nodeKey = row.getAttribute('data-chat-node-key')
+    const sourceIndex = hostFenceIndexOf(row, block)
+    const raw = rawOf(block)
+    if (nodeKey === null || sourceIndex < 0) return undefined
+    return (message) => {
+      const current = sourceSessionOf(ctx)
+      if (!current.available || current.sessionId !== sessionId || !block.isConnected || !isSettled(block)
+        || rowOf(block) !== row || row.getAttribute('data-chat-node-key') !== nodeKey
+        || hostFenceIndexOf(row, block) !== sourceIndex || rawOf(block) !== raw) {
+        return Promise.reject(new Error('session or message changed'))
+      }
+      const source = chatSourceOf(ctx, sessionId)?.getSnapshot()?.nodes.get(nodeKey)
+      if (source?.kind !== 'assistant-step') return Promise.reject(new Error('message source unavailable'))
+      const assistant = source as ChatNode<'assistant-step'>
+      if (assistant.data.status !== 'settled'
+        || sourceFencesOfAssistant(assistant.data.blocks)[sourceIndex]?.value !== raw) {
+        return Promise.reject(new Error('message source unavailable'))
+      }
+      return sendMessage(sessionId, message)
+    }
+  }
+
+  const wrapFenceNode = (
+    node: ReactNode, context: GenuiFenceContext, handler: GenuiActionHandler, streaming: boolean, block: Element,
+  ): ReactNode => (
     withFileLinkContext(
       ctx,
       fileLinkAvailability,
       context.sessionId,
       streaming,
-      <GenuiActionContext.Provider value={handler}>{node}</GenuiActionContext.Provider>,
+      <GenuiActionContext.Provider value={handler}>
+        <GenuiMessageContext.Provider value={topicSenderFor(context, block, streaming)}>
+          {node}
+        </GenuiMessageContext.Provider>
+      </GenuiActionContext.Provider>,
     )
   )
 
@@ -255,7 +293,7 @@ export function installDomFenceRenderer(
     try {
       const handler: GenuiActionHandler = (action, payload) => { sendActionForBlock(block, action, payload) }
       const root = mountDomRoot(container, (root) => {
-        root.render(wrapFenceNode(rendered.node, rendered.context, handler, !state.settled))
+        root.render(wrapFenceNode(rendered.node, rendered.context, handler, !state.settled, block))
       })
       block.style.display = 'none'
       block.setAttribute(PROCESSED, '')
@@ -435,10 +473,10 @@ export function installDomFenceRenderer(
         block.after(fresh)
         mount.container = fresh
         mount.root = mountDomRoot(fresh, (root) => {
-          root.render(wrapFenceNode(rendered.node, rendered.context, handler, !state.settled))
+          root.render(wrapFenceNode(rendered.node, rendered.context, handler, !state.settled, block))
         })
       } else {
-        mount.root.render(wrapFenceNode(rendered.node, rendered.context, handler, !state.settled))
+        mount.root.render(wrapFenceNode(rendered.node, rendered.context, handler, !state.settled, block))
       }
       mount.lastRaw = state.raw
       mount.lastSettled = state.settled

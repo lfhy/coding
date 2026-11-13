@@ -313,6 +313,16 @@ function repairNodeFields(value: unknown, ctx: RepairCtx, depth: number): GenuiN
         ...opt('action', str(v.action, 200)),
       }
     }
+    case 'topic-guide': {
+      const id = str(v.id, 200)?.trim()
+      const question = str(v.question, GENUI_LIMITS.maxString)?.trim()
+      const options = repairTopicOptions(v.options)
+      if (!id || !question || options === undefined || options.length === 0) return null
+      return {
+        type: 'topic-guide', id, question, options,
+        ...opt('confirmLabel', str(v.confirmLabel, 200)?.trim() || undefined),
+      }
+    }
     case 'input': {
       return {
         type: 'input',
@@ -726,6 +736,19 @@ function repairStrings(v: unknown, cap: number, strCap: number): string[] | unde
     }
   }
   return out
+}
+
+/** 仅保留带有可见话题名和非空预设消息的选项。 */
+function repairTopicOptions(value: unknown): Array<{ label: string; message: string }> | undefined {
+  if (!Array.isArray(value)) return undefined
+  const options: Array<{ label: string; message: string }> = []
+  for (const item of value.slice(0, GENUI_LIMITS.maxTopicOptions)) {
+    const entry = obj(item)
+    const label = str(entry?.label, 200)?.trim()
+    const message = str(entry?.message, GENUI_LIMITS.maxString)?.trim()
+    if (label && message) options.push({ label, message })
+  }
+  return options
 }
 
 function repairListItems(
@@ -1834,6 +1857,22 @@ function validateNode(value: unknown, depth: number, at: string, errors: string[
       break
     case 'select': case 'radio':
       if (!Array.isArray(v.options)) errors.push(`${at}: type '${type}' requires options (array)`)
+      break
+    case 'topic-guide':
+      if (typeof v.id !== 'string' || v.id.trim() === '') errors.push(`${at}.id must be a non-empty string`)
+      if (typeof v.question !== 'string' || v.question.trim() === '') errors.push(`${at}.question must be a non-empty string`)
+      if (!Array.isArray(v.options) || v.options.length === 0) {
+        errors.push(`${at}.options must be a non-empty array`)
+      } else {
+        for (const [index, option] of v.options.entries()) {
+          const entry = obj(option)
+          for (const field of ['label', 'message']) {
+            if (typeof entry?.[field] !== 'string' || entry[field].trim() === '') {
+              errors.push(`${at}.options[${index}].${field} must be a non-empty string`)
+            }
+          }
+        }
+      }
       break
     case 'submit':
       if (typeof v.label !== 'string') errors.push(`${at}: type 'submit' requires label (string)`)
