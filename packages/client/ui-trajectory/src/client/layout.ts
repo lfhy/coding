@@ -1062,6 +1062,7 @@ const SIMPLE_TOOL_TITLES: Readonly<Record<string, string>> = {
   schedule_list: 'List reminders',
   ask_user_question: 'Ask question',
   report: 'Report result',
+  validate_gen_ui: '校验UI语法',
 }
 
 /** 返回简单工具的用户友好标题，其他工具保留原名称供调用记录识别。 */

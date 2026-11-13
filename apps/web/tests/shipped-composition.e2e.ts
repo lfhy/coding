@@ -107,7 +107,7 @@ const EXPECTED_TOOLS = [
 const RIPGREP_TOOLS = ['glob', 'grep']
 const GLOBAL_TOOLS = [
   'list_subagent_models', 'memory_delete', 'memory_list', 'memory_read', 'memory_save', 'memory_update',
-  'render_ui', 'validate_dsh_ui',
+  'render_ui', 'validate_gen_ui',
 ]
 
 let scaffold: WebScaffold | undefined

@@ -8,7 +8,7 @@ import { extractGenuiFences, fenceFingerprint, type ExtractedFence } from './fen
 export interface FenceFailure {
   readonly index: number
   readonly fingerprint: string
-  /** 与 validate_dsh_ui 工具一致的可执行诊断。 */
+  /** 与 validate_gen_ui 工具一致的可执行诊断。 */
   readonly detail: string
 }
 

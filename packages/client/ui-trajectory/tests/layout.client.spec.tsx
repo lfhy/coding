@@ -125,6 +125,7 @@ describe('deriveTrajectoryLayout', () => {
     ['list_agents', 'List agents'],
     ['list_subagent_models', 'Browse models'],
     ['memory_list', 'List memory'],
+    ['validate_gen_ui', '校验UI语法'],
     ['browser_close', 'Close browser'],
     ['browser_screenshot', 'Capture screenshot'],
     ['browser_snapshot', 'View page'],

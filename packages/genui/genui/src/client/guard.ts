@@ -1291,7 +1291,7 @@ export function countGenuiNodes(value: unknown, cap = Number.POSITIVE_INFINITY):
         }
       } else if ((v.type === 'row' || v.type === 'col' || v.type === 'grid' || v.type === 'card') && Array.isArray(v.items)) {
         // Layout containers hold real children; skipping them undercounted
-        // the tree and hid silent drops from validate_dsh_ui (issue #42).
+        // the tree and hid silent drops from validate_gen_ui (issue #42).
         walk(v.items)
       } else if (v.type === 'file-tree') {
         // file-tree.items are data records, not GenUI children.
@@ -1320,7 +1320,7 @@ export function countGenuiNodes(value: unknown, cap = Number.POSITIVE_INFINITY):
 }
 
 /** Every white-listed node `type`. Keep in sync with the repairNode switch —
- * validate_dsh_ui uses it to tell declared GenUI nodes apart from unrelated
+ * validate_gen_ui uses it to tell declared GenUI nodes apart from unrelated
  * `"type"` strings (e.g. file-tree's `{type:'file'}` children). */
 export const GENUI_NODE_TYPES: ReadonlySet<string> = GENUI_NATIVE_TYPES
 
@@ -1643,7 +1643,7 @@ function cloneJsonValue(value: unknown): Record<string, unknown> | null {
  * The fence channels call this after the strict gate refuses, so ONE bad
  * component no longer degrades the whole fence to a code block — the
  * behaviour the capability map documents ("坏节点静默丢弃…不会拖垮界面") and
- * that validate_dsh_ui keeps diagnosing for the model. Bounded to a single
+ * that validate_gen_ui keeps diagnosing for the model. Bounded to a single
  * retry: a second failing pass is a genuinely pathological tree and keeps
  * today's full-fence fallback. Chart semantics stay protected the same way —
  * an undrawable chart is DROPPED here, never repaired into a blank canvas.
@@ -1980,7 +1980,7 @@ function validateNode(value: unknown, depth: number, at: string, errors: string[
     case 'divider':
     case 'spacer':
       // No required fields; declared-field kinds are covered by the registry
-      // check below. Missing cases here made validate_dsh_ui reject ANY fence
+      // check below. Missing cases here made validate_gen_ui reject ANY fence
       // containing them as "unknown type" (found via the divider.label test).
       break
     case 'json':

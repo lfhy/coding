@@ -142,6 +142,7 @@ describe('tool-call-model', () => {
     ['ppt_templates', 'Browse presentation templates'],
     ['schedule_list', 'List reminders'],
     ['report', 'Report result'],
+    ['validate_gen_ui', '校验UI语法'],
   ])('shows a friendly action title for %s', (name, title) => {
     const argsRaw = JSON.stringify({ internalValue: 'private' })
     const model = toolRowModel(name, running({ name, argsRaw }))

@@ -149,7 +149,7 @@ const minimalToolNames = (ctx: Context): string[] =>
 /** Web 宿主按设计向每个预设共享的工具，不能混进预设私有的工具。 */
 const GLOBAL_TOOL_NAMES = [
   'list_subagent_models', 'memory_delete', 'memory_list', 'memory_read',
-  'memory_save', 'memory_update', 'render_ui', 'validate_dsh_ui',
+  'memory_save', 'memory_update', 'render_ui', 'validate_gen_ui',
 ] as const
 
 function toolParameterNames(ctx: Context, agent: Agent, toolName: string): string[] {
@@ -249,7 +249,7 @@ describe('the shipped Web composition', () => {
         'job_output', 'list_agents', 'list_subagent_models', 'memory_delete',
         'memory_list', 'memory_read', 'memory_save', 'memory_update', 'ralph',
         'read', 'read_image', 'render_ui', 'run_code', 'send_message', 'skill',
-        'subagent', 'subagent_fork', 'todo_write', 'update_goal', 'validate_dsh_ui',
+        'subagent', 'subagent_fork', 'todo_write', 'update_goal', 'validate_gen_ui',
         'web_search', 'workflow', 'write',
       ])
     } finally {

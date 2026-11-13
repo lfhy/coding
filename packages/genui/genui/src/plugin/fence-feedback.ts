@@ -120,7 +120,7 @@ interface SessionFeedback {
   /** Latest assistant reply text of the current turn (fences are read from here). */
   text: string
   /**
-   * A `validate_dsh_ui` call happened in this turn. This is the FORMAL signal
+   * A `validate_gen_ui` call happened in this turn. This is the FORMAL signal
    * that the turn is GenUI-related — the loop never guesses intent by scanning
    * the reasoning block.
    */
@@ -166,7 +166,7 @@ export interface FenceFeedbackPlanInput {
   readonly correctedSpec: ReadonlySet<string>
   /** Turns already given the delivery reminder. */
   readonly deliveryRemindedTurns?: ReadonlySet<number> | undefined
-  /** A `validate_dsh_ui` call happened this turn (formal GenUI signal). */
+  /** A `validate_gen_ui` call happened this turn (formal GenUI signal). */
   readonly validatedThisTurn?: boolean | undefined
   /** The turn already delivered a body or a successful `render_ui` result. */
   readonly deliveredThisTurn?: boolean | undefined
@@ -198,7 +198,7 @@ export interface FenceFeedbackPlan {
  * testable without a host.
  *
  * The decision is driven by FORMAL events only: fences in the reply body, a
- * `validate_dsh_ui` call, a delivered body text or a successful `render_ui`
+ * `validate_gen_ui` call, a delivered body text or a successful `render_ui`
  * result. The reasoning block is
  * never read here — a draft inside the thinking block is not proof that the model
  * chose to deliver it, so it must not change any decision.
@@ -347,7 +347,7 @@ const DELIVERY_TOOL = 'render_ui'
  * Deliberately narrow: a non-empty text block. A `render_ui` call is decided
  * by its `tool/result`, not by the call appearing in a message — a call that
  * failed (or whose result has not arrived) is not a delivery. Other tools
- * (validate_dsh_ui, bash, …) may succeed without producing any answer, so
+ * (validate_gen_ui, bash, …) may succeed without producing any answer, so
  * they are NOT counted as delivery.
  *
  * @param content - assistant content blocks.
@@ -479,8 +479,8 @@ export function installFenceFeedback(ctx: Context, enabled: boolean, renderUiToo
       const data = event.data as { name?: unknown; callId?: unknown }
       const state = stateOf(sessionId)
       state.isSubagent = session.header.parentSession !== undefined
-      // validate_dsh_ui is the FORMAL signal that this turn is GenUI-related.
-      if (data.name === 'validate_dsh_ui') state.validatedThisTurn = true
+      // validate_gen_ui is the FORMAL signal that this turn is GenUI-related.
+      if (data.name === 'validate_gen_ui') state.validatedThisTurn = true
       // The result — not the call — decides whether render_ui delivered.
       if (data.name === DELIVERY_TOOL && typeof data.callId === 'string') {
         state.pendingRenders.add(data.callId)

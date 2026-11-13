@@ -66,7 +66,7 @@ async function persistedFeedbackHarness() {
     },
     validate: () => {
       session.append('tool/call', {
-        turn, step: 1, callId: `validate-${String(session.seq)}` as never, name: 'validate_dsh_ui', arguments: '{}',
+        turn, step: 1, callId: `validate-${String(session.seq)}` as never, name: 'validate_gen_ui', arguments: '{}',
       })
     },
     assistant: (body: string) => {

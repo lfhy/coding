@@ -144,7 +144,7 @@ description: "用 gen-ui 围栏在回答正文里输出结构化可交互 UI。�
 
 不嵌套、不解析 HTML（每个标记生成 React 元素，不走 innerHTML；`<br>` 字面显示，换行用 `"\n"`）；标记没闭合时原样显示。表格文本、`badge`、`delta` 单元格只识别本地文件链接，外部链接与无效目标显示为普通文字；`bar`、`spark`、`ring`、`index` 等专用数值单元格保持原有展示。
 
-文字字段只支持行内富文本。`text.content`、`callout.content`、`list` 项、`keyvalue` 值、`table` 单元格等字段中不要嵌入 Markdown 表格或连续三个及以上反引号、波浪号组成的代码围栏；表格使用 `table`，代码使用 `code`，代码改动使用 `diff`，结构化 JSON 使用 `json`。误写入文字字段的代码围栏连同内部标记保持原文，未闭合时从围栏标记开始保持原文。`validate_dsh_ui` 返回 `warning=block_markdown` 时，按照 `replacement` 改写结构节点并重新验证。
+文字字段只支持行内富文本。`text.content`、`callout.content`、`list` 项、`keyvalue` 值、`table` 单元格等字段中不要嵌入 Markdown 表格或连续三个及以上反引号、波浪号组成的代码围栏；表格使用 `table`，代码使用 `code`，代码改动使用 `diff`，结构化 JSON 使用 `json`。误写入文字字段的代码围栏连同内部标记保持原文，未闭合时从围栏标记开始保持原文。`validate_gen_ui` 返回 `warning=block_markdown` 时，按照 `replacement` 改写结构节点并重新验证。
 
 ## 回答级版式：默认无卡，焦点唯一
 
@@ -311,7 +311,7 @@ description: "用 gen-ui 围栏在回答正文里输出结构化可交互 UI。�
 1. **围栏放哪，组件就出现在哪** —— 文字在前后自然流动，不要用工具、不要解释"这是一个围栏"。**围栏一闭合就立即渲染**（不等整条回答结束），所以可以边写文字边出组件
 2. **组合优先**：复杂界面用 `grid`+`card`+`stat`+`table` 拼，不要追求单一巨型组件
 3. **JSON 必须严格合法，发出前完成 4 步自检**：插件**只**修标点级小错（字符串内半角引号、尾随逗号）；**缺括号/错括号等结构错误一律不修**，直接红横幅退化成代码块——写错就重发，别指望兜底。**最容易犯的错：字符串值里用了半角引号 `"`**——中文引语一律写 `“”` 或 `「」`。发出围栏前自检 4 条：① 括号配对：`{` 与 `}`、`[` 与 `]` 数量相等，**收尾序列逐个核对**（长表格最易在最后几行错位：把 `]]}]}` 写成 `]}]}]}`）② 无尾随逗号 ③ 值内引号用中文引号 ④ 最后一个字符必须是 `}`（**`}` 之后不要再写任何字符**——实测常见错误是习惯性追加 `</p>` 或一句解释，整条围栏就解析不了）。不要在 JSON 字符串里放 markdown；超长表格/列表拆成多个组件分开发，宁短勿长
-3.5. **字段名逐个核对（写错一个 = 整条围栏降级为代码块）**：某个组件的必填字段写错 / 缺失 → 该组件被丢弃 → 整份 spec 判定不可渲染 → 用户只看到一段裸 JSON。高频误写：`callout` 正文是 `content`（不是 text/body）；`table` 要 `columns` + `rows`（不是 data，只给二维 rows 时首行会当表头）；`keyvalue` 要 `pairs:[{key,value}]`（不是 items）；`diff` 是 `diffs`；图片/音视频是 `src`；`code` 是 `code`、`copy` 是 `text`。拿不准就调 `validate_dsh_ui`，不要凭直觉命名
+3.5. **字段名逐个核对（写错一个 = 整条围栏降级为代码块）**：某个组件的必填字段写错 / 缺失 → 该组件被丢弃 → 整份 spec 判定不可渲染 → 用户只看到一段裸 JSON。高频误写：`callout` 正文是 `content`（不是 text/body）；`table` 要 `columns` + `rows`（不是 data，只给二维 rows 时首行会当表头）；`keyvalue` 要 `pairs:[{key,value}]`（不是 items）；`diff` 是 `diffs`；图片/音视频是 `src`；`code` 是 `code`、`copy` 是 `text`。拿不准就调 `validate_gen_ui`，不要凭直觉命名
 4. **不要嵌套围栏**：gen-ui 里不要再包 ``` 代码围栏
 5. **深色主题友好**：配色选深底亮色；UI 主题跟随应用
 6. **场景判断**：先查上面的映射表 —— 内容类型命中就上对应组件；只有纯文字问答、一句话能说清时才不用
@@ -331,4 +331,4 @@ description: "用 gen-ui 围栏在回答正文里输出结构化可交互 UI。�
     ````
 
     同理：需要用户执行的脚本放进 `code` 节点（`lang`: `bash`/`python`）或正文围栏，并保证**从第一行到最后一行一次粘进终端就能跑**。
-11. **先验后发（复杂 UI）**：发出 ```gen-ui 围栏前，若 spec ≥3 个组件或含 `table`（长表格最易括号错位），先调用 `validate_dsh_ui` 工具（参数 `spec` 传围栏内的 JSON 文本）验证；返回 `next=fix_and_revalidate` 就按诊断修正后重新验证；返回 `next=emit_fence` 再发出；返回 `next=emit_repaired_fence` 时直接照抄 `repaired_json` 发出，无需再次验证；简单 UI（≤2 个组件）不必验证，渲染器会自动修复大部分标点/括号错误
+11. **先验后发（复杂 UI）**：发出 ```gen-ui 围栏前，若 spec ≥3 个组件或含 `table`（长表格最易括号错位），先调用 `validate_gen_ui` 工具（参数 `spec` 传围栏内的 JSON 文本）验证；返回 `next=fix_and_revalidate` 就按诊断修正后重新验证；返回 `next=emit_fence` 再发出；返回 `next=emit_repaired_fence` 时直接照抄 `repaired_json` 发出，无需再次验证；简单 UI（≤2 个组件）不必验证，渲染器会自动修复大部分标点/括号错误

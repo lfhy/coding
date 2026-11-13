@@ -1,6 +1,6 @@
 {
   "name": "coding-genui",
-  "description": "Generative UI for assistant replies: the ```gen-ui fence language with legacy dsh-ui compatibility, render_ui/validate_dsh_ui tools, and browser tool-row rendering",
+  "description": "Generative UI for assistant replies: the ```gen-ui fence language with legacy dsh-ui compatibility, render_ui/validate_gen_ui tools, and browser tool-row rendering",
   "version": "0.1.0-rc.8",
   "publishConfig": {
     "access": "public"

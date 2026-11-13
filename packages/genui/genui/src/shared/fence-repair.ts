@@ -1,7 +1,7 @@
 /**
  * Shared fence-body JSON repair — pure string functions, no DOM, no I/O.
  * Used by BOTH the client fence renderer (tier-1/tier-2 auto-repair before
- * rendering) and the node-side validate_dsh_ui tool (which returns the
+ * rendering) and the node-side validate_gen_ui tool (which returns the
  * repaired JSON to the model instead of making it re-author the fix).
  *
  * Two tiers, deliberately gated differently by the callers:

@@ -1,6 +1,6 @@
 /**
  * GenUI 宿主半：向系统提示词登记 ```gen-ui 围栏语言说明、注册
- * render_ui／validate_dsh_ui 模型工具、以 bundled provider 注册 genui 技能，
+ * render_ui／validate_gen_ui 模型工具、以 bundled provider 注册 genui 技能，
  * 并在 webserver 上挂懒引擎资产路由（mermaid／three／echarts 按需下发）。
  * 浏览器半（`src/client`）负责围栏渲染；没有浏览器半时围栏只是普通代码块。
  * @module coding-genui
@@ -16,7 +16,7 @@ import { readFileSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { basename, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { createRenderUiTool, createValidateDshUiTool } from './tool.ts'
+import { createRenderUiTool, createValidateGenUiTool } from './tool.ts'
 import { installFenceFeedback } from './fence-feedback.ts'
 
 /* ---------------- 懒引擎资产路由 ---------------- */
@@ -108,11 +108,11 @@ export const GENUI_SECTION_TEXT = `在回答正文里，段落之间可以放可
 
 **字段速查**（完整见 genui skill）：\`stat\` \`{"label","value","delta"?}\` · \`table\` \`{"columns":[...],"rows":[[...]],"types"?,"details"?,"filter"?,"export"?}\` · \`progress\` \`{"value":0-100,"label"?,"variant"?,"target"?}\` · \`keyvalue\` \`{"pairs":[{"key","value"}]}\` · \`steps\` \`{"steps":[{"title","desc"?}]}\` · \`file-tree\` \`{"items":[{"name","type":"file|dir","children"?}]}\` · \`callout\` \`{"content","tone"?,"title"?}\`
 
-**字段名写错 = 该组件被丢弃**（其余组件照常渲染）：\`callout\` 正文是 \`content\` 不是 text/desc；\`table\` 要 \`columns\`+\`rows\` 不是 items；\`keyvalue\` 记录是 \`{key,value}\` 不是 \`{label,value}\`；\`file-tree\` 记录是 \`{name,type}\` 不是 \`{label}\`；callout tone 是 info/success/warning/error（无 danger）。不确定就调 \`validate_dsh_ui\`。
+**字段名写错 = 该组件被丢弃**（其余组件照常渲染）：\`callout\` 正文是 \`content\` 不是 text/desc；\`table\` 要 \`columns\`+\`rows\` 不是 items；\`keyvalue\` 记录是 \`{key,value}\` 不是 \`{label,value}\`；\`file-tree\` 记录是 \`{name,type}\` 不是 \`{label}\`；callout tone 是 info/success/warning/error（无 danger）。不确定就调 \`validate_gen_ui\`。
 
 规则：
 - 语言：GenUI 里用户可见的文案跟随回答正文语言，由 Coding 的「回答语言」段决定（默认简体中文）；不要按本文示例或技能示例的语言推断，也不要因此把对话切成英文。JSON 键名、组件类型名、id、action 名与枚举值保持原文；\`<user-language ...>\` 是占位符，必须换成真实内容，不得原样输出。
-- JSON 严格：坏组件被丢弃，坏围栏变代码块；≥3 节点或含 table 时调 validate_dsh_ui，按诊断修改并重验；小围栏字段存疑也先验证。
+- JSON 严格：坏组件被丢弃，坏围栏变代码块；≥3 节点或含 table 时调 validate_gen_ui，按诊断修改并重验；小围栏字段存疑也先验证。
 - warning=block_markdown：按 replacement 改写并重验。
 - 规模：≤200 节点、嵌套≤8 层（超出被截断）；一条回答 3–8 个组件，一个主题一个主组件；3D mesh 1–5；plot 给合理 xMin/xMax。
 - 本地优先：UI 能自己做的状态变化（判卷、判题、重置、展开、选中）就地完成，零往返；action 只用于必须模型参与的事。交互以 [genui-action] name + 组件数据回传，届时重渲染更新 UI；无 action 的按钮禁用。
@@ -181,7 +181,7 @@ export interface GenuiPluginConfig {
 
   /**
    * 是否注册 render_ui 模型工具。默认开启，设置为 false 时关闭；
-   * 不影响 validate_dsh_ui 和 gen-ui 围栏渲染。
+   * 不影响 validate_gen_ui 和 gen-ui 围栏渲染。
    */
   renderUiTool?: boolean
 }
@@ -209,7 +209,7 @@ export function apply(ctx: Context, config?: GenuiPluginConfig): void {
       if (renderUiToolEnabled) {
         yield toolsCtx.tools.register(createRenderUiTool())
       }
-      yield toolsCtx.tools.register(createValidateDshUiTool())
+      yield toolsCtx.tools.register(createValidateGenUiTool())
     }, 'coding-genui: model tools')
   })
 

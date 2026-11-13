@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { extractGenuiFences } from '../src/plugin/fence-extraction.ts'
 import { fenceFailures } from '../src/plugin/fence-diagnostics.ts'
 import { GENUI_SECTION_TEXT } from '../src/plugin/index.ts'
-import { createRenderUiTool, createValidateDshUiTool } from '../src/plugin/tool.ts'
+import { createRenderUiTool, createValidateGenUiTool } from '../src/plugin/tool.ts'
 
 /** 新模型契约使用规范围栏名；旧会话无需重写即可继续参与最终诊断。 */
 describe('GenUI 围栏语言契约', () => {
@@ -18,8 +18,10 @@ describe('GenUI 围栏语言契约', () => {
     expect(GENUI_SECTION_TEXT).not.toContain('```dsh-ui')
     expect(GENUI_SECTION_TEXT).not.toContain('/panel')
     expect(createRenderUiTool().description).toContain('```gen-ui')
-    const validator = createValidateDshUiTool()
-    expect(validator.name).toBe('validate_dsh_ui')
+    expect(GENUI_SECTION_TEXT).toContain('validate_gen_ui')
+    expect(GENUI_SECTION_TEXT).not.toContain('validate_dsh_ui')
+    const validator = createValidateGenUiTool()
+    expect(validator.name).toBe('validate_gen_ui')
     expect(validator.description).toContain('```gen-ui')
   })
 

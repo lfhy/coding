@@ -271,13 +271,9 @@ export function createRenderUiTool(): ToolDefinition {
 }
 
 /**
- * The `validate_dsh_ui` tool: a model-facing pre-flight check for the
- * ```gen-ui fence channel. The model calls it with the JSON text it is about
- * to put inside a fence; it reports whether the body parses as a valid GenUI
- * spec, and when it does not, WHERE it breaks and WHAT is likely wrong
- * (bracket counts, common typo classes) so the model can fix and re-validate
- * before emitting — turning "render a red banner after the fact" into
- * "verify before you send". Purely local: no LLM, no network, no DOM.
+ * `validate_gen_ui` 是模型发出 ```gen-ui 围栏前的本地预检工具。模型传入即将
+ * 写入围栏的 JSON 正文；返回可渲染性、结构错误与修正线索，避免发出后才显示
+ * 失败提示。此工具不调用模型、网络或浏览器 DOM。
  */
 const VALIDATE_DESCRIPTION =
   'Validate the JSON body of a ```gen-ui fence BEFORE emitting it — use for non-trivial specs (≥3 nodes or containing a table); skip for trivial ones (≤2 nodes). '
@@ -359,10 +355,10 @@ function bracketDiagnostic(raw: string): string[] {
 
 const COMMON_CAUSES = 'likely_causes=unbalanced_delimiters,unescaped_quote,trailing_comma,unterminated_string'
 
-/** Build the validate_dsh_ui tool definition (registered alongside render_ui). */
-export function createValidateDshUiTool(): ToolDefinition {
+/** 构造与 render_ui 同时注册的 validate_gen_ui 工具定义。 */
+export function createValidateGenUiTool(): ToolDefinition {
   return {
-    name: 'validate_dsh_ui',
+    name: 'validate_gen_ui',
     description: VALIDATE_DESCRIPTION,
     parameters: VALIDATE_PARAMETERS,
     output: {

@@ -108,7 +108,7 @@ describe('the shipped Codex preset', () => {
       expect(toolNames(codex.agent)).toEqual(expect.arrayContaining([
         'list_subagent_models',
         'memory_delete', 'memory_list', 'memory_read', 'memory_save', 'memory_update',
-        'render_ui', 'validate_dsh_ui',
+        'render_ui', 'validate_gen_ui',
       ]))
       // 这些工具在标准模式里存在，Codex 模式不再暴露它们。
       expect(toolNames(codex.agent)).toEqual(expect.not.arrayContaining([

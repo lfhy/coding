@@ -99,7 +99,7 @@ const TOOL_TITLES: Record<string, string> = {
   job_kill: 'Stop job',
   workflow: 'Run workflow',
   ralph: 'Continue task',
-  validate_dsh_ui: 'Check layout',
+  validate_gen_ui: '校验UI语法',
   browser_close: 'Close browser',
   browser_screenshot: 'Capture screenshot',
   browser_snapshot: 'View page',

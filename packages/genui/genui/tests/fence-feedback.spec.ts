@@ -283,7 +283,7 @@ describe('planFenceFeedback: the bounds that prevent a retry storm', () => {
     const idle = { text: '', turn: 2, correctedSpec: new Set<string>(), aborted: false }
     // Nothing formal happened: silence (an empty body alone is not a GenUI turn).
     expect(planFenceFeedback(idle)).toBeNull()
-    // validate_dsh_ui ran, nothing was delivered: remind once.
+    // validate_gen_ui ran, nothing was delivered: remind once.
     const plan = planFenceFeedback({ ...idle, validatedThisTurn: true })
     expect(plan).not.toBeNull()
     expect(plan!.kind).toBe('delivery')
@@ -301,7 +301,7 @@ describe('planFenceFeedback: the bounds that prevent a retry storm', () => {
   it('says nothing when the turn already delivered something formal', () => {
     const delivered = { text: '', turn: 5, correctedSpec: new Set<string>(), aborted: false, validatedThisTurn: true, deliveredThisTurn: true }
     expect(planFenceFeedback(delivered)).toBeNull()
-    // validate_dsh_ui alone is not a delivery; neither is an ordinary tool call.
+    // validate_gen_ui alone is not a delivery; neither is an ordinary tool call.
     expect(planFenceFeedback({ ...delivered, deliveredThisTurn: false })).not.toBeNull()
   })
 
@@ -449,7 +449,7 @@ describe('installFenceFeedback wiring', () => {
   it('reminds when a formal validate call produced no delivery', () => {
     const h = harness()
     h.emitSession(userEvent())
-    h.emitSession(toolCallEvent('validate_dsh_ui'))
+    h.emitSession(toolCallEvent('validate_gen_ui'))
     h.emitSession({ type: 'assistant/message', seq: 6, time: 3, data: { message: { content: [{ type: 'reasoning', text: '草稿' }] } } })
     const agent = { session: { id: 'sess-1', header: { id: 'sess-1', version: 4 } }, steer: h.steer }
     h.boundary({ agent, turn: 7, signal: new AbortController().signal })
@@ -461,6 +461,14 @@ describe('installFenceFeedback wiring', () => {
     // Only one reminder per turn.
     h.boundary({ agent, turn: 7, signal: new AbortController().signal })
     expect(h.steer).toHaveBeenCalledTimes(1)
+  })
+
+  it('不将旧工具名识别为验证信号', () => {
+    const h = harness()
+    h.emitSession(userEvent())
+    h.emitSession(toolCallEvent('validate_dsh_ui'))
+    h.boundary({ agent: { session: { id: 'sess-1', header: { id: 'sess-1' } }, steer: h.steer }, turn: 7, signal: new AbortController().signal })
+    expect(h.steer).not.toHaveBeenCalled()
   })
 
   it('never lets reasoning content change the decision (only formal events do)', () => {
@@ -476,7 +484,7 @@ describe('installFenceFeedback wiring', () => {
     const decisions = drafts.map((draft) => {
       const h = harness()
       h.emitSession(userEvent())
-      h.emitSession(toolCallEvent('validate_dsh_ui'))
+      h.emitSession(toolCallEvent('validate_gen_ui'))
       if (draft !== '') h.emitSession(reasoningEvent(draft))
       const agent = { session: { id: 'sess-1', header: { id: 'sess-1', version: 4 } }, steer: h.steer }
       h.boundary({ agent, turn: 3, signal: new AbortController().signal })
@@ -488,7 +496,7 @@ describe('installFenceFeedback wiring', () => {
   it('stays silent when the turn delivered a body or a successful render_ui result', () => {
     const delivered = harness()
     delivered.emitSession(userEvent())
-    delivered.emitSession(toolCallEvent('validate_dsh_ui'))
+    delivered.emitSession(toolCallEvent('validate_gen_ui'))
     delivered.emitSession(assistantEvent('就是这些，没有别的要汇报。'))
     const agent = { session: { id: 'sess-1', header: { id: 'sess-1', version: 4 } }, steer: delivered.steer }
     delivered.boundary({ agent, turn: 8, signal: new AbortController().signal })
@@ -498,7 +506,7 @@ describe('installFenceFeedback wiring', () => {
     // 失败的渲染卡也被当成已交付 — review 确认的漏补救之一）。
     const card = harness()
     card.emitSession(userEvent())
-    card.emitSession(toolCallEvent('validate_dsh_ui'))
+    card.emitSession(toolCallEvent('validate_gen_ui'))
     card.emitSession(toolCallEvent('render_ui', 'render-1'))
     card.emitSession({ type: 'assistant/message', seq: 7, time: 4, data: { message: { content: [{ type: 'tool-call', name: 'render_ui', arguments: '{}' }] } } })
     card.emitSession(toolResultEvent('render-1'))
@@ -510,7 +518,7 @@ describe('installFenceFeedback wiring', () => {
     for (const failure of [{ internal: true }, { blockError: true }]) {
       const h = harness()
       h.emitSession(userEvent())
-      h.emitSession(toolCallEvent('validate_dsh_ui'))
+      h.emitSession(toolCallEvent('validate_gen_ui'))
       h.emitSession(toolCallEvent('render_ui', 'render-fail'))
       h.emitSession(toolResultEvent('render-fail', failure))
       const agent = { session: { id: 'sess-1', header: { id: 'sess-1', version: 4 } }, steer: h.steer }
@@ -525,7 +533,7 @@ describe('installFenceFeedback wiring', () => {
     for (const format of ['legacy', 'v4'] as const) {
       const h = harness()
       h.emitSession(userEvent())
-      h.emitSession(toolCallEvent('validate_dsh_ui'))
+      h.emitSession(toolCallEvent('validate_gen_ui'))
       h.emitSession(toolCallEvent('render_ui', `render-${format}`))
       h.emitSession(toolResultEvent(`render-${format}`, { format }))
       h.boundary({ agent: { session: { id: 'sess-1', header: { id: 'sess-1', version: 4 } }, steer: h.steer }, turn: 12, signal: new AbortController().signal })
@@ -541,7 +549,7 @@ describe('installFenceFeedback wiring', () => {
     ]) {
       const h = harness()
       h.emitSession(userEvent())
-      h.emitSession(toolCallEvent('validate_dsh_ui'))
+      h.emitSession(toolCallEvent('validate_gen_ui'))
       h.emitSession(toolCallEvent('render_ui', 'render-unrecognized'))
       h.emitSession(toolResultEvent('render-unrecognized', { text }))
       h.boundary({ agent: { session: { id: 'sess-1', header: { id: 'sess-1', version: 4 } }, steer: h.steer }, turn: 13, signal: new AbortController().signal })
@@ -554,7 +562,7 @@ describe('installFenceFeedback wiring', () => {
   it('stays silent while a render_ui result is outstanding, then decides on the result', () => {
     const h = harness()
     h.emitSession(userEvent())
-    h.emitSession(toolCallEvent('validate_dsh_ui'))
+    h.emitSession(toolCallEvent('validate_gen_ui'))
     h.emitSession(toolCallEvent('render_ui', 'render-late'))
     const agent = { session: { id: 'sess-1', header: { id: 'sess-1', version: 4 } }, steer: h.steer }
     // Result not arrived yet: steering here would race the late result.
@@ -575,7 +583,7 @@ describe('installFenceFeedback wiring', () => {
     for (const kind of ['tool', 'agent', 'member']) {
       const h = harness()
       h.emitSession(userEvent())
-      h.emitSession(toolCallEvent('validate_dsh_ui'))
+      h.emitSession(toolCallEvent('validate_gen_ui'))
       h.emitSession(contextMessageEvent(kind))
       const agent = { session: { id: 'sess-1', header: { id: 'sess-1', version: 4 } }, steer: h.steer }
       h.boundary({ agent, turn: 3, signal: new AbortController().signal })
@@ -589,7 +597,7 @@ describe('installFenceFeedback wiring', () => {
     const h = harness()
     h.emitSession(turnStartEvent(1))
     h.emitSession(userEvent())
-    h.emitSession(toolCallEvent('validate_dsh_ui'))
+    h.emitSession(toolCallEvent('validate_gen_ui'))
     const agent = { session: { id: 'sess-1', header: { id: 'sess-1', version: 4 } }, steer: h.steer }
     h.boundary({ agent, turn: 1, signal: new AbortController().signal })
     expect(h.steer).toHaveBeenCalledTimes(1)
@@ -597,7 +605,7 @@ describe('installFenceFeedback wiring', () => {
     // delivered can be reminded again under a new turn number.
     h.emitSession(turnStartEvent(2))
     h.emitSession(userEvent())
-    h.emitSession(toolCallEvent('validate_dsh_ui'))
+    h.emitSession(toolCallEvent('validate_gen_ui'))
     h.boundary({ agent, turn: 2, signal: new AbortController().signal })
     expect(h.steer).toHaveBeenCalledTimes(2)
   })
@@ -605,7 +613,7 @@ describe('installFenceFeedback wiring', () => {
   it('keeps the delivery ledger separate from the render-failure ledger', () => {
     const h = harness()
     h.emitSession(userEvent())
-    h.emitSession(toolCallEvent('validate_dsh_ui'))
+    h.emitSession(toolCallEvent('validate_gen_ui'))
     const agent = { session: { id: 'sess-1', header: { id: 'sess-1', version: 4 } }, steer: h.steer }
     h.boundary({ agent, turn: 4, signal: new AbortController().signal })
     expect(h.steer).toHaveBeenCalledTimes(1)          // delivery reminder (slot 1)
@@ -677,7 +685,7 @@ describe('installFenceFeedback wiring', () => {
     const h = harness()
     h.emitSession(turnStartEvent(7))
     h.emitSession(feedbackMessageEvent('delivery-7', missingBodyCorrectionText(7)))
-    h.emitSession(toolCallEvent('validate_dsh_ui'))
+    h.emitSession(toolCallEvent('validate_gen_ui'))
     const agent = { session: { id: 'sess-1', header: { id: 'sess-1', version: 4 } }, steer: h.steer }
     h.boundary({ agent, turn: 7, signal: new AbortController().signal })
     expect(h.steer).not.toHaveBeenCalled()
@@ -696,7 +704,7 @@ describe('installFenceFeedback wiring', () => {
     h.emitSession(userEvent())
     h.emitSession(feedbackMessageEvent('render-9-a', fenceCorrectionText(fenceFailures(reply(BROKEN)))))
     h.emitSession(assistantEvent(reply(BROKEN)))
-    h.emitSession(toolCallEvent('validate_dsh_ui'))
+    h.emitSession(toolCallEvent('validate_gen_ui'))
     const agent = { session: { id: 'sess-1', header: { id: 'sess-1', version: 4 } }, steer: h.steer }
     h.boundary({ agent, turn: 9, signal: new AbortController().signal })
     expect(h.steer).not.toHaveBeenCalled()
@@ -728,7 +736,7 @@ describe('installFenceFeedback wiring', () => {
     h.emitSession(turnStartEvent(11))
     h.emitSession(feedbackMessageEvent('delivery-11-a', missingBodyCorrectionText(11)))
     h.emitSession(feedbackMessageEvent('delivery-11-b', missingBodyCorrectionText(11)))
-    h.emitSession(toolCallEvent('validate_dsh_ui'))
+    h.emitSession(toolCallEvent('validate_gen_ui'))
     h.emitSession(assistantEvent(reply('{"items":[{"type":"stat","label":"third"}]}')))
     h.boundary({ agent: { session: { id: 'sess-1', header: { id: 'sess-1', version: 4 } }, steer: h.steer }, turn: 11, signal: new AbortController().signal })
     expect(h.steer).not.toHaveBeenCalled()
@@ -804,7 +812,7 @@ describe('GenUI reasoning-only stream recovery', () => {
   it('rewrites a validated top-level GenUI reasoning-only stop as EMPTY_RESPONSE', async () => {
     const h = streamHarness()
     h.emitSession(userEvent() as SessionEvent)
-    h.emitSession({ type: 'tool/call', seq: 3, time: 1, data: { name: 'validate_dsh_ui', callId: 'validate-1' } } as unknown as SessionEvent)
+    h.emitSession({ type: 'tool/call', seq: 3, time: 1, data: { name: 'validate_gen_ui', callId: 'validate-1' } } as unknown as SessionEvent)
     const chunks = await collectChunks(h.stream(agentRequest(), reasoningOnly))
 
     expect(chunks.slice(0, -1)).toEqual(reasoningOnly.slice(0, -1))
@@ -823,7 +831,7 @@ describe('GenUI reasoning-only stream recovery', () => {
   it('preserves text, tool-call, max-tokens, empty-stop, and existing error finishes', async () => {
     const h = streamHarness()
     h.emitSession(userEvent() as SessionEvent)
-    h.emitSession({ type: 'tool/call', seq: 3, time: 1, data: { name: 'validate_dsh_ui', callId: 'validate-1' } } as unknown as SessionEvent)
+    h.emitSession({ type: 'tool/call', seq: 3, time: 1, data: { name: 'validate_gen_ui', callId: 'validate-1' } } as unknown as SessionEvent)
     const unchanged: StreamChunk[][] = [
       [
         ...reasoningOnly.slice(0, -1),
@@ -862,20 +870,20 @@ describe('GenUI reasoning-only stream recovery', () => {
 
     const validated = streamHarness()
     validated.emitSession(userEvent() as SessionEvent)
-    validated.emitSession({ type: 'tool/call', seq: 3, time: 1, data: { name: 'validate_dsh_ui', callId: 'validate-1' } } as unknown as SessionEvent)
+    validated.emitSession({ type: 'tool/call', seq: 3, time: 1, data: { name: 'validate_gen_ui', callId: 'validate-1' } } as unknown as SessionEvent)
     expect(await collectChunks(validated.stream(ordinaryRequest, reasoningOnly))).toEqual(reasoningOnly)
     expect(await collectChunks(validated.stream(agentRequest({ purpose: 'compaction' }), reasoningOnly))).toEqual(reasoningOnly)
 
     const subagent = streamHarness({ parentSession: 'parent-1' })
     subagent.emitSession(userEvent() as SessionEvent)
-    subagent.emitSession({ type: 'tool/call', seq: 3, time: 1, data: { name: 'validate_dsh_ui', callId: 'validate-1' } } as unknown as SessionEvent)
+    subagent.emitSession({ type: 'tool/call', seq: 3, time: 1, data: { name: 'validate_gen_ui', callId: 'validate-1' } } as unknown as SessionEvent)
     expect(await collectChunks(subagent.stream(agentRequest(), reasoningOnly))).toEqual(reasoningOnly)
   })
 
   it('keeps the validation signal for a host retry that returns a text answer', async () => {
     const h = streamHarness()
     h.emitSession(userEvent() as SessionEvent)
-    h.emitSession({ type: 'tool/call', seq: 3, time: 1, data: { name: 'validate_dsh_ui', callId: 'validate-1' } } as unknown as SessionEvent)
+    h.emitSession({ type: 'tool/call', seq: 3, time: 1, data: { name: 'validate_gen_ui', callId: 'validate-1' } } as unknown as SessionEvent)
     const failedAttempt = await collectChunks(h.stream(agentRequest(), reasoningOnly))
     const answer: StreamChunk[] = [
       { type: 'block-start', index: 0, blockType: 'text' },
@@ -892,7 +900,7 @@ describe('GenUI reasoning-only stream recovery', () => {
   it('keeps host retry recovery enabled when same-turn fence corrections are disabled', async () => {
     const h = streamHarness({ enabled: false })
     h.emitSession(userEvent() as SessionEvent)
-    h.emitSession({ type: 'tool/call', seq: 3, time: 1, data: { name: 'validate_dsh_ui', callId: 'validate-1' } } as unknown as SessionEvent)
+    h.emitSession({ type: 'tool/call', seq: 3, time: 1, data: { name: 'validate_gen_ui', callId: 'validate-1' } } as unknown as SessionEvent)
 
     const chunks = await collectChunks(h.stream(agentRequest(), reasoningOnly))
     expect((chunks.at(-1) as Extract<StreamChunk, { type: 'finish' }>).reason.kind).toBe('error')

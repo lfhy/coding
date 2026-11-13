@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { completeFenceJson, repairFenceJson } from '../src/shared/fence-repair.ts'
 import { resolveFence } from '../src/shared/fence-resolve.ts'
-import { createValidateDshUiTool } from '../src/plugin/tool.ts'
+import { createValidateGenUiTool } from '../src/plugin/tool.ts'
 
 describe('valueless object keys (issues #290 and #291)', () => {
   it.each([
@@ -39,7 +39,7 @@ describe('valueless object keys (issues #290 and #291)', () => {
     for (const settled of [false, true]) {
       expect(resolveFence(raw, { settled }).spec?.items).toEqual([{ type: 'text', content: 'hello' }])
     }
-    const validation = await createValidateDshUiTool().execute({ spec: raw }, { signal: new AbortController().signal } as never)
+    const validation = await createValidateGenUiTool().execute({ spec: raw }, { signal: new AbortController().signal } as never)
     expect(validation).toContain('repair=applied')
     expect(validation).toContain('"content":"hello"')
   })

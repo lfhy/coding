@@ -1,12 +1,12 @@
-// 上游 plugin-tool 测试的移植版：render_ui/validate_dsh_ui 工具定义、
+// 上游 plugin-tool 测试的移植版：render_ui/validate_gen_ui 工具定义、
 // guard 支撑的修复与上限，以及 call/result 卡片与 meta 投影。
 // 适配点：本仓库 ToolDefinition.execute/presentationMeta 需要 (args, exec/value)
 // 双参签名，测试以哑 exec 对象补位。
 import { describe, expect, it } from 'vitest'
-import { createRenderUiTool, createValidateDshUiTool } from '../src/plugin/tool.ts'
+import { createRenderUiTool, createValidateGenUiTool } from '../src/plugin/tool.ts'
 
 const tool = createRenderUiTool()
-const vtool = createValidateDshUiTool()
+const vtool = createValidateGenUiTool()
 const exec = { signal: new AbortController().signal } as never
 
 const text = (content: string) => ({ type: 'text', content })
@@ -43,7 +43,11 @@ describe('render_ui tool definition', () => {
   })
 })
 
-describe('validate_dsh_ui tool definition', () => {
+describe('validate_gen_ui tool definition', () => {
+  it('只注册新工具 wire 名，不暴露旧别名', () => {
+    expect(vtool.name).toBe('validate_gen_ui')
+    expect(vtool.name).not.toBe('validate_dsh_ui')
+  })
   it('validates a good fence body end-to-end', async () => {
     const good = JSON.stringify({ items: [{ type: 'stat', label: '收入', value: '¥128,430', delta: '+12.4%' }] })
     const value = String(await vtool.execute({ spec: good }, exec))
