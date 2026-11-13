@@ -61,6 +61,7 @@ CI 不代表桌面端所有平台已经支持。新增桌面壳或原生模块�
 - 每个能力完整包含 Service Definition、Provider 和 Consumer。注册是 effect：使用 `ctx.effect()`、`ctx.on()` 或注册器返回的 disposer 管理生命周期。
 - 多入口共用的校验、归一化和业务限额归能力拥有者的 Service／Provider 实现；Consumer 只负责自身来源、传输与权限安全检查，不复制处理策略。图片尺寸／字节预算复用 [`fitImage`](packages/attachment/attachment/README.md) 策略，各提供方负责自身编解码与格式语义；模型附件经 `ctx.attachments.saveImage`／`saveImages` 准入，内联 base64 经 `admitEncodedImages`。最终模型限额在归一化后判断，动图不得静默压成单帧。
 - 新的模型可见输入必须能从 session log 重建；新增模型可见行为时同步事件、投影、SDK 期望输出和 keyless snapshot。
+- 新增模型工具时按[工具调用的操作说明](packages/core/tools/README.md#模型调用的操作说明)核对展示：已有友好 `description` 或业务说明就复用，动作可静态说明就提供友好标题；只有不能静态描述且缺少现成说明时才使用可选 `summary`，不要重复加参数、覆盖业务同名字段或展示原始参数。同步验证对话工具行、轨迹与回放。
 - 跨进程、文件、网络、worker 和模型 JSON 边界进行运行时校验；同进程的静态类型边界信任 TypeScript，不为接口已保证的值增加重复 fallback。
 - 跨边界 id 使用 `Branded` 类型；联合类型按 discriminant 分支，封闭联合以 `assertNever` 收尾。
 - Waterfall listener 必须调用 `next()`；插件配置中的部署变量必须是经过校验的 `Config` 字段，不在插件中隐藏硬编码 tunable。
