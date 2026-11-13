@@ -16,7 +16,7 @@ make dev
 
 开发 Host 使用 `~/.dsh-electron-dev`，默认工作目录为其中的 `workspace/`，Electron `userData` 位于 `electron-user-data/`；开发实例拒绝与安装版主目录（`~/.coding`）重叠。开发 Host 从仓库源码启动，需要 PATH 中的 Node，且不自动使用安装版设置与凭据。手动真实 API 测试须显式设置环境变量或只在隔离的 `workspace/.env` 中配置；Host 不读取仓库根目录 `.env`，不要将密钥写进仓库。
 
-`pnpm run test:electron:chat-links` 是独立的开发态原生验收：先按 `make dev` 所需命令构建 Host、Web、Go helper 与 Electron 壳，再在 macOS 图形会话中从仓库根运行。本测试在临时 HOME 中恢复一次 Assistant 链接消息，点击后检查本机测试页面被 Agent 浏览器加载、右侧标签可见且已选中，并核对建页和导航请求；需要本机 Edge、Chrome 或 Chromium，不调用模型或读取用户会话。它不测试现有安装版；退出不确定时保留隔离目录供检查。浏览器切换至 ego 后，旧 guest 的 `--browser-only` 验证结果不代表当前桌面能力。
+`pnpm run test:electron:chat-links` 验收已构建的开发态壳；先按 `make dev` 所需命令构建 Host、Web、Go helper 与 Electron 壳。`pnpm run test:electron:chat-links:packaged` 验收已有的 `dist/Coding.app`：在 macOS 图形会话中把签名包复制到短临时路径，以独立 HOME、浏览器状态和单实例锁启动，不安装或操作正在运行的应用。两种模式都恢复一次 Assistant 链接消息，点击后检查本机测试页面被 Agent 浏览器加载、右侧标签可见且已选中，并核对建页和导航请求；需要本机 Edge、Chrome 或 Chromium，不调用模型或读取用户会话。退出不确定时保留隔离目录供检查；这两项测试不验收既有用户配置和会话。旧 guest 的 `--browser-only` 验证结果不代表当前浏览器能力。
 
 ## Host、Remote-SSH 与窗口
 

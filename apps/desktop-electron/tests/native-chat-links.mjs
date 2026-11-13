@@ -5,7 +5,7 @@
 import assert from 'node:assert/strict'
 import { execFile, spawnSync } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
-import { mkdir, mkdtemp, readFile, realpath, rm } from 'node:fs/promises'
+import { cp, mkdir, mkdtemp, readFile, realpath, rm } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -20,6 +20,11 @@ import { _electron } from 'playwright'
 
 const root = fileURLToPath(new URL('../../..', import.meta.url))
 const entry = join(root, 'apps/desktop-electron/lib/main.js')
+const packagedSource = join(root, 'dist/Coding.app')
+const packaged = process.argv[2] === '--packaged'
+if (process.argv.length > 3 || (process.argv[2] !== undefined && !packaged)) {
+  throw new Error('usage: native-chat-links.mjs [--packaged]')
+}
 const egoCli = join(root, 'packages/browser/browser-ego-host/runtime/ego-linux/bin/ego-browser.mjs')
 const sessionId = SessionId('native-chat-links-fixture')
 const title = '原生链接验收'
@@ -75,7 +80,10 @@ async function seedSession(hostHome, workspace, link) {
 async function hostRecord(hostHome) {
   try {
     const value = JSON.parse(await readFile(join(hostHome, 'host.json'), 'utf8'))
-    if (value.type === 'coding-host-ready' && value.protocol === 1 && value.version === 'dev'
+    const version = packaged
+      ? JSON.parse(await readFile(join(packagedSource, 'Contents/Resources/metadata.json'), 'utf8')).version
+      : 'dev'
+    if (value.type === 'coding-host-ready' && value.protocol === 1 && value.version === version
       && Number.isSafeInteger(value.pid) && value.pid > 0
       && Number.isSafeInteger(value.port) && value.port > 0 && value.port <= 65535
       && typeof value.token === 'string' && value.token.length > 0) return value
@@ -163,11 +171,13 @@ async function hostStopped(hostHome, expected) {
 
 async function main() {
   assert.equal(process.platform, 'darwin', 'native link test requires macOS')
-  const isolated = await mkdtemp(join(tmpdir(), 'coding-native-chat-links-'))
+  const isolated = packaged
+    ? await mkdtemp('/tmp/coding-links-')
+    : await mkdtemp(join(tmpdir(), 'coding-native-chat-links-'))
   const home = join(isolated, 'home')
   const temporary = join(isolated, 'tmp')
-  const hostHome = join(home, '.dsh-electron-dev')
-  const workspace = join(hostHome, 'workspace')
+  const hostHome = join(home, packaged ? '.coding' : '.dsh-electron-dev')
+  const workspace = packaged ? home : join(hostHome, 'workspace')
   const browserState = join(isolated, 'browser')
   let app, record, server, passed = false
   let loadedPage = false
@@ -184,16 +194,34 @@ async function main() {
     assert.ok(address && typeof address !== 'string')
     link = `http://127.0.0.1:${address.port}/page`
     const cwd = await realpath(workspace)
-    await seedSession(hostHome, cwd, link)
-    // 测试 HOME、浏览器目录和执行环境均与用户正在运行的实例隔离。
-    const env = {
-      HOME: home, TMPDIR: temporary, PATH: process.env.PATH ?? '/usr/bin:/bin',
-      USER: process.env.USER ?? '', LOGNAME: process.env.LOGNAME ?? '', LANG: 'zh_CN.UTF-8',
-      DSH_HOME: hostHome, DSH_CWD: workspace, DSH_AGENTS_HOME: join(isolated, 'agents'),
-      EGO_LINUX_STATE_DIR: browserState, EGO_LINUX_PROFILE: join(browserState, 'profile'),
-      EGO_LINUX_HEADLESS: '1',
+    if (!packaged) await seedSession(hostHome, cwd, link)
+    // 生产包复制到短临时路径：Go 单实例锁的 Unix socket 有系统路径长度上限。
+    if (packaged) {
+      await cp(packagedSource, join(isolated, 'Coding.app'), {
+        recursive: true, force: false, verbatimSymlinks: true,
+      })
+      const signature = spawnSync('/usr/bin/codesign', ['--verify', '--deep', '--strict', join(isolated, 'Coding.app')])
+      assert.equal(signature.status, 0, 'isolated packaged app signature')
     }
-    app = await _electron.launch({ executablePath: electronExecutable, args: [entry], cwd: root, env, timeout: 30_000 })
+    // 测试 HOME、浏览器目录和执行环境均与用户正在运行的实例隔离。
+    const env = packaged
+      ? {
+        HOME: home, TMPDIR: temporary, PATH: '/usr/bin:/bin:/usr/sbin',
+        USER: process.env.USER ?? '', LOGNAME: process.env.LOGNAME ?? '', LANG: 'zh_CN.UTF-8',
+        EGO_LINUX_STATE_DIR: browserState, EGO_LINUX_PROFILE: join(browserState, 'profile'),
+        XDG_STATE_HOME: join(isolated, 'state'), EGO_LINUX_HEADLESS: '1',
+      }
+      : {
+        HOME: home, TMPDIR: temporary, PATH: process.env.PATH ?? '/usr/bin:/bin',
+        USER: process.env.USER ?? '', LOGNAME: process.env.LOGNAME ?? '', LANG: 'zh_CN.UTF-8',
+        DSH_HOME: hostHome, DSH_CWD: workspace, DSH_AGENTS_HOME: join(isolated, 'agents'),
+        EGO_LINUX_STATE_DIR: browserState, EGO_LINUX_PROFILE: join(browserState, 'profile'),
+        EGO_LINUX_HEADLESS: '1',
+      }
+    const executable = packaged ? join(isolated, 'Coding.app/Contents/MacOS/Coding') : electronExecutable
+    app = await _electron.launch({ executablePath: executable,
+      args: packaged ? [`--user-data-dir=${join(home, '.dsh-electron-user-data')}`] : [entry],
+      cwd: root, env, timeout: 30_000 })
     await bounded(app.firstWindow(), 'first Electron window', 60_000)
     await until(async () => { record = await hostRecord(hostHome); return record !== null }, 'isolated Host record')
     const origin = `http://127.0.0.1:${record.port}`
@@ -204,6 +232,7 @@ async function main() {
       return page !== undefined
     }, 'Host renderer')
     await page.locator('[data-shell-overlay]').waitFor({ state: 'attached', timeout: 30_000 })
+    if (packaged) await seedSession(hostHome, cwd, link)
     const workspaceResult = await rpc(page, 'workspace.create', { path: cwd })
     await rpc(page, 'session.create', { workspaceId: workspaceResult.workspace.workspaceId, sessionId })
     // RPC 从测试端写入；重新载入 Client 才能从 Host 的会话台账建立本地搜索索引。
@@ -256,10 +285,14 @@ async function main() {
   } finally {
     const browserPid = await statePid(join(browserState, 'browser.json')).catch(() => -1)
     const workerPid = await statePid(join(browserState, 'ego-cast.json')).catch(() => -1)
+    const canonicalApp = packaged ? await realpath(join(isolated, 'Coding.app')).catch(() => null) : null
     const browserOwned = browserPid !== -1 && (browserPid === null
       || processCommand(browserPid).includes(`--user-data-dir=${join(browserState, 'profile')}`))
+    const workerEntry = canonicalApp
+      ? join(canonicalApp, 'Contents/Resources/runtime/node_modules/coding-browser-ego-host/bin/ego-cast-worker.mjs')
+      : join(root, 'packages/browser/browser-ego-host/bin/ego-cast-worker.mjs')
     const workerOwned = workerPid !== -1 && (workerPid === null
-      || processCommand(workerPid).includes(join(root, 'packages/browser/browser-ego-host/bin/ego-cast-worker.mjs')))
+      || (!packaged || canonicalApp !== null) && processCommand(workerPid).includes(workerEntry))
     const appStopped = app ? await stopApp(app).catch(() => false) : true
     const hostExited = await hostStopped(hostHome, record).catch(() => false)
     let browserStopped = false
@@ -283,7 +316,9 @@ async function main() {
       await new Promise(resolve => server.close(resolve))
     }
     if (appStopped && hostExited && browserStopped && workerStopped) await rm(isolated, { recursive: true, force: true })
-    else console.warn(`Isolated test HOME preserved because shutdown is uncertain: ${isolated}`)
+    else console.warn(`Isolated test HOME preserved because shutdown is uncertain: ${isolated}; `
+      + `appStopped=${appStopped} hostExited=${hostExited} browserOwned=${browserOwned} `
+      + `browserStopped=${browserStopped} workerOwned=${workerOwned} workerStopped=${workerStopped}`)
     if (passed) assert.ok(appStopped && hostExited && browserStopped && workerStopped, 'isolated processes must stop')
   }
 }

@@ -56,6 +56,7 @@
     "test:gui": "vitest run packages/client packages/host",
     "test:electron:smoke": "pnpm run build && pnpm run build:electron && pnpm --filter coding-desktop-electron exec install-electron && node apps/desktop-electron/tests/native-smoke.mjs",
     "test:electron:chat-links": "node apps/desktop-electron/tests/native-chat-links.mjs",
+    "test:electron:chat-links:packaged": "node apps/desktop-electron/tests/native-chat-links.mjs --packaged",
     "test:electron:remote-ssh": "pnpm run build && pnpm run build:remote-agent && pnpm run build:electron-helper && pnpm run build:electron && pnpm --filter coding-desktop-electron exec install-electron && node apps/desktop-electron/tests/remote-ssh-parity.mjs",
     "test:electron:remote-basic": "pnpm run build && pnpm run build:remote-agent && pnpm run build:electron-helper && pnpm run build:electron && pnpm --filter coding-desktop-electron exec install-electron && node apps/desktop-electron/tests/remote-basic-parity.mjs",
     "test:electron:packaged": "node apps/desktop-electron/tests/packaged-smoke.mjs",

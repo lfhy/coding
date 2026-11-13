@@ -20,7 +20,7 @@
 
 - **路线**：Electron 壳在 `apps/desktop-electron/src/main.ts`、`window.ts`、`native-chrome.ts`；Go helper `apps/desktop/cmd/electron-helper/main.go` 经 `apps/internal/hostlaunch/launcher.go` 启动 Host，并复用 `apps/desktop/internal/desktopremote/service.go` 与 `bridge.go`。helper stdio、远程连接 preload/main 授权分别在 `helper-client.ts`、`preload.ts`、`remote-ipc.ts`；Agent 浏览器由 [Ego Host](../../packages/browser/browser-ego-host/README.md) 在受管 Host 进程运行，桌面不启动旧 guest/bridge，也不公开旧呈现 IPC。
 - **技术与边界**：`make dev` 启动 Electron 开发态，`make install` 安装由 `pnpm run build:desktop` 组装的 `dist/Coding.app`。Web UI、RPC 和会话由共享 Client/Host 包拥有；开发 home 独立，生产配置共享 `~/.coding`（首次启动自动从 `~/.dsh` 迁移）且先取得安装版单实例锁。壳与 Host 边界见[桌面原生验收](../desktop-shell-comparison.md)，运行限制见 [Electron README](../../apps/desktop-electron/README.md)。
-- **连带与验证**：Host 就绪记录或所有权改动核对 `packages/bundle/web-app/src/managed-host.ts`、`apps/internal/hostlaunch` 与 Go helper；远程连接协议改动核对 `desktopremote`、`helperwire`、Electron IPC 和 Client 工作区。打包资源同步 `scripts/build-electron-helper.ts`、`scripts/package-electron-macos-app.ts` 与对应测试。开发态会话链接用 `pnpm run test:electron:chat-links` 验证右栏真实页面，SSH 与打包版分别原生验证，命令见[应用条目](#appsdesktop-electron)。
+- **连带与验证**：Host 就绪记录或所有权改动核对 `packages/bundle/web-app/src/managed-host.ts`、`apps/internal/hostlaunch` 与 Go helper；远程连接协议改动核对 `desktopremote`、`helperwire`、Electron IPC 和 Client 工作区。打包资源同步 `scripts/build-electron-helper.ts`、`scripts/package-electron-macos-app.ts` 与对应测试。对话链接分别用 `pnpm run test:electron:chat-links` 和 `pnpm run test:electron:chat-links:packaged` 验证开发壳与签名包右栏真实页面；后者复制签名包并以短临时路径隔离 Go 单实例锁。SSH 另行原生验证，命令见[应用条目](#appsdesktop-electron)。
 
 ## 远程连接模式与能力
 
