@@ -49,6 +49,8 @@ describe('addCodingPromptSections', () => {
       expect(rendered).toContain('用统一的子 Tab（顶部或左侧）分层，一次只显示一层')
       expect(rendered).toContain('修改密码、删除、导出、批量替换')
       expect(rendered).toContain('列表页的搜索与筛选工具栏固定在视口内')
+      expect(rendered).toContain('页面外壳的高度等于一屏（100dvh 或等效）')
+      expect(rendered).toContain('卡片里的列表同样给固定高度、内部滚动并配「查看全部」入口')
       expect(rendered).toContain('认证与首屏表单：登录、注册、创建管理员、重置密码')
       expect(rendered).toContain('不要把营销文案或功能清单塞成左栏')
       expect(rendered).not.toContain('未经要求不提交')

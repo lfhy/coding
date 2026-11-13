@@ -11,6 +11,7 @@ component layer, then use the project's tokens and primitives.
 | [`toast/`](toast/Toast.tsx) | a transient success or failure needs to be acknowledged once, globally |
 | [`fields/`](fields/TextField.tsx) | any form control: text field, search field, select. Never render a bare `<input>`, `<select>` or `type="search"` directly on a page |
 | [`pages/auth-page.tsx`](pages/auth-page.tsx) | sign in, sign up, first-run administrator, reset password |
+| [`pages/dashboard-page.tsx`](pages/dashboard-page.tsx) | a dashboard: 100dvh shell, stat cards, and panel lists that scroll inside the card instead of stretching the page |
 | [`pages/settings-page.tsx`](pages/settings-page.tsx) | settings with several sections, including a "change password" action behind a button |
 | [`pages/list-page.tsx`](pages/list-page.tsx) | a list or table page: fixed header and toolbar, one scrolling body, empty and loading states |
 
