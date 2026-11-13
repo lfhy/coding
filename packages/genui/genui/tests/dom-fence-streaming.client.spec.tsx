@@ -157,6 +157,8 @@ describe('GenUI 流式围栏', () => {
     await flushFrames()
     const choice = screen.getByRole<HTMLButtonElement>('radio', { name: '部署' })
     expect(choice.disabled).toBe(false)
+    expect(h.view.container.querySelector('[data-genui-export]')).toBeNull()
+    expect(screen.queryByRole('button', { name: '导出' })).toBeNull()
     h.switchSession('different-session')
     fireEvent.click(choice)
     expect(sendMessage).not.toHaveBeenCalled()

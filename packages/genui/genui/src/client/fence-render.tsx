@@ -8,7 +8,7 @@ import { GENUI_FENCE_LANGUAGE } from '../shared/fence-language.ts'
 import { codeBlockLabels } from './primitive-labels.ts'
 import { t, useT } from './i18n/index.ts'
 import { ErrorBoundary } from './ErrorBoundary.tsx'
-import { ExportableGenuiBlock } from './artifact/ExportableGenuiBlock.tsx'
+import { GenuiBlock } from './GenuiBlock.tsx'
 import { fenceStateKey } from './interaction-store.ts'
 import type { GenuiSpec } from './spec.ts'
 import { describeJsonFailure } from '../shared/fence-repair.ts'
@@ -108,11 +108,10 @@ function renderInlineFence(key: Key, context: GenuiFenceContext | undefined, spe
     : fenceStateKey(sessionId, context.source.id, JSON.stringify(spec))
   return (
     <ErrorBoundary key={JSON.stringify([sessionId, key])} label={t('err.boundary.fence')}>
-      <ExportableGenuiBlock
+      <GenuiBlock
         spec={spec}
         animateEntrance={context?.source === undefined}
         stateKey={stateKey}
-        exportEnabled={context?.source !== undefined}
       />
     </ErrorBoundary>
   )

@@ -2,7 +2,7 @@
 import { useMemo } from 'react'
 import type {} from 'coding-client-runtime/client'
 import type { ToolCallViewProps } from 'coding-client-ui-tool/client'
-import { ExportableGenuiBlock } from './artifact/ExportableGenuiBlock.tsx'
+import { GenuiBlock } from './GenuiBlock.tsx'
 import { ErrorBoundary } from './ErrorBoundary.tsx'
 import { repairGenuiSpec } from './guard.ts'
 import { useT } from './i18n/index.ts'
@@ -51,7 +51,7 @@ export function GenuiToolView({ block, sessionId, toolName }: ToolCallViewProps)
       {description !== undefined && <div className={css.toolDescription}>{description}</div>}
       {'kind' in block && block.isError && <div className={css.toolError} role="alert">{t('tool.failed')}</div>}
       <ErrorBoundary label={t('tool.title')}>
-        <ExportableGenuiBlock spec={spec} stateKey={toolStateKey(sessionId, block.callId)} />
+        <GenuiBlock spec={spec} stateKey={toolStateKey(sessionId, block.callId)} />
       </ErrorBoundary>
     </div>
   )
