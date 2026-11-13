@@ -8,10 +8,10 @@
 - id: progress-reminder
   name: 'coding-progress-reminder'
   config:
-    toolCallsPerReminder: 15 # optional; omit for the shipped default
+    toolCallsPerReminder: 40 # 宿主组合的节奏；省略时插件默认 15
 ```
 
-`toolCallsPerReminder` 是未输出正文时连续完成工具调用的提醒阈值，默认 `15`，必须是正的安全整数；其他值在插件加载时失败。计数单位是一次已完成的工具调用（一条 `tool/result` 事件），不是模型调用的轮次，所以一次并行批次可以跨过阈值，提醒文本会写出真实的累计数。
+`toolCallsPerReminder` 是未输出正文时连续完成工具调用的提醒阈值，插件默认 `15`，宿主组合配置为 `40`；必须是正的安全整数，其他值在插件加载时失败。计数单位是一次已完成的工具调用（一条 `tool/result` 事件），不是模型调用的轮次，所以一次并行批次可以跨过阈值，提醒文本会写出真实的累计数。
 
 ## 计数与注入时序
 
