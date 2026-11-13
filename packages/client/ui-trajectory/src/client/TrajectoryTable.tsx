@@ -26,6 +26,7 @@ import {
 import type { TrajectoryVirtualRow } from './trajectory-virtual-rows.ts'
 import type { TrajectoryTurnModel } from './layout.ts'
 import { trajectoryPreviewText } from './trajectory-preview.ts'
+import { toolDisplayDescription } from 'coding-tools/display-description'
 import css from './TrajectoryTable.module.css'
 
 const BOTTOM_FOLLOW_THRESHOLD_PX = 2
@@ -1183,9 +1184,14 @@ function AssistantToolCalls({
               <span className={css.assistantToolCallName}>
                 {call.toolName ?? 'tool-call'}
               </span>
-              {call.content !== '' && (
-                <span className={css.assistantToolCallArgs}>{call.content}</span>
-              )}
+              {(() => {
+                try {
+                  const description = toolDisplayDescription(JSON.parse(call.content))
+                  return description === undefined ? null : <span className={css.assistantToolCallArgs}>{description}</span>
+                } catch {
+                  return null
+                }
+              })()}
             </span>
           </button>
         </li>
@@ -3000,7 +3006,7 @@ export function TrajectoryTable({
                     )
                     : (
                       <>
-                        {selected.cell.inputDetail && (
+                        {selected.cell.inputDetail && selected.cell.kind !== 'tool' && selected.cell.kind !== 'subtool' && (
                           <OverviewSection label="Payload" onOpen={() => { activateTab('input') }}>
                             <RecordPayload record={selected} direction="input" preview />
                           </OverviewSection>

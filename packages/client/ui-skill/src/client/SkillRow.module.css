@@ -1,8 +1,15 @@
-/* Skill toolview: Bash-matched summary row plus a bounded instructions disclosure. */
+/* 技能工具行保留紧凑摘要及有边界的说明展开区。 */
 
 .card {
   display: flex;
   flex-direction: column;
+}
+
+.description {
+  min-width: 0;
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-xs-13);
+  overflow-wrap: anywhere;
 }
 
 .row {

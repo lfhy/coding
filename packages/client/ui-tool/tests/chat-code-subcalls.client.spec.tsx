@@ -215,7 +215,7 @@ describe('run_code sub-calls through the real chat machinery', () => {
     expect(nest!.querySelector('[data-sample="bash"]')).not.toBeNull()
     expect(view.getByText('Bash')).toBeTruthy()
     expect(view.getByText('List notes')).toBeTruthy()
-    expect(view.getByText('Tool call')).toBeTruthy()
+    expect(view.getByText('使用工具')).toBeTruthy()
   })
 
   it('renders Cordis sub-calls with lifecycle titles over the generic variants', async () => {

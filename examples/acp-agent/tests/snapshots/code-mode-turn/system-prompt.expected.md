@@ -61,11 +61,15 @@ interface ToolArgsMap {
     sandbox_permissions?: "workspace-write" | "danger-full-access" | "use_default";
     /** Required with sandbox_permissions: one sentence for the user explaining why this exact command needs the wider access. */
     justification?: string;
+    /** Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers. */
+    display_description?: string;
   } & Record<string, JsonValue>;
   /** Replace older conversation history with a structured checkpoint to free context. Use it when the history has stopped earning its tokens — the topic moved on, or exploration is finished and the real work is about to start. Pass `focus` to state what the remaining work needs (the concrete task, decisions and constraints that still apply, files and identifiers that matter), so the checkpoint keeps that and drops what the work has outgrown. The current step is never replaced. A busy or failed call leaves the conversation unchanged. */
   context_compact: {
     /** What the work continuing after the checkpoint needs preserved: the concrete task, the decisions and constraints that still apply, and the files or identifiers that matter. Omit only when the whole history is equally relevant. At most 2000 characters. */
     focus?: string;
+    /** Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers. */
+    display_description?: string;
   } & Record<string, JsonValue>;
   /** Create one persisted same-session completion goal when the current direct human request is a long-running objective that should continue across autonomous goal rounds. You may infer that intent without requiring the user to say "create a goal". Do not use this for trivial single-turn work. Execution rejects non-human and subagent authority. */
   create_goal: {
@@ -73,6 +77,8 @@ interface ToolArgsMap {
     objective: string;
     /** Optional positive safe-integer limit on automatic continuation rounds. */
     max_goal_rounds?: number;
+    /** Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers. */
+    display_description?: string;
   } & Record<string, JsonValue>;
   /** Edit an existing UTF-8 text file by replacing literal text. */
   edit: {
@@ -88,6 +94,8 @@ interface ToolArgsMap {
     sandbox_permissions?: "workspace-write" | "danger-full-access" | "use_default";
     /** Required with sandbox_permissions: one sentence for the user explaining why this exact file operation needs the wider access. */
     justification?: string;
+    /** Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers. */
+    display_description?: string;
   } & Record<string, JsonValue>;
   /** Send a follow-up task to a background subagent by its subagent id. The message is queued for the next turn; it does not interrupt an in-flight model request or tool call. This confirms acceptance, not completion of the task. */
   followup_task: {
@@ -95,13 +103,20 @@ interface ToolArgsMap {
     subagent_id: string;
     /** The message to deliver to the subagent. */
     message: string;
+    /** Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers. */
+    display_description?: string;
   } & Record<string, JsonValue>;
   /** Read the current same-session goal, including its exact id/revision, objective, phase, completed continuation rounds, round limit, blocker reason when present, and whether another continuation is armed. Call this before updating a goal. */
-  get_goal: Record<string, JsonValue>;
+  get_goal: {
+    /** Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers. */
+    display_description?: string;
+  } & Record<string, JsonValue>;
   /** Request cancellation of a background agent's current turn by its agent id. The target may be your direct child or a deeper agent created under you. Only the current turn stops: queued messages stay parked until a later send_message or followup_task, agents it started keep running, and the agent stays available. The call returns as soon as the stop request is accepted; interrupting an already finished agent is a no-op. */
   interrupt_agent: {
     /** The agent id of the running agent to interrupt. */
     agent_id: string;
+    /** Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers. */
+    display_description?: string;
   } & Record<string, JsonValue>;
   /** Request cancellation of a running background job by job id. Returns immediately; the job settles as killed once its work actually stops. */
   job_kill: {
@@ -109,9 +124,14 @@ interface ToolArgsMap {
     job_id: string;
     /** Optional short reason, recorded in the log and forwarded to the job. */
     reason?: string;
+    /** Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers. */
+    display_description?: string;
   } & Record<string, JsonValue>;
   /** List your background jobs (running and finished) with their ids, kinds, and statuses. */
-  job_list: Record<string, JsonValue>;
+  job_list: {
+    /** Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers. */
+    display_description?: string;
+  } & Record<string, JsonValue>;
   /** Read a background job. Stream jobs return only output since the previous read; final-output jobs return their result after settlement. Every response ends with `[status: ...]`. Reads are non-blocking unless `wait: true`, which waits up to the configured cap. */
   job_output: {
     /** Job id returned by the tool that started the background work. */
@@ -120,11 +140,15 @@ interface ToolArgsMap {
     wait?: boolean;
     /** Max wait in milliseconds (only meaningful with wait: true). Defaults to the configured wait timeout; capped by the configured maximum. */
     timeout_ms?: number;
+    /** Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers. */
+    display_description?: string;
   } & Record<string, JsonValue>;
   /** List your continuable background subagents by durable id and label. Use it to recall which ones you started, not to poll for completion — you are told when one finishes. Status comes from the live registry: running means the agent is working right now, idle means it is loaded but between turns (it may be waiting on agents it started), and ready means it exists only in storage — resumable, not terminal, and not a result waiting to be collected; a `send_message` wakes it or steers its next step by default, and a direct child remains a `send_message` candidate in every status. The snapshot is not a delivery promise — `send_message` performs the authoritative check and may still fail. Children that could not be read are reported as diagnostics instead of being silently dropped. Scope `descendants` walks the whole tree below you in stable pre-order, annotating each entry with its durable direct-parent session id and depth. You may use `send_message` only for depth-1 entries; deeper entries are candidates for `interrupt_agent` only. */
   list_agents: {
     /** children (default) lists direct children only; descendants walks the complete tree below you. */
     scope?: "children" | "descendants";
+    /** Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers. */
+    display_description?: string;
   } & Record<string, JsonValue>;
   /** Run a foreground fresh-agent Ralph loop toward one immutable objective. Use only when the direct human explicitly asks for Ralph or fresh-agent iteration. Each round opens a new child with no parent conversation or prior child session; the shared workspace is long-term memory, and only a bounded structured report crosses rounds. The call returns when a worker reports completion or a concrete blocker, or at the round limit. Ordinary long-running same-session work belongs to goal tools. */
   ralph: {
@@ -132,6 +156,8 @@ interface ToolArgsMap {
     objective: string;
     /** Optional positive safe-integer round cap, bounded by the deployment ceiling. */
     maxRounds?: number;
+    /** Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers. */
+    display_description?: string;
   } & Record<string, JsonValue>;
   /** Read a UTF-8 text file and return line-numbered content. */
   read: {
@@ -141,6 +167,8 @@ interface ToolArgsMap {
     offset?: number;
     /** Maximum number of lines to return in this call (up to 10000). Defaults to 10000. For a large file, set offset to the first line you need and use the continuation offset from the footer. */
     limit?: number;
+    /** Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers. */
+    display_description?: string;
   } & Record<string, JsonValue>;
   /** Send a message to a background subagent by its subagent id. The message is inserted into the next available step without interrupting an in-flight model request or tool call. If the agent is idle, the message wakes it. This confirms acceptance, not that the agent has read the message. */
   send_message: {
@@ -148,11 +176,15 @@ interface ToolArgsMap {
     subagent_id: string;
     /** The message to deliver to the subagent. */
     message: string;
+    /** Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers. */
+    display_description?: string;
   } & Record<string, JsonValue>;
   /** Load the full instructions for an available skill. Call this with the exact skill name from the session skill catalog before acting on a task that names or clearly matches that skill. */
   skill: {
     /** The exact skill name from the available skills list. */
     name: string;
+    /** Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers. */
+    display_description?: string;
   } & Record<string, JsonValue>;
   /** Read a file bundled with a skill (examples, references, recipes, assets). The path is relative to that skill's resource root, for example "examples/index.md". Use this instead of file-system or shell tools when reading bundled skill files. */
   skill_read: {
@@ -160,6 +192,8 @@ interface ToolArgsMap {
     name: string;
     /** File path relative to the skill resource root, e.g. "examples/index.md". */
     path: string;
+    /** Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers. */
+    display_description?: string;
   } & Record<string, JsonValue>;
   /** Delegate a self-contained task to a subagent (a separate agent that works in its own context) to offload focused, independent work — research, a scoped implementation, an analysis — so it does not consume this conversation's context. The subagent returns its result, not its intermediate steps. Give it a complete, standalone prompt: it does not see this conversation. This tool runs in the background by default, immediately returns a durable subagent id, and keeps the child conversation available for later turns. When that run settles, the runtime sends the parent a notice containing its outcome and any final assistant message; `send_message` starts a later turn in the same child conversation. Set `run_in_background: false` only when your next action depends on receiving the result. */
   subagent: {
@@ -173,6 +207,8 @@ interface ToolArgsMap {
     model_provider?: string;
     /** Whether to run in the background and return a durable subagent id immediately. Defaults to true. Set false to wait for the result when your next action depends on it. */
     run_in_background?: boolean;
+    /** Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers. */
+    display_description?: string;
   } & Record<string, JsonValue>;
   /** Delegate a task to a subagent that inherits this conversation: a child agent seeded with all completed turns so far (it does not see the current in-flight turn). Use this when the subtask builds on this conversation's context — a follow-up analysis, a review, a continuation — without consuming this conversation's context for the work itself. You receive its result, not its intermediate steps. This call waits for the subagent and returns its result. */
   subagent_fork: {
@@ -184,6 +220,8 @@ interface ToolArgsMap {
     model?: string;
     /** Optional LLM provider route, not the subagent transport provider. Omit or leave empty to inherit the current request provider; if none exists, the sole registered LLM provider is used. A non-empty value requires a non-empty model. */
     model_provider?: string;
+    /** Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers. */
+    display_description?: string;
   } & Record<string, JsonValue>;
   /** Record and update a structured task list for the current work. Send the ENTIRE list every call — it REPLACES the previous list (there are no partial updates, no per-item edits). Use it to plan multi-step work and show progress: add one todo per concrete step before you start. Mark every todo being actively worked on `in_progress` — several at once when work genuinely runs in parallel (e.g. concurrent subagents or background commands), one for sequential work; while work remains, at least one task should be `in_progress`. Mark a todo `completed` the moment it is done (do not batch completions), and allow no `in_progress` item only once all work is complete. Skip the list for trivial single-step tasks. Statuses: `pending` (not started), `in_progress` (being worked on now), `completed` (finished). */
   todo_write: {
@@ -194,6 +232,8 @@ interface ToolArgsMap {
       /** pending (not started) | in_progress (now) | completed (done). */
       status: "pending" | "in_progress" | "completed";
     })[];
+    /** Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers. */
+    display_description?: string;
   } & Record<string, JsonValue>;
   /** Update the exact current goal revision. edit, pause, and resume require a direct top-level human request. During an automatic continuation of the current goal, complete and blocked are also allowed. blocked is rejected before the configured minimum round count; the model remains responsible for judging that the same condition persisted across those rounds and must explain it in blocked_reason. */
   update_goal: {
@@ -209,6 +249,8 @@ interface ToolArgsMap {
     max_goal_rounds?: number;
     /** Concrete blocking condition; required only with action blocked. */
     blocked_reason?: string;
+    /** Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers. */
+    display_description?: string;
   } & Record<string, JsonValue>;
   /** Run a JavaScript workflow script that orchestrates subagents at scale. Use this for work that fans out across many independent pieces — an audit over many files, a migration, multi-angle research, adversarial verification of findings — where you write the orchestration as a script instead of delegating turn by turn. The workflow's identity rides the `meta` parameter as JSON: required `name` (short kebab-case) and `description` strings, optional `whenToUse` string and `phases` array (`{title, detail?, provider?, model?}`). The `script` parameter is the plain JavaScript body ONLY (NOT TypeScript, and NO `export const meta` statement — meta is a parameter, not code), running with top-level await; end with `return <value>` — the value must be JSON-serializable and is this tool's result. Script-body hooks: - `agent(prompt, opts?): Promise<any>` — run one subagent to completion. Without `opts.schema` it resolves to the child's final text; with `opts.schema` (an object-rooted JSON Schema using ONLY type/properties/required/additionalProperties/items/enum/const/oneOf — no pattern/format/numeric bounds) it resolves to the validated object. Resolves `null` when the child fails (filter with `.filter(Boolean)`). Other opts: `label` (display), `phase` (progress group), and independent `provider`/`model` LLM target overrides (either may be provided alone). Anything else (`effort`/`isolation`/`agentType`) is rejected loudly. - `pipeline(items, ...stages): Promise<any[]>` — run each item through the stages independently with NO barrier between stages (prefer this for multi-stage work). Each stage receives `(prev, item, index)`. An ordinary stage throw drops that ITEM to `null` and skips its remaining stages. - `parallel(thunks): Promise<any[]>` — run zero-argument functions concurrently and await ALL of them (a barrier; use only when a stage genuinely needs every prior result together). A throwing thunk resolves to `null`. - `phase(title)` — start a progress phase; `log(message)` — narrate progress; `args` — the tool call's `args` input, verbatim. Misused hooks (bad arguments, unknown options, unsupported schemas, tripped caps) throw errors that ALWAYS kill the script — they never dissolve into a per-item `null`. Constraints: concurrency and total-agent caps apply; no filesystem, network, timers, or Node.js APIs are provided — the agents do the work, the script only coordinates them. The run executes in the foreground: this call returns when the whole script finishes. */
   workflow: {
@@ -236,6 +278,8 @@ interface ToolArgsMap {
     } & Record<string, JsonValue>;
     /** Optional JSON input exposed to the script as the `args` global (wrap a bare list as a field, e.g. {"files": [...]}). */
     args?: Record<string, JsonValue>;
+    /** Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers. */
+    display_description?: string;
   } & Record<string, JsonValue>;
   /** Create or fully replace a UTF-8 text file. */
   write: {
@@ -247,6 +291,8 @@ interface ToolArgsMap {
     sandbox_permissions?: "workspace-write" | "danger-full-access" | "use_default";
     /** Required with sandbox_permissions: one sentence for the user explaining why this exact file operation needs the wider access. */
     justification?: string;
+    /** Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers. */
+    display_description?: string;
   } & Record<string, JsonValue>;
 }
 

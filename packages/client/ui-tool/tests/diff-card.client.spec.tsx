@@ -263,13 +263,13 @@ describe('FileMutationRow diff card', () => {
     expect(view.getByText('已停止')).toBeTruthy()
   })
 
-  it('renders a plain summary span when the call carries no file path', () => {
-    // Empty args leave deriveFilePath undefined, so the summary is not a link.
+  it('renders only the action title when the call carries no file path or summary', () => {
+    // 空参数不能把调用标识或路径链接变成普通摘要。
     const view = render(<FileMutationRow {...rowProps(settled({
       call: { name: 'edit', argsRaw: '' }, callView: null, resultView: null,
     }))} />)
     expect(view.container.querySelector('[class*="_fileLink_"]')).toBeNull()
-    expect(view.container.querySelector('[class*="_summary_"]')).not.toBeNull()
+    expect(view.container.querySelector('[class*="_summary_"]')).toBeNull()
   })
 })
 

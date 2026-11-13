@@ -52,11 +52,9 @@ export function GenericToolCard({ toolName, block, cwd, home, openFile, loadImag
       variant={model.variant}
       toolName={toolName}
       icon={VARIANT_ICONS[model.variant]}
-      title={model.title}
-      // A terminal presenter's description is the contract's above-card text, so
-      // it outranks the args-derived summary here exactly as it does in BashRow;
-      // a search result view's replacement title outranks it the same way.
-      summary={terminal?.description ?? search?.title ?? model.summary}
+      title={model.title === 'Tool call' ? t('tool.other') : model.title}
+      // 模型的逐次说明优先；历史调用仍由工具呈现器提供摘要。
+      summary={model.displayDescription ?? terminal?.description ?? search?.title ?? model.summary}
       // Single-file tools never expose an args body — the path link is the only
       // args interaction. A card is not an args body: a read/write/edit row is
       // single-file AND carries a card, so the card expands under the path link.
@@ -72,6 +70,7 @@ export function GenericToolCard({ toolName, block, cwd, home, openFile, loadImag
       web={web}
       state={state}
       filePath={model.filePath}
+      fileLinkLabel={model.displayDescription === undefined ? undefined : model.filePath}
       onOpenFile={singleFile ? openFile : undefined}
       inspect={inspect}
     />

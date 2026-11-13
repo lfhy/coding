@@ -2781,6 +2781,9 @@ importers:
       coding-session:
         specifier: workspace:^
         version: link:../../core/session
+      coding-tools:
+        specifier: workspace:^
+        version: link:../../core/tools
       react:
         specifier: ^18.2.0
         version: 18.3.1
@@ -3762,6 +3765,9 @@ importers:
       coding-invariants:
         specifier: workspace:^
         version: link:../../runtime-diagnostics/invariants
+      coding-tools:
+        specifier: workspace:^
+        version: link:../../core/tools
       react:
         specifier: ^18.2.0
         version: 18.3.1
@@ -3923,6 +3929,9 @@ importers:
       coding-llm:
         specifier: workspace:^
         version: link:../../llm/llm
+      coding-tools:
+        specifier: workspace:^
+        version: link:../../core/tools
       react:
         specifier: ^18.2.0
         version: 18.3.1
@@ -5411,6 +5420,9 @@ importers:
       coding-invariants:
         specifier: workspace:^
         version: link:../../runtime-diagnostics/invariants
+      coding-tools:
+        specifier: workspace:^
+        version: link:../../core/tools
       react:
         specifier: ^18.2.0
         version: 18.3.1

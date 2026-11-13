@@ -260,6 +260,28 @@ describe('syncTools', () => {
     expect(ctx.tools.get('mcp__srv__stable')).toBeDefined()
   })
 
+  it('rejects a reserved remote input field before replacing the previous generation', async () => {
+    const client = createMockClient([{ name: 'stable', inputSchema: { type: 'object' } }])
+    const previous = await syncTools(client as never, ctx, defaultOpts, new Map())
+    const stable = ctx.tools.get('mcp__srv__stable')
+    client.listTools.mockResolvedValue({
+      tools: [
+        { name: 'new_tool', inputSchema: { type: 'object' } },
+        { name: 'conflicting', inputSchema: { type: 'object', properties: { display_description: { type: 'string' } } } },
+      ],
+      nextCursor: undefined,
+    })
+
+    await expect(syncTools(client as never, ctx, defaultOpts, previous))
+      .rejects.toThrow(/tool "conflicting" declares reserved input field display_description/)
+    expect(ctx.tools.get('mcp__srv__stable')).toBe(stable)
+    expect(ctx.tools.get('mcp__srv__new_tool')).toBeUndefined()
+    const result = await ctx.tools.execute({
+      signal: testToolSignal, callId: CallId('reserved-retained'), name: 'mcp__srv__stable', arguments: {},
+    })
+    expect(result.isError).toBe(false)
+  })
+
   it('rolls back the whole generation when a foreign tool squats on the namespace', async () => {
     // A foreign registration occupies one of this server's public names.
     ctx.tools.register({

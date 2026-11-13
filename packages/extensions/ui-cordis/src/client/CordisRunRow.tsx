@@ -1,4 +1,4 @@
-/** `cordis_run` card and the host seat for Package-owned interactive UI. */
+/** 插件运行卡片及其业务视图的宿主席位。 */
 
 import { useEffect } from 'react'
 import {
@@ -13,7 +13,7 @@ import { cordisVisibleStatus, type CordisVisibleStatus } from './status.ts'
 import type { CordisKey } from './locales.ts'
 import css from './CordisRunRow.module.css'
 
-/** Full Run-card props including its declared Package business-view child slot. */
+/** 运行卡片载荷包含插件自身的业务视图子席位。 */
 export type CordisRunRowProps = ToolCallViewProps
   & InjectFace<CordisRunCardFace>
   & PropsRenderSlots<'tool.view.cordis'>
@@ -31,7 +31,7 @@ const READING_LABELS = {
   superseded: 'status.superseded',
 } as const satisfies Record<RunReading, CordisKey>
 
-/** Render one activation result and, when eligible, its Package-owned view. */
+/** 展示激活结果，条件满足时保留插件拥有的业务视图。 */
 export function CordisRunRow({
   callId, block, inspect, renderSlot, useInventory, useLoaded, useRunCards, useActiveRuns,
   onObserveRunCard, t,
@@ -78,8 +78,8 @@ export function CordisRunRow({
             ? cordisVisibleStatus(row, card.packageId, loaded)
             : 'idle'
   const status = t(READING_LABELS[reading])
-  const summary = card.errorSummary
-    ?? (card.pluginId === null ? callId : `${card.pluginId}${card.packageId === null ? '' : ` · ${card.packageId}`}`)
+  const summary = card.errorSummary ?? (row?.packages.find(pkg => pkg.packageId === card.packageId)?.name
+    ?? t('row.unknownTarget'))
   const showBusiness = reading === 'running' && key !== null
 
   return (
@@ -92,6 +92,7 @@ export function CordisRunRow({
       data-cordis-run-id={card.pluginRunId ?? undefined}
       data-cordis-status={reading}
     >
+      {card.displayDescription !== undefined && <div className={css.description}>{card.displayDescription}</div>}
       <div className={css.row}>
         <span className={css.icon}>
           {card.state === 'error'

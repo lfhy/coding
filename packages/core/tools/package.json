@@ -30,6 +30,10 @@
       "types": "./lib/types/presentation.d.ts",
       "default": "./lib/types/presentation.js"
     },
+    "./display-description": {
+      "types": "./lib/types/display-description-value.d.ts",
+      "default": "./lib/types/display-description-value.js"
+    },
     "./src/*": "./src/*",
     "./package.json": "./package.json"
   },

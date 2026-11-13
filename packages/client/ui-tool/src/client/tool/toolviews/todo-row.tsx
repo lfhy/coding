@@ -31,6 +31,7 @@ function isItem(value: unknown): value is PlanItemLike {
 interface RowSummary {
   text: string
   extra: number
+  body: string
 }
 
 function summarize(argsRaw: string, t: TodoRowProps['t']): RowSummary | null {
@@ -38,19 +39,25 @@ function summarize(argsRaw: string, t: TodoRowProps['t']): RowSummary | null {
   try {
     parsed = JSON.parse(argsRaw)
   } catch {
-    // Mid-stream truncation or malformed model JSON: fall back to the generic summary.
+    // 流式截断或参数无效时不把原始输入放进折叠摘要。
     return null
   }
-  // Valid JSON with invalid todo fields (null root, non-array todos, null items —
-  // a rejected tool/call retains such args verbatim): same generic fallback.
+  // 失败调用也保留原始参数，只在检查详情中供开发者查看。
   if (typeof parsed !== 'object' || parsed === null) return null
   const todos = (parsed as { todos?: unknown }).todos
   if (!Array.isArray(todos) || !todos.every(isItem)) return null
   const { done, total, activeContent, activeExtra } = planSummary(todos)
   const head = t('todo.completed', { done, total })
+  const labels: Record<string, string> = {
+    completed: t('todo.item.completed'),
+    in_progress: t('todo.item.active'),
+    pending: t('todo.item.pending'),
+  }
   return {
     text: activeContent === null ? head : `${head} · ${activeContent}`,
     extra: activeExtra,
+    body: todos.map(item => typeof item.content === 'string' && typeof item.status === 'string'
+      && labels[item.status] !== undefined ? `${labels[item.status]} · ${item.content}` : null).filter(Boolean).join('\n') || head,
   }
 }
 
@@ -61,7 +68,7 @@ function summarize(argsRaw: string, t: TodoRowProps['t']): RowSummary | null {
 export function TodoRow({ toolName, block, inspect, t }: TodoRowProps) {
   const model = toolRowModel(toolName, block)
   const argsRaw = ('kind' in block ? block.call?.argsRaw : block.argsRaw) ?? ''
-  const summary = summarize(argsRaw, t) ?? { text: model.summary, extra: 0 }
+  const summary = summarize(argsRaw, t) ?? { text: t('todo.unavailable'), extra: 0, body: t('todo.unavailable') }
   return (
     <ToolRow
       t={t}
@@ -69,9 +76,9 @@ export function TodoRow({ toolName, block, inspect, t }: TodoRowProps) {
       toolName={toolName}
       icon={<IconChecklistOutline14 />}
       title={t('todo.rowTitle')}
-      summary={summary.text}
+      summary={argsRaw === '' ? summary.text : model.summary || summary.text}
       summarySuffix={summary.extra > 0 ? `+${summary.extra}` : null}
-      body={model.body}
+      body={summary.body}
       output={model.output}
       errorSummary={model.errorSummary}
       state={model.state}
@@ -92,7 +99,9 @@ export const todoToolview = {
    * @param ctx - registrant context (disposal rides ctx.effect inside slots.register).
    */
   apply(ctx: Context): void {
-    ctx.slots.inject('tool.call.toolview', () =>
-      ctx.slots.register({ name: 'tool.call.toolview', key: 'todo_write', locale: NS }, TodoRow))
+    ctx.slots.inject('tool.call.toolview', function* () {
+      yield ctx.slots.register({ name: 'tool.call.toolview', key: 'todo_write', locale: NS }, TodoRow)
+      yield ctx.slots.register({ name: 'tool.call.toolview', key: 'update_plan', locale: NS }, TodoRow)
+    })
   },
 }

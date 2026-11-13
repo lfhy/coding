@@ -2062,15 +2062,28 @@ button.ftNameBtn[aria-expanded] { cursor: pointer; }
 }
 .quizRetry:hover { border-color: var(--dsl-g-accent); color: var(--dsl-g-accent); }
 
-/* ---------- render_ui tool card ---------- */
+/* 工具行结果卡片沿用对话层已有的容器外观。 */
 
 .tool {
-  /* The tool row already provides card chrome; the block sits directly. */
+  /* 工具行已经提供卡片外框，这里只留正文间距。 */
   margin: 4px 0;
+}
+
+.toolDescription {
+  margin-bottom: 8px;
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-xs-13);
+  overflow-wrap: anywhere;
+}
+
+.toolError {
+  color: var(--dsw-alias-state-error-primary);
+  font: var(--dsw-font-xs-13);
 }
 
 .toolFallback {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--dsl-g-gap-md);
   padding: var(--dsl-g-gap-sm) 12px;
@@ -2085,9 +2098,14 @@ button.ftNameBtn[aria-expanded] { cursor: pointer; }
   color: var(--dsw-alias-label-primary);
 }
 
-.toolFallbackMeta {
+.toolFallbackDescription {
+  min-width: 0;
   color: var(--dsw-alias-label-secondary);
-  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.toolFallbackMeta {
+  color: var(--dsw-alias-label-tertiary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

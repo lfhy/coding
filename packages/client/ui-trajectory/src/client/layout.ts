@@ -18,6 +18,7 @@ import type {
   TrajectorySourceBlock,
 } from './trajectory-record.ts'
 import { formatElapsedSeconds } from './trajectory-record.ts'
+import { toolDisplayDescription } from 'coding-tools/display-description'
 
 /** One Message or Step group inside a turn. */
 export interface TrajectoryGroupModel {
@@ -1045,9 +1046,15 @@ function summarizeCall(
   name: string,
   argsRaw: string,
 ): Pick<TrajectoryCellProps, 'text' | 'previewMarkdown'> {
+  let description: string | undefined
+  try {
+    description = toolDisplayDescription(JSON.parse(argsRaw))
+  } catch {
+    // 流式参数尚未闭合或旧日志无法解析时，只显示安全的通用动作。
+  }
   return {
     text: name,
-    ...(argsRaw === '' ? {} : { previewMarkdown: argsRaw }),
+    ...(description === undefined ? {} : { previewMarkdown: description }),
   }
 }
 

@@ -1,6 +1,5 @@
 // @vitest-environment jsdom
-// Dedicated skill tool row: replay-stable naming, lifecycle states, disclosure,
-// keyboard operation, exact output, and the trajectory Inspect handoff.
+// 技能行测试覆盖可回放描述、生命周期、键盘展开与原始说明。
 
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -132,22 +131,42 @@ describe('SkillRow', () => {
     expect(screen.getAllByText('SkillError: missing')).toHaveLength(2)
   })
 
-  it('falls back to durable args or call id when the skill name is unavailable', () => {
+  it('缺少可用技能名时使用自然语言兜底，绝不显示原始参数或调用标识', () => {
     const invalid = render(<SkillRow {...props(running('{"name":\n'))} />)
-    expect(invalid.container.textContent).toContain('{"name":')
+    expect(invalid.container.textContent).toContain('技能')
+    expect(invalid.container.textContent).not.toContain('{"name":')
     cleanup()
 
     const scalar = render(<SkillRow {...props(running('"raw-name"'))} />)
-    expect(scalar.container.textContent).toContain('"raw-name"')
+    expect(scalar.container.textContent).not.toContain('"raw-name"')
     cleanup()
 
     const emptyName = render(<SkillRow {...props(running('{"name":""}'))} />)
-    expect(emptyName.container.textContent).toContain('{"name":""}')
+    expect(emptyName.container.textContent).not.toContain('{"name":""}')
     cleanup()
 
     const blank = render(<SkillRow {...props(settled({ call: null, content: [] }))} />)
-    expect(blank.container.textContent).toContain('call-skill')
+    expect(blank.container.textContent).not.toContain('call-skill')
+    expect(blank.container.textContent).toContain('技能')
     expect(blank.container.querySelector('[role="button"]')).toBeNull()
     expect(blank.container.textContent).not.toContain('正在加载 skill')
+  })
+
+  it('逐次展示调用说明，同时保留技能名称、错误首行与可展开结果', () => {
+    const description = '读取项目开发指南'
+    const argsRaw = JSON.stringify({ name: 'dsh-manage-issues', display_description: ` ${description} ` })
+    const view = render(<SkillRow {...props(running(argsRaw))} />)
+    expect(view.container.firstElementChild?.firstElementChild?.textContent).toBe(description)
+    expect(view.container.textContent).toContain('dsh-manage-issues')
+    view.rerender(<SkillRow {...props(settled({ call: { name: 'skill', argsRaw } }))} />)
+    expect(screen.getByText(description)).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Skilldsh-manage-issues' }))
+    expect(screen.getByLabelText('说明').textContent).toContain('Follow the issue workflow.')
+    view.rerender(<SkillRow {...props(settled({
+      call: { name: 'skill', argsRaw }, isError: true,
+      content: [{ type: 'text', text: '技能加载失败\n可在详情中查看' }],
+    }))} />)
+    expect(view.container.textContent).toContain(description)
+    expect(screen.getByRole('button', { name: 'skill 加载失败Skill技能加载失败' })).toBeTruthy()
   })
 })

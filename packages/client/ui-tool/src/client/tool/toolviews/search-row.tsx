@@ -46,9 +46,8 @@ export function SearchRow({ toolName, block, inspect, t }: SearchRowProps) {
       toolName={toolName}
       icon={<IconSearchOutline16 size={14} />}
       title={SEARCH_TITLES[toolName] ?? model.title}
-      // The result view's replacement title outranks the args-derived summary,
-      // matching the terminal card's description precedence.
-      summary={search?.title ?? model.summary}
+      // 模型逐次说明优先于结果自带的摘要；旧调用保留原呈现器标题。
+      summary={model.displayDescription ?? search?.title ?? model.summary}
       body={null}
       // A settled call with no search card (errored search, nested run_code
       // sub-dispatch, legacy generic result) has its text nowhere else to go;

@@ -1,20 +1,22 @@
-/** Replay-stable view models for Cordis lifecycle Tool calls. */
+/** 从冻结调用切片派生可回放的插件操作卡片。 */
 
 import type { ToolCallViewProps } from 'coding-client-ui-tool/client'
+import { toolDisplayDescription } from 'coding-tools/display-description'
 import type {
   CordisDynamicPackageId, CordisDynamicPluginId, CordisDynamicPluginRunId, CordisDynamicRunMode,
 } from './events.ts'
 
 type Block = ToolCallViewProps['block']
 
-/** Lifecycle of the tool call itself. */
+/** 一次工具调用自身的生命周期。 */
 export type CordisToolState = 'running' | 'ok' | 'error' | 'stopped'
 
-/** Frozen `cordis_define` presentation data. */
+/** 定义调用冻结的展示数据。 */
 export interface CordisDefineCard {
   readonly pluginId: CordisDynamicPluginId | null
   readonly packageId: CordisDynamicPackageId | null
   readonly name: string | null
+  readonly displayDescription: string | undefined
   readonly purpose: string | null
   readonly hostCode: string | null
   readonly clientCode: string | null
@@ -23,21 +25,23 @@ export interface CordisDefineCard {
   readonly state: CordisToolState
 }
 
-/** Frozen `cordis_run` presentation data. */
+/** 运行调用冻结的展示数据。 */
 export interface CordisRunCard {
   readonly pluginId: CordisDynamicPluginId | null
   readonly packageId: CordisDynamicPackageId | null
   readonly pluginRunId: CordisDynamicPluginRunId | null
   readonly mode: CordisDynamicRunMode | null
+  readonly displayDescription: string | undefined
   readonly seq: number | null
   readonly output: string | null
   readonly errorSummary: string | null
   readonly state: CordisToolState
 }
 
-/** Frozen `cordis_stop` or `cordis_undefine` presentation data. */
+/** 停止或移除调用冻结的展示数据。 */
 export interface CordisActionCard {
   readonly pluginId: CordisDynamicPluginId | null
+  readonly displayDescription: string | undefined
   readonly output: string | null
   readonly errorSummary: string | null
   readonly state: CordisToolState
@@ -63,7 +67,7 @@ function parseArgs(argsRaw: string): Record<string, unknown> | null {
     const parsed = JSON.parse(argsRaw) as unknown
     return typeof parsed === 'object' && parsed !== null ? parsed as Record<string, unknown> : null
   } catch {
-    // Running calls can expose a truncated JSON prefix.
+    // 流式调用可能只有截断的 JSON 前缀，旧记录也可能缺少调用参数。
     return null
   }
 }
@@ -88,9 +92,9 @@ function metaObject(block: Block): Record<string, unknown> | null {
 }
 
 /**
- * Derive one Define card from its frozen call/result slice.
- * @param block - active or settled tool-call block.
- * @returns normalized Define card fields.
+ * 从冻结的调用或结果切片派生定义卡片。
+ * @param block - 运行中或已结算的工具调用。
+ * @returns 归一化的定义卡片字段。
  */
 export function cordisDefineCard(block: Block): CordisDefineCard {
   const settled = 'kind' in block
@@ -100,11 +104,11 @@ export function cordisDefineCard(block: Block): CordisDefineCard {
   const state = stateOf(block)
   const output = settled ? resultText(block) : null
   const meta = metaObject(block)
-  const rawName = argsRaw === '' ? null : firstLine(argsRaw)
   return {
     pluginId: meta === null ? null : stringAt(meta, 'pluginId') as CordisDynamicPluginId | null,
     packageId: meta === null ? null : stringAt(meta, 'packageId') as CordisDynamicPackageId | null,
-    name: args === null ? rawName : stringAt(args, 'name') ?? rawName,
+    name: args === null ? null : stringAt(args, 'name'),
+    displayDescription: toolDisplayDescription(args),
     purpose: args === null ? null : stringAt(args, 'purpose'),
     hostCode: code === null ? null : stringAt(code, 'host'),
     clientCode: code === null ? null : stringAt(code, 'client'),
@@ -115,9 +119,9 @@ export function cordisDefineCard(block: Block): CordisDefineCard {
 }
 
 /**
- * Derive one Run card and its successful activation metadata.
- * @param block - active or settled tool-call block.
- * @returns normalized Run card fields.
+ * 派生运行卡片与成功激活时的持久元数据。
+ * @param block - 运行中或已结算的工具调用。
+ * @returns 归一化的运行卡片字段。
  */
 export function cordisRunCard(block: Block): CordisRunCard {
   const settled = 'kind' in block
@@ -134,6 +138,7 @@ export function cordisRunCard(block: Block): CordisRunCard {
     packageId: (meta === null ? argsPackageId : stringAt(meta, 'packageId') ?? argsPackageId) as CordisDynamicPackageId | null,
     pluginRunId: (meta === null ? null : stringAt(meta, 'pluginRunId')) as CordisDynamicPluginRunId | null,
     mode: rawMode === 'run' || rawMode === 'update' ? rawMode : null,
+    displayDescription: toolDisplayDescription(args),
     seq: settled ? block.seq : null,
     output,
     errorSummary: state === 'error' && output !== null ? firstLine(output) : null,
@@ -142,9 +147,9 @@ export function cordisRunCard(block: Block): CordisRunCard {
 }
 
 /**
- * Derive one Stop or Remove card from its frozen call/result slice.
- * @param block - active or settled tool-call block.
- * @returns normalized lifecycle-action card fields.
+ * 派生停止或移除调用的卡片信息。
+ * @param block - 运行中或已结算的工具调用。
+ * @returns 归一化的操作卡片字段。
  */
 export function cordisActionCard(block: Block): CordisActionCard {
   const settled = 'kind' in block
@@ -154,6 +159,7 @@ export function cordisActionCard(block: Block): CordisActionCard {
   const output = settled ? resultText(block) : null
   return {
     pluginId: (args === null ? null : stringAt(args, 'pluginId') ?? stringAt(args, 'id')) as CordisDynamicPluginId | null,
+    displayDescription: toolDisplayDescription(args),
     output,
     errorSummary: state === 'error' && output !== null ? firstLine(output) : null,
     state,

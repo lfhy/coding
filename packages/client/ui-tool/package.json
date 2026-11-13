@@ -35,7 +35,8 @@
         "coding-client-connection",
         "coding-client-runtime",
         "coding-client-locale",
-        "coding-client-ui-conversation"
+        "coding-client-ui-conversation",
+        "coding-tools"
       ],
       "platform": "web"
     }
@@ -57,7 +58,8 @@
     "coding-client-runtime": "workspace:^",
     "coding-llm": "workspace:^",
     "coding-client-ui-conversation": "workspace:^",
-    "coding-invariants": "workspace:^"
+    "coding-invariants": "workspace:^",
+    "coding-tools": "workspace:^"
   },
   "devDependencies": {
     "coding-attachment": "workspace:^",
@@ -72,6 +74,7 @@
     "coding-client-ui-primitives": "workspace:^",
     "coding-client-ui-slots": "workspace:^",
     "coding-invariants": "workspace:^",
+    "coding-tools": "workspace:^",
     "@testing-library/react": "^16.1.0",
     "@types/react": "~18.3.1",
     "react": "^18.2.0",

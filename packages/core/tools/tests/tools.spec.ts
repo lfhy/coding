@@ -5,6 +5,7 @@ import SystemPrompt from 'coding-system-prompt'
 import type { Agent } from 'coding-agent'
 import ApprovalService, { type ApprovalOutcome, type ApprovalRequest } from 'coding-user-approval'
 import ToolRuntime, {
+  DISPLAY_DESCRIPTION_KEY,
   defineContentToolFixture, defineTool, JsonSchemaError, parameterSchemaSpecToJsonSchema, validateArgs, ToolArgsError, ToolNotFoundError,
   TOOL_ABORTED, TOOL_ABORTED_BEFORE_DISPATCH,
   type InferArgs, type JsonValue, type ParameterSchemaSpec, type PreToolDecision, type PostToolDecision,
@@ -41,7 +42,7 @@ describe('ToolRuntime', () => {
     expect(ctx.tools.schemas()).toEqual([{
       name: 'echo',
       description: 'echo arguments back',
-      parameters: { type: 'object', properties: { text: { type: 'string' } } },
+      parameters: { type: 'object', properties: { text: { type: 'string' }, [DISPLAY_DESCRIPTION_KEY]: { type: 'string', description: expect.any(String) as string } } },
     }])
     // schemas() result must not leak execute — ToolSchema deliberately has no
     // 'execute' key, so widen through unknown to probe for the absent property
@@ -72,6 +73,15 @@ describe('ToolRuntime', () => {
     expect(schema.execute).toBeUndefined()
   })
 
+  it('does not share writable description schema nodes across projections', async () => {
+    const ctx = await setup()
+    ctx.tools.register(echoTool)
+    const first = ctx.tools.schemas()[0]?.parameters as { properties: { display_description: { description: string } } }
+    first.properties.display_description.description = 'mutated by caller'
+    const second = ctx.tools.schemas()[0]?.parameters as { properties: { display_description: { description: string } } }
+    expect(second.properties.display_description.description).not.toBe('mutated by caller')
+  })
+
   it('schemas() excludes timeoutMs — the budget must never reach the model', async () => {
     const ctx = await setup()
     ctx.tools.register(defineContentToolFixture({
@@ -91,6 +101,43 @@ describe('ToolRuntime', () => {
     const result = await ctx.tools.execute({ signal: testToolSignal, callId: CallId('c1'), name: 'echo', arguments: { text: 'hi' } })
     expect(result).toEqual({ content: [{ type: 'text', text: 'hi' }], isError: false, value: 'hi' })
     expect(observed).toEqual(result)
+  })
+
+  it('keeps optional operation descriptions out of closed tool parameters and policies', async () => {
+    const ctx = await setup()
+    const seen: unknown[] = []
+    const tool = {
+      name: 'closed', description: 'closed input',
+      parameters: { type: 'object' as const, additionalProperties: false, properties: { text: { type: 'string' as const } }, required: ['text'] },
+      output: { schema: { type: 'string' as const }, render: (_args: unknown, value: string) => [{ type: 'text' as const, text: value }] },
+      async execute(args: { text: string }) { seen.push(args); return args.text },
+      isConcurrencySafe(args: { text: string }) { seen.push(args); return true },
+    }
+    ctx.tools.register(tool)
+    const args = { text: 'ok', display_description: '核对封闭参数' }
+    expect(ctx.tools.schemas()[0]?.parameters).toMatchObject({
+      additionalProperties: false,
+      properties: { display_description: { type: 'string' } },
+    })
+    expect(tool.parameters).not.toHaveProperty('properties.display_description')
+    expect(ctx.tools.executionMode({ signal: testToolSignal, callId: CallId('c1'), name: 'closed', arguments: args }))
+      .toEqual({ kind: 'parallel' })
+    const result = await ctx.tools.execute({ signal: testToolSignal, callId: CallId('c1'), name: 'closed', arguments: args })
+    expect(result).toMatchObject({ isError: false, value: 'ok' })
+    expect(seen).toEqual([{ text: 'ok' }, { text: 'ok' }])
+    const invalid = await ctx.tools.execute({ signal: testToolSignal, callId: CallId('c2'), name: 'closed', arguments: { text: 'ok', display_description: 9 } })
+    expect(invalid).toMatchObject({ isError: true, error: { info: { code: 'INVALID_ARGS' } } })
+    expect(seen).toHaveLength(2)
+  })
+
+  it('rejects business parameters colliding with the reserved description key', async () => {
+    const ctx = await setup()
+    expect(() => ctx.tools.register({
+      name: 'collision', description: 'collision',
+      parameters: { type: 'object', properties: { display_description: { type: 'string' } } },
+      output: { schema: { type: 'null' }, render: () => [] },
+      async execute() { return null },
+    })).toThrow(/reserved field display_description/)
   })
 
   it('projects presentation metadata from the canonical value', async () => {
@@ -1928,7 +1975,7 @@ describe('ToolRuntime', () => {
     expect(ctx.tools.schemas()).toEqual([{
       name: 'echo',
       description: 'echo arguments back',
-      parameters: { type: 'object', properties: { text: { type: 'string' } } },
+      parameters: { type: 'object', properties: { text: { type: 'string' }, [DISPLAY_DESCRIPTION_KEY]: { type: 'string', description: expect.any(String) as string } } },
     }])
   })
 
@@ -2129,6 +2176,7 @@ describe('defineTool / schema DSL', () => {
         properties: {
           text: { type: 'string' },
           uppercase: { type: 'boolean' },
+          [DISPLAY_DESCRIPTION_KEY]: { type: 'string', description: expect.any(String) as string },
         },
         required: ['text'],
       },
@@ -2188,6 +2236,7 @@ describe('defineTool / schema DSL', () => {
       properties: {
         req: { type: 'string' },
         opt: { type: 'number', description: 'Optional number' },
+        [DISPLAY_DESCRIPTION_KEY]: { type: 'string', description: expect.any(String) as string },
       },
       required: ['req'],
     })
@@ -2226,7 +2275,7 @@ describe('defineTool / schema DSL', () => {
     const schemas = ctx.tools.schemas()
     expect(schemas[0]!.parameters).toEqual({
       type: 'object',
-      properties: { path: { type: 'string' } },
+      properties: { path: { type: 'string' }, [DISPLAY_DESCRIPTION_KEY]: { type: 'string', description: expect.any(String) as string } },
       required: ['path'],
     })
 

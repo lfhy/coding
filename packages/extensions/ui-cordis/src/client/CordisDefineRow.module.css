@@ -1,12 +1,15 @@
-/* Cordis definition card: DisclosureRow chrome (leading/chevron/title come from
-   that primitive) plus this card's own trailing run switch and source body.
-   No running sweep: `cordis_define` only registers a definition in host memory,
-   so the call settles in the same turn it starts and the state dot carries the
-   whole signal. */
+/* 定义卡片使用共享展开行，并保留源码页签与结果；运行状态由图标传达。 */
 
 .card {
   display: flex;
   flex-direction: column;
+}
+
+.description {
+  min-width: 0;
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-xs-13);
+  overflow-wrap: anywhere;
 }
 
 /* The shared cordis accent (matches ui-tool's [data-tool^='cordis_'] rows). */

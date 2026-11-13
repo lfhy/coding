@@ -36,6 +36,9 @@
       "path": "../../runtime-diagnostics/invariants"
     },
     {
+      "path": "../../core/tools"
+    },
+    {
       "path": "../../api/remotes/tsconfig.client.json"
     }
   ]

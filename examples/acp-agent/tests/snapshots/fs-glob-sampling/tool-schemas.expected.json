@@ -29,6 +29,10 @@
           "run_in_background": {
             "type": "boolean",
             "description": "Run in the background and return a job id immediately (collect with job_output, stop with job_kill). No timeout applies."
+          },
+          "display_description": {
+            "type": "string",
+            "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
           }
         },
         "required": [
@@ -50,6 +54,10 @@
           "path": {
             "type": "string",
             "description": "Directory to search in. Defaults to the session workspace; a relative path resolves against it."
+          },
+          "display_description": {
+            "type": "string",
+            "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
           }
         },
         "required": [
@@ -74,6 +82,10 @@
           "include": {
             "type": "string",
             "description": "One glob filter for which files to search (e.g. \"*.ts\", \"*.{js,jsx}\"). Not a list; negation is not supported."
+          },
+          "display_description": {
+            "type": "string",
+            "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
           }
         },
         "required": [

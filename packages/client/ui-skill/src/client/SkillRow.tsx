@@ -1,6 +1,4 @@
-// Skill toolview registrant: a domain-owned row over the keyed toolview hole.
-// The compact accent row keeps loaded instructions scannable in the transcript;
-// the exact durable tool output remains available in a bounded disclosure card.
+/** 技能工具行只读取冻结的调用与结果；完整说明保留在可展开的正文中。 */
 
 import { useState, type KeyboardEvent, type ReactNode } from 'react'
 import {
@@ -8,45 +6,40 @@ import {
 } from 'coding-client-ui-primitives'
 import type { ToolCallViewProps } from 'coding-client-ui-tool/client'
 import type { PropsLocale } from 'coding-client-ui-slots'
+import { toolDisplayDescription } from 'coding-tools/display-description'
 import css from './SkillRow.module.css'
 
-/** Skill row lifecycle derived solely from the durable call slice. */
+/** 仅从持久调用切片派生的工具行生命周期。 */
 type SkillRowState = 'running' | 'ok' | 'error' | 'stopped'
 
-/** Full row props: the toolview runtime share plus this package's locale seat. */
+/** 工具视图载荷与本包语言席位。 */
 type SkillRowProps = ToolCallViewProps & PropsLocale<'skill'>
 
-/** Compact, replay-stable view model for the dedicated row. */
+/** 可回放的紧凑技能行数据。 */
 interface SkillRowModel {
   readonly name: string
+  readonly displayDescription: string | undefined
   readonly output: string | null
   readonly errorSummary: string | null
   readonly state: SkillRowState
 }
 
-/** First physical line for the collapsed error summary and malformed-args fallback. */
+/** 错误摘要只取首行，完整内容保留在展开区。 */
 function firstLine(text: string): string {
   const newline = text.indexOf('\n')
   return newline === -1 ? text : text.slice(0, newline)
 }
 
-/** Skill names are the only call argument the compact row presents. */
-function skillName(argsRaw: string, callId: string): string {
+/** 调用参数可能来自流式截断或旧记录，不能把原始 JSON 放到聊天摘要。 */
+function skillArgs(argsRaw: string): unknown {
   try {
-    const parsed = JSON.parse(argsRaw) as unknown
-    if (typeof parsed === 'object' && parsed !== null) {
-      const name = (parsed as Record<string, unknown>).name
-      if (typeof name === 'string' && name !== '') return firstLine(name)
-    }
+    return JSON.parse(argsRaw) as unknown
   } catch {
-    // Streaming can expose a truncated JSON prefix; its first line is still
-    // more useful than replacing the call with an unrelated catalog lookup.
+    return undefined
   }
-  return argsRaw === '' ? callId : firstLine(argsRaw)
 }
 
-/** Flatten durable result blocks under the generic Tool-row text contract.
- *  Keep aligned with ui-tool's models/tool-call-model.ts `resultText`. */
+/** 按通用工具行契约展开持久结果；与 ui-tool 的 resultText 保持一致。 */
 function resultText(block: ToolCallViewProps['block']): string | null {
   if (!('kind' in block)) return null
   const parts: string[] = []
@@ -59,10 +52,13 @@ function resultText(block: ToolCallViewProps['block']): string | null {
   return parts.join('\n') || null
 }
 
-/** Derive display state without consulting the live skill catalog. */
-function skillRowModel(block: ToolCallViewProps['block']): SkillRowModel {
+/** 仅从冻结记录派生展示状态，不读取当前技能目录。 */
+function skillRowModel(block: ToolCallViewProps['block'], t: SkillRowProps['t']): SkillRowModel {
   const settled = 'kind' in block
   const argsRaw = (settled ? block.call?.argsRaw : block.argsRaw) ?? ''
+  const args = skillArgs(argsRaw)
+  const rawName = typeof args === 'object' && args !== null && !Array.isArray(args)
+    ? (args as Record<string, unknown>).name : undefined
   const state: SkillRowState = !settled
     ? 'running'
     : block.error?.code === 'interrupted'
@@ -70,14 +66,15 @@ function skillRowModel(block: ToolCallViewProps['block']): SkillRowModel {
       : block.isError ? 'error' : 'ok'
   const output = resultText(block)
   return {
-    name: skillName(argsRaw, block.callId),
+    name: typeof rawName === 'string' && rawName.trim() !== '' ? firstLine(rawName) : t('row.unnamed'),
+    displayDescription: toolDisplayDescription(args),
     output,
     errorSummary: state === 'error' && output !== null ? firstLine(output) : null,
     state,
   }
 }
 
-/** State substitution for the collapsed leading slot. */
+/** 错误与中断态替换行首图标。 */
 function leadingFor(state: SkillRowState): ReactNode {
   switch (state) {
     case 'error': return <StateDot state="error" />
@@ -86,7 +83,7 @@ function leadingFor(state: SkillRowState): ReactNode {
   }
 }
 
-/** Leading disclosure slot: state icon at rest, chevron on hover or while open. */
+/** 可展开时在悬停或展开状态显示箭头。 */
 function disclosureLeading(state: SkillRowState, open: boolean, expandable: boolean): ReactNode {
   if (open) return <IconChevronDownOutline14 className={css.chevron} />
   const icon = leadingFor(state)
@@ -99,7 +96,7 @@ function disclosureLeading(state: SkillRowState, open: boolean, expandable: bool
   )
 }
 
-/** Visually hidden state copy for the colour-only lifecycle cues. */
+/** 为仅靠颜色区分的状态提供屏幕阅读器文案。 */
 function stateStatus(state: SkillRowState, t: SkillRowProps['t']): string | null {
   switch (state) {
     case 'running': return t('row.running')
@@ -110,12 +107,12 @@ function stateStatus(state: SkillRowState, t: SkillRowProps['t']): string | null
 }
 
 /**
- * Render one `skill` tool call as an accent summary and instructions disclosure.
- * @param props - keyed toolview payload plus the skill locale seat.
- * @returns the dedicated skill row.
+ * 把一次技能调用展示为摘要行和可展开的说明正文。
+ * @param props - 键控工具视图载荷及技能语言席位。
+ * @returns 独立的技能工具行。
  */
 export function SkillRow({ block, inspect, t }: SkillRowProps) {
-  const model = skillRowModel(block)
+  const model = skillRowModel(block, t)
   const [expanded, setExpanded] = useState(false)
   const expandable = model.output !== null
   const open = expanded && expandable
@@ -139,6 +136,9 @@ export function SkillRow({ block, inspect, t }: SkillRowProps) {
   const leading = disclosureLeading(model.state, open, expandable)
   return (
     <div className={css.card} data-tool="skill" data-state={model.state}>
+      {model.displayDescription !== undefined && (
+        <div className={css.description}>{model.displayDescription}</div>
+      )}
       <div
         className={css.row}
         data-expandable={expandable || undefined}

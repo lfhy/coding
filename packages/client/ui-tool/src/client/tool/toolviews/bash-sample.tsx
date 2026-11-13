@@ -69,10 +69,9 @@ export function BashRow({ toolName, block, sessionId, useSessions, inspect, t }:
   // Execution failures (for example cancellation before the process reports a
   // terminal result) use the generic presenter. Keep their recorded args and
   // full error reachable instead of collapsing the row to the first line.
-  const genericError = terminal === null
-    && model.state === 'error'
+  const genericBody = terminal === null && model.state === 'error'
     && (model.body !== null || model.output !== null)
-  const expandable = terminal !== null || genericError
+  const expandable = terminal !== null || genericBody
   const open = expanded && expandable
   const failureLine = model.state === 'error' ? model.errorSummary : null
   const toggleExpand = () => {
@@ -114,7 +113,7 @@ export function BashRow({ toolName, block, sessionId, useSessions, inspect, t }:
         {/* The terminal presenter's description is the contractual
             above-card summary; a failure's first line outranks both. */}
         <span className={clsx(css.summary, failureLine !== null && css.errorSummary)}>
-          {failureLine ?? terminal?.description ?? model.summary}
+          {failureLine ?? model.displayDescription ?? terminal?.description ?? model.summary}
         </span>
       </div>
       {open && (
@@ -175,7 +174,9 @@ export const bashToolviewSample = {
    * @param ctx - registrant context (disposal rides ctx.effect inside slots.register).
    */
   apply(ctx: Context): void {
-    ctx.slots.inject('tool.call.toolview', () =>
-      ctx.slots.register({ name: 'tool.call.toolview', key: 'bash', locale: NS }, BashRow))
+    ctx.slots.inject('tool.call.toolview', function* () {
+      yield ctx.slots.register({ name: 'tool.call.toolview', key: 'bash', locale: NS }, BashRow)
+      yield ctx.slots.register({ name: 'tool.call.toolview', key: 'exec_command', locale: NS }, BashRow)
+    })
   },
 }

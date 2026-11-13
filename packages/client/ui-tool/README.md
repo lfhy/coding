@@ -14,6 +14,8 @@ Client 工具展示插件。`ui-conversation` 通过 `conversation.chat.node` �
 
 通用行把已知工具名称归类为 search、read、shell、write、edit、code 或 generic 变体。运行中、成功、失败和中断状态只来自冻结的 call/result slice。只有用户调用 Host 打开文件回调时，文件路径才相对会话 `cwd` 解析；展示代码不读取会话服务。
 
+工具调用参数包含有效的 `display_description` 时，Chat 的折叠工具行优先把它作为简短动作摘要，而不把原始业务参数复制进摘要或通用行的展开参数正文；它只改变展示，不改变调用与结果。没有该字段或旧日志参数不可解析时，仍按已有的工具名称、路径或参数摘要规则回退。字段的校验及执行隔离由[工具注册表](../../core/tools/README.md#模型调用的操作说明)负责。
+
 ## 原子工具视图
 
 拥有该视图的业务包将其 wire 工具名称注册进 `tool.call.toolview`：

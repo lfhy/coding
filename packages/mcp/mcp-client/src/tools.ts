@@ -20,7 +20,7 @@ import { admitEncodedImages, isImageAdmissionError } from 'coding-attachment'
 import type { AttachmentStore, EncodedImageAttachment, ImageAttachmentRef, ImageMediaType } from 'coding-attachment'
 import type { ContentBlock } from 'coding-llm'
 import type { ToolDefinition, ToolExecution, ToolExecutionResult } from 'coding-tools'
-import { assertSupportedJsonSchema } from 'coding-tools'
+import { assertSupportedJsonSchema, DISPLAY_DESCRIPTION_KEY } from 'coding-tools'
 import type { JsonSchemaNode, JsonValue } from 'coding-tools'
 
 /** Resolved options relevant to tool bridging. */
@@ -114,7 +114,7 @@ export function publicToolName(serverName: string, rawName: string): string {
  * Two phases keep the swap safe:
  * 1. Fetch: drain uncached `tools/list` pagination and build the full next
  *    generation of `ToolDefinition`s under public names. Any failure here
- *    (network error, duplicate raw name, repeated continuation cursor) rejects
+ *    (network error, duplicate raw name, reserved parameter, repeated continuation cursor) rejects
  *    and leaves the previous generation registered untouched.
  * 2. Swap: dispose the previous generation, register the new one. A registry
  *    conflict here can only mean a foreign registration squats on this
@@ -136,7 +136,7 @@ export async function syncTools(
   opts: ToolBridgeOptions,
   previous: ToolDisposers,
 ): Promise<ToolDisposers> {
-  // Phase 1: fetch and build the next generation without touching the registry.
+  // 预检完整列表；发现保留参数冲突时，旧世代的工具仍须可调用。
   const definitions = new Map<string, ToolDefinition>()
   const seenCursors = new Set<string>()
   let cursor: string | undefined
@@ -147,6 +147,11 @@ export async function syncTools(
       if (definitions.has(publicName)) {
         throw new Error(
           `mcp-client(${opts.serverName}): server listed tool "${tool.name}" more than once — invalid tool list`,
+        )
+      }
+      if (Object.hasOwn(tool.inputSchema.properties ?? {}, DISPLAY_DESCRIPTION_KEY)) {
+        throw new Error(
+          `mcp-client(${opts.serverName}): tool "${tool.name}" declares reserved input field ${DISPLAY_DESCRIPTION_KEY} — invalid tool list`,
         )
       }
       definitions.set(publicName, createDefinition(

@@ -53,7 +53,7 @@ export function AskQuestionRow({ toolName, block, inspect, t }: AskQuestionRowPr
   // failed shape, and the abort keeps the shared stopped (amber) semantics of
   // any other interrupted tool call.
   const code = 'kind' in block ? block.error?.code : undefined
-  let summary = model.summary
+  let summary = model.summary || t('ask.rowTitle')
   let state = model.state
   if (code === 'ASK_CANCELLED') {
     summary = t('ask.cancelled')
@@ -64,7 +64,7 @@ export function AskQuestionRow({ toolName, block, inspect, t }: AskQuestionRowPr
     summary = t('ask.waiting')
   } else if ('kind' in block && model.state === 'ok') {
     const text = block.content.filter(b => b.type === 'text').map(b => b.text).join('')
-    summary = answeredSummary(text, t) ?? model.summary
+    summary = answeredSummary(text, t) ?? (model.summary || t('ask.rowTitle'))
   }
   return (
     <ToolRow
@@ -73,7 +73,7 @@ export function AskQuestionRow({ toolName, block, inspect, t }: AskQuestionRowPr
       toolName={toolName}
       icon={<IconQuestionOutline14 />}
       title={t('ask.rowTitle')}
-      summary={summary}
+      summary={model.displayDescription ?? summary}
       body={model.body}
       output={model.output}
       state={state}

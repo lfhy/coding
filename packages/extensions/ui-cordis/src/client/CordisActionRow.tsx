@@ -1,4 +1,4 @@
-/** Localized cards for `cordis_stop` and `cordis_undefine`. */
+/** 停止和移除操作的本地化卡片。 */
 
 import {
   IconInspectOutline12, IconStopFill16, IconTrashOutline16, StateDot,
@@ -8,17 +8,18 @@ import type { ToolCallViewProps } from 'coding-client-ui-tool/client'
 import { cordisActionCard } from './card-model.ts'
 import css from './CordisRunRow.module.css'
 
-/** Full action-card props composed by the keyed Tool slot. */
+/** 键控工具视图提供的操作卡片载荷。 */
 export type CordisActionRowProps = ToolCallViewProps & PropsLocale<'cordis'>
 
-/** Render one Stop or Remove call with Cordis-owned localized copy. */
-export function CordisActionRow({ callId, toolName, block, inspect, t }: CordisActionRowProps) {
+/** 展示一次停止或移除操作及其持久结果。 */
+export function CordisActionRow({ toolName, block, inspect, t }: CordisActionRowProps) {
   const card = cordisActionCard(block)
   const remove = toolName === 'cordis_undefine'
-  const summary = card.errorSummary ?? card.pluginId ?? callId
+  const summary = card.errorSummary ?? t('row.unknownTarget')
 
   return (
     <div className={css.card} data-tool={toolName} data-state={card.state}>
+      {card.displayDescription !== undefined && <div className={css.description}>{card.displayDescription}</div>}
       <div className={css.row}>
         <span className={css.icon}>
           {card.state === 'error'

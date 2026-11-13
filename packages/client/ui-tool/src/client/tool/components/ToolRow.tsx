@@ -93,6 +93,8 @@ export interface ToolRowProps {
    * renders as a hover-underline link that opens the host default app.
    */
   filePath?: string | undefined
+  /** 自然语言摘要与真实路径不同时，用于保留独立的文件打开入口。 */
+  fileLinkLabel?: string | undefined
   /** Open the path with the host OS default application (already cwd-resolved). */
   onOpenFile?: ((path: string) => void) | undefined
   /**
@@ -146,6 +148,7 @@ export function ToolRow({
   web,
   state,
   filePath,
+  fileLinkLabel,
   onOpenFile,
   images,
   loadImage,
@@ -218,7 +221,7 @@ export function ToolRow({
              its title shows no trailing dot). */
           <>
             <span className={css.sep} aria-hidden />
-            {fileLink ? (
+            {fileLink && fileLinkLabel === undefined ? (
               <button
                 type="button"
                 className={css.fileLink}
@@ -233,6 +236,11 @@ export function ToolRow({
               >
                 {summaryText}
               </span>
+            )}
+            {fileLink && fileLinkLabel !== undefined && (
+              <button type="button" className={css.fileLinkTarget} onClick={openFile} onKeyDown={fileLinkKeyDown}>
+                {fileLinkLabel}
+              </button>
             )}
             {suffix !== null && <span className={css.summarySuffix}>{suffix}</span>}
           </>

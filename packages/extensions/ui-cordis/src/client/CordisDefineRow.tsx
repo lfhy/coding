@@ -1,4 +1,4 @@
-/** Read-only `cordis_define` card with Host and Client source tabs. */
+/** 定义卡片可展开查看原有 Host 与 Client 源码。 */
 
 import { useId, useState, type ReactNode } from 'react'
 import {
@@ -12,7 +12,7 @@ import { cordisVisibleStatus, type CordisVisibleStatus } from './status.ts'
 import type { CordisKey } from './locales.ts'
 import css from './CordisDefineRow.module.css'
 
-/** Full card props composed by the keyed Tool slot. */
+/** 键控工具视图提供的定义卡片载荷。 */
 export type CordisDefineRowProps = ToolCallViewProps & InjectFace<CordisCardFace> & PropsLocale<'cordis'>
 
 type CardReading = CordisVisibleStatus | 'removed'
@@ -42,9 +42,9 @@ function leadingFor(state: CordisToolState): ReactNode {
   }
 }
 
-/** Render one immutable Package definition. */
+/** 展示一次不可变的插件定义及其源码。 */
 export function CordisDefineRow({
-  callId, block, inspect, useInventory, useLoaded, t,
+  block, inspect, useInventory, useLoaded, t,
 }: CordisDefineRowProps) {
   const card = cordisDefineCard(block)
   const inventory = useInventory(snapshot => snapshot)
@@ -61,7 +61,7 @@ export function CordisDefineRow({
     : row !== undefined && card.packageId !== null
       ? cordisVisibleStatus(row, card.packageId, loaded)
       : 'idle'
-  const name = card.name ?? callId
+  const name = card.name ?? t('row.unknownTarget')
   const expandable = card.hostCode !== null || card.clientCode !== null || card.output !== null
   const open = expanded && expandable
   const a11yState = stateStatus(card.state)
@@ -83,6 +83,7 @@ export function CordisDefineRow({
       data-cordis-package-id={card.packageId ?? undefined}
       data-cordis-status={reading}
     >
+      {card.displayDescription !== undefined && <div className={css.description}>{card.displayDescription}</div>}
       {a11yState !== null && <span className={css.visuallyHidden}>{t(a11yState)}</span>}
       <DisclosureRow
         rowClassName={css.row}

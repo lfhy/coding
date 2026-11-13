@@ -50,6 +50,32 @@ afterEach(() => {
 })
 
 describe('对话图片工具', () => {
+  it('逐次说明显示在等待和结果上方，且不遮挡图片或失败提示', async () => {
+    const description = '绘制清晨的湖泊'
+    const describedArgs = JSON.stringify({ prompt: '晨光中的湖泊', display_description: ` ${description} ` })
+    const view = render(<ImageToolRow {...props(running({ argsRaw: describedArgs }))} />)
+    expect(view.container.querySelector('[data-image-tool-row]')?.firstElementChild?.textContent).toBe(description)
+    expect(screen.getByText('正在创建图像')).toBeTruthy()
+    view.rerender(<ImageToolRow {...props(result({ call: { name: 'generate_image', argsRaw: describedArgs } }))} />)
+    expect(screen.getByText(description)).toBeTruthy()
+    expect(screen.getByText('已生成 1 张图片')).toBeTruthy()
+    expect(await screen.findByRole('img')).toBeTruthy()
+    view.rerender(<ImageToolRow {...props(result({
+      call: { name: 'generate_image', argsRaw: describedArgs }, isError: true, content: [],
+    }))} />)
+    expect(screen.getByText(description)).toBeTruthy()
+    expect(screen.getByText('图片生成失败')).toBeTruthy()
+  })
+
+  it('旧记录和不完整调用参数安全回退到已有状态', () => {
+    const view = render(<ImageToolRow {...props(running({ argsRaw: '{"display_description":' }))} />)
+    expect(screen.getByText('正在创建图像')).toBeTruthy()
+    expect(view.container.textContent).not.toContain('display_description')
+    view.rerender(<ImageToolRow {...props(result({ call: null, content: [] }))} />)
+    expect(screen.getByText('工具未返回图片')).toBeTruthy()
+    expect(view.container.textContent).not.toContain('image-call')
+  })
+
   it('执行中提供忙碌状态和等待动效，不虚构百分比或提前显示结果', () => {
     vi.useFakeTimers()
     const loadImage = vi.fn(async () => 'blob:unexpected')

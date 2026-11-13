@@ -41,6 +41,7 @@ export function ReadRow({ toolName, block, cwd, home, openFile, inspect, t }: Re
       read={read}
       state={model.state}
       filePath={model.filePath}
+      fileLinkLabel={model.displayDescription === undefined ? undefined : model.filePath}
       onOpenFile={openFile}
       inspect={inspect}
     />

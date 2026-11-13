@@ -114,45 +114,61 @@ describe('TodoRow', () => {
     expect(stopped.container.querySelector('[data-state="stopped"]')).not.toBeNull()
   })
 
-  it('falls back to the generic summary on malformed args and marks the error state', () => {
+  it('uses a neutral summary on malformed args and marks the error state', () => {
     const view = render(<TodoRow {...rowProps(resultNode('not json', { isError: true }))} />)
     expect(view.container.querySelector('[data-state="error"]')).not.toBeNull()
-    expect(screen.getByText('todo_write · not json')).toBeTruthy()
+    expect(screen.getByText('任务清单暂不可预览')).toBeTruthy()
+    expect(view.container.textContent).not.toContain('not json')
   })
 
   it('falls back when parsed args carry no todos array', () => {
     render(<TodoRow {...rowProps(resultNode('{"other":1}'))} />)
-    expect(screen.getByText('todo_write · {"other":1}')).toBeTruthy()
+    expect(screen.getByText('任务清单暂不可预览')).toBeTruthy()
   })
 
-  it('leading toggle expands the raw args body', () => {
+  it('expands a readable task list without displaying the JSON envelope', () => {
     render(<TodoRow {...rowProps(resultNode(ARGS))} />)
     fireEvent.click(screen.getByRole('button', { expanded: false }))
     expect(screen.getByRole('button', { expanded: true })).toBeTruthy()
     expect(screen.getByText(/搭骨架/)).toBeTruthy()
+    expect(screen.queryByText(/"todos"/)).toBeNull()
   })
 
   it.each([
     { label: 'null root', argsRaw: 'null' },
     { label: 'non-object root', argsRaw: '42' },
     { label: 'null items', argsRaw: '{"todos":[null]}' },
-  ])('falls back to the generic summary on valid JSON with an invalid shape ($label)', ({ argsRaw }) => {
+  ])('keeps invalid plan inputs out of the summary ($label)', ({ argsRaw }) => {
     render(<TodoRow {...rowProps(resultNode(argsRaw))} />)
-    expect(screen.getByText(`todo_write · ${argsRaw}`)).toBeTruthy()
+    expect(screen.getByText('任务清单暂不可预览')).toBeTruthy()
   })
 
-  it('window-truncated result falls back to the callId summary', () => {
+  it('window-truncated result does not expose the call id', () => {
     render(<TodoRow {...rowProps(resultNode('', { call: null }))} />)
-    expect(screen.getByText('todo_write · c1')).toBeTruthy()
+    expect(screen.getByText('任务清单暂不可预览')).toBeTruthy()
+  })
+
+  it('renders the Codex plan alias with the same summary and readable expanded content', () => {
+    const { container } = render(<TodoRow {...rowProps(resultNode(ARGS, {
+      call: { name: 'update_plan', argsRaw: ARGS },
+    }))} toolName="update_plan" />)
+    expect(screen.getByText('更新任务清单')).toBeTruthy()
+    expect(screen.getByText('1/3 已完成 · 写组件')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { expanded: false }))
+    expect(container.textContent).toContain('进行中 · 写组件')
+    expect(container.textContent).not.toContain('"todos"')
   })
 
   it('injects the keyed toolview declaration directly', () => {
     expect(todoToolview.name).toBe('todo-toolview')
     expect(todoToolview.inject).toEqual(['slots'])
     const register = vi.fn(() => () => undefined)
-    const inject = vi.fn((_name: string, callback: () => () => void) => callback())
+    const inject = vi.fn((_name: string, callback: () => Generator<() => void>) => {
+      for (const dispose of callback()) dispose()
+    })
     todoToolview.apply({ slots: { inject, register } } as never)
     expect(inject).toHaveBeenCalledWith('tool.call.toolview', expect.any(Function))
     expect(register).toHaveBeenCalledWith({ name: 'tool.call.toolview', key: 'todo_write', locale: NS }, TodoRow)
+    expect(register).toHaveBeenCalledWith({ name: 'tool.call.toolview', key: 'update_plan', locale: NS }, TodoRow)
   })
 })

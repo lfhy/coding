@@ -129,6 +129,7 @@ describe('apply', () => {
           'row.failed': 'skill 加载失败',
           'row.stopped': 'skill 加载已中止',
           'row.instructions': '说明',
+          'row.unnamed': '技能',
           'menu.userOnly': '仅用户',
         },
         en: {
@@ -136,6 +137,7 @@ describe('apply', () => {
           'row.failed': 'Skill load failed',
           'row.stopped': 'Skill load stopped',
           'row.instructions': 'Instructions',
+          'row.unnamed': 'Skill',
           'menu.userOnly': 'user-only',
         },
       },

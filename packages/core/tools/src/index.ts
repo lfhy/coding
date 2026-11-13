@@ -26,6 +26,7 @@ import type { CodeSdkLanguage } from './code-mode.ts'
 import { renderToolsSdk } from './ts-types.ts'
 import type { ToolSdkSchema } from './ts-types.ts'
 import { renderToolsSdkPy } from './py-types.ts'
+import { DISPLAY_DESCRIPTION_KEY, DISPLAY_DESCRIPTION_SCHEMA, toolBusinessArgs } from './display-description.ts'
 
 /**
  * Language → SDK-section renderer. The registry looks up the loaded
@@ -102,6 +103,7 @@ export type { JsonValue } from 'coding-session'
 export type { CodeDispatchEventData, CodeDispatchStartEventData } from './types.ts'
 
 export { CodeRunFailedError, RUN_CODE_NAME } from './code-mode.ts'
+export { DISPLAY_DESCRIPTION_KEY, toolBusinessArgs, toolDisplayDescription } from './display-description.ts'
 export { jsonSchemaToTs, renderToolsSdk } from './ts-types.ts'
 export { jsonSchemaToPy, renderToolsSdkPy } from './py-types.ts'
 export { defineContentToolFixture, type ContentToolFixtureOptions } from './testing.ts'
@@ -975,7 +977,7 @@ export class ToolRuntime extends Service {
     const view = this.view(scope)
     const mode = this.modeFor(scope)
     if (mode === 'native') {
-      const schemas = [...view.visible.values()].map(definition => this.schemaOf(definition, false))
+      const schemas = [...view.visible.values()].map(definition => this.schemaOf(definition))
       return { schemas, knownNames: [...view.knownNames] }
     }
     // Validate the runtime language BEFORE projecting schemas: schemaOf reads
@@ -984,7 +986,7 @@ export class ToolRuntime extends Service {
     // renderer-table rejection the canonical assembly-time error for a
     // language with no SDK renderer.
     this.requireCodeRuntime(mode)
-    const schemas = [...view.visible.values()].map(definition => this.schemaOf(definition, false))
+    const schemas = [...view.visible.values()].map(definition => this.schemaOf(definition))
     if (mode === 'code') {
       return {
         schemas: schemas.filter(schema => schema.name === RUN_CODE_NAME),
@@ -1036,6 +1038,13 @@ export class ToolRuntime extends Service {
       throw new TypeError(`tool "${name}" must declare output { schema, render, presentationMeta? }`)
     }
     assertSupportedJsonSchema(output.schema)
+    const parameters = definition.parameters as JsonSchemaNode
+    if (parameters.type !== 'object' || parameters.oneOf !== undefined) {
+      throw new TypeError(`tool "${name}" parameters must have an object root to support display_description`)
+    }
+    if (Object.hasOwn(parameters.properties ?? {}, DISPLAY_DESCRIPTION_KEY)) {
+      throw new TypeError(`tool "${name}" parameters already declare reserved field display_description`)
+    }
     const timeoutMs = definition.timeoutMs
     if (timeoutMs !== undefined
       && (!Number.isFinite(timeoutMs) || timeoutMs <= 0)) {
@@ -1223,7 +1232,7 @@ export class ToolRuntime extends Service {
    * @returns one deep-cloned schema per visible tool.
    */
   schemas(scope?: ScopeKey): ToolSchema[] {
-    return [...this.view(scope).visible.values()].map(definition => this.schemaOf(definition, true))
+    return [...this.view(scope).visible.values()].map(definition => this.schemaOf(definition))
   }
 
   /** Project visible callable tools onto the generated Code Mode SDK contract. */
@@ -1237,23 +1246,28 @@ export class ToolRuntime extends Service {
           throw new Error(`tool "${definition.name}" output schema must be lossless JSON before SDK projection`)
         }
         return {
-          ...this.schemaOf(definition, true),
+          ...this.schemaOf(definition),
           output,
         }
       })
   }
 
   /** Project one definition onto the model-facing schema fields. */
-  private schemaOf(definition: ToolDefinition, detachParameters: boolean): ToolSchema {
+  private schemaOf(definition: ToolDefinition): ToolSchema {
     const { name, description, parameters } = definition
-    const detached = detachParameters ? snapshotJsonValue(parameters) : parameters
+    const detached = snapshotJsonValue(parameters) as JsonSchemaNode | undefined
     if (detached === undefined) {
       throw new Error(`tool "${name}" parameters must be lossless JSON before schema projection`)
     }
+    if (detached.type !== 'object' || detached.oneOf !== undefined
+      || Object.hasOwn(detached.properties ?? {}, DISPLAY_DESCRIPTION_KEY)) {
+      throw new TypeError(`tool "${name}" parameters must have an object root without reserved field display_description`)
+    }
+    detached.properties = { ...detached.properties, [DISPLAY_DESCRIPTION_KEY]: { ...DISPLAY_DESCRIPTION_SCHEMA } }
     return {
       name,
       description,
-      parameters: detached,
+      parameters: detached as Record<string, unknown>,
     }
   }
 
@@ -1268,7 +1282,7 @@ export class ToolRuntime extends Service {
     const tool = this.resolveExecution(exec.name, exec.agent, exec.parent !== undefined)
     if (!tool?.isConcurrencySafe) return { kind: 'exclusive' }
     try {
-      const concurrencySafe: unknown = tool.isConcurrencySafe(exec.arguments)
+      const concurrencySafe: unknown = tool.isConcurrencySafe(toolBusinessArgs(exec.arguments))
       return concurrencySafe === true ? { kind: 'parallel' } : { kind: 'exclusive' }
     } catch {
       return { kind: 'exclusive' }
@@ -1403,7 +1417,7 @@ export class ToolRuntime extends Service {
       if (detached === undefined) {
         throw new TypeError('tool execution arguments must be losslessly JSON-serializable')
       }
-      const execution: MutableToolRunContext = { ...base, arguments: deepFreeze(detached) }
+      const execution: MutableToolRunContext = { ...base, arguments: deepFreeze(toolBusinessArgs(detached)) }
       this.deferredContexts.set(execution, deferredContexts)
       this.contentFinalizers.set(execution, finalizerFor())
       this.cancellationStates.set(execution, {

@@ -46,6 +46,7 @@ export function FileMutationRow({ toolName, block, cwd, home, openFile, inspect,
       diff={diff}
       state={model.state}
       filePath={model.filePath}
+      fileLinkLabel={model.displayDescription === undefined ? undefined : model.filePath}
       onOpenFile={openFile}
       inspect={inspect}
     />

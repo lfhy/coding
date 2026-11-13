@@ -65,6 +65,23 @@ const FOLD_PROPS = {
 }
 
 describe('TrajectoryTable', () => {
+  it('shows operation descriptions in the ledger but raw arguments only after opening Payload', () => {
+    const raw = JSON.stringify({ command: 'echo private', display_description: '检查当前目录' })
+    const turns: readonly TrajectoryTurnModel[] = [{ turn: 1, groups: [{
+      title: 'Step 1', cells: [{
+        index: 1, kind: 'tool', text: 'exec_command', previewMarkdown: '检查当前目录', inputDetail: raw,
+        timeSeconds: null,
+      }],
+    }] }]
+    const view = render(<TrajectoryTable turns={turns} {...FOLD_PROPS} />)
+    expect(view.container.textContent).toContain('检查当前目录')
+    expect(view.container.textContent).not.toContain('private')
+    fireEvent.click(screen.getByRole('row', { name: /exec_command/ }))
+    expect(screen.getByRole('complementary', { name: 'Event details' }).textContent).not.toContain('private')
+    fireEvent.click(screen.getByRole('tab', { name: 'Payload' }))
+    expect(screen.getByRole('complementary', { name: 'Event details' }).textContent).toContain('private')
+  })
+
   it('shows a muted placeholder for an assistant response containing only tool calls', () => {
     const turns: readonly TrajectoryTurnModel[] = [{
       turn: 1,

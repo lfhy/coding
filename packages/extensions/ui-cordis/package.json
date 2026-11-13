@@ -59,6 +59,7 @@
     "coding-client-ui-input-trigger": "workspace:^",
     "coding-client-ui-tool": "workspace:^",
     "coding-invariants": "workspace:^",
+    "coding-tools": "workspace:^",
     "@deepseek-ai/cordis": "workspace:^"
   },
   "devDependencies": {
@@ -73,6 +74,7 @@
     "coding-client-ui-slots": "workspace:^",
     "coding-client-ui-tool": "workspace:^",
     "coding-invariants": "workspace:^",
+    "coding-tools": "workspace:^",
     "@types/react": "~18.3.1",
     "@deepseek-ai/cordis": "workspace:^",
     "react": "^18.2.0"

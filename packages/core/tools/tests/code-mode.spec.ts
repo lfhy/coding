@@ -138,6 +138,27 @@ describe('mode-aware wire contribution', () => {
     expect(sdk?.text).toContain('`require` loads Node built-in modules only')
   })
 
+  it('preserves descriptions in nested call logs while excluding them from tool execution', async () => {
+    const { ctx, runtime, systemPrompt } = await setup({ mode: 'code' })
+    const calls = registerEcho(ctx)
+    const { agent, events } = fakeAgent()
+    const assembly = await systemPrompt.assemble()
+    expect(assembly.tools[0]?.parameters).toMatchObject({ properties: { display_description: { type: 'string' } } })
+    expect(assembly.sections.find(section => section.name === 'tools:sdk')?.text).toContain('display_description?: string;')
+    runtime.behavior = async (request) => {
+      await request.bindings[0]!.functions.echo!({ value: 'ok', display_description: '读取工作区' })
+      return { logs: [], value: 'done' }
+    }
+    const result = await runCode(ctx, 'return 1', { agent })
+    expect(result.isError).toBe(false)
+    expect(calls).toEqual([{ value: 'ok' }])
+    for (const event of events.filter(entry => entry.type === 'tool/code-dispatch-start' || entry.type === 'tool/code-dispatch')) {
+      expect(event.data).toMatchObject({ arguments: { value: 'ok', display_description: '读取工作区' } })
+    }
+    expect(events.filter(entry => entry.type === 'tool/code-dispatch-start')).toHaveLength(1)
+    expect(events.filter(entry => entry.type === 'tool/code-dispatch')).toHaveLength(1)
+  })
+
   it("mode 'code' states the run_code-only rule BEFORE the per-tool guidance that names each tool", async () => {
     const { ctx, systemPrompt } = await setup({ mode: 'code' })
     registerEcho(ctx)
@@ -184,7 +205,7 @@ describe('mode-aware wire contribution', () => {
     const assembly = await systemPrompt.assemble()
     const sdk = assembly.sections.find(section => section.name === 'tools:sdk')?.text
 
-    expect(sdk).toContain('deep_output: Record<string, JsonValue>;')
+    expect(sdk).toContain('display_description?: string;')
     expect(sdk).toContain('deep_output: string | null')
   })
 

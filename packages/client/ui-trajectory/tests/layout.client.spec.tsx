@@ -86,7 +86,7 @@ describe('deriveTrajectoryLayout', () => {
     const tool = turns[0]?.groups.flatMap(g => g.cells).find(c => c.kind === 'tool')
     expect(tool).toMatchObject({
       text: 'bash',
-      previewMarkdown: '{"command":"ls"}',
+      inputDetail: '{"command":"ls"}',
     })
     expect(tool?.timeSeconds).toBe(1.3)
   })
@@ -104,9 +104,20 @@ describe('deriveTrajectoryLayout', () => {
     expect(turns[0]?.groups[0]?.cells[0]).toMatchObject({
       kind: 'tool',
       text: 'bash',
-      previewMarkdown: '{"command":"pwd"}',
+      inputDetail: '{"command":"pwd"}',
       timeSeconds: null,
     })
+  })
+
+  it('projects operation descriptions for running calls and keeps original arguments inspectable', () => {
+    const argsRaw = JSON.stringify({ command: 'echo private', display_description: '检查当前目录' })
+    const turns = deriveTrajectoryLayout({
+      nodes: [], partial: null,
+      runningCalls: [{ callId: 'r2', name: 'exec_command', argsRaw, turn: 1, step: 1, time: 1_000, callView: null, subCalls: [] }],
+    })
+    const cell = turns[0]?.groups[0]?.cells[0]
+    expect(cell).toMatchObject({ text: 'exec_command', previewMarkdown: '检查当前目录', inputDetail: argsRaw })
+    expect(cell?.previewMarkdown).not.toContain('private')
   })
 
   it('appends a streaming partial without rebuilding unaffected finalized turns', () => {
@@ -514,7 +525,7 @@ describe('run_code sub-dispatch cells', () => {
     // Sequential indexes across the interleave; durations from the pair times.
     expect(cells.map(c => c.index)).toEqual([1, 2, 3, 4])
     expect(cells[2]).toMatchObject({
-      text: 'bash', previewMarkdown: '{"x":1}', timeSeconds: 1,
+      text: 'bash', inputDetail: '{"x":1}', timeSeconds: 1,
     })
     expect(cells[3]).toMatchObject({ timeSeconds: 0.5 })
   })
@@ -527,7 +538,7 @@ describe('run_code sub-dispatch cells', () => {
     const turns = deriveTrajectoryLayout({ nodes: withSubCalls([running]), partial: null, runningCalls: [] })
     const sub = turns[0]!.groups.flatMap(g => g.cells).find(c => c.kind === 'subtool')
     expect(sub).toMatchObject({
-      text: 'grep', previewMarkdown: '{"pattern":"x"}', timeSeconds: null,
+      text: 'grep', inputDetail: '{"pattern":"x"}', timeSeconds: null,
     })
   })
 

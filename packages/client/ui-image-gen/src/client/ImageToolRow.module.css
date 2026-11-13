@@ -1,4 +1,5 @@
 .root { display: flex; flex-direction: column; gap: 12px; width: min(100%, 480px); min-width: 0; padding: 12px 0; }
+.description { color: var(--dsw-alias-label-primary); font: var(--dsw-font-xs-strong-13); overflow-wrap: anywhere; }
 .status, .terminal { color: var(--dsw-alias-label-secondary); font: var(--dsw-font-xs-13); overflow-wrap: anywhere; }
 .terminal { padding: 12px 0; }
 .images, .result { display: flex; flex-direction: column; gap: 8px; min-width: 0; }

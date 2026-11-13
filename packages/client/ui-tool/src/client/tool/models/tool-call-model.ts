@@ -13,6 +13,7 @@ import type { ImageAttachmentRef } from 'coding-attachment'
 import { abbreviateHomePath } from 'coding-client-runtime/client'
 import type { ToolCallBlock, ToolResultNode } from 'coding-client-runtime/client'
 import { imageAttachmentsIn } from './tool-result-images.ts'
+import { toolDisplayDescription } from 'coding-tools/display-description'
 
 export type { ToolCallBlock } from 'coding-client-runtime/client'
 
@@ -39,8 +40,8 @@ export const VARIANT_TITLES: Record<ToolRowVariant, string> = {
  */
 const TOOL_VARIANTS: Record<string, ToolRowVariant> = {
   bash: 'bash',
-  // The PowerShell twin is a shell tool: the bash row family (icon, colors)
-  // with its own title from TOOL_TITLES, not the generic `others` row.
+  exec_command: 'bash',
+  // PowerShell 与 Bash 共用命令行视觉类别，保留各自标题。
   pwsh: 'bash',
   read: 'read',
   web_fetch: 'read',
@@ -49,6 +50,9 @@ const TOOL_VARIANTS: Record<string, ToolRowVariant> = {
   glob: 'search',
   write: 'write',
   edit: 'edit',
+  apply_patch: 'edit',
+  str_replace_editor: 'edit',
+  read_image: 'read',
   run_code: 'code',
   cordis_package_inspect: 'read',
   cordis_runtime_inspect: 'read',
@@ -61,8 +65,41 @@ const TOOL_VARIANTS: Record<string, ToolRowVariant> = {
   cordis_undefine: 'others',
 }
 
-/** Tool-owned titles that refine a generic row variant without replacing it. */
+/** 通用行的静态动作标题，不从工具参数或模型返回的标题拼接。 */
 const TOOL_TITLES: Record<string, string> = {
+  apply_patch: 'Apply patch',
+  str_replace_editor: 'Edit file',
+  read_image: 'Read image',
+  write_stdin: 'Background session',
+  update_plan: 'Update plan',
+  todo_write: 'Update plan',
+  skill: 'Load skill',
+  skill_read: 'Read skill',
+  context_compact: 'Compact context',
+  memory_list: 'List memory',
+  memory_read: 'Read memory',
+  memory_save: 'Save memory',
+  memory_update: 'Update memory',
+  memory_delete: 'Delete memory',
+  list_subagent_models: 'Browse models',
+  spawn_agent: 'Delegate task',
+  subagent: 'Delegate task',
+  subagent_fork: 'Delegate task',
+  followup_task: 'Send follow-up',
+  send_message: 'Message agent',
+  list_agents: 'List agents',
+  wait_agent: 'Wait for agents',
+  interrupt_agent: 'Stop agent',
+  report: 'Report result',
+  create_goal: 'Create goal',
+  get_goal: 'Read goal',
+  update_goal: 'Update goal',
+  job_output: 'Read job output',
+  job_list: 'List jobs',
+  job_kill: 'Stop job',
+  workflow: 'Run workflow',
+  ralph: 'Continue task',
+  validate_dsh_ui: 'Check layout',
   cordis_package_inspect: 'Inspect',
   cordis_runtime_inspect: 'Inspect',
   cordis_run: 'Run Cordis Plugin',
@@ -71,13 +108,24 @@ const TOOL_TITLES: Record<string, string> = {
   pwsh: 'Pwsh',
 }
 
+/** 仅为已知前缀指定动作类别；外部工具不把 wire 名当作界面文案。 */
+function titleFor(toolName: string): string | undefined {
+  return (Object.hasOwn(TOOL_TITLES, toolName) ? TOOL_TITLES[toolName] : undefined)
+    ?? (toolName.startsWith('browser_') ? 'Browser'
+      : toolName.startsWith('ppt_') ? 'Presentation'
+        : toolName.startsWith('computer_') ? 'Computer'
+          : toolName.startsWith('schedule_') ? 'Schedule'
+            : toolName.startsWith('mcp__') ? 'External tool'
+              : undefined)
+}
+
 /**
  * Classify a tool name into its row variant.
  * @param toolName - wire tool name.
  * @returns matching variant, others when unknown.
  */
 export function classifyTool(toolName: string): ToolRowVariant {
-  return TOOL_VARIANTS[toolName] ?? 'others'
+  return (Object.hasOwn(TOOL_VARIANTS, toolName) ? TOOL_VARIANTS[toolName] : undefined) ?? 'others'
 }
 
 /** Everything ToolRow needs, derived once from the frozen slice. */
@@ -85,6 +133,8 @@ export interface ToolRowModel {
   variant: ToolRowVariant
   title: string
   summary: string
+  /** 模型逐次填写的展示说明；与缺省的业务摘要区别开以供卡片确定优先级。 */
+  displayDescription: string | undefined
   /**
    * Filesystem path from args (`path` / `file_path`) when the row is a file
    * tool; absent for URL reads and non-file tools. The chat view resolves
@@ -154,6 +204,15 @@ const SUMMARY_KEYS: Record<ToolRowVariant, readonly string[]> = {
   others: [],
 }
 
+/** 委派和技能只显示短描述，不把完整任务或工具输入露出在折叠行。 */
+const TOOL_SUMMARY_KEYS: Record<string, readonly string[]> = {
+  spawn_agent: ['description'],
+  subagent: ['description'],
+  subagent_fork: ['description'],
+  skill: ['name'],
+  skill_read: ['name'],
+}
+
 /**
  * 去掉工作区根前缀（仅用于展示）。
  * @param text - 待缩短的路径。
@@ -184,20 +243,22 @@ export function labelSkillResourcePath(text: string): string {
   return text.split(`${INTERNAL_SKILL_ROOT}/`).join('内置 Skill ')
 }
 
-function deriveSummary(variant: ToolRowVariant, argsRaw: string): string {
+function deriveSummary(toolName: string, variant: ToolRowVariant, argsRaw: string): string {
   const parsed = parseArgs(argsRaw)
-  if (typeof parsed !== 'object' || parsed === null) return firstLine(argsRaw)
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return ''
   const args = parsed as Record<string, unknown>
   if (variant === 'search' && Array.isArray(args.queries)) {
     const queries = args.queries.filter((query): query is string => typeof query === 'string' && query !== '')
     if (queries.length > 0) return queries.map(firstLine).join(', ')
   }
-  const picked = pickString(args, SUMMARY_KEYS[variant])
+  const keys = Object.hasOwn(TOOL_SUMMARY_KEYS, toolName) ? TOOL_SUMMARY_KEYS[toolName] : undefined
+  const picked = pickString(args, keys ?? SUMMARY_KEYS[variant])
   if (picked !== undefined) return firstLine(picked)
-  for (const v of Object.values(args)) {
-    if (typeof v === 'string' && v !== '') return firstLine(v)
+  if (toolName.startsWith('cordis_')) {
+    const legacy = pickString(args, ['id', 'what', 'name'])
+    if (legacy !== undefined) return firstLine(legacy)
   }
-  return firstLine(argsRaw)
+  return ''
 }
 
 /** Path keys only — never `url` (web_fetch lands on the read variant). */
@@ -242,24 +303,20 @@ export function toolRowModel(toolName: string, block: ToolCallBlock, cwd?: strin
   const state: ToolRowState = !done ? 'running'
     : block.error?.code === 'interrupted' ? 'stopped'
       : block.isError ? 'error' : 'ok'
-  const base = argsRaw === ''
-    ? block.callId
-    : abbreviateHomePath(relativizeToCwd(labelSkillResourcePath(deriveSummary(variant, argsRaw)), cwd), home)
-  const toolTitle = TOOL_TITLES[toolName]
-  // Others keeps the static "Tool call" title (figma literal); the real tool
-  // name rides the mutable summary slot unless the tool owns a specific title.
-  const summary = variant === 'others' && toolName !== '' && toolTitle === undefined
-    ? `${toolName} · ${base}`
-    : base
-  // The empty string is "no text" for both derived result fields: a settled
-  // call with blank content has nothing to expand, and a blank first line
-  // would erase the collapsed error row's summary slot.
+  const displayDescription = toolDisplayDescription(parseArgs(argsRaw))
+  const legacy = argsRaw === '' ? '' : abbreviateHomePath(
+    relativizeToCwd(labelSkillResourcePath(deriveSummary(toolName, variant, argsRaw)), cwd), home,
+  )
+  const toolTitle = titleFor(toolName)
+  const summary = displayDescription ?? legacy
+  // 空摘要只显示静态动作；原始参数仍保留在展开区，不能落到标题上。
   const output = done ? (resultText(block) || null) : null
   const errorSummary = state === 'error' && output !== null ? firstLine(output) : null
   return {
     variant,
     title: toolTitle ?? VARIANT_TITLES[variant],
     summary,
+    displayDescription,
     filePath: deriveFilePath(variant, argsRaw),
     body: deriveBody(variant, argsRaw),
     output,

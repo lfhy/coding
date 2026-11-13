@@ -69,6 +69,10 @@ Delete a whole memory file, or just one section of it. Only do this when the use
     "section": {
       "type": "string",
       "description": "Delete only this section heading; omit to delete the whole file."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   },
   "required": [
@@ -86,7 +90,12 @@ List this project's memory files with their titles, sizes, and last-modified tim
 ```json
 {
   "type": "object",
-  "properties": {}
+  "properties": {
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
+    }
+  }
 }
 ```
 
@@ -103,6 +112,10 @@ Read one file of this project's memory in full. The session baseline already car
     "file": {
       "type": "string",
       "description": "Memory file name ending in .md, as reported by memory_list."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   },
   "required": [
@@ -132,6 +145,10 @@ Append one entry to this project's memory. Memory is this project's own notes un
     "section": {
       "type": "string",
       "description": "Section heading inside the file (default `要点`)."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   },
   "required": [
@@ -165,6 +182,10 @@ Replace exactly one existing entry in this project's memory. Use it when an entr
     "section": {
       "type": "string",
       "description": "Only match inside this section heading; omit to match across the whole file."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   },
   "required": [
@@ -240,6 +261,10 @@ Ask the user a concise question when you need confirmation, a choice, or missing
           "question"
         ]
       }
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   },
   "required": [
@@ -316,6 +341,10 @@ Run several element actions from one observation in a single call, for example f
           }
         ]
       }
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   },
   "required": [
@@ -342,6 +371,10 @@ Click an element using its ref and revision from the current browser observation
     "revision": {
       "type": "integer",
       "description": "Positive revision paired with the current observation ref."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   },
   "required": [
@@ -360,7 +393,12 @@ Close the session browser only when requested; the returned observation is no lo
 ```json
 {
   "type": "object",
-  "properties": {}
+  "properties": {
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
+    }
+  }
 }
 ```
 
@@ -385,6 +423,10 @@ Fill an element using its ref and revision from the current browser observation;
     "text": {
       "type": "string",
       "description": "Text to enter, at most 2000 characters."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   },
   "required": [
@@ -408,6 +450,10 @@ Open an absolute HTTP(S) or local file:/// URL. Load the browser-use skill first
     "url": {
       "type": "string",
       "description": "Plain absolute HTTP(S) address (https://example.com/) or local file:/// URL. Do not pass a Markdown link like [label](https://example.com/). No credentials or remote file hosts; at most 2048 characters."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   },
   "required": [
@@ -425,7 +471,12 @@ Capture and persist a PNG of the active page; also return its current observatio
 ```json
 {
   "type": "object",
-  "properties": {}
+  "properties": {
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
+    }
+  }
 }
 ```
 
@@ -450,6 +501,10 @@ Scroll the active page, then return a fresh observation with refs and revision.
     "pixels": {
       "type": "integer",
       "description": "Requested wheel delta, 1..2000 pixels; capped at one viewport height per call."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   },
   "required": [
@@ -468,7 +523,12 @@ Read the current page. Load the browser-use skill first when available; use an o
 ```json
 {
   "type": "object",
-  "properties": {}
+  "properties": {
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
+    }
+  }
 }
 ```
 
@@ -496,6 +556,10 @@ Set the selected files of a file input listed in the current observation, withou
       "items": {
         "type": "string"
       }
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   },
   "required": [
@@ -523,6 +587,10 @@ Change the CSS viewport of the session browser, for example 390x844 to check a p
     "height": {
       "type": "integer",
       "description": "CSS viewport height in pixels, 240..1400."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   },
   "required": [
@@ -547,7 +615,12 @@ Force all persistent login cookies in the agent browser to be written to the on-
 ```json
 {
   "type": "object",
-  "properties": {}
+  "properties": {
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
+    }
+  }
 }
 ```
 
@@ -564,6 +637,10 @@ Check the current page for a human-verification (CAPTCHA) challenge — reCAPTCH
     "space": {
       "type": "string",
       "description": "Optional. Uses this session’s pages; other sessions’ pages are unavailable. Leave blank unless resuming an older call."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   }
 }
@@ -591,6 +668,10 @@ Issue a raw CDP command on the page target, e.g. cdp("Page.handleJavaScriptDialo
     "space": {
       "type": "string",
       "description": "Optional. Uses this session’s pages; other sessions’ pages are unavailable. Leave blank unless resuming an older call."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   },
   "required": [
@@ -620,6 +701,10 @@ Check (tick) or uncheck a checkbox/radio element. Does nothing if already in the
     "space": {
       "type": "string",
       "description": "Optional. Uses this session’s pages; other sessions’ pages are unavailable. Leave blank unless resuming an older call."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   },
   "required": [
@@ -645,6 +730,10 @@ Escape hatch: run an arbitrary `ego-browser nodejs` heredoc script verbatim (fac
     "tab": {
       "type": "string",
       "description": "Optional tab targetId (from browser_tabs list). Omit to use the tab Chrome reports as active, falling back to the first real page."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   },
   "required": [
@@ -686,6 +775,10 @@ Click an element in the current page. Target with a CSS selector, an xpath=.../l
     "space": {
       "type": "string",
       "description": "Optional. Uses this session’s pages; other sessions’ pages are unavailable. Leave blank unless resuming an older call."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   }
 }
@@ -712,6 +805,10 @@ Accept or dismiss a native browser dialog (alert/confirm/prompt), optionally sup
     "space": {
       "type": "string",
       "description": "Optional. Uses this session’s pages; other sessions’ pages are unavailable. Leave blank unless resuming an older call."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   }
 }
@@ -726,7 +823,12 @@ Preflight the ego-browser environment: vendored runtime present, Chrome/Edge/Bra
 ```json
 {
   "type": "object",
-  "properties": {}
+  "properties": {
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
+    }
+  }
 }
 ```
 
@@ -763,6 +865,10 @@ Wait for a file download triggered by the current action, then return its saved 
     "space": {
       "type": "string",
       "description": "Optional. Uses this session’s pages; other sessions’ pages are unavailable. Leave blank unless resuming an older call."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   }
 }
@@ -796,6 +902,10 @@ Drag an element to a target (Playwright dragTo) or drag the pointer through coor
     "space": {
       "type": "string",
       "description": "Optional. Uses this session’s pages; other sessions’ pages are unavailable. Leave blank unless resuming an older call."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   }
 }
@@ -822,6 +932,10 @@ Type text into an input field. Target with a CSS selector, xpath=..., loc=..., o
     "space": {
       "type": "string",
       "description": "Optional. Uses this session’s pages; other sessions’ pages are unavailable. Leave blank unless resuming an older call."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   },
   "required": [
@@ -844,6 +958,10 @@ Query the built-in ego-browser tool guide. `topic` may be a category (overview/t
     "topic": {
       "type": "string",
       "description": "Category or tool name to look up; omitted/all returns the overview index."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   }
 }
@@ -874,6 +992,10 @@ Move the pointer over an element (CSS selector / ref) or to viewport coordinates
     "space": {
       "type": "string",
       "description": "Optional. Uses this session’s pages; other sessions’ pages are unavailable. Leave blank unless resuming an older call."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   }
 }
@@ -917,6 +1039,10 @@ Make an HTTP request and return status + body. Default runs in the agent page's 
     "space": {
       "type": "string",
       "description": "Optional. Uses this session’s pages; other sessions’ pages are unavailable. Leave blank unless resuming an older call."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   },
   "required": [
@@ -942,6 +1068,10 @@ Evaluate a JavaScript expression in the current page and return its JSON-seriali
     "space": {
       "type": "string",
       "description": "Optional. Uses this session’s pages; other sessions’ pages are unavailable. Leave blank unless resuming an older call."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   },
   "required": [
@@ -971,6 +1101,10 @@ Press a keyboard key or shortcut combination on the current page, e.g. 'Enter', 
     "space": {
       "type": "string",
       "description": "Optional. Uses this session’s pages; other sessions’ pages are unavailable. Leave blank unless resuming an older call."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   }
 }
@@ -1004,6 +1138,10 @@ Import login cookies from the system browser into the agent browser, so sites op
     "dryRun": {
       "type": "boolean",
       "description": "true = only report what would be imported (domains + cookie counts), write nothing."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   }
 }
@@ -1038,6 +1176,10 @@ Open a URL in the task space, or switch to the existing tab for it. Always prefe
     "space": {
       "type": "string",
       "description": "Optional. Uses this session’s pages; other sessions’ pages are unavailable. Leave blank unless resuming an older call."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   },
   "required": [
@@ -1059,6 +1201,10 @@ Return the current page info: url, title, viewport size (w, h), scroll offsets (
     "space": {
       "type": "string",
       "description": "Optional. Uses this session’s pages; other sessions’ pages are unavailable. Leave blank unless resuming an older call."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   }
 }
@@ -1089,6 +1235,10 @@ Read a single element (by selector): its text, HTML, input value, an attribute, 
     "space": {
       "type": "string",
       "description": "Optional. Uses this session’s pages; other sessions’ pages are unavailable. Leave blank unless resuming an older call."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   },
   "required": [
@@ -1122,6 +1272,10 @@ Capture a screenshot of the current page (or of a single element if selector is 
     "space": {
       "type": "string",
       "description": "Optional. Uses this session’s pages; other sessions’ pages are unavailable. Leave blank unless resuming an older call."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   }
 }
@@ -1148,6 +1302,10 @@ Run an arbitrary `ego-browser nodejs` heredoc script in ONE invocation (same run
     "tab": {
       "type": "string",
       "description": "Optional tab targetId (from browser_tabs list). Omit to use the tab Chrome reports as active, falling back to the first real page."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   },
   "required": [
@@ -1181,6 +1339,10 @@ Scroll the page: by pixel deltas (wheel), or bring an element into view (scrollI
     "space": {
       "type": "string",
       "description": "Optional. Uses this session’s pages; other sessions’ pages are unavailable. Leave blank unless resuming an older call."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   }
 }
@@ -1206,6 +1368,10 @@ Choose an option in a <select> dropdown by value, label, or index (a single valu
     "space": {
       "type": "string",
       "description": "Optional. Uses this session’s pages; other sessions’ pages are unavailable. Leave blank unless resuming an older call."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   },
   "required": [
@@ -1231,6 +1397,10 @@ Read the current page as text: the full-page semantic tree annotated with [ref=N
     "scope": {
       "type": "string",
       "description": "snapshot scope: 'full_page' (default) or 'only_within_viewport'."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   }
 }
@@ -1253,6 +1423,10 @@ Close this session’s browser pages. Keep them open when you finish a task so y
     "keep": {
       "type": "boolean",
       "description": "Keep the live page open (default false: close it)."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   },
   "required": [
@@ -1274,6 +1448,10 @@ Open or reuse this session’s browser pages. Other sessions’ pages are not av
     "name": {
       "type": "string",
       "description": "Use \"default\" to select this session’s browser pages; other sessions’ pages are unavailable."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   },
   "required": [
@@ -1291,7 +1469,12 @@ Check whether the ego-browser CLI is usable (runs `ego-browser --status`). Use t
 ```json
 {
   "type": "object",
-  "properties": {}
+  "properties": {
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
+    }
+  }
 }
 ```
 
@@ -1320,6 +1503,10 @@ List, switch, open, or close agent-browser tabs. Use it to keep tab hygiene: lis
     "space": {
       "type": "string",
       "description": "Optional. Uses this session’s pages; other sessions’ pages are unavailable. Leave blank unless resuming an older call."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   }
 }
@@ -1346,6 +1533,10 @@ Set files on a file <input> element (path-driven). Use to upload a dataset/attac
     "space": {
       "type": "string",
       "description": "Optional. Uses this session’s pages; other sessions’ pages are unavailable. Leave blank unless resuming an older call."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   },
   "required": [
@@ -1368,6 +1559,10 @@ Pause for a fixed number of milliseconds (e.g. for animations or partial loads).
     "ms": {
       "type": "number",
       "description": "Milliseconds to wait."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   },
   "required": [
@@ -1405,6 +1600,10 @@ Hand the page to the human for a CAPTCHA / login / 2FA / confirmation, then wait
     "space": {
       "type": "string",
       "description": "Optional. Uses this session’s pages; other sessions’ pages are unavailable. Leave blank unless resuming an older call."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   }
 }
@@ -1439,6 +1638,10 @@ Wait for a network response matching a URL/glob/regex and return it. Optionally 
     "space": {
       "type": "string",
       "description": "Optional. Uses this session’s pages; other sessions’ pages are unavailable. Leave blank unless resuming an older call."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   },
   "required": [
@@ -1472,6 +1675,10 @@ Wait until an element matching a CSS selector appears (state=visible, default) o
     "space": {
       "type": "string",
       "description": "Optional. Uses this session’s pages; other sessions’ pages are unavailable. Leave blank unless resuming an older call."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   },
   "required": [
@@ -1501,6 +1708,10 @@ Wait until the page navigates to a URL matching a substring / glob / regex. Use 
     "space": {
       "type": "string",
       "description": "Optional. Uses this session’s pages; other sessions’ pages are unavailable. Leave blank unless resuming an older call."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   },
   "required": [
@@ -1574,6 +1785,10 @@ Click an observed element, preferring AXPress without foreground activation, or 
     "confirmationToken": {
       "type": "string",
       "description": "One-use token from computer_confirm for this exact action."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   },
   "required": [
@@ -1925,6 +2140,10 @@ Request just-in-time approval for one exact sensitive action. Call immediately b
     },
     "dataSummary": {
       "type": "string"
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   },
   "required": [
@@ -1975,6 +2194,10 @@ Drag by routing mouse events only to the selected app process between two points
     "confirmationToken": {
       "type": "string",
       "description": "One-use token from computer_confirm for this exact action."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   },
   "required": [
@@ -1996,7 +2219,12 @@ List bounded running user-facing macOS applications. Use this only when the task
 ```json
 {
   "type": "object",
-  "properties": {}
+  "properties": {
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
+    }
+  }
 }
 ```
 
@@ -2040,6 +2268,10 @@ Read a fresh Accessibility observation for one exact running app. Element indexe
     "full": {
       "type": "boolean",
       "description": "Return a full tree instead of a diff from the previous observation."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   },
   "required": [
@@ -2080,6 +2312,10 @@ Perform one Accessibility action advertised by an observed element. Supply eleme
     "confirmationToken": {
       "type": "string",
       "description": "One-use token from computer_confirm for this exact action."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   },
   "required": [
@@ -2186,6 +2422,10 @@ Press one validated key or chord by routing it to the selected app process. The 
     "confirmationToken": {
       "type": "string",
       "description": "One-use token from computer_confirm for this exact action."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   },
   "required": [
@@ -2250,6 +2490,10 @@ Scroll by routing a wheel event only to the selected app process at an observed 
     "confirmationToken": {
       "type": "string",
       "description": "One-use token from computer_confirm for this exact action."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   },
   "required": [
@@ -2291,6 +2535,10 @@ Set one observed editable Accessibility value without using the clipboard. Suppl
     "confirmationToken": {
       "type": "string",
       "description": "One-use token from computer_confirm for this exact action."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   },
   "required": [
@@ -2323,6 +2571,10 @@ Type Unicode into the currently focused control without reading or replacing the
     "confirmationToken": {
       "type": "string",
       "description": "One-use token from computer_confirm for this exact action."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   },
   "required": [
@@ -2362,6 +2614,10 @@ Wait for one bounded Accessibility condition and return fresh state without muta
     },
     "timeoutMs": {
       "type": "integer"
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   },
   "required": [
@@ -2394,6 +2650,10 @@ Execute a TypeScript program against the available tools. Takes two required arg
     "description": {
       "type": "string",
       "description": "Clear, concise description of what this program does in active voice, 5-10 words (shown in the UI). Examples: \"Count TODO markers across packages\"; \"Read failing test and its fixture\"; \"Rename config key in every cordis.yml\"."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   },
   "required": [
@@ -2422,6 +2682,10 @@ Use only in plan mode. Present your plan for the user's review and, on approval,
     "plan": {
       "type": "string",
       "description": "The complete plan, as markdown, starting with a # heading that names it."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   },
   "required": [
@@ -2469,6 +2733,10 @@ Execute a bash command (`bash -c`) and return its stdout/stderr. Each call runs 
     "run_in_background": {
       "type": "boolean",
       "description": "Run in the background and return a job id immediately (collect with job_output, stop with job_kill). No timeout applies."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   },
   "required": [
@@ -2513,6 +2781,10 @@ Execute a PowerShell command (`pwsh -Command`) and return its stdout/stderr. Eac
     "run_in_background": {
       "type": "boolean",
       "description": "Run in the background and return a job id immediately (collect with job_output, stop with job_kill). No timeout applies."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   },
   "required": [
@@ -2603,6 +2875,10 @@ Define an immutable Cordis Package. For a new Plugin, use kind:"new" and provide
           "description": "Plain JavaScript function body that returns the browser Client-half Cordis Plugin."
         }
       }
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   },
   "required": [
@@ -2623,7 +2899,12 @@ List every Cordis Inspect Provider currently known to the Host, including local 
 ```json
 {
   "type": "object",
-  "properties": {}
+  "properties": {
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
+    }
+  }
 }
 ```
 
@@ -2655,6 +2936,10 @@ Run a read-only query explicitly declared by an Inspect Provider. platform, prov
     },
     "input": {
       "description": "Optional query input; it must satisfy the method input schema."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   },
   "required": [
@@ -2682,6 +2967,10 @@ Inspect dynamic Cordis objects owned by the current Session at increasing levels
     "packageId": {
       "type": "string",
       "description": "Exact immutable Package ID owned by pluginId; when specified, source and diagnostics are returned."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   }
 }
@@ -2712,6 +3001,10 @@ Activate one exact Package of a dynamic Plugin. Use mode:"run" for the first act
         "run",
         "update"
       ]
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   },
   "required": [
@@ -2735,6 +3028,10 @@ Stop the current Run of a dynamic Plugin and cancel unfinished approval or activ
     "pluginId": {
       "type": "string",
       "description": "Stable dynamic Plugin ID to stop."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   },
   "required": [
@@ -2756,6 +3053,10 @@ Permanently remove a dynamic Plugin owned by the current Session. If it is runni
     "pluginId": {
       "type": "string",
       "description": "Stable dynamic Plugin ID to remove permanently."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   },
   "required": [
@@ -2783,6 +3084,10 @@ Run commands in a persistent bash shell. State, including the current directory 
     "command": {
       "type": "string",
       "description": "The bash command to run. Relative path is preferred in the command."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   },
   "required": [
@@ -2810,6 +3115,10 @@ Run commands in a persistent PowerShell shell. State, including the current dire
     "command": {
       "type": "string",
       "description": "The PowerShell command to run. Relative path is preferred in the command."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   },
   "required": [
@@ -2879,6 +3188,10 @@ Notes for using the `str_replace` command:
       "items": {
         "type": "integer"
       }
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   },
   "required": [
@@ -2919,6 +3232,10 @@ Edit an existing UTF-8 text file by replacing literal text.
     "replace_all": {
       "type": "boolean",
       "description": "Replace all matches. Defaults to false; when false, old_string must appear exactly once."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   },
   "required": [
@@ -2950,6 +3267,10 @@ Read a UTF-8 text file and return line-numbered content.
     "limit": {
       "type": "number",
       "description": "Maximum number of lines to return in this call (up to 10000). Defaults to 10000. For a large file, set offset to the first line you need and use the continuation offset from the footer."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   },
   "required": [
@@ -2971,6 +3292,10 @@ Read a PNG/JPEG/WebP/GIF file and return the image itself. Requires the current 
     "file_path": {
       "type": "string",
       "description": "Path to the image file, resolved by the filesystem backend."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   },
   "required": [
@@ -2996,6 +3321,10 @@ Create or fully replace a UTF-8 text file.
     "content": {
       "type": "string",
       "description": "Full UTF-8 text content to write."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   },
   "required": [
@@ -3024,6 +3353,10 @@ Apply a Codex-style patch to workspace files. The input must be a string contain
     "input": {
       "type": "string",
       "description": "The complete Codex patch text; pass it as one string."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   },
   "required": [
@@ -3055,6 +3388,10 @@ Find files whose paths match a glob pattern. Returns matching file paths — nev
     "path": {
       "type": "string",
       "description": "Directory to search in. Defaults to the session workspace; a relative path resolves against it."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   },
   "required": [
@@ -3084,6 +3421,10 @@ Search file contents with a ripgrep regular expression. Returns matching lines w
     "include": {
       "type": "string",
       "description": "One glob filter for which files to search (e.g. \"*.ts\", \"*.{js,jsx}\"). Not a list; negation is not supported."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   },
   "required": [
@@ -3111,6 +3452,10 @@ Close one persistent terminal and wait until its captured owned process tree is 
     "sessionId": {
       "type": "string",
       "description": "Terminal session id."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   },
   "required": [
@@ -3128,7 +3473,12 @@ List persistent terminal sessions owned by the current agent.
 ```json
 {
   "type": "object",
-  "properties": {}
+  "properties": {
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
+    }
+  }
 }
 ```
 
@@ -3153,6 +3503,10 @@ Create a persistent, owner-isolated terminal session from a registered backend t
     "cwd": {
       "type": "string",
       "description": "Initial working directory. Defaults to the deployment workspace root."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   },
   "required": [
@@ -3182,6 +3536,10 @@ Read a bounded page of retained output from a persistent terminal without sendin
     "count": {
       "type": "number",
       "description": "Requested line count (default 500; backend caps apply)."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   },
   "required": [
@@ -3215,6 +3573,10 @@ Send text to a persistent terminal. By default Enter is submitted and the call w
     "run_in_background": {
       "type": "boolean",
       "description": "Return a job id immediately; collect with job_output or stop with job_kill."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   },
   "required": [
@@ -3248,6 +3610,10 @@ Send an allowed signal to the current foreground process group of a persistent t
         "SIGTSTP",
         "SIGHUP"
       ]
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   },
   "required": [
@@ -3280,6 +3646,10 @@ Create one persisted same-session completion goal when the current direct human 
     "max_goal_rounds": {
       "type": "number",
       "description": "Optional positive safe-integer limit on automatic continuation rounds."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   },
   "required": [
@@ -3297,7 +3667,12 @@ Read the current same-session goal, including its exact id/revision, objective, 
 ```json
 {
   "type": "object",
-  "properties": {}
+  "properties": {
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
+    }
+  }
 }
 ```
 
@@ -3341,6 +3716,10 @@ Update the exact current goal revision. edit, pause, and resume require a direct
     "blocked_reason": {
       "type": "string",
       "description": "Concrete blocking condition; required only with action blocked."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   },
   "required": [
@@ -3366,7 +3745,12 @@ Read the current session canvas node summary, including image IDs usable with ed
 ```json
 {
   "type": "object",
-  "properties": {}
+  "properties": {
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
+    }
+  }
 }
 ```
 
@@ -3395,6 +3779,10 @@ Edit an image in this session’s gallery using a text prompt.
     "resolution": {
       "type": "string",
       "description": "Output resolution tier \"1K\", \"2K\", or \"4K\"; requires aspectRatio. Omit to use the smallest tier of the chosen ratio."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   },
   "required": [
@@ -3425,6 +3813,10 @@ Generate one image and save it to this session’s gallery. Pass aspectRatio for
     "resolution": {
       "type": "string",
       "description": "Output resolution tier \"1K\", \"2K\", or \"4K\"; requires aspectRatio. Omit to use the smallest tier of the chosen ratio."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   },
   "required": [
@@ -3456,6 +3848,10 @@ Generate up to 10 images; each item succeeds or fails independently.
     "resolution": {
       "type": "string",
       "description": "Output resolution tier \"1K\", \"2K\", or \"4K\"; requires aspectRatio. Omit to use the smallest tier of the chosen ratio."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   },
   "required": [
@@ -3487,6 +3883,10 @@ Copy an image from this session gallery into the open presentation project. Pass
     "dir": {
       "type": "string",
       "description": "Workspace-relative project directory; omit for the open project."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   },
   "required": [
@@ -3512,6 +3912,10 @@ Run the deterministic layout checks before exporting: elements outside the canva
     "ai": {
       "type": "boolean",
       "description": "Ask the session model for layout advice on top of the rule checks."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   }
 }
@@ -3553,6 +3957,10 @@ Create an editable presentation and focus it in the PPT workbench. Without size 
         "forest",
         "inference"
       ]
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   },
   "required": [
@@ -3582,6 +3990,10 @@ Create a separate editable presentation copy from a saved full-deck user templat
     "dir": {
       "type": "string",
       "description": "Workspace-relative project directory; omit to derive it from the title or template name."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   },
   "required": [
@@ -3607,6 +4019,10 @@ Permanently delete a saved template only when the user explicitly asks. First ca
     "name": {
       "type": "string",
       "description": "Exact current name confirmed with ppt_templates."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   },
   "required": [
@@ -3669,6 +4085,10 @@ Canvas coordinates are base pixels: 1280x720 for 16:9 and 960x720 for 4:3, origi
     "base_revision": {
       "type": "number",
       "description": "Revision the edit was planned against."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   },
   "required": [
@@ -3702,6 +4122,10 @@ Export the current revision as a .pptx file under the project directory (export/
         "pptx",
         "pdf"
       ]
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   }
 }
@@ -3728,6 +4152,10 @@ Import an existing workspace .pptx or registered local upload into a project so 
     "title": {
       "type": "string",
       "description": "Deck title; defaults to the file name."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   },
   "required": [
@@ -3765,6 +4193,10 @@ Read a bounded source-slide XML and linked-chart excerpt for repairing a .pptx i
     "limit": {
       "type": "integer",
       "description": "Maximum characters in this excerpt; defaults to 8000, maximum 16000."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   },
   "required": [
@@ -3792,6 +4224,10 @@ Extract editable layout, colors and typography from a workspace .pptx or registe
     "name": {
       "type": "string",
       "description": "Template name; omit to use the source file name."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   },
   "required": [
@@ -3813,6 +4249,10 @@ Open an existing presentation project in the PPT workbench and return its summar
     "dir": {
       "type": "string",
       "description": "Workspace-relative project directory."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   },
   "required": [
@@ -3842,6 +4282,10 @@ Import a workspace .pptx or registered local upload into a focused editable draf
     "dir": {
       "type": "string",
       "description": "Workspace-relative draft project directory; defaults to the source file name."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   },
   "required": [
@@ -3863,6 +4307,10 @@ Read the full page and element data of a project so you can plan edits. Reading 
     "dir": {
       "type": "string",
       "description": "Workspace-relative project directory; omit for the open project."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   }
 }
@@ -3885,6 +4333,10 @@ Step the presentation forward again after ppt_undo.
     "steps": {
       "type": "number",
       "description": "How many steps to go forward (1–20, default 1)."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   }
 }
@@ -3907,6 +4359,10 @@ Rename one saved full-deck template in the current user's library. First call pp
     "name": {
       "type": "string",
       "description": "New non-empty template name."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   },
   "required": [
@@ -3936,6 +4392,10 @@ Render pages to PNG and show them in the Agent browser panel on the right. Each 
       "items": {
         "type": "number"
       }
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   }
 }
@@ -3958,6 +4418,10 @@ Persist the current or specified editable project, including pages and media, as
     "dir": {
       "type": "string",
       "description": "Workspace-relative source project directory; omit for the open project."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   },
   "required": [
@@ -3975,7 +4439,12 @@ List saved full-deck user presentation templates and their ids, page counts and 
 ```json
 {
   "type": "object",
-  "properties": {}
+  "properties": {
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
+    }
+  }
 }
 ```
 
@@ -3996,6 +4465,10 @@ Step the presentation back through its edit history. Each edit call is one step 
     "steps": {
       "type": "number",
       "description": "How many steps to go back (1–20, default 1)."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   }
 }
@@ -4056,6 +4529,10 @@ Create one reminder in the current session. Supply a non-empty prompt and exactl
         }
       ],
       "description": "Absolute target as strict offset RFC 3339 or local date/time with an explicit IANA zone."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   },
   "required": [
@@ -4077,6 +4554,10 @@ Delete one active reminder in the current session by the exact id returned by sc
     "id": {
       "type": "string",
       "description": "Exact session-local schedule id."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   },
   "required": [
@@ -4094,7 +4575,12 @@ List every active reminder in the current session in creation order, including i
 ```json
 {
   "type": "object",
-  "properties": {}
+  "properties": {
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
+    }
+  }
 }
 ```
 
@@ -4117,6 +4603,10 @@ Replace older conversation history with a structured checkpoint to free context.
     "focus": {
       "type": "string",
       "description": "What the work continuing after the checkpoint needs preserved: the concrete task, the decisions and constraints that still apply, and the files or identifiers that matter. Omit only when the whole history is equally relevant. At most 2000 characters."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   }
 }
@@ -4159,6 +4649,10 @@ Query a language server for precise code navigation. operation is one of goToDef
     "character": {
       "type": "number",
       "description": "One-based UTF-16 column of the cursor."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   },
   "required": [
@@ -4193,6 +4687,10 @@ Run a foreground fresh-agent Ralph loop toward one immutable objective. Use only
     "maxRounds": {
       "type": "number",
       "description": "Optional positive safe-integer round cap, bounded by the deployment ceiling."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   },
   "required": [
@@ -4220,6 +4718,10 @@ Load the full instructions for an available skill. Call this with the exact skil
     "name": {
       "type": "string",
       "description": "The exact skill name from the available skills list."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   },
   "required": [
@@ -4245,6 +4747,10 @@ Read a file bundled with a skill (examples, references, recipes, assets). The pa
     "path": {
       "type": "string",
       "description": "File path relative to the skill resource root, e.g. \"examples/index.md\"."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   },
   "required": [
@@ -4283,6 +4789,10 @@ Read one full unabridged event and optional neighboring raw-event summaries from
     "after": {
       "type": "integer",
       "description": "Number of following raw events to summarize. Omit for none."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   },
   "required": [
@@ -4343,6 +4853,10 @@ Search prior events in one authorized session; the current session excludes the 
           "log-only"
         ]
       }
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   },
   "required": [
@@ -4368,6 +4882,10 @@ Read every direct replacement and relationship to a cited source event for one e
     "seq": {
       "type": "integer",
       "description": "Target event sequence number."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   },
   "required": [
@@ -4461,6 +4979,10 @@ Search prior sessions in the caller workspace and return the strongest matching 
           "log-only"
         ]
       }
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   },
   "required": [
@@ -4482,6 +5004,10 @@ Read the authorized session lineage around one session, including complete visib
     "session_id": {
       "type": "string",
       "description": "Target session id. Omit for the current session."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   }
 }
@@ -4522,6 +5048,10 @@ Delegate a self-contained task to a subagent (a separate agent that works in its
     "run_in_background": {
       "type": "boolean",
       "description": "Whether to run as a background job and return its id. Defaults to false; collect with job_output or stop with job_kill."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   },
   "required": [
@@ -4554,6 +5084,10 @@ Send a follow-up task to a background subagent by its subagent id. The message i
     "message": {
       "type": "string",
       "description": "The message to deliver to the subagent."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   },
   "required": [
@@ -4576,6 +5110,10 @@ Request cancellation of a background agent's current turn by its agent id. The t
     "agent_id": {
       "type": "string",
       "description": "The agent id of the running agent to interrupt."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   },
   "required": [
@@ -4601,6 +5139,10 @@ List your continuable background subagents by durable id and label. Use it to re
         "children",
         "descendants"
       ]
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   }
 }
@@ -4623,6 +5165,10 @@ Send a message to a background subagent by its subagent id. The message is inser
     "message": {
       "type": "string",
       "description": "The message to deliver to the subagent."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   },
   "required": [
@@ -4645,6 +5191,10 @@ Wait for a mailbox update from any live agent: a queued message, a report, or a 
     "timeout_ms": {
       "type": "integer",
       "description": "Maximum time to wait in milliseconds before reporting a timeout. Defaults to 30000; values below 10000 are raised to that minimum and values above 3600000 are rejected."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   }
 }
@@ -4669,6 +5219,10 @@ Report selected content to the agent that started you. Call this once before you
     "output": {
       "type": "string",
       "description": "Actionable content for your parent; summarize conclusions and reference relevant shared paths."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   },
   "required": [
@@ -4700,6 +5254,10 @@ Request cancellation of a running background job by job id. Returns immediately;
     "reason": {
       "type": "string",
       "description": "Optional short reason, recorded in the log and forwarded to the job."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   },
   "required": [
@@ -4717,7 +5275,12 @@ List your background jobs (running and finished) with their ids, kinds, and stat
 ```json
 {
   "type": "object",
-  "properties": {}
+  "properties": {
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
+    }
+  }
 }
 ```
 
@@ -4742,6 +5305,10 @@ Read a background job. Stream jobs return only output since the previous read; f
     "timeout_ms": {
       "type": "number",
       "description": "Max wait in milliseconds (only meaningful with wait: true). Defaults to the configured wait timeout; capped by the configured maximum."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   },
   "required": [
@@ -4771,6 +5338,10 @@ Read the output of a background session, wait for more, and write to it. An empt
     "yield_time_ms": {
       "type": "number",
       "description": "How long to wait for output before returning. Defaults to 30000 ms and is capped at 600000 ms."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   },
   "required": [
@@ -4802,6 +5373,10 @@ Send a durable follow-up task to another Team member and start a turn when neede
     "message": {
       "type": "string",
       "description": "Self-contained message for the target."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   },
   "required": [
@@ -4824,6 +5399,10 @@ Interrupt one teammate's current turn while preserving its pending inbox. Team L
     "target": {
       "type": "string",
       "description": "Teammate name."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   },
   "required": [
@@ -4841,7 +5420,12 @@ List the Lead and every durable teammate with current runtime status.
 ```json
 {
   "type": "object",
-  "properties": {}
+  "properties": {
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
+    }
+  }
 }
 ```
 
@@ -4862,6 +5446,10 @@ Send durable information to another Team member without starting an idle member.
     "message": {
       "type": "string",
       "description": "Self-contained message for the target."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   },
   "required": [
@@ -4900,6 +5488,10 @@ Create one named, durable teammate. Only the Team Lead may call this tool.
         "fresh",
         "fork"
       ]
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   },
   "required": [
@@ -4941,6 +5533,10 @@ Create one unowned pending task on the shared Team task board.
       "items": {
         "type": "string"
       }
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   },
   "required": [
@@ -4963,6 +5559,10 @@ Read the complete latest value of one shared task before changing or executing i
     "task_id": {
       "type": "string",
       "description": "Shared task id."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   },
   "required": [
@@ -5005,6 +5605,10 @@ List shared tasks, including readiness, owner, revision, blockers, and write-sco
     "limit": {
       "type": "integer",
       "description": "Number of rows, 1 through 100. Defaults to 50."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   }
 }
@@ -5067,6 +5671,10 @@ Compare-and-set a shared task action using the latest revision from team_task_ge
     "owner": {
       "type": "string",
       "description": "Member name for Lead-only reassign; omit to unassign."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   },
   "required": [
@@ -5090,6 +5698,10 @@ Wait for the next teammate status, mailbox, or shared-task change after this cal
     "timeout_ms": {
       "type": "integer",
       "description": "Wait duration in milliseconds, from 10000 through 3600000. Defaults to 30000."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   }
 }
@@ -5137,6 +5749,10 @@ Record and update a structured task list for the current work. Send the ENTIRE l
           "status"
         ]
       }
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   },
   "required": [
@@ -5233,6 +5849,10 @@ Constraints: concurrency and total-agent caps apply; no filesystem, network, tim
       "type": "object",
       "description": "Optional JSON input exposed to the script as the `args` global (wrap a bare list as a field, e.g. {\"files\": [...]}).",
       "additionalProperties": true
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   },
   "required": [
@@ -5259,6 +5879,10 @@ Fetch the content of a specific HTTP(S) URL and return it decoded to text.
     "url": {
       "type": "string",
       "description": "The HTTP(S) URL to fetch."
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   },
   "required": [
@@ -5283,6 +5907,10 @@ Search the web for current information. Provide 1–4 queries in the required qu
       "items": {
         "type": "string"
       }
+    },
+    "display_description": {
+      "type": "string",
+      "description": "Optional short, user-friendly description of what this call is doing now. Do not include secrets, raw JSON, or internal identifiers."
     }
   },
   "required": [

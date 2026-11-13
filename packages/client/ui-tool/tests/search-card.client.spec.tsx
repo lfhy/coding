@@ -346,6 +346,18 @@ describe('SearchRow keyed card', () => {
     expect(view.getByText('3 matches in 2 files')).toBeTruthy()
   })
 
+  it('keeps a per-call description ahead of a search result title in both rows', () => {
+    const call = { name: 'grep', argsRaw: JSON.stringify({ pattern: 'foo', display_description: '核对匹配项' }) }
+    const block = settledGrep({ call, resultView: resultMatches({ title: '3 matches in 2 files' }) })
+    const dedicated = render(<SearchRow {...rowProps(block, 'grep')} />)
+    expect(dedicated.getByText('核对匹配项')).toBeTruthy()
+    expect(dedicated.queryByText('3 matches in 2 files')).toBeNull()
+    dedicated.unmount()
+    const generic = render(<GenericToolCard {...{ callId: 'c1', toolName: 'grep', block, openFile: vi.fn(), t }} />)
+    expect(generic.getByText('核对匹配项')).toBeTruthy()
+    expect(generic.queryByText('3 matches in 2 files')).toBeNull()
+  })
+
   it('keeps the args-derived summary when the result view has no title', () => {
     const view = render(<SearchRow {...rowProps(settledGrep(), 'grep')} />)
     expect(view.getByText('foo')).toBeTruthy()

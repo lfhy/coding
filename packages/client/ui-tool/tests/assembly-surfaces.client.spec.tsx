@@ -125,6 +125,28 @@ describe('todo_write assembly (product registrations, no outlet twins)', () => {
 })
 
 describe('terminal card assembly', () => {
+  it('routes the Codex command and plan aliases to the existing readable rows', async () => {
+    const runtime = await bench([
+      bashResult(3, 'codex-command', {
+        call: { name: 'exec_command', argsRaw: '{"command":"ls -la","description":"查看文件"}' },
+        callView: { card: 'terminal', title: 'ls -la', description: '查看文件' },
+      }),
+      { ...todoResult(4), call: {
+        name: 'update_plan', argsRaw: JSON.stringify({ todos: TODOS }),
+      } },
+    ])
+    const view = runtime.renderRoot()
+    const shell = view.container.querySelector('[data-chat-call-id="codex-command"]')!
+    const plan = view.container.querySelector('[data-tool="update_plan"]')!
+    expect(shell.querySelector('[data-sample="bash"]')?.textContent).toContain('Bash')
+    expect(shell.textContent).toContain('查看文件')
+    expect(plan.textContent).toContain('1/3 已完成 · 实现 fixture 样本')
+    expect(plan.textContent).not.toContain('"todos"')
+    fireEvent.click(shell.querySelector('[data-sample="bash"]')!)
+    expect(shell.querySelector('[data-terminal]')).not.toBeNull()
+    await runtime.dispose()
+  })
+
   it('both the keyed bash row and the fallback row reach the terminal card through the whole-row expand', async () => {
     const runtime = await bench([
       bashResult(3, 'c-keyed'),

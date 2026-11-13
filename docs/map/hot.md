@@ -110,6 +110,7 @@
 - **入口**：`packages/core/tools/src/index.ts`（默认导出 `ToolRuntime`，`static inject = ['systemPrompt']`）。
 - **接线**：`packages/bundle/base/cordis.patch.yml` 的 `tools` 行；消费方 `packages/core/agent-loop/src/tool-calls.ts` 与全部 `tool-*` 插件。
 - **关键文件**：`packages/core/tools/src/index.ts`、`packages/core/tools/src/schema.ts`、`packages/core/tools/src/code-mode.ts`。
+- **操作说明的连带与验收**：`ToolRuntime.schemaOf` 为原生与 Code Mode schema 追加可选 `display_description`；[`display-description.ts`](../../packages/core/tools/src/display-description.ts) 校验与剥离展示字段，分类、策略、工具主体和 Host 呈现器使用业务参数，agent loop 与 Code Mode 子调用的会话事件保留原始参数以供重放。[Chat 工具行](../../packages/client/ui-tool/README.md)与[轨迹视图](../../packages/client/ui-trajectory/README.md)从持久参数提取折叠摘要，轨迹的显式 Payload 保留原始输入，历史调用回退既有摘要。验证原生／Code Mode schema、类型化／外部工具执行隔离、两种视图的历史回放及 Payload。
 - **改这里要同步**：`docs/tool-catalog.md`（`pnpm run gen-tool-catalog`）、`docs/tool-execution-pipeline.md`、`docs/subsystems/tools.md` 的生成区块。
 - **不变量**：waterfall 监听器必须调用 `next`；guard 拒绝是单调终局，后续 waterfall 不能翻案；保留名 `run_code` 不能被注册、遮蔽或移除。
 - **测试**：`pnpm exec vitest run packages/core/tools/tests`

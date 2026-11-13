@@ -3,9 +3,10 @@
 import { cleanup, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { ToolCallViewProps } from 'coding-client-ui-tool/client'
+import { setLocale } from '../src/client/i18n/index.ts'
 import { GenuiToolView } from '../src/client/toolview.tsx'
 
-beforeEach(() => { localStorage.clear() })
+beforeEach(() => { localStorage.clear(); setLocale('zh') })
 afterEach(cleanup)
 
 function props(panel?: boolean): ToolCallViewProps {
@@ -27,5 +28,52 @@ describe('GenUI 工具行', () => {
     expect(view.container.querySelector('[data-genui-panel]')).toBeNull()
     const storedKeys = Array.from({ length: localStorage.length }, (_, index) => localStorage.key(index))
     expect(storedKeys.some(key => key?.includes('panel'))).toBe(false)
+  })
+
+  it('带说明的运行中调用只显示友好说明和等待状态', () => {
+    const running = {
+      callId: 'render-test', name: 'render_ui', time: 1, turn: 1, step: 1,
+      argsRaw: JSON.stringify({ display_description: '呈现本周进度' }),
+      callView: null, subCalls: [],
+    } as ToolCallViewProps['block']
+    const view = render(<GenuiToolView {...props()} block={running} />)
+    expect(screen.getByText('呈现本周进度')).toBeTruthy()
+    expect(screen.getByRole('status').textContent).toBe('正在创建…')
+    expect(view.container.textContent).not.toContain('render_ui')
+    expect(view.container.textContent).not.toContain('render-test')
+  })
+
+  it('结果卡片保留渲染内容，错误和历史记录安全回退', () => {
+    const complete = props()
+    const block = complete.block
+    if (!('kind' in block)) throw new Error('测试需要已结算的结果')
+    const described = { ...block, call: {
+      name: 'render_ui', argsRaw: JSON.stringify({ display_description: '呈现本周进度' }),
+    } }
+    const view = render(<GenuiToolView {...complete} block={described} />)
+    expect(screen.getByText('呈现本周进度')).toBeTruthy()
+    expect(screen.getByText('只在工具行显示')).toBeTruthy()
+    view.rerender(<GenuiToolView {...complete} block={{ ...described, isError: true }} />)
+    expect(screen.getByRole('alert').textContent).toContain('界面创建失败')
+    expect(screen.getByText('只在工具行显示')).toBeTruthy()
+    view.rerender(<GenuiToolView {...complete} block={{ ...block, meta: undefined, isError: true }} />)
+    expect(screen.getByRole('status').textContent).toBe('界面创建失败')
+    expect(view.container.textContent).not.toContain('render-test')
+    expect(view.container.textContent).not.toContain('render_ui')
+  })
+
+  it('旧记录中断和无效参数只显示本地化状态', () => {
+    const complete = props()
+    const block = complete.block
+    if (!('kind' in block)) throw new Error('测试需要已结算的结果')
+    const view = render(<GenuiToolView {...complete} block={{
+      ...block, meta: undefined, error: { name: 'InterruptedError', code: 'interrupted' },
+    }} />)
+    expect(screen.getByRole('status').textContent).toBe('已停止创建')
+    view.rerender(<GenuiToolView {...complete} block={{
+      ...block, meta: undefined, call: { name: 'render_ui', argsRaw: '{"display_description":' },
+    }} />)
+    expect(screen.getByRole('status').textContent).toBe('没有可显示的界面')
+    expect(view.container.textContent).not.toContain('display_description')
   })
 })

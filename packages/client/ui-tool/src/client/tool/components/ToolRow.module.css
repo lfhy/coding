@@ -125,6 +125,14 @@
   text-decoration-color: currentColor;
 }
 
+/* 自然语言摘要与路径是不同操作：短路径链接与摘要并排且不改变行高。 */
+.fileLinkTarget {
+  composes: fileLink;
+  flex: 0 1 auto;
+  max-width: 35%;
+  margin-left: 8px;
+}
+
 /* Error row's collapsed summary: the failure's first line in the error color. */
 .errorSummary {
   color: var(--dsw-alias-state-error-primary);

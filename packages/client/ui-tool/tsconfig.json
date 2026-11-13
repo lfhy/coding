@@ -30,6 +30,9 @@
       "path": "../../llm/llm"
     },
     {
+      "path": "../../core/tools"
+    },
+    {
       "path": "../ui-conversation"
     },
     {

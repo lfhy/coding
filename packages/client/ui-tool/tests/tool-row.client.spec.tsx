@@ -32,6 +32,7 @@ const result = (over?: Partial<ToolResultNode>): ToolResultNode => ({
 describe('tool-call-model', () => {
   it('classifies known tools and falls back to others', () => {
     expect(classifyTool('bash')).toBe('bash')
+    expect(classifyTool('exec_command')).toBe('bash')
     expect(classifyTool('pwsh')).toBe('bash')
     expect(classifyTool('read')).toBe('read')
     expect(classifyTool('web_fetch')).toBe('read')
@@ -39,6 +40,7 @@ describe('tool-call-model', () => {
     expect(classifyTool('grep')).toBe('search')
     expect(classifyTool('write')).toBe('write')
     expect(classifyTool('edit')).toBe('edit')
+    expect(classifyTool('apply_patch')).toBe('edit')
     expect(classifyTool('cordis_runtime_inspect')).toBe('read')
     // The v3 run-control verbs: `others` is the decided intent, not an
     // unclassified default (there is no program to show and no file to open).
@@ -46,6 +48,16 @@ describe('tool-call-model', () => {
     expect(classifyTool('cordis_stop')).toBe('others')
     expect(classifyTool('cordis_undefine')).toBe('others')
     expect(classifyTool('todo_write')).toBe('others')
+  })
+
+  it.each(['__proto__', 'constructor', 'toString'])('renders legal inherited names safely: %s', (name) => {
+    const block = running({ name, argsRaw: JSON.stringify({ value: 'safe', display_description: '执行操作' }) })
+    expect(classifyTool(name)).toBe('others')
+    const model = toolRowModel(name, block)
+    expect(model.variant).toBe('others')
+    expect(model.title).toBe('Tool call')
+    expect(model.summary).toBe('执行操作')
+    expect(model.body).toContain('"value": "safe"')
   })
 
   it('names each cordis verb instead of leaving it a bare tool call', () => {
@@ -97,17 +109,59 @@ describe('tool-call-model', () => {
     expect(toolRowModel('bash', running({ argsRaw: '{"command":"pwd"}' })).summary).toBe('pwd')
   })
 
+  it('shows the per-call operation description for any tool without exposing input data', () => {
+    const argsRaw = JSON.stringify({ command: 'echo private', display_description: '检查当前目录' })
+    for (const name of ['exec_command', 'bash', 'unregistered_tool']) {
+      const model = toolRowModel(name, running({ name, argsRaw }))
+      expect(model.summary).toBe('检查当前目录')
+      expect(model.body).not.toBeNull()
+    }
+    const view = render(<GenericToolCard {...{
+      callId: 'c1', toolName: 'unregistered_tool', block: running({ name: 'unregistered_tool', argsRaw }), openFile: vi.fn(), t,
+    }} />)
+    expect(view.getByText('检查当前目录')).toBeTruthy()
+    expect(view.container.textContent).not.toContain('private')
+    fireEvent.click(view.getByRole('button', { name: /检查当前目录/ }))
+    expect(view.container.textContent).toContain('private')
+  })
+
+  it('keeps a running code call expandable when it has an operation description', () => {
+    const argsRaw = JSON.stringify({ code: 'return 42', description: 'Execute program', display_description: '检查结果' })
+    const view = render(<GenericToolCard {...{
+      callId: 'c1', toolName: 'run_code', block: running({ name: 'run_code', argsRaw }), openFile: vi.fn(), t,
+    }} />)
+    expect(view.getByText('检查结果')).toBeTruthy()
+    expect(view.container.textContent).not.toContain('return 42')
+    fireEvent.click(view.getByRole('button', { name: /检查结果/ }))
+    expect(view.container.textContent).toContain('return 42')
+  })
+
   it('keeps summaries single-line and falls back for opaque args', () => {
     expect(toolRowModel('bash', running({ argsRaw: '{"command":"a\\nb"}' })).summary).toBe('a')
     expect(toolRowModel('read', running({ name: 'read', argsRaw: '{"path":"/tmp/x.ts"}' })).summary).toBe('/tmp/x.ts')
     expect(toolRowModel('write', running({ name: 'write', argsRaw: '{"file_path":"src/x.ts"}' })).summary).toBe('src/x.ts')
     expect(toolRowModel('edit', running({ name: 'edit', argsRaw: '{"file_path":"src/x.ts"}' })).summary).toBe('src/x.ts')
-    // Other rows prefix the real tool name into the summary slot (figma
-    // flows: static "Tool call" title, the name rides the mutable summary).
-    expect(toolRowModel('x', running({ argsRaw: '{"n":1}' })).summary).toBe('x · {"n":1}')
-    expect(toolRowModel('x', running({ argsRaw: 'not json' })).summary).toBe('x · not json')
-    expect(toolRowModel('x', running({ argsRaw: '' })).summary).toBe('x · c1')
-    expect(toolRowModel('', running({ argsRaw: '' })).summary).toBe('c1')
+    // 未知工具或异常参数只留在输入详情，不进入折叠行。
+    for (const argsRaw of ['{"n":1}', 'not json']) {
+      const model = toolRowModel('x', running({ argsRaw }))
+      expect(model.summary).toBe('')
+      expect(model.title).toBe('Tool call')
+    }
+    expect(toolRowModel('x', running({ argsRaw: '' })).summary).toBe('')
+    expect(toolRowModel('', running({ argsRaw: '' })).summary).toBe('')
+    expect(toolRowModel('external_action', running({ argsRaw: '{"description":"不可靠的工具描述"}' })).summary).toBe('')
+  })
+
+  it('names common tools without echoing raw parameters into the collapsed row', () => {
+    expect(toolRowModel('apply_patch', running({ argsRaw: '{"input":"*** Begin Patch"}' }))).toMatchObject({
+      title: 'Apply patch', summary: '', variant: 'edit',
+    })
+    expect(toolRowModel('spawn_agent', running({ argsRaw: '{"description":"Check routes","prompt":"secret"}' })))
+      .toMatchObject({ title: 'Delegate task', summary: 'Check routes' })
+    expect(toolRowModel('memory_save', running({ argsRaw: '{"content":"secret"}' })))
+      .toMatchObject({ title: 'Save memory', summary: '' })
+    expect(toolRowModel('browser_screenshot', running({ argsRaw: '{"url":"https://example.com"}' })))
+      .toMatchObject({ title: 'Browser', summary: '' })
   })
 
   it('joins multi-query web search arguments in the summary', () => {
@@ -316,6 +370,16 @@ describe('ToolRow', () => {
     expect(view.getByText(/"a": 1/)).toBeTruthy()
   })
 
+  it('keeps a file path link separate from a per-call operation description', () => {
+    const open = vi.fn()
+    const view = render(<ToolRow {...rowProps} variant="read" title="Read" summary="检查文档"
+      filePath="src/a.ts" fileLinkLabel="src/a.ts" onOpenFile={open} />)
+    fireEvent.click(view.getByText('检查文档'))
+    expect(open).not.toHaveBeenCalled()
+    fireEvent.click(view.getByText('src/a.ts'))
+    expect(open).toHaveBeenCalledWith('src/a.ts')
+  })
+
   it('a file path without onOpenFile renders a plain summary on an expandable row', () => {
     const view = render(
       <ToolRow {...rowProps} variant="write" title="Write" summary="作文.md" filePath="作文.md" />,
@@ -430,13 +494,22 @@ describe('GenericToolCard', () => {
     expect(view.container.querySelector('[data-variant="bash"]')).not.toBeNull()
   })
 
-  it('unknown tools land on the others variant titled Tool call', () => {
+  it('uses a neutral title for unknown tools without showing their raw inputs', () => {
     const view = render(
-      <GenericToolCard {...props('todo_write', running({ name: 'todo_write', argsRaw: '{"note":"x"}' }))} />,
+      <GenericToolCard {...props('unregistered_tool', running({ name: 'unregistered_tool', argsRaw: '{"secret":"token"}' }))} />,
     )
-    expect(view.getByText('Tool call')).toBeTruthy()
+    expect(view.getByText('使用工具')).toBeTruthy()
+    expect(view.queryByText(/token|unregistered_tool/)).toBeNull()
     expect(view.container.querySelector('[data-variant="others"]')).not.toBeNull()
     expect(view.container.querySelector('[data-state="running"]')).not.toBeNull()
+  })
+
+  it.each(['__proto__', 'constructor', 'toString'])('renders inherited-name tool calls: %s', (name) => {
+    const block = running({ name, argsRaw: JSON.stringify({ value: 'safe', display_description: '执行操作' }) })
+    const view = render(<GenericToolCard {...props(name, block)} />)
+    expect(view.getByText('使用工具')).toBeTruthy()
+    expect(view.getByText('执行操作')).toBeTruthy()
+    expect(view.container.querySelector('[data-variant="others"]')).not.toBeNull()
   })
 
   it('renders returned images only after expanding and opens the original preview', async () => {
@@ -455,7 +528,7 @@ describe('GenericToolCard', () => {
       />,
     )
     expect(view.queryByRole('img', { name: '图片' })).toBeNull()
-    fireEvent.click(view.getByRole('button', { name: /Tool call/ }))
+    fireEvent.click(view.getByRole('button', { name: /Browser/ }))
     const image = await view.findByRole('img', { name: '图片' })
     expect(loadImage).toHaveBeenCalledWith(attachment)
     fireEvent.click(image)

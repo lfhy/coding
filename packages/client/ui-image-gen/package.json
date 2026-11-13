@@ -39,7 +39,8 @@
     "coding-client-ui-sidebar": "workspace:^",
     "coding-client-ui-tool": "workspace:^",
     "coding-invariants": "workspace:^",
-    "coding-session": "workspace:^"
+    "coding-session": "workspace:^",
+    "coding-tools": "workspace:^"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "workspace:^",
@@ -60,6 +61,7 @@
     "coding-client-ui-tool": "workspace:^",
     "coding-invariants": "workspace:^",
     "coding-session": "workspace:^",
+    "coding-tools": "workspace:^",
     "react": "^18.2.0",
     "react-dom": "^18.2.0"
   },

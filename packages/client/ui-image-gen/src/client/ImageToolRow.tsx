@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { ToolCallViewProps } from 'coding-client-ui-tool/client'
 import type { PropsLocale } from 'coding-client-ui-slots'
 import { Button, IconDownloadOutline16, ImageLightbox } from 'coding-client-ui-primitives'
+import { toolDisplayDescription } from 'coding-tools/display-description'
 import { ImageToolLoading } from './ImageToolLoading.tsx'
 import type { NS } from './locales.ts'
 import css from './ImageToolRow.module.css'
@@ -11,6 +12,17 @@ type ImageRef = Parameters<NonNullable<ToolCallViewProps['loadImage']>>[0]
 type ImageToolRowProps = ToolCallViewProps & PropsLocale<typeof NS>
   & { openInStudio: (attachmentId: ImageRef['attachmentId']) => void }
 type State = 'running' | 'complete' | 'failed' | 'stopped'
+
+/** 历史结果缺少调用头时不从结果或标识符猜测描述。 */
+function displayDescription(block: ToolCallViewProps['block']): string | undefined {
+  const raw = 'kind' in block ? block.call?.argsRaw : block.argsRaw
+  if (raw === undefined) return undefined
+  try {
+    return toolDisplayDescription(JSON.parse(raw) as unknown)
+  } catch {
+    return undefined
+  }
+}
 
 function requestedCount(block: ToolCallViewProps['block']): number | undefined {
   const raw = 'kind' in block ? block.call?.argsRaw : block.argsRaw
@@ -98,6 +110,7 @@ function ResultImage({ attachment, loadImage, openInStudio, inspect, t }: {
  * @returns 自动结束的点阵等待态或持久结果图片。
  */
 export function ImageToolRow({ block, toolName, loadImage, inspect, openInStudio, t }: ImageToolRowProps) {
+  const description = displayDescription(block)
   const images = useMemo(() => 'kind' in block && !block.isError
     ? block.content.flatMap(part => part.type === 'image' ? [part.attachment] : []) : [], [block])
   const state = imageState(block, images.length)
@@ -116,6 +129,7 @@ export function ImageToolRow({ block, toolName, loadImage, inspect, openInStudio
   const failedCount = state === 'complete' && count !== undefined ? Math.max(0, count - images.length) : 0
   return <section className={css.root} data-image-tool-row="" data-tool={toolName} data-state={state}
     aria-label={t('toolImageTask')} aria-busy={running}>
+    {description !== undefined && <div className={css.description}>{description}</div>}
     {running ? <ImageToolLoading label={t('toolCreatingImage')} />
       : state === 'complete' ? <>
         <div className={css.status} role="status">{t('toolImagesCreated', { count: String(images.length) })}</div>

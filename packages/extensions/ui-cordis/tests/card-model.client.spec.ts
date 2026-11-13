@@ -1,9 +1,8 @@
-// Card view model: what a definition card can and cannot derive from the frozen
-// call/result slice.
+// 插件卡片只从冻结的调用和结果切片派生身份、展示说明及状态。
 
 import { describe, expect, it } from 'vitest'
 import type { RunningToolCall, ToolResultNode } from 'coding-client-runtime/client'
-import { cordisActionCard, cordisDefineCard } from '../src/client/card-model.ts'
+import { cordisActionCard, cordisDefineCard, cordisRunCard } from '../src/client/card-model.ts'
 
 const ARGS = '{"name":"clock","purpose":"顶栏时钟","code":{"client":"return {}","host":"harness.handle(\'now\', () => Date.now())"}}'
 
@@ -68,19 +67,18 @@ describe('cordisDefineCard', () => {
   })
 
   it('degrades on a truncated argument stream instead of dropping the row', () => {
-    expect(cordisDefineCard(running({ argsRaw: '{"name":"clo' })).name).toBe('{"name":"clo')
+    expect(cordisDefineCard(running({ argsRaw: '{"name":"clo' })).name).toBeNull()
     expect(cordisDefineCard(running({ argsRaw: '{"name":"clo' })).purpose).toBeNull()
-    expect(cordisDefineCard(running({ argsRaw: '"just a string"' })).name).toBe('"just a string"')
+    expect(cordisDefineCard(running({ argsRaw: '"just a string"' })).name).toBeNull()
   })
 
-  it('keeps the raw first line as the name when the arguments carry none', () => {
-    expect(cordisDefineCard(running({ argsRaw: '{"purpose":"顶栏时钟"}' })).name).toBe('{"purpose":"顶栏时钟"}')
-    expect(cordisDefineCard(running({ argsRaw: '{"name":"","purpose":"顶栏时钟"}' })).name).toBe('{"name":"","purpose":"顶栏时钟"}')
+  it('没有名称时不把原始参数当作面向用户的回退', () => {
+    expect(cordisDefineCard(running({ argsRaw: '{"purpose":"顶栏时钟"}' })).name).toBeNull()
+    expect(cordisDefineCard(running({ argsRaw: '{"name":"","purpose":"顶栏时钟"}' })).name).toBeNull()
   })
 
   it('reports an unknown name when the event window cut the call head', () => {
-    // The host definition list answers identity and run state only, so the card
-    // has no label left to fall back on and names its own call instead.
+    // 历史结果没有调用头时只保留已有的结果信息，不从调用标识编造名称。
     const card = cordisDefineCard(settled({ call: null }))
     expect(card.name).toBeNull()
     expect(card.purpose).toBeNull()
@@ -97,9 +95,36 @@ describe('cordisActionCard', () => {
 
     expect(card).toEqual({
       pluginId: 'clock-1',
+      displayDescription: undefined,
       output: 'Stopped clock-1.',
       errorSummary: null,
       state: 'ok',
     })
+  })
+})
+
+describe('工具调用展示说明', () => {
+  const description = '更新页头时间显示'
+  it('定义、运行、停止都从各自冻结参数取说明', () => {
+    const defineArgs = JSON.stringify({ name: 'clock', display_description: ` ${description} ` })
+    expect(cordisDefineCard(running({ argsRaw: defineArgs })).displayDescription).toBe(description)
+    expect(cordisDefineCard(settled({ call: { name: 'cordis_define', argsRaw: defineArgs } })).displayDescription)
+      .toBe(description)
+    const runArgs = JSON.stringify({ mode: 'run', pluginId: 'clock-1', display_description: description })
+    expect(cordisRunCard(running({ argsRaw: runArgs })).displayDescription).toBe(description)
+    expect(cordisRunCard(settled({ call: { name: 'cordis_run', argsRaw: runArgs } })).displayDescription)
+      .toBe(description)
+    expect(cordisActionCard(settled({ call: { name: 'cordis_stop', argsRaw: runArgs } })).displayDescription)
+      .toBe(description)
+  })
+
+  it('没有调用头或参数不完整时忽略说明且保留失败结果', () => {
+    expect(cordisDefineCard(running({ argsRaw: '{"display_description":' })).displayDescription).toBeUndefined()
+    expect(cordisRunCard(settled({ call: null })).displayDescription).toBeUndefined()
+    const failed = cordisActionCard(settled({ call: null, isError: true, content: [
+      { type: 'text', text: '操作失败\n查看详情' },
+    ] }))
+    expect(failed.displayDescription).toBeUndefined()
+    expect(failed.errorSummary).toBe('操作失败')
   })
 })

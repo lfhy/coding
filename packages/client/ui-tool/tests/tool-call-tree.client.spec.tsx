@@ -61,7 +61,8 @@ describe('ToolCallTree', () => {
     expect(row?.getAttribute('data-chat-anchor-key')).toBe('call:w1')
     expect(row?.getAttribute('data-selected')).toBe('true')
     expect(view.container.querySelector('[data-variant="others"]')).not.toBeNull()
-    expect(view.getByText('w1')).toBeTruthy()
+    expect(view.getByText('使用工具')).toBeTruthy()
+    expect(view.queryByText('w1')).toBeNull()
   })
 
   it('recursively renders a selected leaf without selecting its ancestors', () => {
@@ -140,7 +141,7 @@ describe('ToolCallTree', () => {
     expect(renderSlot.mock.calls.find(([, owner]) => owner.callId === child.callId)?.[1].loadImage).toBe(loadImage)
     expect(loadImage).not.toHaveBeenCalled()
     expect(view.queryByRole('img', { name: '图片' })).toBeNull()
-    fireEvent.click(view.getByRole('button', { name: /Tool call/ }))
+    fireEvent.click(view.getByRole('button', { name: /使用工具/ }))
     const image = await view.findByRole('img', { name: '图片' })
     expect(loadImage).toHaveBeenCalledWith(attachment)
     expect(image.getAttribute('src')).toBe('blob:tool-image')

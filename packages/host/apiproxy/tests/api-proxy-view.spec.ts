@@ -103,6 +103,39 @@ async function collect(iterable: AsyncIterable<RpcRequest<MuxFrame>>, count: num
 }
 
 describe('mux live view computation', () => {
+  it('keeps recorded display descriptions while passing only business arguments to live and replay presenters', async () => {
+    const { ctx } = await harness()
+    ctx.tools.register(tool('described', {
+      presentCall: args => ({ card: 'generic', title: JSON.stringify(args) }),
+      presentResult: args => ({ card: 'generic', title: JSON.stringify(args) }),
+    }))
+    const api = createApiProxy(ctx, { defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/tmp' })
+    const abort = new AbortController()
+    const collected = collect(api.events.mux({ rpcId: RpcId('t-description'), payload: {} }, abort.signal), 3, abort)
+    const session = ctx.sessions.create()
+    ctx.agents.register({ id: session.id, session, status: 'idle', ctx } as Agent)
+    session.append('turn/start', { turn: 1 })
+    const raw = JSON.stringify({ path: 'a.txt', display_description: '查看文件' })
+    session.append('tool/call', {
+      turn: 1, step: 1, callId: CallId('described-call'), name: 'described', arguments: raw,
+    })
+    session.append('tool/result', {
+      turn: 1, step: 1,
+      message: createToolResultMessage({ callId: CallId('described-call'), content: [{ type: 'text', text: 'ok' }], isError: false }),
+    }, { surfaceOp: 'append' })
+
+    const live = (await collected).filter(frame => frame.type === 'session/event')
+    const history = await api.sessions.history({ rpcId: RpcId('t-description-history'), payload: { sessionId: session.id } })
+    if (!history.result.ok) throw new Error('history request failed')
+    for (const entries of [live, history.result.value.events]) {
+      const call = entries.find(entry => entry.event.type === 'tool/call')
+      const result = entries.find(entry => entry.event.type === 'tool/result')
+      expect(call?.view).toEqual({ for: 'call', view: { card: 'generic', title: '{"path":"a.txt"}' } })
+      expect(result?.view).toEqual({ for: 'result', view: { card: 'generic', title: '{"path":"a.txt"}' } })
+      expect(call?.event).toMatchObject({ data: { arguments: raw } })
+    }
+  })
+
   it('attaches the three standard card views, omits view without a presenter, soft-falls on throw', async () => {
     const { ctx } = await harness()
     const api = createApiProxy(ctx, { defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/tmp' })

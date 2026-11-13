@@ -45,6 +45,13 @@ function rowProps(block: unknown): Parameters<typeof AskQuestionRow>[0] {
 const answers = (entries: unknown[]): string => JSON.stringify({ answers: entries })
 
 describe('AskQuestionRow', () => {
+  it('运行中的提问优先展示逐次说明，不暴露问题输入', () => {
+    const args = JSON.stringify({ questions: [{ question: '内部问题' }], display_description: '核对需求细节' })
+    const view = render(<AskQuestionRow {...rowProps(runningCall(args))} />)
+    expect(screen.getByText('核对需求细节')).toBeTruthy()
+    expect(view.container.textContent).not.toContain('内部问题')
+  })
+
   it('running call reads waiting (args-independent: the composer takeover shows the questions)', () => {
     const view = render(<AskQuestionRow {...rowProps(runningCall(ARGS))} />)
     expect(screen.getByText('提问')).toBeTruthy()
@@ -80,7 +87,8 @@ describe('AskQuestionRow', () => {
     { label: 'empty result content', text: null },
   ])('settled result falls back to the generic summary on $label', ({ text }) => {
     render(<AskQuestionRow {...rowProps(resultNode(ARGS, text))} />)
-    expect(screen.getByText(`ask_user_question · ${ARGS}`)).toBeTruthy()
+    expect(screen.getAllByText('提问').length).toBeGreaterThan(0)
+    expect(screen.queryByText(`ask_user_question · ${ARGS}`)).toBeNull()
   })
 
   it('user cancellation names the verdict instead of the generic failed shape', () => {
@@ -104,18 +112,19 @@ describe('AskQuestionRow', () => {
       { isError: true, error: { name: 'Interrupted', code: 'interrupted' } }))} />)
     expect(view.container.querySelector('[data-state="stopped"]')).not.toBeNull()
     expect(screen.queryByText('已取消')).toBeNull()
-    expect(screen.getByText(`ask_user_question · ${ARGS}`)).toBeTruthy()
+    expect(screen.getAllByText('提问').length).toBeGreaterThan(0)
   })
 
   it('other tool errors keep the generic summary with the error state', () => {
     const view = render(<AskQuestionRow {...rowProps(resultNode(ARGS, null, { isError: true }))} />)
     expect(view.container.querySelector('[data-state="error"]')).not.toBeNull()
-    expect(screen.getByText(`ask_user_question · ${ARGS}`)).toBeTruthy()
+    expect(screen.getAllByText('提问').length).toBeGreaterThan(0)
   })
 
-  it('window-truncated result (call head lost) falls back to the callId summary', () => {
+  it('window-truncated result (call head lost) uses a neutral summary', () => {
     render(<AskQuestionRow {...rowProps(resultNode('', null, { call: null }))} />)
-    expect(screen.getByText('ask_user_question · c1')).toBeTruthy()
+    expect(screen.getAllByText('提问').length).toBeGreaterThan(0)
+    expect(screen.queryByText(/ask_user_question|c1/)).toBeNull()
   })
 
   it('leading toggle expands the raw args body', () => {

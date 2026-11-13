@@ -4,6 +4,13 @@
   gap: 8px;
 }
 
+.description {
+  min-width: 0;
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-xs-13);
+  overflow-wrap: anywhere;
+}
+
 .row {
   display: flex;
   align-items: center;
