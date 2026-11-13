@@ -16,7 +16,7 @@ make dev
 
 开发 Host 使用 `~/.dsh-electron-dev`，默认工作目录为其中的 `workspace/`，Electron `userData` 位于 `electron-user-data/`；开发实例拒绝与安装版主目录（`~/.coding`）重叠。开发 Host 从仓库源码启动，需要 PATH 中的 Node，且不自动使用安装版设置与凭据。手动真实 API 测试须显式设置环境变量或只在隔离的 `workspace/.env` 中配置；Host 不读取仓库根目录 `.env`，不要将密钥写进仓库。
 
-浏览器定向原生验收脚本正在迁移至 ego 浏览器，旧 guest 的 `--browser-only` 验证结果不再代表当前桌面能力。ego 浏览器复用本机安装的 Edge、Chrome 或 Chromium；本机没有可用浏览器时不能把旧 guest 的测试当作替代。
+`pnpm run test:electron:chat-links` 是独立的开发态原生验收：先按 `make dev` 所需命令构建 Host、Web、Go helper 与 Electron 壳，再在 macOS 图形会话中从仓库根运行。本测试在临时 HOME 中恢复一次 Assistant 链接消息，点击后检查本机测试页面被 Agent 浏览器加载、右侧标签可见且已选中，并核对建页和导航请求；需要本机 Edge、Chrome 或 Chromium，不调用模型或读取用户会话。它不测试现有安装版；退出不确定时保留隔离目录供检查。浏览器切换至 ego 后，旧 guest 的 `--browser-only` 验证结果不代表当前桌面能力。
 
 ## Host、Remote-SSH 与窗口
 
