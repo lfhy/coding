@@ -63,4 +63,4 @@ DSH_EGO_EDGE_SMOKE=1 pnpm exec vitest run packages/browser/browser-ego-host/test
 - 上游全部 35 个工具均已注册；风险由消费方按会话审批与 Remote-SSH 拒绝兜底。上游 Web/TUI 的完整前端与 `src/client` 未移植，右侧面板是本项目自行实现，因此部分上游面板专属控件（动作历史抽屉、视频后端切换、设置页）只部分对齐。
 - 视频采集需 `captureBackend=ffmpeg` 与本机 FFmpeg，默认 CDP 画面；上游 FFmpeg 下载服务未接入。
 - `stream` 当前每秒采集本会话活动页；选择非活动页时 Client 应按需调用 `/api/ego/frame?sessionId&targetId`。没有该补充查询，非活动页没有流式画面。
-- 本地 loopback worker 本身是上游进程，不能作为网络安全边界；Host 入口只信任 `connection` 与同源 loopback。不同 Host 实例共享同一上游 Profile 时应按部署单实例管理，避免 worker/状态文件互相抢占。
+- 本地 loopback worker 本身不能作为网络安全边界；Host 入口只信任 `connection` 与同源 loopback。画面 worker 按 `EGO_LINUX_STATE_DIR` 各自保存记录，启动时不会终止别的状态目录中的进程；不同 Host 实例共享同一状态目录或 Profile 时仍需按部署单实例管理，避免页面或状态文件互相抢占。

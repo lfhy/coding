@@ -3,7 +3,6 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import { mkdirSync, writeFileSync, rmSync } from 'node:fs'
 import { homedir, platform } from 'node:os'
 import { join } from 'node:path'
-import { execFileSync } from 'node:child_process'
 import type { AddressInfo } from 'node:net'
 import { CdpClient } from './cdp-client.ts'
 import { TargetSessions, CdpCaptureBackend } from './capture-cdp.ts'
@@ -331,53 +330,7 @@ function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms))
 }
 
-function stopSiblingWorkers(): void {
-  const self = process.pid
-  // Only match processes where ego-cast-worker.mjs is the DIRECT script
-  // argument of the node executable. The DSH subprocess runner (our parent
-  // process tree) merely *mentions* the script path in its command line — the
-  // old loose `*ego-cast-worker.mjs*` substring match plus `taskkill /T` killed
-  // the runner and with it our own tree, so the worker died a few hundred ms
-  // after spawn, before ever writing ego-cast.json (issues #34 defect 2 / #40;
-  // same root cause behind the empty watch panels in #38/#43). Ancestors of
-  // self are additionally excluded defensively.
-  // (Paths containing spaces inside quotes are not matched — the installed
-  // plugin path never has any.)
-  const SCRIPT_ARG_RE = /node(?:\.exe)?"?\s+"?[^"\s]*ego-cast-worker\.mjs(?:["\s]|$)/i
-  if (IS_WIN) {
-    const ps = [
-      `$self = ${self}`,
-      '$procs = Get-CimInstance Win32_Process',
-      '$anc = @{}',
-      '$cur = $procs | Where-Object { $_.ProcessId -eq $self } | Select-Object -First 1',
-      'while ($cur) { $anc[[int]$cur.ProcessId] = $true; $cur = $procs | Where-Object { $_.ProcessId -eq $cur.ParentProcessId } | Select-Object -First 1 }',
-      '$procs | Where-Object { $_.Name -eq \'node.exe\' -and $_.CommandLine -match \'node(\\.exe)?"?\\s+"?[^"\\s]*ego-cast-worker\\.mjs(["\\s]|$)\' -and -not $anc[[int]$_.ProcessId] } | Select-Object -ExpandProperty ProcessId',
-    ].join('; ')
-    try {
-      const output = execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(ps, 'utf16le').toString('base64')], { encoding: 'utf8', timeout: 8000 })
-      for (const line of output.split(/\r?\n/)) if (/^\d+$/.test(line.trim())) try { execFileSync('taskkill', ['/PID', line.trim(), '/T', '/F'], { stdio: 'ignore' }) } catch { /* ignore */ }
-    } catch { /* ignore */ }
-    return
-  }
-  try {
-    const output = execFileSync('ps', ['-eo', 'pid=,ppid=,args='], { encoding: 'utf8', timeout: 8000 })
-    const rows = new Map<number, { ppid: number; args: string }>()
-    for (const line of output.split('\n')) {
-      const match = line.match(/^\s*(\d+)\s+(\d+)\s+(.+)$/)
-      if (match) rows.set(Number(match[1]), { ppid: Number(match[2]), args: match[3] })
-    }
-    const ancestors = new Set<number>([self])
-    let pp = rows.get(self)?.ppid
-    while (pp !== undefined && pp > 0 && !ancestors.has(pp)) {
-      ancestors.add(pp)
-      pp = rows.get(pp)?.ppid
-    }
-    for (const [pid, row] of rows) {
-      if (ancestors.has(pid)) continue
-      if (SCRIPT_ARG_RE.test(row.args)) try { process.kill(pid, 'SIGTERM') } catch { /* ignore */ }
-    }
-  } catch { /* ignore */ }
-}
+// 每个状态目录单独持有画面 worker；启动时不得通过进程扫描终止其他实例。
 
 /**
  * Chrome's own frame around the page, used to turn a desired PAGE viewport into
@@ -443,8 +396,6 @@ const windowSizeCache = new Map<string, WindowSizeCacheEntry>()
 const windowSizeViewportRefresh = new Map<string, ReturnType<typeof setTimeout>>()
 
 async function main(): Promise<void> {
-  stopSiblingWorkers()
-  rmSync(CAST_STATE_FILE, { force: true })
   const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
     const url = new URL(req.url ?? '/', 'http://127.0.0.1')
     try {

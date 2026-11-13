@@ -30,7 +30,7 @@ workspace 共 275 个包，按 group 分节。每行给出包目录、职责（R
 ## packages/browser
 
 - `packages/browser/browser` — 模型消费方在审批前调用 `acquireOperation(sessionId, signal)`：提供方立即阻止新人工命令… 入口 `src/index.ts`（tests 1）
-- `packages/browser/browser-ego-host` — 上游 v0.9.7 的 35 个工具全部移植：`status`、`auth_flush`、`login_import`、`space_open`… 入口 `src/index.ts`（tests 7）
+- `packages/browser/browser-ego-host` — 上游 v0.9.7 的 35 个工具全部移植：`status`、`auth_flush`、`login_import`、`space_open`… 入口 `src/index.ts`（tests 8）
 - `packages/browser/browser-electron` — 模型操作从审批到执行结束独占会话；人工操作按会话排队，并在命令发送前执行准入复核 入口 `src/index.ts`（tests 1）
 - `packages/browser/browser-playwright` — 截图以设备像素密度捕获一次，已在 2 MiB 以内的画面保持原样；超限则直接用共享 `fitImage` 策略和 Sharp PNG 编码器等比… 入口 `src/index.ts`（tests 3）
 - `packages/browser/tool-browser` — 其余组合保持一次性审批路径：`danger-full-access` 搭配 `ask` 仍对每次调用（包括快照与关闭）申请审批… 入口 `src/index.ts`（tests 2）

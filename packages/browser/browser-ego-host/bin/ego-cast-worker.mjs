@@ -3,8 +3,8 @@ import { createServer } from "node:http";
 import { constants, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, platform } from "node:os";
 import { join } from "node:path";
-import { execFile, execFileSync, spawn } from "node:child_process";
 import { access } from "node:fs/promises";
+import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
 //#region third-party/host/worker/cdp-client.ts
 var CdpClient = class {
@@ -2157,66 +2157,6 @@ async function connectLoop() {
 function sleep(ms) {
 	return new Promise((resolve) => setTimeout(resolve, ms));
 }
-function stopSiblingWorkers() {
-	const self = process.pid;
-	const SCRIPT_ARG_RE = /node(?:\.exe)?"?\s+"?[^"\s]*ego-cast-worker\.mjs(?:["\s]|$)/i;
-	if (IS_WIN) {
-		const ps = [
-			`$self = ${self}`,
-			"$procs = Get-CimInstance Win32_Process",
-			"$anc = @{}",
-			"$cur = $procs | Where-Object { $_.ProcessId -eq $self } | Select-Object -First 1",
-			"while ($cur) { $anc[[int]$cur.ProcessId] = $true; $cur = $procs | Where-Object { $_.ProcessId -eq $cur.ParentProcessId } | Select-Object -First 1 }",
-			"$procs | Where-Object { $_.Name -eq 'node.exe' -and $_.CommandLine -match 'node(\\.exe)?\"?\\s+\"?[^\"\\s]*ego-cast-worker\\.mjs([\"\\s]|$)' -and -not $anc[[int]$_.ProcessId] } | Select-Object -ExpandProperty ProcessId"
-		].join("; ");
-		try {
-			const output = execFileSync("powershell.exe", [
-				"-NoProfile",
-				"-NonInteractive",
-				"-EncodedCommand",
-				Buffer.from(ps, "utf16le").toString("base64")
-			], {
-				encoding: "utf8",
-				timeout: 8e3
-			});
-			for (const line of output.split(/\r?\n/)) if (/^\d+$/.test(line.trim())) try {
-				execFileSync("taskkill", [
-					"/PID",
-					line.trim(),
-					"/T",
-					"/F"
-				], { stdio: "ignore" });
-			} catch {}
-		} catch {}
-		return;
-	}
-	try {
-		const output = execFileSync("ps", ["-eo", "pid=,ppid=,args="], {
-			encoding: "utf8",
-			timeout: 8e3
-		});
-		const rows = /* @__PURE__ */ new Map();
-		for (const line of output.split("\n")) {
-			const match = line.match(/^\s*(\d+)\s+(\d+)\s+(.+)$/);
-			if (match) rows.set(Number(match[1]), {
-				ppid: Number(match[2]),
-				args: match[3]
-			});
-		}
-		const ancestors = new Set([self]);
-		let pp = rows.get(self)?.ppid;
-		while (pp !== void 0 && pp > 0 && !ancestors.has(pp)) {
-			ancestors.add(pp);
-			pp = rows.get(pp)?.ppid;
-		}
-		for (const [pid, row] of rows) {
-			if (ancestors.has(pid)) continue;
-			if (SCRIPT_ARG_RE.test(row.args)) try {
-				process.kill(pid, "SIGTERM");
-			} catch {}
-		}
-	} catch {}
-}
 /**
 * Chrome's own frame around the page, used to turn a desired PAGE viewport into
 * a WINDOW size. Measured from the page because the frame height differs by
@@ -2267,8 +2207,6 @@ async function measureViewport(browser, targetId) {
 const windowSizeCache = /* @__PURE__ */ new Map();
 const windowSizeViewportRefresh = /* @__PURE__ */ new Map();
 async function main() {
-	stopSiblingWorkers();
-	rmSync(CAST_STATE_FILE, { force: true });
 	const server = createServer(async (req, res) => {
 		const url = new URL(req.url ?? "/", "http://127.0.0.1");
 		try {
