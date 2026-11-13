@@ -1,11 +1,10 @@
 /**
- * Advanced family: callout/steps/keyvalue, plot/diff/json/code, tabs and
- * accordion containers (recursing through renderNode), copy, mermaid,
- * scene3d, timeline, file-tree, quiz, breadcrumb.
+ * 高级组件族：提示框、步骤、键值、图表、代码、标签页、折叠区、复制、流程图、
+ * 三维场景、时间线、文件树、测验和面包屑；容器通过 renderNode 递归渲染。
  * @module coding-genui/client/blocks/advanced
  */
 import { memo, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
-import { CodeBlock, DiffBlock, JsonTree, writeClipboard } from '../primitive-adapter.ts'
+import { CodeBlock, DiffBlock, IconCheckOutline14, JsonTree, writeClipboard } from '../primitive-adapter.ts'
 import { renderInline } from '../inline.ts'
 import css from '../GenuiBlock.module.css'
 import { GENUI_LIMITS } from '../genui-runtime/index.ts'
@@ -39,8 +38,9 @@ export const CalloutNode = memo(function CalloutNode({ node }: { node: GenuiCall
   )
 })
 
-/** Steps: a vertical progress checklist with an optional current index. */
+/** 已完成步骤使用共享图标，避免字体字形基线造成视觉偏移。 */
 export const StepsNode = memo(function StepsNode({ steps }: { steps: GenuiSteps }) {
+  const t = useT()
   const list = steps.steps.slice(0, GENUI_LIMITS.maxSteps)
   const current = steps.current ?? list.length
   return (
@@ -50,7 +50,10 @@ export const StepsNode = memo(function StepsNode({ steps }: { steps: GenuiSteps 
         const active = i === current
         return (
           <li key={i} className={`${css.step} ${done ? css.stepDone : ''} ${active ? css.stepActive : ''}`}>
-            <span className={css.stepMarker}>{done ? '✓' : String(i + 1)}</span>
+            <span className={css.stepMarker} aria-hidden={done ? true : undefined}>
+              {done ? <IconCheckOutline14 size={12} /> : String(i + 1)}
+            </span>
+            {done && <span className={css.visuallyHidden}>{t('block.stepCompleted')}</span>}
             <span className={css.stepContent}>
               <span className={css.stepTitle}>{renderInline(step.title)}</span>
               {step.desc !== undefined && <span className={css.stepDesc}>{renderInline(step.desc)}</span>}

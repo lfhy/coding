@@ -1023,7 +1023,7 @@ img.mediaPlayer { aspect-ratio: 16 / 9; object-fit: cover; background: var(--dsl
 }
 .calloutBody { color: var(--dsw-alias-label-secondary); }
 
-/* ---------- steps ---------- */
+/* ---------- 步骤 ---------- */
 
 .steps {
   list-style: none;
@@ -1034,7 +1034,7 @@ img.mediaPlayer { aspect-ratio: 16 / 9; object-fit: cover; background: var(--dsl
   gap: var(--dsl-g-gap-md);
 }
 .step { position: relative; display: flex; gap: var(--dsl-g-gap-md); align-items: flex-start; }
-/* Connector between markers: turns a stack of badges into a visible sequence. */
+/* 标记之间的连接线使各步骤形成连续的进度轨道。 */
 .step:not(:last-child)::before {
   content: "";
   position: absolute;
@@ -1044,8 +1044,7 @@ img.mediaPlayer { aspect-ratio: 16 / 9; object-fit: cover; background: var(--dsl
   width: 1px;
   background: var(--dsl-g-border);
 }
-/* The rail behind a finished step picks up the success tint, so the sequence
-   reads as progress instead of a row of badges. */
+/* 已完成步骤的连接线沿用成功状态色，保留轨道的完成进度。 */
 .stepDone:not(:last-child)::before { background: color-mix(in srgb, var(--dsw-alias-state-success-primary, #3ecf8e) 45%, transparent); }
 .stepTitle { transition: color var(--dsl-g-dur-fast); }
 .stepActive .stepTitle { color: var(--dsl-g-accent); }
@@ -1067,8 +1066,8 @@ img.mediaPlayer { aspect-ratio: 16 / 9; object-fit: cover; background: var(--dsl
   background: color-mix(in srgb, var(--dsw-alias-state-success-primary, #3ecf8e) 18%, transparent);
   border-color: color-mix(in srgb, var(--dsw-alias-state-success-primary, #3ecf8e) 55%, transparent);
   color: var(--dsw-alias-state-success-primary, #2f9e6b);
-  font-size: var(--dsl-g-font-title);
 }
+.stepMarker svg { display: block; }
 .stepActive .stepMarker {
   background: color-mix(in srgb, var(--dsl-g-accent) var(--dsl-g-tint-strong), transparent);
   border-color: var(--dsl-g-accent);

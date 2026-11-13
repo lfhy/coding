@@ -79,6 +79,29 @@ describe('GenUI 工具行', () => {
     expect(view.container.textContent).not.toContain('非卡片摘要')
   })
 
+  it('步骤完成标记使用共享图形并保留未完成步骤序号', () => {
+    const complete = props()
+    const block = complete.block
+    if (!('kind' in block)) throw new Error('测试需要已结算的结果')
+    const view = render(<GenuiToolView {...complete} block={{
+      ...block,
+      meta: { items: [{ type: 'steps', current: 2, steps: [
+        { title: '已验证' }, { title: '已提交' }, { title: '待发布' },
+      ] }] },
+    }} />)
+    const items = view.container.querySelectorAll('ol > li')
+    expect(items).toHaveLength(3)
+    expect(items[0]?.querySelector('svg')).not.toBeNull()
+    expect(items[1]?.querySelector('svg')).not.toBeNull()
+    expect(items[0]?.textContent).toBe('已完成已验证')
+    expect(items[1]?.textContent).toBe('已完成已提交')
+    expect(items[2]?.querySelector('svg')).toBeNull()
+    expect(items[0]?.querySelector('svg')?.getAttribute('viewBox')).toBe('0 0 14 14')
+    expect(items[0]?.querySelector('svg')?.closest('[aria-hidden="true"]')).not.toBeNull()
+    expect(items[2]?.textContent).toBe('3待发布')
+    expect(items[2]?.querySelector('[aria-hidden="true"]')).toBeNull()
+  })
+
   it.each(['structured_output', 'mcp__rea__analyze'])('工具 %s 的业务 summary 不被误用为动作说明', (toolName) => {
     const complete = props()
     const block = complete.block

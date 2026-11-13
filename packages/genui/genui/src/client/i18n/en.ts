@@ -287,6 +287,7 @@ export const EN = {
   'block.total': 'Total',
   'block.filteredRows': '{visible} / {total} rows after filtering',
   'block.filterMatch': '{shown} / {total} matched',
+  'block.stepCompleted': 'Completed',
   'block.triggered': '✓ Sent',
   'block.triggeredPlain': 'Sent',
   'block.topicSent': 'Sent, continuing the conversation',

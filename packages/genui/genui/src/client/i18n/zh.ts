@@ -282,6 +282,7 @@ export const ZH: Record<keyof typeof EN, string> = {
   'block.total': '合计',
   'block.filteredRows': '筛选后 {visible} / {total} 行',
   'block.filterMatch': '匹配 {shown} / {total} 项',
+  'block.stepCompleted': '已完成',
   'block.triggered': '✓ 已触发',
   'block.triggeredPlain': '已触发',
   'block.topicSent': '已发送，正在继续对话',
