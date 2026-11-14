@@ -19,7 +19,7 @@
     "./src/*": "./src/*",
     "./package.json": "./package.json"
   },
-  "files": ["lib/index.js", "lib/invariant.js", "lib/types/**/*.js", "lib/types/**/*.d.ts"],
+  "files": ["lib/*.js", "lib/types/**/*.js", "lib/types/**/*.d.ts"],
   "license": "MIT",
   "dependencies": { "zod": "^4.4.3" },
   "peerDependencies": {

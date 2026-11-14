@@ -217,6 +217,8 @@ async function main(): Promise<void> {
   }).values
   const manifest = JSON.parse(await readFile(runtimeManifest, 'utf8')) as { version: string }
   if (!values['skip-build']) await command(process.execPath, ['--import', 'tsx/esm', join(root, 'scripts', 'build.ts')])
+  // deploy 按每个包的 files 清单裁剪产物；先核对相对导入闭包，避免缺少分片的安装包。
+  await command('pnpm', ['run', 'publint'])
   const cliBin = join(root, 'apps', 'cli', 'lib', 'bin.js')
   if (!existsSync(cliBin)) {
     throw new Error(`build:runtime: missing ${cliBin}; pnpm run build must emit the CLI bin before deploy`)
