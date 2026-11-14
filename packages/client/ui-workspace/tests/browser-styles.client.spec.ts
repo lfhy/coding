@@ -9,6 +9,7 @@ import { describe, expect, it } from 'vitest'
 
 const css = readFileSync(fileURLToPath(new URL('../src/client/WorkspaceBrowser.module.css', import.meta.url)), 'utf8')
 const rowsCss = readFileSync(fileURLToPath(new URL('../src/client/rows/Rows.module.css', import.meta.url)), 'utf8')
+const tabsCss = readFileSync(fileURLToPath(new URL('../src/client/WorkspaceViewTabs.module.css', import.meta.url)), 'utf8')
 
 /**
  * Declarations of one selector rule, keyed by property with whitespace collapsed.
@@ -41,6 +42,12 @@ describe('WorkspaceBrowser.module.css list', () => {
   it('is the scrolling region', () => {
     expect(list).toBeDefined()
     expect(list!.get('overflow-y')).toBe('auto')
+  })
+
+  it('移除分段切换的外圈描边，保留选中项的独立边框与原有尺寸', () => {
+    expect(declarationsFrom(tabsCss, '.tabs')?.get('border')).toBe('1px solid transparent')
+    expect(declarationsFrom(tabsCss, ".tabs .tab[aria-selected='true']")?.get('border-color'))
+      .toBe('var(--dsw-alias-border-l2)')
   })
 
   it('counts the themed scrollbar inside the shell trailing inset', () => {
