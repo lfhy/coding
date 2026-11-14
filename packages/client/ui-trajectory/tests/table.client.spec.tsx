@@ -157,6 +157,22 @@ describe('TrajectoryTable', () => {
     expect(view.container.textContent).not.toContain('secret')
   })
 
+  it('uses specific background and message actions in assistant calls without revealing arguments', () => {
+    const turns: readonly TrajectoryTurnModel[] = [{ turn: 1, groups: [{ title: 'Step 1', cells: [{
+      index: 1, kind: 'message', text: 'Tool call only', timeSeconds: 1,
+      sourceBlocks: [
+        { type: 'tool-call', content: '{"session_id":"bash-1","chars":"\\u0003"}', toolName: 'write_stdin', callId: 'session-1' },
+        { type: 'tool-call', content: '{"subagent_id":"child-1","message":"private text"}', toolName: 'send_message', callId: 'message-1' },
+      ],
+    }] }] }]
+    const view = render(<TrajectoryTable turns={turns} {...FOLD_PROPS} />)
+    fireEvent.click(screen.getByRole('row', { name: /ASSISTANT/ }))
+    expect(screen.getByText('停止后台任务')).toBeTruthy()
+    expect(screen.getByText('向子代理发送消息')).toBeTruthy()
+    expect(view.container.textContent).not.toContain('private text')
+    expect(view.container.textContent).not.toContain('child-1')
+  })
+
   it.each(['structured_output', 'mcp__server__tool'])('%s assistant list hides business summary', (toolName) => {
     const turns: readonly TrajectoryTurnModel[] = [{ turn: 1, groups: [{ title: 'Step 1', cells: [{
       index: 1, kind: 'message', text: 'Tool call only', timeSeconds: 1,

@@ -32,7 +32,7 @@ tools:
 
 `ToolRuntime.schemaOf` 只对缺少友好逐次说明且动作不能静态描述的对象根工具，在模型可见的原生 schema 和 Code Mode SDK 绑定中加入可选字符串 `summary`，供模型描述本次动作。已有 `description` 的工具及 `workflow.meta.description`、`team_task_create.subject`、`cordis_define.purpose`、`computer_confirm.reason` 等现成业务说明直接用于展示；等待、列表、浏览器截图等固定动作使用静态说明，不需模型填写。`ask_user_question` 使用自身等待和回答状态，`render_ui` 使用卡片 `spec.title` 和静态状态，均不注入额外摘要。`set_status` 固定显示「更新当前进度」，进度正文只用于当前运行状态，不额外要求动作摘要。动态 `structured_output` 和全部 MCP 工具免注入，保留其业务参数（包括业务 `summary`）的原有含义。注入字段不代替必需的业务参数；有效值是非空且不超过 160 个字符的单次调用动作说明，空白或超长值以 `INVALID_ARGS` 拒绝。说明仅用于展示，不应包含密钥、原始 JSON 或内部标识，也不能作为授权依据；`run_code` 的必填 `description` 仍用于描述外层程序。
 
-agent loop 将模型给出的原始参数写入 `tool/call`；Code Mode 子调用也在 `tool/code-dispatch-start`／`tool/code-dispatch` 中保存原始参数以供回放。注册表在并发分类和执行开始前只剥离符合注入规则的展示 `summary`，因此前置策略、审批、守卫、工具主体、输出投影与后置观测只接收业务参数；Host 的调用／结果呈现器也使用业务参数。未注入时业务参数保持原样，包括 `structured_output` 与 MCP 的业务 `summary`。Client 按工具名读取：适用的新调用优先取有效 `summary`，旧日志兼容读取 `display_description`；GenUI 工具行仅回放已结算旧日志中的 `display_description`，不读取新 `summary`。对话与轨迹共用已知工具的动作标题和缺省对象提取；补丁调用显示目标文件而非补丁正文，其余无有效说明时不把脚本或完整 JSON 放进折叠行，详情中的原始调用参数不受影响。
+agent loop 将模型给出的原始参数写入 `tool/call`；Code Mode 子调用也在 `tool/code-dispatch-start`／`tool/code-dispatch` 中保存原始参数以供回放。注册表在并发分类和执行开始前只剥离符合注入规则的展示 `summary`，因此前置策略、审批、守卫、工具主体、输出投影与后置观测只接收业务参数；Host 的调用／结果呈现器也使用业务参数。未注入时业务参数保持原样，包括 `structured_output` 与 MCP 的业务 `summary`。Client 按工具名读取：适用的新调用优先取有效 `summary`，旧日志兼容读取 `display_description`；GenUI 工具行仅回放已结算旧日志中的 `display_description`，不读取新 `summary`。对话与轨迹共用已知工具的动作标题和缺省对象提取；补丁调用显示目标文件而非补丁正文，后台会话与子代理通信调用区分动作与受控成功回执，不从命令输出或消息正文生成折叠摘要；其余无有效说明时不把脚本或完整 JSON 放进折叠行，详情中的原始调用参数不受影响。
 
 ### 取消
 

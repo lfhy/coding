@@ -14,7 +14,7 @@ import { abbreviateHomePath } from 'coding-client-runtime/client'
 import type { ToolCallBlock, ToolResultNode } from 'coding-client-runtime/client'
 import { imageAttachmentsIn } from './tool-result-images.ts'
 import { toolDisplayDescription } from 'coding-tools/display-description'
-import { toolActionTitle, toolCallPreview } from 'coding-tools/tool-action-title'
+import { toolActionTitle, toolCallPreview, toolResultPreview } from 'coding-tools/tool-action-title'
 
 export type { ToolCallBlock } from 'coding-client-runtime/client'
 
@@ -67,9 +67,9 @@ const TOOL_VARIANTS: Record<string, ToolRowVariant> = {
 }
 
 /** 仅为已知前缀指定动作类别；外部工具不把 wire 名当作界面文案。 */
-function titleFor(toolName: string): string | undefined {
+function titleFor(toolName: string, argsRaw: string): string | undefined {
   // cordis_define 由独立工具视图负责展示，不在通用回退行重复指定标题。
-  return (toolName === 'cordis_define' ? undefined : toolActionTitle(toolName))
+  return (toolName === 'cordis_define' ? undefined : toolActionTitle(toolName, argsRaw))
     ?? (toolName.startsWith('mcp__') ? 'External tool' : undefined)
 }
 
@@ -248,9 +248,10 @@ function deriveBody(variant: ToolRowVariant, argsRaw: string): string | null {
  * @param block - RunningToolCall or ToolResultNode off the snapshot caches.
  * @param cwd - session workspace root; workspace-rooted path summaries display relative to it.
  * @param home - host account home; a leftover POSIX home path displays as `~`.
+ * @param taskDescription - 在同会话启动回执中匹配到的后台任务友好说明。
  * @returns the row model.
  */
-export function toolRowModel(toolName: string, block: ToolCallBlock, cwd?: string, home?: string): ToolRowModel {
+export function toolRowModel(toolName: string, block: ToolCallBlock, cwd?: string, home?: string, taskDescription?: string): ToolRowModel {
   const variant = classifyTool(toolName)
   const done = 'kind' in block
   const argsRaw = (done ? block.call?.argsRaw : block.argsRaw) ?? ''
@@ -261,13 +262,18 @@ export function toolRowModel(toolName: string, block: ToolCallBlock, cwd?: strin
   const legacy = argsRaw === '' ? '' : abbreviateHomePath(
     relativizeToCwd(labelSkillResourcePath(deriveSummary(toolName, variant, argsRaw)), cwd), home,
   )
-  const toolTitle = titleFor(toolName)
-  const summary = toolName === 'apply_patch'
+  const toolTitle = titleFor(toolName, argsRaw)
+  const callSummary = toolName === 'apply_patch'
     ? toolCallPreview(toolName, argsRaw, displayDescription) ?? ''
     : displayDescription ?? (legacy || toolCallPreview(toolName, argsRaw) || '')
-  // 空对象与不完整参数只显示静态动作；完整输入仍保留在展开区。
   const output = done ? (resultText(block) || null) : null
-  const errorSummary = state === 'error' && output !== null ? firstLine(output) : null
+  const receipt = done ? toolResultPreview(toolName, output ?? '', block.isError) : undefined
+  const summary = toolName === 'write_stdin' && taskDescription !== undefined
+    ? `${taskDescription} · ${receipt ?? '正在处理'}`
+    : receipt ?? callSummary
+  // 已识别的回执说明当前状态；错误正文只留在展开详情，不覆盖安全的短提示。
+  const errorSummary = toolName === 'write_stdin' || toolName === 'send_message' || toolName === 'followup_task'
+    ? null : state === 'error' && output !== null ? firstLine(output) : null
   return {
     variant,
     title: toolTitle ?? VARIANT_TITLES[variant],

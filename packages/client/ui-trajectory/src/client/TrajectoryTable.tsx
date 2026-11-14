@@ -1183,7 +1183,7 @@ function AssistantToolCalls({
             </svg>
             <span className={css.assistantToolCallText}>
               <span className={css.assistantToolCallName}>
-                {call.toolName === undefined ? 'tool-call' : trajectoryToolTitle(call.toolName)}
+                {call.toolName === undefined ? 'tool-call' : trajectoryToolTitle(call.toolName, call.content)}
               </span>
               {(() => {
                 try {

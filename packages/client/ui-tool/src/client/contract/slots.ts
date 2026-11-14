@@ -38,6 +38,8 @@ export interface ToolCallOwnerProps {
   cwd?: string | undefined
   /** Host account home; POSIX home-rooted summaries display as `~`. */
   home?: string | undefined
+  /** 同会话后台启动回执中的友好说明；只附在对应会话的控制行。 */
+  taskDescription?: string | undefined
   /** Open a Tool argument path through the Host. */
   openFile: (path: string) => void
   /** Inspect this call in the trajectory view when available. */

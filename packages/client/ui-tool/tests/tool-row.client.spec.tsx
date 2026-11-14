@@ -261,6 +261,91 @@ describe('tool-call-model', () => {
       .toMatchObject({ title: '查询代码定义与引用', summary: 'src/a.ts' })
   })
 
+  it.each([
+    [{ session_id: 'bash-1', chars: '', yield_time_ms: 0 }, '读取后台任务输出'],
+    [{ session_id: 'bash-1', chars: '', yield_time_ms: 30_000 }, '等待后台任务输出'],
+    [{ session_id: 'bash-1', chars: 'secret input' }, '向后台任务输入'],
+    [{ session_id: 'bash-1', chars: '\u0003' }, '停止后台任务'],
+    [{ session_id: 'bash-1', chars: '\\u0003' }, '停止后台任务'],
+  ])('distinguishes background control action for %j', (args, title) => {
+    const block = running({ name: 'write_stdin', argsRaw: JSON.stringify(args) })
+    const model = toolRowModel('write_stdin', block)
+    expect(model).toMatchObject({ title, summary: '' })
+    const view = render(<GenericToolCard {...{ callId: 'c1', toolName: 'write_stdin', block, openFile: vi.fn(), t }} />)
+    expect(view.getByText(title)).toBeTruthy()
+    expect(view.container.textContent).not.toContain('secret input')
+  })
+
+  it('shows accepted subagent messages without echoing message content or implying the agent has read it', () => {
+    const argsRaw = JSON.stringify({ subagent_id: 'child-1', message: 'secret instructions' })
+    for (const [name, output, title, summary] of [
+      ['send_message', 'message accepted for next-step delivery to subagent child-1', '向子代理发送消息', '消息已接受，等待处理'],
+      ['followup_task', 'message accepted for next-turn delivery to subagent child-1', '安排子代理后续任务', '后续任务已安排，等待执行'],
+    ] as const) {
+      const block = result({ call: { name, argsRaw }, content: [{ type: 'text', text: output }] })
+      const model = toolRowModel(name, block)
+      expect(model).toMatchObject({ title, summary, errorSummary: null, output })
+      const view = render(<GenericToolCard {...{ callId: 'c1', toolName: name, block, openFile: vi.fn(), t }} />)
+      expect(view.getByText(summary)).toBeTruthy()
+      expect(view.container.textContent).not.toContain('child-1')
+      expect(view.container.textContent).not.toContain('secret instructions')
+    }
+    const failure = result({
+      call: { name: 'send_message', argsRaw }, isError: true,
+      content: [{ type: 'text', text: 'subagent private-id unavailable' }],
+    })
+    expect(toolRowModel('send_message', failure)).toMatchObject({
+      summary: '未能确认消息是否送达，请查看详情', errorSummary: null,
+    })
+    for (const name of ['send_message', 'followup_task']) {
+      const unknown = result({
+        call: { name, argsRaw }, content: [{ type: 'text', text: 'private unknown receipt' }],
+      })
+      expect(toolRowModel(name, unknown)).toMatchObject({ summary: '消息状态未确认，请查看详情', errorSummary: null })
+      expect(toolRowModel(name, result({ call: { name, argsRaw }, content: [] })).summary)
+        .toBe('消息状态未确认，请查看详情')
+    }
+  })
+
+  it.each([
+    ['(no new output)\n[status: running]', '任务仍在运行'],
+    ['done\n[status: completed]', '任务已结束，结果见详情'],
+    ['(no new output)\n[status: stopping]', '任务正在停止'],
+    ['(no new output)\n[status: killed]', '任务已停止'],
+    ['error details\n[status: failed, exit code: 1]', '任务运行失败，请查看详情'],
+  ])('shows the background task status without showing the stdout for %s', (output, summary) => {
+    const block = result({
+      call: { name: 'write_stdin', argsRaw: '{"session_id":"bash-1","chars":""}' },
+      content: [{ type: 'text', text: output }],
+    })
+    const model = toolRowModel('write_stdin', block)
+    expect(model).toMatchObject({ title: '等待后台任务输出', summary, output })
+    const view = render(<GenericToolCard {...{ callId: 'c1', toolName: 'write_stdin', block, openFile: vi.fn(), t }} />)
+    expect(view.getByText(summary)).toBeTruthy()
+    expect(view.container.textContent).not.toContain('error details')
+  })
+
+  it('keeps private errors out of the collapsed background and message rows', () => {
+    for (const name of ['write_stdin', 'send_message']) {
+      const argsRaw = name === 'write_stdin'
+        ? '{"session_id":"bash-1","chars":""}'
+        : '{"subagent_id":"child-1","message":"private payload"}'
+      const block = result({
+        call: { name, argsRaw }, isError: true,
+        content: [{ type: 'text', text: 'private error details' }],
+      })
+      const model = toolRowModel(name, block)
+      expect(model.errorSummary).toBeNull()
+      const view = render(<GenericToolCard {...{ callId: 'c1', toolName: name, block, openFile: vi.fn(), t }} />)
+      expect(view.container.textContent).not.toContain('private error details')
+      expect(view.container.textContent).not.toContain('private payload')
+    }
+    expect(toolRowModel('write_stdin', result({
+      call: { name: 'write_stdin', argsRaw: '{"session_id":"bash-1"}' },
+      content: [{ type: 'text', text: 'private status not recognized' }],
+    })).summary).toBe('任务状态未确认，请查看详情')
+  })
+
   it('joins multi-query web search arguments in the summary', () => {
     expect(toolRowModel('web_search', running({
       name: 'web_search',

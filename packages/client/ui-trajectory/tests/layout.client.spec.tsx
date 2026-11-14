@@ -71,7 +71,7 @@ describe('deriveTrajectoryLayout', () => {
       {
         kind: 'tool-result', seq: 3, time: 7_500, callId: 'c1',
         call: { name: 'bash', argsRaw: '{"command":"ls"}' }, callTime: 6_200,
-        content: [{ type: 'text', text: 'a.txt' }], isError: false, callView: null, resultView: null,
+        content: [{ type: 'text', text: 'a.txt' }], isError: false, callView: null, resultView: null, subCalls: [],
       },
     ] as unknown as ConversationSnapshot['nodes']
     const turns = deriveTrajectoryLayout({ nodes, partial: null, runningCalls: [] })
@@ -118,6 +118,101 @@ describe('deriveTrajectoryLayout', () => {
     const cell = turns[0]?.groups[0]?.cells[0]
     expect(cell).toMatchObject({ text: 'Bash', previewMarkdown: '检查当前目录', inputDetail: argsRaw })
     expect(cell?.previewMarkdown).not.toContain('private')
+  })
+
+  it('distinguishes background reads, stops and subagent sends in running records', () => {
+    for (const [name, argsRaw, title] of [
+      ['write_stdin', '{"session_id":"bash-1","chars":"","yield_time_ms":0}', '读取后台任务输出'],
+      ['write_stdin', '{"session_id":"bash-1","chars":"\\u0003"}', '停止后台任务'],
+      ['send_message', '{"subagent_id":"child-1","message":"private payload"}', '向子代理发送消息'],
+      ['followup_task', '{"subagent_id":"child-1","message":"private payload"}', '安排子代理后续任务'],
+    ] as const) {
+      const turns = deriveTrajectoryLayout({
+        nodes: [], partial: null,
+        runningCalls: [{ callId: name, name, argsRaw, turn: 1, step: 1, time: 1_000, callView: null, subCalls: [] }],
+      })
+      const cell = turns[0]?.groups[0]?.cells[0]
+      expect(cell).toMatchObject({ text: title, inputDetail: argsRaw })
+      expect(cell?.previewMarkdown).toBeUndefined()
+    }
+  })
+
+  it('keeps full background output in details but summarizes its status and message delivery', () => {
+    for (const [name, argsRaw, raw, summary] of [
+      ['write_stdin', '{"session_id":"bash-1"}', 'private stdout\n[status: completed]', '任务已结束，结果见详情'],
+      ['send_message', '{"subagent_id":"child-1","message":"private payload"}',
+        'message accepted for next-step delivery to subagent child-1', '消息已接受，等待处理'],
+    ]) {
+      const nodes = [{
+        kind: 'tool-result', seq: 1, time: 2_000, callId: name,
+        call: { name, argsRaw }, callTime: 1_000,
+        content: [{ type: 'text', text: raw }], isError: false, callView: null, resultView: null, subCalls: [],
+      }] as unknown as ConversationSnapshot['nodes']
+      const turns = deriveTrajectoryLayout({ nodes, partial: null, runningCalls: [] })
+      const cell = turns[0]?.groups[0]?.cells[0]
+      expect(cell).toMatchObject({ text: name === 'send_message' ? '向子代理发送消息' : '等待后台任务输出', result: summary, outputDetail: raw })
+      expect(cell?.resultPreviewMarkdown).toBeUndefined()
+    }
+  })
+
+  it('associates background readers with the starter description only inside the loaded window', () => {
+    const starter = {
+      kind: 'tool-result', seq: 1, time: 1_000, callId: 'starter',
+      call: { name: 'exec_command', argsRaw: JSON.stringify({
+        command: 'private command', description: '检查最新预览', run_in_background: true,
+      }) }, callTime: 900,
+      content: [{ type: 'text', text: 'started background job bash-1' }],
+      isError: false, callView: null, resultView: null, subCalls: [],
+    }
+    const reader = {
+      kind: 'tool-result', seq: 2, time: 2_000, callId: 'reader',
+      call: { name: 'write_stdin', argsRaw: '{"session_id":"bash-1"}' }, callTime: 1_500,
+      content: [{ type: 'text', text: 'private output\n[status: running]' }],
+      isError: false, callView: null, resultView: null, subCalls: [],
+    }
+    const turns = deriveTrajectoryLayout({
+      nodes: [starter, reader] as unknown as ConversationSnapshot['nodes'], partial: null, runningCalls: [],
+    })
+    const cell = turns.flatMap(turn => turn.groups.flatMap(group => group.cells)).find(item => item.callId === 'reader')
+    expect(cell).toMatchObject({ text: '等待后台任务输出', previewMarkdown: '检查最新预览', result: '任务仍在运行' })
+    expect(cell?.previewMarkdown).not.toContain('private command')
+
+    const withoutStarter = deriveTrajectoryLayout({
+      nodes: [reader] as unknown as ConversationSnapshot['nodes'], partial: null, runningCalls: [],
+    })
+    expect(withoutStarter[0]?.groups[0]?.cells[0]?.previewMarkdown).toBeUndefined()
+  })
+
+  it('links nested background starters to their exact session, not unrelated or failed receipts', () => {
+    const nested = {
+      kind: 'tool-result', seq: 2, time: 2_000, callId: 'nested',
+      call: { name: 'bash', argsRaw: JSON.stringify({
+        command: 'private', description: '验证后台同步', run_in_background: true,
+      }) }, callTime: 1_000, content: [{ type: 'text', text: 'started background job bash-2' }],
+      isError: false, callView: null, resultView: null, subCalls: [],
+    }
+    const parent = {
+      kind: 'tool-result', seq: 1, time: 2_000, callId: 'parent',
+      call: { name: 'run_code', argsRaw: '{"code":"private"}' }, callTime: 1_000,
+      content: [], isError: false, callView: null, resultView: null, subCalls: [nested],
+    }
+    const reader = {
+      kind: 'tool-result', seq: 3, time: 3_000, callId: 'reader',
+      call: { name: 'write_stdin', argsRaw: '{"session_id":"bash-2"}' }, callTime: 2_500,
+      content: [{ type: 'text', text: '[status: completed]' }],
+      isError: false, callView: null, resultView: null, subCalls: [],
+    }
+    const cells = (starter: typeof parent) => deriveTrajectoryLayout({
+      nodes: [starter, reader] as unknown as ConversationSnapshot['nodes'], partial: null, runningCalls: [],
+    }).flatMap(turn => turn.groups.flatMap(group => group.cells))
+    expect(cells(parent).find(cell => cell.callId === 'reader'))
+      .toMatchObject({ previewMarkdown: '验证后台同步', result: '任务已结束，结果见详情' })
+    expect(cells({ ...parent, subCalls: [{ ...nested, isError: true }] }).find(cell => cell.callId === 'reader')?.previewMarkdown)
+      .toBeUndefined()
+    expect(cells({ ...parent, subCalls: [{ ...nested, content: [{ type: 'text', text: 'output started background job bash-2' }] }] })
+      .find(cell => cell.callId === 'reader')?.previewMarkdown).toBeUndefined()
+    expect(cells({ ...parent, subCalls: [{ ...nested, call: { ...nested.call, argsRaw: JSON.stringify({ command: 'private' }) } }] })
+      .find(cell => cell.callId === 'reader')?.previewMarkdown).toBeUndefined()
   })
 
   it('shows patch targets in records without exposing patch content', () => {
@@ -296,12 +391,12 @@ describe('deriveTrajectoryLayout', () => {
       {
         kind: 'tool-result', seq: 2, time: 2_500, callId: 'a',
         call: { name: 'bash', argsRaw: '{}' }, callTime: 1_100,
-        content: [], isError: false, callView: null, resultView: null,
+        content: [], isError: false, callView: null, resultView: null, subCalls: [],
       },
       {
         kind: 'tool-result', seq: 3, time: 4_000, callId: 'b',
         call: { name: 'bash', argsRaw: '{}' }, callTime: 2_600,
-        content: [], isError: false, callView: null, resultView: null,
+        content: [], isError: false, callView: null, resultView: null, subCalls: [],
       },
     ] as unknown as ConversationSnapshot['nodes']
     const turns = deriveTrajectoryLayout({ nodes, partial: null, runningCalls: [] })
@@ -525,7 +620,7 @@ describe('deriveTrajectoryLayout', () => {
       {
         kind: 'tool-result', seq: 3, time: 3_000, callId: 'c1',
         call: { name: 'bash', argsRaw: '{}' }, callTime: 2_100,
-        content: [], isError: false, callView: null, resultView: null,
+        content: [], isError: false, callView: null, resultView: null, subCalls: [],
       },
       {
         kind: 'context', seq: 4, time: 9_000,

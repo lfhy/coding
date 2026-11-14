@@ -19,7 +19,8 @@ import type {
 } from './trajectory-record.ts'
 import { formatElapsedSeconds } from './trajectory-record.ts'
 import { toolDisplayDescription } from 'coding-tools/display-description'
-import { toolActionTitle, toolCallPreview } from 'coding-tools/tool-action-title'
+import { backgroundSessionId, toolActionTitle, toolCallPreview, toolResultPreview } from 'coding-tools/tool-action-title'
+import { backgroundTaskDescriptions } from './background-task-descriptions.ts'
 
 /** One Message or Step group inside a turn. */
 export interface TrajectoryGroupModel {
@@ -142,6 +143,7 @@ export function deriveTrajectoryLayout(input: TrajectoryLayoutInput): readonly T
     nodes, eventLocations, partial, runningCalls, requests = [], callSchemas,
   } = input
   const resultByCall = indexResults(nodes)
+  const backgroundTasks = backgroundTaskDescriptions(nodes)
   const callById = new Map<string, ToolCallBlock>(resultByCall)
   for (const call of runningCalls) callById.set(call.callId, call)
   const emittedCallIds = indexAssistantCallIds(nodes)
@@ -423,7 +425,7 @@ export function deriveTrajectoryLayout(input: TrajectoryLayoutInput): readonly T
     if (node.kind === 'tool-result') {
       if (!emittedCallIds.has(node.callId)) {
         const toolName = node.call?.name
-        const resultPreview = summarizeResult(node)
+        const resultPreview = summarizeResult(node, node.call?.name)
         const laidList: LaidCell[] = [{
           absTime: finiteTime(node.callTime ?? node.time),
           ...(toolName !== undefined ? { toolName } : {}),
@@ -514,7 +516,13 @@ export function deriveTrajectoryLayout(input: TrajectoryLayoutInput): readonly T
 
   for (const entry of [...turns.values(), ...standaloneCompactions]) {
     for (const group of entry.groups) {
-      for (const laid of group.laid) attachToolSchema(laid, callSchemas)
+      for (const laid of group.laid) {
+        attachToolSchema(laid, callSchemas)
+        if (laid.toolName !== 'write_stdin') continue
+        const sessionId = backgroundSessionId(laid.toolName, laid.cell.inputDetail ?? '')
+        const task = sessionId === undefined ? undefined : backgroundTasks.get(sessionId)
+        if (task !== undefined) laid.cell.previewMarkdown = task
+      }
     }
   }
 
@@ -731,7 +739,7 @@ function expandAssistant(
       : durationSeconds(result.time, result.callTime)
     const callAbs = finiteTime(callStarts.get(block.callId))
     const call = calls.get(block.callId)
-    const resultPreview = result === undefined ? undefined : summarizeResult(result)
+    const resultPreview = result === undefined ? undefined : summarizeResult(result, block.name)
     out.push({
       absTime: callAbs,
       toolName: block.name,
@@ -1001,7 +1009,7 @@ function expandSubCalls(
   let index = startIndex
   for (const sub of subs) {
     const settled = 'kind' in sub
-    const resultPreview = settled ? summarizeResult(sub) : undefined
+    const resultPreview = settled ? summarizeResult(sub, sub.call?.name) : undefined
     const laid: LaidCell = {
       absTime: settled ? finiteTime(sub.callTime ?? sub.time) : finiteTime(sub.time),
       toolName: settled ? sub.call?.name ?? sub.callId : sub.name,
@@ -1044,8 +1052,8 @@ function expandSubCalls(
 }
 
 /** 返回已知工具的用户友好动作，未知工具保留调用记录的原名称供检查。 */
-export function trajectoryToolTitle(name: string): string {
-  return toolActionTitle(name) ?? name
+export function trajectoryToolTitle(name: string, argsRaw?: string): string {
+  return toolActionTitle(name, argsRaw) ?? name
 }
 
 function summarizeCall(
@@ -1060,14 +1068,18 @@ function summarizeCall(
   }
   const preview = toolCallPreview(name, argsRaw, description)
   return {
-    text: trajectoryToolTitle(name),
+    text: trajectoryToolTitle(name, argsRaw),
     ...(preview === undefined ? {} : { previewMarkdown: preview }),
   }
 }
 
 function summarizeResult(
   node: ToolResultNode,
+  name?: string,
 ): Pick<TrajectoryCellProps, 'result' | 'resultPreviewMarkdown'> {
+  const text = node.content.find(block => block.type === 'text' && typeof block.text === 'string' && block.text !== '')
+  const receipt = name === undefined ? undefined : toolResultPreview(name, text?.type === 'text' ? text.text : '', node.isError)
+  if (receipt !== undefined) return { result: receipt }
   if (node.isError) {
     return { result: node.error?.code ?? 'error' }
   }

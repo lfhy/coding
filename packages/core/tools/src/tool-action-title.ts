@@ -1,9 +1,11 @@
+import { toolDisplayDescription } from './display-description-value.ts'
+
 /** 已知模型工具的用户可见动作标题，供对话和轨迹共用。未知动作由各视图回退。 */
 const ACTION_TITLES: Readonly<Record<string, string>> = {
   apply_patch: 'Apply patch',
   str_replace_editor: 'Edit file',
   read_image: 'Read image',
-  write_stdin: 'Background session',
+  write_stdin: '查看后台任务输出',
   update_plan: 'Update plan',
   todo_write: 'Update plan',
   set_status: '更新当前进度',
@@ -19,8 +21,8 @@ const ACTION_TITLES: Readonly<Record<string, string>> = {
   spawn_agent: 'Delegate task',
   subagent: 'Delegate task',
   subagent_fork: 'Delegate task',
-  followup_task: 'Send follow-up',
-  send_message: 'Message agent',
+  followup_task: '安排子代理后续任务',
+  send_message: '向子代理发送消息',
   list_agents: 'List agents',
   wait_agent: 'Wait for agents',
   interrupt_agent: 'Stop agent',
@@ -164,9 +166,25 @@ const DOMAIN_TITLES: Readonly<Record<string, string>> = {
 /**
  * 为已知调用提供动作标题，未知同领域动作仅显示所属类别。
  * @param name - 会话记录中的工具名。
+ * @param argsRaw - 可选的完整调用参数；用于区分后台读取、等待与输入。
  * @returns 可供对话及轨迹使用的标题；未知工具返回 undefined。
  */
-export function toolActionTitle(name: string): string | undefined {
+export function toolActionTitle(name: string, argsRaw?: string): string | undefined {
+  if (name === 'write_stdin' && argsRaw !== undefined) {
+    try {
+      const args: unknown = JSON.parse(argsRaw)
+      if (typeof args === 'object' && args !== null && !Array.isArray(args)) {
+        const record = args as Record<string, unknown>
+        if (typeof record.chars === 'string' && record.chars !== '') {
+          return record.chars.includes('\u0003') || record.chars.includes('\\u0003')
+            ? '停止后台任务' : '向后台任务输入'
+        }
+        return record.yield_time_ms === 0 ? '读取后台任务输出' : '等待后台任务输出'
+      }
+    } catch {
+      // 流式调用尚未形成完整参数时，保持静态动作标题。
+    }
+  }
   if (Object.hasOwn(ACTION_TITLES, name)) return ACTION_TITLES[name]
   const prefix = name.split('_', 1)[0] ?? ''
   return Object.hasOwn(DOMAIN_TITLES, prefix) ? DOMAIN_TITLES[prefix] : undefined
@@ -216,4 +234,73 @@ export function toolCallPreview(name: string, argsRaw: string, description?: str
   const target = toolArgsPreview(name, argsRaw)
   if (name === 'apply_patch' && target !== undefined) return description === undefined ? target : `${target} · ${description}`
   return description ?? target
+}
+
+/**
+ * 从后台任务启动回执提取其身份，拒绝普通输出中的误报和未结算的启动调用。
+ * @param name - 启动后台任务的工具名。
+ * @param argsRaw - 启动调用参数。
+ * @param output - 启动回执的完整模型可见文本。
+ * @returns 后台任务身份与逐次说明；缺少说明时不推断命令用途。
+ */
+export function backgroundStart(name: string, argsRaw: string, output: string): { id: string; description: string } | undefined {
+  if (name !== 'bash' && name !== 'exec_command') return undefined
+  const id = /^started background job (\S+)$/.exec(output)?.[1]
+  if (id === undefined) return undefined
+  try {
+    const args: unknown = JSON.parse(argsRaw)
+    if (typeof args !== 'object' || args === null || Array.isArray(args)) return undefined
+    const record = args as Record<string, unknown>
+    if (record.run_in_background !== true) return undefined
+    const description = toolDisplayDescription(args, name)
+    return description === undefined ? undefined : { id, description }
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * 读取后台会话所指的任务身份；不把缺失、未闭合或其他工具参数当作任务索引。
+ * @param name - 工具名。
+ * @param argsRaw - 会话控制调用参数。
+ * @returns 匹配后台启动回执的身份，或 undefined。
+ */
+export function backgroundSessionId(name: string, argsRaw: string): string | undefined {
+  if (name !== 'write_stdin') return undefined
+  try {
+    const args: unknown = JSON.parse(argsRaw)
+    if (typeof args !== 'object' || args === null || Array.isArray(args)) return undefined
+    const id = (args as Record<string, unknown>).session_id
+    return typeof id === 'string' && id !== '' ? id : undefined
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * 只给后台控制和子代理通信提供回执摘要，不把命令输出或消息正文当作行标题。
+ * @param name - 会话记录中的工具名。
+ * @param output - 已结算的模型可见结果文本。
+ * @param isError - 调用是否失败；失败并不证明子代理没有收到消息。
+ * @returns 面向用户的状态说明；其他工具不接管已有结果展示。
+ */
+export function toolResultPreview(name: string, output: string, isError: boolean): string | undefined {
+  if (name === 'send_message' || name === 'followup_task') {
+    if (isError) return '未能确认消息是否送达，请查看详情'
+    const delivery = name === 'send_message' ? 'next-step' : 'next-turn'
+    return new RegExp(`^message accepted for ${delivery} delivery to subagent [^\\r\\n]+$`).test(output)
+      ? name === 'send_message' ? '消息已接受，等待处理' : '后续任务已安排，等待执行'
+      : '消息状态未确认，请查看详情'
+  }
+  if (name !== 'write_stdin') return undefined
+  if (isError) return '读取后台任务失败，请查看详情'
+  const status = /\[status: (running|stopping|completed|killed|failed)(?:,[^\]\r\n]*)?\]\s*$/.exec(output)?.[1]
+  switch (status) {
+    case 'running': return '任务仍在运行'
+    case 'stopping': return '任务正在停止'
+    case 'completed': return '任务已结束，结果见详情'
+    case 'killed': return '任务已停止'
+    case 'failed': return '任务运行失败，请查看详情'
+    default: return '任务状态未确认，请查看详情'
+  }
 }

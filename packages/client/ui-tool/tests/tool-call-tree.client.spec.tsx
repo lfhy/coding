@@ -24,8 +24,11 @@ function props(
   block: ToolResultNode,
   selectedCallId?: string,
   description?: HostDescription,
+  history: readonly ToolResultNode[] = [],
 ): ToolTreeProps {
-  const snapshot = {} as ConversationSnapshot
+  const snapshot = { chat: { nodes: { values: () => history.map(entry => ({
+    kind: 'tool-call', data: { root: entry },
+  })) } } } as unknown as ConversationSnapshot
   const useSession = ((selector: (value: ConversationSnapshot) => unknown) => selector(snapshot)) as ToolTreeProps['useSession']
   const renderSlot = ((_key: string, _owner: object, options?: { fallback?: React.ReactNode }) =>
     options?.fallback ?? null) as unknown as ToolTreeProps['renderSlot']
@@ -54,6 +57,53 @@ function props(
 }
 
 describe('ToolCallTree', () => {
+  it('links a background read to its completed starter description without exposing the command or output', () => {
+    const start = {
+      ...root('starter', { name: 'exec_command', argsRaw: JSON.stringify({
+        command: 'private command', description: '验证设置面板布局', run_in_background: true,
+      }) }),
+      content: [{ type: 'text' as const, text: 'started background job bash-1' }],
+    }
+    const read = {
+      ...root('reader', { name: 'write_stdin', argsRaw: '{"session_id":"bash-1","chars":""}' }),
+      content: [{ type: 'text' as const, text: 'private output\n[status: running]' }],
+    }
+    const view = render(<ToolCallTree {...props(read, undefined, undefined, [start, read])} />)
+    expect(view.getByText('验证设置面板布局 · 任务仍在运行')).toBeTruthy()
+    expect(view.container.textContent).not.toContain('private command')
+    expect(view.container.textContent).not.toContain('private output')
+
+    view.rerender(<ToolCallTree {...props(read, undefined, undefined, [read])} />)
+    expect(view.getByText('任务仍在运行')).toBeTruthy()
+    expect(view.container.textContent).not.toContain('验证设置面板布局')
+  })
+
+  it('does not attach a different session description, untrusted receipt, or parent description to child calls', () => {
+    const starter = (callId: string, id: string, description: string) => ({
+      ...root(callId, { name: 'exec_command', argsRaw: JSON.stringify({
+        command: 'private command', description, run_in_background: true,
+      }) }),
+      content: [{ type: 'text' as const, text: `started background job ${id}` }],
+    })
+    const child = { ...root('child', { name: 'write_stdin', argsRaw: '{"session_id":"bash-2"}' }),
+      content: [{ type: 'text' as const, text: '[status: completed]' }] }
+    const parent = {
+      ...root('parent', { name: 'write_stdin', argsRaw: '{"session_id":"bash-1"}' }),
+      content: [{ type: 'text' as const, text: '[status: completed]' }], subCalls: [child],
+    }
+    const matched = starter('start-1', 'bash-1', '检查主任务')
+    const different = starter('start-2', 'bash-2', '检查子任务')
+    const forged = { ...starter('forged', 'bash-2', '伪造说明'), isError: true }
+    const view = render(<ToolCallTree {...props(parent, undefined, undefined, [matched, different, forged])} />)
+    expect(view.getByText('检查主任务 · 任务已结束，结果见详情')).toBeTruthy()
+    expect(view.getByText('检查子任务 · 任务已结束，结果见详情')).toBeTruthy()
+    expect(view.container.textContent).not.toContain('伪造说明')
+
+    view.rerender(<ToolCallTree {...props(parent, undefined, undefined, [matched])} />)
+    expect(view.getByText('检查主任务 · 任务已结束，结果见详情')).toBeTruthy()
+    expect(view.getByText('任务已结束，结果见详情')).toBeTruthy()
+  })
+
   it('owns the root marker, generic fallback, and selected state for a window-truncated call', () => {
     const block = root('w1', null)
     const view = render(<ToolCallTree {...props(block, 'w1')} />)
