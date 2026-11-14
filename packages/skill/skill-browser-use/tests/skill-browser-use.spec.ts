@@ -88,6 +88,8 @@ describe('bundled browser-use skill', () => {
     expect(loaded.content).toContain('browser_wait_for_selector({selector: "[data-results]"})')
     expect(loaded.content).toContain('browser_navigate({url: "http://localhost:5173/"})')
     expect(loaded.content).toContain('Emulation.setDeviceMetricsOverride')
+    expect(loaded.content).toContain("await cdp('Emulation.clearDeviceMetricsOverride')")
+    expect(loaded.content).toContain('it outlives the call')
     expect(loaded.content).toContain('@@DSH_RESULT@@')
     expect(loaded.content).toContain('browser_screenshot({path: "checkout.png"})')
     expect(loaded.content).toContain('browser_upload({selector: "input[type=file]", path: "fixtures/sample.csv"})')

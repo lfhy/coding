@@ -49,14 +49,15 @@ browser_wait_for_selector({selector: "[data-results]"})
 browser_read_element({selector: "[data-results]", what: "text"})
 ```
 
-Check a local development page, including a viewport-specific layout, in one call:
+Check a local development page, including a viewport-specific layout, in one call that also restores the viewport:
 
 ```text
 browser_navigate({url: "http://localhost:5173/"})
-browser_script({script: "await cdp('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 3, mobile: true })\nconst wide = await page.evaluate(() => document.body.scrollWidth)\nawait page.screenshot({ path: 'mobile.png' })\nconsole.log('@@DSH_RESULT@@' + JSON.stringify({ wide }))"})
+browser_script({script: "await cdp('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 3, mobile: true })\nconst wide = await page.evaluate(() => document.body.scrollWidth)\nawait page.screenshot({ path: 'mobile.png' })\nawait cdp('Emulation.clearDeviceMetricsOverride')\nconsole.log('@@DSH_RESULT@@' + JSON.stringify({ wide }))"})
+browser_page_info({})
 ```
 
-The override ends with that call, so a separate `browser_cdp` call or a later `browser_page_info({})` cannot see it.
+A device-metrics override belongs to that page in this Host's browser session, so it outlives the call: a later `browser_page_info({})` still reports the emulated size, and the right-sidebar picture keeps rendering at the narrow width. Always clear it in the same script once the measurement is taken, and let `browser_page_info({})` confirm the viewport is back before you report the layout result.
 
 Verify appearance with pixels, not the semantic tree:
 
