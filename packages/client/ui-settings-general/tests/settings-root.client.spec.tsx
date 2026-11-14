@@ -6,8 +6,15 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { Modal } from 'coding-client-ui-primitives'
 import type { SettingsRootComponentProps } from '../src/client/shell-contract.ts'
 import { SettingsRoot } from '../src/client/SettingsRoot.tsx'
+import { TriggerContent } from '../src/client/chrome.tsx'
+import { en } from '../src/client/locales.ts'
 
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  vi.useRealTimers()
+})
+
+const t: SettingsRootComponentProps['t'] = key => (en as Record<string, string>)[key] ?? key
 
 type Row = { id: string; order: number; label: string }
 type Step = { id: string; order: number }
@@ -36,8 +43,12 @@ function mount({
   let current = rows
   const listeners = new Set<() => void>()
   const renderSlot = vi.fn(
-    ((key: string, _owner: unknown, opts?: { only?: string }) => {
+    ((key: string, owner: unknown, opts?: { only?: string }) => {
       if (key === 'settings.section') return section?.() ?? <div data-testid={`section-${opts?.only ?? 'all'}`} />
+      if (key === 'settings.trigger') return <TriggerContent
+        wide={(owner as { wide: boolean }).wide} t={t}
+        useSessions={unusedHook} useWorkspaces={unusedHook}
+      />
       return SEAT_CONTENT[key]
     }) as SettingsRootComponentProps['renderSlot'],
   )
@@ -49,6 +60,7 @@ function mount({
     useSessions,
     useWorkspaces: unusedHook,
     wide,
+    t,
     useOnboardingSteps: select => select(steps),
     useSections: (select) => {
       const [, force] = useState(0)
@@ -87,7 +99,24 @@ describe('SettingsRoot page', () => {
     expect(screen.getByRole('button', { name: 'Settings', expanded: true })).toBeTruthy()
   })
 
-  it('portals a full-page main outside the sidebar, with no dialog, mask, or unreachable X', () => {
+  it('shows a delayed hover label and immediate keyboard label for the icon trigger', () => {
+    vi.useFakeTimers()
+    mount({ wide: false })
+    const trigger = screen.getByRole('button', { name: 'Settings' })
+    expect(trigger.textContent).toBe('')
+    fireEvent.mouseEnter(trigger)
+    act(() => { vi.advanceTimersByTime(499) })
+    expect(screen.queryByRole('tooltip')).toBeNull()
+    act(() => { vi.advanceTimersByTime(1) })
+    expect(screen.getByRole('tooltip').textContent).toBe('Settings')
+    fireEvent.mouseLeave(trigger)
+    fireEvent.focus(trigger)
+    expect(screen.getByRole('tooltip').textContent).toBe('Settings')
+    openPage()
+    expect(screen.queryByRole('tooltip')).toBeNull()
+  })
+
+  it('portals a full-page main outside the window navigation, with no dialog, mask, or unreachable X', () => {
     const { view, renderSlot } = mount()
     const page = openPage()
     expect(page.parentElement).toBe(document.body)

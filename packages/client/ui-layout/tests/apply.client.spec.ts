@@ -49,6 +49,7 @@ describe('ui-layout client apply', () => {
     expect(slots.spec('workbench.bottom')).toEqual({ kind: 'single', scope: 'root' })
     expect(slots.spec('shell.overlay')).toEqual({ kind: 'list', scope: 'root' })
     expect(slots.spec('shell.page')).toEqual({ kind: 'keyed', scope: 'session' })
+    expect(slots.spec('shell.settings')).toEqual({ kind: 'single', scope: 'root' })
   })
 
   it('injects the AppFrame projection callbacks and attaches the layout actions', async () => {

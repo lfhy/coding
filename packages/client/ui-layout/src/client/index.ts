@@ -8,7 +8,7 @@ import type {} from 'coding-client-locale/client'
 import type {} from 'coding-client-ui-theme/client'
 import type { AppFrameInjected } from './AppFrame.tsx'
 import type { PanelActions } from './service.ts'
-import { AppFrame } from './AppFrame.tsx'
+import { WindowShell } from './WindowShell.tsx'
 import { createLayoutStore } from './stores.ts'
 import { LayoutController } from './service.ts'
 import { ThemePresenter } from './theme-presenter.ts'
@@ -16,7 +16,7 @@ import { en, zh, type LayoutKey } from './locales.ts'
 
 declare module 'coding-client-ui-slots' {
   interface LocaleNamespaceMap {
-    /** 布局壳悬浮对话控件文案。 */
+    /** 窗口导航与布局壳悬浮对话控件文案。 */
     layout: LayoutKey
   }
 }
@@ -52,6 +52,8 @@ declare module 'coding-client-ui-slots' {
     'shell.overlay': { kind: 'list'; scope: 'root' }
     /** 主内容区的独立会话页面；由根布局保持侧栏与背景会话的挂载。 */
     'shell.page': { kind: 'keyed'; scope: 'session'; owner: ShellPageOwnerProps }
+    /** 外层窄导航底部的设置入口；不随内层侧栏折叠或卸载。 */
+    'shell.settings': { kind: 'single'; scope: 'root'; owner: ShellSettingsOwnerProps }
   }
 }
 
@@ -97,11 +99,16 @@ export interface ShellPageOwnerProps {
   closePage: () => void
 }
 
+/** 设置触发器的呈现约定；外层导航固定使用紧凑图标。 */
+export interface ShellSettingsOwnerProps {
+  wide: boolean
+}
+
 /** Cordis fiber 所需服务。 */
 export const inject = ['slots', 'theme', 'locale']
 
 /**
- * 注册 AppFrame、`ctx.layout` 和主题呈现器。
+ * 注册窗口外壳、`ctx.layout` 和主题呈现器。
  * @param ctx - 客户端根 Context。
  * @returns 无返回值；生命周期由 `ctx.effect` 管理。
  */
@@ -121,6 +128,7 @@ export function apply(ctx: ClientContext): void {
         'workbench.bottom': { kind: 'single', scope: 'root' },
         'shell.overlay': { kind: 'list', scope: 'root' },
         'shell.page': { kind: 'keyed', scope: 'session' },
+        'shell.settings': { kind: 'single', scope: 'root' },
       },
       store: createLayoutStore,
       inject: (actions: PanelActions): AppFrameInjected => {
@@ -134,7 +142,7 @@ export function apply(ctx: ClientContext): void {
           publishPage: (page) => { layout.publishPage(page) },
         }
       },
-    }, AppFrame)
+    }, WindowShell)
     return () => {
       layout.detachPanels()
       disposeRegistration()

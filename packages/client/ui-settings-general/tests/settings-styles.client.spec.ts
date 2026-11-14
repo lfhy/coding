@@ -26,13 +26,15 @@ function declarations(selector: string, source = css): Map<string, string> | und
 }
 
 describe('SettingsRoot.module.css', () => {
-  it('keeps the settings trigger on the sidebar top entry rows', () => {
-    // 触发行与侧栏顶部的新对话行共用行高、内边距与整行宽度，间距由侧栏座位给出。
+  it('matches the settings icon trigger to the window navigation controls', () => {
+    // 宽行保留原有几何；窗口窄导航固定使用 36px 图标按钮与 10px 圆角。
     expect(declarations('.trigger')?.get('margin')).toBe('0')
     expect(declarations('.trigger')?.get('width')).toBe('100%')
     expect(declarations('.trigger')?.get('height')).toBe('42px')
     expect(declarations('.trigger.rail')?.get('margin')).toBe('0')
     expect(declarations('.trigger.rail')?.get('width')).toBe('36px')
+    expect(declarations('.trigger.rail')?.get('height')).toBe('36px')
+    expect(declarations('.trigger.rail')?.get('border-radius')).toBe('10px')
   })
 
   it('occupies the full viewport without a mask or floating modal frame', () => {

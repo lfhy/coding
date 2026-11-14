@@ -1,6 +1,6 @@
 /** 将侧边栏壳层注册到布局持有的 slot。 */
 import type { ClientContext } from 'coding-client-runtime/client'
-// Type-only: pulls the locale plugin's Context merge (ctx.locale).
+// 仅类型导入：合并 locale 插件的 ctx.locale 声明。
 import type {} from 'coding-client-locale/client'
 import type {} from 'coding-client-ui-conversation/client'
 import type { SidebarRootInjected } from './contract/slots.ts'
@@ -9,7 +9,7 @@ import { en, zh, type SidebarKey } from './locales.ts'
 
 export type {
   SidebarTopEntryOwnerProps, SidebarFooterActionOwnerProps,
-  SidebarRootComponentProps, SidebarRootInjected, SidebarSectionOwnerProps, SidebarSettingsOwnerProps,
+  SidebarRootComponentProps, SidebarRootInjected, SidebarSectionOwnerProps,
 } from './contract/slots.ts'
 export type { SidebarKey } from './locales.ts'
 
@@ -46,13 +46,11 @@ export function apply(ctx: ClientContext): void {
     () => ctx.slots.register({
       name: 'sidebar',
       locale: NS,
-      // 壳层持有几何；ui-workspace 注册完整浏览区域（标题、搜索、会话列表、Workspace 对话框），
-      // ui-settings 注册设置触发器和面板。
+      // 壳层持有几何；ui-workspace 注册完整浏览区域（标题、搜索、会话列表、Workspace 对话框）。
       children: {
-        // 新对话与设置之间的可选整行入口；折叠 rail 中也保持相同的顺序。
+        // 新对话下方的可选整行入口；折叠 rail 中也保持相同的顺序。
         'sidebar.top.entry': { kind: 'list', scope: 'root' },
         'sidebar.workspaces': { kind: 'single', scope: 'root' },
-        'sidebar.settings': { kind: 'single', scope: 'root' },
         'sidebar.footer.action': { kind: 'list', scope: 'root' },
       },
       inject: injectProps,

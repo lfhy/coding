@@ -8,6 +8,15 @@ import {
 afterEach(cleanup)
 
 describe('语义图标适配', () => {
+  it('首页使用线性房屋图形而非品牌图片，继承尺寸和无障碍隐藏状态', () => {
+    const view = render(<Icon name="home" size={20} className="home-control" />)
+    const icon = view.container.querySelector<HTMLElement>('.home-control')!
+    expect(icon.style.fontSize).toBe('20px')
+    expect(icon.getAttribute('aria-hidden')).toBe('true')
+    expect(icon.querySelector('svg')).not.toBeNull()
+    expect(icon.querySelector('img')).toBeNull()
+  })
+
   it('统一传递尺寸、类名和无障碍隐藏状态', () => {
     const view = render(<Icon name="sidebar" size={18} className="panel-control" />)
     const wrapper = view.container.querySelector('.panel-control') as HTMLElement

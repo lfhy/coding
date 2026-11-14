@@ -64,7 +64,6 @@ describe('SidebarRoot.module.css', () => {
       '.railIn .iconButton',
       '.railIn .newSession',
       ".railIn [data-slot='sidebar.top.entry'] button",
-      '.railIn .settingsArea',
       '.railIn .regionArea',
     ]) {
       expect(declarations(selector)?.get('animation')).toBe(animation)
@@ -90,10 +89,10 @@ describe('SidebarRoot.module.css', () => {
     expect(root).toContain("{renderSlot('sidebar.top.entry', { wide })}")
     expect(root).not.toContain('brandActions')
     expect(declarations('.toggleArea')?.get('margin-top')).toBe('12px')
-    expect(declarations('.collapsed .settingsArea')?.get('margin-top')).toBe('12px')
+    expect(css).not.toContain('.settingsArea')
   })
 
-  it('gives the New chat entry the same row geometry as the settings entry', () => {
+  it('keeps the New chat row geometry independent of the window navigation', () => {
     expect(declarations('.logoRow')?.get('height')).toBe('42px')
     expect(declarations('.newSession')?.get('height')).toBe('42px')
     expect(declarations('.newSession')?.get('flex')).toBe('1')
@@ -108,19 +107,16 @@ describe('SidebarRoot.module.css', () => {
     expect(declarations('.newSessionLabel')?.get('text-align')).toBe('start')
   })
 
-  it('keeps the settings seat under the New chat entry above the entry divider', () => {
-    expect(declarations('.settingsArea')?.get('width')).toBe('100%')
-    expect(declarations('.settingsArea')?.get('margin-top')).toBe('2px')
+  it('separates the top entry from the browser without a sidebar settings seat', () => {
     expect(declarations('.topDivider')?.get('height')).toBe('1px')
     expect(declarations('.topDivider')?.get('margin')).toBe('8px 0')
     expect(declarations('.topDivider')?.get('background')).toBe('var(--dsw-alias-border-l2)')
     expect(declarations('.collapsed .topDivider')?.get('width')).toBe('30px')
     expect(declarations('.collapsed .topDivider')?.get('margin')).toBe('10px auto')
-    // 顶部入口区与浏览区域之间是分隔线，设置座位不再出现在页脚里。
-    const settings = root.indexOf("renderSlot('sidebar.settings'")
-    expect(settings).toBeGreaterThan(root.indexOf('css.logoRow'))
-    expect(settings).toBeLessThan(root.indexOf('css.topDivider'))
-    expect(settings).toBeLessThan(root.indexOf("renderSlot('sidebar.workspaces'"))
-    expect(root.slice(root.indexOf('css.footArea'))).not.toContain("renderSlot('sidebar.settings'")
+    // 设置入口由窗口导航持有；侧栏分隔线仍位于顶部入口与浏览区域之间。
+    const divider = root.indexOf('css.topDivider')
+    expect(divider).toBeGreaterThan(root.indexOf("renderSlot('sidebar.top.entry'"))
+    expect(divider).toBeLessThan(root.indexOf("renderSlot('sidebar.workspaces'"))
+    expect(root).not.toContain("renderSlot('sidebar.settings'")
   })
 })

@@ -44,14 +44,6 @@ exports[`sidebar shell snapshots > keeps the optional top entry seat on the welc
       style="display: contents;"
     />
     <div
-      class="settingsArea"
-    >
-      <div
-        data-slot="sidebar.settings"
-        style="display: contents;"
-      />
-    </div>
-    <div
       aria-hidden="true"
       class="topDivider"
     />
@@ -146,14 +138,6 @@ exports[`sidebar shell snapshots > renders the collapsed rail after the crossfad
       </button>
     </div>
     <div
-      class="settingsArea"
-    >
-      <div
-        data-slot="sidebar.settings"
-        style="display: contents;"
-      />
-    </div>
-    <div
       aria-hidden="true"
       class="topDivider"
     />
@@ -225,14 +209,6 @@ exports[`sidebar shell snapshots > renders the expanded column (New chat row, em
       style="display: contents;"
     />
     <div
-      class="settingsArea"
-    >
-      <div
-        data-slot="sidebar.settings"
-        style="display: contents;"
-      />
-    </div>
-    <div
       aria-hidden="true"
       class="topDivider"
     />
@@ -303,14 +279,6 @@ exports[`sidebar shell snapshots > renders the expanded column in the default lo
       data-slot="sidebar.top.entry"
       style="display: contents;"
     />
-    <div
-      class="settingsArea"
-    >
-      <div
-        data-slot="sidebar.settings"
-        style="display: contents;"
-      />
-    </div>
     <div
       aria-hidden="true"
       class="topDivider"

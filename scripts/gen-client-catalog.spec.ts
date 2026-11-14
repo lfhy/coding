@@ -205,10 +205,9 @@ describe('the real workspace surface', () => {
       expect(['single', 'list', 'keyed', 'chain']).toContain(entry.kind)
       expect(['root', 'session', 'session-maybe']).toContain(entry.scope)
     }
-    // The frame root is the canonical trap: occupied by the shipped app frame,
-    // so a dynamic package registering there replaces the whole UI.
+    // 根座位由整窗外壳占用；动态插件注册到这里会替换完整应用界面。
     const root = entries.find(entry => entry.key === 'root')
     expect(root?.replaceRisk).toBe('shadows-shipped-ui')
-    expect(root?.occupants.join(' ')).toContain('AppFrame')
+    expect(root?.occupants.join(' ')).toContain('WindowShell')
   })
 })

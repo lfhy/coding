@@ -6,6 +6,7 @@
 `favorite` 使用统一的线性心形图形，选中状态由业务按钮的颜色和 `aria-pressed` 表达。
 `undo` 与 `redo` 分别使用 Semi 的左右回转箭头，继承 `currentColor`，尺寸与布局类名通过统一的 `Icon` 属性传入。
 `drag-handle` 使用 Semi 的六点抓手，用于标示悬浮面板等区域的拖拽位置；图标只负责呈现，拖拽交互由调用方实现。
+`home` 使用 Semi 的线性房屋图形，供外层导航的「回到对话」入口使用；它继承文字颜色，不使用品牌 Logo。
 `ppt-workbench` 使用上游 PPT 品牌标的 36×36 画布、橙色后片、蓝色前片和白色横线。它保留品牌固定颜色与渐变，不继承 `currentColor`；多个实例各有独立渐变 id。来源、改动与完整 MIT 许可见包内 [NOTICE](NOTICE) 和 [LICENSE.PptMark](LICENSE.PptMark)。
 
 ## 模型体验

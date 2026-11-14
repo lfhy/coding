@@ -6,11 +6,9 @@
 import type { ClientContext } from 'coding-client-runtime/client'
 import type { ConnectionHandle } from 'coding-api-remotes/client'
 import { resolveSlotLabel } from 'coding-client-ui-slots'
-// Type-only: the settings slot declarations plus the ctx.settingsScope Context
-// merge. Cross-plugin collaboration goes through the service, never a value
-// import (client bundle purity gate).
+// 仅类型导入：引入设置 slot 和 ctx.settingsScope；跨插件协作经服务而非值导入。
 import type {} from 'coding-client-ui-settings/client'
-// Type-only: pulls ctx.locale into this program.
+// 仅类型导入：合并 ctx.locale 声明。
 import type {} from 'coding-client-locale/client'
 import type {
   SettingsOnboardingStep, SettingsRootInjected, SettingsSectionRow,
@@ -37,18 +35,17 @@ export type { SettingsKey } from './locales.ts'
 
 declare module 'coding-client-ui-slots' {
   interface LocaleNamespaceMap {
-    /** Shell chrome + shell-owned General section copy. */
+    /** 设置外壳控件与通用分区文案。 */
     settings: SettingsKey
   }
 }
 
-/** Dictionary namespace owned by this plugin (shell chrome + General copy). */
+/** 本插件持有的设置外壳与通用分区字典命名空间。 */
 const NS = 'settings'
 
 /**
- * Required services (cordis fiber inject). The target slots are declared by
- * ui-settings' apply, whose activation order relative to this one is NOT
- * constrained; registrations depend on their slots through `slots.inject()`.
+ * 插件所需服务。布局和设置子 slot 的声明顺序不受服务依赖约束，
+ * 注册项通过 slots.inject() 等待所属声明并跟随其生命周期。
  */
 export const inject = ['slots', 'locale', 'connection', 'settingsScope']
 
@@ -60,9 +57,7 @@ export const inject = ['slots', 'locale', 'connection', 'settingsScope']
 export function apply(ctx: ClientContext): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-settings-general: dictionaries')
 
-  // Copy freshness is framework-owned: components read the standard `t`
-  // seat, and the nav label is a thunk the owner resolves per render — no
-  // locale/change re-registration wiring.
+  // 文案由框架更新：组件读取标准 t，导航标签在渲染时求值，不按语言切换重新注册。
   const t = ctx.locale.bind(NS)
   const connection = ctx.get('connection') as ConnectionHandle
   // The action follows the shared describe mirror, whose owning plugin
@@ -77,11 +72,8 @@ export function apply(ctx: ClientContext): void {
       hooks: { snapshot: documentController.store },
     })
   ctx.effect(() => () => { documentController?.dispose() }, 'ui-settings-general: document action directory')
-  // The settings shell: this package occupies the sidebar-owned hole and
-  // declares the settings slots. Ledger → nav-row projection as an observable
-  // source (uSES contract: getSnapshot returns the cached rows until the
-  // ledger version moves). Labels may be locale-following thunks, so the cache
-  // key includes the locale revision and subscribers ride both sources.
+  // 设置外壳占用窗口导航座位，并声明设置子 slot。账本投影保持稳定快照；
+  // 标签可能跟随语言延迟求值，因此缓存与订阅同时覆盖账本版本和语言修订。
   let rowsVersion = -1
   let rowsRevision = -1
   let rows: readonly SettingsSectionRow[] = []
@@ -135,8 +127,9 @@ export function apply(ctx: ClientContext): void {
       },
     },
   })
-  ctx.slots.inject('sidebar.settings', () => ctx.slots.register({
-    name: 'sidebar.settings',
+  ctx.slots.inject('shell.settings', () => ctx.slots.register({
+    name: 'shell.settings',
+    locale: NS,
     children: {
       'settings.trigger': { kind: 'single', scope: 'root' },
       'settings.header': { kind: 'single', scope: 'root' },

@@ -174,14 +174,14 @@
 
 ## packages/client/ui-layout
 
-- **拥有**：浏览器根布局壳：唯一的 `root` entry（`AppFrame`）声明 `sidebar`/`conversation`/`details`/`workbench`/`workbench.bottom`/`shell.overlay` 子 slot、按 Session 隔离的布局 store、`ctx.layout`（`openWorkbench(sessionId)` 等），以及把 `ctx.theme` 快照投影到 DOM 的 `ThemePresenter`。
-- **不拥有**：主题偏好与快照（`packages/client/ui-theme`），本包只做 DOM 呈现；工作台内容（文件树/预览/终端）属于 `packages/client/ui-open-in-app`；`conversation` 座位的占用者是 `packages/client/ui-conversation`。
-- **入口**：`packages/client/ui-layout/src/client/index.ts`（`ctx.slots.register({ name: 'root', children, store: createLayoutStore, inject }, AppFrame)` 并 `ctx.reflect.provide('layout', layout)`）；node 半是空 apply。
+- **拥有**：浏览器窗口外壳与内层面板几何：唯一的 `root` entry（`WindowShell`）固定包裹 `AppFrame`，根注册声明 `sidebar`/`conversation`/`details`/`workbench`/`workbench.bottom`/`shell.settings`/`shell.overlay`/`shell.page` 子 slot，外层窄导航底部渲染 `shell.settings`；本包还持有工作区偏好与会话覆盖的布局 store、`ctx.layout`，以及把 `ctx.theme` 快照投影到 DOM 的 `ThemePresenter`。
+- **不拥有**：主题偏好与快照（`packages/client/ui-theme`），本包只做 DOM 呈现；工作台内容（文件树/预览/终端）属于 `packages/client/ui-open-in-app`；`conversation` 座位的占用者是 `packages/client/ui-conversation`；设置触发控件与设置页由 [ui-settings-general](../../packages/client/ui-settings-general/README.md) 占用 `shell.settings` 提供。
+- **入口**：[`src/client/index.ts`](../../packages/client/ui-layout/src/client/index.ts)（`ctx.slots.register({ name: 'root', children, store: createLayoutStore, inject }, WindowShell)` 并 `ctx.reflect.provide('layout', layout)`）；node 半是空 apply。
 - **接线**：`packages/bundle/web-app/cordis.patch.yml` 的 `ui-layout` 行；`'root'` slot 本体由 `packages/client/runtime/src/client/slots.ts` 预置，禁止第二者注册 root。
-- **关键文件**：`packages/client/ui-layout/src/client/index.ts`、`packages/client/ui-layout/src/client/AppFrame.tsx`、`packages/client/ui-layout/src/client/service.ts`、`packages/client/ui-layout/src/client/stores.ts`。
-- **改这里要同步**：工作台显隐动作需核对 `ui-open-in-app` 的定向会话 id，所有新对话入口需先调用 `beginNewConversation()`；新增或改座位还要同步 `SlotMap` 声明、`AppFrame` 的 `children` 表、`PropsRenderSlots` 键集、各占用包与 README 的 slot 表。
-- **不变量**：布局偏好按工作区键共享，空白会话的右栏显隐按会话覆盖；新建对话不继承旧会话右栏打开状态，只有新会话明确打开才能在首条消息后保持显示。单独显示底栏时右列为零宽，关闭右侧工作台保留已显示的底栏；视觉关闭只做零尺寸加 `inert`，不卸载固定 React 树位置。
-- **测试**：`pnpm exec vitest run packages/client/ui-layout/tests`
+- **关键文件**：[`index.ts`](../../packages/client/ui-layout/src/client/index.ts)、[`WindowShell.tsx`](../../packages/client/ui-layout/src/client/WindowShell.tsx)、[`WindowShell.module.css`](../../packages/client/ui-layout/src/client/WindowShell.module.css)、[`AppFrame.tsx`](../../packages/client/ui-layout/src/client/AppFrame.tsx)、[`service.ts`](../../packages/client/ui-layout/src/client/service.ts)、[`stores.ts`](../../packages/client/ui-layout/src/client/stores.ts)。
+- **改这里要同步**：工作台显隐动作需核对 `ui-open-in-app` 的定向会话 id，所有新对话入口需先调用 `beginNewConversation()`；新增或改座位还要同步 `SlotMap` 声明、根注册的 `children` 表、`PropsRenderSlots` 键集、各占用包与 README 的 slot 表。窗口几何或安全区变化需核对 `ui-sidebar`，设置入口变化需核对 `ui-settings-general`；同步[包说明](../../packages/client/ui-layout/README.md#布局行为)、[页面层级](../../packages/client/UI_DESIGN.md#页面层级)与[用户指南](../user/guide/index.md)。
+- **不变量**：`WindowShell` 不新增 store 或业务状态，`shell.settings` 的 owner 为 `wide: boolean`，外层固定传 `false`，不随内层侧栏折叠变化；`AppFrame` 按内层实际可用宽高求解，原生安全区仅由外层顶部区域消费，Web 无顶部占位。布局偏好按工作区键共享，空白会话的右栏显隐按会话覆盖；新建对话不继承旧会话右栏打开状态，只有新会话明确打开才能在首条消息后保持显示。单独显示底栏时右列为零宽，关闭右侧工作台保留已显示的底栏；视觉关闭只做零尺寸加 `inert`，不卸载固定 React 树位置。
+- **验证**：`pnpm exec vitest run packages/client/ui-layout/tests packages/client/ui-sidebar/tests packages/client/ui-settings-general/tests`；核对外层仅有主页与底部设置入口、主页恢复当前对话、内层侧栏展开／收起与拖拽、常驻内层，以及 Web 无顶部占位与桌面原生安全区。可见界面改动补充 `pnpm run test:gui` 与 `DSH_SNAPSHOT=replay pnpm run test:web`。
 
 ## packages/client/ui-slots
 

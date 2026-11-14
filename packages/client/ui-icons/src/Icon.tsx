@@ -7,6 +7,7 @@ import SemiExternalOpen from '@douyinfe/semi-icons/lib/es/icons/IconExternalOpen
 import SemiUndo from '@douyinfe/semi-icons/lib/es/icons/IconUndo'
 import SemiRedo from '@douyinfe/semi-icons/lib/es/icons/IconRedo'
 import SemiHandle from '@douyinfe/semi-icons/lib/es/icons/IconHandle'
+import SemiHome from '@douyinfe/semi-icons/lib/es/icons/IconHomeStroked'
 import { IconTerminalOutline16, IconThinkOutline16 } from './legacy.tsx'
 import { PptMark } from './PptMark.tsx'
 import type { IconProps } from './props.ts'
@@ -14,7 +15,7 @@ import type { IconProps } from './props.ts'
 /** 消费方使用的图标含义，不暴露第三方库中的组件名。 */
 export type IconName = 'sidebar' | 'files-panel' | 'bottom-panel' | 'terminal-menu'
   | 'model-vision' | 'model-reasoning' | 'open-window' | 'favorite' | 'ppt-workbench' | 'undo' | 'redo'
-  | 'drag-handle'
+  | 'drag-handle' | 'home'
 
 /** 产品语义名称加上共享的布局属性。 */
 export interface SemanticIconProps extends IconProps {
@@ -27,6 +28,9 @@ export interface SemanticIconProps extends IconProps {
  * @returns 隐藏于无障碍树的语义图标。
  */
 export function Icon({ name, size = 16, className }: SemanticIconProps) {
+  if (name === 'home') {
+    return <SemiHome size="inherit" style={{ fontSize: size }} className={className} aria-hidden="true" />
+  }
   if (name === 'ppt-workbench') return <PptMark size={size} className={className} />
   if (name === 'undo') {
     return <SemiUndo size="inherit" style={{ fontSize: size }} className={className} aria-hidden="true" />

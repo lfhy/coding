@@ -37,7 +37,7 @@
         "coding-client-locale",
         "coding-client-connection",
         "coding-api-remotes",
-        "coding-client-ui-sidebar"
+        "coding-client-ui-layout"
       ],
       "platform": "web"
     }
@@ -56,7 +56,7 @@
     "coding-client-locale": "workspace:^",
     "coding-client-runtime": "workspace:^",
     "coding-client-ui-settings": "workspace:^",
-    "coding-client-ui-sidebar": "workspace:^",
+    "coding-client-ui-layout": "workspace:^",
     "coding-invariants": "workspace:^",
     "@deepseek-ai/cordis": "workspace:^"
   },
@@ -69,7 +69,7 @@
     "coding-client-ui-icons": "workspace:^",
     "coding-client-ui-primitives": "workspace:^",
     "coding-client-ui-settings": "workspace:^",
-    "coding-client-ui-sidebar": "workspace:^",
+    "coding-client-ui-layout": "workspace:^",
     "coding-client-ui-slots": "workspace:^",
     "coding-invariants": "workspace:^",
     "@deepseek-ai/cordis": "workspace:^",

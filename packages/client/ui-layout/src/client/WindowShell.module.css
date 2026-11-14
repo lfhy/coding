@@ -1,0 +1,104 @@
+/* 外层只负责窗口几何；原有侧栏、工作台和滚动区域留在内层布局。 */
+.shell {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr);
+  /* Web 没有原生窗口按钮，首行归零；桌面沿用壳层注入的安全区。 */
+  grid-template-rows: max(var(--app-safe-area-inset-top, 0px), min(44px, var(--app-safe-area-inset-right, 0px))) minmax(0, 1fr);
+  box-sizing: border-box;
+  width: 100%;
+  height: 100dvh;
+  min-width: 0;
+  min-height: 0;
+  padding: 0 8px 8px 0;
+  overflow: hidden;
+  background: var(--dsw-specific-sidebar-fill);
+  color: var(--dsw-alias-label-primary);
+}
+
+.titlebar {
+  grid-column: 1 / -1;
+  min-width: 0;
+  margin-right: var(--app-safe-area-inset-right, 0px);
+  margin-left: calc(var(--app-safe-area-inset-top, 0px) * 2);
+  user-select: none;
+  -webkit-app-region: no-drag;
+}
+
+.navigation {
+  grid-column: 1;
+  grid-row: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  min-height: 0;
+  padding: 8px 0 4px;
+  -webkit-app-region: no-drag;
+}
+
+.navAnchor {
+  display: grid;
+  width: 36px;
+  height: 36px;
+}
+
+.settings {
+  flex: 0 0 auto;
+  width: 36px;
+  min-height: 36px;
+  margin-top: auto;
+}
+
+.navigation .navButton {
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border-radius: 10px;
+  color: var(--dsw-alias-label-secondary);
+  transition:
+    background var(--ds-transition-duration-fast) var(--ds-ease-in-out),
+    color var(--ds-transition-duration-fast) var(--ds-ease-in-out);
+}
+
+.navigation .navButton[aria-current='page'] {
+  background: var(--dsw-alias-interactive-bg-active);
+  color: var(--dsw-alias-label-primary);
+}
+
+.navigation .navButton:focus-visible {
+  outline: 2px solid var(--dsw-alias-state-business-primary);
+  outline-offset: 2px;
+}
+
+.surface {
+  /* 原生按钮的安全区由顶栏一次性消费，内层不重复避让。 */
+  --app-safe-area-inset-top: 0px;
+  --app-safe-area-inset-right: 0px;
+  grid-column: 2;
+  grid-row: 2;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border-radius: 16px;
+  background: var(--dsw-alias-bg-base);
+  box-shadow: 0 0 0 1px var(--dsw-alias-border-l1);
+}
+
+@media (max-width: 620px) {
+  .shell {
+    grid-template-columns: 44px minmax(0, 1fr);
+    padding-right: 4px;
+    padding-bottom: 4px;
+  }
+
+  .surface {
+    border-radius: 12px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .navigation .navButton {
+    transition: none;
+  }
+}

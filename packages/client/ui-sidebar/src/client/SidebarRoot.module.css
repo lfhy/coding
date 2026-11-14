@@ -71,7 +71,6 @@
 .railIn .iconButton,
 .railIn .newSession,
 .railIn [data-slot='sidebar.top.entry'] button,
-.railIn .settingsArea,
 .railIn .regionArea {
   animation: rail-in 150ms var(--ds-ease-in-out) backwards;
 }
@@ -158,7 +157,7 @@
   color: var(--dsw-alias-label-primary);
 }
 
-/* 新对话入口与设置入口是同一种行控件：42px 高、12px 圆角、透明底、悬停填充，
+/* 新对话入口使用 42px 高、12px 圆角、透明底、悬停填充，
    图标在前、文案随后。展开时占满新对话行，收起后是 rail 中的一个纯图标控件。 */
 .newSession {
   flex: 1;
@@ -208,7 +207,7 @@
   background: var(--dsw-alias-interactive-bg-hover);
 }
 
-/* 文案紧接图标并占满剩余空间；按钮默认居中文字，这里明确左对齐以对齐设置行。 */
+/* 文案紧接图标并占满剩余空间；按钮默认居中文字，这里明确左对齐。 */
 .newSessionLabel {
   flex: 1;
   min-width: 0;
@@ -216,18 +215,6 @@
   white-space: nowrap;
   text-align: start;
   text-overflow: ellipsis;
-}
-
-/* 设置座位：紧贴新对话入口下方，两者共用同一行几何（触发行由 ui-settings 渲染）。 */
-.settingsArea {
-  flex: none;
-  min-width: 0;
-  width: 100%;
-  margin-top: 2px;
-}
-
-.collapsed .settingsArea {
-  margin-top: 12px;
 }
 
 /* 顶部入口区与工作区列表之间的分隔线；rail 中缩成居中短线。 */
@@ -277,7 +264,6 @@
   align-items: center;
 }
 
-.collapsed .settingsArea,
 .collapsed .footerActions {
   display: flex;
   justify-content: center;
@@ -297,7 +283,6 @@
   .railIn .iconButton,
   .railIn .newSession,
   .railIn [data-slot='sidebar.top.entry'] button,
-  .railIn .settingsArea,
   .railIn .footArea,
   .railIn .regionArea {
     transition: none;

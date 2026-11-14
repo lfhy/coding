@@ -4,7 +4,7 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import type {
   SidebarTopEntryOwnerProps, SidebarFooterActionOwnerProps, SidebarRootComponentProps,
-  SidebarSectionOwnerProps, SidebarSettingsOwnerProps,
+  SidebarSectionOwnerProps,
 } from '../src/client/contract/slots.ts'
 import { SidebarRoot } from '../src/client/SidebarRoot.tsx'
 import { en } from '../src/client/locales.ts'
@@ -29,7 +29,6 @@ function mountShell({ collapsed = false, width = 300, welcomeActionsVisible = fa
   const toggleSidebar = vi.fn()
   let topEntryOwner: SidebarTopEntryOwnerProps | undefined
   let regionOwner: SidebarSectionOwnerProps | undefined
-  let settingsOwner: SidebarSettingsOwnerProps | undefined
   let footerActionOwner: SidebarFooterActionOwnerProps | undefined
   let current = { collapsed, width, welcomeActionsVisible }
   const root = () => (
@@ -42,15 +41,11 @@ function mountShell({ collapsed = false, width = 300, welcomeActionsVisible = fa
       renderSlot={((
         key: string,
         owner: SidebarTopEntryOwnerProps | SidebarFooterActionOwnerProps
-          | SidebarSectionOwnerProps | SidebarSettingsOwnerProps,
+          | SidebarSectionOwnerProps,
       ) => {
         if (key === 'sidebar.top.entry') {
           topEntryOwner = owner
           return <div data-testid="top-entry-seat" data-wide={owner.wide} />
-        }
-        if (key === 'sidebar.settings') {
-          settingsOwner = owner
-          return <div data-testid="settings-seat" data-wide={owner.wide} />
         }
         if (key === 'sidebar.footer.action') {
           footerActionOwner = owner
@@ -72,10 +67,6 @@ function mountShell({ collapsed = false, width = 300, welcomeActionsVisible = fa
     regionOwner: () => {
       if (regionOwner === undefined) throw new Error('region owner not rendered')
       return regionOwner
-    },
-    settingsOwner: () => {
-      if (settingsOwner === undefined) throw new Error('settings owner not rendered')
-      return settingsOwner
     },
     footerActionOwner: () => {
       if (footerActionOwner === undefined) throw new Error('footer action owner not rendered')
@@ -107,7 +98,7 @@ describe('SidebarRoot shell', () => {
     const toggle = screen.getByRole('button', { name: 'Open sidebar' })
     expect(starter.compareDocumentPosition(entry) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(entry.compareDocumentPosition(toggle) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    expect(toggle.compareDocumentPosition(screen.getByTestId('settings-seat')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(toggle.compareDocumentPosition(screen.getByTestId('region')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
 
     b.rerender({ welcomeActionsVisible: false })
     expect(screen.getByTestId('top-entry-seat')).toBeTruthy()
@@ -116,12 +107,12 @@ describe('SidebarRoot shell', () => {
 
   it('routes the New chat entry and hands the collapse action to the browsing region', () => {
     const b = mountShell()
-    // 可选入口在新对话之后、设置之前，占用者拿到 wide。
+    // 可选入口在新对话之后、浏览区域之前，占用者拿到 wide。
     expect(b.topEntryOwner().wide).toBe(true)
     const actions = screen.getByTestId('top-entry-seat')
     const starter = screen.getByRole('button', { name: 'New chat' })
     expect(actions.compareDocumentPosition(starter) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy()
-    expect(actions.compareDocumentPosition(screen.getByTestId('settings-seat')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(actions.compareDocumentPosition(screen.getByTestId('region')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     fireEvent.click(starter)
     expect(b.startSession).toHaveBeenCalledOnce()
     // 宽侧栏不再自带收起按钮，收起动作交给浏览区域的标题行。
@@ -152,10 +143,8 @@ describe('SidebarRoot shell', () => {
   it('hands the region its wide flag and clamps both toggle requests to their own state', () => {
     const b = mountShell()
     expect(b.regionOwner().wide).toBe(true)
-    // 可选入口与设置座位共用同一个 wide 标志。
+    // 可选入口与浏览区域共用同一个 wide 标志。
     expect(b.topEntryOwner().wide).toBe(true)
-    // 设置座位跟随同一个 wide 标志（ui-settings 渲染对应行）。
-    expect(b.settingsOwner().wide).toBe(true)
     expect(b.footerActionOwner().wide).toBe(true)
     // 已展开：展开请求是空操作，收起请求生效。
     b.regionOwner().expandSidebar()

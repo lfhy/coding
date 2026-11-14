@@ -1,5 +1,7 @@
-/** 布局壳持有的悬浮对话控件文案。 */
+/** 窗口导航与布局壳持有的悬浮对话控件文案。 */
 export const zh = {
+  'shell.navigation': '主导航',
+  'shell.conversation': '回到对话',
   'floating.open': '继续对话',
   'floating.open.label': '打开悬浮对话',
   'floating.dialog.label': '悬浮对话',
@@ -16,6 +18,8 @@ export type LayoutKey = keyof typeof zh
 
 /** 英文字典保持相同键集。 */
 export const en = {
+  'shell.navigation': 'Main navigation',
+  'shell.conversation': 'Back to conversation',
   'floating.open': 'Continue conversation',
   'floating.open.label': 'Open floating conversation',
   'floating.dialog.label': 'Floating conversation',

@@ -2,8 +2,8 @@
 /**
  * 侧边栏壳层走真实装配路径的本地 DOM 快照：SlotTestRuntime 在自己的 fiber 上挂载本包
  * apply，auto frame 在渲染点提供布局的 owner share，快照只捕获 'sidebar' slot 的输出
- * （CSS Module 类名由运行时序列化器折叠为语义局部名）。子洞（sidebar.workspaces 与
- * sidebar.settings）在这里没有注册者，因此快照固定的是壳层自身的镶边。
+ * （CSS Module 类名由运行时序列化器折叠为语义局部名）。子 slot 在这里没有注册者，
+ * 因此快照固定的是壳层自身的镶边；设置入口不再属于侧栏。
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, waitFor } from '@testing-library/react'

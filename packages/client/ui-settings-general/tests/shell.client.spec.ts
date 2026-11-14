@@ -1,4 +1,4 @@
-/** Settings shell registration: slot declaration injection, the ledger projections, and HMR recovery. */
+/** 设置外壳注册：窗口座位注入、账本投影与热重载恢复。 */
 import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it, vi } from 'vitest'
 import { SlotRegistry } from 'coding-client-runtime/client'
@@ -29,13 +29,13 @@ async function bench() {
 
 function declare(slots: SlotRegistry): () => void {
   return slots.register(
-    { name: 'root', children: { 'sidebar.settings': { kind: 'single', scope: 'root' } } } as never,
+    { name: 'root', children: { 'shell.settings': { kind: 'single', scope: 'root' } } } as never,
     () => null,
   )
 }
 
 function injectedOf(slots: SlotRegistry): SettingsRootInjected {
-  const entry = slots.entries('sidebar.settings')[0]!
+  const entry = slots.entries('shell.settings')[0]!
   return (entry.inject as () => SettingsRootInjected)()
 }
 
@@ -58,19 +58,20 @@ describe('ui-settings apply', () => {
     const before = await bench()
     declare(before.slots)
     await before.ctx.plugin({ inject: [...inject], apply }).await()
-    expect(before.slots.entries('sidebar.settings')[0]!.component).toBe(SettingsRoot)
+    expect(before.slots.entries('shell.settings')[0]!.component).toBe(SettingsRoot)
+    expect(before.slots.entries('shell.settings')[0]!.locale).toBe('settings')
     for (const name of Object.keys(CHILD_SPECS) as Array<keyof typeof CHILD_SPECS>) {
       expect(before.slots.spec(name)).toEqual(CHILD_SPECS[name])
     }
 
     const after = await bench()
     await after.ctx.plugin({ inject: [...inject], apply }).await()
-    expect(after.slots.entries('sidebar.settings')).toHaveLength(0)
+    expect(after.slots.entries('shell.settings')).toHaveLength(0)
     declare(after.slots)
     await Promise.resolve()
-    expect(after.slots.entries('sidebar.settings')[0]!.component).toBe(SettingsRoot)
-    // The self-inflicted ledger notifications hit the duplicate guard.
-    expect(after.slots.entries('sidebar.settings')).toHaveLength(1)
+    expect(after.slots.entries('shell.settings')[0]!.component).toBe(SettingsRoot)
+    // 注册自身引发的账本通知不能产生重复入口。
+    expect(after.slots.entries('shell.settings')).toHaveLength(1)
   })
 
   it('projects the section ledger into ordered nav rows with option defaults', async () => {
@@ -129,15 +130,15 @@ describe('ui-settings apply', () => {
     const b = await bench()
     const redeclare = declare(b.slots)
     await b.ctx.plugin({ inject: [...inject], apply }).await()
-    expect(b.slots.entries('sidebar.settings')).toHaveLength(1)
+    expect(b.slots.entries('shell.settings')).toHaveLength(1)
     // Declarer unload: the cascade removes our entry and every child
     // declaration while our local disposer variable goes stale.
     redeclare()
-    expect(b.slots.entries('sidebar.settings')).toHaveLength(0)
+    expect(b.slots.entries('shell.settings')).toHaveLength(0)
     expect(b.slots.spec('settings.trigger')).toBeUndefined()
     declare(b.slots)
     await Promise.resolve()
-    expect(b.slots.entries('sidebar.settings')[0]!.component).toBe(SettingsRoot)
+    expect(b.slots.entries('shell.settings')[0]!.component).toBe(SettingsRoot)
     for (const name of Object.keys(CHILD_SPECS) as Array<keyof typeof CHILD_SPECS>) {
       expect(b.slots.spec(name)).toEqual(CHILD_SPECS[name])
     }
@@ -149,7 +150,7 @@ describe('ui-settings apply', () => {
     const fiber = b.ctx.plugin({ inject: [...inject], apply })
     await fiber.await()
     await fiber.dispose()
-    expect(b.slots.entries('sidebar.settings')).toHaveLength(0)
+    expect(b.slots.entries('shell.settings')).toHaveLength(0)
     for (const name of Object.keys(CHILD_SPECS) as Array<keyof typeof CHILD_SPECS>) {
       expect(b.slots.spec(name)).toBeUndefined()
     }

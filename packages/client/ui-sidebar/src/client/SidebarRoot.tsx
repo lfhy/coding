@@ -1,5 +1,5 @@
 /**
- * 侧边栏壳负责折叠动画、顶部入口区（新对话、可选入口、设置）、交通灯避让和滚动条可见性。宽侧栏的
+ * 侧边栏壳负责折叠动画、顶部入口区（新对话、可选入口）、交通灯避让和滚动条可见性。宽侧栏的
  * 收起按钮由浏览区域的标题行渲染（壳层通过 owner share 交出动作）；收起的 56px rail 里
  * 新对话、可选入口与展开按钮依次排列。折叠动画冻结宽内容，等淡出后再切换到 rail；浏览
  * 区域与页脚仍由各自 slot 占用者绘制。
@@ -23,7 +23,7 @@ const SCROLLBAR_LINGER_MS = 2000
 
 /**
  * 渲染侧边栏壳：新对话行持有唯一的新建入口，并交出浏览区域标题行要用的收起动作；
- * 可选入口位独立排在新对话和设置之间。
+ * 可选入口位独立排在新对话和浏览区域之间。
  * @param props - 布局 owner、slot、回调与本地化文案。
  * @returns 侧边栏元素树。
  */
@@ -73,8 +73,8 @@ export function SidebarRoot({
     lingerTimer.current = undefined
   }
   // 离开与否由列的盒子判定，而不是 DOM containment，且只在滑块绘制期内生效：
-  // ui-settings 把整屏面板渲染成这一列 fixed 定位的后代，指针移到面板上（或面板关闭后
-  // 移到会话区）都不会触发本列的 pointerleave，滑块就会留在没人指向的列上。元素自身的
+  // portal 菜单也可能属于本列的 React 子树，移到菜单上或关闭后移到会话区时不能只依赖
+  // 本列的 pointerleave，否则滑块可能留在没人指向的列上。元素自身的
   // leave 事件仍保留，因为指针离开窗口后不会再产生移动事件，那是几何判定给不出的信号。
   useEffect(() => {
     if (!pointerInside) return
@@ -143,11 +143,6 @@ export function SidebarRoot({
         </div>
       )}
 
-      {/* 设置入口与顶部入口相邻，rail 中保留同样的排列顺序。 */}
-      <div className={css.settingsArea}>
-        {renderSlot('sidebar.settings', { wide })}
-      </div>
-
       {/* 顶部入口与下方工作区列表之间的分隔线；rail 中缩成一段短线。 */}
       <div className={css.topDivider} aria-hidden="true" />
 
@@ -163,7 +158,7 @@ export function SidebarRoot({
         })}
       </div>
 
-      {/* 页脚只剩可选动作；设置入口已经在顶部入口区。 */}
+      {/* 页脚只承载可选动作，设置入口由窗口外壳持有。 */}
       <div className={css.footArea}>
         <div className={css.footerActions}>
           {renderSlot('sidebar.footer.action', { wide })}

@@ -1,21 +1,13 @@
 /**
- * Settings domain base plugin, browser half. Provides `ctx.settingsScope`, the
- * settings-namespace scope service every preference row binds its durable
- * section through, and owns the one `settings.describe` reader in the browser:
- * the describe mirror, whose invalidation subscriptions
- * (`settings/document-updated`, `connection/reset`) live here so every derived
- * surface refreshes from a single wire read. It depends on no `ui-*`
- * presentation package, so any feature that owns a preference can reach it:
- * the settings SHELL — the `sidebar.settings` occupant, its navigation, and
- * the chrome — lives in ui-settings-general, because a shell dependency on
- * ui-sidebar would close a reference cycle through ui-layout and ui-theme.
- * Export discipline: packages/client/AGENTS.md.
+ * 设置领域底座的浏览器入口：提供 ctx.settingsScope，并持有唯一的 settings.describe 镜像。
+ * settings/document-updated 与 connection/reset 在此统一使镜像失效，
+ * 让各派生界面共享一次线路读取。本包不依赖 ui-* 呈现包，供各功能绑定自己的持久分区。
+ * 占用 shell.settings 的设置页面与导航留在 ui-settings-general，避免底座经布局和主题闭环。
+ * 导出约束见 packages/client/AGENTS.md。
  */
 import type { ClientContext } from 'coding-client-runtime/client'
 import type { ConnectionHandle } from 'coding-api-remotes/client'
-// Type-only pair supplying `$on` and its key face without dragging a build
-// artifact into the Host graph (rationale beside the same pair in
-// settings-scope.ts).
+// 仅类型导入：合并 $on 及事件键，不将 Client 构建产物带入 Host 引用图。
 import type {} from 'coding-api-remotes/types'
 import type {} from 'coding-settings/types'
 import { SettingsSchemaService } from './schema.ts'

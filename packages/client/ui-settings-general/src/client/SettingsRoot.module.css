@@ -1,6 +1,6 @@
-/* 侧栏触发器与设置页导航共用现有排版与交互 token；模型分区自绘内容列。 */
+/* 窗口导航触发器与设置页导航共用现有排版与交互 token；模型分区自绘内容列。 */
 
-/* 触发器与侧栏顶部入口区的新对话行共用 42px 行高与左右内边距，两者悬停填充对齐。 */
+/* 宽行呈现保留 42px 行高；窗口窄导航由 rail 变体提供固定图标尺寸。 */
 .trigger {
   flex: none;
   display: flex;
@@ -26,7 +26,7 @@
   background: var(--dsw-alias-interactive-bg-hover);
 }
 
-/* 折叠侧栏时使用与相邻 rail 控件一致的圆形点击区域；间距由侧栏的座位决定。 */
+/* 窗口窄导航的点击区域与相邻控件一致；底部位置由外壳座位决定。 */
 .trigger.rail {
   width: 36px;
   height: 36px;
@@ -34,7 +34,7 @@
   justify-content: center;
   gap: 0;
   padding: 0;
-  border-radius: 50%;
+  border-radius: 10px;
 }
 
 .triggerLabel {
@@ -42,7 +42,7 @@
   white-space: nowrap;
 }
 
-/* 设置页通过 portal 脱离侧栏裁切，独占视口而不绘制遮罩或浮动外框。 */
+/* 设置页通过 portal 脱离窗口导航裁切，独占视口而不绘制遮罩或浮动外框。 */
 .page {
   position: fixed;
   inset: 0;

@@ -1,10 +1,11 @@
 /**
- * 设置外壳包含侧栏触发器与独立的全屏设置页面。页面的返回控件和分区文案
+ * 设置外壳包含窗口导航触发器与独立的全屏设置页面。页面的返回控件和分区文案
  * 均来自 slot 注册项；引导步骤仍自行持有阻断式弹窗。
  */
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import clsx from 'clsx'
+import { Tooltip } from 'coding-client-ui-primitives'
 import {
   IconAgentPresetOutline16, IconChevronLeftOutline14, IconDataOutline16,
   IconPersonalizationOutline16, IconSettingsOutline16, IconSparkle16,
@@ -113,7 +114,7 @@ function SettingsPanel({ rows, renderSlot, activeId, onSelect, onClose, trigger 
  * @returns 设置外壳的元素树。
  */
 export function SettingsRoot(props: SettingsRootComponentProps) {
-  const { wide, useSections, useOnboardingSteps, useSessions, renderSlot } = props
+  const { wide, useSections, useOnboardingSteps, useSessions, renderSlot, t } = props
   const [open, setOpen] = useState(false)
   const triggerRef = useRef<HTMLButtonElement | null>(null)
   const [activeId, setActiveId] = useState<string | undefined>(undefined)
@@ -151,15 +152,18 @@ export function SettingsRoot(props: SettingsRootComponentProps) {
 
   return (
     <>
-      <button
-        ref={triggerRef}
-        type="button"
-        className={clsx(css.trigger, !wide && css.rail)}
-        aria-expanded={open}
-        onClick={() => { setOpen(true) }}
-      >
-        {renderSlot('settings.trigger', { wide })}
-      </button>
+      <Tooltip label={t('trigger')} delayMs={500} disabled={wide || open}>
+        <button
+          ref={triggerRef}
+          type="button"
+          className={clsx(css.trigger, !wide && css.rail)}
+          aria-label={t('trigger')}
+          aria-expanded={open}
+          onClick={() => { setOpen(true) }}
+        >
+          {renderSlot('settings.trigger', { wide })}
+        </button>
+      </Tooltip>
       {open && createPortal(
         <SettingsPanel
           rows={rows}

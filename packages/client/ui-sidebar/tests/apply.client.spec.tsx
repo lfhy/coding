@@ -1,4 +1,4 @@
-/** Sidebar shell slot registration and its plain runtime/layout callbacks. */
+/** 侧栏壳层的 slot 注册与运行时／布局回调。 */
 import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it, vi } from 'vitest'
 import { SlotRegistry } from 'coding-client-runtime/client'
@@ -43,9 +43,9 @@ describe('ui-sidebar apply', () => {
     expect(b.slots.entries('sidebar')).toHaveLength(1)
     expect(b.slots.spec('sidebar.top.entry')).toEqual({ kind: 'list', scope: 'root' })
     expect(b.slots.spec('sidebar.workspaces')).toEqual({ kind: 'single', scope: 'root' })
-    expect(b.slots.spec('sidebar.settings')).toEqual({ kind: 'single', scope: 'root' })
+    expect(b.slots.snapshot('sidebar.settings')).toEqual([])
     expect(b.slots.spec('sidebar.footer.action')).toEqual({ kind: 'list', scope: 'root' })
-    // Copy rides the standard locale seat, not the inject face.
+    // 文案通过标准 locale 座位传入，不属于私有注入。
     expect(b.slots.entries('sidebar')[0]!.locale).toBe('sidebar')
     expect(b.slots.entries('conversation.hero.actions')).toEqual([])
     const injected = (b.slots.entries('sidebar')[0]!.inject as () => SidebarRootInjected)()

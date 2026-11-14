@@ -1,24 +1,15 @@
 /**
- * Settings slot contract — the canonical home of every settings slot type,
- * owned by the settings domain base rather than by the shell that renders
- * them (ui-settings-general, which occupies `sidebar.settings`). The shell has
- * zero copy of its own: ALL text (trigger label, panel title, header actions,
- * close aria, section content) arrives from registrants. A feature owns its
- * own settings pages — adding a setting never means editing the shell; copy
- * that belongs to no single feature (chrome, the General section) is owned by
- * ui-settings-general too.
+ * 设置 slot 类型的唯一归属。设置领域底座持有各功能贡献的契约；
+ * 占用 shell.settings 的 ui-settings-general 负责页面、导航及无特定功能归属的通用文案。
+ * 功能插件持有自己的设置分区，新增设置不需要改动外壳。
  */
 
 
 declare module 'coding-client-ui-slots' {
   interface SlotMap {
     /**
-     * The sidebar-foot trigger row content: icon + label, supplied as slot
-     * content (the accessible name comes from the content — rail state
-     * renders the label visually hidden). The shell renders the button
-     * chrome and owns open state. Absent contribution degrades to an
-     * icon-only button without an accessible name (broken-composition state;
-     * the shipped composition always registers the seat).
+     * 窗口导航的设置触发内容：宽行显示图标与文案，窄导航仅显示图标。
+     * 外壳持有按钮、可访问名称、悬停说明及开关状态；本 slot 只贡献按钮内容。
      */
     'settings.trigger': { kind: 'single'; scope: 'root'; owner: SettingsTriggerOwnerProps }
     /**
@@ -100,9 +91,9 @@ export interface SettingsPluginsTabOwnerProps {
   children?: never
 }
 
-/** Owner share of the trigger content seat: the sidebar column state. */
+/** 设置触发内容的 owner share：窗口导航的宽行／图标状态。 */
 export interface SettingsTriggerOwnerProps {
-  /** Whether the sidebar renders wide content (false = 56px rail, icon only). */
+  /** 是否显示宽行文案；false 时仅显示图标。 */
   wide: boolean
 }
 
