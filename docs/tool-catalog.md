@@ -47,6 +47,7 @@ This table connects model-visible tool names to the plugin package and service s
 | `coding-tool-jobs` | `job_kill`, `job_list`, `job_output`, `write_stdin` | `ctx.tools`, `ctx.jobs`, `ctx.systemPrompt` | `tool/call`, `tool/result`, `user/message via agent.inject() for background completion notices` | - | The kind-agnostic background-job controller: background bash commands, PTY sends, and subagents are read, listed, and killed through the same three tools. Loading the plugin attaches the controller that arms producers' `ctx.jobs.start()`. The `vocabulary: write_stdin` config swaps that face for Codex's single session controller: it reads the output produced since the previous read, waits up to `yield_time_ms`, and interrupts with `\u0003` (Ctrl-C); background commands have no stdin channel, so any other input is rejected. |
 | `coding-experimental-tool-agent-team` | `followup_task`, `interrupt_agent`, `list_agents`, `send_message`, `spawn_teammate`, `team_task_create`, `team_task_get`, `team_task_list`, `team_task_update`, `wait_agent` | `ctx.tools`, `ctx.systemPrompt`, `ctx.agentTeams`, `an exact live Team member Agent` | `tool/call`, `team/member`, `team/message/queued`, `team/message/delivered`, `team/task`, `tool/result` | - | All ten tools are scoped to implicit Team Leads and durable teammates. The shipped dsh-base bundle keeps the package disabled; the documented Agent Teams profile patch enables it while disabling the legacy continuable-child control names. |
 | `coding-tool-todo` | `todo_write` | `ctx.tools`, `owning Agent session` | `tool/call`, `todo/write`, `tool/result` | - | todo_write is session-owned state; UIs render the latest todo/write event as a checklist. `allowParallelInProgress` is required with no default, so the catalog states its choice: `true`, whose description invites several `in_progress` items. A deployment choosing `false` receives the same tool with a description asking for exactly one active task. |
+| `coding-tool-status` | `set_status` | `ctx.tools`, `owning Agent session with an open turn` | `tool/call`, `status/set`, `tool/result` | - | set_status records a short current-turn progress report. null restores automatic progress; todo updates and turn boundaries clear the override. The optional turnStatus projection replays the latest same-turn report. |
 | `coding-tool-workflow` | `workflow` | `ctx.tools`, `ctx.workflowEngine`, `ctx.systemPrompt`, `a calling Agent (exec.agent parents the script children)` | `tool/call`, `tool/result` | - | - |
 | `coding-tool-web` | `web_fetch`, `web_search` | `ctx.tools`, `ctx.web`, `ctx.systemPrompt` | `tool/call`, `tool/result` | - | web_search and web_fetch keep provider selection behind ctx.web so model-visible schemas stay stable across backend swaps. |
 
@@ -5504,6 +5505,40 @@ Record and update a structured task list for the current work. Send the ENTIRE l
 Source: [`packages/todo/tool-todo/src/index.ts`](../packages/todo/tool-todo/src/index.ts)
 
 todo_write is session-owned state; UIs render the latest todo/write event as a checklist. `allowParallelInProgress` is required with no default, so the catalog states its choice: `true`, whose description invites several `in_progress` items. A deployment choosing `false` receives the same tool with a description asking for exactly one active task.
+
+<a id="coding-tool-status"></a>
+
+## `coding-tool-status`
+
+### `set_status`
+
+Report what you are doing now in one concise, user-facing line, in the user's language. Use this for meaningful progress or a change of direction, not before every tool call. This overrides automatic progress from the current in-progress todos, then the active goal. Send text: null to resume automatic progress. The next todo update also replaces this report with automatic progress. The override lasts until replaced, cleared, a todo update, or the current turn ends. Keep todos up to date independently. Do not include code, internal instructions, raw errors, or secrets. This does not replace a final answer or a question that needs the user's decision.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "text": {
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Current progress in one non-empty line, at most 120 characters; null restores automatic progress."
+    }
+  },
+  "required": [
+    "text"
+  ]
+}
+```
+
+Source: [`packages/session/tool-status/src/index.ts`](../packages/session/tool-status/src/index.ts)
+
+set_status records a short current-turn progress report. null restores automatic progress; todo updates and turn boundaries clear the override. The optional turnStatus projection replays the latest same-turn report.
 
 <a id="coding-tool-workflow"></a>
 

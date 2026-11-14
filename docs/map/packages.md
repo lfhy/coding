@@ -3,7 +3,7 @@
 
 # 包清单
 
-workspace 共 275 个包，按 group 分节。每行给出包目录、职责（README 首段）、源码入口与 `tests/` 下的 spec 文件数；标 `client` 的包导出 `./client` 浏览器半，标 `bundle` 的包是 profile/bundle 装配层。
+workspace 共 276 个包，按 group 分节。每行给出包目录、职责（README 首段）、源码入口与 `tests/` 下的 spec 文件数；标 `client` 的包导出 `./client` 浏览器半，标 `bundle` 的包是 profile/bundle 装配层。
 
 模型可见工具的名称与 schema 见 [tool-catalog.md](../tool-catalog.md)，插件可配置项见 [config-catalog.md](../config-catalog.md)，依赖边见 [module-graph.md](../module-graph.md)。
 
@@ -55,7 +55,7 @@ workspace 共 275 个包，按 group 分节。每行给出包目录、职责（R
 - `packages/client/ui-browser` — 本包只供显式声明并渲染 `workbench.browser` 与 `workbench.browser.tabs` 两个会话级 slot 的自… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 9）
 - `packages/client/ui-browser-ego` — 本包向右侧工作台贡献会话级「Agent 浏览器」入口：所属会话的每个浏览器页面对应一个工作台顶栏标签… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 10）
 - `packages/client/ui-commands` — 客户端命令 API（`ctx.commandUi`）：以会话为 key 的命令目录缓存、带 `matchSpace`／`matchEnter` … [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 5）
-- `packages/client/ui-conversation` — 会话领域：骨架（标题栏／标签页／编辑器／空状态）、聊天视图（分组步骤摘要流、流式尾部隔离与轮次状态）、输入区 dock… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 41）
+- `packages/client/ui-conversation` — 会话领域：骨架（标题栏／标签页／编辑器／空状态）、聊天视图（分组步骤摘要流、流式尾部隔离与轮次状态）、输入区 dock… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 44）
 - `packages/client/ui-deliverables` — 产出文件与可点击文件引用功能的属主 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 2）
 - `packages/client/ui-directory-picker-browse` — 应用内目录浏览界面：浏览式选取交互的浏览器半边 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 2）
 - `packages/client/ui-directory-picker-native` — 原生目录选择界面：原生选取交互的浏览器半边 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 1）
@@ -326,6 +326,7 @@ workspace 共 275 个包，按 group 分节。每行给出包目录、职责（R
 - `packages/session/session-title-all-prompts-llm` — 可选的 `ctx.sessionTitle` 提供方，通过 `ctx.llm` 总结所有符合条件的用户消息 入口 `src/index.ts`（tests 1）
 - `packages/session/session-title-first-prompt-llm` — 可选的 `ctx.sessionTitle` 提供方，通过 `ctx.llm` 总结第一条符合条件的用户消息 入口 `src/index.ts`（tests 3）
 - `packages/session/session-title-llm` — 由模型支持的会话标题提供方的共享实现策略 入口 `src/index.ts`（tests 1）
+- `packages/session/tool-status` — 提供模型工具 `set_status`，报告当前工作进度 [client] 入口 `src/index.ts`（tests 5）
 
 ## packages/settings
 

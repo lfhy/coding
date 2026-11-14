@@ -143,6 +143,7 @@ describe('tool-call-model', () => {
     ['schedule_list', '查看提醒'],
     ['report', 'Report result'],
     ['validate_gen_ui', '校验UI语法'],
+    ['set_status', '更新当前进度'],
   ])('shows a friendly action title for %s', (name, title) => {
     const argsRaw = JSON.stringify({ internalValue: 'private' })
     const model = toolRowModel(name, running({ name, argsRaw }))

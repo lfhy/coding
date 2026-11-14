@@ -77,6 +77,7 @@ import * as ToolTasks from 'coding-tool-jobs'
 import type TeamService from 'coding-experimental-agent-team'
 import * as ToolTeam from 'coding-experimental-tool-agent-team'
 import * as ToolTodo from 'coding-tool-todo'
+import * as ToolStatus from 'coding-tool-status'
 import * as ToolContextCompact from 'coding-tool-context-compact'
 import CompactionEngine from 'coding-compaction'
 import * as ToolSubagent from 'coding-tool-subagent'
@@ -795,6 +796,17 @@ const TOOL_PACKAGES: ToolPackage[] = [
     },
     note:
       'todo_write is session-owned state; UIs render the latest todo/write event as a checklist. `allowParallelInProgress` is required with no default, so the catalog states its choice: `true`, whose description invites several `in_progress` items. A deployment choosing `false` receives the same tool with a description asking for exactly one active task.',
+  },
+  {
+    pkg: 'coding-tool-status',
+    dir: 'tool-status',
+    source: 'packages/session/tool-status/src/index.ts',
+    requires: ['ctx.tools', 'owning Agent session with an open turn'],
+    writes: ['tool/call', 'status/set', 'tool/result'],
+    async mount(ctx) {
+      await ctx.plugin(ToolStatus)
+    },
+    note: 'set_status records a short current-turn progress report. null restores automatic progress; todo updates and turn boundaries clear the override. The optional turnStatus projection replays the latest same-turn report.',
   },
   {
     pkg: 'coding-tool-workflow',

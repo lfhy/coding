@@ -24,6 +24,7 @@
 | [`session-projection/`](session-projection/README.md) | 定义并驱动会话投影单元 | `ctx.sessionProjections` |
 | [`session-projection-cache/`](session-projection-cache/README.md) | 持久化并恢复投影检查点 | `ctx.sessionProjectionCache` |
 | [`session-stats/`](session-stats/README.md) | 提供全日志会话计数与墙钟时间（`sessionStats` 单元） | 注册到 `ctx.sessionProjections` |
+| [`tool-status/`](tool-status/README.md) | 模型报告当前轮次进度，并提供可回放的 `turnStatus` 单元 | 注册到 `ctx.tools` 与可选 `ctx.sessionProjections` |
 
 ## 标题
 

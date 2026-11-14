@@ -112,6 +112,7 @@
     "coding-tool-pwsh": "workspace:^",
     "coding-tool-ralph": "workspace:^",
     "coding-tool-skill": "workspace:^",
+    "coding-tool-status": "workspace:^",
     "coding-tool-str-replace-editor": "workspace:^",
     "coding-tool-subagent": "workspace:^",
     "coding-tool-subagent-control": "workspace:^",

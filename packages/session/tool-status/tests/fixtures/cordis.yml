@@ -1,0 +1,16 @@
+- name: coding-llm
+- name: coding-session
+- name: coding-system-prompt
+  config:
+    persona: ''
+- name: coding-tools
+- name: coding-agent
+- name: coding-session-projection
+- name: coding-user-questions
+- name: coding-agent-loop
+  config:
+    agents: []
+- name: coding-tool-status
+- name: coding-progress-reminder
+  config:
+    toolCallsPerReminder: 1

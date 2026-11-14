@@ -60,6 +60,9 @@
       "path": "../../todo/tool-todo"
     },
     {
+      "path": "../../session/tool-status"
+    },
+    {
       "path": "../ui-input-trigger"
     },
     {

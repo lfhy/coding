@@ -46,7 +46,8 @@ function validateReminder(
   if (!Number.isSafeInteger(declared) || declared < 1) {
     fail('progress-reminder 声明的工具调用数必须是正的安全整数')
   }
-  if (text !== renderProgressReminder(declared)) {
+  // 两种模板都可能存在于持久日志中；历史提醒仍逐字校验，不因增加工具引导而失效。
+  if (text !== renderProgressReminder(declared) && text !== renderProgressReminder(declared, false)) {
     fail('progress-reminder 文本必须逐字等于渲染结果')
   }
   const source = event.data.source

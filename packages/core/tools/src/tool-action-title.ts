@@ -6,6 +6,7 @@ const ACTION_TITLES: Readonly<Record<string, string>> = {
   write_stdin: 'Background session',
   update_plan: 'Update plan',
   todo_write: 'Update plan',
+  set_status: '更新当前进度',
   skill: 'Load skill',
   skill_read: 'Read skill',
   context_compact: 'Compact context',

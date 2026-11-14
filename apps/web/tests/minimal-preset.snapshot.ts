@@ -118,6 +118,7 @@ describe('minimal agent preset', () => {
           "memory_save",
           "memory_update",
           "render_ui",
+          "set_status",
           "str_replace_editor",
           "validate_gen_ui",
         ],

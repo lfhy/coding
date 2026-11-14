@@ -31,3 +31,9 @@ harness 的用途，且这两个包本来就在 Host 图中。另外，chat 场�
 偶然而非保证——一旦它离开该图，就像其余情形那样镜像该 helper。
 
 没有任何机制强制这条规则；靠 review 守住它。
+
+## 当前轮次进度
+
+[`turn-status.e2e.ts`](turn-status.e2e.ts) 通过真实 base 与 Web 组合验证运行状态行。临时回放脚本只替换外部模型，逐请求门控让浏览器观察真实 `set_status`、`todo_write`、目标变更与轮次边界；待办更新必须清除手动文案，显式清除恢复自动跟随。场景还验证刷新后的手动状态和计时，以及 375、768 与桌面宽度下的单行截断、计时保留和文档无溢出。
+
+构建产物就绪后执行 `DSH_SNAPSHOT=replay pnpm exec vitest run --config vitest.web.config.ts apps/web/tests/turn-status.e2e.ts`。场景不调用真实 API；回放文件、Host 设置与会话均隔离在测试自建临时目录，结束时释放浏览器、Host 和临时资源。计时验证只固定浏览器挂钟，Host 持久轮次时间与实际定时器保持真实。

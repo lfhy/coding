@@ -466,6 +466,7 @@
 - `session-checkpoint-policy` → `coding-session-checkpoint-policy`
 - `tool-result-pruner` → `coding-compaction-tool-result-pruner`
 - `tool-todo` → `coding-tool-todo`
+- `tool-status` → `coding-tool-status`
 - `tool-goal` → `coding-tool-goal`
 - `tool-ralph` → `coding-tool-ralph`
 - `tool-str-replace-editor` → `coding-tool-str-replace-editor`

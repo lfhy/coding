@@ -51,22 +51,55 @@ function emitLastEvent(ctx: Context, session: Session): void {
 }
 
 describe('progress-reminder invariants', () => {
-  it('accepts a reminder whose declared count matches the completed tool calls', async () => {
+  it.each([true, false])('accepts an exact reminder template with a matching count (status guidance: %s)', async (includeStatusTool) => {
     const ctx = await setup()
     const session = Session.create(SessionId('accepted'))
     openTurn(session, 1)
     appendToolResults(session, 3, 1)
-    appendReminder(session, renderProgressReminder(3))
+    appendReminder(session, renderProgressReminder(3, includeStatusTool))
 
     expect(() => { emitLastEvent(ctx, session) }).not.toThrow()
   })
 
-  it('rejects a declared count that disagrees with the completed tool calls', async () => {
+  it.each([true, false])('replays either reminder template when a session is restored (status guidance: %s)', async (includeStatusTool) => {
+    const ctx = await setup()
+    const seed = Session.create(SessionId('restore-source'))
+    openTurn(seed, 1)
+    appendToolResults(seed, 2, 1)
+    appendReminder(seed, renderProgressReminder(2, includeStatusTool))
+
+    try {
+      const restored = ctx.sessions.create(SessionId('restored'), { seed: seed.events })
+      expect(restored.deriveMessages().some(message => message.content.some(
+        block => block.type === 'text' && block.text === renderProgressReminder(2, includeStatusTool),
+      ))).toBe(true)
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
+  it('replays historical reminders when the invariant starts after the session', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    const session = ctx.sessions.create(SessionId('existing-history'))
+    openTurn(session, 1)
+    appendToolResults(session, 1, 1)
+    appendReminder(session, renderProgressReminder(1, false))
+
+    try {
+      await ctx.plugin(InvariantRegistry, { enabled: true })
+      await expect(ctx.plugin(ProgressInvariant)).resolves.toBeDefined()
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
+  it.each([true, false])('rejects an incorrect count in either reminder template (status guidance: %s)', async (includeStatusTool) => {
     const ctx = await setup()
     const session = Session.create(SessionId('mismatch'))
     openTurn(session, 1)
     appendToolResults(session, 2, 1)
-    appendReminder(session, renderProgressReminder(4))
+    appendReminder(session, renderProgressReminder(4, includeStatusTool))
 
     expect(() => { emitLastEvent(ctx, session) }).toThrow(/声明 4 次调用，日志中该边界之后为 2 次/)
   })
@@ -94,12 +127,12 @@ describe('progress-reminder invariants', () => {
     }
   })
 
-  it('rejects a reminder whose text was altered', async () => {
+  it.each([true, false])('rejects altered text in either reminder template (status guidance: %s)', async (includeStatusTool) => {
     const ctx = await setup()
     const session = Session.create(SessionId('altered'))
     openTurn(session, 1)
     appendToolResults(session, 1, 1)
-    appendReminder(session, `${renderProgressReminder(1)}\n额外一句`)
+    appendReminder(session, `${renderProgressReminder(1, includeStatusTool)}\n额外一句`)
 
     expect(() => { emitLastEvent(ctx, session) }).toThrow(/文本必须逐字等于渲染结果/)
   })

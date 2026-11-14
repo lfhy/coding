@@ -418,6 +418,10 @@
       config:
         allowParallelInProgress: true
 
+    # 逐会话进度是各模式共享的工具；留在 Host，避免投影随预设重复注册。
+    - id: tool-status
+      name: 'coding-tool-status'
+
     # Persisted same-session goals reach the model and the slash menu here; the
     # domain, driver, and `/goal` command are above.
     - id: tool-goal

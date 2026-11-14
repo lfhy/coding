@@ -84,7 +84,7 @@ describe('ToolRuntime', () => {
 
   it.each([
     'wait_agent', 'list_agents', 'list_subagent_models', 'memory_list', 'render_ui', 'bash', 'ask_user_question',
-    'validate_gen_ui',
+    'validate_gen_ui', 'set_status',
     'browser_close', 'browser_screenshot', 'browser_snapshot', 'browser_auth_flush', 'browser_doctor', 'browser_status',
     'computer_list_apps', 'cordis_inspect_list', 'terminal_list', 'canvas_state', 'ppt_templates', 'schedule_list', 'report',
     'spawn_teammate', 'team_task_create', 'workflow', 'computer_confirm', 'cordis_define',

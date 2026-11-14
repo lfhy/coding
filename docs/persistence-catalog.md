@@ -705,6 +705,19 @@ Types: [SessionTitleLlmRequestEventData](subsystems/session-title.md)
 
 Source: [`packages/session/session-title-llm/src/index.ts:44`](../packages/session/session-title-llm/src/index.ts)
 
+### `status/*`
+
+<a id="statusset--log-only"></a>
+
+#### `status/set` — log-only
+
+```ts persistence-catalog
+/** 模型报告的完整当前进度；text 为 null 时恢复自动跟随待办或目标。 */
+'status/set': { turn: number; text: string | null }
+```
+
+Source: [`packages/session/tool-status/src/types.ts:6`](../packages/session/tool-status/src/types.ts)
+
 ### `step/*`
 
 <a id="stepend--log-only"></a>

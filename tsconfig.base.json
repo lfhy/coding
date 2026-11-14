@@ -67,6 +67,8 @@
       "coding-session-projection/types": ["./packages/session/session-projection/src/types.ts"],
       "coding-tool-todo/types": ["./packages/todo/tool-todo/src/types.ts"],
       "coding-tool-todo/client": ["./packages/todo/tool-todo/src/client.ts"],
+      "coding-tool-status/types": ["./packages/session/tool-status/src/types.ts"],
+      "coding-tool-status/client": ["./packages/session/tool-status/src/client.ts"],
       "coding-session-title/types": ["./packages/session/session-title/src/types.ts"],
       "coding-session-title/client": ["./packages/session/session-title/src/client.ts"],
       "coding-session-stats/types": ["./packages/session/session-stats/src/types.ts"],

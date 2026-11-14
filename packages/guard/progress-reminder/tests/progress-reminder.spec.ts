@@ -165,6 +165,29 @@ describe('counting completed tool calls', () => {
 })
 
 describe('reminder wording', () => {
+  it('pins the complete reminder with conditional status-tool guidance', () => {
+    expect(renderProgressReminder(3)).toMatchInlineSnapshot(`
+      "<system-reminder>
+      你已连续执行 3 次工具调用，其间没有向用户汇报过进展。
+      这是一次性提示，只对紧邻的下一次助手回复生效；它不是持续规则，也不是每个步骤的固定要求。
+      请在紧邻的下一次回复正文中简短说明已完成什么、还剩什么，然后继续执行。说明一次即可；处理完这条提示后，即使历史中仍能看到它，也不要在每次工具调用或后续步骤前重复汇报。
+      若当前可用工具中有 \`set_status\`，请同时调用它，用简短的单行文本更新当前正在推进的工作；工具不可用时不要尝试调用。状态更新不能代替本次正文汇报，也不要为了更新状态停下或提问。
+      除非之后再次收到一条新的本提醒，或确实需要用户选择或确认，否则按原计划继续，不要为了汇报而停下或提问。任务完成时按正常方式向用户报告结果。
+      </system-reminder>"
+    `)
+  })
+
+  it('preserves the exact historical reminder for persisted-log validation', () => {
+    expect(renderProgressReminder(3, false)).toMatchInlineSnapshot(`
+      "<system-reminder>
+      你已连续执行 3 次工具调用，其间没有向用户汇报过进展。
+      这是一次性提示，只对紧邻的下一次助手回复生效；它不是持续规则，也不是每个步骤的固定要求。
+      请在紧邻的下一次回复正文中简短说明已完成什么、还剩什么，然后继续执行。说明一次即可；处理完这条提示后，即使历史中仍能看到它，也不要在每次工具调用或后续步骤前重复汇报。
+      除非之后再次收到一条新的本提醒，或确实需要用户选择或确认，否则按原计划继续，不要为了汇报而停下或提问。任务完成时按正常方式向用户报告结果。
+      </system-reminder>"
+    `)
+  })
+
   it('limits the report to this trigger instead of every following step', () => {
     const text = renderProgressReminder(3)
     expect(text).toContain('这是一次性提示，只对紧邻的下一次助手回复生效；它不是持续规则，也不是每个步骤的固定要求。')
@@ -174,6 +197,19 @@ describe('reminder wording', () => {
 })
 
 describe('pre-step injection', () => {
+  it('keeps status-tool guidance conditional without requiring a tool registry', async () => {
+    const { ctx } = await mount({ toolCallsPerReminder: 1 })
+    const session = Session.create(SessionId('no-status-tool'))
+    openTurn(session, 1)
+    appendToolResults(session, 1, 1)
+
+    expect(ctx.get('tools')).toBeUndefined()
+    await fire(ctx, sessionAgent(session), 1, 2)
+
+    expect(reminderTexts(session)).toEqual([renderProgressReminder(1)])
+    expect(reminderTexts(session)[0]).toContain('工具不可用时不要尝试调用。')
+  })
+
   it('leaves the proposed batch alone below the threshold', async () => {
     const { ctx } = await mount({ toolCallsPerReminder: 3 })
     const session = Session.create(SessionId('below'))

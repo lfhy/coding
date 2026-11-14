@@ -12,7 +12,7 @@ const STATIC_SUMMARY_TOOLS = new Set([
   'memory_list', 'memory_read', 'memory_delete', 'memory_save', 'memory_update',
   'read', 'write', 'edit', 'read_image', 'grep', 'glob', 'web_search', 'web_fetch',
   'apply_patch', 'str_replace_editor', 'write_stdin', 'send_message', 'followup_task',
-  'interrupt_agent', 'job_list', 'job_output', 'job_kill', 'update_plan', 'todo_write',
+  'interrupt_agent', 'job_list', 'job_output', 'job_kill', 'update_plan', 'todo_write', 'set_status',
   'skill', 'skill_read', 'context_compact', 'render_ui', 'image_gen', 'edit_image',
   'validate_gen_ui', 'create_goal', 'get_goal', 'update_goal',
   'browser_close', 'browser_screenshot', 'browser_snapshot', 'browser_auth_flush', 'browser_doctor', 'browser_status',
@@ -21,7 +21,11 @@ const STATIC_SUMMARY_TOOLS = new Set([
   'team_task_create', 'workflow',
 ])
 
-/** 不需要额外说明，或将根 `summary` 用作业务载荷的工具。 */
+/**
+ * 判断工具是否需要额外的单次动作说明，静态动作及业务摘要保持原契约。
+ * @param name 模型可调用的工具名。
+ * @returns 允许注入展示摘要时为 true。
+ */
 export function supportsToolSummary(name: string): boolean {
   return !name.startsWith('mcp__') && !DESCRIPTION_TOOLS.has(name) && !STATIC_SUMMARY_TOOLS.has(name)
 }

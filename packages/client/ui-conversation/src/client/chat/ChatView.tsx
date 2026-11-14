@@ -9,17 +9,16 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { ConversationTimelineSnapshot } from 'coding-client-runtime/client'
+import type {} from 'coding-goal/client'
+import type {} from 'coding-tool-status/client'
+import type {} from 'coding-tool-todo/client'
 import { Button, IconChevronDownOutline14, Modal } from 'coding-client-ui-primitives'
 import type { ChatViewSlotProps, RenderMessageImages } from '../contract/slots.ts'
 import { buildConversationAnchors, type ConversationAnchor } from './conversation-anchors.ts'
 import { ConversationAnchorRail } from './ConversationAnchorRail.tsx'
 import { PendingSteeringBubble } from './MessageItem.tsx'
 import { ChatNodeSeat } from './ChatNodeSeat.tsx'
-import { formatRunDuration } from './message-chrome.ts'
-import {
-  pickTurnStatusPhrase, TURN_STATUS_ROTATE_MS, turnStatusLocale, turnStatusPhase, turnStatusPhrases,
-} from './turn-status-phrases/index.ts'
-import a11yCss from './accessibility.module.css'
+import { TurnStatus } from './TurnStatus.tsx'
 import css from './ChatView.module.css'
 
 const FOLLOW_THRESHOLD = 24
@@ -143,61 +142,11 @@ function runningTurnStartTime(timeline: ConversationTimelineSnapshot): number | 
   return latest
 }
 
-/** 回合级活动标签：跨首 token、工具调用与流式阶段保持不变。 */
-function TurnStatus({ startTime, t }: {
-  /** 运行中回合记录的 `turn/start` 时间；该边界在窗口外时回退到挂载时间。 */
-  startTime: number | null
-  /** 所属视图的语言座位。 */
-  t: ChatViewSlotProps['t']
-}) {
-  const [mountedAt] = useState(() => Date.now())
-  // 锚定 turn/start：中途重载仍保留真实耗时，收尾行的 Ran-for 与本时钟一致。
-  const anchor = startTime ?? mountedAt
-  const [elapsedMs, setElapsedMs] = useState(() => Math.max(0, Date.now() - anchor))
-  useEffect(() => {
-    const tick = (): void => {
-      setElapsedMs(Math.max(0, Date.now() - anchor))
-    }
-    tick()
-    const id = setInterval(tick, 1000)
-    return () => { clearInterval(id) }
-  }, [anchor])
-  // 短回合只显示标签；明显运行一段时间后才出现计时。
-  const showClock = elapsedMs >= 15_000
-  const phase = turnStatusPhase(elapsedMs)
-  // 换词只在阶段切换或到点换词时发生，不跟着每秒计时刷新。
-  const [phrase, setPhrase] = useState<string | null>(null)
-  useEffect(() => {
-    const rotate = (): void => {
-      setPhrase(previous => pickTurnStatusPhrase(turnStatusPhrases(phase, turnStatusLocale()), previous))
-    }
-    rotate()
-    const id = setInterval(rotate, TURN_STATUS_ROTATE_MS)
-    return () => { clearInterval(id) }
-  }, [phase])
-  return (
-    <div className={css.turnStatus} role="status" aria-live="polite">
-      {/* 圆环与轮换短语都只是进行中的装饰；读屏只读固定状态文案与计时。 */}
-      <span className={css.turnStatusSpinner} aria-hidden />
-      {phrase !== null && (
-        <span key={phrase} className={css.turnStatusLabel} aria-hidden>{phrase}</span>
-      )}
-      <span className={a11yCss.visuallyHidden}>{t('status.running')}</span>
-      {showClock && (
-        <span className={css.turnStatusClock} aria-hidden>
-          {formatRunDuration(elapsedMs, t)}
-        </span>
-      )}
-    </div>
-  )
-}
-
 /**
- * The chat view slot entry: pure component over the composed props; each
- * ordered business Node crosses the keyed renderer seat.
+ * 聊天视图入口：读取框架提供的成品值，每个业务节点经稳定 key 分发。
  */
 export function ChatView({
-  useSession, useSessions, useStore, renderSlot, sessionId, openFile, loadOlder, loadImage, inspectCall, chatScroll, forkAt,
+  useSession, useSessions, useProjection, useStore, renderSlot, sessionId, openFile, loadOlder, loadImage, inspectCall, chatScroll, forkAt,
   retryTurn, retryHistory, startSession, archiveSession,  fileMentions, openBrowserUrl, t,
 }: ChatViewSlotProps) {
   const order = useSession(s => s.chat.order)
@@ -207,6 +156,11 @@ export function ChatView({
   // Workspace root off the session list row: path summaries display relative to it.
   const cwd = useSessions(s => s.byId[sessionId]?.cwd)
   const running = useSession(s => s.running)
+  const statusOverride = useProjection('turnStatus')
+  const todoLabel = useProjection('todos', todos => todos
+    ?.filter(item => item.status === 'in_progress').map(item => item.content).join(' · ') || null)
+  const goalLabel = useProjection('goal', value => value?.goal.phase === 'active' ? value.goal.objective : null)
+  const statusLabel = statusOverride ?? todoLabel ?? goalLabel ?? null
   const openState = useSession(s => s.openState)
   const openError = useSession(s => s.openError)
   const hasMore = useSession(s => s.hasMore)
@@ -701,9 +655,8 @@ export function ChatView({
           {/* No pending placeholders: questions (ui-user-questions) and approvals
               (ApprovalPanel) both take over the composer, so a flow card would
               double-render the same wait. */}
-          {/* Turn-level loading signal: rides the whole running turn (first-token
-              wait, tool execution, streaming) so it never flickers per step. */}
-          {running && <TurnStatus startTime={runningTurnStart} t={t} />}
+          {/* 回合活动行跨首 token、工具执行与流式输出保留，进度变化不重置计时。 */}
+          {running && <TurnStatus startTime={runningTurnStart} label={statusLabel} t={t} />}
           {pendingSteering.map(item => (
             <PendingSteeringBubble
               key={item.id}
