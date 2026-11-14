@@ -1535,6 +1535,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         throws: ['PptStoreError 模板仓库损坏或无法访问时。'],
       },
       {
+        signature: 'listFonts(): Promise<readonly string[]>',
+        description: '本机已安装的字体族，供面板字体下拉列出。\n\n只读族名：不嵌入字节，也不判断许可。结果在进程内缓存一次，失败时不缓存、 下次调用重试，因此字体目录读坏了不会永久卡住下拉。',
+        parameters: [],
+        returns: '排序去重后的族名。',
+      },
+      {
         signature: 'readTemplate(id: string): Promise<PptTemplateDetail>',
         description: '读取模板的完整 deck；不切换当前工程。',
         parameters: [{ name: 'id', description: '模板 UUID。' }],
@@ -5637,7 +5643,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ToolDefinition',
-    declaration: 'export interface ToolDefinition extends ToolSchema {\n    readonly output: ToolOutputDefinition;\n    execute(args: unknown, exec: ToolRunContext): Promise<unknown>;\n    finalizeContent?(exec: Readonly<ToolExecution>, result: Readonly<ToolExecutionResult>): ContentBlock[] | undefined;\n    timeoutMs?: number;\n    isConcurrencySafe?(args: unknown): boolean;\n    presentCall?(args: unknown): ToolCallView | undefined;\n    presentResult?(args: unknown, result: ToolResult): ToolResultView | undefined;\n}',
+    declaration: 'export interface ToolDefinition extends ToolSchema {\n    readonly output: ToolOutputDefinition;\n    readonly summaryParameter?: false;\n    execute(args: unknown, exec: ToolRunContext): Promise<unknown>;\n    finalizeContent?(exec: Readonly<ToolExecution>, result: Readonly<ToolExecutionResult>): ContentBlock[] | undefined;\n    timeoutMs?: number;\n    isConcurrencySafe?(args: unknown): boolean;\n    presentCall?(args: unknown): ToolCallView | undefined;\n    presentResult?(args: unknown, result: ToolResult): ToolResultView | undefined;\n}',
   },
   {
     name: 'ToolDispatchExecution',

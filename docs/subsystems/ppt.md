@@ -203,6 +203,15 @@ async importEvidence(sessionId: string, source: string, options: { sourceIndex: 
  */
 listTemplates(): Promise<readonly PptTemplateSummary[]>
 
+/**
+ * 本机已安装的字体族，供面板字体下拉列出。
+ *
+ * 只读族名：不嵌入字节，也不判断许可。结果在进程内缓存一次，失败时不缓存、
+ * 下次调用重试，因此字体目录读坏了不会永久卡住下拉。
+ * @returns 排序去重后的族名。
+ */
+listFonts(): Promise<readonly string[]>
+
 /** 读取模板的完整 deck；不切换当前工程。
  * @param id - 模板 UUID。
  * @returns 模板详情。
