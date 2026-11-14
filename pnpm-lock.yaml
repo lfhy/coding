@@ -8401,9 +8401,6 @@ importers:
       coding-agent-loop:
         specifier: workspace:^
         version: link:../../core/agent-loop
-      coding-agent-loop-testkit:
-        specifier: workspace:^
-        version: link:../../test-support/agent-loop-testkit
       coding-host-apiproxy:
         specifier: workspace:^
         version: link:../../host/apiproxy

@@ -19,7 +19,7 @@
     "./src/*": "./src/*",
     "./package.json": "./package.json"
   },
-  "files": ["lib/*.js", "lib/types/**/*.js", "lib/types/**/*.d.ts"],
+  "files": ["lib/index.js", "lib/invariant.js", "lib/types/**/*.js", "lib/types/**/*.d.ts"],
   "license": "MIT",
   "dependencies": { "zod": "^4.4.3" },
   "peerDependencies": {
@@ -36,7 +36,6 @@
     "@deepseek-ai/cordis-plugin-loader": "workspace:^",
     "coding-agent": "workspace:^",
     "coding-agent-loop": "workspace:^",
-    "coding-agent-loop-testkit": "workspace:^",
     "coding-host-apiproxy": "workspace:^",
     "coding-invariants": "workspace:^",
     "coding-llm": "workspace:^",
