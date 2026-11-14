@@ -4,6 +4,8 @@
 
 client entry 还持有 slot outlet、会话 provider 以及 observable 到 uSES 绑定的 React 实现。业务插件通过带类型的 slot `hooks` 传递裸 observable source；渲染器在 outlet 处完成绑定。插件在 `slots`、`sessions` 和 `layout` 就绪后激活，投影当前会话标题，并执行全程序唯一一次上下文级 `renderSlot('root')` 调用。React、React DOM、Cordis、ui-slots 和 ui-primitives 通过 web 外壳的静态模块表保持同一浏览器身份；本包则以动态客户端 bundle 到达。
 
+`session-maybe` 默认保留无会话到首个会话的组件身份，之后切换或清空会话时重挂。显式 `sessionIdentity: 'entry'` 的常驻壳保留 React 身份，但标准 hook、注入和 store 继续使用当前会话；新对话根壳与输入栏用此选项保留编辑器，并由页面管理开始方式与临时选择的归属。
+
 ## 模型体验
 
 无，因为 UI 渲染器只组装浏览器 UI，不贡献模型可见输入。

@@ -532,17 +532,9 @@ function SessionMaybeEntryBody({ entry, ownerProps, info, slotKey, slotInjected,
 }
 
 /**
- * Session-maybe identity: adoption — the ONLY behavior (there is no
- * hold-identity-forever mode). An incarnation born session-less ADOPTS the
- * first session that arrives: identity holds across that one transition
- * (undefined → first id), so a blank shell's DOM survives the moment a
- * session appears. From then on the entry behaves exactly like a strict
- * session entry: switching to a DIFFERENT session remounts (component-local
- * state must not leak between sessions), and dropping back to no-session
- * remounts into a fresh blank incarnation, which will adopt again.
- * Component-local per-session state therefore clears by construction; state
- * that must SURVIVE a switch belongs in session-bound sources (machine,
- * store, hooks) — the existing layering rule, now load-bearing.
+ * session-maybe 默认在首次会话到达时采用该身份，之后换会话或清空选择会重挂，
+ * 防止本地会话状态泄漏。显式 sessionIdentity: 'entry' 只保留常驻壳的组件身份；
+ * 框架 hook、注入与 store 仍切换到当前会话，壳自行清理不应跨会话保留的查看状态。
  */
 function SessionMaybeEntry({ entry, ownerProps, slotKey, slotInjected, hookContext, hasHookContext }: {
   entry: StoredEntry
@@ -553,32 +545,28 @@ function SessionMaybeEntry({ entry, ownerProps, slotKey, slotInjected, hookConte
   hasHookContext: boolean
 }) {
   const info = useSessionMaybeProvideInfo()
-  // The child key is an incarnation counter, NOT the session id: adoption
-  // must keep the key constant across undefined → first id. Bookkeeping
-  // lives in this stable (unkeyed) wrapper via the render-phase setState
-  // form (React's sanctioned derived-state pattern: setState during render
-  // of the same component re-renders once before children mount, and the
-  // guard conditions make it convergent — StrictMode-safe).
+  // 默认 key 是挂载代次而非会话 id，保证 undefined → 首个会话不重挂。
+  // 在当前 wrapper 的渲染阶段收敛身份，子树渲染前完成，StrictMode 下同样稳定。
   const [state, setState] = useState<MaybeIncarnation>(FIRST_INCARNATION)
   let { adopted, epoch } = state
   if (info.sessionId !== undefined && adopted === undefined) {
-    // Adoption: same epoch — no remount.
+    // 首次采用会话不改变挂载代次。
     adopted = info.sessionId
     setState({ adopted, epoch })
   } else if (adopted !== undefined && info.sessionId !== undefined && info.sessionId !== adopted) {
-    // Post-adoption session switch: next incarnation, born already adopted.
+    // 后续会话切换生成已采用新身份的下一代。
     adopted = info.sessionId
     epoch += 1
     setState({ adopted, epoch })
   } else if (adopted !== undefined && info.sessionId === undefined) {
-    // Back to no-session: next incarnation, born blank (adopts anew later).
+    // 清空选择后，新一代等待再次采用会话。
     adopted = undefined
     epoch += 1
     setState({ adopted, epoch })
   }
   return (
     <SessionMaybeEntryBody
-      key={epoch}
+      key={entry.sessionIdentity === 'entry' ? 0 : epoch}
       entry={entry}
       ownerProps={ownerProps}
       info={info}

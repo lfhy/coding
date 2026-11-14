@@ -19,6 +19,7 @@ declare module 'coding-client-ui-slots' {
     'chain.frame': { kind: 'single'; scope: 'root' }
     'chain.side': { kind: 'single'; scope: 'root'; owner: { collapsed: boolean; width: number } }
     'chain.conv': { kind: 'single'; scope: 'session' }
+    'chain.maybe': { kind: 'single'; scope: 'session-maybe' }
     'chain.context': {
       kind: 'single'
       scope: 'session'
@@ -88,6 +89,7 @@ const CONTEXT_INJECT: ContextInjected = {
 // Component fixtures (never rendered; the register call sites are the test).
 declare function Frame(props: FrameProps): ReactNode
 declare function Conv(props: ConvProps): ReactNode
+declare function Maybe(props: PropsRuntime<'chain.maybe'>): ReactNode
 declare function Details(props: PropsRuntime<'chain.conv'> & PropsStore<ChatHandle>): ReactNode
 declare function Tool(props: PropsRuntime<'chain.tools'>): ReactNode
 declare function Over(props: PropsRuntime<'chain.frame'> & PropsRenderSlots<'chain.side' | 'chain.conv'>): ReactNode
@@ -135,6 +137,15 @@ describe('terminal-design type chain', () => {
 
       // Pure reader: same handle, no inject.
       core.register({ name: 'chain.conv', store: chat }, Details)
+
+      // 只有可选会话入口允许常驻身份；必选会话和根入口仍遵守原有生命周期。
+      core.register({ name: 'chain.maybe', sessionIdentity: 'entry' }, Maybe)
+      // @ts-expect-error 根入口不能声明会话身份策略。
+      core.register({ name: 'chain.frame', sessionIdentity: 'entry' }, Blind)
+      // @ts-expect-error 必选会话入口不能绕过随会话重挂的生命周期。
+      core.register({ name: 'chain.conv', sessionIdentity: 'entry' }, () => null)
+      // @ts-expect-error 身份策略只接受显式的 entry 值。
+      core.register({ name: 'chain.maybe', sessionIdentity: 'session' }, Maybe)
 
       // Owner + store shares arrive typed on the component face. Standard-kit
       // member payloads are the runtime merge's property — not probed here

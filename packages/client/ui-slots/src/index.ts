@@ -545,6 +545,8 @@ type BaseOptions<
    * face — fails loud otherwise.
    */
   locale?: N
+  /** 仅 session-maybe 可选：按注册生命周期保留组件，业务状态仍按当前会话切换。 */
+  sessionIdentity?: ScopeOf<K> extends 'session-maybe' ? 'entry' : never
   /** Registrant identity label for diagnostics (the runtime Service wrapper stamps the caller's fiber name). */
   registrant?: string
 } & KindOptions<K, EntryKey, M>
@@ -556,6 +558,8 @@ type BaseOptions<
  */
 export interface StoredEntry {
   component: unknown
+  /** 仅常驻 session-maybe 壳使用；缺省仍按采用后的会话身份重挂。 */
+  sessionIdentity?: 'entry' | undefined
   options: { key?: string; id?: string; order?: number; label?: SlotLabel; priority?: number }
   /** Chain routing selector (type-erased like `inject`; present exactly on chain-slot entries). */
   select?: ((owner: never) => unknown) | undefined
@@ -590,6 +594,7 @@ export function resolveSlotLabel(label: SlotLabel | undefined): string | undefin
  */
 interface ErasedOptions {
   name: string
+  sessionIdentity?: unknown
   key?: string | undefined
   id?: string | undefined
   order?: number | undefined
@@ -790,9 +795,12 @@ export class SlotCore {
       throw new Error(`slot "${options.name}" is not declared (a parent entry's children table must declare it)`)
     }
     const spec = rec.spec
-    // Kind constraints stay runtime checks for dynamically-composed callers;
-    // typed callers already satisfied KindOptions statically. Cell occupancy
-    // clashes only at the exact priority: a different priority shadows.
+    if (options.sessionIdentity !== undefined
+      && (options.sessionIdentity !== 'entry' || spec.scope !== 'session-maybe')) {
+      throw new Error(`slot "${options.name}" only accepts sessionIdentity "entry" with session-maybe scope`)
+    }
+    // 动态组合仍在运行时校验 kind；静态调用已由 KindOptions 约束。
+    // 同一单元格只有相同优先级冲突，不同优先级按遮蔽规则处理。
     const priority = options.priority ?? 0
     const occupantHint = (occupant: StoredEntry) =>
       `at priority ${priority}${occupant.registrant !== undefined ? ` (registered by ${occupant.registrant})` : ''} — register at a different priority to shadow it (lowest renders)`
@@ -844,6 +852,7 @@ export class SlotCore {
 
     const entry: StoredEntry = {
       component,
+      ...(options.sessionIdentity !== undefined ? { sessionIdentity: options.sessionIdentity } : {}),
       options: {
         ...(options.key !== undefined ? { key: options.key } : {}),
         ...(options.id !== undefined ? { id: options.id } : {}),

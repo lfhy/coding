@@ -967,14 +967,15 @@ describe('inject: execution point, parameter derivation, cache granularity', () 
 describe('session-maybe adoption identity', () => {
   const SINGLE_MAYBE: DeclaredSpec = { kind: 'single', scope: 'session-maybe' }
 
-  /** Mount a maybe entry that records its mount count and local state. */
-  function mountMaybeCounter(h: Fake) {
+  /** 记录可选会话入口的挂载次数，区分默认采用与显式常驻身份。 */
+  function mountMaybeCounter(h: Fake, sessionIdentity?: 'entry') {
     let mounts = 0
     const seen: { sessionId: string | undefined; mount: number }[] = []
     h.declare('k.maybe', SINGLE_MAYBE)
     h.add('k.maybe', {
+      sessionIdentity,
       component: ({ sessionId }: { sessionId?: string }) => {
-        // Local mount marker: useState initializer runs once per incarnation.
+        // 本地标记只在每次真正挂载时生成。
         const [mount] = useState(() => ++mounts)
         seen.push({ sessionId, mount })
         return <b>{`${sessionId ?? 'blank'}#${mount}`}</b>
@@ -992,6 +993,60 @@ describe('session-maybe adoption identity', () => {
     act(() => { h.current.set('s1') })
     // Same incarnation (#1): the blank shell adopted s1.
     expect(view.container.textContent).toBe('s1#1')
+  })
+
+  it('显式常驻入口跨会话和清空仍保留组件身份，当前会话属性照常更新', () => {
+    const h = makeHost()
+    h.addSession('s1')
+    h.addSession('s2')
+    const { view } = mountMaybeCounter(h, 'entry')
+    const element = view.container.querySelector('b')
+    for (const id of ['s1', 's2', undefined, 's1']) {
+      act(() => { h.current.set(id) })
+      expect(view.container.querySelector('b')).toBe(element)
+      expect(view.container.textContent).toBe(`${id ?? 'blank'}#1`)
+    }
+  })
+
+  it('常驻组件仍切换 hook、注入与 store 作用域，离开旧会话后不再响应其数据', () => {
+    const h = makeHost()
+    h.addSession('s1', { value: 'one' })
+    h.addSession('s2', { value: 'two' })
+    h.current.set('s1')
+    h.declare('k.maybe', SINGLE_MAYBE)
+    const store = miniStore(() => ({ draft: '' }), { setDraft: (_state, draft: string) => ({ draft }) })
+    const inject = vi.fn((id: never) => ({ tag: String(id) }))
+    const cleanup = vi.fn()
+    let setDraft = (_draft: string) => {}
+    const dispose = h.add('k.maybe', {
+      sessionIdentity: 'entry', store, inject,
+      component: ({ useSession, useStore, actions, tag }: {
+        useSession: <Selected>(select: (state: { value: string }) => Selected) => Selected
+        useStore: <Selected>(select: (state: { draft: string }) => Selected) => Selected
+        actions: { setDraft: (draft: string) => void }
+        tag: string
+      }) => {
+        useEffect(() => cleanup, [])
+        setDraft = actions.setDraft
+        return <b>{`${useSession(state => state.value)}|${useStore(state => state.draft)}|${tag}`}</b>
+      },
+    })
+    const { view } = mountRoot(h, { 'k.maybe': SINGLE_MAYBE }, renderSlot => renderSlot('k.maybe', {}))
+    const element = view.container.querySelector('b')
+    act(() => { setDraft('first') })
+    expect(element?.textContent).toBe('one|first|s1')
+    act(() => { h.current.set('s2') })
+    expect(view.container.querySelector('b')).toBe(element)
+    expect(element?.textContent).toBe('two||s2')
+    act(() => { h.setSession('s1', { value: 'old-updated' }); setDraft('second') })
+    expect(element?.textContent).toBe('two|second|s2')
+    act(() => { h.current.set('s1') })
+    expect(element?.textContent).toBe('old-updated|first|s1')
+    expect(inject).toHaveBeenCalledTimes(2)
+    expect(cleanup).not.toHaveBeenCalled()
+    act(() => { dispose() })
+    expect(view.container.querySelector('b')).toBeNull()
+    expect(cleanup).toHaveBeenCalledOnce()
   })
 
   it('remounts on a post-adoption session switch (local state must not leak across sessions)', () => {

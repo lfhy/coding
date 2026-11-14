@@ -11,6 +11,7 @@ declare module 'coding-client-ui-slots' {
   interface SlotMap {
     'test.single': { kind: 'single'; scope: 'root' }
     'test.session': { kind: 'single'; scope: 'session' }
+    'test.maybe': { kind: 'single'; scope: 'session-maybe' }
     'test.list': { kind: 'list'; scope: 'root' }
     'test.keyed': { kind: 'keyed'; scope: 'session' }
     'test.chain': { kind: 'chain'; scope: 'session'; owner: { tags: string[] } }
@@ -38,6 +39,7 @@ function mountFrame(core: SlotCore) {
     children: {
       'test.single': { kind: 'single', scope: 'root' },
       'test.session': { kind: 'single', scope: 'session' },
+      'test.maybe': { kind: 'single', scope: 'session-maybe' },
       'test.list': { kind: 'list', scope: 'root' },
       'test.keyed': { kind: 'keyed', scope: 'session' },
       'test.chain': { kind: 'chain', scope: 'session' },
@@ -58,6 +60,19 @@ describe('a-priori root and declaration gate', () => {
   it('throws on registering into an undeclared slot', () => {
     const core = new SlotCore()
     expect(() => core.register({ name: 'test.single' }, Comp)).toThrow('not declared')
+  })
+
+  it('只允许 session-maybe 入口声明按注册生命周期保留身份', () => {
+    const core = new SlotCore()
+    mountFrame(core)
+    core.register({ name: 'test.maybe', sessionIdentity: 'entry' }, Comp)
+    expect(core.entries('test.maybe')[0]?.sessionIdentity).toBe('entry')
+    expect(() => core.register({ name: 'test.single', sessionIdentity: 'entry' } as never, Comp))
+      .toThrow('session-maybe scope')
+    expect(() => core.register({ name: 'test.session', sessionIdentity: 'entry' } as never, Comp))
+      .toThrow('session-maybe scope')
+    expect(() => core.register({ name: 'test.maybe', sessionIdentity: 'session' } as never, Comp))
+      .toThrow('only accepts sessionIdentity "entry"')
   })
 
   it('root is single: a second frame registration throws', () => {
@@ -374,8 +389,8 @@ describe('subscription API', () => {
     const keys: string[] = []
     const off = core.onMutate(key => keys.push(key))
     mountFrame(core)
-    // Contribution first, then each declared child key.
-    expect(keys).toEqual(['root', 'test.single', 'test.session', 'test.list', 'test.keyed', 'test.chain'])
+    // 先通知入口贡献，再按顺序通知它声明的子座位。
+    expect(keys).toEqual(['root', 'test.single', 'test.session', 'test.maybe', 'test.list', 'test.keyed', 'test.chain'])
     keys.length = 0
     core.register({ name: 'test.list', id: 'a' }, Comp)
     expect(keys).toEqual(['test.list'])
