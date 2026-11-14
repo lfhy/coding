@@ -1,12 +1,10 @@
-/**
- * 从 Host 的 Workspace 顺序与成员关系派生侧边栏会话树：不属于任何 Workspace
- * 的会话排在 Ungrouped 之下；尚未开跑的空白会话不出现为任何行。
- */
+/** 从真实工作区台账派生分组，并为对话、最近与内容搜索共用可见性规则。 */
 import {
   indexSubagentDescendants, type PendingInteractionStatus, type SessionId, type SessionListState,
   type SessionSearchResultItem, type SessionSummary, type SubagentDescendantSummary,
   type WorkspaceId, type WorkspaceView,
 } from 'coding-client-runtime/client'
+import type { WorkspaceViewMode } from './stores.ts'
 
 /** Group key for Sessions outside every Workspace. */
 export const UNGROUPED_KEY = ''
@@ -75,8 +73,6 @@ export interface SearchResultSet {
 /** Viewing state consumed by the derivation. */
 export interface TreeView {
   expandedGroups: readonly string[]
-  /** Browser-local order for Sessions without a backing Workspace account. */
-  ungroupedOrder?: readonly string[]
 }
 
 interface Group {
@@ -103,7 +99,12 @@ export function workspaceLabel(cwd: string | undefined): string {
 /** Recency comparator: newest first, id as the deterministic tiebreak (ids are unique per group). */
 function byRecency(a: SessionSummary, b: SessionSummary): number {
   if (b.updatedAt !== a.updatedAt) return b.updatedAt - a.updatedAt
-  return a.id < b.id ? -1 : 1
+  return a.id === b.id ? 0 : a.id < b.id ? -1 : 1
+}
+
+/** 归属只来自真实工作区台账，不从 cwd 或谱系推断。 */
+function sessionInView(id: SessionId, view: WorkspaceViewMode, accounted: ReadonlySet<SessionId>): boolean {
+  return view === 'recent' || (view === 'work' ? accounted.has(id) : !accounted.has(id))
 }
 
 /**
@@ -117,7 +118,7 @@ function sessionVisible(session: SessionSummary, archived: ReadonlySet<SessionId
     && !session.blank
 }
 
-/** Build one group without projecting session lineage into presentation. */
+/** 工作区分组保持调用方提供的会话台账顺序，不把谱系投影为层次。 */
 function buildGroup(
   key: string,
   workspaceId: WorkspaceId | undefined,
@@ -125,73 +126,31 @@ function buildGroup(
   createdAt: number | undefined,
   label: string,
   members: readonly SessionSummary[],
-  order: 'account' | 'recency',
 ): Group {
   const sessions = [...members]
-  // Real Workspace order comes from sessionIds. Ungrouped falls back to
-  // recency until the browser supplies its persisted local order.
-  if (order === 'recency') sessions.sort(byRecency)
   return { key, workspaceId, cwd, createdAt, label, sessions }
 }
 
-/** Apply a stored Ungrouped order and append newly loose Sessions by recency. */
-function orderedUngrouped(members: readonly SessionSummary[], stored: readonly string[]): SessionSummary[] {
-  const byId = new Map(members.map(session => [session.id as string, session]))
-  const included = new Set<string>()
-  const ordered: SessionSummary[] = []
-  for (const key of stored) {
-    const session = byId.get(key)
-    if (session === undefined || included.has(key)) continue
-    ordered.push(session)
-    included.add(key)
-  }
-  for (const session of [...members].sort(byRecency)) {
-    if (included.has(session.id)) continue
-    ordered.push(session)
-  }
-  return ordered
-}
-
 /**
- * 按 Host Workspace 分组：每个实体一组，保持 Host 顺序，成员按 `sessionIds`
- * 的存储顺序取自列表；不属于任何 Workspace 的会话排在浏览器本地的 Ungrouped
- * 顺序下，该顺序初始化之前回退到最近更新优先。
+ * 仅为真实工作区创建分组，保留 Host 的工作区顺序与会话台账顺序。
  */
 function groupByWorkspace(
   list: SessionListState,
   workspaces: readonly WorkspaceView[],
   archived: ReadonlySet<SessionId>,
-  ungroupedOrder: readonly string[] | undefined,
 ): Group[] {
   const groups: Group[] = []
-  const accounted = new Set<SessionId>()
   for (const workspace of workspaces) {
     const members: SessionSummary[] = []
     for (const id of workspace.sessionIds) {
       const summary = list.byId[id]
       if (summary === undefined) continue // 台账可能先于列表拉取到达；摘要落地后该行才会出现
-      accounted.add(id)
       if (!sessionVisible(summary, archived)) continue
       members.push(summary)
     }
     groups.push(buildGroup(
       workspace.workspaceId, workspace.workspaceId, workspace.path,
-      Date.parse(workspace.createdAt), workspace.title, members, 'account',
-    ))
-  }
-  const stray = list.ids
-    .map(id => list.byId[id])
-    .filter((s): s is SessionSummary =>
-      s !== undefined && !accounted.has(s.id) && sessionVisible(s, archived))
-  if (stray.length > 0) {
-    groups.push(buildGroup(
-      UNGROUPED_KEY,
-      undefined,
-      undefined,
-      undefined,
-      UNGROUPED_LABEL,
-      ungroupedOrder === undefined ? stray : orderedUngrouped(stray, ungroupedOrder),
-      ungroupedOrder === undefined ? 'recency' : 'account',
+      Date.parse(workspace.createdAt), workspace.title, members,
     ))
   }
   return groups
@@ -237,7 +196,7 @@ export function deriveGroups(
     : (workspaces.find(w => w.sessionIds.includes(list.current as SessionId))?.workspaceId as string | undefined)
         ?? UNGROUPED_KEY
   const groups: GroupNode[] = []
-  for (const g of groupByWorkspace(list, workspaces, archived, view.ungroupedOrder)) {
+  for (const g of groupByWorkspace(list, workspaces, archived)) {
     const expanded = expandedGroups.has(g.key)
     groups.push({
       key: g.key,
@@ -260,18 +219,21 @@ export function deriveGroups(
  * 不在这里派生（见 {@link deriveSearchResults}）。
  * @param list - 会话列表快照。
  * @param archivedSessionIds - 注册表全局归档集合。
+ * @param scope - 可选的视图范围；缺省为所有可见普通会话。
  * @returns 按渲染顺序排列的行。
  */
 export function deriveFlat(
   list: SessionListState,
   archivedSessionIds: readonly SessionId[],
+  scope?: { view: WorkspaceViewMode; workspaces: readonly WorkspaceView[] },
 ): SessionNode[] {
   const archived = new Set(archivedSessionIds)
+  const accounted = new Set(scope?.workspaces.flatMap(workspace => workspace.sessionIds))
   const descendants = indexSubagentDescendants(list.byId)
   const rows: SessionSummary[] = []
   for (const id of list.ids) {
     const s = list.byId[id]
-    if (s === undefined || !sessionVisible(s, archived)) continue
+    if (s === undefined || !sessionVisible(s, archived) || !sessionInView(id, scope?.view ?? 'recent', accounted)) continue
     rows.push(s)
   }
   rows.sort(byRecency)
@@ -297,6 +259,7 @@ export interface RelativeTime {
  * @param archivedSessionIds - 注册表全局归档集合（成员永不匹配）。
  * @param content - Host 排序后的内容搜索页。
  * @param limit - 协议规定的合并行数上限。
+ * @param view - 当前视图；本地元数据与后端内容命中都必须属于该范围。
  * @returns 有界去重的单列表行，以及「需要收窄查询」提示位。
  */
 export function deriveSearchResults(
@@ -306,6 +269,7 @@ export function deriveSearchResults(
   archivedSessionIds: readonly SessionId[],
   content: { items: readonly SessionSearchResultItem[]; hasMore: boolean },
   limit: number,
+  view: WorkspaceViewMode = 'recent',
 ): SearchResultSet {
   const q = query.trim().toLowerCase()
   if (q === '') return { items: [], hasMore: false }
@@ -318,6 +282,7 @@ export function deriveSearchResults(
       if (!workspaceBySession.has(sessionId)) workspaceBySession.set(sessionId, workspace.title)
     }
   }
+  const accounted = new Set(workspaceBySession.keys())
   const labelOf = (summary: SessionSummary): string =>
     workspaceBySession.get(summary.id) ?? workspaceLabel(summary.cwd)
   const contentBySession = new Map<SessionId, SessionSearchResultItem>()
@@ -329,7 +294,8 @@ export function deriveSearchResults(
   for (const id of list.ids) {
     const summary = list.byId[id]
     // 空白会话不进列表，也不参与匹配；它们没有可供搜索的内容。
-    if (summary === undefined || !sessionVisible(summary, archived)) continue
+    if (summary === undefined || !sessionVisible(summary, archived)
+      || !sessionInView(id, view, accounted)) continue
     if (
       summary.displayTitle.toLowerCase().includes(q)
       || labelOf(summary).toLowerCase().includes(q)
@@ -349,8 +315,10 @@ export function deriveSearchResults(
   for (const summary of local) include(summary)
   for (const item of content.items) {
     const summary = list.byId[item.sessionId]
-    if (summary !== undefined && sessionVisible(summary, archived)) include(summary)
+    if (summary !== undefined && sessionVisible(summary, archived)
+      && sessionInView(summary.id, view, accounted)) include(summary)
   }
+  if (view === 'recent') ordered.sort(byRecency)
 
   return {
     items: ordered.slice(0, limit).map((summary) => {

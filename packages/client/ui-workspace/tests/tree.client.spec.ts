@@ -24,10 +24,7 @@ const workspace = (id: string, sessionIds: string[], title = id): WorkspaceView 
   workspaceId: wid(id), path: `/projects/${id}`, title,
   sessionIds: sessionIds.map(sid), createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z',
 })
-const view = (expandedGroups: readonly string[] = [], ungroupedOrder?: readonly string[]) => ({
-  expandedGroups,
-  ...(ungroupedOrder === undefined ? {} : { ungroupedOrder }),
-})
+const view = (expandedGroups: readonly string[] = []) => ({ expandedGroups })
 const noArchive: readonly SessionId[] = []
 const archived = (...ids: string[]): readonly SessionId[] => ids.map(sid)
 
@@ -48,24 +45,23 @@ describe('deriveGroups', () => {
     expect(deriveFlat(sessions, noArchive)[0]).toMatchObject({ pendingInteraction: 'plan-review', running: true })
   })
 
-  it('puts only real unaccounted Sessions in the trailing Ungrouped group', () => {
+  it('never mixes loose sessions into the real Workspace groups', () => {
     const sessions = list(summary('owned', 1, '/projects/first'), summary('loose', 9, '/other'))
     const groups = deriveGroups(sessions, [workspace('first', ['owned'])], noArchive, view([UNGROUPED_KEY]))
-    expect(groups.map(group => group.key)).toEqual(['first', UNGROUPED_KEY])
-    expect(groups[1]!.sessions.map(session => session.id)).toEqual([sid('loose')])
+    expect(groups.map(group => group.key)).toEqual(['first'])
+    expect(deriveFlat(sessions, noArchive, { view: 'conversations', workspaces: [workspace('first', ['owned'])] })
+      .map(session => session.id)).toEqual([sid('loose')])
   })
 
-  it('applies stored Ungrouped order and appends new loose Sessions by recency', () => {
+  it('keeps the Work tree empty when only loose sessions exist', () => {
     const sessions = list(summary('one', 3), summary('two', 2), summary('new', 4))
     const groups = deriveGroups(
       sessions,
       [],
       noArchive,
-      view([UNGROUPED_KEY], ['two', 'stale', 'two']),
+      view([UNGROUPED_KEY]),
     )
-    expect(groups[0]!.sessions.map(session => session.id)).toEqual([
-      sid('two'), sid('new'), sid('one'),
-    ])
+    expect(groups).toEqual([])
   })
 
   it('keeps blank sessions out of the tree and its counts', () => {
@@ -148,22 +144,20 @@ describe('deriveGroups', () => {
     const orphan = { ...summary('orphan', 3), parentId: sid('missing') }
     const cycleA = { ...summary('cycle-a', 4), parentId: sid('cycle-b') }
     const cycleB = { ...summary('cycle-b', 5), parentId: sid('cycle-a') }
-    const groups = deriveGroups(
+    const rows = deriveFlat(
       list(parent, oldChild, newChild, tieB, tieA, self, orphan, cycleA, cycleB),
-      [],
       noArchive,
-      { expandedGroups: [UNGROUPED_KEY] },
+      { view: 'conversations', workspaces: [] },
     )
 
-    expect(groups).toHaveLength(1)
-    expect(groups[0]!.sessions.map(node => node.id)).toEqual([
+    expect(rows.map(node => node.id)).toEqual([
       newChild.id, tieA.id, tieB.id, oldChild.id,
       cycleB.id, cycleA.id, orphan.id, self.id, parent.id,
     ])
 
     // Equal timestamps use ids as a deterministic tiebreak in either input order.
-    expect(deriveGroups(list(summary('tie-a', 1), summary('tie-b', 1)), [], noArchive, view([UNGROUPED_KEY]))[0]!
-      .sessions.map(node => node.id)).toEqual([sid('tie-a'), sid('tie-b')])
+    expect(deriveFlat(list(summary('tie-a', 1), summary('tie-b', 1)), noArchive,
+      { view: 'conversations', workspaces: [] }).map(node => node.id)).toEqual([sid('tie-a'), sid('tie-b')])
   })
 
   it('tolerates Workspace membership arriving before its Session summary', () => {
@@ -198,7 +192,7 @@ describe('deriveGroups', () => {
     const ownedGroups = deriveGroups({ ...list(owned, loose), current: owned.id }, [ws], noArchive, view())
     expect(ownedGroups.find(group => group.key === 'project')!.containsCurrent).toBe(true)
     const looseGroups = deriveGroups({ ...list(owned, loose), current: loose.id }, [ws], noArchive, view())
-    expect(looseGroups.find(group => group.key === UNGROUPED_KEY)!.containsCurrent).toBe(true)
+    expect(looseGroups.some(group => group.containsCurrent)).toBe(false)
   })
 })
 
@@ -387,14 +381,14 @@ describe('deriveSearchResults', () => {
 describe('createWorkspaceViewStore', () => {
   it('stores grouping, ordering, Workspace expansion, and recent-session view order', () => {
     const store = createWorkspaceViewStore().create()
-    expect(store.getSnapshot().groupBy).toBe('workspace')
+    expect(store.getSnapshot().view).toBe('work')
     expect(store.getSnapshot().orderBy).toBe('updated')
-    store.actions.setGroupBy('flat')
+    store.actions.setView('conversations')
     store.actions.setOrderBy('updated')
     store.actions.setGroupExpanded('alpha', true)
     store.actions.syncSessionOrderAccount('alpha', ['two', 'one'], { one: 1, two: 2 })
     store.actions.setSessionOrder('alpha', ['one', 'two'])
-    expect(store.getSnapshot().groupBy).toBe('flat')
+    expect(store.getSnapshot().view).toBe('conversations')
     expect(store.getSnapshot()).toMatchObject({
       orderBy: 'updated',
       groupExpansion: { alpha: true },

@@ -1,0 +1,47 @@
+/* 固定在标题行上方；三种范围共用侧栏交互与排版 token。 */
+.tabs {
+  flex: none;
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  margin-block: 8px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+}
+
+.tabs .tab {
+  flex: 1;
+  min-width: 0;
+  padding-inline: 6px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  font: var(--dsw-font-xxs-12);
+  color: var(--dsw-alias-label-secondary);
+  transition:
+    background-color var(--ds-transition-duration-fast) var(--ds-ease-in-out),
+    color var(--ds-transition-duration-fast) var(--ds-ease-in-out);
+}
+
+.tabs .tab[aria-selected='true'] {
+  border-color: var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-layer-1);
+  box-shadow: var(--dsw-shadow-lv1);
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary);
+}
+
+.tabs .tab:hover:not([aria-selected='true']) {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.tab:focus-visible {
+  outline: 2px solid var(--dsw-alias-state-business-primary);
+  outline-offset: 1px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tabs .tab {
+    transition: none;
+  }
+}

@@ -8,6 +8,15 @@ import {
 afterEach(cleanup)
 
 describe('语义图标适配', () => {
+  it.each(['conversation', 'recent'] as const)('%s 使用线性语义图形并继承主题颜色', (name) => {
+    const view = render(<Icon name={name} size={14} className="view-icon" />)
+    const icon = view.container.querySelector<HTMLElement>('.view-icon')!
+    expect(icon.style.fontSize).toBe('14px')
+    expect(icon.getAttribute('aria-hidden')).toBe('true')
+    expect(icon.querySelector('svg')).not.toBeNull()
+    expect(icon.querySelector('img')).toBeNull()
+  })
+
   it('首页使用线性房屋图形而非品牌图片，继承尺寸和无障碍隐藏状态', () => {
     const view = render(<Icon name="home" size={20} className="home-control" />)
     const icon = view.container.querySelector<HTMLElement>('.home-control')!

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { act, cleanup, fireEvent, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, waitFor } from '@testing-library/react'
 import { SlotTestRuntime } from 'coding-client-test-runtime'
 import { createSnapshotStore, type SessionId, type WorkspaceId } from 'coding-client-runtime/client'
 import { LocaleRuntime } from 'coding-client-locale/client'
@@ -38,10 +38,7 @@ describe('sidebar conversation navigation from shell pages', () => {
     const { view } = runtime.renderSlot('sidebar', {
       collapsed: false, width: 300, welcomeActionsVisible: false,
     })
-    if (mode === 'flat') {
-      fireEvent.click(view.getByRole('button', { name: '视图选项' }))
-      fireEvent.click(screen.getByRole('menuitem', { name: '单列表', hidden: true }))
-    }
+    if (mode === 'flat') fireEvent.click(view.getByRole('tab', { name: '最近' }))
     if (mode === 'search') {
       fireEvent.click(view.getByRole('button', { name: '搜索会话' }))
       fireEvent.change(view.getByRole('textbox'), { target: { value: '会话' } })

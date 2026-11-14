@@ -18,7 +18,7 @@
 
 栏内的滚动条是一种指针可供性：只要指针不在栏内，外壳就把 ui-theme 的[滚动条间接层](../ui-theme/README.md)重新绑定为 `transparent`；指针离开后滑块再保留 2 秒，因此没人指向的列表不会带着滚动条。避免行位移的空间预留属于滚动区域本身（[ui-workspace](../ui-workspace/README.md)），所以显示滑块不会引起重排。
 
-顶部入口区在新对话与可选入口之后，经分隔线连接 `sidebar.workspaces` 的标题行与列表；折叠到 rail 时入口区纵向排列，分隔线缩成一段居中短线。页脚保留 `sidebar.footer.action` 的可选动作。设置座位 `shell.settings` 由 [ui-layout](../ui-layout/README.md) 声明，位于外层窄导航底部，由 [ui-settings-general](../ui-settings-general/README.md) 注册触发控件与设置页；本包不声明或渲染设置座位。
+顶部入口区在新对话与可选入口之后，直接连接 `sidebar.workspaces` 的分段切换、标题行与列表，宽侧栏不重复绘制分隔线；折叠到 rail 时入口区纵向排列，并保留一段居中短线。页脚保留 `sidebar.footer.action` 的可选动作。设置座位 `shell.settings` 由 [ui-layout](../ui-layout/README.md) 声明，位于外层窄导航底部，由 [ui-settings-general](../ui-settings-general/README.md) 注册触发控件与设置页；本包不声明或渲染设置座位。
 
 `/client` 导出表层只包含插件主体（`apply`／`inject`）及约定类型；SidebarRoot、行组件和树派生仍由 slot 注册封装在包内。
 

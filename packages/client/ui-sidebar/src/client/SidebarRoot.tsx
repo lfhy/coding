@@ -143,7 +143,7 @@ export function SidebarRoot({
         </div>
       )}
 
-      {/* 顶部入口与下方工作区列表之间的分隔线；rail 中缩成一段短线。 */}
+      {/* 宽侧栏由浏览区域的切换栏分层；这里只在 rail 中绘制短分隔线。 */}
       <div className={css.topDivider} aria-hidden="true" />
 
       {/* 浏览区域在两种状态下都填满控件与页脚之间的空间，rail 的图标列走同一个 slot。 */}

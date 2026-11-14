@@ -108,12 +108,14 @@ describe('SidebarRoot.module.css', () => {
   })
 
   it('separates the top entry from the browser without a sidebar settings seat', () => {
+    expect(declarations('.topDivider')?.get('display')).toBe('none')
     expect(declarations('.topDivider')?.get('height')).toBe('1px')
     expect(declarations('.topDivider')?.get('margin')).toBe('8px 0')
     expect(declarations('.topDivider')?.get('background')).toBe('var(--dsw-alias-border-l2)')
     expect(declarations('.collapsed .topDivider')?.get('width')).toBe('30px')
+    expect(declarations('.collapsed .topDivider')?.get('display')).toBe('block')
     expect(declarations('.collapsed .topDivider')?.get('margin')).toBe('10px auto')
-    // 设置入口由窗口导航持有；侧栏分隔线仍位于顶部入口与浏览区域之间。
+    // 设置入口由窗口导航持有；rail 的短分隔线仍位于顶部入口与浏览区域之间。
     const divider = root.indexOf('css.topDivider')
     expect(divider).toBeGreaterThan(root.indexOf("renderSlot('sidebar.top.entry'"))
     expect(divider).toBeLessThan(root.indexOf("renderSlot('sidebar.workspaces'"))

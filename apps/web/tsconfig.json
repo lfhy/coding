@@ -43,6 +43,7 @@
     "tests/lifecycle-chrome.e2e.ts",
     "tests/hero-panel-actions.e2e.ts",
     "tests/window-shell.e2e.ts",
+    "tests/workspace-view-tabs.e2e.ts",
     "tests/new-conversation-workbench.e2e.ts",
     "tests/details-session-lifecycle.e2e.ts",
     "tests/plugin-config.e2e.ts",

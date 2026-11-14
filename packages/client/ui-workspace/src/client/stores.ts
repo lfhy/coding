@@ -1,23 +1,15 @@
-/**
- * The workspace browser's viewing store: the session-list grouping mode,
- * persisted across reloads. Module level exports the factory only (a
- * module-level handle would pin the store identity across plugin reloads);
- * register() receives the factory and the browser derives its PropsStore
- * share from the return type.
- */
+/** 工作区浏览偏好由注册时创建的 store 持有，跨挂载与刷新保留。 */
 import { defineStore, type EngineStoreHandle } from 'coding-client-runtime/client'
 
-/** Browser-local order account for the hierarchy-free flat Session list. */
-export const FLAT_SESSION_ORDER_KEY = '__flat_session_order__'
-
-/** Session-list grouping mode: workspace sections or one flat recency list. */
-export type SessionGroupBy = 'workspace' | 'flat'
-/** Session order: user-arranged only, or user-arranged plus activity promotion. */
+/** 视图决定会话归属范围；最近视图不使用可编辑的顺序台账。 */
+export type WorkspaceViewMode = 'work' | 'conversations' | 'recent'
+/** 工作和对话视图支持固定手工顺序或活动置顶。 */
 export type SessionOrderBy = 'manual' | 'updated'
 
 /** Workspace browser viewing state persisted across surface remounts and reloads. */
 type WorkspaceViewState = {
-  groupBy: SessionGroupBy
+  /** 旧版持久记录没有该字段，读取时回退到工作视图。 */
+  view?: WorkspaceViewMode
   orderBy: SessionOrderBy
   /** Explicit zero-or-five-session state keyed by Workspace group identity. */
   groupExpansion: Record<string, boolean>
@@ -32,7 +24,7 @@ type WorkspaceViewState = {
  * return type); drift fails assignability at the defineStore call.
  */
 type WorkspaceViewActions = {
-  setGroupBy: (draft: WorkspaceViewState, mode: SessionGroupBy) => void
+  setView: (draft: WorkspaceViewState, mode: WorkspaceViewMode) => void
   setOrderBy: (draft: WorkspaceViewState, mode: SessionOrderBy) => void
   setGroupExpanded: (draft: WorkspaceViewState, key: string, expanded: boolean) => void
   retainAccountKeys: (draft: WorkspaceViewState, workspaceKeys: readonly string[]) => void
@@ -52,7 +44,7 @@ type WorkspaceViewActions = {
 export function createWorkspaceViewStore(): EngineStoreHandle<WorkspaceViewState, WorkspaceViewActions> {
   return defineStore({
     init: (): WorkspaceViewState => ({
-      groupBy: 'workspace',
+      view: 'work',
       orderBy: 'updated',
       groupExpansion: {},
       sessionOrderByAccount: {},
@@ -60,7 +52,7 @@ export function createWorkspaceViewStore(): EngineStoreHandle<WorkspaceViewState
     }),
     persist: 'dsh.workspace.view.v5',
     actions: {
-      setGroupBy: (d, mode: SessionGroupBy) => { d.groupBy = mode },
+      setView: (d, mode: WorkspaceViewMode) => { d.view = mode },
       setOrderBy: (d, mode: SessionOrderBy) => { d.orderBy = mode },
       setGroupExpanded: (d, key: string, expanded: boolean) => { d.groupExpansion[key] = expanded },
       retainAccountKeys: (d, workspaceKeys: readonly string[]) => {

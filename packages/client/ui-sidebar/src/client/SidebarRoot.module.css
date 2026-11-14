@@ -217,8 +217,9 @@
   text-overflow: ellipsis;
 }
 
-/* 顶部入口区与工作区列表之间的分隔线；rail 中缩成居中短线。 */
+/* 宽侧栏由浏览区域的分段切换分层；短分隔线仅用于折叠后的图标轨道。 */
 .topDivider {
+  display: none;
   flex: none;
   height: 1px;
   margin: 8px 0;
@@ -272,6 +273,7 @@
 
 /* rail 中顶部入口区与图标列之间的分隔线缩成一段居中短线。 */
 .collapsed .topDivider {
+  display: block;
   width: 30px;
   margin: 10px auto;
 }
