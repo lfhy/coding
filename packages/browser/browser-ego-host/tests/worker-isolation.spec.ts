@@ -13,7 +13,7 @@ const directories: string[] = []
 afterEach(async () => {
   for (const child of children) {
     if (child.exitCode !== null || child.signalCode !== null) continue
-    const exit = new Promise<void>(resolve => child.once('exit', () => resolve()))
+    const exit = new Promise<void>((resolve) => { child.once('exit', () => { resolve() }) })
     child.kill('SIGTERM')
     await exit
   }
