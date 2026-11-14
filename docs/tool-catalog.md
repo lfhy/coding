@@ -2607,10 +2607,6 @@ Use only in plan mode. Present your plan for the user's review and, on approval,
     "plan": {
       "type": "string",
       "description": "The complete plan, as markdown, starting with a # heading that names it."
-    },
-    "summary": {
-      "type": "string",
-      "description": "Optional short, user-friendly summary of what this call is doing now. Omit when the action is self-explanatory. Do not include secrets, raw JSON, or internal identifiers."
     }
   },
   "required": [

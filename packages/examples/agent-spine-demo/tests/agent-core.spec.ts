@@ -782,19 +782,19 @@ describe('dsh-agent-spine-demo bundle', () => {
 
   it('forwards toolOrder to the system-prompt assembly', async () => {
     const ctx = await mount({ toolOrder: ['zulu', TOOL_ORDER_REST], workspaceContext: false })
-    // The bundle's own bash tools pend on the absent `ctx.shell` executor in
-    // this providerless mount, so register two plain tools to order.
+    // 此无 Provider 的装配缺少 `ctx.shell` 执行器，内置 bash 工具会等待；
+    // 注册两个最小对象参数工具以验证排序。
     for (const name of ['alpha', 'zulu']) {
       ctx.get('tools')!.register({
         name,
         description: name,
-        parameters: {},
+        parameters: { type: 'object' },
         output: { schema: { type: 'null' }, render: () => [] },
         execute: async () => null,
       })
     }
     const assembly = await ctx.get('systemPrompt')!.assemble()
-    expect(assembly.tools.map(tool => tool.name)).toEqual(['zulu', 'alpha', 'job_kill', 'job_list', 'job_output', 'skill'])
+    expect(assembly.tools.map(tool => tool.name)).toEqual(['zulu', 'alpha', 'job_kill', 'job_list', 'job_output', 'skill', 'skill_read'])
     await ctx.fiber.dispose()
   })
 

@@ -15,6 +15,7 @@ const STATIC_SUMMARY_TOOLS = new Set([
   'interrupt_agent', 'job_list', 'job_output', 'job_kill', 'update_plan', 'todo_write', 'set_status',
   'skill', 'skill_read', 'context_compact', 'render_ui', 'image_gen', 'edit_image',
   'validate_gen_ui', 'create_goal', 'get_goal', 'update_goal',
+  'exit_plan_mode',
   'browser_close', 'browser_screenshot', 'browser_snapshot', 'browser_auth_flush', 'browser_doctor', 'browser_status',
   'computer_list_apps', 'computer_confirm', 'cordis_inspect_list', 'cordis_define',
   'terminal_list', 'canvas_state', 'ppt_templates', 'schedule_list',

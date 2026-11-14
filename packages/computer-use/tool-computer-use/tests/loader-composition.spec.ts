@@ -210,7 +210,7 @@ describe('Computer Use through a real Loader composition', () => {
   it('publishes only the activation tool and the Skill before the Skill is loaded', async () => {
     fixture = new FixtureBackend()
     const context = await boot()
-    expect(toolNames(context)).toEqual(['computer_use_activate', 'skill'])
+    expect(toolNames(context)).toEqual(['computer_use_activate', 'skill', 'skill_read'])
     const catalog = await context.skills.list({ scope: undefined })
     expect(catalog.map(skill => skill.name).sort()).toEqual(['computer-use', 'dsh-computer-use'])
   })
@@ -234,8 +234,8 @@ describe('Computer Use through a real Loader composition', () => {
 
     context.emit('agent/created', { agent: loaded.agent } as never)
 
-    expect(toolNames(context)).toEqual(['computer_use_activate', 'skill'])
-    expect(toolNames(context, viewer.agent)).toEqual(['computer_use_activate', 'skill'])
+    expect(toolNames(context)).toEqual(['computer_use_activate', 'skill', 'skill_read'])
+    expect(toolNames(context, viewer.agent)).toEqual(['computer_use_activate', 'skill', 'skill_read'])
     expect(toolNames(context, loaded.agent)).toContain('computer_list_apps')
     expect(toolNames(context, loaded.agent)).not.toContain('computer_use_activate')
     expect(toolNames(context, loaded.agent)).not.toContain('computer_use_activate')

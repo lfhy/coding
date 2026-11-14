@@ -235,13 +235,13 @@ describe('dsh-acp-demo composition', () => {
       persistenceRoot: '/tmp/dsh-acp-demo-test-tool-order',
       workspaceContext: false,
     })
-    // The bundle's own bash tools pend on the absent `ctx.shell` executor in
-    // this providerless mount, so register two plain tools to order.
+    // 此无 Provider 的装配缺少 `ctx.shell` 执行器，内置 bash 工具会等待；
+    // 注册两个最小对象参数工具以验证排序。
     for (const name of ['alpha', 'zulu']) {
       ctx.get('tools')!.register({
         name,
         description: name,
-        parameters: {},
+        parameters: { type: 'object' },
         output: { schema: { type: 'null' }, render: () => [] },
         execute: async () => null,
       })
@@ -256,6 +256,7 @@ describe('dsh-acp-demo composition', () => {
       'job_list',
       'job_output',
       'skill',
+      'skill_read',
       'update_goal',
     ])
     await ctx.fiber.dispose()
