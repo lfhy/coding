@@ -162,6 +162,14 @@ export function collectInlineContentWarnings(spec: GenuiSpec): InlineContentWarn
         })
         check(node.explanation, `${path}.explanation`)
         break
+      case 'topic-guide':
+        check(node.question, `${path}.question`)
+        node.options.forEach((option, i) => {
+          check(option.label, `${path}.options[${i}].label`)
+          check(option.message, `${path}.options[${i}].message`)
+        })
+        check(node.confirmLabel, `${path}.confirmLabel`)
+        break
       case 'plot':
       case 'echart':
       case 'diagram':
