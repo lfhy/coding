@@ -610,9 +610,10 @@ describe('the session-persistence design record: AgentLoop factory create/resume
     a1.inject(createUserMessage({ content: [{ type: 'text', text: 'background job 42 finished' }], source: { kind: 'plugin', plugin: 'tool-bash' } }))
     await a1.whenIdle()
     await ctx1.sessions.flush(a1.session)
+    await (ctx1.sessionPersistence as JsonlSessionPersistence).close()
 
-    // Lifecycle 2: resume; the injected context is still pending and becomes
-    // model-visible when the next turn admits it.
+    // 模拟进程退出时内核释放写锁，不运行会撤销待处理注入的优雅停机逻辑。
+    // 恢复后的下轮会把注入上下文纳入模型输入。
     const adapter2 = new MockAdapter([textResponse('next')])
     const ctx2 = new Context()
     await ctx2.plugin(LlmRuntime)

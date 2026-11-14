@@ -418,6 +418,7 @@ describe('SubagentRuntime.startContinuable', () => {
     const routeless = ctx.agentLoop.create(SessionId('routeless-resume'), {})
     const started = await ctx.subagents.startContinuable(startSpec(routeless))
     await waitNoActivation(ctx, started.childId)
+    await ctx.fiber.dispose()
 
     const fresh = new Context()
     await mountAgentLoopTestDependencies(fresh)
@@ -436,6 +437,7 @@ describe('SubagentRuntime.startContinuable', () => {
     expect(resumed.options.provider).toBeUndefined()
     expect(resumed.options.model).toBeUndefined()
     await drainManager(fresh)
+    await fresh.fiber.dispose()
   })
 
   it('continues turn numbering after an inherited fork prefix and pre-turn descriptor', async () => {
