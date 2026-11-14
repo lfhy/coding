@@ -484,6 +484,10 @@
 - id: tool-todo
   disabled: true
 
+# 进度提醒由各模式选择；Codex 不挂载，其余模式保留原节奏。
+- id: progress-reminder
+  disabled: true
+
 - id: tool-web
   disabled: true
 

@@ -237,6 +237,11 @@
   config:
     allowParallelInProgress: true
 
+- id: progress-reminder
+  name: 'coding-progress-reminder'
+  config:
+    toolCallsPerReminder: 40
+
 # The `web` service and its search provider stay in the host composition; only
 # the model-facing tool is per-session.
 - id: tool-web

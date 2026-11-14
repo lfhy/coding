@@ -62,6 +62,7 @@
 - `tool-ralph` → `coding-tool-ralph`
 - `tool-ask-user` → `coding-tool-ask-user`
 - `tool-todo` → `coding-tool-todo`
+- `progress-reminder` → `coding-progress-reminder`
 - `tool-web` → `coding-tool-web`
 - `tool-image-gen` → `coding-tool-image-gen`
 - `tool-cordis` → `coding-tool-cordis`
@@ -92,6 +93,7 @@
 - `tool-result-pruner` → `coding-compaction-tool-result-pruner`
 - `tool-ask-user` → `coding-tool-ask-user`
 - `tool-todo` → `coding-tool-todo`
+- `progress-reminder` → `coding-progress-reminder`
 - `tool-web` → `coding-tool-web`
 
 ## `apps/cli/config/agent-presets/longrun/agent.cordis.yml`
@@ -129,6 +131,7 @@
 - `tool-subagent-claude-code` → `coding-tool-subagent`（disabled）
 - `tool-ask-user` → `coding-tool-ask-user`
 - `tool-todo` → `coding-tool-todo`
+- `progress-reminder` → `coding-progress-reminder`
 - `tool-web` → `coding-tool-web`
 - `tool-browser` → `coding-tool-browser-ego`
 - `tool-image-gen` → `coding-tool-image-gen`
@@ -136,6 +139,7 @@
 ## `apps/cli/config/agent-presets/minimal/agent.cordis.yml`
 
 - `persona` → `coding-persona`
+- `progress-reminder` → `coding-progress-reminder`
 - `persistent-shell` → `cordis:group`
 - `pty` → `coding-terminal`
 - `terminal-bash` → `coding-terminal-bash`
@@ -171,6 +175,7 @@
 - `tool-result-pruner` → `coding-compaction-tool-result-pruner`
 - `tool-ask-user` → `coding-tool-ask-user`
 - `tool-todo` → `coding-tool-todo`
+- `progress-reminder` → `coding-progress-reminder`
 - `tool-web` → `coding-tool-web`
 
 ## `apps/cli/config/agent-presets/reverse/agent.cordis.yml`
@@ -210,6 +215,7 @@
 - `tool-ralph` → `coding-tool-ralph`
 - `tool-ask-user` → `coding-tool-ask-user`
 - `tool-todo` → `coding-tool-todo`
+- `progress-reminder` → `coding-progress-reminder`
 - `tool-web` → `coding-tool-web`
 - `tool-browser` → `coding-tool-browser-ego`
 - `tool-image-gen` → `coding-tool-image-gen`
@@ -253,6 +259,7 @@
 - `tool-ralph` → `coding-tool-ralph`
 - `tool-ask-user` → `coding-tool-ask-user`
 - `tool-todo` → `coding-tool-todo`
+- `progress-reminder` → `coding-progress-reminder`
 - `tool-web` → `coding-tool-web`
 - `tool-browser` → `coding-tool-browser-ego`
 - `tool-image-gen` → `coding-tool-image-gen`
@@ -295,6 +302,7 @@
 - `tool-ralph` → `coding-tool-ralph`
 - `tool-ask-user` → `coding-tool-ask-user`
 - `tool-todo` → `coding-tool-todo`
+- `progress-reminder` → `coding-progress-reminder`
 - `tool-web` → `coding-tool-web`
 - `tool-browser` → `coding-tool-browser-ego`
 - `tool-image-gen` → `coding-tool-image-gen`

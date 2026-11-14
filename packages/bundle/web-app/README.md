@@ -4,6 +4,8 @@ dsh 浏览器表层组合包。[`cordis.patch.yml`](cordis.patch.yml) 叠加在 
 
 本层挂载 [Agent 浏览器实时观察面板](../../client/ui-browser-ego/src/client/index.ts)，复用 base 的 ego-lite 宿主与预设里的[受控浏览器工具](../../browser/tool-browser-ego/src/index.ts)。右侧工作台通过外部标签展示当前 Session 的浏览器页面与实时画面：可选择已打开页面、刷新列表，并在画面可用时点击、滚动或在选中焦点后插入文字；没有旧浏览器的人工地址栏、前进后退、刷新页面或新建空白页面控件。Host 画面路由只在本机 Web 宿主装配，远程工作区不提供本机浏览器操作；面板隐藏时停止预览，不结束 Agent 的浏览器任务。模型工具按会话权限审批，截图写文件只读会话不可用；实际浏览器需本机安装 Edge、Chrome 或 Chromium。[浏览器使用指南](../../../docs/user/guide/index.md#让-agent-使用浏览器)说明操作与限制。
 
+本层关闭基础组合的全局[进度提醒](../../guard/progress-reminder/README.md)，交给非 Codex 预设按作用域挂载；Codex 模式及其派生会话不加载提醒，其他随包模式保留连续 40 次工具调用的提醒节奏。当前进度工具和状态行自动跟随独立保留。
+
 ## 模型重试默认值
 
 Web 使用共享的有界 normal 默认值，在首次请求后最多再重试五次符合条件的失败。`deepseek-official` 与由 settings 新增的 pi-ai 路由在省略 `retryPolicy` 时使用该默认值；显式提供方策略仍然优先。Web 不再增加重试专用的组合覆盖，因此非 Web profile 的省略行为与之相同。

@@ -302,6 +302,11 @@
   config:
     allowParallelInProgress: true
 
+- id: progress-reminder
+  name: 'coding-progress-reminder'
+  config:
+    toolCallsPerReminder: 40
+
 # `web` 服务与搜索提供方在宿主组合；这里只有模型侧工具。
 - id: tool-web
   name: 'coding-tool-web'

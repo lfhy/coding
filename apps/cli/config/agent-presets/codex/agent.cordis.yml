@@ -32,6 +32,8 @@
 # subagent model catalog) remain visible: a preset chooses its own agent-plane
 # contributions, not the deployment's cross-mode capabilities.
 
+# 本模式不挂载 progress-reminder，不额外注入连续工具调用的进度汇报提醒。
+
 - id: persona
   name: 'coding-persona'
   config:

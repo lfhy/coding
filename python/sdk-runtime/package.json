@@ -74,6 +74,7 @@
     "coding-ppt-model": "workspace:^",
     "coding-ppt-workbench": "workspace:^",
     "coding-persona": "workspace:^",
+    "coding-progress-reminder": "workspace:^",
     "coding-proxy-pool": "workspace:^",
     "coding-pwsh-local": "workspace:^",
     "coding-terminal": "workspace:^",

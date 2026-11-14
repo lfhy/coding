@@ -5,11 +5,13 @@ import { fileURLToPath } from 'node:url'
 import { Context } from '@deepseek-ai/cordis'
 import { boot, healProfilesModuleFallback, loadOverlayPatches } from 'coding-app-boot'
 import { provideCmdline } from 'coding-cmdline'
-import { CallId } from 'coding-llm'
+import { CallId, createUserMessage } from 'coding-llm'
 import { SessionId } from 'coding-session'
 import type { Agent } from 'coding-agent'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { settingsNamespace } from 'coding-settings'
+import { MockAdapter, textResponse, toolCallResponse } from '../../../packages/core/agent-loop/tests/mock-adapter.ts'
+import { loadCordisYaml } from '../../../scripts/cordis-yaml.ts'
 
 const ROOT = fileURLToPath(new URL('../../..', import.meta.url))
 const CONFIG = join(ROOT, 'apps/cli/config')
@@ -39,6 +41,8 @@ beforeAll(async () => {
     { id: 'connection', disabled: true },
     { id: 'open-in-app', disabled: true },
     { id: 'client-hmr', disabled: true },
+    // 辅助标题会额外请求同一路由；本回归只替换并消费主对话模型响应。
+    { id: 'session-title-llm', disabled: true },
     { id: 'settings', config: { path: join(root, 'settings.yaml'), watch: false } },
     { id: 'storage-json', config: { root: join(root, 'storages') } },
     { id: 'session-persistence-jsonl', config: { root: join(root, 'sessions') } },
@@ -219,6 +223,83 @@ describe('the shipped Codex preset', () => {
       expect(transcript).toContain('echo:hello-pty')
     } finally {
       await codex.dispose()
+    }
+  }, 30_000)
+
+  it('仅 Codex 不装配进度提醒，其余随包模式保持原阈值', async () => {
+    for (const preset of ['codex', 'standard', 'minimal', 'cordis', 'image', 'ppt', 'reverse', 'webclone', 'longrun']) {
+      const rows = loadCordisYaml(await readFile(join(CONFIG, 'agent-presets', preset, 'agent.cordis.yml'), 'utf8')) as {
+        id?: string
+        name: string
+        config?: unknown
+      }[]
+      const reminders = rows.filter(row => row.name === 'coding-progress-reminder')
+      expect(reminders, preset).toEqual(preset === 'codex' ? [] : [{
+        id: 'progress-reminder', name: 'coding-progress-reminder', config: { toolCallsPerReminder: 40 },
+      }])
+    }
+  })
+
+  it('标准模式已启动提醒时，Codex 及其派生会话仍不会注入提醒', async () => {
+    const standard = await ctx.agents.create({
+      sessionId: SessionId('progress-standard'),
+      meta: { cwd: root },
+      agentOptions: { provider: 'progress-standard', model: 'mock' },
+      setup: agentCtx => ctx.agentPresets.mount(agentCtx, 'standard').then(() => undefined),
+    })
+    const codex = await mountCodex()
+    const child = await ctx.agents.create({
+      sessionId: SessionId('progress-codex-child'),
+      meta: { cwd: root, parentSession: codex.agent.id, origin: 'subagent' },
+      agentOptions: { provider: 'progress-child', model: 'mock' },
+      setup: (agentCtx) => { ctx.agentPresets.composeFrom(agentCtx, codex.agent.ctx) },
+    })
+    const switched = await ctx.agents.create({
+      sessionId: SessionId('progress-switched'),
+      meta: { cwd: root },
+      agentOptions: { provider: 'progress-switched', model: 'mock' },
+      setup: agentCtx => ctx.agentPresets.mount(agentCtx, 'standard').then(() => undefined),
+    })
+    const adapters = new Map<Agent, MockAdapter>()
+    const releases: (() => void)[] = []
+    try {
+      await ctx.agentPresets.recompose(switched.agent.ctx, 'codex')
+      for (const [owner, provider] of [
+        [standard.agent, 'progress-standard'], [codex.agent, 'progress-codex'],
+        [child.agent, 'progress-child'], [switched.agent, 'progress-switched'],
+      ] as const) {
+        owner.options.provider = provider
+        owner.options.model = 'mock'
+        // 固定外部模型，仍由真实工具、循环和作用域监听器驱动 40 次调用。
+        const adapter = new MockAdapter([
+          ...Array.from({ length: 40 }, (_, index) => toolCallResponse(`progress-${index}`, 'set_status', { text: '正在验证进度' })),
+          textResponse('验证完成'),
+        ])
+        adapters.set(owner, adapter)
+        releases.push(ctx.llm.registerAdapter([provider], adapter))
+        owner.followup(createUserMessage({ content: [{ type: 'text', text: '连续检查当前工作' }], source: { kind: 'user' } }))
+      }
+      await Promise.all([...adapters.keys()].map(owner => owner.whenIdle()))
+      for (const [owner, adapter] of adapters) {
+        expect(adapter.requests).toHaveLength(41)
+        const isReminder = (message: { role: string; source: unknown }): boolean =>
+          message.role === 'user' && typeof message.source === 'object' && message.source !== null
+          && 'kind' in message.source && message.source.kind === 'plugin'
+          && 'plugin' in message.source && message.source.plugin === 'progress-reminder'
+        const expected = owner === standard.agent ? 1 : 0
+        expect(owner.session.events.filter(event => event.type === 'status/set'), owner.id).toHaveLength(40)
+        expect(owner.session.events.filter(event => event.type === 'tool/result'), owner.id).toHaveLength(40)
+        expect(owner.session.events.filter(event => event.type === 'assistant/message')
+          .flatMap(event => event.data.message.content.filter(block => block.type === 'text').map(block => block.text)), owner.id)
+          .toEqual(['验证完成'])
+        expect(adapter.requests.at(-1)?.messages.filter(isReminder), owner.id).toHaveLength(expected)
+        expect(owner.session.events.filter(event => event.type === 'user/message'
+          && event.data.source.kind === 'plugin' && event.data.source.plugin === 'progress-reminder'), owner.id)
+          .toHaveLength(expected)
+      }
+    } finally {
+      for (const release of releases) release()
+      await Promise.all([standard.dispose(), codex.dispose(), child.dispose(), switched.dispose()])
     }
   }, 30_000)
 

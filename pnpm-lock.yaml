@@ -11171,6 +11171,9 @@ importers:
       coding-ppt-workbench:
         specifier: workspace:^
         version: link:../../packages/ppt/ppt-workbench
+      coding-progress-reminder:
+        specifier: workspace:^
+        version: link:../../packages/guard/progress-reminder
       coding-proxy-pool:
         specifier: workspace:^
         version: link:../../packages/net/proxy-pool

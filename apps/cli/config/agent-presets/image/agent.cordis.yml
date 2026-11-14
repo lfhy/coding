@@ -107,6 +107,11 @@
   config:
     allowParallelInProgress: false
 
+- id: progress-reminder
+  name: 'coding-progress-reminder'
+  config:
+    toolCallsPerReminder: 40
+
 - id: tool-web
   name: 'coding-tool-web'
   config:
