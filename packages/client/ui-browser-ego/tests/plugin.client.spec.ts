@@ -138,12 +138,14 @@ describe('对话链接在 Agent 浏览器打开', () => {
     await provider.fiber.dispose()
   })
 
-  it('远端工作区在本机浏览器启动前拒绝打开链接', async () => {
-    const fetcher = vi.fn(async () => Response.json({ ok: true, targetId: 'page-1' }))
+  it('远端工作区同样在宿主浏览器打开链接', async () => {
+    const fetcher = vi.fn(async (url: string) => url === '/api/ego/pages'
+      ? Response.json({ ok: true, targetId: 'page-1' }) : Response.json({ ok: true }))
     const provider = await linkProvider(fetcher)
     provider.sessions[first] = { cwd: '/tmp/remote-workspaces/0123456789abcdefabcd/project-0123456789abcdefabcd' }
-    await expect(provider.links.open(first, 'https://example.org/')).rejects.toThrow('远程工作区无法使用本机浏览器')
-    expect(fetcher).not.toHaveBeenCalled()
+    await provider.links.open(first, 'https://example.org/')
+    expect(fetcher.mock.calls.map(([url]) => url)).toEqual(['/api/ego/pages', '/api/ego/navigation'])
+    expect(provider.openResourceForSession).toHaveBeenCalledTimes(1)
     await provider.fiber.dispose()
   })
 

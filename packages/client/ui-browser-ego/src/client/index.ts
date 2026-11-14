@@ -4,7 +4,7 @@
  * 不依赖设置页实现，只在命名空间被 Host 服务时出现。
  */
 import type { ClientContext } from 'coding-client-runtime/client'
-import { createSnapshotStore, isRemoteWorkspacePath } from 'coding-client-runtime/client'
+import { createSnapshotStore } from 'coding-client-runtime/client'
 import type { SessionId } from 'coding-session/types'
 import type {} from 'coding-client-ui-open-in-app/client'
 import type {} from 'coding-client-locale/client'
@@ -74,7 +74,6 @@ export function apply(ctx: ClientContext): void {
       if (!linkAddress(url)) throw new Error(t('linkInvalid'))
       const session = ctx.sessions.list.getSnapshot().byId[sessionId]
       if (session === undefined) throw new Error(t('linkSessionUnavailable'))
-      if (session.cwd && isRemoteWorkspacePath(session.cwd)) throw new Error(t('linkRemoteUnavailable'))
       try {
         const response = await fetch('/api/ego/pages', { method: 'POST',
           headers: { 'content-type': 'application/json' }, body: JSON.stringify({ sessionId }) })

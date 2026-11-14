@@ -157,21 +157,39 @@ describe('Ego browser model tools', () => {
     expect(host.calls).not.toHaveBeenCalled()
   })
 
-  it('denies remote workspaces before and after an approval without local fallback', async () => {
-    const { call, cwd, host, ctx } = await setup([fixture('snapshot')], 'danger-full-access', 'ask')
+  it('keeps page operations available in a remote workspace', async () => {
+    const { call, cwd, host } = await setup([
+      fixture('snapshot'), fixture('navigate', { url: { type: 'string', required: true } }),
+    ], 'danger-full-access', 'never')
+    await writeFile(join(cwd, '.coding-remote-workspace.json'), JSON.stringify({
+      version: 3, remoteRoot: '/srv/project', connectionId: 'test', generation: 1, mode: 'basic',
+    }))
+    expect((await call('snapshot')).isError).toBe(false)
+    expect((await call('navigate', { url: 'https://example.com/' })).isError).toBe(false)
+    expect(host.calls.mock.calls.map(([name]) => name)).toEqual(['ego_snapshot', 'ego_navigate'])
+  })
+
+  it('refuses Host-local files from a remote workspace before and after an approval', async () => {
+    const { call, cwd, host, ctx } = await setup([
+      fixture('upload'), fixture('download'), fixture('navigate', { url: { type: 'string', required: true } }),
+    ], 'danger-full-access', 'ask')
     const marker = join(cwd, '.coding-remote-workspace.json')
     const writeMarker = () => writeFile(marker, JSON.stringify({
       version: 3, remoteRoot: '/srv/project', connectionId: 'test', generation: 1, mode: 'basic',
     }))
+    const refused = 'remote workspaces cannot read or write local files'
     await writeMarker()
     const asked = vi.fn(async () => 'allowed-once' as const)
     const removeAnswerer = ctx.on('approval/request', asked)
-    expect(content(await call('snapshot'))).toContain('remote workspaces')
+    for (const [name, args] of [['upload', { path: '/tmp/a.png' }], ['download', { savePath: '/tmp/a.png' }],
+      ['navigate', { url: 'file:///etc/passwd' }]] as const) {
+      expect(content(await call(name, args))).toContain(refused)
+    }
     expect(asked).not.toHaveBeenCalled()
     await rm(marker)
     removeAnswerer()
     ctx.on('approval/request', async () => { await writeMarker(); return 'allowed-once' as const })
-    expect(content(await call('snapshot'))).toContain('remote workspaces')
+    expect(content(await call('upload', { path: '/tmp/a.png' }))).toContain(refused)
     expect(host.calls).not.toHaveBeenCalled()
   })
 

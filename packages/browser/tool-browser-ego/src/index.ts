@@ -108,11 +108,19 @@ function failureDetail(error: unknown): string {
   return line.length > 240 ? `${line.slice(0, 240)}…` : line
 }
 
-/** 远程工作区没有本机浏览器；在审批前后都拒绝，避免策略变化时落到本机。 */
-async function checkLocal(cwd: string | undefined, signal: AbortSignal, name: string): Promise<void> {
+/**
+ * 远程工作区仍可使用浏览器：浏览器属于执行工具的那台 Host，与工作区内容无关。
+ * 但上传、下载与本地 `file://` 文档都要读写 Host 自己的文件，这些入口按工作区拒绝，
+ * 免得远程会话借此读写本机文件。
+ */
+async function checkLocalFiles(cwd: string | undefined, name: string, args: Record<string, unknown>,
+  signal: AbortSignal): Promise<void> {
   signal.throwIfAborted()
-  if (cwd !== undefined && await remoteWorkspacePath('.', cwd, signal) !== undefined) {
-    throw new Error(`${name}: remote workspaces do not support local browser operations`)
+  const localFile = name === 'browser_upload' || name === 'browser_download'
+    || (name === 'browser_navigate' && typeof args.url === 'string' && /^file:/iu.test(args.url))
+  if (!localFile || cwd === undefined) return
+  if (await remoteWorkspacePath('.', cwd, signal) !== undefined) {
+    throw new Error(`${name}: remote workspaces cannot read or write local files through the browser`)
   }
   signal.throwIfAborted()
 }
@@ -138,10 +146,10 @@ async function run(ctx: Context, source: ToolDefinition, name: string, input: un
   const agent = exec.agent
   if (agent === undefined) throw new Error(`${name}: calling agent is required`)
   const cwd = agent.session.header.cwd
-  await checkLocal(cwd, exec.signal, name)
   const approval = ctx.get('approval')
   if (approval === undefined) throw new Error(`${name}: approval service is unavailable`)
   const args = (input !== null && typeof input === 'object' && !Array.isArray(input)) ? input as Record<string, unknown> : {}
+  await checkLocalFiles(cwd, name, args, exec.signal)
   const policy = policyOf(approval, agent.session)
   const mode = ctx.get('sandboxPolicy')?.resolve({ session: agent.session }).mode
   if (!(mode === 'danger-full-access' && policy === 'never')) {
@@ -150,7 +158,8 @@ async function run(ctx: Context, source: ToolDefinition, name: string, input: un
     exec.signal.throwIfAborted()
     if (outcome !== 'allowed-once') throw new Error(`${name}: approval ${outcome}`)
   }
-  await checkLocal(cwd, exec.signal, name)
+  // 审批期间工作区可能被切到远程，因此放行前后各查一次同样的文件边界。
+  await checkLocalFiles(cwd, name, args, exec.signal)
   const liveMode = ctx.get('sandboxPolicy')?.resolve({ session: agent.session }).mode
   if (liveMode !== mode || policyOf(approval, agent.session) !== policy) {
     throw new Error(`${name}: session permissions changed while awaiting approval`)

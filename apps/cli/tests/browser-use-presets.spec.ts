@@ -319,7 +319,7 @@ describe('browser tools and skill in the shipped Web preset composition', () => 
     }
   }, 30_000)
 
-  it('keeps rejected approval and Remote-SSH workspaces away from the provider', async () => {
+  it('keeps rejected approval away from the provider and lets a Remote-SSH workspace browse', async () => {
     const local = await agent('standard', root)
     const remote = join(root, 'remote')
     await mkdir(remote)
@@ -340,24 +340,17 @@ describe('browser tools and skill in the shipped Web preset composition', () => 
       })
       expect(nested.isError).toBe(true)
       expect(JSON.stringify(nested.content)).toContain('approval rejected')
-
-      for (const permission of ['workspace-write', 'danger-full-access']) {
-        ctx.permissionPresets.set(remoteAgent.agent.session, permission)
-        const remoteResult = await call(remoteAgent.agent, 'browser_snapshot', {})
-        expect(remoteResult.isError).toBe(true)
-        expect(JSON.stringify(remoteResult.content)).toContain('remote workspace')
-        const remoteCodeResult = await call(remoteAgent.agent, 'run_code', {
-          code: 'await tools.browser_snapshot({})', description: 'Remote browser request',
-        })
-        expect(remoteCodeResult.isError).toBe(true)
-        expect(JSON.stringify(remoteCodeResult.content)).toMatch(/remote|REMOTE/)
-        for (const target of [remoteAgent.agent]) {
-          expect(target.session.events.filter(event =>
-            event.type === 'approval/asked' || event.type === 'approval/decided')).toEqual([])
-        }
-      }
       expect(requested).toHaveBeenCalledTimes(2)
-      expect(browser.commands).not.toHaveBeenCalled()
+
+      // 远程工作区照常使用宿主浏览器，只是不能借它读写本机文件。
+      ctx.permissionPresets.set(remoteAgent.agent.session, 'danger-full-access')
+      const snapshot = await call(remoteAgent.agent, 'browser_snapshot', {})
+      expect(snapshot.isError).toBe(false)
+      expect(browser.commands.mock.calls.map(([name]) => name)).toEqual(['ego_snapshot'])
+      const upload = await call(remoteAgent.agent, 'browser_upload', { selector: 'input[type=file]', path: 'a.png' })
+      expect(upload.isError).toBe(true)
+      expect(JSON.stringify(upload.content)).toContain('remote workspaces cannot read or write local files')
+      expect(browser.commands).toHaveBeenCalledTimes(1)
     } finally {
       unlisten()
       await remoteAgent.dispose()

@@ -4,7 +4,7 @@
 
 ## 当前能力
 
-上游 v0.9.7 的 35 个工具全部移植：`status`、`auth_flush`、`login_import`、`space_open`、`space_close`、`snapshot`、`navigate`、`click`、`fill`、`js`、`cdp`、`screenshot`、`page_info`、`tabs`（列出/打开/切换/关闭）、`wait`、`wait_for_selector`、`wait_for_url`、`wait_for_response`、`key`、`hover`、`read_element`、`select`、`drag`、`scroll`、`upload`、`download`、`check`、`dialog`、`http`、`cli`、`captcha`、`wait_for_human`、`help`、`doctor`、`script`。消费方统一以 `browser_*` 注册，参数形状与上游 schema 一致；审批、Remote-SSH 拒绝与结果上限由消费方执行。Host 将省略的 `space`、空字符串与 `default` 都视为当前会话空间，并将 `space_open`／`space_close` 的 `name: "default"` 映射到本会话；显式指定其他空间仍拒绝，不能用空值绕过隔离。`cli`／`script` 执行前先进入当前会话空间，页面才会出现在该会话工作台。默认每个会话独立任务空间（上游 `sessionScopedSpaces`），浏览器 Profile 持久保存在用户目录，跨会话共享登录态但页面/标签隔离。
+上游 v0.9.7 的 35 个工具全部移植：`status`、`auth_flush`、`login_import`、`space_open`、`space_close`、`snapshot`、`navigate`、`click`、`fill`、`js`、`cdp`、`screenshot`、`page_info`、`tabs`（列出/打开/切换/关闭）、`wait`、`wait_for_selector`、`wait_for_url`、`wait_for_response`、`key`、`hover`、`read_element`、`select`、`drag`、`scroll`、`upload`、`download`、`check`、`dialog`、`http`、`cli`、`captcha`、`wait_for_human`、`help`、`doctor`、`script`。消费方统一以 `browser_*` 注册，参数形状与上游 schema 一致；审批、远程工作区的本机文件边界与结果上限由消费方执行。Host 将省略的 `space`、空字符串与 `default` 都视为当前会话空间，并将 `space_open`／`space_close` 的 `name: "default"` 映射到本会话；显式指定其他空间仍拒绝，不能用空值绕过隔离。`cli`／`script` 执行前先进入当前会话空间，页面才会出现在该会话工作台。默认每个会话独立任务空间（上游 `sessionScopedSpaces`），浏览器 Profile 持久保存在用户目录，跨会话共享登录态但页面/标签隔离。
 
 宿主的 `third-party/upstream/src/` 是上游 Host 源码，构建产物 `third-party/upstream/lib/index.js` 才是运行时入口；`apply()` 收集全部工具定义并由本包暴露，同时注册上游观察窗路由。上游 `/api/ego/*` 与 `/ego/api/*` 统一经过本项目 `connection.requestRejection` 与回环同源栅栏；`spaces`、`stream`、`frame`、`input`、`navigation`、`close`、`status`、`history` 使用本项目按会话过滤的实现，其余上游路由（设置网关、登录导入、watch、video 等）在通过同一栅栏后可用。
 
@@ -60,7 +60,7 @@ DSH_EGO_EDGE_SMOKE=1 pnpm exec vitest run packages/browser/browser-ego-host/test
 
 ## Known Limitations and Deferred Work
 
-- 上游全部 35 个工具均已注册；风险由消费方按会话审批与 Remote-SSH 拒绝兜底。上游 Web/TUI 的完整前端与 `src/client` 未移植，右侧面板是本项目自行实现，因此部分上游面板专属控件（动作历史抽屉、视频后端切换、设置页）只部分对齐。
+- 上游全部 35 个工具均已注册；风险由消费方按会话审批与远程工作区的本机文件边界兜底。上游 Web/TUI 的完整前端与 `src/client` 未移植，右侧面板是本项目自行实现，因此部分上游面板专属控件（动作历史抽屉、视频后端切换、设置页）只部分对齐。
 - 视频采集需 `captureBackend=ffmpeg` 与本机 FFmpeg，默认 CDP 画面；上游 FFmpeg 下载服务未接入。
 - `stream` 当前每秒采集本会话活动页；选择非活动页时 Client 应按需调用 `/api/ego/frame?sessionId&targetId`。没有该补充查询，非活动页没有流式画面。
 - 本地 loopback worker 本身不能作为网络安全边界；Host 入口只信任 `connection` 与同源 loopback。画面 worker 按 `EGO_LINUX_STATE_DIR` 各自保存记录，启动时不会终止别的状态目录中的进程；不同 Host 实例共享同一状态目录或 Profile 时仍需按部署单实例管理，避免页面或状态文件互相抢占。
