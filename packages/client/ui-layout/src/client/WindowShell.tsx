@@ -8,7 +8,7 @@ import css from './WindowShell.module.css'
 /** 外壳与内层共用根注册，只在外层增加底部设置的渲染权限。 */
 export type WindowShellProps = Omit<AppFrameProps, 'renderSlot' | '__renders'>
   & PropsRenderSlots<'sidebar' | 'conversation' | 'details' | 'workbench' | 'workbench.bottom'
-    | 'shell.overlay' | 'shell.page' | 'shell.settings'>
+    | 'shell.overlay' | 'shell.page' | 'shell.navigation.entry' | 'shell.settings'>
 
 /**
  * 渲染窗口顶栏、全局导航和常驻的内层布局。
@@ -38,6 +38,8 @@ export function WindowShell(props: WindowShellProps) {
             </Button>
           </span>
         </Tooltip>
+        {/* 中部入口自带紧凑图标按钮，与主页图标同列；底部设置仍贴住导航栏下沿。 */}
+        {props.renderSlot('shell.navigation.entry', {})}
         <div className={css.settings}>
           {props.renderSlot('shell.settings', { wide: false })}
         </div>

@@ -6,7 +6,7 @@ import { CanvasPanel, type CanvasPanelProps } from '../src/client/CanvasPanel.ts
 import { GalleryView, type GalleryViewProps } from '../src/client/GalleryView.tsx'
 import { createGalleryUiStore } from '../src/client/gallery-ui-store.ts'
 import { SettingsSection, type SettingsSectionProps } from '../src/client/SettingsSection.tsx'
-import { SidebarEntry } from '../src/client/SidebarEntry.tsx'
+import { NavigationEntry } from '../src/client/NavigationEntry.tsx'
 import { zh } from '../src/client/locales.ts'
 
 const t = (key: keyof typeof zh) => zh[key]
@@ -448,31 +448,36 @@ describe('图像交互组件', () => {
 
   it('未配置画图服务时不渲染入口，配置就绪后点击打开画廊', () => {
     const openGallery = vi.fn(async () => {})
-    const unconfigured = { t, wide: true, openGallery, useImageEntrySettings: (pick: (state: unknown) => unknown) => pick({
+    const unconfigured = { t, openGallery, useImageEntrySettings: (pick: (state: unknown) => unknown) => pick({
       section: { status: 'ready', value: { enabled: true, endpoint: 'https://images.example', model: 'paint', apiKeyRef: 'KEY' } },
       credential: { status: 'ready', configured: false, writable: true, ref: 'KEY' },
     }), useGalleryPage: (pick: (state: unknown) => unknown) => pick(null) }
-    const { rerender } = render(<SidebarEntry {...(unconfigured as unknown as React.ComponentProps<typeof SidebarEntry>)} />)
+    const { rerender } = render(<NavigationEntry {...(unconfigured as unknown as React.ComponentProps<typeof NavigationEntry>)} />)
     expect(screen.queryByRole('button')).toBeNull()
-    rerender(<SidebarEntry {...({ ...unconfigured, useImageEntrySettings: (pick: (state: unknown) => unknown) => pick({
+    rerender(<NavigationEntry {...({ ...unconfigured, useImageEntrySettings: (pick: (state: unknown) => unknown) => pick({
       section: { status: 'ready', value: { enabled: true, endpoint: 'https://images.example', model: 'paint', apiKeyRef: 'KEY' } },
       credential: { status: 'ready', configured: true, writable: true, ref: 'KEY' },
-    }) } as unknown as React.ComponentProps<typeof SidebarEntry>)} />)
+    }) } as unknown as React.ComponentProps<typeof NavigationEntry>)} />)
     fireEvent.click(screen.getByRole('button', { name: '画图' }))
     expect(openGallery).toHaveBeenCalledTimes(1)
   })
 
-  it('侧边栏画图入口在展开时显示文案，收起时保留可访问的图标按钮', () => {
+  it('外侧导航入口只渲染图标按钮，画廊打开时标记为当前页', () => {
     const openGallery = vi.fn(async () => {})
     const configured = { status: 'ready', value: { enabled: true, endpoint: 'https://images.example', model: 'paint', apiKeyRef: 'KEY' } }
     const credential = { status: 'ready', configured: true, writable: true, ref: 'KEY' }
-    const sidebarProps = { t, wide: true, openGallery,
+    const entryProps = { t, openGallery,
       useImageEntrySettings: (pick: (state: unknown) => unknown) => pick({ section: configured, credential }),
       useGalleryPage: (pick: (state: unknown) => unknown) => pick(null),
-    } as unknown as React.ComponentProps<typeof SidebarEntry>
-    const sidebar = render(<SidebarEntry {...sidebarProps} />)
-    expect(screen.getByRole('button', { name: '画图' }).textContent).toBe('画图')
-    sidebar.rerender(<SidebarEntry {...{ ...sidebarProps, wide: false }} />)
-    expect(screen.getByRole('button', { name: '画图' }).textContent).toBe('')
+    }
+    const entry = render(<NavigationEntry {...(entryProps as unknown as React.ComponentProps<typeof NavigationEntry>)} />)
+    const button = screen.getByRole('button', { name: '画图' })
+    expect(button.textContent).toBe('')
+    expect(button.getAttribute('title')).toBe('画图')
+    expect(button.getAttribute('aria-current')).toBeNull()
+    entry.rerender(<NavigationEntry {...({ ...entryProps,
+      useGalleryPage: (pick: (state: unknown) => unknown) => pick({ kind: 'image-gallery' }),
+    } as unknown as React.ComponentProps<typeof NavigationEntry>)} />)
+    expect(screen.getByRole('button', { name: '画图' }).getAttribute('aria-current')).toBe('page')
   })
 })

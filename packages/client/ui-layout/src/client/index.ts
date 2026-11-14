@@ -52,6 +52,8 @@ declare module 'coding-client-ui-slots' {
     'shell.overlay': { kind: 'list'; scope: 'root' }
     /** 主内容区的独立会话页面；由根布局保持侧栏与背景会话的挂载。 */
     'shell.page': { kind: 'keyed'; scope: 'session'; owner: ShellPageOwnerProps }
+    /** 外层窄导航中部的图标入口；排在主页图标之后、底部设置之前。 */
+    'shell.navigation.entry': { kind: 'list'; scope: 'root'; owner: ShellNavigationEntryOwnerProps }
     /** 外层窄导航底部的设置入口；不随内层侧栏折叠或卸载。 */
     'shell.settings': { kind: 'single'; scope: 'root'; owner: ShellSettingsOwnerProps }
   }
@@ -104,6 +106,9 @@ export interface ShellSettingsOwnerProps {
   wide: boolean
 }
 
+/** 外层窄导航入口没有 owner 数据；注册者渲染自己的 36×36 图标按钮。 */
+export interface ShellNavigationEntryOwnerProps {}
+
 /** Cordis fiber 所需服务。 */
 export const inject = ['slots', 'theme', 'locale']
 
@@ -128,6 +133,7 @@ export function apply(ctx: ClientContext): void {
         'workbench.bottom': { kind: 'single', scope: 'root' },
         'shell.overlay': { kind: 'list', scope: 'root' },
         'shell.page': { kind: 'keyed', scope: 'session' },
+        'shell.navigation.entry': { kind: 'list', scope: 'root' },
         'shell.settings': { kind: 'single', scope: 'root' },
       },
       store: createLayoutStore,

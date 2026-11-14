@@ -12,13 +12,13 @@ import type { GalleryFace } from '../src/client/gallery.ts'
 afterEach(() => { vi.unstubAllGlobals() })
 
 describe('图像插件注册生命周期', () => {
-  it('贡献设置、侧边栏入口与主内容画廊工作台，卸载时一起移除', async () => {
+  it('贡献设置、外侧导航入口与主内容画廊工作台，卸载时一起移除', async () => {
     const ctx = new Context()
     await ctx.plugin(SlotRegistry).await()
     const slots = ctx.get('slots') as SlotRegistry
     slots.register({ name: 'root', children: {
       'settings.section': { kind: 'list', scope: 'root' },
-      'sidebar.top.entry': { kind: 'list', scope: 'root' },
+      'shell.navigation.entry': { kind: 'list', scope: 'root' },
       'conversation.hero.actions': { kind: 'list', scope: 'root' },
       'conversation.session.header.utilities': { kind: 'list', scope: 'session' },
       'shell.page': { kind: 'keyed', scope: 'session' },
@@ -53,7 +53,7 @@ describe('图像插件注册生命周期', () => {
     await fiber.await()
     expect(slots.entries('settings.section')[0]?.options.id).toBe('image-generation')
     expect(resolveSlotLabel(slots.entries('settings.section')[0]?.options.label)).toBe('图像生成')
-    expect(slots.entries('sidebar.top.entry')[0]?.options.id).toBe('image-generation')
+    expect(slots.entries('shell.navigation.entry')[0]?.options.id).toBe('image-generation')
     expect(slots.entries('conversation.hero.actions')).toHaveLength(0)
     expect(slots.entries('conversation.session.header.utilities')).toHaveLength(0)
     expect(slots.entries('shell.page').map(entry => entry.options.key)).toEqual(['image-gallery'])
@@ -80,7 +80,7 @@ describe('图像插件注册生命周期', () => {
     openPage.mockClear()
     expect(openPage).not.toHaveBeenCalled()
 
-    const entry = (slots.entries('sidebar.top.entry')[0]!.inject as unknown as () => {
+    const entry = (slots.entries('shell.navigation.entry')[0]!.inject as unknown as () => {
       hooks: { imageEntrySettings: { getSnapshot: () => ImageSettingsView } }
     })()
     const settingsSnapshot = () => entry.hooks.imageEntrySettings.getSnapshot()
@@ -105,7 +105,7 @@ describe('图像插件注册生命周期', () => {
     ctx.remote.$dispatch('credentials/updated', ['IMAGE_GEN_API_KEY'])
     ctx.emit('connection/reset')
     expect(describe).toHaveBeenCalledTimes(beforeDisposed)
-    for (const seat of ['settings.section', 'sidebar.top.entry', 'conversation.hero.actions',
+    for (const seat of ['settings.section', 'shell.navigation.entry', 'conversation.hero.actions',
       'conversation.session.header.utilities', 'shell.page', 'tool.call.toolview'] as const) {
       expect(slots.entries(seat)).toHaveLength(0)
     }

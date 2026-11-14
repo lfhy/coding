@@ -7,13 +7,14 @@ const gallery = readFileSync(fileURLToPath(new URL('../src/client/GalleryView.mo
 const inspiration = readFileSync(fileURLToPath(new URL('../src/client/InspirationView.module.css', import.meta.url)), 'utf8')
 const selectMenu = readFileSync(fileURLToPath(new URL('../src/client/SelectMenu.module.css', import.meta.url)), 'utf8')
 const selectMenuSource = readFileSync(fileURLToPath(new URL('../src/client/SelectMenu.tsx', import.meta.url)), 'utf8')
-const entry = readFileSync(fileURLToPath(new URL('../src/client/SidebarEntry.module.css', import.meta.url)), 'utf8')
+const entry = readFileSync(fileURLToPath(new URL('../src/client/NavigationEntry.module.css', import.meta.url)), 'utf8')
 
 describe('窄屏画廊与画布样式', () => {
-  it('画图入口是 42px 整行，折叠后仍是可聚焦的 36px 图标盒', () => {
-    expect(entry).toMatch(/\.wide\s*\{[^}]*width:\s*100%;[^}]*height:\s*42px;[^}]*border-radius:\s*12px;/u)
-    expect(entry).toMatch(/\.rail\s*\{[^}]*width:\s*36px;[^}]*height:\s*36px;/u)
-    expect(entry).toMatch(/\.wide:focus-visible,\s*\.rail:focus-visible\s*\{[^}]*outline:/u)
+  it('画图入口是外侧导航栏的可聚焦 36px 图标盒，高亮标记当前画廊页', () => {
+    expect(entry).toMatch(/\.entry\s*\{[^}]*width:\s*36px;[^}]*height:\s*36px;[^}]*border-radius:\s*10px;/u)
+    expect(entry).toMatch(/\.entry\[aria-current='page'\]\s*\{[^}]*background:/u)
+    expect(entry).toMatch(/\.entry:focus-visible\s*\{[^}]*outline:/u)
+    expect(entry).toContain('@media (prefers-reduced-motion: reduce)')
   })
   it('让有原生像素尺寸的画布在工作台内收缩，并保留画廊列表独立滚动', () => {
     expect(canvas).toMatch(/\.root\s*\{[^}]*min-width:\s*0;[^}]*min-height:\s*0;/u)

@@ -4,7 +4,6 @@ import type { ConnectionHandle } from 'coding-api-remotes/client'
 import type {} from 'coding-client-locale/client'
 import type {} from 'coding-client-ui-settings/client'
 import type {} from 'coding-client-ui-layout/client'
-import type {} from 'coding-client-ui-sidebar/client'
 import type {} from 'coding-client-ui-tool/client'
 import { CanvasController } from './canvas.ts'
 import { GalleryController } from './gallery.ts'
@@ -14,7 +13,7 @@ import { createGalleryUiStore } from './gallery-ui-store.ts'
 import { en, NS, zh, type ImageKey } from './locales.ts'
 import { createGalleryNavigation } from './navigation.ts'
 import { SettingsSection } from './SettingsSection.tsx'
-import { SidebarEntry } from './SidebarEntry.tsx'
+import { NavigationEntry } from './NavigationEntry.tsx'
 import { decodeImageSettings, ImageSettingsController, SETTINGS_NAMESPACE } from './settings.ts'
 import type { GalleryItem } from './wire.ts'
 
@@ -96,10 +95,10 @@ export function apply(ctx: ClientContext): void {
     name: 'settings.section', id: 'image-generation', order: 13, label: () => t('nav'), locale: NS,
     inject: () => settings.inject(),
   }, SettingsSection))
-  ctx.slots.inject('sidebar.top.entry', () => ctx.slots.register({
-    name: 'sidebar.top.entry', id: 'image-generation', order: 20, locale: NS,
+  ctx.slots.inject('shell.navigation.entry', () => ctx.slots.register({
+    name: 'shell.navigation.entry', id: 'image-generation', order: 20, locale: NS,
     inject: () => ({ hooks: { imageEntrySettings: settings.view, galleryPage: ctx.layout.page }, openGallery }),
-  }, SidebarEntry))
+  }, NavigationEntry))
   ctx.slots.inject('shell.page', () => ctx.slots.register({
     name: 'shell.page', key: GALLERY_PAGE, locale: NS, store: galleryUi,
     inject: (sessionId: SessionId) => {

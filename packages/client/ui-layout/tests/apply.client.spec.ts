@@ -49,6 +49,7 @@ describe('ui-layout client apply', () => {
     expect(slots.spec('workbench.bottom')).toEqual({ kind: 'single', scope: 'root' })
     expect(slots.spec('shell.overlay')).toEqual({ kind: 'list', scope: 'root' })
     expect(slots.spec('shell.page')).toEqual({ kind: 'keyed', scope: 'session' })
+    expect(slots.spec('shell.navigation.entry')).toEqual({ kind: 'list', scope: 'root' })
     expect(slots.spec('shell.settings')).toEqual({ kind: 'single', scope: 'root' })
   })
 
@@ -121,6 +122,7 @@ describe('ui-layout client apply', () => {
     expect(slots.spec('sidebar')).toBeUndefined()
     expect(slots.spec('workbench')).toBeUndefined()
     expect(slots.spec('workbench.bottom')).toBeUndefined()
+    expect(slots.spec('shell.navigation.entry')).toBeUndefined()
     // runtime 自己声明的 root 在 entry 卸载后仍然存在。
     expect(slots.spec('root')).toEqual({ kind: 'single', scope: 'root' })
   })

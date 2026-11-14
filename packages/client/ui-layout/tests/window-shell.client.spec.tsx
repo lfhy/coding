@@ -35,9 +35,11 @@ function mountShell(current: SessionId | null = 'shell-session' as SessionId) {
     )),
     useSessions: selector => selector({ current: current ?? undefined } as never),
     t: key => (zh as Record<string, string>)[key] ?? key,
-    renderSlot: (key, owner) => key === 'shell.settings'
-      ? <button type="button" aria-label="设置" data-compact={'wide' in owner && !owner.wide} />
-      : null,
+    renderSlot: (key, owner) => {
+      if (key === 'shell.settings') return <button type="button" aria-label="设置" data-compact={'wide' in owner && !owner.wide} />
+      if (key === 'shell.navigation.entry') return <button type="button" aria-label="画图" data-nav-entry />
+      return null
+    },
   } as WindowShellProps
   return { instance, ...render(<WindowShell {...props} />) }
 }
@@ -51,9 +53,13 @@ describe('窗口外壳', () => {
     expect(view.getByRole('button', { name: '回到对话' }).querySelector('img')).toBeNull()
     expect(view.getByRole('button', { name: '回到对话' }).querySelector('svg')).toBeTruthy()
     expect(view.getByRole('navigation').contains(view.getByRole('button', { name: '设置' }))).toBe(true)
+    // 中部入口排在主页图标之后、底部设置之前。
+    const labels = Array.from(view.getByRole('navigation').querySelectorAll('button'))
+      .map(button => button.getAttribute('aria-label'))
+    expect(labels).toEqual(['回到对话', '画图', '设置'])
     const draft = view.getByRole('textbox', { name: '对话草稿' }) as HTMLTextAreaElement
     fireEvent.change(draft, { target: { value: '保留这份草稿' } })
-    expect(view.getByRole('navigation').querySelectorAll('button')).toHaveLength(2)
+    expect(view.getByRole('navigation').querySelectorAll('button')).toHaveLength(3)
     act(() => { view.instance.actions.toggleSidebar() })
     expect(view.instance.getSnapshot().sidebar).toBe(0)
     expect(view.getByRole('button', { name: '设置' }).getAttribute('data-compact')).toBe('true')
@@ -65,12 +71,12 @@ describe('窗口外壳', () => {
     expect(lifecycle.unmount).not.toHaveBeenCalled()
   })
 
-  it('内层窄屏展开时，外层仍只保留主页和设置两个入口', () => {
+  it('内层窄屏展开时，外层导航入口不随内层侧栏变化', () => {
     const view = mountShell()
     const width = view.instance.getSnapshot().sidebar
     act(() => { view.instance.actions.setNarrow(true) })
     act(() => { view.instance.actions.toggleSidebar() })
-    expect(view.getByRole('navigation').querySelectorAll('button')).toHaveLength(2)
+    expect(view.getByRole('navigation').querySelectorAll('button')).toHaveLength(3)
     expect(view.instance.getSnapshot().sidebar).toBe(width)
     act(() => { view.instance.actions.toggleSidebar() })
     expect(view.instance.getSnapshot().narrowExpanded).toBe(false)
