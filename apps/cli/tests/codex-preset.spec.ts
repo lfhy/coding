@@ -93,7 +93,7 @@ describe('the shipped Codex preset', () => {
   it('exposes exactly the Codex tool surface', async () => {
     const codex = await mountCodex()
     try {
-      // Codex 的工具面本身：shell 是 exec_command + write_stdin，联网是 search + fetch。
+      // 核心 Codex 工具及本产品的浏览器和按需技能入口均对当前会话可见。
       expect(toolNames(codex.agent)).toEqual(expect.arrayContaining([
         'apply_patch',
         'exec_command',
@@ -106,6 +106,8 @@ describe('the shipped Codex preset', () => {
         'wait_agent',
         'web_fetch',
         'web_search',
+        'browser_navigate', 'browser_snapshot', 'browser_screenshot',
+        'skill', 'skill_read',
         'write_stdin',
       ]))
       // 宿主半的跨模式工具（记忆、GenUI、子级模型目录）不属于预设。
@@ -119,7 +121,7 @@ describe('the shipped Codex preset', () => {
         'bash', 'job_kill', 'job_list', 'job_output',
         'read', 'write', 'edit', 'read_image', 'glob', 'grep',
         'generate_image', 'generate_images', 'edit_image',
-        'skill', 'subagent_fork', 'workflow', 'ralph',
+        'subagent_fork', 'workflow', 'ralph',
         'get_goal', 'create_goal', 'update_goal', 'exit_plan_mode', 'ask_user_question',
         'todo_write',
       ]))
