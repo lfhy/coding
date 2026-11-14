@@ -1,0 +1,257 @@
+/* Hub skeleton: header + focus band + entry rows + reference links.
+   Regions are 24px apart, groups 12px, label/value pairs 6px — the ladder in information-architecture.md.
+   Only the row list scrolls; the document never grows at any number of entries. */
+.page {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  gap: 24px;
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
+  padding: 24px 28px;
+  background: var(--ui-bg);
+  color: var(--ui-text);
+}
+
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.heading {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.title {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.subtitle {
+  margin: 0;
+  max-width: 640px;
+  color: var(--ui-text-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+/* The only filled button on the page. */
+.primary {
+  flex: none;
+  padding: 8px 14px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--ui-accent);
+  color: #fff;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.secondary {
+  flex: none;
+  padding: 7px 12px;
+  border: 1px solid var(--ui-border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ui-text);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+/* Focus band: tinted surface, not another card in a grid. */
+.focus {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 20px;
+  padding: 18px 20px;
+  border: 1px solid var(--ui-border);
+  border-radius: 12px;
+  background: var(--ui-surface);
+}
+
+.focusMain {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.focusTitle {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.focusMeta {
+  margin: 0;
+  color: var(--ui-text-muted);
+  font-size: 12px;
+}
+
+.statusRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.statusText {
+  color: var(--ui-text-muted);
+  font-size: 12px;
+}
+
+.dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--ui-text-muted);
+}
+
+.status[data-state='on'] .dot {
+  background: var(--ui-accent);
+}
+
+.attention {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding-left: 20px;
+  border-left: 1px solid var(--ui-border);
+}
+
+.attentionTitle {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+/* Entry rows: one line each, one grid template, aligned on the same vertical center. */
+.entries {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+}
+
+.regionTitle {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.rowList {
+  min-height: 0;
+  overflow: auto;
+  border: 1px solid var(--ui-border);
+  border-radius: 12px;
+  background: var(--ui-surface);
+}
+
+.row {
+  display: grid;
+  grid-template-columns: minmax(0, 200px) minmax(0, 1fr) 150px auto;
+  align-items: center;
+  gap: 16px;
+  height: 52px;
+  padding: 0 16px;
+  font-size: 13px;
+}
+
+.row + .row {
+  border-top: 1px solid var(--ui-border);
+}
+
+.rowName {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  overflow: hidden;
+  font-weight: 500;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.rowMark {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--ui-accent) 14%, transparent);
+}
+
+.rowSummary,
+.rowMeta {
+  overflow: hidden;
+  color: var(--ui-text-muted);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.rowAction {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 10px;
+  border: 1px solid var(--ui-border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ui-text);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.reference {
+  display: flex;
+  gap: 16px;
+}
+
+.link {
+  color: var(--ui-text-muted);
+  font-size: 12px;
+  text-decoration: none;
+}
+
+@media (max-width: 720px) {
+  .page {
+    padding: 16px;
+  }
+
+  .focus {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .attention {
+    padding-left: 0;
+    border-left: 0;
+  }
+
+  /* 窄屏先隐藏次要列，而不是把行内容挤成两行。 */
+  .row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .rowMeta {
+    display: none;
+  }
+}

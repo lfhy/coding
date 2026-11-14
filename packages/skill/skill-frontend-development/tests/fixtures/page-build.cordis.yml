@@ -1,0 +1,78 @@
+# 真实模型页面生成场景的组合：一个真实编码 Agent（含文件工具与内置前端技能），用来人工
+# 复核技能改动的实际效果。模型端点与模型 id 只从环境读取，避免把凭据或私有渠道写进仓库。
+#
+# 用法（在仓库根目录，任务自拟；工作目录建议放在仓库之外，避免模型读到本仓库自己的设计文档）：
+#   TSX_TSCONFIG_PATH=$PWD/tsconfig.json DSH_HOME=/tmp/pg/.dsh \
+#   DEEPSEEK_API_KEY=... DSH_E2E_BASE_URL=https://... DSH_E2E_MODEL=deepseek-v4-flash \
+#   node --import tsx examples/headless-agent/tests/fixtures/headless-driver.ts \
+#     packages/skill/skill-frontend-development/tests/fixtures/page-build.cordis.yml \
+#     '在 site/ 做一个静态页面：介绍 HTTP API、MCP 服务、技能包三种接入方式并显示当前接入状态。'
+#
+# 生成的页面在该工作目录的 site/ 下。样式、字号阶梯与文案泄漏的判定口径见
+# assets/information-architecture.md 第 7 节与 assets/frontend-development.md 的 Verification。
+- id: settings
+  name: 'coding-settings-file'
+
+- id: credentials
+  name: 'coding-credentials-local'
+
+- id: llm-deepseek
+  name: 'coding-llm-deepseek'
+  config:
+    baseURL: !!js process.env.DSH_E2E_BASE_URL
+    thinking: enabled
+    reasoningEffort: high
+    models:
+      - id: !!js process.env.DSH_E2E_MODEL ?? 'deepseek-v4-flash'
+        contextWindow: 900000
+        inputModalities:
+          - text
+
+- id: subprocess
+  name: 'coding-subprocess-local'
+
+- id: bash
+  name: 'coding-bash-local'
+  config:
+    timeoutMs: 60000
+
+- id: fs-local
+  name: 'coding-fs-local'
+  config:
+    cwd: !!js process.cwd()
+
+- id: fs-observation-policy
+  name: 'coding-fs-observation-policy'
+
+- id: tool-fs
+  name: 'coding-tool-fs'
+
+- id: tool-apply-patch
+  name: 'coding-tool-apply-patch'
+
+- id: tool-todo
+  name: 'coding-tool-todo'
+  config:
+    allowParallelInProgress: true
+
+# 页面生成是单页任务，只挂一个根 Agent；技能目录里就是被测的内置前端技能。
+- id: agent-spine
+  name: 'coding-agent-spine-demo'
+  config:
+    agents:
+      - id: main
+        provider: deepseek-official
+        model: !!js process.env.DSH_E2E_MODEL ?? 'deepseek-v4-flash'
+        cwd: !!js process.cwd()
+    workspaceContext: false
+    persona: |
+      You run the {{model}} model; the working directory is {{cwd}}.
+
+- id: skill-frontend-development
+  name: 'coding-skill-frontend-development'
+
+- id: persistence
+  name: 'coding-session-persistence-jsonl'
+  config:
+    root: './.sessions'
+    compression: 'none'

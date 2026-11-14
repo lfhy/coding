@@ -17,6 +17,7 @@ const motionRecipeUrls = [
   'list-stagger.css',
   'feedback.css',
 ].map(name => new URL(`../assets/motion-recipes/${name}`, import.meta.url))
+const architectureUrl = new URL('../assets/information-architecture.md', import.meta.url)
 const examplesIndexUrl = new URL('../assets/examples/index.md', import.meta.url)
 const exampleUrls = [
   'tabs/Tabs.tsx',
@@ -33,7 +34,7 @@ const exampleUrls = [
   'pages/list-page.module.css',
 ].map(path => new URL(`../assets/examples/${path}`, import.meta.url))
 const resourcePrefix = '${INTERNAL_SKILL_DIR}/coding-skill-frontend-development'
-const description = '在创建或修改前端、网页、组件或用户界面时使用。遵循项目已有技术栈、组件、图标库和设计规范；没有既有图标库时按需读取内置参考并默认选用 Lucide，禁止手写或内联 SVG（除非确实缺少领域图标且已走项目图标抽象，且先用画图工具生成底板再转 SVG）；禁止直接摆浏览器原生控件（搜索框、下拉、复选框、日期与颜色控件），必须套项目共享表单组件或先在共享层补一个；请求失败等短暂通知必须使用共享 Toast，长流程使用分步模态框，抽屉内使用子 Tab；页面外壳固定一屏（100dvh），数据变多只让列表或卡片内容区内部滚动，整页不随数据变长；列表页的搜索与筛选工具栏留在视口内，长列表使用虚拟滚动与无限滚动加载；列表不超出屏幕宽度，长名称截断成省略号且整行不换行，行高统一，列不够时按优先级隐藏；缺少共享组件时直接抄内置案例（子 Tab、弹层、Toast、认证页、设置页含修改密码弹窗、列表页），并保持其 ARIA 与键盘行为；避免文字海报和页面／图标硬切；禁止把系统或开发者提示、技能、工具调用、Agent 计划、框架／库／包标识、内部路径、调试信息或内部状态写进用户界面；完成后加载 browser-use 检查真实渲染与交互。仅在用户明确要求具名视觉方向时配合 stylekit，不能覆盖产品规范。'
+const description = '在创建或修改前端、网页、组件或用户界面时使用。先定信息架构再写代码：把内容分成焦点区、主任务区与参考区，一屏只有一个主行动，标题／区域标题／正文／说明要有明确的字号与字重阶梯；禁止把重要性或内容量不同的东西做成同尺寸卡片平铺，当前状态用带状区域、同级项用紧凑行、参考资料用链接，页面不能是等大卡片墙。遵循项目已有技术栈、组件、图标库和设计规范；没有既有图标库时按需读取内置参考并默认选用 Lucide，禁止手写或内联 SVG（除非确实缺少领域图标且已走项目图标抽象，且先用画图工具生成底板再转 SVG）；禁止直接摆浏览器原生控件（搜索框、下拉、复选框、日期与颜色控件），必须套项目共享表单组件或先在共享层补一个；请求失败等短暂通知必须使用共享 Toast，长流程使用分步模态框，抽屉内使用子 Tab；页面外壳固定一屏（100dvh），数据变多只让列表或卡片内容区内部滚动，整页不随数据变长；列表页的搜索与筛选工具栏留在视口内，长列表使用虚拟滚动与无限滚动加载；列表不超出屏幕宽度，长名称截断成省略号且整行不换行，行高统一，列不够时按优先级隐藏；缺少共享组件时直接抄内置案例（子 Tab、弹层、Toast、认证页、设置页含修改密码弹窗、列表页、仪表盘、接入中心页），并保持其 ARIA 与键盘行为；避免文字海报和页面／图标硬切；禁止把系统或开发者提示、提示词、技能、工具调用、Agent 计划、开发说明、实现过程、验收说明、框架／库／包标识、内部路径、调试信息或内部状态写进用户界面，页面只保留用户自己的处境、能做的动作和产品语言；完成后加载 browser-use 检查真实渲染、字号阶梯与信息层级。仅在用户明确要求具名视觉方向时配合 stylekit，不能覆盖产品规范。'
 
 describe('bundled frontend-development skill', () => {
   it('registers and loads its published instructions', async () => {
@@ -58,23 +59,25 @@ describe('bundled frontend-development skill', () => {
       expect(renderSkillContent(loaded)).toContain('<skill_instructions>')
       expect(await readFile(notificationUrl, 'utf8')).toContain('request failure that only needs brief acknowledgement')
       expect(await readFile(notificationUrl, 'utf8')).toContain('Shared Dialog, Drawer, Stepper, Tabs, Field, and Toast primitives')
-      expect(loaded.content).toContain('prefers-reduced-motion')
+      // 正文是硬折行的 Markdown：断言前把连续空白归一，避免依赖换行位置。
+      const prose = loaded.content.replace(/\s+/gu, ' ')
+      expect(prose).toContain('prefers-reduced-motion')
       expect(loaded.content).toContain('Never render system or developer instructions')
       expect(loaded.content).toContain('Compose a product surface, not a text poster')
-      expect(loaded.content).toContain('Only content the user supplied and explicitly asked to inspect')
+      expect(prose).toContain('Only content the user supplied and explicitly asked to inspect')
       expect(loaded.content).toContain('do not hand-write a foundation from zero')
-      expect(loaded.content).toContain('remain usable within one viewport (`100vh`')
-      expect(loaded.content).toContain('Use hierarchy intentionally: use child tabs')
+      expect(loaded.content).toContain('remain usable within one viewport')
+      expect(loaded.content).toContain('Use hierarchy intentionally: separate regions by 24')
       // 原生控件禁令必须写死：搜索框、下拉、复选与日期控件都要走项目共享组件。
       expect(loaded.content).toContain('Never ship a browser-default control')
       expect(loaded.content).toContain('A missing primitive is a task, not an excuse')
-      expect(loaded.content).toContain('a platform-default search box, select arrow, checkbox glyph, date picker, or focus ring means the primitive was skipped')
-      expect(loaded.content).toContain('A create action must open a modal dialog')
+      expect(prose).toContain('a platform-default search box, select arrow, checkbox glyph, date picker, or focus ring means the primitive was skipped')
+      expect(prose).toContain('A create action must open a modal dialog')
       expect(loaded.content).toContain('Check that the primary flow fits within the target viewport')
       expect(loaded.content).toContain('only the list body scrolls')
-      expect(loaded.content).toContain('A page-scrolling list, an unbounded mounted row count, and a full collection fetched before the first screen are defects')
+      expect(prose).toContain('A page-scrolling list, an unbounded mounted row count, and a full collection fetched before the first screen are defects')
       expect(loaded.content).toContain('Own the scroll in exactly one place: the list viewport')
-      expect(loaded.content).toContain('the next page loads before the end with visible loading and end-of-list states')
+      expect(prose).toContain('the next page loads before the end with visible loading and end-of-list states')
       // 页面外壳必须一屏高：数据变多只滚列表，不允许页面被拉长。
       expect(loaded.content).toContain('Every page owns the viewport')
       expect(loaded.content).toContain('A page that grows taller with its data is a defect')
@@ -139,6 +142,41 @@ describe('bundled frontend-development skill', () => {
       expect(await readFile(listCssUrl!, 'utf8')).toContain('align-items: center')
       expect(await readFile(listUrl!, 'utf8')).toContain('styles.statusCell')
       expect(await readFile(listCssUrl!, 'utf8')).toContain('width: 6px')
+      // 先定信息架构、再写代码：分层、降级与字号阶梯都要在正文里写死。
+      expect(loaded.content).toContain('One page, one job')
+      expect(loaded.content).toContain('No flat walls')
+      expect(prose).toContain('Three or more equal cards for items whose importance, content, or state differs is a defect')
+      expect(loaded.content).toContain('Plan the page before the markup')
+      expect(prose).toContain('Task: <who> needs to <finish what> here')
+      expect(loaded.content).toContain('information-architecture.md')
+      expect(loaded.content).toContain('Read the rendered screen as a stranger')
+      expect(loaded.content).toContain('At 25% zoom, is the largest block the most important one')
+      // 开发说明、提示词与实现过程绝对不能落在页面上。
+      expect(loaded.content).toContain('Product copy only')
+      expect(loaded.content).toContain('task narrations, framework/library/package identifiers')
+      expect(loaded.content).toContain('build steps, acceptance')
+      const architecture = await readFile(architectureUrl, 'utf8')
+      expect(architecture).toContain('P0 focus')
+      expect(architecture).toContain('Demote before you add')
+      expect(architecture).toContain('| Card |')
+      expect(architecture).toContain('Weight ladder')
+      expect(architecture).toContain('Adjacent tiers differ by at least 1.2×')
+      expect(architecture).toContain('The three defects, and how to prove they are gone')
+      expect(architecture).toContain('Flat wall')
+      expect(architecture).toContain('No organization')
+      expect(architecture).toContain('A card grid with three or more equal cards is legitimate only')
+      // 抄的案例必须真的按层级排：焦点带状区域 + 可比较的行 + 安静链接。
+      const hubTsx = await readFile(new URL('../assets/examples/pages/hub-page.tsx', import.meta.url), 'utf8')
+      const hubCss = await readFile(new URL('../assets/examples/pages/hub-page.module.css', import.meta.url), 'utf8')
+      expect(hubTsx).toContain('className={styles.focus}')
+      expect(hubTsx).toContain('Connected {connected} of {entries.length}')
+      expect(hubTsx).toContain('styles.rowList')
+      expect(hubTsx).toContain('role="listitem"')
+      expect(hubCss).toContain('grid-template-rows: auto auto minmax(0, 1fr) auto')
+      expect(hubCss).toContain('gap: 24px')
+      expect(hubCss).toContain('minmax(0, 200px) minmax(0, 1fr)')
+      expect(hubCss).toContain('text-overflow: ellipsis')
+      expect(exampleIndex).toContain('pages/hub-page.tsx')
       expect(loaded.content).toContain('load the `stylekit` skill')
       expect(loaded.content).toContain('followed a `stylekit` style spec')
       expect(await readFile(motionIndexUrl, 'utf8')).toContain('view-switch.css')
@@ -146,8 +184,8 @@ describe('bundled frontend-development skill', () => {
       expect(await readFile(iconLibraryUrl, 'utf8')).toContain('Use [Lucide]')
       expect(await readFile(iconLibraryUrl, 'utf8')).toContain('Do not hand-draw or inline SVG icons')
       // 缺插图／领域图标时先画底板再转 SVG，而不是凭空手绘路径。
-      expect(loaded.content).toContain('draw a base plate first with the image tool')
-      expect(loaded.content).toContain('Without image tools, fall back to a library icon with a label')
+      expect(prose).toContain('draw a base plate first with the image tool')
+      expect(prose).toContain('Without image tools, fall back to a library icon with a label')
       expect(await readFile(iconLibraryUrl, 'utf8')).toContain('Draw the base plate before writing the path')
       const listScrollReference = await readFile(listScrollUrl, 'utf8')
       expect(listScrollReference).toContain('## Row alignment')

@@ -14,6 +14,7 @@ component layer, then use the project's tokens and primitives.
 | [`pages/dashboard-page.tsx`](pages/dashboard-page.tsx) | a dashboard: 100dvh shell, stat cards, and panel lists that scroll inside the card instead of stretching the page |
 | [`pages/settings-page.tsx`](pages/settings-page.tsx) | settings with several sections, including a "change password" action behind a button |
 | [`pages/list-page.tsx`](pages/list-page.tsx) | a list or table page: fixed header and toolbar, one scrolling body, empty and loading states |
+| [`pages/hub-page.tsx`](pages/hub-page.tsx) | a hub where the user picks one of several ways to do the same job: current state as a focus band, the ways as comparable rows, reference as links. Never a row of equal cards |
 
 ## Rules for using an example
 
