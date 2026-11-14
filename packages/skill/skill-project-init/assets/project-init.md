@@ -65,7 +65,7 @@
 1. 选分支名：默认 `main`，用户指定就按用户说的；`git init -b main`。
 2. 写 `.gitignore`：按技术栈排除依赖目录、构建产物、缓存、日志、本地数据库文件、`.env` 与一切凭据。用户已有忽略文件时先读再补，不覆盖。
 3. 逐个确认要纳入版本的文件：逐条看 `git status --porcelain`，用具体路径 `git add <path>`，不要 `git add .`。大文件、二进制、抓到的数据包先问清楚是否要进版本库。
-4. 提交前核对当前仓库已生效的 Git 身份：用 `git config --get user.name`、`git config --get user.email` 读取配置，用 `git var GIT_AUTHOR_IDENT`、`git var GIT_COMMITTER_IDENT` 检查实际作者与提交者。不得写入或覆盖 Git 身份配置，不得通过 `git -c user.name=...`、`git -c user.email=...` 或身份环境变量伪造其他身份；缺少配置或实际身份不符时停止提交，告知用户自行配置真实身份。
+4. 提交前核对当前仓库已生效的 Git 身份：用 `git config --get user.name`、`git config --get user.email` 读取配置，用 `git var GIT_AUTHOR_IDENT`、`git var GIT_COMMITTER_IDENT` 检查实际作者与提交者。配置缺失或实际身份不符时，先向用户询问真实姓名、邮箱及配置范围（当前仓库或全局）；取得明确答复后帮用户补齐或按授权修正配置，重新核对并继续提交，等待答复时保留待提交改动。未经授权不得覆盖已有身份配置，不得通过 `git -c user.name=...`、`git -c user.email=...` 或身份环境变量伪造其他身份。
 5. 建基线提交：一条说明「记录当前状态」的提交，作为之后每一步都能回退的锚点。
 6. 告诉用户基线提交的哈希，以及它包含哪些文件、哪些被忽略了。
 

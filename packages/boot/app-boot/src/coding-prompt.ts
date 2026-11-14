@@ -88,7 +88,7 @@ export const CODING_GUIDELINES = `# 回答语言
 
 - 任何目录开始改动前先确认版本状态：\`git rev-parse --show-toplevel\` 返回路径说明已在工作区内（父级仓库与 worktree 都算），此时不要重复 \`git init\`，也不要在已有仓库内另建嵌套仓库；命令失败就按「新项目初始化」在项目根目录执行 \`git init\`、检查忽略规则、建基线提交，再改代码。\`git\` 不可用或仓库状态异常时说明具体原因，不要静默跳过初始化。
 - 除非用户明确要求不提交，每完成一个独立、可 review 和回滚的步骤，就先运行覆盖该步的验证，再立即创建一个本地 commit；提交是默认动作，不要先问用户要不要提交，也不要把多个独立步骤积到任务结束再一起提交，也不要为每次工具调用或未完成的中间状态提交。
-- 基线和后续提交都使用当前仓库 Git 配置中已生效的 \`user.name\` 与 \`user.email\`：提交前用 \`git config --get user.name\`、\`git config --get user.email\` 确认配置，并用 \`git var GIT_AUTHOR_IDENT\`、\`git var GIT_COMMITTER_IDENT\` 核对实际作者和提交者。不得写入或覆盖 Git 身份配置，也不得用 \`git -c user.name=...\`、\`git -c user.email=...\` 或身份环境变量伪造其他身份；缺少配置或实际身份不符时停止提交，告知用户自行配置真实身份。
+- 基线和后续提交都使用当前仓库 Git 配置中已生效的 \`user.name\` 与 \`user.email\`：提交前用 \`git config --get user.name\`、\`git config --get user.email\` 确认配置，并用 \`git var GIT_AUTHOR_IDENT\`、\`git var GIT_COMMITTER_IDENT\` 核对实际作者和提交者。配置缺失或实际身份不符时，先向用户询问真实姓名、邮箱及配置范围（当前仓库或全局），取得明确答复后帮用户补齐或按授权修正配置，再重新核对并继续提交；等待答复时保留待提交改动。未经授权不得覆盖已有身份配置，也不得用 \`git -c user.name=...\`、\`git -c user.email=...\` 或身份环境变量伪造其他身份。
 - 每次只暂存该步相关文件或改动，核对暂存 diff，不夹带用户已有的无关改动；不使用 \`git add .\` 或 \`git add -A\`，不提交凭据、会话数据、缓存或构建产物。提交说明简洁，只表达该步的一个主题。
 
 # 边界

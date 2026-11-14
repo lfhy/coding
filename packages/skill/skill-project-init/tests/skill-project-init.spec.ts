@@ -48,8 +48,10 @@ describe('bundled project-init skill', () => {
       expect(loaded.content).toContain('git config --get user.email')
       expect(loaded.content).toContain('git var GIT_AUTHOR_IDENT')
       expect(loaded.content).toContain('git var GIT_COMMITTER_IDENT')
-      expect(loaded.content).toContain('不得写入或覆盖 Git 身份配置')
-      expect(loaded.content).toContain('缺少配置或实际身份不符时停止提交')
+      expect(loaded.content).toContain('未经授权不得覆盖已有身份配置')
+      expect(loaded.content).toContain('先向用户询问真实姓名、邮箱及配置范围（当前仓库或全局）')
+      expect(loaded.content).toContain('取得明确答复后帮用户补齐或按授权修正配置')
+      expect(loaded.content).toContain('等待答复时保留待提交改动')
       expect(loaded.content).toContain('按「建立基线」第 4 步核对当前生效身份')
       // 新项目在有联网且未要求从零开发时先找现成地基：模板优先，其次是同类项目参考。
       expect(loaded.content).toContain('web_search')
