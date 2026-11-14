@@ -37,6 +37,7 @@ async function loadComposition(): Promise<Context> {
   await writeFile(join(dist, 'app.js'), 'export {}')
   await writeFile(join(dist, 'blob.bin'), 'BLOB')
   await writeFile(join(dist, 'manifest.webmanifest'), '{}')
+  await writeFile(join(dist, 'favicon.png'), Buffer.from('89504e470d0a1a0a', 'hex'))
   const configPath = join(root, 'cordis.yml')
   await writeFile(configPath, [
     "- name: 'coding-host-webserver'",
@@ -93,8 +94,9 @@ describe('real Loader composition', () => {
     const server = loaded.webServer
     const port = server.port
 
-    // Real assets with their MIME types; a live rebuild is served on the next read.
+    // 真实资源返回对应 MIME；构建更新后，下次请求读取最新内容。
     expect(await request(port, '/app.js')).toMatchObject({ status: 200, type: 'text/javascript; charset=utf-8', body: 'export {}' })
+    expect(await request(port, '/favicon.png')).toMatchObject({ status: 200, type: 'image/png' })
     expect(await request(port, '/manifest.webmanifest')).toMatchObject({
       status: 200,
       type: 'application/manifest+json',

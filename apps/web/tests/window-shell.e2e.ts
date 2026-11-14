@@ -37,6 +37,13 @@ describe('Web 窗口外壳', () => {
     expect((await shell.locator('header').boundingBox())?.height ?? 0).toBe(0)
     expect(await surface.locator('#dsh-layout-floating-conversation').count()).toBe(1)
     expect(await surface.boundingBox()).toMatchObject({ x: 52, y: 0, width: 1620, height: 992 })
+    const logo = page.getByTestId('hero-brand-mark').locator('img')
+    expect(await logo.evaluate(async (image: HTMLImageElement) => {
+      await image.decode()
+      return image.naturalWidth > 0 && image.getBoundingClientRect().width === 34
+    })).toBe(true)
+    const logoResponse = await page.request.get(new URL('/favicon.png', scaffold.baseUrl).href)
+    expect(logoResponse.headers()['content-type']).toBe('image/png')
     const navigation = page.getByRole('navigation', { name: 'Main navigation', exact: true })
     const home = navigation.getByRole('button', { name: 'Back to conversation' })
     expect(await home.locator('img').count()).toBe(0)
