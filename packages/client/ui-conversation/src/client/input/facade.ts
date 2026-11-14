@@ -1,11 +1,4 @@
-/**
- * SessionInput shell over the pure input machine: the sole machine caller
- * and effect executor. Owns the InputState store (machine state + the queue
- * overlay), the notice channel, and the submit transaction plumbing
- * (adjudicate via the session's InputTriggerController; claim.submit; default
- * sink). Package-private; the hub alone constructs it and wires the scoped
- * event listeners onto it.
- */
+/** 包内输入状态机壳：持有草稿、通知与提交事务，由 InputHub 构造并随会话释放。 */
 import type { ClientContext, ObservableSnapshot, SnapshotStore } from 'coding-client-runtime/client'
 import { createSnapshotStore } from 'coding-client-runtime/client'
 import type {
@@ -19,18 +12,14 @@ import type {
 import type { InputSubmitMode } from '../contract/composer-submission.ts'
 import { InputMachine, argsAfter, projectClipboard } from './machine.ts'
 import { stagedPasteComponents } from './staged-reference.ts'
+import { transferDraft } from './draft-transfer.ts'
 
 /** Popup face the shell needs (dismissal only; typed structurally to avoid a value import). */
 export interface PopupDismissFace {
   dismiss(): void
 }
 
-/**
- * Construction dependencies of one facade. The slash/popup faces are THUNKS: the
- * shell is created inside the sessions provide materialization (before the
- * scope record is queryable), where `slash.sessionOf`/`command.popupFor`
- * cannot resolve yet — resolution defers to first interactive use.
- */
+/** 会话 scope 尚在物化时无法寻址命令来源；相关依赖延迟到交互时解析。 */
 export interface SessionInputDeps {
   /** Session-scope ctx handed to claim.submit transactions. */
   actx: ClientContext
@@ -77,10 +66,7 @@ const EMPTY_QUEUE: readonly QueuedMessage[] = []
 /** No-pipeline lexicon: zero text-ref decorations. */
 const EMPTY_LEXICON: ReadonlyMap<'/' | '@', readonly string[]> = new Map()
 
-/**
- * The per-session input facade: scoped-event application verbs +
- * setDraft/submit + the published InputState store.
- */
+/** 逐会话输入动作与状态源；包内另提供草稿迁移和持久化镜像绑定。 */
 export class SessionInputShell implements SessionInput {
   /** Published machine state + queue overlay (the InputZone currency source). */
   readonly state: SnapshotStore<InputState>
@@ -97,8 +83,7 @@ export class SessionInputShell implements SessionInput {
     submit: () => { this.submit('queue') },
   }
 
-  // Real wall clock: the typing-run merge window must actually expire in
-  // production (the machine's no-clock default is a constant for pure tests).
+  // 真实时钟让连续输入的撤销合并窗口按时间过期。
   private readonly core = new InputMachine({ now: () => Date.now() })
   private noticeSeq = 0
   private focusSeq = 0
@@ -148,11 +133,7 @@ export class SessionInputShell implements SessionInput {
     return true
   }
 
-  /**
-   * Remove one image id from this draft. Busy admission phases refuse, like
-   * {@link addImages}: a removal landing while a command submit serializes
-   * would otherwise vanish from the rail yet still ride the in-flight send.
-   */
+  /** 提交锁期间不允许移除图片，避免界面隐藏后仍被正在序列化的请求发送。 */
   removeImage(id: DraftAttachmentId): void {
     if (this.snapshot.phase === 'adjudicating' || this.snapshot.phase === 'submitting') return
     const next = this.imageIds.filter(candidate => candidate !== id)
@@ -309,14 +290,7 @@ export class SessionInputShell implements SessionInput {
     this.deps.popup?.()?.dismiss()
   }
 
-  /**
-   * Hot plain-text reference lexicon source for the decoration scan
-   * (the plain-text-reference decision;
-   * see ):
-   * delegates to the controller's aggregated store. Stable
-   * identity per shell; without a pipeline the snapshot is the empty Map and
-   * subscribers never fire.
-   */
+  /** 引用装饰词表来自控制器；每个 shell 的来源身份稳定，无控制器时使用空词表。 */
   readonly lexicon: ObservableSnapshot<ReadonlyMap<'/' | '@', readonly string[]>> = {
     getSnapshot: () => this.deps.inputTriggers?.()?.lexicon.getSnapshot() ?? EMPTY_LEXICON,
     subscribe: fn => this.deps.inputTriggers?.()?.lexicon.subscribe(fn) ?? (() => {}),
@@ -417,15 +391,26 @@ export class SessionInputShell implements SessionInput {
   }
 
   /**
-   * Bind the draft persistence mirror (chat store write). Adopt-on-bind: the
-   * store draft may hold a persisted value from a previous mount; the caller
-   * seeds it via setDraft BEFORE binding, and afterwards every machine-adopted
-   * draft mirrors out.
-   * @param write - store draft write.
-   * @returns the unbind disposer.
+   * 包内跨会话迁移；提交中的任一端拒绝，引用身份由目标重新物化。
+   * @param target - 接纳输入的目标 shell。
+   * @returns 是否完成迁移；拒绝时双方保持不变。
+   */
+  moveDraftTo(target: SessionInputShell): boolean {
+    const locked = (shell: SessionInputShell) => shell.disposed || shell.imageSendInFlight
+      || guardOf(shell.snapshot.phase) === 'frozen'
+    if (locked(this) || locked(target)) return false
+    return this === target || transferDraft(this, target)
+  }
+
+  /**
+   * 先由调用方恢复持久草稿，再绑定镜像；绑定立即同步未挂载期间收到的规范文本。
+   * @param write - 会话 store 的草稿写入口。
+   * @returns 仅撤回本次镜像的 disposer。
    */
   bindMirror(write: (text: string) => void): () => void {
     this.mirrorFn = write
+    this.lastMirroredDraft = projectClipboard(this.snapshot)
+    write(this.lastMirroredDraft)
     return () => {
       if (this.mirrorFn === write) this.mirrorFn = undefined
     }

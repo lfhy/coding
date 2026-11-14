@@ -1,11 +1,13 @@
 // 常驻会话骨架在无会话与有会话之间切换时保留 Hero、编辑器定位、接管链和
 // session-maybe 输入栏；没有会话时由 owner props 锁定输入栏。
 
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import clsx from 'clsx'
-import type { SessionId, WorkspaceId } from 'coding-client-runtime/client'
+import type { SessionId } from 'coding-client-runtime/client'
+import { Toast } from 'coding-client-ui-primitives'
 import type { ConversationSlotProps, InputZone } from '../contract/slots.ts'
 import { HeroGlow, HeroShell, WorkspaceChip, workspaceLabel } from './EmptyHero.tsx'
+import { useHeroSelection } from './hero-selection.ts'
 import css from './ConversationRoot.module.css'
 
 /** 由 slot 契约组合得到的完整 props。 */
@@ -16,7 +18,7 @@ const OVERVIEW_MIN_COLUMN_WIDTH = 1_388
 
 export function ConversationRoot({
   sessionId, sidebarCollapsed, useSession, useSessions, useWorkspaces, useInput, useComposerBlock,
-  renderSlot, renderSlotChain, selectWorkspace, t,
+  renderSlot, renderSlotChain, selectWorkspace, selectWithoutWorkspace, abortBlankSelection, t,
 }: ConversationRootProps) {
   const openState = useSession(s => s.openState)
   const composerPhase = useSession(s => s.composerPhase)
@@ -30,7 +32,7 @@ export function ConversationRoot({
   const composerBlock = useComposerBlock(block => block)
 
   const [pickerOpen, setPickerOpen] = useState(false)
-  const [pendingWorkspaceId, setPendingWorkspaceId] = useState<WorkspaceId | undefined>()
+  const modeId = useId()
   const pickerAnchor = useRef<HTMLButtonElement>(null)
   const rootRef = useRef<HTMLDivElement>(null)
   const [columnWidth, setColumnWidth] = useState(0)
@@ -78,18 +80,6 @@ export function ConversationRoot({
   const sessionWorkspace = sessionId === undefined
     ? undefined
     : workspaces.items.find(workspace => workspace.sessionIds.includes(sessionId))
-  const pendingWorkspace = workspaces.items.find(
-    workspace => workspace.workspaceId === pendingWorkspaceId,
-  )
-
-  // 会话进入所选工作区，或该工作区从已就绪列表中被删除时，清除待定选择。
-  useEffect(() => {
-    if (pendingWorkspaceId === undefined) return
-    if (sessionWorkspace?.workspaceId === pendingWorkspaceId
-      || (workspaces.phase === 'ready' && pendingWorkspace === undefined)) {
-      setPendingWorkspaceId(undefined)
-    }
-  }, [pendingWorkspaceId, sessionWorkspace?.workspaceId, workspaces.phase, pendingWorkspace])
 
   // 日志回放期间尚不能确定 Hero 或底部编辑器布局，先隐藏编辑器以免跳动。
   // 列表摘要已确认空白的会话除外：它没有历史，cold、loading 与 error 状态都
@@ -98,19 +88,26 @@ export function ConversationRoot({
     && summaryBlank !== true
   const hero = sessionId === undefined
     || (composerPhase === 'blank' && (openState === 'open' || summaryBlank === true))
+  const selection = useHeroSelection({
+    sessionId, workspaceId: sessionWorkspace?.workspaceId,
+    workspacesReady: workspaces.phase === 'ready', hero,
+    selectWorkspace, selectWithoutWorkspace, abortBlankSelection,
+  })
+  const { mode, pendingWorkspaceId } = selection
+  const pendingWorkspace = pendingWorkspaceId === sessionWorkspace?.workspaceId ? undefined
+    : workspaces.items.find(workspace => workspace.workspaceId === pendingWorkspaceId)
+  useEffect(() => { setPickerOpen(false) }, [mode, sessionId, hero])
   const zone: InputZone | undefined =
     session === undefined || inputState === undefined ? undefined : { session, input: inputState }
 
   // 菜单刚选中的工作区优先显示；列表尚未就绪时以 cwd 名称防闪烁，确认
-  // 会话不属于任何工作区后才显示无项目状态，避免把已删除的项目误标出来。
-  const noProject = sessionId !== undefined && pendingWorkspace === undefined
-    && sessionWorkspace === undefined && workspaces.phase === 'ready'
+  // 没有工作区归属时恢复选择入口，不把无项目会话冒充成工作模式的目标。
   const chipTitle = pendingWorkspace?.title
     ?? (sessionId === undefined
       ? undefined
       : sessionWorkspace?.title
         ?? (workspaces.phase === 'ready'
-          ? t('hero.noProject')
+          ? undefined
           : cwd === undefined || cwd === ''
             ? undefined
             : workspaceLabel(cwd)))
@@ -119,37 +116,39 @@ export function ConversationRoot({
     ? sessionId : undefined
   const heroWorkspaceRow = (
     <div className={css.heroWorkspaceRow}>
-      {renderSlot('conversation.hero.agentPreset', {})}
-      <WorkspaceChip
-        buttonRef={pickerAnchor}
-        label={chipTitle}
-        mode={noProject ? 'no-project' : undefined}
-        menuOpen={pickerOpen}
-        // 选择器菜单把按钮当作自己的外置触发器（anchorRef），因此这次点击
-        // 不算外部点击：按钮的 click 单独负责开关，同时别的已展开菜单会照常收起。
-        onClick={() => { setPickerOpen(open => !open) }}
-        t={t}
-      />
-      {renderSlot('conversation.hero.git', { sessionId: workspaceGitSessionId })}
-      {renderSlot('conversation.hero.workspace', {
-        open: pickerOpen,
-        anchorRef: pickerAnchor,
-        selectedId: pendingWorkspaceId ?? sessionWorkspace?.workspaceId,
-        onPick: (workspaceId) => {
-          setPickerOpen(false)
-          setPendingWorkspaceId(workspaceId)
-          void selectWorkspace(workspaceId).catch(() => {
-            setPendingWorkspaceId(current => current === workspaceId ? undefined : current)
-          })
-        },
-        onClose: () => { setPickerOpen(false) },
-      })}
+      {mode === 'work' && <>
+        {renderSlot('conversation.hero.agentPreset', {})}
+        <WorkspaceChip
+          buttonRef={pickerAnchor}
+          label={chipTitle}
+          menuOpen={pickerOpen}
+          // 选择器菜单把按钮当作自己的外置触发器（anchorRef），因此这次点击
+          // 不算外部点击：按钮的 click 单独负责开关，同时别的已展开菜单会照常收起。
+          onClick={() => { if (!selection.busy) setPickerOpen(open => !open) }}
+          t={t}
+        />
+        {renderSlot('conversation.hero.git', { sessionId: workspaceGitSessionId })}
+        {renderSlot('conversation.hero.workspace', {
+          open: pickerOpen,
+          anchorRef: pickerAnchor,
+          selectedId: pendingWorkspaceId ?? sessionWorkspace?.workspaceId,
+          startSessionWithoutWorkspace: async () => {
+            try { await selection.selectConversation() }
+            catch { throw new Error(t('hero.startFailed')) }
+          },
+          onPick: (workspaceId) => {
+            setPickerOpen(false)
+            selection.pickWorkspace(workspaceId)
+          },
+          onClose: () => { setPickerOpen(false) },
+        })}
+      </>}
     </div>
   )
 
-  // 没有会话时只能先选择入口；已有但未归属项目的会话使用 Host 默认 cwd，
-  // 可直接发送。输入栏始终复用同一棵树，切换状态不会销毁 textarea。
-  const inert = sessionId === undefined
+  // 工作模式必须有项目归属；返回未选项目的工作模式时仍保留无项目草稿，
+  // 但不能继续向它发送。模式切换与异步创建始终复用同一棵输入树。
+  const inert = selection.locked
   // 发送限制仍优先于普通输入；模型选择器保留可用，便于解除其自身的限制。
   const blocked = !inert && composerBlock !== undefined
   const inputBar = renderSlot('conversation.composer.bar', {
@@ -159,7 +158,7 @@ export function ConversationRoot({
         disabled: true,
         placeholder: t('placeholder.workspace'),
         workspacePickerOpen: pickerOpen,
-        onRequestWorkspace: () => { setPickerOpen(true) },
+        ...(mode === 'work' && !selection.busy ? { onRequestWorkspace: () => { setPickerOpen(true) } } : {}),
       }
       : blocked
         // 使用 blocked 而非 disabled：输入栏都会拒绝输入，但阻塞态必须保留模型
@@ -201,17 +200,29 @@ export function ConversationRoot({
   return (
     <div ref={rootRef} className={css.root} data-phase={phase}>
       {(hero || settling) && <div className={css.windowDragStrip} data-window-drag-strip data-window-drag-region aria-hidden="true" />}
+      {hero && <div className={css.heroMode}>
+        {renderSlot('conversation.hero.mode', {
+          mode, busy: selection.busy || inputState?.phase === 'adjudicating' || inputState?.phase === 'submitting',
+          onPick: selection.pickMode, id: modeId,
+        })}
+      </div>}
       {hero && (
         <div className={css.heroActions}>
           {renderSlot('conversation.hero.actions', { sidebarCollapsed })}
         </div>
       )}
       {renderSlot('conversation.session.header', { overviewExpanded, toggleOverview })}
-      <div className={css.scrollBody} data-conversation-scroll="">
+      <div className={css.scrollBody} data-conversation-scroll=""
+        role={hero ? 'tabpanel' : undefined}
+        id={hero ? `${modeId}-panel` : undefined}
+        aria-labelledby={hero ? `${modeId}-${mode === 'conversation' ? 'conversations' : 'work'}` : undefined}
+      >
         {renderSlot('conversation.session', {})}
         {composerSeat}
       </div>
       {!hero && !settling && renderSlot('conversation.overview', { overviewExpanded, toggleOverview })}
+      {selection.failure > 0 && <Toast key={selection.failure} text={t('hero.startFailed')}
+        anchor={rootRef.current} onDone={selection.dismissFailure} />}
     </div>
   )
 }

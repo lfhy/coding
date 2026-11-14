@@ -97,6 +97,7 @@ function mount(
       onClose={onClose}
       createWorkspace={createWorkspace}
       startSessionWithoutWorkspace={startSessionWithoutWorkspace}
+      startUnscopedSession={vi.fn(async () => {})}
       useDirectoryFlow={occupancy.useDirectoryFlow}
       renderSlot={renderSlot}
       t={t}
@@ -263,7 +264,7 @@ describe('WorkspacePicker', () => {
       <WorkspacePicker
         open useSessions={hook(sessions)} useWorkspaces={hook(workspaceState([workspace('alpha', 'Alpha')]))}
         onPick={vi.fn()} onClose={vi.fn()} createWorkspace={vi.fn()}
-        startSessionWithoutWorkspace={vi.fn(async () => {})}
+        startUnscopedSession={vi.fn(async () => {})}
         useDirectoryFlow={occupancySource().useDirectoryFlow} renderSlot={renderSlot} t={t}
       />,
     )
@@ -279,7 +280,7 @@ describe('WorkspacePicker', () => {
       <WorkspacePicker
         open anchorRef={anchor()} useSessions={hook(sessions)} useWorkspaces={hook(state)}
         onPick={vi.fn()} onClose={vi.fn()} createWorkspace={vi.fn()}
-        startSessionWithoutWorkspace={vi.fn(async () => {})}
+        startUnscopedSession={vi.fn(async () => {})}
         useDirectoryFlow={occupancySource().useDirectoryFlow} renderSlot={renderSlot} t={t}
       />,
     )

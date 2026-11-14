@@ -24,6 +24,16 @@
   --dsh-composer-dock-inset: 8px;
 }
 
+.heroMode {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 2;
+  max-width: calc(100% - 32px - var(--app-safe-area-inset-right, 0px));
+  -webkit-app-region: no-drag;
+}
+
 .heroActions {
   position: absolute;
   top: 12px;
@@ -61,6 +71,7 @@
 }
 
 @media (max-width: 480px) {
+  .heroMode { top: 56px; }
   .heroActions { right: calc(12px + var(--app-safe-area-inset-right, 0px)); }
   :global([data-workbench-shown]) .heroActions { right: 12px; }
 }
@@ -449,6 +460,10 @@
   /* figma drew px 8; nudged +12 so the chip's folder glyph lines up closer to
      the card's inner controls below. */
   padding-left: 20px;
+}
+
+.heroWorkspaceRow:empty {
+  display: none;
 }
 
 /* Hero: the composer sits inside the session scroll body; center there so

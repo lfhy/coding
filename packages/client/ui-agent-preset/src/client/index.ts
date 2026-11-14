@@ -128,10 +128,10 @@ export function apply(ctx: ClientContext): void {
     })
 
     scope.effect(() => {
-      // Connecting a workspace either creates a blank session or reuses one,
-      // and either way the chip's pick predates it — so the stage is applied
-      // when the session arrives, not when it was made.
+      // 工作区可新建或复用空白会话；暂存选择在成为当前会话时应用，而不是只跟随创建。
       const stop = scope.sessions.list.subscribe(() => { void seat.apply() })
+      // 独立对话先撤回工作模式的暂存与在途切换，再放行目标会话的导航和草稿交接。
+      const prepareStandalone = scope.on('conversation/prepare-standalone', sessionId => seat.prepareStandard(sessionId))
       // 每个标签页都将已提交的模式折入共享摘要；发起方可能已用 RPC
       // 回执更新过摘要，这次合并是幂等的。
       const presetSelected = scope.remote.$on('agent-preset/selected', (sessionId, agentPreset) => {
@@ -165,6 +165,7 @@ export function apply(ctx: ClientContext): void {
       }, AgentPresetLabel)
       return () => {
         stop()
+        prepareStandalone()
         presetSelected()
         rosterReaders.delete(readRoster)
         creatorDraft = undefined

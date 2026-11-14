@@ -19,6 +19,8 @@ import { SlotTestRuntime, stubSettingsScope } from 'coding-client-test-runtime'
 import type { SessionBehaviorOverrides } from 'coding-client-test-runtime'
 import { LocaleRuntime } from 'coding-client-locale/client'
 import type { ISession, SessionId } from 'coding-client-runtime/client'
+import { createSnapshotStore } from 'coding-client-runtime/client'
+import type { PageRoute } from 'coding-client-ui-layout/client'
 import { apply, inject } from 'coding-client-ui-conversation/client'
 import type {
   ChatViewInjected, ComposerBarInjected, ConversationInjected, ConversationSessionHeaderInjected,
@@ -54,7 +56,10 @@ async function bench() {
     summary: { title: 'R', displayTitle: 'R', cwd: '/proj' },
     session: sessionFake,
   })
-  const layoutFake = { openDetails: vi.fn(), closeDetails: vi.fn(), beginNewConversation: vi.fn() }
+  const layoutFake = {
+    openDetails: vi.fn(), closeDetails: vi.fn(), beginNewConversation: vi.fn(),
+    conversationIntent: 1, page: createSnapshotStore<PageRoute | null>(null),
+  }
   runtime.provide('layout', layoutFake)
   const locale = new LocaleRuntime(runtime.ctx)
   runtime.provide('locale', locale)
@@ -214,11 +219,11 @@ describe('conversation slot inject API', () => {
     expect(state.getSnapshot().draft).toBe('typed during flight')
     // The provide contribution is idempotent per session: one shell identity.
     expect(b.inputApi(ROOT).state).toBe(state)
-    // The draft mirror rides the conversation inject face.
+    // 镜像绑定时先发布当前草稿，再跟随后续编辑。
     const mirrored: string[] = []
     const unbind = injected.bindDraftMirror(text => mirrored.push(text))
     actions.setDraft('mirrored text')
-    expect(mirrored).toEqual(['mirrored text'])
+    expect(mirrored).toEqual(['typed during flight', 'mirrored text'])
     unbind()
     // Stop failure is swallowed (promptError owns the display).
     b.sessionFake.cancel.mockResolvedValueOnce({ ok: false, error: { code: 'internal', message: 'x', details: {} } })
@@ -342,6 +347,7 @@ describe('conversation slot inject API', () => {
     const b = await bench()
     // No-session resident (hero before any session): connect resolves and
     // navigation proceeds without any draft choreography.
+    await b.runtime.sessions.setCurrent(undefined)
     const noSession = b.residentApi(undefined)
     b.runtime.workspaces.stub('connectWorkspace', () => Promise.resolve(ROOT))
     void noSession.selectWorkspace('workspace-0' as never)
@@ -365,6 +371,7 @@ describe('conversation slot inject API', () => {
     // Connect failure: the rejection propagates to the caller (the view owns
     // the rollback) and no further navigation happens.
     const opens = b.runtime.sessions.calls.filter(c => c.method === 'open').length
+    await b.runtime.sessions.setCurrent(ROOT)
     b.runtime.workspaces.stub('connectWorkspace', () => Promise.reject(new Error('offline')))
     await expect(resident.selectWorkspace('workspace-4' as never)).rejects.toThrow('offline')
     expect(b.runtime.sessions.calls.filter(c => c.method === 'open')).toHaveLength(opens)

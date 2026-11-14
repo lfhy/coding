@@ -147,7 +147,7 @@ describe('resident composer', () => {
     expect(view.container.querySelector('textarea')).toBe(textarea)
     expect(view.getByRole('button', { name: '选择工作区' })).toBe(workspaceChip)
     expect(view.getByTestId('workspace-probe')).toBe(workspaceProbe)
-    expect(workspaceProbe.textContent).toBe('true:1')
+    expect(workspaceProbe.textContent).toBe('false:1')
     expect(textarea.disabled).toBe(false)
     expect(textarea.readOnly).toBe(false)
     await runtime.dispose()

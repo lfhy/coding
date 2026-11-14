@@ -89,7 +89,7 @@ function conversationSnapshot(overrides: Partial<ConversationSnapshot> = {}): Co
 function mount(
   snapshot: ConversationSnapshot,
   workspaceRows: WorkspaceView[] = [{ ...workspace('one'), sessionIds: [SID] }],
-  retargetWorkspace = vi.fn(async (_workspaceId: WorkspaceId) => {}),
+  retargetWorkspace = vi.fn(async (_workspaceId: WorkspaceId) => SID),
   options: {
     /** When true, mimic overlay:true chain siblings (hidden fallback + takeover). */
     overlayTakeover?: boolean
@@ -258,6 +258,8 @@ function mount(
     renderSlot,
     renderSlotChain,
     selectWorkspace: retargetWorkspace,
+    selectWithoutWorkspace: vi.fn(async () => SID),
+    abortBlankSelection: vi.fn(),
     t,
   }
   const view = render(<ConversationRoot {...props} />)
@@ -342,7 +344,9 @@ describe('ConversationRoot resident composer', () => {
     expect(box.disabled).toBe(false)
     expect(box.readOnly).toBe(false)
     expect(box.placeholder).not.toBe('选择一个工作区开始')
-    expect(b.view.getByText('不在项目中工作')).toBeTruthy()
+    expect(b.view.queryByRole('button', { name: '选择工作区' })).toBeNull()
+    expect(b.view.queryByTestId('view-conversation.hero.git')).toBeNull()
+    expect(b.view.queryByTestId('view-conversation.hero.agentPreset')).toBeNull()
     fireEvent.keyDown(box, { key: 'Enter' })
     expect(b.sink).toHaveBeenCalledWith('ordinary draft', [], 'queue', expect.any(AbortSignal))
     const modelSeat = b.seatOwners.filter(call => call.key === 'conversation.input.model').at(-1)?.owner

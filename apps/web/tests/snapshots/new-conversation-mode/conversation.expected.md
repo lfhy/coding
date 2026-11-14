@@ -1,0 +1,17 @@
+- tablist "New conversation mode":
+  - tab "Work":
+    - img
+    - text: Work
+  - tab "Conversations" [selected]
+- button "Show terminal panel"
+- button "Open right sidebar"
+- tabpanel "Conversations":
+  - text: {{greeting}}
+  - textbox "Describe what you want to build"
+  - button "Commands":
+    - img
+  - 'button "Access mode, current: Workspace Write"': Workspace Write
+  - button "Select model, current DeepSeek-V4-Flash":
+    - text: DeepSeek-V4-Flash
+    - img
+  - button "Send message" [disabled]

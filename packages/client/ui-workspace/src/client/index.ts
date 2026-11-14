@@ -12,6 +12,7 @@ import type { WorkspaceBrowserInjected, WorkspacePickerInjected } from './contra
 import { createWorkspaceViewStore } from './stores.ts'
 import { WorkspaceBrowser } from './WorkspaceBrowser.tsx'
 import { WorkspacePicker } from './WorkspacePicker.tsx'
+import { NewConversationModeSwitch } from './NewConversationModeSwitch.tsx'
 import { getRemoteSshBridge } from './remote.ts'
 import { en, zh, type WorkspaceKey } from './locales.ts'
 
@@ -44,6 +45,8 @@ export const inject = ['slots', 'layout', 'sessions', 'workspaces', 'locale', 'c
 export function apply(ctx: ClientContext): void {
   const connection = ctx.get('connection') as ConnectionHandle
   const hostDescription = connection.hostDescription
+  // 两个根作用域入口共用同一份浏览 store；页面模式仍由新对话 owner 单独持有。
+  const viewStore = createWorkspaceViewStore()
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-workspace: dictionaries')
 
   // 桌面端可用已保存的凭据恢复远端连接；普通 Web 没有 preload 桥，不注册该服务。
@@ -112,7 +115,7 @@ export function apply(ctx: ClientContext): void {
   })
   const pickerInjected = (): WorkspacePickerInjected => ({
     createWorkspace: input => ctx.workspaces.create(input),
-    startSessionWithoutWorkspace: () => {
+    startUnscopedSession: () => {
       ctx.layout.beginNewConversation()
       return ctx.workspaces.startSessionWithoutWorkspace()
     },
@@ -124,12 +127,17 @@ export function apply(ctx: ClientContext): void {
     {
       name: 'sidebar.workspaces',
       children: { 'sidebar.workspaces.directoryFlow': { kind: 'single', scope: 'root' } },
-      store: createWorkspaceViewStore(),
+      store: viewStore,
       inject: browserInjected,
       locale: NS,
     },
     WorkspaceBrowser,
   ))
+  ctx.slots.inject('conversation.hero.mode', () => ctx.slots.register({
+    name: 'conversation.hero.mode',
+    store: viewStore,
+    locale: NS,
+  }, NewConversationModeSwitch))
   ctx.slots.inject('conversation.hero.workspace', () => ctx.slots.register(
     {
       name: 'conversation.hero.workspace',

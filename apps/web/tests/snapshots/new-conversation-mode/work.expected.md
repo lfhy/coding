@@ -1,0 +1,22 @@
+- tablist "New conversation mode":
+  - tab "Work" [selected]:
+    - img
+    - text: Work
+  - tab "Conversations"
+- button "Show terminal panel"
+- button "Open right sidebar"
+- tabpanel "Work":
+  - text: {{greeting}}
+  - button "Minimal mode":
+    - img
+    - text: Minimal mode
+    - img
+  - button "Choose workspace":
+    - img
+    - text: Choose workspace
+    - img
+  - textbox "Choose workspace":
+    - /placeholder: Choose a workspace to start
+  - button "Commands" [disabled]:
+    - img
+  - button "Send message" [disabled]

@@ -81,6 +81,8 @@ export function InputBar({
     activeSession.current = sessionId
     uploadGeneration.current += 1
     filePendingRef.current = false
+    // 常驻输入栏切换所属会话时，同时清除呈现状态，旧上传不能重新锁定新会话。
+    setFilePending(false)
   }
   const toastSeq = useRef(0)
   const showToast = useCallback((text: string) => {

@@ -24,6 +24,7 @@ import type { IConversation } from './service.ts'
 import { ComposerBlockRegistry } from './input/blocks.ts'
 import type { ComposerBlock } from './input/blocks.ts'
 import { InputHub } from './input/hub.ts'
+import { BlankSelection } from './input/blank-selection.ts'
 import { stageConversationFile } from './input/stage-file.ts'
 import { ComposerSubmissionPolicy } from './input/submission-policy.ts'
 import { InputBar } from './skeleton/InputBar.tsx'
@@ -180,6 +181,9 @@ export function apply(ctx: Context): void {
   // The per-session input machine registry (SessionInputResolver face; published as
   // ctx.conversation.input by the service below sharing this one instance).
   const inputHub = new InputHub(ctx, t)
+  const blankSelection = new BlankSelection(sessions, workspaces, inputHub, layout,
+    async (sessionId) => { await ctx.serial('conversation/prepare-standalone', sessionId) })
+  ctx.effect(() => blankSelection.abort, 'ui-conversation: blank selection')
 
   // The composer-block registry: a plugin that knows a session cannot send —
   // ui-model-selection, when no adapter serves the session's route — raises a block
@@ -207,6 +211,7 @@ export function apply(ctx: Context): void {
   // frame while strict session slots fill only their session-bound regions.
   slots.register({
     name: 'conversation',
+    sessionIdentity: 'entry',
     locale: NS,
     children: {
       'conversation.session': { kind: 'single', scope: 'session' },
@@ -221,31 +226,16 @@ export function apply(ctx: Context): void {
       'conversation.input.right': { kind: 'list', scope: 'session' },
       'conversation.hero.brand.mark': { kind: 'single', scope: 'root' },
       'conversation.hero.workspace': { kind: 'single', scope: 'root' },
+      'conversation.hero.mode': { kind: 'single', scope: 'root' },
       'conversation.hero.git': { kind: 'single', scope: 'root' },
       'conversation.hero.actions': { kind: 'list', scope: 'root' },
       'conversation.hero.agentPreset': { kind: 'single', scope: 'root' },
     },
     inject: (sessionId: SessionId | undefined): ConversationInjected => ({
       hooks: { composerBlock: sessionId === undefined ? ABSENT_BLOCK : composerBlocks.storeFor(sessionId) },
-      selectWorkspace: async (workspaceId) => {
-        const nextId = await workspaces.connectWorkspace(workspaceId)
-        if (sessionId !== undefined && nextId !== sessionId) {
-          const from = inputHub.shell(sessionId)
-          const draft = from.snapshot.draft
-          const imageIds = from.snapshot.imageIds
-          const next = inputHub.shell(nextId)
-          if (imageIds.length === 0 || next.addImages(imageIds)) {
-            if (draft !== '') {
-              next.setDraft(draft)
-              from.setDraft('')
-            }
-            if (imageIds.length > 0) {
-              for (const id of imageIds) from.removeImage(id)
-            }
-          }
-        }
-        sessions.open(nextId)
-      },
+      selectWorkspace: workspaceId => blankSelection.workspace(sessionId, workspaceId),
+      selectWithoutWorkspace: () => blankSelection.withoutWorkspace(sessionId),
+      abortBlankSelection: blankSelection.abort,
     }),
   }, ConversationRoot)
 
@@ -369,6 +359,7 @@ export function apply(ctx: Context): void {
   // observableHook caching and hook order stay stable across transitions).
   slots.register({
     name: 'conversation.composer.bar',
+    sessionIdentity: 'entry',
     locale: NS,
     // The two named control seats in the bar's tool row (plan beside the
     // access control, model right); empty until their owning plugins

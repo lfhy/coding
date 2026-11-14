@@ -6,6 +6,7 @@ import { apply, inject } from 'coding-client-ui-workspace/client'
 import type { WorkspaceBrowserInjected, WorkspacePickerInjected } from 'coding-client-ui-workspace/client'
 import { WorkspaceBrowser } from '../src/client/WorkspaceBrowser.tsx'
 import { WorkspacePicker } from '../src/client/WorkspacePicker.tsx'
+import { NewConversationModeSwitch } from '../src/client/NewConversationModeSwitch.tsx'
 
 async function bench() {
   const ctx = new Context()
@@ -46,7 +47,7 @@ async function bench() {
   }
 }
 
-type HoleName = 'sidebar.workspaces' | 'conversation.hero.workspace' | 'conversation.empty.workspace'
+type HoleName = 'sidebar.workspaces' | 'conversation.hero.workspace' | 'conversation.empty.workspace' | 'conversation.hero.mode'
 
 /** Declare any subset of the holes with a single root registration ('root' is a single slot). */
 function declare(slots: SlotRegistry, ...names: HoleName[]): () => void {
@@ -121,7 +122,7 @@ describe('ui-workspace apply', () => {
     const picker = (b.slots.entries('conversation.hero.workspace')[0]!.inject as () => WorkspacePickerInjected)()
     await picker.createWorkspace({ path: '/tmp/project' })
     expect(b.create).toHaveBeenCalledWith({ path: '/tmp/project' })
-    await picker.startSessionWithoutWorkspace()
+    await picker.startUnscopedSession()
     expect(b.startSessionWithoutWorkspace).toHaveBeenCalledOnce()
     expect(b.beginNewConversation).toHaveBeenCalledTimes(3)
     expect(b.beginNewConversation.mock.invocationCallOrder[2])
@@ -152,6 +153,20 @@ describe('ui-workspace apply', () => {
     dispose()
     expect(browser.hooks.directoryFlow.getSnapshot()).toBe(false)
     unsubscribe()
+  })
+
+  it('顶部入口与侧栏共用视图 store，卸载后撤回入口注册', async () => {
+    const b = await bench()
+    declare(b.slots, 'sidebar.workspaces', 'conversation.hero.mode')
+    const fiber = b.ctx.plugin({ inject: [...inject], apply })
+    await fiber.await()
+    const browser = b.slots.entries('sidebar.workspaces')[0]!
+    const mode = b.slots.entries('conversation.hero.mode')[0]!
+    expect(mode.component).toBe(NewConversationModeSwitch)
+    expect(mode.store).toBe(browser.store)
+    expect(mode.locale).toBe('workspace')
+    await fiber.dispose()
+    expect(b.slots.entries('conversation.hero.mode')).toHaveLength(0)
   })
 
   it('rejects the browser search callback on a runtime business error', async () => {

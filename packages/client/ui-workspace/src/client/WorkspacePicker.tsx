@@ -304,6 +304,7 @@ export function WorkspacePicker({
   onClose,
   createWorkspace,
   startSessionWithoutWorkspace,
+  startUnscopedSession,
   useDirectoryFlow,
   renderSlot,
   t,
@@ -315,7 +316,7 @@ export function WorkspacePicker({
       anchorRef={anchorRef}
       useWorkspaces={useWorkspaces}
       createWorkspace={createWorkspace}
-      startSessionWithoutWorkspace={startSessionWithoutWorkspace}
+      startSessionWithoutWorkspace={startSessionWithoutWorkspace ?? startUnscopedSession}
       useDirectoryFlow={useDirectoryFlow}
       renderDirectoryFlow={owner => renderSlot('conversation.hero.workspace.directoryFlow', owner)}
       selectedId={selectedId}

@@ -30,6 +30,19 @@
   color: var(--dsw-alias-label-primary);
 }
 
+.prominent {
+  gap: 4px;
+  margin-block: 0;
+  border-color: var(--dsw-alias-border-l2);
+  border-radius: 12px;
+}
+
+.prominent .tab {
+  min-width: 96px;
+  padding-inline: 16px;
+  font: var(--dsw-font-s-14);
+}
+
 .tabs .tab:hover:not([aria-selected='true']) {
   background: var(--dsw-alias-interactive-bg-hover);
   color: var(--dsw-alias-label-primary);

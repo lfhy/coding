@@ -1,20 +1,13 @@
 /**
- * Hero-chip controller: which preset the NEXT session gets.
- *
- * The new-session screen has no session, so a pick is staged rather than
- * applied. It reaches a session when one becomes current and is still blank —
- * whether the workspace connect created it or reused an existing blank one,
- * which is why staging cannot simply ride along on `sessions.create`.
- *
- * The stage is forgotten once applied: the next new session starts from the
- * deployment default again, matching the workspace picker beside it.
+ * 新会话的预设暂存与标准对话准备。工作入口的选择只应用一次；独立对话
+ * 在导航前撤回旧选择并等待已发出的切换，避免迟到回执覆盖标准模式。
  */
 
 import type { IApiClient } from 'coding-api-remotes/client'
 import {
   createSnapshotStore, type SessionId, type SnapshotStore,
 } from 'coding-client-runtime/client'
-import { messageOf, presetOptions } from './settings-store.ts'
+import { messageOf, presetOptions, readRoster } from './settings-store.ts'
 import type { AgentPresetOption } from './settings-store.ts'
 
 /** Hero-chip snapshot. */
@@ -62,6 +55,10 @@ export class AgentPresetSeatController {
   /** Set while a pick is waiting for a session; cleared once applied. */
   private staged: string | undefined
   private loadGeneration = 0
+  /** 会话摘要通知可能重入 apply；所有观察者等待同一个在途切换。 */
+  private applying: Promise<void> | undefined
+  /** 准备期间禁止列表订阅应用新暂存；计数覆盖重叠的导航请求。 */
+  private preparing = 0
 
   constructor(
     private readonly api: Pick<IApiClient, 'agentPresets'>,
@@ -148,36 +145,76 @@ export class AgentPresetSeatController {
   }
 
   /**
-   * Hand the staged choice to the current session, if there is one to take it.
-   *
-   * Called both by `select()` and by whoever observes the current session
-   * changing, because the session may appear either before or after the pick.
-   * @returns once the switch settled, or immediately when there is nothing to do.
+   * 将暂存选择交给当前空白会话；列表重入共用在途请求，标准入口准备时不应用。
+   * @returns 切换完成；没有可接收的会话时立即完成。
    */
   async apply(): Promise<void> {
+    if (this.applying !== undefined) return this.applying
+    if (this.preparing > 0) return
     const staged = this.staged
     const session = this.currentSession()
     if (staged === undefined || session === undefined) return
-    // A started session's history was produced under its own composition; the
-    // host refuses the swap, so the stage is no longer meaningful.
-    if (!session.blank || session.agentPreset === staged) {
-      this.staged = undefined
-      return
-    }
+    // 先消费暂存，避免摘要通知或旧请求回执将同一选择再次套到别的会话。
+    this.staged = undefined
+    if (!session.blank || session.agentPreset === staged) return
+    this.applying = this.applyPreset(session.id, staged).finally(() => { this.applying = undefined })
+    return this.applying
+  }
+
+  /** 工作模式的切换错误留在选择器中，不改变既有 select/apply 的失败契约。 */
+  private async applyPreset(sessionId: SessionId, preset: string): Promise<void> {
     this.set({ busy: true, error: null })
     try {
-      const response = await this.api.agentPresets.select({ sessionId: session.id, agentPreset: staged })
-      this.staged = undefined
+      const response = await this.api.agentPresets.select({ sessionId, agentPreset: preset })
       if (!response.result.ok) {
-        this.set({ busy: false, error: response.result.error.message, current: this.fallback })
+        this.set({ error: response.result.error.message, current: this.fallback })
         return
       }
-      // Consumed: the next new session opens on the deployment default again.
-      this.set({ busy: false, current: response.result.value.agentPreset })
-      this.onApplied?.(session.id, response.result.value.agentPreset)
+      this.set({ current: response.result.value.agentPreset })
+      this.onApplied?.(sessionId, response.result.value.agentPreset)
     } catch (error) {
-      this.staged = undefined
-      this.set({ busy: false, error: messageOf(error), current: this.fallback })
+      this.set({ error: messageOf(error), current: this.fallback })
+    } finally {
+      this.set({ busy: this.preparing > 0 })
+    }
+  }
+
+  /**
+   * 在独立对话导航前为明确的目标空白会话准备标准模式，不改部署默认值。
+   * Host 仍负责拒绝已开始的会话；失败必须传给入口，禁止释放草稿与导航锁。
+   * @param sessionId - 入口连接出的目标，不一定是当前会话。
+   * @returns 旧切换已结算且目标已确认标准模式；无预设部署无需切换。
+   */
+  async prepareStandard(sessionId: SessionId): Promise<void> {
+    this.staged = undefined
+    this.loadGeneration++
+    this.preparing++
+    this.set({ busy: true, error: null, introduce: false })
+    try {
+      await this.applying
+      const roster = await readRoster(this.api)
+      if (!roster.ok) throw new Error(roster.error)
+      const { presets } = roster.value
+      const options = presetOptions(presets)
+      this.fallback = presets.find(preset => preset.isDefault)?.id ?? presets[0]?.id ?? ''
+      this.set({ options })
+      if (presets.length === 0) {
+        this.set({ current: '' })
+        return
+      }
+      if (!options.some(option => option.id === 'standard')) {
+        throw new Error('标准模式暂不可用，请检查模式配置后重试。')
+      }
+      const response = await this.api.agentPresets.select({ sessionId, agentPreset: 'standard' })
+      if (!response.result.ok) throw new Error(response.result.error.message)
+      this.set({ current: response.result.value.agentPreset, error: null })
+      this.onApplied?.(sessionId, response.result.value.agentPreset)
+    } catch (error) {
+      this.set({ error: messageOf(error), current: this.fallback })
+      throw error
+    } finally {
+      this.preparing--
+      this.set({ busy: this.preparing > 0 })
     }
   }
 }

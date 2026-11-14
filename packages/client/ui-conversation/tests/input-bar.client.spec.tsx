@@ -429,6 +429,26 @@ describe('image draft rail', () => {
     expect(addFile).toHaveBeenCalledWith(file)
   })
 
+  it('切换会话后再次输入和旧上传结束都不会恢复文件暂存锁定', async () => {
+    let finishOld!: (path: string) => void
+    const oldUpload = new Promise<string>((resolve) => { finishOld = resolve })
+    const result = bench({ draft: '原草稿', addFile: () => oldUpload })
+    act(() => { attachmentOwner(result.slotCalls).onAddFiles([new File(['old'], 'old.pptx')]) })
+    expect(result.view.getByRole('status')).toBeTruthy()
+    result.view.rerender(<InputBar {...result.props} sessionId={'next-session' as SessionId} />)
+    fireEvent.change(result.textarea, { target: { value: '新会话继续输入' } })
+    expect(result.view.queryByRole('status')).toBeNull()
+    expect(result.button.disabled).toBe(false)
+    expect(attachmentOwner(result.slotCalls).canAcceptDrop).toBe(true)
+    await act(async () => {
+      finishOld('/Users/demo/files/uploads/123e4567-e89b-42d3-a456-426614174000-old.pptx')
+      await oldUpload
+    })
+    expect(result.view.queryByRole('status')).toBeNull()
+    expect(result.button.disabled).toBe(false)
+    expect(result.shell.snapshot.draft).toBe('新会话继续输入')
+  })
+
   it('ignores an old session upload and allows a fresh one after switching', async () => {
     let finishOld: (path: string) => void = () => { throw new Error('no upload in flight') }
     const oldUpload = new Promise<string>((resolve) => { finishOld = resolve })

@@ -21,6 +21,7 @@ import type { createChatStore } from '../stores.ts'
 import type { ComposerSubmitGesture, InputSubmitMode } from './composer-submission.ts'
 import type { ChatNode, ChatNodeKind } from './chat-nodes.ts'
 import type { CallId, SelectionTarget, ViewTab } from './views.ts'
+import type { HeroModeOwnerProps } from './hero-mode.ts'
 
 /** Browser-owned image that has not crossed the durable host boundary. */
 export interface ComposerAttachment {
@@ -164,6 +165,8 @@ declare module 'coding-client-ui-slots' {
      * reads the global workspace list.
      */
     'conversation.hero.workspace': { kind: 'single'; scope: 'root'; owner: EmptyWorkspaceOwnerProps }
+    /** 新对话页顶部的发起方式；与问候、输入区及侧栏浏览选择独立。 */
+    'conversation.hero.mode': { kind: 'single'; scope: 'root'; owner: HeroModeOwnerProps }
     /** Hero 工作区行右侧的 Git 分支入口；非 Git 工作区不渲染。 */
     'conversation.hero.git': { kind: 'single'; scope: 'root'; owner: { sessionId?: SessionId | undefined } }
     /** 欢迎页右上角的全局面板操作；由侧边栏和工作台插件各自注册。 */
@@ -499,13 +502,17 @@ export type ConvViewProps = PropsRuntime<'conversation.view'>
 /** The shared chat store handle type declared by the Session header/body, details, and chat-view registrations. */
 export type ChatStore = ReturnType<typeof createChatStore>
 
-/** Business callbacks injected into the conversation slot. */
+/** 常驻对话壳的空白会话动作；失效请求返回 undefined，不导航也不迁移草稿。 */
 export interface ConversationInjected {
   /**
-   * Connect the selected Workspace and open its reusable/new blank session.
-   * When a blank session is already current, carry its draft to the target.
+   * 连接并打开所选工作区的空白会话，成功时迁移当前草稿与图片。
+   * @returns 已打开的会话 id；被新选择、新对话意图或导航取代时返回 undefined。
    */
-  selectWorkspace: (workspaceId: WorkspaceId) => Promise<void>
+  selectWorkspace: (workspaceId: WorkspaceId) => Promise<SessionId | undefined>
+  /** 创建无项目空白会话并迁移草稿；当前已是无项目空白时直接复用。 */
+  selectWithoutWorkspace: () => Promise<SessionId | undefined>
+  /** 撤销本轮页面请求的导航与草稿迁移权，不删除 Host 已成功创建的会话。 */
+  abortBlankSelection: () => void
   /**
    * Framework-bound sources. `composerBlock` is this session's block when a
    * plugin raised one; the reason is the blocker's own localized copy, which
@@ -684,6 +691,7 @@ export type ConversationSlotProps =
     | 'conversation.input.left' | 'conversation.input.right'
     | 'conversation.hero.brand.mark'
     | 'conversation.hero.workspace'
+    | 'conversation.hero.mode'
     | 'conversation.hero.git'
     | 'conversation.hero.actions'
     | 'conversation.hero.agentPreset'
@@ -870,6 +878,8 @@ export interface EmptyWorkspaceOwnerProps {
   anchorRef?: RefObject<HTMLElement>
   /** Currently active workspace (renders a trailing check in the picker list). */
   selectedId?: WorkspaceId | undefined
+  /** Hero 提供受保护的无项目入口；弹层等待失败并保留其恢复操作。 */
+  startSessionWithoutWorkspace?: (() => Promise<void>) | undefined
   onPick: (workspaceId: WorkspaceId) => void
   onClose: () => void
 }

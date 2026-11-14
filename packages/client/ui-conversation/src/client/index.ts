@@ -23,6 +23,7 @@ export type {
   CallId, ChatStoreState, SelectionTarget, ViewTab,
 } from './contract/views.ts'
 export type { ConversationKey } from './locales.ts'
+export type { HeroModeOwnerProps, NewConversationMode } from './contract/hero-mode.ts'
 export type {
   AssistantChatData, ChatNode, ChatNodeDataMap, ChatNodeKind, ManualCompactionChatData,
   RetryChatData, ToolChatData, TurnTailChatData,

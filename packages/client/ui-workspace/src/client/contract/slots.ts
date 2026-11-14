@@ -157,7 +157,7 @@ export type WorkspacePickerInjected = DirectoryPickingInjected & {
   /** 注册已选本地目录；可选标题只在新工作区创建时生效。 */
   createWorkspace: (input: { path: string; title?: string }) => Promise<WorkspaceView>
   /** 创建并打开不归属任何工作区的会话。 */
-  startSessionWithoutWorkspace: () => Promise<void>
+  startUnscopedSession: () => Promise<void>
 }
 
 /**

@@ -275,6 +275,109 @@ describe('reference submission', () => {
   })
 })
 
+describe('包内草稿交接', () => {
+  it('迁移通用引用和图片，目标重新编号且提交使用目标来源，不携带旧命令闭包', async () => {
+    const sourceSubmit = vi.fn()
+    const release = vi.fn()
+    const sink = vi.fn(() => Promise.resolve<SubmitOutcome>({ kind: 'success' }))
+    const serializeReference = vi.fn((_source: string, ref: string) => Promise.resolve(ref))
+    const source = new SessionInputShell({
+      actx: {} as ClientContext, defaultSink: vi.fn(), commandImages: { ...commandImages, release },
+    })
+    const target = new SessionInputShell({
+      actx: {} as ClientContext, defaultSink: sink, commandImages: { ...commandImages, release },
+      inputTriggers: () => ({
+        track: vi.fn(), serializeReference, adjudicate: () => Promise.resolve(undefined),
+      }) as unknown as InputTriggerController,
+    })
+    chip(target)
+    target.setDraft('目标旧草稿')
+    source.setDraft(`/run ${stagedMention} 和 ${spacedMention}`)
+    source.beginCommand({ token: '/run ', submit: sourceSubmit }, {
+      start: 0, end: 5, draftRev: source.snapshot.draftRev,
+    })
+    const end = source.snapshot.draft.length
+    source.pasteBegin(' custom', { start: end, end }, [{
+      start: 1, end: 7,
+      reference: { source: 'custom-source', ref: 'stable-ref', label: '领域引用', clipboardText: 'custom-code' },
+    }])
+    const image = 'transfer-image' as DraftAttachmentId
+    source.addImages([image])
+    const before = source.snapshot
+    expect(source.moveDraftTo(target)).toBe(true)
+    expect(source.snapshot).toMatchObject({ draft: '', imageIds: [], occurrences: [], phase: 'plain' })
+    expect(target.snapshot).toMatchObject({
+      draft: before.draft, imageIds: [image], phase: 'plain',
+      occurrences: before.occurrences.map(({ occurrenceId: _occurrenceId, ...value }) => value),
+    })
+    expect(target.snapshot.occurrences[0]?.occurrenceId).not.toBe(before.occurrences[0]?.occurrenceId)
+    expect(target.snapshot.paste).toBeUndefined()
+    expect(target.snapshot.claim).toBeUndefined()
+    expect(release).not.toHaveBeenCalled()
+    target.submit()
+    await vi.waitFor(() => { expect(sink).toHaveBeenCalledWith(
+      `/run ${stagedMention} 和 ${spacedMention} stable-ref`, [image], 'queue', expect.any(AbortSignal),
+    ) })
+    expect(serializeReference).toHaveBeenCalledWith('custom-source', 'stable-ref', expect.any(AbortSignal))
+    expect(sourceSubmit).not.toHaveBeenCalled()
+  })
+
+  it('镜像首次及重新绑定立即发布完整投影，后续无草稿变化不重复发布', () => {
+    const shell = new SessionInputShell({ actx: {} as ClientContext, defaultSink: vi.fn(), commandImages })
+    shell.setDraft(`读取 ${stagedMention}`)
+    const first = vi.fn()
+    const unbind = shell.bindMirror(first)
+    expect(first).toHaveBeenCalledExactlyOnceWith(`读取 ${stagedMention}`)
+    shell.addImages(['mirror-image' as DraftAttachmentId])
+    expect(first).toHaveBeenCalledOnce()
+    unbind()
+    shell.setDraft('离开页面时更新')
+    const next = vi.fn()
+    shell.bindMirror(next)
+    expect(next).toHaveBeenCalledExactlyOnceWith('离开页面时更新')
+    shell.addImages([])
+    expect(next).toHaveBeenCalledOnce()
+  })
+
+  it.each(['来源', '目标'] as const)('%s 空草稿不覆盖目标原有文字，但图片仍交接', (direction) => {
+    const source = new SessionInputShell({ actx: {} as ClientContext, defaultSink: vi.fn(), commandImages })
+    const target = new SessionInputShell({ actx: {} as ClientContext, defaultSink: vi.fn(), commandImages })
+    if (direction === '目标') source.setDraft('来源文字')
+    else target.setDraft('目标文字')
+    source.addImages(['image' as DraftAttachmentId])
+    expect(source.moveDraftTo(target)).toBe(true)
+    expect(target.snapshot).toMatchObject({ draft: direction === '目标' ? '来源文字' : '目标文字', imageIds: ['image'] })
+  })
+
+  it.each(['来源', '目标'] as const)('%s 的提交锁包括纯图片请求，拒绝迁移且双方不变', async (direction) => {
+    for (const phase of ['adjudicating', 'submitting', 'image-only'] as const) {
+      let settle!: (outcome: SubmitOutcome) => void
+      const busy = new SessionInputShell({
+        actx: {} as ClientContext, commandImages,
+        defaultSink: () => new Promise<SubmitOutcome>((resolve) => { settle = resolve }),
+        ...(phase === 'adjudicating' ? {
+          inputTriggers: () => ({ track: vi.fn(), adjudicate: () => new Promise(() => {}) }) as unknown as InputTriggerController,
+        } : {}),
+      })
+      const idle = new SessionInputShell({ actx: {} as ClientContext, commandImages, defaultSink: vi.fn() })
+      idle.setDraft('不能被改动')
+      idle.addImages(['idle-image' as DraftAttachmentId])
+      busy.addImages(['busy-image' as DraftAttachmentId])
+      if (phase !== 'image-only') busy.setDraft(phase === 'adjudicating' ? '/pending' : '尚未提交完成')
+      busy.submit()
+      expect(busy.snapshot.phase).toBe(phase === 'image-only' ? 'plain' : phase)
+      const beforeBusy = busy.snapshot
+      const beforeIdle = idle.snapshot
+      expect(direction === '来源' ? busy.moveDraftTo(idle) : idle.moveDraftTo(busy)).toBe(false)
+      expect(busy.snapshot).toBe(beforeBusy)
+      expect(idle.snapshot).toBe(beforeIdle)
+      if (phase !== 'adjudicating') { settle({ kind: 'error' }); await Promise.resolve() }
+      busy.dispose()
+      idle.dispose()
+    }
+  })
+})
+
 describe('submit transaction hardening', () => {
   it('sends one image-only prompt per settlement, ignoring Enter during the round-trip', async () => {
     let settle!: (outcome: SubmitOutcome) => void
