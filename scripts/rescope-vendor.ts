@@ -90,6 +90,13 @@ const GENERIC_SKIPS: readonly GenericSkip[] = [
   { file: 'packages/client/ui-agent-preset/tests/locales.client.spec.ts', upstream: ['cordis'] },
   { file: 'packages/client/ui-agent-preset/tests/section.client.spec.tsx', upstream: ['cordis'] },
   { file: 'apps/cli/tests/web-agent-presets.e2e.ts', upstream: ['cordis'] },
+  // 这些断言引用产品预设 id；浏览器技能示例中的同名文本只是页面搜索词。
+  { file: 'apps/cli/tests/codex-preset.spec.ts', upstream: ['cordis'] },
+  { file: 'apps/cli/tests/webclone-preset.spec.ts', upstream: ['cordis'] },
+  { file: 'packages/client/ui-agent-preset/tests/standard-entry.client.spec.ts', upstream: ['cordis'] },
+  { file: 'apps/cli/tests/browser-use-presets.spec.ts', upstream: ['cordis'] },
+  { file: 'packages/skill/skill-browser-use/assets/browser-use.md', upstream: ['cordis'] },
+  { file: 'packages/skill/skill-browser-use/tests/skill-browser-use.spec.ts', upstream: ['cordis'] },
   { file: 'apps/cli/tests/reverse-preset.spec.ts', upstream: ['cordis'] },
   { file: 'apps/web/tests/agent-preset-authoring.e2e.ts', upstream: ['cordis'] },
   { file: 'docs/map/hot.md', upstream: ['cordis'] },
