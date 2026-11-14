@@ -33,8 +33,9 @@ describe('Web 窗口外壳', () => {
     const surface = page.locator('[data-window-content]')
     const sidebar = page.locator('#dsh-layout-sidebar')
     const frame = sidebar.locator('..')
-    expect(await shell.locator('header').textContent()).toBe('')
-    expect((await shell.locator('header').boundingBox())?.height ?? 0).toBe(0)
+    // 外壳没有自己的顶栏：内层表面贴住窗口上沿，导航列顶部只留窗口拖拽垫片。
+    expect(await shell.locator('header').count()).toBe(0)
+    expect(await shell.locator(':scope > [data-window-drag-region]').count()).toBe(1)
     expect(await surface.locator('#dsh-layout-floating-conversation').count()).toBe(1)
     expect(await surface.boundingBox()).toMatchObject({ x: 52, y: 0, width: 1620, height: 992 })
     const logo = page.getByTestId('hero-brand-mark').locator('img')
@@ -95,17 +96,20 @@ describe('Web 窗口外壳', () => {
           viewportHeight: innerHeight,
           surfaceWidth: surface.clientWidth,
           frameWidth: sidebar.parentElement!.clientWidth,
-          safeTop: getComputedStyle(surface).getPropertyValue('--app-safe-area-inset-top').trim(),
+          // 普通 Web 没有原生窗口按钮：导航列顶部的拖拽垫片不占空间。
+          dragInsetHeight: document
+            .querySelector<HTMLElement>('[data-window-shell] > [data-window-drag-region]')!
+            .getBoundingClientRect().height,
         }
       })
       expect(dimensions.documentWidth).toBe(dimensions.viewportWidth)
       expect(dimensions.documentHeight).toBe(dimensions.viewportHeight)
       expect(dimensions.frameWidth).toBe(dimensions.surfaceWidth)
-      expect(dimensions.safeTop).toBe('0px')
+      expect(dimensions.dragInsetHeight).toBe(0)
     }
   })
 
-  it('跟随系统明暗，并只在外层顶栏消费原生窗口安全区', async () => {
+  it('跟随系统明暗，并把原生窗口安全区交给内层各自避让', async () => {
     await page.emulateMedia({ colorScheme: 'light' })
     await expect.poll(() => page.locator('body').getAttribute('data-ds-dark-theme')).toBeNull()
     const light = await page.locator('[data-window-shell]').evaluate(element => getComputedStyle(element).backgroundColor)
@@ -113,23 +117,27 @@ describe('Web 窗口外壳', () => {
     await expect.poll(() => page.locator('body').getAttribute('data-ds-dark-theme')).not.toBeNull()
     const dark = await page.locator('[data-window-shell]').evaluate(element => getComputedStyle(element).backgroundColor)
     expect(dark).not.toBe(light)
-    for (const [top, right, height] of [[38, 0, 38], [0, 138, 44], [0, 0, 0]] as const) {
+    for (const [top, right] of [[38, 0], [0, 138], [0, 0]] as const) {
       const style = await page.addStyleTag({
         content: `:root { --app-safe-area-inset-top: ${top}px; --app-safe-area-inset-right: ${right}px; }`,
       })
       const safeArea = await page.evaluate(() => {
         const surface = document.querySelector<HTMLElement>('[data-window-content]')!
-        const title = document.querySelector<HTMLElement>('[data-window-shell] > header')!
+        const inset = document.querySelector<HTMLElement>('[data-window-shell] > [data-window-drag-region]')!
         const sidebar = document.querySelector<HTMLElement>('#dsh-layout-sidebar')!
+        const sidebarStyle = getComputedStyle(sidebar)
         return {
-          titleLeft: getComputedStyle(title).marginLeft,
-          titleRight: getComputedStyle(title).marginRight,
           contentTop: surface.getBoundingClientRect().top,
-          sidebarSafeTop: getComputedStyle(sidebar).getPropertyValue('--app-safe-area-inset-top').trim(),
+          dragInsetHeight: inset.getBoundingClientRect().height,
+          sidebarSafeTop: sidebarStyle.getPropertyValue('--app-safe-area-inset-top').trim(),
+          sidebarSafeRight: sidebarStyle.getPropertyValue('--app-safe-area-inset-right').trim(),
         }
       })
       expect(safeArea).toEqual({
-        titleLeft: `${top * 2}px`, titleRight: `${right}px`, contentTop: height, sidebarSafeTop: '0px',
+        contentTop: 0,
+        dragInsetHeight: top,
+        sidebarSafeTop: `${top}px`,
+        sidebarSafeRight: `${right}px`,
       })
       await style.evaluate((element: HTMLStyleElement) => { element.remove() })
     }

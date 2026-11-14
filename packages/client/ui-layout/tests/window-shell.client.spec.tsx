@@ -49,7 +49,9 @@ describe('窗口外壳', () => {
     const view = mountShell()
     expect(view.getByRole('navigation', { name: '主导航' })).toBeTruthy()
     expect(view.container.querySelector('[data-window-content] textarea')).toBeTruthy()
-    expect(view.container.querySelector('header')?.textContent).toBe('')
+    // 外壳不再自带顶栏：内层顶到窗口上沿，只留导航列顶部的窗口拖拽垫片。
+    expect(view.container.querySelector('header')).toBeNull()
+    expect(view.container.querySelector('[data-window-shell] > [data-window-drag-region]')).toBeTruthy()
     expect(view.getByRole('button', { name: '回到对话' }).querySelector('img')).toBeNull()
     expect(view.getByRole('button', { name: '回到对话' }).querySelector('svg')).toBeTruthy()
     expect(view.getByRole('navigation').contains(view.getByRole('button', { name: '设置' }))).toBe(true)

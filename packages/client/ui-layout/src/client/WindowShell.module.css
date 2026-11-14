@@ -1,9 +1,9 @@
 /* 外层只负责窗口几何；原有侧栏、工作台和滚动区域留在内层布局。 */
 .shell {
+  position: relative;
   display: grid;
   grid-template-columns: 52px minmax(0, 1fr);
-  /* Web 没有原生窗口按钮，首行归零；桌面沿用壳层注入的安全区。 */
-  grid-template-rows: max(var(--app-safe-area-inset-top, 0px), min(44px, var(--app-safe-area-inset-right, 0px))) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
   box-sizing: border-box;
   width: 100%;
   height: 100dvh;
@@ -15,24 +15,24 @@
   color: var(--dsw-alias-label-primary);
 }
 
-.titlebar {
-  grid-column: 1 / -1;
-  min-width: 0;
-  margin-right: var(--app-safe-area-inset-right, 0px);
-  margin-left: calc(var(--app-safe-area-inset-top, 0px) * 2);
-  user-select: none;
-  -webkit-app-region: no-drag;
+/* 交通灯占住窗口左上角：导航列顶部让出这段高度，留白本身作为原生窗口拖拽区。 */
+.titleDragInset {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 52px;
+  height: var(--app-safe-area-inset-top, 0px);
 }
 
 .navigation {
   grid-column: 1;
-  grid-row: 2;
+  grid-row: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 8px;
   min-height: 0;
-  padding: 8px 0 4px;
+  padding: calc(8px + var(--app-safe-area-inset-top, 0px)) 0 4px;
   -webkit-app-region: no-drag;
 }
 
@@ -72,11 +72,9 @@
 }
 
 .surface {
-  /* 原生按钮的安全区由顶栏一次性消费，内层不重复避让。 */
-  --app-safe-area-inset-top: 0px;
-  --app-safe-area-inset-right: 0px;
+  /* 内层自行用安全区避让原生窗口按钮：侧栏、页头与工作台顶栏各自留出交通灯和 caption 位置。 */
   grid-column: 2;
-  grid-row: 2;
+  grid-row: 1;
   min-width: 0;
   min-height: 0;
   overflow: hidden;
@@ -90,6 +88,10 @@
     grid-template-columns: 44px minmax(0, 1fr);
     padding-right: 4px;
     padding-bottom: 4px;
+  }
+
+  .titleDragInset {
+    width: 44px;
   }
 
   .surface {

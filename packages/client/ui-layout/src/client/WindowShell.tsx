@@ -11,7 +11,7 @@ export type WindowShellProps = Omit<AppFrameProps, 'renderSlot' | '__renders'>
     | 'shell.overlay' | 'shell.page' | 'shell.navigation.entry' | 'shell.settings'>
 
 /**
- * 渲染窗口顶栏、全局导航和常驻的内层布局。
+ * 渲染全局导航和常驻的内层布局；内层顶到窗口上沿，原生窗口按钮由内层各自避让。
  * @param props - 根 slot 派生的布局、会话与本地化能力，原样交给 AppFrame。
  * @returns 固定一屏的窗口外壳；仅内层内容区域拥有滚动。
  */
@@ -21,7 +21,7 @@ export function WindowShell(props: WindowShellProps) {
 
   return (
     <div className={css.shell} data-window-shell>
-      <header className={css.titlebar} data-window-drag-region aria-hidden="true" />
+      <div className={css.titleDragInset} data-window-drag-region aria-hidden="true" />
       <nav className={css.navigation} aria-label={props.t('shell.navigation')}>
         <Tooltip label={props.t('shell.conversation')} delayMs={500}>
           <span className={css.navAnchor}>
