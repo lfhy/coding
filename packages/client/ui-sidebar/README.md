@@ -6,6 +6,8 @@
 
 收起按钮不由壳层渲染：壳层通过浏览区域的 owner share 交出 `collapseSidebar`，ui-workspace 把它排在标题行搜索的左侧；56px rail 没有标题行，展开按钮仍由壳层渲染在新对话图标下方。两个动作都按当前状态收敛（已展开时展开请求是空操作，已收起时收起请求是空操作），因此动画期间的误触不会反转折叠方向。
 
+展开时新对话按钮向内缩进，与下方工作页签的同尺寸图标对齐；不放大下方图标，折叠轨道仍沿用居中的图标盒。
+
 新对话入口会启动运行时的页面局部前端 Session Intent。运行时优先使用作用域操作明确指定的 Workspace，否则使用当前 Session 所属 Workspace，再否则使用最近活跃 Workspace；一个 Workspace 都没有时则清空选择，进入空白 New Session 页面。Workspace 专属控件与共享选择器由 ui-workspace 持有。
 
 侧边栏的收起与展开最终都调用 `ctx.layout.toggleSidebar()`：宽侧栏由浏览区域标题行的按钮触发，收起 rail 中由壳层自己的按钮触发；侧栏图形经 [`ui-icons`](../ui-icons/README.md) 的语义入口渲染。

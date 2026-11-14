@@ -157,8 +157,7 @@
   color: var(--dsw-alias-label-primary);
 }
 
-/* 新对话入口使用 42px 高、12px 圆角、透明底、悬停填充，
-   图标在前、文案随后。展开时占满新对话行，收起后是 rail 中的一个纯图标控件。 */
+/* 新对话入口向内对齐下方分段图标；收起后仍使用原有 rail 的居中图标盒。 */
 .newSession {
   flex: 1;
   min-width: 0;
@@ -167,7 +166,7 @@
   justify-content: flex-start;
   gap: 8px;
   height: 42px;
-  padding: 0 10px 0 8px;
+  padding: 0 10px 0 22px;
   margin: 0;
   box-sizing: border-box;
   border: none;

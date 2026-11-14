@@ -99,7 +99,7 @@ describe('SidebarRoot.module.css', () => {
     expect(declarations('.newSession')?.get('border-radius')).toBe('12px')
     expect(declarations('.newSession')?.get('border')).toBe('none')
     expect(declarations('.newSession')?.get('background')).toBe('transparent')
-    expect(declarations('.newSession')?.get('padding')).toBe('0 10px 0 8px')
+    expect(declarations('.newSession')?.get('padding')).toBe('0 10px 0 22px')
     expect(declarations('.collapsed .newSession')?.get('flex')).toBe('none')
     expect(declarations('.newSessionLabel')?.get('text-overflow')).toBe('ellipsis')
     // 图标贴左，文案紧接图标占满剩余空间（按钮默认居中文字，这里显式左对齐）。

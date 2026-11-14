@@ -49,7 +49,7 @@ workspace 共 276 个包，按 group 分节。每行给出包目录、职责（R
 - `packages/client/locale` — locale 插件：LocaleRuntime——`zh`／`en` 偏好以 `locale.preference` 存储在 `$DSH_HOM… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 7）
 - `packages/client/modules` — 客户端模块系统：Node 内部 ESM loader 的浏览器端对等实现，以惰性 CJS 表实现 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 2）
 - `packages/client/runtime` — 客户端 cordis 启动与不依赖 React 的对象服务：SlotRegistry 包装 SlotCore 并提供 renderer 数据源… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 24）
-- `packages/client/ui-agent-preset` — agent preset 的各个表层：General 设置中的一行，用于选择新建会话据以组装的 preset；新建会话界面上的一枚 chip… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 7）
+- `packages/client/ui-agent-preset` — agent preset 的各个表层：General 设置中的一行，用于选择新建会话据以组装的 preset；新建会话界面上的一枚 chip… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 8）
 - `packages/client/ui-attachment` — 对话 UI 的动态附件呈现插件 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 7）
 - `packages/client/ui-brand-official` — 仅当 `DSH_CLIENT_BUILD_PROFILE` 为 `official` 时… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 2）
 - `packages/client/ui-browser` — 本包只供显式声明并渲染 `workbench.browser` 与 `workbench.browser.tabs` 两个会话级 slot 的自… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 9）
