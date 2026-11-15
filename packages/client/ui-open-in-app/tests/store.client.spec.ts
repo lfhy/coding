@@ -140,7 +140,7 @@ describe('统一工作台标签', () => {
     expect(instance.getSnapshot()).toMatchObject({ view: 'files', activeId: 'file-manager' })
   })
 
-  it('关闭启动标签仅修改本地状态，选择邻项或返回空菜单；返回菜单不创建启动项', () => {
+  it('关闭启动标签仅修改本地状态，选择邻项或回到空功能菜单', () => {
     const instance = createWorkbenchStore().create()
     instance.actions.openLauncher()
     instance.actions.openLauncher()
@@ -152,6 +152,26 @@ describe('统一工作台标签', () => {
     expect(instance.getSnapshot().tabs.map(tab => tab.id)).toEqual(['launcher:2'])
     instance.actions.closeTab('launcher:2')
     expect(instance.getSnapshot()).toMatchObject({ view: 'menu', activeId: null, tabs: [] })
+  })
+
+  it('ensureLauncher 补一个空闲新标签页并复用已有的新标签页', () => {
+    const instance = createWorkbenchStore().create()
+    instance.actions.ensureLauncher()
+    expect(instance.getSnapshot()).toMatchObject({ view: 'menu', activeId: 'launcher:1',
+      tabs: [{ type: 'launcher', id: 'launcher:1', number: 1, fresh: false }] })
+    instance.actions.openFileManager()
+    expect(instance.getSnapshot()).toMatchObject({ view: 'files', activeId: 'file-manager' })
+    instance.actions.ensureLauncher()
+    expect(instance.getSnapshot()).toMatchObject({ view: 'menu', activeId: 'launcher:2' })
+    expect(instance.getSnapshot().tabs.map(tab => tab.id)).toEqual(['file-manager', 'launcher:2'])
+    // 共享 + 新建的入口同样是现成的“新标签页”，不会再补第二个。
+    instance.actions.openFileManager()
+    instance.actions.openLauncher()
+    expect(instance.getSnapshot()).toMatchObject({ view: 'menu', activeId: 'launcher:3',
+      tabs: [{ type: 'file-manager' }, { type: 'launcher', id: 'launcher:3', fresh: true }] })
+    instance.actions.ensureLauncher()
+    expect(instance.getSnapshot()).toMatchObject({ view: 'menu', activeId: 'launcher:3' })
+    expect(instance.getSnapshot().tabs.filter(tab => tab.type === 'launcher')).toHaveLength(1)
   })
 
   it('第三方标签按 kind 去重，保留初始 definitionId 并使每次导航递增 revision', () => {

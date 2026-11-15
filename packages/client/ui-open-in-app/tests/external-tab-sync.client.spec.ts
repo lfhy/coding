@@ -119,6 +119,15 @@ describe('目录驱动的页面标签', () => {
     expect(browserTabs(instance, FIRST)).toHaveLength(1)
   })
 
+  it('打开边栏补的空闲新标签页不按手动新建处理，目录里的新页面照常成为标签', () => {
+    const instance = createRetainedWorkbenchStore().create()
+    instance.actions.ensureLauncher(FIRST)
+    const newPage = page('idle-page', '空闲页面')
+    instance.actions.syncExternalTabs(FIRST, directory([newPage], newPage.address))
+    expect(browserTabs(instance, FIRST)).toMatchObject([{ address: newPage.address, params: { targetId: 'idle-page' } }])
+    expect(instance.getSnapshot().sessions[FIRST]?.tabs.some(tab => tab.type === 'launcher')).toBe(true)
+  })
+
   it('关闭视图后的轮询不复活，目录删除关闭页面，旧页退出再出现可重新打开', () => {
     const instance = createRetainedWorkbenchStore().create()
     const firstPage = page('page-one', '第一页')

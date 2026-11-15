@@ -69,7 +69,8 @@ describe('default workbench with the optional legacy browser plugin', () => {
     expect(workbench.view.queryByRole('button', { name: '浏览器' })).toBeNull()
 
     fireEvent.click(workbench.view.getByRole('button', { name: '添加工作台标签' }))
-    expect(workbench.view.getByRole('tab', { name: '新标签页' }).getAttribute('aria-selected')).toBe('true')
+    const launchers = workbench.view.getAllByRole('tab', { name: '新标签页' })
+    expect(launchers.at(-1)?.getAttribute('aria-selected')).toBe('true')
     expect(workbench.view.getByRole('button', { name: '文件' })).toBeTruthy()
     expect(workbench.view.queryByRole('button', { name: '浏览器' })).toBeNull()
     expect(control).not.toHaveBeenCalled()

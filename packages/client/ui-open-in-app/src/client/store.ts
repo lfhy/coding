@@ -37,6 +37,11 @@ export interface WorkbenchLauncherTab {
   type: 'launcher'
   id: string
   number: number
+  /**
+   * 是否由共享 `+` 新建。新建入口选择带新建动作的引导项时替换自身并创建资源；
+   * 打开右侧边栏时补的空闲入口只查看现有内容，不替用户创建页面或终端。
+   */
+  fresh: boolean
 }
 
 /** 第三方标签的导航参数只接受可序列化的 JSON 值。 */
@@ -119,6 +124,7 @@ type WorkbenchActions = {
   openHistory: (draft: WorkbenchState) => void
   openTerminal: (draft: WorkbenchState) => void
   openLauncher: (draft: WorkbenchState) => void
+  ensureLauncher: (draft: WorkbenchState) => void
   openExternalTab: (draft: WorkbenchState, input: OpenExternalTabInput) => void
   syncExternalTabs: (draft: WorkbenchState, input: SyncExternalTabsInput) => void
   updateExternalTab: (draft: WorkbenchState, tabId: string, update: UpdateExternalTabInput) => void
@@ -249,7 +255,22 @@ const workbenchActions: WorkbenchActions = {
   },
   openLauncher: (draft) => {
     const number = draft.nextLauncherNumber++
-    const tab: WorkbenchLauncherTab = { type: 'launcher', id: `launcher:${String(number)}`, number }
+    const tab: WorkbenchLauncherTab = { type: 'launcher', id: `launcher:${String(number)}`, number, fresh: true }
+    draft.tabs.push(tab)
+    selectTab(draft, tab)
+  },
+  /**
+   * 让功能菜单有承载它的标签：已有任一“新标签页”时切回它，否则补一个空闲入口。
+   * 右侧边栏的显隐由标签数量决定，所以打开边栏和返回功能菜单都走这条路径。
+   */
+  ensureLauncher: (draft) => {
+    const existing = draft.tabs.find((tab): tab is WorkbenchLauncherTab => tab.type === 'launcher')
+    if (existing !== undefined) {
+      selectTab(draft, existing)
+      return
+    }
+    const number = draft.nextLauncherNumber++
+    const tab: WorkbenchLauncherTab = { type: 'launcher', id: `launcher:${String(number)}`, number, fresh: false }
     draft.tabs.push(tab)
     selectTab(draft, tab)
   },
@@ -297,8 +318,9 @@ const workbenchActions: WorkbenchActions = {
   syncExternalTabs: (draft, { kind, definitionId, fallback, pages, firstSeen }) => {
     const current = new Set(pages.map(page => page.address))
     const previous = new Set(draft.knownExternalAddresses[kind] ?? [])
-    const pendingLauncher = draft.tabs.some(tab => tab.type === 'launcher' && tab.id === draft.activeId)
-    const isNewBrowserPage = (address: string) => pendingLauncher && kind === 'ego-browser:watch' && !previous.has(address)
+    // 只有用户正停在共享 + 的新建入口时才按“手动新建”处理；打开边栏补的空闲入口照常接收目录里的新页面。
+    const freshLauncher = draft.tabs.some(tab => tab.type === 'launcher' && tab.id === draft.activeId && tab.fresh)
+    const isNewBrowserPage = (address: string) => freshLauncher && kind === 'ego-browser:watch' && !previous.has(address)
     const existing = draft.tabs.filter((tab): tab is WorkbenchExternalTab => tab.type === 'external' && tab.kind === kind)
     for (const tab of existing) {
       if (tab.address !== fallback.address && !current.has(tab.address)) workbenchActions.closeExternalTab(draft, tab.id)
@@ -432,6 +454,7 @@ export function createRetainedWorkbenchStore(): EngineStoreHandle<RetainedWorkbe
       openHistory: (draft, id: SessionId) => { workbenchActions.openHistory(sessionState(draft, id)) },
       openTerminal: (draft, id: SessionId) => { workbenchActions.openTerminal(sessionState(draft, id)) },
       openLauncher: (draft, id: SessionId) => { workbenchActions.openLauncher(sessionState(draft, id)) },
+      ensureLauncher: (draft, id: SessionId) => { workbenchActions.ensureLauncher(sessionState(draft, id)) },
       openExternalTab: (draft, id: SessionId, input: OpenExternalTabInput) => {
         workbenchActions.openExternalTab(sessionState(draft, id), input)
       },

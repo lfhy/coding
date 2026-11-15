@@ -446,17 +446,21 @@ describe('WorkspaceWorkbench shell', () => {
     expect(screen.getByRole('tab', { name: zh['files.tab'] }).getAttribute('aria-selected')).toBe('true')
   })
 
-  it('starts on a keyboard-operable function menu and only enters wired features', async () => {
+  it('starts on a labeled new-tab page and only enters wired features', async () => {
     const b = bench()
     render(<WorkspaceWorkbench {...b.props} />)
     const menu = screen.getByRole('navigation', { name: zh['workbench.menu.label'] })
     const topbar = screen.getByRole('region', { name: zh['workbench.label'] })
       .querySelector('header') as HTMLElement
-    expect(within(topbar).getAllByRole('button')).toHaveLength(3)
+    expect(within(topbar).getAllByRole('button')).toHaveLength(4)
     expect(within(topbar).queryByRole('button', { name: /文件侧栏/ })).toBeNull()
     expect(within(topbar).getByRole('button', { name: zh['tabs.add'] })).toBeDefined()
     expect(within(topbar).queryByRole('button', { name: zh['workbench.menu.back'] })).toBeNull()
-    expect(b.instance.store.getSnapshot().view).toBe('menu')
+    const named = screen.getByRole('tab', { name: zh['tabs.new'] })
+    expect(named.getAttribute('aria-selected')).toBe('true')
+    expect(document.getElementById(named.getAttribute('aria-controls')!)?.contains(menu)).toBe(true)
+    expect(b.instance.store.getSnapshot()).toMatchObject({ view: 'menu',
+      tabs: [{ type: 'launcher', fresh: false }] })
     expect(b.listFiles).not.toHaveBeenCalled()
     const items = within(menu).getAllByRole('button')
     expect(items.map(item => item.textContent)).toEqual([
@@ -518,25 +522,80 @@ describe('WorkspaceWorkbench shell', () => {
   it('keeps multiple launcher tabs independent and keyboard-selectable, then closes locally', () => {
     const b = bench()
     render(<WorkspaceWorkbench {...b.props} />)
+    // 打开边栏补的空闲入口先占一个标签，共享 + 每次再新增一个。
+    expect(b.instance.getSnapshot().tabs.map(tab => tab.id)).toEqual(['launcher:1'])
     const add = screen.getByRole('button', { name: zh['tabs.add'] })
     fireEvent.click(add)
     fireEvent.click(add)
     expect(document.activeElement).toBe(screen.getByRole('button', { name: zh['workbench.menu.terminal'] }))
     const launchers = screen.getAllByRole('tab', { name: zh['tabs.new'] })
-    expect(launchers).toHaveLength(2)
-    expect(launchers[0]?.getAttribute('aria-selected')).toBe('false')
-    expect(launchers[1]?.getAttribute('aria-selected')).toBe('true')
+    expect(launchers).toHaveLength(3)
+    expect(launchers.map(tab => tab.getAttribute('aria-selected'))).toEqual(['false', 'false', 'true'])
     expect(document.getElementById(launchers[0]!.getAttribute('aria-controls')!)?.hasAttribute('hidden')).toBe(true)
-    fireEvent.keyDown(launchers[1]!, { key: 'Home' })
+    fireEvent.keyDown(launchers[2]!, { key: 'Home' })
     expect(launchers[0]?.getAttribute('aria-selected')).toBe('true')
     expect(document.activeElement).toBe(launchers[0])
     expect(document.getElementById(launchers[0]!.getAttribute('aria-controls')!)?.hasAttribute('hidden')).toBe(false)
-    expect(b.instance.getSnapshot().tabs.map(tab => tab.id)).toEqual(['launcher:1', 'launcher:2'])
+    expect(b.instance.getSnapshot().tabs.map(tab => tab.id)).toEqual(['launcher:1', 'launcher:2', 'launcher:3'])
     fireEvent.click(screen.getAllByRole('button', { name: zh['tabs.close'].replace('{name}', zh['tabs.new']) })[0]!)
     expect(b.instance.getSnapshot()).toMatchObject({ view: 'menu', activeId: 'launcher:2' })
+    fireEvent.click(screen.getAllByRole('button', { name: zh['tabs.close'].replace('{name}', zh['tabs.new']) })[0]!)
+    expect(b.instance.getSnapshot()).toMatchObject({ view: 'menu', activeId: 'launcher:3' })
     fireEvent.click(screen.getByRole('button', { name: zh['tabs.close'].replace('{name}', zh['tabs.new']) }))
     expect(b.instance.getSnapshot()).toMatchObject({ view: 'menu', activeId: null, tabs: [] })
+    expect(b.closeWorkbench).toHaveBeenCalledOnce()
     expect(b.renderSlot).not.toHaveBeenCalled()
+  })
+
+  it('打开右侧边栏时如果没有标签页就弹出新标签页，关闭最后一个标签后收起', () => {
+    const b = bench({ shown: false })
+    const mounted = render(<WorkspaceWorkbench {...b.props} shown={false} />)
+    expect(b.instance.getSnapshot()).toMatchObject({ view: 'menu', tabs: [] })
+    mounted.rerender(<WorkspaceWorkbench {...b.props} shown />)
+    const launcher = screen.getByRole('tab', { name: zh['tabs.new'] })
+    expect(launcher.getAttribute('aria-selected')).toBe('true')
+    expect(b.instance.getSnapshot().tabs).toMatchObject([{ type: 'launcher', fresh: false }])
+    expect(screen.getByRole('navigation', { name: zh['workbench.menu.label'] })).toBeDefined()
+    fireEvent.click(screen.getByRole('button', { name: zh['tabs.close'].replace('{name}', zh['tabs.new']) }))
+    expect(b.closeWorkbench).toHaveBeenCalledOnce()
+    expect(b.instance.getSnapshot()).toMatchObject({ view: 'menu', activeId: null, tabs: [] })
+    // 收起后不会立刻补回新标签页，重新显示才再弹一个。
+    mounted.rerender(<WorkspaceWorkbench {...b.props} shown={false} />)
+    expect(b.instance.getSnapshot().tabs).toEqual([])
+    mounted.rerender(<WorkspaceWorkbench {...b.props} shown />)
+    expect(b.instance.getSnapshot().tabs).toMatchObject([{ type: 'launcher', id: 'launcher:2' }])
+    expect(screen.getByRole('tab', { name: zh['tabs.new'] }).getAttribute('aria-selected')).toBe('true')
+  })
+
+  it('返回功能菜单落到新标签页，重复返回只切回同一个标签', () => {
+    const b = bench()
+    b.instance.actions.openFile({ name: 'note.txt', segments: ['note.txt'] })
+    render(<WorkspaceWorkbench {...b.props} />)
+    fireEvent.click(screen.getByRole('button', { name: zh['workbench.menu.back'] }))
+    expect(b.instance.getSnapshot().tabs.map(tab => tab.type)).toEqual(['file', 'launcher'])
+    expect(screen.getByRole('tab', { name: zh['tabs.new'] }).getAttribute('aria-selected')).toBe('true')
+    fireEvent.click(screen.getByRole('tab', { name: 'note.txt' }))
+    expect(b.instance.getSnapshot().view).toBe('files')
+    fireEvent.click(screen.getByRole('button', { name: zh['workbench.menu.back'] }))
+    expect(b.instance.getSnapshot().tabs.map(tab => tab.type)).toEqual(['file', 'launcher'])
+    expect(screen.getByRole('tab', { name: zh['tabs.new'] }).getAttribute('aria-selected')).toBe('true')
+    expect(b.closeWorkbench).not.toHaveBeenCalled()
+  })
+
+  it('空闲新标签页只查看现有入口，共享 + 的新标签页才允许替用户新建', async () => {
+    const create = vi.fn(async () => ({ address: 'sidebar://ego-browser%3Awatch/new-target' }))
+    const b = bench({ externalDefinitions: [{ id: 'ego-browser', kind: 'ego-browser:watch', multiple: true,
+      title: () => 'Agent 浏览器', guide: [{ id: 'watch', order: 10, title: () => 'Agent 浏览器', create }] }] })
+    render(<WorkspaceWorkbench {...b.props} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Agent 浏览器' }))
+    expect(create).not.toHaveBeenCalled()
+    expect(b.openSidebarTab).toHaveBeenCalledExactlyOnceWith(SESSION, 'ego-browser:watch')
+    fireEvent.click(screen.getByRole('button', { name: zh['tabs.add'] }))
+    const launcher = b.instance.getSnapshot().activeId ?? ''
+    fireEvent.click(screen.getByRole('button', { name: 'Agent 浏览器' }))
+    await waitFor(() => { expect(create).toHaveBeenCalledOnce() })
+    expect(b.openCreatedSidebarTab).toHaveBeenCalledWith(SESSION,
+      'ego-browser:watch', 'sidebar://ego-browser%3Awatch/new-target', launcher, undefined)
   })
 
   it('scrolls the selected launcher into view without stealing focus from its menu', () => {
@@ -628,16 +687,18 @@ describe('WorkspaceWorkbench shell', () => {
     expect(b.closeWorkbench).toHaveBeenCalledExactlyOnceWith(SESSION)
   })
 
-  it('工作台已隐藏时清空标签不再重复收起，重新打开仍先显示功能菜单', () => {
+  it('工作台已隐藏时清空标签不再重复收起，重新打开先弹出新标签页', () => {
     const b = bench({ shown: false })
     b.instance.actions.openFileManager()
-    render(<WorkspaceWorkbench {...b.props} shown={false} />)
+    const mounted = render(<WorkspaceWorkbench {...b.props} shown={false} />)
     act(() => { b.instance.actions.closeTab('file-manager') })
     expect(b.closeWorkbench).not.toHaveBeenCalled()
     expect(b.instance.getSnapshot()).toMatchObject({ view: 'menu', activeId: null, tabs: [] })
+    mounted.rerender(<WorkspaceWorkbench {...b.props} shown />)
+    expect(b.instance.getSnapshot().tabs).toMatchObject([{ type: 'launcher', fresh: false }])
   })
 
-  it('切换会话不因新会话尚无标签而收起右侧边栏', () => {
+  it('切换会话不因新会话尚无标签而收起右侧边栏，而是给它补一个新标签页', () => {
     const other = 'other-session' as SessionId
     const b = bench()
     b.instance.actions.openFileManager()
@@ -647,6 +708,9 @@ describe('WorkspaceWorkbench shell', () => {
         selector({ ids: [SESSION, other], current: other }) } as WorkspaceWorkbenchProps
     mounted.rerender(<WorkspaceWorkbench {...switched} />)
     expect(b.closeWorkbench).not.toHaveBeenCalled()
+    const launchers = screen.getAllByRole('tab', { name: zh['tabs.new'] })
+    expect(launchers).toHaveLength(1)
+    expect(launchers[0]?.getAttribute('aria-selected')).toBe('true')
   })
 
   it('窄屏预览独占内容，返回文件管理器仍保留目录筛选与展开', async () => {

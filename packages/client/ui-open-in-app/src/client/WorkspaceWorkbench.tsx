@@ -80,7 +80,9 @@ export type WorkspaceWorkbenchProps =
   & PropsLocale<typeof NS>
   & InjectFace<WorkspaceWorkbenchInjected>
 
-type WorkbenchActions = Omit<BoundActions<ReturnType<typeof createWorkbenchStore>>, 'activateFile' | 'closeFile'>
+/** 工作台视图可调用的标签动作；直接切视图而不经过标签由 store 内部持有。 */
+type WorkbenchActions = Omit<BoundActions<ReturnType<typeof createWorkbenchStore>>,
+  'activateFile' | 'closeFile' | 'setView'>
 type WorkbenchViewProps = Pick<WorkspaceWorkbenchProps, 'shown' | 'fullscreen' | 'bottomOpen' | 't' | 'renderSlot'> & {
   sessionId: SessionId
   narrow: boolean
@@ -447,7 +449,6 @@ export function WorkspaceWorkbench(props: WorkspaceWorkbenchProps): React.JSX.El
   const viewProps = useMemo(() => {
     if (sessionId === undefined) return undefined
     const actions: WorkbenchActions = {
-      setView: (view) => { props.actions.setView(sessionId, view) },
       openFile: (file) => { props.actions.openFile(sessionId, file) },
       openFileManager: () => { props.actions.openFileManager(sessionId) },
       openHistory: () => { props.actions.openHistory(sessionId) },
@@ -456,6 +457,7 @@ export function WorkspaceWorkbench(props: WorkspaceWorkbenchProps): React.JSX.El
         props.actions.openTerminal(sessionId)
       },
       openLauncher: () => { props.actions.openLauncher(sessionId) },
+      ensureLauncher: () => { props.actions.ensureLauncher(sessionId) },
       openExternalTab: (input) => { props.actions.openExternalTab(sessionId, input) },
       syncExternalTabs: (input) => { props.actions.syncExternalTabs(sessionId, input) },
       updateExternalTab: (tabId, update) => { props.actions.updateExternalTab(sessionId, tabId, update) },
@@ -543,25 +545,38 @@ function WorkbenchView(props: WorkbenchViewProps): React.JSX.Element {
   const pendingFocus = useRef<'menu' | 'return' | null>(null)
   const previousView = useRef(view)
   /**
-   * 当前 Session 的标签从有到无时收起右侧边栏：用户的关闭动作、外部页面目录同步移除和
-   * 定义卸载共用同一条规则。组件按 Session 重挂载，切换会话不会把新会话的空标签当成清空；
-   * 打开一个本来就没有标签的工作台也保留功能菜单。
+   * 右侧边栏只在有标签页时可见，功能菜单页本身也是一个“新标签页”标签。
+   * 当前 Session 的标签从有到无时收起右侧边栏——用户的关闭动作、外部页面目录同步移除和定义卸载
+   * 共用同一条规则，本次清空因此不再补新标签页；反过来，显示中的工作台没有标签页却停在功能菜单时
+   * 补一个新标签页，覆盖首次打开、重新打开和切换到这个尚无标签的 Session。
+   * 组件按 Session 重挂载，所以 `tabCountSeen` 只比较本 Session 的标签数。
    */
   const tabCountSeen = useRef(tabs.length)
+  const collapsedEmpty = useRef(false)
   useEffect(() => {
     const previousCount = tabCountSeen.current
     tabCountSeen.current = tabs.length
-    if (previousCount === 0 || tabs.length > 0 || !shown) return
-    closeWorkbench()
-  }, [closeWorkbench, shown, tabs.length])
+    if (!shown) {
+      collapsedEmpty.current = false
+      return
+    }
+    if (previousCount > 0 && tabs.length === 0) {
+      collapsedEmpty.current = true
+      closeWorkbench()
+      return
+    }
+    if (tabs.length > 0 || collapsedEmpty.current || view !== 'menu') return
+    actions.ensureLauncher()
+  }, [actions, closeWorkbench, shown, tabs.length, view])
   const showFiles = useCallback((): void => {
     pendingFocus.current = 'return'
     actions.openFileManager()
   }, [actions])
+  /** 返回功能菜单落到新标签页：已有“新标签页”就切回去，否则补一个空闲入口。 */
   const showMenu = useCallback((): void => {
     pendingFocus.current = 'menu'
     setGuideError(null)
-    actions.setView('menu')
+    actions.ensureLauncher()
   }, [actions])
   useEffect(() => () => { pendingCreate.current = null; pendingCreateSession.current = null }, [])
   const showLauncher = useCallback((): void => {
@@ -824,7 +839,8 @@ function WorkbenchView(props: WorkbenchViewProps): React.JSX.Element {
                   disabled={!available || creating !== null} title={!available ? t('workbench.menu.unavailable') : undefined}
                   onClick={() => {
                     if (pendingCreate.current !== null) return
-                    if (active?.type === 'launcher' && entry.create !== undefined) {
+                    // 只有共享 + 新建的入口替用户创建资源；打开边栏补的空闲入口和普通菜单一样查看现有内容。
+                    if (active?.type === 'launcher' && active.fresh && entry.create !== undefined) {
                       const launcherId = active.id
                       pendingCreate.current = launcherId
                       pendingCreateSession.current = props.sessionId
