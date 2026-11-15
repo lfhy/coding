@@ -72,3 +72,15 @@
   line-height: 18px;
   overflow-wrap: anywhere;
 }
+
+/* 保存路径行：输入框占满剩余宽度，“选择目录”按钮固定在右侧不换行。 */
+.pathRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.pathBrowse {
+  white-space: nowrap;
+}

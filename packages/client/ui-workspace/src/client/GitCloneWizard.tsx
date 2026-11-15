@@ -2,7 +2,8 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import clsx from 'clsx'
 import {
-  Button, IconCloseOutline16, IconDataOutline16, Input, Modal, IconSettingsOutline16,
+  Button, IconCloseOutline16, IconDataOutline16, IconFolderOpenOutline16, Input, Modal,
+  IconSettingsOutline16,
 } from 'coding-client-ui-primitives'
 import type { WorkspaceId, WorkspaceView } from 'coding-client-runtime/client'
 import { GitCloneAuthRequired } from './contract/slots.ts'
@@ -34,6 +35,11 @@ export interface GitCloneWizardProps {
   forgetGitCredentials: (ref: string) => Promise<void>
   /** 选中新建的工作区。 */
   onPick: (workspaceId: WorkspaceId) => void
+  /**
+   * 打开目录选择流程，选中的绝对路径交给 `applyPath`。省略时不显示“选择目录”入口
+   * （部署没有占用目录流程槽位时）。
+   */
+  requestDirectory?: ((applyPath: (path: string) => void) => void) | undefined
 }
 
 const cloneSteps = [
@@ -63,7 +69,7 @@ function defaultClonePath(url: string): string {
  * @returns 配置/进度两步对话框，以及独立于它的认证弹窗。
  */
 export function GitCloneWizard({
-  open, onClose, t, createWorkspace, cloneRepository, forgetGitCredentials, onPick,
+  open, onClose, t, createWorkspace, cloneRepository, forgetGitCredentials, onPick, requestDirectory,
 }: GitCloneWizardProps) {
   const [step, setStep] = useState<CloneStep>('config')
   const [url, setUrl] = useState('')
@@ -282,18 +288,37 @@ export function GitCloneWizard({
                   </div>
                   <div className={remoteCss.field}>
                     <label className={remoteCss.label} htmlFor="git-clone-path">{t('picker.clone.field.path')}</label>
-                    <Input
-                      id="git-clone-path"
-                      className={remoteCss.input ?? ''}
-                      autoComplete="off"
-                      spellCheck={false}
-                      value={path}
-                      placeholder={t('picker.clone.placeholder.path')}
-                      onChange={(event) => {
-                        setPathTouched(true)
-                        setPath(event.target.value)
-                      }}
-                    />
+                    <div className={css.pathRow}>
+                      <Input
+                        id="git-clone-path"
+                        className={remoteCss.input ?? ''}
+                        autoComplete="off"
+                        spellCheck={false}
+                        value={path}
+                        placeholder={t('picker.clone.placeholder.path')}
+                        onChange={(event) => {
+                          setPathTouched(true)
+                          setPath(event.target.value)
+                        }}
+                      />
+                      {requestDirectory !== undefined && (
+                        <Button
+                          variant="outline"
+                          className={css.pathBrowse}
+                          disabled={cloning}
+                          icon={<IconFolderOpenOutline16 size={16} />}
+                          onClick={() => {
+                            // 选中的目录直接成为保存路径；向导保持打开，用户可继续改。
+                            requestDirectory((picked) => {
+                              setPathTouched(true)
+                              setPath(picked)
+                            })
+                          }}
+                        >
+                          {t('picker.clone.browse')}
+                        </Button>
+                      )}
+                    </div>
                   </div>
                   <details className={css.advanced}>
                     <summary className={css.advancedSummary}>{t('picker.clone.advanced')}</summary>

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type {
   SessionListState, WorkspaceId, WorkspaceListState, WorkspaceView,
 } from 'coding-client-runtime/client'
@@ -86,6 +86,7 @@ function mountWizard(
   options: {
     createWorkspace?: CreateWorkspace
     forgetGitCredentials?: ForgetCredentials
+    requestDirectory?: (applyPath: (path: string) => void) => void
   } = {},
 ) {
   const onClose = vi.fn()
@@ -101,6 +102,7 @@ function mountWizard(
       createWorkspace={createWorkspace}
       cloneRepository={cloneRepository}
       forgetGitCredentials={forgetGitCredentials}
+      {...options.requestDirectory === undefined ? {} : { requestDirectory: options.requestDirectory }}
     />,
   )
   return { onClose, onPick, createWorkspace, forgetGitCredentials }
@@ -115,6 +117,31 @@ function submitClone(): void {
 }
 
 describe('Git clone wizard', () => {
+  it('fills the save path from the directory flow instead of overwriting it later', () => {
+    let applyPath: ((path: string) => void) | undefined
+    const requestDirectory = vi.fn((apply: (path: string) => void) => { applyPath = apply })
+    mountWizard(
+      vi.fn<CloneRepository>(async () => ({ path: '/home/coding/demo', branch: 'main', mechanism: 'cli' })),
+      { requestDirectory },
+    )
+    const pathField = (): HTMLInputElement => screen.getByLabelText<HTMLInputElement>(t('picker.clone.field.path'))
+    fillTarget()
+    expect(pathField().value).toBe('~/demo')
+
+    fireEvent.click(screen.getByRole('button', { name: t('picker.clone.browse') }))
+    expect(requestDirectory).toHaveBeenCalledOnce()
+    // 选中的绝对路径写回字段，并按“用户已编辑”处理：再改地址也不覆盖。
+    act(() => { applyPath?.('/Users/me/work/demo') })
+    expect(pathField().value).toBe('/Users/me/work/demo')
+    fillTarget('https://github.com/acme/other.git')
+    expect(pathField().value).toBe('/Users/me/work/demo')
+  })
+
+  it('hides the directory entry when no flow occupies the slot', () => {
+    mountWizard(vi.fn<CloneRepository>(async () => ({ path: '/home/coding/demo', branch: 'main', mechanism: 'cli' })))
+    expect(screen.queryByRole('button', { name: t('picker.clone.browse') })).toBeNull()
+  })
+
   it('opens from the picker menu with the repository and save-path fields', () => {
     const onClose = vi.fn()
     const renderSlot = flowSlot()
@@ -142,6 +169,41 @@ describe('Git clone wizard', () => {
     expect(screen.getByLabelText(t('picker.clone.field.url'))).toBeTruthy()
     expect(screen.getByLabelText(t('picker.clone.field.path'))).toBeTruthy()
     expect(screen.getByRole('navigation', { name: t('picker.clone.steps.aria') })).toBeTruthy()
+  })
+
+  it('opens the shared directory flow for the clone save path', async () => {
+    const probe: { owner: DirectoryFlowOwnerProps | undefined } = { owner: undefined }
+    const renderSlot = ((_name: string, owner: DirectoryFlowOwnerProps) => {
+      probe.owner = owner
+      return owner.open ? <div data-testid="directory-flow" /> : null
+    }) as never
+    const useDirectoryFlow = bindSnapshotSelector({ getSnapshot: () => true, subscribe: () => () => {} })
+    render(
+      <WorkspacePicker
+        open
+        anchorRef={anchor()}
+        useSessions={hook(sessions)}
+        useWorkspaces={hook(workspaceState([]))}
+        onPick={vi.fn()}
+        onClose={vi.fn()}
+        createWorkspace={vi.fn()}
+        startUnscopedSession={vi.fn(async () => {})}
+        cloneRepository={vi.fn(async () => ({ path: '/Users/me/work/demo', branch: 'main', mechanism: 'cli' as const }))}
+        forgetGitCredentials={vi.fn(async () => {})}
+        useDirectoryFlow={useDirectoryFlow}
+        renderSlot={renderSlot}
+        t={t}
+      />,
+    )
+    fireEvent.click(screen.getByRole('menuitem', { name: t('picker.clone.menu') }))
+    fillTarget()
+    fireEvent.click(screen.getByRole('button', { name: t('picker.clone.browse') }))
+    expect(screen.getByTestId('directory-flow')).toBeTruthy()
+    await act(async () => { probe.owner?.onPicked('/Users/me/work/demo') })
+    // 只是挑路径：不注册工作区，向导仍在，字段已更新。
+    expect(screen.queryByTestId('directory-flow')).toBeNull()
+    expect(screen.getByRole('dialog', { name: t('picker.clone.title') })).toBeTruthy()
+    expect(screen.getByLabelText<HTMLInputElement>(t('picker.clone.field.path')).value).toBe('/Users/me/work/demo')
   })
 
   it('derives the save path from the URL until the operator edits it', () => {

@@ -109,6 +109,8 @@ export function WorkspacePickFlow({
   const [folderErrorOpen, setFolderErrorOpen] = useState(false)
   const [folderError, setFolderError] = useState<string | null>(null)
   const [flowOpen, setFlowOpen] = useState(false)
+  // 目录流程的两个用途：注册工作区，或替克隆向导挑保存路径。挂起回调非空即后者。
+  const pendingClonePath = useRef<((path: string) => void) | undefined>(undefined)
   const [pickingFolder, setPickingFolder] = useState(false)
   const [query, setQuery] = useState('')
   const [remoteOpen, setRemoteOpen] = useState(false)
@@ -153,8 +155,18 @@ export function WorkspacePickFlow({
     onClose()
     setFolderErrorOpen(false)
     setFolderError(null)
+    pendingClonePath.current = undefined
     setFlowOpen(true)
   }, [onClose])
+
+  /**
+   * 让克隆向导借用同一个目录流程：选中的路径交回调用方，而不是直接注册工作区。
+   * @param applyPath - 选中目录后的落点，由向导提供。
+   */
+  const requestClonePath = useCallback((applyPath: (path: string) => void): void => {
+    pendingClonePath.current = applyPath
+    setFlowOpen(true)
+  }, [])
 
   const startWithoutProject = (): void => {
     if (startSessionWithoutWorkspace === undefined || startingWithoutProject) return
@@ -223,11 +235,23 @@ export function WorkspacePickFlow({
     open: flowOpen,
     busy: pickingFolder,
     onPicked: (path) => {
+      const applyClonePath = pendingClonePath.current
+      if (applyClonePath !== undefined) {
+        // 向导只是要一个目录：交回路径即可，不注册工作区，也不关闭向导。
+        pendingClonePath.current = undefined
+        setFlowOpen(false)
+        applyClonePath(path)
+        return
+      }
       setPickingFolder(true)
       void adoptDirectory(path).finally(() => { setPickingFolder(false) })
     },
-    onCancel: () => { setFlowOpen(false) },
+    onCancel: () => {
+      pendingClonePath.current = undefined
+      setFlowOpen(false)
+    },
     onError: (message) => {
+      pendingClonePath.current = undefined
       setFlowOpen(false)
       setFolderError(message)
       setFolderErrorOpen(true)
@@ -317,6 +341,7 @@ export function WorkspacePickFlow({
           cloneRepository={cloneRepository}
           forgetGitCredentials={forgetGitCredentials}
           onPick={onPick}
+          {...flowAvailable ? { requestDirectory: requestClonePath } : {}}
         />
       )}
       <Modal
