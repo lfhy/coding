@@ -88,7 +88,7 @@ export function GitOverview({
   const branchMenu = useRef<HTMLDivElement>(null)
   const [position, setPosition] = useState<CSSProperties | null>(null)
   const [branchPosition, setBranchPosition] = useState<CSSProperties | null>(null)
-  const [busy, setBusy] = useState<'push' | 'pull' | 'resolve' | 'checkout' | 'forget' | null>(null)
+  const [busy, setBusy] = useState<'push' | 'pull' | 'refresh' | 'resolve' | 'checkout' | 'forget' | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [conflict, setConflict] = useState(false)
   const [toast, setToast] = useState<{ seq: number; text: string } | null>(null)
@@ -281,6 +281,22 @@ export function GitOverview({
     }
   }
 
+  const refresh = async () => {
+    setBusy('refresh')
+    setError(null)
+    setAuthError(null)
+    setConflict(false)
+    try {
+      const next = await status(sessionId)
+      setGit(next)
+      onBranchChange?.(next?.branch ?? null)
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason))
+    } finally {
+      setBusy(null)
+    }
+  }
+
   const solve = async () => {
     setBusy('resolve')
     setError(null)
@@ -391,6 +407,10 @@ export function GitOverview({
             <button type="button" disabled={busy !== null} onClick={() => { void run('pull') }}>
               <IconDownloadOutline16 aria-hidden="true" />
               {busy === 'pull' ? t('overview.git.pullRunning') : t('overview.git.pull')}
+            </button>
+            <button type="button" disabled={busy !== null} onClick={() => { void refresh() }}>
+              <IconRefreshOutline16 aria-hidden="true" />
+              {busy === 'refresh' ? t('overview.git.refreshRunning') : t('overview.git.refresh')}
             </button>
           </div>
           {conflict && <div role="alert" className={css.feedback}>

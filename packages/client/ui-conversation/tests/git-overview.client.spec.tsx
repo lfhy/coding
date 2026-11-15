@@ -178,7 +178,12 @@ describe('Git overview', () => {
   })
 
   it('pushes, pulls, refreshes status, and notifies outside the card', async () => {
-    const { actions } = fixture()
+    const status = vi.fn<GitOverviewInjected['status']>()
+      .mockResolvedValueOnce(git)
+      .mockResolvedValueOnce(git)
+      .mockResolvedValueOnce(git)
+      .mockResolvedValueOnce({ ...git, ahead: 4, behind: 0 })
+    const { actions } = fixture({ status })
     const layer = await openGit()
     fireEvent.click(within(layer).getByRole('button', { name: '推送' }))
     await waitFor(() => { expect(actions.operate).toHaveBeenCalledWith(sessionId, 'push', undefined) })
@@ -186,6 +191,9 @@ describe('Git overview', () => {
     fireEvent.click(within(layer).getByRole('button', { name: '拉取' }))
     await waitFor(() => { expect(actions.operate).toHaveBeenCalledWith(sessionId, 'pull', undefined) })
     expect(actions.status).toHaveBeenCalledTimes(3)
+    fireEvent.click(within(layer).getByRole('button', { name: '刷新' }))
+    await waitFor(() => { expect(actions.status).toHaveBeenCalledTimes(4) })
+    expect(within(layer).getByText('待推送 4 · 待拉取 0')).toBeTruthy()
   })
 
   it('offers a new conflict-resolution session after a blocked pull', async () => {
