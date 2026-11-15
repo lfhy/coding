@@ -58,6 +58,10 @@ packages/typert/generator/tests/.generated-model-*/
 packages/*/*/src/**/*.js
 packages/*/*/src/**/*.js.map
 packages/*/*/src/**/*.d.ts.map
+# vendored 副本沿用同一规则：vendor 的源码是纯 TypeScript，声明由各自 lib/types 提供。
+vendor/*/src/**/*.js
+vendor/*/src/**/*.js.map
+vendor/*/src/**/*.d.ts.map
 
 # Computer Use helper：本地用 native/macos 的 Swift 源码编译，产物与它的哈希清单不入库。
 packages/computer-use/computer-use/native/macos/bin/
