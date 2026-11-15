@@ -17,6 +17,13 @@ describe('managed files wire', () => {
     expect(fetcher).toHaveBeenCalledWith('/api/files/list?offset=0&limit=50', { method: 'GET', signal })
   })
 
+  it('按文件分类请求无工作区文件', async () => {
+    const fetcher = vi.fn(async (_input: string | URL, _init?: RequestInit) => ({ ok: true, json: async () => ({ items: [], total: 0 }) }))
+    vi.stubGlobal('fetch', fetcher)
+    await listManagedFiles(0, 50, new AbortController().signal, { unscoped: true, category: 'image' })
+    expect(String(fetcher.mock.calls[0]?.[0])).toBe('/api/files/list?offset=0&limit=50&scope=unscoped&category=image')
+  })
+
   it('拒绝非成功 HTTP 状态与格式错误的响应', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false, status: 503 })))
     await expect(listManagedFiles(0, 50, new AbortController().signal)).rejects.toThrow('503')
