@@ -8,34 +8,22 @@
     - img
   - list:
     - listitem:
-      - button "adopted":
-        - img
-        - text: adopted
-        - img
-    - listitem:
-      - button "alpha-ws":
-        - img
-        - text: alpha-ws
-        - img
-    - listitem:
-      - button "beta-ws":
-        - img
-        - text: beta-ws
-        - img
-    - listitem:
       - button "browse-golden":
         - img
         - text: browse-golden
         - img
-    - listitem:
-      - button "same-name":
+      - button "Rename \"browse-golden\"":
         - img
-        - text: same-name
+      - button "Delete \"browse-golden\"":
         - img
     - listitem:
       - button "workspace":
         - img
         - text: workspace
+        - img
+      - button "Rename \"workspace\"":
+        - img
+      - button "Delete \"workspace\"":
         - img
   - list:
     - listitem:
@@ -43,10 +31,18 @@
         - img
         - text: alpha
         - img
+      - button "Rename \"alpha\"":
+        - img
+      - button "Delete \"alpha\"":
+        - img
     - listitem:
       - button "beta":
         - img
         - text: beta
+        - img
+      - button "Rename \"beta\"":
+        - img
+      - button "Delete \"beta\"":
         - img
   - button "New folder":
     - img

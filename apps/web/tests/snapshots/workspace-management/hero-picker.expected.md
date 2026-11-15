@@ -4,6 +4,9 @@
   - menuitem "Open folder":
     - img
     - text: Open folder
+  - menuitem "Open repository":
+    - img
+    - text: Open repository
   - menuitem "Remote connection":
     - img
     - text: Remote connection
