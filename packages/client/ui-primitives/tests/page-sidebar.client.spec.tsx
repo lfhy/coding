@@ -17,7 +17,7 @@ describe('PageSidebar', () => {
     expect(screen.getByRole('complementary', { name: '资料空间' })).toBeTruthy()
     expect(screen.getByText('资料空间')).toBeTruthy()
     const all = screen.getByText('全部').closest('button')
-    expect(all.getAttribute('aria-current')).toBe('true')
+    expect(all?.getAttribute('aria-current')).toBe('true')
     expect(screen.getByText('图片').closest('button')?.getAttribute('aria-current')).toBeNull()
     fireEvent.click(screen.getByText('图片'))
     expect(items[1]?.onSelect).toHaveBeenCalledOnce()

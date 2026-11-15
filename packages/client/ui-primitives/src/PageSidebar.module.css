@@ -16,6 +16,9 @@
   background: var(--dsw-specific-sidebar-fill);
   color: var(--dsw-alias-label-primary);
   font: var(--dsw-font-xs-13);
+  /* 侧栏属于抬升表面，滚动条使用与对话侧栏一致的 l2 配色。 */
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
   /* 与对话侧栏一致：宽度滑动 300ms，宽内容就地淡出 150ms 后才换成图标轨。 */
   transition: width var(--ds-transition-duration-slow) var(--ds-ease-in-out);
 }
