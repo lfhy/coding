@@ -5,8 +5,13 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { CredentialRef } from 'coding-credentials'
 import { afterEach, describe, expect, it } from 'vitest'
-import { gitCredentialRef, parseGitHistory, parseGitHistoryRefs, workspaceGitBranches, workspaceGitCheckout, workspaceGitHistory, workspaceGitPull, workspaceGitPush, workspaceGitStatus } from '../src/workspace-git.ts'
-import type { GitCredentialStore } from '../src/workspace-git.ts'
+import { gitCredentialRef } from 'coding-git'
+import type { GitCredentialStore } from 'coding-git'
+import {
+  cliBranches as workspaceGitBranches, cliCheckout as workspaceGitCheckout, cliHistory as workspaceGitHistory,
+  cliPull as workspaceGitPull, cliPush as workspaceGitPush, cliStatus as workspaceGitStatus,
+  parseGitHistory, parseGitHistoryRefs,
+} from '../src/cli-repository.ts'
 
 const roots: string[] = []
 const signal = new AbortController().signal
@@ -97,7 +102,7 @@ function memoryStore(initial?: string) {
   }
 }
 
-/** 本机存储里一组凭据的编码形式，与 workspace-git 写入的格式一致。 */
+/** 本机存储里一组凭据的编码形式，与 Git seam 写入的格式一致。 */
 function storedValue(host: string, username: string, password: string): string {
   return JSON.stringify({ host, username, password })
 }
@@ -561,7 +566,7 @@ describe('standalone workspace Git', () => {
     git(root, 'update-ref', 'refs/remotes/origin/tracking', feature)
     const nested = join(root, 'nested')
     mkdirSync(nested)
-    const history = await workspaceGitHistory(nested, signal)
+    const history = await workspaceGitHistory(nested, signal, { count: 60 })
     expect(history).toMatchObject({ current: branch, branches: ['feature', branch, 'unused'].sort((a, b) => a.localeCompare(b)), truncated: false })
     expect(history?.commits.map(commit => commit.id).sort()).toEqual([merge, main, feature, base].sort())
     const commitById = new Map(history?.commits.map(commit => [commit.id, commit]))
@@ -579,9 +584,9 @@ describe('standalone workspace Git', () => {
   it('returns empty commits for an unborn local repo and null outside a repository', async () => {
     const empty = temp()
     git(empty, 'init', '-q')
-    const history = await workspaceGitHistory(empty, signal)
+    const history = await workspaceGitHistory(empty, signal, { count: 60 })
     expect(history).toEqual({ commits: [], truncated: false, current: git(empty, 'symbolic-ref', '--short', 'HEAD'), branches: [] })
-    expect(await workspaceGitHistory(temp(), signal)).toBeNull()
+    expect(await workspaceGitHistory(temp(), signal, { count: 60 })).toBeNull()
   })
 
   it('rejects unsafe revisions and count directly before Git interprets them', async () => {
@@ -626,13 +631,13 @@ describe('standalone workspace Git', () => {
     writeFileSync(join(root, '.coding-remote-workspace.json'), JSON.stringify({
       version: 3, remoteRoot: '/srv/project', connectionId: 'connection-1', generation: 1, mode: 'agent',
     }))
-    await expect(workspaceGitHistory(root, signal)).rejects.toMatchObject({ code: 'GIT_REMOTE_UNAVAILABLE' })
+    await expect(workspaceGitHistory(root, signal, { count: 60 })).rejects.toMatchObject({ code: 'GIT_REMOTE_UNAVAILABLE' })
   })
 
   it('honors cancellation before launching Git history', async () => {
     const abort = new AbortController()
     abort.abort()
-    await expect(workspaceGitHistory(repo(), abort.signal)).rejects.toBeDefined()
+    await expect(workspaceGitHistory(repo(), abort.signal, { count: 60 })).rejects.toBeDefined()
   })
 
   it('honors cancellation before launching Git', async () => {

@@ -222,6 +222,9 @@ flowchart LR
   svc_directoryPicker["ctx.directoryPicker<br/>Workspace-directory picking seam"]
   pkg_directory_picker_native["directory-picker-native"]
   pkg_directory_picker_browse["directory-picker-browse"]
+  pkg_git["git"]
+  svc_git["ctx.git<br/>Local repository reads and remote operations"]
+  pkg_git_local["git-local"]
   pkg_webserver["webserver"]
   svc_webServer["ctx.webServer<br/>HTTP route registration"]
   pkg_connection["connection"]
@@ -279,6 +282,8 @@ flowchart LR
   pkg_fs_e2b --> svc_fs
   pkg_fs_local --> svc_fs
   pkg_fs_sandbox --> svc_fs
+  pkg_git --> svc_git
+  pkg_git_local --> svc_git
   pkg_goal --> svc_goals
   pkg_image_gen --> svc_imageGeneration
   pkg_invariants --> svc_invariants
@@ -395,6 +400,7 @@ flowchart LR
   svc_fileLibrary --> pkg_ppt_workbench
   svc_fileLibrary --> pkg_tool_browser
   svc_fs --> pkg_tool_fs
+  svc_git --> pkg_apiproxy
   svc_imageGeneration --> pkg_tool_image_gen
   svc_invariants --> pkg_agent
   svc_invariants --> pkg_agent_loop
@@ -569,6 +575,7 @@ flowchart LR
 | `ctx.proxyPool` | `seam` | [`proxy-pool`](../packages/net/proxy-pool) | - | [`llm-deepseek`](../packages/llm/llm-deepseek), [`llm-opencode`](../packages/llm/llm-opencode), [`web-search-exa`](../packages/web/web-search-exa), [`web-search-perplexity`](../packages/web/web-search-perplexity), [`web-search-deepseek`](../packages/web/web-search-deepseek), [`web-search-duckduckgo`](../packages/web/web-search-duckduckgo), [`web-search-tavily`](../packages/web/web-search-tavily), [`web-search-bing`](../packages/web/web-search-bing), [`web-search-searxng`](../packages/web/web-search-searxng), [`web-search-firecrawl`](../packages/web/web-search-firecrawl), [`web-search-keenable`](../packages/web/web-search-keenable), [`web-search-parallel`](../packages/web/web-search-parallel), [`web-search-anysearch`](../packages/web/web-search-anysearch), [`host-apiproxy`](../packages/host/apiproxy) | - | Owns the optional local proxy frontend, node/group registry, health checks, subscription refresh, and pool-level outbound policy; model channels and search providers resolve their own outbound choice against this service, while the Host API exposes management operations. |
 | `ctx.spillStore` | `seam` | [`spill`](../packages/spill/spill) | [`spill-local`](../packages/spill/spill-local) | [`spill-policy`](../packages/spill/spill-policy) | - | The backend saves oversized tool text and returns a model-facing locator plus retrieval hint; spill-policy is the tools/post-execute consumer that decides when to spill. |
 | `ctx.directoryPicker` | `seam` | `directory-picker` | `directory-picker-native`, `directory-picker-browse` | `apiproxy` | - | Discriminated interaction capability: the native backend opens one OS chooser on the host display, the browse backend serves listing/creation primitives for the in-app browser; dual-face backends fill ui-workspace directory-flow slots from their browser halves (no wire advertisement). |
+| `ctx.git` | `seam` | [`git`](../packages/git/git) | [`git-local`](../packages/git/git-local) | `apiproxy` | - | One implementation per context: the local provider drives the system git binary and falls back to a built-in JavaScript clone when git is not installed; capability() reports which mechanism and operations are available. |
 | `ctx.webServer` | `core` | `webserver` | - | `connection`, `modules`, `hmr` | - | Plain node:http carrier: named-route registry, index transform taps, and the static dist fallback; web-transport plugins register their own routes. |
 | `ctx.clientModules` | `core` | `modules` | - | `hmr` | - | Composes the __DSH_BOOT__ entry graph from an incremental dsh.client scan, serves plugin bundles, and notifies rebuilt/graph-changed subscribers. |
 | `ctx.workflowEngine` | `seam` | [`workflow`](../packages/workflow/workflow) | [`workflow-worker-thread`](../packages/workflow/workflow-worker-thread) | [`tool-workflow`](../packages/workflow/tool-workflow), [`tool-ralph`](../packages/workflow/tool-ralph) | - | One engine per context, as in bash, with no named-provider registry; the general workflow and fixed Ralph consumers start runs whose agent() calls fan out through ctx.subagents. |

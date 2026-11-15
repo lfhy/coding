@@ -77,6 +77,27 @@ export const workspaceGitCheckoutValueSchema = gitStatusSchema satisfies z.ZodTy
 export const workspaceGitPushValueSchema = gitOperationSchema satisfies z.ZodType<Wire<ResponseValue<'workspace.gitPush'>>>
 export const workspaceGitPullValueSchema = gitOperationSchema satisfies z.ZodType<Wire<ResponseValue<'workspace.gitPull'>>>
 
+/** workspace.gitClone 请求：目标目录由客户端先解析，身份与代理都是可选的高级项。 */
+export const workspaceGitCloneRequestSchema = z.strictObject({
+  url: z.string().trim().min(1).max(4096),
+  path: z.string().trim().min(1).max(4096),
+  ref: z.string().trim().min(1).max(1024).optional(),
+  depth: z.number().int().positive().max(100_000).optional(),
+  proxy: z.string().trim().min(1).max(2048).optional(),
+  identity: z.strictObject({
+    name: z.string().trim().min(1).max(1024).optional(),
+    email: z.string().trim().min(1).max(1024).optional(),
+  }).optional(),
+  credentials: gitCredentialsSchema.optional(),
+}) satisfies z.ZodType<Wire<RequestPayload<'workspace.gitClone'>>>
+
+/** workspace.gitClone 响应值：实际目录、检出分支与本次使用的实现。 */
+export const workspaceGitCloneValueSchema = z.strictObject({
+  path: z.string(),
+  branch: z.string().nullable(),
+  mechanism: z.enum(['cli', 'js']),
+}) satisfies z.ZodType<Wire<ResponseValue<'workspace.gitClone'>>>
+
 /** workspace.create 请求：已有目录路径与仅用于新记录的可选非空标题。 */
 export const workspaceCreateRequestSchema = z.object({
   path: z.string(),

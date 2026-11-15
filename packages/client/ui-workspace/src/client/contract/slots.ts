@@ -148,6 +148,46 @@ export type WorkspaceBrowserProps =
   & PropsHooks<WorkspaceBrowserInjected['hooks']>
   & PropsLocale<'workspace'>
 
+/** 克隆仓库的一次请求；保存路径允许以 `~` 开头，HOME 由 Host 展开。 */
+export interface GitCloneRequestInput {
+  /** 远端地址：HTTPS、SSH 或本机路径。 */
+  url: string
+  /** 目标目录；`~/repo` 形式由 Host 解析成账户主目录下的路径。 */
+  path: string
+  /** 要检出的分支或标签；省略时使用远端 HEAD。 */
+  ref?: string
+  /** 只取该深度的历史。 */
+  depth?: number
+  /** HTTPS 代理；未安装 git 的内置实现不支持代理。 */
+  proxy?: string
+  /** 写入新仓库的用户身份，后续自动提交使用它。 */
+  identity?: { name?: string; email?: string }
+  credentials?: { username: string; password: string; remember?: boolean }
+}
+
+/** 克隆结果：实际目录、检出分支与本次使用的实现。 */
+export interface GitCloneOutcome {
+  path: string
+  branch: string | null
+  /** `cli` 是本机 git，`js` 是未安装 git 时使用的内置实现。 */
+  mechanism: 'cli' | 'js'
+}
+
+/**
+ * 克隆需要认证：前两级来源（宿主凭据助手、本机已保存凭据）都没有可用材料。
+ * `credentialRef` 存在时表示这组已存凭据被拒，界面提示并允许清除它。
+ */
+export class GitCloneAuthRequired extends Error {
+  /**
+   * @param url - 需要认证的远端地址。
+   * @param credentialRef - 被拒绝的本机已存凭据引用。
+   */
+  constructor(readonly url: string, readonly credentialRef?: string) {
+    super('Git clone requires credentials')
+    this.name = 'GitCloneAuthRequired'
+  }
+}
+
 /**
  * Picker-private injected share. Pick semantics remain in the owner's onPick
  * callback; this callback creates only the real Host Workspace. A type alias
@@ -158,6 +198,10 @@ export type WorkspacePickerInjected = DirectoryPickingInjected & {
   createWorkspace: (input: { path: string; title?: string }) => Promise<WorkspaceView>
   /** 创建并打开不归属任何工作区的会话。 */
   startUnscopedSession: () => Promise<void>
+  /** 把远端仓库克隆到 Host 目录；需要认证时以 {@link GitCloneAuthRequired} 拒绝。 */
+  cloneRepository: (input: GitCloneRequestInput) => Promise<GitCloneOutcome>
+  /** 清除本机为该远端保存的 Git 凭据；本就没有保存时同样成功。 */
+  forgetGitCredentials: (ref: string) => Promise<void>
 }
 
 /**

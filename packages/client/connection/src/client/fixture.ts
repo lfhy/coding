@@ -2696,6 +2696,8 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
       gitCheckout: request => err(request, { code: 'git-unavailable', message: 'fixture has no Git repository', details: { sessionId: request.payload.sessionId, reason: 'GIT_NO_REPOSITORY' } }),
       gitPush: request => err(request, { code: 'git-unavailable', message: 'fixture has no Git repository', details: { sessionId: request.payload.sessionId, reason: 'GIT_NO_REPOSITORY' } }),
       gitPull: request => err(request, { code: 'git-unavailable', message: 'fixture has no Git repository', details: { sessionId: request.payload.sessionId, reason: 'GIT_NO_REPOSITORY' } }),
+      // 与 gitPush/gitPull 同类：fixture 不伪造克隆，直接用错误码说明本机没有 Git。
+      gitClone: request => err(request, { code: 'git-clone-failed', message: 'fixture has no Git installation', details: { url: request.payload.url, path: request.payload.path, reason: 'GIT_UNAVAILABLE' } }),
       list: request => ok(request, {
         items: workspaces.map(w => ({ ...w })),
         archivedSessionIds: [...archivedSessionIds],
@@ -3251,6 +3253,7 @@ export class FixtureApiClient extends AbstractApiClient {
       case 'workspace.gitCheckout': return this.api.workspace.gitCheckout(request, signal)
       case 'workspace.gitPush': return this.api.workspace.gitPush(request, signal)
       case 'workspace.gitPull': return this.api.workspace.gitPull(request, signal)
+      case 'workspace.gitClone': return this.api.workspace.gitClone(request, signal)
       case 'workspace.create': return this.api.workspace.create(request)
       case 'workspace.rename': return this.api.workspace.rename(request)
       case 'workspace.delete': return this.api.workspace.delete(request)

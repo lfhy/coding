@@ -947,6 +947,63 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'git',
+    summary: '抽象的 Git 服务。子类实现 capability 与各操作并作为插件加载，注册为 `ctx.git`；一个上下文只有一个实现，加载第二个按 Cordis 的重复服务规则失败。',
+    description: '抽象的 Git 服务。子类实现 capability 与各操作并作为插件加载，注册为 `ctx.git`；一个上下文只有一个实现，加载第二个按 Cordis 的重复服务规则失败。',
+    methods: [
+      {
+        signature: 'abstract capability(): Promise<GitCapability>',
+        description: '当前实现的能力。探测本机可执行文件需要一次命令，因此结果是异步的。',
+        parameters: [],
+        returns: '机制与它在本机可完成的操作。',
+      },
+      {
+        signature: 'abstract status(cwd: string, signal: AbortSignal): Promise<GitStatus | null>',
+        description: '读取工作目录所属仓库的状态。',
+        parameters: [{ name: 'cwd', description: '会话记录里的工作目录。' }, { name: 'signal', description: '调用方取消信号。' }],
+        returns: '非仓库为 null。',
+        throws: ['{GitOperationError} 环境、仓库或命令失败。'],
+      },
+      {
+        signature: 'abstract branches(cwd: string, signal: AbortSignal): Promise<GitBranches | null>',
+        description: '列出全部本地分支。',
+        parameters: [{ name: 'cwd', description: '仓库工作目录。' }, { name: 'signal', description: '调用方取消信号。' }],
+        returns: '非仓库为 null。',
+      },
+      {
+        signature: 'abstract history(cwd: string, signal: AbortSignal, query: GitHistoryQuery): Promise<GitHistory | null>',
+        description: '只读查询最近提交及其父边和 ref 标签。',
+        parameters: [{ name: 'cwd', description: '仓库工作目录。' }, { name: 'signal', description: '调用方取消信号。' }, { name: 'query', description: '已校验的条数与可选起点。' }],
+        returns: '非仓库为 null。',
+      },
+      {
+        signature: 'abstract checkout(cwd: string, signal: AbortSignal, branch: string): Promise<GitStatus>',
+        description: '切换已有本地分支；脏工作树阻止切换。',
+        parameters: [{ name: 'cwd', description: '仓库工作目录。' }, { name: 'signal', description: '调用方取消信号。' }, { name: 'branch', description: '已存在的本地分支短名。' }],
+        returns: '切换后的最新状态。',
+      },
+      {
+        signature: 'abstract push(cwd: string, signal: AbortSignal, options?: GitRemoteOptions): Promise<GitOperationResult>',
+        description: '提交全部未忽略改动并推送当前上游分支。',
+        parameters: [{ name: 'cwd', description: '仓库工作目录。' }, { name: 'signal', description: '调用方取消信号。' }, { name: 'options', description: '本次凭据、本机存储与诊断出口。' }],
+        returns: '推送结果；无 staged 差异时不创建提交。',
+      },
+      {
+        signature: 'abstract pull(cwd: string, signal: AbortSignal, options?: GitRemoteOptions): Promise<GitOperationResult>',
+        description: '从当前上游做只允许快进的拉取。',
+        parameters: [{ name: 'cwd', description: '仓库工作目录。' }, { name: 'signal', description: '调用方取消信号。' }, { name: 'options', description: '本次凭据、本机存储与诊断出口。' }],
+        returns: '拉取后的分支。',
+      },
+      {
+        signature: 'abstract clone(input: GitCloneInput, signal: AbortSignal, options?: GitRemoteOptions): Promise<GitCloneResult>',
+        description: '把远端仓库克隆到目标目录。',
+        parameters: [{ name: 'input', description: '远端地址、目标目录、可选分支／深度／代理／身份与凭据。' }, { name: 'signal', description: '调用方取消信号；取消后不留下半成品目录。' }, { name: 'options', description: '本机已保存凭据的读取入口与诊断出口。' }],
+        returns: '目标目录、检出的分支与实际使用的机制。',
+        throws: ['{GitOperationError} 目标已存在、认证、远端或克隆失败。'],
+      },
+    ],
+  },
+  {
     key: 'goals',
     summary: 'Goal service (`ctx.goals`) backed exclusively by the owning session log.',
     description: 'Goal service (`ctx.goals`) backed exclusively by the owning session log.',
@@ -4114,6 +4171,30 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface GenericResultView {\n    card: \'generic\';\n    title?: string;\n    content?: ContentBlock[];\n}',
   },
   {
+    name: 'GitCapability',
+    declaration: 'export interface GitCapability {\n    mechanism: \'cli\' | \'js\';\n    operations: readonly GitOperation[];\n}',
+  },
+  {
+    name: 'GitCloneInput',
+    declaration: 'export interface GitCloneInput {\n    url: string;\n    path: string;\n    ref?: string;\n    depth?: number;\n    proxy?: string;\n    identity?: GitCommitIdentity;\n    credentials?: GitCredentials;\n}',
+  },
+  {
+    name: 'GitCommitIdentity',
+    declaration: 'export interface GitCommitIdentity {\n    name?: string;\n    email?: string;\n}',
+  },
+  {
+    name: 'GitCredentialStore',
+    declaration: 'export interface GitCredentialStore {\n    read(ref: CredentialRef): Promise<string | undefined>;\n    writable(ref: CredentialRef): Promise<boolean>;\n    write(ref: CredentialRef, value: string): Promise<void>;\n}',
+  },
+  {
+    name: 'GitOperation',
+    declaration: 'export type GitOperation = typeof GIT_OPERATIONS[number];',
+  },
+  {
+    name: 'GitRemoteOptions',
+    declaration: 'export interface GitRemoteOptions {\n    credentials?: GitCredentials;\n    store?: GitCredentialStore;\n    warn?: (message: string) => void;\n}',
+  },
+  {
     name: 'GoalActivation',
     declaration: 'export type GoalActivation = \'armed\' | \'disarmed\';',
   },
@@ -4847,7 +4928,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'RpcErrorDetailsMap',
-    declaration: 'export interface RpcErrorDetailsMap {\n    \'bad-request\': {\n        issues: ZodIssue[];\n    };\n    \'cancelled\': {};\n    \'session-not-found\': {\n        sessionId: SessionId;\n    };\n    \'browser-failed\': {\n        reason: BrowserUseErrorCode;\n    };\n    \'model-unavailable\': {\n        provider: string;\n        model: string;\n        reason?: \'MODEL_DOES_NOT_SUPPORT_IMAGES\';\n    };\n    \'session-conflict\': {\n        sessionId: SessionId;\n        requestedCwd: string;\n        existingCwd?: string;\n    };\n    \'invalid-time-zone\': {\n        value: string;\n    };\n    \'workspace-attach-failed\': {\n        sessionId: SessionId;\n        workspaceId: string;\n    };\n    \'workspace-not-found\': {\n        workspaceId: string;\n    };\n    \'workspace-invalid-path\': {\n        path: string;\n    };\n    \'git-unavailable\': {\n        sessionId: SessionId;\n        reason: string;\n    };\n    \'git-auth-required\': {\n        sessionId: SessionId;\n        remote: string;\n        credentialRef?: string;\n    };\n    \'git-auth-failed\': {\n        sessionId: SessionId;\n        remote: string;\n    };\n    \'git-conflict\': {\n        sessionId: SessionId;\n        reason: string;\n    };\n    \'git-branch-not-found\': {\n        sessionId: SessionId;\n        reason: string;\n    };\n    \'workspace-name-conflict\': {\n        name: string;\n    };\n    \'workspace-move-invalid\': {\n        workspaceId: string;\n        sessionId: SessionId;\n        beforeSessionId?: SessionId;\n    };\n    \'directory-unreadable\': {\n        path: string;\n /* …truncated — full shape in source */',
+    declaration: 'export interface RpcErrorDetailsMap {\n    \'bad-request\': {\n        issues: ZodIssue[];\n    };\n    \'cancelled\': {};\n    \'session-not-found\': {\n        sessionId: SessionId;\n    };\n    \'browser-failed\': {\n        reason: BrowserUseErrorCode;\n    };\n    \'model-unavailable\': {\n        provider: string;\n        model: string;\n        reason?: \'MODEL_DOES_NOT_SUPPORT_IMAGES\';\n    };\n    \'session-conflict\': {\n        sessionId: SessionId;\n        requestedCwd: string;\n        existingCwd?: string;\n    };\n    \'invalid-time-zone\': {\n        value: string;\n    };\n    \'workspace-attach-failed\': {\n        sessionId: SessionId;\n        workspaceId: string;\n    };\n    \'workspace-not-found\': {\n        workspaceId: string;\n    };\n    \'workspace-invalid-path\': {\n        path: string;\n    };\n    \'git-unavailable\': {\n        sessionId: SessionId;\n        reason: string;\n    };\n    \'git-auth-required\': {\n        sessionId: SessionId;\n        remote: string;\n        credentialRef?: string;\n    };\n    \'git-auth-failed\': {\n        sessionId: SessionId;\n        remote: string;\n    };\n    \'git-conflict\': {\n        sessionId: SessionId;\n        reason: string;\n    };\n    \'git-branch-not-found\': {\n        sessionId: SessionId;\n        reason: string;\n    };\n    \'git-clone-auth-required\': {\n        url: string;\n        credentialRef?: string;\n    };\n    \'git-clone-failed\': {\n        url: string;\n        path: string;\n        reason: string;\n    };\n    \'workspace-name-conflict\': {\n        name: string;\n  /* …truncated — full shape in source */',
   },
   {
     name: 'RpcId',

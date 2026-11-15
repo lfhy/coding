@@ -53,6 +53,7 @@ export interface RpcMethodMap {
   'workspace.gitCheckout': WorkspaceApi['gitCheckout']
   'workspace.gitPush': WorkspaceApi['gitPush']
   'workspace.gitPull': WorkspaceApi['gitPull']
+  'workspace.gitClone': WorkspaceApi['gitClone']
   'workspace.create': WorkspaceApi['create']
   'workspace.rename': WorkspaceApi['rename']
   'workspace.delete': WorkspaceApi['delete']

@@ -526,6 +526,7 @@
 - `session-stats` → `coding-session-stats`
 - `directory-picker` → `coding-host-directory-picker-browse`
 - `ui-directory-picker-browse` → `coding-client-ui-directory-picker-browse`
+- `git-local` → `coding-git-local`
 - `plugin-inventory` → `coding-host-plugin-inventory`
 - `api-gateway` → `coding-host-apiproxy`
 - `cordis-host-runner` → `coding-cordis-host-runner`

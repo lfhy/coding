@@ -147,6 +147,85 @@ abstract capability(): DirectoryPickerCapability
 
 Source: [`packages/host/directory-picker/src/index.ts:131`](../../packages/host/directory-picker/src/index.ts)
 
+<a id="ctxgit--git-abstract-seam"></a>
+
+### `ctx.git` — `Git` (abstract seam)
+
+抽象的 Git 服务。子类实现 capability 与各操作并作为插件加载，注册为 `ctx.git`；一个上下文只有一个实现，加载第二个按 Cordis 的重复服务规则失败。
+
+```ts cordis-catalog
+/**
+ * 当前实现的能力。探测本机可执行文件需要一次命令，因此结果是异步的。
+ * @returns 机制与它在本机可完成的操作。
+ */
+abstract capability(): Promise<GitCapability>
+
+/**
+ * 读取工作目录所属仓库的状态。
+ * @param cwd - 会话记录里的工作目录。
+ * @param signal - 调用方取消信号。
+ * @returns 非仓库为 null。
+ * @throws {GitOperationError} 环境、仓库或命令失败。
+ */
+abstract status(cwd: string, signal: AbortSignal): Promise<GitStatus | null>
+
+/**
+ * 列出全部本地分支。
+ * @param cwd - 仓库工作目录。
+ * @param signal - 调用方取消信号。
+ * @returns 非仓库为 null。
+ */
+abstract branches(cwd: string, signal: AbortSignal): Promise<GitBranches | null>
+
+/**
+ * 只读查询最近提交及其父边和 ref 标签。
+ * @param cwd - 仓库工作目录。
+ * @param signal - 调用方取消信号。
+ * @param query - 已校验的条数与可选起点。
+ * @returns 非仓库为 null。
+ */
+abstract history(cwd: string, signal: AbortSignal, query: GitHistoryQuery): Promise<GitHistory | null>
+
+/**
+ * 切换已有本地分支；脏工作树阻止切换。
+ * @param cwd - 仓库工作目录。
+ * @param signal - 调用方取消信号。
+ * @param branch - 已存在的本地分支短名。
+ * @returns 切换后的最新状态。
+ */
+abstract checkout(cwd: string, signal: AbortSignal, branch: string): Promise<GitStatus>
+
+/**
+ * 提交全部未忽略改动并推送当前上游分支。
+ * @param cwd - 仓库工作目录。
+ * @param signal - 调用方取消信号。
+ * @param options - 本次凭据、本机存储与诊断出口。
+ * @returns 推送结果；无 staged 差异时不创建提交。
+ */
+abstract push(cwd: string, signal: AbortSignal, options?: GitRemoteOptions): Promise<GitOperationResult>
+
+/**
+ * 从当前上游做只允许快进的拉取。
+ * @param cwd - 仓库工作目录。
+ * @param signal - 调用方取消信号。
+ * @param options - 本次凭据、本机存储与诊断出口。
+ * @returns 拉取后的分支。
+ */
+abstract pull(cwd: string, signal: AbortSignal, options?: GitRemoteOptions): Promise<GitOperationResult>
+
+/**
+ * 把远端仓库克隆到目标目录。
+ * @param input - 远端地址、目标目录、可选分支／深度／代理／身份与凭据。
+ * @param signal - 调用方取消信号；取消后不留下半成品目录。
+ * @param options - 本机已保存凭据的读取入口与诊断出口。
+ * @returns 目标目录、检出的分支与实际使用的机制。
+ * @throws {GitOperationError} 目标已存在、认证、远端或克隆失败。
+ */
+abstract clone(input: GitCloneInput, signal: AbortSignal, options?: GitRemoteOptions): Promise<GitCloneResult>
+```
+
+Source: [`packages/git/git/src/index.ts:238`](../../packages/git/git/src/index.ts)
+
 <a id="ctxworkspaceregistry--workspaceregistry"></a>
 
 ### `ctx.workspaceRegistry` — `WorkspaceRegistry`

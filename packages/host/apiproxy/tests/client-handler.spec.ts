@@ -99,6 +99,7 @@ function scriptedApi(overrides: {
       gitCheckout: r => ok(r, { branch: r.payload.branch, ahead: 0, behind: 0, additions: 0, deletions: 0, files: [] }),
       gitPush: r => ok(r, { branch: 'main', commitCreated: false }),
       gitPull: r => ok(r, { branch: 'main', commitCreated: false }),
+      gitClone: r => ok(r, { path: r.payload.path, branch: 'main', mechanism: 'cli' as const }),
       list: r => ok(r, { items: [], archivedSessionIds: [] }),
       create: r => ok(r, { workspace: { workspaceId: 'w1' as never, path: '/t', title: 't', sessionIds: [], createdAt: '0', updatedAt: '0' }, created: true }),
       rename: r => ok(r, { workspace: { workspaceId: 'w1' as never, path: '/t', title: 't', sessionIds: [], createdAt: '0', updatedAt: '0' } }),

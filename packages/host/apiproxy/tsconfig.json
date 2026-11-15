@@ -18,6 +18,9 @@
       "path": "../../credentials/credentials"
     },
     {
+      "path": "../../git/git"
+    },
+    {
       "path": "../../../vendor/cordis"
     },
     {

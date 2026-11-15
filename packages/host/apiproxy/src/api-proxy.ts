@@ -6,7 +6,7 @@
 import { randomUUID } from 'node:crypto'
 import { mkdir, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { dirname } from 'node:path'
+import { dirname, isAbsolute, join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import { installModelSelection } from 'coding-agent'
 import type { Agent, ModelSelection, ModelSelectionRef, AgentOptions, AgentStatus } from 'coding-agent'
@@ -121,8 +121,9 @@ import {
   inspectApiRemoteSession,
 } from 'coding-api-remotes'
 import { canOpenNativePath, openNativePath, openNativeTextFile } from 'coding-native-command'
-import { GitOperationError, workspaceGitStatus, workspaceGitBranches, workspaceGitHistory, workspaceGitCheckout, workspaceGitPush, workspaceGitPull } from './workspace-git.ts'
-import type { GitRemoteOptions } from './workspace-git.ts'
+import { GitOperationError } from 'coding-git'
+import type { Git, GitCloneInput, GitRemoteOptions } from 'coding-git'
+import { GIT_HISTORY_DEFAULT_COUNT } from './api/workspace.ts'
 import type { GitCredentials } from './api/workspace.ts'
 import type { CredentialRef } from 'coding-credentials'
 
@@ -1766,7 +1767,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
    * Git 远端操作的认证输入：本机凭据存储取自 credentials seam，未挂载凭据提供方时只剩
    * 宿主凭据助手与本次显式凭据两级；非致命诊断统一进 Host 日志。
    * @param credentials - 调用方本次显式提供的凭据。
-   * @returns 传给 workspace-git 的认证输入。
+   * @returns 传给 Git seam 的认证输入。
    */
   function gitRemoteOptions(credentials: GitCredentials | undefined): GitRemoteOptions {
     const store = ctx.get('credentials')
@@ -1783,22 +1784,43 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
     }
   }
 
+  /**
+   * 把 `~` 与 `~/x` 展开成 Host 账户主目录下的路径。
+   * @param path - 客户端提交的保存路径。
+   * @returns 展开后的路径；不含 `~` 的输入原样返回。
+   */
+  function expandHomePath(path: string): string {
+    if (path === '~') return homedir()
+    if (path.startsWith('~/') || path.startsWith('~\\')) return join(homedir(), path.slice(2))
+    return path
+  }
+
+  /** Git seam 的当前实现；未装配提供方时返回 undefined，由各入口报 unavailable。 */
+  function gitService(): Git | undefined {
+    return ctx.get('git')
+  }
+
   /** 仅会话记录能选中目录；不接纳客户端路径，也不恢复冷 Agent。 */
   async function gitForSession<T>(
     request: RpcRequest<{ sessionId: SessionId }>,
     signal: AbortSignal,
-    operation: (cwd: string, signal: AbortSignal) => Promise<T>,
+    operation: (git: Git, cwd: string, signal: AbortSignal) => Promise<T>,
   ): Promise<RpcResponse<T>> {
     const { sessionId } = request.payload
     try {
       signal.throwIfAborted()
+      const git = gitService()
+      if (git === undefined) return err(request, {
+        code: 'git-unavailable', message: 'Git is not available in this deployment',
+        details: { sessionId, reason: 'GIT_UNAVAILABLE' },
+      })
       const session = await readSessionState(sessionId)
       const cwd = session.header.cwd
       if (cwd === undefined) return err(request, {
         code: 'git-unavailable', message: 'session has no workspace directory', details: { sessionId, reason: 'NO_WORKSPACE' },
       })
       signal.throwIfAborted()
-      return ok(request, await operation(cwd, signal))
+      return ok(request, await operation(git, cwd, signal))
     } catch (error: unknown) {
       if (signal.aborted) return err(request, { code: 'cancelled', message: 'Git operation was cancelled', details: {} })
       if (error instanceof SessionNotFound) return err(request, {
@@ -2998,28 +3020,67 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
 
     workspace: {
       async gitStatus(request, signal) {
-        return gitForSession(request, signal, workspaceGitStatus)
+        return gitForSession(request, signal, (git, cwd, abort) => git.status(cwd, abort))
       },
 
       async gitBranches(request, signal) {
-        return gitForSession(request, signal, workspaceGitBranches)
+        return gitForSession(request, signal, (git, cwd, abort) => git.branches(cwd, abort))
       },
 
       async gitHistory(request, signal) {
-        return gitForSession(request, signal, (cwd, abort) => workspaceGitHistory(cwd, abort, request.payload))
+        const { count, from } = request.payload
+        return gitForSession(request, signal, (git, cwd, abort) => git.history(cwd, abort, {
+          count: count ?? GIT_HISTORY_DEFAULT_COUNT,
+          ...(from === undefined ? {} : { from }),
+        }))
       },
 
       async gitCheckout(request, signal) {
         const { branch } = request.payload
-        return gitForSession(request, signal, (cwd, abort) => workspaceGitCheckout(cwd, abort, branch))
+        return gitForSession(request, signal, (git, cwd, abort) => git.checkout(cwd, abort, branch))
       },
 
       async gitPush(request, signal) {
-        return gitForSession(request, signal, (cwd, abort) => workspaceGitPush(cwd, abort, gitRemoteOptions(request.payload.credentials)))
+        return gitForSession(request, signal, (git, cwd, abort) => git.push(cwd, abort, gitRemoteOptions(request.payload.credentials)))
       },
 
       async gitPull(request, signal) {
-        return gitForSession(request, signal, (cwd, abort) => workspaceGitPull(cwd, abort, gitRemoteOptions(request.payload.credentials)))
+        return gitForSession(request, signal, (git, cwd, abort) => git.pull(cwd, abort, gitRemoteOptions(request.payload.credentials)))
+      },
+
+      async gitClone(request, signal) {
+        const { url, ref, depth, proxy, identity, credentials } = request.payload
+        const path = expandHomePath(request.payload.path)
+        if (!isAbsolute(path)) return err(request, {
+          code: 'git-clone-failed', message: 'Clone target must be an absolute path', details: { url, path, reason: 'GIT_INVALID_PATH' },
+        })
+        const git = gitService()
+        if (git === undefined) return err(request, {
+          code: 'git-clone-failed', message: 'Git is not available in this deployment', details: { url, path, reason: 'GIT_UNAVAILABLE' },
+        })
+        const input: GitCloneInput = {
+          url, path,
+          ...(ref === undefined ? {} : { ref }),
+          ...(depth === undefined ? {} : { depth }),
+          ...(proxy === undefined ? {} : { proxy }),
+          ...(identity === undefined ? {} : { identity }),
+          ...(credentials === undefined ? {} : { credentials }),
+        }
+        try {
+          signal.throwIfAborted()
+          return ok(request, await git.clone(input, signal, gitRemoteOptions(credentials)))
+        } catch (error: unknown) {
+          if (signal.aborted) return err(request, { code: 'cancelled', message: 'Git clone was cancelled', details: {} })
+          if (error instanceof GitOperationError && error.code === 'GIT_AUTH_REQUIRED') return err(request, {
+            code: 'git-clone-auth-required', message: error.message,
+            details: { url, ...(error.credentialRef === undefined ? {} : { credentialRef: error.credentialRef }) },
+          })
+          return err(request, {
+            code: 'git-clone-failed',
+            message: error instanceof GitOperationError ? error.message : 'Git clone failed',
+            details: { url, path, reason: error instanceof GitOperationError ? error.code : 'GIT_FAILED' },
+          })
+        }
       },
 
       list(request) {

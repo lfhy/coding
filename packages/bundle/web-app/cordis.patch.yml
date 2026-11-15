@@ -122,6 +122,11 @@
     - id: ui-directory-picker-browse
       name: 'coding-client-ui-directory-picker-browse'
 
+    # Git seam 的本机实现：有 git 可执行文件时驱动它，没有时用内置实现完成克隆，
+    # 所以“打开仓库”入口在未安装 git 的机器上仍然可用。
+    - id: git-local
+      name: 'coding-git-local'
+
     # Read-only projection of current Loader entries for trusted client RPCs.
     - id: plugin-inventory
       name: 'coding-host-plugin-inventory'

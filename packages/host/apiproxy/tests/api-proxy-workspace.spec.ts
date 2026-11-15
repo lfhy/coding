@@ -11,6 +11,7 @@ import type { Session } from 'coding-session'
 import Storage from 'coding-storage'
 import { DomainFacility } from 'coding-storage-domain'
 import UserQuestionService from 'coding-user-questions'
+import GitLocal from 'coding-git-local'
 import { DirectoryPickerError } from 'coding-host-directory-picker'
 import type { DirectoryPickerCapability } from 'coding-host-directory-picker'
 import WorkspaceRegistry from 'coding-workspace'
@@ -78,6 +79,8 @@ async function harness(
   ctx.provide('storageDomain', storageDomain)
   ctx.provide('sessionPersistence', { list: () => Promise.resolve([]) } as never)
   await ctx.plugin(WorkspaceRegistry)
+  // Git RPC 走真实的 Git seam：状态、历史与克隆都由本机 git 提供方回答。
+  await ctx.plugin(GitLocal)
 
   const factory: AgentFactory = {
     async createAgent(_ownerCtx, options) {
@@ -110,6 +113,11 @@ async function harness(
     ...extras.canOpenPath === undefined ? {} : { canOpenPath: extras.canOpenPath },
   })
   return { api, ctx, storageDomain, root }
+}
+
+/** 一个可以当远端用的本地仓库路径；克隆用例只读它，不需要网络。 */
+function sourceUrl(root: string): string {
+  return join(root, 'missing-source')
 }
 
 /** Stage one directory under the harness root for path adoption. */
@@ -376,6 +384,34 @@ describe('session-bound workspace Git RPC', () => {
     expect((await api.workspace.gitHistory(request({ sessionId }), new AbortController().signal)).result).toMatchObject({
       ok: false, error: { code: 'git-unavailable', details: { sessionId, reason: 'GIT_REMOTE_UNAVAILABLE' } },
     })
+  })
+})
+
+describe('workspace.gitClone', () => {
+  it('clones a local repository into the requested absolute path', async () => {
+    const { api, root } = await harness()
+    const source = stageDir(root, 'clone-source')
+    execFileSync('git', ['-c', 'init.defaultBranch=main', 'init', '-q'], { cwd: source })
+    writeFileSync(join(source, 'tracked.txt'), 'hello\n')
+    execFileSync('git', ['add', 'tracked.txt'], { cwd: source })
+    execFileSync('git', ['-c', 'user.email=t@example.org', '-c', 'user.name=T', 'commit', '-qm', 'first'], { cwd: source })
+    const target = join(root, 'cloned')
+    const value = expectOk(await api.workspace.gitClone(
+      request({ url: source, path: target, identity: { name: 'Clone User', email: 'clone@example.org' } }),
+      new AbortController().signal,
+    ))
+    expect(value).toMatchObject({ path: target, branch: 'main', mechanism: 'cli' })
+    expect(execFileSync('git', ['config', 'user.name'], { cwd: target, encoding: 'utf8' }).trim()).toBe('Clone User')
+  })
+
+  it('rejects a relative target and a non-empty destination before touching the remote', async () => {
+    const { api, root } = await harness()
+    expect((await api.workspace.gitClone(request({ url: sourceUrl(root), path: 'relative/target' }), new AbortController().signal)).result)
+      .toMatchObject({ ok: false, error: { code: 'git-clone-failed', details: { reason: 'GIT_INVALID_PATH' } } })
+    const occupied = stageDir(root, 'occupied')
+    writeFileSync(join(occupied, 'existing.txt'), 'x')
+    expect((await api.workspace.gitClone(request({ url: sourceUrl(root), path: occupied }), new AbortController().signal)).result)
+      .toMatchObject({ ok: false, error: { code: 'git-clone-failed', details: { reason: 'GIT_TARGET_EXISTS' } } })
   })
 })
 

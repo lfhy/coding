@@ -83,6 +83,36 @@ export interface GitOperationResult {
   commit?: string
 }
 
+/** 克隆时要写入新仓库的提交身份；省略的字段保持目标机器上的 git 配置。 */
+export interface GitCloneIdentity {
+  name?: string
+  email?: string
+}
+
+/** workspace.gitClone 请求：目标是本机绝对路径，创建面板先解析再提交。 */
+export interface GitCloneRequest {
+  /** 远端地址：HTTPS、SSH 或本机路径。 */
+  url: string
+  /** 目标目录绝对路径；必须不存在或为空目录。 */
+  path: string
+  /** 要检出的分支或标签；省略时使用远端 HEAD。 */
+  ref?: string
+  /** 只取该深度的历史；省略时取完整历史。 */
+  depth?: number
+  /** HTTPS 代理；未安装 git 的内置实现不支持代理并明确拒绝。 */
+  proxy?: string
+  /** 写入新仓库的用户身份，后续自动提交使用它。 */
+  identity?: GitCloneIdentity
+  credentials?: GitCredentials
+}
+
+/** 克隆结果；mechanism 指出本次用的是本机 git 还是内置实现。 */
+export interface GitCloneResult {
+  path: string
+  branch: string | null
+  mechanism: 'cli' | 'js'
+}
+
 
 /**
  * Wire-side workspace id brand. Deliberately re-declared here rather than
@@ -135,6 +165,15 @@ export interface WorkspaceApi {
   /** 从当前上游拉取；冲突以 git-conflict 错误返回，保留 Git 的冲突现场。认证与 remember 同 gitPush。 */
   gitPull(request: RpcRequest<{ sessionId: SessionId; credentials?: GitCredentials }>, signal: AbortSignal):
   Promise<RpcResponse<GitOperationResult>>
+
+  /**
+   * 把远端仓库克隆到目标目录，成功后由调用方把该目录注册为工作区。认证依次尝试宿主
+   * 凭据助手、本机已保存的凭据和本次显式凭据；前两级都失败时以
+   * git-clone-auth-required 作答，调用方可带 credentials 重试，成功后按 remember 保存。
+   * 目标已存在、非空或克隆失败以 git-clone-failed 作答，并带上失败原因码。
+   */
+  gitClone(request: RpcRequest<GitCloneRequest>, signal: AbortSignal):
+  Promise<RpcResponse<GitCloneResult>>
 
   /**
    * Lists all workspaces in the registry's durable display order, plus the

@@ -98,6 +98,9 @@ function mount(
       createWorkspace={createWorkspace}
       startSessionWithoutWorkspace={startSessionWithoutWorkspace}
       startUnscopedSession={vi.fn(async () => {})}
+      // 克隆入口由独立 spec 覆盖；这里只需要注入面完整。
+      cloneRepository={vi.fn(async () => ({ path: '/tmp/cloned', branch: null, mechanism: 'cli' as const }))}
+      forgetGitCredentials={vi.fn(async () => {})}
       useDirectoryFlow={occupancy.useDirectoryFlow}
       renderSlot={renderSlot}
       t={t}
@@ -265,6 +268,8 @@ describe('WorkspacePicker', () => {
         open useSessions={hook(sessions)} useWorkspaces={hook(workspaceState([workspace('alpha', 'Alpha')]))}
         onPick={vi.fn()} onClose={vi.fn()} createWorkspace={vi.fn()}
         startUnscopedSession={vi.fn(async () => {})}
+        cloneRepository={vi.fn(async () => ({ path: '/tmp/cloned', branch: null, mechanism: 'cli' as const }))}
+        forgetGitCredentials={vi.fn(async () => {})}
         useDirectoryFlow={occupancySource().useDirectoryFlow} renderSlot={renderSlot} t={t}
       />,
     )
@@ -281,6 +286,8 @@ describe('WorkspacePicker', () => {
         open anchorRef={anchor()} useSessions={hook(sessions)} useWorkspaces={hook(state)}
         onPick={vi.fn()} onClose={vi.fn()} createWorkspace={vi.fn()}
         startUnscopedSession={vi.fn(async () => {})}
+        cloneRepository={vi.fn(async () => ({ path: '/tmp/cloned', branch: null, mechanism: 'cli' as const }))}
+        forgetGitCredentials={vi.fn(async () => {})}
         useDirectoryFlow={occupancySource().useDirectoryFlow} renderSlot={renderSlot} t={t}
       />,
     )

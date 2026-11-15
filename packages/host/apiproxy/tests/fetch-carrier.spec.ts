@@ -216,6 +216,12 @@ function fakeApi(overrides: Partial<{ muxFrames: MuxFrame[]; hostFrames: HostFra
       async gitPull(request) {
         return { rpcId: request.rpcId, result: { ok: false, error: { code: 'git-conflict', message: 'diverged', details: { sessionId: request.payload.sessionId, reason: 'GIT_CONFLICT' } } } }
       },
+      async gitClone(request) {
+        return {
+          rpcId: request.rpcId,
+          result: { ok: true, value: { path: request.payload.path, branch: 'main', mechanism: 'cli' as const } },
+        }
+      },
       async list(request) {
         return { rpcId: request.rpcId, result: { ok: true, value: { items: [], archivedSessionIds: [] } } }
       },

@@ -158,6 +158,8 @@ flowchart LR
   cfg --> plugin_dsh_base_tool_result_pruner
   plugin_dsh_base_tool_todo["tool-todo<br/>coding-tool-todo"]
   cfg --> plugin_dsh_base_tool_todo
+  plugin_dsh_base_tool_status["tool-status<br/>coding-tool-status"]
+  cfg --> plugin_dsh_base_tool_status
   plugin_dsh_base_tool_goal["tool-goal<br/>coding-tool-goal"]
   cfg --> plugin_dsh_base_tool_goal
   plugin_dsh_base_tool_ralph["tool-ralph<br/>coding-tool-ralph"]
@@ -281,6 +283,7 @@ flowchart LR
 | `session-checkpoint-policy` | `coding-session-checkpoint-policy` |
 | `tool-result-pruner` | `coding-compaction-tool-result-pruner` |
 | `tool-todo` | `coding-tool-todo` |
+| `tool-status` | `coding-tool-status` |
 | `tool-goal` | `coding-tool-goal` |
 | `tool-ralph` | `coding-tool-ralph` |
 | `tool-str-replace-editor` | `coding-tool-str-replace-editor` |

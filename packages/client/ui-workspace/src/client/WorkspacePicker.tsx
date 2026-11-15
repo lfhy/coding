@@ -1,10 +1,10 @@
-/** 工作区选择菜单、目录采用流程与 Remote-SSH 向导。 */
+/** 工作区选择菜单、目录采用流程、Remote-SSH 向导与“打开仓库”向导的挂载点。 */
 import type { ReactNode, RefObject } from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import clsx from 'clsx'
 import {
   Button, IconCloudOutline16, IconCloseOutline16, IconCodeOutline16, IconFolderClose16,
-  IconDataOutline16, IconFolderOpenOutline16, IconProjectAddOutline16,
+  IconDataOutline16, IconDownloadOutline16, IconFolderOpenOutline16, IconProjectAddOutline16,
   IconNewChatOutline16, IconSearchOutline16, IconSettingsOutline16, Input,
   Menu, Modal, type MenuEntry,
 } from 'coding-client-ui-primitives'
@@ -13,7 +13,10 @@ import type {
   WorkspaceId, WorkspaceListState, WorkspaceView,
 } from 'coding-client-runtime/client'
 import type { SnapshotSelectorHook } from 'coding-client-ui-slots'
-import type { DirectoryFlowOwnerProps, WorkspacePickerProps } from './contract/slots.ts'
+import type {
+  DirectoryFlowOwnerProps, GitCloneOutcome, GitCloneRequestInput, WorkspacePickerProps,
+} from './contract/slots.ts'
+import { GitCloneWizard } from './GitCloneWizard.tsx'
 import css from './WorkspacePicker.module.css'
 import remoteCss from './RemoteSshWizard.module.css'
 import {
@@ -24,6 +27,7 @@ import {
 
 const OPEN_FOLDER = '::open-folder'
 const CONNECT_REMOTE = '::connect-remote'
+const CLONE_REPOSITORY = '::clone-repository'
 const WITHOUT_PROJECT = '::without-project'
 
 /**
@@ -60,6 +64,13 @@ export interface WorkspacePickFlowProps {
   selectedId?: WorkspaceId | undefined
   /** 创建并打开不归属任何工作区的会话。 */
   startSessionWithoutWorkspace?: (() => Promise<void>) | undefined
+  /**
+   * 把远端仓库克隆到 Host 目录；与 `forgetGitCredentials` 一起注入时菜单才出现
+   * “打开仓库”。侧栏只负责添加工作区，因此不传这两项。
+   */
+  cloneRepository?: ((input: GitCloneRequestInput) => Promise<GitCloneOutcome>) | undefined
+  /** 清除本机为该远端保存的 Git 凭据；克隆向导在凭据被拒时调用。 */
+  forgetGitCredentials?: ((ref: string) => Promise<void>) | undefined
 }
 
 /** 将任意失败值转换为可显示的错误文本。 */
@@ -68,7 +79,7 @@ function errorText(reason: unknown): string {
 }
 
 /**
- * 渲染工作区选择菜单及其目录、Remote-SSH 和无项目操作。
+ * 渲染工作区选择菜单及其目录、打开仓库、Remote-SSH 和无项目操作。
  * @param props - 选择器的数据、操作与 slot 渲染权限。
  * @returns 菜单与所拥有的对话框。
  */
@@ -86,6 +97,8 @@ export function WorkspacePickFlow({
   side = 'bottom',
   selectedId,
   startSessionWithoutWorkspace,
+  cloneRepository,
+  forgetGitCredentials,
 }: WorkspacePickFlowProps) {
   const workspaceSnapshot = useWorkspaces(state => state)
   const workspaces = workspaceSnapshot.items
@@ -99,6 +112,7 @@ export function WorkspacePickFlow({
   const [pickingFolder, setPickingFolder] = useState(false)
   const [query, setQuery] = useState('')
   const [remoteOpen, setRemoteOpen] = useState(false)
+  const [cloneOpen, setCloneOpen] = useState(false)
   const [startingWithoutProject, setStartingWithoutProject] = useState(false)
   const [sessionError, setSessionError] = useState<string | null>(null)
   const flowBusy = flowOpen || pickingFolder
@@ -170,10 +184,18 @@ export function WorkspacePickFlow({
   if (!addOnly && normalizedQuery !== '' && workspaceEntries.length === 0 && workspaceSnapshot.phase === 'ready') {
     workspaceEntries.push({ type: 'label', id: '::no-matches', text: t('picker.noMatches') })
   }
+  // 克隆需要同时具备克隆与清除凭据两个动作；缺任一个都不显示入口。
+  const cloneAvailable = cloneRepository !== undefined && forgetGitCredentials !== undefined
   const auxiliaryEntries: MenuEntry[] = addOnly
     ? []
     : [
       ...folderEntries,
+      ...(cloneAvailable ? [{
+        id: CLONE_REPOSITORY,
+        label: t('picker.clone.menu'),
+        icon: <IconDownloadOutline16 size={16} />,
+        disabled: actionBusy,
+      }] : []),
       {
         id: CONNECT_REMOTE,
         label: t('picker.remoteConnect'),
@@ -220,6 +242,11 @@ export function WorkspacePickFlow({
     if (id === CONNECT_REMOTE) {
       onClose()
       setRemoteOpen(true)
+      return
+    }
+    if (id === CLONE_REPOSITORY) {
+      onClose()
+      setCloneOpen(true)
       return
     }
     if (id === WITHOUT_PROJECT) {
@@ -281,6 +308,17 @@ export function WorkspacePickFlow({
         createWorkspace={createWorkspace}
         onPick={onPick}
       />
+      {cloneRepository !== undefined && forgetGitCredentials !== undefined && (
+        <GitCloneWizard
+          open={cloneOpen}
+          onClose={() => { setCloneOpen(false) }}
+          t={t}
+          createWorkspace={createWorkspace}
+          cloneRepository={cloneRepository}
+          forgetGitCredentials={forgetGitCredentials}
+          onPick={onPick}
+        />
+      )}
       <Modal
         open={sessionError !== null}
         onClose={() => { setSessionError(null) }}
@@ -305,6 +343,8 @@ export function WorkspacePicker({
   createWorkspace,
   startSessionWithoutWorkspace,
   startUnscopedSession,
+  cloneRepository,
+  forgetGitCredentials,
   useDirectoryFlow,
   renderSlot,
   t,
@@ -317,6 +357,8 @@ export function WorkspacePicker({
       useWorkspaces={useWorkspaces}
       createWorkspace={createWorkspace}
       startSessionWithoutWorkspace={startSessionWithoutWorkspace ?? startUnscopedSession}
+      cloneRepository={cloneRepository}
+      forgetGitCredentials={forgetGitCredentials}
       useDirectoryFlow={useDirectoryFlow}
       renderDirectoryFlow={owner => renderSlot('conversation.hero.workspace.directoryFlow', owner)}
       selectedId={selectedId}

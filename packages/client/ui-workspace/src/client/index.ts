@@ -8,6 +8,7 @@ import type { ClientContext } from 'coding-client-runtime/client'
 // 类型导入补齐 locale 与 layout 对 Context 的服务声明。
 import type {} from 'coding-client-locale/client'
 import type {} from 'coding-client-ui-layout/client'
+import { GitCloneAuthRequired } from './contract/slots.ts'
 import type { WorkspaceBrowserInjected, WorkspacePickerInjected } from './contract/slots.ts'
 import { createWorkspaceViewStore } from './stores.ts'
 import { WorkspaceBrowser } from './WorkspaceBrowser.tsx'
@@ -18,8 +19,10 @@ import { en, zh, type WorkspaceKey } from './locales.ts'
 
 export type {
   DirectoryFlowOwnerProps, DirectoryFlowSlotName, DirectoryPickingHooks, DirectoryPickingInjected,
-  WorkspaceBrowserInjected, WorkspaceBrowserProps, WorkspacePickerInjected, WorkspacePickerProps,
+  GitCloneOutcome, GitCloneRequestInput, WorkspaceBrowserInjected, WorkspaceBrowserProps,
+  WorkspacePickerInjected, WorkspacePickerProps,
 } from './contract/slots.ts'
+export { GitCloneAuthRequired } from './contract/slots.ts'
 export type { WorkspaceKey } from './locales.ts'
 
 declare module 'coding-client-ui-slots' {
@@ -118,6 +121,21 @@ export function apply(ctx: ClientContext): void {
     startUnscopedSession: () => {
       ctx.layout.beginNewConversation()
       return ctx.workspaces.startSessionWithoutWorkspace()
+    },
+    // 克隆只负责把远端落到目录，工作区注册仍由上方 createWorkspace 完成；
+    // 需要认证时把远端交给界面弹窗，绝不在这里静默重试。
+    cloneRepository: async (input) => {
+      const response = await connection.api.workspace.gitClone(input)
+      if (response.result.ok) return response.result.value
+      const { error } = response.result
+      if (error.code === 'git-clone-auth-required') {
+        throw new GitCloneAuthRequired(error.details.url, error.details.credentialRef)
+      }
+      throw new Error(error.message)
+    },
+    forgetGitCredentials: async (ref) => {
+      const response = await connection.api.credentials.unset({ ref })
+      if (!response.result.ok) throw new Error(response.result.error.message)
     },
     hooks: { directoryFlow: pickerFlowSource },
   })

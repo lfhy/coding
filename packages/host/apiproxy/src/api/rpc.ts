@@ -46,6 +46,10 @@ export interface RpcErrorDetailsMap {
   'git-auth-failed': { sessionId: SessionId; remote: string }
   'git-conflict': { sessionId: SessionId; reason: string }
   'git-branch-not-found': { sessionId: SessionId; reason: string }
+  /** 克隆需要凭据：前两级来源（宿主助手、本机凭据）都没有可用材料；带 credentialRef 时该组已存凭据被拒。 */
+  'git-clone-auth-required': { url: string; credentialRef?: string }
+  /** 克隆失败：目标已存在、远端不可达或命令失败；reason 是 seam 的失败码。 */
+  'git-clone-failed': { url: string; path: string; reason: string }
   'workspace-name-conflict': { name: string }
   'workspace-move-invalid': { workspaceId: string; sessionId: SessionId; beforeSessionId?: SessionId }
   'directory-unreadable': { path: string }

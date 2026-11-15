@@ -3,7 +3,7 @@
 
 # 包清单
 
-workspace 共 276 个包，按 group 分节。每行给出包目录、职责（README 首段）、源码入口与 `tests/` 下的 spec 文件数；标 `client` 的包导出 `./client` 浏览器半，标 `bundle` 的包是 profile/bundle 装配层。
+workspace 共 278 个包，按 group 分节。每行给出包目录、职责（README 首段）、源码入口与 `tests/` 下的 spec 文件数；标 `client` 的包导出 `./client` 浏览器半，标 `bundle` 的包是 profile/bundle 装配层。
 
 模型可见工具的名称与 schema 见 [tool-catalog.md](../tool-catalog.md)，插件可配置项见 [config-catalog.md](../config-catalog.md)，依赖边见 [module-graph.md](../module-graph.md)。
 
@@ -91,7 +91,7 @@ workspace 共 276 个包，按 group 分节。每行给出包目录、职责（R
 - `packages/client/ui-trajectory` — Trajectory 渲染按轮次组织的事件记录表，其中可选择用户、助手、工具和嵌套子工具记录 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 9）
 - `packages/client/ui-user-questions` — Web 提问功能插件：其浏览器侧把 `question` 条目注册到会话拥有的 `conversation.composer` 键控 slot … [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 5）
 - `packages/client/ui-workflow-run` — 这个浏览器插件把持久化的顶层工作流运行重建为独立 Chat 节点 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 1）
-- `packages/client/ui-workspace` — 共享 Workspace 浏览器与选择器插件 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 13）
+- `packages/client/ui-workspace` — 共享 Workspace 浏览器与选择器插件 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 14）
 - `packages/client/web` — Web 启动内核：`new AppWebEntry(el, seams?).run()` 分两个阶段挂载客户端 入口 `src/index.ts`（tests 3）
 
 ## packages/code-runtime
@@ -183,6 +183,11 @@ workspace 共 276 个包，按 group 分节。每行给出包目录、职责（R
 
 - `packages/genui/genui` — 内嵌 GenUI 能力：把模型回答中的 ` ```gen-ui ` 围栏渲染成可交互组件… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 20）
 
+## packages/git
+
+- `packages/git/git` — 宿主读取本机仓库并执行远端操作的能力 seam（`ctx.git`），本包是它的 Service Definition 入口 `src/index.ts`（tests 1）
+- `packages/git/git-local` — Git seam（`ctx.git`，见 `coding-git`）的本机实现 入口 `src/index.ts`（tests 2）
+
 ## packages/goal
 
 - `packages/goal/command-goal` — 面向用户的 `/goal` 控制，基于 `ctx.goals` 实现 入口 `src/index.ts`（tests 1）
@@ -204,7 +209,7 @@ workspace 共 276 个包，按 group 分节。每行给出包目录、职责（R
 
 ## packages/host
 
-- `packages/host/apiproxy` — 所有客户端共用的 API 网关由三部分组成：TypeScript API 约定（`src/api/`，不依赖 Node… [client] 入口 `src/index.ts`（tests 23）
+- `packages/host/apiproxy` — 所有客户端共用的 API 网关由三部分组成：TypeScript API 约定（`src/api/`，不依赖 Node… [client] 入口 `src/index.ts`（tests 22）
 - `packages/host/directory-picker` — web GUI 宿主的工作区目录选择是一项能力 seam 入口 `src/index.ts`（tests 1）
 - `packages/host/directory-picker-auto` — 目录选择 seam 的**自适应选择器**：一个只有 node 半侧的插件，在启动时一次性判定宿主处境… 入口 `src/index.ts`（tests 2）
 - `packages/host/directory-picker-browse` — 目录选择 seam 的**应用内浏览后端**：`BrowseDirectoryPicker` 以 `browse` 能力注册 `ctx.dire… 入口 `src/index.ts`（tests 1）

@@ -45,16 +45,19 @@
   ],
   "license": "MIT",
   "dependencies": {
-    "coding-attachment": "workspace:^",
+    "@deepseek-ai/schemastery": "workspace:^",
     "coding-agent": "workspace:^",
     "coding-agent-default-model": "workspace:^",
     "coding-api-remotes": "workspace:^",
+    "coding-attachment": "workspace:^",
     "coding-brand": "workspace:^",
     "coding-browser": "workspace:^",
     "coding-commands": "workspace:^",
     "coding-credentials": "workspace:^",
+    "coding-git": "workspace:^",
     "coding-goal": "workspace:^",
     "coding-host-directory-picker": "workspace:^",
+    "coding-jobs": "workspace:^",
     "coding-llm": "workspace:^",
     "coding-native-command": "workspace:^",
     "coding-session": "workspace:^",
@@ -67,12 +70,10 @@
     "coding-skill": "workspace:^",
     "coding-subagent": "workspace:^",
     "coding-subprocess": "workspace:^",
-    "coding-jobs": "workspace:^",
     "coding-tools": "workspace:^",
     "coding-user-approval": "workspace:^",
     "coding-user-questions": "workspace:^",
     "coding-workspace": "workspace:^",
-    "@deepseek-ai/schemastery": "workspace:^",
     "fflate": "^0.8.2",
     "zod": "^4.4.3"
   },
@@ -93,14 +94,15 @@
   "devDependencies": {
     "@deepseek-ai/cordis": "workspace:^",
     "coding-agent-presets": "workspace:^",
-    "coding-llm-vision-fallback": "workspace:^",
     "coding-cordis-host-runner": "workspace:^",
+    "coding-git-local": "workspace:^",
     "coding-invariants": "workspace:^",
+    "coding-llm-opencode": "workspace:^",
+    "coding-llm-vision-fallback": "workspace:^",
+    "coding-proxy-pool": "workspace:^",
     "coding-storage": "workspace:^",
     "coding-storage-domain": "workspace:^",
     "coding-typert-protocol": "workspace:^",
-    "coding-typert-registry": "workspace:^",
-    "coding-proxy-pool": "workspace:^",
-    "coding-llm-opencode": "workspace:^"
+    "coding-typert-registry": "workspace:^"
   }
 }

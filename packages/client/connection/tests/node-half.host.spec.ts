@@ -190,7 +190,7 @@ describe('connection node half', () => {
     for (const method of [
       'session.rebuildMetadata',
       'host.pickDirectory', 'host.openPath',
-      'workspace.gitStatus', 'workspace.gitBranches', 'workspace.gitHistory', 'workspace.gitCheckout', 'workspace.gitPush', 'workspace.gitPull',
+      'workspace.gitStatus', 'workspace.gitBranches', 'workspace.gitHistory', 'workspace.gitCheckout', 'workspace.gitPush', 'workspace.gitPull', 'workspace.gitClone',
       'browser.control',
       'settings.describe', 'settings.openDocument', 'settings.update', 'settings.replace', 'settings.mutate',
       'credentials.describe', 'credentials.set', 'credentials.unset',

@@ -45,7 +45,7 @@ import {
   workspaceInsertSessionBeforeValueSchema,
   workspaceListValueSchema,
   workspaceGitStatusValueSchema, workspaceGitBranchesValueSchema, workspaceGitHistoryValueSchema, workspaceGitCheckoutValueSchema,
-  workspaceGitPushValueSchema, workspaceGitPullValueSchema,
+  workspaceGitPushValueSchema, workspaceGitPullValueSchema, workspaceGitCloneValueSchema,
   workspaceRenameValueSchema,
 } from '../api/workspace.schema.ts'
 import { skillListValueSchema } from '../api/skills.schema.ts'
@@ -141,6 +141,7 @@ export interface IApiClient {
     gitCheckout(payload: RequestPayload<'workspace.gitCheckout'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'workspace.gitCheckout'>>>
     gitPush(payload: RequestPayload<'workspace.gitPush'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'workspace.gitPush'>>>
     gitPull(payload: RequestPayload<'workspace.gitPull'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'workspace.gitPull'>>>
+    gitClone(payload: RequestPayload<'workspace.gitClone'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'workspace.gitClone'>>>
     create(payload: RequestPayload<'workspace.create'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'workspace.create'>>>
     rename(payload: RequestPayload<'workspace.rename'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'workspace.rename'>>>
     delete(payload: RequestPayload<'workspace.delete'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'workspace.delete'>>>
@@ -234,6 +235,7 @@ const UNARY_VALUE_SCHEMAS: { [K in keyof RpcMethodMap]: z.ZodType<Wire<ResponseV
   'workspace.gitCheckout': workspaceGitCheckoutValueSchema,
   'workspace.gitPush': workspaceGitPushValueSchema,
   'workspace.gitPull': workspaceGitPullValueSchema,
+  'workspace.gitClone': workspaceGitCloneValueSchema,
   'workspace.create': workspaceCreateValueSchema,
   'workspace.rename': workspaceRenameValueSchema,
   'workspace.delete': workspaceDeleteValueSchema,
@@ -390,7 +392,8 @@ export abstract class AbstractApiClient implements IApiClient {
   ): Promise<RpcResponse<ResponseValue<K>>> {
     const message: ClientRequest = { type: 'client-request', rpcId: this.mintRpcId(), method, payload }
     // 密码只进入请求体；诊断订阅者不得观察到凭据载荷。
-    if ((method !== 'workspace.gitPush' && method !== 'workspace.gitPull') || !('credentials' in payload)) this.onEnvelope(message)
+    if ((method !== 'workspace.gitPush' && method !== 'workspace.gitPull' && method !== 'workspace.gitClone')
+      || !('credentials' in payload)) this.onEnvelope(message)
     const response = await this.postJson(`/api/${method}`, message, signal, timeoutPolicy)
     const full = serverResponseSchema.parse(await response.json())
     this.onEnvelope(full)
@@ -506,6 +509,7 @@ export abstract class AbstractApiClient implements IApiClient {
     gitCheckout: (payload, signal) => this.callUnary('workspace.gitCheckout', payload, signal),
     gitPush: (payload, signal) => this.callUnary('workspace.gitPush', payload, signal, 'caller-signal-only'),
     gitPull: (payload, signal) => this.callUnary('workspace.gitPull', payload, signal, 'caller-signal-only'),
+    gitClone: (payload, signal) => this.callUnary('workspace.gitClone', payload, signal, 'caller-signal-only'),
     create: (payload, signal) => this.callUnary('workspace.create', payload, signal),
     rename: (payload, signal) => this.callUnary('workspace.rename', payload, signal),
     delete: (payload, signal) => this.callUnary('workspace.delete', payload, signal),

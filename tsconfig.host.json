@@ -342,6 +342,8 @@
     { "path": "./packages/ppt/tool-ppt" },
     { "path": "./packages/image/image-gen" },
     { "path": "./packages/image/tool-image-gen" },
+    { "path": "./packages/git/git" },
+    { "path": "./packages/git/git-local" },
     { "path": "./packages/host/apiproxy" },
     { "path": "./packages/host/directory-picker" },
     { "path": "./packages/host/directory-picker-auto" },

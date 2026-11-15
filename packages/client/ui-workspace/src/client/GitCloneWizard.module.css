@@ -1,0 +1,74 @@
+/* “打开仓库”向导只补充远程连接向导没有的两块：可折叠的高级选项与凭据弹窗里的
+   竖排字段。容器、步骤栏、正文与页脚沿用 RemoteSshWizard.module.css，避免同一
+   包内出现第二套视觉体系。 */
+
+/* 高级选项：原生 details，默认折叠，summary 保留键盘可达的焦点环。 */
+.advanced {
+  display: grid;
+  min-width: 0;
+  border-top: 1px solid var(--dsw-alias-border-l1);
+}
+
+.advancedSummary {
+  padding: 12px 0;
+  border-radius: 8px;
+  color: var(--dsw-alias-label-primary);
+  font-size: 14px;
+  line-height: 22px;
+  cursor: pointer;
+}
+
+.advancedSummary:focus-visible {
+  outline: 2px solid var(--dsw-alias-state-business-primary);
+  outline-offset: 2px;
+}
+
+.advancedBody {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+  padding: 4px 0 4px;
+}
+
+/* 字段下方的说明文字：弱化到三级标签色，不与输入值争夺注意力。 */
+.hint {
+  margin: 0;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+/* 凭据弹窗：单列表单，字段直接排在 Modal 提供的 24px 内容列里。 */
+.authForm {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.authLabel {
+  color: var(--dsw-alias-label-primary);
+  font-size: 14px;
+  line-height: 22px;
+}
+
+.authLabel:not(:first-child) {
+  margin-top: 8px;
+}
+
+.authStale {
+  display: grid;
+  justify-items: start;
+  gap: 8px;
+  margin-top: 4px;
+  padding: 12px;
+  border-radius: 12px;
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.authStale p {
+  margin: 0;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+  overflow-wrap: anywhere;
+}

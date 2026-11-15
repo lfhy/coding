@@ -598,6 +598,15 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'Discriminated interaction capability: the native backend opens one OS chooser on the host display, the browse backend serves listing/creation primitives for the in-app browser; dual-face backends fill ui-workspace directory-flow slots from their browser halves (no wire advertisement).',
   },
   {
+    key: 'git',
+    pkg: 'git',
+    title: 'Local repository reads and remote operations',
+    mode: 'seam',
+    implementations: ['git-local'],
+    consumers: ['apiproxy'],
+    note: 'One implementation per context: the local provider drives the system git binary and falls back to a built-in JavaScript clone when git is not installed; capability() reports which mechanism and operations are available.',
+  },
+  {
     key: 'webServer',
     pkg: 'webserver',
     title: 'HTTP route registration',

@@ -125,6 +125,7 @@
       "coding-experimental-tool-agent-team/invariant": ["./packages/experimental/tool-agent-team/src/invariant.ts"],
       "coding-*/invariant": [
         "./packages/core/*/src/invariant.ts",
+        "./packages/git/*/src/invariant.ts",
         "./packages/prompt/*/src/invariant.ts",
         "./packages/llm/*/src/invariant.ts",
         "./packages/shell/*/src/invariant.ts",
@@ -275,6 +276,7 @@
       "coding-experimental-tool-agent-team": ["./packages/experimental/tool-agent-team/src"],
       "coding-*": [
         "./packages/core/*/src",
+        "./packages/git/*/src",
         "./packages/prompt/*/src",
         "./packages/llm/*/src",
         "./packages/net/*/src",
