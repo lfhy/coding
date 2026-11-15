@@ -24,23 +24,20 @@
   height: var(--app-safe-area-inset-top, 0px);
 }
 
-/* 顶部安全区是原生窗口按钮（macOS 交通灯）的地盘：内层卡片的左上圆角正好落在按钮
-   旁边，看起来像内容顶到了交通灯。这里用窗口底色把整条留白渐隐到透明，把这一段的
-   圆角淡掉；它不接收指针，拖拽仍由窄导航列里的拖拽垫片负责。浏览器里安全区为 0。 */
-.chromeFade {
+/* macOS 交通灯底座：无边框窗口把三个系统按钮画在窗口左上角（壳把它们的起点设在
+   16,15），这里给按钮单独垫一块实心圆角托盘，按钮与下面的内容就有了分界。托盘只占
+   安全区高度，普通 Web 没有安全区、高度归零，不绘制；它不接收指针，拖拽仍由导航列负责。 */
+.trafficLights {
   position: absolute;
-  top: 0;
-  right: 0;
-  left: 0;
-  height: var(--app-safe-area-inset-top, 0px);
+  top: 8px;
+  left: 8px;
+  width: 72px;
+  height: clamp(0px, calc(var(--app-safe-area-inset-top, 0px) - 12px), 26px);
   z-index: 1;
+  border-radius: 13px;
+  background: var(--dsw-alias-bg-layer-3);
+  box-shadow: 0 0 0 1px var(--dsw-alias-border-l1);
   pointer-events: none;
-  background: linear-gradient(
-    to bottom,
-    var(--dsw-specific-sidebar-fill) 0,
-    var(--dsw-specific-sidebar-fill) 64%,
-    transparent 100%
-  );
 }
 
 .navigation {
