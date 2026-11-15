@@ -34,6 +34,7 @@ body {
   --dsw-static-green-100: rgb(230, 250, 237);
   --dsw-static-green-400: rgb(78, 209, 126);
   --dsw-static-green-500: rgb(34, 197, 94);
+  --dsw-static-green-600: rgb(22, 163, 74);
   --dsw-static-green-900: rgb(35, 60, 44);
   --dsw-static-indigo-600: rgb(38, 65, 208);
   --dsw-static-neutral-00: rgb(255, 255, 255);
@@ -113,6 +114,7 @@ body[data-ds-dark-theme] {
   --dsw-static-green-100: rgb(230, 250, 237);
   --dsw-static-green-400: rgb(78, 209, 126);
   --dsw-static-green-500: rgb(34, 197, 94);
+  --dsw-static-green-600: rgb(22, 163, 74);
   --dsw-static-green-900: rgb(35, 60, 44);
   --dsw-static-neutral-00: rgb(255, 255, 255);
   --dsw-static-neutral-1000: rgb(0, 0, 0);
@@ -234,6 +236,9 @@ body {
   --dsw-alias-state-warn-primary: var(--dsw-static-amber-500);
   --dsw-alias-state-warn-secondary: var(--dsw-static-amber-400);
   --dsw-alias-state-warn-tertiary: var(--dsw-static-amber-100);
+  /* 图标强调色：窗口导航里与业务蓝并排的入口各用自己的色相，图标不靠文字也能分开。
+     亮色取 600 档，保证 16px 线稿在浅底上仍然清楚。 */
+  --dsw-alias-icon-accent-green: var(--dsw-static-green-600);
   --dsw-alias-toast-bg: var(--dsw-static-neutral-bluish-800);
   --dsw-alias-tooltip-bg: var(--dsw-static-neutral-bluish-850);
   --dsw-specific-bubble-highlight: var(--dsw-static-deepseek-200);
@@ -351,6 +356,8 @@ body[data-ds-dark-theme] {
   --dsw-alias-state-warn-primary: var(--dsw-static-amber-500);
   --dsw-alias-state-warn-secondary: var(--dsw-static-amber-400);
   --dsw-alias-state-warn-tertiary: var(--dsw-static-amber-900);
+  /* 与亮色同一色相：暗色改用 400 档，避免深底上的线稿发闷。 */
+  --dsw-alias-icon-accent-green: var(--dsw-static-green-400);
   --dsw-alias-toast-bg: var(--dsw-static-neutral-bluish-750);
   --dsw-alias-tooltip-bg: var(--dsw-static-neutral-bluish-750);
   --dsw-specific-bubble-highlight: var(--dsw-static-neutral-bluish-750);

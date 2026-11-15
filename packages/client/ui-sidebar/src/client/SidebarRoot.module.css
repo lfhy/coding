@@ -184,6 +184,12 @@
   background: var(--dsw-alias-interactive-bg-hover);
 }
 
+/* 新对话行的图标用业务蓝，文字保持主文字色，二者不互相抢色；收起 rail 里只剩图标，
+   蓝色仍是这一列唯一的新建入口标识。 */
+.newSession svg {
+  color: var(--dsw-alias-state-business-primary);
+}
+
 /* 焦点环画在行内侧：新对话行裁切溢出，向外偏移的轮廓会被切掉。 */
 .newSession:focus-visible {
   outline: 2px solid var(--dsw-alias-state-business-primary);

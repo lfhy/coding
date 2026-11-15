@@ -1,5 +1,5 @@
-/* 画图入口：与外侧窄导航的主页、设置入口共用 36×36 图标盒与 10px 圆角。 */
-
+/* 画图入口：与外侧窄导航的主页、设置入口共用 36×36 图标盒与 10px 圆角；
+   图标用图标强调色的绿，悬停与打开画廊时保持色相，只换底色。 */
 .entry {
   flex: none;
   display: inline-flex;
@@ -11,7 +11,7 @@
   border: 0;
   border-radius: 10px;
   background: transparent;
-  color: var(--dsw-alias-label-secondary);
+  color: var(--dsw-alias-icon-accent-green);
   cursor: pointer;
   transition:
     background var(--ds-transition-duration-fast) var(--ds-ease-in-out),
@@ -20,12 +20,12 @@
 
 .entry:hover:not(:disabled) {
   background: var(--dsw-alias-interactive-bg-hover);
-  color: var(--dsw-alias-label-primary);
+  color: var(--dsw-alias-icon-accent-green);
 }
 
 .entry[aria-current='page'] {
   background: var(--dsw-alias-interactive-bg-active);
-  color: var(--dsw-alias-label-primary);
+  color: var(--dsw-alias-icon-accent-green);
 }
 
 .entry:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: 2px; }

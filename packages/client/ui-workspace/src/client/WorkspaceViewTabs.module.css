@@ -30,6 +30,11 @@
   color: var(--dsw-alias-label-primary);
 }
 
+/* 选中范围的图标换成业务蓝；未选中仍是次级文字色，选中与否不只靠颜色表达。 */
+.tabs .tab[aria-selected='true'] svg {
+  color: var(--dsw-alias-state-business-primary);
+}
+
 .prominent {
   gap: 4px;
   margin-block: 0;

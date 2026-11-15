@@ -22,6 +22,8 @@ export function WindowShell(props: WindowShellProps) {
   return (
     <div className={css.shell} data-window-shell>
       <div className={css.titleDragInset} data-window-drag-region aria-hidden="true" />
+      {/* 顶部安全区淡出层只负责隐去内层容器的顶部圆角，不参与拖拽与命中测试。 */}
+      <div className={css.chromeFade} data-window-chrome-fade aria-hidden="true" />
       <nav className={css.navigation} aria-label={props.t('shell.navigation')}>
         <Tooltip label={props.t('shell.conversation')} delayMs={500}>
           <span className={css.navAnchor}>
