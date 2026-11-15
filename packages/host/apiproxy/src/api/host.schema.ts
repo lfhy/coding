@@ -48,23 +48,49 @@ export const hostListDirectoryValueSchema = z.object({
   home: z.string(),
   crumbs: z.array(directoryEntrySchema),
   entries: z.array(directoryEntrySchema),
+  files: z.array(directoryEntrySchema),
   truncated: z.boolean(),
 }) satisfies z.ZodType<Wire<ResponseValue<'host.listDirectory'>>>
 
-/** host.createDirectory request payload: name must be one plain path segment. */
-export const hostCreateDirectoryRequestSchema = z.object({
+/**
+ * 建目录与改名的共用 payload：`name` 必须是一个普通路径段。wire 栅栏在这里，
+ * 后端对直连服务调用方重复同一道栅栏。
+ */
+const directorySegmentPayloadSchema = z.object({
   path: z.string(),
   name: z.string(),
 }).refine(
   payload => payload.name.trim() !== '' && payload.name !== '.' && payload.name !== '..'
     && !/[/\\]/.test(payload.name),
-  { message: 'host.createDirectory requires a single non-blank path segment name' },
-) satisfies z.ZodType<Wire<RequestPayload<'host.createDirectory'>>>
+  { message: 'name must be a single non-blank path segment' },
+)
+
+/** host.createDirectory request payload：name 必须是单个普通路径段。 */
+export const hostCreateDirectoryRequestSchema = directorySegmentPayloadSchema satisfies z.ZodType<Wire<RequestPayload<'host.createDirectory'>>>
 
 /** host.createDirectory response value: the created directory's absolute path. */
 export const hostCreateDirectoryValueSchema = z.object({
   path: z.string(),
 }) satisfies z.ZodType<Wire<ResponseValue<'host.createDirectory'>>>
+
+/** host.renameDirectoryEntry request payload：目标路径加上新的单段名称。 */
+export const hostRenameDirectoryEntryRequestSchema = directorySegmentPayloadSchema satisfies z.ZodType<Wire<RequestPayload<'host.renameDirectoryEntry'>>>
+
+/** host.renameDirectoryEntry response value: the entry's absolute path under its new name. */
+export const hostRenameDirectoryEntryValueSchema = z.object({
+  path: z.string(),
+}) satisfies z.ZodType<Wire<ResponseValue<'host.renameDirectoryEntry'>>>
+
+/** host.deleteDirectoryEntry request payload. */
+export const hostDeleteDirectoryEntryRequestSchema = z.object({
+  path: z.string(),
+}) satisfies z.ZodType<Wire<RequestPayload<'host.deleteDirectoryEntry'>>>
+
+/** host.deleteDirectoryEntry response value. */
+export const hostDeleteDirectoryEntryValueSchema = z.object({
+  deleted: z.literal(true),
+}) satisfies z.ZodType<Wire<ResponseValue<'host.deleteDirectoryEntry'>>>
+
 /** host.openPath request payload. */
 export const hostOpenPathRequestSchema = z.object({
   path: z.string().min(1),

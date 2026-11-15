@@ -8,7 +8,7 @@ import type { RpcRequest, RpcResponse } from './rpc.ts'
 /** 受管 Host 在自身进程中保存 host.json 所有权 token 的环境变量。 */
 export const MANAGED_HOST_RECORD_TOKEN_ENV = 'DSH_MANAGED_HOST_RECORD_TOKEN'
 
-/** One directory row of a listing: a child entry or a breadcrumb ancestor. */
+/** One browser row of a listing: a child entry (directory or file) or a breadcrumb ancestor. */
 export interface DirectoryEntry {
   /** Base name shown in a browser row (a root crumb carries its full path). */
   name: string
@@ -29,9 +29,15 @@ export interface DirectoryListing {
    * inclusive; every crumb is a jump target (crumb `hidden` is always false).
    */
   crumbs: DirectoryEntry[]
-  /** Direct child directories, name-sorted; symlinks to directories included. */
+  /** Direct child directories, name-sorted; symlinks to directories included. The only rows picking accepts. */
   entries: DirectoryEntry[]
-  /** True when the backend cut `entries` at its complete-result bound (the name-sorted tail is absent). */
+  /** Direct child files, name-sorted; display-only rows that are never picking targets. */
+  files: DirectoryEntry[]
+  /**
+   * True when the backend cut the level at its complete-result bound: child
+   * directories and files together exceeded it and the name-sorted tail of
+   * that combined set is absent.
+   */
   truncated: boolean
 }
 
@@ -86,6 +92,26 @@ export interface HostApi {
   createDirectory(
     request: RpcRequest<{ path: string; name: string }>,
   ): Promise<RpcResponse<{ path: string }>>
+
+  /**
+   * Rename one child of its existing parent — a directory or a file, never a
+   * move. Only served under the `browse` capability; an existing sibling
+   * fails with `directory-exists`, an invalid name or any other filesystem
+   * failure with `directory-rename-failed`.
+   */
+  renameDirectoryEntry(
+    request: RpcRequest<{ path: string; name: string }>,
+  ): Promise<RpcResponse<{ path: string }>>
+
+  /**
+   * Delete one entry — a file, or a directory with everything inside it.
+   * Only served under the `browse` capability; failures (including a missing
+   * target) report `directory-delete-failed`. The caller owns the operator's
+   * confirmation: this method deletes immediately.
+   */
+  deleteDirectoryEntry(
+    request: RpcRequest<{ path: string }>,
+  ): Promise<RpcResponse<{ deleted: true }>>
 
   /**
    * Open a filesystem path with the operating system's default application

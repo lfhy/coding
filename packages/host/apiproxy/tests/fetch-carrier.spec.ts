@@ -179,10 +179,16 @@ function fakeApi(overrides: Partial<{ muxFrames: MuxFrame[]; hostFrames: HostFra
         return { rpcId: request.rpcId, result: { ok: true, value: { path: null } } }
       },
       async listDirectory(request) {
-        return { rpcId: request.rpcId, result: { ok: true, value: { path: '/w', home: '/w', crumbs: [{ name: '/', path: '/', hidden: false }], entries: [], truncated: false } } }
+        return { rpcId: request.rpcId, result: { ok: true, value: { path: '/w', home: '/w', crumbs: [{ name: '/', path: '/', hidden: false }], entries: [], files: [], truncated: false } } }
       },
       async createDirectory(request) {
         return { rpcId: request.rpcId, result: { ok: true, value: { path: '/w/new' } } }
+      },
+      async renameDirectoryEntry(request) {
+        return { rpcId: request.rpcId, result: { ok: true, value: { path: `/w/${request.payload.name}` } } }
+      },
+      async deleteDirectoryEntry(request) {
+        return { rpcId: request.rpcId, result: { ok: true, value: { deleted: true as const } } }
       },
       async openPath(request) {
         return { rpcId: request.rpcId, result: { ok: true, value: { opened: true as const } } }
@@ -514,12 +520,28 @@ describe('unary round trip (handler ⇄ client, no network)', () => {
     const listed = await c.host.listDirectory({ path: '/w' })
     expect(listed.result).toEqual({
       ok: true,
-      value: { path: '/w', home: '/w', crumbs: [{ name: '/', path: '/', hidden: false }], entries: [], truncated: false },
+      value: {
+        path: '/w', home: '/w', crumbs: [{ name: '/', path: '/', hidden: false }], entries: [], files: [], truncated: false,
+      },
     })
     const home = await c.host.listDirectory({})
     expect(home.result).toMatchObject({ ok: true, value: { home: '/w' } })
     const created = await c.host.createDirectory({ path: '/w', name: 'fresh' })
     expect(created.result).toEqual({ ok: true, value: { path: '/w/new' } })
+  })
+
+  it('round-trips the browse rename and delete calls, refusing an invalid name at the carrier', async () => {
+    const c = client()
+    const renamed = await c.host.renameDirectoryEntry({ path: '/w/old', name: 'fresh' })
+    expect(renamed.result).toEqual({ ok: true, value: { path: '/w/fresh' } })
+    const removed = await c.host.deleteDirectoryEntry({ path: '/w/fresh' })
+    expect(removed.result).toEqual({ ok: true, value: { deleted: true } })
+    // The payload schema is the wire fence: a separator or dot-segment name
+    // never reaches the backend.
+    for (const name of ['', ' ', '.', '..', 'a/b', 'a\\b']) {
+      const refused = await c.host.renameDirectoryEntry({ path: '/w/old', name })
+      expect(refused.result).toMatchObject({ ok: false, error: { code: 'bad-request' } })
+    }
   })
 
   it('round-trips host.openPath through the wire form', async () => {

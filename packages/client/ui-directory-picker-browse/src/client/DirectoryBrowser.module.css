@@ -235,19 +235,30 @@
   flex: none;
 }
 
+/* Row geometry is shared by directory and file rows; the right 52px strip is
+ * reserved for the two management actions, which sit exactly where the
+ * chevron is (the chevron steps aside while they show, so no name ever runs
+ * underneath a button and no row shifts on hover). */
 .row {
+  position: relative;
   width: 100%;
   display: flex;
   align-items: center;
   gap: 4px;
   height: 28px;
   flex: none;
-  padding: 4px;
+  padding: 4px 52px 4px 4px;
   border: none;
   border-radius: 6px;
   background: transparent;
   text-align: left;
   cursor: pointer;
+}
+
+/* File rows are display-only: same grid and height as a directory row, but
+ * nothing to pick, so no pointer cursor and no chevron. */
+.rowFile {
+  cursor: default;
 }
 
 .row:hover {
@@ -283,8 +294,74 @@
 }
 
 .rowChevron {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
   flex: none;
   color: var(--dsw-alias-label-tertiary);
+}
+
+/* Management actions: visible only while the row is hovered or holds focus
+ * (`:focus-within`), which is also what keyboard traversal produces — the
+ * buttons are ALWAYS in the tab order (opacity, never visibility/display), so
+ * tabbing into them is what reveals them. Pointer events follow the same
+ * state so a hidden button never eats a row click. */
+.rowActions {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.rowSeat:hover .rowActions,
+.rowSeat:focus-within .rowActions {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.rowSeat:hover .rowChevron,
+.rowSeat:focus-within .rowChevron {
+  opacity: 0;
+}
+
+.rowAction {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+}
+
+.rowAction:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.rowAction:focus-visible {
+  outline: 2px solid var(--dsw-alias-state-business-primary);
+  outline-offset: 1px;
+  color: var(--dsw-alias-label-primary);
+}
+
+.rowAction:disabled {
+  color: var(--dsw-alias-label-caption);
+  cursor: default;
+}
+
+.rowActionDanger:hover:not(:disabled) {
+  color: var(--dsw-alias-state-error-primary);
 }
 
 .status,
@@ -377,21 +454,22 @@
   min-width: 72px;
 }
 
-/* Nested create dialog (figma 813:23278): a small centered card. */
-.createDialog.createDialog {
+/* Nested dialogs (figma 813:23278 family): one small centered card shape
+ * shared by create, rename, and delete. */
+.entryDialog.entryDialog {
   width: min(380px, 100%);
   padding: 0;
   gap: 0;
 }
 
-.createBody {
+.entryBody {
   display: flex;
   flex-direction: column;
   gap: 12px;
   padding: 22px 24px 20px;
 }
 
-.createTitle {
+.entryTitle {
   margin: 0;
   font-size: 16px;
   line-height: 24px;
@@ -399,40 +477,42 @@
   color: var(--dsw-alias-label-primary);
 }
 
-.createIn {
+.entryIn {
   margin: 0;
   font-size: 14px;
   line-height: 22px;
   color: var(--dsw-alias-label-primary);
 }
 
-.createInput {
-  box-sizing: border-box;
+/* The destructive consequence of deleting a directory, stated once and in the
+ * error color so the confirm button's weight matches the copy beside it. */
+.entryWarning {
+  margin: 0;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.entryInput {
   width: 100%;
-  height: 44px;
-  padding: 7px 14px;
-  border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 22px;
-  outline: none;
-  background: transparent;
-  font-size: 14px;
-  line-height: 22px;
-  color: var(--dsw-alias-label-primary);
 }
 
-.createInput:focus-visible {
-  border-color: var(--dsw-alias-state-business-primary);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--dsw-alias-state-business-primary) 18%, transparent);
-}
-
-.createInput::placeholder {
-  color: var(--dsw-alias-label-caption);
-}
-
-.createActions {
+.entryActions {
   display: flex;
   align-items: center;
   justify-content: flex-end;
   gap: 8px;
   margin-top: 8px;
+}
+
+/* Destructive primary action: the shared primary capsule, repainted from the
+ * danger tokens. Deleting is irreversible, so the button reads as one. */
+.dangerAction,
+.dangerAction:hover:not(:disabled) {
+  background: var(--dsw-alias-state-error-primary);
+  color: var(--dsw-alias-label-primary-foreground);
+}
+
+.dangerAction:hover:not(:disabled) {
+  filter: brightness(1.08);
 }

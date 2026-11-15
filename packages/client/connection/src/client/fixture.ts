@@ -1603,12 +1603,69 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
       'deepseek-web', 'deepseek-harness', 'deepseek-app', 'deepseek-landing-blog',
     ]],
   ])
+  // 同一层的普通文件（fixture 只做展示与文件管理演示，不对应真实磁盘）。
+  const fileTree = new Map<string, string[]>([
+    [FIXTURE_HOME, ['README.md', 'notes.txt']],
+    [`${FIXTURE_HOME}/Documents`, ['draft.md']],
+  ])
+  const parentOf = (path: string): string => path.slice(0, path.lastIndexOf('/')) || '/'
+  const baseOf = (path: string): string => path.slice(path.lastIndexOf('/') + 1)
   const childrenOf = (path: string): string[] | undefined => {
     const known = directoryTree.get(path)
     if (known !== undefined) return known
-    const parent = path.slice(0, path.lastIndexOf('/')) || '/'
-    const name = path.slice(path.lastIndexOf('/') + 1)
+    const parent = parentOf(path)
+    const name = baseOf(path)
     return directoryTree.get(parent)?.includes(name) === true ? [] : undefined
+  }
+  const filesOf = (path: string): string[] | undefined => {
+    if (childrenOf(path) === undefined) return undefined
+    return fileTree.get(path) ?? []
+  }
+  /** 目录或文件是否已存在（目录树对已知层是权威的，叶层按父层列表推出）。 */
+  const entryExists = (path: string): boolean => {
+    if (path === '/') return true
+    const parent = parentOf(path)
+    const name = baseOf(path)
+    return directoryTree.get(parent)?.includes(name) === true
+      || fileTree.get(parent)?.includes(name) === true
+  }
+  /** 把某一层的名字换成新名；层不存在时返回空的追加结果。 */
+  const renameIn = (names: string[] | undefined, from: string, to: string): string[] => (
+    (names ?? []).map(name => (name === from ? to : name))
+  )
+  /** 摘掉一层里的某个名字（层不存在时保持原样）。 */
+  const dropFrom = (names: string[] | undefined, name: string): string[] => (
+    (names ?? []).filter(entry => entry !== name)
+  )
+  /** 递归移走目录（连同子孙层的目录列表与文件列表）。 */
+  const detachTree = (source: string): void => {
+    for (const child of childrenOf(source) ?? []) detachTree(`${source === '/' ? '' : source}/${child}`)
+    directoryTree.delete(source)
+    fileTree.delete(source)
+  }
+  const renameEntry = (source: string, nextName: string): string | undefined => {
+    const parent = parentOf(source)
+    const target = parent === '/' ? `/${nextName}` : `${parent}/${nextName}`
+    if (entryExists(target)) return undefined
+    const dirs = directoryTree.get(parent) ?? []
+    directoryTree.set(parent, renameIn(dirs, baseOf(source), nextName))
+    fileTree.set(parent, renameIn(fileTree.get(parent), baseOf(source), nextName))
+    if (dirs.includes(baseOf(source))) {
+      // 目录改名要整棵子树跟着走，否则下一层列举会指向已不存在的旧路径。
+      const keys = [...directoryTree.keys()].filter(key => key.startsWith(`${source}/`) || key === source)
+      for (const key of keys) {
+        const value = directoryTree.get(key) ?? []
+        directoryTree.delete(key)
+        directoryTree.set(`${target}${key.slice(source.length)}`, value)
+      }
+      for (const key of [...fileTree.keys()].filter(key => key.startsWith(`${source}/`) || key === source)) {
+        const value = fileTree.get(key) ?? []
+        fileTree.delete(key)
+        fileTree.set(`${target}${key.slice(source.length)}`, value)
+      }
+      directoryTree.set(target, directoryTree.get(target) ?? [])
+    }
+    return target
   }
   const crumbsOf = (path: string): { name: string; path: string; hidden: boolean }[] => {
     const crumbs = [{ name: '/', path: '/', hidden: false }]
@@ -2658,15 +2715,19 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
       listDirectory: (request) => {
         const target = request.payload.path ?? FIXTURE_HOME
         const children = childrenOf(target)
-        if (children === undefined) {
+        const files = filesOf(target)
+        if (children === undefined || files === undefined) {
           return err(request, { code: 'directory-unreadable', message: `cannot list ${target}: not in the fixture tree`, details: { path: target } })
         }
+        const row = (name: string) => ({
+          name, path: target === '/' ? `/${name}` : `${target}/${name}`, hidden: name.startsWith('.'),
+        })
         return ok(request, {
           path: target,
           home: FIXTURE_HOME,
           crumbs: crumbsOf(target),
-          entries: [...children].sort((a, b) => a.localeCompare(b))
-            .map(name => ({ name, path: target === '/' ? `/${name}` : `${target}/${name}`, hidden: name.startsWith('.') })),
+          entries: [...children].sort((a, b) => a.localeCompare(b)).map(row),
+          files: [...files].sort((a, b) => a.localeCompare(b)).map(row),
           // The fixture tree is tiny; no level ever reaches a backend bound.
           truncated: false,
         })
@@ -2686,6 +2747,39 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
         directoryTree.set(parent, [...children, request.payload.name])
         directoryTree.set(target, [])
         return ok(request, { path: target })
+      },
+      renameDirectoryEntry: (request) => {
+        const source = request.payload.path
+        if (!entryExists(source)) {
+          return err(request, {
+            code: 'directory-rename-failed',
+            message: `cannot rename ${source}: no such file or directory`,
+            details: { path: source },
+          })
+        }
+        const target = renameEntry(source, request.payload.name)
+        if (target === undefined) {
+          const parent = parentOf(source)
+          const taken = parent === '/' ? `/${request.payload.name}` : `${parent}/${request.payload.name}`
+          return err(request, { code: 'directory-exists', message: `${taken} already exists`, details: { path: taken } })
+        }
+        return ok(request, { path: target })
+      },
+      deleteDirectoryEntry: (request) => {
+        const target = request.payload.path
+        if (!entryExists(target)) {
+          return err(request, {
+            code: 'directory-delete-failed',
+            message: `cannot delete ${target}: no such file or directory`,
+            details: { path: target },
+          })
+        }
+        const parent = parentOf(target)
+        const name = baseOf(target)
+        detachTree(target)
+        directoryTree.set(parent, dropFrom(directoryTree.get(parent), name))
+        fileTree.set(parent, dropFrom(fileTree.get(parent), name))
+        return ok(request, { deleted: true as const })
       },
       openPath: request => ok(request, { opened: true as const }),
     },
@@ -3245,6 +3339,8 @@ export class FixtureApiClient extends AbstractApiClient {
       case 'host.pickDirectory': return this.api.host.pickDirectory(request, new AbortController().signal)
       case 'host.listDirectory': return this.api.host.listDirectory(request, new AbortController().signal)
       case 'host.createDirectory': return this.api.host.createDirectory(request)
+      case 'host.renameDirectoryEntry': return this.api.host.renameDirectoryEntry(request)
+      case 'host.deleteDirectoryEntry': return this.api.host.deleteDirectoryEntry(request)
       case 'host.openPath': return this.api.host.openPath(request, new AbortController().signal)
       case 'workspace.list': return this.api.workspace.list(request)
       case 'workspace.gitStatus': return this.api.workspace.gitStatus(request, signal)

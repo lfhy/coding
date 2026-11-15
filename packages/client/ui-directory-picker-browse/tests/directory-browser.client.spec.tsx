@@ -32,6 +32,7 @@ function listingFor(path?: string): DirectoryListing {
         { name: '.config', path: `${HOME}/.config`, hidden: true },
         { name: 'Documents', path: DOCS, hidden: false },
       ],
+      files: [],
       truncated: false,
     },
     '/': {
@@ -39,6 +40,7 @@ function listingFor(path?: string): DirectoryListing {
       home: HOME,
       crumbs: [{ name: '/', path: '/', hidden: false }],
       entries: [{ name: 'home', path: '/home', hidden: false }],
+      files: [],
       truncated: false,
     },
     [`${HOME}/.config`]: {
@@ -51,6 +53,7 @@ function listingFor(path?: string): DirectoryListing {
         { name: '.config', path: `${HOME}/.config`, hidden: true },
       ],
       entries: [],
+      files: [],
       truncated: false,
     },
     [DOCS]: {
@@ -63,6 +66,7 @@ function listingFor(path?: string): DirectoryListing {
         { name: 'Documents', path: DOCS, hidden: false },
       ],
       entries: [{ name: 'harness', path: HARNESS, hidden: false }],
+      files: [],
       truncated: false,
     },
     [HARNESS]: {
@@ -76,6 +80,7 @@ function listingFor(path?: string): DirectoryListing {
         { name: 'harness', path: HARNESS, hidden: false },
       ],
       entries: [],
+      files: [],
       truncated: false,
     },
   }
@@ -89,12 +94,16 @@ function listingFor(path?: string): DirectoryListing {
 function mount(overrides: Partial<Parameters<typeof DirectoryBrowser>[0]> = {}) {
   const listDirectory = vi.fn(async (path?: string) => listingFor(path))
   const createDirectory = vi.fn(async (path: string, name: string) => `${path}/${name}`)
+  const renameEntry = vi.fn(async (path: string, nextName: string) => `${path.slice(0, path.lastIndexOf('/'))}/${nextName}`)
+  const removeEntry = vi.fn(async () => {})
   const onOpen = vi.fn()
   const onClose = vi.fn()
   const props = {
     open: true,
     listDirectory,
     createDirectory,
+    renameEntry,
+    removeEntry,
     onOpen,
     onClose,
     busy: false,
@@ -102,7 +111,7 @@ function mount(overrides: Partial<Parameters<typeof DirectoryBrowser>[0]> = {}) 
     ...overrides,
   }
   const view = render(<DirectoryBrowser {...props} />)
-  return { view, props, listDirectory, createDirectory, onOpen, onClose }
+  return { view, props, listDirectory, createDirectory, renameEntry, removeEntry, onOpen, onClose }
 }
 
 /** The rendered level columns, left-to-right. */
@@ -110,9 +119,15 @@ function columns(): HTMLElement[] {
   return screen.getAllByRole('list')
 }
 
-/** The actionable button inside a listitem seat (rows keep native button semantics). */
+/**
+ * The row button that opens a listitem seat (rows keep native button
+ * semantics). The seat also holds the two management actions, so the row is
+ * the seat's first direct button child.
+ */
 function rowButton(item: HTMLElement): HTMLButtonElement {
-  return within(item).getByRole<HTMLButtonElement>('button')
+  const button = item.querySelector<HTMLButtonElement>(':scope > button')
+  if (button === null) throw new Error('a listitem seat must start with its row button')
+  return button
 }
 
 describe('DirectoryBrowser', () => {
@@ -518,6 +533,7 @@ describe('DirectoryBrowser', () => {
       home: ROOT,
       crumbs: [{ name: 'C:\\', path: ROOT, hidden: false }],
       entries: [{ name: 'Users', path: 'C:\\Users', hidden: false }],
+      files: [],
       truncated: false,
     }
     const winUsers: DirectoryListing = {
@@ -525,6 +541,7 @@ describe('DirectoryBrowser', () => {
       home: ROOT,
       crumbs: [{ name: 'C:\\', path: ROOT, hidden: false }, { name: 'users', path: TYPED, hidden: false }],
       entries: [],
+      files: [],
       truncated: false,
     }
     mount({ listDirectory: vi.fn(async (path?: string) => (path === TYPED ? winUsers : winRoot)) })
@@ -775,6 +792,7 @@ describe('DirectoryBrowser', () => {
         home: ROOT,
         crumbs: chain,
         entries: [{ name: 'mid', path: MID, hidden: false }, { name: 'other', path: `${ROOT}/other`, hidden: false }],
+        files: [],
         truncated: false,
       },
       [MID]: {
@@ -782,6 +800,7 @@ describe('DirectoryBrowser', () => {
         home: ROOT,
         crumbs: [...chain, { name: 'mid', path: MID, hidden: false }],
         entries: [{ name: 'leaf', path: LEAF, hidden: false }, { name: 'sibling', path: `${MID}/sibling`, hidden: false }],
+        files: [],
         truncated: false,
       },
       [LEAF]: {
@@ -789,6 +808,7 @@ describe('DirectoryBrowser', () => {
         home: ROOT,
         crumbs: [...chain, { name: 'mid', path: MID, hidden: false }, { name: 'leaf', path: LEAF, hidden: false }],
         entries: [],
+        files: [],
         truncated: false,
       },
     }
@@ -1115,6 +1135,7 @@ describe('DirectoryBrowser', () => {
         { name: 'Program Files', path: `${ROOT}Program Files`, hidden: false },
         { name: 'Users', path: `${ROOT}Users`, hidden: false },
       ],
+      files: [],
       truncated: false,
     }
     const listDirectory = vi.fn(async () => windowsListing)
@@ -1218,6 +1239,7 @@ describe('DirectoryBrowser', () => {
         { name: 'data', path: '/srv/data', hidden: false },
       ],
       entries: [],
+      files: [],
       truncated: false,
     }
     mount({ listDirectory: vi.fn(async () => outside) })
@@ -1267,6 +1289,7 @@ describe('DirectoryBrowser', () => {
       path: `${HOME}/fresh`, home: HOME,
       crumbs: [...listingFor(HOME).crumbs, { name: 'fresh', path: `${HOME}/fresh`, hidden: false }],
       entries: [],
+      files: [],
       truncated: false,
     }
     b.listDirectory.mockImplementation((path?: string) =>
@@ -1549,6 +1572,7 @@ describe('DirectoryBrowser', () => {
           path: `${DOCS}/fresh`, home: HOME,
           crumbs: [...listingFor(DOCS).crumbs, { name: 'fresh', path: `${DOCS}/fresh`, hidden: false }],
           entries: [],
+          files: [],
           truncated: false,
         }
       }
@@ -1681,7 +1705,7 @@ describe('DirectoryBrowser', () => {
   })
 
   it('names the create target by its path when the level reports no crumbs', async () => {
-    const bare: DirectoryListing = { path: '/srv/data', home: HOME, crumbs: [], entries: [], truncated: false }
+    const bare: DirectoryListing = { path: '/srv/data', home: HOME, crumbs: [], entries: [], files: [], truncated: false }
     mount({ listDirectory: vi.fn(async () => bare) })
     await waitFor(() => { expect(screen.getByRole('button', { name: 'browser.newFolder' })).toBeTruthy() })
     await waitFor(() => {
@@ -1748,5 +1772,221 @@ describe('DirectoryBrowser', () => {
     await waitFor(() => { expect(screen.getByRole('listitem').textContent).toBe('Documents') })
     expect(columns()).toHaveLength(1)
     expect(b.listDirectory).toHaveBeenLastCalledWith(undefined, expect.any(AbortSignal))
+  })
+})
+
+describe('DirectoryBrowser entry management', () => {
+  /** The topmost modal: the browser dialog always renders first, nested boxes after it. */
+  function nestedDialog(): HTMLElement {
+    return screen.getAllByRole('dialog').at(-1)!
+  }
+
+  /** The row's management action inside a listitem seat. */
+  function rowAction(item: HTMLElement, kind: 'rename' | 'delete'): HTMLButtonElement {
+    return within(item).getByRole<HTMLButtonElement>('button', { name: `browser.${kind}Entry:${item.textContent ?? ''}` })
+  }
+
+  /** A home level that also reports one plain file beside Documents. */
+  function homeWithFiles(): DirectoryListing {
+    return {
+      ...listingFor(HOME),
+      files: [{ name: 'notes.txt', path: `${HOME}/notes.txt`, hidden: false }],
+    }
+  }
+
+  /** Mount over a home level carrying a directory row and a file row. */
+  async function mountWithFiles(overrides: Partial<Parameters<typeof DirectoryBrowser>[0]> = {}) {
+    const listDirectory = vi.fn(async (path?: string) => (
+      path === undefined || path === HOME ? homeWithFiles() : listingFor(path)
+    ))
+    const b = mount({ listDirectory, ...overrides })
+    await waitFor(() => { expect(screen.getAllByRole('listitem')).toHaveLength(2) })
+    return { ...b, listDirectory }
+  }
+
+  /** The seat of one named row in the left column. */
+  function seatOf(name: string): HTMLElement {
+    return within(columns()[0]!).getAllByRole('listitem').find(item => item.textContent === name)!
+  }
+
+  it('renders files as read-only rows sharing the directory grid, never as pick targets', async () => {
+    const b = await mountWithFiles()
+    const seats = within(columns()[0]!).getAllByRole('listitem')
+    expect(seats.map(seat => seat.textContent)).toEqual(['Documents', 'notes.txt'])
+    // The file row is not a button: clicking it neither picks nor descends.
+    const fileSeat = seats[1]!
+    expect(fileSeat.querySelector(':scope > button')).toBeNull()
+    fireEvent.click(within(fileSeat).getByText('notes.txt'))
+    await new Promise(resolve => setTimeout(resolve, 20))
+    expect(b.listDirectory).toHaveBeenCalledTimes(1)
+    expect(columns()).toHaveLength(1)
+    expect(b.onOpen).not.toHaveBeenCalled()
+    // Files still take part in the shared filters.
+    const listing = { ...homeWithFiles(), files: [...homeWithFiles().files, { name: '.env', path: `${HOME}/.env`, hidden: true }] }
+    b.listDirectory.mockResolvedValue(listing)
+    b.view.rerender(<DirectoryBrowser {...b.props} listDirectory={b.listDirectory} open={false} />)
+    b.view.rerender(<DirectoryBrowser {...b.props} listDirectory={b.listDirectory} open />)
+    await waitFor(() => { expect(screen.getAllByRole('listitem')).toHaveLength(2) })
+    expect(screen.queryByText('.env')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'browser.showHidden' }))
+    expect(screen.getByText('.env')).toBeTruthy()
+  })
+
+  it('offers rename and delete on every row, tab-reachable and labelled with the entry name', async () => {
+    await mountWithFiles()
+    for (const name of ['Documents', 'notes.txt']) {
+      const seat = seatOf(name)
+      const rename = within(seat).getByRole<HTMLButtonElement>('button', { name: `browser.renameEntry:${name}` })
+      const remove = within(seat).getByRole<HTMLButtonElement>('button', { name: `browser.deleteEntry:${name}` })
+      // Both are ordinary buttons in the tab order: the reveal is opacity only,
+      // so keyboard focus (not a pointer hover) is what surfaces them.
+      expect(rename.tabIndex).toBe(0)
+      expect(remove.tabIndex).toBe(0)
+      expect(rename.disabled).toBe(false)
+      expect(remove.disabled).toBe(false)
+      // Focusing an action never selects the row it belongs to.
+      rename.focus()
+      expect(document.activeElement).toBe(rename)
+      expect(seat.querySelector('[aria-current="true"]')).toBeNull()
+    }
+  })
+
+  it('renames a directory in the box, refreshes the level, and keeps the renamed folder selected', async () => {
+    const b = await mountWithFiles()
+    const renamed = `${HOME}/Docs`
+    // After the rename the Host reports the new sibling, and the new level is
+    // listable — the dialog must land on it like any other selection.
+    b.listDirectory.mockImplementation(async (path?: string) => {
+      if (path === renamed) {
+        return {
+          path: renamed,
+          home: HOME,
+          crumbs: [...listingFor(HOME).crumbs, { name: 'Docs', path: renamed, hidden: false }],
+          entries: [],
+          files: [],
+          truncated: false,
+        }
+      }
+      if (path === undefined || path === HOME) {
+        return { ...homeWithFiles(), entries: [{ name: 'Docs', path: renamed, hidden: false }] }
+      }
+      return listingFor(path)
+    })
+    fireEvent.click(rowAction(seatOf('Documents'), 'rename'))
+    const input = within(nestedDialog()).getByRole<HTMLInputElement>('textbox', { name: 'browser.renameLabel' })
+    // Prefilled with the current name, so an unchanged submit is a no-op path.
+    expect(input.value).toBe('Documents')
+    fireEvent.change(input, { target: { value: 'Docs' } })
+    fireEvent.click(within(nestedDialog()).getByRole('button', { name: 'browser.save' }))
+    await waitFor(() => { expect(b.renameEntry).toHaveBeenCalledWith(DOCS, 'Docs') })
+    // One shared Toast, then the level is re-listed with the renamed row selected.
+    await screen.findByText('browser.renamed:Docs')
+    await waitFor(() => { expect(columns()).toHaveLength(2) })
+    const selected = within(columns()[0]!).getAllByRole('listitem').find(item => item.textContent === 'Docs')!
+    expect(rowButton(selected).getAttribute('aria-current')).toBe('true')
+    expect(b.listDirectory).toHaveBeenLastCalledWith(renamed, expect.any(AbortSignal))
+    expect(screen.queryByRole('textbox', { name: 'browser.renameLabel' })).toBeNull()
+  })
+
+  it('validates the new name in the box and never calls the Host for a blank or separated name', async () => {
+    const b = await mountWithFiles()
+    fireEvent.click(rowAction(seatOf('notes.txt'), 'rename'))
+    const input = within(nestedDialog()).getByRole<HTMLInputElement>('textbox', { name: 'browser.renameLabel' })
+    expect(input.value).toBe('notes.txt')
+    fireEvent.change(input, { target: { value: '   ' } })
+    expect(within(nestedDialog()).getByRole('alert').textContent).toBe('browser.renameRequired')
+    expect(within(nestedDialog()).getByRole<HTMLButtonElement>('button', { name: 'browser.save' }).disabled).toBe(true)
+    fireEvent.change(input, { target: { value: 'notes/1.txt' } })
+    expect(within(nestedDialog()).getByRole('alert').textContent).toBe('browser.renameNoSeparator')
+    fireEvent.click(within(nestedDialog()).getByRole('button', { name: 'browser.save' }))
+    fireEvent.keyDown(input, { key: 'Enter' })
+    await new Promise(resolve => setTimeout(resolve, 20))
+    expect(b.renameEntry).not.toHaveBeenCalled()
+    // A valid name clears the alert and re-enables the primary action.
+    fireEvent.change(input, { target: { value: 'notes-1.txt' } })
+    expect(within(nestedDialog()).queryByRole('alert')).toBeNull()
+    expect(within(nestedDialog()).getByRole<HTMLButtonElement>('button', { name: 'browser.save' }).disabled).toBe(false)
+  })
+
+  it('keeps a refused rename inside the box, with the Host message as the alert', async () => {
+    const b = await mountWithFiles()
+    b.renameEntry.mockRejectedValueOnce(
+      new DirectoryBrowseError({ code: 'directory-exists', message: 'Docs already exists', details: { path: `${HOME}/Docs` } }))
+    fireEvent.click(rowAction(seatOf('Documents'), 'rename'))
+    fireEvent.change(within(nestedDialog()).getByRole('textbox', { name: 'browser.renameLabel' }), { target: { value: 'Docs' } })
+    fireEvent.click(within(nestedDialog()).getByRole('button', { name: 'browser.save' }))
+    await waitFor(() => { expect(within(nestedDialog()).getByRole('alert').textContent).toBe('Docs already exists') })
+    // Still open and still holding the draft the operator typed.
+    expect(within(nestedDialog()).getByRole<HTMLInputElement>('textbox', { name: 'browser.renameLabel' }).value).toBe('Docs')
+    expect(b.listDirectory).toHaveBeenCalledTimes(1)
+  })
+
+  it('renames a file without touching the directory selection', async () => {
+    const b = await mountWithFiles()
+    fireEvent.click(rowAction(seatOf('notes.txt'), 'rename'))
+    fireEvent.change(within(nestedDialog()).getByRole('textbox', { name: 'browser.renameLabel' }), { target: { value: 'todo.txt' } })
+    fireEvent.click(within(nestedDialog()).getByRole('button', { name: 'browser.save' }))
+    await waitFor(() => { expect(b.renameEntry).toHaveBeenCalledWith(`${HOME}/notes.txt`, 'todo.txt') })
+    await waitFor(() => { expect(b.listDirectory).toHaveBeenLastCalledWith(HOME, expect.any(AbortSignal)) })
+    // Nothing was selected before, so the refresh lands as one wide level.
+    expect(columns()).toHaveLength(1)
+  })
+
+  it('asks before deleting, states the consequence for a directory, and never calls the Host on cancel', async () => {
+    const b = await mountWithFiles()
+    fireEvent.click(rowAction(seatOf('Documents'), 'delete'))
+    expect(screen.getByText('browser.deleteBody:Documents')).toBeTruthy()
+    // Deleting a directory says what else goes with it.
+    expect(screen.getByText('browser.deleteDirBody')).toBeTruthy()
+    fireEvent.click(within(nestedDialog()).getByRole('button', { name: 'browser.cancel' }))
+    expect(screen.queryByText('browser.deleteBody:Documents')).toBeNull()
+    expect(b.removeEntry).not.toHaveBeenCalled()
+    expect(b.listDirectory).toHaveBeenCalledTimes(1)
+
+    fireEvent.click(rowAction(seatOf('notes.txt'), 'delete'))
+    expect(screen.getByText('browser.deleteBody:notes.txt')).toBeTruthy()
+    expect(screen.queryByText('browser.deleteDirBody')).toBeNull()
+    fireEvent.click(within(nestedDialog()).getByRole('button', { name: 'browser.cancel' }))
+    expect(b.removeEntry).not.toHaveBeenCalled()
+  })
+
+  it('deletes only on confirmation, then refreshes the level and says so once', async () => {
+    const b = await mountWithFiles()
+    fireEvent.click(rowAction(seatOf('notes.txt'), 'delete'))
+    fireEvent.click(within(nestedDialog()).getByRole('button', { name: 'browser.deleteConfirm' }))
+    await waitFor(() => { expect(b.removeEntry).toHaveBeenCalledWith(`${HOME}/notes.txt`) })
+    await screen.findByText('browser.deleted:notes.txt')
+    await waitFor(() => { expect(b.listDirectory).toHaveBeenLastCalledWith(HOME, expect.any(AbortSignal)) })
+    expect(screen.queryByText('browser.deleteBody:notes.txt')).toBeNull()
+  })
+
+  it('returns to the parent level after deleting the selected directory', async () => {
+    const b = mount()
+    await waitFor(() => { expect(screen.getByRole('listitem')).toBeTruthy() })
+    fireEvent.click(rowButton(screen.getByRole('listitem')))
+    await waitFor(() => { expect(columns()).toHaveLength(2) })
+    // Delete the SELECTED directory from the left pane.
+    fireEvent.click(rowAction(within(columns()[0]!).getByRole('listitem'), 'delete'))
+    fireEvent.click(within(nestedDialog()).getByRole('button', { name: 'browser.deleteConfirm' }))
+    await waitFor(() => { expect(b.removeEntry).toHaveBeenCalledWith(DOCS) })
+    // Back to the single-pane parent level: no selection survives the delete.
+    await waitFor(() => { expect(columns()).toHaveLength(1) })
+    expect(within(columns()[0]!).getByRole('listitem').querySelector('[aria-current="true"]')).toBeNull()
+    expect(b.listDirectory).toHaveBeenLastCalledWith(HOME, expect.any(AbortSignal))
+  })
+
+  it('keeps a refused delete inside the box', async () => {
+    const b = await mountWithFiles()
+    b.removeEntry.mockRejectedValueOnce(
+      new DirectoryBrowseError({
+        code: 'directory-delete-failed',
+        message: 'permission denied',
+        details: { path: `${HOME}/notes.txt` },
+      }))
+    fireEvent.click(rowAction(seatOf('notes.txt'), 'delete'))
+    fireEvent.click(within(nestedDialog()).getByRole('button', { name: 'browser.deleteConfirm' }))
+    await waitFor(() => { expect(within(nestedDialog()).getByRole('alert').textContent).toBe('permission denied') })
+    expect(screen.getByText('browser.deleteBody:notes.txt')).toBeTruthy()
+    expect(b.listDirectory).toHaveBeenCalledTimes(1)
   })
 })

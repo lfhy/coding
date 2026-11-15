@@ -3288,6 +3288,39 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         }
       },
 
+      async renameDirectoryEntry(request) {
+        const capability = ctx.directoryPicker.capability()
+        if (capability.kind !== 'browse') {
+          return err(request, {
+            code: 'directory-picker-unavailable',
+            message: `host.renameDirectoryEntry needs the browse capability; the composed picker serves "${capability.kind}"`,
+            details: { capability: capability.kind },
+          })
+        }
+        try {
+          return ok(request, { path: await capability.rename(request.payload.path, request.payload.name) })
+        } catch (error: unknown) {
+          return err(request, directoryError(error))
+        }
+      },
+
+      async deleteDirectoryEntry(request) {
+        const capability = ctx.directoryPicker.capability()
+        if (capability.kind !== 'browse') {
+          return err(request, {
+            code: 'directory-picker-unavailable',
+            message: `host.deleteDirectoryEntry needs the browse capability; the composed picker serves "${capability.kind}"`,
+            details: { capability: capability.kind },
+          })
+        }
+        try {
+          await capability.remove(request.payload.path)
+          return ok(request, { deleted: true as const })
+        } catch (error: unknown) {
+          return err(request, directoryError(error))
+        }
+      },
+
       async openPath(request, signal) {
         return openPath(request, request.payload.path, signal)
       },

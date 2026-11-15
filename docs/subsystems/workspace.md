@@ -145,7 +145,7 @@ Abstract directory-picking service. Subclass, implement `capability()`, and load
 abstract capability(): DirectoryPickerCapability
 ```
 
-Source: [`packages/host/directory-picker/src/index.ts:131`](../../packages/host/directory-picker/src/index.ts)
+Source: [`packages/host/directory-picker/src/index.ts:167`](../../packages/host/directory-picker/src/index.ts)
 
 <a id="ctxgit--git-abstract-seam"></a>
 

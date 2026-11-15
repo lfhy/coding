@@ -64,7 +64,8 @@ describe('输入控件焦点样式', () => {
       ['../../ui-workspace/src/client/WorkspaceBrowser.module.css', '.searchExpanded:focus-within'],
       ['../../ui-workspace/src/client/WorkspaceBrowser.module.css', '.renameInput:focus-visible'],
       ['../../ui-directory-picker-browse/src/client/DirectoryBrowser.module.css', '.crumbBar:has(.pathInput:focus-visible)'],
-      ['../../ui-directory-picker-browse/src/client/DirectoryBrowser.module.css', '.createInput:focus-visible'],
+      // The dialog's nested boxes (create/rename) use the shared Input atom:
+      // its .wrap:focus-within ring is checked above, so no local rule exists.
       ['../../ui-commands/src/client/PopupSelectView.module.css', '.search:focus-visible'],
       ['../../ui-primitives/src/ChatSurfaces.module.css', '.composerCard:focus-within'],
       ['../../ui-conversation/src/client/skeleton/HeroShell.module.css', '.modalInput:focus-visible'],

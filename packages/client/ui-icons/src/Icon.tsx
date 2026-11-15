@@ -10,6 +10,7 @@ import SemiHandle from '@douyinfe/semi-icons/lib/es/icons/IconHandle'
 import SemiHome from '@douyinfe/semi-icons/lib/es/icons/IconHomeStroked'
 import SemiConversation from '@douyinfe/semi-icons/lib/es/icons/IconCommentStroked'
 import SemiRecent from '@douyinfe/semi-icons/lib/es/icons/IconClockStroked'
+import SemiFile from '@douyinfe/semi-icons/lib/es/icons/IconFile'
 import { IconTerminalOutline16, IconThinkOutline16 } from './legacy.tsx'
 import { PptMark } from './PptMark.tsx'
 import type { IconProps } from './props.ts'
@@ -17,7 +18,7 @@ import type { IconProps } from './props.ts'
 /** 消费方使用的图标含义，不暴露第三方库中的组件名。 */
 export type IconName = 'sidebar' | 'files-panel' | 'bottom-panel' | 'terminal-menu'
   | 'model-vision' | 'model-reasoning' | 'open-window' | 'favorite' | 'ppt-workbench' | 'undo' | 'redo'
-  | 'drag-handle' | 'home' | 'conversation' | 'recent'
+  | 'drag-handle' | 'home' | 'conversation' | 'recent' | 'file'
 
 /** 产品语义名称加上共享的布局属性。 */
 export interface SemanticIconProps extends IconProps {
@@ -60,6 +61,9 @@ export function Icon({ name, size = 16, className }: SemanticIconProps) {
     return <SemiHeartStroked size="inherit" style={{ fontSize: size }} className={className} aria-hidden="true" />
   }
   if (name === 'model-reasoning') return <IconThinkOutline16 size={size} className={className} />
+  if (name === 'file') {
+    return <SemiFile size="inherit" style={{ fontSize: size }} className={className} aria-hidden="true" />
+  }
   if (name === 'open-window') {
     return <SemiExternalOpen size="inherit" style={{ fontSize: size }} className={className} aria-hidden="true" />
   }

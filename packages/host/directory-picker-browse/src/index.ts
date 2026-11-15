@@ -1,15 +1,17 @@
 /**
  * Browse backend of the directory-picker seam: registers `ctx.directoryPicker`
- * with the `browse` capability — one-level directory listing and child-directory
- * creation over the host filesystem via Node's stdlib (which already carries
- * the per-OS adaptation). Nothing renders on the host display, so this backend
- * serves remote clients the dialog backend cannot. Policy decisions (hidden
- * entries flagged but returned, symlinks followed, whole-filesystem scope) are
- * recorded in the directory-picker seam design record.
+ * with the `browse` capability — one-level listing (child directories and
+ * files), child-directory creation, same-parent rename, and removal, all over
+ * the host filesystem via Node's stdlib (which already carries the per-OS
+ * adaptation). Nothing renders on the host display, so this backend serves
+ * remote clients the dialog backend cannot. Policy decisions (hidden entries
+ * flagged but returned, symlinks followed, whole-filesystem scope, no
+ * confirmation for the destructive primitive) are recorded in the
+ * directory-picker seam design record.
  * @module coding-host-directory-picker-browse
  */
 
-import { mkdir, opendir, stat } from 'node:fs/promises'
+import { mkdir, opendir, rename, rm, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, dirname, join, posix, resolve, win32 } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
@@ -53,13 +55,17 @@ export function fullyQualified(path: string, platform: NodeJS.Platform = process
     : posix.isAbsolute(path)
 }
 
-/** One streamed listing candidate: the dirent facts a row needs, nothing else retained. */
+/**
+ * One streamed listing candidate: the dirent facts a row needs, nothing else
+ * retained. A plain file arrives with both flags false; a symlink needs a
+ * `stat` probe to decide between a directory row, a file row, and no row.
+ */
 export interface ListingCandidate {
   /** Base name within the streamed level. */
   name: string
   /** Dirent says directory (no probe needed). */
   isDirectory: boolean
-  /** Dirent says symlink (enterability needs a stat probe). */
+  /** Dirent says symlink (its directory/file nature needs a stat probe). */
   isSymbolicLink: boolean
 }
 
@@ -149,32 +155,54 @@ function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
+/** 一次文件系统失败的 errno（非标准错误或被包装过的值返回 undefined）。 */
+function errnoOf(error: unknown): string | undefined {
+  return typeof error === 'object' && error !== null && 'code' in error && typeof error.code === 'string'
+    ? error.code
+    : undefined
+}
+
+/** 名称是否为同层里的单个路径段：非空白、不是 `.`／`..`、不含分隔符。 */
+function isPathSegment(name: string): boolean {
+  return name.trim() !== '' && name !== '.' && name !== '..' && !/[/\\]/.test(name)
+}
+
+/** 已解析的一行：目录行进入 `entries`（可挑选），文件行进入 `files`（只读展示）。 */
+interface ResolvedRow {
+  /** 行归属：目录可被进入与挑选，文件只用于展示。 */
+  kind: 'directory' | 'file'
+  /** 该行在列举里的条目（路径已由宿主拼好）。 */
+  entry: DirectoryEntry
+}
+
 /**
- * One listing row for a dirent, following symlinks to directories; null for
- * non-directories and broken/cyclic links (skipped silently — the browser
- * shows what can be entered, and a broken link cannot).
+ * Resolve one streamed candidate into a directory row, a file row, or no row.
+ * Plain dirents need no probe; a symlink is probed once (never once per kind)
+ * and a broken or cyclic link resolves to nothing — the browser shows what it
+ * can act on, and a link to nothing cannot be entered, picked, or opened.
  */
-async function directoryRow(
+async function resolveRow(
   parent: string, name: string, isDirectory: boolean, isSymbolicLink: boolean, signal: AbortSignal | undefined,
-): Promise<DirectoryEntry | null> {
+): Promise<ResolvedRow | null> {
   const path = join(parent, name)
-  let enterable = isDirectory
-  if (!enterable && isSymbolicLink) {
+  let kind: ResolvedRow['kind'] | null = isDirectory ? 'directory' : isSymbolicLink ? null : 'file'
+  if (kind === null) {
     try {
       // The probe races the caller too: a symlink target on a stalled
       // network filesystem must not keep a departed caller's request alive.
-      enterable = (await raceAbort(stat(path), signal)).isDirectory()
+      const stats = await raceAbort(stat(path), signal)
+      kind = stats.isDirectory() ? 'directory' : stats.isFile() ? 'file' : null
     } catch {
       /* v8 ignore next 2 -- an abort landing mid-probe needs a stalled stat; the per-candidate check in list covers the settled path. */
       if (signal?.aborted) throw asError(signal.reason)
-      // Broken or cyclic symlink: stat is the probe, failure means "not enterable".
+      // Broken or cyclic symlink: stat is the probe, failure means "no row".
       return null
     }
   }
-  if (!enterable) return null
+  if (kind === null) return null
   // POSIX hidden convention; Windows' hidden attribute is not exposed by
   // dirents (Known Limitations). The client owns whether hidden rows show.
-  return { name, path, hidden: name.startsWith('.') }
+  return { kind, entry: { name, path, hidden: name.startsWith('.') } }
 }
 
 /** Validated plugin configuration. */
@@ -187,10 +215,10 @@ export interface Config {
 export default class BrowseDirectoryPicker extends DirectoryPicker {
   /**
    * `maxEntries` bounds the complete listing level a single `list` call may
-   * materialize and put on the wire: at most this many child-directory rows
-   * (hidden rows included), with `truncated` flagging a cut level. The
-   * default follows GitHub's web UI, which truncates directory listings at
-   * 1,000 entries.
+   * materialize and put on the wire: at most this many rows in total, child
+   * directories and files together (hidden rows included), with `truncated`
+   * flagging a cut level. The default follows GitHub's web UI, which
+   * truncates directory listings at 1,000 entries.
    */
   static Config: z<Config> = z.object({
     maxEntries: z.natural().min(1).default(1000),
@@ -200,6 +228,8 @@ export default class BrowseDirectoryPicker extends DirectoryPicker {
     kind: 'browse',
     list: (path, signal) => this.list(path, signal),
     createDirectory: (path, name) => this.createDirectory(path, name),
+    rename: (path, nextName) => this.rename(path, nextName),
+    remove: path => this.remove(path),
   }
 
   constructor(ctx: Context, private readonly config: Config) {
@@ -223,13 +253,16 @@ export default class BrowseDirectoryPicker extends DirectoryPicker {
       throw new DirectoryPickerError('directory-unreadable', path, `cannot list "${path}": not a fully qualified path`)
     }
     const target = resolve(path ?? home)
-    // Stream the level (opendir, one dirent at a time) into a name-sorted
-    // window of maxEntries + 1 candidates: memory stays bounded no matter how
-    // many children the directory holds, the window keeps the name-sorted
-    // head, and the +1 slot lets an in-window extra row prove the cut. A
-    // window candidate that turns out non-enterable (broken symlink) is not
-    // backfilled from beyond the window — an eviction already marks the
-    // level truncated, which stays the honest answer.
+    // Stream the level (opendir, one dirent at a time) into ONE name-sorted
+    // window over directories and files together: memory stays bounded no
+    // matter how many children the directory holds, the window keeps the
+    // name-sorted head of the combined set, and the +1 slot lets an in-window
+    // extra row prove the cut. One window (not one per kind) is what keeps
+    // `truncated` honest: the bound applies to the level as the browser shows
+    // it, so a level of 600 files beside 600 directories cannot report
+    // "complete" twice over. A window candidate that resolves to no row
+    // (broken symlink) is not backfilled from beyond the window — an eviction
+    // already marks the level truncated, which stays the honest answer.
     const keep = this.config.maxEntries + 1
     const window: ListingCandidate[] = []
     let evicted = false
@@ -254,9 +287,8 @@ export default class BrowseDirectoryPicker extends DirectoryPicker {
         for (;;) {
           const dirent = await raceAbort(level.read(), signal)
           if (dirent === null) break
-          // Only rows a browser could enter contend for the window; dirent
-          // says "directory" outright, a symlink needs the later stat probe.
-          if (!dirent.isDirectory() && !dirent.isSymbolicLink()) continue
+          // Every child contends for the window: a plain dirent already says
+          // whether it is a directory or a file, so no row costs a probe.
           const candidate = { name: dirent.name, isDirectory: dirent.isDirectory(), isSymbolicLink: dirent.isSymbolicLink() }
           if (boundedInsert(window, candidate, keep)) evicted = true
         }
@@ -280,20 +312,23 @@ export default class BrowseDirectoryPicker extends DirectoryPicker {
       throw new DirectoryPickerError('directory-unreadable', target, `cannot list ${target}: ${messageOf(error)}`)
     }
     const entries: DirectoryEntry[] = []
+    const files: DirectoryEntry[] = []
     let truncated = evicted
     for (const candidate of window) {
       // A caller that departed between reads and probes stops before the
-      // next probe (each probe's own await is raced inside directoryRow).
+      // next probe (each probe's own await is raced inside resolveRow).
       signal?.throwIfAborted()
-      const row = await directoryRow(target, candidate.name, candidate.isDirectory, candidate.isSymbolicLink, signal)
+      const row = await resolveRow(target, candidate.name, candidate.isDirectory, candidate.isSymbolicLink, signal)
       if (row === null) continue
-      if (entries.length === this.config.maxEntries) {
+      // The bound counts the complete level — directories and files together.
+      if (entries.length + files.length === this.config.maxEntries) {
         truncated = true
         break
       }
-      entries.push(row)
+      if (row.kind === 'directory') entries.push(row.entry)
+      else files.push(row.entry)
     }
-    return { path: target, home, crumbs: ancestryCrumbs(target), entries, truncated }
+    return { path: target, home, crumbs: ancestryCrumbs(target), entries, files, truncated }
   }
 
   private async createDirectory(path: string, name: string): Promise<string> {
@@ -305,7 +340,7 @@ export default class BrowseDirectoryPicker extends DirectoryPicker {
     const parent = resolve(path)
     // The backend owns segment validation (the wire schema also refuses these,
     // but direct service consumers must hit the same fence).
-    if (name.trim() === '' || name === '.' || name === '..' || /[/\\]/.test(name)) {
+    if (!isPathSegment(name)) {
       throw new DirectoryPickerError('directory-create-failed', join(parent, name), `"${name}" is not a single path segment`)
     }
     const target = join(parent, name)
@@ -315,10 +350,77 @@ export default class BrowseDirectoryPicker extends DirectoryPicker {
       await mkdir(target)
       return target
     } catch (error: unknown) {
-      if (typeof error === 'object' && error !== null && 'code' in error && error.code === 'EEXIST') {
+      if (errnoOf(error) === 'EEXIST') {
         throw new DirectoryPickerError('directory-exists', target, `${target} already exists`)
       }
       throw new DirectoryPickerError('directory-create-failed', target, `cannot create ${target}: ${messageOf(error)}`)
+    }
+  }
+
+  private async rename(path: string, nextName: string): Promise<string> {
+    // Same fully-qualified fence as list/create: never rebase a wire value
+    // under the host process cwd or its current drive.
+    if (!fullyQualified(path)) {
+      throw new DirectoryPickerError('directory-rename-failed', path, `cannot rename "${path}": not a fully qualified path`)
+    }
+    const source = resolve(path)
+    const parent = dirname(source)
+    if (!isPathSegment(nextName)) {
+      throw new DirectoryPickerError(
+        'directory-rename-failed', join(parent, nextName), `"${nextName}" is not a single path segment`,
+      )
+    }
+    const target = join(parent, nextName)
+    // Submitting the current name unchanged is a no-op, not a conflict: the
+    // dialog prefills the entry's own name, and Enter on it must not report
+    // the sibling it already is.
+    if (target === source) return source
+    try {
+      // POSIX rename(2) silently REPLACES an existing target, so the conflict
+      // is refused here instead. A target that resolves to the entry itself is
+      // the case-only rename a case-insensitive volume offers (macOS, Windows)
+      // — same device and inode means the operator is respelling this very
+      // entry, not colliding with a sibling.
+      const existing = await stat(target).catch(() => undefined)
+      if (existing !== undefined) {
+        const current = await stat(source).catch(() => undefined)
+        const sameEntry = current !== undefined && current.dev === existing.dev && current.ino === existing.ino
+        if (!sameEntry) {
+          throw new DirectoryPickerError('directory-exists', target, `${target} already exists`)
+        }
+      }
+      await rename(source, target)
+      return target
+    } catch (error: unknown) {
+      if (error instanceof DirectoryPickerError) throw error
+      throw new DirectoryPickerError(
+        'directory-rename-failed',
+        source,
+        errnoOf(error) === 'ENOENT'
+          ? `cannot rename ${source}: no such file or directory`
+          : `cannot rename ${source}: ${messageOf(error)}`,
+      )
+    }
+  }
+
+  private async remove(path: string): Promise<void> {
+    if (!fullyQualified(path)) {
+      throw new DirectoryPickerError('directory-delete-failed', path, `cannot delete "${path}": not a fully qualified path`)
+    }
+    const target = resolve(path)
+    try {
+      // Recursive by contract: a directory goes with everything inside it.
+      // The confirmation the operator saw is the caller's obligation, and the
+      // browser owns it before this primitive is ever reached.
+      await rm(target, { recursive: true })
+    } catch (error: unknown) {
+      throw new DirectoryPickerError(
+        'directory-delete-failed',
+        target,
+        errnoOf(error) === 'ENOENT'
+          ? `cannot delete ${target}: no such file or directory`
+          : `cannot delete ${target}: ${messageOf(error)}`,
+      )
     }
   }
 }

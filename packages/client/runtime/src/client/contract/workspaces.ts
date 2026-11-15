@@ -48,19 +48,32 @@ export interface IWorkspaces {
    */
   pickDirectory(): Promise<string | null>
   /**
-   * List one directory level through the Host's `browse` capability.
-   * @param path - absolute directory to list; absent lists the Host home directory.
-   * @param signal - aborts the wire request (and the Host's scan) when the caller supersedes it.
-   * @returns the level's listing with breadcrumb ancestry.
+   * 经 Host 的 `browse` 能力列举一层目录。
+   * @param path - 要列举的绝对目录；省略时列举 Host 用户主目录。
+   * @param signal - 调用方改主意时中断线上请求（同时停掉 Host 侧扫描）。
+   * @returns 该层条目、同层文件与面包屑祖先链。
    */
   listDirectory(path?: string, signal?: AbortSignal): Promise<DirectoryListing>
   /**
-   * Create one child directory through the Host's `browse` capability.
-   * @param path - absolute existing parent directory.
-   * @param name - single non-blank path segment.
-   * @returns the created directory's absolute path.
+   * 经 Host 的 `browse` 能力新建一个子目录。
+   * @param path - 已存在的绝对父目录。
+   * @param name - 单个非空白路径段。
+   * @returns 新目录的绝对路径。
    */
   createDirectory(path: string, name: string): Promise<string>
+  /**
+   * 经 Host 的 `browse` 能力在同一父目录下改名（文件与目录都支持）。
+   * @param path - 要改名的条目绝对路径。
+   * @param nextName - 单个非空白路径段。
+   * @returns 改名后的绝对路径。
+   */
+  renameDirectoryEntry(path: string, nextName: string): Promise<string>
+  /**
+   * 经 Host 的 `browse` 能力删除条目（文件，或连同内容的目录）。破坏性操作：
+   * 二次确认由调用方持有，本方法一经调用立即删除。
+   * @param path - 要删除的条目绝对路径。
+   */
+  deleteDirectoryEntry(path: string): Promise<void>
   /**
    * Open a filesystem path with the Host operating system's default application.
    * @param path - absolute or host-resolvable path.

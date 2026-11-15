@@ -20,6 +20,7 @@ const homeListing: DirectoryListing = {
   home: HOME,
   crumbs: [{ name: '/', path: '/', hidden: false }, { name: 'u', path: HOME, hidden: false }],
   entries: [{ name: 'Documents', path: `${HOME}/Documents`, hidden: false }],
+  files: [],
   truncated: false,
 }
 
@@ -29,13 +30,15 @@ async function bench() {
   ctx.provide('locale', new LocaleRuntime(ctx))
   const listDirectory = vi.fn(async (): Promise<DirectoryListing> => homeListing)
   const createDirectory = vi.fn(async (path: string, name: string) => `${path}/${name}`)
-  ctx.provide('workspaces', { listDirectory, createDirectory } as never)
+  const renameDirectoryEntry = vi.fn(async (path: string, nextName: string) => `${path.slice(0, path.lastIndexOf('/'))}/${nextName}`)
+  const deleteDirectoryEntry = vi.fn(async () => {})
+  ctx.provide('workspaces', { listDirectory, createDirectory, renameDirectoryEntry, deleteDirectoryEntry } as never)
   const slots = ctx.get('slots') as SlotRegistry
   const declare = () => slots.register({
     name: 'root',
     children: Object.fromEntries(HOLES.map(name => [name, { kind: 'single', scope: 'root' }])),
   } as never, () => null)
-  return { ctx, slots, listDirectory, createDirectory, declare }
+  return { ctx, slots, listDirectory, createDirectory, renameDirectoryEntry, deleteDirectoryEntry, declare }
 }
 
 function owner(overrides: Partial<DirectoryFlowOwnerProps> = {}): DirectoryFlowOwnerProps {
@@ -165,6 +168,8 @@ describe('directory-picker-browse client half', () => {
     expect(injected.t('browser.title')).toBe('选择工作区目录')
     expect(injected.t('browser.newFolder')).toBe('新建文件夹')
     expect(injected.t('browser.showHidden')).toBe('显示隐藏文件')
+    expect(injected.t('browser.rename')).toBe('重命名')
+    expect(injected.t('browser.deleteTitle')).toBe('删除')
   })
 
   it('drives the injected browse calls through the hole entry', async () => {
@@ -175,11 +180,22 @@ describe('directory-picker-browse client half', () => {
     const injected = (entry.inject as () => {
       listDirectory: (path?: string) => Promise<DirectoryListing>
       createDirectory: (path: string, name: string) => Promise<string>
+      renameEntry: (path: string, nextName: string) => Promise<string>
+      removeEntry: (path: string) => Promise<void>
     })()
     await expect(injected.listDirectory()).resolves.toBe(homeListing)
     await expect(injected.createDirectory(HOME, 'fresh')).resolves.toBe(`${HOME}/fresh`)
+    await expect(injected.renameEntry(`${HOME}/fresh`, 'renamed')).resolves.toBe(`${HOME}/renamed`)
+    await expect(injected.removeEntry(`${HOME}/renamed`)).resolves.toBeUndefined()
     expect(b.listDirectory).toHaveBeenCalledOnce()
     expect(b.createDirectory).toHaveBeenCalledWith(HOME, 'fresh')
+    expect(b.renameDirectoryEntry).toHaveBeenCalledWith(`${HOME}/fresh`, 'renamed')
+    expect(b.deleteDirectoryEntry).toHaveBeenCalledWith(`${HOME}/renamed`)
+
+    // A refused write surfaces as the flow's own error, never the owner's.
+    b.renameDirectoryEntry.mockRejectedValueOnce(new Error('taken'))
+    await expect(injected.renameEntry(`${HOME}/fresh`, 'taken')).rejects.toThrow('taken')
+    expect(b.ctx.get('workspaces')).toBeTruthy()
   })
 
   it('adapts the owner conversation onto the dialog: confirm picks, dismissal cancels', async () => {
@@ -191,6 +207,8 @@ describe('directory-picker-browse client half', () => {
         {...props}
         listDirectory={listDirectory}
         createDirectory={vi.fn(async () => '')}
+        renameEntry={vi.fn(async () => '')}
+        removeEntry={vi.fn(async () => {})}
         t={t}
       />,
     )
@@ -210,6 +228,8 @@ describe('directory-picker-browse client half', () => {
         {...owner({ open: false })}
         listDirectory={vi.fn(async () => homeListing)}
         createDirectory={vi.fn(async () => '')}
+        renameEntry={vi.fn(async () => '')}
+        removeEntry={vi.fn(async () => {})}
         t={key => key}
       />,
     )

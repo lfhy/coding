@@ -16,8 +16,10 @@ import {
 } from '../src/api/sessions.schema.ts'
 import {
   hostCreateDirectoryRequestSchema, hostCreateDirectoryValueSchema,
+  hostDeleteDirectoryEntryRequestSchema, hostDeleteDirectoryEntryValueSchema,
   hostDescribeRequestSchema, hostDescribeValueSchema,
   hostListDirectoryRequestSchema, hostListDirectoryValueSchema,
+  hostRenameDirectoryEntryRequestSchema, hostRenameDirectoryEntryValueSchema,
 } from '../src/api/host.schema.ts'
 import {
   workspaceArchiveSessionRequestSchema, workspaceArchiveSessionValueSchema,
@@ -352,7 +354,7 @@ describe('host domain schemas', () => {
     })).toThrow()
   })
 
-  it('validates the browse listing/creation payloads', () => {
+  it('validates the browse listing/creation/rename/delete payloads', () => {
     expect(hostListDirectoryRequestSchema.parse({})).toEqual({})
     expect(hostListDirectoryRequestSchema.parse({ path: '/x' })).toEqual({ path: '/x' })
     const listing = hostListDirectoryValueSchema.parse({
@@ -360,16 +362,29 @@ describe('host domain schemas', () => {
       home: '/home/u',
       crumbs: [{ name: '/', path: '/', hidden: false }, { name: 'p', path: '/home/u/p', hidden: false }],
       entries: [{ name: '.dot', path: '/home/u/p/.dot', hidden: true }],
+      files: [{ name: 'notes.txt', path: '/home/u/p/notes.txt', hidden: false }],
       truncated: false,
     })
     expect(listing.entries[0]?.hidden).toBe(true)
-    // The flag is part of the wire value, not an optional decoration.
+    expect(listing.files[0]?.name).toBe('notes.txt')
+    // The flag and both row lists are part of the wire value, not optional
+    // decorations: a level without files is an incomplete answer.
     expect(() => hostListDirectoryValueSchema.parse({ path: '/x', home: '/x', crumbs: [], entries: [] })).toThrow()
+    expect(() => hostListDirectoryValueSchema.parse({
+      path: '/x', home: '/x', crumbs: [], entries: [], files: [],
+    })).toThrow()
     expect(hostCreateDirectoryRequestSchema.parse({ path: '/x', name: 'new' })).toEqual({ path: '/x', name: 'new' })
     for (const name of ['', ' ', '.', '..', 'a/b', 'a\\b']) {
       expect(() => hostCreateDirectoryRequestSchema.parse({ path: '/x', name })).toThrow()
+      // Rename shares the segment fence with creation.
+      expect(() => hostRenameDirectoryEntryRequestSchema.parse({ path: '/x/old', name })).toThrow()
     }
+    expect(hostRenameDirectoryEntryRequestSchema.parse({ path: '/x/old', name: 'new' })).toEqual({ path: '/x/old', name: 'new' })
     expect(hostCreateDirectoryValueSchema.parse({ path: '/x/new' })).toEqual({ path: '/x/new' })
+    expect(hostRenameDirectoryEntryValueSchema.parse({ path: '/x/new' })).toEqual({ path: '/x/new' })
+    expect(hostDeleteDirectoryEntryRequestSchema.parse({ path: '/x/old' })).toEqual({ path: '/x/old' })
+    expect(hostDeleteDirectoryEntryValueSchema.parse({ deleted: true })).toEqual({ deleted: true })
+    expect(() => hostDeleteDirectoryEntryValueSchema.parse({ deleted: false })).toThrow()
   })
 })
 

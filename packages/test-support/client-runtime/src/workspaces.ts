@@ -146,6 +146,7 @@ export class TestWorkspaces implements IWorkspaces {
         { name: 'test', path: '/home/test', hidden: false },
       ],
       entries: [],
+      files: [],
       truncated: false,
     }
   }
@@ -161,6 +162,29 @@ export class TestWorkspaces implements IWorkspaces {
     const stub = this.stubs.get('createDirectory')
     if (stub !== undefined) return await (stub(path, name) as Promise<string>)
     return `${path}/${name}`
+  }
+
+  /**
+   * 浏览重命名（会被记录）。默认返回同层的新绝对路径，桩可自定义。
+   * @param path - 要改名的条目绝对路径。
+   * @param nextName - 单个路径段。
+   * @returns 改名后的绝对路径。
+   */
+  async renameDirectoryEntry(path: string, nextName: string): Promise<string> {
+    this.calls.push({ method: 'renameDirectoryEntry', args: [path, nextName] })
+    const stub = this.stubs.get('renameDirectoryEntry')
+    if (stub !== undefined) return await (stub(path, nextName) as Promise<string>)
+    return `${path.slice(0, path.lastIndexOf('/'))}/${nextName}`
+  }
+
+  /**
+   * 浏览删除（会被记录）。破坏性调用在本双重里没有副作用。
+   * @param path - 要删除的条目绝对路径。
+   */
+  async deleteDirectoryEntry(path: string): Promise<void> {
+    this.calls.push({ method: 'deleteDirectoryEntry', args: [path] })
+    const stub = this.stubs.get('deleteDirectoryEntry')
+    if (stub !== undefined) await (stub(path) as Promise<void>)
   }
 
   /**

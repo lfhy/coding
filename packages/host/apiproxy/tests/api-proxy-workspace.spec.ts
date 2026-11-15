@@ -167,7 +167,7 @@ describe('host.pickDirectory', () => {
   })
 })
 
-/** Canned browse capability: one listing, one created path, typed failures on demand. */
+/** Canned browse capability: one listing, one created/renamed path, typed failures on demand. */
 const BROWSE_STUB: DirectoryPickerCapability = {
   kind: 'browse',
   list: async (path) => {
@@ -178,6 +178,7 @@ const BROWSE_STUB: DirectoryPickerCapability = {
       home: '/home/user',
       crumbs: [{ name: '/', path: '/', hidden: false }],
       entries: [{ name: 'projects', path: `${target}/projects`, hidden: false }],
+      files: [{ name: 'notes.txt', path: `${target}/notes.txt`, hidden: false }],
       truncated: false,
     }
   },
@@ -185,6 +186,16 @@ const BROWSE_STUB: DirectoryPickerCapability = {
     if (name === 'taken') throw new DirectoryPickerError('directory-exists', `${path}/${name}`, 'already exists')
     if (name === 'unwritable') throw new Error('disk detached')
     return `${path}/${name}`
+  },
+  rename: async (path, nextName) => {
+    const parent = path.slice(0, path.lastIndexOf('/'))
+    if (nextName === 'taken') throw new DirectoryPickerError('directory-exists', `${parent}/${nextName}`, 'already exists')
+    if (nextName === 'locked') throw new DirectoryPickerError('directory-rename-failed', path, 'permission denied')
+    return `${parent}/${nextName}`
+  },
+  remove: async (path) => {
+    if (path === '/home/user/locked') throw new DirectoryPickerError('directory-delete-failed', path, 'permission denied')
+    if (path === '/home/user/ghost') throw new DirectoryPickerError('directory-delete-failed', path, 'no such file or directory')
   },
 }
 
@@ -219,6 +230,8 @@ describe('host.listDirectory / host.createDirectory', () => {
         signal?.addEventListener('abort', () => { reject(new Error('scan aborted')) }, { once: true })
       }),
       createDirectory: async () => '/never',
+      rename: async () => '/never',
+      remove: async () => {},
     })
     const abort = new AbortController()
     const pending = api.host.listDirectory(request({}), abort.signal)
@@ -233,6 +246,56 @@ describe('host.listDirectory / host.createDirectory', () => {
     })
     expect((await api.host.createDirectory(request({ path: '/x', name: 'y' }))).result).toMatchObject({
       ok: false, error: { code: 'directory-picker-unavailable', details: { capability: 'native' } },
+    })
+    expect((await api.host.renameDirectoryEntry(request({ path: '/x/old', name: 'new' }))).result).toMatchObject({
+      ok: false, error: { code: 'directory-picker-unavailable', details: { capability: 'native' } },
+    })
+    expect((await api.host.deleteDirectoryEntry(request({ path: '/x/old' }))).result).toMatchObject({
+      ok: false, error: { code: 'directory-picker-unavailable', details: { capability: 'native' } },
+    })
+  })
+
+  it('serves the level files beside the directories, so the wire never hides a plain file', async () => {
+    const { api } = await harness(undefined, BROWSE_STUB)
+    const listed = await api.host.listDirectory(request({ path: '/home/user' }), new AbortController().signal)
+    expect(listed.result).toMatchObject({
+      ok: true,
+      value: {
+        entries: [{ name: 'projects' }],
+        files: [{ name: 'notes.txt', path: '/home/user/notes.txt' }],
+      },
+    })
+  })
+})
+
+describe('host.renameDirectoryEntry / host.deleteDirectoryEntry', () => {
+  it('renames in place and reports the new absolute path', async () => {
+    const { api } = await harness(undefined, BROWSE_STUB)
+    const renamed = await api.host.renameDirectoryEntry(request({ path: '/home/user/projects', name: 'code' }))
+    expect(renamed.result).toEqual({ ok: true, value: { path: '/home/user/code' } })
+  })
+
+  it('maps a taken name to directory-exists and a typed rename failure to its own code', async () => {
+    const { api } = await harness(undefined, BROWSE_STUB)
+    expect((await api.host.renameDirectoryEntry(request({ path: '/home/user/projects', name: 'taken' }))).result).toMatchObject({
+      ok: false, error: { code: 'directory-exists', details: { path: '/home/user/taken' } },
+    })
+    expect((await api.host.renameDirectoryEntry(request({ path: '/home/user/projects', name: 'locked' }))).result).toMatchObject({
+      ok: false, error: { code: 'directory-rename-failed', details: { path: '/home/user/projects' } },
+    })
+  })
+
+  it('deletes files and whole directories, mapping a missing target to directory-delete-failed', async () => {
+    const { api } = await harness(undefined, BROWSE_STUB)
+    expect((await api.host.deleteDirectoryEntry(request({ path: '/home/user/notes.txt' }))).result)
+      .toEqual({ ok: true, value: { deleted: true } })
+    expect((await api.host.deleteDirectoryEntry(request({ path: '/home/user/projects' }))).result)
+      .toEqual({ ok: true, value: { deleted: true } })
+    expect((await api.host.deleteDirectoryEntry(request({ path: '/home/user/ghost' }))).result).toMatchObject({
+      ok: false, error: { code: 'directory-delete-failed', details: { path: '/home/user/ghost' } },
+    })
+    expect((await api.host.deleteDirectoryEntry(request({ path: '/home/user/locked' }))).result).toMatchObject({
+      ok: false, error: { code: 'directory-delete-failed' },
     })
   })
 })

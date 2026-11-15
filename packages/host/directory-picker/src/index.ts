@@ -3,9 +3,9 @@
  * select a workspace directory. Backends differ in interaction shape, not
  * just mechanism, so the service exposes a discriminated capability instead
  * of one method set: a `native` backend opens one OS chooser on the
- * host's display, while a `browse` backend serves listing/creation primitives
- * for an in-app browser (and thereby works for remote clients no OS dialog
- * can reach). Consumers switch on `capability().kind`; the union is
+ * host's display, while a `browse` backend serves listing/creation/rename/
+ * delete primitives for an in-app browser (and thereby works for remote
+ * clients no OS dialog can reach). Consumers switch on `capability().kind`; the union is
  * merge-extensible, and the documented default for an unknown kind is to
  * hide the picking affordance rather than fail.
  * @module coding-host-directory-picker
@@ -24,7 +24,7 @@ export interface DirectoryPickerNativeCapability {
   pick(signal: AbortSignal): Promise<string | null>
 }
 
-/** One directory row: a listing child or a breadcrumb ancestor. */
+/** One browser row: a listing child (directory or file) or a breadcrumb ancestor. */
 export interface DirectoryEntry {
   /** Base name shown in a browser row (a root crumb carries its full path). */
   name: string
@@ -45,12 +45,24 @@ export interface DirectoryListing {
    * inclusive; every crumb is a jump target (crumb `hidden` is always false).
    */
   crumbs: DirectoryEntry[]
-  /** Direct child directories, name-sorted; symlinks to directories included. */
+  /**
+   * Direct child directories, name-sorted; symlinks to directories included.
+   * Picking semantics accept only these rows — `files` exists so the browser
+   * can show one honest level, not so a file can be adopted as a workspace.
+   */
   entries: DirectoryEntry[]
   /**
-   * True when the backend cut `entries` at its complete-result bound: the
-   * level has more child directories than reported, and the missing rows are
-   * the name-sorted tail (hidden rows count toward the bound).
+   * Direct child files of the same level, name-sorted; a symlink that
+   * resolves to a file is included, a broken or cyclic link is not. Files are
+   * display-only rows: they are never picking targets and never breadcrumbs.
+   */
+  files: DirectoryEntry[]
+  /**
+   * True when the backend cut the level at its complete-result bound: child
+   * directories and files TOGETHER exceed that bound, and the missing rows
+   * are the name-sorted tail of the combined set (hidden rows count toward
+   * the bound). A client that shows both lists therefore reports an
+   * incomplete level whenever this flag is set, whichever list looks cut.
    */
   truncated: boolean
 }
@@ -84,6 +96,25 @@ export interface DirectoryPickerBrowseCapability {
    * `directory-create-failed` for a parent that is not fully qualified or any other failure.
    */
   createDirectory(path: string, name: string): Promise<string>
+  /**
+   * Rename one child of its existing parent — never move it to another
+   * directory. Works for directories and files alike.
+   * @param path - absolute path of the entry to rename.
+   * @param nextName - single non-blank path segment (no separators, not `.`/`..`).
+   * @returns the entry's absolute path under the new name.
+   * @throws {DirectoryPickerError} `directory-exists` when a sibling already
+   * holds that name, `directory-rename-failed` for a target that is not fully
+   * qualified, an invalid name, or any other failure.
+   */
+  rename(path: string, nextName: string): Promise<string>
+  /**
+   * Delete one entry — a file, or a directory together with everything inside
+   * it. Destructive: callers own the confirmation the operator sees.
+   * @param path - absolute path of the entry to delete.
+   * @throws {DirectoryPickerError} `directory-delete-failed` for a target that
+   * is not fully qualified, does not exist, or cannot be removed.
+   */
+  remove(path: string): Promise<void>
 }
 
 /**
@@ -100,7 +131,12 @@ export interface DirectoryPickerCapabilities {
 export type DirectoryPickerCapability = DirectoryPickerCapabilities[keyof DirectoryPickerCapabilities]
 
 /** Closed failure vocabulary of the browse primitives (mirrored onto the wire by consumers). */
-export type DirectoryPickerErrorCode = 'directory-unreadable' | 'directory-exists' | 'directory-create-failed'
+export type DirectoryPickerErrorCode =
+  | 'directory-unreadable'
+  | 'directory-exists'
+  | 'directory-create-failed'
+  | 'directory-rename-failed'
+  | 'directory-delete-failed'
 
 /** Typed failure thrown by browse primitives so consumers can map business codes without string matching. */
 export class DirectoryPickerError extends Error {

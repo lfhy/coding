@@ -357,7 +357,14 @@ describe('WorkspaceRuntime', () => {
     const ctx = new Context()
     const api = new FakeApiClient()
     const workspaces = new WorkspaceRuntime(ctx, api, new SessionRuntime(ctx, api, fakeRemote()))
-    const listing = { path: '/home/u', home: '/home/u', crumbs: [{ name: '/', path: '/', hidden: false }], entries: [{ name: 'p', path: '/home/u/p', hidden: false }], truncated: false }
+    const listing = {
+      path: '/home/u',
+      home: '/home/u',
+      crumbs: [{ name: '/', path: '/', hidden: false }],
+      entries: [{ name: 'p', path: '/home/u/p', hidden: false }],
+      files: [{ name: 'n.txt', path: '/home/u/n.txt', hidden: false }],
+      truncated: false,
+    }
     api.onListDirectory = () => Promise.resolve(ok(listing))
     await expect(workspaces.listDirectory()).resolves.toEqual(listing)
     await expect(workspaces.listDirectory('/home/u')).resolves.toEqual(listing)
@@ -372,6 +379,21 @@ describe('WorkspaceRuntime', () => {
     expect(api.callsOf('host.createDirectory')).toEqual([{ path: '/home/u', name: 'fresh' }])
     api.onCreateDirectory = () => Promise.resolve(err({ code: 'directory-exists', message: 'taken', details: { path: '/home/u/fresh' } }))
     await expect(workspaces.createDirectory('/home/u', 'fresh')).rejects.toMatchObject({ rpcError: { code: 'directory-exists' } })
+  })
+
+  it('passes the browse rename and delete through the wire, wrapping business failures', async () => {
+    const ctx = new Context()
+    const api = new FakeApiClient()
+    const workspaces = new WorkspaceRuntime(ctx, api, new SessionRuntime(ctx, api, fakeRemote()))
+    await expect(workspaces.renameDirectoryEntry('/home/u/old', 'new')).resolves.toBe('/home/fake/renamed')
+    expect(api.callsOf('host.renameDirectoryEntry')).toEqual([{ path: '/home/u/old', name: 'new' }])
+    api.onRenameDirectoryEntry = () => Promise.resolve(err({ code: 'directory-exists', message: 'taken', details: { path: '/home/u/new' } }))
+    await expect(workspaces.renameDirectoryEntry('/home/u/old', 'new')).rejects.toMatchObject({ rpcError: { code: 'directory-exists' } })
+
+    await expect(workspaces.deleteDirectoryEntry('/home/u/old')).resolves.toBeUndefined()
+    expect(api.callsOf('host.deleteDirectoryEntry')).toEqual([{ path: '/home/u/old' }])
+    api.onDeleteDirectoryEntry = () => Promise.resolve(err({ code: 'directory-delete-failed', message: 'denied', details: { path: '/home/u/old' } }))
+    await expect(workspaces.deleteDirectoryEntry('/home/u/old')).rejects.toMatchObject({ rpcError: { code: 'directory-delete-failed' } })
   })
 
   it('opens a filesystem path through the host without local state', async () => {

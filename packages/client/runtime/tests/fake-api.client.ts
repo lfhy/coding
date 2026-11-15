@@ -125,12 +125,26 @@ export class FakeApiClient implements IApiClient {
     home: string
     crumbs: { name: string; path: string; hidden: boolean }[]
     entries: { name: string; path: string; hidden: boolean }[]
+    files: { name: string; path: string; hidden: boolean }[]
     truncated: boolean
   }>> =
-    () => Promise.resolve(ok({ path: '/home/fake', home: '/home/fake', crumbs: [{ name: '/', path: '/', hidden: false }], entries: [], truncated: false }))
+    () => Promise.resolve(ok({
+      path: '/home/fake',
+      home: '/home/fake',
+      crumbs: [{ name: '/', path: '/', hidden: false }],
+      entries: [],
+      files: [],
+      truncated: false,
+    }))
 
   onCreateDirectory: (payload: unknown) => Promise<RpcResponse<{ path: string }>> =
     () => Promise.resolve(ok({ path: '/home/fake/new' }))
+
+  onRenameDirectoryEntry: (payload: unknown) => Promise<RpcResponse<{ path: string }>> =
+    () => Promise.resolve(ok({ path: '/home/fake/renamed' }))
+
+  onDeleteDirectoryEntry: (payload: unknown) => Promise<RpcResponse<{ deleted: true }>> =
+    () => Promise.resolve(ok({ deleted: true as const }))
 
   onBrowserControl: (payload: RequestPayload<'browser.control'>, signal?: AbortSignal)
   => Promise<RpcResponse<ResponseValue<'browser.control'>>> =
@@ -192,6 +206,10 @@ export class FakeApiClient implements IApiClient {
     pickDirectory: (payload: unknown) => this.record('host.pickDirectory', payload, this.onPickDirectory(payload)),
     listDirectory: (payload: unknown) => this.record('host.listDirectory', payload, this.onListDirectory(payload)),
     createDirectory: (payload: unknown) => this.record('host.createDirectory', payload, this.onCreateDirectory(payload)),
+    renameDirectoryEntry: (payload: unknown) =>
+      this.record('host.renameDirectoryEntry', payload, this.onRenameDirectoryEntry(payload)),
+    deleteDirectoryEntry: (payload: unknown) =>
+      this.record('host.deleteDirectoryEntry', payload, this.onDeleteDirectoryEntry(payload)),
     openPath: (payload: unknown) => this.record('host.openPath', payload, this.onOpenPath(payload)),
   }
 

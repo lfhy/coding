@@ -121,6 +121,10 @@ const PRIVILEGED_METHODS = new Set([
   'agentPreset.remove',
   'host.pickDirectory',
   'host.openPath',
+  // 目录改名与删除会写本机文件系统：删除还是破坏性操作，只有回环同源调用才可能，
+  // 跨站页面既拿不到响应也无法静默触发。
+  'host.renameDirectoryEntry',
+  'host.deleteDirectoryEntry',
   // Git 读操作会披露本机仓库，写操作会修改仓库或联系远端；均限定回环同源。
   'workspace.gitStatus',
   'workspace.gitBranches',

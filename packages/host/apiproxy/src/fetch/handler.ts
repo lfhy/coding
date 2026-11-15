@@ -31,9 +31,9 @@ import {
   sessionUpdateQueueRequestSchema,
 } from '../api/sessions.schema.ts'
 import {
-  hostCreateDirectoryRequestSchema, hostDescribeRequestSchema,
+  hostCreateDirectoryRequestSchema, hostDeleteDirectoryEntryRequestSchema, hostDescribeRequestSchema,
   hostListDirectoryRequestSchema, hostOpenPathRequestSchema,
-  hostPickDirectoryRequestSchema,
+  hostPickDirectoryRequestSchema, hostRenameDirectoryEntryRequestSchema,
 } from '../api/host.schema.ts'
 import {
   workspaceArchiveSessionRequestSchema,
@@ -121,6 +121,8 @@ const UNARY_ROUTES: UnaryRoutes = {
   'host.pickDirectory': { schema: hostPickDirectoryRequestSchema, invoke: (api, r, signal) => api.host.pickDirectory(r, signal) },
   'host.listDirectory': { schema: hostListDirectoryRequestSchema, invoke: (api, r, signal) => api.host.listDirectory(r, signal) },
   'host.createDirectory': { schema: hostCreateDirectoryRequestSchema, invoke: (api, r) => api.host.createDirectory(r) },
+  'host.renameDirectoryEntry': { schema: hostRenameDirectoryEntryRequestSchema, invoke: (api, r) => api.host.renameDirectoryEntry(r) },
+  'host.deleteDirectoryEntry': { schema: hostDeleteDirectoryEntryRequestSchema, invoke: (api, r) => api.host.deleteDirectoryEntry(r) },
   'host.openPath': { schema: hostOpenPathRequestSchema, invoke: (api, r, signal) => api.host.openPath(r, signal) },
   'workspace.list': { schema: workspaceListRequestSchema, invoke: (api, r) => api.workspace.list(r) },
   'workspace.gitStatus': { schema: workspaceGitStatusRequestSchema, invoke: (api, r, signal) => api.workspace.gitStatus(r, signal) },

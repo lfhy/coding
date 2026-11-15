@@ -1,6 +1,6 @@
 /** Behavior of the browse backend over a real temporary directory tree. */
 
-import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
@@ -45,14 +45,21 @@ afterAll(async () => {
 })
 
 describe('BrowseDirectoryPicker', () => {
-  it('lists directories only, flags hidden rows, follows symlinks, skips broken links, sorts by name', async () => {
+  it('lists directories and files separately, flags hidden rows, follows symlinks, skips broken links, sorts by name', async () => {
     const listing = await capability.list(root)
     expect(listing.path).toBe(root)
     expect(listing.home).toBe(homedir())
     expect(listing.entries.map(entry => entry.name)).toEqual(['.hidden-dir', 'linked', 'projects'])
     expect(listing.entries.map(entry => entry.hidden)).toEqual([true, false, false])
+    // Files are their own list, never mixed into the pickable rows: the level
+    // also holds notes.txt and (on POSIX) a symlink resolving to it, while the
+    // broken link yields no row at all. Windows may refuse the file symlink,
+    // which only removes `file-link` here.
+    expect(listing.files.every(entry => ['file-link', 'notes.txt'].includes(entry.name))).toBe(true)
+    expect(listing.files.map(entry => entry.name)).toContain('notes.txt')
     // Every entry path is absolute and host-joined — clients never join segments.
     expect(listing.entries.every(entry => entry.path === join(root, entry.name))).toBe(true)
+    expect(listing.files.every(entry => entry.path === join(root, entry.name))).toBe(true)
     // Well under the default bound: the complete level, not a cut one.
     expect(listing.truncated).toBe(false)
   })
@@ -227,5 +234,153 @@ describe('BrowseDirectoryPicker', () => {
     // Missing parent is a real failure, not a level to invent.
     const missingParent = await capability.createDirectory(join(root, 'no-such-dir'), 'child').catch((error: unknown) => error)
     expect((missingParent as DirectoryPickerError).code).toBe('directory-create-failed')
+  })
+  it('sorts files by name inside their own list, keeping directories out of it', async () => {
+    const level = await mkdtemp(join(tmpdir(), 'dsh-browse-files-'))
+    try {
+      for (const name of ['b.txt', 'a.txt', 'c.md']) await writeFile(join(level, name), name)
+      await mkdir(join(level, 'zdir'))
+      const listing = await capability.list(level)
+      expect(listing.entries.map(entry => entry.name)).toEqual(['zdir'])
+      expect(listing.files.map(entry => entry.name)).toEqual(['a.txt', 'b.txt', 'c.md'])
+      // Hidden files are flagged like hidden directories; the client decides.
+      await writeFile(join(level, '.env'), '')
+      expect((await capability.list(level)).files.map(entry => [entry.name, entry.hidden]))
+        .toEqual([['.env', true], ['a.txt', false], ['b.txt', false], ['c.md', false]])
+    } finally {
+      await rm(level, { recursive: true, force: true })
+    }
+  })
+
+  it('cuts the level over directories AND files together, flagging the cut', async () => {
+    const level = await mkdtemp(join(tmpdir(), 'dsh-browse-bound-'))
+    const ctx = new Context()
+    const fiber = ctx.plugin(BrowseDirectoryPicker, { maxEntries: 2 })
+    await fiber.await()
+    const bounded = ctx.get('directoryPicker')!.capability()
+    if (bounded.kind !== 'browse') throw new Error('browse backend must advertise the browse capability')
+    try {
+      await mkdir(join(level, 'adir'))
+      await writeFile(join(level, 'afile'), '')
+      // Two rows fit the bound exactly: complete, not truncated.
+      const exact = await bounded.list(level)
+      expect(exact.entries.map(entry => entry.name)).toEqual(['adir'])
+      expect(exact.files.map(entry => entry.name)).toEqual(['afile'])
+      expect(exact.truncated).toBe(false)
+      // A third row overflows the SAME bound: the combined set is cut at the
+      // name-sorted head and the missing tail is reported, not hidden.
+      await writeFile(join(level, 'zfile'), '')
+      const cut = await bounded.list(level)
+      expect(cut.entries.map(entry => entry.name)).toEqual(['adir'])
+      expect(cut.files.map(entry => entry.name)).toEqual(['afile'])
+      expect(cut.truncated).toBe(true)
+    } finally {
+      await fiber.dispose()
+      await rm(level, { recursive: true, force: true })
+    }
+  })
+
+  it('renames a directory in place and returns its new absolute path', async () => {
+    const level = await mkdtemp(join(tmpdir(), 'dsh-browse-rename-'))
+    try {
+      await mkdir(join(level, 'old'))
+      await writeFile(join(level, 'old', 'inner.txt'), 'kept')
+      const renamed = await capability.rename(join(level, 'old'), 'new')
+      expect(renamed).toBe(join(level, 'new'))
+      // Content moved with the directory; the old name is gone from the level.
+      await expect(readFile(join(level, 'new', 'inner.txt'), 'utf8')).resolves.toBe('kept')
+      expect((await capability.list(level)).entries.map(entry => entry.name)).toEqual(['new'])
+    } finally {
+      await rm(level, { recursive: true, force: true })
+    }
+  })
+
+  it('renames a file in place and treats an unchanged name as a no-op', async () => {
+    const level = await mkdtemp(join(tmpdir(), 'dsh-browse-rename-file-'))
+    try {
+      await writeFile(join(level, 'a.txt'), 'body')
+      const renamed = await capability.rename(join(level, 'a.txt'), 'b.txt')
+      expect(renamed).toBe(join(level, 'b.txt'))
+      expect((await capability.list(level)).files.map(entry => entry.name)).toEqual(['b.txt'])
+      // The dialog prefills the current name; submitting it unchanged must not
+      // report the entry as its own collision.
+      await expect(capability.rename(join(level, 'b.txt'), 'b.txt')).resolves.toBe(join(level, 'b.txt'))
+    } finally {
+      await rm(level, { recursive: true, force: true })
+    }
+  })
+
+  it('refuses a rename onto a sibling with directory-exists, files included', async () => {
+    const level = await mkdtemp(join(tmpdir(), 'dsh-browse-rename-taken-'))
+    try {
+      await mkdir(join(level, 'one'))
+      await mkdir(join(level, 'two'))
+      await writeFile(join(level, 'taken.txt'), 'x')
+      const dirFailure = await capability.rename(join(level, 'one'), 'two').catch((error: unknown) => error)
+      expect(dirFailure).toBeInstanceOf(DirectoryPickerError)
+      expect((dirFailure as DirectoryPickerError).code).toBe('directory-exists')
+      expect((dirFailure as DirectoryPickerError).path).toBe(join(level, 'two'))
+      // POSIX rename(2) would replace the file silently; the backend refuses.
+      const fileFailure = await capability.rename(join(level, 'one'), 'taken.txt').catch((error: unknown) => error)
+      expect((fileFailure as DirectoryPickerError).code).toBe('directory-exists')
+      await expect(readFile(join(level, 'taken.txt'), 'utf8')).resolves.toBe('x')
+      expect((await capability.list(level)).entries.map(entry => entry.name)).toEqual(['one', 'two'])
+    } finally {
+      await rm(level, { recursive: true, force: true })
+    }
+  })
+
+  it('refuses non-segment, relative, and missing rename targets', async () => {
+    const level = await mkdtemp(join(tmpdir(), 'dsh-browse-rename-invalid-'))
+    try {
+      await mkdir(join(level, 'one'))
+      for (const name of ['', '  ', '.', '..', 'a/b', 'a\\b']) {
+        const failure = await capability.rename(join(level, 'one'), name).catch((error: unknown) => error)
+        expect(failure).toBeInstanceOf(DirectoryPickerError)
+        expect((failure as DirectoryPickerError).code).toBe('directory-rename-failed')
+      }
+      // A relative path is never rebased under the host process cwd.
+      const relative = await capability.rename('one', 'two').catch((error: unknown) => error)
+      expect((relative as DirectoryPickerError).code).toBe('directory-rename-failed')
+      const missing = await capability.rename(join(level, 'ghost'), 'two').catch((error: unknown) => error)
+      expect((missing as DirectoryPickerError).code).toBe('directory-rename-failed')
+      expect((missing as DirectoryPickerError).message).toContain('no such file or directory')
+      // Nothing was renamed by the failures.
+      expect((await capability.list(level)).entries.map(entry => entry.name)).toEqual(['one'])
+    } finally {
+      await rm(level, { recursive: true, force: true })
+    }
+  })
+
+  it('deletes a file, and a directory together with everything inside it', async () => {
+    const level = await mkdtemp(join(tmpdir(), 'dsh-browse-remove-'))
+    try {
+      await writeFile(join(level, 'gone.txt'), 'x')
+      await capability.remove(join(level, 'gone.txt'))
+      expect((await capability.list(level)).files).toEqual([])
+      await mkdir(join(level, 'tree', 'deep'), { recursive: true })
+      await writeFile(join(level, 'tree', 'deep', 'inner.txt'), 'x')
+      await capability.remove(join(level, 'tree'))
+      expect((await capability.list(level)).entries).toEqual([])
+      await expect(stat(join(level, 'tree'))).rejects.toThrow()
+    } finally {
+      await rm(level, { recursive: true, force: true })
+    }
+  })
+
+  it('reports a missing or non-qualified delete target as directory-delete-failed with a readable message', async () => {
+    const level = await mkdtemp(join(tmpdir(), 'dsh-browse-remove-miss-'))
+    try {
+      const missing = await capability.remove(join(level, 'ghost')).catch((error: unknown) => error)
+      expect(missing).toBeInstanceOf(DirectoryPickerError)
+      expect((missing as DirectoryPickerError).code).toBe('directory-delete-failed')
+      expect((missing as DirectoryPickerError).path).toBe(join(level, 'ghost'))
+      expect((missing as DirectoryPickerError).message).toBe(`cannot delete ${join(level, 'ghost')}: no such file or directory`)
+      const relative = await capability.remove('ghost').catch((error: unknown) => error)
+      expect((relative as DirectoryPickerError).code).toBe('directory-delete-failed')
+      expect((relative as DirectoryPickerError).message).toContain('not a fully qualified path')
+    } finally {
+      await rm(level, { recursive: true, force: true })
+    }
   })
 })
