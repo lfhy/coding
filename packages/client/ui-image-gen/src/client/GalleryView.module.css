@@ -100,7 +100,7 @@
 .promptFooter { display: flex; align-items: center; gap: 8px; margin-top: -8px; color: var(--dsw-alias-label-secondary); font: var(--dsw-font-xxs-12); }
 .promptFooter button { border: 0; background: transparent; color: var(--dsw-alias-state-business-primary); cursor: pointer; font: var(--dsw-font-xxs-12); }
 .promptFooter span { margin-left: auto; }
-.outputFields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.outputFields { display: grid; grid-template-columns: repeat(auto-fit, minmax(92px, 1fr)); gap: 8px; }
 .outputField { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .promptFooter button:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: 1px; }
 .generateButton { display: flex; align-items: center; justify-content: center; gap: 8px; flex: none; min-height: 38px; margin-top: 4px; border: 0; border-radius: 10px; background: var(--dsw-alias-state-business-primary); color: var(--dsw-alias-label-primary-inverted); cursor: pointer; font: var(--dsw-font-xs-strong-13); }

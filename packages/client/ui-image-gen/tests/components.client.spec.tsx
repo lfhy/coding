@@ -294,19 +294,29 @@ describe('图像交互组件', () => {
       url: (id: string) => `/api/image-gen/image?sessionId=test&id=${id}`,
     } as unknown as GalleryViewProps)} />)
     expect(screen.getByText('本次结果')).toBeTruthy()
+    // Auto 比例不下发尺寸，也不显示档位选择。
+    expect(screen.queryByRole('button', { name: '分辨率' })).toBeNull()
     expect(screen.getByRole('button', { name: '继续编辑' })).toBeTruthy()
     expect(screen.getByRole('button', { name: '再次生成' })).toBeTruthy()
     expect(screen.getByRole('button', { name: '复制图片' })).toBeTruthy()
     expect(screen.getByRole('button', { name: '下载图片' })).toBeTruthy()
     expect(screen.getByText(/耗时 12\.4 秒/u)).toBeTruthy()
+    // Auto 比例不下发尺寸，也不显示档位选择。
+    expect(screen.queryByRole('button', { name: '分辨率' })).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: '继续编辑' }))
     expect(screen.getByRole('button', { name: '图生图' }).getAttribute('aria-pressed')).toBe('true')
     fireEvent.click(screen.getByRole('button', { name: '再次生成' }))
     expect(screen.getByRole('button', { name: '文生图' }).getAttribute('aria-pressed')).toBe('true')
     choose('比例', /16:9/u)
     choose('生成质量', '高')
+    choose('分辨率', '2K')
     fireEvent.submit(screen.getByLabelText('画面描述').closest('form')!)
-    expect(generate).toHaveBeenCalledWith('晨光', undefined, { size: '1536x864', quality: 'high' })
+    expect(generate).toHaveBeenCalledWith('晨光', undefined, { size: '2048x1152', quality: 'high' })
+    // 只给比例时取该比例的最小档位；切回自动再选比例会重置档位。
+    choose('比例', /Auto/u)
+    choose('比例', /^16:9/u)
+    fireEvent.submit(screen.getByLabelText('画面描述').closest('form')!)
+    expect(generate).toHaveBeenLastCalledWith('晨光', undefined, { size: '1536x864', quality: 'high' })
   })
 
   it('图库收藏、筛选与本机隐藏不改写会话目录', () => {

@@ -3619,7 +3619,7 @@ Edit an image in this session’s gallery using a text prompt.
     },
     "resolution": {
       "type": "string",
-      "description": "Output resolution tier \"1K\", \"2K\", or \"4K\"; requires aspectRatio. Omit to use the smallest tier of the chosen ratio."
+      "description": "Output resolution tier \"1K\", \"2K\", or \"4K\"; requires aspectRatio. Available tiers differ by ratio, so omit it to use the smallest tier of the chosen ratio."
     }
   },
   "required": [
@@ -3649,7 +3649,7 @@ Generate one image and save it to this session’s gallery. Pass aspectRatio for
     },
     "resolution": {
       "type": "string",
-      "description": "Output resolution tier \"1K\", \"2K\", or \"4K\"; requires aspectRatio. Omit to use the smallest tier of the chosen ratio."
+      "description": "Output resolution tier \"1K\", \"2K\", or \"4K\"; requires aspectRatio. Available tiers differ by ratio, so omit it to use the smallest tier of the chosen ratio."
     },
     "summary": {
       "type": "string",
@@ -3684,7 +3684,7 @@ Generate up to 10 images; each item succeeds or fails independently.
     },
     "resolution": {
       "type": "string",
-      "description": "Output resolution tier \"1K\", \"2K\", or \"4K\"; requires aspectRatio. Omit to use the smallest tier of the chosen ratio."
+      "description": "Output resolution tier \"1K\", \"2K\", or \"4K\"; requires aspectRatio. Available tiers differ by ratio, so omit it to use the smallest tier of the chosen ratio."
     },
     "summary": {
       "type": "string",

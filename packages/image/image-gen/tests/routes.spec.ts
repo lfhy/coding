@@ -167,7 +167,9 @@ describe('image generation HTTP (real Loader)', () => {
     const env = await boot()
     expect(await (await env.get('state')).json()).toMatchObject({ enabled: false, available: false, model: '',
       maxEditReferences: 10,
-      sizes: { '1:1': { '1K': '1024x1024' }, '2:3': { '1K': '1024x1536' }, '3:2': { '1K': '1536x1024' } } })
+      sizes: { '1:1': { '1K': '1024x1024', '2K': '2048x2048' }, '2:3': { '1K': '1024x1536' },
+        '3:2': { '1K': '1536x1024' }, '16:9': { '2K': '2048x1152', '4K': '3840x2160' },
+        '9:16': { '4K': '2160x3840' } } })
     expect((await env.post('generate', { sessionId: 'one', prompt: 'test' })).status).toBe(503)
   })
 

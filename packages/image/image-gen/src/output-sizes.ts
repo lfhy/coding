@@ -1,11 +1,24 @@
-/** 兼容图像接口的比例与分辨率表，沿用上游工作台的默认尺寸与档位顺序。 */
-
-/** 未配置专用尺寸表时，使用原版 OpenAI 兼容渠道的保守档位。 */
+/**
+ * 兼容图像接口的比例与分辨率表。
+ *
+ * 默认组合取自 OpenAI 官方图像生成指南的 popular sizes，档位名沿用界面与模型
+ * 共用的 1K／2K／4K 分组。官方只列出这些比例与尺寸，其它比例需在 `sizes` 里补上
+ * 符合官方尺寸约束的像素值；官方尺寸见
+ * https://developers.openai.com/api/docs/guides/image-generation 。
+ */
 export const DEFAULT_OUTPUT_SIZES: Readonly<Record<string, Readonly<Record<string, string>>>> = {
-  '1:1': { '1K': '1024x1024' },
+  '1:1': { '1K': '1024x1024', '2K': '2048x2048' },
   '2:3': { '1K': '1024x1536' },
   '3:2': { '1K': '1536x1024' },
+  '16:9': { '2K': '2048x1152', '4K': '3840x2160' },
+  '9:16': { '4K': '2160x3840' },
 }
+
+/** 官方尺寸约束：最长边 3840，宽高为 16 的倍数，长宽比不超过 3:1，总像素 655360 至 8294400。 */
+const MAX_EDGE = 3840
+const MAX_ASPECT = 3
+const MIN_PIXELS = 655_360
+const MAX_PIXELS = 8_294_400
 
 const RATIO_ORDER = ['1:1', '2:3', '3:2', '3:4', '4:3', '4:5', '5:4', '9:16', '16:9', '9:21', '21:9', '1:3', '3:1']
 
@@ -15,15 +28,19 @@ export function validateOutputSizes(sizes: Record<string, Record<string, string>
   for (const [ratio, tiers] of Object.entries(sizes)) {
     const rawTiers: unknown = tiers
     if (!RATIO_ORDER.includes(ratio) || rawTiers === null || typeof rawTiers !== 'object' || Array.isArray(rawTiers)
-      || Object.keys(rawTiers).length < 1 || Object.keys(rawTiers).length > 4) {
+      || Object.keys(rawTiers).length < 1 || Object.keys(rawTiers).length > 3) {
       throw new TypeError('图像比例或分辨率档位无效')
     }
     for (const [tier, size] of Object.entries(rawTiers as Record<string, unknown>)) {
       const match = typeof size === 'string' ? /^(\d{2,4})x(\d{2,4})$/.exec(size) : null
       const width = Number(match?.[1]), height = Number(match?.[2])
-      if (!/^(?:1K|2K|4K)$/.test(tier) || !match || width < 128 || height < 128
-        || width > 4096 || height > 4096 || width * height > 16_777_216) {
-        throw new TypeError('图像分辨率须为 1K、2K 或 4K 对应的有效像素尺寸')
+      const longEdge = Math.max(width, height), shortEdge = Math.min(width, height)
+      // 与官方图像接口一致：档位名只是分组，真正的限制在像素尺寸本身。
+      if (!/^(?:1K|2K|4K)$/.test(tier) || !match
+        || width % 16 !== 0 || height % 16 !== 0
+        || longEdge > MAX_EDGE || longEdge > shortEdge * MAX_ASPECT
+        || width * height < MIN_PIXELS || width * height > MAX_PIXELS) {
+        throw new TypeError('图像分辨率须为 1K、2K 或 4K 档位对应的合法像素尺寸：宽高为 16 的倍数，最长边不超过 3840，长宽比不超过 3:1，总像素介于 655360 与 8294400 之间')
       }
     }
   }

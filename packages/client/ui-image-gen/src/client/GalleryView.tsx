@@ -18,8 +18,10 @@ import css from './GalleryView.module.css'
 
 type Tab = 'studio' | 'inspiration' | 'gallery'
 type Ratio = 'all' | 'square' | 'landscape' | 'portrait'
+/** Host 尺寸表到达前的兜底，与 image-gen 的默认表（官方 popular sizes）保持一致。 */
 const FALLBACK_SIZES: Record<string, Record<string, string>> = {
-  '1:1': { '1K': '1024x1024' }, '2:3': { '1K': '1024x1536' }, '3:2': { '1K': '1536x1024' },
+  '1:1': { '1K': '1024x1024', '2K': '2048x2048' }, '2:3': { '1K': '1024x1536' }, '3:2': { '1K': '1536x1024' },
+  '16:9': { '2K': '2048x1152', '4K': '3840x2160' }, '9:16': { '4K': '2160x3840' },
 }
 
 /** 主内容画廊的框架派生 props。 */
@@ -113,6 +115,7 @@ export function GalleryView({ sessionId, closePage, useGallery, useStore, action
   const [zoom, setZoom] = useState(100)
   const [studioImageId, setStudioImageId] = useState<string | null>(null)
   const [outputRatio, setOutputRatio] = useState('auto')
+  const [outputTier, setOutputTier] = useState<string | null>(null)
   const [quality, setQuality] = useState('default')
   const [toast, setToast] = useState<{ id: number; text: string } | null>(null)
   const [limit, setLimit] = useState(24)
@@ -166,7 +169,12 @@ export function GalleryView({ sessionId, closePage, useGallery, useStore, action
   const ratios = Object.keys(sizes)
   const selectedRatio = outputRatio === 'auto' || !ratios.includes(outputRatio) ? 'auto' : outputRatio
   const selectedTiers = selectedRatio === 'auto' ? {} : sizes[selectedRatio] ?? {}
-  const selectedSize = selectedTiers['1K'] ?? Object.values(selectedTiers)[0]
+  // 档位只在当前比例提供时生效；切到别的比例时回落到该比例的最小档位。
+  const tierNames = Object.keys(selectedTiers)
+  const selectedTier = outputTier !== null && tierNames.includes(outputTier) ? outputTier : tierNames[0]
+  const selectedSize = selectedTier === undefined ? undefined : selectedTiers[selectedTier]
+  const tierOptions = tierNames.map(tier => ({ id: tier, label: tier }))
+  const chooseRatio = (next: string): void => { setOutputRatio(next); setOutputTier(null) }
   const ratioShape = (ratio: string): string => {
     if (ratio === '1:1') return t('square')
     if (ratio === '3:2' || ratio === '4:3') return t('horizontal')
@@ -228,9 +236,11 @@ export function GalleryView({ sessionId, closePage, useGallery, useStore, action
   const prepareRegeneration = (item: GalleryItem) => {
     setMode('generate')
     setPrompt(item.prompt)
-    const found = Object.entries(sizes)
-      .find(([, tiers]) => Object.values(tiers).includes(item.size ?? `${item.width}x${item.height}`))
+    // 记录里保存的是请求像素尺寸，回填时同时还原比例与档位。
+    const target = item.size ?? `${item.width}x${item.height}`
+    const found = Object.entries(sizes).find(([, tiers]) => Object.values(tiers).includes(target))
     setOutputRatio(found?.[0] ?? 'auto')
+    setOutputTier(found === undefined ? null : Object.entries(found[1]).find(([, size]) => size === target)?.[0] ?? null)
     setQuality(item.quality ?? 'default')
   }
   const copyImage = (item: GalleryItem) => {
@@ -439,8 +449,13 @@ export function GalleryView({ sessionId, closePage, useGallery, useStore, action
           <div className={css.outputField}>
             <span>{t('outputSize')}</span>
             <SelectMenu label={t('outputSize')} value={selectedRatio} options={ratioOptions}
-              onChange={setOutputRatio} />
+              onChange={chooseRatio} />
           </div>
+          {selectedTier !== undefined && <div className={css.outputField}>
+            <span>{t('outputResolution')}</span>
+            <SelectMenu label={t('outputResolution')} value={selectedTier} options={tierOptions}
+              onChange={setOutputTier} />
+          </div>}
           <div className={css.outputField}>
             <span>{t('generationQuality')}</span>
             <SelectMenu label={t('generationQuality')} value={quality} options={[

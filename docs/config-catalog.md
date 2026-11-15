@@ -983,7 +983,7 @@ export interface Config {
   apiKeyRef: string
   /** 编辑一次允许的参考图数量；默认 10，可设为 1 至 10。 */
   maxEditReferences: number
-  /** 比例到分辨率档位的像素尺寸映射；空表使用原版兼容渠道的 1K 预设。 */
+  /** 比例到分辨率档位的像素尺寸映射；空表使用官方 popular sizes（含 2K 与 4K 档位）。 */
   sizes?: Record<string, Record<string, string>>
 }
 ```

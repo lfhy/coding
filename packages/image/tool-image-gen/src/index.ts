@@ -25,7 +25,7 @@ const aspectParam = {
 } as const
 const resolutionParam = {
   type: 'string',
-  description: 'Output resolution tier "1K", "2K", or "4K"; requires aspectRatio. Omit to use the smallest tier of the chosen ratio.',
+  description: 'Output resolution tier "1K", "2K", or "4K"; requires aspectRatio. Available tiers differ by ratio, so omit it to use the smallest tier of the chosen ratio.',
 } as const
 const itemOutput = { type: 'object', additionalProperties: true } as const
 const result = (item: GalleryItem & { path?: string }): Record<string, string | number> => ({
