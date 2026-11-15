@@ -39,6 +39,7 @@
     "coding-credentials": "workspace:^",
     "coding-git": "workspace:^",
     "coding-invariants": "workspace:^",
+    "coding-proxy-pool": "workspace:^",
     "coding-subprocess": "workspace:^"
   },
   "devDependencies": {
@@ -46,6 +47,7 @@
     "coding-credentials": "workspace:^",
     "coding-git": "workspace:^",
     "coding-invariants": "workspace:^",
+    "coding-proxy-pool": "workspace:^",
     "coding-subprocess": "workspace:^"
   }
 }

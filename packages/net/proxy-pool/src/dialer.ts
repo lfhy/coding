@@ -160,7 +160,9 @@ async function dialSocks5(node: ProxyNode, target: DialTarget): Promise<DialedSt
   if (head[1] !== 0x00) fail(`connect rejected with ${head[1]}`)
   const rest = head[3] === 0x01 ? 5 : head[3] === 0x04 ? 17 : head[3] === 0x03 ? (head[4] ?? 0) + 2 : -1
   if (rest > 0) await readExact(socket, rest, target.signal)
-  return socket
+  // 交还套接字前恢复流动：readExact 会暂停读取，而调用方（HTTP 客户端等）
+  // 后续都按流动流消费，暂停态会让响应永远读不到。
+  return socket.resume()
 }
 
 /** 从流里读满 n 字节；提前结束或被中止按失败处理（中止同时销毁套接字）。 */
@@ -183,9 +185,10 @@ function readExact(socket: Socket, n: number, signal?: AbortSignal): Promise<Buf
         socket.off('error', onErr)
         signal?.removeEventListener('abort', onAbort)
         const all = Buffer.concat(chunks)
-        // 多余字节放回读取队列并恢复流动，交给后续消费者（如 pipe）。
+        // 先暂停再放回多余字节：分段到达时，握手后半段可能与头同处一个 chunk，
+        // 若此刻保持流动，下一次 readExact 挂上监听前这些字节会被静默丢弃。
+        socket.pause()
         if (all.length > n) socket.unshift(all.subarray(n))
-        socket.resume()
         resolve(all.subarray(0, n))
       }
     }
@@ -195,6 +198,9 @@ function readExact(socket: Socket, n: number, signal?: AbortSignal): Promise<Buf
       reject(error)
     }
     socket.on('data', onData)
+    // 上一轮读取结束时套接字被显式暂停，而 on('data') 不会替它恢复流动：
+    // 每一轮读取都要自己 resume，否则握手后半段永远等不到数据。
+    socket.resume()
     socket.once('error', onErr)
   })
 }
@@ -216,7 +222,7 @@ async function dialVless(node: ProxyNode, target: DialTarget): Promise<DialedStr
     socket.destroy()
     throw new ProxyPoolError(`VLESS node rejected the request with version ${response[0]}`, 'PROXY_DIAL_FAILED')
   }
-  return socket
+  return socket.resume()
 }
 
 /** 解析 36 字符 UUID 为 16 字节。 */
@@ -263,7 +269,7 @@ async function dialVmess(node: ProxyNode, target: DialTarget): Promise<DialedStr
   socket.write(Buffer.concat([authId, sealedLength, sealed]))
   // 响应头：1 字节版本 + 1 字节选项；服务端随后开始转发。
   await readExact(socket, 2, target.signal)
-  return socket
+  return socket.resume()
 }
 
 /**

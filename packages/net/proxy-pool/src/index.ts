@@ -53,6 +53,8 @@ export {
   parseProxyLink,
   parseProxyLinks,
 } from './links.ts'
+export { dialThrough } from './dialer.ts'
+export type { DialTarget, DialedStream } from './dialer.ts'
 export {
   mirrorPoolNodes,
   serializeNodes,

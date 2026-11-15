@@ -5938,6 +5938,9 @@ importers:
       coding-invariants:
         specifier: workspace:^
         version: link:../../runtime-diagnostics/invariants
+      coding-proxy-pool:
+        specifier: workspace:^
+        version: link:../../net/proxy-pool
       coding-subprocess:
         specifier: workspace:^
         version: link:../../subprocess/subprocess

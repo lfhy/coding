@@ -14,7 +14,7 @@ Git seam（`ctx.git`，见 [`coding-git`](../git/README.md)）的本机实现。
 - 提交身份（`identity`）写入新仓库的本地配置，后续自动提交使用它；留空的字段保持目标机器上的 git 配置。`git clone` 的 `-c` 只影响那一次命令，不会落到新仓库。
 - 认证按宿主凭据助手、本机凭据存储、调用方显式凭据的顺序解析；前两级都给不出可用凭据时以 `GIT_AUTH_REQUIRED` 请求输入，已存凭据被拒时同一个错误带上 `credentialRef`。
 
-内置实现（`isomorphic-git`，使用本包自己的 `node:http(s)` 适配器，可按调用方信号中止）只支持 http(s) 远端，并且**不支持代理**：带 `proxy` 时会以 `GIT_REMOTE_UNAVAILABLE` 明确拒绝，而不是悄悄忽略。它克隆后同样写入提交身份，结果里的 `mechanism: 'js'` 让界面说明本次用的是内置实现。
+内置实现使用 `isomorphic-git` 加本包自己的 `node:http(s)` 适配器（可按调用方信号中止，不经过第三方请求库）。它只支持 http(s) 远端。代理同样可用：显式 `proxy` 优先，留空时读 `HTTPS_PROXY`／`HTTP_PROXY`／`ALL_PROXY`（含小写拼写）并尊重 `NO_PROXY`；隧道由 [`coding-proxy-pool`](../../net/proxy-pool/README.md) 的拨号器建立，HTTP(S) 前向代理与 SOCKS5 都走同一条路径，目标为 https 时 TLS 由本进程完成，代理只看到密文。代理连不上或地址不可解析时以 `GIT_REMOTE_UNAVAILABLE` 失败，不会退回直连。克隆后同样写入提交身份，结果里的 `mechanism: 'js'` 让界面说明本次用的是内置实现。
 
 ## 模型体验
 
@@ -27,4 +27,4 @@ Git seam（`ctx.git`，见 [`coding-git`](../git/README.md)）的本机实现。
 ## 已知限制与暂缓事项
 
 - **内置实现只覆盖克隆**：状态、分支、历史、切换、推送与拉取在有 `git` 的机器上才可用；未安装时这些 RPC 以 `GIT_UNAVAILABLE` 失败，由界面提示安装 Git。
-- **内置实现不支持代理、SSH 与本机路径远端**：只处理 http(s) 智能协议。
+- **内置实现不支持 SSH 与本机路径远端**：只处理 http(s) 智能协议；`git@host:owner/repo` 需要本机 `git`。

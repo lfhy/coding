@@ -7,7 +7,7 @@
 
 import { Context } from '@deepseek-ai/cordis'
 import { createServer, type Server } from 'node:http'
-import { connect as tcpConnect } from 'node:net'
+import { createServer as createTcpServer, connect as tcpConnect } from 'node:net'
 import { SettingsProvider } from 'coding-settings'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import ProxyPoolService, {
@@ -106,6 +106,38 @@ describe('parseProxyLink', () => {
   })
 })
 
+
+/**
+ * 把 SOCKS5 应答按 `at` 拆成两次写出：`at` 等于应答长度时一次写完，
+ * 落在中间时模拟头与地址分处两个 TCP 段。
+ */
+function splitReply(at: number): (reply: Buffer, socket: import('node:net').Socket) => void {
+  return (reply, socket) => {
+    if (at >= reply.length) { socket.write(reply); return }
+    socket.write(reply.subarray(0, at))
+    setTimeout(() => { socket.write(reply.subarray(at)) }, 5)
+  }
+}
+
+/** 无认证的 SOCKS5 假代理：接收 CONNECT 后按给定策略写应答。 */
+async function fakeSocks5(send: (reply: Buffer, socket: import('node:net').Socket) => void): Promise<{ port: number; close: () => void }> {
+  const server = createTcpServer((socket) => {
+    socket.once('data', () => {
+      socket.write(Buffer.from([0x05, 0x00]))
+      socket.once('data', () => {
+        send(Buffer.from([0x05, 0x00, 0x00, 0x01, 127, 0, 0, 1, 0x1f, 0x90]), socket)
+      })
+    })
+  })
+  const port = await new Promise<number>((resolve) => {
+    server.listen(0, '127.0.0.1', () => {
+      const address = server.address()
+      resolve(typeof address === 'object' && address !== null ? address.port : 0)
+    })
+  })
+  return { port, close: () => { server.close() } }
+}
+
 describe('dialThrough', () => {
   /** 起一个本地 HTTP CONNECT 假代理，记录收到的权威串。 */
   function fakeHttpProxy(onConnect: (authority: string) => void): Promise<{ server: Server; port: number }> {
@@ -159,6 +191,25 @@ describe('dialThrough', () => {
   it('连不上的节点以 PROXY_DIAL_FAILED 快速失败', async () => {
     const node = parseProxyLink('http://127.0.0.1:1#dead')
     await expect(dialThrough(node, { host: 'x.example', port: 80 })).rejects.toThrow(/cannot reach proxy node/)
+  })
+
+  it('SOCKS5 握手后把流动的套接字交还调用方（回复一次到达）', async () => {
+    const server = await fakeSocks5(splitReply(10))
+    const node = parseProxyLink(`socks5://127.0.0.1:${server.port}#socks`)
+    const stream = await dialThrough(node, { host: 'example.org', port: 80 })
+    // 交还的流必须是流动的：暂停态会让后续 HTTP 客户端永远读不到响应。
+    expect(stream.isPaused()).toBe(false)
+    stream.destroy()
+    server.close()
+  })
+
+  it('SOCKS5 握手回复分段到达时仍能完成且不丢字节', async () => {
+    const server = await fakeSocks5(splitReply(5))
+    const node = parseProxyLink(`socks5://127.0.0.1:${server.port}#socks-split`)
+    const stream = await dialThrough(node, { host: 'example.org', port: 80 })
+    expect(stream.isPaused()).toBe(false)
+    stream.destroy()
+    server.close()
   })
 })
 

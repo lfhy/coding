@@ -111,9 +111,6 @@ export async function cloneWithJs(
   signal: AbortSignal,
   options: GitRemoteOptions,
 ): Promise<GitCloneResult> {
-  if (input.proxy !== undefined && input.proxy !== '') {
-    throw new GitOperationError('GIT_REMOTE_UNAVAILABLE', 'The built-in Git implementation cannot use a proxy; install Git or clear the proxy')
-  }
   const identity = gitRemoteIdentity(input.url)
   const saved = identity === undefined
     ? undefined
@@ -125,7 +122,10 @@ export async function cloneWithJs(
   try {
     await gitJs.clone({
       fs,
-      http: createNodeHttpClient(),
+      // 显式代理优先；留空时适配器仍会读 HTTPS_PROXY／ALL_PROXY（并尊重 NO_PROXY）。
+      http: createNodeHttpClient({
+        ...input.proxy === undefined || input.proxy === '' ? {} : { proxy: { url: input.proxy } },
+      }),
       dir: input.path,
       url: input.url,
       ...input.ref === undefined || input.ref === '' ? {} : { ref: input.ref, singleBranch: true },
@@ -157,6 +157,10 @@ export async function cloneWithJs(
 function classifyCloneFailure(error: unknown, url: string, hadCredentials: boolean): GitOperationError {
   const identity = gitRemoteIdentity(url)
   const code = (error as { code?: string }).code
+  // 代理拨号失败没有 HTTP 状态可读，单独归一为“远端不可达”。
+  if (code === 'PROXY_DIAL_FAILED' || code === 'PROXY_LINK_INVALID') {
+    return new GitOperationError('GIT_REMOTE_UNAVAILABLE', error instanceof Error ? error.message : 'Proxy connection failed')
+  }
   if (code === 'HttpError') {
     if (identity !== undefined) {
       return new GitOperationError(hadCredentials ? 'GIT_AUTH_FAILED' : 'GIT_AUTH_REQUIRED',

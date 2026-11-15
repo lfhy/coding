@@ -1,9 +1,11 @@
 import { execFileSync, spawn } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:http'
+import { createServer as createTcpServer, connect as connectTcp } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
+import type { Socket } from 'node:net'
 import { cloneWithCli, cloneWithJs } from '../src/clone.ts'
 
 const roots: string[] = []
@@ -32,6 +34,82 @@ function sourceRepo(): string {
 }
 
 const cliAvailable = async (): Promise<boolean> => true
+
+/**
+ * 只转发 `CONNECT` 的 HTTP 代理：足够让智能 HTTP 的 GET 与 POST 走隧道。
+ * @returns 代理地址与回收函数。
+ */
+async function httpConnectProxy(): Promise<string> {
+  const server = createServer((_request, response) => {
+    response.statusCode = 405
+    response.end()
+  })
+  server.on('connect', (request, client: Socket, head: Buffer) => {
+    const [host, rawPort] = (request.url ?? '').split(':')
+    const upstream = connectTcp(Number(rawPort), host ?? '', () => {
+      client.write('HTTP/1.1 200 Connection Established\r\n\r\n')
+      if (head.length > 0) upstream.write(head)
+      upstream.pipe(client)
+      client.pipe(upstream)
+    })
+    upstream.on('error', () => { client.destroy() })
+    client.on('error', () => { upstream.destroy() })
+  })
+  await new Promise<void>((resolve) => { server.listen(0, '127.0.0.1', resolve) })
+  servers.push(() => new Promise<void>((resolve) => {
+    // 关闭监听后仍未结束的 keep-alive 连接会拖住 close：HTTP 服务器直接断开它们，
+    // TCP 代理由用例自己销毁套接字。
+    ;(server as unknown as { closeAllConnections?: () => void }).closeAllConnections?.()
+    server.close(() => { resolve() })
+  }))
+  const address = server.address()
+  const port = typeof address === 'object' && address !== null ? address.port : 0
+  return `http://127.0.0.1:${port}`
+}
+
+/**
+ * 无认证的 SOCKS5 代理（RFC 1928）：只实现 CONNECT 命令与 IPv4／域名两种地址。
+ * @returns 代理地址。
+ */
+async function socks5Proxy(): Promise<string> {
+  const server = createTcpServer((client) => {
+    client.once('data', () => {
+      // 问候：版本 + 方法数 + 方法列表；本实现只接受“无认证”。
+      client.write(Buffer.from([0x05, 0x00]))
+      client.once('data', (request: Buffer) => {
+        const atyp = request[3]
+        let host: string
+        let offset: number
+        if (atyp === 0x01) {
+          host = `${request[4] ?? 0}.${request[5] ?? 0}.${request[6] ?? 0}.${request[7] ?? 0}`
+          offset = 8
+        } else if (atyp === 0x03) {
+          const length = request[4] ?? 0
+          host = request.subarray(5, 5 + length).toString('utf8')
+          offset = 5 + length
+        } else {
+          client.destroy()
+          return
+        }
+        const upstream = connectTcp(request.readUInt16BE(offset), host, () => {
+          client.write(Buffer.from([0x05, 0x00, 0x00, 0x01, 0, 0, 0, 0, 0, 0]))
+          upstream.pipe(client)
+          client.pipe(upstream)
+        })
+        upstream.on('error', () => { client.destroy() })
+        client.on('error', () => { upstream.destroy() })
+      })
+    })
+  })
+  await new Promise<void>((resolve) => { server.listen(0, '127.0.0.1', resolve) })
+  servers.push(() => new Promise<void>((resolve) => {
+    ;(server as unknown as { closeAllConnections?: () => void }).closeAllConnections?.()
+    server.close(() => { resolve() })
+  }))
+  const address = server.address()
+  const port = typeof address === 'object' && address !== null ? address.port : 0
+  return `socks5://127.0.0.1:${port}`
+}
 
 /** 关掉的智能 HTTP 服务，用例结束时统一回收。 */
 const servers: Array<() => Promise<void>> = []
@@ -82,7 +160,10 @@ async function smartHttp(projectRoot: string): Promise<string> {
     response.on('close', () => { if (!response.writableEnded) child.kill() })
   })
   await new Promise<void>((resolve) => { server.listen(0, '127.0.0.1', resolve) })
-  servers.push(() => new Promise<void>((resolve) => { server.close(() => { resolve() }) }))
+  servers.push(() => new Promise<void>((resolve) => {
+    ;(server as unknown as { closeAllConnections?: () => void }).closeAllConnections?.()
+    server.close(() => { resolve() })
+  }))
   const address = server.address()
   const port = typeof address === 'object' && address !== null ? address.port : 0
   return `http://127.0.0.1:${port}/repo.git`
@@ -163,11 +244,52 @@ describe('cloneWithJs', () => {
       .rejects.toMatchObject({ code: 'GIT_REMOTE_UNAVAILABLE' })
   })
 
-  it('refuses a proxy instead of silently ignoring it', async () => {
-    const target = join(temp(), 'proxied')
-    await expect(cloneWithJs({ url: 'https://example.com/repo.git', path: target, proxy: 'http://127.0.0.1:7890' }, signal, {}))
+  it('clones through an HTTP CONNECT proxy given on the request', async () => {
+    const projectRoot = temp()
+    git(projectRoot, 'clone', '-q', '--bare', sourceRepo(), join(projectRoot, 'repo.git'))
+    const url = await smartHttp(projectRoot)
+    const proxy = await httpConnectProxy()
+    const target = join(temp(), 'http-proxied')
+    const result = await cloneWithJs({ url, path: target, proxy }, signal, {})
+    expect(result.mechanism).toBe('js')
+    expect(readFileSync(join(target, 'tracked.txt'), 'utf8')).toBe('first\n')
+  }, CLONE_TIMEOUT_MS)
+
+  it('clones through a SOCKS5 proxy', async () => {
+    const projectRoot = temp()
+    git(projectRoot, 'clone', '-q', '--bare', sourceRepo(), join(projectRoot, 'repo.git'))
+    const url = await smartHttp(projectRoot)
+    const proxy = await socks5Proxy()
+    const target = join(temp(), 'socks-proxied')
+    await cloneWithJs({ url, path: target, proxy }, signal, {})
+    expect(readFileSync(join(target, 'tracked.txt'), 'utf8')).toBe('first\n')
+  }, CLONE_TIMEOUT_MS)
+
+  it('honors HTTP_PROXY from the environment when the request names no proxy', async () => {
+    const projectRoot = temp()
+    git(projectRoot, 'clone', '-q', '--bare', sourceRepo(), join(projectRoot, 'repo.git'))
+    const url = await smartHttp(projectRoot)
+    const proxy = await httpConnectProxy()
+    const previous = process.env.HTTP_PROXY
+    process.env.HTTP_PROXY = proxy
+    try {
+      const target = join(temp(), 'env-proxied')
+      await cloneWithJs({ url, path: target }, signal, {})
+      expect(readFileSync(join(target, 'tracked.txt'), 'utf8')).toBe('first\n')
+    } finally {
+      if (previous === undefined) delete process.env.HTTP_PROXY
+      else process.env.HTTP_PROXY = previous
+    }
+  }, CLONE_TIMEOUT_MS)
+
+  it('reports an unreachable proxy instead of silently cloning directly', async () => {
+    const projectRoot = temp()
+    git(projectRoot, 'clone', '-q', '--bare', sourceRepo(), join(projectRoot, 'repo.git'))
+    const url = await smartHttp(projectRoot)
+    const target = join(temp(), 'dead-proxy')
+    await expect(cloneWithJs({ url, path: target, proxy: 'http://127.0.0.1:1' }, signal, {}))
       .rejects.toMatchObject({ code: 'GIT_REMOTE_UNAVAILABLE' })
-  })
+  }, CLONE_TIMEOUT_MS)
 
   it('reports a rejected destination before reaching the remote', async () => {
     const occupied = temp()

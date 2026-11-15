@@ -110,7 +110,7 @@ async refresh(): Promise<RefreshResult>
 async checkNode(nodeId: string, timeoutMs?: number): Promise<ProxyHealth | undefined>
 ```
 
-Source: [`packages/net/proxy-pool/src/index.ts:137`](../../packages/net/proxy-pool/src/index.ts)
+Source: [`packages/net/proxy-pool/src/index.ts:139`](../../packages/net/proxy-pool/src/index.ts)
 
 <a id="proxy-pool-events"></a>
 
@@ -132,5 +132,5 @@ Source: [`packages/net/proxy-pool/src/index.ts:137`](../../packages/net/proxy-po
 'proxy-pool/node'(event: ProxyPoolNodeEvent): void
 ```
 
-Source: [`packages/net/proxy-pool/src/index.ts:95`](../../packages/net/proxy-pool/src/index.ts)
+Source: [`packages/net/proxy-pool/src/index.ts:97`](../../packages/net/proxy-pool/src/index.ts)
 <!-- END GENERATED cordis-surface -->
