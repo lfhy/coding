@@ -225,7 +225,7 @@
   background: var(--dsw-alias-bg-base);
 }
 
-/* 独立页面只覆盖主内容，侧栏仍可导航；原会话树保持挂载但退出命中与可访问树。 */
+/* 独立页面占满整行：侧栏列收缩为零宽，原会话树保持挂载但退出命中与可访问树。 */
 .pageCol {
   grid-column: 2 / 4;
   grid-row: 1 / 3;
@@ -235,6 +235,8 @@
   overflow: hidden;
   background: var(--dsw-alias-bg-base);
 }
+
+.frame[data-page-open] .pageCol { grid-column: 1 / 4; }
 
 .frame[data-page-open] .handle { display: none; }
 
@@ -249,6 +251,7 @@
 
 /* 视觉关闭不卸载子树，但必须退出命中测试和可访问树。 */
 .centerCol[data-hidden],
+.sidebarCol[data-hidden],
 .detailsCol[data-hidden],
 .workbenchCol[data-hidden],
 .bottomCol[data-hidden] {

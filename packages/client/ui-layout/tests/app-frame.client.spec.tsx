@@ -673,18 +673,25 @@ describe('AppFrame', () => {
     act(() => { b.rerenderFrame() })
     expect(floatingDialog(b.frame)).toBeNull()
   })
-  it('places an independent session page beside the sidebar and restores the mounted conversation', () => {
+  it('hides the sidebar while an independent page fills the frame and restores it on close', () => {
     const b = mountFrame()
     const center = conversationColumn(b.getByTestId('center-content'))
+    const sidebarColumn = b.getByTestId('sidebar-content').parentElement!
     act(() => { b.instance.actions.openPage('image-gallery', 's-test' as SessionId) })
     expect(b.getByTestId('gallery-page')).toBeTruthy()
-    expect(b.getByTestId('sidebar-content')).toBeTruthy()
     expect(center?.hasAttribute('inert')).toBe(true)
     expect(b.frame.getAttribute('data-page-open')).toBe('true')
+    // 页面占满主内容：侧栏收成零宽并退出命中与可访问树，但子树保持挂载。
+    expect(sidebarColumn.hasAttribute('data-hidden')).toBe(true)
+    expect(sidebarColumn.hasAttribute('inert')).toBe(true)
+    expect(b.getByTestId('sidebar-content')).toBeTruthy()
+    expect(tracks(b.frame)[0]).toBe(0)
     const owner = b.ownerFor('shell.page') as { closePage(): void }
     act(() => { owner.closePage() })
     expect(b.queryByTestId('gallery-page')).toBeNull()
     expect(center?.hasAttribute('inert')).toBe(false)
+    expect(sidebarColumn.hasAttribute('data-hidden')).toBe(false)
+    expect(tracks(b.frame)[0]).toBe(280)
     expect(b.getByTestId('center-content')).toBeTruthy()
   })
 

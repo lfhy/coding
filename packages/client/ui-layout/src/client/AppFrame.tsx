@@ -278,6 +278,21 @@ function ConversationColumn({
   )
 }
 
+/** 内层侧栏列；独立主内容页打开时随页面隐藏，页面关闭后按用户的栏宽偏好恢复。 */
+function SidebarColumn({ children, hidden }: SurfaceProps) {
+  const hiddenAttributes = hidden ? { 'aria-hidden': true, inert: '' } as const : {}
+  return (
+    <div
+      id={SIDEBAR_ID}
+      className={css.sidebarCol}
+      data-hidden={hidden || undefined}
+      {...hiddenAttributes}
+    >
+      {children}
+    </div>
+  )
+}
+
 /** 详情列；关闭时保持挂载。 */
 function DetailsColumn({ children, hidden }: SurfaceProps) {
   const hiddenAttributes = hidden ? { 'aria-hidden': true, inert: '' } as const : {}
@@ -695,7 +710,8 @@ export function AppFrame({
       ref={frameRef}
       className={css.frame}
       style={{
-        gridTemplateColumns: `${sidebarWidth}px minmax(0, 1fr) ${rightWidth}px`,
+        // 独立主内容页占满整行时，侧栏列收缩为零宽，页面关闭后回到用户的栏宽偏好。
+        gridTemplateColumns: `${pageVisible ? 0 : sidebarWidth}px minmax(0, 1fr) ${rightWidth}px`,
         gridTemplateRows: `minmax(0, 1fr) ${bottomHeight}px`,
         '--layout-sidebar-width': `${sidebarWidth}px`,
         '--layout-bottom-height': `${bottomHeight}px`,
@@ -710,9 +726,9 @@ export function AppFrame({
       data-dragging={dragging || undefined}
       data-page-open={pageVisible || undefined}
     >
-      <div id={SIDEBAR_ID} className={css.sidebarCol}>
+      <SidebarColumn hidden={pageVisible}>
         {renderSlot('sidebar', { collapsed: sidebarCollapsed, width: sidebarWidth, welcomeActionsVisible })}
-      </div>
+      </SidebarColumn>
       <ConversationColumn
         hidden={(workbenchFullscreen || pageVisible) && !floatingOpen}
         floating={floatingOpen}
