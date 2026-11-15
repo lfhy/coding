@@ -82,6 +82,9 @@ describe('web e2e: no-session Hero panel actions', () => {
     expect(await bottom.getAttribute('inert')).toBe('')
     const menu = page.getByRole('navigation', { name: 'Workbench features' })
     await expect.poll(() => menu.isVisible()).toBe(true)
+    // 打开右栏时该会话还没有标签页，先弹出承载功能菜单的“新标签页”。
+    const newTab = workbench.getByRole('tab', { name: 'New tab' })
+    await expect.poll(() => newTab.getAttribute('aria-selected')).toBe('true')
     await expect.poll(async () => (await workbench.boundingBox())?.width ?? 0).toBeGreaterThan(300)
     expect(await menu.getByRole('button').count()).toBe(4)
     for (const name of ['Change history', 'Terminal', 'Agent Browser', 'Files']) {
