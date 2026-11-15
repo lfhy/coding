@@ -59,7 +59,7 @@ workspace 共 278 个包，按 group 分节。每行给出包目录、职责（R
 - `packages/client/ui-deliverables` — 产出文件与可点击文件引用功能的属主 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 2）
 - `packages/client/ui-directory-picker-browse` — 应用内目录浏览界面：浏览式选取交互的浏览器半边 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 2）
 - `packages/client/ui-directory-picker-native` — 原生目录选择界面：原生选取交互的浏览器半边 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 1）
-- `packages/client/ui-files` — 「设置 → 文件管理」列出当前 Host 管理的全局上传文件和生成图片 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 3）
+- `packages/client/ui-files` — 外侧窄导航的「文件管理」进入独立主内容页，默认管理没有工作区的会话输入、生成图片和导出成品；页面只展示文件库元数据，不把本机绝对路径交给浏览器 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 3）
 - `packages/client/ui-goal` — Goal 界面插件（浏览器端部分）：`GoalBar` 条带是 `conversation.input.dock` composer 上下文堆栈… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 4）
 - `packages/client/ui-icons` — 本包是浏览器客户端图标的独立组件边界 入口 `src/index.ts`（tests 1）
 - `packages/client/ui-image-gen` — 图像生成的浏览器界面：设置里的「图像生成」分区、外层窄导航栏的画图图标入口，以及主内容「工作台／灵感／图库」页面 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 11）
@@ -72,7 +72,7 @@ workspace 共 278 个包，按 group 分节。每行给出包目录、职责（R
 - `packages/client/ui-permission-presets` — 面向两种不同生命周期的浏览器权限界面 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 3）
 - `packages/client/ui-plan` — Plan mode 状态徽章，纯浏览器 surface 插件 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 2）
 - `packages/client/ui-ppt-workbench` — 右侧边栏的「PPT 工作台」标签在打开工程后提供可收起的左侧缩略图与主画布，可就地改字、拖动元素、增删页与导出；操作收纳在顶部胶囊… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 8）
-- `packages/client/ui-primitives` — 纯 React 原子组件（零 cordis）：StateDot、DisclosureRow、ic_ds_* 图标、Button/Pill/Men… 入口 `src/index.ts`（tests 22）
+- `packages/client/ui-primitives` — 纯 React 原子组件（零 cordis）：StateDot、DisclosureRow、ic_ds_* 图标、Button/Pill/Men… 入口 `src/index.ts`（tests 23）
 - `packages/client/ui-reference` — 统一的 Web `@file` 与 `@session` source [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 1）
 - `packages/client/ui-renderer` — 负责 React 渲染层的浏览器 Cordis 插件 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 9）
 - `packages/client/ui-settings` — 设置领域的底座，本身不含任何呈现内容 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 5）

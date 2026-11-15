@@ -1,13 +1,14 @@
 /** Host 管理的文件记录；绝对路径不会进入浏览器响应。 */
 export interface ManagedFileRecord {
   id: string
-  kind: 'upload' | 'generated-image'
+  kind: 'upload' | 'generated-image' | 'export'
   name: string
   relativePath: string
   mediaType: string
   bytes: number
   createdAt: string
   sessionId?: string
+  workspaceId?: string
   galleryId?: string
   attachmentId?: string
 }
@@ -17,6 +18,16 @@ export interface ManagedFilesPage {
   items: ManagedFileRecord[]
   total: number
   nextOffset?: number
+}
+
+export type ManagedFileKind = ManagedFileRecord['kind']
+export type ManagedFileCategory = 'image' | 'presentation' | 'document' | 'other'
+
+export function categoryOf(file: Pick<ManagedFileRecord, 'name' | 'mediaType'>): ManagedFileCategory {
+  if (file.mediaType.startsWith('image/')) return 'image'
+  if (file.mediaType.includes('presentation') || /\.(?:pptx?|key)$/iu.test(file.name)) return 'presentation'
+  if (file.mediaType.includes('pdf') || file.mediaType.includes('word') || /\.(?:docx?|pdf|txt|md|csv)$/iu.test(file.name)) return 'document'
+  return 'other'
 }
 
 /** 对每页响应在网络边界验证，拒绝绝对路径和不完整字段。
@@ -29,11 +40,12 @@ export function parseManagedFilesPage(value: unknown): ManagedFilesPage {
     throw new Error('Invalid managed files page')
   }
   const items = value.items.map((item): ManagedFileRecord => {
-    if (!isObject(item) || !nonempty(item.id) || (item.kind !== 'upload' && item.kind !== 'generated-image')
+    if (!isObject(item) || !nonempty(item.id) || (item.kind !== 'upload' && item.kind !== 'generated-image' && item.kind !== 'export')
       || !nonempty(item.name) || !nonempty(item.relativePath) || /^[\\/]|^[a-zA-Z]:/.test(item.relativePath)
       || item.relativePath.split(/[\\/]/).includes('..') || !nonempty(item.mediaType)
       || !nonnegativeInteger(item.bytes) || !nonempty(item.createdAt) || !Number.isFinite(Date.parse(item.createdAt))
-      || !optionalString(item.sessionId) || !optionalString(item.galleryId) || !optionalString(item.attachmentId)) {
+      || !optionalString(item.sessionId) || !optionalString(item.workspaceId)
+      || !optionalString(item.galleryId) || !optionalString(item.attachmentId)) {
       throw new Error('Invalid managed file record')
     }
     return item as unknown as ManagedFileRecord
@@ -55,9 +67,26 @@ function nonnegativeInteger(value: unknown): value is number { return Number.isS
  * @param signal - 分区卸载时取消本次读取的信号。
  * @returns 经网络边界校验的分页记录；HTTP 或格式错误会拒绝。
  */
-export async function listManagedFiles(offset: number, limit: number, signal: AbortSignal): Promise<ManagedFilesPage> {
-  const query = new URLSearchParams({ offset: String(offset), limit: String(limit) })
+export async function listManagedFiles(offset: number, limit: number, signal: AbortSignal,
+  options: {
+    sessionId?: string
+    unscoped?: boolean
+    kind?: ManagedFileKind
+    category?: ManagedFileCategory
+  } = {}): Promise<ManagedFilesPage> {
+  const query = new URLSearchParams({
+    offset: String(offset), limit: String(limit),
+    ...options.sessionId === undefined ? {} : { sessionId: options.sessionId },
+    ...options.unscoped ? { scope: 'unscoped' } : {},
+    ...options.kind === undefined ? {} : { kind: options.kind },
+    ...options.category === undefined ? {} : { category: options.category },
+  })
   const response = await fetch(`/api/files/list?${query}`, { method: 'GET', signal })
   if (!response.ok) throw new Error(`File list request failed: ${response.status}`)
   return parseManagedFilesPage(await response.json())
+}
+
+/** 受保护的本机文件预览地址；页面只持有 FileId，不接触本机路径。 */
+export function managedFilePreviewUrl(id: string): string {
+  return `/api/files/preview?id=${encodeURIComponent(id)}`
 }

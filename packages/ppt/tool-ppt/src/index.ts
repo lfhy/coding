@@ -79,8 +79,9 @@ export interface PptProjectsFace {
     revision: number
     fonts: readonly { readonly family: string; readonly readonly: boolean; readonly subset: boolean }[]
     skippedFonts: readonly { readonly family: string; readonly reason: string }[]
+    fileId?: string
   }>
-  exportPdf: (sessionId: string, dir?: string) => Promise<{ path: string; bytes: number; revision: number }>
+  exportPdf: (sessionId: string, dir?: string) => Promise<{ path: string; bytes: number; revision: number; fileId?: string }>
 }
 
 /** 质检结果。 */
@@ -927,6 +928,7 @@ export function apply(ctx: Context): void {
         path: { type: 'string', required: true },
         bytes: { type: 'number', required: true },
         revision: { type: 'number', required: true },
+        fileId: { type: 'string' },
         fonts: {
           type: 'array',
           required: true,
@@ -957,13 +959,21 @@ export function apply(ctx: Context): void {
     async execute(args, exec) {
       if (args.target === 'pdf') {
         const pdf = await projects().exportPdf(sessionOf(exec), args.dir)
-        return { path: pdf.path, bytes: pdf.bytes, revision: pdf.revision, fonts: [], skippedFonts: [] }
+        return {
+          path: pdf.path,
+          bytes: pdf.bytes,
+          revision: pdf.revision,
+          ...(pdf.fileId === undefined ? {} : { fileId: pdf.fileId }),
+          fonts: [],
+          skippedFonts: [],
+        }
       }
       const result = await projects().export(sessionOf(exec), args.dir, { skipCheck: args.skip_check === true })
       return {
         path: result.path,
         bytes: result.bytes,
         revision: result.revision,
+        ...(result.fileId === undefined ? {} : { fileId: result.fileId }),
         fonts: result.fonts.map(font => ({
           family: font.family,
           readonly: font.readonly,

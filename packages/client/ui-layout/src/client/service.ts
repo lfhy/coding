@@ -93,6 +93,33 @@ export interface ILayout {
   showConversation(sessionId: SessionId): void
   /** 供导航入口显示是否正处于主内容页。 */
   readonly page: ObservableSnapshot<PageRoute | null>
+  /**
+   * 主内容页页内左侧栏的共享折叠状态：文件管理、画图等页面共用同一份，
+   * 因此宽度、行几何与折叠动画始终一致，并在刷新后保留。
+   */
+  readonly pageSidebar: ObservableSnapshot<PageSidebarLayoutSnapshot>
+  /** 切换页内左侧栏折叠状态；所有主内容页同步生效。 */
+  togglePageSidebar(): void
+}
+
+/** 页内左侧栏的共享状态。 */
+export interface PageSidebarLayoutSnapshot {
+  collapsed: boolean
+}
+
+/** 页内左侧栏折叠状态的持久化键。 */
+const PAGE_SIDEBAR_STORAGE = 'dsh.layout.pageSidebar'
+
+/** 读取上次保存的页内左侧栏状态；存储不可用时按展开处理。 */
+function readPageSidebar(): PageSidebarLayoutSnapshot {
+  try {
+    const raw = globalThis.localStorage.getItem(PAGE_SIDEBAR_STORAGE)
+    if (raw === null) return { collapsed: false }
+    const value = JSON.parse(raw) as { collapsed?: unknown }
+    return { collapsed: value.collapsed === true }
+  } catch {
+    return { collapsed: false }
+  }
 }
 
 /** `ctx.layout` 的具体实现。 */
@@ -103,6 +130,8 @@ export class LayoutController implements ILayout {
   #page = createSnapshotStore<PageRoute | null>(null)
   #conversationIntent = 0
   readonly page: ObservableSnapshot<PageRoute | null> = this.#page
+  #pageSidebar = createSnapshotStore<PageSidebarLayoutSnapshot>(readPageSidebar())
+  readonly pageSidebar: ObservableSnapshot<PageSidebarLayoutSnapshot> = this.#pageSidebar
 
   /** 新对话意图的同步版本；异步欢迎页操作只可完成同版本手势。 */
   get conversationIntent(): number { return this.#conversationIntent }
@@ -263,6 +292,17 @@ export class LayoutController implements ILayout {
   /** 同一页面入口可再次点击返回。 */
   togglePage(kind: string, sessionId: SessionId): void {
     this.#require().togglePage(kind, sessionId)
+  }
+
+  /** 切换页内左侧栏折叠状态，并尽力写入本地存储供下次启动恢复。 */
+  togglePageSidebar(): void {
+    const collapsed = !this.#pageSidebar.getSnapshot().collapsed
+    this.#pageSidebar.set({ collapsed })
+    try {
+      globalThis.localStorage.setItem(PAGE_SIDEBAR_STORAGE, JSON.stringify({ collapsed }))
+    } catch {
+      // 隐私模式或配额耗尽只让偏好不落盘，不改变本次界面状态。
+    }
   }
 
   /** AppFrame 将最终路由投影给不持有根 store 的入口。 */

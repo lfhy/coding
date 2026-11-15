@@ -112,6 +112,16 @@ One UI feature = one plugin package (`src/client/` browser half). A multi-domain
 
 新增或调整客户端图标时，图形由 [`ui-icons`](ui-icons/README.md) 持有并经其 `src/index.ts` 统一导出；业务组件只从包入口使用语义 `Icon` 或具名图形，不内联图标 SVG、不直接引用第三方图标库或 `ui-icons` 内部文件。同步维护语义映射、包 README 和图标测试。
 
+### 主内容页的页内左侧栏
+
+独立主内容页（`shell.page`）需要自己的左侧栏时必须复用 [`ui-primitives` 的 `PageSidebar`](ui-primitives/src/PageSidebar.tsx)，不要在页面里另写列布局：
+
+1. **固定几何**：展开 210px、收起 56px 图标轨、左右 12px 内边距、36px 标题行、34px 行高（`variant="media"` 的缩略图行 52px）。宽度、行几何与折叠动画都由组件持有，页面只提供条目与折叠状态。
+2. **必须可收起且状态共享**：`collapsed` 取自 `ctx.layout.pageSidebar`，切换调用 `ctx.layout.togglePageSidebar()`——所有主内容页共用同一份折叠状态并写入本地存储，因此切换页面或刷新后宽度一致。收起后每条退化为 36×36 图标按钮，所以每条都必须给出语义 `icon`。
+3. **避让 macOS 交通灯**：组件内部已叠加 `--app-safe-area-inset-top`。页面不要重复加顶部内边距，窗口外壳也不要再画装饰托盘——红绿灯直接浮在窗口背景上。
+4. **同类页面同构**：文件管理、画图「最近生成」等页内左侧栏共用这一个组件与同一组「收起侧栏／展开侧栏」文案，不得出现第二种宽度或第二套折叠实现。
+5. **只调这一列**：安全区与列宽改动只作用于页内左侧栏，页头、列表和右侧面板布局保持不变。
+
 ## Testing and coverage
 
 GUI 测试层级与仓库测试政策见[测试指南](../../docs/testing.md)，具体测试由改动包的 `tests/` 持有。

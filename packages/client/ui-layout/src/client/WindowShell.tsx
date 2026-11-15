@@ -22,8 +22,6 @@ export function WindowShell(props: WindowShellProps) {
   return (
     <div className={css.shell} data-window-shell>
       <div className={css.titleDragInset} data-window-drag-region aria-hidden="true" />
-      {/* 交通灯托盘只是装饰底，按钮本身由系统绘制，这里不参与命中与拖拽。 */}
-      <div className={css.trafficLights} data-window-traffic-lights aria-hidden="true" />
       <nav className={css.navigation} aria-label={props.t('shell.navigation')}>
         <Tooltip label={props.t('shell.conversation')} delayMs={500}>
           <span className={css.navAnchor}>

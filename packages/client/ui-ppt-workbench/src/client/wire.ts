@@ -44,6 +44,7 @@ export interface PptExportView {
   readonly path: string
   readonly bytes: number
   readonly revision: number
+  readonly fileId?: string
 }
 
 function text(value: unknown): string | null {
@@ -128,7 +129,9 @@ export function parseExport(value: unknown): PptExportView | null {
   const path = text(value.export.path)
   const bytes = integer(value.export.bytes)
   const revision = integer(value.export.revision)
-  return path === null || bytes === null || revision === null ? null : { path, bytes, revision }
+  const fileId = value.export.fileId === undefined ? undefined : text(value.export.fileId)
+  if (path === null || bytes === null || revision === null || value.export.fileId !== undefined && fileId === null) return null
+  return fileId === null ? { path, bytes, revision } : { path, bytes, revision, ...(fileId === undefined ? {} : { fileId }) }
 }
 
 /**

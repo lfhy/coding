@@ -185,7 +185,7 @@ describe('图像交互组件', () => {
     const view = { phase: 'ready', state: { enabled: true, available: true, model: 'paint' }, items: [item],
       generating: false, uploading: false, lastResultId: null, failed: false }
     const ui = createGalleryUiStore().create()
-    const { unmount } = render(<GalleryView {...({ t, sessionId: 'test', closePage,
+    const { unmount } = render(<GalleryView {...({ t, sessionId: 'test', usePageSidebar: (pick: (state: unknown) => unknown) => pick({ collapsed: false }), togglePageSidebar: vi.fn(), closePage,
       useGallery: (pick: (state: unknown) => unknown) => pick(view), useStore: bindSnapshotSelector(ui), actions: ui.actions,
       useImageCanvas: (pick: (state: unknown) => unknown) => pick({ phase: 'loading', nodes: [], selectedId: null, saving: false, issue: null }),
       canvas: { show: vi.fn(), refresh: vi.fn(), add: vi.fn(), select: vi.fn(), move: vi.fn(), remove: vi.fn(),
@@ -225,7 +225,7 @@ describe('图像交互组件', () => {
 
   it('生成中在预览区和提交按钮显示旋转加载状态', () => {
     const ui = createGalleryUiStore().create()
-    render(<GalleryView {...({ t, sessionId: 'test', closePage: vi.fn(),
+    render(<GalleryView {...({ t, sessionId: 'test', usePageSidebar: (pick: (state: unknown) => unknown) => pick({ collapsed: false }), togglePageSidebar: vi.fn(), closePage: vi.fn(),
       useGallery: (pick: (state: unknown) => unknown) => pick({ phase: 'ready',
         state: { enabled: true, available: true, model: 'paint' }, items: [], generating: true,
         uploading: false, lastResultId: null, failed: false }),
@@ -251,7 +251,7 @@ describe('图像交互组件', () => {
       model: 'import', mediaType: 'image/png', width: 1, height: 1 }
     const upload = vi.fn(async () => image)
     const generate = vi.fn(async () => true)
-    render(<GalleryView {...({ t, sessionId: 'test', closePage: vi.fn(),
+    render(<GalleryView {...({ t, sessionId: 'test', usePageSidebar: (pick: (state: unknown) => unknown) => pick({ collapsed: false }), togglePageSidebar: vi.fn(), closePage: vi.fn(),
       useGallery: (pick: (state: unknown) => unknown) => pick({ phase: 'ready',
         state: { enabled: true, available: true, model: 'paint', maxEditReferences: 10 }, items: [], generating: false,
         uploading: false, lastResultId: null, failed: false }),
@@ -281,7 +281,7 @@ describe('图像交互组件', () => {
       model: 'paint', mediaType: 'image/png', width: 1024, height: 1024 }
     const generate = vi.fn(async () => true)
     const ui = createGalleryUiStore().create()
-    render(<GalleryView {...({ t, sessionId: 'test', closePage: vi.fn(),
+    render(<GalleryView {...({ t, sessionId: 'test', usePageSidebar: (pick: (state: unknown) => unknown) => pick({ collapsed: false }), togglePageSidebar: vi.fn(), closePage: vi.fn(),
       useGallery: (pick: (state: unknown) => unknown) => pick({ phase: 'ready',
         state: { enabled: true, available: true, model: 'paint', sizes: {
           '1:1': { '1K': '1024x1024' }, '16:9': { '1K': '1536x864', '2K': '2048x1152' },
@@ -327,7 +327,7 @@ describe('图像交互组件', () => {
     const ui = createGalleryUiStore().create()
     const view = { phase: 'ready', state: { enabled: true, available: true, model: 'paint' }, items,
       generating: false, uploading: false, lastResultId: null, failed: false }
-    render(<GalleryView {...({ t, sessionId: 'test', closePage: vi.fn(),
+    render(<GalleryView {...({ t, sessionId: 'test', usePageSidebar: (pick: (state: unknown) => unknown) => pick({ collapsed: false }), togglePageSidebar: vi.fn(), closePage: vi.fn(),
       useGallery: (pick: (state: unknown) => unknown) => pick(view), useStore: bindSnapshotSelector(ui), actions: ui.actions,
       useImageCanvas: (pick: (state: unknown) => unknown) => pick({ phase: 'loading', nodes: [], selectedId: null, saving: false, issue: null }),
       canvas: { show: vi.fn(), refresh: vi.fn(), add: vi.fn(), select: vi.fn(), move: vi.fn(), remove: vi.fn(),
@@ -378,7 +378,7 @@ describe('图像交互组件', () => {
     ui.actions.hide([item.id])
     const hidden = ui.store.getSnapshot().hidden
     const closePage = vi.fn()
-    render(<GalleryView {...({ t, sessionId: 'test', closePage,
+    render(<GalleryView {...({ t, sessionId: 'test', usePageSidebar: (pick: (state: unknown) => unknown) => pick({ collapsed: false }), togglePageSidebar: vi.fn(), closePage,
       useGallery: (pick: (state: unknown) => unknown) => pick({ phase: 'ready',
         state: { enabled: true, available: true, model: 'paint' }, items: [item], generating: false,
         uploading: false, lastResultId: item.id, failed: false }),
@@ -410,7 +410,7 @@ describe('图像交互组件', () => {
     const item = { id: 'hide-current', prompt: '准备隐藏的图片', attachmentId: 'att', createdAt: 1,
       model: 'paint', mediaType: 'image/png', width: 512, height: 512 }
     const ui = createGalleryUiStore().create()
-    const props = { t, sessionId: 'test', closePage: vi.fn(),
+    const props = { t, sessionId: 'test', usePageSidebar: (pick: (state: unknown) => unknown) => pick({ collapsed: false }), togglePageSidebar: vi.fn(), closePage: vi.fn(),
       useGallery: (pick: (state: unknown) => unknown) => pick({ phase: 'ready',
         state: { enabled: true, available: true, model: 'paint' }, items: [item], generating: false,
         uploading: false, lastResultId: item.id, failed: false }),

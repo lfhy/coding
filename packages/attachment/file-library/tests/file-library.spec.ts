@@ -193,6 +193,12 @@ describe('global file library (SQLite)', () => {
     expect((await fetch(`${url}?limit=1&limit=2`)).status).toBe(400)
     expect((await fetch(url, { method: 'POST' })).status).toBe(405)
     expect((await fetch(url, { headers: { origin: 'http://untrusted.example' } })).status).toBe(403)
+    const image = await library.saveGeneratedImage({ sessionId: 'session-1', attachmentId: 'sha256:preview', mediaType: 'image/png', data: new Uint8Array([137, 80, 78, 71]) })
+    const preview = await fetch(`http://127.0.0.1:${ctx.webServer.port}/api/files/preview?id=${image.record.id}`)
+    expect(preview.status).toBe(200)
+    expect(preview.headers.get('content-type')).toContain('image/png')
+    expect(Buffer.from(await preview.arrayBuffer())).toEqual(Buffer.from([137, 80, 78, 71]))
+    expect((await fetch(`http://127.0.0.1:${ctx.webServer.port}/api/files/preview?id=bad`)).status).toBe(404)
     rejected = true
     expect((await fetch(url)).status).toBe(403)
   })

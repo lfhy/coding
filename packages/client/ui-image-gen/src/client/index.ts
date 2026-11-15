@@ -105,7 +105,8 @@ export function apply(ctx: ClientContext): void {
       const gallery = galleryFor(sessionId)
       const canvas = canvasFor(sessionId)
       return {
-        hooks: { gallery: gallery.view },
+        hooks: { gallery: gallery.view, pageSidebar: ctx.layout.pageSidebar },
+        togglePageSidebar: () => { ctx.layout.togglePageSidebar() },
         show: (shown: boolean) => { gallery.show(shown) },
         refresh: () => { void gallery.refresh() },
         generate: (prompt: string, imageId?: string | readonly string[], output?: import('./wire.ts').ImageOutput) =>

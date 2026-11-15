@@ -59,6 +59,14 @@ describe('语义图标适配', () => {
     expect(icon.querySelector('svg')).not.toBeNull()
   })
 
+  it('演示文稿语义图标使用独立图形，不与文档图标共用同一轮廓', () => {
+    const view = render(<><Icon name="file" className="doc" /><Icon name="file-slides" className="slides" /></>)
+    const doc = view.container.querySelector<HTMLElement>('.doc')
+    const slides = view.container.querySelector<HTMLElement>('.slides')
+    expect(slides?.querySelector('svg')).not.toBeNull()
+    expect(slides?.innerHTML).not.toBe(doc?.innerHTML)
+  })
+
   it('原有图标迁移后仍保留原尺寸与 SVG 图形', () => {
     const view = render(<IconPanelLeftOutline16 />)
     expect(view.container.querySelector('svg')?.getAttribute('viewBox')).toBe('0 0 16 16')

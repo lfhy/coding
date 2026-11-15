@@ -13,7 +13,7 @@ describe('ui-files registration', () => {
       slots: { inject: (_name: string, install: () => unknown) => { install() }, register },
     }
     apply(ctx as never)
-    expect(inject).toEqual(['slots', 'locale'])
+    expect(inject).toEqual(['slots', 'locale', 'layout', 'sessions', 'workspaces'])
     expect(localeRegister.mock.calls[0]?.[0]).toBe('settings.files')
     expect(localeRegister.mock.calls[0]?.[1].zh.nav).toBe('文件管理')
     expect(localeRegister.mock.calls[0]?.[1].en.nav).toBe('Files')

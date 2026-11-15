@@ -26,10 +26,15 @@
   line-height: 18px;
 }
 
+.listBody { min-height: 160px; }
 .list { margin: 0; padding: 0; list-style: none; }
 .row { min-height: 52px; padding: 8px 12px; border-bottom: 1px solid var(--dsw-alias-border-l2); box-sizing: border-box; font-size: 13px; line-height: 20px; }
-.fileName { min-width: 0; overflow-wrap: anywhere; font-weight: 500; }
-.cell { min-width: 0; overflow-wrap: anywhere; color: var(--dsw-alias-label-secondary); font-variant-numeric: tabular-nums; }
+.row[role='button'] { cursor: pointer; }
+.row[role='button']:hover, .row[role='button']:focus-visible { background: var(--dsw-alias-interactive-bg-hover); }
+.row[role='button']:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: -2px; }
+.fileName { display: inline-flex; align-items: center; gap: 8px; min-width: 0; overflow: hidden; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+.fileIcon { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 28px; height: 28px; border-radius: 7px; background: var(--dsw-alias-bg-layer-2); color: var(--dsw-alias-label-secondary); }
+.cell { min-width: 0; overflow: hidden; color: var(--dsw-alias-label-secondary); font-variant-numeric: tabular-nums; text-overflow: ellipsis; white-space: nowrap; }
 .mobileLabel, .screenReaderLabel {
   position: absolute;
   width: 1px;
@@ -39,6 +44,7 @@
   white-space: nowrap;
 }
 .status { margin: 20px 0 0; color: var(--dsw-alias-label-secondary); font-size: 13px; line-height: 20px; }
+.empty { margin: 0; padding: 40px 12px; color: var(--dsw-alias-label-tertiary); text-align: center; font: var(--dsw-font-xs-13); }
 .failure { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 20px; color: var(--dsw-alias-state-error-primary); font-size: 13px; line-height: 20px; }
 .failure p { margin: 0; }
 .more, .failure button { min-height: 36px; padding: 6px 14px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-label-primary); font: inherit; font-size: 13px; line-height: 20px; cursor: pointer; }

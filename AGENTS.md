@@ -74,6 +74,8 @@ CI 不代表桌面端所有平台已经支持。新增桌面壳或原生模块�
 
 可见 UI 修改以[客户端设计参考](packages/client/UI_DESIGN.md)和[样式归属规则](docs/web-styling.md)为准：复用现有组件、图标、排版角色与主题 token，让同类界面的字号、行高、间距和交互状态一致；不得为单个页面或组件另写一套视觉体系。
 
+独立主内容页的页内左侧栏统一使用 `ui-primitives` 的 `PageSidebar`：固定 210px、收起 56px 图标轨，并自带 macOS 交通灯安全区避让。新页面不得自建列宽、折叠动画或第二种行几何，详见[客户端协作指南](packages/client/AGENTS.md)。
+
 ## 凭据、数据与安全
 
 出厂默认模型是内置 Free 渠道的匿名免费层，不需要本机凭据；自己接的提供方从环境变量或根目录被 gitignore 的 `.env` 读取，例如 `DEEPSEEK_API_KEY` 和可选的 `DEEPSEEK_BASE_URL`。绝不提交凭据、会话、设置、缓存或构建产物。配置文件、session log、worker 消息、工具 JSON 和 RPC 输入都视为外部数据，必须在所属解析点失败并给出具体诊断。不要为了测试方便放宽文件系统、Shell、网络或桌面权限。

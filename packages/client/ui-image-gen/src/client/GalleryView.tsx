@@ -4,7 +4,7 @@ import { createPortal } from 'react-dom'
 import {
   AspectRatioGlyph, Button, Icon, IconChevronLeftOutline14, IconChevronRightOutline14, IconCloseOutline16,
   IconCopyOutline16, IconDownloadOutline16, IconPlusOutline16, IconRefreshOutline16, IconSearchOutline16,
-  IconSparkle16, IconTrashOutline16, Toast, writeClipboard,
+  IconSparkle16, IconTrashOutline16, PageSidebar, Toast, writeClipboard,
 } from 'coding-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime, PropsStore } from 'coding-client-ui-slots'
 import type { GalleryFace } from './gallery.ts'
@@ -94,7 +94,7 @@ function GalleryCard({ item, src, favorite, selected, managing, t, onPreview, on
 
 /** 三个子页共用的主内容画廊；打开和关闭只改变页面视图，不生成模型轮次。 */
 export function GalleryView({ sessionId, closePage, useGallery, useStore, actions,
-  show, refresh, generate, importReference, place, url, t }: GalleryViewProps) {
+  show, refresh, generate, importReference, place, url, usePageSidebar, togglePageSidebar, t }: GalleryViewProps) {
   const state = useGallery(snapshot => snapshot)
   const favorites = useStore(snapshot => snapshot.favorites)
   const hidden = useStore(snapshot => snapshot.hidden)
@@ -338,16 +338,18 @@ export function GalleryView({ sessionId, closePage, useGallery, useStore, action
       </div>}
     </>}
     {tab === 'studio' && <div className={css.studio}>
-      <div className={css.recent}>
-        <h2>{t('recentImages')}</h2>
-        {items.length === 0 && <p>{t('galleryEmpty')}</p>}
-        {items.slice().sort((a, b) => b.createdAt - a.createdAt).map(item => <button key={item.id} type="button"
-          className={studioImageId === item.id ? css.recentSelected : css.recentItem}
-          draggable onDragStart={(event) => { event.dataTransfer.setData('application/x-dsh-image-id', item.id) }}
-          onClick={() => { setStudioImageId(item.id); setZoom(100) }}>
-          <img src={url(item.id)} alt="" /><span>{item.prompt || t('image')}</span>
-        </button>)}
-      </div>
+      <PageSidebar label={t('recentImages')} title={t('recentImages')} variant="media"
+        collapsed={usePageSidebar(state => state.collapsed)} onToggle={togglePageSidebar}
+        labels={{ collapse: t('collapseRecent'), expand: t('expandRecent') }}
+        empty={t('galleryEmpty')}
+        items={items.slice().sort((a, b) => b.createdAt - a.createdAt).map(item => ({
+          id: item.id,
+          label: item.prompt || t('image'),
+          icon: 'model-vision',
+          media: <img src={url(item.id)} alt="" />,
+          active: studioImageId === item.id,
+          onSelect: () => { setStudioImageId(item.id); setZoom(100) },
+        }))} />
       <div className={css.studioCenter}>
         <div className={css.previewPane}>
           <div className={css.studioCanvas} aria-busy={state.generating}>

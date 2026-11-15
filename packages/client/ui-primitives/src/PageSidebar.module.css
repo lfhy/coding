@@ -1,0 +1,169 @@
+/* 主内容页共享侧栏。几何与对话侧栏一致：展开 210px、左右 12px 内边距、
+   36px 标题行、34px 行高与 8px 圆角；收起后 56px 图标轨、36×36 控件盒。
+   顶部内边距叠加 --app-safe-area-inset-top，避免 macOS 交通灯压住内容。 */
+
+.shell {
+  display: flex;
+  flex-direction: column;
+  flex: none;
+  width: 210px;
+  min-width: 0;
+  min-height: 0;
+  box-sizing: border-box;
+  padding: calc(10px + var(--app-safe-area-inset-top, 0px)) 12px 10px;
+  overflow-y: auto;
+  border-right: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-specific-sidebar-fill);
+  color: var(--dsw-alias-label-primary);
+  font: var(--dsw-font-xs-13);
+  /* 与对话侧栏一致：宽度滑动 300ms，宽内容就地淡出 150ms 后才换成图标轨。 */
+  transition: width var(--ds-transition-duration-slow) var(--ds-ease-in-out);
+}
+
+/* 收起的图标轨：56px，控件贴左 10px，纵向居中排布。 */
+.shell.collapsed {
+  align-items: center;
+  gap: 8px;
+  padding: calc(10px + var(--app-safe-area-inset-top, 0px)) 0 10px;
+  overflow-y: auto;
+}
+
+/* 折叠第一阶段：冻结宽度的内容在 150ms 内淡出。 */
+.fading > * { opacity: 0; transition: opacity 150ms var(--ds-ease-in-out); }
+
+/* 图标轨落定时从原列内侧淡入并右移少许位移，用掉剩下的过渡时间。 */
+.railIn { animation: page-sidebar-rail-in 150ms var(--ds-ease-in-out) backwards; }
+
+@keyframes page-sidebar-rail-in {
+  from { opacity: 0; transform: translateX(-16px); }
+}
+
+.headerRow {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  height: 36px;
+  margin-bottom: 4px;
+  padding-left: 4px;
+  border-radius: 12px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.sectionLabel {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  line-height: 20px;
+}
+
+.iconButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+}
+
+.iconButton:hover { background: var(--dsw-alias-interactive-bg-hover); }
+.iconButton:focus-visible { outline: 2px solid var(--dsw-alias-border-l3); outline-offset: 2px; }
+
+.rows { display: grid; gap: 2px; }
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  min-width: 0;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  cursor: pointer;
+  text-align: start;
+  font: var(--dsw-font-s-14);
+}
+
+.mediaRows { gap: 4px; }
+
+.mediaRow { height: 52px; padding: 0 6px; gap: 8px; }
+
+.row:hover { background: var(--dsw-alias-interactive-bg-hover); }
+.row[aria-current='true'] { background: var(--dsw-alias-interactive-bg-hover); font-weight: 600; }
+.row:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: -2px; }
+
+.rowIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 16px;
+  height: 20px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.row[aria-current='true'] .rowIcon,
+.row:hover .rowIcon { color: var(--dsw-alias-state-warn-primary); }
+
+.mediaBox {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 36px;
+  height: 36px;
+  overflow: hidden;
+  border-radius: 7px;
+  background: var(--dsw-alias-bg-layer-2);
+}
+
+.mediaBox img { width: 100%; height: 100%; object-fit: cover; }
+
+.rowLabel { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+
+.empty { margin: 8px; color: var(--dsw-alias-label-tertiary); font: var(--dsw-font-xs-13); }
+
+.railButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  cursor: pointer;
+  transition: background var(--ds-transition-duration-fast) var(--ds-ease-in-out);
+}
+
+.railButton:hover { background: var(--dsw-alias-interactive-bg-hover); }
+.railButton[aria-pressed='true'] { background: var(--dsw-alias-interactive-bg-active); }
+.railButton[aria-pressed='true'] svg { color: var(--dsw-alias-state-warn-primary); }
+.railButton:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: 2px; }
+
+.railDivider { flex: none; width: 30px; height: 1px; margin: 2px auto; background: var(--dsw-alias-border-l2); }
+
+@media (max-width: 620px) {
+  .shell { padding-inline: 8px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shell { transition: none; }
+  .fading > * { transition: none; }
+  .railIn { animation: none; }
+  .railButton { transition: none; }
+}

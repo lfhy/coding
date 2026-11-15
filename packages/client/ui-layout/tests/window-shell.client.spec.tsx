@@ -52,8 +52,7 @@ describe('窗口外壳', () => {
     // 外壳不再自带顶栏：内层顶到窗口上沿，只留导航列顶部的窗口拖拽垫片。
     expect(view.container.querySelector('header')).toBeNull()
     expect(view.container.querySelector('[data-window-shell] > [data-window-drag-region]')).toBeTruthy()
-    // 交通灯托盘只是按钮底下的装饰层，不进入无障碍树。
-    expect(view.container.querySelector('[data-window-traffic-lights]')?.getAttribute('aria-hidden')).toBe('true')
+    // 交通灯由系统绘制：外壳不再垫装饰托盘，侧栏自己用安全区避让按钮。
     expect(view.getByRole('button', { name: '回到对话' }).querySelector('img')).toBeNull()
     expect(view.getByRole('button', { name: '回到对话' }).querySelector('svg')).toBeTruthy()
     expect(view.getByRole('navigation').contains(view.getByRole('button', { name: '设置' }))).toBe(true)

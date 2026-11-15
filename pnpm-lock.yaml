@@ -1085,6 +1085,9 @@ importers:
       coding-storage-sqlite:
         specifier: workspace:^
         version: link:../../storage/storage-sqlite
+      coding-workspace:
+        specifier: workspace:^
+        version: link:../../workspace/workspace
 
   packages/boot/app-boot:
     dependencies:
@@ -2648,6 +2651,15 @@ importers:
       coding-client-runtime:
         specifier: workspace:^
         version: link:../runtime
+      coding-client-ui-icons:
+        specifier: workspace:^
+        version: link:../ui-icons
+      coding-client-ui-layout:
+        specifier: workspace:^
+        version: link:../ui-layout
+      coding-client-ui-primitives:
+        specifier: workspace:^
+        version: link:../ui-primitives
       coding-client-ui-settings:
         specifier: workspace:^
         version: link:../ui-settings
@@ -7538,6 +7550,9 @@ importers:
       coding-client-connection:
         specifier: workspace:^
         version: link:../../client/connection
+      coding-file-library:
+        specifier: workspace:^
+        version: link:../../attachment/file-library
       coding-home-paths:
         specifier: workspace:^
         version: link:../../util/home-paths

@@ -24,6 +24,9 @@
       "path": "../../host/webserver"
     },
     {
+      "path": "../../attachment/file-library"
+    },
+    {
       "path": "../../util/home-paths"
     },
     {

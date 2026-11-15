@@ -8,6 +8,7 @@
     { "path": "../../util/brand" },
     { "path": "../../storage/storage-domain" },
     { "path": "../../util/home-paths" },
+    { "path": "../../workspace/workspace" },
     { "path": "../../client/connection/tsconfig.host.json" },
     { "path": "../../host/webserver" },
     { "path": "../../runtime-diagnostics/invariants" }

@@ -8,13 +8,15 @@ import { Context, Service } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { resolveDshHome } from 'coding-home-paths'
 import type { Domain } from 'coding-storage-domain'
+import type {} from 'coding-workspace'
 import { FileId } from './brand.ts'
+import { managedFileCategory } from './file-category.ts'
 import { fileDomainSpec } from './spec.ts'
 import { installFileRoutes } from './routes.ts'
-import type { ManagedFilePage, ManagedFileRecord } from './types.ts'
+import type { ManagedFileCategory, ManagedFileKind, ManagedFilePage, ManagedFileRecord } from './types.ts'
 
 export { FileId } from './brand.ts'
-export type { ManagedFileRecord, ManagedFilePage } from './types.ts'
+export type { ManagedFileCategory, ManagedFileKind, ManagedFileRecord, ManagedFilePage } from './types.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context { fileLibrary: FileLibrary }
@@ -96,6 +98,14 @@ export class FileLibrary extends Service {
   private domain!: Domain<typeof fileDomainSpec>
   private rootIdentity!: { dev: number; ino: number }
 
+  /** 从宿主工作区注册表解析会话归属；未装载注册表或未分组会话返回 undefined。 */
+  private workspaceIdForSession(sessionId: string): string | undefined {
+    const registry = this.ctx.get('workspaceRegistry') as {
+      list(): readonly { id: string; sessionIds: readonly string[] }[]
+    } | undefined
+    return registry?.list().find(workspace => workspace.sessionIds.includes(sessionId))?.id
+  }
+
   constructor(ctx: Context, config: Config = {}) {
     const root = config.root ?? join(resolveDshHome(), 'files')
     if (root === '' || /["\u0000-\u001f\u007f]/u.test(root)) {
@@ -117,7 +127,7 @@ export class FileLibrary extends Service {
     this.domain = domain
   }
 
-  private async directory(kind: 'uploads' | 'generated'): Promise<string> {
+  private async directory(kind: 'uploads' | 'generated' | 'exports'): Promise<string> {
     const info = await lstat(this.root)
     if (!info.isDirectory() || info.isSymbolicLink() || info.dev !== this.rootIdentity.dev || info.ino !== this.rootIdentity.ino) {
       throw new Error('文件库根目录已更换')
@@ -136,6 +146,7 @@ export class FileLibrary extends Service {
   async saveUpload(input: {
     name: string
     sessionId: string
+    workspaceId?: string
     stream: AsyncIterable<Uint8Array>
     verify: () => Promise<void>
   }): Promise<{ record: ManagedFileRecord; path: string }> {
@@ -143,7 +154,9 @@ export class FileLibrary extends Service {
     const sessionId = identity(input.sessionId, '会话标识')
     await input.verify()
     const extension = name.split('.').at(-1)?.toLowerCase() ?? ''
-    return this.save('upload', name, `uploads/${randomUUID()}-${name}`, input.stream, { sessionId }, input.verify,
+    return this.save('upload', name, `uploads/${randomUUID()}-${name}`, input.stream,
+      { sessionId, workspaceId: input.workspaceId === undefined
+        ? this.workspaceIdForSession(sessionId) : identity(input.workspaceId, '工作区标识') }, input.verify,
       UPLOAD_MEDIA[extension] ?? 'application/octet-stream', MAX_MANAGED_FILE_BYTES)
   }
 
@@ -154,6 +167,7 @@ export class FileLibrary extends Service {
    */
   async saveGeneratedImage(input: {
     sessionId: string
+    workspaceId?: string
     galleryId?: string
     attachmentId: string
     mediaType: GeneratedImageMediaType
@@ -168,15 +182,62 @@ export class FileLibrary extends Service {
     const extension = EXTENSION[input.mediaType]
     const name = `image-${(galleryId ?? attachmentId).replace(/[^a-zA-Z0-9_-]/gu, '_').slice(0, 80)}.${extension}`
     const record = await this.save('generated-image', name, `generated/${randomUUID()}.${extension}`,
-      Readable.from([input.data]), { sessionId, ...(galleryId === undefined ? {} : { galleryId }), attachmentId },
+      Readable.from([input.data]), { sessionId, workspaceId: input.workspaceId === undefined
+        ? this.workspaceIdForSession(sessionId) : identity(input.workspaceId, '工作区标识'), ...(galleryId === undefined ? {} : { galleryId }), attachmentId },
       () => Promise.resolve(), input.mediaType)
     return record
   }
 
-  private async save(kind: ManagedFileRecord['kind'], name: string, relativePath: string,
-    stream: AsyncIterable<Uint8Array>, metadata: Partial<Pick<ManagedFileRecord, 'sessionId' | 'galleryId' | 'attachmentId'>>,
+  /** 把已由附件服务准入的输入图片复制到文件库，供文件管理页集中查看。 */
+  async saveInputImage(input: {
+    sessionId: string
+    workspaceId?: string
+    attachmentId: string
+    mediaType: GeneratedImageMediaType
+    name?: string
+    data: Uint8Array
+  }): Promise<{ record: ManagedFileRecord; path: string }> {
+    const sessionId = identity(input.sessionId, '会话标识')
+    const attachmentId = identity(input.attachmentId, '附件标识')
+    if (!Object.hasOwn(EXTENSION, input.mediaType) || !(input.data instanceof Uint8Array) || input.data.byteLength === 0) {
+      throw new TypeError('输入图片格式无效')
+    }
+    const extension = EXTENSION[input.mediaType]
+    const name = safeName(input.name ?? `image-${attachmentId.replace(/[^a-zA-Z0-9_-]/gu, '_').slice(0, 80)}.${extension}`)
+    return this.save('upload', name, `uploads/${randomUUID()}-${name}`, Readable.from([input.data]),
+      { sessionId, workspaceId: input.workspaceId === undefined
+        ? this.workspaceIdForSession(sessionId) : identity(input.workspaceId, '工作区标识') },
+      () => Promise.resolve(), input.mediaType)
+  }
+
+  /**
+   * 把会话导出的成品登记到全局文件库。导出文件与工作区里的原始产物
+   * 保持两份独立副本，便于无工作区会话在 Coding home 中集中管理。
+   * @param input - 成品文件名、会话身份、媒体类型与已生成字节。
+   * @returns 文件库记录和仅供 Host 使用的绝对路径。
+   */
+  async saveExport(input: {
+    name: string
+    sessionId: string
+    workspaceId?: string
+    mediaType: string
+    data: Uint8Array
+  }): Promise<{ record: ManagedFileRecord; path: string }> {
+    const name = safeName(input.name)
+    const sessionId = identity(input.sessionId, '会话标识')
+    if (!(input.data instanceof Uint8Array) || input.data.byteLength === 0 || input.mediaType.length === 0) {
+      throw new TypeError('导出文件无效')
+    }
+    return this.save('export', name, `exports/${randomUUID()}-${name}`, Readable.from([input.data]),
+      { sessionId, workspaceId: input.workspaceId === undefined
+        ? this.workspaceIdForSession(sessionId) : identity(input.workspaceId, '工作区标识') },
+      () => Promise.resolve(), input.mediaType)
+  }
+
+  private async save(kind: ManagedFileKind, name: string, relativePath: string,
+    stream: AsyncIterable<Uint8Array>, metadata: Partial<Pick<ManagedFileRecord, 'sessionId' | 'workspaceId' | 'galleryId' | 'attachmentId'>>,
     verify: () => Promise<void>, mediaType = 'application/octet-stream', maxBytes?: number): Promise<{ record: ManagedFileRecord; path: string }> {
-    const directory = await this.directory(kind === 'upload' ? 'uploads' : 'generated')
+    const directory = await this.directory(kind === 'upload' ? 'uploads' : kind === 'generated-image' ? 'generated' : 'exports')
     const folder = await lstat(directory)
     const path = join(directory, basename(relativePath))
     const handle = await open(path, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600)
@@ -196,7 +257,7 @@ export class FileLibrary extends Service {
       } finally { await handle.close() }
       await syncDirectory(directory)
       await verify()
-      await this.directory(kind === 'upload' ? 'uploads' : 'generated')
+      await this.directory(kind === 'upload' ? 'uploads' : kind === 'generated-image' ? 'generated' : 'exports')
       const currentFolder = await lstat(directory)
       if (currentFolder.dev !== folder.dev || currentFolder.ino !== folder.ino) throw new Error('文件库子目录已更换')
       const current = await lstat(path)
@@ -223,15 +284,48 @@ export class FileLibrary extends Service {
    * @param limit - 每页最多 100 条，默认 50。
    * @returns 当前快照的一页、总数和可选后续偏移。
    */
-  list(offset: number = 0, limit: number = 50): ManagedFilePage {
+  list(offset: number = 0, limit: number = 50, filter: {
+    sessionId?: string
+    workspaceId?: string
+    unscoped?: boolean
+    kind?: ManagedFileKind
+    category?: ManagedFileCategory
+  } = {}): ManagedFilePage {
     if (!Number.isSafeInteger(offset) || offset < 0 || !Number.isSafeInteger(limit) || limit < 1) {
       throw new TypeError('分页参数无效')
     }
+    const sessionId = filter.sessionId === undefined ? undefined : identity(filter.sessionId, '会话标识')
+    const workspaceId = filter.workspaceId === undefined ? undefined : identity(filter.workspaceId, '工作区标识')
     const rows = [...this.domain.table('files').entries()].map(([, row]) => row)
+      .filter(row => sessionId === undefined || row.sessionId === sessionId)
+      .filter(row => workspaceId === undefined || row.workspaceId === workspaceId)
+      .filter(row => !filter.unscoped || row.workspaceId === undefined)
+      .filter(row => filter.kind === undefined || row.kind === filter.kind)
+      .filter(row => filter.category === undefined || managedFileCategory(row) === filter.category)
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id))
     const size = Math.min(limit, 100)
     const items = rows.slice(offset, offset + size)
     return { items, total: rows.length, ...(offset + items.length < rows.length ? { nextOffset: offset + items.length } : {}) }
+  }
+
+  /** 按文件库 ID 读取已登记的本地字节；绝对路径永远不离开 Host。 */
+  async read(id: string): Promise<{ record: ManagedFileRecord; data: Uint8Array } | undefined> {
+    let fileId
+    try { fileId = FileId(id) } catch { return undefined }
+    const record = this.domain.table('files').get(fileId)
+    if (record === undefined) return undefined
+    try {
+      const directory = await this.directory(record.kind === 'upload' ? 'uploads' : record.kind === 'generated-image' ? 'generated' : 'exports')
+      const target = join(directory, basename(record.relativePath))
+      const handle = await open(target, constants.O_RDONLY | constants.O_NOFOLLOW)
+      try {
+        const info = await handle.stat()
+        if (!info.isFile()) return undefined
+        return { record, data: new Uint8Array(await handle.readFile()) }
+      } finally {
+        await handle.close()
+      }
+    } catch { return undefined }
   }
 
   /**

@@ -28,7 +28,8 @@
     "coding-home-paths": "workspace:^",
     "coding-client-connection": "workspace:^",
     "coding-host-webserver": "workspace:^",
-    "coding-invariants": "workspace:^"
+    "coding-invariants": "workspace:^",
+    "coding-workspace": "workspace:^"
   },
   "peerDependenciesMeta": {
     "coding-client-connection": { "optional": true },
@@ -45,6 +46,7 @@
     "coding-home-paths": "workspace:^",
     "coding-client-connection": "workspace:^",
     "coding-host-webserver": "workspace:^",
-    "coding-invariants": "workspace:^"
+    "coding-invariants": "workspace:^",
+    "coding-workspace": "workspace:^"
   }
 }

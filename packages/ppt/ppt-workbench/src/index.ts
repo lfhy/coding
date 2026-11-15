@@ -15,6 +15,7 @@ import z from '@deepseek-ai/schemastery'
 import { resolveDshHome } from 'coding-home-paths'
 import { remoteWorkspacePath } from 'coding-subprocess'
 import type {} from 'coding-host-webserver'
+import type {} from 'coding-file-library'
 import type {} from 'coding-session'
 import type { SessionId } from 'coding-session/types'
 import { checkDeck, type PptCheckResult } from './check.ts'
@@ -78,6 +79,8 @@ export interface PptExportResult {
   readonly fonts: readonly { readonly family: string; readonly readonly: boolean; readonly subset: boolean }[]
   /** 因许可或找不到文件而跳过的字体。 */
   readonly skippedFonts: readonly SkippedFont[]
+  /** 已复制到全局文件库的记录标识；旧组合或登记失败时缺省。 */
+  readonly fileId?: string
 }
 
 declare module 'coding-session/types' {
@@ -304,7 +307,7 @@ export default class PptProjects extends Service {
    * @param dir - 工程目录；缺省为当前工程。
    * @returns 导出文件路径与大小。
    */
-  async exportPdf(sessionId: string, dir?: string): Promise<{ path: string; bytes: number; revision: number }> {
+  async exportPdf(sessionId: string, dir?: string): Promise<{ path: string; bytes: number; revision: number; fileId?: string }> {
     const absolute = this.resolveDir(sessionId, dir)
     const snapshot = await loadProject(absolute)
     const rendered = await this.render(sessionId, dir)
@@ -316,7 +319,7 @@ export default class PptProjects extends Service {
     if (pages.length === 0) throw new PptModelError('没有可写入 PDF 的页面图')
     const pdf = buildPdf(pages)
     const path = await writeExport(absolute, snapshot.revision, snapshot.title, pdf, 'pdf')
-    return { path, bytes: pdf.length, revision: snapshot.revision }
+    return { path, bytes: pdf.length, revision: snapshot.revision, ...(await this.registerExport(sessionId, path, 'application/pdf', pdf)) }
   }
 
   /**
@@ -655,16 +658,34 @@ export default class PptProjects extends Service {
       fonts: collected.fonts,
     })
     const path = await writeExport(absolute, snapshot.revision, snapshot.title, bytes)
+    const fileId = await this.registerExport(sessionId, path,
+      'application/vnd.openxmlformats-officedocument.presentationml.presentation', bytes)
     return {
       path,
       bytes: bytes.length,
       revision: snapshot.revision,
+      ...fileId,
       fonts: collected.fonts.map(font => ({
         family: font.family,
         readonly: font.readonly,
         subset: font.subset,
       })),
       skippedFonts: collected.skipped,
+    }
+  }
+
+  /** 导出仍保留工作区原件，同时尽力复制一份到全局文件库。 */
+  private async registerExport(sessionId: string, path: string, mediaType: string, data: Uint8Array): Promise<{ fileId?: string }> {
+    const library = this.ctx.get('fileLibrary') as {
+      saveExport(input: { name: string; sessionId: string; mediaType: string; data: Uint8Array }): Promise<{ record: { id: string } }>
+    } | undefined
+    if (library === undefined) return {}
+    try {
+      const saved = await library.saveExport({ name: basename(path), sessionId, mediaType, data })
+      return { fileId: saved.record.id }
+    } catch (error) {
+      this.ctx.logger.warn('ppt-workbench: export was written but could not be indexed in the file library', error)
+      return {}
     }
   }
 }

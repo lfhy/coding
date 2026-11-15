@@ -7,13 +7,16 @@ import type { ManagedFileRecord } from './types.ts'
 /** 持久边界的完整记录校验；不信任 SQLite 中的路径或标识符。 */
 export const managedFileSchema: z.ZodType<ManagedFileRecord> = z.object({
   id: z.uuid().transform(FileId),
-  kind: z.enum(['upload', 'generated-image']),
+  kind: z.enum(['upload', 'generated-image', 'export']),
   name: z.string().min(1).max(255),
-  relativePath: z.string().regex(/^(?:uploads\/[0-9a-f-]{36}-[^/\\]+|generated\/[0-9a-f-]{36}\.(?:png|jpg|webp|gif))$/u),
+  relativePath: z.string().regex(
+    /^(?:uploads\/[0-9a-f-]{36}-[^/\\]+|generated\/[0-9a-f-]{36}\.(?:png|jpg|webp|gif)|exports\/[0-9a-f-]{36}-[^/\\]+)$/u,
+  ),
   mediaType: z.string().min(1),
   bytes: z.number().int().min(1),
   createdAt: z.iso.datetime(),
   sessionId: z.string().min(1).optional(),
+  workspaceId: z.string().min(1).optional(),
   galleryId: z.string().min(1).optional(),
   attachmentId: z.string().min(1).optional(),
 }).strict()

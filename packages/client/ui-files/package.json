@@ -19,7 +19,7 @@
     "./package.json": "./package.json"
   },
   "dsh": { "client": {
-    "inject": ["coding-client-locale", "coding-client-runtime", "coding-client-ui-settings"],
+    "inject": ["coding-client-locale", "coding-client-runtime", "coding-client-ui-layout", "coding-client-ui-settings"],
     "platform": "web"
   } },
   "scripts": { "bundle": "tsdown", "watch": "tsdown --watch" },
@@ -28,6 +28,7 @@
     "@deepseek-ai/cordis": "workspace:^",
     "coding-client-locale": "workspace:^",
     "coding-client-runtime": "workspace:^",
+    "coding-client-ui-layout": "workspace:^",
     "coding-client-ui-settings": "workspace:^",
     "coding-invariants": "workspace:^"
   },
@@ -35,6 +36,9 @@
     "@deepseek-ai/cordis": "workspace:^",
     "coding-client-locale": "workspace:^",
     "coding-client-runtime": "workspace:^",
+    "coding-client-ui-icons": "workspace:^",
+    "coding-client-ui-layout": "workspace:^",
+    "coding-client-ui-primitives": "workspace:^",
     "coding-client-ui-settings": "workspace:^",
     "coding-client-ui-slots": "workspace:^",
     "coding-invariants": "workspace:^",

@@ -141,17 +141,35 @@ export const DEFAULT_COLD_BLANK_PROBE_MAX_BYTES = 16 * 1024
 /** Conversation message event types (the pagination counting unit). */
 const MESSAGE_TYPES = new Set(['user/message', 'assistant/message'])
 
-/** Validate one prompt as a batch before publishing any durable image object. */
-async function durablePromptContent(ctx: Context, content: readonly PromptContentPart[]): Promise<ContentBlock[]> {
-  if (content.every(part => part.type === 'text')) {
-    return content.map(part => ({ type: 'text', text: part.text }))
+/** 输入图片在模型附件准入后另存一份，供无工作区文件页查看；失败不影响本次消息。 */
+async function copyInputImagesToFileLibrary(
+  ctx: Context,
+  session: Session,
+  content: readonly PromptContentPart[],
+  refs: readonly ImageAttachmentRef[],
+): Promise<void> {
+  const library = ctx.get('fileLibrary') as {
+    saveInputImage(input: { sessionId: string; attachmentId: string; mediaType: ImageAttachmentRef['mediaType']; name?: string; data: Uint8Array }): Promise<unknown>
+  } | undefined
+  if (library === undefined) return
+  let index = 0
+  for (const part of content) {
+    if (part.type !== 'image') continue
+    const ref = refs[index++]
+    if (ref === undefined) continue
+    try {
+      const stored = await ctx.attachments.readImage(ref)
+      await library.saveInputImage({
+        sessionId: session.id,
+        attachmentId: String(ref.attachmentId),
+        mediaType: stored.ref.mediaType,
+        ...(ref.name === undefined ? {} : { name: ref.name }),
+        data: stored.data,
+      })
+    } catch (error) {
+      ctx.logger.warn('api-proxy: input image was admitted but could not be indexed in the file library', error)
+    }
   }
-  const refs = await admitEncodedImages(ctx.attachments, content.filter(part => part.type === 'image'))
-  let next = 0
-  return content.map(part => part.type === 'text'
-    ? { type: 'text', text: part.text }
-    // admitEncodedImages returns one reference per image part in order.
-    : { type: 'image', attachment: refs[next++] as ImageAttachmentRef })
 }
 
 /** Search durable content for an image reference, including nested tool results. */
@@ -2700,7 +2718,16 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
                 })
               }
             }
-            const durable = await durablePromptContent(ctx, content)
+            const imageParts = content.filter((part): part is Extract<PromptContentPart, { type: 'image' }> => part.type === 'image')
+            const refs = imageParts.length === 0 ? [] : await admitEncodedImages(ctx.attachments, imageParts)
+            await copyInputImagesToFileLibrary(ctx, agent.session, imageParts, refs)
+            let next = 0
+            const durable = content.map((part): ContentBlock => {
+              if (part.type === 'text') return { type: 'text', text: part.text }
+              const attachment = refs[next++]
+              if (attachment === undefined) throw new AttachmentError('missing admitted image reference', 'INVALID_ATTACHMENT_REF')
+              return { type: 'image', attachment }
+            })
             const message: UserMessage = createUserMessage({ content: durable, source })
             if (mode === 'steer') agent.steer(message)
             else agent.followup(message)
