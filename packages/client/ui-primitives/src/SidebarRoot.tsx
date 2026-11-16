@@ -16,6 +16,8 @@ export interface SidebarRootItem {
   /** 用户可见文案，同时是收起态的悬停提示与可访问名称。 */
   label: string
   icon: IconName
+  /** 可选的图标语义色；只着色图标，不影响文字和选中底色。 */
+  iconTone?: 'amber' | 'green' | 'blue' | 'violet'
   /** `media` 变体里的缩略图；`rows` 变体忽略该字段。 */
   media?: ReactNode
   active?: boolean
@@ -89,7 +91,7 @@ export function SidebarRoot({
               <div className={clsx(css.rows, variant === 'media' && css.mediaRows)} role="list">
                 {items.map(item => (
                   <button key={item.id} type="button" role="listitem" className={clsx(css.row, variant === 'media' && css.mediaRow)}
-                    aria-current={item.active === true ? 'true' : undefined} onClick={item.onSelect}>
+                    aria-current={item.active === true ? 'true' : undefined} data-icon-tone={item.iconTone} onClick={item.onSelect}>
                     {variant === 'media' && item.media !== undefined
                       ? <span className={css.mediaBox}>{item.media}</span>
                       : <span className={css.rowIcon} aria-hidden="true"><Icon name={item.icon} size={16} /></span>}
@@ -103,7 +105,7 @@ export function SidebarRoot({
         <>
           {items.map(item => (
             <button key={item.id} type="button" className={css.railButton}
-              aria-label={item.label} title={item.label} aria-pressed={item.active === true}
+              aria-label={item.label} title={item.label} aria-pressed={item.active === true} data-icon-tone={item.iconTone}
               onClick={item.onSelect}>
               <Icon name={item.icon} size={18} />
             </button>

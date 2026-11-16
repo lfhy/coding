@@ -239,6 +239,7 @@ body {
   /* 图标强调色：窗口导航里与业务蓝并排的入口各用自己的色相，图标不靠文字也能分开。
      亮色取 600 档，保证 16px 线稿在浅底上仍然清楚。 */
   --dsw-alias-icon-accent-green: var(--dsw-static-green-600);
+  --dsw-alias-icon-accent-violet: var(--dsw-static-violet-500);
   --dsw-alias-toast-bg: var(--dsw-static-neutral-bluish-800);
   --dsw-alias-tooltip-bg: var(--dsw-static-neutral-bluish-850);
   --dsw-specific-bubble-highlight: var(--dsw-static-deepseek-200);
@@ -358,6 +359,7 @@ body[data-ds-dark-theme] {
   --dsw-alias-state-warn-tertiary: var(--dsw-static-amber-900);
   /* 与亮色同一色相：暗色改用 400 档，避免深底上的线稿发闷。 */
   --dsw-alias-icon-accent-green: var(--dsw-static-green-400);
+  --dsw-alias-icon-accent-violet: var(--dsw-static-violet-400);
   --dsw-alias-toast-bg: var(--dsw-static-neutral-bluish-750);
   --dsw-alias-tooltip-bg: var(--dsw-static-neutral-bluish-750);
   --dsw-specific-bubble-highlight: var(--dsw-static-neutral-bluish-750);

@@ -6,8 +6,8 @@ import { SidebarRoot, type SidebarRootItem } from '../src/SidebarRoot.tsx'
 afterEach(cleanup)
 
 const items: SidebarRootItem[] = [
-  { id: 'all', label: '全部', icon: 'files-panel', active: true, onSelect: vi.fn() },
-  { id: 'image', label: '图片', icon: 'model-vision', onSelect: vi.fn() },
+  { id: 'all', label: '全部', icon: 'files-panel', iconTone: 'amber', active: true, onSelect: vi.fn() },
+  { id: 'image', label: '图片', icon: 'model-vision', iconTone: 'green', onSelect: vi.fn() },
 ]
 const labels = { collapse: '收起侧栏', expand: '展开侧栏' }
 
@@ -19,7 +19,10 @@ describe('SidebarRoot', () => {
     expect(screen.getByText('资料空间')).toBeTruthy()
     const all = screen.getByText('全部').closest('button')
     expect(all?.getAttribute('aria-current')).toBe('true')
-    expect(screen.getByText('图片').closest('button')?.getAttribute('aria-current')).toBeNull()
+    expect(all?.getAttribute('data-icon-tone')).toBe('amber')
+    const image = screen.getByText('图片').closest('button')
+    expect(image?.getAttribute('aria-current')).toBeNull()
+    expect(image?.getAttribute('data-icon-tone')).toBe('green')
     fireEvent.click(screen.getByText('图片'))
     expect(items[1]?.onSelect).toHaveBeenCalledOnce()
   })
@@ -29,7 +32,8 @@ describe('SidebarRoot', () => {
     render(<SidebarRoot label="资料空间" title="资料空间" items={items} collapsed width={56} onToggle={onToggle} labels={labels} />)
     expect(screen.getByRole('complementary', { name: '资料空间' }).getAttribute('style')).toContain('width: 56px')
     expect(screen.getByRole('button', { name: '全部' }).getAttribute('aria-pressed')).toBe('true')
-    expect(screen.getByRole('button', { name: '图片' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: '全部' }).getAttribute('data-icon-tone')).toBe('amber')
+    expect(screen.getByRole('button', { name: '图片' }).getAttribute('data-icon-tone')).toBe('green')
     fireEvent.click(screen.getByRole('button', { name: '展开侧栏' }))
     expect(onToggle).toHaveBeenCalledOnce()
   })

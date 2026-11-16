@@ -113,11 +113,16 @@
   flex: none;
   width: 16px;
   height: 20px;
-  color: var(--dsw-alias-label-tertiary);
+  color: var(--sidebar-item-icon, var(--dsw-alias-label-tertiary));
 }
 
-.row[aria-current='true'] .rowIcon,
-.row:hover .rowIcon { color: var(--dsw-alias-state-warn-primary); }
+/* 分类图标按项目语义色常显，选中和悬停只改变行底色。 */
+.row[data-icon-tone='amber'], .railButton[data-icon-tone='amber'] { --sidebar-item-icon: var(--dsw-alias-state-warn-primary); }
+.row[data-icon-tone='green'], .railButton[data-icon-tone='green'] { --sidebar-item-icon: var(--dsw-alias-icon-accent-green); }
+.row[data-icon-tone='blue'], .railButton[data-icon-tone='blue'] { --sidebar-item-icon: var(--dsw-alias-state-business-primary); }
+.row[data-icon-tone='violet'], .railButton[data-icon-tone='violet'] { --sidebar-item-icon: var(--dsw-alias-icon-accent-violet); }
+.row:not([data-icon-tone])[aria-current='true'] .rowIcon,
+.row:not([data-icon-tone]):hover .rowIcon { color: var(--dsw-alias-state-warn-primary); }
 
 .mediaBox {
   display: inline-flex;
@@ -155,7 +160,8 @@
 
 .railButton:hover { background: var(--dsw-alias-interactive-bg-hover); }
 .railButton[aria-pressed='true'] { background: var(--dsw-alias-interactive-bg-active); }
-.railButton[aria-pressed='true'] svg { color: var(--dsw-alias-state-warn-primary); }
+.railButton svg { color: var(--sidebar-item-icon, inherit); }
+.railButton:not([data-icon-tone])[aria-pressed='true'] svg { color: var(--dsw-alias-state-warn-primary); }
 .railButton:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: 2px; }
 
 .railDivider { flex: none; width: 30px; height: 1px; margin: 2px auto; background: var(--dsw-alias-border-l2); }

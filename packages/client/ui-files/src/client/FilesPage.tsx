@@ -38,12 +38,12 @@ export function FilesPage({ closePage, list, t, sidebarCollapsed, sidebarWidth, 
       previousFocus.current?.focus()
     }
   }, [closePage])
-  const categories: readonly { value: ManagedFileCategory | undefined; label: string; icon: SidebarRootItem['icon'] }[] = [
-    { value: undefined, label: t('all'), icon: 'files' },
-    { value: 'image', label: t('image'), icon: 'model-vision' },
-    { value: 'presentation', label: t('presentation'), icon: 'file-slides' },
-    { value: 'document', label: t('document'), icon: 'file' },
-    { value: 'other', label: t('other'), icon: 'file-other' },
+  const categories: readonly { value: ManagedFileCategory | undefined; label: string; icon: SidebarRootItem['icon']; iconTone: NonNullable<SidebarRootItem['iconTone']> }[] = [
+    { value: undefined, label: t('all'), icon: 'files', iconTone: 'amber' },
+    { value: 'image', label: t('image'), icon: 'model-vision', iconTone: 'green' },
+    { value: 'presentation', label: t('presentation'), icon: 'file-slides', iconTone: 'violet' },
+    { value: 'document', label: t('document'), icon: 'file', iconTone: 'blue' },
+    { value: 'other', label: t('other'), icon: 'file-other', iconTone: 'amber' },
   ]
   const selectedLabel = categories.find(entry => entry.value === category)?.label ?? t('all')
   return (
@@ -55,6 +55,7 @@ export function FilesPage({ closePage, list, t, sidebarCollapsed, sidebarWidth, 
           id: entry.label,
           label: entry.label,
           icon: entry.icon,
+          iconTone: entry.iconTone,
           active: category === entry.value,
           onSelect: () => { setCategory(entry.value); setKind(undefined) },
         }))}
