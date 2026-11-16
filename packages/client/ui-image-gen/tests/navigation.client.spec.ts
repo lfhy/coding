@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+import type { SessionId } from 'coding-session/types'
 import { createGalleryNavigation } from '../src/client/navigation.ts'
 
 interface OtherSession {
@@ -27,8 +28,10 @@ function bench(current?: string, blank = true, preset = 'standard', others: read
   }
   const select = vi.fn(async () => ({ result: { ok: true as const, value: { agentPreset: 'image' } } }))
   const openPanel = vi.fn(() => true)
-  return { sessions, workspaces, select, openPanel,
-    navigate: createGalleryNavigation(sessions as never, workspaces as never, { agentPresets: { select } } as never, openPanel) }
+  const returnSession = vi.fn(() => undefined as SessionId | undefined)
+  return { sessions, workspaces, select, openPanel, returnSession,
+    navigate: createGalleryNavigation(sessions as never, workspaces as never,
+      { agentPresets: { select } } as never, openPanel, returnSession) }
 }
 
 describe('画图入口', () => {
@@ -38,7 +41,7 @@ describe('画图入口', () => {
     expect(workspaces.connectWorkspace).toHaveBeenCalledWith('workspace')
     expect(select).toHaveBeenCalledWith({ sessionId: 'new', agentPreset: 'image' })
     expect(sessions.open).toHaveBeenCalledWith('new')
-    expect(openPanel).toHaveBeenCalledWith('new')
+    expect(openPanel).toHaveBeenCalledWith('new', undefined)
   })
 
   it('已有非空普通会话时优先回到最近的画图会话', async () => {
@@ -49,7 +52,7 @@ describe('画图入口', () => {
     await withImage.navigate()
     expect(withImage.select).not.toHaveBeenCalled()
     expect(withImage.sessions.open).toHaveBeenCalledWith('newer-image')
-    expect(withImage.openPanel).toHaveBeenCalledWith('newer-image')
+    expect(withImage.openPanel).toHaveBeenCalledWith('newer-image', 'old')
 
     const withoutImage = bench('old', false)
     await withoutImage.navigate()
@@ -63,19 +66,30 @@ describe('画图入口', () => {
     ])
     await blank.navigate()
     expect(blank.select).not.toHaveBeenCalled()
-    expect(blank.openPanel).toHaveBeenCalledWith('image-session')
+    expect(blank.openPanel).toHaveBeenCalledWith('image-session', 'blank')
 
     const blankImage = bench('blank-image', true, 'image', [
       { id: 'image-session', blank: false, agentPreset: 'image', updatedAt: 200 },
     ])
     await blankImage.navigate()
     expect(blankImage.select).not.toHaveBeenCalled()
-    expect(blankImage.openPanel).toHaveBeenCalledWith('image-session')
+    expect(blankImage.openPanel).toHaveBeenCalledWith('image-session', 'blank-image')
 
     const image = bench('image-session', false, 'image')
     await image.navigate()
     expect(image.select).not.toHaveBeenCalled()
-    expect(image.openPanel).toHaveBeenCalledWith('image-session')
+    expect(image.openPanel).toHaveBeenCalledWith('image-session', 'image-session')
+  })
+
+  it('从文件页面切到画图时保留原始对话，不以文件会话替换返回目标', async () => {
+    const b = bench('file-session', false, 'standard', [
+      { id: 'image-session', blank: false, agentPreset: 'image', updatedAt: 200 },
+    ])
+    b.returnSession.mockReturnValue('working-conversation' as SessionId)
+    await b.navigate()
+    expect(b.sessions.open).toHaveBeenCalledWith('image-session')
+    expect(b.openPanel).toHaveBeenCalledWith('image-session', 'working-conversation')
+    expect(b.sessions.list.getSnapshot().byId['working-conversation']).toBeUndefined()
   })
 
   it('预设切换失败时不触碰当前会话或视图', async () => {

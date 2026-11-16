@@ -1,25 +1,20 @@
-// Hover/focus label bubble (figma tooltip pill: dark plate, white text).
-// TODO: interaction is a placeholder (horizontal overflow clamps and a
-// vertical collision flips the bubble to the other side, but there is no
-// arrow) — visuals and behavior get a proper pass later.
-// The anchor is the child element itself (cloneElement, no wrapper node), so
-// attaching a tooltip never changes the anchor's layout context. The bubble is
-// position:fixed and coordinates come from the anchor's rect at show time, so
-// it escapes ancestor overflow clipping (the sidebar rail clips its column)
-// without a portal.
+// 悬停与焦点说明泡泡使用固定定位，避免被侧栏图标轨的溢出裁切。
+// 子元素本身是锚点；cloneElement 不增加布局节点，展开时才读取锚点位置。
+// TODO: 箭头与复杂碰撞避让仍未实现，当前仅处理水平边界和上下翻转。
 
 import { cloneElement, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { FocusEventHandler, MouseEventHandler, MutableRefObject, ReactElement, Ref } from 'react'
 import css from './Tooltip.module.css'
 
-/** Bubble placement relative to the anchor. */
+/** 提示泡泡相对锚点的方向。 */
 export type TooltipSide = 'right' | 'bottom' | 'top'
 
-/** Props Tooltip injects into its anchor child; the child's own handlers are chained ahead of the tooltip's. */
+/** Tooltip 注入到子锚点的事件；先执行子元素原有的处理器。 */
 interface AnchorProps {
   ref?: Ref<HTMLElement> | undefined
   onMouseEnter?: MouseEventHandler | undefined
   onMouseLeave?: MouseEventHandler | undefined
+  onClick?: MouseEventHandler | undefined
   onFocus?: FocusEventHandler | undefined
   onBlur?: FocusEventHandler | undefined
 }
@@ -27,32 +22,27 @@ interface AnchorProps {
 type TooltipLabel = string | (() => string)
 
 /**
- * Attach a hover/focus tooltip to an anchor element.
- * @param props.label - bubble text, or a resolver evaluated only while the bubble is visible.
- * @param props.side - placement relative to the anchor (default 'right').
- * @param props.delayMs - hover delay in milliseconds; keyboard focus remains immediate.
- * @param props.disabled - suppress the bubble while true; the anchor renders identically so
- * toggling never remounts it (which would cut its CSS transitions).
- * @param props.maxWidth - bubble width cap in pixels, for labels long enough that the default
- * half-viewport cap would render a slab wider than the surface the anchor sits on.
- * @param props.children - a single anchor element; its own ref (callback or object) is forwarded alongside the tooltip's.
- * @returns the cloned anchor plus a fixed-position bubble while hovered/focused.
+ * 将悬停或聚焦提示附着到单个锚点；点击后隐藏，重新悬停或重新聚焦才再次显示。
+ * @param props.label - 提示文案或仅在可见时求值的文案函数。
+ * @param props.side - 相对锚点的位置，默认向右。
+ * @param props.delayMs - 悬停显示的延迟毫秒数，键盘聚焦不等待。
+ * @param props.disabled - 禁止显示，但不重挂锚点以免中断其动效。
+ * @param props.maxWidth - 长文案可选的像素宽度上限。
+ * @param props.children - 单个锚点，原 ref 与事件回调保持可用。
+ * @returns 锚点与可见时固定定位的提示泡泡。
  */
 export function Tooltip({ label, side = 'right', delayMs = 0, disabled = false, maxWidth, children }: { label: TooltipLabel; side?: TooltipSide; delayMs?: number; disabled?: boolean; maxWidth?: number; children: ReactElement<AnchorProps> }) {
   const anchor = useRef<HTMLElement | null>(null)
-  // React 18 keeps the element's ref outside props; forward it so wrapping an
-  // anchor in Tooltip never silently severs the owner's ref.
+  // React 18 的 ref 不在元素 props 内；合并 ref 以保留调用方的锚点引用。
   const childRef = (children as ReactElement<AnchorProps> & { ref?: Ref<HTMLElement> }).ref
   const mergedRef = useCallback((el: HTMLElement | null) => {
     anchor.current = el
     if (typeof childRef === 'function') childRef(el)
     else if (childRef != null) (childRef as MutableRefObject<HTMLElement | null>).current = el
   }, [childRef])
-  // The anchor's edges rather than final coordinates: a vertical flip has to
-  // re-derive the bubble's own top from the opposite edge.
+  // 使用锚点两条边重新计算翻转后的纵坐标，避免沿用旧位置。
   const [pos, setPos] = useState<{ x: number; top: number; bottom: number } | null>(null)
-  // Where the bubble actually sits, which is the requested side until the
-  // viewport refuses it.
+  // 实际位置可能因视口空间不足而与请求方向不同。
   const [placement, setPlacement] = useState<TooltipSide>(side)
   const bubble = useRef<HTMLSpanElement | null>(null)
   const resolvedLabel = pos === null
@@ -64,18 +54,13 @@ export function Tooltip({ label, side = 'right', delayMs = 0, disabled = false, 
       ? pos.top + (pos.bottom - pos.top) / 2
       : placement === 'top' ? pos.top - 8 : pos.bottom + 8
   const EDGE_MARGIN = 12
-  // Viewport fit: fixed positioning knows nothing about edges, so a centered
-  // bubble near the right edge would clip and a long label under an anchor low
-  // on the page would run off the bottom. Horizontally the bubble slides back
-  // inside; vertically it flips to the opposite side, which is the only move
-  // that does not cover the anchor being read. Each measurement resets the base
-  // position first, so a shorter label or a larger viewport releases a previous
-  // adjustment without another render.
+  // 固定定位不提供边界约束：水平移入视口，垂直方向只在另一侧容得下时翻转。
+  // 每次先用原始位置测量，文案或窗口变化后即可释放旧偏移。
   useLayoutEffect(() => {
     if (pos === null) return
     const fit = () => {
       const el = bubble.current
-      /* v8 ignore next -- pos is set only while the bubble is mounted. */
+      /* v8 ignore next -- 提示可见时泡泡一定已挂载。 */
       if (el === null) return
       el.style.left = `${pos.x}px`
       const r = el.getBoundingClientRect()
@@ -84,8 +69,7 @@ export function Tooltip({ label, side = 'right', delayMs = 0, disabled = false, 
       if (r.left + dx < EDGE_MARGIN) dx = EDGE_MARGIN - r.left
       el.style.left = `${pos.x + dx}px`
       if (side === 'right') return
-      // Flip only into a side that genuinely fits, so an anchor with room on
-      // neither side keeps the requested placement instead of oscillating.
+      // 两侧都容不下时维持请求的位置，避免反复翻转。
       const fitsBelow = pos.bottom + 8 + r.height <= window.innerHeight - EDGE_MARGIN
       const fitsAbove = pos.top - 8 - r.height >= EDGE_MARGIN
       if (placement === 'bottom' && !fitsBelow && fitsAbove) setPlacement('top')
@@ -96,12 +80,10 @@ export function Tooltip({ label, side = 'right', delayMs = 0, disabled = false, 
     return () => { window.removeEventListener('resize', fit) }
   }, [placement, pos, resolvedLabel, side])
   const showTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  // Hover and focus are independent triggers: the bubble hides only after
-  // BOTH clear (hovering away from a focused anchor must not drop it).
-  const triggers = useRef({ hover: false, focus: false })
+  // 悬停与键盘焦点相互独立；点击后由调用方的页面动作恢复焦点时，仍需压住刚点击的提示。
+  const triggers = useRef({ hover: false, focus: false, clicked: false, clickFocused: false })
 
-  // Disabling mid-hover (e.g. clicking a rail control expands the sidebar)
-  // must drop an already-visible bubble: no mouseleave fires.
+  // 操作期间禁用锚点时不会收到 mouseleave，需立即撤回已显示的提示。
   const cancelShow = useCallback(() => {
     if (showTimer.current === null) return
     clearTimeout(showTimer.current)
@@ -110,7 +92,7 @@ export function Tooltip({ label, side = 'right', delayMs = 0, disabled = false, 
   useEffect(() => {
     if (disabled) {
       cancelShow()
-      triggers.current = { hover: false, focus: false }
+      triggers.current = { hover: false, focus: false, clicked: false, clickFocused: false }
       setPos(null)
     }
     return cancelShow
@@ -119,11 +101,10 @@ export function Tooltip({ label, side = 'right', delayMs = 0, disabled = false, 
   const show = () => {
     if (disabled) return
     const el = anchor.current
-    /* v8 ignore next -- the ref is attached by event time: events fire on the cloned anchor. */
+    /* v8 ignore next -- 事件只会由已有 ref 的克隆锚点发出。 */
     if (el === null) return
     const r = el.getBoundingClientRect()
-    // Every show starts from the requested side; the fit pass flips it only
-    // where this anchor's position demands it.
+    // 每次从请求方向开始，位置测量负责必要时翻转。
     setPlacement(side)
     setPos({ x: side === 'right' ? r.right + 10 : r.left + r.width / 2, top: r.top, bottom: r.bottom })
   }
@@ -147,10 +128,38 @@ export function Tooltip({ label, side = 'right', delayMs = 0, disabled = false, 
     <>
       {cloneElement(children, {
         ref: mergedRef,
-        onMouseEnter: (e) => { children.props.onMouseEnter?.(e); triggers.current.hover = true; showAfterHoverDelay() },
-        onMouseLeave: (e) => { children.props.onMouseLeave?.(e); triggers.current.hover = false; cancelShow(); setPos(null) },
-        onFocus: (e) => { children.props.onFocus?.(e); triggers.current.focus = true; cancelShow(); show() },
-        onBlur: (e) => { children.props.onBlur?.(e); triggers.current.focus = false; hide() },
+        onMouseEnter: (e) => {
+          children.props.onMouseEnter?.(e)
+          triggers.current.hover = true
+          if (!triggers.current.focus) triggers.current.clicked = false
+          if (!triggers.current.clicked) showAfterHoverDelay()
+        },
+        onMouseLeave: (e) => {
+          children.props.onMouseLeave?.(e)
+          triggers.current.hover = false
+          cancelShow()
+          setPos(null)
+        },
+        onFocus: (e) => {
+          children.props.onFocus?.(e)
+          triggers.current.focus = true
+          if (!triggers.current.clicked) { cancelShow(); show() }
+        },
+        onBlur: (e) => {
+          children.props.onBlur?.(e)
+          triggers.current.focus = false
+          if (!triggers.current.clickFocused) triggers.current.clicked = false
+          triggers.current.clickFocused = false
+          hide()
+        },
+        onClick: (e) => {
+          children.props.onClick?.(e)
+          triggers.current.clicked = true
+          // 鼠标点击聚焦的入口稍后因切页失焦、再恢复焦点时，仍不重现提示。
+          triggers.current.clickFocused = triggers.current.focus
+          cancelShow()
+          setPos(null)
+        },
       })}
       {pos !== null && (
         <span

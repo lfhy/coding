@@ -115,7 +115,7 @@ export function createHostWindow(origin: string, options: { devTools?: boolean; 
     const drag = isMacOS || isWindows
       ? '[data-window-drag-region] { -webkit-app-region: drag !important; }'
       : ''
-    // macOS 把跨页面的侧栏开关交给窗口左上角，页内开关不再占位或参与焦点顺序。
+    // macOS 的外层导航底部承载跨页面侧栏开关，页内开关退出布局和焦点顺序。
     const desktop = isMacOS
       ? ':root { --desktop-sidebar-toggle: flex; --sidebar-inline-toggle: none; }'
       : ''

@@ -72,9 +72,9 @@ export function apply(ctx: ClientContext): void {
     galleries.clear()
     canvases.clear()
   }, 'ui-image-gen: session controllers')
-  const openGallery = createGalleryNavigation(ctx.sessions, ctx.workspaces, api, (sessionId) => {
-    try { ctx.layout.togglePage(GALLERY_PAGE, sessionId); return true } catch { return false }
-  })
+  const openGallery = createGalleryNavigation(ctx.sessions, ctx.workspaces, api, (sessionId, origin) => {
+    try { ctx.layout.togglePage(GALLERY_PAGE, sessionId, origin); return true } catch { return false }
+  }, () => ctx.layout.page.getSnapshot()?.returnSessionId)
 
   ctx.slots.inject('tool.call.toolview', function* () {
     for (const key of ['generate_image', 'generate_images', 'edit_image', 'image_gen']) {
@@ -83,8 +83,10 @@ export function apply(ctx: ClientContext): void {
         inject: (sessionId: SessionId) => ({
           openInStudio: (attachmentId: GalleryItem['attachmentId']) => {
             galleryFor(sessionId).openImage(attachmentId)
+            const origin = ctx.layout.page.getSnapshot()?.returnSessionId
+              ?? ctx.sessions.list.getSnapshot().current
             ctx.sessions.open(sessionId)
-            ctx.layout.openPage(GALLERY_PAGE, sessionId)
+            ctx.layout.openPage(GALLERY_PAGE, sessionId, origin)
           },
         }),
       }, ImageToolRow)

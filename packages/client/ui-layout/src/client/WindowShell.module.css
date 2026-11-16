@@ -24,33 +24,31 @@
   height: var(--app-safe-area-inset-top, 0px);
 }
 
-/* macOS 桌面窗口在交通灯右侧放置共用侧栏开关，网页端不占据标题空间。 */
+/* 桌面端在外层导航底部显示共用侧栏开关，网页端继续使用页内控件。 */
 .desktopSidebarToggle {
-  position: absolute;
-  top: 7px;
-  left: 108px;
-  z-index: 5;
   display: var(--desktop-sidebar-toggle, none);
-  width: 28px;
-  height: 28px;
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
   -webkit-app-region: no-drag;
 }
 
 .sidebarToggleAnchor {
   display: grid;
-  width: 28px;
-  height: 28px;
+  width: 36px;
+  height: 36px;
 }
 
 .sidebarToggleButton {
-  width: 28px;
-  height: 28px;
+  width: 36px;
+  height: 36px;
   padding: 0;
   border-radius: 8px;
   color: var(--dsw-alias-label-secondary);
   -webkit-app-region: no-drag;
 }
 
+.sidebarToggleButton:hover { background: var(--dsw-alias-interactive-bg-hover); }
 .sidebarToggleButton:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary); }
 
 .navigation {
@@ -71,11 +69,19 @@
   height: 36px;
 }
 
+.footer {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  margin-top: auto;
+}
+
 .settings {
   flex: 0 0 auto;
   width: 36px;
   min-height: 36px;
-  margin-top: auto;
 }
 
 /* 窄导航图标按语义着色：回到对话用业务蓝，与画图入口的图标强调绿、底部设置的中性灰

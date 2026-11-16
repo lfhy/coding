@@ -63,7 +63,7 @@ describe('图像插件注册生命周期', () => {
       (sessionId: string) => { openInStudio: (attachmentId: string) => void })('tool-session')
     imageTool.openInStudio('target-attachment')
     expect(openSession).toHaveBeenCalledWith('tool-session')
-    expect(openPage).toHaveBeenCalledWith('image-gallery', 'tool-session')
+    expect(openPage).toHaveBeenCalledWith('image-gallery', 'tool-session', 'image-session')
     vi.stubGlobal('fetch', vi.fn(async (url: string) => new Response(JSON.stringify(url.includes('/gallery')
       ? { enabled: true, items: [
         { id: 'other', attachmentId: 'other-attachment', prompt: '夜景', model: 'image-model', createdAt: 1,

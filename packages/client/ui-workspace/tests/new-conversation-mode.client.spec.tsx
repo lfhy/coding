@@ -39,6 +39,7 @@ describe('新对话顶部入口单向联动', () => {
   it('顶部对话同步侧栏对话，顶部工作同步侧栏工作', () => {
     const page = mountMode()
     const tabs = within(page.getByRole('tablist', { name: '新对话方式' }))
+    expect(tabs.getAllByRole('tab').map(tab => tab.textContent)).toEqual(['工作', '对话'])
     expect(tabs.queryByRole('tab', { name: '最近' })).toBeNull()
     fireEvent.click(tabs.getByRole('tab', { name: '对话' }))
     expect(page.store.getSnapshot().view).toBe('conversations')

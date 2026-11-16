@@ -30,6 +30,7 @@ const initialState = {
   activeBlankSession: null,
   page: null,
   conversationRequest: null,
+  conversationReturn: null,
   conversationRequestSeq: 0,
 }
 
@@ -134,6 +135,34 @@ describe('createLayoutStore', () => {
       workbench: { [SESSION]: { open: true } } })
     actions.closePage()
     expect(store.getSnapshot()).toMatchObject({ page: null, workbench: { [SESSION]: { open: true } } })
+  })
+
+  it('remembers the originating conversation across files and gallery, then returns it once', () => {
+    const { store, actions } = createLayoutStore().create()
+    actions.openPage('files', SESSION)
+    actions.openPage('image-gallery', NEXT_SESSION, SESSION)
+    expect(store.getSnapshot().page).toEqual({ kind: 'image-gallery', sessionId: NEXT_SESSION, returnSessionId: SESSION })
+    actions.closePage()
+    const pending = store.getSnapshot().conversationReturn
+    expect(pending).toMatchObject({ from: NEXT_SESSION, sessionId: SESSION })
+    actions.acknowledgeConversationReturn(pending!.seq - 1)
+    expect(store.getSnapshot().conversationReturn).toBe(pending)
+    actions.acknowledgeConversationReturn(pending!.seq)
+    expect(store.getSnapshot().conversationReturn).toBeNull()
+    actions.closePage()
+    expect(store.getSnapshot().conversationReturn).toBeNull()
+  })
+
+  it('drops pending restoration when a page is discarded or replaced', () => {
+    const { store, actions } = createLayoutStore().create()
+    actions.openPage('image-gallery', NEXT_SESSION, SESSION)
+    actions.togglePage('image-gallery', NEXT_SESSION)
+    expect(store.getSnapshot().conversationReturn).toMatchObject({ from: NEXT_SESSION, sessionId: SESSION })
+    actions.openPage('files', NEXT_SESSION)
+    expect(store.getSnapshot().conversationReturn).toBeNull()
+    actions.openPage('image-gallery', NEXT_SESSION, SESSION)
+    actions.discardPage()
+    expect(store.getSnapshot()).toMatchObject({ page: null, conversationReturn: null })
   })
 
   it('initializes closed details and workbench with reusable size preferences', () => {

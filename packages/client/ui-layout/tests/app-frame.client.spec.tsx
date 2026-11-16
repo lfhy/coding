@@ -118,6 +118,7 @@ function mountFrame(options: {
   layout.attachPanels(instance.actions)
   const publishWorkbench = vi.fn()
   const publishPage = vi.fn()
+  const restoreConversation = vi.fn((sessionId: SessionId) => { selectedSession.current = sessionId })
   const retainWorkbenchViews = vi.fn()
   const consumeEscape = { current: false }
   const slotCalls: { key: string; props: unknown }[] = []
@@ -176,6 +177,7 @@ function mountFrame(options: {
       SessionProvider={SessionProviderStub}
       publishWorkbench={publishWorkbench}
       publishPage={publishPage}
+      restoreConversation={restoreConversation}
       retainWorkbenchViews={retainWorkbenchViews}
       workspaceKeyOf={options.workspaceKeyOf ?? workspaceKeyOf}
       t={(key, params) => Object.entries(params ?? {}).reduce(
@@ -193,6 +195,7 @@ function mountFrame(options: {
     slotCalls,
     publishWorkbench,
     publishPage,
+    restoreConversation,
     consumeEscape,
     rerenderFrame: () => { utils.rerender(element()) },
     ownerFor: (key: string) => slotCalls.filter(call => call.key === key).at(-1)?.props,
@@ -623,6 +626,35 @@ describe('AppFrame', () => {
     expect(b.getByTestId('center-content')).toBe(center)
     expect(floatingDialog(b.frame)?.contains(center)).toBe(true)
     expect(b.instance.store.getSnapshot().workbench['s-test']?.fullscreen).toBe(true)
+  })
+
+  it('restores the conversation selected before files and gallery without recreating its draft', () => {
+    const b = mountFrame()
+    const draft = b.getByRole('textbox', { name: '测试会话草稿' }) as HTMLTextAreaElement
+    fireEvent.change(draft, { target: { value: '正在处理的内容' } })
+    act(() => { b.instance.actions.openPage('managed-files', 's-test' as SessionId) })
+    act(() => {
+      selectedSession.current = 's-next' as SessionId
+      b.instance.actions.openPage('image-gallery', 's-next' as SessionId, 's-test' as SessionId)
+      b.rerenderFrame()
+    })
+    expect(b.getByTestId('gallery-page')).toBeTruthy()
+    act(() => { b.instance.actions.closePage() })
+    expect(b.restoreConversation).toHaveBeenCalledWith('s-test')
+    act(() => { b.rerenderFrame() })
+    expect(selectedSession.current).toBe('s-test')
+    expect(b.getByRole('textbox', { name: '测试会话草稿' })).toBe(draft)
+    expect(draft.value).toBe('正在处理的内容')
+  })
+
+  it('does not restore a stale page after the user selects another session', () => {
+    const b = mountFrame()
+    act(() => { b.instance.actions.openPage('image-gallery', 's-test' as SessionId, 's-next' as SessionId) })
+    selectedSession.current = 'other-session' as SessionId
+    act(() => { b.rerenderFrame() })
+    expect(b.instance.store.getSnapshot().page).toBeNull()
+    expect(b.instance.store.getSnapshot().conversationReturn).toBeNull()
+    expect(b.restoreConversation).not.toHaveBeenCalled()
   })
 
   it('leaves an ordinary conversation visible without opening a floating window or changing panels', () => {

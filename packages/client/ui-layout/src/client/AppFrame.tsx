@@ -34,6 +34,8 @@ import css from './AppFrame.module.css'
 
 /** AppFrame 向布局服务回报工作区级工作台投影的注入面。 */
 export interface AppFrameInjected {
+  /** 归还页面打开前的会话；会话列表已失效时由调用方直接丢弃请求。 */
+  restoreConversation: (sessionId: SessionId) => void
   /** 发布布局当前页面供侧栏入口回显。 */
   publishPage: (page: PageRoute | null) => void
   /** 发布当前工作区的工作台状态。 */
@@ -489,6 +491,7 @@ export function AppFrame({
   publishWorkbench,
   retainWorkbenchViews,
   publishPage,
+  restoreConversation,
   workspaceKeyOf,
   t,
 }: AppFrameProps) {
@@ -513,8 +516,16 @@ export function AppFrame({
   const page = rootPanels.page
   const pageVisible = page !== null && page.sessionId === activeSession && liveSessionIds.includes(page.sessionId)
   useEffect(() => { publishPage(pageVisible ? page : null) }, [page, pageVisible, publishPage])
+  const conversationReturn = rootPanels.conversationReturn
+  useLayoutEffect(() => {
+    if (conversationReturn === null) return
+    actions.acknowledgeConversationReturn(conversationReturn.seq)
+    // 导航选中其他会话、来源已经移除，或目标不存在时，不得以旧请求抢回用户当前选择。
+    if (activeSession !== conversationReturn.from || !liveSessionIds.includes(conversationReturn.sessionId)) return
+    restoreConversation(conversationReturn.sessionId)
+  }, [actions, activeSession, conversationReturn, liveSessionIds, restoreConversation])
   useEffect(() => {
-    if (page !== null && !pageVisible) actions.closePage()
+    if (page !== null && !pageVisible) actions.discardPage()
   }, [actions, page, pageVisible])
   const activeKey = activeSession === undefined ? undefined : workspaceKeyOf(activeSession)
   useLayoutEffect(() => {

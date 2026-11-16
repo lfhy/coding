@@ -260,11 +260,13 @@ describe('Tooltip', () => {
   it('chains the anchor\'s own handlers ahead of the tooltip\'s', () => {
     const onMouseEnter = vi.fn()
     const onMouseLeave = vi.fn()
+    const onClick = vi.fn()
     const onFocus = vi.fn()
     const onBlur = vi.fn()
     render(
       <Tooltip label="Chained">
-        <button type="button" onMouseEnter={onMouseEnter} onMouseLeave={onMouseLeave} onFocus={onFocus} onBlur={onBlur}>anchor</button>
+        <button type="button" onMouseEnter={onMouseEnter} onMouseLeave={onMouseLeave}
+          onClick={onClick} onFocus={onFocus} onBlur={onBlur}>anchor</button>
       </Tooltip>,
     )
     const anchor = screen.getByText('anchor')
@@ -272,8 +274,10 @@ describe('Tooltip', () => {
     fireEvent.mouseLeave(anchor)
     fireEvent.focus(anchor)
     fireEvent.blur(anchor)
+    fireEvent.click(anchor)
     expect(onMouseEnter).toHaveBeenCalledOnce()
     expect(onMouseLeave).toHaveBeenCalledOnce()
+    expect(onClick).toHaveBeenCalledOnce()
     expect(onFocus).toHaveBeenCalledOnce()
     expect(onBlur).toHaveBeenCalledOnce()
   })
@@ -296,6 +300,49 @@ describe('Tooltip', () => {
     expect(screen.getByText('anchor')).toBe(anchor)
     fireEvent.mouseEnter(anchor)
     expect(screen.getByRole('tooltip')).toBeTruthy()
+  })
+
+  it('hides a hovered or focused navigation tooltip on click until it is revisited', () => {
+    vi.useFakeTimers()
+    try {
+      render(<Tooltip label="Files" delayMs={500}><button type="button">anchor</button></Tooltip>)
+      const anchor = screen.getByText('anchor')
+      fireEvent.mouseEnter(anchor)
+      act(() => { vi.advanceTimersByTime(500) })
+      expect(screen.getByRole('tooltip').textContent).toBe('Files')
+      fireEvent.focus(anchor)
+      fireEvent.click(anchor)
+      expect(screen.queryByRole('tooltip')).toBeNull()
+      fireEvent.focus(anchor)
+      act(() => { vi.advanceTimersByTime(500) })
+      expect(screen.queryByRole('tooltip')).toBeNull()
+      fireEvent.mouseLeave(anchor)
+      fireEvent.blur(anchor)
+      fireEvent.mouseEnter(anchor)
+      act(() => { vi.advanceTimersByTime(500) })
+      expect(screen.getByRole('tooltip').textContent).toBe('Files')
+      fireEvent.click(anchor)
+      expect(screen.queryByRole('tooltip')).toBeNull()
+      fireEvent.blur(anchor)
+      fireEvent.focus(anchor)
+      expect(screen.getByRole('tooltip').textContent).toBe('Files')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('cancels the pending hover timer when the anchor is clicked before the delay', () => {
+    vi.useFakeTimers()
+    try {
+      render(<Tooltip label="Files" delayMs={500}><button type="button">anchor</button></Tooltip>)
+      const anchor = screen.getByText('anchor')
+      fireEvent.mouseEnter(anchor)
+      fireEvent.click(anchor)
+      act(() => { vi.advanceTimersByTime(500) })
+      expect(screen.queryByRole('tooltip')).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('mouse leave hides the bubble immediately, even while the anchor stays focused', () => {

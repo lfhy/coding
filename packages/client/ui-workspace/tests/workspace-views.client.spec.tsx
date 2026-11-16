@@ -144,6 +144,8 @@ describe('Workspace browser scopes', () => {
     const work = screen.getByRole('tab', { name: '工作' })
     const conversations = screen.getByRole('tab', { name: '对话' })
     const recent = screen.getByRole('tab', { name: '最近' })
+    expect(Array.from(screen.getByRole('tablist').querySelectorAll('[role="tab"]')).map(tab => tab.textContent))
+      .toEqual(['工作', '对话', '最近'])
     expect([work.tabIndex, conversations.tabIndex, recent.tabIndex]).toEqual([0, -1, -1])
     work.focus()
     expect(fireEvent.keyDown(work, { key: 'Tab' })).toBe(true)

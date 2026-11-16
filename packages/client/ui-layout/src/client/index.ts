@@ -149,6 +149,7 @@ export function apply(ctx: ClientContext): void {
         const workspaces = ctx.get('workspaces') as { workspaceKeyOf?: (id: SessionId) => string } | undefined
         return {
           workspaceKeyOf: sessionId => workspaces?.workspaceKeyOf?.(sessionId) ?? sessionId,
+          restoreConversation: (sessionId) => { ctx.get('sessions')?.open(sessionId) },
           publishWorkbench: (key, state) => { layout.publishWorkbench(key, state) },
           retainWorkbenchViews: (keys) => { layout.retainWorkbenchViews(keys) },
           publishPage: (page) => { layout.publishPage(page) },

@@ -12,18 +12,22 @@ const RETRY_LIMIT = 30
  * @param workspaces - 当前工作区归属与空白创建。
  * @param api - 切换预设的 Host RPC。
  * @param openPage - 在指定会话打开主内容画廊，布局尚未挂载时返回 false。
+ * @param returnSession - 已有独立页记录的对话来处，跨页面切换时沿用。
  * @returns 可点击入口的异步动作。
  */
 export function createGalleryNavigation(
   sessions: Pick<ISessions, 'list' | 'open' | 'noteAgentPreset'>,
   workspaces: Pick<IWorkspaces, 'list' | 'connectWorkspace' | 'connectHome'>,
   api: Pick<IApiClient, 'agentPresets'>,
-  openPage: (sessionId: SessionId) => boolean,
+  openPage: (sessionId: SessionId, returnSessionId?: SessionId) => boolean,
+  returnSession: () => SessionId | undefined,
 ): () => Promise<void> {
   let opening: Promise<void> | undefined
   const navigate = async (): Promise<void> => {
     const snapshot = sessions.list.getSnapshot()
     const current = snapshot.current
+    // 点击入口时冻结原对话；连接工作区和预设选择期间当前会话可能改变。
+    const origin = returnSession() ?? current
     const summary = current === undefined ? undefined : snapshot.byId[current]
     // 画图入口是模式入口：有既有画图会话时回到最近一个，而不是每次
     // 从别的会话新建空画廊，让刚生成的图片看似消失。
@@ -59,7 +63,7 @@ export function createGalleryNavigation(
     sessions.open(target)
     // 页面动作在根布局挂载后才可用；下一帧起按固定节奏重试。
     for (let attempt = 0; attempt < RETRY_LIMIT; attempt++) {
-      if (openPage(target)) return
+      if (openPage(target, origin)) return
       await new Promise<void>((resolve) => { setTimeout(resolve, RETRY_MS) })
     }
     throw new Error('image gallery page unavailable')

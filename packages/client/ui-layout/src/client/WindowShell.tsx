@@ -1,5 +1,5 @@
 /** 窗口级外壳包裹原布局；导航动作复用布局 store，不重建会话或工作台。 */
-import { Button, Icon, Tooltip } from 'coding-client-ui-primitives'
+import { Button, Icon, IconChevronLeftOutline14, IconChevronRightOutline14, Tooltip } from 'coding-client-ui-primitives'
 import type { PropsRenderSlots } from 'coding-client-ui-slots'
 import { AppFrame } from './AppFrame.tsx'
 import type { AppFrameProps } from './AppFrame.tsx'
@@ -18,23 +18,13 @@ export type WindowShellProps = Omit<AppFrameProps, 'renderSlot' | '__renders'>
 export function WindowShell(props: WindowShellProps) {
   const current = props.useSessions(state => state.current)
   const conversationVisible = props.useStore(state => state.page === null)
+  const returnToDifferentSession = props.useStore(state => state.page?.returnSessionId !== undefined)
   const sidebarCollapsed = props.useStore(state => state.narrow ? !state.narrowExpanded : state.sidebar === 0)
+  const toggleLabel = props.t(sidebarCollapsed ? 'shell.sidebar.expand' : 'shell.sidebar.collapse')
 
   return (
     <div className={css.shell} data-window-shell>
       <div className={css.titleDragInset} data-window-drag-region aria-hidden="true" />
-      {/* 仅桌面窗口显示：靠近交通灯，操作的是与页内侧栏共用的根布局状态。 */}
-      <div className={css.desktopSidebarToggle}>
-        <Tooltip label={props.t(sidebarCollapsed ? 'shell.sidebar.expand' : 'shell.sidebar.collapse')} delayMs={500}>
-          <span className={css.sidebarToggleAnchor}>
-            <Button size="sm" className={css.sidebarToggleButton}
-              aria-label={props.t(sidebarCollapsed ? 'shell.sidebar.expand' : 'shell.sidebar.collapse')}
-              onClick={() => { props.actions.toggleSidebar() }}>
-              <Icon name="sidebar" size={18} />
-            </Button>
-          </span>
-        </Tooltip>
-      </div>
       <nav className={css.navigation} aria-label={props.t('shell.navigation')}>
         <Tooltip label={props.t('shell.conversation')} delayMs={500}>
           <span className={css.navAnchor}>
@@ -43,7 +33,12 @@ export function WindowShell(props: WindowShellProps) {
               aria-label={props.t('shell.conversation')}
               aria-current={conversationVisible ? 'page' : undefined}
               onClick={() => {
-                props.actions.closePage()
+                // 页面关闭后归还原会话；全屏工作台的同会话对话仍可展开浮窗。
+                if (!conversationVisible) {
+                  props.actions.closePage()
+                  if (current !== undefined && !returnToDifferentSession) props.actions.requestShowConversation(current)
+                  return
+                }
                 if (current !== undefined) props.actions.requestShowConversation(current)
               }}
             >
@@ -53,8 +48,21 @@ export function WindowShell(props: WindowShellProps) {
         </Tooltip>
         {/* 中部入口自带紧凑图标按钮，与主页图标同列；底部设置仍贴住导航栏下沿。 */}
         {props.renderSlot('shell.navigation.entry', {})}
-        <div className={css.settings}>
-          {props.renderSlot('shell.settings', { wide: false })}
+        {/* 桌面窗口把侧栏开关放在这一列底部：既不压在交通灯上，收起后也不落进内容区。 */}
+        <div className={css.footer}>
+          <div className={css.desktopSidebarToggle}>
+            <Tooltip label={toggleLabel} delayMs={500}>
+              <span className={css.sidebarToggleAnchor}>
+                <Button className={css.sidebarToggleButton} aria-label={toggleLabel}
+                  onClick={() => { props.actions.toggleSidebar() }}>
+                  {sidebarCollapsed ? <IconChevronRightOutline14 size={18} /> : <IconChevronLeftOutline14 size={18} />}
+                </Button>
+              </span>
+            </Tooltip>
+          </div>
+          <div className={css.settings}>
+            {props.renderSlot('shell.settings', { wide: false })}
+          </div>
         </div>
       </nav>
       <div className={css.surface} data-window-content>

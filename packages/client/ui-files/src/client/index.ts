@@ -52,11 +52,13 @@ function openFilesFor(ctx: ClientContext): () => Promise<void> {
   return () => {
     opening ??= (async() => {
       const current = ctx.sessions.list.getSnapshot().current
+      // 从画图等独立页切入时沿用先前对话的来处，不把文件页所属会话当成归途。
+      const origin = ctx.layout.page.getSnapshot()?.returnSessionId ?? current
       const target = current ?? await ctx.workspaces.connectHome()
       ctx.sessions.open(target)
       for (let attempt = 0; attempt < 30; attempt++) {
         try {
-          ctx.layout.togglePage(PAGE, target)
+          ctx.layout.togglePage(PAGE, target, origin)
           return
         } catch {
           await new Promise<void>((resolve) => { window.setTimeout(resolve, 32) })

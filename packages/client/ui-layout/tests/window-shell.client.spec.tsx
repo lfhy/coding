@@ -56,13 +56,15 @@ describe('窗口外壳', () => {
     expect(view.getByRole('button', { name: '回到对话' }).querySelector('img')).toBeNull()
     expect(view.getByRole('button', { name: '回到对话' }).querySelector('svg')).toBeTruthy()
     expect(view.getByRole('navigation').contains(view.getByRole('button', { name: '设置' }))).toBe(true)
-    // 中部入口排在主页图标之后、底部设置之前。
+    // 中部入口排在主页图标之后；桌面开关与设置同在底部控件组。
     const labels = Array.from(view.getByRole('navigation').querySelectorAll('button'))
       .map(button => button.getAttribute('aria-label'))
-    expect(labels).toEqual(['回到对话', '画图', '设置'])
+    expect(labels).toEqual(['回到对话', '画图', '收起侧边栏', '设置'])
+    expect(view.getByRole('button', { name: '收起侧边栏' }).parentElement?.parentElement?.nextElementSibling
+      ?.contains(view.getByRole('button', { name: '设置' }))).toBe(true)
     const draft = view.getByRole('textbox', { name: '对话草稿' }) as HTMLTextAreaElement
     fireEvent.change(draft, { target: { value: '保留这份草稿' } })
-    expect(view.getByRole('navigation').querySelectorAll('button')).toHaveLength(3)
+    expect(view.getByRole('navigation').querySelectorAll('button')).toHaveLength(4)
     act(() => { view.instance.actions.toggleSidebar() })
     expect(view.instance.getSnapshot().sidebar).toBe(0)
     expect(view.getByRole('button', { name: '设置' }).getAttribute('data-compact')).toBe('true')
@@ -79,7 +81,7 @@ describe('窗口外壳', () => {
     const width = view.instance.getSnapshot().sidebar
     act(() => { view.instance.actions.setNarrow(true) })
     act(() => { view.instance.actions.toggleSidebar() })
-    expect(view.getByRole('navigation').querySelectorAll('button')).toHaveLength(3)
+    expect(view.getByRole('navigation').querySelectorAll('button')).toHaveLength(4)
     expect(view.instance.getSnapshot().sidebar).toBe(width)
     act(() => { view.instance.actions.toggleSidebar() })
     expect(view.instance.getSnapshot().narrowExpanded).toBe(false)
@@ -89,7 +91,10 @@ describe('窗口外壳', () => {
     const view = mountShell()
     const collapse = view.getByRole('button', { name: '收起侧边栏' })
     expect(collapse.closest('[data-window-shell]')).toBeTruthy()
+    const expandedIcon = collapse.querySelector('svg path')?.getAttribute('d')
     fireEvent.click(collapse)
+    const collapsedIcon = view.getByRole('button', { name: '展开侧边栏' }).querySelector('svg path')?.getAttribute('d')
+    expect(collapsedIcon).not.toBe(expandedIcon)
     expect(view.instance.getSnapshot().sidebar).toBe(0)
     act(() => { view.instance.actions.openPage('files', 'shell-session' as SessionId) })
     fireEvent.click(view.getByRole('button', { name: '展开侧边栏' }))
@@ -113,6 +118,19 @@ describe('窗口外壳', () => {
     expect(view.instance.getSnapshot().conversationRequest?.sessionId).toBe('shell-session')
     expect(back.getAttribute('aria-current')).toBe('page')
     expect(lifecycle.mount).toHaveBeenCalledOnce()
+  })
+
+  it('跨会话画图后通过主页归还原对话而不是画图会话', () => {
+    const view = mountShell('image-session' as SessionId)
+    act(() => {
+      view.instance.actions.openPage('image-gallery', 'image-session' as SessionId, 'working-session' as SessionId)
+    })
+    fireEvent.click(view.getByRole('button', { name: '回到对话' }))
+    expect(view.instance.getSnapshot().page).toBeNull()
+    expect(view.instance.getSnapshot().conversationReturn).toMatchObject({
+      from: 'image-session', sessionId: 'working-session',
+    })
+    expect(view.instance.getSnapshot().conversationRequest).toBeNull()
   })
 
   it('无会话时也能返回欢迎页，不发出无目标的对话请求', () => {

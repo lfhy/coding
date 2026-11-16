@@ -69,8 +69,9 @@ describe('ui-layout client apply', () => {
       setActiveBlankSession: vi.fn(),
       clearBlankWorkbench: vi.fn(), retainBlankSessions: vi.fn(),
       retainWorkbenchSessions: vi.fn(),
-      openPage: vi.fn(), closePage: vi.fn(),
-      requestShowConversation: vi.fn(), acknowledgeConversationRequest: vi.fn(), clearConversationRequest: vi.fn(),
+      openPage: vi.fn(), closePage: vi.fn(), discardPage: vi.fn(),
+      requestShowConversation: vi.fn(), acknowledgeConversationRequest: vi.fn(),
+      acknowledgeConversationReturn: vi.fn(), clearConversationRequest: vi.fn(),
     } satisfies PanelActions
     const injected = (slots.entries('root')[0]!.inject as unknown as (
       actions: PanelActions,

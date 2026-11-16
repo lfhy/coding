@@ -13,9 +13,10 @@ describe('AppFrame titlebar hit regions', () => {
     expect(css).toMatch(/\.handle\s*\{[^}]*-webkit-app-region: no-drag;/)
   })
 
-  it('将 macOS 共用开关放在交通灯右侧，页内按钮在桌面端退出布局和焦点顺序', () => {
-    expect(shellCss).toMatch(/\.desktopSidebarToggle\s*\{[^}]*top:\s*7px;[^}]*left:\s*108px;/u)
+  it('将 macOS 共用开关放到外层导航底部，页内按钮在桌面端退出布局和焦点顺序', () => {
+    expect(shellCss).toMatch(/\.footer\s*\{[^}]*margin-top:\s*auto;/u)
     expect(shellCss).toMatch(/\.desktopSidebarToggle\s*\{[^}]*display:\s*var\(--desktop-sidebar-toggle, none\);/u)
+    expect(shellCss).not.toMatch(/\.desktopSidebarToggle\s*\{[^}]*\b(?:top|left):\s*\d+px;/u)
     expect(shellCss).toMatch(/\.desktopSidebarToggle\s*\{[^}]*-webkit-app-region:\s*no-drag;/u)
     expect(conversationCss).toMatch(/\.sectionToggle\s*\{[^}]*display:\s*var\(--sidebar-inline-toggle, flex\);/u)
     expect(railCss).toMatch(/\.toggleArea\s*\{[^}]*display:\s*var\(--sidebar-inline-toggle, flex\);/u)

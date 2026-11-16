@@ -31,11 +31,18 @@ export type WorkbenchState = {
   bottomHeight: number
 }
 
-/** 当前主内容页的临时身份。 */
-export interface PageRoute { kind: string; sessionId: SessionId }
+/** 当前主内容页的临时身份；返回入口可指定打开前的会话。 */
+export interface PageRoute {
+  kind: string
+  sessionId: SessionId
+  returnSessionId?: SessionId
+}
 
 /** 跨插件动作发给根布局的一次性会话显示请求。 */
 export interface ConversationRequest { sessionId: SessionId; seq: number }
+
+/** 主内容页关闭后的单次跨会话归还请求；from 用于拒绝已过期的导航。 */
+export interface ConversationReturn { sessionId: SessionId; from: SessionId; seq: number }
 
 /** 布局偏好；0 宽度只用于既有 sidebar/details 的关闭语义。 */
 type LayoutState = {
@@ -55,9 +62,10 @@ type LayoutState = {
   pendingNewConversation: boolean
   /** 通用工作台动作当前所属的空白会话，供没有 session 参数的顶栏动作使用。 */
   activeBlankSession: { sessionId: SessionId; key: string } | null
-  /** 主内容区的临时页面；只属于打开它的会话。 */
+  /** 主内容区的临时页面；只属于打开它的会话，可选记录打开前的对话。 */
   page: PageRoute | null
   conversationRequest: ConversationRequest | null
+  conversationReturn: ConversationReturn | null
   conversationRequestSeq: number
 }
 
@@ -95,11 +103,13 @@ type LayoutActions = {
   clearBlankWorkbench: (draft: LayoutState, sessionId: SessionId) => void
   retainBlankSessions: (draft: LayoutState, sessionIds: readonly SessionId[]) => void
   retainWorkbenchSessions: (draft: LayoutState, keys: readonly string[]) => void
-  openPage: (draft: LayoutState, kind: string, sessionId: SessionId) => void
+  openPage: (draft: LayoutState, kind: string, sessionId: SessionId, returnSessionId?: SessionId) => void
   closePage: (draft: LayoutState) => void
-  togglePage: (draft: LayoutState, kind: string, sessionId: SessionId) => void
+  discardPage: (draft: LayoutState) => void
+  togglePage: (draft: LayoutState, kind: string, sessionId: SessionId, returnSessionId?: SessionId) => void
   requestShowConversation: (draft: LayoutState, sessionId: SessionId) => void
   acknowledgeConversationRequest: (draft: LayoutState, seq: number) => void
+  acknowledgeConversationReturn: (draft: LayoutState, seq: number) => void
   clearConversationRequest: (draft: LayoutState) => void
 }
 
@@ -122,6 +132,7 @@ export function createLayoutStore(): EngineStoreHandle<LayoutState, LayoutAction
       activeBlankSession: null,
       page: null,
       conversationRequest: null,
+      conversationReturn: null,
       conversationRequestSeq: 0,
     }),
     actions: {
@@ -306,10 +317,39 @@ export function createLayoutStore(): EngineStoreHandle<LayoutState, LayoutAction
         }
         d.workbench = next
       },
-      openPage: (d, kind: string, sessionId: SessionId) => { d.page = { kind, sessionId } },
-      closePage: (d) => { d.page = null },
-      togglePage: (d, kind: string, sessionId: SessionId) => {
-        d.page = d.page?.kind === kind && d.page.sessionId === sessionId ? null : { kind, sessionId }
+      openPage: (d, kind: string, sessionId: SessionId, returnSessionId?: SessionId) => {
+        d.page = returnSessionId === undefined || returnSessionId === sessionId
+          ? { kind, sessionId }
+          : { kind, sessionId, returnSessionId }
+        d.conversationReturn = null
+      },
+      closePage: (d) => {
+        const page = d.page
+        if (page === null) return
+        d.page = null
+        // 仅跨会话返回需要再选中原会话；同会话关闭沿用已有的页面呈现路径。
+        d.conversationReturn = page.returnSessionId === undefined ? null : {
+          sessionId: page.returnSessionId,
+          from: page.sessionId,
+          seq: ++d.conversationRequestSeq,
+        }
+      },
+      discardPage: (d) => { d.page = null; d.conversationReturn = null },
+      togglePage: (d, kind: string, sessionId: SessionId, returnSessionId?: SessionId) => {
+        if (d.page?.kind === kind && d.page.sessionId === sessionId) {
+          const page = d.page
+          d.page = null
+          d.conversationReturn = page.returnSessionId === undefined ? null : {
+            sessionId: page.returnSessionId,
+            from: page.sessionId,
+            seq: ++d.conversationRequestSeq,
+          }
+          return
+        }
+        d.page = returnSessionId === undefined || returnSessionId === sessionId
+          ? { kind, sessionId }
+          : { kind, sessionId, returnSessionId }
+        d.conversationReturn = null
       },
       requestShowConversation: (d, sessionId: SessionId) => {
         d.conversationRequest = { sessionId, seq: ++d.conversationRequestSeq }
@@ -317,7 +357,13 @@ export function createLayoutStore(): EngineStoreHandle<LayoutState, LayoutAction
       acknowledgeConversationRequest: (d, seq: number) => {
         if (d.conversationRequest?.seq === seq) d.conversationRequest = null
       },
-      clearConversationRequest: (d) => { d.conversationRequest = null },
+      clearConversationRequest: (d) => {
+        d.conversationRequest = null
+        d.conversationReturn = null
+      },
+      acknowledgeConversationReturn: (d, seq: number) => {
+        if (d.conversationReturn?.seq === seq) d.conversationReturn = null
+      },
     },
   })
 }

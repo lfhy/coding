@@ -34,9 +34,11 @@ function fakePanels(): PanelActions {
     retainWorkbenchSessions: vi.fn(),
     openPage: vi.fn(),
     closePage: vi.fn(),
+    discardPage: vi.fn(),
     togglePage: vi.fn(),
     requestShowConversation: vi.fn(),
     acknowledgeConversationRequest: vi.fn(),
+    acknowledgeConversationReturn: vi.fn(),
     clearConversationRequest: vi.fn(),
   }
 }
@@ -62,9 +64,9 @@ describe('LayoutController', () => {
     expect(service.conversationIntent).toBe(0)
     service.beginNewConversation()
     expect(service.conversationIntent).toBe(1)
-    service.openPage('image-gallery', SESSION)
+    service.openPage('image-gallery', SESSION, 'origin-session' as SessionId)
     service.closePage()
-    service.togglePage('image-gallery', SESSION)
+    service.togglePage('image-gallery', SESSION, 'origin-session' as SessionId)
     service.showConversation(SESSION)
 
     expect(panels.toggleSidebar).toHaveBeenCalledTimes(1)
@@ -80,9 +82,9 @@ describe('LayoutController', () => {
     expect(panels.toggleHeroPanel).toHaveBeenCalledWith(SESSION, 'bottom', undefined)
     expect(panels.toggleHeroPanel).toHaveBeenCalledWith(SESSION, 'files', SESSION)
     expect(panels.beginNewConversation).toHaveBeenCalledOnce()
-    expect(panels.openPage).toHaveBeenCalledWith('image-gallery', SESSION)
+    expect(panels.openPage).toHaveBeenCalledWith('image-gallery', SESSION, 'origin-session')
     expect(panels.closePage).toHaveBeenCalledOnce()
-    expect(panels.togglePage).toHaveBeenCalledWith('image-gallery', SESSION)
+    expect(panels.togglePage).toHaveBeenCalledWith('image-gallery', SESSION, 'origin-session')
     expect(panels.requestShowConversation).toHaveBeenCalledWith(SESSION)
     expect(panels.setSidebar).not.toHaveBeenCalled()
     expect(panels.setDetails).not.toHaveBeenCalled()
@@ -119,6 +121,19 @@ describe('LayoutController', () => {
     expect(source.getSnapshot().fullscreen).toBe(true)
     expect(listener).toHaveBeenCalledTimes(2)
     service.publishWorkbench(SESSION, { open: true, fullscreen: true, bottomOpen: true })
+    expect(listener).toHaveBeenCalledTimes(2)
+    unsubscribe()
+  })
+
+  it('updates the published page when only its return conversation changes', () => {
+    const service = new LayoutController()
+    const listener = vi.fn()
+    const unsubscribe = service.page.subscribe(listener)
+    service.publishPage({ kind: 'image-gallery', sessionId: SESSION })
+    service.publishPage({ kind: 'image-gallery', sessionId: SESSION, returnSessionId: 'origin-session' as SessionId })
+    expect(listener).toHaveBeenCalledTimes(2)
+    expect(service.page.getSnapshot()?.returnSessionId).toBe('origin-session')
+    service.publishPage({ kind: 'image-gallery', sessionId: SESSION, returnSessionId: 'origin-session' as SessionId })
     expect(listener).toHaveBeenCalledTimes(2)
     unsubscribe()
   })

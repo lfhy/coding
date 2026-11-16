@@ -79,11 +79,11 @@ export interface ILayout {
   beginNewConversation(): void
   /** 新对话意图的同步版本；供异步欢迎页面板操作确认其手势仍有效。 */
   readonly conversationIntent: number
-  /** 在主内容区打开属于指定会话的独立页面，不改变会话或工作台偏好。 */
-  openPage(kind: string, sessionId: SessionId): void
-  /** 同一会话再次点击入口会返回原界面。 */
-  togglePage(kind: string, sessionId: SessionId): void
-  /** 返回原会话界面。 */
+  /** 在主内容区打开属于指定会话的独立页面；可选保留打开前的对话会话。 */
+  openPage(kind: string, sessionId: SessionId, returnSessionId?: SessionId): void
+  /** 同一会话再次点击入口会返回原界面；跨会话时返回指定原对话，须由页面调用方沿用原 id。 */
+  togglePage(kind: string, sessionId: SessionId, returnSessionId?: SessionId): void
+  /** 返回打开独立页面前的会话，页面所属会话已不是当前选择时不切换。 */
   closePage(): void
   /**
    * 显示指定当前会话的对话；全屏工作台中打开原有悬浮对话。
@@ -241,12 +241,12 @@ export class LayoutController implements ILayout {
     this.#conversationIntent++
   }
 
-  /** 在主内容区打开会话页面。 */
-  openPage(kind: string, sessionId: SessionId): void {
-    this.#require().openPage(kind, sessionId)
+  /** 在主内容区打开会话页面，可选提供页面关闭后要恢复的会话。 */
+  openPage(kind: string, sessionId: SessionId, returnSessionId?: SessionId): void {
+    this.#require().openPage(kind, sessionId, returnSessionId)
   }
 
-  /** 返回原会话界面。 */
+  /** 返回打开独立页面前的会话，原选择已变更时保持新选择。 */
   closePage(): void {
     this.#require().closePage()
   }
@@ -260,15 +260,16 @@ export class LayoutController implements ILayout {
     this.#require().requestShowConversation(sessionId)
   }
 
-  /** 同一页面入口可再次点击返回。 */
-  togglePage(kind: string, sessionId: SessionId): void {
-    this.#require().togglePage(kind, sessionId)
+  /** 同一页面入口可再次点击返回；可选保留打开前的会话。 */
+  togglePage(kind: string, sessionId: SessionId, returnSessionId?: SessionId): void {
+    this.#require().togglePage(kind, sessionId, returnSessionId)
   }
 
   /** AppFrame 将最终路由投影给不持有根 store 的入口。 */
   publishPage(next: PageRoute | null): void {
     const current = this.#page.getSnapshot()
-    if (current?.kind === next?.kind && current?.sessionId === next?.sessionId) return
+    if (current?.kind === next?.kind && current?.sessionId === next?.sessionId
+      && current?.returnSessionId === next?.returnSessionId) return
     this.#page.set(next)
   }
 
