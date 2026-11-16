@@ -134,9 +134,21 @@ export interface SkillCatalogSource {
   readonly entries: readonly { readonly name: string; readonly description: string }[]
 }
 
+/**
+ * 每轮第一步发出的技能匹配提醒。`candidates` 与渲染的列表一一对应，
+ * 因此消费方不必重新解析提醒正文就能知道这一轮建议过哪些技能。
+ */
+export interface SkillTurnReminderSource {
+  readonly kind: 'skill-reminder'
+  readonly form: 'turn-reminder'
+  /** 本轮按用户输入匹配到的候选技能，可能为空。 */
+  readonly candidates: readonly { readonly name: string; readonly description: string }[]
+}
+
 declare module 'coding-llm' {
   interface MessageSourceMap {
     'skill-catalog': SkillCatalogSource
+    'skill-reminder': SkillTurnReminderSource
   }
 }
 
@@ -155,11 +167,17 @@ function catalogSourceEntries(
 export interface Config {
   /** Maximum normalized description length rendered in the session catalog; minimum 3. */
   catalogDescriptionMaxLength?: number
+  /**
+   * 每轮第一步是否补一条技能匹配提醒。目录本身是持久背景，弱模型经常直接跳过；
+   * 打开后在用户发出这一轮内容的第一步骤再点名一次候选技能。默认关闭，按模式装配打开。
+   */
+  turnReminder?: boolean
 }
 
 /** Validate and default the model-facing skill catalog configuration. */
 export const Config: z<Config> = z.object({
   catalogDescriptionMaxLength: z.number().default(DEFAULT_CATALOG_DESCRIPTION_MAX_LENGTH),
+  turnReminder: z.boolean().default(false),
 })
 
 /**
@@ -171,6 +189,7 @@ export const Config: z<Config> = z.object({
 export function apply(ctx: Context, config: Config = {}): void {
   const catalogDescriptionMaxLength = config.catalogDescriptionMaxLength ?? DEFAULT_CATALOG_DESCRIPTION_MAX_LENGTH
   assertPositiveInteger('catalogDescriptionMaxLength', catalogDescriptionMaxLength, 3)
+  const turnReminder = config.turnReminder ?? false
 
   // 目录本身是持久 user-role 消息，模型会把它当背景；路由规则因此还需要一段系统提示词指引，
   // 它承担「先在目录里找，再动手」的时机，目录与工具 schema 只声明各自范围内的规则。
@@ -317,6 +336,36 @@ export function apply(ctx: Context, config: Config = {}): void {
   })
   ctx.tools.register(skillReadTool)
 
+  // 每轮第一步补一条技能匹配提醒。先注册＝最外层：它拿到内层监听器处理完的决策，
+  // 因此提醒排在目录与 /name 正文之后，成为模型读到这一轮请求时的最后一段指引。
+  // 只在用户真实发出内容的那一步触发一次，后续步骤与工具循环不重复。
+  ctx.on('agent/pre-step', async (
+    { agent, messages, step, signal },
+    next,
+  ): Promise<PreStepDecision> => {
+    const decision = await next()
+    if (decision.kind === 'reject' || !turnReminder || step !== 0) return decision
+    // 子代理拿到的任务提示由派发方写好，不需要每轮再劝它找技能。
+    if (agent.session.header.origin === 'subagent') return decision
+    // 已点名技能、或本步骤已发过提醒时不重复。
+    if (invokedSkillNames(messages).length > 0) return decision
+    if (decision.messages.some(message => message.source.kind === 'skill-reminder')) return decision
+    const request = claimedRequestText(messages)
+    if (request === '') return decision
+    signal.throwIfAborted()
+    // 只有本轮可见的正是本插件的 `skill` 工具时才提醒；受限或被同名遮蔽时不说话。
+    if (ctx.tools.get(skillTool.name, agent) !== skillTool) return decision
+    const snapshot = await ctx.skills.snapshot({ cwd: agent.session.header.cwd, signal, scope: agent })
+    signal.throwIfAborted()
+    if (!snapshot.complete) return decision
+    const skills = snapshot.skills.filter(isModelInvocable)
+    if (skills.length === 0) return decision
+    return {
+      kind: 'enter',
+      messages: [...decision.messages, renderTurnReminder(request, rankReminderCandidates(skills, request), catalogDescriptionMaxLength)],
+    }
+  })
+
   // 用户消息中的 /name 手势独立于模型工具可见性；用户专用技能也经此入口加载。
   // 先向下游委托，目录等背景上下文排在已加载正文之前；同一步骤若有其他实例已注入同名正文，则沿用它。
   ctx.on('agent/pre-step', async (
@@ -461,6 +510,138 @@ function renderCatalogUpdate(entries: SkillCatalogSource['entries']): UserMessag
  */
 function renderCatalogEntries(entries: SkillCatalogSource['entries']): string[] {
   return entries.map(entry => `- \`${entry.name}\`: ${escapeText(entry.description)}`)
+}
+
+/** 提醒里最多点名的候选技能数：再多就成了第二份目录。 */
+const REMINDER_CANDIDATE_LIMIT = 4
+/** 提醒只引用一小段用户原文：模型需要认出这是哪一句请求，不需要读第二遍全文。 */
+const REMINDER_EXCERPT_LIMIT = 160
+/** 常见英文虚词与泛动词：几乎命中每个技能，不参与打分。 */
+const REMINDER_STOPWORDS = new Set([
+  'the', 'and', 'for', 'with', 'you', 'are', 'can', 'this', 'that', 'please', 'use', 'using',
+  'from', 'have', 'will', 'not', 'but', 'all', 'any', 'how', 'why', 'what', 'when', 'make',
+  'sure', 'test', 'tests', 'code', 'file', 'files', 'add', 'fix', 'run', 'new', 'get', 'set',
+])
+
+/**
+ * 本轮第一步直接由用户发出的正文；注入、目录与技能正文都不参与匹配。
+ * @param messages - 本步骤认领的用户消息。
+ * @returns 拼接后的用户原文；没有真实用户输入时为空串。
+ */
+function claimedRequestText(messages: readonly UserMessage[]): string {
+  const blocks: string[] = []
+  for (const message of messages) {
+    if ((message.source as { kind?: unknown }).kind !== 'user') continue
+    for (const block of message.content) {
+      if (block.type === 'text' && block.text.trim() !== '') blocks.push(block.text)
+    }
+  }
+  return blocks.join('\n').trim()
+}
+
+/**
+ * 匹配用的词元：英文按单词（去掉虚词），中文按二元组，避免单字过宽。
+ * @param text - 用户原文。
+ * @returns 去重后的词元。
+ */
+function reminderTokens(text: string): string[] {
+  const tokens = new Set<string>()
+  for (const match of text.toLowerCase().matchAll(/[a-z0-9][a-z0-9+#.-]{2,}/gu)) {
+    if (!REMINDER_STOPWORDS.has(match[0])) tokens.add(match[0])
+  }
+  for (const run of text.match(/[\u4e00-\u9fff]+/gu) ?? []) {
+    if (run.length === 1) {
+      tokens.add(run)
+      continue
+    }
+    for (let index = 0; index + 1 < run.length; index += 1) tokens.add(run.slice(index, index + 2))
+  }
+  return [...tokens]
+}
+
+/**
+ * 一个技能与请求的词元重合度。名称按连字符拆开参与匹配，`whenToUse` 与描述同等权重。
+ * @param tokens - 请求词元。
+ * @param skill - 候选技能摘要。
+ * @returns 命中的不同词元数量。
+ */
+function skillMatchScore(tokens: readonly string[], skill: SkillSummary): number {
+  const haystack = [skill.name.replaceAll('-', ' '), skill.name, skill.description, skill.whenToUse ?? '']
+    .join(' ')
+    .toLowerCase()
+  let score = 0
+  for (const token of tokens) if (haystack.includes(token)) score += 1
+  return score
+}
+
+/**
+ * 按重合度排序候选技能，同分保持目录顺序。
+ * @param skills - 当前可见且可模型调用的技能。
+ * @param request - 用户原文。
+ * @returns 至多 {@link REMINDER_CANDIDATE_LIMIT} 个候选；没有命中时为空。
+ */
+function rankReminderCandidates(skills: readonly SkillSummary[], request: string): SkillSummary[] {
+  const tokens = reminderTokens(request)
+  if (tokens.length === 0) return []
+  return skills
+    .map(skill => ({ skill, score: skillMatchScore(tokens, skill) }))
+    .filter(entry => entry.score > 0)
+    .sort((left, right) => right.score - left.score)
+    .slice(0, REMINDER_CANDIDATE_LIMIT)
+    .map(entry => entry.skill)
+}
+
+/**
+ * 提醒里引用请求时的折叠与截断。
+ * @param request - 用户原文。
+ * @returns 单行摘录。
+ */
+function requestExcerpt(request: string): string {
+  const normalized = request.replaceAll(/\s+/gu, ' ').trim()
+  return normalized.length <= REMINDER_EXCERPT_LIMIT
+    ? normalized
+    : `${normalized.slice(0, REMINDER_EXCERPT_LIMIT - 3)}...`
+}
+
+/**
+ * 每轮第一步的技能匹配提醒。没有命中候选时仍然提醒查目录，只是不点名具体技能，
+ * 因此弱模型拿到的是一句可执行的指令，而不是一份可以忽略的背景列表。
+ * @param request - 本轮用户原文。
+ * @param candidates - 匹配到的候选技能。
+ * @param descriptionMaxLength - 候选描述的截断长度。
+ * @returns 持久 user 角色消息。
+ */
+function renderTurnReminder(
+  request: string,
+  candidates: readonly SkillSummary[],
+  descriptionMaxLength: number,
+): UserMessage {
+  const lines = [
+    '<system-reminder>',
+    'A new request arrived in this turn. Before your first action on it, match it against the session skill catalog: if a skill plausibly covers what was just asked, call the `skill` tool with its exact name and follow the loaded instructions instead of improvising from the catalog summary.',
+    `Request: "${escapeText(requestExcerpt(request))}"`,
+  ]
+  if (candidates.length === 0) {
+    lines.push('No catalog entry matched this request by keyword. Skim the catalog once, then continue without loading a skill if nothing applies.')
+  } else {
+    lines.push('Possibly relevant skills for this request:')
+    for (const skill of candidates) {
+      lines.push(`- \`${skill.name}\`: ${escapeText(catalogDescription(skill.description, descriptionMaxLength))}`)
+    }
+    lines.push('Load the ones that apply before acting. If none apply, continue without loading a skill.')
+  }
+  lines.push('</system-reminder>')
+  return createUserMessage({
+    content: [{ type: 'text', text: lines.join('\n') }],
+    source: {
+      kind: 'skill-reminder',
+      form: 'turn-reminder',
+      candidates: candidates.map(skill => ({
+        name: skill.name,
+        description: catalogDescription(skill.description, descriptionMaxLength),
+      })),
+    },
+  })
 }
 
 /**

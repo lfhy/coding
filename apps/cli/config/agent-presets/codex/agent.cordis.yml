@@ -383,8 +383,11 @@
 - id: skill-browser-use
   name: 'coding-skill-browser-use'
 
+# 每轮第一步点名候选技能，让 Codex 词表也先查目录再动手。
 - id: tool-skill
   name: 'coding-tool-skill'
+  config:
+    turnReminder: true
 
 # ── web search ──────────────────────────────────────────────────────────────
 

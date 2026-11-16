@@ -1126,6 +1126,133 @@ describe('dsh-tool-skill', () => {
   })
 })
 
+describe('turn-opening skill reminder', () => {
+  /** 一套带两个用途分明的技能、且打开提醒的接线。 */
+  async function reminderHarness(config: toolSkill.Config = { turnReminder: true }): Promise<{ ctx: Context; agent: Agent }> {
+    const home = await tempDir('reminder')
+    const skillsRoot = join(home, '.agents', 'skills')
+    await writeSkill(skillsRoot, 'frontend-development', '页面与组件的视觉、交互与浏览器验收约定', 'Frontend body.')
+    await writeSkill(skillsRoot, 'go-backend', '编写与测试 Go 服务的分层、错误与并发约定', 'Go body.')
+    const ctx = await setup(home, config)
+    return { ctx, agent: agentForCwd(home) }
+  }
+
+  function request(text: string): UserMessage {
+    return createUserMessage({ content: [{ type: 'text', text }], source: { kind: 'user' } })
+  }
+
+  function reminders(decision: PreStepDecision): UserMessage[] {
+    if (decision.kind === 'reject') return []
+    return decision.messages.filter(message => (message.source as { kind?: string }).kind === 'skill-reminder')
+  }
+
+  it('opens every turn with one reminder that names the skills matching the request', async () => {
+    const { ctx, agent } = await reminderHarness()
+    const signal = new AbortController().signal
+    const decision = await agentEvents(ctx, agent).waterfall(
+      'agent/pre-step',
+      { messages: [request('帮我做一个 Go 后端的接口分层')], turn: 1, step: 0, signal },
+      () => Promise.resolve({ kind: 'enter' as const, messages: [] }),
+    )
+    if (decision.kind !== 'enter') throw new Error('expected enter')
+    const [reminder] = reminders(decision)
+    expect(reminder).toBeDefined()
+    // 提醒排在目录之后：目录是背景，提醒是这一轮最后的行动指引。
+    const kinds = decision.messages.map(message => (message.source as { kind: string }).kind)
+    expect(kinds.at(-1)).toBe('skill-reminder')
+    expect(kinds.indexOf('skill-catalog')).toBeLessThan(kinds.indexOf('skill-reminder'))
+    expect(reminder!.source).toMatchObject({
+      kind: 'skill-reminder',
+      form: 'turn-reminder',
+      candidates: [{ name: 'go-backend' }],
+    })
+    const block = reminder!.content[0]
+    if (block?.type !== 'text') throw new Error('expected text reminder')
+    expect(block.text).toContain('session skill catalog')
+    expect(block.text).toContain('- `go-backend`')
+    expect(block.text).not.toContain('frontend-development')
+    expect(block.text).toContain('Go 后端')
+  })
+
+  it('reminds once per turn and stays silent on later steps', async () => {
+    const { ctx, agent } = await reminderHarness()
+    const signal = new AbortController().signal
+    const step = async (stepNumber: number) => await agentEvents(ctx, agent).waterfall(
+      'agent/pre-step',
+      { messages: stepNumber === 0 ? [request('写一个前端页面')] : [], turn: 1, step: stepNumber, signal },
+      () => Promise.resolve({ kind: 'enter' as const, messages: [] }),
+    )
+    expect(reminders(await step(0))).toHaveLength(1)
+    expect(reminders(await step(1))).toHaveLength(0)
+    expect(reminders(await step(2))).toHaveLength(0)
+  })
+
+  it('reminds even when no entry matches, so the model still checks the catalog', async () => {
+    const { ctx, agent } = await reminderHarness()
+    const signal = new AbortController().signal
+    const decision = await agentEvents(ctx, agent).waterfall(
+      'agent/pre-step',
+      { messages: [request('解释一下这一行正则')], turn: 1, step: 0, signal },
+      () => Promise.resolve({ kind: 'enter' as const, messages: [] }),
+    )
+    if (decision.kind !== 'enter') throw new Error('expected enter')
+    const [reminder] = reminders(decision)
+    expect(reminder?.source).toMatchObject({ candidates: [] })
+    const block = reminder!.content[0]
+    if (block?.type !== 'text') throw new Error('expected text reminder')
+    expect(block.text).toContain('No catalog entry matched')
+  })
+
+  it('stays off by default and stays out of the way of an explicit /skill gesture', async () => {
+    const { ctx: quiet, agent: quietAgent } = await reminderHarness({})
+    const signal = new AbortController().signal
+    const off = await agentEvents(quiet, quietAgent).waterfall(
+      'agent/pre-step',
+      { messages: [request('写一个前端页面')], turn: 1, step: 0, signal },
+      () => Promise.resolve({ kind: 'enter' as const, messages: [] }),
+    )
+    expect(reminders(off)).toHaveLength(0)
+
+    const { ctx, agent } = await reminderHarness()
+    const explicit = await agentEvents(ctx, agent).waterfall(
+      'agent/pre-step',
+      { messages: [request('/go-backend 按这个写')], turn: 1, step: 0, signal },
+      () => Promise.resolve({ kind: 'enter' as const, messages: [] }),
+    )
+    expect(reminders(explicit)).toHaveLength(0)
+  })
+
+  it('stays out of subagent sessions, whose task prompt is already scoped', async () => {
+    const { ctx } = await reminderHarness()
+    const id = SessionId('reminder-subagent')
+    const session = Session.create(id, [], { version: 0, id, createdAt: 0, cwd: '/workspace', origin: 'subagent' })
+    const agent = sessionAgent(session)
+    const decision = await agentEvents(ctx, agent).waterfall(
+      'agent/pre-step',
+      { messages: [request('写一个前端页面')], turn: 1, step: 0, signal: new AbortController().signal },
+      () => Promise.resolve({ kind: 'enter' as const, messages: [] }),
+    )
+    expect(reminders(decision)).toHaveLength(0)
+  })
+
+  it('leaves no reminder when the shipped skill tool is hidden from this agent', async () => {
+    const { ctx } = await reminderHarness()
+    const session = Session.create(SessionId('reminder-restricted'))
+    const agent = sessionAgent(session)
+    const { scope } = await mintAgentScope(ctx, agent)
+    scope.ctx.tools.restrict({ deny: ['skill'] })
+    expect(ctx.tools.get('skill', agent)).toBeUndefined()
+    const signal = new AbortController().signal
+    const decision = await agentEvents(ctx, agent).waterfall(
+      'agent/pre-step',
+      { messages: [request('写一个前端页面')], turn: 1, step: 0, signal },
+      () => Promise.resolve({ kind: 'enter' as const, messages: [] }),
+    )
+    expect(reminders(decision)).toHaveLength(0)
+    await scope.dispose()
+  })
+})
+
 describe('user-explicit invocation injection', () => {
   async function writePolicySkill(root: string, name: string, description: string, policy: string, body: string): Promise<void> {
     const dir = join(root, name)
@@ -1228,7 +1355,7 @@ describe('user-explicit invocation injection', () => {
     expect(injections).toHaveLength(1)
   })
 
-  it('passes a downstream reject through both pre-step listeners untouched', async () => {
+  it('passes a downstream reject through every pre-step listener untouched', async () => {
     const { ctx, agent } = await invokeHarness()
     const signal = new AbortController().signal
     const decision = await agentEvents(ctx, agent).waterfall(

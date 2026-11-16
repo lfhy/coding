@@ -100,8 +100,11 @@
 - id: skill-go-backend
   name: 'coding-skill-go-backend'
 
+# 每轮第一步再点名一次候选技能：目录本身是背景，弱模型经常直接跳过。
 - id: tool-skill
   name: 'coding-tool-skill'
+  config:
+    turnReminder: true
 
 # ── goals ───────────────────────────────────────────────────────────────────
 
