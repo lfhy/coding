@@ -115,6 +115,15 @@ describe('WorkspaceBrowser.module.css list', () => {
       .toBe('var(--dsw-alias-interactive-bg-hover)')
   })
 
+  it('标题贴左、动作簇靠右，且不随内联收起按钮显隐改变', () => {
+    // 桌面端把收起按钮移出布局（--sidebar-inline-toggle: none），auto 外边距若挂在
+    // 该按钮上，标题会跟着搜索与动作一起漂到右端。
+    expect(declarations('.sectionLabel')?.get('margin-right')).toBe('auto')
+    expect(declarations('.sectionToggle')?.has('margin-left')).toBe(false)
+    // 展开搜索时保留 auto 外边距，否则标题会在淡出过程中先向右滑一段。
+    expect(declarations('.sectionLabelHidden')?.has('margin-right')).toBe(false)
+  })
+
   it('pins both rail controls to the shared left anchor during the column slide', () => {
     expect(declarations('.rail .sectionHeader')?.get('justify-content')).toBe('flex-start')
     expect(declarations('.rail .iconButton')?.get('width')).toBe('36px')
