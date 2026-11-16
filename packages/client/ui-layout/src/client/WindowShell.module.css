@@ -1,15 +1,18 @@
-/* 外层只负责窗口几何；原有侧栏、工作台和滚动区域留在内层布局。 */
+/* 外层只负责窗口几何；原有侧栏、工作台和滚动区域留在内层布局。
+   导航列（含顶部的原生窗口按钮区）与内层圆角工作区是两张分开的卡片：左列自身带外框，
+   两者之间留出窗口底色，切换页面时不会看起来像一列。 */
 .shell {
   position: relative;
   display: grid;
-  grid-template-columns: 52px minmax(0, 1fr);
+  grid-template-columns: var(--app-rail-inline-size, 52px) minmax(0, 1fr);
   grid-template-rows: minmax(0, 1fr);
+  column-gap: 8px;
   box-sizing: border-box;
   width: 100%;
   height: 100dvh;
   min-width: 0;
   min-height: 0;
-  padding: 0 8px 8px 0;
+  padding: 0 8px 8px 8px;
   overflow: hidden;
   background: var(--dsw-specific-sidebar-fill);
   color: var(--dsw-alias-label-primary);
@@ -20,7 +23,7 @@
   position: absolute;
   top: 0;
   left: 0;
-  width: 52px;
+  width: calc(8px + var(--app-rail-inline-size, 52px));
   height: var(--app-safe-area-inset-top, 0px);
 }
 
@@ -53,12 +56,16 @@
 .navigation {
   grid-column: 1;
   grid-row: 1;
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 8px;
   min-height: 0;
   padding: calc(8px + var(--app-safe-area-inset-top, 0px)) 0 4px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 16px;
+  background: var(--dsw-specific-sidebar-fill);
   -webkit-app-region: no-drag;
 }
 
@@ -121,13 +128,13 @@
 
 @media (max-width: 620px) {
   .shell {
-    grid-template-columns: 44px minmax(0, 1fr);
+    grid-template-columns: var(--app-rail-inline-size, 44px) minmax(0, 1fr);
     padding-right: 4px;
     padding-bottom: 4px;
   }
 
   .titleDragInset {
-    width: 44px;
+    width: calc(8px + var(--app-rail-inline-size, 44px));
   }
 
   .surface {

@@ -112,10 +112,12 @@ export function createHostWindow(origin: string, options: { devTools?: boolean; 
     // 页面每次加载都恢复避让值：macOS 交通灯在左上，Windows caption 在右上。
     const top = isMacOS ? '38px' : '0px'
     const right = isWindows ? '138px' : '0px'
+    // 交通灯摆在 x=16 起、总宽约 52px 的位置：导航列要放宽到能连同它们一起被外框包住。
+    const rail = isMacOS ? '--app-rail-inline-size: 68px;' : ''
     const drag = isMacOS || isWindows
       ? '[data-window-drag-region] { -webkit-app-region: drag !important; }'
       : ''
-    void window.webContents.insertCSS(`:root { --app-safe-area-inset-top: ${top}; --app-safe-area-inset-right: ${right}; } ${drag}`)
+    void window.webContents.insertCSS(`:root { --app-safe-area-inset-top: ${top}; --app-safe-area-inset-right: ${right}; ${rail} } ${drag}`)
       .catch(() => undefined)
   })
   if (isMacOS && app.dock && options.iconPath && existsSync(options.iconPath)) {

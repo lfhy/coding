@@ -13,6 +13,18 @@ describe('AppFrame titlebar hit regions', () => {
     expect(css).toMatch(/\.handle\s*\{[^}]*-webkit-app-region: no-drag;/)
   })
 
+  it('导航列自成一张带外框的卡片，与内层工作区之间留出窗口底色', () => {
+    // 左列宽度可变：桌面壳按交通灯宽度注入，Web 缺省 52px。
+    expect(shellCss).toMatch(/\.shell\s*\{[^}]*grid-template-columns:\s*var\(--app-rail-inline-size, 52px\)/u)
+    expect(shellCss).toMatch(/\.shell\s*\{[^}]*column-gap:\s*8px;/u)
+    // 外框与圆角让导航列（含顶部原生按钮区）成为独立一列。
+    expect(shellCss).toMatch(/\.navigation\s*\{[^}]*border:\s*1px solid var\(--dsw-alias-border-l1\);/u)
+    expect(shellCss).toMatch(/\.navigation\s*\{[^}]*border-radius:\s*16px;/u)
+    expect(shellCss).toMatch(/\.titleDragInset\s*\{[^}]*width:\s*calc\(8px \+ var\(--app-rail-inline-size, 52px\)\);/u)
+    // 内层圆角工作区仍靠自身外圈单独成卡，两卡之间只有窗口底色。
+    expect(shellCss).toMatch(/\.surface\s*\{[^}]*border-radius:\s*16px;/u)
+  })
+
   it('侧栏开关只在外层导航底部渲染，所有端与页内都不再出第二枚', () => {
     // 外层：固定显示，不靠平台变量开关。
     expect(shellCss).toMatch(/\.footer\s*\{[^}]*margin-top:\s*auto;/u)
