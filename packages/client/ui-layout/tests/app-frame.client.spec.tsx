@@ -681,11 +681,12 @@ describe('AppFrame', () => {
     expect(b.getByTestId('gallery-page')).toBeTruthy()
     expect(center?.hasAttribute('inert')).toBe(true)
     expect(b.frame.getAttribute('data-page-open')).toBe('true')
-    // 页面占满主内容：侧栏收成零宽并退出命中与可访问树，但子树保持挂载。
+    // 页面覆盖整行，但根布局的侧栏轨道保持原宽度；返回时无需从零重新展开。
     expect(sidebarColumn.hasAttribute('data-hidden')).toBe(true)
     expect(sidebarColumn.hasAttribute('inert')).toBe(true)
     expect(b.getByTestId('sidebar-content')).toBeTruthy()
-    expect(tracks(b.frame)[0]).toBe(0)
+    expect(tracks(b.frame)[0]).toBe(280)
+    expect(b.ownerFor('shell.page')).toMatchObject({ sidebarCollapsed: false, sidebarWidth: 280 })
     const owner = b.ownerFor('shell.page') as { closePage(): void }
     act(() => { owner.closePage() })
     expect(b.queryByTestId('gallery-page')).toBeNull()
@@ -693,6 +694,46 @@ describe('AppFrame', () => {
     expect(sidebarColumn.hasAttribute('data-hidden')).toBe(false)
     expect(tracks(b.frame)[0]).toBe(280)
     expect(b.getByTestId('center-content')).toBeTruthy()
+  })
+
+  it.each([1920, 768])('shares sidebar collapse and width across conversation, files, and gallery at %ipx', (width) => {
+    frameWidth = width
+    const b = mountFrame()
+    type PageOwner = { sidebarCollapsed: boolean; sidebarWidth: number; toggleSidebar(): void }
+    const pageOwner = (): PageOwner => b.ownerFor('shell.page') as PageOwner
+    const conversationCollapsed = () => (b.ownerFor('sidebar') as { collapsed: boolean }).collapsed
+    const expectedWidth = width < 1024 ? SIDEBAR_COLLAPSED : 280
+
+    expect(conversationCollapsed()).toBe(width < 1024)
+    act(() => { b.instance.actions.openPage('files', 's-test' as SessionId) })
+    expect(pageOwner()).toMatchObject({ sidebarCollapsed: width < 1024, sidebarWidth: expectedWidth })
+    expect(tracks(b.frame)[0]).toBe(expectedWidth)
+    act(() => { pageOwner().toggleSidebar() })
+    const toggledWidth = width < 1024 ? 280 : SIDEBAR_COLLAPSED
+    expect(pageOwner()).toMatchObject({ sidebarCollapsed: width >= 1024, sidebarWidth: toggledWidth })
+    expect(conversationCollapsed()).toBe(width >= 1024)
+
+    act(() => { b.instance.actions.openPage('image-gallery', 's-test' as SessionId) })
+    expect(pageOwner()).toMatchObject({ sidebarCollapsed: width >= 1024, sidebarWidth: toggledWidth })
+    expect(tracks(b.frame)[0]).toBe(toggledWidth)
+    act(() => { b.instance.actions.closePage() })
+    expect(b.ownerFor('conversation')).toEqual({ sidebarCollapsed: width >= 1024 })
+    expect(tracks(b.frame)[0]).toBe(toggledWidth)
+  })
+
+  it('跨页面折叠并重新展开时恢复用户拖拽的宽度', () => {
+    const b = mountFrame()
+    act(() => { b.instance.actions.setSidebar(400) })
+    act(() => { b.instance.actions.openPage('files', 's-test' as SessionId) })
+    const owner = () => b.ownerFor('shell.page') as { sidebarCollapsed: boolean; sidebarWidth: number; toggleSidebar(): void }
+    expect(owner()).toMatchObject({ sidebarCollapsed: false, sidebarWidth: 400 })
+    act(() => { owner().toggleSidebar() })
+    act(() => { b.instance.actions.openPage('image-gallery', 's-test' as SessionId) })
+    expect(owner()).toMatchObject({ sidebarCollapsed: true, sidebarWidth: SIDEBAR_COLLAPSED })
+    act(() => { owner().toggleSidebar() })
+    expect(owner()).toMatchObject({ sidebarCollapsed: false, sidebarWidth: 400 })
+    act(() => { b.instance.actions.closePage() })
+    expect(tracks(b.frame)[0]).toBe(400)
   })
 
   it('closes a page when navigation selects another session', () => {

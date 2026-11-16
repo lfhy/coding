@@ -85,6 +85,24 @@ describe('窗口外壳', () => {
     expect(view.instance.getSnapshot().narrowExpanded).toBe(false)
   })
 
+  it('窗口开关在三个页面使用同一侧栏状态，窄屏只临时展开', () => {
+    const view = mountShell()
+    const collapse = view.getByRole('button', { name: '收起侧边栏' })
+    expect(collapse.closest('[data-window-shell]')).toBeTruthy()
+    fireEvent.click(collapse)
+    expect(view.instance.getSnapshot().sidebar).toBe(0)
+    act(() => { view.instance.actions.openPage('files', 'shell-session' as SessionId) })
+    fireEvent.click(view.getByRole('button', { name: '展开侧边栏' }))
+    expect(view.instance.getSnapshot().sidebar).toBe(280)
+    act(() => { view.instance.actions.openPage('image-gallery', 'shell-session' as SessionId) })
+    expect(view.getByRole('button', { name: '收起侧边栏' })).toBeTruthy()
+    act(() => { view.instance.actions.setNarrow(true) })
+    expect(view.getByRole('button', { name: '展开侧边栏' })).toBeTruthy()
+    fireEvent.click(view.getByRole('button', { name: '展开侧边栏' }))
+    expect(view.instance.getSnapshot()).toMatchObject({ sidebar: 280, narrowExpanded: true })
+    expect(view.getByRole('button', { name: '收起侧边栏' })).toBeTruthy()
+  })
+
   it('从独立页面回到当前对话，不创建或切换会话', () => {
     const view = mountShell()
     act(() => { view.instance.actions.openPage('gallery', 'shell-session' as SessionId) })

@@ -1,12 +1,12 @@
-/* 主内容页共享侧栏。几何与对话侧栏一致：展开 210px、左右 12px 内边距、
-   36px 标题行、34px 行高与 8px 圆角；收起后 56px 图标轨、36×36 控件盒。
+/* 主内容页共享侧栏。宽度与对话侧栏的实际列宽同步，收起后 56px 图标轨；
+   标题行 36px、普通行 34px、图标控件 36×36。
    顶部内边距叠加 --app-safe-area-inset-top，避免 macOS 交通灯压住内容。 */
 
 .shell {
   display: flex;
   flex-direction: column;
   flex: none;
-  width: 210px;
+  width: 100%;
   min-width: 0;
   min-height: 0;
   box-sizing: border-box;
@@ -63,7 +63,7 @@
 }
 
 .iconButton {
-  display: inline-flex;
+  display: var(--sidebar-inline-toggle, inline-flex);
   align-items: center;
   justify-content: center;
   flex: none;
@@ -159,6 +159,7 @@
 .railButton:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: 2px; }
 
 .railDivider { flex: none; width: 30px; height: 1px; margin: 2px auto; background: var(--dsw-alias-border-l2); }
+.railToggle { display: var(--sidebar-inline-toggle, inline-flex); }
 
 @media (max-width: 620px) {
   .shell { padding-inline: 8px; }

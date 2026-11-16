@@ -150,6 +150,7 @@ describe('Host 窗口导航边界', () => {
     domReady()
     expect(fixture.webContents.insertCSS).toHaveBeenCalledTimes(2)
     expect(fixture.webContents.insertCSS).toHaveBeenCalledWith(expect.stringContaining('--app-safe-area-inset-top: 38px'))
+    expect(fixture.webContents.insertCSS).toHaveBeenCalledWith(expect.stringContaining('--desktop-sidebar-toggle: flex; --sidebar-inline-toggle: none;'))
     expect(fixture.webContents.insertCSS).toHaveBeenCalledWith(expect.stringContaining('[data-window-drag-region] { -webkit-app-region: drag !important; }'))
     fixture.webContents.getURL.mockReturnValue('http://127.0.0.1:43124/')
     domReady()
@@ -166,6 +167,7 @@ describe('Host 窗口导航边界', () => {
     })
     fixture.listeners.get('dom-ready')!()
     expect(fixture.webContents.insertCSS).toHaveBeenCalledWith(expect.stringContaining('--app-safe-area-inset-right: 138px'))
+    expect(fixture.webContents.insertCSS).toHaveBeenCalledWith(expect.not.stringContaining('--desktop-sidebar-toggle'))
     expect(fixture.webContents.insertCSS).toHaveBeenCalledWith(expect.stringContaining('[data-window-drag-region] { -webkit-app-region: drag !important; }'))
   })
 

@@ -108,7 +108,7 @@
    一起让位给输入框。 */
 .sectionToggle {
   flex: none;
-  display: flex;
+  display: var(--sidebar-inline-toggle, flex);
   align-items: center;
   margin-left: auto;
   max-width: 28px;

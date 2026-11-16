@@ -24,6 +24,35 @@
   height: var(--app-safe-area-inset-top, 0px);
 }
 
+/* macOS 桌面窗口在交通灯右侧放置共用侧栏开关，网页端不占据标题空间。 */
+.desktopSidebarToggle {
+  position: absolute;
+  top: 7px;
+  left: 108px;
+  z-index: 5;
+  display: var(--desktop-sidebar-toggle, none);
+  width: 28px;
+  height: 28px;
+  -webkit-app-region: no-drag;
+}
+
+.sidebarToggleAnchor {
+  display: grid;
+  width: 28px;
+  height: 28px;
+}
+
+.sidebarToggleButton {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: 8px;
+  color: var(--dsw-alias-label-secondary);
+  -webkit-app-region: no-drag;
+}
+
+.sidebarToggleButton:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary); }
+
 .navigation {
   grid-column: 1;
   grid-row: 1;

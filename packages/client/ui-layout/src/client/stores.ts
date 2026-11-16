@@ -40,6 +40,8 @@ export interface ConversationRequest { sessionId: SessionId; seq: number }
 /** 布局偏好；0 宽度只用于既有 sidebar/details 的关闭语义。 */
 type LayoutState = {
   sidebar: number
+  /** 折叠前最后一次展开宽度；独立页与对话共用，重新展开时不丢失拖拽结果。 */
+  sidebarExpandedWidth: number
   details: number
   narrow: boolean
   narrowExpanded: boolean
@@ -109,6 +111,7 @@ export function createLayoutStore(): EngineStoreHandle<LayoutState, LayoutAction
   return defineStore({
     init: (): LayoutState => ({
       sidebar: SIDEBAR_DEFAULT,
+      sidebarExpandedWidth: SIDEBAR_DEFAULT,
       details: 0,
       narrow: false,
       narrowExpanded: false,
@@ -122,7 +125,10 @@ export function createLayoutStore(): EngineStoreHandle<LayoutState, LayoutAction
       conversationRequestSeq: 0,
     }),
     actions: {
-      setSidebar: (d, px: number) => { d.sidebar = clampWidth(px, SIDEBAR_MIN, SIDEBAR_MAX) },
+      setSidebar: (d, px: number) => {
+        d.sidebar = clampWidth(px, SIDEBAR_MIN, SIDEBAR_MAX)
+        d.sidebarExpandedWidth = d.sidebar
+      },
       setDetails: (d, px: number) => { d.details = clampWidth(px, DETAILS_MIN, DETAILS_MAX) },
       setWorkbench: (d, key: string, px: number) => {
         workbench(d, key).width = clampWidth(px, WORKBENCH_MIN, WORKBENCH_MAX)
@@ -132,7 +138,7 @@ export function createLayoutStore(): EngineStoreHandle<LayoutState, LayoutAction
       },
       toggleSidebar: (d) => {
         if (d.narrow) d.narrowExpanded = !d.narrowExpanded
-        else d.sidebar = d.sidebar === 0 ? SIDEBAR_DEFAULT : 0
+        else d.sidebar = d.sidebar === 0 ? d.sidebarExpandedWidth : 0
       },
       setNarrow: (d, narrow: boolean) => {
         if (d.narrow === narrow) return

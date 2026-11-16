@@ -43,8 +43,6 @@ export function apply(ctx: ClientContext): void {
     inject: (_sessionId: SessionId) => ({
       list: (offset: number, limit: number, signal: AbortSignal, options?: { kind?: import('./wire.ts').ManagedFileKind; category?: import('./wire.ts').ManagedFileCategory }) =>
         listManagedFiles(offset, limit, signal, { unscoped: true, ...options }),
-      hooks: { pageSidebar: ctx.layout.pageSidebar },
-      togglePageSidebar: () => { ctx.layout.togglePageSidebar() },
     }),
   }, FilesPage))
 }

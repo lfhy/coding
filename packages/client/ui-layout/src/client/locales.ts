@@ -2,6 +2,8 @@
 export const zh = {
   'shell.navigation': '主导航',
   'shell.conversation': '回到对话',
+  'shell.sidebar.collapse': '收起侧边栏',
+  'shell.sidebar.expand': '展开侧边栏',
   'floating.open': '继续对话',
   'floating.open.label': '打开悬浮对话',
   'floating.dialog.label': '悬浮对话',
@@ -20,6 +22,8 @@ export type LayoutKey = keyof typeof zh
 export const en = {
   'shell.navigation': 'Main navigation',
   'shell.conversation': 'Back to conversation',
+  'shell.sidebar.collapse': 'Collapse sidebar',
+  'shell.sidebar.expand': 'Expand sidebar',
   'floating.open': 'Continue conversation',
   'floating.open.label': 'Open floating conversation',
   'floating.dialog.label': 'Floating conversation',

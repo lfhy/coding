@@ -106,20 +106,6 @@ describe('LayoutController', () => {
     expect(() => { service.showConversation(SESSION) }).toThrow(/panel actions not wired/)
   })
 
-  it('共享页内左侧栏的折叠状态，并在切换时通知订阅者', () => {
-    const service = new LayoutController()
-    const seen: boolean[] = []
-    const off = service.pageSidebar.subscribe(() => { seen.push(service.pageSidebar.getSnapshot().collapsed) })
-    expect(service.pageSidebar.getSnapshot()).toEqual({ collapsed: false })
-    service.togglePageSidebar()
-    expect(service.pageSidebar.getSnapshot()).toEqual({ collapsed: true })
-    service.togglePageSidebar()
-    expect(service.pageSidebar.getSnapshot()).toEqual({ collapsed: false })
-    off()
-    service.togglePageSidebar()
-    expect(seen).toEqual([true, false])
-  })
-
   it('publishes stable per-workspace workbench snapshots for header controls', () => {
     const service = new LayoutController()
     const source = service.workbench(SESSION)

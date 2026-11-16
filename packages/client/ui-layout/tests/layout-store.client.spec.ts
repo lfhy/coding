@@ -19,6 +19,7 @@ const NEXT_SESSION = 's-two' as SessionId
 
 const initialState = {
   sidebar: SIDEBAR_DEFAULT,
+  sidebarExpandedWidth: SIDEBAR_DEFAULT,
   details: 0,
   narrow: false,
   narrowExpanded: false,
@@ -168,13 +169,16 @@ describe('createLayoutStore', () => {
     })
   })
 
-  it('wide sidebar toggle closes and restores the contract default', () => {
+  it('宽屏折叠后恢复最后拖拽宽度，页面切换不清除偏好', () => {
     const { store, actions } = createLayoutStore().create()
     actions.setSidebar(400)
     actions.toggleSidebar()
-    expect(store.getSnapshot().sidebar).toBe(0)
+    expect(store.getSnapshot()).toMatchObject({ sidebar: 0, sidebarExpandedWidth: 400 })
+    actions.openPage('files', SESSION)
+    actions.openPage('image-gallery', SESSION)
+    actions.closePage()
     actions.toggleSidebar()
-    expect(store.getSnapshot().sidebar).toBe(SIDEBAR_DEFAULT)
+    expect(store.getSnapshot()).toMatchObject({ sidebar: 400, sidebarExpandedWidth: 400 })
   })
 
   it('narrow sidebar toggle changes only the temporary expansion override', () => {

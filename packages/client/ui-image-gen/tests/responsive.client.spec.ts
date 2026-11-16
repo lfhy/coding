@@ -22,23 +22,31 @@ describe('窄屏画廊与画布样式', () => {
     expect(canvas).toMatch(/\.canvas\s*\{[^}]*flex:\s*0 1 960px;[^}]*width:\s*100%;[^}]*min-width:\s*0;/u)
     expect(gallery).toMatch(/\.root\s*\{[^}]*min-width:\s*0;/u)
     expect(gallery).toMatch(/\.list\s*\{[^}]*min-width:\s*0;[^}]*overflow-y:\s*auto;/u)
-    const narrow = gallery.slice(gallery.indexOf('@media (max-width: 620px)'))
-    expect(narrow).toMatch(/\.studioCenter\s*\{[^}]*flex:\s*none;[^}]*min-height:\s*400px;/u)
-    expect(narrow).toMatch(/\.studioForm\s*\{[^}]*max-height:\s*none;[^}]*overflow:\s*visible;/u)
+    const narrow = gallery.slice(gallery.indexOf('@media (max-width: 1100px)'))
+    expect(narrow).toMatch(/\.studio\s*\{[^}]*grid-template-columns:\s*var\(--page-sidebar-width\) minmax\(0, 1fr\);/u)
+    expect(narrow).toMatch(/\.studio\s*\{[^}]*grid-template-rows:\s*48px minmax\(0, 1fr\) auto;/u)
+    expect(narrow).toMatch(/\.studio > :first-child\s*\{[^}]*grid-row:\s*1 \/ 4;/u)
+    expect(narrow).toMatch(/\.studioForm\s*\{[^}]*grid-column:\s*2;[^}]*grid-row:\s*3;/u)
   })
-  it('切换工作台、灵感和图库时胶囊保持同一横向位置', () => {
+  it('工作台侧栏贯通顶部，胶囊只覆盖右侧内容；其它页签仍使用整行工具栏', () => {
     expect(gallery).toMatch(
       /\.tabsBar\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\) auto minmax\(0, 1fr\);[^}]*box-sizing:\s*border-box;/u,
     )
     expect(gallery).toMatch(/\.tabs\s*\{[^}]*grid-column:\s*2;[^}]*justify-self:\s*center;/u)
     expect(gallery).toMatch(/\.tab, \.activeTab\s*\{[^}]*min-width:\s*64px;/u)
     expect(gallery).toMatch(
-      /\.studio\s*\{[^}]*grid-template-columns:\s*auto minmax\(0, 1fr\) minmax\(260px, 310px\);/u,
+      /\.studio\s*\{[^}]*grid-template-columns:\s*var\(--page-sidebar-width\) minmax\(0, 1fr\) minmax\(260px, 310px\);/u,
     )
-    expect(gallery).not.toContain(".root[data-tab='studio'] .tabsBar")
+    expect(gallery).toMatch(/\.studio\s*\{[^}]*grid-template-rows:\s*48px minmax\(0, 1fr\);/u)
+    expect(gallery).toMatch(/\.studio > :first-child\s*\{[^}]*grid-column:\s*1;[^}]*grid-row:\s*1 \/ 3;/u)
+    expect(gallery).toMatch(/\.studioCenter\s*\{[^}]*grid-column:\s*2;[^}]*grid-row:\s*2;/u)
+    expect(gallery).toMatch(/\.tabsBar\s*\{[^}]*width:\s*100%;/u)
+    expect(gallery).toMatch(/\.root\[data-tab='studio'\] \.tabsBar\s*\{[^}]*position:\s*absolute;/u)
+    expect(gallery).toMatch(/\.root\[data-tab='studio'\] \.tabsBar\s*\{[^}]*width:\s*calc\(100% - var\(--page-sidebar-width\)\);/u)
     expect(gallery).not.toContain(".root[data-tab='studio'] .tabs {")
     const narrow = gallery.slice(gallery.indexOf('@media (max-width: 1100px)'))
-    expect(narrow).toMatch(/\.studio\s*\{[^}]*minmax\(120px, 170px\)/u)
+    expect(narrow).toMatch(/\.studio\s*\{[^}]*var\(--page-sidebar-width\) minmax\(0, 1fr\)/u)
+    expect(narrow).toMatch(/\.studioForm\s*\{[^}]*grid-column:\s*2;[^}]*grid-row:\s*3;/u)
   })
   it('预览工具位于本次结果工具栏，图片默认完整适配', () => {
     expect(gallery).toMatch(/\.previewControls\s*\{[^}]*display:\s*flex;[^}]*flex-wrap:\s*wrap;/u)

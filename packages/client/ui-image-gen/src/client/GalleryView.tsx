@@ -1,10 +1,11 @@
 /** 按原画廊的主区域结构呈现图库、工作台、灵感和收藏，数据仍以本会话 Host 目录为准。 */
 import { useEffect, useMemo, useRef, useState } from 'react'
+import type { CSSProperties } from 'react'
 import { createPortal } from 'react-dom'
 import {
   AspectRatioGlyph, Button, Icon, IconChevronLeftOutline14, IconChevronRightOutline14, IconCloseOutline16,
   IconCopyOutline16, IconDownloadOutline16, IconPlusOutline16, IconRefreshOutline16, IconSearchOutline16,
-  IconSparkle16, IconTrashOutline16, PageSidebar, Toast, writeClipboard,
+  IconSparkle16, IconTrashOutline16, SidebarRoot, Toast, writeClipboard,
 } from 'coding-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime, PropsStore } from 'coding-client-ui-slots'
 import type { GalleryFace } from './gallery.ts'
@@ -93,8 +94,8 @@ function GalleryCard({ item, src, favorite, selected, managing, t, onPreview, on
 }
 
 /** 三个子页共用的主内容画廊；打开和关闭只改变页面视图，不生成模型轮次。 */
-export function GalleryView({ sessionId, closePage, useGallery, useStore, actions,
-  show, refresh, generate, importReference, place, url, usePageSidebar, togglePageSidebar, t }: GalleryViewProps) {
+export function GalleryView({ sessionId, closePage, sidebarCollapsed, sidebarWidth, toggleSidebar, useGallery, useStore, actions,
+  show, refresh, generate, importReference, place, url, t }: GalleryViewProps) {
   const state = useGallery(snapshot => snapshot)
   const favorites = useStore(snapshot => snapshot.favorites)
   const hidden = useStore(snapshot => snapshot.hidden)
@@ -275,7 +276,8 @@ export function GalleryView({ sessionId, closePage, useGallery, useStore, action
     onSelect={() => { select(item.id) }} onEdit={() => { beginEdit(item) }} onCopy={() => { copyPrompt(item) }}
     onDownload={() => { download(item) }} onPlace={() => { addToCanvas(item) }} />
 
-  return <main className={css.root} aria-label={t('gallery')} data-image-gallery-page="" data-session-id={sessionId} data-tab={tab}>
+  return <main className={css.root} aria-label={t('gallery')} data-image-gallery-page="" data-session-id={sessionId}
+    data-tab={tab} style={{ '--page-sidebar-width': `${sidebarWidth}px` } as CSSProperties}>
     <div className={css.tabsBar}>
       <nav className={css.tabs} role="tablist" aria-label={t('gallerySections')}>
         {(['studio', 'inspiration', 'gallery'] as const).map(key => <button key={key}
@@ -338,8 +340,8 @@ export function GalleryView({ sessionId, closePage, useGallery, useStore, action
       </div>}
     </>}
     {tab === 'studio' && <div className={css.studio}>
-      <PageSidebar label={t('recentImages')} title={t('recentImages')} variant="media"
-        collapsed={usePageSidebar(state => state.collapsed)} onToggle={togglePageSidebar}
+      <SidebarRoot label={t('recentImages')} title={t('recentImages')} variant="media" width={sidebarWidth}
+        collapsed={sidebarCollapsed} onToggle={toggleSidebar}
         labels={{ collapse: t('collapseRecent'), expand: t('expandRecent') }}
         empty={t('galleryEmpty')}
         items={items.slice().sort((a, b) => b.createdAt - a.createdAt).map(item => ({

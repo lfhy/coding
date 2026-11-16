@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
-import { ImageLightbox, PageSidebar, type PageSidebarItem } from 'coding-client-ui-primitives'
-import type { ObservableSnapshot } from 'coding-client-runtime/client'
+import type { CSSProperties } from 'react'
+import { ImageLightbox, SidebarRoot, type SidebarRootItem } from 'coding-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime } from 'coding-client-ui-slots'
 import { FilesSection } from './FilesSection.tsx'
 import { NS } from './locales.ts'
@@ -11,19 +11,16 @@ export type FilesPageProps = PropsRuntime<'shell.page'> & PropsLocale<typeof NS>
   & InjectFace<{
     list: (offset: number, limit: number, signal: AbortSignal,
       options?: { kind?: ManagedFileKind; category?: ManagedFileCategory }) => Promise<ManagedFilesPage>
-    hooks: { pageSidebar: ObservableSnapshot<{ collapsed: boolean }> }
-    togglePageSidebar: () => void
   }>
 
 /** 无工作区文件页；页头固定，列表由内容区自行滚动。 */
-export function FilesPage({ closePage, list, t, usePageSidebar, togglePageSidebar }: FilesPageProps) {
+export function FilesPage({ closePage, list, t, sidebarCollapsed, sidebarWidth, toggleSidebar }: FilesPageProps) {
   const titleId = useId()
   const titleRef = useRef<HTMLHeadingElement | null>(null)
   const previousFocus = useRef<HTMLElement | null>(null)
   const [kind, setKind] = useState<ManagedFileKind | undefined>(undefined)
   const [category, setCategory] = useState<ManagedFileCategory | undefined>(undefined)
   const [preview, setPreview] = useState<ManagedFileRecord | null>(null)
-  const collapsed = usePageSidebar(state => state.collapsed)
   const listForPage = useCallback((offset: number, limit: number, signal: AbortSignal,
     options?: { kind?: ManagedFileKind; category?: ManagedFileCategory }) =>
     list(offset, limit, signal, options), [list])
@@ -41,7 +38,7 @@ export function FilesPage({ closePage, list, t, usePageSidebar, togglePageSideba
       previousFocus.current?.focus()
     }
   }, [closePage])
-  const categories: readonly { value: ManagedFileCategory | undefined; label: string; icon: PageSidebarItem['icon'] }[] = [
+  const categories: readonly { value: ManagedFileCategory | undefined; label: string; icon: SidebarRootItem['icon'] }[] = [
     { value: undefined, label: t('all'), icon: 'files' },
     { value: 'image', label: t('image'), icon: 'model-vision' },
     { value: 'presentation', label: t('presentation'), icon: 'file-slides' },
@@ -50,8 +47,9 @@ export function FilesPage({ closePage, list, t, usePageSidebar, togglePageSideba
   ]
   const selectedLabel = categories.find(entry => entry.value === category)?.label ?? t('all')
   return (
-    <main className={css.page} aria-labelledby={titleId} data-collapsed={collapsed || undefined}>
-      <PageSidebar label={t('space')} title={t('space')} collapsed={collapsed}
+    <main className={css.page} aria-labelledby={titleId}
+      style={{ '--page-sidebar-width': `${sidebarWidth}px` } as CSSProperties}>
+      <SidebarRoot label={t('space')} title={t('space')} collapsed={sidebarCollapsed} width={sidebarWidth}
         labels={{ collapse: t('collapse'), expand: t('expand') }}
         items={categories.map(entry => ({
           id: entry.label,
@@ -60,7 +58,7 @@ export function FilesPage({ closePage, list, t, usePageSidebar, togglePageSideba
           active: category === entry.value,
           onSelect: () => { setCategory(entry.value); setKind(undefined) },
         }))}
-        onToggle={togglePageSidebar} />
+        onToggle={toggleSidebar} />
       <section className={css.content} aria-label={selectedLabel}>
         <header className={css.header}>
           <div className={css.heading}>

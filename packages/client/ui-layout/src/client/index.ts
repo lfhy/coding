@@ -96,9 +96,15 @@ export interface WorkbenchBottomOwnerProps {
   shown: boolean
 }
 
-/** 独立页面只负责内容与返回动作，会话身份由框架标准 seat 注入。 */
+/** 独立页面接收返回动作与内层侧栏的当前事实；会话身份由框架标准 seat 注入。 */
 export interface ShellPageOwnerProps {
   closePage: () => void
+  /** 与对话侧栏相同的响应式折叠状态，页面切换时不重置。 */
+  sidebarCollapsed: boolean
+  /** 与对话侧栏相同的实际宽度，包含窄屏的 56px 图标轨。 */
+  sidebarWidth: number
+  /** 切换根布局持有的侧栏状态。 */
+  toggleSidebar: () => void
 }
 
 /** 设置触发器的呈现约定；外层导航固定使用紧凑图标。 */

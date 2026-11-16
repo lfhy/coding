@@ -1,5 +1,5 @@
 /** 单会话画廊：旧读取可取消，新图提交后重新读取 Host 权威目录。 */
-import { createSnapshotStore, type ObservableSnapshot, type SnapshotStore } from 'coding-client-runtime/client'
+import { createSnapshotStore, type SnapshotStore } from 'coding-client-runtime/client'
 import { generateImage, imageUrl, importReference, readGallery, readState, type GalleryItem, type ImageOutput, type ImageState } from './wire.ts'
 
 /** 只保留图片元数据与读取状态，原始字节由浏览器访问同会话受限地址。 */
@@ -18,11 +18,7 @@ export interface GalleryViewState {
 export interface GalleryFace {
   hooks: {
     gallery: SnapshotStore<GalleryViewState>
-    /** 页内左侧栏的共享折叠状态，与其他主内容页一致。 */
-    pageSidebar: ObservableSnapshot<{ collapsed: boolean }>
   }
-  /** 切换页内左侧栏折叠状态。 */
-  togglePageSidebar: () => void
   show: (shown: boolean) => void
   refresh: () => void
   generate: (prompt: string, imageId?: string | readonly string[], output?: ImageOutput) => Promise<boolean>

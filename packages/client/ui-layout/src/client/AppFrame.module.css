@@ -225,7 +225,7 @@
   background: var(--dsw-alias-bg-base);
 }
 
-/* 独立页面占满整行：侧栏列收缩为零宽，原会话树保持挂载但退出命中与可访问树。 */
+/* 独立页面覆盖整行：保留对话侧栏原列宽与挂载位置，切回时不播放零宽展开。 */
 .pageCol {
   grid-column: 2 / 4;
   grid-row: 1 / 3;
@@ -234,6 +234,10 @@
   min-height: 0;
   overflow: hidden;
   background: var(--dsw-alias-bg-base);
+}
+
+.frame[data-page-open] .sidebarCol {
+  border-right: 0;
 }
 
 .frame[data-page-open] .pageCol { grid-column: 1 / 4; }

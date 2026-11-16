@@ -18,10 +18,23 @@ export type WindowShellProps = Omit<AppFrameProps, 'renderSlot' | '__renders'>
 export function WindowShell(props: WindowShellProps) {
   const current = props.useSessions(state => state.current)
   const conversationVisible = props.useStore(state => state.page === null)
+  const sidebarCollapsed = props.useStore(state => state.narrow ? !state.narrowExpanded : state.sidebar === 0)
 
   return (
     <div className={css.shell} data-window-shell>
       <div className={css.titleDragInset} data-window-drag-region aria-hidden="true" />
+      {/* 仅桌面窗口显示：靠近交通灯，操作的是与页内侧栏共用的根布局状态。 */}
+      <div className={css.desktopSidebarToggle}>
+        <Tooltip label={props.t(sidebarCollapsed ? 'shell.sidebar.expand' : 'shell.sidebar.collapse')} delayMs={500}>
+          <span className={css.sidebarToggleAnchor}>
+            <Button size="sm" className={css.sidebarToggleButton}
+              aria-label={props.t(sidebarCollapsed ? 'shell.sidebar.expand' : 'shell.sidebar.collapse')}
+              onClick={() => { props.actions.toggleSidebar() }}>
+              <Icon name="sidebar" size={18} />
+            </Button>
+          </span>
+        </Tooltip>
+      </div>
       <nav className={css.navigation} aria-label={props.t('shell.navigation')}>
         <Tooltip label={props.t('shell.conversation')} delayMs={500}>
           <span className={css.navAnchor}>

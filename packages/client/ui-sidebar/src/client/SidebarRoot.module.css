@@ -118,7 +118,7 @@
 /* 入口座位不包额外布局盒；画图不可用时不占行，展开按钮仍紧跟新对话。 */
 .toggleArea {
   flex: none;
-  display: flex;
+  display: var(--sidebar-inline-toggle, flex);
   width: 36px;
   margin-top: 12px;
 }

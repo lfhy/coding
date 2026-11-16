@@ -115,7 +115,11 @@ export function createHostWindow(origin: string, options: { devTools?: boolean; 
     const drag = isMacOS || isWindows
       ? '[data-window-drag-region] { -webkit-app-region: drag !important; }'
       : ''
-    void window.webContents.insertCSS(`:root { --app-safe-area-inset-top: ${top}; --app-safe-area-inset-right: ${right}; } ${drag}`)
+    // macOS 把跨页面的侧栏开关交给窗口左上角，页内开关不再占位或参与焦点顺序。
+    const desktop = isMacOS
+      ? ':root { --desktop-sidebar-toggle: flex; --sidebar-inline-toggle: none; }'
+      : ''
+    void window.webContents.insertCSS(`:root { --app-safe-area-inset-top: ${top}; --app-safe-area-inset-right: ${right}; } ${drag} ${desktop}`)
       .catch(() => undefined)
   })
   if (isMacOS && app.dock && options.iconPath && existsSync(options.iconPath)) {

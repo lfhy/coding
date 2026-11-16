@@ -4,7 +4,7 @@
 
 `ChatUserBubble`、`ChatAssistantBody`、`ChatComposerCard` 和 `ChatComposerAction` 共用主对话的消息与输入几何；调用方各自提供原文／Markdown、草稿、发送状态、无障碍名称和动作。卡片转发 DOM 属性与 ref，供会话输入栏锚定菜单和焦点；发送按钮转发原生按钮属性与 ref，供 Tooltip 锚定。它们不持有 Agent、会话或传输。
 
-图标的实现与新语义入口位于 [`ui-icons`](../ui-icons/README.md)；本包只转发其已有具名图标和统一 `Icon` 组件，供既有使用者逐步迁移。
+`SidebarRoot` 是独立主内容页共用的纯 React 侧栏根：宽度从根布局的 `shell.page` owner 传入，展开时跟随对话侧栏的实际宽度，收起后为 56px 图标轨，统一处理安全区、折叠动画、行几何、焦点与主题滚动条。调用方传入标题、条目、当前折叠状态、实际宽度和切换回调；文件管理传分类行，画图传最近生成缩略图行。对话侧栏的业务 `SidebarRoot` 由 `ui-sidebar` 在 slot 内组装，纯组件不依赖 Cordis 或跨插件服务；macOS 桌面壳隐藏页内收放按钮，窗口开关仍调用同一个根布局动作。
 
 `writeClipboard` 优先使用异步剪贴板 API；若宿主没有提供该 API，或异步写入被拒绝，会在同一次用户操作中尝试选区复制。仅在宿主确认写入时返回成功，由调用控件负责显示复制反馈；两条路径都失败时不显示成功。
 

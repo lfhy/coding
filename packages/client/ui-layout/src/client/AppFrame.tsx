@@ -16,7 +16,6 @@ import {
   DETAILS_MAX,
   DETAILS_MIN,
   SIDEBAR_AUTO_COLLAPSE,
-  SIDEBAR_DEFAULT,
   SIDEBAR_MAX,
   SIDEBAR_MIN,
   WORKBENCH_BOTTOM_DEFAULT,
@@ -588,7 +587,7 @@ export function AppFrame({
   const sidebarCollapsed = narrow ? !rootPanels.narrowExpanded : rootPanels.sidebar === 0
   const sidebarPreference = sidebarCollapsed
     ? 0
-    : rootPanels.sidebar === 0 ? SIDEBAR_DEFAULT : rootPanels.sidebar
+    : rootPanels.sidebar === 0 ? rootPanels.sidebarExpandedWidth : rootPanels.sidebar
 
   const detailsColumns = computeColumns(
     viewport.width,
@@ -710,8 +709,8 @@ export function AppFrame({
       ref={frameRef}
       className={css.frame}
       style={{
-        // 独立主内容页占满整行时，侧栏列收缩为零宽，页面关闭后回到用户的栏宽偏好。
-        gridTemplateColumns: `${pageVisible ? 0 : sidebarWidth}px minmax(0, 1fr) ${rightWidth}px`,
+        // 独立页覆盖整行时保留对话侧栏的网格宽度；返回对话不会从零宽重新展开。
+        gridTemplateColumns: `${sidebarWidth}px minmax(0, 1fr) ${rightWidth}px`,
         gridTemplateRows: `minmax(0, 1fr) ${bottomHeight}px`,
         '--layout-sidebar-width': `${sidebarWidth}px`,
         '--layout-bottom-height': `${bottomHeight}px`,
@@ -783,7 +782,12 @@ export function AppFrame({
       </div>
       {pageVisible && (
         <div className={css.pageCol} data-shell-page>
-          {renderSlot('shell.page', { closePage: () => { actions.closePage() } }, { entryKey: page.kind })}
+          {renderSlot('shell.page', {
+            closePage: () => { actions.closePage() },
+            sidebarCollapsed,
+            sidebarWidth,
+            toggleSidebar: () => { actions.toggleSidebar() },
+          }, { entryKey: page.kind })}
         </div>
       )}
 

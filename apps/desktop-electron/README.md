@@ -20,7 +20,7 @@ make dev
 
 ## Host、Remote-SSH 与窗口
 
-桌面窗口启动时默认最大化，但不进入全屏。macOS 与 Windows 顶栏的空白区域支持拖动已还原的窗口；双击该区域在最大化和还原之间切换。顶栏按钮和输入框等交互区域不参与拖动，仍可正常点击或输入。
+桌面窗口启动时默认最大化，但不进入全屏。macOS 与 Windows 顶栏的空白区域支持拖动已还原的窗口；双击该区域在最大化和还原之间切换。顶栏按钮和输入框等交互区域不参与拖动，仍可正常点击或输入。macOS 交通灯右侧的侧栏按钮收放当前页面左栏，对话、文件管理与画图共用折叠状态；同一窗口的页内收放按钮不再显示，普通 Web 沿用原位。
 
 [Go helper](../desktop/cmd/electron-helper/main.go)持有 Host 启动与 Remote-SSH 生命周期：它通过共享的 `desktopremote.Service`、回环 bridge 和 `hostlaunch` 的 `ReplaceCompatibleHost` 发现或替换兼容 Host，并向 Electron 主进程报告经过验证的回环 origin。Host 的 HTTP 和 WebSocket 由窗口直接访问，不经 main 转发；窗口只允许该 origin 的导航，拒绝弹窗、跨源 frame 导航和网页原生权限请求。回环 origin 不是身份认证，不得把 Host token、凭据或私有路径放进 URL 或页面存储。
 
