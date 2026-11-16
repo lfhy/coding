@@ -24,7 +24,7 @@ kind: "package-reference"
 | `shell.navigation.entry` | `root` | 空 owner share 的有序 list，排在主页图标之后、设置之前；注册者自带 36×36 图标按钮，[ui-image-gen](../ui-image-gen/README.md) 用它承载画图入口 |
 | `shell.settings` | `root` | `wide: boolean`，外层固定传 `false`；[ui-settings-general](../ui-settings-general/README.md) 提供设置图标入口与设置页 |
 | `shell.overlay` | `root` | 无 owner 数据的有序 list |
-| `shell.page` | `session` | 按 `entryKey` 选择主内容页，owner 提供 `closePage()`、`sidebarCollapsed`、`sidebarWidth` 与 `toggleSidebar()` |
+| `shell.page` | `session` | 按 `entryKey` 选择主内容页，owner 提供 `closePage()`、`sidebarCollapsed` 与 `sidebarWidth` |
 
 `ctx.layout` 提供全局的 `toggleSidebar()`、`openDetails()`、`closeDetails()`，以及接收工作区键的 `openWorkbench()`、`closeWorkbench()`、`toggleWorkbench()`、`toggleWorkbenchFullscreen()`、`toggleWorkbenchBottom()`、`closeWorkbenchBottom()` 和欢迎页专用的 `toggleHeroPanel()`。`beginNewConversation()` 同步清除空白会话的手动右栏选择并更新新对话意图版本；等待创建会话的欢迎页面板操作须核对该版本，不能在新对话操作后抢占选择。`workbench(workspaceKey)` 返回供会话页头、欢迎页与工作台顶栏面板开关订阅的显隐投影。`openPage(kind, sessionId, returnSessionId?)` 和 `togglePage(kind, sessionId, returnSessionId?)` 在侧栏右侧打开会话所属主内容页；提供不同的原对话 id 后，关闭页或再次点击当前入口会选回该对话。页面间切换须沿用已有 `returnSessionId`，未提供时返回当前页会话；若用户另行选中了会话或原对话已不存在，过期页面和返回请求不会抢回选择。切换或移除页面所属会话会关闭页面。打开工作台会关闭详情栏；打开详情栏会暂时覆盖工作台，关闭详情栏后恢复该工作区的状态。
 
@@ -42,9 +42,9 @@ kind: "package-reference"
 
 ## 布局行为
 
-`WindowShell` 固定占满 `100dvh`，整窗不随内容滚动，也不自带顶栏：内层圆角容器顶到窗口上沿，原生窗口按钮由内层各自避让。桌面壳把 `--app-safe-area-inset-top` 与 `--app-safe-area-inset-right` 注入 `:root`，导航列顶部按安全区留出交通灯位置，并提供窗口拖拽区域；macOS 窗口在外层窄导航底部、设置入口上方提供共用侧栏开关，页面内的折叠按钮不占位。普通 Web 没有原生安全区或窗口开关，导航按钮距顶部 8px；内层侧栏、会话页头、工作台顶栏和设置页按需避让系统窗口按钮。外层不显示品牌文字，不绘制交通灯或前进／后退按钮。
+`WindowShell` 固定占满 `100dvh`，整窗不随内容滚动，也不自带顶栏：内层圆角容器顶到窗口上沿，原生窗口按钮由内层各自避让。桌面壳把 `--app-safe-area-inset-top` 与 `--app-safe-area-inset-right` 注入 `:root`，导航列顶部按安全区留出交通灯位置，并提供窗口拖拽区域；侧栏开关在所有端都固定在外层窄导航底部、设置入口上方，页内不再渲染折叠按钮。普通 Web 没有原生安全区，导航按钮距顶部 8px；内层侧栏、会话页头、工作台顶栏和设置页按需避让系统窗口按钮。外层不显示品牌文字，不绘制交通灯或前进／后退按钮。
 
-左侧固定 52px 窄导航自上而下是主页图标「回到对话」、`shell.navigation.entry` 的中部图标入口和底部由 `shell.settings` 承载的设置入口；macOS 在设置入口上方增加侧栏开关，折叠与展开分别使用朝左与朝右的图标。中部与底部入口都以 36×36 图标盒排在列内，未注册时不占空间。普通 Web 的侧栏展开、收起由内层控件提供，桌面端 macOS 由外层底部开关提供；宽度拖拽始终由内层控件提供。右侧圆角容器包含完整 `AppFrame`，距窗口右侧和底部各 8px。整窗宽度不超过 620px 时，外层窄导航为 44px，右侧与底部间距各 4px。图标按入口着色：主页是业务蓝，`shell.navigation.entry` 的中部入口用图标强调绿（画图），底部设置入口保持中性灰，当前页只加重底色；所有颜色取自既有主题 token，随用户的亮暗偏好切换。
+左侧固定 52px 窄导航自上而下是主页图标「回到对话」、`shell.navigation.entry` 的中部图标入口和底部由 `shell.settings` 承载的设置入口；设置入口上方固定一枚侧栏开关。中部与底部入口都以 36×36 图标盒排在列内，未注册时不占空间。侧栏的展开与收起在所有端都由这一枚底部开关完成，折叠与展开分别使用朝左与朝右的图标；宽度拖拽仍由内层控件提供。右侧圆角容器包含完整 `AppFrame`，距窗口右侧和底部各 8px。整窗宽度不超过 620px 时，外层窄导航为 44px，右侧与底部间距各 4px。图标按入口着色：主页是业务蓝，`shell.navigation.entry` 的中部入口用图标强调绿（画图），底部设置入口保持中性灰，当前页只加重底色；所有颜色取自既有主题 token，随用户的亮暗偏好切换。
 
 `AppFrame` 的 `ResizeObserver` 测量圆角容器内实际可用宽高，响应式断点、面板求解和底栏高度均以该尺寸为准，不使用整窗尺寸。宽屏内层由用户选择宽度的导航栏、左侧对话和右侧工作台组成。尚未手动调整过宽度时，内层导航栏之外的主内容按对话 1 份、右侧工作台 2 份分配，并随可用宽度重新求解。工作台宽度可在 300--2400px 间拖拽，一旦手动拖拽就改用该像素偏好；对话区不低于 320px，空间不足时先把工作台收缩到 300px，再由对话承担剩余让步。内层宽度低于 1024px 时导航自动收成 56px rail，工作台采用全屏呈现：对话继续保持挂载且默认进入 `inert`，工作台占据内层 rail 之外的全部主内容；显式最大化使用同一路径。实际全屏且有当前会话、未打开 `shell.page` 时，底部「继续对话」胶囊可将原对话展开为同会话的悬浮小窗，不重挂对话或输入框；小窗的收起按钮或未被内部控件消费的 Escape 可返回胶囊，退出全屏、关闭工作台、切换会话或打开独立页面也会收起，普通布局恢复原对话与草稿。
 

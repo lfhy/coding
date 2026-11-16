@@ -115,11 +115,7 @@ export function createHostWindow(origin: string, options: { devTools?: boolean; 
     const drag = isMacOS || isWindows
       ? '[data-window-drag-region] { -webkit-app-region: drag !important; }'
       : ''
-    // macOS 的外层导航底部承载跨页面侧栏开关，页内开关退出布局和焦点顺序。
-    const desktop = isMacOS
-      ? ':root { --desktop-sidebar-toggle: flex; --sidebar-inline-toggle: none; }'
-      : ''
-    void window.webContents.insertCSS(`:root { --app-safe-area-inset-top: ${top}; --app-safe-area-inset-right: ${right}; } ${drag} ${desktop}`)
+    void window.webContents.insertCSS(`:root { --app-safe-area-inset-top: ${top}; --app-safe-area-inset-right: ${right}; } ${drag}`)
       .catch(() => undefined)
   })
   if (isMacOS && app.dock && options.iconPath && existsSync(options.iconPath)) {

@@ -37,7 +37,7 @@ function hook<T>(snapshot: T) {
 function mount(sessions: SessionListState, workspaceState: WorkspaceListState, extra: Partial<WorkspaceBrowserProps> = {}) {
   const store = createWorkspaceViewStore().create()
   const props: WorkspaceBrowserProps = {
-    wide: true, expandSidebar: vi.fn(), collapseSidebar: vi.fn(), conversationVisible: true, showConversation: vi.fn(),
+    wide: true, expandSidebar: vi.fn(), conversationVisible: true, showConversation: vi.fn(),
     useSessions: hook(sessions), useWorkspaces: hook(workspaceState), useStore: bindSnapshotSelector(store), actions: store.actions,
     startSession: vi.fn(), open: vi.fn(), renameSession: vi.fn(async () => {}), forkSession: vi.fn(),
     renameWorkspace: vi.fn(async () => {}), deleteWorkspace: vi.fn(async () => {}), archiveSession: vi.fn(async () => {}),

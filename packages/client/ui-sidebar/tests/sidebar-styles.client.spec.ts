@@ -61,7 +61,6 @@ describe('SidebarRoot.module.css', () => {
   it('moves the top entry seats and the region while the footer only fades', () => {
     const animation = 'rail-in 150ms var(--ds-ease-in-out) backwards'
     for (const selector of [
-      '.railIn .iconButton',
       '.railIn .newSession',
       ".railIn [data-slot='sidebar.top.entry'] button",
       '.railIn .regionArea',
@@ -85,10 +84,12 @@ describe('SidebarRoot.module.css', () => {
     expect(declarations('.collapsed .newSession')?.get('width')).toBe('36px')
   })
 
-  it('leaves no wrapper space for an unavailable entry, and places the rail toggle after it', () => {
+  it('leaves no wrapper space for an unavailable entry and draws no inline toggle', () => {
     expect(root).toContain("{renderSlot('sidebar.top.entry', { wide })}")
     expect(root).not.toContain('brandActions')
-    expect(declarations('.toggleArea')?.get('margin-top')).toBe('12px')
+    // 侧栏开关只在外层导航底部渲染，列内不再保留按钮位。
+    expect(css).not.toContain('.toggleArea')
+    expect(css).not.toContain('.iconButton')
     expect(css).not.toContain('.settingsArea')
   })
 

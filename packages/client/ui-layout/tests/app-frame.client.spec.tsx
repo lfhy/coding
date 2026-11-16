@@ -731,7 +731,7 @@ describe('AppFrame', () => {
   it.each([1920, 768])('shares sidebar collapse and width across conversation, files, and gallery at %ipx', (width) => {
     frameWidth = width
     const b = mountFrame()
-    type PageOwner = { sidebarCollapsed: boolean; sidebarWidth: number; toggleSidebar(): void }
+    type PageOwner = { sidebarCollapsed: boolean; sidebarWidth: number }
     const pageOwner = (): PageOwner => b.ownerFor('shell.page') as PageOwner
     const conversationCollapsed = () => (b.ownerFor('sidebar') as { collapsed: boolean }).collapsed
     const expectedWidth = width < 1024 ? SIDEBAR_COLLAPSED : 280
@@ -740,7 +740,8 @@ describe('AppFrame', () => {
     act(() => { b.instance.actions.openPage('files', 's-test' as SessionId) })
     expect(pageOwner()).toMatchObject({ sidebarCollapsed: width < 1024, sidebarWidth: expectedWidth })
     expect(tracks(b.frame)[0]).toBe(expectedWidth)
-    act(() => { pageOwner().toggleSidebar() })
+    // 收放由外层导航底部的开关发起，页面只读共享状态。
+    act(() => { b.instance.actions.toggleSidebar() })
     const toggledWidth = width < 1024 ? 280 : SIDEBAR_COLLAPSED
     expect(pageOwner()).toMatchObject({ sidebarCollapsed: width >= 1024, sidebarWidth: toggledWidth })
     expect(conversationCollapsed()).toBe(width >= 1024)
@@ -757,12 +758,12 @@ describe('AppFrame', () => {
     const b = mountFrame()
     act(() => { b.instance.actions.setSidebar(400) })
     act(() => { b.instance.actions.openPage('files', 's-test' as SessionId) })
-    const owner = () => b.ownerFor('shell.page') as { sidebarCollapsed: boolean; sidebarWidth: number; toggleSidebar(): void }
+    const owner = () => b.ownerFor('shell.page') as { sidebarCollapsed: boolean; sidebarWidth: number }
     expect(owner()).toMatchObject({ sidebarCollapsed: false, sidebarWidth: 400 })
-    act(() => { owner().toggleSidebar() })
+    act(() => { b.instance.actions.toggleSidebar() })
     act(() => { b.instance.actions.openPage('image-gallery', 's-test' as SessionId) })
     expect(owner()).toMatchObject({ sidebarCollapsed: true, sidebarWidth: SIDEBAR_COLLAPSED })
-    act(() => { owner().toggleSidebar() })
+    act(() => { b.instance.actions.toggleSidebar() })
     expect(owner()).toMatchObject({ sidebarCollapsed: false, sidebarWidth: 400 })
     act(() => { b.instance.actions.closePage() })
     expect(tracks(b.frame)[0]).toBe(400)

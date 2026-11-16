@@ -4,11 +4,11 @@ export const NS = 'settings.files'
 export type FilesLocaleKey =
   | 'nav' | 'title' | 'intro' | 'name' | 'kind' | 'size' | 'date'
   | 'upload' | 'generatedImage' | 'export' | 'loading' | 'empty' | 'error' | 'retry'
-  | 'loadMore' | 'loadingMore' | 'count' | 'dateLocale' | 'pageTitle' | 'pageIntro' | 'back' | 'all' | 'space' | 'categories' | 'image' | 'presentation' | 'document' | 'other' | 'previewDialog' | 'close' | 'collapse' | 'expand'
+  | 'loadMore' | 'loadingMore' | 'count' | 'dateLocale' | 'pageTitle' | 'pageIntro' | 'back' | 'all' | 'space' | 'categories' | 'image' | 'presentation' | 'document' | 'other' | 'previewDialog' | 'close'
 
 /** 简体中文文案。 */
 export const zh: Record<FilesLocaleKey, string> = {
-  nav: '文件管理', title: '文件管理', intro: '查看此设备保存的上传文件和生成图片。', pageTitle: '全部', pageIntro: '输入文件、生成图片和导出成品。', back: '返回对话', all: '全部', space: '资料空间', categories: '文件类型', image: '图片', presentation: '幻灯片', document: '文档', other: '其他', previewDialog: '图片预览', close: '关闭', collapse: '收起侧栏', expand: '展开侧栏',
+  nav: '文件管理', title: '文件管理', intro: '查看此设备保存的上传文件和生成图片。', pageTitle: '全部', pageIntro: '输入文件、生成图片和导出成品。', back: '返回对话', all: '全部', space: '资料空间', categories: '文件类型', image: '图片', presentation: '幻灯片', document: '文档', other: '其他', previewDialog: '图片预览', close: '关闭',
   name: '名称', kind: '类型', size: '大小', date: '创建时间',
   upload: '上传文件', generatedImage: '生成图片', export: '导出成品',
   loading: '正在读取文件…', empty: '还没有保存的文件。',
@@ -18,7 +18,7 @@ export const zh: Record<FilesLocaleKey, string> = {
 
 /** 英文文案。 */
 export const en: Record<FilesLocaleKey, string> = {
-  nav: 'Files', title: 'Files', intro: 'View uploads and generated images stored on this device.', pageTitle: 'All', pageIntro: 'Inputs, generated images, and exports from chats without a workspace.', back: 'Back to conversation', all: 'All', space: 'Files', categories: 'File type', image: 'Images', presentation: 'Slides', document: 'Documents', other: 'Other', previewDialog: 'Image preview', close: 'Close', collapse: 'Collapse sidebar', expand: 'Expand sidebar',
+  nav: 'Files', title: 'Files', intro: 'View uploads and generated images stored on this device.', pageTitle: 'All', pageIntro: 'Inputs, generated images, and exports from chats without a workspace.', back: 'Back to conversation', all: 'All', space: 'Files', categories: 'File type', image: 'Images', presentation: 'Slides', document: 'Documents', other: 'Other', previewDialog: 'Image preview', close: 'Close',
   name: 'Name', kind: 'Type', size: 'Size', date: 'Created',
   upload: 'Upload', generatedImage: 'Generated image', export: 'Export',
   loading: 'Loading files…', empty: 'No files have been saved yet.',

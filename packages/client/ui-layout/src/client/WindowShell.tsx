@@ -48,9 +48,10 @@ export function WindowShell(props: WindowShellProps) {
         </Tooltip>
         {/* 中部入口自带紧凑图标按钮，与主页图标同列；底部设置仍贴住导航栏下沿。 */}
         {props.renderSlot('shell.navigation.entry', {})}
-        {/* 桌面窗口把侧栏开关放在这一列底部：既不压在交通灯上，收起后也不落进内容区。 */}
+        {/* 侧栏开关固定在导航列底部：既不压在交通灯上，收起后也不落进内容区；
+            桌面端与普通 Web 共用这一枚，页内不再渲染第二枚。 */}
         <div className={css.footer}>
-          <div className={css.desktopSidebarToggle}>
+          <div className={css.sidebarToggle}>
             <Tooltip label={toggleLabel} delayMs={500}>
               <span className={css.sidebarToggleAnchor}>
                 <Button className={css.sidebarToggleButton} aria-label={toggleLabel}

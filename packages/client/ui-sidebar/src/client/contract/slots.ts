@@ -52,8 +52,6 @@ export interface SidebarSectionOwnerProps {
   wide: boolean
   /** rail 图标请求展开；浏览器跟随 wide 翻转处理焦点。 */
   expandSidebar: () => void
-  /** 宽侧栏的标题行用它渲染收起按钮；已展开时才会真正收起。 */
-  collapseSidebar: () => void
   /** 独立主内容页打开时，会话行不显示选中态。 */
   conversationVisible: boolean
   /** 返回对话视图，不改变当前会话。 */

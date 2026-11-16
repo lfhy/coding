@@ -24,9 +24,8 @@
   height: var(--app-safe-area-inset-top, 0px);
 }
 
-/* 桌面端在外层导航底部显示共用侧栏开关，网页端继续使用页内控件。 */
-.desktopSidebarToggle {
-  display: var(--desktop-sidebar-toggle, none);
+/* 外层导航底部固定渲染整列唯一的侧栏开关；页内不再显示第二枚。 */
+.sidebarToggle {
   flex: 0 0 auto;
   width: 36px;
   height: 36px;

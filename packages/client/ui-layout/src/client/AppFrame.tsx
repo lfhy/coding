@@ -797,7 +797,6 @@ export function AppFrame({
             closePage: () => { actions.closePage() },
             sidebarCollapsed,
             sidebarWidth,
-            toggleSidebar: () => { actions.toggleSidebar() },
           }, { entryKey: page.kind })}
         </div>
       )}

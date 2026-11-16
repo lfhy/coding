@@ -68,10 +68,11 @@ describe('sidebar shell snapshots', () => {
     const slot = runtime.renderSlot('sidebar', { collapsed: false, width: 300, welcomeActionsVisible: false })
     const shell = slot.container.firstElementChild
     slot.update({ collapsed: true, width: 56, welcomeActionsVisible: false })
-    // 顶部避让行在 150ms 落定后换成 rail，收起按钮变成 rail 里的展开按钮。
+    // 顶部避让行在 150ms 落定后换成 rail：侧栏开关在外层导航，列内不出现第二枚。
     await waitFor(() => {
-      expect(slot.view.getByRole('button', { name: 'Open sidebar' })).toBeTruthy()
+      expect(slot.view.getByRole('button', { name: 'New chat' })).toBeTruthy()
     })
+    expect(slot.view.queryByRole('button', { name: 'Open sidebar' })).toBeNull()
     expect(slot.container).toMatchSnapshot()
     // Same tree position: the owner flip re-rendered the shell in place.
     expect(slot.container.firstElementChild).toBe(shell)

@@ -94,7 +94,7 @@ function GalleryCard({ item, src, favorite, selected, managing, t, onPreview, on
 }
 
 /** 三个子页共用的主内容画廊；打开和关闭只改变页面视图，不生成模型轮次。 */
-export function GalleryView({ sessionId, closePage, sidebarCollapsed, sidebarWidth, toggleSidebar, useGallery, useStore, actions,
+export function GalleryView({ sessionId, closePage, sidebarCollapsed, sidebarWidth, useGallery, useStore, actions,
   show, refresh, generate, importReference, place, url, t }: GalleryViewProps) {
   const state = useGallery(snapshot => snapshot)
   const favorites = useStore(snapshot => snapshot.favorites)
@@ -341,8 +341,7 @@ export function GalleryView({ sessionId, closePage, sidebarCollapsed, sidebarWid
     </>}
     {tab === 'studio' && <div className={css.studio}>
       <SidebarRoot label={t('recentImages')} title={t('recentImages')} variant="media" width={sidebarWidth}
-        collapsed={sidebarCollapsed} onToggle={toggleSidebar}
-        labels={{ collapse: t('collapseRecent'), expand: t('expandRecent') }}
+        collapsed={sidebarCollapsed}
         empty={t('galleryEmpty')}
         items={items.slice().sort((a, b) => b.createdAt - a.createdAt).map(item => ({
           id: item.id,

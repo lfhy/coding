@@ -68,7 +68,6 @@
 /* rail 落定（150ms）时，顶部入口区与浏览区域的控件从原 rail 右边缘进入，用掉 AppFrame
    轨道过渡剩下的 150ms。页脚动作只共用透明度时序，水平位置不动。只有实时折叠才带
    .railIn；冷启动即为收起状态时静态渲染。 */
-.railIn .iconButton,
 .railIn .newSession,
 .railIn [data-slot='sidebar.top.entry'] button,
 .railIn .regionArea {
@@ -113,48 +112,6 @@
   height: auto;
   padding: 0;
   justify-content: flex-start;
-}
-
-/* 入口座位不包额外布局盒；画图不可用时不占行，展开按钮仍紧跟新对话。 */
-.toggleArea {
-  flex: none;
-  display: var(--sidebar-inline-toggle, flex);
-  width: 36px;
-  margin-top: 12px;
-}
-
-.iconButton {
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  border: none;
-  border-radius: 50%;
-  padding: 0;
-  background: transparent;
-  cursor: pointer;
-  color: var(--dsw-alias-label-secondary);
-}
-
-.iconButton:hover {
-  background: var(--dsw-alias-interactive-bg-hover);
-}
-
-.iconButton:focus-visible {
-  outline: 2px solid var(--dsw-alias-border-l3);
-  outline-offset: 2px;
-}
-
-.collapsed .iconButton {
-  width: 36px;
-  height: 36px;
-}
-
-/* 收起 rail 使用主文字色；展开侧栏保留图标按钮的次级文字色。 */
-.collapsed .iconButton {
-  color: var(--dsw-alias-label-primary);
 }
 
 /* 新对话入口向内对齐下方分段图标；收起后仍使用原有 rail 的居中图标盒。 */
@@ -287,7 +244,6 @@
   .wide,
   .fading > *,
   .fading [data-slot='sidebar.top.entry'] button,
-  .railIn .iconButton,
   .railIn .newSession,
   .railIn [data-slot='sidebar.top.entry'] button,
   .railIn .footArea,

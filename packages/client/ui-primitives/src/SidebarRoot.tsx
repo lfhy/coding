@@ -24,11 +24,6 @@ export interface SidebarRootItem {
   onSelect?: () => void
 }
 
-export interface SidebarRootLabels {
-  collapse: string
-  expand: string
-}
-
 export interface SidebarRootProps {
   /** 整列的可访问名称。 */
   label: string
@@ -38,8 +33,6 @@ export interface SidebarRootProps {
   collapsed: boolean
   /** 对话侧栏的实际宽度，由根布局计算；收起时为 56px。 */
   width: number
-  onToggle: () => void
-  labels: SidebarRootLabels
   /** 行几何：紧凑图标行，或带缩略图的行。宽度与折叠行为两者一致。 */
   variant?: 'rows' | 'media'
   /** 无条目时的说明；收起态不显示。 */
@@ -53,7 +46,7 @@ export interface SidebarRootProps {
  * @returns 展开列或收起轨。
  */
 export function SidebarRoot({
-  label, title, items, collapsed, width, onToggle, labels, variant = 'rows', empty,
+  label, title, items, collapsed, width, variant = 'rows', empty,
 }: SidebarRootProps) {
   // 与对话侧栏同一套折叠时序：宽度先滑动，宽内容就地淡出 150ms，落定后换成图标轨并淡入。
   const [settled, setSettled] = useState(collapsed)
@@ -81,9 +74,6 @@ export function SidebarRoot({
         <>
           <div className={css.headerRow}>
             <span className={css.sectionLabel}>{title}</span>
-            <button type="button" className={css.iconButton} aria-label={labels.collapse} title={labels.collapse} onClick={onToggle}>
-              <Icon name="sidebar" size={16} />
-            </button>
           </div>
           {items.length === 0 && empty !== undefined
             ? <p className={css.empty}>{empty}</p>
@@ -110,10 +100,6 @@ export function SidebarRoot({
               <Icon name={item.icon} size={18} />
             </button>
           ))}
-          <div className={css.railDivider} aria-hidden="true" />
-          <button type="button" className={clsx(css.railButton, css.railToggle)} aria-label={labels.expand} title={labels.expand} onClick={onToggle}>
-            <Icon name="sidebar" size={18} />
-          </button>
         </>
       )}
     </aside>

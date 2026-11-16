@@ -41,7 +41,7 @@ async function createRuntime(): Promise<SlotTestRuntime> {
 type FrameProps = PropsRenderSlots<'sidebar.workspaces'>
 function SidebarFrame({ renderSlot }: FrameProps) {
   return <>{renderSlot('sidebar.workspaces', {
-    wide: true, expandSidebar: () => {}, collapseSidebar: () => {},
+    wide: true, expandSidebar: () => {},
     conversationVisible: true, showConversation: () => {},
   })}</>
 }

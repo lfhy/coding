@@ -2,7 +2,7 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import clsx from 'clsx'
 import {
-  Button, Icon, IconCloseFill14,
+  Button, IconCloseFill14,
   IconProjectAddOutline16, IconSearchOutline16, Modal, Tooltip,
 } from 'coding-client-ui-primitives'
 import type { SessionId, WorkspaceId } from 'coding-client-runtime/client'
@@ -35,7 +35,6 @@ const SEARCH_DEBOUNCE_MS = 250
 export function WorkspaceBrowser({
   wide,
   expandSidebar,
-  collapseSidebar,
   conversationVisible,
   showConversation,
   useSessions,
@@ -292,21 +291,6 @@ export function WorkspaceBrowser({
           <span className={clsx(css.sectionLabel, css.wide, searchExpanded && css.sectionLabelHidden)}>
             {view === 'work' ? t('section.workspaces') : t('section.sessions')}
           </span>
-        )}
-        {/* 壳层把收起动作交到这里：按钮排在搜索左边，搜索展开时让位给输入框。 */}
-        {wide && (
-          <div className={clsx(css.sectionToggle, searchExpanded && css.sectionToggleHidden)}>
-            <Tooltip label={t('sidebar.collapse')} side="bottom" delayMs={500}>
-              <button
-                type="button"
-                className={css.iconButton}
-                aria-label={t('sidebar.collapse')}
-                onClick={() => { collapseSidebar() }}
-              >
-                <Icon name="sidebar" size={16} />
-              </button>
-            </Tooltip>
-          </div>
         )}
         {wide && (
           <div className={clsx(css.searchSlot, searchExpanded && css.searchSlotExpanded)}>

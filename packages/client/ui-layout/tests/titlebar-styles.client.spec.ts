@@ -13,14 +13,18 @@ describe('AppFrame titlebar hit regions', () => {
     expect(css).toMatch(/\.handle\s*\{[^}]*-webkit-app-region: no-drag;/)
   })
 
-  it('将 macOS 共用开关放到外层导航底部，页内按钮在桌面端退出布局和焦点顺序', () => {
+  it('侧栏开关只在外层导航底部渲染，所有端与页内都不再出第二枚', () => {
+    // 外层：固定显示，不靠平台变量开关。
     expect(shellCss).toMatch(/\.footer\s*\{[^}]*margin-top:\s*auto;/u)
-    expect(shellCss).toMatch(/\.desktopSidebarToggle\s*\{[^}]*display:\s*var\(--desktop-sidebar-toggle, none\);/u)
-    expect(shellCss).not.toMatch(/\.desktopSidebarToggle\s*\{[^}]*\b(?:top|left):\s*\d+px;/u)
-    expect(shellCss).toMatch(/\.desktopSidebarToggle\s*\{[^}]*-webkit-app-region:\s*no-drag;/u)
-    expect(conversationCss).toMatch(/\.sectionToggle\s*\{[^}]*display:\s*var\(--sidebar-inline-toggle, flex\);/u)
-    expect(railCss).toMatch(/\.toggleArea\s*\{[^}]*display:\s*var\(--sidebar-inline-toggle, flex\);/u)
-    expect(pageCss).toMatch(/\.iconButton\s*\{[^}]*display:\s*var\(--sidebar-inline-toggle, inline-flex\);/u)
-    expect(pageCss).toMatch(/\.railToggle\s*\{[^}]*display:\s*var\(--sidebar-inline-toggle, inline-flex\);/u)
+    expect(shellCss).toMatch(/\.sidebarToggle\s*\{[^}]*-webkit-app-region:\s*no-drag;/u)
+    expect(shellCss).not.toMatch(/\.sidebarToggle\s*\{[^}]*display:\s*none;/u)
+    expect(shellCss).not.toContain('--desktop-sidebar-toggle')
+    // 页内：对话区头、侧栏图标轨、页内侧栏都没有开关样式。
+    for (const source of [conversationCss, railCss, pageCss]) {
+      expect(source).not.toContain('--sidebar-inline-toggle')
+    }
+    expect(conversationCss).not.toContain('.sectionToggle')
+    expect(railCss).not.toContain('.toggleArea')
+    expect(pageCss).not.toContain('.railToggle')
   })
 })

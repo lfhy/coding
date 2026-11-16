@@ -7,7 +7,7 @@
 import { useEffect, useRef, useState } from 'react'
 import clsx from 'clsx'
 import {
-  Icon, IconNewChatOutline16, Tooltip,
+  IconNewChatOutline16, Tooltip,
 } from 'coding-client-ui-primitives'
 import type { SidebarRootComponentProps } from './contract/slots.ts'
 import css from './SidebarRoot.module.css'
@@ -127,22 +127,6 @@ export function SidebarRoot({
 
       {renderSlot('sidebar.top.entry', { wide })}
 
-      {!wide && (
-        <div className={css.toggleArea}>
-          <Tooltip label={t('toggle.open')} delayMs={500}>
-            <button
-              type="button"
-              className={clsx(css.iconButton, css.toggle)}
-              aria-label={t('toggle.open')}
-              onClick={() => { toggleSidebar() }}
-            >
-              {/* rail 始终提供侧边栏展开入口。 */}
-              <Icon name="sidebar" className={css.panelIcon} size={18} />
-            </button>
-          </Tooltip>
-        </div>
-      )}
-
       {/* 宽侧栏由浏览区域的切换栏分层；这里只在 rail 中绘制短分隔线。 */}
       <div className={css.topDivider} aria-hidden="true" />
 
@@ -153,8 +137,6 @@ export function SidebarRoot({
           conversationVisible,
           showConversation,
           expandSidebar: () => { if (collapsed) toggleSidebar() },
-          // 宽侧栏的收起按钮由浏览区域的标题行渲染；已收起时点击不重复收起。
-          collapseSidebar: () => { if (!collapsed) toggleSidebar() },
         })}
       </div>
 

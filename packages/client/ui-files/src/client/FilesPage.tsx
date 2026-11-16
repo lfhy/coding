@@ -14,7 +14,7 @@ export type FilesPageProps = PropsRuntime<'shell.page'> & PropsLocale<typeof NS>
   }>
 
 /** 无工作区文件页；页头固定，列表由内容区自行滚动。 */
-export function FilesPage({ closePage, list, t, sidebarCollapsed, sidebarWidth, toggleSidebar }: FilesPageProps) {
+export function FilesPage({ closePage, list, t, sidebarCollapsed, sidebarWidth }: FilesPageProps) {
   const titleId = useId()
   const titleRef = useRef<HTMLHeadingElement | null>(null)
   const previousFocus = useRef<HTMLElement | null>(null)
@@ -50,7 +50,6 @@ export function FilesPage({ closePage, list, t, sidebarCollapsed, sidebarWidth, 
     <main className={css.page} aria-labelledby={titleId}
       style={{ '--page-sidebar-width': `${sidebarWidth}px` } as CSSProperties}>
       <SidebarRoot label={t('space')} title={t('space')} collapsed={sidebarCollapsed} width={sidebarWidth}
-        labels={{ collapse: t('collapse'), expand: t('expand') }}
         items={categories.map(entry => ({
           id: entry.label,
           label: entry.label,
@@ -58,8 +57,7 @@ export function FilesPage({ closePage, list, t, sidebarCollapsed, sidebarWidth, 
           iconTone: entry.iconTone,
           active: category === entry.value,
           onSelect: () => { setCategory(entry.value); setKind(undefined) },
-        }))}
-        onToggle={toggleSidebar} />
+        }))} />
       <section className={css.content} aria-label={selectedLabel}>
         <header className={css.header}>
           <div className={css.heading}>

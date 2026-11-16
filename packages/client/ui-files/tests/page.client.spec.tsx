@@ -11,7 +11,7 @@ describe('文件管理分类侧栏', () => {
   it('所有类别在选中前就各自带颜色，侧栏折叠后也沿用颜色', async () => {
     const base = {
       list: vi.fn(async () => ({ items: [], total: 0 })),
-      closePage: vi.fn(), toggleSidebar: vi.fn(),
+      closePage: vi.fn(),
       t: (key: keyof typeof zh) => zh[key],
       sidebarCollapsed: false, sidebarWidth: 280,
     }

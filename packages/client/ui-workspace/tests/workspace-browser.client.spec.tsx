@@ -63,7 +63,6 @@ function mount(overrides: Partial<WorkspaceBrowserProps> = {}) {
   const props: WorkspaceBrowserProps = {
     wide: true,
     expandSidebar: vi.fn(),
-    collapseSidebar: vi.fn(),
     conversationVisible: true,
     showConversation: vi.fn(),
     useSessions: hook(sessionState([])),
@@ -735,20 +734,15 @@ describe('WorkspaceBrowser', () => {
     }
   })
 
-  it('wide header renders the shell collapse control left of search', () => {
-    const collapseSidebar = vi.fn()
-    mount({ collapseSidebar })
+  it('wide header keeps the title on the left and draws no inline collapse control', () => {
+    mount()
     const label = screen.getByText('工作区')
-    const collapse = screen.getByRole('button', { name: '收起侧边栏' })
     const search = screen.getByRole('button', { name: '搜索会话' })
-    // 收起按钮在新对话行下方的标题行里，紧挨着搜索的左侧。
-    expect(label.compareDocumentPosition(collapse) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    expect(collapse.compareDocumentPosition(search) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    fireEvent.click(collapse)
-    expect(collapseSidebar).toHaveBeenCalledOnce()
-    // 搜索展开后整簇动作让位，收起按钮随之隐藏（输入框独占标题行）。
+    // 侧栏开关由外层导航底部持有，标题行只留标题、搜索与尾部动作。
+    expect(screen.queryByRole('button', { name: '收起侧边栏' })).toBeNull()
+    expect(label.compareDocumentPosition(search) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     fireEvent.click(search)
-    expect(screen.queryByRole('button', { name: '收起侧边栏' })).toBeTruthy()
+    expect(screen.getByPlaceholderText('搜索会话…')).toBeTruthy()
   })
 
   it('rail state renders icon controls that request expansion', () => {

@@ -80,32 +80,28 @@ function mountShell({ collapsed = false, width = 300, welcomeActionsVisible = fa
 }
 
 describe('SidebarRoot shell', () => {
-  it('keeps the optional entry on welcome and orders it before the rail toggle', () => {
+  it('keeps the optional entry on welcome and leaves the toggle to the window navigation', () => {
     vi.useFakeTimers()
     const b = mountShell({ welcomeActionsVisible: true })
     expect(screen.getByTestId('top-entry-seat')).toBeTruthy()
     expect(screen.getAllByRole('button', { name: 'New chat' })).toHaveLength(1)
 
-    // 展开态不渲染任何收起按钮；落定到 rail 后才出现展开入口。
+    // 侧栏开关统一在外层导航底部：展开态与 rail 态都不在列内再画第二枚。
     b.rerender({ collapsed: true, welcomeActionsVisible: true })
     expect(screen.queryByRole('button', { name: 'Open sidebar' })).toBeNull()
     vi.advanceTimersByTime(200)
     b.rerender({})
-    fireEvent.click(screen.getByRole('button', { name: 'Open sidebar' }))
-    expect(b.toggleSidebar).toHaveBeenCalledOnce()
+    expect(screen.queryByRole('button', { name: 'Open sidebar' })).toBeNull()
     const entry = screen.getByTestId('top-entry-seat')
     const starter = screen.getByRole('button', { name: 'New chat' })
-    const toggle = screen.getByRole('button', { name: 'Open sidebar' })
     expect(starter.compareDocumentPosition(entry) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    expect(entry.compareDocumentPosition(toggle) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    expect(toggle.compareDocumentPosition(screen.getByTestId('region')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(entry.compareDocumentPosition(screen.getByTestId('region')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
 
     b.rerender({ welcomeActionsVisible: false })
     expect(screen.getByTestId('top-entry-seat')).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'Open sidebar' })).toBeTruthy()
   })
 
-  it('routes the New chat entry and hands the collapse action to the browsing region', () => {
+  it('routes the New chat entry and keeps only the expand request for the browsing region', () => {
     const b = mountShell()
     // 可选入口在新对话之后、浏览区域之前，占用者拿到 wide。
     expect(b.topEntryOwner().wide).toBe(true)
@@ -115,10 +111,9 @@ describe('SidebarRoot shell', () => {
     expect(actions.compareDocumentPosition(screen.getByTestId('region')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     fireEvent.click(starter)
     expect(b.startSession).toHaveBeenCalledOnce()
-    // 宽侧栏不再自带收起按钮，收起动作交给浏览区域的标题行。
+    // 外壳与浏览区域都不再渲染收起按钮，也不需要收起回调。
     expect(screen.queryByRole('button', { name: 'Collapse sidebar' })).toBeNull()
-    b.regionOwner().collapseSidebar()
-    expect(b.toggleSidebar).toHaveBeenCalledOnce()
+    expect('collapseSidebar' in b.regionOwner()).toBe(false)
   })
 
   it('renders no brand wordmark in the New chat row', () => {
@@ -140,17 +135,15 @@ describe('SidebarRoot shell', () => {
     expect(screen.queryByText('0123456')).toBeNull()
   })
 
-  it('hands the region its wide flag and clamps both toggle requests to their own state', () => {
+  it('hands the region its wide flag and ignores expand requests while already wide', () => {
     const b = mountShell()
     expect(b.regionOwner().wide).toBe(true)
     // 可选入口与浏览区域共用同一个 wide 标志。
     expect(b.topEntryOwner().wide).toBe(true)
     expect(b.footerActionOwner().wide).toBe(true)
-    // 已展开：展开请求是空操作，收起请求生效。
+    // 已展开：展开请求是空操作。
     b.regionOwner().expandSidebar()
     expect(b.toggleSidebar).not.toHaveBeenCalled()
-    b.regionOwner().collapseSidebar()
-    expect(b.toggleSidebar).toHaveBeenCalledOnce()
   })
 
   it('keeps the region mounted through collapse and expands on its request', () => {
@@ -167,15 +160,12 @@ describe('SidebarRoot shell', () => {
     expect(screen.getByTestId('region')).toBeTruthy()
     b.regionOwner().expandSidebar()
     expect(b.toggleSidebar).toHaveBeenCalledOnce()
-    // 已收起：收起请求不再反转成展开。
-    b.regionOwner().collapseSidebar()
-    expect(b.toggleSidebar).toHaveBeenCalledOnce()
   })
 
   it('renders statically collapsed on a cold start (no crossfade classes)', () => {
     const b = mountShell({ collapsed: true })
     expect(b.regionOwner().wide).toBe(false)
-    expect(screen.getByRole('button', { name: 'Open sidebar' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Open sidebar' })).toBeNull()
     expect(document.querySelector('img[src="/favicon.png"]')).toBeNull()
   })
 })

@@ -150,7 +150,8 @@ describe('Host 窗口导航边界', () => {
     domReady()
     expect(fixture.webContents.insertCSS).toHaveBeenCalledTimes(2)
     expect(fixture.webContents.insertCSS).toHaveBeenCalledWith(expect.stringContaining('--app-safe-area-inset-top: 38px'))
-    expect(fixture.webContents.insertCSS).toHaveBeenCalledWith(expect.stringContaining('--desktop-sidebar-toggle: flex; --sidebar-inline-toggle: none;'))
+    // 侧栏开关已统一到外层导航底部，桌面壳不再注入页内开关的显隐变量。
+    expect(fixture.webContents.insertCSS).toHaveBeenCalledWith(expect.not.stringContaining('--sidebar-inline-toggle'))
     expect(fixture.webContents.insertCSS).toHaveBeenCalledWith(expect.stringContaining('[data-window-drag-region] { -webkit-app-region: drag !important; }'))
     fixture.webContents.getURL.mockReturnValue('http://127.0.0.1:43124/')
     domReady()

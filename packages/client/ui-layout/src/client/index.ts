@@ -103,8 +103,6 @@ export interface ShellPageOwnerProps {
   sidebarCollapsed: boolean
   /** 与对话侧栏相同的实际宽度，包含窄屏的 56px 图标轨。 */
   sidebarWidth: number
-  /** 切换根布局持有的侧栏状态。 */
-  toggleSidebar: () => void
 }
 
 /** 设置触发器的呈现约定；外层导航固定使用紧凑图标。 */
