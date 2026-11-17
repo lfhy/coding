@@ -14,7 +14,7 @@ describe('Hero action titlebar clearance', () => {
     expect(actions).toMatch(/\btop:\s*12px;/)
     expect(actions).toMatch(/\bright:\s*calc\(24px \+ var\(--app-safe-area-inset-right, 0px\)\);/)
     expect(actions).not.toContain('--app-safe-area-inset-top')
-    expect(css).toMatch(/@media \(max-width: 480px\)\s*\{\s*\.heroActions/)
+    expect(css).toMatch(/@media \(max-width: 480px\)\s*\{\s*\.heroMode \{ top: 56px; \}\s*\.heroActions/)
     expect(css).toContain('.heroActions { right: calc(12px + var(--app-safe-area-inset-right, 0px)); }')
     expect(css).toContain(':global([data-workbench-shown]) .heroActions {\n  right: 24px;\n}')
     expect(css).toContain(':global([data-workbench-shown]) .heroActions { right: 12px; }')

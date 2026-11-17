@@ -175,12 +175,7 @@ export function ConversationRoot({
   const composerBar = (
     <div className={clsx(css.composerStack, hero && css.composerHero)}>
       {hero && <HeroGlow className={css.heroGlow} />}
-      {hero && <HeroShell t={t} renderSlot={renderSlot} mode={<div className={css.heroMode}>
-        {renderSlot('conversation.hero.mode', {
-          mode, busy: selection.busy || inputState?.phase === 'adjudicating' || inputState?.phase === 'submitting',
-          onPick: selection.pickMode, id: modeId,
-        })}
-      </div>} />}
+      {hero && <HeroShell t={t} renderSlot={renderSlot} />}
       {hero && heroWorkspaceRow}
       {zone !== undefined && renderSlot('conversation.input.dock', zone)}
       {inputBar}
@@ -205,6 +200,12 @@ export function ConversationRoot({
   return (
     <div ref={rootRef} className={css.root} data-phase={phase}>
       {(hero || settling) && <div className={css.windowDragStrip} data-window-drag-strip data-window-drag-region aria-hidden="true" />}
+      {hero && <div className={css.heroMode}>
+        {renderSlot('conversation.hero.mode', {
+          mode, busy: selection.busy || inputState?.phase === 'adjudicating' || inputState?.phase === 'submitting',
+          onPick: selection.pickMode, id: modeId,
+        })}
+      </div>}
       {hero && (
         <div className={css.heroActions}>
           {renderSlot('conversation.hero.actions', { sidebarCollapsed })}

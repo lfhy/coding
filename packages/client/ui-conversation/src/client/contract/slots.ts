@@ -165,7 +165,7 @@ declare module 'coding-client-ui-slots' {
      * reads the global workspace list.
      */
     'conversation.hero.workspace': { kind: 'single'; scope: 'root'; owner: EmptyWorkspaceOwnerProps }
-    /** 欢迎页问候下方的开始方式；与侧栏浏览选择独立。 */
+    /** 新对话页顶部的发起方式；与问候、输入区及侧栏浏览选择独立。 */
     'conversation.hero.mode': { kind: 'single'; scope: 'root'; owner: HeroModeOwnerProps }
     /** Hero 工作区行右侧的 Git 分支入口；非 Git 工作区不渲染。 */
     'conversation.hero.git': { kind: 'single'; scope: 'root'; owner: { sessionId?: SessionId | undefined } }

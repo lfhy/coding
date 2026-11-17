@@ -1,6 +1,6 @@
 # coding-client-ui-workspace
 
-共享 Workspace 浏览器与选择器插件。`WorkspaceBrowser` 填充侧边栏的 `sidebar.workspaces` slot，`WorkspacePicker` 填充欢迎页的 `conversation.hero.workspace` slot，两个界面使用同一套 Workspace 菜单和添加流程；`NewConversationModeSwitch` 填充欢迎页问候下方的 `conversation.hero.mode` slot。独立主内容页（`shell.page`）打开时，会话行不显示选中；点击当前会话行会通过[布局服务](../ui-layout/README.md)关闭该页并返回对话，保留当前 Session。
+共享 Workspace 浏览器与选择器插件。`WorkspaceBrowser` 填充侧边栏的 `sidebar.workspaces` slot，`WorkspacePicker` 填充欢迎页的 `conversation.hero.workspace` slot，两个界面使用同一套 Workspace 菜单和添加流程；`NewConversationModeSwitch` 填充欢迎页顶部的 `conversation.hero.mode` slot。独立主内容页（`shell.page`）打开时，会话行不显示选中；点击当前会话行会通过[布局服务](../ui-layout/README.md)关闭该页并返回对话，保留当前 Session。
 
 该浏览器通过全局运行时钩子读取 Session 与 Workspace，并负责 Workspace 添加／重命名／重排序以及 Session 重排序。侧栏顶部入口下方、工作区标题行上方提供带图标的**工作｜对话｜最近**胶囊分段切换，默认选中工作，整体不绘制外圈描边，仅选中项保留浅底与边框：
 
@@ -8,7 +8,7 @@
 - **对话**：只平铺不属于任何 Workspace 的普通会话。
 - **最近**：跨 Workspace 与未分组范围平铺所有可见会话，始终按 `updatedAt` 倒序、同时间按 id 升序稳定排列，不提供手动排序或拖拽排序。
 
-欢迎页问候下方只有**工作｜对话**，与输入卡片组成居中内容栈，复用 [`WorkspaceViewTabs`](src/client/WorkspaceViewTabs.tsx) 的图标与交互；该胶囊放大且带轻描边，按钮高 36px、最小宽 96px、字号 14px，侧栏保持高 28px、字号 12px 且无外圈的紧凑样式。工作要求选择工作区开始；对话不要求选择工作区，隐藏 Agent 预设选择器、工作区与 Git 入口，直接使用标准模式。已有未分组空白会话可复用，没有可复用空白时通过 Host 用户 HOME 目录新建，权限策略不因开始方式改变。模式、忙碌状态和选择回调由 [`ui-conversation`](../ui-conversation/README.md) 的空态 owner 提供，切换组件只调用 owner，不自行创建会话或准备预设。该入口仅在没有会话或当前会话为空白时显示，已有非空会话不显示。
+欢迎页顶部只有**工作｜对话**，按内容区水平居中，复用 [`WorkspaceViewTabs`](src/client/WorkspaceViewTabs.tsx) 的图标与交互；顶部使用放大且带轻描边的胶囊，按钮高 36px、最小宽 96px、字号 14px，侧栏保持高 28px、字号 12px 且无外圈的紧凑样式。工作要求选择工作区开始；对话不要求选择工作区，隐藏 Agent 预设选择器、工作区与 Git 入口，直接使用标准模式。已有未分组空白会话可复用，没有可复用空白时通过 Host 用户 HOME 目录新建，权限策略不因开始方式改变。顶部模式、忙碌状态和选择回调由 [`ui-conversation`](../ui-conversation/README.md) 的空态 owner 提供，切换组件只调用 owner，不自行创建会话或准备预设。该入口仅在没有会话或当前会话为空白时显示，已有非空会话不显示。
 
 [`NewConversationModeSwitch`](src/client/NewConversationModeSwitch.tsx) 与侧栏注册共享在 `apply` 内创建的同一个 `createWorkspaceViewStore` handle。顶部点击工作／对话时，仅将侧栏 `view` 写为 `work`／`conversations`，即使侧栏原先在最近也会同步；顶部显示始终读取 owner 的 `mode`，不从侧栏 store 反推。单点侧栏页签只改变列表范围，不切顶部模式、不创建会话、不切换当前会话。开始方式切换的草稿／附件保留、失败重试和过时请求处理由[会话壳](../ui-conversation/README.md)负责。
 

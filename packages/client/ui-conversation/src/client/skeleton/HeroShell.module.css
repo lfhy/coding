@@ -1,19 +1,24 @@
-/* 新会话引导层：品牌问候与开始方式同处居中内容栈，工作区选择器位于输入卡片上方。 */
+/* 新会话引导层：品牌图标和时段问候，以及共享 InputBar 卡片上方的工作区选择器。 */
 
 .root {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
   min-width: 0;
   padding: 0 24px;
 }
 
-/* 与输入卡片共用宽度轴，开始方式单独居中。 */
+/* 内容宽度与 InputBar 卡片一致，发光背景可以超出两侧。 */
 .stack {
   display: flex;
   flex-direction: column;
   align-items: stretch;
+  /* 标题、工作区和卡片之间保持 12px。 */
   gap: 12px;
   width: 100%;
   max-width: var(--dsh-composer-card-max-width);
-  margin-inline: auto;
+  overflow: visible;
 }
 
 /* 问候和品牌图标居中排列。 */
@@ -50,6 +55,32 @@
   height: 34px;
   border-radius: 7px;
   object-fit: cover;
+}
+
+/* 工作区行位于输入卡片上方 12px；蓝色发光背景由 owner 持有，以便与输入卡片居中。 */
+.body {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  overflow: visible;
+}
+
+.body > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* Must beat `.body > :not(.glow)` specificity so the open Menu (and its
+   right-hand submenu) paints above the InputBar card. */
+.body > .workspaceRow {
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  /* figma 75:8208 workspace row: px 8 above the card. */
+  padding-left: 8px;
 }
 
 /* 工作区选择器与模式选择器共用紧凑的透明 chip 外观。 */

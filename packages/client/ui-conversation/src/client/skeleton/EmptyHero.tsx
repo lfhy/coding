@@ -145,24 +145,22 @@ export function HeroGlow({ className }: { className?: string | undefined }) {
   )
 }
 
-/** 会话引导层的属性；开始方式与问候共用居中的内容栈。 */
+/** 会话引导层的属性；工作区行由 InputBar 的 accessory slot 承载。 */
 export interface HeroShellProps {
   /** owner 的 locale seat，以普通属性传入。 */
   t: HeroTranslate
   /** 获授权的会话引导品牌 slot 渲染函数。 */
   renderSlot: ConversationSlotProps['renderSlot']
-  /** 问候下方的开始方式切换。 */
-  mode?: ReactNode
   /** 位于内容栈之后的叠层内容（如模态框）。 */
   children?: ReactNode
 }
 
 /**
- * 渲染会话引导层的问候与开始方式；发光背景、编辑器和工作区行由 owner 单独持有。
+ * 渲染会话引导层的标题部分；发光背景、编辑器和工作区行由 owner 单独持有。
  * @param props - 见 {@link HeroShellProps}。
  * @returns 居中的会话引导元素树。
  */
-export function HeroShell({ t, renderSlot, mode, children }: HeroShellProps) {
+export function HeroShell({ t, renderSlot, children }: HeroShellProps) {
   const now = useHeroClock()
 
   return (
@@ -179,7 +177,12 @@ export function HeroShell({ t, renderSlot, mode, children }: HeroShellProps) {
             {t(heroGreetingKey(now.getHours()))}
           </span>
         </div>
-        {mode}
+        <div className={css.body}>
+          {/* The resident composer (ConversationRoot's root-owned scrollport;
+              the workspace row rides the stack above the card) is CSS-centered
+              in that scroll body during hero — see
+              ConversationRoot.module.css [data-phase='hero']. */}
+        </div>
       </div>
       {children}
     </div>
