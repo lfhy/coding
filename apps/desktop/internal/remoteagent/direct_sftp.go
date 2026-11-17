@@ -828,8 +828,8 @@ func (backend *directSFTPBackend) edit(ctx context.Context, root, name string, r
 	if !info.Mode().IsRegular() {
 		return EditResponse{}, fail(http.StatusUnprocessableEntity, "not-regular-file", "target is not a regular file")
 	}
-	// 用文本读取路径取内容：控制面可用时一条脚本就够，回退时仍是 SFTP 分块读。
-	data, opened, err := backend.readText(ctx, root, name, maxFileBytes)
+	// 写入路径仍用 SFTP 读取：原子替换与版本守卫都建立在 SFTP 的文件句柄语义上。
+	data, opened, err := backend.read(ctx, root, name, maxFileBytes)
 	if err != nil {
 		return EditResponse{}, err
 	}
