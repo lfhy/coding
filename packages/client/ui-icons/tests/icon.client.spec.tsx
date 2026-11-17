@@ -67,6 +67,15 @@ describe('语义图标适配', () => {
     expect(slides?.innerHTML).not.toBe(doc?.innerHTML)
   })
 
+  it('笔记语义图标使用文字文档图形，不与普通文档图标共用同一轮廓', () => {
+    const view = render(<><Icon name="file" className="doc" /><Icon name="notes" className="notes-row-icon" /></>)
+    const doc = view.container.querySelector<HTMLElement>('.doc')
+    const notes = view.container.querySelector<HTMLElement>('.notes-row-icon')
+    expect(notes?.querySelector('svg')).not.toBeNull()
+    expect(notes?.getAttribute('aria-hidden')).toBe('true')
+    expect(notes?.innerHTML).not.toBe(doc?.innerHTML)
+  })
+
   it('原有图标迁移后仍保留原尺寸与 SVG 图形', () => {
     const view = render(<IconPanelLeftOutline16 />)
     expect(view.container.querySelector('svg')?.getAttribute('viewBox')).toBe('0 0 16 16')
