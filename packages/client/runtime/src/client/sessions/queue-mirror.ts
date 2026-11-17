@@ -1,4 +1,4 @@
-import { isImageEnvelope } from 'coding-llm'
+import { isImageEnvelope } from 'coding-llm/src/image-envelope.ts'
 import type { ContentBlock } from 'coding-llm/types'
 import type { MuxFrame } from 'coding-api-remotes/client'
 import type { SessionEvent } from 'coding-session/types'
