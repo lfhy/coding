@@ -115,6 +115,7 @@ export function GalleryView({ sessionId, closePage, sidebarCollapsed, sidebarWid
   const [editing, setEditing] = useState<string[]>([])
   const [zoom, setZoom] = useState(100)
   const [studioImageId, setStudioImageId] = useState<string | null>(null)
+  const [promptExpanded, setPromptExpanded] = useState(false)
   const [outputRatio, setOutputRatio] = useState('auto')
   const [outputTier, setOutputTier] = useState<string | null>(null)
   const [quality, setQuality] = useState('default')
@@ -151,6 +152,8 @@ export function GalleryView({ sessionId, closePage, sidebarCollapsed, sidebarWid
     setStudioImageId(state.lastResultId)
     setZoom(100)
   }, [state.lastResultId])
+  // 换图时把长 Prompt 折叠回默认的两行，避免上一张图的展开状态串到新图上。
+  useEffect(() => { setPromptExpanded(false) }, [studioImageId])
 
   const items = useMemo(() => state.items.filter(item => !hidden.includes(item.id)), [state.items, hidden])
   const visible = useMemo(() => items.filter((item) => {
@@ -282,16 +285,18 @@ export function GalleryView({ sessionId, closePage, sidebarCollapsed, sidebarWid
     <SidebarRoot label={t('recentImages')} title={t('recentImages')} variant="media" width={sidebarWidth}
       collapsed={sidebarCollapsed}
       header={<StudioTabs tab={tab} collapsed={sidebarCollapsed} t={t}
-        onTab={(next) => { setTab(next); setManage(false); setSelected(new Set()) }}
+        onTab={(next) => { setTab(next); setManage(false); setSelected(new Set()); if (next !== 'studio') { setStudioImageId(null); setZoom(100) } }}
         registerFirstTab={(element) => { firstTabRef.current = element }} />}
       empty={t('galleryEmpty')}
-      items={items.slice().sort((a, b) => b.createdAt - a.createdAt).map(item => ({
+      // 收起为图标轨时只保留顶部的子页切换，不显示最近生成缩略图。
+      items={sidebarCollapsed ? [] : items.slice().sort((a, b) => b.createdAt - a.createdAt).map(item => ({
         id: item.id,
         label: item.prompt || t('image'),
         icon: 'model-vision',
         media: <img src={url(item.id)} alt="" />,
         active: studioImageId === item.id,
-        onSelect: () => { setStudioImageId(item.id); setZoom(100) },
+        // 点侧栏缩略图即回到工作台并选中该图：最近生成属于工作台的上下文。
+        onSelect: () => { setTab('studio'); setStudioImageId(item.id); setZoom(100) },
       }))} />
     <div className={css.content}>
       {tab === 'gallery' && favoritesOnly && <div className={css.favoriteKinds} role="group" aria-label={t('favoritesTab')}>
@@ -379,15 +384,20 @@ export function GalleryView({ sessionId, closePage, sidebarCollapsed, sidebarWid
                     }}><Icon name="model-vision" size={16} /></button>
                   </div>
                 </div>
-                <div className={css.resultQuickActions}>
-                  <button type="button" onClick={() => { beginEdit(studioItem) }}><IconSparkle16 size={15} />{t('continueEdit')}</button>
-                  <button type="button" onClick={() => { prepareRegeneration(studioItem) }}><IconRefreshOutline16 size={15} />{t('regenerate')}</button>
-                </div>
               </div>
             </div>
-            <div className={css.resultActions}>
-              <p title={studioItem.prompt}>{studioItem.prompt || t('image')}</p>
+            {/* Prompt 默认折叠两行，长文本点「展开」看全文；短文本不出现开关。 */}
+            <div className={css.resultPrompt}>
+              <p className={promptExpanded ? css.promptFull : css.promptClamp} title={studioItem.prompt}>{studioItem.prompt || t('image')}</p>
+              {(studioItem.prompt ?? '').length > 60
+                ? <button type="button" onClick={() => setPromptExpanded(value => !value)}>
+                  {promptExpanded ? t('showLess') : t('showMore')}</button>
+                : undefined}
+            </div>
+            <div className={css.resultFooter}>
               <div>
+                <button type="button" onClick={() => { beginEdit(studioItem) }}><IconSparkle16 size={15} />{t('continueEdit')}</button>
+                <button type="button" onClick={() => { prepareRegeneration(studioItem) }}><IconRefreshOutline16 size={15} />{t('regenerate')}</button>
                 <button type="button" aria-pressed={favorites.includes(studioItem.id)} onClick={() => { actions.toggleFavorite(studioItem.id) }}>
                   <Icon name="favorite" size={15} />{t(favorites.includes(studioItem.id) ? 'removeFavorite' : 'addFavorite')}</button>
                 <button type="button" onClick={() => { copyImage(studioItem) }}><IconCopyOutline16 size={15} />{t('copyImage')}</button>
@@ -395,11 +405,11 @@ export function GalleryView({ sessionId, closePage, sidebarCollapsed, sidebarWid
                 <button type="button" onClick={() => { setSelected(new Set([studioItem.id])); setConfirmDelete(true) }}>
                   <IconTrashOutline16 size={15} />{t('hideSelected')}</button>
               </div>
-            </div>
-            <div className={css.resultMeta}>
-              {readableDate(studioItem.createdAt)} · {studioItem.model} · {studioItem.width} × {studioItem.height}
-              {studioItem.id === state.lastResultId && typeof state.lastElapsedMs === 'number'
-                && <> · {elapsed(t('elapsedSeconds'), state.lastElapsedMs)}</>}
+              <span className={css.resultMeta}>
+                {readableDate(studioItem.createdAt)} · {studioItem.model} · {studioItem.width} × {studioItem.height}
+                {studioItem.id === state.lastResultId && typeof state.lastElapsedMs === 'number'
+                  && <> · {elapsed(t('elapsedSeconds'), state.lastElapsedMs)}</>}
+              </span>
             </div>
           </div>}
         </div>

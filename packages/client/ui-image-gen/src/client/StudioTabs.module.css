@@ -36,15 +36,16 @@
   outline-offset: -2px;
 }
 
-.tab > svg, .activeTab > svg { flex: none; }
-.tab > svg { color: var(--dsw-alias-label-tertiary); }
-.activeTab > svg { color: var(--dsw-alias-label-primary); }
+/* 语义 Icon 在按钮里渲染成 span>svg 嵌套，具名图形则是直接的 svg，统一用后代选择器着色。 */
+.tab svg, .activeTab svg { flex: none; }
+.tab svg { color: var(--dsw-alias-label-tertiary); }
+.activeTab svg { color: var(--dsw-alias-label-primary); }
 
 /* 切换行图标按语义色常显，选中与悬停只改变文字和行底色。 */
-.tab[data-tone='amber'] > svg, .activeTab[data-tone='amber'] > svg { color: var(--dsw-alias-state-warn-primary); }
-.tab[data-tone='green'] > svg, .activeTab[data-tone='green'] > svg { color: var(--dsw-alias-icon-accent-green); }
-.tab[data-tone='blue'] > svg, .activeTab[data-tone='blue'] > svg { color: var(--dsw-alias-state-business-primary); }
-.tab[data-tone='violet'] > svg, .activeTab[data-tone='violet'] > svg { color: var(--dsw-alias-icon-accent-violet); }
+.tab[data-tone='amber'] svg, .activeTab[data-tone='amber'] svg { color: var(--dsw-alias-state-warn-primary); }
+.tab[data-tone='green'] svg, .activeTab[data-tone='green'] svg { color: var(--dsw-alias-icon-accent-green); }
+.tab[data-tone='blue'] svg, .activeTab[data-tone='blue'] svg { color: var(--dsw-alias-state-business-primary); }
+.tab[data-tone='violet'] svg, .activeTab[data-tone='violet'] svg { color: var(--dsw-alias-icon-accent-violet); }
 
 .rail {
   display: grid;

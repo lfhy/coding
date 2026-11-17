@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { bindSnapshotSelector } from 'coding-client-test-runtime'
 import { CanvasPanel, type CanvasPanelProps } from '../src/client/CanvasPanel.tsx'
@@ -226,6 +226,62 @@ describe('图像交互组件', () => {
     expect(show).toHaveBeenLastCalledWith(false)
   })
 
+  it('点击最近生成图片回到工作台，离开工作台时取消侧栏选中', () => {
+    const item = { id: 'one', prompt: '晨光', attachmentId: 'att', createdAt: 1, model: 'paint', mediaType: 'image/png', width: 256, height: 256 }
+    const view = { phase: 'ready', state: { enabled: true, available: true, model: 'paint' }, items: [item],
+      generating: false, uploading: false, lastResultId: null, failed: false }
+    const ui = createGalleryUiStore().create()
+    render(<GalleryView {...({ t, sessionId: 'test', sidebarCollapsed: false, sidebarWidth: 280, toggleSidebar: vi.fn(), closePage: vi.fn(),
+      useGallery: (pick: (state: unknown) => unknown) => pick(view), useStore: bindSnapshotSelector(ui), actions: ui.actions,
+      useImageCanvas: (pick: (state: unknown) => unknown) => pick({ phase: 'loading', nodes: [], selectedId: null, saving: false, issue: null }),
+      canvas: { show: vi.fn(), refresh: vi.fn(), add: vi.fn(), select: vi.fn(), move: vi.fn(), remove: vi.fn(),
+        clear: vi.fn(), url: vi.fn(() => '/image') },
+      show: vi.fn(), refresh: vi.fn(), generate: vi.fn(async () => true), place: vi.fn(async () => true),
+      url: (id: string) => `/api/image-gen/image?sessionId=test&id=${id}`,
+    } as unknown as GalleryViewProps)} />)
+    // 侧栏行是 role=listitem 的按钮，新版 accname 不按内容计算名称，用侧栏内唯一定位。
+    const aside = screen.getByRole('complementary', { name: '最近生成' })
+    const row = within(aside).getByRole('listitem')
+    expect(within(row).getByText('晨光')).toBeTruthy()
+    expect(row.getAttribute('aria-current')).toBeNull()
+    fireEvent.click(screen.getByRole('tab', { name: '灵感' }))
+    expect(row.getAttribute('aria-current')).toBeNull()
+    // 在灵感页点最近生成的图片：页面回到工作台，该行进入选中态。
+    fireEvent.click(row)
+    expect(screen.getByRole('tab', { name: '工作台' }).getAttribute('aria-selected')).toBe('true')
+    expect(row.getAttribute('aria-current')).toBe('true')
+    expect(screen.getByText('本次结果')).toBeTruthy()
+    // 再切到图库：侧栏保留但选中取消，工作台预览回到空态。
+    fireEvent.click(screen.getByRole('tab', { name: '图库' }))
+    expect(screen.getByRole('complementary', { name: '最近生成' })).toBeTruthy()
+    expect(row.getAttribute('aria-current')).toBeNull()
+    expect(screen.queryByText('本次结果')).toBeNull()
+    fireEvent.click(row)
+    expect(screen.getByRole('tab', { name: '工作台' }).getAttribute('aria-selected')).toBe('true')
+    expect(row.getAttribute('aria-current')).toBe('true')
+  })
+
+  it('收起侧栏时只保留子页切换图标，不显示最近生成', () => {
+    const item = { id: 'one', prompt: '晨光', attachmentId: 'att', createdAt: 1, model: 'paint', mediaType: 'image/png', width: 256, height: 256 }
+    const view = { phase: 'ready', state: { enabled: true, available: true, model: 'paint' }, items: [item],
+      generating: false, uploading: false, lastResultId: null, failed: false }
+    const ui = createGalleryUiStore().create()
+    render(<GalleryView {...({ t, sessionId: 'test', sidebarCollapsed: true, sidebarWidth: 56, toggleSidebar: vi.fn(), closePage: vi.fn(),
+      useGallery: (pick: (state: unknown) => unknown) => pick(view), useStore: bindSnapshotSelector(ui), actions: ui.actions,
+      useImageCanvas: (pick: (state: unknown) => unknown) => pick({ phase: 'loading', nodes: [], selectedId: null, saving: false, issue: null }),
+      canvas: { show: vi.fn(), refresh: vi.fn(), add: vi.fn(), select: vi.fn(), move: vi.fn(), remove: vi.fn(),
+        clear: vi.fn(), url: vi.fn(() => '/image') },
+      show: vi.fn(), refresh: vi.fn(), generate: vi.fn(async () => true), place: vi.fn(async () => true),
+      url: (id: string) => `/api/image-gen/image?sessionId=test&id=${id}`,
+    } as unknown as GalleryViewProps)} />)
+    const aside = screen.getByRole('complementary', { name: '最近生成' })
+    // 图标轨里只剩三个子页切换按钮（轨上仍是 tab 角色），不再出现最近生成条目。
+    expect(within(aside).getAllByRole('tab')).toHaveLength(3)
+    expect(within(aside).queryAllByRole('listitem')).toHaveLength(0)
+    expect(within(aside).queryAllByRole('button')).toHaveLength(0)
+    expect(screen.queryByText('最近生成')).toBeNull()
+  })
+
   it('生成中在预览区和提交按钮显示旋转加载状态', () => {
     const ui = createGalleryUiStore().create()
     render(<GalleryView {...({ t, sessionId: 'test', sidebarCollapsed: false, sidebarWidth: 280, toggleSidebar: vi.fn(), closePage: vi.fn(),
@@ -394,6 +450,8 @@ describe('图像交互组件', () => {
     expect(screen.getByRole('img', { name: '工具生成的图片' }).getAttribute('src'))
       .toBe('/api/image-gen/image?sessionId=test&id=hidden')
     expect(screen.getByText('本次结果')).toBeTruthy()
+    // 短 Prompt 不出现「展开」开关。
+    expect(screen.queryByText('展开')).toBeNull()
     expect(ui.store.getSnapshot().hidden).toEqual(hidden)
     fireEvent.click(screen.getByRole('button', { name: '全屏查看' }))
     const preview = screen.getByRole('dialog', { name: '查看大图' })
@@ -409,6 +467,28 @@ describe('图像交互组件', () => {
     expect(screen.queryByRole('button', { name: '查看大图：工具生成的图片' })).toBeNull()
     fireEvent.keyDown(document, { key: 'Escape' })
     expect(closePage).toHaveBeenCalledOnce()
+  })
+
+  it('长 Prompt 在工作台结果区折叠两行，可展开查看全文', () => {
+    const longPrompt = 'Rough Japanese digital doodle, extremely casual messy simple chibi anime girl mascot, '
+      + 'low-effort colored sketch scribbled fast with a coarse brush in a drawing app, clearly a draft.'
+    const item = { id: 'long', prompt: longPrompt, attachmentId: 'att', createdAt: 1,
+      model: 'paint', mediaType: 'image/png', width: 512, height: 512 }
+    const ui = createGalleryUiStore().create()
+    render(<GalleryView {...({ t, sessionId: 'test', sidebarCollapsed: false, sidebarWidth: 280, toggleSidebar: vi.fn(), closePage: vi.fn(),
+      useGallery: (pick: (state: unknown) => unknown) => pick({ phase: 'ready',
+        state: { enabled: true, available: true, model: 'paint' }, items: [item], generating: false,
+        uploading: false, lastResultId: item.id, failed: false }),
+      useStore: bindSnapshotSelector(ui), actions: ui.actions,
+      show: vi.fn(), refresh: vi.fn(), generate: vi.fn(async () => true), place: vi.fn(),
+      url: (id: string) => `/api/image-gen/image?sessionId=test&id=${id}`,
+    } as unknown as GalleryViewProps)} />)
+    expect(screen.getByText('本次结果')).toBeTruthy()
+    // 默认折叠，点「展开」后显示全文，按钮文案随之切换为「收起」。
+    fireEvent.click(screen.getByRole('button', { name: '展开' }))
+    expect(screen.getByRole('button', { name: '收起' })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: '收起' }))
+    expect(screen.getByRole('button', { name: '展开' })).toBeTruthy()
   })
 
   it('工作台确认隐藏当前图片后清除预览，再次显式打开仍能查看', () => {
