@@ -8,6 +8,8 @@ const inspiration = readFileSync(fileURLToPath(new URL('../src/client/Inspiratio
 const selectMenu = readFileSync(fileURLToPath(new URL('../src/client/SelectMenu.module.css', import.meta.url)), 'utf8')
 const selectMenuSource = readFileSync(fileURLToPath(new URL('../src/client/SelectMenu.tsx', import.meta.url)), 'utf8')
 const entry = readFileSync(fileURLToPath(new URL('../src/client/NavigationEntry.module.css', import.meta.url)), 'utf8')
+const studioTabs = readFileSync(fileURLToPath(new URL('../src/client/StudioTabs.module.css', import.meta.url)), 'utf8')
+const studioTabsSource = readFileSync(fileURLToPath(new URL('../src/client/StudioTabs.tsx', import.meta.url)), 'utf8')
 
 describe('窄屏画廊与画布样式', () => {
   it('画图入口是外侧导航栏的可聚焦 36px 图标盒，高亮标记当前画廊页', () => {
@@ -23,30 +25,24 @@ describe('窄屏画廊与画布样式', () => {
     expect(gallery).toMatch(/\.root\s*\{[^}]*min-width:\s*0;/u)
     expect(gallery).toMatch(/\.list\s*\{[^}]*min-width:\s*0;[^}]*overflow-y:\s*auto;/u)
     const narrow = gallery.slice(gallery.indexOf('@media (max-width: 1100px)'))
-    expect(narrow).toMatch(/\.studio\s*\{[^}]*grid-template-columns:\s*var\(--page-sidebar-width\) minmax\(0, 1fr\);/u)
-    expect(narrow).toMatch(/\.studio\s*\{[^}]*grid-template-rows:\s*48px minmax\(0, 1fr\) auto;/u)
-    expect(narrow).toMatch(/\.studio > :first-child\s*\{[^}]*grid-row:\s*1 \/ 4;/u)
-    expect(narrow).toMatch(/\.studioForm\s*\{[^}]*grid-column:\s*2;[^}]*grid-row:\s*3;/u)
+    expect(narrow).toMatch(/\.studio\s*\{[^}]*grid-template-rows:\s*minmax\(0, 1fr\) auto;/u)
+    expect(narrow).toMatch(/\.studioCenter\s*\{[^}]*grid-column:\s*1;[^}]*grid-row:\s*1;/u)
+    expect(narrow).toMatch(/\.studioForm\s*\{[^}]*grid-column:\s*1;[^}]*grid-row:\s*2;/u)
   })
-  it('工作台侧栏贯通顶部，胶囊只覆盖右侧内容；其它页签仍使用整行工具栏', () => {
+  it('子页切换收进页内侧栏顶部，工作台只排预览与表单两列', () => {
     expect(gallery).toMatch(
-      /\.tabsBar\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\) auto minmax\(0, 1fr\);[^}]*box-sizing:\s*border-box;/u,
+      /\.root\s*\{[^}]*grid-template-columns:\s*var\(--page-sidebar-width\) minmax\(0, 1fr\);/u,
     )
-    expect(gallery).toMatch(/\.tabs\s*\{[^}]*grid-column:\s*2;[^}]*justify-self:\s*center;/u)
-    expect(gallery).toMatch(/\.tab, \.activeTab\s*\{[^}]*min-width:\s*64px;/u)
-    expect(gallery).toMatch(
-      /\.studio\s*\{[^}]*grid-template-columns:\s*var\(--page-sidebar-width\) minmax\(0, 1fr\) minmax\(260px, 310px\);/u,
-    )
-    expect(gallery).toMatch(/\.studio\s*\{[^}]*grid-template-rows:\s*48px minmax\(0, 1fr\);/u)
-    expect(gallery).toMatch(/\.studio > :first-child\s*\{[^}]*grid-column:\s*1;[^}]*grid-row:\s*1 \/ 3;/u)
-    expect(gallery).toMatch(/\.studioCenter\s*\{[^}]*grid-column:\s*2;[^}]*grid-row:\s*2;/u)
-    expect(gallery).toMatch(/\.tabsBar\s*\{[^}]*width:\s*100%;/u)
-    expect(gallery).toMatch(/\.root\[data-tab='studio'\] \.tabsBar\s*\{[^}]*position:\s*absolute;/u)
-    expect(gallery).toMatch(/\.root\[data-tab='studio'\] \.tabsBar\s*\{[^}]*width:\s*calc\(100% - var\(--page-sidebar-width\)\);/u)
-    expect(gallery).not.toContain(".root[data-tab='studio'] .tabs {")
-    const narrow = gallery.slice(gallery.indexOf('@media (max-width: 1100px)'))
-    expect(narrow).toMatch(/\.studio\s*\{[^}]*var\(--page-sidebar-width\) minmax\(0, 1fr\)/u)
-    expect(narrow).toMatch(/\.studioForm\s*\{[^}]*grid-column:\s*2;[^}]*grid-row:\s*3;/u)
+    expect(gallery).not.toContain('.tabsBar')
+    expect(studioTabsSource).toContain('role="tablist"')
+    expect(studioTabsSource).toContain('aria-selected')
+    expect(studioTabs).toMatch(/\.tabs\s*\{[^}]*display:\s*grid;/u)
+    expect(studioTabs).not.toMatch(/\.tabs\s*\{[^}]*position:/u)
+    expect(studioTabs).toMatch(/\.railButton\s*\{[^}]*width:\s*36px;[^}]*height:\s*36px;/u)
+    expect(gallery).toMatch(/\.studio\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\) minmax\(260px, 310px\);/u)
+    expect(gallery).toMatch(/\.studio\s*\{[^}]*grid-template-rows:\s*minmax\(0, 1fr\);/u)
+    expect(gallery).toMatch(/\.studioCenter\s*\{[^}]*grid-column:\s*1;[^}]*grid-row:\s*1;/u)
+    expect(gallery).toMatch(/\.studioForm\s*\{[^}]*grid-column:\s*2;[^}]*grid-row:\s*1;/u)
   })
   it('预览工具位于本次结果工具栏，图片默认完整适配', () => {
     expect(gallery).toMatch(/\.previewControls\s*\{[^}]*display:\s*flex;[^}]*flex-wrap:\s*wrap;/u)

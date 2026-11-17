@@ -1,0 +1,81 @@
+/* 画图页左侧栏顶部的子页切换行。展开态与文件管理页的分类行同几何：34px 行、8px 图标间距、
+   悬停与选中同底色、选中加粗；图标语义色按 data-tone 常显。收起态是 36×36 图标按钮，
+   与共享侧栏根的图标轨一致。 */
+
+.tabs {
+  display: grid;
+  gap: 2px;
+  width: 100%;
+  margin-bottom: 8px;
+}
+
+.tab, .activeTab {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+  text-align: start;
+  font: var(--dsw-font-xs-13);
+}
+
+.tab:hover, .activeTab {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.activeTab { font-weight: 600; }
+
+.tab:focus-visible, .activeTab:focus-visible {
+  outline: 2px solid var(--dsw-alias-state-business-primary);
+  outline-offset: -2px;
+}
+
+.tab > svg, .activeTab > svg { flex: none; }
+.tab > svg { color: var(--dsw-alias-label-tertiary); }
+.activeTab > svg { color: var(--dsw-alias-label-primary); }
+
+/* 切换行图标按语义色常显，选中与悬停只改变文字和行底色。 */
+.tab[data-tone='amber'] > svg, .activeTab[data-tone='amber'] > svg { color: var(--dsw-alias-state-warn-primary); }
+.tab[data-tone='green'] > svg, .activeTab[data-tone='green'] > svg { color: var(--dsw-alias-icon-accent-green); }
+.tab[data-tone='blue'] > svg, .activeTab[data-tone='blue'] > svg { color: var(--dsw-alias-state-business-primary); }
+.tab[data-tone='violet'] > svg, .activeTab[data-tone='violet'] > svg { color: var(--dsw-alias-icon-accent-violet); }
+
+.rail {
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  margin-bottom: 4px;
+}
+
+.railButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  cursor: pointer;
+}
+
+.railButton:hover { background: var(--dsw-alias-interactive-bg-hover); }
+.railButton[aria-selected='true'] { background: var(--dsw-alias-interactive-bg-active); }
+.railButton[data-tone='amber'] svg { color: var(--dsw-alias-state-warn-primary); }
+.railButton[data-tone='green'] svg { color: var(--dsw-alias-icon-accent-green); }
+.railButton[data-tone='blue'] svg { color: var(--dsw-alias-state-business-primary); }
+.railButton[data-tone='violet'] svg { color: var(--dsw-alias-icon-accent-violet); }
+.railButton:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: 2px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .tab, .activeTab, .railButton { transition: none; }
+}

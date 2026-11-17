@@ -193,6 +193,9 @@ describe('图像交互组件', () => {
       show, refresh: vi.fn(), generate, place, url: (id: string) => `/api/image-gen/image?sessionId=test&id=${id}`,
     } as unknown as GalleryViewProps)} />)
     expect(screen.getAllByRole('tab').map(tab => tab.textContent)).toEqual(['工作台', '灵感', '图库'])
+    // 子页切换位于页内侧栏顶部，最近生成缩略图列表仍在同一侧栏内。
+    expect(screen.getByRole('tab', { name: '工作台' }).closest('aside')).toBeTruthy()
+    expect(screen.getByRole('complementary', { name: '最近生成' }).textContent).toContain('晨光')
     expect(screen.queryByRole('heading', { name: '画廊' })).toBeNull()
     expect(screen.getByRole('tab', { name: '工作台' }).getAttribute('aria-selected')).toBe('true')
     expect(screen.queryByRole('button', { name: '会话画布' })).toBeNull()
@@ -336,6 +339,8 @@ describe('图像交互组件', () => {
       url: (id: string) => `/api/image-gen/image?sessionId=test&id=${id}`,
     } as unknown as GalleryViewProps)} />)
     fireEvent.click(screen.getByRole('tab', { name: '图库' }))
+    // 切到图库后侧栏不卸载，最近生成列表仍然可见。
+    expect(screen.getByRole('complementary', { name: '最近生成' }).textContent).toContain('晨光')
     expect(screen.queryByRole('combobox')).toBeNull()
     expect(screen.getByRole('button', { name: '比例' }).textContent).toBe('全部比例')
     expect(screen.getByRole('button', { name: '排序' }).textContent).toBe('最新生成')

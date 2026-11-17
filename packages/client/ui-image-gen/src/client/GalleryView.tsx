@@ -15,9 +15,9 @@ import { InspirationView } from './InspirationView.tsx'
 import { copyImageBlob } from './image-clipboard.ts'
 import { NS } from './locales.ts'
 import { SelectMenu } from './SelectMenu.tsx'
+import { StudioTabs, type GalleryTab } from './StudioTabs.tsx'
 import css from './GalleryView.module.css'
 
-type Tab = 'studio' | 'inspiration' | 'gallery'
 type Ratio = 'all' | 'square' | 'landscape' | 'portrait'
 /** Host 尺寸表到达前的兜底，与 image-gen 的默认表（官方 popular sizes）保持一致。 */
 const FALLBACK_SIZES: Record<string, Record<string, string>> = {
@@ -100,7 +100,7 @@ export function GalleryView({ sessionId, closePage, sidebarCollapsed, sidebarWid
   const favorites = useStore(snapshot => snapshot.favorites)
   const hidden = useStore(snapshot => snapshot.hidden)
   const inspirationFavorites = useStore(snapshot => snapshot.inspirationFavorites)
-  const [tab, setTab] = useState<Tab>('studio')
+  const [tab, setTab] = useState<GalleryTab>('studio')
   const [favoritesOnly, setFavoritesOnly] = useState(false)
   const [favoriteKind, setFavoriteKind] = useState<'images' | 'prompts'>('images')
   const [search, setSearch] = useState('')
@@ -121,7 +121,7 @@ export function GalleryView({ sessionId, closePage, sidebarCollapsed, sidebarWid
   const [toast, setToast] = useState<{ id: number; text: string } | null>(null)
   const [limit, setLimit] = useState(24)
   const [lightboxFocus, setLightboxFocus] = useState<HTMLElement | null>(null)
-  const firstTabRef = useRef<HTMLButtonElement>(null)
+  const firstTabRef = useRef<HTMLButtonElement | null>(null)
   const previousFocus = useRef<HTMLElement | null>(null)
   const listRef = useRef<HTMLDivElement>(null)
   const fileInput = useRef<HTMLInputElement>(null)
@@ -276,216 +276,212 @@ export function GalleryView({ sessionId, closePage, sidebarCollapsed, sidebarWid
     onSelect={() => { select(item.id) }} onEdit={() => { beginEdit(item) }} onCopy={() => { copyPrompt(item) }}
     onDownload={() => { download(item) }} onPlace={() => { addToCanvas(item) }} />
 
+  // 子页切换位于页内左侧栏顶部（最近生成之上），三个子页共用同一侧栏，切换时不卸载。
   return <main className={css.root} aria-label={t('gallery')} data-image-gallery-page="" data-session-id={sessionId}
-    data-tab={tab} style={{ '--page-sidebar-width': `${sidebarWidth}px` } as CSSProperties}>
-    <div className={css.tabsBar}>
-      <nav className={css.tabs} role="tablist" aria-label={t('gallerySections')}>
-        {(['studio', 'inspiration', 'gallery'] as const).map(key => <button key={key}
-          ref={key === 'studio' ? firstTabRef : undefined} type="button" role="tab" aria-selected={tab === key}
-          className={tab === key ? css.activeTab : css.tab}
-          onClick={() => { setTab(key); setManage(false); setSelected(new Set()) }}>
-          {t(key === 'studio' ? 'studioTab' : key === 'inspiration' ? 'inspirationTab' : 'galleryTab')}
-        </button>)}
-      </nav>
-    </div>
-    {tab === 'gallery' && favoritesOnly && <div className={css.favoriteKinds} role="group" aria-label={t('favoritesTab')}>
-      <button type="button" aria-pressed={favoriteKind === 'images'} onClick={() => { setFavoriteKind('images') }}>{t('favoriteImages')}</button>
-      <button type="button" aria-pressed={favoriteKind === 'prompts'} onClick={() => { setFavoriteKind('prompts') }}>{t('favoritePrompts')}</button>
-    </div>}
-    {tab === 'gallery' && (!favoritesOnly || favoriteKind === 'images') && <>
-      <div className={css.filters}>
-        <div className={css.filterLabel}><span>{t('ratioFilter')}</span>
-          <SelectMenu label={t('ratioFilter')} value={ratio} onChange={(value) => { setRatio(value as Ratio) }}
-            options={[
-              { id: 'all', label: t('allRatios') }, { id: 'square', label: '1:1' },
-              { id: 'landscape', label: t('landscape') }, { id: 'portrait', label: t('portrait') },
-            ]} />
-        </div>
-        <label className={css.search}><IconSearchOutline16 size={16} />
-          <span className={css.visuallyHidden}>{t('searchImages')}</span>
-          <input value={search} onChange={(event) => { setSearch(event.target.value) }} placeholder={t('searchImages')} />
-        </label>
-        <div className={css.filterLabel}><span>{t('sortBy')}</span>
-          <SelectMenu label={t('sortBy')} value={oldestFirst ? 'oldest' : 'newest'}
-            onChange={(value) => { setOldestFirst(value === 'oldest') }}
-            options={[{ id: 'newest', label: t('newest') }, { id: 'oldest', label: t('oldest') }]} />
-        </div>
-        <button type="button" className={css.iconButton} aria-label={t('refresh')} title={t('refresh')} onClick={refresh}>
-          <IconRefreshOutline16 size={16} />
-        </button>
-        <button type="button" className={favoritesOnly ? css.manageActive : css.manage} aria-pressed={favoritesOnly}
-          onClick={() => { setFavoritesOnly(value => !value); setManage(false); setSelected(new Set()) }}>{t('favoritesTab')}</button>
-        <button type="button" className={manage ? css.manageActive : css.manage} aria-pressed={manage}
-          onClick={() => { setManage(value => !value); setSelected(new Set()) }}>{t('manage')}</button>
-      </div>
-      <div ref={listRef} className={css.list} onScroll={(event) => {
-        const target = event.currentTarget
-        if (target.scrollTop + target.clientHeight >= target.scrollHeight - 240 && limit < visible.length) {
-          setLimit(Math.min(visible.length, limit + 24))
-        }
-      }}>
-        <p className={css.count}>{t('imageCount').replace('{count}', String(visible.length))}</p>
-        {state.phase === 'loading' && items.length === 0 && <p className={css.empty} role="status">{t('galleryLoading')}</p>}
-        {state.phase === 'error' && <div className={css.empty} role="alert">{t('galleryUnavailable')} <Button size="sm" onClick={refresh}>{t('retry')}</Button></div>}
-        {state.phase === 'ready' && visible.length === 0 && <div className={css.empty}>
-          <Icon name="model-vision" size={32} /><h2>{t(favoritesOnly ? 'favoritesEmpty' : items.length === 0 ? 'galleryEmpty' : 'noMatches')}</h2>
-          <p>{t(favoritesOnly ? 'favoritesHint' : 'galleryHint')}</p>
-        </div>}
-        {visible.length > 0 && <ul className={css.grid}>{visible.slice(0, limit).map(card)}</ul>}
-      </div>
-      {manage && selected.size > 0 && <div className={css.batchBar} role="toolbar" aria-label={t('batchActions')}>
-        <span>{t('selectedCount').replace('{count}', String(selected.size))}</span>
-        <Button size="sm" onClick={() => { actions.setFavorite([...selected], true); announce(t('favorited')) }}>{t('addFavorite')}</Button>
-        <Button size="sm" onClick={() => { setConfirmDelete(true) }} icon={<IconTrashOutline16 size={16} />}>{t('hideSelected')}</Button>
+    style={{ '--page-sidebar-width': `${sidebarWidth}px` } as CSSProperties}>
+    <SidebarRoot label={t('recentImages')} title={t('recentImages')} variant="media" width={sidebarWidth}
+      collapsed={sidebarCollapsed}
+      header={<StudioTabs tab={tab} collapsed={sidebarCollapsed} t={t}
+        onTab={(next) => { setTab(next); setManage(false); setSelected(new Set()) }}
+        registerFirstTab={(element) => { firstTabRef.current = element }} />}
+      empty={t('galleryEmpty')}
+      items={items.slice().sort((a, b) => b.createdAt - a.createdAt).map(item => ({
+        id: item.id,
+        label: item.prompt || t('image'),
+        icon: 'model-vision',
+        media: <img src={url(item.id)} alt="" />,
+        active: studioImageId === item.id,
+        onSelect: () => { setStudioImageId(item.id); setZoom(100) },
+      }))} />
+    <div className={css.content}>
+      {tab === 'gallery' && favoritesOnly && <div className={css.favoriteKinds} role="group" aria-label={t('favoritesTab')}>
+        <button type="button" aria-pressed={favoriteKind === 'images'} onClick={() => { setFavoriteKind('images') }}>{t('favoriteImages')}</button>
+        <button type="button" aria-pressed={favoriteKind === 'prompts'} onClick={() => { setFavoriteKind('prompts') }}>{t('favoritePrompts')}</button>
       </div>}
-    </>}
-    {tab === 'studio' && <div className={css.studio}>
-      <SidebarRoot label={t('recentImages')} title={t('recentImages')} variant="media" width={sidebarWidth}
-        collapsed={sidebarCollapsed}
-        empty={t('galleryEmpty')}
-        items={items.slice().sort((a, b) => b.createdAt - a.createdAt).map(item => ({
-          id: item.id,
-          label: item.prompt || t('image'),
-          icon: 'model-vision',
-          media: <img src={url(item.id)} alt="" />,
-          active: studioImageId === item.id,
-          onSelect: () => { setStudioImageId(item.id); setZoom(100) },
-        }))} />
-      <div className={css.studioCenter}>
-        <div className={css.previewPane}>
-          <div className={css.studioCanvas} aria-busy={state.generating}>
-            {state.generating ? <p className={css.studioLoading} role="status">
-              <span className={css.loadingSpinner} data-image-gen-loading="" aria-hidden="true" />
-              <span>{t('generating')}</span>
-            </p>
-              : studioItem === undefined ? <p className={css.studioEmpty}><Icon name="model-vision" size={32} />{t('studioHint')}</p>
-                : <img className={css.previewImage} style={{ '--dsh-image-zoom': zoom / 100 } as React.CSSProperties}
-                  src={url(studioItem.id)} alt={studioItem.prompt || t('image')} />}
+      {tab === 'gallery' && (!favoritesOnly || favoriteKind === 'images') && <>
+        <div className={css.filters}>
+          <div className={css.filterLabel}><span>{t('ratioFilter')}</span>
+            <SelectMenu label={t('ratioFilter')} value={ratio} onChange={(value) => { setRatio(value as Ratio) }}
+              options={[
+                { id: 'all', label: t('allRatios') }, { id: 'square', label: '1:1' },
+                { id: 'landscape', label: t('landscape') }, { id: 'portrait', label: t('portrait') },
+              ]} />
           </div>
+          <label className={css.search}><IconSearchOutline16 size={16} />
+            <span className={css.visuallyHidden}>{t('searchImages')}</span>
+            <input value={search} onChange={(event) => { setSearch(event.target.value) }} placeholder={t('searchImages')} />
+          </label>
+          <div className={css.filterLabel}><span>{t('sortBy')}</span>
+            <SelectMenu label={t('sortBy')} value={oldestFirst ? 'oldest' : 'newest'}
+              onChange={(value) => { setOldestFirst(value === 'oldest') }}
+              options={[{ id: 'newest', label: t('newest') }, { id: 'oldest', label: t('oldest') }]} />
+          </div>
+          <button type="button" className={css.iconButton} aria-label={t('refresh')} title={t('refresh')} onClick={refresh}>
+            <IconRefreshOutline16 size={16} />
+          </button>
+          <button type="button" className={favoritesOnly ? css.manageActive : css.manage} aria-pressed={favoritesOnly}
+            onClick={() => { setFavoritesOnly(value => !value); setManage(false); setSelected(new Set()) }}>{t('favoritesTab')}</button>
+          <button type="button" className={manage ? css.manageActive : css.manage} aria-pressed={manage}
+            onClick={() => { setManage(value => !value); setSelected(new Set()) }}>{t('manage')}</button>
         </div>
-        {studioItem !== undefined && <div className={css.result}>
-          <div className={css.resultStrip}>
-            <strong>{t('latestResult')}</strong>
-            <div className={css.resultStripActions}>
-              <div className={css.previewControls}>
-                <div className={css.zoomControls} role="group" aria-label={t('zoom')}>
-                  <button type="button" onClick={() => { setZoom(100) }}>{t('fitWindow')}</button>
-                  <button type="button" aria-label={t('zoomOut')} title={t('zoomOut')} onClick={() => { setZoom(value => Math.max(25, value - 25)) }}>−</button>
-                  <span>{zoom}%</span>
-                  <button type="button" aria-label={t('zoomIn')} title={t('zoomIn')} onClick={() => { setZoom(value => Math.min(500, value + 25)) }}>+</button>
-                </div>
-                <div className={css.toolbarActions}>
-                  <button type="button" onClick={() => {
-                    setStudioImageId(null); setPrompt(''); setMode('generate'); setEditing([]); setZoom(100)
-                  }}><IconPlusOutline16 size={16} />{t('newGeneration')}</button>
-                  <button type="button" aria-label={t('fullscreen')} title={t('fullscreen')} onClick={() => {
-                    setLightboxFocus(document.activeElement instanceof HTMLElement ? document.activeElement : null)
-                    setPreviewId(studioItem.id)
-                  }}><Icon name="model-vision" size={16} /></button>
-                </div>
-              </div>
-              <div className={css.resultQuickActions}>
-                <button type="button" onClick={() => { beginEdit(studioItem) }}><IconSparkle16 size={15} />{t('continueEdit')}</button>
-                <button type="button" onClick={() => { prepareRegeneration(studioItem) }}><IconRefreshOutline16 size={15} />{t('regenerate')}</button>
-              </div>
-            </div>
-          </div>
-          <div className={css.resultActions}>
-            <p title={studioItem.prompt}>{studioItem.prompt || t('image')}</p>
-            <div>
-              <button type="button" aria-pressed={favorites.includes(studioItem.id)} onClick={() => { actions.toggleFavorite(studioItem.id) }}>
-                <Icon name="favorite" size={15} />{t(favorites.includes(studioItem.id) ? 'removeFavorite' : 'addFavorite')}</button>
-              <button type="button" onClick={() => { copyImage(studioItem) }}><IconCopyOutline16 size={15} />{t('copyImage')}</button>
-              <button type="button" onClick={() => { download(studioItem) }}><IconDownloadOutline16 size={15} />{t('download')}</button>
-              <button type="button" onClick={() => { setSelected(new Set([studioItem.id])); setConfirmDelete(true) }}>
-                <IconTrashOutline16 size={15} />{t('hideSelected')}</button>
-            </div>
-          </div>
-          <div className={css.resultMeta}>
-            {readableDate(studioItem.createdAt)} · {studioItem.model} · {studioItem.width} × {studioItem.height}
-            {studioItem.id === state.lastResultId && typeof state.lastElapsedMs === 'number'
-              && <> · {elapsed(t('elapsedSeconds'), state.lastElapsedMs)}</>}
-          </div>
-        </div>}
-      </div>
-      <form className={css.studioForm} onSubmit={submit}>
-        <h2>{t('generationPanel')}</h2>
-        <div className={`${css.tabs} ${css.studioMode}`} role="group" aria-label={t('creationMode')}>
-          <button type="button" className={mode === 'generate' ? css.activeTab : css.tab} aria-pressed={mode === 'generate'} onClick={() => { setMode('generate') }}>{t('textToImage')}</button>
-          <button type="button" className={mode === 'edit' ? css.activeTab : css.tab} aria-pressed={mode === 'edit'} onClick={() => { setMode('edit') }}>{t('imageToImage')}</button>
-        </div>
-        <p className={css.studioModel}>{t('configuredModel')}：{state.state?.model ?? t('noModel')}</p>
-        {state.state?.available === false && <p role="status">{t('noService')}</p>}
-        {mode === 'edit' && <div className={css.referenceArea}>
-          <div className={css.referenceHeading}><span>{t('referenceImages')} ( {editing.length} / {maxReferences} )</span>
-            {editing.length > 0 && <button type="button" onClick={() => { setEditing([]) }}>{t('clearReference')}</button>}
-          </div>
-          <div className={css.referenceRow} onDragOver={(event) => { event.preventDefault() }}
-            onDrop={(event) => {
-              event.preventDefault()
-              const id = event.dataTransfer.getData('application/x-dsh-image-id')
-              if (id && items.some(item => item.id === id)) {
-                setEditing(previous => previous.includes(id) || previous.length >= maxReferences ? previous : [...previous, id])
-              } else importFiles(event.dataTransfer.files)
-            }}>
-            {editing.map(id => <div className={css.referenceThumb} key={id}>
-              <img src={url(id)} alt={t('referenceImage')} />
-              <button type="button" aria-label={t('removeReference')} onClick={() => { setEditing(previous => previous.filter(value => value !== id)) }}>×</button>
-            </div>)}
-            {editing.length < maxReferences && <button type="button" className={css.addReference} disabled={state.uploading}
-              aria-label={t('addReference')} title={t('addReference')}
-              onClick={() => { fileInput.current?.click() }}><IconPlusOutline16 size={18} /></button>
-            }
-            <input ref={fileInput} hidden type="file" multiple={maxReferences > 1} accept="image/png,image/jpeg,image/webp,image/gif"
-              aria-label={t('chooseReference')} onChange={(event) => {
-                importFiles(event.currentTarget.files); event.currentTarget.value = ''
-              }} />
-          </div>
-          {state.uploading && <p role="status">{t('importing')}</p>}
-        </div>}
-        <label htmlFor="image-gen-prompt">{t('prompt')}</label>
-        <textarea id="image-gen-prompt" value={prompt} placeholder={t('promptPlaceholder')}
-          disabled={!canGenerate || state.generating} onChange={(event) => { setPrompt(event.target.value) }} />
-        <div className={css.promptFooter}><button type="button" onClick={() => { setTab('inspiration') }}>{t('findInspiration')}</button>
-          <button type="button" onClick={() => { setPrompt('') }}>{t('clearPrompt')}</button><span>{prompt.length}/4000</span></div>
-        <div className={css.outputFields}>
-          <div className={css.outputField}>
-            <span>{t('outputSize')}</span>
-            <SelectMenu label={t('outputSize')} value={selectedRatio} options={ratioOptions}
-              onChange={chooseRatio} />
-          </div>
-          {selectedTier !== undefined && <div className={css.outputField}>
-            <span>{t('outputResolution')}</span>
-            <SelectMenu label={t('outputResolution')} value={selectedTier} options={tierOptions}
-              onChange={setOutputTier} />
+        <div ref={listRef} className={css.list} onScroll={(event) => {
+          const target = event.currentTarget
+          if (target.scrollTop + target.clientHeight >= target.scrollHeight - 240 && limit < visible.length) {
+            setLimit(Math.min(visible.length, limit + 24))
+          }
+        }}>
+          <p className={css.count}>{t('imageCount').replace('{count}', String(visible.length))}</p>
+          {state.phase === 'loading' && items.length === 0 && <p className={css.empty} role="status">{t('galleryLoading')}</p>}
+          {state.phase === 'error' && <div className={css.empty} role="alert">{t('galleryUnavailable')} <Button size="sm" onClick={refresh}>{t('retry')}</Button></div>}
+          {state.phase === 'ready' && visible.length === 0 && <div className={css.empty}>
+            <Icon name="model-vision" size={32} /><h2>{t(favoritesOnly ? 'favoritesEmpty' : items.length === 0 ? 'galleryEmpty' : 'noMatches')}</h2>
+            <p>{t(favoritesOnly ? 'favoritesHint' : 'galleryHint')}</p>
           </div>}
-          <div className={css.outputField}>
-            <span>{t('generationQuality')}</span>
-            <SelectMenu label={t('generationQuality')} value={quality} options={[
-              { id: 'default', label: t('providerDefault') },
-              { id: 'auto', label: t('automatic') },
-              { id: 'low', label: t('lowQuality') },
-              { id: 'medium', label: t('mediumQuality') },
-              { id: 'high', label: t('highQuality') },
-            ]} onChange={setQuality} />
-          </div>
+          {visible.length > 0 && <ul className={css.grid}>{visible.slice(0, limit).map(card)}</ul>}
         </div>
-        <button className={css.generateButton} type="submit"
-          disabled={!canGenerate || state.generating || state.uploading || !prompt.trim() || prompt.length > 4000 || mode === 'edit' && editing.length === 0}>
-          {state.generating
-            ? <span className={css.loadingSpinner} data-image-gen-loading="" aria-hidden="true" />
-            : <IconSparkle16 size={16} />}
-          {t(state.generating ? 'generating' : 'startGeneration')}
-        </button>
-      </form>
-    </div>}
-    {(tab === 'inspiration' || tab === 'gallery' && favoritesOnly && favoriteKind === 'prompts') && <InspirationView
-      favorites={inspirationFavorites} favoritesOnly={tab === 'gallery'}
-      onFavorite={(id) => { actions.toggleInspirationFavorite(id) }}
-      onCopy={(text) => {
-        void writeClipboard(text).then((ok) => { announce(t(ok ? 'copiedPrompt' : 'copyFailed')) })
-      }}
-      onUse={(text) => { setPrompt(text); setEditing([]); setTab('studio') }} t={t} />}
+        {manage && selected.size > 0 && <div className={css.batchBar} role="toolbar" aria-label={t('batchActions')}>
+          <span>{t('selectedCount').replace('{count}', String(selected.size))}</span>
+          <Button size="sm" onClick={() => { actions.setFavorite([...selected], true); announce(t('favorited')) }}>{t('addFavorite')}</Button>
+          <Button size="sm" onClick={() => { setConfirmDelete(true) }} icon={<IconTrashOutline16 size={16} />}>{t('hideSelected')}</Button>
+        </div>}
+      </>}
+      {tab === 'studio' && <div className={css.studio}>
+        <div className={css.studioCenter}>
+          <div className={css.previewPane}>
+            <div className={css.studioCanvas} aria-busy={state.generating}>
+              {state.generating ? <p className={css.studioLoading} role="status">
+                <span className={css.loadingSpinner} data-image-gen-loading="" aria-hidden="true" />
+                <span>{t('generating')}</span>
+              </p>
+                : studioItem === undefined ? <p className={css.studioEmpty}><Icon name="model-vision" size={32} />{t('studioHint')}</p>
+                  : <img className={css.previewImage} style={{ '--dsh-image-zoom': zoom / 100 } as React.CSSProperties}
+                    src={url(studioItem.id)} alt={studioItem.prompt || t('image')} />}
+            </div>
+          </div>
+          {studioItem !== undefined && <div className={css.result}>
+            <div className={css.resultStrip}>
+              <strong>{t('latestResult')}</strong>
+              <div className={css.resultStripActions}>
+                <div className={css.previewControls}>
+                  <div className={css.zoomControls} role="group" aria-label={t('zoom')}>
+                    <button type="button" onClick={() => { setZoom(100) }}>{t('fitWindow')}</button>
+                    <button type="button" aria-label={t('zoomOut')} title={t('zoomOut')} onClick={() => { setZoom(value => Math.max(25, value - 25)) }}>−</button>
+                    <span>{zoom}%</span>
+                    <button type="button" aria-label={t('zoomIn')} title={t('zoomIn')} onClick={() => { setZoom(value => Math.min(500, value + 25)) }}>+</button>
+                  </div>
+                  <div className={css.toolbarActions}>
+                    <button type="button" onClick={() => {
+                      setStudioImageId(null); setPrompt(''); setMode('generate'); setEditing([]); setZoom(100)
+                    }}><IconPlusOutline16 size={16} />{t('newGeneration')}</button>
+                    <button type="button" aria-label={t('fullscreen')} title={t('fullscreen')} onClick={() => {
+                      setLightboxFocus(document.activeElement instanceof HTMLElement ? document.activeElement : null)
+                      setPreviewId(studioItem.id)
+                    }}><Icon name="model-vision" size={16} /></button>
+                  </div>
+                </div>
+                <div className={css.resultQuickActions}>
+                  <button type="button" onClick={() => { beginEdit(studioItem) }}><IconSparkle16 size={15} />{t('continueEdit')}</button>
+                  <button type="button" onClick={() => { prepareRegeneration(studioItem) }}><IconRefreshOutline16 size={15} />{t('regenerate')}</button>
+                </div>
+              </div>
+            </div>
+            <div className={css.resultActions}>
+              <p title={studioItem.prompt}>{studioItem.prompt || t('image')}</p>
+              <div>
+                <button type="button" aria-pressed={favorites.includes(studioItem.id)} onClick={() => { actions.toggleFavorite(studioItem.id) }}>
+                  <Icon name="favorite" size={15} />{t(favorites.includes(studioItem.id) ? 'removeFavorite' : 'addFavorite')}</button>
+                <button type="button" onClick={() => { copyImage(studioItem) }}><IconCopyOutline16 size={15} />{t('copyImage')}</button>
+                <button type="button" onClick={() => { download(studioItem) }}><IconDownloadOutline16 size={15} />{t('download')}</button>
+                <button type="button" onClick={() => { setSelected(new Set([studioItem.id])); setConfirmDelete(true) }}>
+                  <IconTrashOutline16 size={15} />{t('hideSelected')}</button>
+              </div>
+            </div>
+            <div className={css.resultMeta}>
+              {readableDate(studioItem.createdAt)} · {studioItem.model} · {studioItem.width} × {studioItem.height}
+              {studioItem.id === state.lastResultId && typeof state.lastElapsedMs === 'number'
+                && <> · {elapsed(t('elapsedSeconds'), state.lastElapsedMs)}</>}
+            </div>
+          </div>}
+        </div>
+        <form className={css.studioForm} onSubmit={submit}>
+          <h2>{t('generationPanel')}</h2>
+          <div className={`${css.tabs} ${css.studioMode}`} role="group" aria-label={t('creationMode')}>
+            <button type="button" className={mode === 'generate' ? css.activeTab : css.tab} aria-pressed={mode === 'generate'} onClick={() => { setMode('generate') }}>{t('textToImage')}</button>
+            <button type="button" className={mode === 'edit' ? css.activeTab : css.tab} aria-pressed={mode === 'edit'} onClick={() => { setMode('edit') }}>{t('imageToImage')}</button>
+          </div>
+          <p className={css.studioModel}>{t('configuredModel')}：{state.state?.model ?? t('noModel')}</p>
+          {state.state?.available === false && <p role="status">{t('noService')}</p>}
+          {mode === 'edit' && <div className={css.referenceArea}>
+            <div className={css.referenceHeading}><span>{t('referenceImages')} ( {editing.length} / {maxReferences} )</span>
+              {editing.length > 0 && <button type="button" onClick={() => { setEditing([]) }}>{t('clearReference')}</button>}
+            </div>
+            <div className={css.referenceRow} onDragOver={(event) => { event.preventDefault() }}
+              onDrop={(event) => {
+                event.preventDefault()
+                const id = event.dataTransfer.getData('application/x-dsh-image-id')
+                if (id && items.some(item => item.id === id)) {
+                  setEditing(previous => previous.includes(id) || previous.length >= maxReferences ? previous : [...previous, id])
+                } else importFiles(event.dataTransfer.files)
+              }}>
+              {editing.map(id => <div className={css.referenceThumb} key={id}>
+                <img src={url(id)} alt={t('referenceImage')} />
+                <button type="button" aria-label={t('removeReference')} onClick={() => { setEditing(previous => previous.filter(value => value !== id)) }}>×</button>
+              </div>)}
+              {editing.length < maxReferences && <button type="button" className={css.addReference} disabled={state.uploading}
+                aria-label={t('addReference')} title={t('addReference')}
+                onClick={() => { fileInput.current?.click() }}><IconPlusOutline16 size={18} /></button>
+              }
+              <input ref={fileInput} hidden type="file" multiple={maxReferences > 1} accept="image/png,image/jpeg,image/webp,image/gif"
+                aria-label={t('chooseReference')} onChange={(event) => {
+                  importFiles(event.currentTarget.files); event.currentTarget.value = ''
+                }} />
+            </div>
+            {state.uploading && <p role="status">{t('importing')}</p>}
+          </div>}
+          <label htmlFor="image-gen-prompt">{t('prompt')}</label>
+          <textarea id="image-gen-prompt" value={prompt} placeholder={t('promptPlaceholder')}
+            disabled={!canGenerate || state.generating} onChange={(event) => { setPrompt(event.target.value) }} />
+          <div className={css.promptFooter}><button type="button" onClick={() => { setTab('inspiration') }}>{t('findInspiration')}</button>
+            <button type="button" onClick={() => { setPrompt('') }}>{t('clearPrompt')}</button><span>{prompt.length}/4000</span></div>
+          <div className={css.outputFields}>
+            <div className={css.outputField}>
+              <span>{t('outputSize')}</span>
+              <SelectMenu label={t('outputSize')} value={selectedRatio} options={ratioOptions}
+                onChange={chooseRatio} />
+            </div>
+            {selectedTier !== undefined && <div className={css.outputField}>
+              <span>{t('outputResolution')}</span>
+              <SelectMenu label={t('outputResolution')} value={selectedTier} options={tierOptions}
+                onChange={setOutputTier} />
+            </div>}
+            <div className={css.outputField}>
+              <span>{t('generationQuality')}</span>
+              <SelectMenu label={t('generationQuality')} value={quality} options={[
+                { id: 'default', label: t('providerDefault') },
+                { id: 'auto', label: t('automatic') },
+                { id: 'low', label: t('lowQuality') },
+                { id: 'medium', label: t('mediumQuality') },
+                { id: 'high', label: t('highQuality') },
+              ]} onChange={setQuality} />
+            </div>
+          </div>
+          <button className={css.generateButton} type="submit"
+            disabled={!canGenerate || state.generating || state.uploading || !prompt.trim() || prompt.length > 4000 || mode === 'edit' && editing.length === 0}>
+            {state.generating
+              ? <span className={css.loadingSpinner} data-image-gen-loading="" aria-hidden="true" />
+              : <IconSparkle16 size={16} />}
+            {t(state.generating ? 'generating' : 'startGeneration')}
+          </button>
+        </form>
+      </div>}
+      {(tab === 'inspiration' || tab === 'gallery' && favoritesOnly && favoriteKind === 'prompts') && <InspirationView
+        favorites={inspirationFavorites} favoritesOnly={tab === 'gallery'}
+        onFavorite={(id) => { actions.toggleInspirationFavorite(id) }}
+        onCopy={(text) => {
+          void writeClipboard(text).then((ok) => { announce(t(ok ? 'copiedPrompt' : 'copyFailed')) })
+        }}
+        onUse={(text) => { setPrompt(text); setEditing([]); setTab('studio') }} t={t} />}
+    </div>
     {preview !== undefined && createPortal(<div className={css.lightbox} role="dialog" aria-modal="true" aria-label={t('preview')}
       onKeyDown={(event) => {
         if (event.key === 'Escape') setPreviewId(null)
