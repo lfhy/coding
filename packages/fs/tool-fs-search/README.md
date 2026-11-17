@@ -27,7 +27,7 @@ Node 部署在受支持的 macOS、Linux 与 Windows x64/arm64 目标上获得 `
 | `grepMaxMatches` | `250` | 一次 `grep` 调用内联保留的最大平铺匹配数（与 Claude Code 的 `GrepTool` `head_limit` 相同）；后续匹配写入格式化 spill 产物。 |
 | `grepMaxLineBytes` | `2000` | 每条匹配行预览的字节上限；截断会保留 UTF-8 边界，并标记为 `(line truncated)`。 |
 | `rawOutputMaxBytes` | `20000000` | 搜索可接受的完整本地 `rg` stdout 或远端搜索响应上限（与 Claude Code 的 ripgrep 原始 buffer 相同）；更大的结果以 `SEARCH_RAW_OUTPUT_OVERFLOW` 失败。 |
-| `timeoutMs` | `30000` | 附加到两个工具定义上的协作式工具调用预算，由 `coding-tool-call-timeout-policy` 通过 `exec.signal` 强制执行；subprocess seam 的终止升级提供硬终止。 |
+| `timeoutMs` | `30000` | 附加到两个工具定义上的协作式工具调用预算，由 `coding-tool-call-timeout-policy` 通过 `exec.signal` 强制执行；subprocess seam 的终止升级提供硬终止。远端搜索在该预算内提前 2 秒收尾，用自己的诊断说明「窄化 `path`／`pattern`」而不是留下通用超时；预算小到没有余量时按原值执行。 |
 | `graceMs` | `3000` | subprocess seam 在 `timeoutMs` 之外授予的终止升级宽限期须为正值；超过后搜索以 `SEARCH_ABORTED` 失败；该宽限期不得大于 [`MAX_TIMER_DELAY_MS`](../../util/timeout/README.md)。 |
 | `stderrMaxBytes` | `65536` | `rg` stderr 的诊断尾部预算，经 subprocess seam 的 collect 形态捕获；lossy 读取只保留尾部（标记 `[stderr truncated]`）。 |
 
@@ -74,6 +74,14 @@ Use the glob tool — not shell find — to discover files by path pattern. A pa
 
 ```markdown
 Use the grep tool — not shell grep or rg — to search file contents. Use read on a matched file when you need surrounding context.
+```
+
+##### basic 模式远端会话的运行时上下文
+
+远端 `basic` 工作区的搜索沿 SFTP 逐目录走查，比本机 ripgrep 慢一个数量级，因此该模式下每次装配还会贡献一段动态上下文，要求先收窄范围（本地工作区与 `agent` 模式渲染为空串）：
+
+```markdown
+Searches in this workspace run on the remote host and walk the tree over SFTP one directory at a time, so they stop at <timeoutMs>/1000s. Pass a subdirectory as `path` (or a narrower `pattern`/`include`) instead of searching the whole workspace root.
 ```
 
 #### Token 影响

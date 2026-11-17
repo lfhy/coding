@@ -68,6 +68,16 @@
 Check the [exit code: N] marker on every bash result; investigate failures before moving on.
 ```
 
+##### Remote-SSH 工作区的运行时上下文
+
+会话工作区带 marker 时，每次装配还会贡献一段动态上下文（本地会话渲染为空串，不进入请求）：说明 bash 在该远端主机上执行、该主机上的工作区根目录是哪个，以及绝对路径按远端解释（`../x` 是远端父目录）、相对路径与会话工作区路径指向同一批文件。模板：
+
+```markdown
+This session's workspace is on a remote host reached over SSH, and bash commands run there: the workspace root on that host is <remoteRoot>. Absolute paths in tool arguments are resolved on the remote host (`../x` is the remote parent), while relative paths and the session workspace path address those same files. Prefer paths under that root.
+```
+
+marker 不可读或属于本地工作区时该段为空，装配不会因为提示词读取失败而中断；执行侧仍按 marker 失败关闭。
+
 #### Token 影响
 
 插件活跃期间，每个请求都会产生少量固定输入开销，不受沙箱模式或模式切换影响。

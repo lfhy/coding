@@ -230,6 +230,35 @@ function remoteWorkdirDiagnostic(remote: RemoteWorkspacePath, error: unknown): u
     + 'pass a path under that root, a path inside the session workspace, or a relative path.')
 }
 
+/**
+ * 渲染期读取会话工作区的 marker；不可读时返回 undefined，绝不让提示词装配失败。
+ * @param cwd - 会话工作区路径。
+ * @returns 远端工作区身份；本地工作区或 marker 失效时为 undefined。
+ */
+function remoteWorkspaceOf(cwd: string | undefined): RemoteWorkspacePath | undefined {
+  if (cwd === undefined) return undefined
+  try {
+    return remoteWorkspacePathSync('.', cwd)
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * 远端会话的路径说明。系统提示里的会话工作区是宿主占位目录，模型需要知道真正的
+ * 远端根，才能把绝对路径、相对路径与它在 `pwd` 里看到的结果对应起来。
+ * @param cwd - 会话工作区路径。
+ * @returns 模型可见的远端路径说明；本地会话渲染为空串。
+ */
+function remoteWorkspaceContext(cwd: string | undefined): string {
+  const remote = remoteWorkspaceOf(cwd)
+  if (remote === undefined) return ''
+  return 'This session\'s workspace is on a remote host reached over SSH, and bash commands run there: '
+    + `the workspace root on that host is ${remote.remoteRoot}. Absolute paths in tool arguments are resolved `
+    + 'on the remote host (`../x` is the remote parent), while relative paths and the session workspace path '
+    + 'address those same files. Prefer paths under that root.'
+}
+
 /** Detach the executor DTO from readonly Service Definition types into plain JSON data. */
 function canonicalBashResult(result: ShellRunResult) {
   const output = (stream: ShellRunResult['stdout']) => ({
@@ -313,6 +342,15 @@ export function apply(ctx: Context, config: Config = {}): void {
     name: 'tool:bash',
     order: 105,
     text: 'Check the [exit code: N] marker on every bash result; investigate failures before moving on.',
+  })
+
+  // 系统提示交给模型的会话工作区是宿主占位目录，远端会话需要补一句真正的远端根，
+  // 否则模型只能靠 `pwd` 反向推断，绝对路径与相对路径也会被当成两个地方。本地会话
+  // 渲染为空串，不进入模型可见文本。
+  ctx.systemPrompt.context({
+    name: 'tool:bash:remote-workspace',
+    order: 117,
+    text: context => remoteWorkspaceContext(context.agent?.session.header.cwd),
   })
 
   ctx.tools.register(defineTool({

@@ -31,6 +31,8 @@ import {
   RemoteWorkspaceError,
   verifyRemoteWorkspaceTarget,
 } from 'coding-subprocess'
+import type { RemoteWorkspacePath } from 'coding-subprocess'
+import { deadline, timeoutOf } from 'coding-timeout'
 import { HarnessError } from 'coding-llm'
 import { ItemRetainer, TextRetainer } from 'coding-output-retention'
 import type { RetainedItems } from 'coding-output-retention'
@@ -60,6 +62,38 @@ export const SEARCH_STDERR_MAX_BYTES = 64 * 1024
 
 /** Default terminate grace period for a search process (ms). */
 export const SEARCH_GRACE_MS = 3_000
+
+/**
+ * 远端搜索的提前收尾余量（ms）：在工具声明的协作式预算之内结束，才能返回
+ * 带补救建议的诊断，而不是被 `coding-tool-call-timeout-policy` 换成通用超时。
+ */
+export const REMOTE_SEARCH_DEADLINE_MARGIN_MS = 2_000
+
+/** 远端搜索自己拥有的超时代码；只用于区分「我方提前收尾」与调用方取消。 */
+export const REMOTE_SEARCH_TIMEOUT = 'SEARCH_REMOTE_DEADLINE'
+
+/**
+ * 远端搜索的实际预算：工具预算减去收尾余量。预算本身小到没有余量时按原值执行，
+ * 让过小的部署配置仍受通用超时约束，而不是立刻失败。
+ * @param timeoutMs - 工具声明的协作式预算。
+ * @returns 远端搜索可用的毫秒数。
+ */
+export function remoteSearchBudget(timeoutMs: number): number {
+  return timeoutMs > REMOTE_SEARCH_DEADLINE_MARGIN_MS * 2 ? timeoutMs - REMOTE_SEARCH_DEADLINE_MARGIN_MS : timeoutMs
+}
+
+/**
+ * 远端搜索超时的模型可见诊断：说明耗时结构与可执行的下一步，而不是只报一个数字。
+ * @param toolName - 工具名。
+ * @param timeoutMs - 工具声明的协作式预算。
+ * @returns 面向模型的错误文本。
+ */
+function remoteSearchTimeoutMessage(toolName: string, timeoutMs: number): string {
+  return `${toolName} ran out of its ${Math.round(timeoutMs / 1000)}s budget: a remote workspace search `
+    + 'walks the tree over SFTP one directory at a time, so a wide search cannot finish in time. '
+    + 'Retry with a narrower `path` (a subdirectory instead of the workspace root) or a more specific '
+    + '`pattern`/`include`.'
+}
 
 /**
  * Default cap in bytes on one search's serialized `presentationMeta` (the
@@ -398,6 +432,7 @@ function bridgeSearchResponse(
  * @param toolName - 产生面向模型诊断的工具名称。
  * @param input - 已通过工具 schema 校验的搜索参数。
  * @param rawOutputMaxBytes - 此次搜索允许返回的原始输出字节上限。
+ * @param timeoutMs - 工具声明的协作式预算，用于在通用超时之前给出可执行的收尾诊断。
  * @returns marker Workspace 的规范化搜索结果；路径不属于远端工作区时返回 `undefined`。
  */
 export async function runRemoteSearch(
@@ -405,17 +440,26 @@ export async function runRemoteSearch(
   toolName: string,
   input: RemoteSearchInput,
   rawOutputMaxBytes: number,
+  timeoutMs: number,
 ): Promise<RemoteSearchRun | undefined> {
   const cwd = exec.agent?.session.header.cwd ?? process.cwd()
+  let workspace: RemoteWorkspacePath | undefined
   try {
-    const workspace = await remoteWorkspacePath('.', cwd, exec.signal)
-    if (workspace === undefined) return undefined
+    workspace = await remoteWorkspacePath('.', cwd, exec.signal)
+  } catch (error: unknown) {
+    throw remoteSearchError(toolName, error)
+  }
+  if (workspace === undefined) return undefined
+  // 远端搜索按目录逐个往返，实际耗时由链路和目录树决定；提前一小段收尾，才能把
+  // 「窄化搜索范围」告诉模型，而不是让通用超时把它截断成一条没有出路的错误。
+  using search = deadline(exec.signal, remoteSearchBudget(timeoutMs), REMOTE_SEARCH_TIMEOUT)
+  try {
     requireRemoteWorkspaceCapability(workspace, 'search')
     let target = workspace
     if (input.path !== undefined) {
       // 宿主占位路径先按本地语义解析：系统提示交给模型的工作区路径必须和远端绝对
       // 路径等价，否则 glob／grep 会把占位路径当成远端主机上的另一个目录。
-      const mapped = await remoteWorkspacePath(input.path, cwd, exec.signal)
+      const mapped = await remoteWorkspacePath(input.path, cwd, search.signal)
       if (mapped !== undefined) {
         if (mapped.markerRoot !== workspace.markerRoot || mapped.remoteRoot !== workspace.remoteRoot
           || mapped.connectionId !== workspace.connectionId) {
@@ -432,14 +476,14 @@ export async function runRemoteSearch(
     }
     // 解析参数路径期间 marker 可能被重绑；把根目录和连接身份交给 bridge 前必须
     // 立即复核精确 target，避免搜索仍然到达旧主机。
-    const verified = await verifyRemoteWorkspaceTarget(target, exec.signal)
+    const verified = await verifyRemoteWorkspaceTarget(target, search.signal)
     const response = await callRemoteWorkspaceBridge(verified, '/v1/search', 'POST', {
       path: verified.remotePath,
       kind: input.kind,
       pattern: input.pattern,
       ...input.include === undefined ? {} : { include: input.include },
       maxBytes: rawOutputMaxBytes,
-    }, value => bridgeSearchResponse(value, input.kind), exec.signal)
+    }, value => bridgeSearchResponse(value, input.kind), search.signal)
     if (response.payloadBytes > rawOutputMaxBytes) {
       throw new SearchError(
         `remote search returned ${response.payloadBytes} bytes of raw output, over the ${rawOutputMaxBytes}-byte cap; narrow pattern, path, or include and retry`,
@@ -458,7 +502,8 @@ export async function runRemoteSearch(
     }
     return { kind: 'grep', matches: response.matches }
   } catch (error: unknown) {
-    throw remoteSearchError(toolName, error)
+    if (timeoutOf(search.signal, REMOTE_SEARCH_TIMEOUT) === undefined) throw remoteSearchError(toolName, error)
+    throw new SearchError(remoteSearchTimeoutMessage(toolName, timeoutMs), 'SEARCH_ABORTED', { cause: error })
   }
 }
 

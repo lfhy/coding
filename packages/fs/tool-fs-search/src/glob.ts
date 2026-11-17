@@ -341,7 +341,7 @@ export function applyGlobTool(ctx: Context, caps: GlobToolCaps): void {
     },
     async execute(args, exec) {
       const input = parseGlobArgs(args)
-      const remote = await runRemoteSearch(exec, 'glob', { ...input, kind: 'glob' }, caps.rawOutputMaxBytes)
+      const remote = await runRemoteSearch(exec, 'glob', { ...input, kind: 'glob' }, caps.rawOutputMaxBytes, caps.timeoutMs)
       if (remote !== undefined) {
         /* v8 ignore next -- input.kind fixes the remote result arm. */
         if (remote.kind !== 'glob') throw new Error('glob received an invalid remote result')

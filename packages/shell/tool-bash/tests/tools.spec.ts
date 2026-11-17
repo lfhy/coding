@@ -8,7 +8,7 @@ import { Context } from '@deepseek-ai/cordis'
 import { CallId } from 'coding-llm'
 import { ShellExecutor } from 'coding-shell'
 import type { ShellExecRequest, ShellExecSpec, ShellProcess, ShellProcessRead, ShellRunResult } from 'coding-shell'
-import SystemPrompt from 'coding-system-prompt'
+import SystemPrompt, { renderContextSnapshot } from 'coding-system-prompt'
 import ToolRuntime, { TOOL_ABORTED, TOOL_ABORTED_BEFORE_DISPATCH } from 'coding-tools'
 import AgentRegistry from 'coding-agent'
 import type { Agent } from 'coding-agent'
@@ -1469,6 +1469,32 @@ describe('the model-facing bash tool builds its request from named args only (no
       expect(bash.requests).toHaveLength(0)
     } finally {
       rmSync(markerRoot, { recursive: true, force: true })
+    }
+  })
+
+  it('tells the model the remote workspace root in a per-session prompt context', async () => {
+    const markerRoot = mkdtempSync(join(tmpdir(), 'dsh-tool-bash-remote-marker-'))
+    const localRoot = mkdtempSync(join(tmpdir(), 'dsh-tool-bash-local-workspace-'))
+    writeFileSync(join(markerRoot, REMOTE_WORKSPACE_MARKER), JSON.stringify({
+      version: 2,
+      remoteRoot: '/srv/project',
+      connectionId: 'connection-1',
+      generation: 1,
+    }))
+    const ctx = await setup()
+    const owner = registerFakeAgent(ctx, 'remote-context')
+    Object.assign(owner.session.header, { cwd: markerRoot })
+    try {
+      const remote = renderContextSnapshot(await ctx.systemPrompt.assemble({ agent: owner }))
+      expect(remote).toContain('remote host')
+      expect(remote).toContain('/srv/project')
+
+      Object.assign(owner.session.header, { cwd: localRoot })
+      const local = renderContextSnapshot(await ctx.systemPrompt.assemble({ agent: owner }))
+      expect(local).not.toContain('remote host')
+    } finally {
+      rmSync(markerRoot, { recursive: true, force: true })
+      rmSync(localRoot, { recursive: true, force: true })
     }
   })
 

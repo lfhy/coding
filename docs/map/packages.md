@@ -186,7 +186,7 @@ workspace 共 278 个包，按 group 分节。每行给出包目录、职责（R
 ## packages/git
 
 - `packages/git/git` — 宿主读取本机仓库并执行远端操作的能力 seam（`ctx.git`），本包是它的 Service Definition 入口 `src/index.ts`（tests 1）
-- `packages/git/git-local` — Git seam（`ctx.git`，见 `coding-git`）的本机实现 入口 `src/index.ts`（tests 3）
+- `packages/git/git-local` — Git seam（`ctx.git`，见 `coding-git`）的本机实现 入口 `src/index.ts`（tests 4）
 
 ## packages/goal
 

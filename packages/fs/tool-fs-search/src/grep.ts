@@ -319,7 +319,7 @@ export function applyGrepTool(ctx: Context, caps: GrepToolCaps): void {
     },
     async execute(args, exec) {
       const input = parseGrepArgs(args)
-      const remote = await runRemoteSearch(exec, 'grep', { ...input, kind: 'grep' }, caps.rawOutputMaxBytes)
+      const remote = await runRemoteSearch(exec, 'grep', { ...input, kind: 'grep' }, caps.rawOutputMaxBytes, caps.timeoutMs)
       if (remote !== undefined) {
         /* v8 ignore next -- input.kind fixes the remote result arm. */
         if (remote.kind !== 'grep') throw new Error('grep received an invalid remote result')

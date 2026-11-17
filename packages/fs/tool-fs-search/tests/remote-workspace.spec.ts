@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { CallId } from 'coding-llm'
-import SystemPrompt from 'coding-system-prompt'
+import SystemPrompt, { renderContextSnapshot } from 'coding-system-prompt'
 import { REMOTE_WORKSPACE_MARKER, SubprocessRuntime } from 'coding-subprocess'
 import type { SubprocessHandle, SubprocessSpawnSpec, SubprocessTerminalHandle, SubprocessTerminalSpawnSpec } from 'coding-subprocess'
 import ToolRuntime from 'coding-tools'
@@ -202,6 +202,66 @@ describe('tool-fs-search Remote-SSH routing', () => {
       }
 
       expect(paths).toEqual(['/srv/project', '/srv/project/src'])
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
+  it.each([
+    ['basic', true],
+    ['agent', false],
+  ] as const)('tells the model that a %s-mode remote search needs a narrow path', async (mode, guided) => {
+    const cwd = await marker(mode)
+    const ctx = new Context()
+    try {
+      await ctx.plugin(SystemPrompt)
+      await ctx.plugin(ToolRuntime)
+      await ctx.plugin(NeverSpawnSubprocess)
+      await ctx.plugin(ToolFsSearch, { sampleOverCapGlobResults: true })
+
+      const snapshot = renderContextSnapshot(await ctx.systemPrompt.assemble({
+        agent: { session: { header: { id: 'remote-search-session', cwd } } },
+      } as never))
+      if (guided) {
+        expect(snapshot).toContain('over SFTP')
+        expect(snapshot).toContain('subdirectory')
+      } else {
+        expect(snapshot).not.toContain('over SFTP')
+      }
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
+  it('stops a remote search inside its budget with the narrowing hint instead of a bare timeout', async () => {
+    const cwd = await marker('basic')
+    // 桥接器永不响应：搜索必须按自己的预算收尾，而不是等通用工具超时把它截断。
+    const server = createServer(() => {})
+    servers.push(server)
+    await new Promise<void>((resolve) => { server.listen(0, '127.0.0.1', resolve) })
+    const address = server.address() as AddressInfo
+    process.env.DSH_REMOTE_BRIDGE_URL = `http://127.0.0.1:${address.port}`
+    process.env.DSH_REMOTE_BRIDGE_TOKEN = 'test-bridge-token-which-is-long-enough'
+    const ctx = new Context()
+    try {
+      await ctx.plugin(SystemPrompt)
+      await ctx.plugin(ToolRuntime)
+      await ctx.plugin(NeverSpawnSubprocess)
+      await ctx.plugin(ToolFsSearch, { sampleOverCapGlobResults: true, timeoutMs: 4_100 })
+      const started = Date.now()
+
+      const result = await ctx.tools.execute({
+        signal: new AbortController().signal,
+        callId: CallId('remote-glob-budget'),
+        name: 'glob',
+        arguments: { pattern: '**/*.ts' },
+        agent: { session: { header: { id: 'remote-search-session', cwd } } } as never,
+      })
+
+      expect(result.isError).toBe(true)
+      expect(result.error).toMatchObject({ info: { code: 'SEARCH_ABORTED' } })
+      expect(text(result)).toContain('narrower `path`')
+      expect(Date.now() - started).toBeLessThan(4_100)
     } finally {
       await ctx.fiber.dispose()
     }

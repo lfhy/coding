@@ -29,6 +29,8 @@
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { MAX_TIMER_DELAY_MS } from 'coding-timeout'
+import { remoteWorkspacePathSync } from 'coding-subprocess'
+import type { RemoteWorkspacePath } from 'coding-subprocess'
 import { GLOB_MAX_RESULTS, applyGlobTool } from './glob.ts'
 import { GREP_MAX_LINE_BYTES, GREP_MAX_MATCHES, applyGrepTool } from './grep.ts'
 import { RAW_OUTPUT_MAX_BYTES, SEARCH_GRACE_MS, SEARCH_META_MAX_BYTES, SEARCH_STDERR_MAX_BYTES, SEARCH_TIMEOUT_MS } from './search-core.ts'
@@ -157,4 +159,36 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     stderrMaxBytes: resolved.stderrMaxBytes,
     timeoutMs: resolved.timeoutMs,
   })
+  // basic 模式远端工作区的搜索按目录逐个往返，比本机 ripgrep 慢一个数量级；先说明
+  // 让人给窄范围，而不是等调用在预算边缘失败。本地与 agent 模式渲染为空串。
+  ctx.systemPrompt.context({
+    name: 'tool:fs-search:remote-workspace',
+    order: 118,
+    text: context => remoteSearchContext(context.agent?.session.header.cwd, resolved.timeoutMs),
+  })
+}
+
+/** 会话工作区的远端 marker 读取：提示词装配期不可抛错，读不到就当作本地会话。 */
+function sessionRemoteWorkspace(cwd: string | undefined): RemoteWorkspacePath | undefined {
+  if (cwd === undefined) return undefined
+  try {
+    return remoteWorkspacePathSync('.', cwd)
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * basic 模式远端搜索的耗时说明：搜索沿 SFTP 逐目录走查，只有窄范围才可能按时完成。
+ * @param cwd - 会话工作区路径。
+ * @param timeoutMs - 工具声明的协作式预算。
+ * @returns 模型可见说明；本地会话与 agent 模式远端会话为空串。
+ */
+function remoteSearchContext(cwd: string | undefined, timeoutMs: number): string {
+  const remote = sessionRemoteWorkspace(cwd)
+  if (remote === undefined || remote.mode !== 'basic') return ''
+  const seconds = Math.round(timeoutMs / 1000)
+  return 'Searches in this workspace run on the remote host and walk the tree over SFTP one directory at a '
+    + `time, so they stop at ${String(seconds)}s. Pass a subdirectory as \`path\` (or a narrower `
+    + '`pattern`/`include`) instead of searching the whole workspace root.'
 }
