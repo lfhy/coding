@@ -64,6 +64,8 @@ type LayoutState = {
   activeBlankSession: { sessionId: SessionId; key: string } | null
   /** 主内容区的临时页面；只属于打开它的会话，可选记录打开前的对话。 */
   page: PageRoute | null
+  /** 当前主内容页是否附带 AI 助手轨；只随页面打开与关闭，切换页面时重置。 */
+  pageAssistant: boolean
   conversationRequest: ConversationRequest | null
   conversationReturn: ConversationReturn | null
   conversationRequestSeq: number
@@ -107,6 +109,7 @@ type LayoutActions = {
   closePage: (draft: LayoutState) => void
   discardPage: (draft: LayoutState) => void
   togglePage: (draft: LayoutState, kind: string, sessionId: SessionId, returnSessionId?: SessionId) => void
+  setPageAssistant: (draft: LayoutState, open: boolean) => void
   requestShowConversation: (draft: LayoutState, sessionId: SessionId) => void
   acknowledgeConversationRequest: (draft: LayoutState, seq: number) => void
   acknowledgeConversationReturn: (draft: LayoutState, seq: number) => void
@@ -131,6 +134,7 @@ export function createLayoutStore(): EngineStoreHandle<LayoutState, LayoutAction
       pendingNewConversation: false,
       activeBlankSession: null,
       page: null,
+      pageAssistant: false,
       conversationRequest: null,
       conversationReturn: null,
       conversationRequestSeq: 0,
@@ -321,12 +325,14 @@ export function createLayoutStore(): EngineStoreHandle<LayoutState, LayoutAction
         d.page = returnSessionId === undefined || returnSessionId === sessionId
           ? { kind, sessionId }
           : { kind, sessionId, returnSessionId }
+        d.pageAssistant = false
         d.conversationReturn = null
       },
       closePage: (d) => {
         const page = d.page
         if (page === null) return
         d.page = null
+        d.pageAssistant = false
         // 仅跨会话返回需要再选中原会话；同会话关闭沿用已有的页面呈现路径。
         d.conversationReturn = page.returnSessionId === undefined ? null : {
           sessionId: page.returnSessionId,
@@ -334,11 +340,12 @@ export function createLayoutStore(): EngineStoreHandle<LayoutState, LayoutAction
           seq: ++d.conversationRequestSeq,
         }
       },
-      discardPage: (d) => { d.page = null; d.conversationReturn = null },
+      discardPage: (d) => { d.page = null; d.pageAssistant = false; d.conversationReturn = null },
       togglePage: (d, kind: string, sessionId: SessionId, returnSessionId?: SessionId) => {
         if (d.page?.kind === kind && d.page.sessionId === sessionId) {
           const page = d.page
           d.page = null
+          d.pageAssistant = false
           d.conversationReturn = page.returnSessionId === undefined ? null : {
             sessionId: page.returnSessionId,
             from: page.sessionId,
@@ -349,7 +356,11 @@ export function createLayoutStore(): EngineStoreHandle<LayoutState, LayoutAction
         d.page = returnSessionId === undefined || returnSessionId === sessionId
           ? { kind, sessionId }
           : { kind, sessionId, returnSessionId }
+        d.pageAssistant = false
         d.conversationReturn = null
+      },
+      setPageAssistant: (d, open: boolean) => {
+        d.pageAssistant = open
       },
       requestShowConversation: (d, sessionId: SessionId) => {
         d.conversationRequest = { sessionId, seq: ++d.conversationRequestSeq }

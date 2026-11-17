@@ -227,6 +227,7 @@
 
 /* 独立页面覆盖整行：保留对话侧栏原列宽与挂载位置，切回时不播放零宽展开。 */
 .pageCol {
+  display: flex;
   grid-column: 2 / 4;
   grid-row: 1 / 3;
   z-index: 3;
@@ -234,6 +235,29 @@
   min-height: 0;
   overflow: hidden;
   background: var(--dsw-alias-bg-base);
+}
+
+/* 带 AI 助手轨的页面：页面内容区与对话视图各占主内容的一半，中间一条分隔。 */
+.pageMain {
+  display: flex;
+  flex: 1 1 50%;
+  min-width: 0;
+  min-height: 0;
+}
+
+.pageMain > * {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+}
+
+.pageAssistant {
+  display: flex;
+  flex: 1 1 50%;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  border-left: 1px solid var(--dsw-alias-border-l2);
 }
 
 .frame[data-page-open] .sidebarCol {

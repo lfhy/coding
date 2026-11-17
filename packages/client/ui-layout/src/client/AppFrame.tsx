@@ -797,12 +797,19 @@ export function AppFrame({
         {renderSlot('shell.overlay', {})}
       </div>
       {pageVisible && (
-        <div className={css.pageCol} data-shell-page>
-          {renderSlot('shell.page', {
-            closePage: () => { actions.closePage() },
-            sidebarCollapsed,
-            sidebarWidth,
-          }, { entryKey: page.kind })}
+        <div className={css.pageCol} data-shell-page data-page-assistant={rootPanels.pageAssistant || undefined}>
+          <div className={css.pageMain}>
+            {renderSlot('shell.page', {
+              closePage: () => { actions.closePage() },
+              sidebarCollapsed,
+              sidebarWidth,
+            }, { entryKey: page.kind })}
+          </div>
+          {rootPanels.pageAssistant && (
+            <div className={css.pageAssistant} data-page-assistant-track>
+              {renderSlot('conversation', { sidebarCollapsed })}
+            </div>
+          )}
         </div>
       )}
 

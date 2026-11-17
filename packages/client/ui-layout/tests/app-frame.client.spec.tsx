@@ -738,6 +738,24 @@ describe('AppFrame', () => {
     expect(b.getByTestId('center-content')).toBeTruthy()
   })
 
+  it('把对话 slot 渲染进页面助手轨，页面关闭后随状态一并收起', () => {
+    const b = mountFrame()
+    act(() => { b.instance.actions.openPage('image-gallery', 's-test' as SessionId) })
+    expect(b.frame.querySelector('[data-page-assistant-track]')).toBeNull()
+    expect(b.frame.querySelector('[data-shell-page]')?.getAttribute('data-page-assistant')).toBeNull()
+    act(() => { b.instance.actions.setPageAssistant(true) })
+    const track = b.frame.querySelector('[data-page-assistant-track]')
+    expect(track).not.toBeNull()
+    // 助手轨承载真实的对话视图，页面内容仍在左侧原区域。
+    expect(track?.querySelector('[data-testid="center-content"]')).not.toBeNull()
+    expect(track?.querySelector('[data-testid="gallery-page"]')).toBeNull()
+    expect(b.frame.querySelector('[data-shell-page]')?.getAttribute('data-page-assistant')).toBe('true')
+    expect(b.ownerFor('conversation')).toMatchObject({ sidebarCollapsed: false })
+    act(() => { (b.ownerFor('shell.page') as { closePage(): void }).closePage() })
+    expect(b.frame.querySelector('[data-page-assistant-track]')).toBeNull()
+    expect(b.instance.store.getSnapshot().pageAssistant).toBe(false)
+  })
+
   it.each([1920, 768])('shares sidebar collapse and width across conversation, files, and gallery at %ipx', (width) => {
     frameWidth = width
     const b = mountFrame()

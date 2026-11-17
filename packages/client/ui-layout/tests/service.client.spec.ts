@@ -36,6 +36,7 @@ function fakePanels(): PanelActions {
     closePage: vi.fn(),
     discardPage: vi.fn(),
     togglePage: vi.fn(),
+    setPageAssistant: vi.fn(),
     requestShowConversation: vi.fn(),
     acknowledgeConversationRequest: vi.fn(),
     acknowledgeConversationReturn: vi.fn(),
@@ -66,6 +67,7 @@ describe('LayoutController', () => {
     expect(service.conversationIntent).toBe(1)
     service.openPage('image-gallery', SESSION, 'origin-session' as SessionId)
     service.closePage()
+    service.setPageAssistant(true)
     service.togglePage('image-gallery', SESSION, 'origin-session' as SessionId)
     service.showConversation(SESSION)
 
@@ -84,6 +86,7 @@ describe('LayoutController', () => {
     expect(panels.beginNewConversation).toHaveBeenCalledOnce()
     expect(panels.openPage).toHaveBeenCalledWith('image-gallery', SESSION, 'origin-session')
     expect(panels.closePage).toHaveBeenCalledOnce()
+    expect(panels.setPageAssistant).toHaveBeenCalledWith(true)
     expect(panels.togglePage).toHaveBeenCalledWith('image-gallery', SESSION, 'origin-session')
     expect(panels.requestShowConversation).toHaveBeenCalledWith(SESSION)
     expect(panels.setSidebar).not.toHaveBeenCalled()
