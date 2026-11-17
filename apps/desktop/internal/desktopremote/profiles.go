@@ -139,6 +139,26 @@ func (s *Service) RemoteSSHForgetProfile(id string) error {
 	return nil
 }
 
+// liveProfileConnection 找出该档案当前登记过的一条仍然可用的连接，供重连快路径
+// 复用。marker 只能绑定仍然活着的连接，因此先用 manager 的摘要核验一次身份；
+// 连接已关闭或已被清理时返回 false，调用方继续完整重连。
+func (s *Service) liveProfileConnection(profileID string) (remoteagent.ConnectionInfo, bool) {
+	s.remoteMarkerMu.Lock()
+	candidates := make([]string, 0, len(s.remoteProfiles))
+	for connectionID, id := range s.remoteProfiles {
+		if id == profileID {
+			candidates = append(candidates, connectionID)
+		}
+	}
+	s.remoteMarkerMu.Unlock()
+	for _, connectionID := range candidates {
+		if info, err := s.remoteManager.Connection(connectionID); err == nil {
+			return info, true
+		}
+	}
+	return remoteagent.ConnectionInfo{}, false
+}
+
 // RemoteSSHReconnectWorkspace 用已保存的凭据重连某个远端工作区，并把 marker
 // 重新发布到新连接上。marker 路径必须与该档案记录的路径一致，否则拒绝，
 // 避免把旧证书用到另一台主机。
@@ -154,6 +174,20 @@ func (s *Service) RemoteSSHReconnectWorkspace(markerPath string) (RemoteSSHConne
 	profile, err := s.profiles.FindByMarker(ctx, markerPath)
 	if err != nil {
 		return RemoteSSHConnectResult{}, err
+	}
+	// 快路径：该档案已经有一条活跃连接时，直接在这条连接上重新发布 marker，不再
+	// 握手。每次打开远端工作区都完整重连会让入口页等待数秒，而 marker 只需要绑定
+	// 到仍然可用的连接；连接已失效时 selectDirectory 会失败，再走下面的完整重连。
+	if info, ok := s.liveProfileConnection(profile.ID); ok && info.Mode == remoteagent.ConnectionMode(profile.Mode) {
+		if selection, err := s.selectDirectory(info.ID, profile.RemoteRoot, nil); err == nil && selection.MarkerPath == markerPath {
+			s.remoteMarkerMu.Lock()
+			if s.remoteProfiles == nil {
+				s.remoteProfiles = make(map[string]string)
+			}
+			s.remoteProfiles[info.ID] = profile.ID
+			s.remoteMarkerMu.Unlock()
+			return RemoteSSHConnectResult{Kind: "ready", ConnectionID: info.ID, Mode: info.Mode, HomePath: info.RemoteHome}, nil
+		}
 	}
 	authKind, secret, err := s.profiles.Secret(ctx, profile.ID)
 	if err != nil {

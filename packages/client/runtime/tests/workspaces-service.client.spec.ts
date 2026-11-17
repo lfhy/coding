@@ -300,6 +300,57 @@ describe('WorkspaceRuntime', () => {
     expect(api.callsOf('session.create')).toEqual([{ workspaceId: 'remote' }])
   })
 
+  it('opens a reusable blank remote session without waiting for its reconnection', async () => {
+    const ctx = new Context()
+    const api = new FakeApiClient()
+    const sessions = new SessionRuntime(ctx, api, fakeRemote())
+    const workspaces = new WorkspaceRuntime(ctx, api, sessions)
+    const remotePath = '/home/me/.coding/remote-workspaces/509887000862b70a4669/project-0123456789abcdef0123'
+    api.onWorkspaceList = () => Promise.resolve(ok({
+      items: [{ ...workspace('remote', [sid('s-blank')]), path: remotePath }] as never[],
+    }))
+    api.onList = () => Promise.resolve(ok({
+      items: [{ sessionId: sid('s-blank'), updatedAt: 2, running: false, blank: true, cwd: remotePath }] as never[],
+    }))
+    await Promise.all([workspaces.refresh(), sessions.refresh()])
+    await Promise.resolve()
+    let release: () => void = () => {}
+    const activate = vi.fn(() => new Promise<void>((resolve) => { release = resolve }))
+    ctx.reflect.provide('remoteWorkspace', { activate })
+
+    // 复用已有空白会话：入口页不等重连结算。
+    await expect(workspaces.connectWorkspace(wid('remote'))).resolves.toBe('s-blank')
+    expect(activate).toHaveBeenCalledWith(remotePath)
+    expect(api.callsOf('session.create')).toEqual([])
+    release()
+    await Promise.resolve()
+  })
+
+  it('coalesces concurrent remote reconnects and never mints a second blank session', async () => {
+    const ctx = new Context()
+    const api = new FakeApiClient()
+    const sessions = new SessionRuntime(ctx, api, fakeRemote())
+    const workspaces = new WorkspaceRuntime(ctx, api, sessions)
+    const remotePath = '/home/me/.coding/remote-workspaces/509887000862b70a4669/project-0123456789abcdef0123'
+    api.onWorkspaceList = () => Promise.resolve(ok({
+      items: [{ ...workspace('remote'), path: remotePath }] as never[],
+    }))
+    api.onList = () => Promise.resolve(ok({ items: [] }))
+    await Promise.all([workspaces.refresh(), sessions.refresh()])
+    await Promise.resolve()
+    let release: () => void = () => {}
+    const activate = vi.fn(() => new Promise<void>((resolve) => { release = resolve }))
+    ctx.reflect.provide('remoteWorkspace', { activate })
+    api.onCreate = () => Promise.resolve(ok({ sessionId: sid('s-remote') }))
+
+    const first = workspaces.connectWorkspace(wid('remote'))
+    const second = workspaces.connectWorkspace(wid('remote'))
+    release()
+    await expect(Promise.all([first, second])).resolves.toEqual(['s-remote', 's-remote'])
+    expect(activate).toHaveBeenCalledTimes(1)
+    expect(api.callsOf('session.create')).toEqual([{ workspaceId: 'remote' }])
+  })
+
   it('a rejected first prompt keeps the blank session eligible for connectWorkspace reuse', async () => {
     const ctx = new Context()
     const api = new FakeApiClient()

@@ -18,15 +18,28 @@ import (
 
 type serviceManager struct {
 	connect func(context.Context, remoteagent.ConnectRequest) (remoteagent.ConnectionInfo, error)
+	resolve func(string) (remoteagent.ResolveResponse, error)
 	closed  []string
-	mu      sync.Mutex
+	// live 记录当前仍然登记过的连接摘要，重连快路径据此复用连接。
+	live map[string]remoteagent.ConnectionInfo
+	mu   sync.Mutex
 }
 
 func (m *serviceManager) Connect(ctx context.Context, request remoteagent.ConnectRequest) (remoteagent.ConnectionInfo, error) {
-	if m.connect != nil {
-		return m.connect(ctx, request)
+	if m.connect == nil {
+		return remoteagent.ConnectionInfo{}, errors.New("unexpected connection")
 	}
-	return remoteagent.ConnectionInfo{}, errors.New("unexpected connection")
+	info, err := m.connect(ctx, request)
+	if err != nil {
+		return info, err
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.live == nil {
+		m.live = make(map[string]remoteagent.ConnectionInfo)
+	}
+	m.live[info.ID] = info
+	return info, nil
 }
 func (m *serviceManager) ConfirmHostKey(ctx context.Context, _ string, request remoteagent.ConnectRequest, _ string) (remoteagent.ConnectionInfo, error) {
 	return m.Connect(ctx, request)
@@ -35,10 +48,21 @@ func (m *serviceManager) RejectHostKey(string) {}
 func (m *serviceManager) ListDirectories(context.Context, string, string) (remoteagent.RemoteDirectory, error) {
 	return remoteagent.RemoteDirectory{Path: "/srv", Entries: []remoteagent.DirectoryEntry{{Name: "project", Path: "/srv/project", Type: "directory"}}}, nil
 }
-func (m *serviceManager) ResolvePath(context.Context, string, string) (remoteagent.ResolveResponse, error) {
+func (m *serviceManager) ResolvePath(_ context.Context, connectionID, _ string) (remoteagent.ResolveResponse, error) {
+	if m.resolve != nil {
+		return m.resolve(connectionID)
+	}
 	return remoteagent.ResolveResponse{Path: "/srv/project", Info: &remoteagent.PathInfo{Path: "/srv/project", Type: "directory"}}, nil
 }
 func (m *serviceManager) Connection(id string) (remoteagent.ConnectionInfo, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if info, ok := m.live[id]; ok {
+		return info, nil
+	}
+	if m.live != nil {
+		return remoteagent.ConnectionInfo{}, remoteagent.ErrConnectionNotFound
+	}
 	return remoteagent.ConnectionInfo{ID: id, Mode: remoteagent.ModeAgent, TargetHost: "example.com", TargetPort: 22, TargetUser: "coding"}, nil
 }
 func (m *serviceManager) Marker(id, root string) (remoteagent.RemoteWorkspaceMarker, error) {
@@ -47,6 +71,7 @@ func (m *serviceManager) Marker(id, root string) (remoteagent.RemoteWorkspaceMar
 func (m *serviceManager) Close(_ context.Context, id string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	delete(m.live, id)
 	m.closed = append(m.closed, id)
 	return nil
 }

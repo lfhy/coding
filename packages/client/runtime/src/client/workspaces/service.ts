@@ -103,6 +103,8 @@ export class WorkspaceRuntime implements IWorkspaces {
   private readonly manager: WorkspaceManager
   /** In-flight blank-session creates keyed by workspace (connectWorkspace coalescing). */
   private readonly connecting = new Map<WorkspaceId, Promise<SessionId>>()
+  /** 进行中的远端重连，按工作区路径去重：连续点击不再各自发起一轮 SSH 握手。 */
+  private readonly activating = new Map<string, Promise<void>>()
   /** Guards the runtime-owned one-shot initial-selection subscription. */
   private initialSelectionStarted = false
   /** 显式新建会话的单调 attempt，旧完成结果不能覆盖新尝试。 */
@@ -146,14 +148,43 @@ export class WorkspaceRuntime implements IWorkspaces {
     // would miss the reuse scan and mint another hidden blank session.
     const inflight = this.connecting.get(workspaceId)
     if (inflight !== undefined) return inflight
+    // 复用的空白会话先于远端重连返回：入口页不该为一次并不需要的握手等待。
+    // 远端连接仍要可用，因此重连在后台继续，失败只记录诊断，不撤销已完成的导航。
+    const reusable = this.reusableBlankSession(workspace)
+    if (reusable !== undefined) {
+      void this.activateRemoteWorkspace(workspace.path).catch((reason: unknown) => {
+        this.startSessionError = {
+          attempt: this.startSessionAttempt,
+          workspaceId,
+          message: startSessionErrorMessage(reason),
+        }
+        this.project()
+      })
+      return reusable
+    }
     await this.activateRemoteWorkspace(workspace.path)
-    // Reuse requires workspace membership (id in sessionIds AND same
-    // canonical cwd — the host's own membership rule), never cwd alone:
-    // a cwd match can belong to no account (sessions the CLI/TUI birthed at
-    // the host cwd, or a deleted/recreated registration) and reusing it
-    // would open a session no grouping surface shows under this workspace.
-    // An archived blank is never reused either: reuse would open a session
-    // no grouping surface can show, so New Session mints a fresh one instead.
+    // 新会话必须落在可用的远端连接上，因此创建之前仍等重连；连接还活着时它在远端
+    // 复用已有连接，只重新发布 marker。
+    const created = this.reusableBlankSession(workspace)
+    if (created !== undefined) return created
+    // 重连期间到达的第二次点击可能已经先一步创建：回到同一份创建，不再多铸一个空白会话。
+    const coalesced = this.connecting.get(workspaceId)
+    if (coalesced !== undefined) return coalesced
+    const attempt = this.sessions.create({ workspaceId })
+      .finally(() => { this.connecting.delete(workspaceId) })
+    this.connecting.set(workspaceId, attempt)
+    return attempt
+  }
+
+  /**
+   * 找出该工作区当前可复用的空白会话。复用必须同时满足成员关系（id 在
+   * sessionIds 里）与同一 canonical cwd——那是 Host 自己的归属规则；仅凭 cwd
+   * 命中会打开一个没有归属账号的会话。已归档的空白会话永不复用：打开它也无处
+   * 展示，新建更符合预期。
+   * @param workspace - 目标工作区。
+   * @returns 可复用的空白会话 id；没有时 undefined。
+   */
+  private reusableBlankSession(workspace: WorkspaceView): SessionId | undefined {
     const archived = this.list.getSnapshot().archivedSessionIds
     const sessions = this.sessions.list.getSnapshot()
     for (const id of sessions.ids) {
@@ -162,22 +193,28 @@ export class WorkspaceRuntime implements IWorkspaces {
         && workspace.sessionIds.includes(summary.id)
         && !archived.includes(summary.id)) return summary.id
     }
-    const attempt = this.sessions.create({ workspaceId })
-      .finally(() => { this.connecting.delete(workspaceId) })
-    this.connecting.set(workspaceId, attempt)
-    return attempt
+    return undefined
   }
 
   /**
-   * 打开远端工作区前先让桌面端用已保存的凭据重连并重新发布 marker。
+   * 打开远端工作区前让桌面端用已保存的凭据重连并重新发布 marker。
+   * 同一工作区的并发调用共享同一次重连：连续点击「新对话」不该各发起一轮握手。
    * 缺少连接能力时直接失败，避免进入一个所有工具都会报 stale-marker 的会话。
    * @param path - 工作区的本地路径；非远端占位路径直接放行。
+   * @returns 本次重连完成时结算；失败时拒绝并让下一次调用重新尝试。
    */
-  private async activateRemoteWorkspace(path: string): Promise<void> {
-    if (!isRemoteWorkspacePath(path)) return
+  private activateRemoteWorkspace(path: string): Promise<void> {
+    if (!isRemoteWorkspacePath(path)) return Promise.resolve()
     const activation = this.ctx.get('remoteWorkspace') as RemoteWorkspaceActivation | undefined
-    if (activation === undefined) throw new Error('remote workspace activation is unavailable')
-    await activation.activate(path)
+    if (activation === undefined) {
+      return Promise.reject(new Error('remote workspace activation is unavailable'))
+    }
+    const inflight = this.activating.get(path)
+    if (inflight !== undefined) return inflight
+    const attempt = activation.activate(path)
+      .finally(() => { this.activating.delete(path) })
+    this.activating.set(path, attempt)
+    return attempt
   }
 
   /**
