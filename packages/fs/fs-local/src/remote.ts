@@ -370,9 +370,24 @@ export class RemoteWorkspaceRouter implements FsProvider {
   }
 
   async stat(target: FsTarget, signal?: AbortSignal): Promise<FsInfo | undefined> {
+    return await this.statRemote(target, signal, false)
+  }
+
+  /**
+   * 只读探测：让桥接器跳过内容版本，远端因此不必读取整份文件。
+   * 得到的版本只能用于展示与变更判断，条件写守卫要求读过内容得到的版本。
+   */
+  async statMetadata(target: FsTarget, signal?: AbortSignal): Promise<FsInfo | undefined> {
+    return await this.statRemote(target, signal, true)
+  }
+
+  private async statRemote(target: FsTarget, signal: AbortSignal | undefined, noVersion: boolean): Promise<FsInfo | undefined> {
     const remote = await this.verified(target, signal, 'stat')
     try {
-      const info = await callRemoteWorkspaceBridge(remote, '/v1/stat', 'POST', { path: remote.remotePath }, (value) => {
+      const info = await callRemoteWorkspaceBridge(remote, '/v1/stat', 'POST', {
+        path: remote.remotePath,
+        ...noVersion ? { noVersion: true } : {},
+      }, (value) => {
         const record = bridgeRecord(value)
         if (record.info === undefined) return undefined
         const response = bridgeInfo(record.info)

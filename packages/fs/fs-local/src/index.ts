@@ -161,6 +161,13 @@ export class LocalFileSystemBackend implements FsProvider {
     return { version: info.version, type: info.type, size: info.size }
   }
 
+  /** 只读探测：远端不必为版本读取内容，本地本来就只读元数据。 */
+  async statMetadata(target: FsTarget, signal?: AbortSignal): Promise<FsInfo | undefined> {
+    if (signal?.aborted) throw new FsError('stat aborted', 'FS_ABORTED')
+    if (this.remoteRouter.owns(String(target.targetKey))) return await this.remoteRouter.statMetadata(target, signal)
+    return await this.stat(target, signal)
+  }
+
   async lstat(path: string, opts?: { cwd?: string }, signal?: AbortSignal): Promise<FsPathInfo | undefined> {
     if (signal?.aborted) throw new FsError('lstat aborted', 'FS_ABORTED')
     if (path.trim().length === 0) throw new FsError('file_path must be a non-empty string', 'FS_NOT_FOUND')
@@ -356,6 +363,11 @@ export class LocalFileSystem extends FileSystem {
 
   stat(target: FsTarget, signal?: AbortSignal): Promise<FsInfo | undefined> {
     return this.backend.stat(target, signal)
+  }
+
+  /** 只读探测：本地后端本来就只读元数据，远端后端据此让桥接器跳过内容版本。 */
+  override statMetadata(target: FsTarget, signal?: AbortSignal): Promise<FsInfo | undefined> {
+    return this.backend.statMetadata(target, signal)
   }
 
   lstat(path: string, opts?: { cwd?: string }, signal?: AbortSignal): Promise<FsPathInfo | undefined> {

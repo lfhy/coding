@@ -132,7 +132,8 @@ async function fsStatFile(
   try {
     const target = await fileSystem.resolve(path, signalOptions(signal))
     signal?.throwIfAborted()
-    const info = await fileSystem.stat(target, signal)
+    // 探测只要存在与大小：远端 basic 实现的内容版本需要读取整份文件，因此走只读探测。
+    const info = await fileSystem.statMetadata(target, signal)
     signal?.throwIfAborted()
     if (info?.type !== 'file') return { kind: 'absent' }
     return {
@@ -157,7 +158,7 @@ async function existsAsMarker(path: string, fileSystem?: FileSystem, signal?: Ab
   if (fileSystem !== undefined) {
     try {
       const target = await fileSystem.resolve(path, signalOptions(signal))
-      return await fileSystem.stat(target, signal) !== undefined
+      return await fileSystem.statMetadata(target, signal) !== undefined
     } catch {
       signal?.throwIfAborted()
       // TODO(root-marker-unavailable): preserve provider failure separately from

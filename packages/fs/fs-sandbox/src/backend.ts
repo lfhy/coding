@@ -133,6 +133,13 @@ export class SandboxedBackend implements FsProvider {
     return this.inner.stat(target, signal)
   }
 
+  /** 只读探测原样转发：包装层不改变内容版本的语义。 */
+  statMetadata(target: FsTarget, signal?: AbortSignal): Promise<FsInfo | undefined> {
+    return this.inner.statMetadata === undefined
+      ? this.inner.stat(target, signal)
+      : this.inner.statMetadata(target, signal)
+  }
+
   lstat(path: string, opts?: { cwd?: string }, signal?: AbortSignal): Promise<FsPathInfo | undefined> {
     return this.inner.lstat(path, opts, signal)
   }

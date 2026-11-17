@@ -234,6 +234,19 @@ export abstract class FileSystem extends Service {
   abstract stat(target: FsTarget, signal?: AbortSignal): Promise<FsInfo | undefined>
 
   /**
+   * 只读探测：返回元数据，但版本不保证能通过条件写守卫。
+   *
+   * 远端 basic 实现把内容绑进版本，因此 `stat` 会读取整份文件；只想确认“存在与大小”
+   * 的调用方用这个方法，远端就不必为一次探测传输内容。默认实现与 {@link stat} 相同。
+   * @param target - 已解析的目标。
+   * @param signal - 取消元数据往返。
+   * @returns 元数据；目标不存在时 `undefined`。
+   */
+  statMetadata(target: FsTarget, signal?: AbortSignal): Promise<FsInfo | undefined> {
+    return this.stat(target, signal)
+  }
+
+  /**
    * Return path metadata without following the final path component when it is a
    * symbolic link. This is intentionally path-shaped, not target-shaped:
    * {@link resolve} follows symlinks to produce the stable identity used by
@@ -359,6 +372,10 @@ export interface FsProvider {
   fileUrl(target: FsTarget): string
   contains(parent: FsTarget, child: FsTarget): boolean
   stat(target: FsTarget, signal?: AbortSignal): Promise<FsInfo | undefined>
+  /**
+   * 只读探测的可选实现：提供方覆盖它来跳过内容版本；缺省时调用方回退 {@link stat}。
+   */
+  statMetadata?(target: FsTarget, signal?: AbortSignal): Promise<FsInfo | undefined>
   lstat(path: string, opts?: { cwd?: string }, signal?: AbortSignal): Promise<FsPathInfo | undefined>
   readText(target: FsTarget, signal?: AbortSignal): Promise<string>
   streamText(target: FsTarget, signal?: AbortSignal): Promise<AsyncIterable<string>>
@@ -523,6 +540,12 @@ export class FsRegistry extends FileSystem {
 
   override stat(target: FsTarget, signal?: AbortSignal): Promise<FsInfo | undefined> {
     return this.backendForTarget(String(target.targetKey)).stat(target, signal)
+  }
+
+  /** 分派只读探测：后端提供 `statMetadata` 时用它，否则退回普通 stat。 */
+  override statMetadata(target: FsTarget, signal?: AbortSignal): Promise<FsInfo | undefined> {
+    const backend = this.backendForTarget(String(target.targetKey))
+    return backend.statMetadata === undefined ? backend.stat(target, signal) : backend.statMetadata(target, signal)
   }
 
   override async lstat(path: string, opts?: { cwd?: string }, signal?: AbortSignal): Promise<FsPathInfo | undefined> {

@@ -315,6 +315,37 @@ describe('LocalFileSystem Remote-SSH marker routing', () => {
     }
   })
 
+  it('asks the bridge to skip the content version when the caller only wants metadata', async () => {
+    const root = await workspaceMarker()
+    const statBodies: Array<Record<string, unknown>> = []
+    await startBridge((path, body) => {
+      if (path === '/v1/resolve') {
+        return { path: body.path, info: { path: body.path, type: 'file', version: 'v1', size: 5 } }
+      }
+      if (path === '/v1/stat') {
+        statBodies.push(body)
+        return { info: { path: body.path, type: 'file', version: 'meta-v1', size: 5 } }
+      }
+      throw new Error(`unexpected bridge path ${path}`)
+    })
+    const ctx = new Context()
+    try {
+      await ctx.plugin(LocalFileSystem, { cwd: root })
+      const fs = ctx.fs as LocalFileSystem
+      const target = await fs.resolve('source.ts')
+      // 探测型调用：不带内容版本，远端因此不必读取整份文件。
+      const probe = await fs.statMetadata(target)
+      expect(probe).toMatchObject({ type: 'file', version: 'meta-v1', size: 5 })
+      // 默认调用仍要内容版本，供条件写守卫使用。
+      await fs.stat(target)
+      // 桥接请求会补上 marker 根；探测多带 noVersion，默认 stat 不带。
+      expect(statBodies[0]).toMatchObject({ path: '/srv/project/source.ts', noVersion: true })
+      expect(statBodies[1]).not.toHaveProperty('noVersion')
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
   it('rejects stat metadata that belongs to another path in the same remote workspace', async () => {
     const root = await workspaceMarker()
     await startBridge((path, body) => {
