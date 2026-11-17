@@ -58,6 +58,9 @@ type StatRequest struct {
 	Root     string `json:"root,omitempty"`
 	Path     string `json:"path"`
 	NoFollow bool   `json:"noFollow,omitempty"`
+	// NoVersion 让桥接器跳过为条件写守卫计算的内容版本：调用方只要元数据与大小，
+	// 因此不必为一次探测读取整份文件。
+	NoVersion bool `json:"noVersion,omitempty"`
 }
 
 // StatResponse 返回不存在或已知元数据。

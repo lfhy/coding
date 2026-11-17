@@ -431,3 +431,61 @@ func TestShellControlPlaneTextReadKeepsSFTPVersionParity(t *testing.T) {
 		t.Fatalf("version mismatch: stat=%q text=%q bytes=%q", stat.Info.Version, text.Version, raw.Version)
 	}
 }
+
+func TestShellControlPlaneStatCanSkipTheContentVersion(t *testing.T) {
+	backend, _, root := newShellBackend(t)
+	ctx := context.Background()
+	if err := os.WriteFile(filepath.Join(root, "probe.txt"), []byte("body\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	call := func(route string, request any) (int, []byte) {
+		t.Helper()
+		encoded, err := json.Marshal(request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		response, err := backend.Proxy(ctx, http.MethodPost, route, encoded)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return response.Status, response.Body
+	}
+
+	// 探测型 stat 不读内容：版本不是内容版本，调用方据此不能再做条件写守卫。
+	status, body := call("/v1/stat", StatRequest{Root: root, Path: "probe.txt", NoVersion: true})
+	if status != http.StatusOK {
+		t.Fatalf("versionless stat = %d %s", status, body)
+	}
+	var probe StatResponse
+	if err := json.Unmarshal(body, &probe); err != nil {
+		t.Fatal(err)
+	}
+	if probe.Info == nil || probe.Info.Type != "file" || probe.Info.Size == nil || *probe.Info.Size != 5 {
+		t.Fatalf("versionless stat info = %+v", probe.Info)
+	}
+	if strings.HasPrefix(probe.Info.Version, "sftp-sha256:") {
+		t.Fatalf("versionless stat returned a content version: %q", probe.Info.Version)
+	}
+
+	// 用这份元数据版本做条件写必须被拒：守卫只接受读过内容得到的版本。
+	writeStatus, writeBody := call("/v1/update_file", WriteRequest{
+		Root: root, Path: "probe.txt", Content: "other\n",
+		Expected: &WriteExpectation{Kind: "replaceIfVersion", Version: probe.Info.Version},
+	})
+	if writeStatus == http.StatusOK {
+		t.Fatalf("conditional write accepted a metadata version: %s", writeBody)
+	}
+
+	// 正常 stat 仍然给出可用于守卫的内容版本。
+	normalStatus, normalBody := call("/v1/stat", StatRequest{Root: root, Path: "probe.txt"})
+	if normalStatus != http.StatusOK {
+		t.Fatalf("stat = %d %s", normalStatus, normalBody)
+	}
+	var normal StatResponse
+	if err := json.Unmarshal(normalBody, &normal); err != nil {
+		t.Fatal(err)
+	}
+	if normal.Info == nil || !strings.HasPrefix(normal.Info.Version, "sftp-sha256:") {
+		t.Fatalf("stat version = %+v", normal.Info)
+	}
+}

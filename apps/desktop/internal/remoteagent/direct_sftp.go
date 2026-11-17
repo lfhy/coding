@@ -139,11 +139,12 @@ func (backend *directSFTPBackend) Proxy(ctx context.Context, method, route strin
 		return directError(fail(http.StatusBadRequest, "invalid-json", "request must contain exactly one JSON value")), nil
 	}
 	noFollow := false
+	noVersion := false
 	switch value := target.(type) {
 	case *ResolveRequest:
 		request.Root, request.Path = value.Root, value.Path
 	case *StatRequest:
-		request.Root, request.Path, noFollow = value.Root, value.Path, value.NoFollow
+		request.Root, request.Path, noFollow, noVersion = value.Root, value.Path, value.NoFollow, value.NoVersion
 	case *ListRequest:
 		request.Root, request.Path = value.Root, value.Path
 	case *WriteRequest:
@@ -167,7 +168,7 @@ func (backend *directSFTPBackend) Proxy(ctx context.Context, method, route strin
 		}
 		// 只有 stat 的版本会参与条件写入；resolve 的身份只用到规范化后的路径，
 		// 因此不为它读取文件内容计算 sftp-sha256（远端一次读取就是若干次往返）。
-		if route == "/v1/stat" && info != nil && info.Type == "file" && info.Size != nil && *info.Size <= maxFileBytes {
+		if route == "/v1/stat" && !noVersion && info != nil && info.Type == "file" && info.Size != nil && *info.Size <= maxFileBytes {
 			opened, statErr := backend.sftp.Stat(name)
 			if statErr != nil {
 				return directError(statErr), nil
