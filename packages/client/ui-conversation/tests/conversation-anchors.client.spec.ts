@@ -73,6 +73,22 @@ describe('buildConversationAnchors', () => {
     ])
   })
 
+  it('keeps the image label when Host appended a managed path envelope', () => {
+    const image = { type: 'image', attachment: {} } as UserMessageNode['content'][number]
+    const envelope = {
+      type: 'text',
+      text: '<path>/home/demo/.coding/files/uploads/1-image.png</path>\n<type>image</type>\n<content>\nimage/png image, 2x3 px, 7 bytes\n</content>',
+    } as UserMessageNode['content'][number]
+    expect(build(['photo'], [node('photo', 'user', 1, [envelope, image])])).toEqual([
+      { key: 'photo', seq: 1, title: '图片', preview: '图片' },
+    ])
+    // 用户自己写出的同类文本仍然是正文。
+    const typed = { type: 'text', text: '<path>look</path>' } as UserMessageNode['content'][number]
+    expect(build(['typed'], [node('typed', 'user', 2, [typed])])).toEqual([
+      { key: 'typed', seq: 2, title: '<path>look</path>', preview: '<path>look</path>' },
+    ])
+  })
+
   it('uses staged file names in navigation without changing the durable message', () => {
     const mention = '@"/Users/demo/Coding Home/files/uploads/123e4567-e89b-42d3-a456-426614174000-演示 slides.pptx"'
     const text = `请解析 ${mention} 后继续`

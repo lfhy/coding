@@ -80,6 +80,23 @@ describe('queue snapshot intake', () => {
     ])
   })
 
+  it('keeps the model-only image envelope out of the queue preview', () => {
+    const session = makeSession()
+    session.handleMuxEnvelope(rid('env-envelope'), queueFrame([{
+      id: 'q-envelope',
+      body: '',
+      content: [
+        {
+          type: 'text',
+          text: '<path>/home/demo/.coding/files/uploads/1-image.png</path>\n<type>image</type>\n<content>\nimage/png image, 2x3 px, 7 bytes\n</content>',
+        },
+        { type: 'image', data: 'x' } as never,
+      ],
+    }]))
+    // 路径说明不算用户写下的内容，排队行只显示图片占位。
+    expect(session.getSnapshot().queue[0]).toMatchObject({ preview: '[image]', text: null })
+  })
+
   it('caps previews at 200 code points and preserves the full editable text', () => {
     const session = makeSession()
     const body = '长'.repeat(201)

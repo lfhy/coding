@@ -103,15 +103,25 @@ describe('Web 文件库装配', () => {
     try {
       const first = await boot()
       let recordId: string
+      let inputId: string
       try {
         const copy = await first.fileLibrary.saveGeneratedImage({
           sessionId: 'session-1', attachmentId: 'image-1', mediaType: 'image/png', data: new Uint8Array([1, 2, 3]),
         })
         recordId = copy.record.id
         expect(copy.path.startsWith(first.fileLibrary.root)).toBe(true)
-        expect(first.fileLibrary.list()).toMatchObject({
-          total: 1,
-          items: [{ id: recordId, kind: 'generated-image', sessionId: 'session-1', bytes: 3 }],
+        // 网关在 prompt 准入后调用的同一入口：输入图片副本落到 uploads 并保留附件关联。
+        const input = await first.fileLibrary.saveInputImage({
+          sessionId: 'session-1', attachmentId: 'input-1', mediaType: 'image/png', name: 'paste.png', data: new Uint8Array([4, 5]),
+        })
+        inputId = input.record.id
+        expect(input.path.startsWith(join(first.fileLibrary.root, 'uploads'))).toBe(true)
+        expect(first.fileLibrary.list()).toMatchObject({ total: 2 })
+        expect(first.fileLibrary.list(0, 50, { kind: 'upload' })).toMatchObject({
+          items: [{ id: inputId, attachmentId: 'input-1', bytes: 2 }],
+        })
+        expect(first.fileLibrary.list(0, 50, { kind: 'generated-image' })).toMatchObject({
+          items: [{ id: recordId, sessionId: 'session-1', bytes: 3 }],
         })
       } finally {
         await first.fiber.dispose()
@@ -119,9 +129,11 @@ describe('Web 文件库装配', () => {
 
       const second = await boot()
       try {
-        expect(second.fileLibrary.list()).toMatchObject({
-          total: 1,
-          items: [{ id: recordId, kind: 'generated-image', sessionId: 'session-1', bytes: 3 }],
+        expect(second.fileLibrary.list(0, 50, { kind: 'upload' })).toMatchObject({
+          items: [{ id: inputId, attachmentId: 'input-1', bytes: 2 }],
+        })
+        expect(second.fileLibrary.list(0, 50, { kind: 'generated-image' })).toMatchObject({
+          items: [{ id: recordId, sessionId: 'session-1', bytes: 3 }],
         })
       } finally {
         await second.fiber.dispose()

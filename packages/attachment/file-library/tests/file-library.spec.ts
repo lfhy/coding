@@ -71,6 +71,51 @@ describe('global file library (SQLite)', () => {
     expect(await second.library.isManagedUploadPath(uploadResult.path)).toBe(true)
   })
 
+  it('copies an admitted input image into uploads with its attachment association', async () => {
+    const first = await harness()
+    const saved = await first.library.saveInputImage({
+      sessionId: 'session-1',
+      attachmentId: 'sha256:input',
+      mediaType: 'image/png',
+      name: '../截图 one.png',
+      data: new Uint8Array([9, 8, 7]),
+    })
+    expect(saved.record).toMatchObject({
+      kind: 'upload',
+      name: '截图 one.png',
+      mediaType: 'image/png',
+      bytes: 3,
+      sessionId: 'session-1',
+      attachmentId: 'sha256:input',
+    })
+    expect(saved.record.relativePath).toMatch(/^uploads\/[a-f0-9-]{36}-/u)
+    expect(saved.path).toBe(join(first.library.root, saved.record.relativePath))
+    expect(await readFile(saved.path)).toEqual(Buffer.from([9, 8, 7]))
+    // 输入副本归入 uploads，因此对文件管理页的未分组过滤可见。
+    expect(first.library.list(0, 50, { unscoped: true }).items.map(row => row.id)).toEqual([saved.record.id])
+    await first.ctx.fiber.dispose()
+    contexts.splice(contexts.indexOf(first.ctx), 1)
+    await first.backend.close()
+    const second = await harness(first.dir)
+    expect(second.library.list().items).toMatchObject([
+      { id: saved.record.id, attachmentId: 'sha256:input', bytes: 3 },
+    ])
+    expect(await second.library.getUpload(saved.path)).toMatchObject({ attachmentId: 'sha256:input' })
+  })
+
+  it('rejects empty or non-image input copies without leaving a file behind', async () => {
+    const { library } = await harness()
+    await expect(library.saveInputImage({
+      sessionId: 'session-1', attachmentId: 'input', mediaType: 'image/png', data: new Uint8Array(),
+    })).rejects.toThrow(/输入图片格式无效/)
+    await expect(library.saveInputImage({
+      sessionId: 'session-1', attachmentId: 'input', mediaType: 'text/plain' as never, data: new Uint8Array([1]),
+    })).rejects.toThrow(/输入图片格式无效/)
+    // 校验先失败时连目录都不会创建；已创建时也必须为空。
+    expect(await readdir(join(library.root, 'uploads')).catch(() => [])).toEqual([])
+    expect(library.list().total).toBe(0)
+  })
+
   it('copies an admitted generated image larger than the upload limit', async () => {
     const first = await harness()
     const data = Buffer.alloc(MAX_MANAGED_FILE_BYTES + 1, 7)

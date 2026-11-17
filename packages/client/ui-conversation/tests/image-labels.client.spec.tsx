@@ -65,6 +65,7 @@ describe('attachment rejection copy', () => {
     expect(attachmentErrorText(t, 'IMAGE_TOO_LARGE', limits)).toBe('图片超出可处理范围，请换用较小的原图')
     expect(attachmentErrorText(t, 'IMAGES_TOO_LARGE', limits)).toBe('图片总量超出可处理范围，请减少图片数量或换用较小的原图')
     expect(attachmentErrorText(t, 'IMAGE_DIMENSION_TOO_LARGE', limits)).toBe('图片宽高不能超过 2000px，请缩小后重试')
+    expect(attachmentErrorText(t, 'FILE_LIBRARY_SAVE_FAILED')).toBe('图片没能存入文件，请重新发送一次')
     expect(attachmentErrorText(enT, 'TOO_MANY_IMAGES', limits)).toBe('A message can include up to 20 images')
     expect(attachmentErrorText(enT, 'IMAGE_TOO_LARGE', limits)).toBe('This image exceeds processing limits; choose a smaller original')
     expect(attachmentErrorText(enT, 'IMAGES_TOO_LARGE', limits)).toBe('The images exceed processing limits; remove some or choose smaller originals')

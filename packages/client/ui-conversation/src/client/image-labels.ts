@@ -44,6 +44,8 @@ export function attachmentErrorText(
       break
     case 'IMAGE_TOO_LARGE': return t('image.hostImageTooLarge')
     case 'IMAGES_TOO_LARGE': return t('image.hostImagesTooLarge')
+    // 已准入但没能存入文件库：保留草稿重试即可，不把内部原因码带给用户。
+    case 'FILE_LIBRARY_SAVE_FAILED': return t('image.hostSaveFailed')
     default: break
   }
   return t('image.sendFailed', { reason })

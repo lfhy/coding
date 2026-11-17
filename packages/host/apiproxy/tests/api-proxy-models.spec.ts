@@ -142,13 +142,32 @@ class RecordingImageStore extends AttachmentStore {
     readonly imageLimits: ImageAttachmentLimits,
     private readonly validate: (input: SaveImageAttachment) => Promise<void>,
     private readonly save: (input: SaveImageAttachment) => Promise<ImageAttachmentRef>,
+    private readonly read?: (ref: ImageAttachmentRef) => Promise<{ ref: ImageAttachmentRef; data: Uint8Array }>,
   ) {
     super(ctx)
   }
 
   validateImage(input: SaveImageAttachment): Promise<void> { return this.validate(input) }
   saveImage(input: SaveImageAttachment): Promise<ImageAttachmentRef> { return this.save(input) }
-  readImage(): Promise<never> { return Promise.reject(new Error('unused')) }
+  readImage(ref: ImageAttachmentRef): Promise<{ ref: ImageAttachmentRef; data: Uint8Array }> {
+    return this.read === undefined ? Promise.reject(new Error('unused')) : this.read(ref)
+  }
+}
+
+/** 已挂载文件库替身：只回放保存参数并给出本机副本路径。 */
+function installInputImageLibrary(
+  ctx: Context,
+  save: (input: { attachmentId: string; name?: string; data: Uint8Array }) => Promise<{ path: string }>
+    = input => Promise.resolve({ path: `/home/user/.coding/files/uploads/${input.attachmentId}.png` }),
+): { attachmentId: string; name?: string; data: Uint8Array }[] {
+  const calls: { attachmentId: string; name?: string; data: Uint8Array }[] = []
+  ctx.provide('fileLibrary', {
+    saveInputImage(input: { attachmentId: string; name?: string; data: Uint8Array }) {
+      calls.push(input)
+      return save(input)
+    },
+  } as never)
+  return calls
 }
 
 function installImageStore(ctx: Context) {
@@ -329,6 +348,7 @@ describe('Web session model selection', () => {
       { type: 'text', text: 'What is this?' },
       { type: 'image', attachment: { attachmentId: 'stored-image', mediaType: 'image/png', bytes: 1, width: 1, height: 1 } },
     ])
+    // 组合没有挂载文件库时不复制也不失败，图片照常进入会话，消息里不出现路径说明。
 
     const invalid = await api.sessions.prompt(request({
       sessionId, mode: 'queue' as const,
@@ -343,6 +363,82 @@ describe('Web session model selection', () => {
     expect((await api.sessions.prompt(request({ sessionId, mode: 'queue' as const, content: [incomingImage] }))).result)
       .toMatchObject({ ok: false, error: { details: { reason: 'MODEL_DOES_NOT_SUPPORT_IMAGES' } } })
     expect(saveImage).toHaveBeenCalledOnce()
+    await ctx.fiber.dispose()
+  })
+
+  it('records a managed copy path beside every admitted input image', async () => {
+    const { ctx, agent, sessionId } = await harness()
+    const saveImage = vi.fn((input: SaveImageAttachment) => Promise.resolve({
+      attachmentId: `att-${String(input.data[0])}` as never,
+      mediaType: input.mediaType,
+      bytes: input.data.byteLength,
+      width: 1,
+      height: 1,
+      ...input.name === undefined ? {} : { name: input.name },
+    }))
+    new RecordingImageStore(ctx, {
+      maxImageBytes: 4, maxImagesPerMessage: 2, maxMessageImageBytes: 4,
+      maxImagePixels: 4, maxImageDimension: 2000, mediaTypes: ['image/png'],
+    }, () => Promise.resolve(), saveImage, ref => Promise.resolve({
+      // 副本元数据取自附件服务读回的引用，而不是浏览器提交的字段。
+      ref: { ...ref, bytes: 7, width: 2, height: 3 },
+      data: new Uint8Array([1]),
+    }))
+    const saved = installInputImageLibrary(ctx)
+    const followup = vi.fn()
+    Object.assign(agent, { followup })
+    const api = createApiProxy(ctx, {
+      defaultModelSelection: () => ({ provider: 'deepseek-official', model: 'deepseek-chat' }), cwd: '/tmp',
+    })
+
+    expectValue(await api.sessions.prompt(request({
+      sessionId, mode: 'queue' as const,
+      content: [incomingImage, { type: 'text' as const, text: 'describe' }],
+    })))
+    expect(saved).toHaveLength(1)
+    expect(saved[0]).toMatchObject({ attachmentId: 'att-1', data: new Uint8Array([1]) })
+    // 路径说明排在图片之前，模型读到的图片块仍持有可重建的附件引用。
+    expect((followup.mock.calls[0]?.[0] as UserMessage).content).toEqual([
+      {
+        type: 'text',
+        text: '<path>/home/user/.coding/files/uploads/att-1.png</path>\n<type>image</type>\n<content>\nimage/png image, 2x3 px, 7 bytes\n</content>',
+      },
+      { type: 'image', attachment: { attachmentId: 'att-1', mediaType: 'image/png', bytes: 1, width: 1, height: 1 } },
+      { type: 'text', text: 'describe' },
+    ])
+    await ctx.fiber.dispose()
+  })
+
+  it('refuses an image prompt the mounted file library cannot copy', async () => {
+    const { ctx, agent, sessionId } = await harness()
+    // 准入与读回都成功，失败只发生在文件库保存这一步。
+    new RecordingImageStore(ctx, {
+      maxImageBytes: 4, maxImagesPerMessage: 2, maxMessageImageBytes: 4,
+      maxImagePixels: 4, maxImageDimension: 2000, mediaTypes: ['image/png'],
+    }, () => Promise.resolve(), input => Promise.resolve({
+      attachmentId: 'stored-image' as never,
+      mediaType: input.mediaType,
+      bytes: input.data.byteLength,
+      width: 1,
+      height: 1,
+    }), ref => Promise.resolve({ ref, data: new Uint8Array([1]) }))
+    installInputImageLibrary(ctx, () => Promise.reject(new Error('disk full')))
+    const followup = vi.fn()
+    Object.assign(agent, { followup })
+    const api = createApiProxy(ctx, {
+      defaultModelSelection: () => ({ provider: 'deepseek-official', model: 'deepseek-chat' }), cwd: '/tmp',
+    })
+
+    const refused = await api.sessions.prompt(request({
+      sessionId, mode: 'queue' as const, content: [incomingImage],
+    }))
+    // 附件已准入却没有副本时整条 prompt 失败，客户端保留草稿重试，而不是发出无法定位的图片。
+    expect(refused.result).toMatchObject({
+      ok: false,
+      error: { code: 'attachment-error', details: { reason: 'FILE_LIBRARY_SAVE_FAILED' } },
+    })
+    expect(followup).not.toHaveBeenCalled()
+    expect(agent.session.events.some(event => event.type === 'user/message')).toBe(false)
     await ctx.fiber.dispose()
   })
 

@@ -206,7 +206,7 @@ export class FileLibrary extends Service {
     const name = safeName(input.name ?? `image-${attachmentId.replace(/[^a-zA-Z0-9_-]/gu, '_').slice(0, 80)}.${extension}`)
     return this.save('upload', name, `uploads/${randomUUID()}-${name}`, Readable.from([input.data]),
       { sessionId, workspaceId: input.workspaceId === undefined
-        ? this.workspaceIdForSession(sessionId) : identity(input.workspaceId, '工作区标识') },
+        ? this.workspaceIdForSession(sessionId) : identity(input.workspaceId, '工作区标识'), attachmentId },
       () => Promise.resolve(), input.mediaType)
   }
 

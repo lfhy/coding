@@ -1,6 +1,7 @@
 import type {
   ChatConversationViewNode, ChatNodeStore, SteeringMessageNode, UserMessageNode,
 } from 'coding-client-runtime/client'
+import { isImageEnvelope } from 'coding-client-runtime/client'
 import { displayStagedFiles } from '../contract/staged-file-mention.ts'
 
 const MAX_BLOCKS = 32
@@ -25,6 +26,8 @@ function textPreview(
   for (const block of content.slice(0, MAX_BLOCKS)) {
     if (block.type === 'image') hasImage = true
     if (block.type !== 'text') continue
+    // 纯图片消息的路径说明不算正文，导航项继续显示「图片」标签。
+    if (isImageEnvelope(block.text)) continue
     const remaining = MAX_SOURCE_LENGTH - source.length
     if (remaining <= 0) break
     source += block.text.slice(0, remaining)

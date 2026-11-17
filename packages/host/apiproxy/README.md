@@ -28,6 +28,8 @@ Settings 分节中的 `reasoningEffort` 在 agent-default-model 插件配置中�
 
 对明确不支持图片的模型，`session.prompt` 在保存附件前、`session.selectModel` 在切换选择前检查本次图片以及当前模型历史和待处理 inbox 中的图片。只有可选的 `ctx.visionUnderstanding.status().configured` 报告显式视觉路由已配置时才放行；未配置时分别返回 `attachment-error` 或 `model-unavailable`，其稳定 `details.reason` 均为 `MODEL_DOES_NOT_SUPPORT_IMAGES`，提示在设置中配置视觉理解模型。放行仅表示允许把原图保存在 Session 中，不代表图片已成功描述；请求前的[视觉理解插件](../../llm/llm-vision-fallback/README.md)负责真实描述、持久替换及失败时阻止文本模型收到图片。模型输入能力未知或本身支持图片时，不触发这项拒绝；附件大小、类型及数量仍由宿主验证，客户端不能绕过该检查直接提交图片字节。
 
+图片准入后，网关先把它复制到可选的文件库，再在同一个 `user/message` 的图片块之前写入一条 `<path>`／`<type>`／`<content>` 说明，内容与本机路径、媒体类型、像素尺寸和字节数，使模型在后续步骤里能按路径回看原件，而不是只拿到无法定位的图片。这条说明和图片块一起进入会话日志，因此重放、压缩与视觉降级都保留它。组合没有挂载文件库时不复制也不写说明，图片照常进入会话；已挂载却复制失败时整条 `session.prompt` 以 `attachment-error`／`FILE_LIBRARY_SAVE_FAILED` 拒绝且不入队，客户端保留草稿重试。
+
 ## 约定层（`/api`）
 
 协议消息组成一个四象限可辨识联合：发起方 × 请求／响应，与物理通道解耦。四种消息分别是 `ClientRequest`（POST `/api/<method>` 的请求体）、`ServerResponse`（该 POST 的响应体）、`ServerRequest`（SSE（Server-Sent Events）帧）和 `ClientResponse`（POST `/api/respond` 的请求体）。响应始终回显对应请求的 `rpcId`，绝不签发新值。方法的参数与返回值结构只存在于领域接口签名（`SessionsApi`、`HostApi`、`EventsApi`）中；`RpcMethodMap` 注册方法，其他所有位置均通过 `RequestPayload<K>`／`ResponseValue<K>` 派生。Zod schema 以 `satisfies z.ZodType<Wire<T>>` 锚定类型，并分两层解析：先解析信封，再解析业务载荷，随后按方法分发。业务错误由 `RpcResult` 的错误分支承载（`RpcErrorDetailsMap` 封闭错误码集合）；HTTP 状态只表达载体层结果。每个 `/api` POST 都必须声明 `application/json` 媒体类型——否则在分发前即以 415 拒绝，因此跨站「简单请求」（浏览器不经 CORS 预检就会发出）永远无法盲目执行有副作用的方法。
@@ -94,16 +96,17 @@ Host 在准入时及提供方会话队列真正执行前复核同一 Session 仍
 
 ## 模型体验
 
-无。该包定义客户端与宿主间的 wire 约定和载体，其中没有任何内容会进入模型请求。
+该包定义客户端与宿主间的 wire 约定和载体，自己不组装提示词、工具 schema 或提供方请求。唯一进入模型请求的内容是 `session.prompt` 的图片路径说明：图片准入后，网关在图片块之前追加一个文本块，形如 `<path>…</path>`、`<type>image</type>`、`<content>` 中写明媒体类型、像素尺寸与字节数，与 `read_image` 的结果同形。它随 `user/message` 持久化，因此后续步骤、重放和视觉理解替换都保留路径，模型不必再猜图片存在哪里。组合没有挂载文件库时这条说明缺席，图片块本身不变。
 
 #### KV Cache 影响
 
-无；该包既不组装也不发送提供方请求。
+说明只出现在新追加的消息上，不改写既有历史前缀，因此不额外失效缓存；每张图增加数十个 token 的固定文本。
 
 ## 已知限制与暂缓事项
 
 - **转发的 Remote 事件寄居在这套 legacy 帧联合里**：`host/remote-event` 住在 `HostFrame` 中，是为了让投递路径复用现有宿主流、不必新开第三条下行通道，因此读起来像是本包拥有 Remote 事件契约。并非如此：名单归 `dsh-api-remotes`，消费端动词是 `ctx.remote.$on`。将来宿主流整体搬离本包时，该帧随之搬走，消费端契约不受影响（原委）。
 - **待处理交互状态位于宿主侧**：wire 使用 POST `/api/respond` 加 `RpcReceipt`；`src/api-proxy.ts` 中的表只处理问题，不包含审批条目。
+- **图片路径说明指向运行 Host 的机器**：文件库属于 Host 本机，所以说明里的路径不能当作 Remote-SSH marker 会话的远端工作区路径；远程会话里模型应改用会话附件或请用户把文件放进工作区。历史消息不会因为后来挂载文件库而补上路径说明。
 - **预留 seam 不进入 `RpcMethodMap`**：`prompt.mode: 'inject'`、`job.list` 和描述字段 `hostInstanceId` 都是已记录的预留项；模型发现使用 `llm.models`。未知方法会在信封解析时直接失败，而不会返回「尚未实现」错误码。
 - **没有协议版本字段**：客户端与宿主一同发布；只有出现独立发布的客户端后，`host.describe` 才会增加版本协商字段。
 - **搜索失败会包含提供方诊断信息**：网关是单用户本地服务。将其暴露给多名用户的载体必须用可安全公开的诊断信息替代内部搜索细节。

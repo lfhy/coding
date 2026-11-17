@@ -7,7 +7,7 @@ import { Context, FiberState, Service, type Fiber } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { z as zod } from 'zod'
 import type { Branded } from 'coding-brand'
-import { assertNever, deepFreeze, isAgentLoopRequest } from 'coding-llm'
+import { assertNever, deepFreeze, isAgentLoopRequest, isImageEnvelope } from 'coding-llm'
 import type { GenerateOptions } from 'coding-llm'
 import type {
   Session,
@@ -196,6 +196,8 @@ export function collectSessionTitleMessages(
     const content = event.data.content
     const text = content
       .filter((block): block is Extract<(typeof content)[number], { type: 'text' }> => block.type === 'text')
+      // 图片路径说明只服务模型，不参与标题取材，否则纯图片消息会拿本机路径当正文。
+      .filter(block => !isImageEnvelope(block.text))
       .map(block => block.text)
       .join('\n')
     if (normalizeSessionTitle(text, Number.MAX_SAFE_INTEGER).length === 0) continue

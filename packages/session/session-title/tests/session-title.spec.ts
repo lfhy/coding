@@ -1,4 +1,4 @@
-import { createUserMessage } from 'coding-llm'
+import { createUserMessage, imageEnvelopeText } from 'coding-llm'
 import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it } from 'vitest'
 import SessionStore, { Session, SessionId } from 'coding-session'
@@ -145,6 +145,25 @@ describe('SessionTitleService', () => {
     expect(collectSessionTitleMessages(replayed.events)).toEqual([
       { seq: prompt.seq, text: 'Actual follow-up prompt' },
     ])
+  })
+
+  it('ignores the model-only image path envelope when collecting prompt text', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(SessionTitleService, CONFIG)
+    const session = ctx.sessions.create(SessionId('image-envelope'))
+    session.append('user/message', createUserMessage({
+      content: [
+        {
+          type: 'text',
+          text: imageEnvelopeText({ path: '/home/demo/.coding/files/uploads/1-image.png', mediaType: 'image/png', width: 2, height: 3, bytes: 7 }),
+        },
+        { type: 'image', attachment: { attachmentId: 'sha256:picture' as never, mediaType: 'image/png', bytes: 7, width: 2, height: 3 } },
+      ],
+      source: { kind: 'user' },
+    }), { surfaceOp: 'append' })
+    // 纯图片消息的正文里只有路径说明，标题仍应等待真正的文字输入。
+    expect(collectSessionTitleMessages(session.events)).toEqual([])
   })
 
   it('waits through synthetic, empty, and non-text messages, then keeps the first fallback', async () => {

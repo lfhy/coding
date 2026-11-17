@@ -1,3 +1,4 @@
+import { isImageEnvelope } from 'coding-llm'
 import type { ContentBlock } from 'coding-llm/types'
 import type { MuxFrame } from 'coding-api-remotes/client'
 import type { SessionEvent } from 'coding-session/types'
@@ -7,6 +8,8 @@ const QUEUE_PREVIEW_CHARS = 200
 
 function previewOf(content: readonly ContentBlock[]): string {
   const flat = content
+    // 图片路径说明只服务模型，不应占用队列行的预览文本。
+    .filter(block => !(block.type === 'text' && isImageEnvelope(block.text)))
     .map(block => (block.type === 'text' ? block.text : `[${block.type}]`))
     .join(' ').replace(/\s+/g, ' ').trim()
   const chars = Array.from(flat)

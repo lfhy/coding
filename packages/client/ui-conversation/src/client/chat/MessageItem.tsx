@@ -8,6 +8,7 @@ import type { ReactNode } from 'react'
 import type {
   ModelRetryNode, TurnErrorNode, UserMessageNode,
 } from 'coding-client-runtime/client'
+import { isImageEnvelope } from 'coding-client-runtime/client'
 import { Button, ChatUserBubble, IconRefreshOutline16, JsonBlock, MessageText, StateDot } from 'coding-client-ui-primitives'
 import type { ChatNodeOwnerProps, ChatNodeViewProps, ChatViewSlotProps } from '../contract/slots.ts'
 import { stagedFileName } from '../contract/staged-file-mention.ts'
@@ -29,7 +30,10 @@ function contentParts(content: readonly unknown[]): {
   const rest: unknown[] = []
   for (const block of content) {
     const b = block as { type?: string; text?: string; attachment?: unknown }
-    if (b.type === 'text' && typeof b.text === 'string') texts.push(b.text)
+    if (b.type === 'text' && typeof b.text === 'string') {
+      // 已发送图片的路径说明只服务模型，不进气泡文本，也不进复制内容。
+      if (!isImageEnvelope(b.text)) texts.push(b.text)
+    }
     else if (b.type === 'image' && b.attachment !== undefined) {
       images.push({ attachment: (b as UserImage).attachment })
     }
