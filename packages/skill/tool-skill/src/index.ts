@@ -398,7 +398,7 @@ export function apply(ctx: Context, config: Config = {}): void {
   // 在工具之后注册监听器，卸载时先撤销目录指引。精确工具身份可排除普通同名遮蔽；
   // 同类插件的其他实例则由当前可见实例处理，避免外层监听器删除其目录。
   ctx.on('agent/pre-step', async (
-    { agent, signal },
+    { agent, messages, step, signal },
     next,
   ): Promise<PreStepDecision> => {
     const decision = await next()
@@ -420,20 +420,30 @@ export function apply(ctx: Context, config: Config = {}): void {
     const digest = digestCatalogEntries(entries)
     const history = catalogHistory(agent)
     const existing = catalogMessage(decision.messages)
-    if (history.visibleDigest === digest) {
+
+    // 轮次首步（`step === 1`）由真人开启时重发一次完整目录：目录是持久用户角色消息，
+    // 长对话里模型会把它当背景跳过。中途插话（steering）与工具循环都落在同轮的后续步骤，
+    // 不重发；子代理的任务提示由派发方写好，也不按轮次刷新。
+    const userSpoke = step === 1
+      && agent.session.header.origin !== 'subagent'
+      && messages.some(message => message.source.kind === 'user')
+    // 空目录没有可加载的技能，只在新变空时发一次失效指引，不按轮次重复刷屏。
+    const refreshTurn = userSpoke && entries.length > 0
+    if (!refreshTurn && history.visibleDigest === digest) {
       return existing === undefined
         ? decision
         : { kind: 'enter', messages: decision.messages.filter(message => message.id !== existing.message.id) }
     }
     if (existing !== undefined && digestCatalogEntries(existing.entries) === digest) return decision
-    if (!history.published && skills.length === 0) {
+    if (!history.published && entries.length === 0) {
       return existing === undefined
         ? decision
         : { kind: 'enter', messages: decision.messages.filter(message => message.id !== existing.message.id) }
     }
-    const catalog = history.published
-      ? renderCatalogUpdate(entries)
-      : renderCatalogMessage(entries)
+    // 只有空目录使用替换模板（明确停用旧名）；完整目录在首次发布、压缩后重建与逐轮重发时都读作当前清单。
+    const catalog = entries.length > 0 && (history.visibleDigest === undefined || history.visibleDigest === digest)
+      ? renderCatalogMessage(entries)
+      : renderCatalogUpdate(entries)
     return {
       kind: 'enter',
       messages: existing === undefined

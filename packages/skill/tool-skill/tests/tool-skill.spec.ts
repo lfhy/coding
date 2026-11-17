@@ -101,13 +101,20 @@ async function proposeStep(
   ctx: Context,
   agent: Agent,
   messages: UserMessage[],
+  step = 1,
 ): Promise<PreStepDecision> {
   const signal = new AbortController().signal
   return await agentEvents(ctx, agent).waterfall(
     'agent/pre-step',
-    { messages, turn: 1, step: 1, signal },
+    { messages, turn: 1, step, signal },
     () => Promise.resolve({ kind: 'enter' as const, messages }),
   )
+}
+
+function catalogDecisions(decision: PreStepDecision): UserMessage[] {
+  return decision.kind === 'enter'
+    ? decision.messages.filter(message => message.source.kind === 'skill-catalog')
+    : []
 }
 
 function catalogMessages(session: Session): Extract<SessionEvent, { type: 'user/message' }>[] {
@@ -1123,6 +1130,80 @@ describe('dsh-tool-skill', () => {
     const vanishedBlock = vanished.content[0]
     if (vanishedBlock?.type !== 'text') throw new Error('expected text tool result')
     expect(vanishedBlock.text).toContain('skill "vanishing-skill" is unknown or no longer available')
+  })
+})
+
+describe('skill catalog turn refresh', () => {
+  it('refreshes the catalog only when a user message starts a new turn', async () => {
+    const home = await tempDir('tool-catalog-turn-boundary')
+    const ctx = await setup(home)
+    ctx.skills.register({ name: 'turn-skill', description: 'Turn skill', source: 'runtime', content: 'Turn body.' })
+    const agent = sessionAgent(Session.create(SessionId('catalog-turn-boundary')))
+    const request = createUserMessage({ content: [{ type: 'text', text: 'new request' }], source: { kind: 'user' } })
+
+    const initial = await proposeStep(ctx, agent, [request], 1)
+    expect(catalogDecisions(initial)).toHaveLength(1)
+    if (initial.kind !== 'enter') throw new Error('expected initial catalog')
+    for (const message of initial.messages) agent.session.append('user/message', message, { surfaceOp: 'append' })
+
+    // 同轮中途插话落在 step 2：目录没变就不重发。
+    const steer = await proposeStep(ctx, agent, [createUserMessage({
+      content: [{ type: 'text', text: '中途插话' }], source: { kind: 'user' },
+    })], 2)
+    expect(catalogDecisions(steer)).toHaveLength(0)
+    // 工具循环的后续步骤同样不重发。
+    expect(catalogDecisions(await proposeStep(ctx, agent, [], 2))).toHaveLength(0)
+
+    // 下一轮真人发言即使目录没变，也重发一次完整目录。
+    expect(catalogDecisions(await proposeStep(ctx, agent, [request], 1))).toHaveLength(1)
+  })
+
+  it('refreshes the catalog for an image-only turn and keeps later steps quiet', async () => {
+    const home = await tempDir('tool-catalog-image-turn')
+    const ctx = await setup(home)
+    ctx.skills.register({ name: 'image-turn-skill', description: 'Image turn skill', source: 'runtime', content: 'Image body.' })
+    const agent = sessionAgent(Session.create(SessionId('catalog-image-turn')))
+    const image = createUserMessage({
+      content: [{ type: 'image', attachment: {
+        attachmentId: 'image-turn' as never, mediaType: 'image/png', bytes: 1, width: 1, height: 1,
+      } }],
+      source: { kind: 'user' },
+    })
+
+    const first = await proposeStep(ctx, agent, [image], 1)
+    expect(catalogDecisions(first)).toHaveLength(1)
+    if (first.kind !== 'enter') throw new Error('expected image turn')
+    for (const message of first.messages) agent.session.append('user/message', message, { surfaceOp: 'append' })
+
+    expect(catalogDecisions(await proposeStep(ctx, agent, [], 2))).toHaveLength(0)
+    // 纯图片消息没有正文，仍算真人开启的新轮次。
+    expect(catalogDecisions(await proposeStep(ctx, agent, [image], 1))).toHaveLength(1)
+  })
+
+  it('stays quiet on later turns once no skills remain', async () => {
+    const home = await tempDir('tool-catalog-empty-turn')
+    const ctx = await setup(home)
+    const dispose = ctx.skills.register({ name: 'gone-skill', description: 'Gone skill', source: 'runtime', content: 'Body.' })
+    const agent = sessionAgent(Session.create(SessionId('catalog-empty-turn')))
+    const request = createUserMessage({ content: [{ type: 'text', text: 'keep going' }], source: { kind: 'user' } })
+
+    const initial = await proposeStep(ctx, agent, [request], 1)
+    expect(catalogDecisions(initial)).toHaveLength(1)
+    if (initial.kind !== 'enter') throw new Error('expected initial catalog')
+    for (const message of initial.messages) agent.session.append('user/message', message, { surfaceOp: 'append' })
+
+    dispose()
+    // 技能消失后发一次失效指引，明确停用旧名。
+    const removal = catalogDecisions(await proposeStep(ctx, agent, [request], 1))
+    expect(removal).toHaveLength(1)
+    const removalMessage = removal[0]
+    const removalBlock = removalMessage?.content[0]
+    if (removalMessage === undefined || removalBlock?.type !== 'text') throw new Error('expected text catalog')
+    expect(removalBlock.text).toContain('No skills are currently available')
+    agent.session.append('user/message', removalMessage, { surfaceOp: 'append' })
+
+    // 之后每轮真人发言都不再重复空目录。
+    expect(catalogDecisions(await proposeStep(ctx, agent, [request], 1))).toHaveLength(0)
   })
 })
 
