@@ -20,7 +20,7 @@ workspace 共 278 个包，按 group 分节。每行给出包目录、职责（R
 
 - `packages/attachment/attachment` — 持久附件服务边界 入口 `src/index.ts`（tests 3）
 - `packages/attachment/attachment-local` — 这是 `coding-attachment` 的私有本地实现 入口 `src/index.ts`（tests 3）
-- `packages/attachment/file-library` — 全局受管理文件服务 `ctx.fileLibrary` 入口 `src/index.ts`（tests 2）
+- `packages/attachment/file-library` — 全局受管理文件服务 `ctx.fileLibrary` 入口 `src/index.ts`（tests 3）
 
 ## packages/boot
 

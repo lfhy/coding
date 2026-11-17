@@ -1,8 +1,18 @@
 /** 全局文件库的持久记录；相对路径只能位于受管理目录。@module coding-file-library/types */
 import type { FileId } from './brand.ts'
 
-/** 用户输入、生成图片与会话导出的受管理文件分类。 */
-export type ManagedFileKind = 'upload' | 'generated-image' | 'export'
+/** 用户输入、生成图片、会话导出与无目录笔记的受管理文件分类。 */
+export type ManagedFileKind = 'upload' | 'generated-image' | 'export' | 'note'
+
+/** 笔记目录树的节点；`path` 是相对笔记根目录的斜杠路径，浏览器端不会拿到绝对路径。 */
+export interface NotesTreeNode {
+  name: string
+  kind: 'dir' | 'file'
+  path: string
+  /** 文件修改时间戳（毫秒）；目录取其最后一次写入时间，供编辑端检测外部改动。 */
+  mtimeMs: number
+  children?: NotesTreeNode[] | undefined
+}
 export type ManagedFileCategory = 'image' | 'presentation' | 'document' | 'other'
 
 /** 上传原件、生成图片与会话导出的受管理文件元数据。 */
