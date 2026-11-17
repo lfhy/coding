@@ -37,6 +37,11 @@ export interface SidebarRootProps {
   variant?: 'rows' | 'media'
   /** 无条目时的说明；收起态不显示。 */
   empty?: string
+  /**
+   * 标题行之上的页面自有入口（如画图的三子页切换、对话侧栏的新建对话行）。
+   * 宽度、安全区与折叠动画仍由本组件持有；展开与收起时的呈现由调用方按 `collapsed` 自行切换。
+   */
+  header?: ReactNode
 }
 
 /**
@@ -46,7 +51,7 @@ export interface SidebarRootProps {
  * @returns 展开列或收起轨。
  */
 export function SidebarRoot({
-  label, title, items, collapsed, width, variant = 'rows', empty,
+  label, title, items, collapsed, width, variant = 'rows', empty, header,
 }: SidebarRootProps) {
   // 与对话侧栏同一套折叠时序：宽度先滑动，宽内容就地淡出 150ms，落定后换成图标轨并淡入。
   const [settled, setSettled] = useState(collapsed)
@@ -70,6 +75,7 @@ export function SidebarRoot({
       style={{ width: wide && collapsed ? lastWideWidth.current : width }}
       aria-label={label}
     >
+      {header}
       {wide ? (
         <>
           <div className={css.headerRow}>

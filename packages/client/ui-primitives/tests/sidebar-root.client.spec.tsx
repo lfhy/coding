@@ -46,4 +46,16 @@ describe('SidebarRoot', () => {
       items={[{ id: 'a', label: '云海', icon: 'model-vision', media: <img src="blob:x" alt="" /> }]} />)
     expect(screen.getByText('云海').closest('button')?.querySelector('img')).not.toBeNull()
   })
+
+  it('header 插槽渲染在标题行上方，收起态保留在图标轨之前', () => {
+    const header = <button type="button" data-testid="page-entry">子页切换</button>
+    const { unmount } = render(<SidebarRoot label="最近生成" title="最近生成" items={items} collapsed={false} width={280} header={header} />)
+    const entry = screen.getByTestId('page-entry')
+    expect(entry.compareDocumentPosition(screen.getByText('最近生成')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    unmount()
+    render(<SidebarRoot label="最近生成" title="最近生成" items={items} collapsed width={56} header={header} />)
+    expect(screen.getByTestId('page-entry')).toBeTruthy()
+    expect(screen.queryByText('最近生成')).toBeNull()
+    expect(screen.getAllByRole('button')).toHaveLength(items.length + 1)
+  })
 })
