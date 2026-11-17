@@ -16,6 +16,11 @@ import * as BrowserTool from '../src/index.ts'
 
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC', 'base64')
 
+type FixtureHostResult =
+  | { ok: true; path: string }
+  | { ok: true; name: string; args: Record<string, unknown> }
+  | { ok: false; error: string }
+
 /** 生成与上游同形的 fixture 定义；执行由 FixtureHost 统一接管。 */
 function fixture(name: string, parameters: Record<string, unknown> = {}): ToolDefinition {
   return defineTool({
@@ -32,14 +37,16 @@ function fixture(name: string, parameters: Record<string, unknown> = {}): ToolDe
 class FixtureHost extends Service {
   /** 没有落点时模拟上游自己的临时文件，路径同样回给调用方。 */
   private shots = 0
-  readonly calls = vi.fn(async (name: string, args: Record<string, unknown>) => {
-    if (name === 'ego_screenshot') {
-      const path = typeof args.path === 'string' ? args.path : join(tmpdir(), `ego-shot-${++this.shots}.png`)
-      await writeFile(path, PNG)
-      return { ok: true, path }
-    }
-    return { ok: true, name, args }
-  })
+  readonly calls = vi.fn<(name: string, args: Record<string, unknown>) => Promise<FixtureHostResult>>(
+    async (name: string, args: Record<string, unknown>) => {
+      if (name === 'ego_screenshot') {
+        const path = typeof args.path === 'string' ? args.path : join(tmpdir(), `ego-shot-${++this.shots}.png`)
+        await writeFile(path, PNG)
+        return { ok: true, path }
+      }
+      return { ok: true, name, args }
+    },
+  )
   definitions: ToolDefinition[] = []
   constructor(ctx: Context) { super(ctx, 'egoBrowser') }
   toolDefinitions(): readonly ToolDefinition[] {

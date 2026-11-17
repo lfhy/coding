@@ -101,7 +101,7 @@ describe('新对话页面开始方式', () => {
     expect(stack?.children[0]?.contains(greeting)).toBe(true)
     expect(stack?.children[1]?.contains(tabs)).toBe(true)
     expect(panel.contains(b.view.getByRole('textbox'))).toBe(true)
-    expect(stack?.compareDocumentPosition(b.view.getByRole('textbox')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(stack && (stack.compareDocumentPosition(b.view.getByRole('textbox')) & Node.DOCUMENT_POSITION_FOLLOWING)).toBeTruthy()
     expect(panel.getAttribute('aria-labelledby')).toBe(work.id)
     expect(work.getAttribute('aria-controls')).toBe(panel.id)
     expect(work.getAttribute('aria-selected')).toBe('true')
