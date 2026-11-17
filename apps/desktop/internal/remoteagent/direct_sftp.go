@@ -47,7 +47,8 @@ func newDirectSFTPBackend(client *ssh.Client) (*directSFTPBackend, error) {
 }
 
 // useShell 为 POSIX 远端启用常驻 shell 控制面。
-// 文件内容读写仍走 SFTP；远端没有 sh 时控制面会自行降级。
+// 文本读取优先走控制面的一次脚本；二进制读取、写入与编辑仍走 SFTP（写入需要原子
+// 替换与版本守卫），远端没有 sh 时控制面会自行降级。
 func (backend *directSFTPBackend) useShell() {
 	if backend.shell == nil {
 		backend.shell = newDirectShell(backend.ssh)
@@ -193,7 +194,12 @@ func (backend *directSFTPBackend) Proxy(ctx context.Context, method, route strin
 		if limit <= 0 || limit > maxFileBytes {
 			limit = maxFileBytes
 		}
-		data, info, readErr := backend.read(ctx, request.Root, name, limit)
+		read := backend.read
+		if route == "/v1/read_file" {
+			// 文本读取优先走控制面一次脚本；二进制内容（read_bytes）仍由 SFTP 分块读取。
+			read = backend.readText
+		}
+		data, info, readErr := read(ctx, request.Root, name, limit)
 		if readErr != nil {
 			return directError(readErr), nil
 		}
@@ -611,6 +617,42 @@ func (backend *directSFTPBackend) list(ctx context.Context, name, root string) (
 		return nil, err
 	}
 	return entries, nil
+}
+
+// readText 读取一个文本文件的完整内容。
+//
+// POSIX 控制面可用且文件在上限内时，用一条脚本完成符号链接拒绝、类型/可读性/大小
+// 检查、读取前后的元数据比对与内容传输，一次往返即可；控制面不可用、远端没有 stat、
+// 内容在上限外或读取期间变化时，回退逐操作的 SFTP 读取。
+//
+// 版本令牌仍由紧随其后的 SFTP stat 派生：写入守卫的 `sftp-sha256` 必须与 SFTP 读取
+// 路径给出完全相同的值，控制面的秒级 mtime 不参与其中。
+// @param root - 绑定的远端根，仅用于回退路径的包含性校验。
+// @param name - 已规范化的远端绝对路径。
+// @param limit - 本次允许读取的最大字节数。
+// @returns 完整内容与远端元数据。
+func (backend *directSFTPBackend) readText(ctx context.Context, root, name string, limit int64) ([]byte, os.FileInfo, error) {
+	if backend.shell != nil && limit <= shellMaxReadBytes {
+		found, ok, err := backend.shell.readText(ctx, name, limit)
+		if err != nil {
+			return nil, nil, err
+		}
+		if ok {
+			if err := backend.check(ctx); err != nil {
+				return nil, nil, err
+			}
+			info, statErr := backend.sftp.Stat(name)
+			if statErr != nil {
+				return nil, nil, statErr
+			}
+			// 脚本读到的字节数必须与最终 stat 一致；不一致说明读取期间文件变了。
+			if !info.Mode().IsRegular() || info.Size() != found.size {
+				return nil, nil, fail(http.StatusConflict, "file-changed", "file changed during read")
+			}
+			return found.content, info, nil
+		}
+	}
+	return backend.read(ctx, root, name, limit)
 }
 
 func (backend *directSFTPBackend) read(ctx context.Context, root, name string, limit int64) ([]byte, os.FileInfo, error) {

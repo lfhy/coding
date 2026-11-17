@@ -11,12 +11,15 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
 	"time"
+
+	"encoding/json"
 
 	"github.com/deepseek-ai/coding/apps/desktop/internal/sshfixture"
 	"golang.org/x/crypto/ssh"
@@ -314,5 +317,117 @@ func TestReadShellFrameRejectsInvalidStatus(t *testing.T) {
 func TestShellLiteralEscapesEveryByte(t *testing.T) {
 	if got := shellLiteral("/tmp/a'b"); got != `'\057\164\155\160\057\141\047\142'` {
 		t.Fatalf("literal = %s", got)
+	}
+}
+
+func TestShellControlPlaneReadsTextInOneScript(t *testing.T) {
+	backend, _, root := newShellBackend(t)
+	ctx := context.Background()
+	// 内容里带换行、制表符、引号与多字节字符：分帧不能依赖内容形状。
+	body := "第一行\n\ttab \"quoted\" 'single'\nlast line without newline"
+	path := filepath.Join(root, "notes.md")
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	data, info, err := backend.readText(ctx, root, path, 1<<20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != body {
+		t.Fatalf("content = %q", string(data))
+	}
+	if info.Size() != int64(len(body)) || !info.Mode().IsRegular() {
+		t.Fatalf("info = %+v", info)
+	}
+	version, err := directSFTPStrongVersion(path, info, data)
+	if err != nil || !strings.HasPrefix(version, "sftp-sha256:") {
+		t.Fatalf("version = %q, %v", version, err)
+	}
+}
+
+func TestShellControlPlaneReadTextReportsFailures(t *testing.T) {
+	backend, _, root := newShellBackend(t)
+	ctx := context.Background()
+	if err := os.WriteFile(filepath.Join(root, "big.txt"), []byte(strings.Repeat("x", 64)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "dir.txt"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(root, "big.txt"), filepath.Join(root, "link.txt")); err != nil {
+		t.Fatal(err)
+	}
+
+	// 缺失保留 not-found 语义，Host 靠它映射 FS_NOT_FOUND。
+	if _, _, err := backend.readText(ctx, root, filepath.Join(root, "missing.txt"), 1<<20); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("missing error = %v", err)
+	}
+	// 目录与符号链接都不是可读的常规文件，不能悄悄读到别处的内容。
+	if _, _, err := backend.readText(ctx, root, filepath.Join(root, "dir.txt"), 1<<20); err == nil {
+		t.Fatal("expected a not-regular failure for a directory")
+	}
+	if _, _, err := backend.readText(ctx, root, filepath.Join(root, "link.txt"), 1<<20); err == nil {
+		t.Fatal("expected a symlink rejection")
+	}
+	// 超过请求上限时不返回被截断的内容。
+	if _, _, err := backend.readText(ctx, root, filepath.Join(root, "big.txt"), 16); err == nil {
+		t.Fatal("expected a too-large failure")
+	}
+}
+
+func TestShellControlPlaneReadTextFallsBackForOversizedReads(t *testing.T) {
+	backend, _, root := newShellBackend(t)
+	ctx := context.Background()
+	// 超过控制面单次读取上限时整条走 SFTP，结果必须与分块读取一致。
+	body := strings.Repeat("ab", shellMaxReadBytes/2+16)
+	path := filepath.Join(root, "huge.txt")
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	data, info, err := backend.readText(ctx, root, path, int64(len(body)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != body || info.Size() != int64(len(body)) {
+		t.Fatalf("fallback read returned %d bytes, size %d", len(data), info.Size())
+	}
+}
+
+func TestShellControlPlaneTextReadKeepsSFTPVersionParity(t *testing.T) {
+	backend, _, root := newShellBackend(t)
+	ctx := context.Background()
+	body := "line one\nline two\n"
+	if err := os.WriteFile(filepath.Join(root, "parity.txt"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	call := func(route string, request any, target any) {
+		t.Helper()
+		encoded, err := json.Marshal(request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		response, err := backend.Proxy(ctx, http.MethodPost, route, encoded)
+		if err != nil || response.Status != http.StatusOK {
+			t.Fatalf("%s = %d %s, %v", route, response.Status, response.Body, err)
+		}
+		if target != nil {
+			if err := json.Unmarshal(response.Body, target); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	var stat StatResponse
+	call("/v1/stat", StatRequest{Root: root, Path: "parity.txt"}, &stat)
+	var text ReadResponse
+	call("/v1/read_file", ReadRequest{Root: root, Path: "parity.txt"}, &text)
+	var raw ReadBytesResponse
+	call("/v1/read_bytes", ReadRequest{Root: root, Path: "parity.txt"}, &raw)
+
+	if text.Content != body {
+		t.Fatalf("content = %q", text.Content)
+	}
+	// 控制面读到的字节必须和 SFTP 版本令牌一致：写入守卫按字符串比较版本。
+	if stat.Info == nil || stat.Info.Version != text.Version || text.Version != raw.Version {
+		t.Fatalf("version mismatch: stat=%q text=%q bytes=%q", stat.Info.Version, text.Version, raw.Version)
 	}
 }

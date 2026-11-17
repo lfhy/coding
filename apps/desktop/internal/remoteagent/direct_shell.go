@@ -17,6 +17,7 @@ package remoteagent
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -41,6 +42,9 @@ const (
 	shellMaxScriptBytes = 32 << 10
 	// shellMaxResponseBytes 限制单次控制的响应字节数，与目录上限保持一致。
 	shellMaxResponseBytes = 8 << 20
+	// shellMaxReadBytes 限制走控制面的单文件读取；更大的文件回退 SFTP 分块读取，
+	// 避免把整份内容塞进一次控制响应并顶到响应上限。
+	shellMaxReadBytes = 4 << 20
 )
 
 // shellStatFlavor 记录远端 stat 的参数风格；POSIX 没有统一元数据命令。
@@ -441,6 +445,114 @@ func (shell *directShell) info(ctx context.Context, name string) (shellInfo, boo
 		return shellInfo{}, false, fmt.Errorf("remote shell path probe exited with status %d", status)
 	}
 	return parseShellInfo(output)
+}
+
+// shellText 是一次控制面文本读取的结果：完整内容与远端 stat 元数据串。
+type shellText struct {
+	content []byte
+	size    int64
+	meta    string
+}
+
+// readText 用一条脚本读取一个常规文本文件。
+//
+// 一次往返里完成：符号链接拒绝、存在/常规文件/可读性检查、大小上限、读取前后的
+// 元数据比对，以及内容传输。文本内容不含 NUL，所以能安全地放进 NUL 分帧的响应里，
+// 末尾再用一个 NUL 字段报告内容是否在读取期间变化。
+//
+// @param name - 已规范化的远端绝对路径；符号链接按不可读处理。
+// @param limit - 本次允许读取的最大字节数。
+// @returns 第二个返回值为 false 表示控制面无法承担这次读取（不可用、远端没有 stat、
+// 超出脚本或响应上限、内容在读取期间变化），调用方应回退 SFTP。
+func (shell *directShell) readText(ctx context.Context, name string, limit int64) (shellText, bool, error) {
+	if !shell.available() {
+		return shellText{}, false, nil
+	}
+	meta := shell.metaScript()
+	// 没有 stat 就没有版本元数据，控制面读取会退化成不可信的读取。
+	if meta == "" {
+		return shellText{}, false, nil
+	}
+	// 脚本只用 printf/shell 内建命令：路径经八进制字面量传入，不做任何插值。
+	// 失败分支只打印状态码而不 exit：控制面是与连接同寿命的常驻会话，脚本退出会把它关掉。
+	script := fmt.Sprintf(
+		"p=$(printf '%%b' %s); "+
+			"if [ -L \"$p\" ]; then printf 'E\\000symlink\\000'; "+
+			"elif [ ! -e \"$p\" ]; then printf 'E\\000missing\\000'; "+
+			"elif [ ! -f \"$p\" ]; then printf 'E\\000not-regular\\000'; "+
+			"elif [ ! -r \"$p\" ]; then printf 'E\\000permission-denied\\000'; else "+
+			"m=$(%s); if [ -z \"$m\" ]; then printf 'E\\000meta-unavailable\\000'; else "+
+			"s=${m%%%%|*}; case \"$s\" in ''|*[!0-9]*) printf 'E\\000meta-unavailable\\000';; *) "+
+			"if [ \"$s\" -gt %d ] 2>/dev/null; then printf 'E\\000too-large\\000'; else "+
+			"printf 'C\\000%%s\\000%%s\\000' \"$s\" \"$m\"; cat \"$p\"; m2=$(%s); "+
+			"if [ \"$m\" = \"$m2\" ]; then printf '\\000ok'; else printf '\\000changed'; fi; "+
+			"fi;; esac; fi; fi",
+		shellLiteral(name), meta, limit, meta,
+	)
+	output, status, err := shell.run(ctx, script)
+	if errors.Is(err, errShellUnavailable) {
+		return shellText{}, false, nil
+	}
+	if err != nil {
+		return shellText{}, false, err
+	}
+	if status != 0 {
+		return shellText{}, false, fmt.Errorf("remote shell read exited with status %d", status)
+	}
+	return parseShellText(output)
+}
+
+// parseShellText 解析文本读取响应：成功是 C + 字节数 + 元数据 + 内容 + 判定，
+// 失败是 E + 原因。内容允许出现任意字节（含 NUL），因此判定字段从最后一段取。
+// @returns 第三个返回值为 (ok=false, err=nil) 时表示控制面不支持这次读取，调用方回退 SFTP。
+func parseShellText(output []byte) (shellText, bool, error) {
+	fields := bytes.SplitN(output, []byte{0}, 4)
+	switch string(fields[0]) {
+	case "E":
+		reason := ""
+		if len(fields) > 1 {
+			reason = string(fields[1])
+		}
+		switch reason {
+		case "missing":
+			return shellText{}, false, os.ErrNotExist
+		case "not-regular":
+			return shellText{}, false, fail(422, "not-regular-file", "target is not a regular file")
+		case "permission-denied":
+			return shellText{}, false, fail(403, "permission-denied", "file is not readable")
+		case "symlink":
+			return shellText{}, false, fail(403, "outside-root", "file path changed during read")
+		case "too-large":
+			return shellText{}, false, fail(413, "too-large", "file exceeds the requested byte limit")
+		default:
+			// meta-unavailable 与未知原因都交回 SFTP：控制面没有元数据时不能声称读成功。
+			return shellText{}, false, nil
+		}
+	case "C":
+		if len(fields) != 4 {
+			return shellText{}, false, errors.New("remote shell read response is malformed")
+		}
+		size, err := strconv.ParseInt(string(fields[1]), 10, 64)
+		if err != nil || size < 0 {
+			return shellText{}, false, errors.New("remote shell read response has an invalid size")
+		}
+		rest := fields[3]
+		// 判定字段从最后一段取：内容本身可以包含任意字节。
+		split := bytes.LastIndexByte(rest, 0)
+		if split < 0 {
+			return shellText{}, false, errors.New("remote shell read response has no verdict")
+		}
+		if string(rest[split+1:]) != "ok" {
+			// 内容在读取期间变化：交给 SFTP 复核，不把可能不一致的内容交给调用方。
+			return shellText{}, false, nil
+		}
+		content := rest[:split]
+		if int64(len(content)) != size {
+			return shellText{}, false, nil
+		}
+		return shellText{content: content, size: size, meta: string(fields[2])}, true, nil
+	}
+	return shellText{}, false, nil
 }
 
 // parseShellListing 解析目录响应：每项是 D + 名称 + 类型 + 元数据，E 表示失败。
