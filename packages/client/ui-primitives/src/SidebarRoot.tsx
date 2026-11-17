@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import type { ReactNode } from 'react'
+import type { CSSProperties, ReactNode } from 'react'
 import clsx from 'clsx'
 import { Icon, type IconName } from 'coding-client-ui-icons'
 import css from './SidebarRoot.module.css'
@@ -22,6 +22,12 @@ export interface SidebarRootItem {
   media?: ReactNode
   active?: boolean
   onSelect?: () => void
+  /** 树形条目的缩进层级（0 起）；非树条目缺省 0。 */
+  depth?: number
+  /** 目录行：图标前渲染展开箭头，点击只切换展开状态。 */
+  folder?: boolean
+  /** 目录行的展开状态，驱动箭头朝向与 `aria-expanded`。 */
+  open?: boolean
 }
 
 export interface SidebarRootProps {
@@ -86,8 +92,12 @@ export function SidebarRoot({
             : (
               <div className={clsx(css.rows, variant === 'media' && css.mediaRows)} role="list">
                 {items.map(item => (
-                  <button key={item.id} type="button" role="listitem" className={clsx(css.row, variant === 'media' && css.mediaRow)}
-                    aria-current={item.active === true ? 'true' : undefined} data-icon-tone={item.iconTone} onClick={item.onSelect}>
+                  <button key={item.id} type="button" role="listitem"
+                    className={clsx(css.row, variant === 'media' && css.mediaRow, item.folder && css.folderRow)}
+                    style={{ '--tree-depth': item.depth ?? 0 } as CSSProperties}
+                    aria-current={item.active === true ? 'true' : undefined} data-icon-tone={item.iconTone}
+                    aria-expanded={item.folder ? item.open === true : undefined} onClick={item.onSelect}>
+                    {item.folder && <span className={css.chevron} data-open={item.open ? '' : undefined} aria-hidden="true" />}
                     {variant === 'media' && item.media !== undefined
                       ? <span className={css.mediaBox}>{item.media}</span>
                       : <span className={css.rowIcon} aria-hidden="true"><Icon name={item.icon} size={16} /></span>}
@@ -99,7 +109,7 @@ export function SidebarRoot({
         </>
       ) : (
         <>
-          {items.map(item => (
+          {items.filter(item => !item.folder).map(item => (
             <button key={item.id} type="button" className={css.railButton}
               aria-label={item.label} title={item.label} aria-pressed={item.active === true} data-icon-tone={item.iconTone}
               onClick={item.onSelect}>

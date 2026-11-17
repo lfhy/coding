@@ -47,6 +47,34 @@ describe('SidebarRoot', () => {
     expect(screen.getByText('云海').closest('button')?.querySelector('img')).not.toBeNull()
   })
 
+  it('树形条目按层级缩进，目录行带展开箭头与 aria-expanded', () => {
+    const tree: SidebarRootItem[] = [
+      { id: 'd1', label: '想法', icon: 'files', folder: true, open: true, depth: 0, onSelect: vi.fn() },
+      { id: 'n1', label: '草稿', icon: 'file', depth: 1, active: true, onSelect: vi.fn() },
+      { id: 'n0', label: '顶层笔记', icon: 'file', depth: 0, onSelect: vi.fn() },
+    ]
+    render(<SidebarRoot label="笔记" title="笔记" items={tree} collapsed={false} width={280} />)
+    const dir = screen.getByText('想法').closest('button')
+    expect(dir?.getAttribute('aria-expanded')).toBe('true')
+    const deep = screen.getByText('草稿').closest('button')
+    expect(deep?.style.getPropertyValue('--tree-depth')).toBe('1')
+    expect(deep?.getAttribute('aria-expanded')).toBeNull()
+    const top = screen.getByText('顶层笔记').closest('button')
+    expect(top?.style.getPropertyValue('--tree-depth')).toBe('0')
+  })
+
+  it('收起的图标轨只显示文件条目，目录行不进入图标轨', () => {
+    const tree: SidebarRootItem[] = [
+      { id: 'd1', label: '想法', icon: 'files', folder: true, open: true, depth: 0 },
+      { id: 'n1', label: '草稿', icon: 'file', depth: 1 },
+      { id: 'n0', label: '顶层笔记', icon: 'file', depth: 0 },
+    ]
+    render(<SidebarRoot label="笔记" title="笔记" items={tree} collapsed width={56} />)
+    expect(screen.getByRole('button', { name: '顶层笔记' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: '草稿' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: '想法' })).toBeNull()
+  })
+
   it('header 插槽渲染在标题行上方，收起态保留在图标轨之前', () => {
     const header = <button type="button" data-testid="page-entry">子页切换</button>
     const { unmount } = render(<SidebarRoot label="最近生成" title="最近生成" items={items} collapsed={false} width={280} header={header} />)

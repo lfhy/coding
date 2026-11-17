@@ -71,6 +71,8 @@
   height: 34px;
   min-width: 0;
   padding: 0 8px;
+  /* 树形条目按层级缩进；非树条目缺省 0，保持原 8px 左内边距。 */
+  padding-left: calc(8px + var(--tree-depth, 0) * 14px);
   border: 0;
   border-radius: 8px;
   background: transparent;
@@ -81,6 +83,20 @@
 }
 
 .mediaRows { gap: 4px; }
+
+.chevron {
+  display: inline-block;
+  flex: none;
+  width: 6px;
+  height: 6px;
+  margin-left: 2px;
+  border-right: 1.5px solid var(--dsw-alias-label-tertiary);
+  border-bottom: 1.5px solid var(--dsw-alias-label-tertiary);
+  transform: rotate(-45deg);
+  transition: transform var(--ds-transition-duration-fast) var(--ds-ease-in-out);
+}
+
+.chevron[data-open] { transform: rotate(45deg); }
 
 .mediaRow { height: 52px; padding: 0 6px; gap: 8px; }
 
@@ -155,4 +171,5 @@
   .fading > * { transition: none; }
   .railIn { animation: none; }
   .railButton { transition: none; }
+  .chevron { transition: none; }
 }
