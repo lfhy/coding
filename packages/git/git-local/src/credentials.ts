@@ -9,8 +9,7 @@ import {
 } from 'coding-git'
 import type { GitCredentials, GitCredentialStore, GitRemoteOptions } from 'coding-git'
 import type { CredentialRef } from 'coding-credentials'
-import { runGit } from './cli-process.ts'
-import type { GitOutput, GitRunOptions } from './cli-process.ts'
+import type { GitExecutor, GitOutput, GitRunOptions } from './cli-process.ts'
 
 /** 可在本次命令上注入的认证材料。 */
 export interface RemoteAttempt {
@@ -157,6 +156,10 @@ export async function withAskpass<T>(
  * 按固定优先级认证一次远端命令：宿主的凭据助手、本机已保存的凭据，最后才是调用方
  * 显式提供的凭据。显式凭据一旦提供就独占本次认证，因为它来自上一轮前两级都失败的
  * 弹窗；非 HTTPS 远端既不使用助手，也不读写凭据存储。
+ *
+ * 远端工作区不适用这套编排：命令在远端主机上执行，宿主凭据、askpass 脚本与凭据存储
+ * 都到不了那一侧，因此只用远端主机自己的 git 配置与凭据助手，认证失败按环境问题报告。
+ * @param exec - 本次调用的执行世界。
  * @param cwd - 仓库工作目录。
  * @param signal - 调用方取消信号。
  * @param args - 一次 git 远端命令及其参数。
@@ -165,12 +168,19 @@ export async function withAskpass<T>(
  * @param base - 本次命令的附加运行选项（输出上限、超时）；克隆使用更宽的预算。
  */
 export async function remoteCommand(
-  cwd: string, signal: AbortSignal, args: string[], url: string, options: GitRemoteOptions, base: GitRunOptions = {},
+  exec: GitExecutor,
+  cwd: string,
+  signal: AbortSignal,
+  args: string[],
+  url: string,
+  options: GitRemoteOptions,
+  base: GitRunOptions = {},
 ): Promise<void> {
+  if (exec.remote) return remoteWorkspaceCommand(exec, cwd, signal, args, url, options, base)
   const identity = gitRemoteIdentity(url)
   if (options.credentials !== undefined && identity === undefined) requireRemoteIdentity(url)
   const attempt = async (runOptions: GitRunOptions, credentials: GitCredentials | undefined): Promise<GitOperationError | undefined> => {
-    const result = await runGit(cwd, signal, args, { ...base, ...runOptions })
+    const result = await exec.run(cwd, signal, args, { ...base, ...runOptions })
     if (result.code === 0) return undefined
     if (identity !== undefined) {
       const refused = authenticationFailure(result, credentials, identity.display)
@@ -199,4 +209,61 @@ export async function remoteCommand(
   if (refused.code !== 'GIT_AUTH_FAILED') throw refused
   // 已保存的凭据被拒：仍按“需要认证”请求用户输入，并带上引用名，让界面能清除它。
   throw new GitOperationError('GIT_AUTH_REQUIRED', 'Git credentials required', identity.display, ref)
+}
+
+/**
+ * 远端工作区不接受本机输入的凭据：命令在远端主机上执行，本机凭据、askpass 脚本与
+ * 凭据存储都到不了那一侧。在读取仓库或触碰远端之前就拒绝，避免白跑一轮再弹出无处
+ * 可送的对话框。
+ * @param exec - 本次调用的执行世界。
+ * @param options - 本次调用的凭据输入。
+ */
+export function refuseLocalCredentials(exec: GitExecutor, options: GitRemoteOptions): void {
+  if (!exec.remote || options.credentials === undefined) return
+  throw new GitOperationError(
+    'GIT_REMOTE_UNAVAILABLE',
+    'Remote workspaces authenticate with the remote host\'s own Git credentials; credentials entered on this machine are never forwarded over SSH',
+  )
+}
+
+/**
+ * 远端工作区的一次远端命令：不使用宿主凭据助手、askpass 或凭据存储，只让远端主机
+ * 按自身配置完成认证。认证被拒报告为环境问题，避免界面在无处可送的情况下反复弹窗。
+ * @param exec - 远端执行器。
+ * @param cwd - 仓库工作目录。
+ * @param signal - 调用方取消信号。
+ * @param args - 一次 git 远端命令及其参数。
+ * @param url - 该命令实际使用的远端 URL。
+ * @param options - 本次调用的凭据输入（远端不接受）。
+ * @param base - 附加运行选项。
+ */
+async function remoteWorkspaceCommand(
+  exec: GitExecutor,
+  cwd: string,
+  signal: AbortSignal,
+  args: string[],
+  url: string,
+  options: GitRemoteOptions,
+  base: GitRunOptions,
+): Promise<void> {
+  const identity = gitRemoteIdentity(url)
+  if (options.credentials !== undefined) {
+    throw new GitOperationError(
+      'GIT_REMOTE_UNAVAILABLE',
+      'Remote workspaces authenticate with the remote host\'s own Git credentials; credentials entered on this machine are never forwarded over SSH',
+      identity?.display,
+    )
+  }
+  const result = await exec.run(cwd, signal, args, { ...base, helper: true })
+  if (result.code === 0) return
+  if (identity !== undefined && authenticationFailure(result, undefined, identity.display) !== undefined) {
+    throw new GitOperationError(
+      'GIT_REMOTE_UNAVAILABLE',
+      `Remote Git authentication failed: configure credentials for ${identity.display} on the remote host, or switch that repository to an SSH remote there`,
+      identity.display,
+    )
+  }
+  throw /conflict|not possible to fast-forward|divergent|would be overwritten|non-fast-forward/i.test(result.stderr)
+    ? new GitOperationError('GIT_CONFLICT', 'Git remote history or working tree conflicts')
+    : new GitOperationError('GIT_FAILED', 'Git remote operation failed')
 }

@@ -1,13 +1,18 @@
-/** 本机 `git` 子进程的启动、环境与失败归一。 @module coding-git-local/cli-process */
+/** `git` 命令的启动、环境与失败归一：本机工作区走子进程，远端工作区走 subprocess seam。
+ * @module coding-git-local/cli-process */
 
 import { spawn } from 'node:child_process'
 import { GitOperationError } from 'coding-git'
-import { remoteWorkspacePath } from 'coding-subprocess'
+import type { SubprocessOutcome, SubprocessOutputReader, SubprocessRuntime } from 'coding-subprocess'
 
 /** 单次命令连同 stderr 的输出上限。 */
 export const OUTPUT_LIMIT = 4 * 1024 * 1024
 /** 单次命令的超时；克隆使用更宽的独立预算。 */
 export const COMMAND_TIMEOUT = 60_000
+/** 远端命令的 stderr 收集上限：只用于失败分类，不必与 stdout 一样宽。 */
+export const REMOTE_STDERR_LIMIT = 512 * 1024
+/** 远端命令终止时的升级宽限期；远端进程树停稳前结束会留下孤儿。 */
+export const REMOTE_GRACE_MS = 3_000
 
 /** 一次 `git` 调用的结果；非零退出码由调用方决定是否算失败。 */
 export interface GitOutput {
@@ -50,6 +55,136 @@ export function gitEnv(options: GitRunOptions): NodeJS.ProcessEnv {
     env['GIT_CONFIG_VALUE_' + String(index)] = value
   })
   return env
+}
+
+/**
+ * 一次 Git 调用的执行世界。本机工作区直接起子进程；远端 marker 工作区把同一条
+ * `git` 命令交给 `ctx.subprocess` 在远端主机上运行，认证材料也只能来自远端主机。
+ */
+export interface GitExecutor {
+  /** 目标是否是远端 SSH 工作区；决定凭据来源与工作树位置。 */
+  readonly remote: boolean
+  /**
+   * 在工作区的 `cwd` 里运行一次 git。
+   * @param cwd - 仓库工作目录（远端工作区是该会话的 marker 占位路径）。
+   * @param signal - 调用方取消信号。
+   * @param args - `git` 的参数（不含 `git --no-pager` 前缀）。
+   * @param options - 环境、输出上限与超时。
+   * @returns 完整输出与退出码。
+   */
+  run(cwd: string, signal: AbortSignal, args: string[], options?: GitRunOptions): Promise<GitOutput>
+}
+
+/** 本机执行器：与子进程语义一致，命名让调用点显式表达「本机」。 */
+export const LOCAL_GIT: GitExecutor = { remote: false, run: runGit }
+
+/**
+ * 远端执行器：经 subprocess seam 在 SSH 工作区里运行 `git`，本地不执行任何命令。
+ * @param subprocess - 已挂载的 subprocess seam。
+ * @returns 面向远端工作区的执行器。
+ */
+export function remoteGit(subprocess: SubprocessRuntime): GitExecutor {
+  return {
+    remote: true,
+    run: (cwd, signal, args, options = {}) => runGitRemote(subprocess, cwd, signal, args, options),
+  }
+}
+
+/**
+ * 远端命令环境：只带固定变量，绝不转发宿主进程环境。宿主凭据助手与 askpass 在远端
+ * 没有意义（脚本在宿主上），因此认证完全交给远端主机自己的 git 配置与凭据助手；
+ * 交互提示一律关闭，避免命令在没有任何人可以回答的终端里等待。
+ * @param options - 本次调用的助手开关。
+ * @returns 该远端命令的完整环境变量。
+ */
+export function remoteGitEnv(options: GitRunOptions): NodeJS.ProcessEnv {
+  const config: Array<[string, string]> = options.helper === true ? [] : [['credential.helper', '']]
+  config.push(['core.askPass', ''])
+  const env: NodeJS.ProcessEnv = {
+    LC_ALL: 'C',
+    GIT_TERMINAL_PROMPT: '0',
+    GCM_INTERACTIVE: 'never',
+    GIT_ASKPASS: '',
+    SSH_ASKPASS: '',
+    GIT_SSH_COMMAND: 'ssh -o BatchMode=yes',
+    GIT_CONFIG_COUNT: String(config.length),
+  }
+  config.forEach(([key, value], index) => {
+    env['GIT_CONFIG_KEY_' + String(index)] = key
+    env['GIT_CONFIG_VALUE_' + String(index)] = value
+  })
+  return env
+}
+
+/**
+ * 读取一份收集输出；`lossy` 说明整段输出超过本次上限，调用方按失败处理（与本地
+ * 实现的「输出超过上限」同类），不返回被截断的文本冒充完整结果。
+ * @param reader - 请求过的 collected 读取器。
+ * @returns 保留的文本与是否被截断。
+ */
+function readCollected(reader: SubprocessOutputReader | undefined): { text: string; truncated: boolean } {
+  if (reader === undefined) return { text: '', truncated: false }
+  const read = reader.readFrom(0)
+  return { text: read.text, truncated: read.lossy }
+}
+
+/**
+ * 在远端执行世界中运行一次 git：输出按本次上限收集，超时或取消由 subprocess seam
+ * 终止整棵远端进程树（远端无法证明停稳时以失败结束，绝不退回本机执行）。
+ * @param subprocess - 已挂载的 subprocess seam。
+ * @param cwd - 远端工作区的 marker 占位路径；seam 由它派生远端执行身份。
+ * @param signal - 调用方取消信号。
+ * @param args - `git` 的参数（不含 `git --no-pager` 前缀）。
+ * @param options - 环境、输出上限与超时。
+ * @returns 完整输出与退出码。
+ */
+async function runGitRemote(
+  subprocess: SubprocessRuntime,
+  cwd: string,
+  signal: AbortSignal,
+  args: string[],
+  options: GitRunOptions,
+): Promise<GitOutput> {
+  signal.throwIfAborted()
+  const stdoutLimit = options.outputLimit ?? OUTPUT_LIMIT
+  const handle = subprocess.spawn({
+    argv: ['git', '--no-pager', ...args],
+    cwd,
+    stdio: {
+      stdin: 'ignore',
+      stdout: { maxBytes: stdoutLimit },
+      stderr: { maxBytes: Math.min(stdoutLimit, REMOTE_STDERR_LIMIT) },
+    },
+    graceMs: REMOTE_GRACE_MS,
+    signal,
+    env: remoteGitEnv(options),
+  })
+  // 截止时间归调用方：到期先终止远端进程树，`undefined` 结算表示这次命令超时。
+  const outcome = await new Promise<SubprocessOutcome | undefined>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      handle.terminate()
+      resolve(undefined)
+    }, options.timeout ?? COMMAND_TIMEOUT)
+    handle.done.then((value) => {
+      clearTimeout(timer)
+      resolve(value)
+    }, (error: unknown) => {
+      clearTimeout(timer)
+      reject(error instanceof Error ? error : new Error(String(error)))
+    })
+  }).catch(() => {
+    signal.throwIfAborted()
+    throw new GitOperationError('GIT_FAILED', 'Git command could not run on the remote host')
+  })
+  if (signal.aborted) throw new Error('Git command was cancelled')
+  if (outcome === undefined) throw new GitOperationError('GIT_FAILED', 'Git command timed out or was terminated')
+  const stdout = readCollected(handle.collected.stdout)
+  const stderr = readCollected(handle.collected.stderr)
+  if (stdout.truncated) throw new GitOperationError('GIT_FAILED', 'Git output exceeded the size limit')
+  if (outcome.exitCode === 127 && /not found/i.test(stderr.text)) {
+    throw new GitOperationError('GIT_UNAVAILABLE', 'Git is not installed on the remote host')
+  }
+  return { stdout: stdout.text, stderr: stderr.text, code: outcome.exitCode ?? 1 }
 }
 
 /**
@@ -113,36 +248,34 @@ export function failure(result: GitOutput, fallback: GitOperationError['code'] =
 
 /**
  * 运行一次必须成功的命令。
+ * @param exec - 本次调用的执行世界。
  * @param cwd - 命令工作目录。
  * @param signal - 调用方取消信号。
  * @param args - 命令及其参数。
  * @param code - 失败时的覆盖码。
  * @returns 命令的标准输出。
  */
-export async function checked(cwd: string, signal: AbortSignal, args: string[], code?: GitOperationError['code']): Promise<string> {
-  const result = await runGit(cwd, signal, args)
+export async function checked(
+  exec: GitExecutor,
+  cwd: string,
+  signal: AbortSignal,
+  args: string[],
+  code?: GitOperationError['code'],
+): Promise<string> {
+  const result = await exec.run(cwd, signal, args)
   if (result.code !== 0) throw failure(result, code)
   return result.stdout
 }
 
 /**
- * 确认该目录是可操作的本地工作树；远端 marker 目录从不调用本机 Git。
+ * 确认该目录在该执行世界里是可操作的工作树。
+ * @param exec - 本次调用的执行世界。
  * @param cwd - 待检查目录。
  * @param signal - 调用方取消信号。
  * @returns 是工作树时为 true，不是仓库时为 false。
- * @throws {GitOperationError} 目录属于远端工作区或无法检查。
  */
-export async function guard(cwd: string, signal: AbortSignal): Promise<boolean> {
-  try {
-    if (await remoteWorkspacePath('.', cwd, signal) !== undefined) {
-      throw new GitOperationError('GIT_REMOTE_UNAVAILABLE', 'Git operations are unavailable in remote workspaces')
-    }
-  } catch (error) {
-    signal.throwIfAborted()
-    if (error instanceof GitOperationError) throw error
-    throw new GitOperationError('GIT_REMOTE_UNAVAILABLE', 'Cannot verify whether the workspace is remote')
-  }
-  const result = await runGit(cwd, signal, ['rev-parse', '--is-inside-work-tree'])
+export async function guard(exec: GitExecutor, cwd: string, signal: AbortSignal): Promise<boolean> {
+  const result = await exec.run(cwd, signal, ['rev-parse', '--is-inside-work-tree'])
   if (result.code !== 0) {
     if (/not a git repository/i.test(result.stderr)) return false
     throw failure(result)
@@ -153,12 +286,13 @@ export async function guard(cwd: string, signal: AbortSignal): Promise<boolean> 
 
 /**
  * 读取当前分支短名。
+ * @param exec - 本次调用的执行世界。
  * @param cwd - 仓库工作目录。
  * @param signal - 调用方取消信号。
  * @returns 分支短名；游离 HEAD 为 null。
  */
-export async function branchName(cwd: string, signal: AbortSignal): Promise<string | null> {
-  const result = await runGit(cwd, signal, ['symbolic-ref', '--quiet', '--short', 'HEAD'])
+export async function branchName(exec: GitExecutor, cwd: string, signal: AbortSignal): Promise<string | null> {
+  const result = await exec.run(cwd, signal, ['symbolic-ref', '--quiet', '--short', 'HEAD'])
   if (result.code === 1) return null
   if (result.code !== 0) throw failure(result)
   return result.stdout.trim()
@@ -166,20 +300,25 @@ export async function branchName(cwd: string, signal: AbortSignal): Promise<stri
 
 /**
  * 读取当前分支的上游远端及其两个 URL。
+ * @param exec - 本次调用的执行世界。
  * @param cwd - 仓库工作目录。
  * @param signal - 调用方取消信号。
  * @returns 上游名与 fetch／push URL。
  */
-export async function upstream(cwd: string, signal: AbortSignal): Promise<{ name: string; fetchUrl: string; pushUrl: string }> {
-  const result = await runGit(cwd, signal, ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{upstream}'])
+export async function upstream(
+  exec: GitExecutor,
+  cwd: string,
+  signal: AbortSignal,
+): Promise<{ name: string; fetchUrl: string; pushUrl: string }> {
+  const result = await exec.run(cwd, signal, ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{upstream}'])
   if (result.code !== 0) throw new GitOperationError('GIT_REMOTE_UNAVAILABLE', 'No upstream is configured')
   const name = result.stdout.trim()
   const slash = name.indexOf('/')
   if (slash < 1 || slash === name.length - 1) throw new GitOperationError('GIT_REMOTE_UNAVAILABLE', 'Upstream has no remote branch')
   const remote = name.slice(0, slash)
-  const url = await checked(cwd, signal, ['remote', 'get-url', remote], 'GIT_REMOTE_UNAVAILABLE')
+  const url = await checked(exec, cwd, signal, ['remote', 'get-url', remote], 'GIT_REMOTE_UNAVAILABLE')
   if (!url.trim()) throw new GitOperationError('GIT_REMOTE_UNAVAILABLE', 'Upstream remote has no URL')
-  const pushUrl = await checked(cwd, signal, ['remote', 'get-url', '--push', remote], 'GIT_REMOTE_UNAVAILABLE')
+  const pushUrl = await checked(exec, cwd, signal, ['remote', 'get-url', '--push', remote], 'GIT_REMOTE_UNAVAILABLE')
   if (!pushUrl.trim()) throw new GitOperationError('GIT_REMOTE_UNAVAILABLE', 'Upstream remote has no push URL')
   return { name, fetchUrl: url.trim(), pushUrl: pushUrl.trim() }
 }

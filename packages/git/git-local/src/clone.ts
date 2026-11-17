@@ -7,7 +7,7 @@ import { GitOperationError, gitCredentialRef, gitRemoteIdentity } from 'coding-g
 import type { GitCloneInput, GitCloneResult, GitRemoteOptions } from 'coding-git'
 import gitJs from 'isomorphic-git'
 import { createNodeHttpClient } from './http-node.ts'
-import { checked, runGit } from './cli-process.ts'
+import { LOCAL_GIT, checked, runGit } from './cli-process.ts'
 import { remoteCommand, storedCredential } from './credentials.ts'
 
 /** 克隆大仓库的独立预算：远端握手、打包传输与检出都算在一次命令里。 */
@@ -53,10 +53,10 @@ async function applyIdentity(path: string, input: GitCloneInput, signal: AbortSi
   const identity = input.identity
   if (identity === undefined) return
   if (identity.name !== undefined && identity.name !== '') {
-    await checked(path, signal, ['config', '--local', 'user.name', identity.name])
+    await checked(LOCAL_GIT, path, signal, ['config', '--local', 'user.name', identity.name])
   }
   if (identity.email !== undefined && identity.email !== '') {
-    await checked(path, signal, ['config', '--local', 'user.email', identity.email])
+    await checked(LOCAL_GIT, path, signal, ['config', '--local', 'user.email', identity.email])
   }
 }
 
@@ -89,7 +89,7 @@ export async function cloneWithCli(
     input.path,
   ]
   try {
-    await remoteCommand(parent, signal, args, input.url, options, { timeout: CLONE_TIMEOUT })
+    await remoteCommand(LOCAL_GIT, parent, signal, args, input.url, options, { timeout: CLONE_TIMEOUT })
   } catch (error: unknown) {
     await discardPartial(input.path, existed)
     throw error

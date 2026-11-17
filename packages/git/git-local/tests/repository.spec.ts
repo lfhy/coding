@@ -7,6 +7,7 @@ import type { CredentialRef } from 'coding-credentials'
 import { afterEach, describe, expect, it } from 'vitest'
 import { gitCredentialRef } from 'coding-git'
 import type { GitCredentialStore } from 'coding-git'
+import { LOCAL_GIT } from '../src/cli-process.ts'
 import {
   cliBranches as workspaceGitBranches, cliCheckout as workspaceGitCheckout, cliHistory as workspaceGitHistory,
   cliPull as workspaceGitPull, cliPush as workspaceGitPush, cliStatus as workspaceGitStatus,
@@ -197,11 +198,11 @@ async function upstreamRepo(accepted = 'alice:private-token', failure: RemoteFai
 describe('standalone workspace Git', () => {
   it('returns null outside a repository and rejects write operations', async () => {
     const root = temp()
-    expect(await workspaceGitStatus(root, signal)).toBeNull()
-    expect(await workspaceGitBranches(root, signal)).toBeNull()
-    await expect(workspaceGitCheckout(root, signal, 'main')).rejects.toMatchObject({ code: 'GIT_NO_REPOSITORY' })
-    await expect(workspaceGitPush(root, signal)).rejects.toMatchObject({ code: 'GIT_NO_REPOSITORY' })
-    await expect(workspaceGitPull(root, signal)).rejects.toMatchObject({ code: 'GIT_NO_REPOSITORY' })
+    expect(await workspaceGitStatus(LOCAL_GIT, root, signal)).toBeNull()
+    expect(await workspaceGitBranches(LOCAL_GIT, root, signal)).toBeNull()
+    await expect(workspaceGitCheckout(LOCAL_GIT, root, signal, 'main')).rejects.toMatchObject({ code: 'GIT_NO_REPOSITORY' })
+    await expect(workspaceGitPush(LOCAL_GIT, root, signal)).rejects.toMatchObject({ code: 'GIT_NO_REPOSITORY' })
+    await expect(workspaceGitPull(LOCAL_GIT, root, signal)).rejects.toMatchObject({ code: 'GIT_NO_REPOSITORY' })
   })
 
   it('returns a complete status for a newly initialized repository before its first commit', async () => {
@@ -211,7 +212,7 @@ describe('standalone workspace Git', () => {
     git(root, 'add', 'first.txt')
     writeFileSync(join(root, 'first.txt'), 'one\ntwo\nthree\n')
     writeFileSync(join(root, 'new.txt'), 'fresh\n')
-    const status = await workspaceGitStatus(root, signal)
+    const status = await workspaceGitStatus(LOCAL_GIT, root, signal)
     expect(status).toMatchObject({ additions: 4, deletions: 0 })
     expect(status?.files).toEqual(expect.arrayContaining([
       { path: 'first.txt', status: 'AM', additions: 3, deletions: 0 },
@@ -227,7 +228,7 @@ describe('standalone workspace Git', () => {
     writeFileSync(join(root, 'tracked.txt'), 'first\nsecond\n')
     writeFileSync(join(root, 'new.txt'), 'one\ntwo\n')
     writeFileSync(join(root, 'secret.txt'), 'secret\n')
-    const status = await workspaceGitStatus(root, signal)
+    const status = await workspaceGitStatus(LOCAL_GIT, root, signal)
     expect(status).toMatchObject({ ahead: 0, behind: 0, additions: 3, deletions: 0 })
     expect(status?.files).toEqual(expect.arrayContaining([
       { path: 'tracked.txt', status: ' M', additions: 1, deletions: 0 },
@@ -243,7 +244,7 @@ describe('standalone workspace Git', () => {
     mkdirSync(nested)
     writeFileSync(join(root, 'outside.txt'), 'outside\n')
     writeFileSync(join(nested, 'inside.txt'), 'inside\n')
-    const status = await workspaceGitStatus(nested, signal)
+    const status = await workspaceGitStatus(LOCAL_GIT, nested, signal)
     expect(status?.files).toEqual(expect.arrayContaining([
       { path: 'outside.txt', status: '??', additions: 1, deletions: 0 },
       { path: 'nested/inside.txt', status: '??', additions: 1, deletions: 0 },
@@ -256,7 +257,7 @@ describe('standalone workspace Git', () => {
     writeFileSync(join(root, 'renamed.txt'), 'first\nsecond\n')
     writeFileSync(join(root, 'after.txt'), 'after\n')
     git(root, 'add', 'after.txt')
-    const status = await workspaceGitStatus(root, signal)
+    const status = await workspaceGitStatus(LOCAL_GIT, root, signal)
     expect(status?.files).toEqual(expect.arrayContaining([
       { path: 'renamed.txt', status: 'RM', additions: 2, deletions: 0 },
       { path: 'after.txt', status: 'A ', additions: 1, deletions: 0 },
@@ -270,19 +271,19 @@ describe('standalone workspace Git', () => {
     git(root, 'branch', 'other/nested')
     git(root, 'update-ref', 'refs/remotes/origin/remote-only', 'HEAD')
     expect(git(root, 'branch', '-r')).toContain('origin/remote-only')
-    expect(await workspaceGitBranches(root, signal)).toEqual({
+    expect(await workspaceGitBranches(LOCAL_GIT, root, signal)).toEqual({
       branches: ['feature', 'other/nested', original].sort((a, b) => a.localeCompare(b)), current: original,
     })
-    await expect(workspaceGitCheckout(root, signal, 'missing')).rejects.toMatchObject({ code: 'GIT_BRANCH_NOT_FOUND' })
+    await expect(workspaceGitCheckout(LOCAL_GIT, root, signal, 'missing')).rejects.toMatchObject({ code: 'GIT_BRANCH_NOT_FOUND' })
     writeFileSync(join(root, 'new.txt'), 'untracked\n')
-    await expect(workspaceGitCheckout(root, signal, 'feature')).rejects.toMatchObject({ code: 'GIT_CONFLICT' })
+    await expect(workspaceGitCheckout(LOCAL_GIT, root, signal, 'feature')).rejects.toMatchObject({ code: 'GIT_CONFLICT' })
     expect(git(root, 'branch', '--show-current')).toBe(original)
     rmSync(join(root, 'new.txt'))
-    expect(await workspaceGitCheckout(root, signal, 'feature')).toMatchObject({ branch: 'feature', files: [] })
-    expect(await workspaceGitBranches(root, signal)).toMatchObject({ current: 'feature' })
+    expect(await workspaceGitCheckout(LOCAL_GIT, root, signal, 'feature')).toMatchObject({ branch: 'feature', files: [] })
+    expect(await workspaceGitBranches(LOCAL_GIT, root, signal)).toMatchObject({ current: 'feature' })
     git(root, 'checkout', '--detach', '-q')
-    expect(await workspaceGitBranches(root, signal)).toMatchObject({ current: null })
-    expect(await workspaceGitCheckout(root, signal, original)).toMatchObject({ branch: original })
+    expect(await workspaceGitBranches(LOCAL_GIT, root, signal)).toMatchObject({ current: null })
+    expect(await workspaceGitCheckout(LOCAL_GIT, root, signal, original)).toMatchObject({ branch: original })
   }, GIT_INTEGRATION_TIMEOUT_MS)
 
   it('does not overwrite ignored files when switching to a branch that tracks their path', async () => {
@@ -297,8 +298,8 @@ describe('standalone workspace Git', () => {
     git(root, 'add', '.gitignore')
     git(root, 'commit', '-qm', 'ignore private file')
     writeFileSync(join(root, 'private.txt'), 'local secret\n')
-    expect((await workspaceGitStatus(root, signal))?.files).toEqual([])
-    await expect(workspaceGitCheckout(root, signal, 'feature')).rejects.toMatchObject({ code: 'GIT_CONFLICT' })
+    expect((await workspaceGitStatus(LOCAL_GIT, root, signal))?.files).toEqual([])
+    await expect(workspaceGitCheckout(LOCAL_GIT, root, signal, 'feature')).rejects.toMatchObject({ code: 'GIT_CONFLICT' })
     expect(readFileSync(join(root, 'private.txt'), 'utf8')).toBe('local secret\n')
     expect(git(root, 'branch', '--show-current')).toBe(original)
   })
@@ -306,7 +307,7 @@ describe('standalone workspace Git', () => {
   it('requires an upstream before staging; explicitly pushes non-ignored changes', async () => {
     const root = repo()
     writeFileSync(join(root, 'new.txt'), 'new\n')
-    await expect(workspaceGitPush(root, signal)).rejects.toMatchObject({ code: 'GIT_REMOTE_UNAVAILABLE' })
+    await expect(workspaceGitPush(LOCAL_GIT, root, signal)).rejects.toMatchObject({ code: 'GIT_REMOTE_UNAVAILABLE' })
     expect(git(root, 'ls-files', 'new.txt')).toBe('')
     const remote = temp()
     git(remote, 'init', '--bare', '-q')
@@ -315,12 +316,12 @@ describe('standalone workspace Git', () => {
     git(root, 'push', '-qu', 'origin', branch)
     writeFileSync(join(root, '.gitignore'), 'secret.txt\n')
     writeFileSync(join(root, 'secret.txt'), 'not committed\n')
-    const result = await workspaceGitPush(root, signal)
+    const result = await workspaceGitPush(LOCAL_GIT, root, signal)
     expect(result).toMatchObject({ branch, commitCreated: true, commit: git(root, 'rev-parse', 'HEAD') })
     expect(git(root, 'log', '-1', '--format=%s')).toMatch(/^Add 2 workspace files \(\+\d+\/-\d+\)$/u)
     expect(git(root, 'ls-files', 'secret.txt')).toBe('')
     expect(git(root, 'ls-files', 'new.txt')).toBe('new.txt')
-    expect((await workspaceGitPush(root, signal)).commitCreated).toBe(false)
+    expect((await workspaceGitPush(LOCAL_GIT, root, signal)).commitCreated).toBe(false)
   })
 
   it('fast-forwards and refuses divergent histories without creating a merge commit', async () => {
@@ -337,7 +338,7 @@ describe('standalone workspace Git', () => {
     writeFileSync(join(peer, 'tracked.txt'), 'peer\n')
     git(peer, 'commit', '-qam', 'peer')
     git(peer, 'push', '-q')
-    expect(await workspaceGitPull(root, signal)).toEqual({ branch, commitCreated: false })
+    expect(await workspaceGitPull(LOCAL_GIT, root, signal)).toEqual({ branch, commitCreated: false })
     expect(readFileSync(join(root, 'tracked.txt'), 'utf8')).toBe('peer\n')
     writeFileSync(join(root, 'local.txt'), 'local\n')
     git(root, 'add', 'local.txt')
@@ -345,7 +346,7 @@ describe('standalone workspace Git', () => {
     writeFileSync(join(peer, 'tracked.txt'), 'peer two\n')
     git(peer, 'commit', '-qam', 'peer two')
     git(peer, 'push', '-q')
-    await expect(workspaceGitPull(root, signal)).rejects.toMatchObject({ code: 'GIT_CONFLICT' })
+    await expect(workspaceGitPull(LOCAL_GIT, root, signal)).rejects.toMatchObject({ code: 'GIT_CONFLICT' })
     expect(git(root, 'status', '--porcelain')).toBe('')
     expect(git(root, 'log', '-1', '--format=%s')).toBe('local')
   })
@@ -354,16 +355,16 @@ describe('standalone workspace Git', () => {
     const { root, remote, branch } = await upstreamRepo()
     writeFileSync(join(root, 'pending.txt'), 'uncommitted\n')
     // 空存储只提供“没有已保存凭据”这一事实，不会自行认证。
-    await expect(workspaceGitPush(root, signal, { store: memoryStore().store })).rejects.toMatchObject({
+    await expect(workspaceGitPush(LOCAL_GIT, root, signal, { store: memoryStore().store })).rejects.toMatchObject({
       code: 'GIT_AUTH_REQUIRED', remote: 'https://' + remote.host,
     })
     expect(git(root, 'status', '--porcelain')).toBe('?? pending.txt')
     // 完全没有凭据存储时同样只报告需要认证。
-    await expect(workspaceGitPull(root, signal)).rejects.toMatchObject({ code: 'GIT_AUTH_REQUIRED' })
-    await expect(workspaceGitPull(root, signal, { credentials: { username: 'alice', password: 'wrong' } }))
+    await expect(workspaceGitPull(LOCAL_GIT, root, signal)).rejects.toMatchObject({ code: 'GIT_AUTH_REQUIRED' })
+    await expect(workspaceGitPull(LOCAL_GIT, root, signal, { credentials: { username: 'alice', password: 'wrong' } }))
       .rejects.toMatchObject({ code: 'GIT_AUTH_FAILED' })
     // 正确的显式凭据只出现在一次性 askpass 子进程里，随后远端操作真正完成。
-    await expect(workspaceGitPull(root, signal, { credentials: { username: 'alice', password: 'private-token' } }))
+    await expect(workspaceGitPull(LOCAL_GIT, root, signal, { credentials: { username: 'alice', password: 'private-token' } }))
       .resolves.toEqual({ branch, commitCreated: false })
   })
 
@@ -372,7 +373,7 @@ describe('standalone workspace Git', () => {
       const { root, remote, branch, host } = await upstreamRepo()
       git(root, 'config', 'credential.helper', '!f() { echo username=alice; echo password=private-token; }; f')
       const memory = memoryStore(storedValue(host, 'alice', 'stale-token'))
-      await expect(workspaceGitPull(root, signal, { store: memory.store }))
+      await expect(workspaceGitPull(LOCAL_GIT, root, signal, { store: memory.store }))
         .resolves.toEqual({ branch, commitCreated: false })
       expect(memory.reads).toEqual([])
       expect(remote.authorizations).toContain(basic('alice:private-token'))
@@ -383,7 +384,7 @@ describe('standalone workspace Git', () => {
     await withIsolatedGitConfig(async () => {
       const { root, remote, branch, host, ref } = await upstreamRepo()
       const memory = memoryStore(storedValue(host, 'alice', 'private-token'))
-      await expect(workspaceGitPull(root, signal, { store: memory.store }))
+      await expect(workspaceGitPull(LOCAL_GIT, root, signal, { store: memory.store }))
         .resolves.toEqual({ branch, commitCreated: false })
       expect(memory.reads).toEqual([ref])
       expect(remote.authorizations).toContain(basic('alice:private-token'))
@@ -394,7 +395,7 @@ describe('standalone workspace Git', () => {
     await withIsolatedGitConfig(async () => {
       const { root, host, ref } = await upstreamRepo()
       const memory = memoryStore(storedValue(host, 'alice', 'stale-token'))
-      await expect(workspaceGitPull(root, signal, { store: memory.store })).rejects.toMatchObject({
+      await expect(workspaceGitPull(LOCAL_GIT, root, signal, { store: memory.store })).rejects.toMatchObject({
         code: 'GIT_AUTH_REQUIRED', remote: 'https://' + host, credentialRef: ref,
       })
       expect(memory.reads).toEqual([ref])
@@ -405,7 +406,7 @@ describe('standalone workspace Git', () => {
     await withIsolatedGitConfig(async () => {
       const { root, remote, branch, host, ref } = await upstreamRepo()
       const memory = memoryStore()
-      await expect(workspaceGitPull(root, signal, {
+      await expect(workspaceGitPull(LOCAL_GIT, root, signal, {
         credentials: { username: 'alice', password: 'private-token', remember: true },
         store: memory.store,
       })).resolves.toEqual({ branch, commitCreated: false })
@@ -413,7 +414,7 @@ describe('standalone workspace Git', () => {
       // 下一轮既没有助手也没有显式凭据：只有已保存的凭据能通过认证。
       const reused = memoryStore(memory.writes[0]?.value)
       const before = remote.authorizations.length
-      await expect(workspaceGitPull(root, signal, { store: reused.store }))
+      await expect(workspaceGitPull(LOCAL_GIT, root, signal, { store: reused.store }))
         .resolves.toEqual({ branch, commitCreated: false })
       expect(reused.reads).toEqual([ref])
       // 匿名首试会留下一次未认证请求，凭据生效的那次必须带上已保存的凭据。
@@ -425,14 +426,14 @@ describe('standalone workspace Git', () => {
   it('refuses to remember credentials without a writable store, before touching the remote', async () => {
     const { root, remote } = await upstreamRepo()
     const before = remote.authorizations.length
-    await expect(workspaceGitPush(root, signal, {
+    await expect(workspaceGitPush(LOCAL_GIT, root, signal, {
       credentials: { username: 'alice', password: 'private-token', remember: true },
     })).rejects.toMatchObject({ code: 'GIT_CREDENTIALS_UNAVAILABLE' })
     expect(remote.authorizations.length).toBe(before)
     expect(git(root, 'status', '--porcelain')).toBe('')
     const memory = memoryStore()
     memory.setWritable(false)
-    await expect(workspaceGitPull(root, signal, {
+    await expect(workspaceGitPull(LOCAL_GIT, root, signal, {
       credentials: { username: 'alice', password: 'private-token', remember: true }, store: memory.store,
     })).rejects.toMatchObject({ code: 'GIT_CREDENTIALS_UNAVAILABLE' })
     expect(memory.writes).toEqual([])
@@ -449,19 +450,19 @@ describe('standalone workspace Git', () => {
       }
       const warn = (message: string): void => { warnings.push(message) }
       memory.rejectWrites(new Error('disk is full'))
-      await expect(workspaceGitPull(root, signal, { ...options, warn }))
+      await expect(workspaceGitPull(LOCAL_GIT, root, signal, { ...options, warn }))
         .resolves.toEqual({ branch, commitCreated: false })
       expect(warnings).toEqual(['Git credentials for ' + host + ' were not saved: disk is full'])
       // 存储抛出非 Error 值时同样只记录诊断。
       memory.rejectWrites('quota exceeded')
-      await expect(workspaceGitPull(root, signal, { ...options, warn }))
+      await expect(workspaceGitPull(LOCAL_GIT, root, signal, { ...options, warn }))
         .resolves.toEqual({ branch, commitCreated: false })
       expect(warnings).toEqual([
         'Git credentials for ' + host + ' were not saved: disk is full',
         'Git credentials for ' + host + ' were not saved: quota exceeded',
       ])
       // 没有诊断出口时同样不改变已经完成的拉取。
-      await expect(workspaceGitPull(root, signal, options)).resolves.toEqual({ branch, commitCreated: false })
+      await expect(workspaceGitPull(LOCAL_GIT, root, signal, options)).resolves.toEqual({ branch, commitCreated: false })
     })
   })
 
@@ -480,12 +481,12 @@ describe('standalone workspace Git', () => {
       ]) {
         memory.setValue(value)
         warnings.length = 0
-        await expect(workspaceGitPull(root, signal, {
+        await expect(workspaceGitPull(LOCAL_GIT, root, signal, {
           store: memory.store, warn: (message: string) => { warnings.push(message) },
         })).rejects.toMatchObject({ code: 'GIT_AUTH_REQUIRED' })
         expect(warnings).toEqual([ignored])
         // 没有诊断出口时结果相同。
-        await expect(workspaceGitPull(root, signal, { store: memory.store }))
+        await expect(workspaceGitPull(LOCAL_GIT, root, signal, { store: memory.store }))
           .rejects.toMatchObject({ code: 'GIT_AUTH_REQUIRED' })
       }
     })
@@ -494,13 +495,13 @@ describe('standalone workspace Git', () => {
   it('reports a remote failure that is not about credentials', async () => {
     // 远端整体不可用：显式凭据与匿名尝试都直接失败，不会提示重新输入凭据。
     const broken = await upstreamRepo('alice:private-token', 'always')
-    await expect(workspaceGitPull(broken.root, signal, { credentials: { username: 'alice', password: 'private-token' } }))
+    await expect(workspaceGitPull(LOCAL_GIT, broken.root, signal, { credentials: { username: 'alice', password: 'private-token' } }))
       .rejects.toMatchObject({ code: 'GIT_FAILED' })
-    await expect(workspaceGitPull(broken.root, signal)).rejects.toMatchObject({ code: 'GIT_FAILED' })
+    await expect(workspaceGitPull(LOCAL_GIT, broken.root, signal)).rejects.toMatchObject({ code: 'GIT_FAILED' })
     // 认证通过后远端才失败：已保存的凭据同样不能把它变成认证提示。
     const failing = await upstreamRepo('alice:private-token', 'authenticated')
     const memory = memoryStore(storedValue(failing.host, 'alice', 'private-token'))
-    await expect(workspaceGitPull(failing.root, signal, { store: memory.store }))
+    await expect(workspaceGitPull(LOCAL_GIT, failing.root, signal, { store: memory.store }))
       .rejects.toMatchObject({ code: 'GIT_FAILED' })
   })
 
@@ -511,18 +512,18 @@ describe('standalone workspace Git', () => {
       const warnings: string[] = []
       const warn = (message: string): void => { warnings.push(message) }
       memory.rejectReads(new Error('credentials document is unreadable'))
-      await expect(workspaceGitPull(root, signal, { store: memory.store, warn }))
+      await expect(workspaceGitPull(LOCAL_GIT, root, signal, { store: memory.store, warn }))
         .rejects.toMatchObject({ code: 'GIT_AUTH_REQUIRED' })
       expect(warnings).toEqual([
         'Git credentials stored for ' + host + ' could not be read (' + ref + '): credentials document is unreadable',
       ])
       // 存储抛出非 Error 值时同样只记录诊断。
       memory.rejectReads('document is gone')
-      await expect(workspaceGitPull(root, signal, { store: memory.store, warn }))
+      await expect(workspaceGitPull(LOCAL_GIT, root, signal, { store: memory.store, warn }))
         .rejects.toMatchObject({ code: 'GIT_AUTH_REQUIRED' })
       expect(warnings).toHaveLength(2)
       // 没有诊断出口时结果相同。
-      await expect(workspaceGitPull(root, signal, { store: memory.store }))
+      await expect(workspaceGitPull(LOCAL_GIT, root, signal, { store: memory.store }))
         .rejects.toMatchObject({ code: 'GIT_AUTH_REQUIRED' })
     })
   })
@@ -535,13 +536,13 @@ describe('standalone workspace Git', () => {
     git(root, 'config', 'branch.' + branch + '.merge', 'refs/heads/' + branch)
     git(root, 'update-ref', 'refs/remotes/origin/' + branch, 'HEAD')
     const credentials = { username: 'alice', password: 'secret' }
-    await expect(workspaceGitPush(root, signal, { credentials })).rejects.toMatchObject({ code: 'GIT_REMOTE_UNAVAILABLE' })
+    await expect(workspaceGitPush(LOCAL_GIT, root, signal, { credentials })).rejects.toMatchObject({ code: 'GIT_REMOTE_UNAVAILABLE' })
     git(root, 'remote', 'set-url', 'origin', 'https://alice:embedded-secret@localhost:1/private.git')
-    await expect(workspaceGitPull(root, signal, { credentials })).rejects.toMatchObject({ code: 'GIT_REMOTE_UNAVAILABLE' })
+    await expect(workspaceGitPull(LOCAL_GIT, root, signal, { credentials })).rejects.toMatchObject({ code: 'GIT_REMOTE_UNAVAILABLE' })
     git(root, 'remote', 'set-url', 'origin', 'git@example.org:repo.git')
-    await expect(workspaceGitPull(root, signal, { credentials })).rejects.toMatchObject({ code: 'GIT_REMOTE_UNAVAILABLE' })
+    await expect(workspaceGitPull(LOCAL_GIT, root, signal, { credentials })).rejects.toMatchObject({ code: 'GIT_REMOTE_UNAVAILABLE' })
     // 记住凭据只对 HTTPS 远端有意义：其它协议在触碰远端之前就拒绝。
-    await expect(workspaceGitPull(root, signal, { credentials: { ...credentials, remember: true } }))
+    await expect(workspaceGitPull(LOCAL_GIT, root, signal, { credentials: { ...credentials, remember: true } }))
       .rejects.toMatchObject({ code: 'GIT_REMOTE_UNAVAILABLE' })
   })
 
@@ -566,7 +567,7 @@ describe('standalone workspace Git', () => {
     git(root, 'update-ref', 'refs/remotes/origin/tracking', feature)
     const nested = join(root, 'nested')
     mkdirSync(nested)
-    const history = await workspaceGitHistory(nested, signal, { count: 60 })
+    const history = await workspaceGitHistory(LOCAL_GIT, nested, signal, { count: 60 })
     expect(history).toMatchObject({ current: branch, branches: ['feature', branch, 'unused'].sort((a, b) => a.localeCompare(b)), truncated: false })
     expect(history?.commits.map(commit => commit.id).sort()).toEqual([merge, main, feature, base].sort())
     const commitById = new Map(history?.commits.map(commit => [commit.id, commit]))
@@ -576,17 +577,18 @@ describe('standalone workspace Git', () => {
     expect(commitById.get(merge)?.refs).toEqual([branch])
     expect(commitById.get(base)?.refs).toEqual(['unused'])
     expect(history?.commits.every(commit => /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d[+-]\d\d:\d\d$/u.test(commit.authoredAt))).toBe(true)
-    expect((await workspaceGitHistory(root, signal, { count: 2 }))?.commits).toHaveLength(2)
-    expect((await workspaceGitHistory(root, signal, { count: 2 }))?.truncated).toBe(true)
-    expect((await workspaceGitHistory(root, signal, { from: feature }))?.commits.map(commit => commit.id)).toEqual([feature, base])
+    expect((await workspaceGitHistory(LOCAL_GIT, root, signal, { count: 2 }))?.commits).toHaveLength(2)
+    expect((await workspaceGitHistory(LOCAL_GIT, root, signal, { count: 2 }))?.truncated).toBe(true)
+    expect((await workspaceGitHistory(LOCAL_GIT, root, signal, { from: feature }))?.commits.map(commit => commit.id))
+      .toEqual([feature, base])
   })
 
   it('returns empty commits for an unborn local repo and null outside a repository', async () => {
     const empty = temp()
     git(empty, 'init', '-q')
-    const history = await workspaceGitHistory(empty, signal, { count: 60 })
+    const history = await workspaceGitHistory(LOCAL_GIT, empty, signal, { count: 60 })
     expect(history).toEqual({ commits: [], truncated: false, current: git(empty, 'symbolic-ref', '--short', 'HEAD'), branches: [] })
-    expect(await workspaceGitHistory(temp(), signal, { count: 60 })).toBeNull()
+    expect(await workspaceGitHistory(LOCAL_GIT, temp(), signal, { count: 60 })).toBeNull()
   })
 
   it('rejects unsafe revisions and count directly before Git interprets them', async () => {
@@ -594,16 +596,16 @@ describe('standalone workspace Git', () => {
     const head = git(root, 'rev-parse', 'HEAD')
     const status = git(root, 'status', '--porcelain')
     for (const from of ['--all', '-1', 'HEAD', `${head}..HEAD`, `${head}\n--all`, 'a'.repeat(39) + 'z']) {
-      await expect(workspaceGitHistory(root, signal, { from })).rejects.toMatchObject({ code: 'GIT_FAILED' })
+      await expect(workspaceGitHistory(LOCAL_GIT, root, signal, { from })).rejects.toMatchObject({ code: 'GIT_FAILED' })
     }
     for (const count of [0, -1, 301, 1.2, Number.NaN, Infinity]) {
-      await expect(workspaceGitHistory(root, signal, { count })).rejects.toMatchObject({ code: 'GIT_FAILED' })
+      await expect(workspaceGitHistory(LOCAL_GIT, root, signal, { count })).rejects.toMatchObject({ code: 'GIT_FAILED' })
     }
-    await expect(workspaceGitHistory(root, signal, { from: 'a'.repeat(40) })).rejects.toMatchObject({ code: 'GIT_FAILED' })
+    await expect(workspaceGitHistory(LOCAL_GIT, root, signal, { from: 'a'.repeat(40) })).rejects.toMatchObject({ code: 'GIT_FAILED' })
     expect(git(root, 'status', '--porcelain')).toBe(status)
     expect(git(root, 'rev-parse', 'HEAD')).toBe(head)
-    expect((await workspaceGitHistory(root, signal, { count: 1 }))?.commits).toHaveLength(1)
-    expect((await workspaceGitHistory(root, signal, { count: 300 }))?.truncated).toBe(false)
+    expect((await workspaceGitHistory(LOCAL_GIT, root, signal, { count: 1 }))?.commits).toHaveLength(1)
+    expect((await workspaceGitHistory(LOCAL_GIT, root, signal, { count: 300 }))?.truncated).toBe(false)
   })
 
   it('rejects malformed and oversized history or ref records without partial data', () => {
@@ -626,23 +628,25 @@ describe('standalone workspace Git', () => {
     }
   })
 
-  it('rejects a remote marker before reading a colocated local Git repository', async () => {
+  it('never reads a colocated local repository for a remote marker directory', async () => {
     const root = repo()
     writeFileSync(join(root, '.coding-remote-workspace.json'), JSON.stringify({
       version: 3, remoteRoot: '/srv/project', connectionId: 'connection-1', generation: 1, mode: 'agent',
     }))
-    await expect(workspaceGitHistory(root, signal, { count: 60 })).rejects.toMatchObject({ code: 'GIT_REMOTE_UNAVAILABLE' })
+    // marker 目录名不是官方保留形式，因此本机执行器仍按普通目录处理；服务层的远端
+    // 路由由 remote.spec.ts 覆盖，这里只确认本机仓库不会被误当成远端工作区。
+    expect(await workspaceGitHistory(LOCAL_GIT, root, signal, { count: 60 })).not.toBeNull()
   })
 
   it('honors cancellation before launching Git history', async () => {
     const abort = new AbortController()
     abort.abort()
-    await expect(workspaceGitHistory(repo(), abort.signal, { count: 60 })).rejects.toBeDefined()
+    await expect(workspaceGitHistory(LOCAL_GIT, repo(), abort.signal, { count: 60 })).rejects.toBeDefined()
   })
 
   it('honors cancellation before launching Git', async () => {
     const abort = new AbortController()
     abort.abort()
-    await expect(workspaceGitStatus(repo(), abort.signal)).rejects.toBeDefined()
+    await expect(workspaceGitStatus(LOCAL_GIT, repo(), abort.signal)).rejects.toBeDefined()
   })
 })

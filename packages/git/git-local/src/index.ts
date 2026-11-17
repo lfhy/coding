@@ -10,7 +10,9 @@ import type {
   GitBranches, GitCapability, GitCloneInput, GitCloneResult, GitHistory, GitHistoryQuery,
   GitOperationResult, GitRemoteOptions, GitStatus,
 } from 'coding-git'
-import { runGit } from './cli-process.ts'
+import { remoteWorkspacePath } from 'coding-subprocess'
+import { LOCAL_GIT, remoteGit, runGit } from './cli-process.ts'
+import type { GitExecutor } from './cli-process.ts'
 import { cliBranches, cliCheckout, cliHistory, cliPull, cliPush, cliStatus } from './cli-repository.ts'
 import { cloneWithCli, cloneWithJs } from './clone.ts'
 
@@ -41,39 +43,70 @@ export default class GitLocal extends Git {
       : { mechanism: 'js', operations: ['clone'] }
   }
 
+  /**
+   * 该仓库工作区的执行世界：会话工作区带 marker 时用 subprocess seam 在远端主机上
+   * 运行 git，其他路径沿用本机子进程。远端能力缺失或 marker 不可读时明确失败，绝不
+   * 把远端仓库当成宿主目录来读。
+   * @param cwd - 会话记录里的工作目录。
+   * @param signal - 调用方取消信号。
+   * @returns 本次调用使用的执行器。
+   */
+  private async executor(cwd: string, signal: AbortSignal): Promise<GitExecutor> {
+    let remote: Awaited<ReturnType<typeof remoteWorkspacePath>>
+    try {
+      remote = await remoteWorkspacePath('.', cwd, signal)
+    } catch (error: unknown) {
+      signal.throwIfAborted()
+      if (error instanceof GitOperationError) throw error
+      throw new GitOperationError('GIT_REMOTE_UNAVAILABLE', 'Cannot verify whether the workspace is a remote workspace')
+    }
+    if (remote === undefined) return LOCAL_GIT
+    const subprocess = this.ctx.get('subprocess')
+    if (subprocess === undefined) {
+      throw new GitOperationError('GIT_REMOTE_UNAVAILABLE', 'Git in remote workspaces needs the subprocess capability')
+    }
+    return remoteGit(subprocess)
+  }
+
   private async requireCli(): Promise<void> {
     if (await this.cliAvailable()) return
     throw new GitOperationError('GIT_UNAVAILABLE', 'Git is not installed; only cloning is available through the built-in implementation')
   }
 
   async status(cwd: string, signal: AbortSignal): Promise<GitStatus | null> {
-    await this.requireCli()
-    return cliStatus(cwd, signal)
+    const exec = await this.executor(cwd, signal)
+    if (!exec.remote) await this.requireCli()
+    return cliStatus(exec, cwd, signal)
   }
 
   async branches(cwd: string, signal: AbortSignal): Promise<GitBranches | null> {
-    await this.requireCli()
-    return cliBranches(cwd, signal)
+    const exec = await this.executor(cwd, signal)
+    if (!exec.remote) await this.requireCli()
+    return cliBranches(exec, cwd, signal)
   }
 
   async history(cwd: string, signal: AbortSignal, query: GitHistoryQuery): Promise<GitHistory | null> {
-    await this.requireCli()
-    return cliHistory(cwd, signal, query)
+    const exec = await this.executor(cwd, signal)
+    if (!exec.remote) await this.requireCli()
+    return cliHistory(exec, cwd, signal, query)
   }
 
   async checkout(cwd: string, signal: AbortSignal, branch: string): Promise<GitStatus> {
-    await this.requireCli()
-    return cliCheckout(cwd, signal, branch)
+    const exec = await this.executor(cwd, signal)
+    if (!exec.remote) await this.requireCli()
+    return cliCheckout(exec, cwd, signal, branch)
   }
 
   async push(cwd: string, signal: AbortSignal, options: GitRemoteOptions = {}): Promise<GitOperationResult> {
-    await this.requireCli()
-    return cliPush(cwd, signal, options)
+    const exec = await this.executor(cwd, signal)
+    if (!exec.remote) await this.requireCli()
+    return cliPush(exec, cwd, signal, options)
   }
 
   async pull(cwd: string, signal: AbortSignal, options: GitRemoteOptions = {}): Promise<GitOperationResult> {
-    await this.requireCli()
-    return cliPull(cwd, signal, options)
+    const exec = await this.executor(cwd, signal)
+    if (!exec.remote) await this.requireCli()
+    return cliPull(exec, cwd, signal, options)
   }
 
   async clone(input: GitCloneInput, signal: AbortSignal, options: GitRemoteOptions = {}): Promise<GitCloneResult> {
