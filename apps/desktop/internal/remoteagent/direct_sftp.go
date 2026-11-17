@@ -76,6 +76,8 @@ func (backend *directSFTPBackend) Home(ctx context.Context) (string, error) {
 	return home, nil
 }
 
+// ResolvePath 只返回规范化路径与元数据；版本不由 resolve 承担，条件写入的版本来自
+// stat 或 read（`sftp-sha256`），避免每次解析都读取整份文件内容。
 func (backend *directSFTPBackend) ResolvePath(ctx context.Context, raw string) (ResolveResponse, error) {
 	name, err := backend.resolve(ctx, "", raw, false)
 	if err != nil {
@@ -163,8 +165,9 @@ func (backend *directSFTPBackend) Proxy(ctx context.Context, method, route strin
 		if infoErr != nil && !errors.Is(infoErr, os.ErrNotExist) {
 			return directError(infoErr), nil
 		}
-		if info != nil && info.Type == "file" && info.Size != nil && *info.Size <= maxFileBytes {
-			// 绑定根目录的文件观察会被工具用于条件写入；目录列举仍只读取元数据。
+		// 只有 stat 的版本会参与条件写入；resolve 的身份只用到规范化后的路径，
+		// 因此不为它读取文件内容计算 sftp-sha256（远端一次读取就是若干次往返）。
+		if route == "/v1/stat" && info != nil && info.Type == "file" && info.Size != nil && *info.Size <= maxFileBytes {
 			opened, statErr := backend.sftp.Stat(name)
 			if statErr != nil {
 				return directError(statErr), nil
@@ -439,7 +442,8 @@ func (backend *directSFTPBackend) strongVersion(ctx context.Context, root, name 
 	if info.Size() > maxFileBytes {
 		return "", fail(http.StatusConflict, "version-unavailable", "read_file cannot provide a version for a file above the writable byte limit")
 	}
-	data, opened, err := backend.read(ctx, root, name, maxFileBytes)
+	// 用文本读取路径取内容：控制面可用时一条脚本就够，回退时仍是 SFTP 分块读。
+	data, opened, err := backend.readText(ctx, root, name, maxFileBytes)
 	if err != nil {
 		return "", err
 	}
@@ -824,7 +828,8 @@ func (backend *directSFTPBackend) edit(ctx context.Context, root, name string, r
 	if !info.Mode().IsRegular() {
 		return EditResponse{}, fail(http.StatusUnprocessableEntity, "not-regular-file", "target is not a regular file")
 	}
-	data, opened, err := backend.read(ctx, root, name, maxFileBytes)
+	// 用文本读取路径取内容：控制面可用时一条脚本就够，回退时仍是 SFTP 分块读。
+	data, opened, err := backend.readText(ctx, root, name, maxFileBytes)
 	if err != nil {
 		return EditResponse{}, err
 	}

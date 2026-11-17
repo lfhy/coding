@@ -212,8 +212,16 @@ func TestDirectSFTPStatAndResolveVersionsGuardWrites(t *testing.T) {
 	call("/v1/read_file", ReadRequest{Root: root, Path: "seed.txt"}, &read)
 	var bytesRead ReadBytesResponse
 	call("/v1/read_bytes", ReadRequest{Root: root, Path: "seed.txt"}, &bytesRead)
-	if resolved.Info == nil || observed.Info.Version != resolved.Info.Version || observed.Info.Version != read.Version || read.Version != bytesRead.Version {
-		t.Fatalf("version mismatch: stat=%q resolve=%+v read=%q bytes=%q", observed.Info.Version, resolved.Info, read.Version, bytesRead.Version)
+	// 版本只在真正参与写入守卫的入口之间保持一致；resolve 只给路径身份，
+	// 因此不复用 sftp-sha256（否则每次解析都要读整份文件）。
+	if resolved.Info == nil || resolved.Info.Path != observed.Info.Path {
+		t.Fatalf("resolve mismatch: stat=%+v resolve=%+v", observed.Info, resolved.Info)
+	}
+	if !strings.HasPrefix(resolved.Info.Version, "sftp-meta:") {
+		t.Fatalf("resolve version = %q", resolved.Info.Version)
+	}
+	if observed.Info.Version != read.Version || read.Version != bytesRead.Version {
+		t.Fatalf("version mismatch: stat=%q read=%q bytes=%q", observed.Info.Version, read.Version, bytesRead.Version)
 	}
 	var updated WriteResponse
 	call("/v1/update_file", WriteRequest{Root: root, Path: "seed.txt", Content: "replaced", Expected: &WriteExpectation{Kind: "replaceIfVersion", Version: observed.Info.Version}}, &updated)
