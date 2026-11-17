@@ -91,21 +91,21 @@ describe('remote workspace Git routing', () => {
     const cwd = markerWorkspace()
     subprocess.queue(
       { stdout: 'true\n' }, // rev-parse --is-inside-work-tree
-      { stdout: 'main\n' }, // symbolic-ref --short HEAD
-      { stdout: ' M src/app.ts\0?? notes.md\0' }, // status --porcelain
-      { stdout: '/srv/project\n' }, // rev-parse --show-toplevel
+      // status --porcelain=v1 -z --branch：头行带分支与上游差，随后是文件项
+      { stdout: '## main...origin/main [ahead 1, behind 2]\0 M src/app.ts\0?? notes.md\0' },
       { stdout: '' }, // rev-parse --verify HEAD
       { stdout: '3\t1\tsrc/app.ts\0' }, // diff HEAD --numstat
-      { stdout: '', code: 128 }, // rev-parse @{upstream}: 没有上游
     )
     try {
       const status = await git.status(cwd, signal)
 
-      expect(status).toMatchObject({ branch: 'main', ahead: 0, behind: 0, additions: 3, deletions: 1 })
+      expect(status).toMatchObject({ branch: 'main', ahead: 1, behind: 2, additions: 3, deletions: 1 })
       expect(status?.files.map(file => file.path)).toEqual(['src/app.ts', 'notes.md'])
       // 未跟踪文件的行数在远端工作区不统计（宿主读不到远端内容）。
       expect(status?.files[1]?.additions).toBe(0)
-      expect(subprocess.spawns).toHaveLength(7)
+      // 一次 status 就带回分支与上游差：远端不再为它们各跑一个 git 子进程。
+      expect(subprocess.spawns).toHaveLength(4)
+      expect(subprocess.spawns[1]?.argv).toContain('--branch')
       expect(subprocess.spawns[0]?.argv.slice(0, 2)).toEqual(['git', '--no-pager'])
       expect(subprocess.spawns[0]?.cwd).toBe(cwd)
       expect(subprocess.spawns[0]?.env).toMatchObject({ LC_ALL: 'C', GIT_TERMINAL_PROMPT: '0' })

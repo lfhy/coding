@@ -8,11 +8,27 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { gitCredentialRef } from 'coding-git'
 import type { GitCredentialStore } from 'coding-git'
 import { LOCAL_GIT } from '../src/cli-process.ts'
+import type { GitExecutor, GitOutput } from '../src/cli-process.ts'
 import {
   cliBranches as workspaceGitBranches, cliCheckout as workspaceGitCheckout, cliHistory as workspaceGitHistory,
   cliPull as workspaceGitPull, cliPush as workspaceGitPush, cliStatus as workspaceGitStatus,
-  parseGitHistory, parseGitHistoryRefs,
+  parseGitHistory, parseGitHistoryRefs, parseStatusBranch,
 } from '../src/cli-repository.ts'
+
+/** 记录每次 git 调用的执行器，用来确认状态读取没有为分支／上游多跑子进程。 */
+function countingLocalGit(): { executor: GitExecutor; calls: string[][] } {
+  const calls: string[][] = []
+  return {
+    calls,
+    executor: {
+      remote: false,
+      run: (cwd: string, signal: AbortSignal, args: string[], options?): Promise<GitOutput> => {
+        calls.push([...args])
+        return LOCAL_GIT.run(cwd, signal, args, options)
+      },
+    },
+  }
+}
 
 const roots: string[] = []
 const signal = new AbortController().signal
@@ -626,6 +642,42 @@ describe('standalone workspace Git', () => {
       'x'.repeat(256 * 1024 + 1), `refs/other/branch\0${id}\0\0\n`]) {
       expect(() => parseGitHistoryRefs(raw)).toThrow()
     }
+  })
+
+  it('parses the porcelain --branch header without extra git calls', () => {
+    // 头行把分支、上游与 ahead/behind 一次带回；解析必须覆盖这些形态。
+    expect(parseStatusBranch('## main')).toEqual({ branch: 'main', ahead: 0, behind: 0 })
+    expect(parseStatusBranch('## main...origin/main')).toEqual({ branch: 'main', ahead: 0, behind: 0 })
+    expect(parseStatusBranch('## main...origin/main [ahead 3]')).toEqual({ branch: 'main', ahead: 3, behind: 0 })
+    expect(parseStatusBranch('## main...origin/main [behind 2]')).toEqual({ branch: 'main', ahead: 0, behind: 2 })
+    expect(parseStatusBranch('## feat/x...origin/feat/x [ahead 1, behind 4]')).toEqual({ branch: 'feat/x', ahead: 1, behind: 4 })
+    expect(parseStatusBranch('## main...origin/main [gone]')).toEqual({ branch: 'main', ahead: 0, behind: 0 })
+    expect(parseStatusBranch('## HEAD (no branch)')).toEqual({ branch: null, ahead: 0, behind: 0 })
+    expect(parseStatusBranch('## No commits yet on main')).toEqual({ branch: 'main', ahead: 0, behind: 0 })
+    expect(parseStatusBranch('## Initial commit on trunk')).toEqual({ branch: 'trunk', ahead: 0, behind: 0 })
+    expect(() => parseStatusBranch('main')).toThrow()
+  })
+
+  it('reads branch, tracking distance and files in a single status call', async () => {
+    const root = repo()
+    const remote = `file://${root}`
+    git(root, 'remote', 'add', 'origin', remote)
+    git(root, 'push', '-q', '-u', 'origin', 'HEAD')
+    writeFileSync(join(root, 'tracked.txt'), 'second\n')
+    writeFileSync(join(root, 'fresh.txt'), 'new\n')
+    git(root, 'add', 'tracked.txt')
+    git(root, 'commit', '-qm', 'second')
+
+    const exec = countingLocalGit()
+    const status = await workspaceGitStatus(exec.executor, root, signal)
+
+    expect(status).toMatchObject({ branch: git(root, 'rev-parse', '--abbrev-ref', 'HEAD'), ahead: 1, behind: 0 })
+    // 已提交的 tracked.txt 不在变更里；未跟踪文件仍带本地行数统计。
+    expect(status?.files.map(file => file.path)).toEqual(['fresh.txt'])
+    expect(status?.files[0]?.additions).toBe(1)
+    // guard + status + rev-parse HEAD + diff，最多再加一次取仓库根（未跟踪计数）。
+    expect(exec.calls.length).toBeLessThanOrEqual(5)
+    expect(exec.calls.some(argv => argv.includes('--branch'))).toBe(true)
   })
 
   it('never reads a colocated local repository for a remote marker directory', async () => {

@@ -39,6 +39,41 @@ async function untrackedLines(path: string, signal: AbortSignal): Promise<number
 }
 
 /**
+ * 解析 `status --porcelain=v1 --branch -z` 的首行头。
+ *
+ * 头行把分支、上游与 ahead／behind 一次带回来，省掉 `symbolic-ref`、
+ * `rev-parse @{upstream}` 与 `rev-list` 三次调用——远端工作区里那是三次 SSH 往返。
+ * @param header - 头行（不含结尾 NUL）。
+ * @returns 分支短名（游离 HEAD 为 null）与相对上游的提交差。
+ */
+export function parseStatusBranch(header: string): { branch: string | null; ahead: number; behind: number } {
+  if (!header.startsWith('## ')) throw new GitOperationError('GIT_FAILED', 'Unexpected Git status header')
+  const body = header.slice(3)
+  // 无提交的仓库：`No commits yet on <branch>`（旧版本写作 `Initial commit on <branch>`）。
+  const unborn = /^(?:No commits yet on|Initial commit on) (.+)$/u.exec(body)
+  if (unborn !== null) return { branch: unborn[1] ?? null, ahead: 0, behind: 0 }
+  // 游离 HEAD：`HEAD (no branch)`。
+  if (body === 'HEAD (no branch)') return { branch: null, ahead: 0, behind: 0 }
+  // `main`、`main...origin/main`、`main...origin/main [ahead 1, behind 2]`、
+  // `main...origin/main [gone]`。
+  const tracked = /^(.+?)(?:\.\.\.(.+?))?(?: \[(.+)\])?$/u.exec(body)
+  const branch = tracked?.[1]
+  if (branch === undefined || branch === '') throw new GitOperationError('GIT_FAILED', 'Unexpected Git status header')
+  const detail = tracked?.[3] ?? ''
+  const distance = /ahead (\d+)(?:, behind (\d+))?|behind (\d+)/u.exec(detail)
+  if (distance === null) {
+    // `[gone]` 或没有上游：没有可用的提交差。
+    return { branch, ahead: 0, behind: 0 }
+  }
+  // 只有 ahead 时命中第一组的第 1 段，只有 behind 时命中第二组的第 3 段。
+  return {
+    branch,
+    ahead: Number(distance[1] ?? 0),
+    behind: Number(distance[2] ?? distance[3] ?? 0),
+  }
+}
+
+/**
  * 返回仓库的文件及行数；非仓库返回 null。
  * @param exec - 本次调用的执行世界（本机或远端主机）。
  * @param cwd - 会话记录里的工作目录。
@@ -47,10 +82,11 @@ async function untrackedLines(path: string, signal: AbortSignal): Promise<number
  */
 export async function cliStatus(exec: GitExecutor, cwd: string, signal: AbortSignal): Promise<GitStatus | null> {
   if (!await guard(exec, cwd, signal)) return null
-  const branch = await branchName(exec, cwd, signal)
-  const raw = await checked(exec, cwd, signal, ['status', '--porcelain=v1', '-z', '--untracked-files=all'])
-  const root = (await checked(exec, cwd, signal, ['rev-parse', '--show-toplevel'])).trim()
+  // 一次 status 带回分支、上游差与文件列表：远端工作区每个子进程都是一次 SSH 执行。
+  const raw = await checked(exec, cwd, signal, ['status', '--porcelain=v1', '-z', '--untracked-files=all', '--branch'])
   const entries = raw.split('\0')
+  const header = entries.shift() ?? ''
+  const { branch, ahead, behind } = parseStatusBranch(header)
   const files: GitStatus['files'] = []
   for (let i = 0; i < entries.length - 1; i++) {
     const entry = entries[i]
@@ -83,23 +119,19 @@ export async function cliStatus(exec: GitExecutor, cwd: string, signal: AbortSig
       deletions: (previous?.deletions ?? 0) + (Number(match[2]) || 0),
     })
   }
+  // 远端工作区的未跟踪文件在宿主上不可读，因此只跳过行数统计，状态本身保持可见；
+  // 只有确实需要统计时才去问仓库根，远端会话因此完全不做这次调用。
+  const needsUntrackedCounts = !exec.remote && files.some(file => file.status === '??' && !counts.has(file.path))
+  const root = needsUntrackedCounts
+    ? (await checked(exec, cwd, signal, ['rev-parse', '--show-toplevel'])).trim()
+    : undefined
   for (const file of files) {
     const count = counts.get(file.path)
     if (count !== undefined) Object.assign(file, count)
-    // 远端工作区的未跟踪文件在宿主上不可读，因此只跳过行数统计，状态本身保持可见。
-    else if (file.status === '??' && !exec.remote) {
+    else if (file.status === '??' && root !== undefined) {
       try { file.additions = await untrackedLines(join(root, file.path), signal) }
       catch { signal.throwIfAborted(); throw new GitOperationError('GIT_FAILED', `Cannot count untracked file ${file.path}`) }
     }
-  }
-  let ahead = 0
-  let behind = 0
-  const tracking = await exec.run(cwd, signal, ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{upstream}'])
-  if (tracking.code === 0) {
-    const distance = await checked(exec, cwd, signal, ['rev-list', '--left-right', '--count', 'HEAD...@{upstream}'])
-    const match = /^(\d+)\s+(\d+)/u.exec(distance)
-    if (!match) throw new GitOperationError('GIT_FAILED', 'Unexpected Git ahead/behind output')
-    ahead = Number(match[1]); behind = Number(match[2])
   }
   return {
     branch, ahead, behind, files,
