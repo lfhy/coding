@@ -6,6 +6,11 @@ const record = {
   mediaType: 'text/plain', bytes: 1024, createdAt: '2026-11-09T08:00:00.000Z',
 } as const
 
+const noteRecord = {
+  id: '123e4567-e89b-52d3-a456-426614174000', kind: 'note', name: '想法.md', relativePath: 'notes/想法.md',
+  mediaType: 'text/markdown', bytes: 128, createdAt: '2026-11-09T08:00:00.000Z',
+} as const
+
 afterEach(() => { vi.unstubAllGlobals() })
 
 describe('managed files wire', () => {
@@ -22,6 +27,12 @@ describe('managed files wire', () => {
     vi.stubGlobal('fetch', fetcher)
     await listManagedFiles(0, 50, new AbortController().signal, { unscoped: true, category: 'image' })
     expect(String(fetcher.mock.calls[0]?.[0])).toBe('/api/files/list?offset=0&limit=50&scope=unscoped&category=image')
+  })
+
+  it('接受无目录笔记记录并保留其类型', () => {
+    const page = parseManagedFilesPage({ items: [record, noteRecord], total: 2 })
+    expect(page.items.map(item => item.kind)).toEqual(['upload', 'note'])
+    expect(page.items[1]?.relativePath).toBe('notes/想法.md')
   })
 
   it('拒绝非成功 HTTP 状态与格式错误的响应', async () => {

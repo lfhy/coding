@@ -1,7 +1,7 @@
 /** Host 管理的文件记录；绝对路径不会进入浏览器响应。 */
 export interface ManagedFileRecord {
   id: string
-  kind: 'upload' | 'generated-image' | 'export'
+  kind: 'upload' | 'generated-image' | 'export' | 'note'
   name: string
   relativePath: string
   mediaType: string
@@ -40,7 +40,7 @@ export function parseManagedFilesPage(value: unknown): ManagedFilesPage {
     throw new Error('Invalid managed files page')
   }
   const items = value.items.map((item): ManagedFileRecord => {
-    if (!isObject(item) || !nonempty(item.id) || (item.kind !== 'upload' && item.kind !== 'generated-image' && item.kind !== 'export')
+    if (!isObject(item) || !nonempty(item.id) || (item.kind !== 'upload' && item.kind !== 'generated-image' && item.kind !== 'export' && item.kind !== 'note')
       || !nonempty(item.name) || !nonempty(item.relativePath) || /^[\\/]|^[a-zA-Z]:/.test(item.relativePath)
       || item.relativePath.split(/[\\/]/).includes('..') || !nonempty(item.mediaType)
       || !nonnegativeInteger(item.bytes) || !nonempty(item.createdAt) || !Number.isFinite(Date.parse(item.createdAt))
