@@ -526,6 +526,18 @@ describe('DetailsPanel Output section', () => {
     expect(description.compareDocumentPosition(card!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
+  it('shows a remote workspace by its remote directory name instead of the marker hash', () => {
+    const remote = '/home/me/.coding/remote-workspaces/509887000862b70a4669/shep-chat-2620b32d2df925e6cbca'
+    // 会话 cwd 是本地占位目录：提示行只显示远端目录名，不暴露 marker 哈希。
+    expect(terminalCardModel(settled(), remote)?.card.cwd).toBe('shep-chat')
+    // 占位目录内部：显示「远端目录名 + 相对路径」。
+    expect(terminalCardModel(settled({ callView: callTerminal({ cwd: `${remote}/src` }) }), remote)?.card.cwd)
+      .toBe('shep-chat/src')
+    // 模型给出的远端绝对路径原样显示。
+    expect(terminalCardModel(settled({ callView: callTerminal({ cwd: '/home/lx/shep-chat' }) }), remote)?.card.cwd)
+      .toBe('/home/lx/shep-chat')
+  })
+
   it('resolves the prompt cwd against the session workspace', () => {
     const view = mount(snapshot({ nodes: [settled()] }), target, '/w/app')
     // No workdir in the call view: the prompt label is the workspace basename.

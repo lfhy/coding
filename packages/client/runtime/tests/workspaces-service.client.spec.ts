@@ -3,7 +3,9 @@ import { describe, expect, it, vi } from 'vitest'
 import type { SessionId, WorkspaceId, WorkspaceView } from 'coding-api-remotes/client'
 import { SessionRuntime } from '../src/client/sessions/service.ts'
 import { WorkspaceManager } from '../src/client/workspaces/manager.ts'
-import { DirectoryBrowseError, WorkspaceCreateError, WorkspaceRuntime } from '../src/client/workspaces/service.ts'
+import {
+  DirectoryBrowseError, remoteWorkspaceDisplayPath, WorkspaceCreateError, WorkspaceRuntime,
+} from '../src/client/workspaces/service.ts'
 import { FakeApiClient, deferred, err, fakeRemote, ok } from './fake-api.client.ts'
 
 const sid = (id: string): SessionId => id as SessionId
@@ -298,6 +300,17 @@ describe('WorkspaceRuntime', () => {
     await expect(workspaces.connectWorkspace(wid('remote'))).resolves.toBe('s-remote')
     expect(activate).toHaveBeenCalledWith(remotePath)
     expect(api.callsOf('session.create')).toEqual([{ workspaceId: 'remote' }])
+  })
+
+  it('names a remote placeholder path by its remote directory instead of the marker hash', () => {
+    const marker = '/home/me/.coding/remote-workspaces/509887000862b70a4669/shep-chat-2620b32d2df925e6cbca'
+    // 占位目录本身只显示远端目录名；目录内部保留相对路径。
+    expect(remoteWorkspaceDisplayPath(marker)).toBe('shep-chat')
+    expect(remoteWorkspaceDisplayPath(`${marker}/src/app.ts`)).toBe('shep-chat/src/app.ts')
+    expect(remoteWorkspaceDisplayPath(`${marker}/`)).toBe('shep-chat')
+    // 普通本地路径不参与这条展示规则。
+    expect(remoteWorkspaceDisplayPath('/home/me/project')).toBeUndefined()
+    expect(remoteWorkspaceDisplayPath('relative/path')).toBeUndefined()
   })
 
   it('opens a reusable blank remote session without waiting for its reconnection', async () => {

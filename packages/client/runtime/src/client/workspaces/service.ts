@@ -96,6 +96,26 @@ export function isRemoteWorkspacePath(path: string): boolean {
   return REMOTE_WORKSPACE_PATH.test(path)
 }
 
+/** 命中远端占位目录本身或其内部路径：捕获远端目录名与相对剩余部分。 */
+const REMOTE_WORKSPACE_SEGMENT = /(?:^|[\\/])remote-workspaces[\\/][a-f0-9]{20}[\\/]([A-Za-z0-9_-]+)-[a-f0-9]{20}((?:[\\/].*)?)$/u
+
+/**
+ * 把远端工作区的本地占位路径换成可展示的名字。
+ *
+ * marker 目录名是 `<远端目录名>-<20 位哈希>`，哈希只是本地路由身份；界面里显示它等于
+ * 把内部标识当成路径给用户看。占位目录本身显示成远端目录名，目录内部显示成
+ * `<远端目录名>/<相对路径>`。非远端路径返回 `undefined`，调用方据此保留原路径。
+ * @param path - 会话 cwd 或工具调用的工作目录。
+ * @returns 可展示的名字；不是远端占位路径时为 undefined。
+ */
+export function remoteWorkspaceDisplayPath(path: string): string | undefined {
+  const matched = REMOTE_WORKSPACE_SEGMENT.exec(path)
+  const label = matched?.[1]
+  if (label === undefined) return undefined
+  const rest = (matched?.[2] ?? '').replace(/^[\\/]+/u, '')
+  return rest === '' ? label : `${label}/${rest}`
+}
+
 export class WorkspaceRuntime implements IWorkspaces {
   /** UI-facing immutable projection; the manager remains wire truth. */
   readonly list: SnapshotStore<WorkspaceListState>

@@ -8,7 +8,7 @@
  * are derived once.
  * @module
  */
-import { resolveWorkspacePath } from 'coding-client-runtime/client'
+import { remoteWorkspaceDisplayPath, resolveWorkspacePath } from 'coding-client-runtime/client'
 import type { TerminalBlockLabels, TerminalBlockProps } from 'coding-client-ui-primitives'
 import type { TranslateNS } from 'coding-client-ui-slots'
 import type { ToolCallBlock } from './tool-call-model.ts'
@@ -84,12 +84,20 @@ export function terminalFailed(model: TerminalCardModel): boolean {
  * omitted one stays absent (the prompt row then draws a bare `$`).
  * @param viewCwd - the cwd the terminal call view carries, if any.
  * @param sessionCwd - the session workspace root, if the caller knows it.
- * @returns the working directory for the prompt label, or undefined.
+ * @returns the working directory for the prompt label, or undefined; a remote
+ *   workspace placeholder is displayed as its remote directory name.
  */
 function resolveTerminalCwd(viewCwd: string | undefined, sessionCwd: string | undefined): string | undefined {
-  if (viewCwd === undefined || viewCwd === '') return sessionCwd
-  if (sessionCwd === undefined || sessionCwd === '') return normalizeSegments(viewCwd)
-  return normalizeSegments(resolveWorkspacePath(sessionCwd, viewCwd))
+  // 远端工作区的会话 cwd 是本地占位目录（`<远端目录名>-<哈希>`）。哈希只是本地路由
+  // 身份，提示行里只显示远端目录名与相对部分，绝不把内部标识当成路径展示。
+  if (viewCwd === undefined || viewCwd === '') {
+    return sessionCwd === undefined ? undefined : remoteWorkspaceDisplayPath(sessionCwd) ?? sessionCwd
+  }
+  if (sessionCwd === undefined || sessionCwd === '') {
+    return remoteWorkspaceDisplayPath(viewCwd) ?? normalizeSegments(viewCwd)
+  }
+  const joined = normalizeSegments(resolveWorkspacePath(sessionCwd, viewCwd))
+  return remoteWorkspaceDisplayPath(joined) ?? joined
 }
 
 /**
