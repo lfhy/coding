@@ -172,6 +172,16 @@ describe('LocalBashExecutor.run', () => {
     })
   })
 
+  it('forwards the caller timeout to the remote exec instead of a fixed server default', async () => {
+    await withBasicBridge(() => ({ body: execResponse() }), async (markerRoot, received) => {
+      // 执行器配置的默认是 120s；调用方显式给的值（模型可指定的 timeoutMs）必须原样
+      // 送到远端，由服务端按它计时，而不是另有一个固定上限。
+      const { bash } = await setup()
+      await bash.run(bash.resolve({ command: 'sleep 1', workdir: markerRoot, timeoutMs: 300_000 }))
+      expect(received[0]?.body).toMatchObject({ timeoutMs: 300_000 })
+    })
+  })
+
   it('refuses a stale basic marker instead of falling back to local execution', async () => {
     await withBasicBridge(() => ({ body: execResponse() }), async (markerRoot, received) => {
       const { ctx, bash } = await setup()
