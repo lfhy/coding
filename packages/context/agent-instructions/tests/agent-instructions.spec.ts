@@ -65,6 +65,7 @@ class RecordingFileSystem extends FileSystem {
   omitSizes = new Set<string>()
   readTargets: string[] = []
   readTextTargets: string[] = []
+  statTargets: FsTarget[] = []
   signals: AbortSignal[] = []
 
   override async resolve(path: string, opts?: { cwd?: string; signal?: AbortSignal }): Promise<FsTarget> {
@@ -86,6 +87,7 @@ class RecordingFileSystem extends FileSystem {
   }
 
   override async stat(target: FsTarget, signal?: AbortSignal): Promise<FsInfo | undefined> {
+    this.statTargets.push(target)
     if (signal !== undefined) this.signals.push(signal)
     signal?.throwIfAborted()
     if (this.throwOnStat.has(target.targetKey)) throw new Error(`stat failed: ${target.displayPath}`)
@@ -322,6 +324,34 @@ describe('workspace context instruction discovery', () => {
       expect(files).toEqual([])
     } finally {
       await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  it('re-probes the project root only when a file touch could have created one', async () => {
+    const root = join(await tempRepo(), 'virtual-rooted-repo')
+    const home = join(await tempRepo(), 'virtual-rooted-home')
+    const ctx = new Context()
+    try {
+      await ctx.plugin(ConcurrencyTrackingFileSystem)
+      const fs = ctx.fs as ConcurrencyTrackingFileSystem
+      fs.entries.set(join(root, '.git'), { type: 'directory' })
+      fs.entries.set(join(root, 'pkg'), { type: 'directory' })
+      fs.entries.set(join(root, 'AGENTS.md'), { type: 'file', content: 'repo rule' })
+      await ctx.plugin(workspaceContext, { dshHome: home, maxBytes: 65536 })
+      const agent = stubAgent(join(root, 'pkg'))
+
+      await composeBaselinePrefix(ctx, agent)
+      const markerProbes = () => fs.statTargets.filter(target => String(target.targetKey).endsWith('/.git')).length
+      const afterFirstStep = markerProbes()
+      expect(afterFirstStep).toBeGreaterThan(0)
+
+      // 没有文件 touch 的后续步骤沿用缓存的项目根，不再为它做远端探测。
+      await composeBaselinePrefix(ctx, agent)
+      expect(markerProbes()).toBe(afterFirstStep)
+    } finally {
+      await ctx.fiber.dispose()
+      await rm(dirname(root), { recursive: true, force: true })
+      await rm(dirname(home), { recursive: true, force: true })
     }
   })
 

@@ -14,6 +14,7 @@ import { isDeepStrictEqual } from 'node:util'
 import type { Agent, PreStepDecision } from 'coding-agent'
 import { createUserMessage } from 'coding-llm'
 import type { Session, UserMessage } from 'coding-session'
+import type { FileSystem } from 'coding-fs'
 import type { ToolExecution, ToolExecutionResult, ToolExecutionToken } from 'coding-tools'
 import { Config, resolveConfig, workspaceBaselineIdentity, type ResolvedConfig } from './config.ts'
 import { findProjectRoot, loadBaselineInstructionSet } from './files.ts'
@@ -102,6 +103,40 @@ export function apply(ctx: Context, config: Config): void {
   // boundaries before an asynchronous projection may mutate the agent inbox.
   const openSteps = new WeakMap<Session, boolean>()
   const stepTouches = new WeakMap<Session, ProjectionTouch[]>()
+  // 项目根在一次会话内基本不动，但每个 step 都会重新探测它；远端工作区里那是一次
+  // 远端往返，而且发生在用户消息入日志之前（气泡因此更晚出现）。按会话缓存，只有
+  // 出现文件 touch（项目根可能被创建）或 cwd/标记变化时才重新探测。
+  const projectRoots = new WeakMap<Session, { cwd: string; markers: string; root: Promise<string> }>()
+
+  /**
+   * 解析会话的项目根，并按会话缓存上一个结果。
+   * @param session - 会话，缓存的生命周期与它一致。
+   * @param cwd - 会话工作目录。
+   * @param refresh - 为真时忽略缓存重新探测（存在文件 touch 时项目根可能刚被创建）。
+   * @param fileSystem - 探测用的文件系统。
+   * @param signal - 取消信号。
+   * @returns 项目根路径。
+   */
+  const resolveProjectRoot = async (
+    session: Session,
+    cwd: string,
+    refresh: boolean,
+    fileSystem: FileSystem,
+    signal: AbortSignal,
+  ): Promise<string> => {
+    const markers = resolved.projectRootMarkers.join('\u0000')
+    const cached = projectRoots.get(session)
+    if (!refresh && cached !== undefined && cached.cwd === cwd && cached.markers === markers) {
+      return await cached.root
+    }
+    const root = findProjectRoot(cwd, resolved.projectRootMarkers, fileSystem, signal)
+    projectRoots.set(session, { cwd, markers, root })
+    // 探测失败不能把拒绝留在缓存里，否则会话余下的每一步都会重复同一次失败。
+    return await root.catch((error: unknown) => {
+      projectRoots.delete(session)
+      throw error
+    })
+  }
 
   const compose = async (
     agent: Agent,
@@ -123,7 +158,7 @@ export function apply(ctx: Context, config: Config): void {
     const authorityMessages = [...claimed]
     /* v8 ignore next -- normal agents carry an absolute session cwd. */
     const cwd = agent.session.header.cwd ?? process.cwd()
-    const projectRoot = await findProjectRoot(cwd, resolved.projectRootMarkers, fileSystem, signal)
+    const projectRoot = await resolveProjectRoot(agent.session, cwd, touchedPaths.length > 0, fileSystem, signal)
     const identity = workspaceBaselineIdentity(resolved, cwd, projectRoot)
     const visibleBaseline = visibleBaselineSource(agent, authorityMessages)
     const baselinePresent = visibleBaseline !== undefined
