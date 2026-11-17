@@ -79,6 +79,10 @@ describe('ui-layout client apply', () => {
     expect(typeof injected.publishWorkbench).toBe('function')
     expect(typeof injected.retainWorkbenchViews).toBe('function')
     expect(typeof injected.publishPage).toBe('function')
+    expect(typeof injected.setTheme).toBe('function')
+    expect(injected.hooks.theme.getSnapshot().active.colorScheme).toBe('light')
+    injected.setTheme('dark')
+    expect(injected.hooks.theme.getSnapshot().active.colorScheme).toBe('dark')
     const layout = ctx.get('layout') as LayoutController
     layout.toggleSidebar()
     layout.openWorkbench('layout-session')

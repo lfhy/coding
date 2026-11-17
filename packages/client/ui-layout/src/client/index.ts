@@ -4,8 +4,9 @@
  */
 import type { ClientContext } from 'coding-client-runtime/client'
 import type { SessionId } from 'coding-session/types'
+import type { HostObservable } from 'coding-client-ui-slots'
+import type { ThemeSnapshot } from 'coding-client-ui-theme/client'
 import type {} from 'coding-client-locale/client'
-import type {} from 'coding-client-ui-theme/client'
 import type { AppFrameInjected } from './AppFrame.tsx'
 import type { PanelActions } from './service.ts'
 import { WindowShell } from './WindowShell.tsx'
@@ -124,6 +125,11 @@ export const inject = ['slots', 'theme', 'locale']
 export function apply(ctx: ClientContext): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-layout: dictionaries')
   const layout = new LayoutController()
+  const theme = ctx.theme
+  const themeSource: HostObservable<ThemeSnapshot> = {
+    getSnapshot: () => theme.getTheme(),
+    subscribe: listener => ctx.on('theme/change', () => { listener() }),
+  }
   ctx.effect(() => {
     const disposeService = ctx.reflect.provide('layout', layout)
     const disposeRegistration = ctx.slots.register({
@@ -151,6 +157,8 @@ export function apply(ctx: ClientContext): void {
           publishWorkbench: (key, state) => { layout.publishWorkbench(key, state) },
           retainWorkbenchViews: (keys) => { layout.retainWorkbenchViews(keys) },
           publishPage: (page) => { layout.publishPage(page) },
+          hooks: { theme: themeSource },
+          setTheme: (id) => { theme.setTheme(id) },
         }
       },
     }, WindowShell)
@@ -163,7 +171,7 @@ export function apply(ctx: ClientContext): void {
 
   ctx.effect(() => {
     const presenter = new ThemePresenter()
-    presenter.apply(ctx.theme.getTheme())
+    presenter.apply(theme.getTheme())
     const off = ctx.on('theme/change', (snapshot) => { presenter.apply(snapshot) })
     return () => {
       off()

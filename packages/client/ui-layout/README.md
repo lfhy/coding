@@ -7,7 +7,7 @@ kind: "package-reference"
 
 ## 概述
 
-本包拥有浏览器根布局、瞬时面板几何和 `ctx.layout`。唯一 `root` entry 为 `WindowShell`：它固定渲染 `AppFrame`，并在外层窄导航中部承载 `shell.navigation.entry`、底部承载 `shell.settings`，不新增 store 或业务状态。`AppFrame` 承载导航栏、对话区、详情栏及 root scope 的 `workbench` 与 `workbench.bottom` slot。工作台占用者通过 `useSessions` 读取当前 Session，底栏占用者接收 owner 的当前 Session id；两者按 Session 保留内容。宽屏工作台遵循导航栏自己的展开偏好，主内容上方形成左侧对话与右侧固定工作台；工作台占用者再把自己的区域拆成中间预览和右侧文件树。包内主题呈现器把 `ctx.theme` 的已解析快照投影到 document；功能插件只负责填充 slot，不直接操作根网格。
+本包拥有浏览器根布局、瞬时面板几何和 `ctx.layout`。唯一 `root` entry 为 `WindowShell`：它固定渲染 `AppFrame`，并在外层窄导航中部承载 `shell.navigation.entry`、底部承载主题切换、侧栏开关与 `shell.settings`，不新增 store 或业务状态。主题按钮读取 `ctx.theme` 的生效明暗，点击后在内置 `light` 与 `dark` 偏好之间切换；系统跟随或自定义主题生效时，按钮仍按当前解析出的明暗决定下一步。`AppFrame` 承载导航栏、对话区、详情栏及 root scope 的 `workbench` 与 `workbench.bottom` slot。工作台占用者通过 `useSessions` 读取当前 Session，底栏占用者接收 owner 的当前 Session id；两者按 Session 保留内容。宽屏工作台遵循导航栏自己的展开偏好，主内容上方形成左侧对话与右侧固定工作台；工作台占用者再把自己的区域拆成中间预览和右侧文件树。包内主题呈现器把 `ctx.theme` 的已解析快照投影到 document；功能插件只负责填充 slot，不直接操作根网格。
 
 <a id="use-this-package"></a>
 ## 使用本包
@@ -21,7 +21,7 @@ kind: "package-reference"
 | `details` | `session` | 空 owner share |
 | `workbench` | `root` | `shown`、`fullscreen`、`bottomOpen`；当前工作区由占用者通过 `useSessions` 读取 |
 | `workbench.bottom` | `root` | 当前 Session id 与底栏可见性；占用者按工作区保留终端标签 |
-| `shell.navigation.entry` | `root` | 空 owner share 的有序 list，排在主页图标之后、设置之前；注册者自带 36×36 图标按钮，[ui-image-gen](../ui-image-gen/README.md) 用它承载画图入口 |
+| `shell.navigation.entry` | `root` | 空 owner share 的有序 list，排在主页图标之后、底部主题切换和设置之前；注册者自带 36×36 图标按钮，[ui-image-gen](../ui-image-gen/README.md) 用它承载画图入口 |
 | `shell.settings` | `root` | `wide: boolean`，外层固定传 `false`；[ui-settings-general](../ui-settings-general/README.md) 提供设置图标入口与设置页 |
 | `shell.overlay` | `root` | 无 owner 数据的有序 list |
 | `shell.page` | `session` | 按 `entryKey` 选择主内容页，owner 提供 `closePage()`、`sidebarCollapsed` 与 `sidebarWidth` |
@@ -44,7 +44,7 @@ kind: "package-reference"
 
 `WindowShell` 固定占满 `100dvh`，整窗不随内容滚动，也不自带顶栏：内层圆角容器顶到窗口上沿，原生窗口按钮由内层各自避让。桌面壳把 `--app-safe-area-inset-top`、`--app-safe-area-inset-right` 与 `--app-rail-inline-size` 注入 `:root`，导航列顶部按安全区留出交通灯位置并据此放宽到能连同交通灯一起被外框包住，同时提供窗口拖拽区域；侧栏开关在所有端都固定在外层窄导航底部、设置入口上方，页内不再渲染折叠按钮。普通 Web 没有原生安全区，导航按钮距顶部 8px；内层侧栏、会话页头、工作台顶栏和设置页按需避让系统窗口按钮。外层不显示品牌文字，不绘制交通灯或前进／后退按钮。
 
-左侧窄导航是一张带 1px 外框、16px 圆角、从窗口上沿通到底部的独立卡片，与右侧圆角工作区之间隔 8px 窗口底色；宽度取 `--app-rail-inline-size`（Web 缺省 52px，窄屏 44px，macOS 桌面按交通灯占位注入 76px：灯组左右各留 12px，灯顶高于 16px 圆角，三颗按钮落在卡片直边之内而不压着圆角）。列内自上而下是主页图标「回到对话」、`shell.navigation.entry` 的中部图标入口和底部由 `shell.settings` 承载的设置入口；设置入口上方固定一枚侧栏开关。中部与底部入口都以 36×36 图标盒排在列内，未注册时不占空间。侧栏的展开与收起在所有端都由这一枚底部开关完成，折叠与展开分别使用朝左与朝右的图标；宽度拖拽仍由内层控件提供。右侧圆角容器包含完整 `AppFrame`，距窗口右侧和底部各 8px。整窗宽度不超过 620px 时，外层窄导航为 44px，右侧与底部间距各 4px。图标按入口着色：主页是业务蓝，`shell.navigation.entry` 的中部入口用图标强调绿（画图），底部设置入口保持中性灰，当前页只加重底色；所有颜色取自既有主题 token，随用户的亮暗偏好切换。
+左侧窄导航是一张带 1px 外框、16px 圆角、从窗口上沿通到底部的独立卡片，与右侧圆角工作区之间隔 8px 窗口底色；宽度取 `--app-rail-inline-size`（Web 缺省 52px，窄屏 44px，macOS 桌面按交通灯占位注入 76px：灯组左右各留 12px，灯顶高于 16px 圆角，三颗按钮落在卡片直边之内而不压着圆角）。列内自上而下是主页图标「回到对话」、`shell.navigation.entry` 的中部图标入口和底部的主题切换、侧栏开关与 `shell.settings` 设置入口；设置入口上方固定一枚侧栏开关，主题切换位于侧栏开关上方。中部与底部入口都以 36×36 图标盒排在列内，未注册时不占空间。侧栏的展开与收起在所有端都由这一枚底部开关完成，折叠与展开分别使用朝左与朝右的图标；主题按钮按当前生效的明暗显示下一步图标，点击在浅色与深色之间切换；宽度拖拽仍由内层控件提供。右侧圆角容器包含完整 `AppFrame`，距窗口右侧和底部各 8px。整窗宽度不超过 620px 时，外层窄导航为 44px，右侧与底部间距各 4px。图标按入口着色：主页是业务蓝，`shell.navigation.entry` 的中部入口用图标强调绿（画图），底部设置入口保持中性灰，当前页只加重底色；主题按钮随用户的亮暗偏好切换。
 
 `AppFrame` 的 `ResizeObserver` 测量圆角容器内实际可用宽高，响应式断点、面板求解和底栏高度均以该尺寸为准，不使用整窗尺寸。宽屏内层由用户选择宽度的导航栏、左侧对话和右侧工作台组成。尚未手动调整过宽度时，内层导航栏之外的主内容按对话 1 份、右侧工作台 2 份分配，并随可用宽度重新求解。工作台宽度可在 300--2400px 间拖拽，一旦手动拖拽就改用该像素偏好；对话区不低于 320px，空间不足时先把工作台收缩到 300px，再由对话承担剩余让步。内层宽度低于 1024px 时导航自动收成 56px rail，工作台采用全屏呈现：对话继续保持挂载且默认进入 `inert`，工作台占据内层 rail 之外的全部主内容；显式最大化使用同一路径。实际全屏且有当前会话、未打开 `shell.page` 时，底部「继续对话」胶囊可将原对话展开为同会话的悬浮小窗，不重挂对话或输入框；小窗的收起按钮或未被内部控件消费的 Escape 可返回胶囊，退出全屏、关闭工作台、切换会话或打开独立页面也会收起，普通布局恢复原对话与草稿。
 

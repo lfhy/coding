@@ -5,7 +5,8 @@
  */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, KeyboardEvent, PointerEvent, ReactNode } from 'react'
-import type { InjectFace, PropsLocale, PropsRenderSlots, PropsRuntime, PropsStore } from 'coding-client-ui-slots'
+import type { HostObservable, InjectFace, PropsLocale, PropsRenderSlots, PropsRuntime, PropsStore } from 'coding-client-ui-slots'
+import type { ThemeSnapshot } from 'coding-client-ui-theme/client'
 import { Icon, IconChevronDownOutline14, IconChevronUpOutline14 } from 'coding-client-ui-icons'
 import type { SessionId } from 'coding-session/types'
 import type { WorkbenchLayoutSnapshot } from './service.ts'
@@ -44,6 +45,10 @@ export interface AppFrameInjected {
   retainWorkbenchViews: (keys: readonly string[]) => void
   /** 解析会话所属的工作区键；工作台偏好按它保存。 */
   workspaceKeyOf: (sessionId: SessionId) => string
+  /** 当前主题快照，供外层导航根据生效明暗更新图标。 */
+  hooks: { theme: HostObservable<ThemeSnapshot> }
+  /** 切换到指定的主题偏好。 */
+  setTheme: (id: 'light' | 'dark') => void
 }
 
 /** AppFrame 的框架派生 props。 */

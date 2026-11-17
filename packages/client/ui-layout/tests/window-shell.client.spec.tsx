@@ -8,6 +8,7 @@ import type { WindowShellProps } from 'coding-client-ui-layout/src/client/Window
 import { WindowShell } from 'coding-client-ui-layout/src/client/WindowShell.tsx'
 import { createLayoutStore } from 'coding-client-ui-layout/src/client/stores.ts'
 import { zh } from 'coding-client-ui-layout/src/client/locales.ts'
+import type { ThemeSnapshot } from 'coding-client-ui-theme/client'
 
 const lifecycle = vi.hoisted(() => ({ mount: vi.fn(), unmount: vi.fn() }))
 
@@ -28,12 +29,26 @@ afterEach(() => {
 
 function mountShell(current: SessionId | null = 'shell-session' as SessionId) {
   const instance = createLayoutStore().create()
+  let theme: ThemeSnapshot = {
+    preference: 'light',
+    active: { id: 'light', colorScheme: 'light', tokens: {} },
+    themes: [],
+    revision: 1,
+  }
+  const themeListeners = new Set<() => void>()
   const props = {
     actions: instance.actions,
     useStore: selector => selector(useSyncExternalStore(
       listener => instance.subscribe(listener), () => instance.getSnapshot(),
     )),
     useSessions: selector => selector({ current: current ?? undefined } as never),
+    useTheme: selector => selector(useSyncExternalStore(
+      (listener) => { themeListeners.add(listener); return () => { themeListeners.delete(listener) } }, () => theme,
+    )),
+    setTheme: (id: 'light' | 'dark') => {
+      theme = { ...theme, preference: id, active: { ...theme.active, id, colorScheme: id }, revision: theme.revision + 1 }
+      for (const listener of themeListeners) listener()
+    },
     t: key => (zh as Record<string, string>)[key] ?? key,
     renderSlot: (key, owner) => {
       if (key === 'shell.settings') return <button type="button" aria-label="设置" data-compact={'wide' in owner && !owner.wide} />
@@ -59,12 +74,12 @@ describe('窗口外壳', () => {
     // 中部入口排在主页图标之后；桌面开关与设置同在底部控件组。
     const labels = Array.from(view.getByRole('navigation').querySelectorAll('button'))
       .map(button => button.getAttribute('aria-label'))
-    expect(labels).toEqual(['回到对话', '画图', '收起侧边栏', '设置'])
-    expect(view.getByRole('button', { name: '收起侧边栏' }).parentElement?.parentElement?.nextElementSibling
+    expect(labels).toEqual(['回到对话', '画图', '收起侧边栏', '切换深色主题', '设置'])
+    expect(view.getByRole('button', { name: '收起侧边栏' }).parentElement?.parentElement?.parentElement
       ?.contains(view.getByRole('button', { name: '设置' }))).toBe(true)
     const draft = view.getByRole('textbox', { name: '对话草稿' }) as HTMLTextAreaElement
     fireEvent.change(draft, { target: { value: '保留这份草稿' } })
-    expect(view.getByRole('navigation').querySelectorAll('button')).toHaveLength(4)
+    expect(view.getByRole('navigation').querySelectorAll('button')).toHaveLength(5)
     act(() => { view.instance.actions.toggleSidebar() })
     expect(view.instance.getSnapshot().sidebar).toBe(0)
     expect(view.getByRole('button', { name: '设置' }).getAttribute('data-compact')).toBe('true')
@@ -76,12 +91,20 @@ describe('窗口外壳', () => {
     expect(lifecycle.unmount).not.toHaveBeenCalled()
   })
 
+  it('在外层导航底部切换亮暗主题并同步图标与文案', () => {
+    const view = mountShell()
+    const toggle = view.getByRole('button', { name: '切换深色主题' })
+    expect(toggle.getAttribute('aria-pressed')).toBe('false')
+    fireEvent.click(toggle)
+    expect(view.getByRole('button', { name: '切换浅色主题' }).getAttribute('aria-pressed')).toBe('true')
+  })
+
   it('内层窄屏展开时，外层导航入口不随内层侧栏变化', () => {
     const view = mountShell()
     const width = view.instance.getSnapshot().sidebar
     act(() => { view.instance.actions.setNarrow(true) })
     act(() => { view.instance.actions.toggleSidebar() })
-    expect(view.getByRole('navigation').querySelectorAll('button')).toHaveLength(4)
+    expect(view.getByRole('navigation').querySelectorAll('button')).toHaveLength(5)
     expect(view.instance.getSnapshot().sidebar).toBe(width)
     act(() => { view.instance.actions.toggleSidebar() })
     expect(view.instance.getSnapshot().narrowExpanded).toBe(false)

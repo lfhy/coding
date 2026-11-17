@@ -1,5 +1,13 @@
 /** 窗口级外壳包裹原布局；导航动作复用布局 store，不重建会话或工作台。 */
-import { Button, Icon, IconChevronLeftOutline14, IconChevronRightOutline14, Tooltip } from 'coding-client-ui-primitives'
+import {
+  Button,
+  Icon,
+  IconChevronLeftOutline14,
+  IconChevronRightOutline14,
+  IconDarkOutline16,
+  IconLightOutline16,
+  Tooltip,
+} from 'coding-client-ui-primitives'
 import type { PropsRenderSlots } from 'coding-client-ui-slots'
 import { AppFrame } from './AppFrame.tsx'
 import type { AppFrameProps } from './AppFrame.tsx'
@@ -20,6 +28,8 @@ export function WindowShell(props: WindowShellProps) {
   const conversationVisible = props.useStore(state => state.page === null)
   const returnToDifferentSession = props.useStore(state => state.page?.returnSessionId !== undefined)
   const sidebarCollapsed = props.useStore(state => state.narrow ? !state.narrowExpanded : state.sidebar === 0)
+  const themeScheme = props.useTheme(state => state.active.colorScheme)
+  const themeLabel = props.t(themeScheme === 'dark' ? 'shell.theme.light' : 'shell.theme.dark')
   const toggleLabel = props.t(sidebarCollapsed ? 'shell.sidebar.expand' : 'shell.sidebar.collapse')
 
   return (
@@ -46,7 +56,7 @@ export function WindowShell(props: WindowShellProps) {
             </Button>
           </span>
         </Tooltip>
-        {/* 中部入口自带紧凑图标按钮，与主页图标同列；底部设置仍贴住导航栏下沿。 */}
+        {/* 中部入口自带紧凑图标按钮，与主页图标同列；底部依次提供侧栏开关、主题切换和设置入口。 */}
         {props.renderSlot('shell.navigation.entry', {})}
         {/* 侧栏开关固定在导航列底部：既不压在交通灯上，收起后也不落进内容区；
             桌面端与普通 Web 共用这一枚，页内不再渲染第二枚。 */}
@@ -57,6 +67,17 @@ export function WindowShell(props: WindowShellProps) {
                 <Button className={css.sidebarToggleButton} aria-label={toggleLabel}
                   onClick={() => { props.actions.toggleSidebar() }}>
                   {sidebarCollapsed ? <IconChevronRightOutline14 size={18} /> : <IconChevronLeftOutline14 size={18} />}
+                </Button>
+              </span>
+            </Tooltip>
+          </div>
+          <div className={css.themeToggle}>
+            <Tooltip label={themeLabel} delayMs={500}>
+              <span className={css.themeToggleAnchor}>
+                <Button className={css.themeToggleButton} aria-label={themeLabel}
+                  aria-pressed={themeScheme === 'dark'}
+                  onClick={() => { props.setTheme(themeScheme === 'dark' ? 'light' : 'dark') }}>
+                  {themeScheme === 'dark' ? <IconLightOutline16 size={18} /> : <IconDarkOutline16 size={18} />}
                 </Button>
               </span>
             </Tooltip>

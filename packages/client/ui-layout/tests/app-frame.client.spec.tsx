@@ -25,6 +25,7 @@ import { LayoutController } from 'coding-client-ui-layout/src/client/service.ts'
 import type {
   SessionId, SessionListState, WorkspaceListState,
 } from 'coding-client-runtime/client'
+import type { ThemeSnapshot } from 'coding-client-ui-theme/client'
 
 // SessionProvider 与 useSessions stub 共用的会话选择状态。
 const selectedSession = { current: 's-test' as SessionId | undefined }
@@ -40,6 +41,8 @@ const layoutLabels: Record<string, string> = {
   'floating.dock.left': '左下角',
   'floating.dock.center': '底部居中',
   'floating.dock.right': '右下角',
+  'shell.theme.light': '切换浅色主题',
+  'shell.theme.dark': '切换深色主题',
 }
 
 // 生产环境由 renderer 注入；这里保留同一 render-prop 类型以校验 branded id。
@@ -167,6 +170,11 @@ function mountFrame(options: {
     baselinesReady: baselinesReady.current, recentWorkspaceId: undefined,
   }
   const workspaceKeyOf = (id: SessionId): string => id
+  const theme: ThemeSnapshot = {
+    preference: 'light', active: { id: 'light', colorScheme: 'light', tokens: {} }, themes: [], revision: 1,
+  }
+  const themeSource = { getSnapshot: () => theme, subscribe: () => () => {} }
+  const setTheme = vi.fn()
   const element = () => (
     <AppFrame
       useStore={hookOf(rawInstance)}
@@ -180,6 +188,8 @@ function mountFrame(options: {
       restoreConversation={restoreConversation}
       retainWorkbenchViews={retainWorkbenchViews}
       workspaceKeyOf={options.workspaceKeyOf ?? workspaceKeyOf}
+      useTheme={hookOf(themeSource)}
+      setTheme={setTheme}
       t={(key, params) => Object.entries(params ?? {}).reduce(
         (message, [name, value]) => message.replaceAll(`{${name}}`, String(value)),
         layoutLabels[key] ?? key,

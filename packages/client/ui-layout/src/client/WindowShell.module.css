@@ -28,20 +28,23 @@
 }
 
 /* 外层导航底部固定渲染整列唯一的侧栏开关；页内不再显示第二枚。 */
-.sidebarToggle {
+.sidebarToggle,
+.themeToggle {
   flex: 0 0 auto;
   width: 36px;
   height: 36px;
   -webkit-app-region: no-drag;
 }
 
-.sidebarToggleAnchor {
+.sidebarToggleAnchor,
+.themeToggleAnchor {
   display: grid;
   width: 36px;
   height: 36px;
 }
 
-.sidebarToggleButton {
+.sidebarToggleButton,
+.themeToggleButton {
   width: 36px;
   height: 36px;
   padding: 0;
@@ -50,8 +53,10 @@
   -webkit-app-region: no-drag;
 }
 
-.sidebarToggleButton:hover { background: var(--dsw-alias-interactive-bg-hover); }
-.sidebarToggleButton:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary); }
+.sidebarToggleButton:hover,
+.themeToggleButton:hover { background: var(--dsw-alias-interactive-bg-hover); }
+.sidebarToggleButton:focus-visible,
+.themeToggleButton:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary); }
 
 .navigation {
   grid-column: 1;
