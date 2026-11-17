@@ -140,7 +140,7 @@ describe('Host 窗口导航边界', () => {
     createHostWindow(origin, { devTools: true, iconPath })
     expect(electronMock.BrowserWindow.mock.calls[0]?.[0]).toMatchObject({
       titleBarStyle: 'hiddenInset',
-      trafficLightPosition: { x: 16, y: 15 },
+      trafficLightPosition: { x: 20, y: 18 },
       webPreferences: { devTools: true },
     })
     expect(electronMock.nativeImage.createFromPath).toHaveBeenCalledWith(expect.stringContaining('icon_512x512@2x.png'))
@@ -153,7 +153,7 @@ describe('Host 窗口导航边界', () => {
     // 侧栏开关已统一到外层导航底部，桌面壳不再注入页内开关的显隐变量。
     expect(fixture.webContents.insertCSS).toHaveBeenCalledWith(expect.not.stringContaining('--sidebar-inline-toggle'))
     // 导航列放宽到能连同交通灯一起被外框包住。
-    expect(fixture.webContents.insertCSS).toHaveBeenCalledWith(expect.stringContaining('--app-rail-inline-size: 68px;'))
+    expect(fixture.webContents.insertCSS).toHaveBeenCalledWith(expect.stringContaining('--app-rail-inline-size: 76px;'))
     expect(fixture.webContents.insertCSS).toHaveBeenCalledWith(expect.stringContaining('[data-window-drag-region] { -webkit-app-region: drag !important; }'))
     fixture.webContents.getURL.mockReturnValue('http://127.0.0.1:43124/')
     domReady()

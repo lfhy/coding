@@ -50,7 +50,7 @@ export function createHostWindow(origin: string, options: { devTools?: boolean; 
     minWidth: 720,
     minHeight: 480,
     backgroundColor: '#f5f5f7',
-    ...(isMacOS ? { titleBarStyle: 'hiddenInset' as const, trafficLightPosition: { x: 16, y: 15 } } : {}),
+    ...(isMacOS ? { titleBarStyle: 'hiddenInset' as const, trafficLightPosition: { x: 20, y: 18 } } : {}),
     ...(isWindows ? {
       titleBarStyle: 'hidden' as const,
       titleBarOverlay: { color: '#f5f5f7', symbolColor: '#303030', height: 40 },
@@ -112,8 +112,9 @@ export function createHostWindow(origin: string, options: { devTools?: boolean; 
     // 页面每次加载都恢复避让值：macOS 交通灯在左上，Windows caption 在右上。
     const top = isMacOS ? '38px' : '0px'
     const right = isWindows ? '138px' : '0px'
-    // 交通灯摆在 x=16 起、总宽约 52px 的位置：导航列要放宽到能连同它们一起被外框包住。
-    const rail = isMacOS ? '--app-rail-inline-size: 68px;' : ''
+    // 交通灯自 x=20 起、总宽约 52px：导航列取 76px，让灯组与卡片左右边框各留 12px；
+    // 灯顶 y=18 高出卡片 16px 圆角，整组按钮落在窄导航的直边之内，不会顶着圆角。
+    const rail = isMacOS ? '--app-rail-inline-size: 76px;' : ''
     const drag = isMacOS || isWindows
       ? '[data-window-drag-region] { -webkit-app-region: drag !important; }'
       : ''
