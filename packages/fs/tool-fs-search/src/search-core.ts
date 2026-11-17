@@ -413,21 +413,21 @@ export async function runRemoteSearch(
     requireRemoteWorkspaceCapability(workspace, 'search')
     let target = workspace
     if (input.path !== undefined) {
-      if (isRemoteAbsolutePath(input.path)) {
+      // 宿主占位路径先按本地语义解析：系统提示交给模型的工作区路径必须和远端绝对
+      // 路径等价，否则 glob／grep 会把占位路径当成远端主机上的另一个目录。
+      const mapped = await remoteWorkspacePath(input.path, cwd, exec.signal)
+      if (mapped !== undefined) {
+        if (mapped.markerRoot !== workspace.markerRoot || mapped.remoteRoot !== workspace.remoteRoot
+          || mapped.connectionId !== workspace.connectionId) {
+          throw new Error('search path is outside the remote workspace')
+        }
+        target = mapped
+      } else if (isRemoteAbsolutePath(input.path)) {
         // 绝对路径按远端路径解释：整台远端主机都可搜索。
         target = { ...workspace, remotePath: input.path }
       } else {
-        const mapped = await remoteWorkspacePath(input.path, cwd, exec.signal)
-        if (mapped !== undefined) {
-          if (mapped.markerRoot !== workspace.markerRoot || mapped.remoteRoot !== workspace.remoteRoot
-            || mapped.connectionId !== workspace.connectionId) {
-            throw new Error('search path is outside the remote workspace')
-          }
-          target = mapped
-        } else {
-          // 相对路径按远端根解析，允许越过根目录指向远端父目录。
-          target = { ...workspace, remotePath: resolveRemotePathAgainst(workspace.remoteRoot, input.path) }
-        }
+        // 相对路径按远端根解析，允许越过根目录指向远端父目录。
+        target = { ...workspace, remotePath: resolveRemotePathAgainst(workspace.remoteRoot, input.path) }
       }
     }
     // 解析参数路径期间 marker 可能被重绑；把根目录和连接身份交给 bridge 前必须

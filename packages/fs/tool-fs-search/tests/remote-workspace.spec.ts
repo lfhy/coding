@@ -176,6 +176,37 @@ describe('tool-fs-search Remote-SSH routing', () => {
     }
   })
 
+  it('maps the host placeholder path of the session workspace back onto the remote root', async () => {
+    const cwd = await marker()
+    const paths: unknown[] = []
+    await bridge((_path, body) => {
+      paths.push(body.path)
+      return { payload: { root: '/srv/project', paths: ['src/remote.ts'], truncated: false } }
+    })
+    const ctx = new Context()
+    try {
+      await ctx.plugin(SystemPrompt)
+      await ctx.plugin(ToolRuntime)
+      await ctx.plugin(NeverSpawnSubprocess)
+      await ctx.plugin(ToolFsSearch, { sampleOverCapGlobResults: true })
+
+      for (const path of [cwd, join(cwd, 'src')]) {
+        const result = await ctx.tools.execute({
+          signal: new AbortController().signal,
+          callId: CallId('remote-glob-placeholder'),
+          name: 'glob',
+          arguments: { pattern: '**/*.ts', path },
+          agent: { session: { header: { id: 'remote-search-session', cwd } } } as never,
+        })
+        expect(result.isError).toBe(false)
+      }
+
+      expect(paths).toEqual(['/srv/project', '/srv/project/src'])
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
   it('rejects an agent response that exceeds the requested raw-output budget', async () => {
     const cwd = await marker()
     await bridge(() => ({

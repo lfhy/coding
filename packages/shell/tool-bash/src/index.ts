@@ -29,6 +29,7 @@ import {
   remoteWorkspaceLocalPath,
   remoteWorkspacePathSync,
   RemoteWorkspaceError,
+  type RemoteWorkspacePath,
 } from 'coding-subprocess'
 import { processOutcome } from './background.ts'
 import { parseExitStatus, renderProcessRead, renderResult } from './render.ts'
@@ -161,7 +162,7 @@ function presentBashResult(args: unknown, result: ToolResult): ToolResultView | 
 
 /**
  * 先解析显式 workdir；相对路径以会话工作区为基准。沙箱策略已解析出的根目录优先，
- * 让工作目录与限制使用同一身份。Remote-SSH 会话的相对路径必须仍位于同一 marker，
+ * 让工作目录与限制使用同一身份。Remote-SSH 会话的路径必须仍属于同一 marker，
  * 不能借由本地路径逃出后回退到本机执行器。
  */
 function resolveWorkdir(
@@ -174,20 +175,59 @@ function resolveWorkdir(
   if (modelWorkdir === undefined) return sessionCwd
   const remote = sessionCwd === undefined ? undefined : remoteWorkspacePathSync('.', sessionCwd)
   if (remote !== undefined && sessionCwd !== undefined) {
-    if (isRemoteAbsolutePath(modelWorkdir)) return remoteWorkspaceLocalPath(remote, modelWorkdir)
-    if (!isAbsolute(modelWorkdir)) {
-      const localWorkdir = resolvePath(sessionCwd, modelWorkdir)
-      const resolvedRemote = remoteWorkspacePathSync(localWorkdir)
-      if (resolvedRemote?.markerRoot !== remote.markerRoot) {
-        throw new RemoteWorkspaceError('REMOTE_WORKSPACE_TARGET_INVALID', 'remote workspace path escapes its marker')
-      }
-      return localWorkdir
+    try {
+      return resolveRemoteWorkdir(remote, sessionCwd, modelWorkdir)
+    } catch (error: unknown) {
+      throw remoteWorkdirDiagnostic(remote, error)
     }
   }
   if (sessionCwd !== undefined && !isAbsolute(modelWorkdir)) {
     return resolvePath(sessionCwd, modelWorkdir)
   }
   return modelWorkdir
+}
+
+/**
+ * 远端会话的 workdir：宿主绝对路径先按本地语义解析，仍落在同一 marker 内时沿用占位
+ * 目录映射（与 fs 后端一致），因此模型抄回系统提示里的工作区路径不会被误判成远端路径；
+ * 其余绝对路径按远端路径解释，相对路径以会话工作区为基准，越出 marker 即失败。
+ * @param remote - 会话工作区对应的 marker。
+ * @param sessionCwd - 会话工作区占位路径。
+ * @param modelWorkdir - 模型给出的 workdir。
+ * @returns 交给执行器的本地占位路径；marker 由执行器再次识别并路由到远端。
+ */
+function resolveRemoteWorkdir(remote: RemoteWorkspacePath, sessionCwd: string, modelWorkdir: string): string {
+  if (isAbsolute(modelWorkdir)) {
+    const localAbsolute = remoteWorkspacePathSync(modelWorkdir)
+    if (localAbsolute !== undefined && sameRemoteWorkspace(localAbsolute, remote)) {
+      return remoteWorkspaceLocalPath(remote, localAbsolute.remotePath)
+    }
+  }
+  if (isRemoteAbsolutePath(modelWorkdir)) return remoteWorkspaceLocalPath(remote, modelWorkdir)
+  const localWorkdir = resolvePath(sessionCwd, modelWorkdir)
+  if (remoteWorkspacePathSync(localWorkdir)?.markerRoot !== remote.markerRoot) {
+    throw new RemoteWorkspaceError('REMOTE_WORKSPACE_TARGET_INVALID', 'remote workspace path escapes its marker')
+  }
+  return localWorkdir
+}
+
+/** 两次路径解析是否指向同一条远端工作区（同 marker 根、远端根、连接、generation 与模式）。 */
+function sameRemoteWorkspace(left: RemoteWorkspacePath, right: RemoteWorkspacePath): boolean {
+  return left.markerRoot === right.markerRoot && left.remoteRoot === right.remoteRoot
+    && left.connectionId === right.connectionId
+    && left.markerGeneration === right.markerGeneration
+    && left.mode === right.mode
+}
+
+/**
+ * 越界 workdir 的模型可读诊断：补上远端根目录，让模型改用远端路径或相对路径，
+ * 而不是反复重试宿主占位路径。其他错误维持原样。
+ */
+function remoteWorkdirDiagnostic(remote: RemoteWorkspacePath, error: unknown): unknown {
+  if (!(error instanceof RemoteWorkspaceError) || error.code !== 'REMOTE_WORKSPACE_TARGET_INVALID') return error
+  return new RemoteWorkspaceError('REMOTE_WORKSPACE_TARGET_INVALID',
+    `${error.message} — this session runs on a remote host, where its workspace root is ${remote.remoteRoot}; `
+    + 'pass a path under that root, a path inside the session workspace, or a relative path.')
 }
 
 /** Detach the executor DTO from readonly Service Definition types into plain JSON data. */

@@ -1412,6 +1412,67 @@ describe('the model-facing bash tool builds its request from named args only (no
   })
 
   it.each([
+    ['the marker root itself', ''],
+    ['a subdirectory of the marker root', 'src'],
+  ])('accepts %s as a remote workdir, the host path the system prompt hands the model', async (_label, suffix) => {
+    const markerRoot = mkdtempSync(join(tmpdir(), 'dsh-tool-bash-remote-marker-'))
+    writeFileSync(join(markerRoot, REMOTE_WORKSPACE_MARKER), JSON.stringify({
+      version: 2,
+      remoteRoot: '/srv/project',
+      connectionId: 'connection-1',
+      generation: 1,
+    }))
+    const { ctx, bash } = await setupRecording()
+    const owner = registerFakeAgent(ctx, 'request-remote-placeholder')
+    Object.assign(owner.session.header, { cwd: markerRoot })
+    try {
+      await ctx.tools.execute({
+        signal: testToolSignal,
+        callId: CallId(`remote-placeholder-${suffix}`),
+        name: 'bash',
+        arguments: {
+          command: 'pwd',
+          description: 'run inside the session workspace',
+          workdir: suffix === '' ? markerRoot : join(markerRoot, suffix),
+        },
+        agent: owner,
+      })
+      expect(bash.requests[0]?.workdir)
+        .toBe(suffix === '' ? realpathSync(markerRoot) : join(realpathSync(markerRoot), suffix))
+    } finally {
+      rmSync(markerRoot, { recursive: true, force: true })
+    }
+  })
+
+  it('names the remote workspace root when a remote workdir escapes its marker', async () => {
+    const markerRoot = mkdtempSync(join(tmpdir(), 'dsh-tool-bash-remote-marker-'))
+    writeFileSync(join(markerRoot, REMOTE_WORKSPACE_MARKER), JSON.stringify({
+      version: 2,
+      remoteRoot: '/srv/project',
+      connectionId: 'connection-1',
+      generation: 1,
+    }))
+    const { ctx, bash } = await setupRecording()
+    const owner = registerFakeAgent(ctx, 'request-remote-outside')
+    Object.assign(owner.session.header, { cwd: markerRoot })
+    try {
+      const result = await ctx.tools.execute({
+        signal: testToolSignal,
+        callId: CallId('remote-outside'),
+        name: 'bash',
+        arguments: { command: 'pwd', description: 'reject outside path', workdir: '/srv/other' },
+        agent: owner,
+      })
+      expect(result.isError).toBe(true)
+      expect(text(result)).toContain('remote workspace path escapes its marker')
+      expect(text(result)).toContain('/srv/project')
+      expect(bash.requests).toHaveLength(0)
+    } finally {
+      rmSync(markerRoot, { recursive: true, force: true })
+    }
+  })
+
+  it.each([
     ['..', false],
     ['..', true],
     ['../other', false],
