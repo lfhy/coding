@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-/** Hero 顶部入口与常驻编辑器的装配行为，不依赖工作区插件内部实现。 */
+/** Hero 开始方式与常驻编辑器的装配行为，不依赖工作区插件内部实现。 */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, waitFor } from '@testing-library/react'
 import { LocaleRuntime } from 'coding-client-locale/client'
@@ -89,15 +89,19 @@ async function bench(initial: 'work' | 'conversation' | 'none' | 'active' = 'wor
   return { runtime, view, layout, prompt, picker: () => picker! }
 }
 
-describe('新对话页面顶部入口', () => {
-  it('胶囊在页面顶部、问候和输入框之外，关联面板并保留右上面板动作', async () => {
+describe('新对话页面开始方式', () => {
+  it('胶囊紧随问候并在输入框之前，关联面板且保留右上面板动作', async () => {
     const b = await bench()
     const tabs = b.view.getByRole('tablist', { name: '开始方式' })
     const panel = b.view.getByRole('tabpanel')
+    const greeting = b.view.getByTestId('hero-greeting')
     const work = b.view.getByRole('tab', { name: '工作' })
-    expect(panel.contains(tabs)).toBe(false)
-    expect(tabs.closest('[data-phase]')).toBe(panel.parentElement)
+    const stack = greeting.parentElement?.parentElement
+    expect(panel.contains(tabs)).toBe(true)
+    expect(stack?.children[0]?.contains(greeting)).toBe(true)
+    expect(stack?.children[1]?.contains(tabs)).toBe(true)
     expect(panel.contains(b.view.getByRole('textbox'))).toBe(true)
+    expect(stack?.compareDocumentPosition(b.view.getByRole('textbox')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(panel.getAttribute('aria-labelledby')).toBe(work.id)
     expect(work.getAttribute('aria-controls')).toBe(panel.id)
     expect(work.getAttribute('aria-selected')).toBe('true')

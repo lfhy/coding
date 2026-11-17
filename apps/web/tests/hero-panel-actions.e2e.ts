@@ -31,6 +31,33 @@ describe('web e2e: no-session Hero panel actions', () => {
     await scaffold?.close()
   })
 
+  it('将开始方式放在问候与输入框之间，宽窄窗口均保持居中', async () => {
+    const hero = page.locator('[data-phase="hero"]')
+    const greeting = hero.getByTestId('hero-greeting')
+    const mode = hero.getByRole('tablist', { name: 'New conversation mode' })
+    const editor = hero.locator('textarea')
+    const geometry = async () => {
+      const [greetingBox, modeBox, editorBox] = await Promise.all([
+        greeting.boundingBox(), mode.boundingBox(), editor.boundingBox(),
+      ])
+      expect(greetingBox).not.toBeNull()
+      expect(modeBox).not.toBeNull()
+      expect(editorBox).not.toBeNull()
+      const modeCenter = modeBox!.x + modeBox!.width / 2
+      const editorCenter = editorBox!.x + editorBox!.width / 2
+      expect(greetingBox!.y + greetingBox!.height).toBeLessThan(modeBox!.y)
+      expect(modeBox!.y + modeBox!.height).toBeLessThan(editorBox!.y)
+      expect(Math.abs(modeCenter - editorCenter)).toBeLessThan(2)
+    }
+    await geometry()
+    await page.setViewportSize({ width: 768, height: 900 })
+    try {
+      await geometry()
+    } finally {
+      await page.setViewportSize({ width: 1680, height: 1000 })
+    }
+  })
+
   it('opens the feature menu first and keeps bottom and right panels independent', async () => {
     onTestFailed(async () => { await page.screenshot({ path: '/tmp/dsh-hero-panel-failed.png', fullPage: true }) })
     const sidebar = page.locator(SIDEBAR)

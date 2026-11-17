@@ -25,12 +25,8 @@
 }
 
 .heroMode {
-  position: absolute;
-  top: 12px;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 2;
-  max-width: calc(100% - 32px - var(--app-safe-area-inset-right, 0px));
+  display: flex;
+  justify-content: center;
   -webkit-app-region: no-drag;
 }
 
@@ -71,7 +67,6 @@
 }
 
 @media (max-width: 480px) {
-  .heroMode { top: 56px; }
   .heroActions { right: calc(12px + var(--app-safe-area-inset-right, 0px)); }
   :global([data-workbench-shown]) .heroActions { right: 12px; }
 }
