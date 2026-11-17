@@ -192,9 +192,9 @@ export async function findProjectRoot(
 ): Promise<string> {
   let current = resolve(cwd)
   for (;;) {
-    for (const marker of markers) {
-      if (await existsAsMarker(join(current, marker), fileSystem, signal)) return current
-    }
+    // 同一层的标记彼此独立：并发探测，远端工作区不必按「标记数 × 往返」串行等待。
+    const found = await Promise.all(markers.map(marker => existsAsMarker(join(current, marker), fileSystem, signal)))
+    if (found.includes(true)) return current
     const parent = dirname(current)
     if (parent === current) return resolve(cwd)
     current = parent
@@ -255,10 +255,14 @@ async function existingInstructionFiles(
   fileSystem?: FileSystem,
   signal?: AbortSignal,
 ): Promise<DiscoveredInstructionFile[]> {
-  const found: DiscoveredInstructionFile[] = []
-  for (const candidate of candidateNames) {
+  // 同级候选彼此独立：并发探测。远端工作区一次候选就是若干次往返，串行会让首轮
+  // 装配按候选数线性变慢；结果顺序仍由候选名顺序决定。
+  const probed = await Promise.all(candidateNames.map(async (candidate) => {
     const path = join(dir, candidate)
-    const probe = await statFile(path, fileSystem, signal)
+    return { path, probe: await statFile(path, fileSystem, signal) }
+  }))
+  const found: DiscoveredInstructionFile[] = []
+  for (const { path, probe } of probed) {
     switch (probe.kind) {
       case 'present':
         found.push({ absolutePath: path, displayPath: relativeDisplay(root, path), kind, ...probe.info })
@@ -311,7 +315,10 @@ async function discoverInstructionFiles(
   const cwd = resolve(options.cwd)
   const projectRoot = options.projectRoot
     ?? await findProjectRoot(cwd, config.projectRootMarkers, fileSystem, options.signal)
-  for (const dir of ancestorChain(projectRoot, cwd)) {
+  // 链上的目录彼此独立，因此整批并发探测；产物顺序仍按「目录（由宽到窄）、分组
+  // （简介→指令→本地覆盖）、候选名」排列，模型看到的优先级不变。
+  const directories = ancestorChain(projectRoot, cwd)
+  const probedDirectories = await Promise.all(directories.map(async (dir) => {
     // 项目简介只在项目根目录发现，并渲染在该目录指令之前：它是背景，基线溢出时
     // 共享预算最先丢弃最宽泛的一节。
     const groups: { candidateNames: readonly string[]; kind: InstructionKind }[] = [
@@ -321,18 +328,18 @@ async function discoverInstructionFiles(
       { candidateNames: config.instructionFileCandidates, kind: 'instructions' },
       { candidateNames: config.localInstructionFileCandidates, kind: 'instructions' },
     ]
-    for (const group of groups) {
-      for (const file of await existingInstructionFiles(
-        dir,
-        projectRoot,
-        group.candidateNames,
-        group.kind,
-        fileSystem,
-        options.signal,
-      )) {
-        addFile(file)
-      }
-    }
+    const perGroup = await Promise.all(groups.map(group => existingInstructionFiles(
+      dir,
+      projectRoot,
+      group.candidateNames,
+      group.kind,
+      fileSystem,
+      options.signal,
+    )))
+    return perGroup.flat()
+  }))
+  for (const found of probedDirectories) {
+    for (const file of found) addFile(file)
   }
   return files
 }

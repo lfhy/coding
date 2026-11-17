@@ -150,6 +150,24 @@ class RecordingFileSystem extends FileSystem {
   }
 }
 
+/** 记录 stat 并发度的替身：并发探测会叠加 in-flight，串行实现始终停在 1。 */
+class ConcurrencyTrackingFileSystem extends RecordingFileSystem {
+  inFlight = 0
+  maxInFlight = 0
+
+  override async stat(target: FsTarget, signal?: AbortSignal): Promise<FsInfo | undefined> {
+    this.inFlight++
+    this.maxInFlight = Math.max(this.maxInFlight, this.inFlight)
+    try {
+      // 让出一次宏任务：串行实现要等上一次结算才会发起下一次。
+      await new Promise<void>((settle) => { setTimeout(settle, 0) })
+      return await super.stat(target, signal)
+    } finally {
+      this.inFlight--
+    }
+  }
+}
+
 class BlockingReadFileSystem extends RecordingFileSystem {
   readonly started = Promise.withResolvers<undefined>()
 
@@ -304,6 +322,36 @@ describe('workspace context instruction discovery', () => {
       expect(files).toEqual([])
     } finally {
       await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  it('probes independent instruction candidates concurrently', async () => {
+    const root = join(await tempRepo(), 'virtual-repo')
+    const home = join(await tempRepo(), 'virtual-home')
+    const ctx = new Context()
+    try {
+      await ctx.plugin(ConcurrencyTrackingFileSystem)
+      const fs = ctx.fs as ConcurrencyTrackingFileSystem
+      fs.entries.set(join(root, '.git'), { type: 'directory' })
+      fs.entries.set(join(root, 'pkg'), { type: 'directory' })
+      fs.entries.set(join(root, 'AGENTS.md'), { type: 'file', content: 'repo rule' })
+      fs.entries.set(join(root, 'pkg', 'AGENTS.md'), { type: 'file', content: 'pkg rule' })
+      // 只留一组候选并固定为 4 个：并发度就只可能来自同一组的候选探测。
+      await ctx.plugin(workspaceContext, {
+        dshHome: home,
+        maxBytes: 65536,
+        instructionFileCandidates: ['AGENTS.md', 'CLAUDE.md', 'GEMINI.md', 'CODEX.md'],
+        localInstructionFileCandidates: [],
+      })
+
+      await composeBaselinePrefix(ctx, stubAgent(join(root, 'pkg')))
+
+      // 同一层的标记、同级候选与链上目录彼此独立，必须并发发出，而不是逐个等待往返。
+      expect(fs.maxInFlight).toBeGreaterThanOrEqual(4)
+    } finally {
+      await ctx.fiber.dispose()
+      await rm(dirname(root), { recursive: true, force: true })
+      await rm(dirname(home), { recursive: true, force: true })
     }
   })
 
