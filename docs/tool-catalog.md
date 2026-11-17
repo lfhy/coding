@@ -673,7 +673,7 @@ Source: [`packages/browser/tool-browser-ego/src/index.ts`](../packages/browser/t
 
 ### `browser_cli`
 
-Escape hatch: run an arbitrary `ego-browser nodejs` heredoc script verbatim (facades page/browser/taskSpaces/site/fetch and the raw cdp() are preloaded). Use when the structured browser_* tools do not cover the task. Returns raw stdout plus the parsed console.log payload when present.
+Escape hatch: run an arbitrary `ego-browser nodejs` heredoc script verbatim (facades page/browser/taskSpaces/site/fetch and the raw cdp() are preloaded). Use when the structured browser_* tools do not cover the task. Returns raw stdout plus the parsed console.log payload when present. Relative file paths inside the script belong to the Host process, not the session workspace: pass an absolute path for every file the script writes, and print what `page.screenshot(...)` returns — that value is the PNG’s absolute path.
 
 ```json
 {
@@ -803,7 +803,7 @@ Wait for a file download triggered by the current action, then return its saved 
     },
     "savePath": {
       "type": "string",
-      "description": "Optional absolute destination path to also copy the downloaded file to. Otherwise only the temp-captured path is returned."
+      "description": "Optional destination for the downloaded file, resolved inside the session workspace. Omit it to keep only the captured temporary file."
     },
     "timeout": {
       "type": "number",
@@ -1202,7 +1202,7 @@ Source: [`packages/browser/tool-browser-ego/src/index.ts`](../packages/browser/t
 
 ### `browser_screenshot`
 
-Capture a screenshot of the current page (or of a single element if selector is given). Returns the file path of the saved PNG, which you can then read with a vision/image tool.
+Capture a screenshot of the current page (or of a single element if selector is given). `path` is resolved inside the session workspace and must not exist yet; omit it to save a uniquely named PNG there. The result carries that PNG’s absolute path, and the image itself is part of this result.
 
 ```json
 {
@@ -1214,7 +1214,7 @@ Capture a screenshot of the current page (or of a single element if selector is 
     },
     "path": {
       "type": "string",
-      "description": "Optional absolute output path for the PNG."
+      "description": "Optional output path for the PNG, resolved inside the session workspace. Omit it to save a uniquely named file there; the result returns the absolute path."
     },
     "deliver": {
       "type": "boolean",
@@ -1232,7 +1232,7 @@ Source: [`packages/browser/tool-browser-ego/src/index.ts`](../packages/browser/t
 
 ### `browser_script`
 
-Run an arbitrary `ego-browser nodejs` heredoc script in ONE invocation (same runtime/API as browser_cli: page/…locator/browser/taskSpaces/site/fetch/cdp preloaded), and return structured {ok, stdout, stderr, result, durationMs, timedOut}. Use for a full multi-step browser task as a single script. NOTE: `page` is the ego runtime page facade, NOT Playwright — it has goto/reload/info/url/title/locator/getBy*/waitFor*/evaluate/screenshot/snapshot/drainEvents/keyboard/mouse but no fill/click/type/press; use browser_fill/browser_click or page.locator(...). page.goto() does not return a Playwright Response; get status via browser_wait_for_response or page.info().
+Run an arbitrary `ego-browser nodejs` heredoc script in ONE invocation (same runtime/API as browser_cli: page/…locator/browser/taskSpaces/site/fetch/cdp preloaded), and return structured {ok, stdout, stderr, result, durationMs, timedOut}. Use for a full multi-step browser task as a single script. NOTE: `page` is the ego runtime page facade, NOT Playwright — it has goto/reload/info/url/title/locator/getBy*/waitFor*/evaluate/screenshot/snapshot/drainEvents/keyboard/mouse but no fill/click/type/press; use browser_fill/browser_click or page.locator(...). page.goto() does not return a Playwright Response; get status via browser_wait_for_response or page.info(). Relative file paths inside the script belong to the Host process, not the session workspace: pass an absolute path for every file the script writes, and print what `page.screenshot(...)` returns — that value is the PNG’s absolute path.
 
 ```json
 {
@@ -1466,7 +1466,7 @@ Set files on a file <input> element (path-driven). Use to upload a dataset/attac
     },
     "path": {
       "type": "string",
-      "description": "Absolute path of the file(s) to upload on this machine."
+      "description": "Path of the file to upload. A relative path resolves inside the session workspace; an absolute path must stay there."
     },
     "space": {
       "type": "string",

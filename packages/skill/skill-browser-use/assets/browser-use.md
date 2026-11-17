@@ -53,19 +53,24 @@ Check a local development page, including a viewport-specific layout, in one cal
 
 ```text
 browser_navigate({url: "http://localhost:5173/"})
-browser_script({script: "await cdp('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 3, mobile: true })\nconst wide = await page.evaluate(() => document.body.scrollWidth)\nawait page.screenshot({ path: 'mobile.png' })\nawait cdp('Emulation.clearDeviceMetricsOverride')\nconsole.log('@@DSH_RESULT@@' + JSON.stringify({ wide }))"})
+browser_script({script: "await cdp('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 3, mobile: true })\nconst wide = await page.evaluate(() => document.body.scrollWidth)\nconst shot = await page.screenshot()\nawait cdp('Emulation.clearDeviceMetricsOverride')\nconsole.log('@@DSH_RESULT@@' + JSON.stringify({ wide, shot }))"})
 browser_page_info({})
 ```
+
+A script runs in the Host process, not in the session workspace: `page.screenshot()` without `path` returns the PNG's absolute path in the Host's temp directory, and a relative `path` lands beside the Host process rather than in your project. Print whatever it returns, or pass an absolute path the session may write — `browser_screenshot` is the tool that saves into the workspace for you.
 
 A device-metrics override belongs to that page in this Host's browser session, so it outlives the call: a later `browser_page_info({})` still reports the emulated size, and the right-sidebar picture keeps rendering at the narrow width. Always clear it in the same script once the measurement is taken, and let `browser_page_info({})` confirm the viewport is back before you report the layout result.
 
 Verify appearance with pixels, not the semantic tree:
 
 ```text
-browser_screenshot({path: "checkout.png"})
+browser_screenshot({})
+browser_screenshot({selector: "#checkout", path: "artifacts/checkout.png"})
 ```
 
-The tool writes a new PNG inside the session workspace and returns the image. Read the image before claiming the layout looks right; if saving or delivery fails, say visual verification was not possible. Saving is unavailable in read-only sessions, and every call still needs its own decision unless full access and the never-ask policy both apply.
+`path` is a workspace path — a relative name resolves inside the session workspace, and an absolute path must stay there. It has to name a file that does not exist yet, inside a directory that already exists. Omit `path` and the tool saves `browser-screenshot.png`, then `browser-screenshot-2.png`, and so on. Read the result's `path`: it is absolute, it is the file behind the returned image, and it stays readable afterwards.
+
+Read the image before claiming the layout looks right; if saving or delivery fails, say visual verification was not possible. A read-only session writes nothing into the workspace — the capture then only exists as the Host's temporary file — and every call still needs its own decision unless full access and the never-ask policy both apply.
 
 Hand a login, two-factor, or CAPTCHA challenge to the user:
 
@@ -89,7 +94,7 @@ browser_upload({selector: "input[type=file]", path: "fixtures/sample.csv"})
 browser_download({triggerSelector: "#export", savePath: "exports/report.csv"})
 ```
 
-Both are real tools: report a transfer only from their result, and only for paths the session permits. Upload reads an existing workspace file; download writes a new one.
+Both are real tools: report a transfer only from their result, and only for paths the session permits. The paths are workspace paths, like the screenshot `path`: upload reads an existing file, download writes one that must not exist yet with a directory that does.
 
 Keep tabs tidy when a task needs a second page:
 

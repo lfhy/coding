@@ -30,10 +30,13 @@ function fixture(name: string, parameters: Record<string, unknown> = {}): ToolDe
 }
 
 class FixtureHost extends Service {
+  /** 没有落点时模拟上游自己的临时文件，路径同样回给调用方。 */
+  private shots = 0
   readonly calls = vi.fn(async (name: string, args: Record<string, unknown>) => {
     if (name === 'ego_screenshot') {
-      await writeFile(args.path as string, PNG)
-      return { ok: true, path: args.path }
+      const path = typeof args.path === 'string' ? args.path : join(tmpdir(), `ego-shot-${++this.shots}.png`)
+      await writeFile(path, PNG)
+      return { ok: true, path }
     }
     return { ok: true, name, args }
   })
@@ -188,8 +191,9 @@ describe('Ego browser model tools', () => {
     expect(asked).not.toHaveBeenCalled()
     await rm(marker)
     removeAnswerer()
+    await writeFile(join(cwd, 'sample.txt'), 'hello')
     ctx.on('approval/request', async () => { await writeMarker(); return 'allowed-once' as const })
-    expect(content(await call('upload', { path: '/tmp/a.png' }))).toContain(refused)
+    expect(content(await call('upload', { path: 'sample.txt' }))).toContain(refused)
     expect(host.calls).not.toHaveBeenCalled()
   })
 
@@ -217,13 +221,16 @@ describe('Ego browser model tools', () => {
     expect(host.calls).not.toHaveBeenCalled()
   })
 
-  it('passes complete upstream arguments, including scripts and file paths, unchanged', async () => {
+  it('resolves upload and download paths inside the session workspace', async () => {
     const { call, host, cwd, ctx } = await setup([fixture('download'), fixture('upload'), fixture('script')])
     ctx.on('approval/request', async () => 'allowed-once' as const)
-    const savePath = join(await realpath(cwd), 'saved.zip')
+    const root = await realpath(cwd)
+    const savePath = join(root, 'saved.zip')
     expect((await call('download', { triggerScript: 'fetch("x")', savePath })).isError).toBe(false)
     expect(host.calls.mock.calls[0]?.[1]).toMatchObject({ triggerScript: 'fetch("x")', savePath })
-    expect((await call('upload', { selector: '#file', path: join(cwd, 'sample.txt') })).isError).toBe(false)
+    await writeFile(join(cwd, 'sample.txt'), 'hello')
+    expect((await call('upload', { selector: '#file', path: 'sample.txt' })).isError).toBe(false)
+    expect(host.calls.mock.calls[1]?.[1]).toMatchObject({ selector: '#file', path: join(root, 'sample.txt') })
     expect((await call('script', { code: 'await page.info()' })).isError).toBe(false)
     expect(host.calls).toHaveBeenCalledTimes(3)
   })
@@ -240,6 +247,75 @@ describe('Ego browser model tools', () => {
     expect(save).toHaveBeenCalledOnce()
     expect(await readFile(path)).toEqual(PNG)
     expect(host.calls.mock.calls[1]?.[1]).toMatchObject({ path })
+  })
+
+  it('writes a relative screenshot path into the session workspace and reports it absolute', async () => {
+    const { call, cwd } = await setup([fixture('screenshot')])
+    const root = await realpath(cwd)
+    const shot = await call('screenshot', { path: 'artifacts/preview-light.png' })
+    expect(content(shot)).toContain('output directory is unavailable')
+    const flat = await call('screenshot', { path: 'preview-light.png' })
+    expect(flat.isError).toBe(false)
+    expect(flat.value).toEqual({ ok: true, path: join(root, 'preview-light.png') })
+    expect(flat.content.map(block => block.type)).toEqual(['text', 'image'])
+    expect(await readFile(join(root, 'preview-light.png'))).toEqual(PNG)
+  })
+
+  it('saves each screenshot under a new workspace name when no path is given', async () => {
+    const { call, cwd, host } = await setup([fixture('screenshot')])
+    const root = await realpath(cwd)
+    const first = await call('screenshot', {})
+    const second = await call('screenshot', {})
+    expect(first.value).toEqual({ ok: true, path: join(root, 'browser-screenshot.png') })
+    expect(second.value).toEqual({ ok: true, path: join(root, 'browser-screenshot-2.png') })
+    expect(host.calls.mock.calls.map(([, args]) => args.path))
+      .toEqual([join(root, 'browser-screenshot.png'), join(root, 'browser-screenshot-2.png')])
+    expect(await readFile(join(root, 'browser-screenshot-2.png'))).toEqual(PNG)
+  })
+
+  it('refuses a screenshot path outside the workspace or onto an existing file', async () => {
+    const { call, cwd, host } = await setup([fixture('screenshot')])
+    expect(content(await call('screenshot', { path: join(tmpdir(), 'outside.png') })))
+      .toContain('output must remain inside the session workspace')
+    expect(content(await call('screenshot', { path: '../escape.png' })))
+      .toContain('output must remain inside the session workspace')
+    await writeFile(join(cwd, 'taken.png'), 'keep')
+    expect(content(await call('screenshot', { path: 'taken.png' }))).toContain('output file already exists')
+    expect(await readFile(join(cwd, 'taken.png'), 'utf8')).toBe('keep')
+    expect(host.calls).not.toHaveBeenCalled()
+  })
+
+  it('keeps the captured temp file in a read-only session and refuses a workspace path', async () => {
+    const { call, host, ctx } = await setup([fixture('screenshot')], 'read-only', 'ask')
+    const asked = vi.fn(async () => 'allowed-once' as const)
+    ctx.on('approval/request', asked)
+    expect(content(await call('screenshot', { path: 'preview.png' })))
+      .toContain('a read-only session cannot write files into the session workspace')
+    expect(asked).not.toHaveBeenCalled()
+    expect(host.calls).not.toHaveBeenCalled()
+    const shot = await call('screenshot', {})
+    expect(shot.isError).toBe(false)
+    expect(host.calls.mock.calls[0]?.[1]).toEqual({})
+    expect(shot.value).toMatchObject({ ok: true })
+  })
+
+  it('keeps an upstream screenshot failure instead of replacing it with an image error', async () => {
+    const { call, host } = await setup([fixture('screenshot')])
+    host.calls.mockResolvedValueOnce({ ok: false, error: 'capture budget exceeded' })
+    const result = await call('screenshot', { path: 'failed.png' })
+    expect(result.isError).toBe(false)
+    expect(content(result)).toContain('capture budget exceeded')
+    expect(result.content.map(block => block.type)).toEqual(['text'])
+  })
+
+  it('leaves file arguments to the Host when the session has no workspace', async () => {
+    const { call, session, host, cwd } = await setup([fixture('screenshot')])
+    delete (session.header as { cwd?: string }).cwd
+    const path = join(cwd, 'preview.png')
+    const shot = await call('screenshot', { path })
+    expect(shot.isError).toBe(false)
+    expect(host.calls.mock.calls[0]?.[1]).toEqual({ path })
+    expect(shot.content.map(block => block.type)).toEqual(['text', 'image'])
   })
 
   it('rejects an oversized structured result without truncating the output schema', async () => {

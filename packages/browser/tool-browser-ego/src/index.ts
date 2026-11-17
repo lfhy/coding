@@ -11,6 +11,7 @@ import type {} from 'coding-browser-ego-host'
 import type {} from 'coding-attachment'
 import type {} from 'coding-sandbox-policy'
 import type {} from 'coding-user-approval'
+import { newScreenshotPath, newWorkspacePath, screenshotPath, uploadPath } from './paths.ts'
 
 /** 插件名称。 */
 export const name = 'tool-browser-ego'
@@ -35,6 +36,23 @@ function renameDescription<T>(schema: T): T {
   ])) as T
 }
 
+/** 截图落点由本包决定，因此说明直接写清楚：路径相对工作区，结果回传绝对路径。 */
+const SCREENSHOT_DESCRIPTION = 'Capture a screenshot of the current page (or of a single element if selector is given). '
+  + '`path` is resolved inside the session workspace and must not exist yet; omit it to save a uniquely named PNG there. '
+  + 'The result carries that PNG’s absolute path, and the image itself is part of this result.'
+/** 脚本进程的工作目录不是会话工作区，模型必须自己把绝对路径写进脚本并打印返回值。 */
+const SCRIPT_PATH_NOTE = ' Relative file paths inside the script belong to the Host process, not the session workspace:'
+  + ' pass an absolute path for every file the script writes, and print what `page.screenshot(...)` returns —'
+  + ' that value is the PNG’s absolute path.'
+const FILE_PARAMETER_DESCRIPTIONS: Readonly<Record<string, string>> = {
+  'browser_screenshot.path': 'Optional output path for the PNG, resolved inside the session workspace.'
+    + ' Omit it to save a uniquely named file there; the result returns the absolute path.',
+  'browser_download.savePath': 'Optional destination for the downloaded file, resolved inside the session workspace.'
+    + ' Omit it to keep only the captured temporary file.',
+  'browser_upload.path': 'Path of the file to upload. A relative path resolves inside the session workspace;'
+    + ' an absolute path must stay there.',
+}
+
 /** 把上游的全局空间说明收敛为当前会话，不改实际参数与输出格式。 */
 function browserDescription(name: string, description: string): string {
   const text = description.replaceAll('ego_', 'browser_')
@@ -44,22 +62,32 @@ function browserDescription(name: string, description: string): string {
   if (name === 'browser_space_close') {
     return 'Close this session’s browser pages. Keep them open when you finish a task so you can continue later.'
   }
+  if (name === 'browser_screenshot') return SCREENSHOT_DESCRIPTION
+  if (name === 'browser_script' || name === 'browser_cli') return `${text}${SCRIPT_PATH_NOTE}`
   return text
 }
 
-/** schema 中的空间参数只接受当前会话；调用时留空或传旧别名均由宿主收敛。 */
+/** schema 中的空间参数只接受当前会话；文件路径说明改成工作区口径。 */
 function browserParameters(name: string, schema: Record<string, unknown>): Record<string, unknown> {
   const parameters = renameDescription(schema)
   if (!('properties' in parameters) || !parameters.properties || typeof parameters.properties !== 'object') return parameters
-  const properties = parameters.properties as Record<string, unknown>
+  const properties: Record<string, unknown> = { ...(parameters.properties as Record<string, unknown>) }
+  for (const [path, text] of Object.entries(FILE_PARAMETER_DESCRIPTIONS)) {
+    const [owner, property] = path.split('.') as [string, string]
+    const field = properties[property]
+    if (owner !== name || !field || typeof field !== 'object') continue
+    properties[property] = { ...field, description: text }
+  }
   const key = name === 'browser_space_open' || name === 'browser_space_close' ? 'name' : 'space'
   const field = properties[key]
-  if (!field || typeof field !== 'object') return parameters
-  return { ...parameters, properties: { ...properties, [key]: { ...field,
-    description: key === 'space'
-      ? 'Optional. Uses this session’s pages; other sessions’ pages are unavailable. Leave blank unless resuming an older call.'
-      : 'Use "default" to select this session’s browser pages; other sessions’ pages are unavailable.',
-  } } }
+  if (field && typeof field === 'object') {
+    properties[key] = { ...field,
+      description: key === 'space'
+        ? 'Optional. Uses this session’s pages; other sessions’ pages are unavailable. Leave blank unless resuming an older call.'
+        : 'Use "default" to select this session’s browser pages; other sessions’ pages are unavailable.',
+    }
+  }
+  return { ...parameters, properties }
 }
 
 function origin(value: unknown): string {
@@ -110,13 +138,14 @@ function failureDetail(error: unknown): string {
 
 /**
  * 远程工作区仍可使用浏览器：浏览器属于执行工具的那台 Host，与工作区内容无关。
- * 但上传、下载与本地 `file://` 文档都要读写 Host 自己的文件，这些入口按工作区拒绝，
- * 免得远程会话借此读写本机文件。
+ * 但上传、下载、带落点的截图与本地 `file://` 文档都要读写 Host 自己的文件，
+ * 这些入口按工作区拒绝，免得远程会话借此读写本机文件。
  */
 async function checkLocalFiles(cwd: string | undefined, name: string, args: Record<string, unknown>,
   signal: AbortSignal): Promise<void> {
   signal.throwIfAborted()
-  const localFile = name === 'browser_upload' || name === 'browser_download'
+  const screenshotFile = name === 'browser_screenshot' && typeof args.path === 'string' && args.path !== ''
+  const localFile = name === 'browser_upload' || name === 'browser_download' || screenshotFile
     || (name === 'browser_navigate' && typeof args.url === 'string' && /^file:/iu.test(args.url))
   if (!localFile || cwd === undefined) return
   if (await remoteWorkspacePath('.', cwd, signal) !== undefined) {
@@ -125,11 +154,66 @@ async function checkLocalFiles(cwd: string | undefined, name: string, args: Reco
   signal.throwIfAborted()
 }
 
-/** 只把本次截图读取为模型图片；路径与大小由上游与附件服务各自校验。 */
-async function persistScreenshot(ctx: Context, value: unknown, signal: AbortSignal): Promise<ContentBlock | null> {
-  if (value === null || typeof value !== 'object') return null
-  const path = (value as { path?: unknown }).path
-  if (typeof path !== 'string') return null
+/**
+ * 模型看不到 Host 进程的当前目录，因此文件参数一律以会话工作区为基准：
+ * 上传读工作区里已有的文件，截图与下载写工作区内尚不存在的新文件。
+ *
+ * 改写后的绝对路径会随结果回到模型，模型下一次直接读它即可，不必猜截图落在哪；
+ * 只读会话不能把浏览器产物写进工作区，此时带显式路径的调用直接拒绝。
+ * 上传、下载与带路径的截图已先由 {@link checkLocalFiles} 挡在远程工作区之外。
+ * 没有工作区路径的会话不做改写：没有可锚定的目录，保持上游原有语义。
+ * @param options 调用会话、工具名、原始参数、有效沙箱模式与取消信号。
+ * @returns 交给宿主执行的参数，以及本包授权的截图落点（没有落定时省略）。
+ */
+async function localizeFileArgs(options: {
+  readonly cwd: string | undefined
+  readonly name: string
+  readonly args: Record<string, unknown>
+  readonly mode: string | undefined
+  readonly signal: AbortSignal
+}): Promise<{ args: Record<string, unknown>; expected?: string }> {
+  const { cwd, name, args, mode, signal } = options
+  signal.throwIfAborted()
+  if (cwd === undefined) return { args }
+  if (name === 'browser_upload') {
+    if (typeof args.path !== 'string' || args.path === '') return { args }
+    return { args: { ...args, path: await uploadPath(cwd, args.path, signal) } }
+  }
+  const key = name === 'browser_screenshot' ? 'path' : name === 'browser_download' ? 'savePath' : undefined
+  if (key === undefined) return { args }
+  const requested = typeof args[key] === 'string' && args[key] !== '' ? args[key] : undefined
+  if (mode === 'read-only') {
+    if (requested === undefined) return { args }
+    throw new Error(`${name}: a read-only session cannot write files into the session workspace`)
+  }
+  const target = requested !== undefined
+    ? await newWorkspacePath(cwd, requested, name, signal)
+    // 下载没有显式落点时保持上游的临时文件；截图的默认落点在工作区里。
+    : name === 'browser_screenshot' ? await newScreenshotPath(cwd, signal) : undefined
+  if (target === undefined) return { args }
+  return { args: { ...args, [key]: target }, ...name === 'browser_screenshot' ? { expected: target } : {} }
+}
+
+/**
+ * 只把本次截图读取为模型图片。
+ *
+ * 指定了落点时先核对提供方写的正是这个文件（否则可能读到别的本机文件），
+ * 没指定时接受提供方自己报告的临时路径；大小与格式由附件服务复核。
+ * 上游报告失败时没有图片可读，保留它自己的诊断。
+ * @param ctx 提供持久附件服务的上下文。
+ * @param value 上游截图结果。
+ * @param expected 本次授权的绝对落点；省略路径且没有默认落点时为 undefined。
+ * @param signal 调用取消信号。
+ * @returns 模型图片块与它对应的绝对路径；截图不可读时为 null。
+ */
+async function persistScreenshot(ctx: Context, value: unknown, expected: string | undefined,
+  signal: AbortSignal): Promise<{ path: string; image: ContentBlock } | null> {
+  if (value === null || typeof value !== 'object' || (value as { ok?: unknown }).ok === false) return null
+  const reported = (value as { path?: unknown }).path
+  let path: string
+  if (expected !== undefined) path = await screenshotPath(expected, reported, signal)
+  else if (typeof reported === 'string') path = reported
+  else return null
   signal.throwIfAborted()
   let info
   try { info = await stat(path) } catch { return null }
@@ -138,7 +222,7 @@ async function persistScreenshot(ctx: Context, value: unknown, signal: AbortSign
   try { data = await readFile(path) } catch { return null }
   signal.throwIfAborted()
   const attachment = await ctx.attachments.saveImage({ data, mediaType: 'image/png', name: 'browser-screenshot.png' })
-  return { type: 'image', attachment }
+  return { path, image: { type: 'image', attachment } }
 }
 
 async function run(ctx: Context, source: ToolDefinition, name: string, input: unknown, exec: ToolRunContext,
@@ -152,6 +236,8 @@ async function run(ctx: Context, source: ToolDefinition, name: string, input: un
   await checkLocalFiles(cwd, name, args, exec.signal)
   const policy = policyOf(approval, agent.session)
   const mode = ctx.get('sandboxPolicy')?.resolve({ session: agent.session }).mode
+  // 文件参数在审批前落到工作区：路径不合规不该先弹一次审批。
+  const localized = await localizeFileArgs({ cwd, name, args, mode, signal: exec.signal })
   if (!(mode === 'danger-full-access' && policy === 'never')) {
     const outcome = await approval.request({ agent, toolName: name, callId: exec.callId,
       reason: reason(name, args), signal: exec.signal })
@@ -159,13 +245,13 @@ async function run(ctx: Context, source: ToolDefinition, name: string, input: un
     if (outcome !== 'allowed-once') throw new Error(`${name}: approval ${outcome}`)
   }
   // 审批期间工作区可能被切到远程，因此放行前后各查一次同样的文件边界。
-  await checkLocalFiles(cwd, name, args, exec.signal)
+  await checkLocalFiles(cwd, name, localized.args, exec.signal)
   const liveMode = ctx.get('sandboxPolicy')?.resolve({ session: agent.session }).mode
   if (liveMode !== mode || policyOf(approval, agent.session) !== policy) {
     throw new Error(`${name}: session permissions changed while awaiting approval`)
   }
   let value: unknown
-  try { value = await source.execute(args, exec) } catch (error) {
+  try { value = await source.execute(localized.args, exec) } catch (error) {
     exec.signal.throwIfAborted()
     const detail = failureDetail(error)
     const isSpaceError = detail.includes('another task space is not available')
@@ -176,9 +262,8 @@ async function run(ctx: Context, source: ToolDefinition, name: string, input: un
   }
   bounded(value, name)
   if (name === 'browser_screenshot') {
-    const image = await persistScreenshot(ctx, value, exec.signal)
-    const path = value !== null && typeof value === 'object' ? (value as { path?: unknown }).path : undefined
-    if (image !== null && typeof path === 'string') imageForPath.set(path, image)
+    const shot = await persistScreenshot(ctx, value, localized.expected, exec.signal)
+    if (shot !== null) imageForPath.set(shot.path, shot.image)
   }
   return value
 }

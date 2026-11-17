@@ -4,6 +4,9 @@ import { realpath, lstat } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, relative, resolve, sep } from 'node:path'
 
 const MAX_PATH_CHARS = 1024
+/** 省略路径时的截图文件名；已存在就依次尝试 `browser-screenshot-2.png` 等。 */
+const SCREENSHOT_NAME = 'browser-screenshot.png'
+const MAX_SCREENSHOT_ATTEMPTS = 50
 
 function inside(root: string, target: string): boolean {
   const path = relative(root, target)
@@ -82,6 +85,39 @@ export async function newWorkspacePath(cwd: string | undefined, input: unknown, 
   }
   signal.throwIfAborted()
   return target
+}
+
+/**
+ * 省略截图路径时的工作区默认落点：`browser-screenshot.png`，重名时依次试
+ * `browser-screenshot-2.png` 等，不覆盖工作区里已有的文件。
+ *
+ * 与 `newWorkspacePath` 的区别只在重名处理——名字由本模块生成，因此不需要把
+ * “文件已存在”当成模型错误；尝试次数用尽或工作区不可用时返回 `undefined`，
+ * 调用方退回提供方自己的临时文件，而不是让整次截图失败。
+ * @param cwd 会话工作区根。
+ * @param signal 调用取消信号。
+ * @returns 工作区内尚不存在的绝对路径；取不到默认落点时为 undefined。
+ */
+export async function newScreenshotPath(cwd: string | undefined, signal: AbortSignal): Promise<string | undefined> {
+  signal.throwIfAborted()
+  let root: string
+  try {
+    root = await workspaceRoot(cwd, 'browser_screenshot', signal)
+  } catch {
+    // 取消也走这条路径，先按信号重新抛出，别把取消当“没有默认落点”。
+    signal.throwIfAborted()
+    return undefined
+  }
+  for (let index = 1; index <= MAX_SCREENSHOT_ATTEMPTS; index += 1) {
+    signal.throwIfAborted()
+    const target = resolve(root, index === 1 ? SCREENSHOT_NAME : `browser-screenshot-${index}.png`)
+    try {
+      await lstat(target)
+    } catch (error) {
+      return (error as NodeJS.ErrnoException).code === 'ENOENT' ? target : undefined
+    }
+  }
+  return undefined
 }
 
 /**
