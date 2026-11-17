@@ -96,6 +96,7 @@ describe('LocalBashExecutor.run', () => {
       const spawn = vi.spyOn(ctx.subprocess, 'spawn')
       const logged = vi.spyOn(console, 'log').mockImplementation(() => {})
       const errors = vi.spyOn(console, 'error').mockImplementation(() => {})
+      process.env.CODING_TEST_HOST_ONLY = 'host-value'
       let result: Awaited<ReturnType<typeof bash.run>>
       try {
         result = await bash.run(bash.resolve({
@@ -105,6 +106,7 @@ describe('LocalBashExecutor.run', () => {
         }))
         expect(JSON.stringify([logged.mock.calls, errors.mock.calls])).not.toContain('test-secret')
       } finally {
+        delete process.env.CODING_TEST_HOST_ONLY
         logged.mockRestore()
         errors.mockRestore()
       }
@@ -117,6 +119,12 @@ describe('LocalBashExecutor.run', () => {
       } })
       expect(received[0]?.url).not.toContain('test-secret')
       expect(received[0]?.url).not.toContain('DSH_MANAGED')
+      // 宿主环境不跨机器转发：远端用它自己的登录环境，宿主 HOME／PATH／缓存目录
+      // 过去会让远端构建找不到缓存甚至去联网下载。
+      const forwarded = received[0]?.body.env as Record<string, string>
+      expect(forwarded.CODING_TEST_HOST_ONLY).toBeUndefined()
+      expect(forwarded.PATH).toBeUndefined()
+      expect(forwarded.HOME).toBeUndefined()
       expect(result).toMatchObject({
         exitCode: 0, signal: null, timedOut: false, aborted: false,
         stdout: { text: 'bcdef', truncated: true }, stderr: { text: 'wxyz', truncated: true },
@@ -229,11 +237,15 @@ describe('LocalBashExecutor.run', () => {
     })
   })
 
-  it('treats timed-out SSH exec and cancelled transport as unknown remote process state', async () => {
+  it('settles a timed-out SSH exec as a timeout result and a cancelled transport as an error', async () => {
+    // 服务端到期是一次「已超时」的结算：部分输出保留，工具层照常显示 [timed out]。
     await withBasicBridge(() => ({ body: execResponse({ exitCode: null, timedOut: true }) }), async (markerRoot) => {
       const { bash } = await setup()
-      await expect(bash.run(bash.resolve({ command: 'sleep 60', workdir: markerRoot })))
-        .rejects.toThrow(/remote process status is unknown/)
+      const timedOut = await bash.run(bash.resolve({ command: 'sleep 60', workdir: markerRoot }))
+      expect(timedOut).toMatchObject({ timedOut: true, exitCode: null, aborted: false, timeoutMs: 120_000 })
+      // 已经收到的输出不会被一次超时丢掉。
+      expect(timedOut.stdout.text).toBe('remote output\n')
+      expect(timedOut.stderr.text).toContain('may still be running')
     })
     let started!: () => void
     const dispatched = new Promise<void>((resolve) => { started = resolve })

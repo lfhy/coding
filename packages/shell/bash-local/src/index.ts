@@ -15,7 +15,6 @@ import {
   RemoteWorkspaceError,
   requireRemoteWorkspaceCapability,
   remoteWorkspacePathSync,
-  scrubbedParentEnv,
   verifyRemoteWorkspaceTarget,
 } from 'coding-subprocess'
 import type {
@@ -368,7 +367,10 @@ export class LocalBashExecutor extends ShellExecutor {
         command: spec.command,
         timeoutMs: spec.timeoutMs,
         ...spec.stdin === undefined ? {} : { stdin: spec.stdin },
-        env: { ...scrubbedParentEnv(), ...ENV_OVERRIDES, ...spec.env, ...spec.dshEnv },
+        // 远端执行世界有自己的登录环境：宿主的 HOME／PATH／GOMODCACHE／TMPDIR 属于
+        // 另一台机器，转发过去会让远端构建找不到自己的缓存甚至去联网下载。这里只带
+        // 执行器的固定覆盖、调用方显式 env 与托管 DSH 事实，其余由 SSH 服务端提供。
+        env: { ...ENV_OVERRIDES, ...spec.env, ...spec.dshEnv },
       }, parseDirectExecResponse, transport.signal)
     } catch (error: unknown) {
       if (transport.signal.aborted) {
@@ -377,7 +379,20 @@ export class LocalBashExecutor extends ShellExecutor {
       throw error
     }
     if (response.timedOut) {
-      throw new RemoteWorkspaceError('REMOTE_BRIDGE_ABORTED', 'remote SSH exec timed out; remote process status is unknown')
+      // 一次性 SSH exec 没有可终止的远端进程树，但输出已经收在桥接器那边。超时按
+      // 普通结果返回，工具层因而像本机一样显示 [timed out] 与已收到的输出；远端进程
+      // 可能仍在跑这件事写在 stderr 里，不把整段输出换成一条错误。
+      const stderr = directOutput(response.stderr, response.stderrTruncated, this.config.maxOutputBytes)
+      const caution = '[remote SSH exec timed out; the remote process may still be running]'
+      return {
+        exitCode: response.exitCode ?? null,
+        signal: response.signal ?? null,
+        timedOut: true,
+        aborted: false,
+        timeoutMs: spec.timeoutMs,
+        stdout: directOutput(response.stdout, response.stdoutTruncated, spec.stdoutMaxBytes),
+        stderr: { ...stderr, text: stderr.text === '' ? caution : `${stderr.text.replace(/\n+$/u, '')}\n${caution}` },
+      }
     }
     return {
       exitCode: response.exitCode,
