@@ -1,8 +1,33 @@
 import { existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import { app, BrowserWindow, dialog, nativeImage } from 'electron'
+import { app, BrowserWindow, dialog, nativeImage, screen } from 'electron'
 
 const preloadPath = fileURLToPath(new URL('./preload.cjs', import.meta.url))
+
+/** 显示器完整边界，字段与 Electron `Display.bounds`／`workArea` 一致。 */
+export interface DisplayRect {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+/**
+ * 计算铺满显示器的初始窗口边界。
+ *
+ * macOS 的 `maximize()` 取屏幕「可用区域」：侧边 Dock（即便设成自动隐藏）照样让出约 47px，
+ * 于是最大化后右侧露出一条桌面。这里在屏幕两侧被让出时改用整屏宽度，
+ * 同时保留菜单栏高度与工作区底边；系统 Dock 始终绘制在窗口之上，不会被盖住。
+ * @param bounds 显示器完整边界。
+ * @param workArea 扣除菜单栏与 Dock 后的可用区域。
+ * @param platform 运行平台，只有 macOS 走这套边界。
+ * @returns 目标边界；返回 null 表示交给系统 `maximize()`（底部 Dock 或非 macOS）。
+ */
+export function fillBounds(bounds: DisplayRect, workArea: DisplayRect, platform: NodeJS.Platform): DisplayRect | null {
+  if (platform !== 'darwin') return null
+  if (workArea.width >= bounds.width) return null
+  return { x: bounds.x, y: workArea.y, width: bounds.width, height: workArea.height }
+}
 
 function validHostOrigin(origin: string): boolean {
   const match = /^http:\/\/127\.0\.0\.1:([1-9]\d{0,4})$/.exec(origin)
@@ -65,7 +90,11 @@ export function createHostWindow(origin: string, options: { devTools?: boolean; 
       preload: preloadPath,
     },
   })
-  window.maximize()
+  // 侧边 Dock 会让 macOS 的可用区域窄一条，直接取整屏宽度铺满；其余情况仍用系统最大化。
+  const display = screen.getDisplayMatching(window.getBounds())
+  const target = fillBounds(display.bounds, display.workArea, process.platform)
+  if (target === null) window.maximize()
+  else window.setBounds(target)
 
   // 权限属于 session；这个最小窗口不授予任何站点原生权限。
   window.webContents.session.setPermissionRequestHandler((_contents, _permission, callback) => {

@@ -9,11 +9,17 @@ const electronMock = vi.hoisted(() => ({
   app: { dock: { setIcon: vi.fn<(image: unknown) => void>() } },
   dialog: { showErrorBox: vi.fn<(title: string, message: string) => void>() },
   nativeImage: { createFromPath: vi.fn((_path: string) => ({ isEmpty: () => false })) },
+  screen: {
+    getDisplayMatching: vi.fn((_rect: unknown) => ({
+      bounds: { x: 0, y: 0, width: 1920, height: 1080 },
+      workArea: { x: 0, y: 30, width: 1920, height: 1050 },
+    })),
+  },
 }))
 
 vi.mock('electron', () => electronMock)
 
-import { createHostWindow, isAllowedHostNavigation } from '../src/window.ts'
+import { createHostWindow, fillBounds, isAllowedHostNavigation } from '../src/window.ts'
 
 const origin = 'http://127.0.0.1:43123'
 
@@ -39,6 +45,8 @@ function fakeWindow() {
     webContents,
     loadURL: vi.fn(async () => undefined),
     maximize: vi.fn(),
+    setBounds: vi.fn(),
+    getBounds: vi.fn(() => ({ x: 320, y: 140, width: 1280, height: 860 })),
     on: vi.fn((name: string, listener: (...args: unknown[]) => void) => {
       windowListeners.set(name, listener)
     }),
@@ -58,6 +66,26 @@ function navigationPrevented(listener: (...args: unknown[]) => void, target: str
 function emitLoadFailure(fixture: ReturnType<typeof fakeWindow>, errorCode: number, isMainFrame: boolean): void {
   fixture.listeners.get('did-fail-load')!({}, errorCode, 'secret error description', `${origin}/?secret=private`, isMainFrame, 1, 1)
 }
+
+describe('Host 窗口初始边界', () => {
+  const screen = { x: 0, y: 0, width: 1920, height: 1080 }
+  const menuOnly = { x: 0, y: 30, width: 1920, height: 1050 }
+  const rightDock = { x: 0, y: 30, width: 1873, height: 1050 }
+
+  it('macOS 侧边 Dock 让出的宽度被铺满，菜单栏高度与底边保持系统值', () => {
+    expect(fillBounds(screen, rightDock, 'darwin')).toEqual({ x: 0, y: 30, width: 1920, height: 1050 })
+    // 左右任一侧让位都同样铺满整屏宽度。
+    expect(fillBounds(screen, { x: 47, y: 30, width: 1873, height: 1050 }, 'darwin'))
+      .toEqual({ x: 0, y: 30, width: 1920, height: 1050 })
+  })
+
+  it('底部 Dock 与非 macOS 仍交给系统最大化', () => {
+    expect(fillBounds(screen, { x: 0, y: 30, width: 1920, height: 1000 }, 'darwin')).toBeNull()
+    expect(fillBounds(screen, menuOnly, 'darwin')).toBeNull()
+    expect(fillBounds(screen, rightDock, 'win32')).toBeNull()
+    expect(fillBounds(screen, rightDock, 'linux')).toBeNull()
+  })
+})
 
 describe('Host 窗口导航边界', () => {
   beforeEach(() => vi.clearAllMocks())
