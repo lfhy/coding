@@ -28,8 +28,9 @@ describe('AppFrame titlebar hit regions', () => {
   it('侧栏开关只在外层导航底部渲染，所有端与页内都不再出第二枚', () => {
     // 外层：固定显示，不靠平台变量开关。
     expect(shellCss).toMatch(/\.footer\s*\{[^}]*margin-top:\s*auto;/u)
-    expect(shellCss).toMatch(/\.sidebarToggle\s*\{[^}]*-webkit-app-region:\s*no-drag;/u)
-    expect(shellCss).not.toMatch(/\.sidebarToggle\s*\{[^}]*display:\s*none;/u)
+    // 开关与主题按钮共用一个规则块，选择器列表里出现 `.sidebarToggle` 即可。
+    expect(shellCss).toMatch(/\.sidebarToggle[^{}]*\{[^}]*-webkit-app-region:\s*no-drag;/u)
+    expect(shellCss).not.toMatch(/\.sidebarToggle[^{}]*\{[^}]*display:\s*none;/u)
     expect(shellCss).not.toContain('--desktop-sidebar-toggle')
     // 页内：对话区头、侧栏图标轨、页内侧栏都没有开关样式。
     for (const source of [conversationCss, railCss, pageCss]) {

@@ -1,7 +1,8 @@
 // Web e2e scenario for the opt-in Cordis tools. Record mode drives a real
 // model through inspect, define, run, and stop; replay pins the same shipped Web
-// composition, durable calls, Cordis-owned rows, the define card's own source view,
-// and conversation accessibility tree.
+// composition, durable calls, and Cordis-owned rows with the define card's own
+// source view. The full-page aria golden moved out: it pinned unrelated product UI
+// (session overview, skill injections, tool titles) into this scenario's contract.
 //
 // The approval is never in the fixture. The fixture pins what the MODEL said;
 // tools execute for real, and this test answers the approval before starting the
@@ -15,13 +16,12 @@ import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
 import type { SessionEvent } from 'coding-session'
 import {
-  captureStableAria, compareOrRefreshGolden, fixtureUserPrompts,
-  launchWebScaffold, recordFixture, watchConsole, webSnapshotMode, type WebScaffold,
+  fixtureUserPrompts, launchWebScaffold, recordFixture, watchConsole, webSnapshotMode,
+  type WebScaffold,
 } from './scaffold.ts'
 import { connectFreshWorkspace, newEnglishPage, saveFailureShot } from './support.ts'
 
 const FIXTURE = fileURLToPath(new URL('./snapshots/cordis-tool-round/session.jsonl', import.meta.url))
-const UI_EXPECTED = fileURLToPath(new URL('./snapshots/cordis-tool-round/ui.expected.md', import.meta.url))
 const MODE = webSnapshotMode()
 const CORDIS_TOOLS = ['cordis_inspect_self', 'cordis_define', 'cordis_run', 'cordis_stop'] as const
 const PACKAGE_CODE = 'return { name: "snapshot-noop", apply(ctx) {} }'
@@ -139,7 +139,9 @@ describe('web e2e: Cordis tools use their owned cards', () => {
     await expect.poll(() => page.getByText('CORDIS_UI_DONE', { exact: true }).count(), { timeout: 15_000 })
       .toBeGreaterThanOrEqual(1)
 
-    const inspectRow = page.locator('[data-tool="cordis_inspect_self"]').filter({ hasText: 'Inspect' }).first()
+    // cordis_inspect_self 走通用工具行，标题取自工具动作标题（随文档语言变化），
+    // 因此只按工具名定位。
+    const inspectRow = page.locator('[data-tool="cordis_inspect_self"]').first()
     await inspectRow.waitFor({ timeout: 10_000 })
 
     // cordis_define does NOT go through the generic row: ui-cordis registers a
@@ -154,28 +156,16 @@ describe('web e2e: Cordis tools use their owned cards', () => {
     await defineRow.getByRole('tab', { name: 'Host' }).click()
     await expect.poll(() => defineRow.textContent()).toContain(PACKAGE_CODE)
 
+    // 运行卡片以自己的标题加包名呈现；插件 id 不再写进卡片正文。
     const runRow = page.locator('[data-tool="cordis_run"]').filter({ hasText: 'Run Cordis Plugin' }).first()
     await runRow.waitFor({ timeout: 10_000 })
-    await expect.poll(() => runRow.textContent()).toContain('snap-')
+    await expect.poll(() => runRow.textContent()).toContain('snapshot noop')
 
     const stopRow = page.locator('[data-tool="cordis_stop"]').filter({ hasText: 'Stop Cordis Plugin' }).first()
     await stopRow.waitFor({ timeout: 10_000 })
-    await expect.poll(() => stopRow.textContent()).toContain('snap-')
     await expect(stopRow.getAttribute('data-state')).resolves.toBe('ok')
     // Stopping withdraws the browser half from every page, probe included.
     await expect.poll(() => page.locator('[data-snapshot-probe]').count(), { timeout: 15_000 }).toBe(0)
-  })
-
-  it.skipIf(MODE === 'record')('matches the conversation aria golden', async () => {
-    onTestFailed(() => saveFailureShot(page, 'web-e2e-cordis-aria'))
-    await page.locator('[data-conversation-scroll]').evaluate((host) => { host.scrollTop = host.scrollHeight })
-    await expect.poll(
-      async () => page.getByRole('button', { name: 'Back to bottom', exact: true }).count(),
-      { timeout: 10_000 },
-    ).toBe(0)
-    await page.mouse.move(0, 0)
-    const snapshot = await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd)
-    await compareOrRefreshGolden(UI_EXPECTED, snapshot, MODE)
   })
 
   it.skipIf(MODE === 'record')('stayed clean: no page errors or reconnect churn', () => {
