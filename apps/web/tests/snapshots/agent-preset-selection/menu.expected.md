@@ -11,3 +11,4 @@
   - menuitem "Image creation mode Create images one at a time or in batches, edit existing images, and view the results in the gallery and AI canvas on the right."
   - 'menuitem "Website cloning mode All Standard mode capabilities plus bundled website-cloning skills: give it a URL and it rebuilds the real copy, fonts, assets, and interactions as a runnable local page; when a site needs a login you sign in yourself in the Agent browser panel on the right and cloning continues."'
   - menuitem "Notes mode Reads, writes, organizes, rewrites, and summarizes Markdown notes while preserving their structure and checking every change."
+  - 'menuitem "Chat mode Q&A and discussion outside a project: the same tools as Standard mode, but the prompt asks for a web search of the latest information first instead of answering from memory or scanning your disk."'

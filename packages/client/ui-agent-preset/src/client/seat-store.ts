@@ -1,6 +1,6 @@
 /**
- * 新会话的预设暂存与标准对话准备。工作入口的选择只应用一次；独立对话
- * 在导航前撤回旧选择并等待已发出的切换，避免迟到回执覆盖标准模式。
+ * 新会话的预设暂存与独立对话准备。工作入口的选择只应用一次；独立对话
+ * 在导航前撤回旧选择并等待已发出的切换，避免迟到回执覆盖对话模式。
  */
 
 import type { IApiClient } from 'coding-api-remotes/client'
@@ -30,6 +30,13 @@ export interface AgentPresetSeatState {
 const INITIAL: AgentPresetSeatState = {
   options: [], current: '', error: null, busy: false, introduce: false,
 }
+
+/**
+ * 独立对话入口优先使用的预设，取第一个出现在名单里的。随包的 `chat` 就是
+ * 「对话」开始方式对应的对话模式；名单里没有它时退回 `standard`，让自定义
+ * 预设名单和旧部署仍能进入对话，只是不带对话模式自己的工具面。
+ */
+const STANDALONE_PRESETS = ['chat', 'standard'] as const
 
 /** One session's identity and whether it has started. */
 export interface SeatSessionSummary {
@@ -180,12 +187,13 @@ export class AgentPresetSeatController {
   }
 
   /**
-   * 在独立对话导航前为明确的目标空白会话准备标准模式，不改部署默认值。
+   * 在独立对话导航前为明确的目标空白会话准备对话模式，不改部署默认值。
+   * 名单里没有随包的 `chat` 时退回 `standard`，让自定义名单仍能进入对话。
    * Host 仍负责拒绝已开始的会话；失败必须传给入口，禁止释放草稿与导航锁。
    * @param sessionId - 入口连接出的目标，不一定是当前会话。
-   * @returns 旧切换已结算且目标已确认标准模式；无预设部署无需切换。
+   * @returns 旧切换已结算且目标已确认对话模式；无预设部署无需切换。
    */
-  async prepareStandard(sessionId: SessionId): Promise<void> {
+  async prepareStandalone(sessionId: SessionId): Promise<void> {
     this.staged = undefined
     this.loadGeneration++
     this.preparing++
@@ -202,10 +210,11 @@ export class AgentPresetSeatController {
         this.set({ current: '' })
         return
       }
-      if (!options.some(option => option.id === 'standard')) {
-        throw new Error('标准模式暂不可用，请检查模式配置后重试。')
+      const target = STANDALONE_PRESETS.find(id => options.some(option => option.id === id))
+      if (target === undefined) {
+        throw new Error('对话模式暂不可用，请检查模式配置后重试。')
       }
-      const response = await this.api.agentPresets.select({ sessionId, agentPreset: 'standard' })
+      const response = await this.api.agentPresets.select({ sessionId, agentPreset: target })
       if (!response.result.ok) throw new Error(response.result.error.message)
       this.set({ current: response.result.value.agentPreset, error: null })
       this.onApplied?.(sessionId, response.result.value.agentPreset)

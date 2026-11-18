@@ -1,4 +1,4 @@
-/** 标准对话在导航前撤回工作模式选择，并将失败原样交还会话入口。 */
+/** 独立对话在导航前撤回工作模式选择，切到对话模式，并把失败原样交还会话入口。 */
 import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it, vi } from 'vitest'
 import type { IApiClient } from 'coding-api-remotes/client'
@@ -13,6 +13,7 @@ import type { AgentPresetSeatInjected } from '../src/client/AgentPresetSeat.tsx'
 const SOURCE = 'work-session' as SessionId
 const TARGET = 'standalone-session' as SessionId
 const ROSTER = [
+  { id: 'chat', trust: 'system' as const, isDefault: false },
   { id: 'standard', trust: 'system' as const, isDefault: false },
   { id: 'minimal', trust: 'system' as const, isDefault: true },
 ]
@@ -39,18 +40,18 @@ function bench() {
   return { controller, api, list, select, settings, note, move: (next?: SeatSessionSummary) => { current = next } }
 }
 
-describe('独立对话的标准模式准备', () => {
+describe('独立对话的对话模式准备', () => {
   it('取消无会话时暂存的工作模式，只切换明确目标，打开后的通知不再覆盖', async () => {
     const b = bench()
     await b.controller.load()
     b.controller.stage('minimal', true)
-    const preparing = b.controller.prepareStandard(TARGET)
+    const preparing = b.controller.prepareStandalone(TARGET)
     expect(b.controller.store.getSnapshot()).toMatchObject({ busy: true, introduce: false })
     await preparing
 
-    expect(b.select).toHaveBeenCalledExactlyOnceWith({ sessionId: TARGET, agentPreset: 'standard' })
-    expect(b.note).toHaveBeenCalledExactlyOnceWith(TARGET, 'standard')
-    b.move({ id: TARGET, blank: true, agentPreset: 'standard' })
+    expect(b.select).toHaveBeenCalledExactlyOnceWith({ sessionId: TARGET, agentPreset: 'chat' })
+    expect(b.note).toHaveBeenCalledExactlyOnceWith(TARGET, 'chat')
+    b.move({ id: TARGET, blank: true, agentPreset: 'chat' })
     await b.controller.apply()
     expect(b.select).toHaveBeenCalledTimes(1)
     expect(b.settings).not.toHaveBeenCalled()
@@ -60,8 +61,8 @@ describe('独立对话的标准模式准备', () => {
   it('当前工作会话已开始也只准备目标，不重组来源', async () => {
     const b = bench()
     b.move({ id: SOURCE, blank: false, agentPreset: 'minimal' })
-    await b.controller.prepareStandard(TARGET)
-    expect(b.select).toHaveBeenCalledExactlyOnceWith({ sessionId: TARGET, agentPreset: 'standard' })
+    await b.controller.prepareStandalone(TARGET)
+    expect(b.select).toHaveBeenCalledExactlyOnceWith({ sessionId: TARGET, agentPreset: 'chat' })
     expect(b.note).not.toHaveBeenCalledWith(SOURCE, expect.anything())
   })
 
@@ -76,7 +77,7 @@ describe('独立对话的标准模式准备', () => {
     })
     const working = b.controller.select('minimal')
     const repeated = b.controller.apply()
-    const preparing = b.controller.prepareStandard(TARGET)
+    const preparing = b.controller.prepareStandalone(TARGET)
     await Promise.resolve()
     expect(b.select).toHaveBeenCalledTimes(1)
     expect(b.list).not.toHaveBeenCalled()
@@ -87,11 +88,11 @@ describe('独立对话的标准模式准备', () => {
     await Promise.all([working, repeated, preparing])
     expect(b.select.mock.calls.map(([payload]) => payload)).toEqual([
       { sessionId: SOURCE, agentPreset: 'minimal' },
-      { sessionId: TARGET, agentPreset: 'standard' },
+      { sessionId: TARGET, agentPreset: 'chat' },
     ])
-    expect(b.note).toHaveBeenLastCalledWith(TARGET, 'standard')
-    expect(b.controller.store.getSnapshot()).toMatchObject({ busy: false, current: 'standard', error: null })
-    b.move({ id: TARGET, blank: true, agentPreset: 'standard' })
+    expect(b.note).toHaveBeenLastCalledWith(TARGET, 'chat')
+    expect(b.controller.store.getSnapshot()).toMatchObject({ busy: false, current: 'chat', error: null })
+    b.move({ id: TARGET, blank: true, agentPreset: 'chat' })
     await b.controller.apply()
     expect(b.select).toHaveBeenCalledTimes(2)
   })
@@ -105,12 +106,12 @@ describe('独立对话的标准模式准备', () => {
       return { rpcId: 'r', result: { ok: true, value: { agentPreset: payload.agentPreset } } }
     })
     const working = b.controller.select('minimal')
-    const first = b.controller.prepareStandard(TARGET)
-    const second = b.controller.prepareStandard(TARGET)
+    const first = b.controller.prepareStandalone(TARGET)
+    const second = b.controller.prepareStandalone(TARGET)
     b.controller.stage('cordis')
     old.resolve()
     await Promise.all([working, first, second])
-    expect(b.select.mock.calls.map(([payload]) => payload.agentPreset)).toEqual(['minimal', 'standard', 'standard'])
+    expect(b.select.mock.calls.map(([payload]) => payload.agentPreset)).toEqual(['minimal', 'chat', 'chat'])
     expect(b.controller.store.getSnapshot().busy).toBe(false)
     await b.controller.apply()
     expect(b.select).toHaveBeenLastCalledWith({ sessionId: SOURCE, agentPreset: 'cordis' })
@@ -125,14 +126,14 @@ describe('独立对话的标准模式准备', () => {
       return { rpcId: 'r', result: { ok: true, value: { presets: ROSTER, authorable: false, hasDocument: false } } }
     })
     b.controller.stage('minimal')
-    const preparing = b.controller.prepareStandard(TARGET)
+    const preparing = b.controller.prepareStandalone(TARGET)
     await b.controller.select('minimal')
     await b.controller.apply()
     expect(b.select).not.toHaveBeenCalled()
     roster.resolve()
     await preparing
-    expect(b.select).toHaveBeenCalledExactlyOnceWith({ sessionId: TARGET, agentPreset: 'standard' })
-    b.move({ id: TARGET, blank: true, agentPreset: 'standard' })
+    expect(b.select).toHaveBeenCalledExactlyOnceWith({ sessionId: TARGET, agentPreset: 'chat' })
+    b.move({ id: TARGET, blank: true, agentPreset: 'chat' })
     await b.controller.apply()
     expect(b.select).toHaveBeenCalledTimes(1)
   })
@@ -143,7 +144,7 @@ describe('独立对话的标准模式准备', () => {
       rpcId: 'r', result: { ok: true, value: { presets: [], authorable: false, hasDocument: false } },
     })
     b.controller.stage('minimal')
-    await b.controller.prepareStandard(TARGET)
+    await b.controller.prepareStandalone(TARGET)
     b.move({ id: TARGET, blank: true })
     await b.controller.apply()
     expect(b.select).not.toHaveBeenCalled()
@@ -151,14 +152,23 @@ describe('独立对话的标准模式准备', () => {
     expect(b.controller.store.getSnapshot()).toMatchObject({ busy: false, current: '', options: [] })
   })
 
-  it.each(['缺失', '损坏'] as const)('非空名单的标准模式%s时拒绝，不退回默认', async (state) => {
+  it('名单没有对话模式时退回标准模式', async () => {
     const b = bench()
-    const presets = state === '缺失' ? [ROSTER[1]!]
-      : [{ ...ROSTER[0]!, broken: '组装不可加载' }, ROSTER[1]!]
+    b.list.mockResolvedValue({
+      rpcId: 'r', result: { ok: true, value: { presets: [ROSTER[1]!], authorable: false, hasDocument: false } },
+    })
+    await b.controller.prepareStandalone(TARGET)
+    expect(b.select).toHaveBeenCalledExactlyOnceWith({ sessionId: TARGET, agentPreset: 'standard' })
+  })
+
+  it.each(['缺失', '损坏'] as const)('名单既无对话模式也无标准模式%s时拒绝，不退回默认', async (state) => {
+    const b = bench()
+    const presets = state === '缺失' ? [ROSTER[2]!]
+      : [{ ...ROSTER[0]!, broken: '组装不可加载' }, ROSTER[2]!]
     b.list.mockResolvedValue({
       rpcId: 'r', result: { ok: true, value: { presets, authorable: false, hasDocument: false } },
     })
-    await expect(b.controller.prepareStandard(TARGET)).rejects.toThrow('标准模式暂不可用')
+    await expect(b.controller.prepareStandalone(TARGET)).rejects.toThrow('对话模式暂不可用')
     expect(b.select).not.toHaveBeenCalled()
     expect(b.note).not.toHaveBeenCalled()
     expect(b.settings).not.toHaveBeenCalled()
@@ -172,11 +182,11 @@ describe('独立对话的标准模式准备', () => {
     if (failure === '名单断开') b.list.mockRejectedValueOnce(error)
     if (failure === '切换答复') b.select.mockResolvedValueOnce(rejected as never)
     if (failure === '切换断开') b.select.mockRejectedValueOnce(error)
-    await expect(b.controller.prepareStandard(TARGET)).rejects.toThrow(error.message)
+    await expect(b.controller.prepareStandalone(TARGET)).rejects.toThrow(error.message)
     expect(b.note).not.toHaveBeenCalled()
     expect(b.controller.store.getSnapshot()).toMatchObject({ busy: false, error: error.message })
-    await b.controller.prepareStandard(TARGET)
-    expect(b.note).toHaveBeenCalledExactlyOnceWith(TARGET, 'standard')
+    await b.controller.prepareStandalone(TARGET)
+    expect(b.note).toHaveBeenCalledExactlyOnceWith(TARGET, 'chat')
     expect(b.settings).not.toHaveBeenCalled()
   })
 
@@ -185,12 +195,12 @@ describe('独立对话的标准模式准备', () => {
     b.select.mockResolvedValueOnce({
       rpcId: 'r', result: { ok: false, error: { code: 'agent-preset-locked', message: '会话已经开始' } },
     } as never)
-    await expect(b.controller.prepareStandard(TARGET)).rejects.toThrow('会话已经开始')
+    await expect(b.controller.prepareStandalone(TARGET)).rejects.toThrow('会话已经开始')
     expect(b.note).not.toHaveBeenCalled()
   })
 })
 
-describe('标准入口的插件事件生命周期', () => {
+describe('独立对话入口的插件事件生命周期', () => {
   it('无需挂载选择器就准备非当前目标，卸载后移除监听且不改默认', async () => {
     const ctx = new Context()
     const b = bench()
@@ -240,9 +250,9 @@ describe('标准入口的插件事件生命周期', () => {
     await chip.select('minimal')
     state.current = SOURCE
     await ctx.serial('conversation/prepare-standalone', TARGET)
-    expect(b.select).toHaveBeenCalledExactlyOnceWith({ sessionId: TARGET, agentPreset: 'standard' })
+    expect(b.select).toHaveBeenCalledExactlyOnceWith({ sessionId: TARGET, agentPreset: 'chat' })
     expect(state.byId[SOURCE]!.agentPreset).toBe('minimal')
-    expect(state.byId[TARGET]!.agentPreset).toBe('standard')
+    expect(state.byId[TARGET]!.agentPreset).toBe('chat')
     state.current = TARGET
     for (const listener of listeners) listener()
     await Promise.resolve()

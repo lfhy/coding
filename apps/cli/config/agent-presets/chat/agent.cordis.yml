@@ -1,0 +1,303 @@
+# `chat` 预设：新对话页切到「对话」时运行的模式，也就是对话模式。
+#
+# 工具面与 `standard` 完全相同——联网搜索、文件、Shell、浏览器、Skills、计划、
+# 子代理都在，用户想顺手改点东西时不必换模式；两者的差别只有 persona：对话
+# 入口打开的会话以用户主目录为工作目录，用户问的多是「xxx 是什么」这类通用
+# 问题，所以提示词要求先联网检索、不要到本地磁盘翻答案。
+#
+# `apps/cli/tests/web-agent-presets.e2e.ts` 固定了「工具面与 standard 一致」，
+# 给标准模式增删工具行时这里必须同步，否则该断言会失败。
+#
+# 本文件是 AGENT-PLANE 组装，roster 只在常驻作用域下挂载一次；带 `isolate`
+# 的 group 提供条目私有实例，服务行不得落在根 realm。
+
+# ── identity ────────────────────────────────────────────────────────────────
+
+# 预设自己的 persona，遮蔽部署默认值；`{{model}}` 与 `{{cwd}}` 从本 agent
+# 自己的路由与工作目录求值。
+#
+# 这段文本是对话模式与标准模式唯一的实质差别：工具都有，但默认动作是先查网，
+# 而不是先翻本地磁盘。文件、Shell 与浏览器工具留给用户明确要求在本机做的事。
+- id: persona
+  name: 'coding-persona'
+  config:
+    text: |-
+      你运行在 {{model}} 模型上，当前工作目录是 {{cwd}}。
+
+      这是对话模式：用户在这里提问、讨论和查资料，多数时候不要求在项目里改代码。
+
+      回答需要事实、数据或时效信息的问题时，先联网检索再作答：概念、定义、文档、版本与 API 变更、价格、新闻、他人的经验，都先用 web_search 搜索，并在回答里给出来源链接；不确定或可能过期的信息不要凭记忆作答。从对话入口打开的会话以用户主目录为工作目录，那里通常没有这类答案，不要为了回答它们去扫描目录、读本地文件或翻缓存。用户明确要你看某个项目、某份文件或本机状态时，才用文件、Shell 与浏览器工具，并按既有规则核对结果。
+
+- id: agent-instructions
+  name: 'coding-agent-instructions'
+  config:
+    maxBytes: 65536
+
+# ── shell ───────────────────────────────────────────────────────────────────
+
+# `shell-env` stays in the HOST composition: `apps/cli/src/web.ts` injects it to
+# publish `DSH_WEB_URL`/`DSH_WEB_MODE`, and a host row that injects a service is
+# the criterion for host-plane ownership — injection resolves before any session
+# exists, so there is no agent to key by. Behind a preset realm those variables
+# never reached the model's shell at all. Both shell tools consume the host
+# registry from here; their executors (`bash-sandbox`/`pwsh-sandbox`) are
+# host-plane too.
+- id: tool-bash
+  name: 'coding-tool-bash'
+  disabled: !!js process.platform === 'win32'
+
+- id: tool-pwsh
+  name: 'coding-tool-pwsh'
+  disabled: !!js process.platform !== 'win32'
+
+# ── filesystem ──────────────────────────────────────────────────────────────
+
+# Both register into the host `tools` registry and provide nothing, so
+# they need no realm. The `fs` service and its policy stay in the host.
+- id: tool-fs
+  name: 'coding-tool-fs'
+
+- id: tool-apply-patch
+  name: 'coding-tool-apply-patch'
+
+- id: tool-fs-search
+  name: 'coding-tool-fs-search'
+  config:
+    sampleOverCapGlobResults: false
+
+# ── background jobs ────────────────────────────────────────────────────────
+
+# Only the model-facing controls. The task REGISTRY stays on the host plane:
+# its producers sit outside any realm this file could put it in — `tool-bash`
+# above resolves it with `ctx.get`, and an entry-local realm here is invisible
+# to every sibling row, so `run_in_background` would answer "background jobs
+# unavailable" while these controls sat in the catalog. The registry is keyed by
+# owning agent anyway, so one host instance serves every session. What a preset
+# chooses is whether its agent can collect and stop background work at all.
+- id: tool-jobs
+  name: 'coding-tool-jobs'
+
+# ── skills ──────────────────────────────────────────────────────────────────
+
+# 技能注册表属于宿主组合，并按 agent 作用域分层；这些提供方注册到本预设层，无需独立 realm。
+# 文件系统提供方发现本地技能，随包提供方贡献浏览器、前端开发和 StyleKit 视觉风格技能；
+# `tool-skill` 发布目录和按需加载工具。
+# 合并后的目录也包含部署在全局注册的技能。
+- id: skill-filesystem
+  name: 'coding-skill-filesystem'
+
+- id: skill-browser-use
+  name: 'coding-skill-browser-use'
+
+- id: skill-stylekit
+  name: 'coding-skill-stylekit'
+
+- id: skill-frontend-development
+  name: 'coding-skill-frontend-development'
+
+- id: skill-project-init
+  name: 'coding-skill-project-init'
+
+- id: skill-go-backend
+  name: 'coding-skill-go-backend'
+
+# 每轮第一步再点名一次候选技能：目录本身是背景，弱模型经常直接跳过。
+- id: tool-skill
+  name: 'coding-tool-skill'
+  config:
+    turnReminder: true
+
+# ── goals ───────────────────────────────────────────────────────────────────
+
+# Only the model-facing tool. The goal SERVICE, its session driver, and the
+# `/goal` command stay on the host plane: the Gateway serves the goal domain as
+# Remote endpoints whose receiver comes from a generated descriptor, so it
+# resolves `goals` on the host and an entry-local realm here would hide it. The
+# registry is keyed by session anyway, so one host instance serves every
+# session. What a preset chooses is whether its agent can call the goal tool.
+- id: tool-goal
+  name: 'coding-tool-goal'
+
+# ── plan mode ───────────────────────────────────────────────────────────────
+
+# Plan state is per-agent by nature, so an entry-local realm is not a
+# workaround here — it is the correct lifetime.
+- id: planning
+  name: cordis:group
+  group: true
+  isolate:
+    planMode: true
+  config:
+    - id: plan-mode
+      name: 'coding-plan-mode'
+      config:
+        section: |
+              You are in plan mode. Stay in plan mode until exit_plan_mode succeeds or the user switches the session mode. Imperative language to implement changes means plan the implementation, not execute it. A user's conversational agreement — including an answer confirming something you asked — approves nothing and does not end plan mode; fold the confirmed decision into the plan and submit it through exit_plan_mode.
+
+              Explore first. Use non-mutating reads, searches, static analysis, and checks to ground the plan in the actual repository. Do not edit or write files, change configuration, run formatters or code generation that rewrites tracked files, commit, or otherwise carry out the plan. Prefer existing functions and patterns over new machinery.
+
+              The tool catalog stays the same across modes for request-cache stability. These plan-mode rules override any later tool description or guidance that suggests using mutation tools; those tools remain listed to keep the tool catalog unchanged. Do not use todo_write to track this planning phase: it tracks implementation after an approved plan, while the plan itself belongs in exit_plan_mode.
+
+              Resolve discoverable facts by inspection. Use ask_user_question only for user-owned choices or material ambiguity that inspection cannot answer. Do not ask the user where code lives or how current behavior works when you can find out.
+
+              Make the plan decision-complete: state the goal and success criteria; group implementation changes by subsystem; identify public API, schema, and data-flow changes; cover edge cases, failure modes, tests, acceptance criteria, and explicit assumptions. Keep it concise enough to review but detailed enough that another engineer can implement it without making design decisions.
+
+              When ready, call exit_plan_mode with the complete plan markdown, starting with a # title. Make exit_plan_mode the only and final tool call in that assistant response: it presents the plan for approval, and implementation begins only in a later step after approval. Do not paste the final plan as a plain reply or ask "should I proceed?" through prose or ask_user_question. If review rejects it, incorporate the feedback and present again. If the review channel is unavailable or aborted, stay in plan mode and ask the user to switch modes manually; do not proceed with implementation.
+
+# ── compaction ──────────────────────────────────────────────────────────────
+
+# `compaction-basic` reads `toolResultPrune` through `ctx.get`, so the pruner must
+# share this realm rather than sit outside it.
+#
+# `tokenMeter` is deliberately NOT in this realm: the meter stays on the HOST
+# plane, and the rows here resolve that one instance. It takes no configuration,
+# keys every fold by Session, and owns the context-meter projection units the
+# browser reads for every session — behind a realm those units would come and go
+# with whichever presets happen to be mounted. What a preset chooses is whether
+# its agent compacts at all, which is `compaction-basic` below.
+- id: compaction
+  name: cordis:group
+  group: true
+  isolate:
+    compaction: true
+    toolResultPruner: true
+  config:
+    - id: compaction-basic
+      name: 'coding-compaction-basic'
+
+    - id: command-compact
+      name: 'coding-command-compact'
+
+    - id: tool-context-compact
+      name: 'coding-tool-context-compact'
+
+    - id: tool-result-pruner
+      name: 'coding-compaction-tool-result-pruner'
+      config:
+        thresholdChars: 8192
+        headChars: 4096
+        tailChars: 1024
+
+# ── delegation and workflows ────────────────────────────────────────────────
+
+# The `subagents` registry and its spawn/fork backends live in the HOST
+# composition: the registry is a process singleton whose cross-session queries
+# the api-proxy serves to the browser, and a provider name may only be
+# registered once. This preset contributes the delegation TOOLS, which resolve
+# that host registry.
+#
+# `workflows` is different — nothing outside an agent reads it — so every row
+# that reaches it shares one entry-local realm here, and a consumer left
+# outside would resolve a host registry this preset does not populate.
+#
+# `tool-subagent-report` is host-plane for the same reason as the registry,
+# not because a preset may not want it: it registers a CONTINUABLE SETUP on
+# that singleton rather than a tool this agent calls, and the setup list is
+# not scope-aware — one copy per mounted preset means every child gets
+# `report` registered once per live session, which throws on the second.
+- id: delegation
+  name: cordis:group
+  group: true
+  isolate:
+    workflowEngine: true
+  config:
+    - id: tool-subagent-control
+      name: 'coding-tool-subagent-control'
+
+    - id: tool-subagent-list-agents
+      name: 'coding-tool-subagent-control/list-agents'
+
+    - id: tool-subagent
+      name: 'coding-tool-subagent'
+      config:
+        provider: spawn
+        toolName: subagent
+        backgroundMode: continuable
+
+    - id: tool-subagent-fork
+      name: 'coding-tool-subagent'
+      config:
+        provider: fork
+        toolName: subagent_fork
+        backgroundMode: continuable
+
+    # Production dsh does not install these optional providers. Install the
+    # matching Bundle in this Profile and restart the Host, then copy this
+    # preset and remove `disabled` from the matching tool row. Host availability
+    # alone grants no tool.
+    - id: tool-subagent-codex
+      name: 'coding-tool-subagent'
+      disabled: true
+      config:
+        provider: codex
+        toolName: subagent_codex
+        backgroundMode: one-shot
+        maxDepth: provider-managed
+
+    - id: tool-subagent-claude-code
+      name: 'coding-tool-subagent'
+      disabled: true
+      config:
+        provider: claude-code
+        toolName: subagent_claude_code
+        backgroundMode: one-shot
+        maxDepth: provider-managed
+
+    - id: workflow-worker-thread
+      name: 'coding-workflow-worker-thread'
+      config:
+        provider: spawn
+
+    - id: tool-workflow
+      name: 'coding-tool-workflow'
+
+    - id: tool-ralph
+      name: 'coding-tool-ralph'
+      config:
+        subagentProvider: spawn
+        maxRounds: 64
+
+# ── remaining model-facing rows ─────────────────────────────────────────────
+
+- id: tool-ask-user
+  name: 'coding-tool-ask-user'
+
+- id: tool-todo
+  name: 'coding-tool-todo'
+  config:
+    allowParallelInProgress: true
+
+- id: progress-reminder
+  name: 'coding-progress-reminder'
+  config:
+    toolCallsPerReminder: 40
+
+# The `web` service and its search provider stay in the host composition; only
+# the model-facing tool is per-session.
+- id: tool-web
+  name: 'coding-tool-web'
+  config:
+    fetch: false
+    searchTimeoutMs: 60000
+
+- id: tool-browser
+  name: 'coding-tool-browser-ego'
+
+# 图片生成与编辑仅向本预设的会话注册，后端服务由宿主持有。
+- id: tool-image-gen
+  name: 'coding-tool-image-gen'
+
+# ── 工具呈现 ─────────────────────────────────────────────────────────────────
+
+# 标准模式同时提供两种工具形态：原生 schema 直呼，以及 Code Mode 的 `run_code`
+# 加一份按当前工具生成的 TypeScript SDK（原先独立的 PTC 预设已并入这里，二者
+# 的组装差别只有这一行）。`both` 不会收起原生调用，因此不需要「只能调
+# `run_code`」的提示；模型可以直呼单个工具，也可以用一个程序组合多步操作。
+#
+# 代价与前提：每个标准会话的请求前缀都会包含 SDK 段与 `run_code` schema（首轮
+# 全价，之后由 KV cache 复用）；`both` 在挂载时要求宿主装配 `ctx.codeRuntime`，
+# 未装配代码运行时的组合只能使用 native 呈现的预设（如 `minimal`）。
+- id: tool-presentation
+  name: 'coding-agent-tool-presentation'
+  config:
+    mode: both

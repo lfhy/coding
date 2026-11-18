@@ -219,7 +219,7 @@ describe('the shipped Web composition', () => {
     const listed = await ctx.agentPresets.list()
 
     expect(listed.map(preset => preset.id).sort())
-      .toEqual(['codex', 'cordis', 'image', 'longrun', 'minimal', 'notes', 'ppt', 'reverse', 'standard', 'webclone'])
+      .toEqual(['chat', 'codex', 'cordis', 'image', 'longrun', 'minimal', 'notes', 'ppt', 'reverse', 'standard', 'webclone'])
     expect(listed.every(preset => preset.trust === 'system')).toBe(true)
     expect(ctx.agentPresets.defaultId).toBe('standard')
   })
@@ -230,12 +230,6 @@ describe('the shipped Web composition', () => {
       setup: agentCtx => ctx.agentPresets.mount(agentCtx, 'standard').then(() => undefined),
     })
     try {
-      // 对话模式复用标准模式，工作目录就是用户家目录；通用提问必须先去联网检索，
-      // 而不是拿文件系统工具在本地磁盘翻答案。这条判断只有写进模型真正读到的提示词才有效。
-      const prompt = (await ctx.systemPrompt.assemble({ scope: handle.agent })).sections
-        .map(section => section.text).join('\n')
-      expect(prompt).toContain('先用 web_search 联网检索再回答')
-      expect(prompt).toContain('不要把它当作项目来扫描')
       // 固定本预设完整的工具面，包含宿主共享工具。
       // `glob`/`grep` 依赖运行环境提供 ripgrep，故不纳入此处。
       expect(toolNames(ctx, handle.agent).filter(name => name !== 'glob' && name !== 'grep')).toEqual([
@@ -260,6 +254,31 @@ describe('the shipped Web composition', () => {
       ])
     } finally {
       await handle.dispose()
+    }
+  })
+
+  it('composes the chat preset with the standard toolset and web-first guidance', async () => {
+    const standard = await ctx.agents.create({
+      sessionId: SessionId('preset-chat-standard'),
+      setup: agentCtx => ctx.agentPresets.mount(agentCtx, 'standard').then(() => undefined),
+    })
+    const chat = await ctx.agents.create({
+      sessionId: SessionId('preset-chat'),
+      setup: agentCtx => ctx.agentPresets.mount(agentCtx, 'chat').then(() => undefined),
+    })
+    try {
+      // 对话模式与标准模式能力相同、只换提示词：工具面必须逐项一致，两份组装
+      // 才不会随时间漂移；模型读到的那段判断才是「先联网」真正生效的地方。
+      expect(toolNames(ctx, chat.agent)).toEqual(toolNames(ctx, standard.agent))
+      const prompt = (await ctx.systemPrompt.assemble({ scope: chat.agent })).sections
+        .map(section => section.text).join('\n')
+      expect(prompt).toContain('这是对话模式')
+      expect(prompt).toContain('先联网检索再作答')
+      expect(prompt).toContain('不要为了回答它们去扫描目录')
+      expect(prompt).toContain('web_search')
+    } finally {
+      await chat.dispose()
+      await standard.dispose()
     }
   })
 

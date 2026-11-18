@@ -84,7 +84,7 @@
         - text: 复制
     - listitem:
       - 'button "设为默认: Codex 模式"':
-        - text: Codex 模式 内置 提供 Codex 风格的 Shell、补丁、计划、联网搜索与子代理工具，并可使用本机会话的 Agent 浏览器；随包技能指导项目初始化、Go 后端、前端、视觉风格与浏览器操作。
+        - text: Codex 模式 内置 对齐 Codex 的提示词与工具面：Shell、apply_patch、update_plan、联网搜索，以及带 wait_agent 的可继续子 agent；随包技能提供项目初始化、Go 后端、前端与视觉风格指引。
         - code: codex
       - 'button "查看: Codex 模式"':
         - img
@@ -140,6 +140,16 @@
         - img
         - text: 查看
       - 'button "复制: 笔记专用模式"':
+        - img
+        - text: 复制
+    - listitem:
+      - 'button "设为默认: 对话模式"':
+        - text: 对话模式 内置 不在项目里工作时的问答与讨论：工具与标准模式相同，但提示词要求先用联网搜索获取最新信息再回答，不凭记忆猜易过期的内容。
+        - code: chat
+      - 'button "查看: 对话模式"':
+        - img
+        - text: 查看
+      - 'button "复制: 对话模式"':
         - img
         - text: 复制
   - heading "自定义" [level=3]
