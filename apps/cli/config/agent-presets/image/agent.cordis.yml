@@ -50,9 +50,6 @@
 - id: skill-filesystem
   name: 'coding-skill-filesystem'
 
-- id: skill-stylekit
-  name: 'coding-skill-stylekit'
-
 - id: tool-skill
   name: 'coding-tool-skill'
 

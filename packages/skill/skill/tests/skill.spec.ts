@@ -160,6 +160,20 @@ describe('SkillRegistry registry', () => {
     expect((await ctx.skills.list()).map(skill => skill.name)).toEqual(['same-rank-skill', 'shadowed'])
   })
 
+  it('lists ordered skills first and keeps name order for ties', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SkillRegistry)
+    registerProvider(ctx, new MemoryProvider([
+      { ...memorySkill('zeta', 'Zeta', 10), order: -20 },
+      { ...memorySkill('alpha', 'Alpha', 10) },
+      { ...memorySkill('gamma', 'Gamma', 10), order: -5 },
+      { ...memorySkill('beta', 'Beta', 10), order: -5 },
+    ]))
+
+    expect((await ctx.skills.list()).map(skill => skill.name))
+      .toEqual(['zeta', 'beta', 'gamma', 'alpha'])
+  })
+
   it('returns an invocation-neutral catalog and resolves model and user policy independently', async () => {
     const ctx = new Context()
     await ctx.plugin(SkillRegistry)
@@ -238,6 +252,7 @@ describe('SkillRegistry registry', () => {
       { patch: { rank: '1' as unknown as number }, expected: 'invalid rank' },
       { patch: { provider: { value: 'provider' } as unknown as string }, expected: 'non-string provider' },
       { patch: { path: 1 as unknown as string }, expected: 'non-string path' },
+      { patch: { order: 'first' as unknown as number }, expected: 'invalid order' },
     ]
     for (const [index, { patch, expected }] of cases.entries()) {
       const ctx = new Context()

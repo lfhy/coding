@@ -236,17 +236,15 @@ describe('browser tools and skill in the shipped Web preset composition', () => 
         name: 'frontend-development', source: 'bundled', provider: 'frontend-development',
         invocation: { modelInvocable: true, userInvocable: true },
       })
-      expect((await entries(native.agent)).find(skill => skill.name === 'stylekit')).toMatchObject({
-        name: 'stylekit', source: 'bundled', provider: 'stylekit',
-        invocation: { modelInvocable: true, userInvocable: true },
-      })
+      // 技能摘要的 order 决定目录位置：project-init 排在其它随包技能之前。
+      const names = (await entries(native.agent)).map(skill => skill.name)
+      expect(names.indexOf('project-init')).toBeLessThan(names.indexOf('browser-use'))
       // Codex 同样提供浏览器技能与原生浏览器工具，但不通过 run_code 调用。
       const codexSkills = (await entries(codex.agent)).map(skill => skill.name)
-      expect(codexSkills).toEqual(expect.arrayContaining(['browser-use', 'frontend-development', 'stylekit']))
+      expect(codexSkills).toEqual(expect.arrayContaining(['browser-use', 'frontend-development']))
       expect(ctx.tools.schemas(codex.agent).map(tool => tool.name)).toContain('browser_navigate')
       expect(ctx.tools.schemas(codex.agent).map(tool => tool.name)).not.toContain('run_code')
       expect((await entries(minimal.agent)).map(skill => skill.name)).not.toContain('frontend-development')
-      expect((await entries(minimal.agent)).map(skill => skill.name)).not.toContain('stylekit')
       expect((await ctx.skills.list()).map(skill => skill.name)).not.toContain('frontend-development')
       expect(ctx.tools.schemas(minimal.agent).map(tool => tool.name).filter(name => name.startsWith('browser_'))).toEqual([])
 
@@ -261,7 +259,6 @@ describe('browser tools and skill in the shipped Web preset composition', () => 
         const catalog = decision.messages.find(message => message.source.kind === 'skill-catalog')
         expect(JSON.stringify(catalog?.content)).toContain('`browser-use`')
         expect(JSON.stringify(catalog?.content)).toContain('`frontend-development`')
-        expect(JSON.stringify(catalog?.content)).toContain('`stylekit`')
 
         const invoked = await agentEvents(target.ctx, target).waterfall(
           'agent/pre-step',

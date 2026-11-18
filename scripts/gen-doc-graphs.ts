@@ -361,7 +361,7 @@ const SERVICE_ROLES: ServiceRole[] = [
     pkg: 'skill',
     title: 'Skill provider registry',
     mode: 'seam',
-    implementations: ['skill-badge', 'skill-browser-use', 'skill-frontend-development', 'skill-filesystem', 'skill-stylekit'],
+    implementations: ['skill-badge', 'skill-browser-use', 'skill-frontend-development', 'skill-filesystem'],
     consumers: ['tool-skill'],
     note: 'Merges provider skill catalogs; tool-skill renders the session-prefix catalog and loads complete skill bodies.',
   },

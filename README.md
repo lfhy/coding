@@ -37,13 +37,12 @@ Coding 是面向个人开发的开源 AI 编程桌面客户端。它将模型对
 | Skill | 用途 |
 | --- | --- |
 | [`browser-use`](packages/skill/skill-browser-use/README.md) | 指导 Agent 先观察页面，再使用有效的元素引用操作网页，完成页面阅读、交互、截图和界面验收。 |
-| [`frontend-development`](packages/skill/skill-frontend-development/README.md) | 指导先定信息架构与视觉层级、再按项目已有技术栈、组件和设计规范实现，附信息架构参考（分层、降级阶梯、字号阶梯、间距尺度与三个常见缺陷的判定）和可直接抄的共享组件与页面骨架案例（子 Tab、模态框、Toast、表单控件、认证页、设置页含修改密码弹窗、列表页、仪表盘、接入中心页）；禁止把等大卡片平铺当作布局；使用图标与按需 CSS 动效配方；缺少合适插图或领域图标时先用画图工具按目标尺寸与配色生成底板、再在代码里转成 SVG，不凭空手绘；列表页固定在视口内、只在列表区域内部滚动，长列表用虚拟滚动与无限滚动加载；列表不超出屏幕宽度，行高统一、长名称截断不换行，列不够时按优先级隐藏；避免内部实现文案和文字海报，并结合浏览器检查实际效果。 |
+| [`frontend-development`](packages/skill/skill-frontend-development/README.md) | 指导先定信息架构与视觉层级、再按项目已有技术栈、组件和设计规范实现，附信息架构参考（分层、降级阶梯、字号阶梯、间距尺度与三个常见缺陷的判定）和可直接抄的共享组件与页面骨架案例（子 Tab、模态框、Toast、表单控件、认证页、设置页含修改密码弹窗、列表页、仪表盘、接入中心页）；禁止把等大卡片平铺当作布局；使用图标与按需 CSS 动效配方；缺少合适插图或领域图标时先用画图工具按目标尺寸与配色生成底板、再在代码里转成 SVG，不凭空手绘；列表页固定在视口内、只在列表区域内部滚动，长列表用虚拟滚动与无限滚动加载；列表不超出屏幕宽度，行高统一、长名称截断不换行，列不够时按优先级隐藏；避免内部实现文案和文字海报，并结合浏览器检查实际效果；用户点名具名视觉方向（玻璃拟态、新野兽派、赛博朋克、Apple／Stripe 风格等）时，按技能内置的 StyleKit 目录选风格、读规格并在项目主题层落地验收。 |
 | [`go-backend`](packages/skill/skill-go-backend/README.md) | 写 Go 服务端时给出布局（根 `main.go` 加 `cmd`／`conf`／`core`）、HTTP、context 与并发、错误包装、数据访问与交付验证的默认约定，前端放 `web/` 并由 `go:embed` 提供访问，优先沿用项目已有做法。 |
 | [`project-init`](packages/skill/skill-project-init/README.md) | 在改动前定好地基与可回滚的版本基线：新项目能联网时先去 GitHub 找 template 或同类开源仓库（如 vben、shadcn-admin；对话与 Agent 页面用 assistant-ui、Cherry Studio 等）当地基、复用成熟实现而不重写基础件、后端按分层技能搭，再判断 Git 工作区、`git init`、忽略规则、逐条确认后建基线提交，并给出新项目最小的 README／AGENTS。 |
 | [`genui`](packages/genui/genui/README.md) | 提供交互式回答的组件与语法指引，用于生成表格、图表、表单和流程图等内容。 |
-| [`stylekit`](packages/skill/skill-stylekit/README.md) | 为界面选定具名视觉风格（玻璃拟态、新野兽派、赛博朋克、Apple／Stripe 风格等），给出配色、设计令牌与 do／don't 规则，并在项目现有技术栈内落地和验收。 |
 
-你可以直接描述任务，让 Agent 按技能指引工作；也可以在输入框输入 `/` 查看技能候选，或在消息中写入 `/frontend-development`、`/browser-use`、`/stylekit`、`/genui` 显式调用。
+你可以直接描述任务，让 Agent 按技能指引工作；也可以在输入框输入 `/` 查看技能候选，或在消息中写入 `/frontend-development`、`/browser-use`、`/genui` 显式调用。
 
 自有规范也能接入：将技能放入项目的 `.agents/skills/<name>/SKILL.md`，或数据主目录的 `skills/<name>/SKILL.md`，即可由本地技能发现机制读取。格式、发现范围与优先级见[本地 Skills 说明](packages/skill/skill-filesystem/README.md)。本仓库还随源码提供 [Go 项目约定](.agents/skills/go-project-conventions/SKILL.md)、[CLI 配置](.agents/skills/go-cli-config/SKILL.md)、[数据库](.agents/skills/go-database/SKILL.md)与[质量检查](.agents/skills/go-quality/SKILL.md)等项目级技能，供在本仓库开发时使用；它们不属于安装版面向所有项目的内置技能。
 

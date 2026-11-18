@@ -98,6 +98,12 @@ export interface SkillSummary {
   readonly provider: string
   /** Provider-specific base for relative resources. */
   readonly resourceBase?: SkillResourceBase
+  /**
+   * Catalog position hint; lower values list first and ties fall back to name
+   * order. Omitted means 0, so a shipped skill that must lead the catalog can
+   * go negative without changing every other entry.
+   */
+  readonly order?: number
 }
 
 /** Provider catalog entry used by the registry to merge and later load skills. */
@@ -766,6 +772,9 @@ function validateCandidate(candidate: SkillCandidate, providerName: string): voi
   if (typeof candidate.provider !== 'string') {
     throw new TypeError(`skill provider "${providerName}" returned skill "${candidate.name}" with a non-string provider`)
   }
+  if (candidate.order !== undefined && (typeof candidate.order !== 'number' || !Number.isFinite(candidate.order))) {
+    throw new Error(`skill provider "${providerName}" returned skill "${candidate.name}" with an invalid order`)
+  }
   if (candidate.provider !== providerName) {
     throw new Error(`skill provider "${providerName}" returned skill "${candidate.name}" for provider "${candidate.provider}"`)
   }
@@ -803,7 +812,7 @@ function validateDefinition(skill: SkillDefinition): void {
 }
 
 function toSummary(skill: SkillDefinition | SkillCandidate): SkillSummary {
-  const { name, description, whenToUse, invocation, source, provider, resourceBase } = skill
+  const { name, description, whenToUse, invocation, source, provider, resourceBase, order } = skill
   return {
     name,
     description,
@@ -812,6 +821,7 @@ function toSummary(skill: SkillDefinition | SkillCandidate): SkillSummary {
     source,
     provider,
     ...resourceBase !== undefined ? { resourceBase } : {},
+    ...order === undefined ? {} : { order },
   }
 }
 
@@ -830,7 +840,7 @@ function validateInvocation(invocation: unknown, subject: string): void {
 }
 
 function compareSkillSummary(left: SkillSummary, right: SkillSummary): number {
-  return compareCodePoints(left.name, right.name)
+  return (left.order ?? 0) - (right.order ?? 0) || compareCodePoints(left.name, right.name)
 }
 
 function compareCodePoints(left: string, right: string): number {

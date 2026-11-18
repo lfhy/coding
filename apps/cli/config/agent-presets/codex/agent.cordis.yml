@@ -377,9 +377,6 @@
 - id: skill-frontend-development
   name: 'coding-skill-frontend-development'
 
-- id: skill-stylekit
-  name: 'coding-skill-stylekit'
-
 - id: skill-browser-use
   name: 'coding-skill-browser-use'
 

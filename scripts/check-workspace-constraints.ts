@@ -172,9 +172,8 @@ const packageFileExtras: Readonly<Record<string, readonly string[]>> = {
   'coding-session-persistence-sqlite': ['resources/sql/**/*.sql'],
   'coding-skill-badge': ['assets'],
   'coding-skill-browser-use': ['assets'],
-  'coding-skill-frontend-development': ['assets'],
-  // StyleKit 技能的随包目录快照与上游 MIT 来源说明都要随 npm 包交付。
-  'coding-skill-stylekit': ['assets', 'NOTICE.md'],
+  // 前端技能随包分发 StyleKit 风格目录快照，上游 MIT 来源说明也要一起交付。
+  'coding-skill-frontend-development': ['assets', 'NOTICE.md'],
   // Agent 浏览器的内嵌 CLI、观察 worker 与两级 MIT 来源声明必须与 Host 同包交付。
   'coding-browser-ego-host': ['runtime/', 'bin/', 'third-party/host/', 'third-party/upstream/lib/', 'third-party/upstream/src/', 'LICENSE', 'THIRD_PARTY_NOTICES.upstream.md', 'NOTICE.md'],
   'coding-subprocess-local': ['scripts/ensure-spawn-helper.mjs'],

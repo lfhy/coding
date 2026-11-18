@@ -153,9 +153,6 @@
 - id: skill-browser-use
   name: 'coding-skill-browser-use'
 
-- id: skill-stylekit
-  name: 'coding-skill-stylekit'
-
 - id: skill-frontend-development
   name: 'coding-skill-frontend-development'
 

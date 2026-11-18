@@ -1,10 +1,10 @@
 /**
- * 生成 `packages/skill/skill-stylekit/assets/` 下的 StyleKit 快照：目录索引 `styles.jsonl`
- * 与每风格完整规格 `styles/<slug>.json`。
+ * 生成 `packages/skill/skill-frontend-development/assets/stylekit/` 下的 StyleKit 快照：
+ * 目录索引 `styles.jsonl` 与每风格完整规格 `styles/<slug>.json`。
  *
- * 内嵌规格让 `stylekit` 技能完全离线可用：配色、设计令牌、组件配方、示例提示词与
- * do/don't 规则都随包分发，不再依赖运行时联网。上游站点仍是清单与规则的权威来源，
- * 需要最新目录时重新运行本脚本。
+ * 资产随 `frontend-development` 技能分发，作为「选择具名视觉方向」那一步的离线数据：
+ * 配色、设计令牌、组件配方、示例提示词与 do/don't 规则都在本地，不再依赖运行时联网。
+ * 上游站点仍是清单与规则的权威来源，需要最新目录时重新运行本脚本。
  *
  * 用法：
  * - 默认在线拉取 `https://www.stylekit.top/api/styles` 与 `/api/styles/<slug>`，重写全部资产；
@@ -17,7 +17,7 @@ import { join, resolve } from 'node:path'
 
 const LIST_SOURCE = 'https://www.stylekit.top/api/styles'
 const SPEC_SOURCE = (slug: string): string => `https://www.stylekit.top/api/styles/${slug}`
-const ASSETS = resolve(import.meta.dirname, '../packages/skill/skill-stylekit/assets')
+const ASSETS = resolve(import.meta.dirname, '../packages/skill/skill-frontend-development/assets/stylekit')
 const INDEX_FILE = join(ASSETS, 'styles.jsonl')
 const SPEC_DIR = join(ASSETS, 'styles')
 /** 上游目录异常缩小到该阈值以下时视为抓取失败，避免用残缺快照覆盖资产。 */

@@ -8,10 +8,9 @@
 | [`skill-badge/`](skill-badge/README.md) | 贡献可选的内置 dsh 徽章 skill | 注册到 `ctx.skills` |
 | [`skill-browser-use/`](skill-browser-use/README.md) | 为浏览器工具提供内置操作指引 | 注册到 `ctx.skills` |
 | [`skill-filesystem/`](skill-filesystem/README.md) | 从本地文件系统发现 skill | 注册到 `ctx.skills` |
-| [`skill-frontend-development/`](skill-frontend-development/README.md) | 为前端实现提供信息架构与视觉层级、技术栈与组件复用、图标、列表滚动与加载、CSS 动效配方、可见文案边界和浏览器验收指引 | 注册到 `ctx.skills` |
+| [`skill-frontend-development/`](skill-frontend-development/README.md) | 为前端实现提供信息架构与视觉层级、技术栈与组件复用、图标、列表滚动与加载、CSS 动效配方、可见文案边界、StyleKit 具名视觉方向流程和浏览器验收指引 | 注册到 `ctx.skills` |
 | [`skill-go-backend/`](skill-go-backend/README.md) | 为 Go 服务端实现提供布局、前端 `web/` 经 `go:embed` 内嵌、HTTP、context 与并发、错误、数据访问和交付验证的默认约定 | 注册到 `ctx.skills` |
 | [`skill-project-init/`](skill-project-init/README.md) | 新项目先找现成模板与同类仓库当地基，再建立本地仓库与基线提交，让每一步改动可回滚 | 注册到 `ctx.skills` |
-| [`skill-stylekit/`](skill-stylekit/README.md) | 提供 StyleKit 视觉风格目录与落地、验收指引 | 注册到 `ctx.skills` |
 | [`tool-skill/`](tool-skill/README.md) | 发布 skill 目录和面向模型的 loader | 注册到 `ctx.tools` |
 
 该能力位于核心控制主干之外，可以使用本地、嵌入式或远程提供方，而无需更改面向模型的约定。

@@ -60,6 +60,37 @@ Read [`information-architecture.md`](information-architecture.md) before composi
 finished page works but reads flat. It carries the tier rules, the demote ladder (card → row → link), the weight
 ladder, the spacing scale, and the three defects with before/after examples.
 
+## Pick a named visual direction (optional)
+
+Run this step only when the user names a style or clearly asks for a named look; otherwise the project's own visual
+system is the answer and this section stays closed.
+
+1. **Find the direction.** Read `stylekit/styles.jsonl` — one JSON line per style with `slug`, `name`, `nameEn`,
+   `category`, `tags`, `colors` (`primary`/`secondary`/`accent`), `keywords`, and a one-sentence `description`.
+   Use the exact `slug` when the user named one (`glassmorphism`, `neo-brutalist`, `cyberpunk-neon`, `bauhaus`,
+   `swiss-style`, `apple-style`, `stripe-style`, `notion-style`, `linear-style`, `bento-grid`, `wabi-sabi`, `y2k`).
+   When the user describes a feeling instead, search that file by keyword and compare 1–3 candidates; read it in
+   full if needed, it is an index. A request that matches nothing stays with the project's existing language —
+   say so, and never invent a slug.
+2. **Read one full spec.** `stylekit/styles/<slug>.json` is about 20 KB: `philosophy`, `doList`/`dontList` (the
+   hardest rules), `aiRules`, `colors`, `tokens`, `recipes`, `components`, `examplePrompts`, `globalCss`. Start
+   with `philosophy`, `doList`, `dontList`, `colors`, and `tokens`, and go deeper only where the page needs it.
+   Never paste the spec into the interface or into comments.
+3. **Apply it through the project.** Land colors and scale in the project's theme layer (CSS variables, theme
+   tokens, Tailwind theme); do not scatter literal colors, one-off breakpoints, or arbitrary shadows across
+   components. A named style never justifies a second component library or a parallel visual system. Keep
+   behavior, routing, data, accessibility, and the product language intact: they win over the spec when they
+   conflict, and a requested behavior still goes through the owning abstraction rather than a page-local copy.
+4. **Check it against the spec.** In the running page, compare computed colors, typography, spacing, radius,
+   borders, shadow, and the required hover/active/focus states — Verification step 10 below covers this. If the
+   slug is wrong or its file is missing, build only from the `styles.jsonl` entry and tell the user the full rules
+   are unavailable instead of inventing them.
+
+Read bundled files with `skill_read` (`path` is relative to this skill, e.g. `stylekit/styles.jsonl`); the fallback
+prefix described under [Reading bundled files](#reading-bundled-files) points at this same `assets/` directory. The
+catalog and specs are a snapshot of the public StyleKit catalog; upstream provenance and licensing live in this
+package's `NOTICE.md`.
+
 ## Hierarchy, layout, and space
 
 - Set a weight ladder once and reuse it: page title 22–24px/600, region title 15–16px/600, item title 14–15px/500,
@@ -156,11 +187,12 @@ plus Tailwind CSS when it matches the project's chosen stack; adapt it to the pr
 competing foundation.
 
 When the user explicitly names or clearly asks for a named visual direction ("make it look like Stripe",
-"cyberpunk dashboard", "glassmorphism", "brutalist style"), load the `stylekit` skill and follow its style spec:
-pick the exact slug, take its colors, tokens, and do/don't rules, then implement them with this project's existing
-components and theme layer. The spec guides the visual decisions; it does not replace product behavior,
-accessibility, or the project's own stack. When a requested behavior conflicts with the existing stack or UI
-modules, inspect their contracts and extend the owning abstraction rather than bypassing it in a local component.
+"cyberpunk dashboard", "glassmorphism", "brutalist style"), run the style step in
+[Pick a named visual direction](#pick-a-named-visual-direction-optional): it turns the request into one bundled
+style slug plus colors, tokens, and do/don't rules, applied through this project's existing components and theme
+layer. The spec guides the visual decisions; it does not replace product behavior, accessibility, or the project's
+own stack. When a requested behavior conflicts with the existing stack or UI modules, inspect their contracts and
+extend the owning abstraction rather than bypassing it in a local component.
 
 ## Page shell, lists, and scroll
 
@@ -262,7 +294,7 @@ never restates it. A copyable example is not a library to vendor wholesale; it i
 9. Scan every visible string, including empty, loading, error, and disabled states, placeholders, tooltips, and
    accessible names, for implementation leakage: instructions, prompts, plans, framework or package names, file
    paths, raw errors, JSON, logs, and process narration. If any survived, replace it with product language.
-10. When the change followed a `stylekit` style spec, compare the rendered result against that spec's tokens and
+10. When the change followed a bundled StyleKit spec, compare the rendered result against that spec's tokens and
     rules, including computed colors, typography, spacing, borders, and the required interaction states.
 11. After implementation, load `browser-use` and use its structured browser tools to inspect the real rendered
     page at two representative widths. Check the target flow, keyboard and focus behavior, loading/empty/error/

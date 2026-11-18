@@ -392,7 +392,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/shell/bash-local/src/index.ts:51`](../packages/shell/bash-local/src/index.ts)
+Source: [`packages/shell/bash-local/src/index.ts:50`](../packages/shell/bash-local/src/index.ts)
 
 <a id="coding-bash-sandbox"></a>
 
@@ -689,7 +689,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/attachment/file-library/src/index.ts:27`](../packages/attachment/file-library/src/index.ts)
+Source: [`packages/attachment/file-library/src/index.ts:30`](../packages/attachment/file-library/src/index.ts)
 
 <a id="coding-file-reference-local"></a>
 
@@ -908,7 +908,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/host/directory-picker-browse/src/index.ts:181`](../packages/host/directory-picker-browse/src/index.ts)
+Source: [`packages/host/directory-picker-browse/src/index.ts:209`](../packages/host/directory-picker-browse/src/index.ts)
 
 <a id="coding-host-frontend-static"></a>
 
@@ -1685,7 +1685,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/ppt/ppt-workbench/src/index.ts:50`](../packages/ppt/ppt-workbench/src/index.ts)
+Source: [`packages/ppt/ppt-workbench/src/index.ts:51`](../packages/ppt/ppt-workbench/src/index.ts)
 
 <a id="coding-progress-reminder"></a>
 
@@ -1739,7 +1739,7 @@ export interface RefreshConfig {
 }
 ```
 
-Source: [`packages/net/proxy-pool/src/index.ts:118`](../packages/net/proxy-pool/src/index.ts)
+Source: [`packages/net/proxy-pool/src/index.ts:120`](../packages/net/proxy-pool/src/index.ts)
 
 <a id="coding-pwsh-local"></a>
 
@@ -1950,7 +1950,7 @@ export interface Config {
 export type JsonlCompression = 'zstd' | 'none'
 ```
 
-Source: [`packages/session/session-persistence-jsonl/src/index.ts:60`](../packages/session/session-persistence-jsonl/src/index.ts)
+Source: [`packages/session/session-persistence-jsonl/src/index.ts:61`](../packages/session/session-persistence-jsonl/src/index.ts)
 
 <a id="coding-session-persistence-sqlite"></a>
 
@@ -2210,7 +2210,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/skill/skill/src/index.ts:314`](../packages/skill/skill/src/index.ts)
+Source: [`packages/skill/skill/src/index.ts:320`](../packages/skill/skill/src/index.ts)
 
 <a id="coding-skill-filesystem"></a>
 
@@ -2735,7 +2735,7 @@ export interface Config {
 export type BackgroundSessionTools = 'jobs' | 'write_stdin'
 ```
 
-Source: [`packages/shell/tool-bash/src/index.ts:47`](../packages/shell/tool-bash/src/index.ts)
+Source: [`packages/shell/tool-bash/src/index.ts:48`](../packages/shell/tool-bash/src/index.ts)
 
 <a id="coding-tool-bash-persistent"></a>
 
@@ -2814,7 +2814,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/fs/tool-fs-search/src/index.ts:73`](../packages/fs/tool-fs-search/src/index.ts)
+Source: [`packages/fs/tool-fs-search/src/index.ts:75`](../packages/fs/tool-fs-search/src/index.ts)
 
 <a id="coding-tool-goal"></a>
 
@@ -2997,10 +2997,15 @@ Requires: `agents` · `tools` · `skills` · `systemPrompt`
 export interface Config {
   /** Maximum normalized description length rendered in the session catalog; minimum 3. */
   catalogDescriptionMaxLength?: number
+  /**
+   * 每轮第一步是否补一条技能匹配提醒。目录本身是持久背景，弱模型经常直接跳过；
+   * 打开后在用户发出这一轮内容的第一步骤再点名一次候选技能。默认关闭，按模式装配打开。
+   */
+  turnReminder?: boolean
 }
 ```
 
-Source: [`packages/skill/tool-skill/src/index.ts:62`](../packages/skill/tool-skill/src/index.ts)
+Source: [`packages/skill/tool-skill/src/index.ts:167`](../packages/skill/tool-skill/src/index.ts)
 
 <a id="coding-tool-str-replace-editor"></a>
 
@@ -3245,7 +3250,7 @@ export interface Config {
 export type ToolPresentationMode = 'native' | 'code' | 'both'
 ```
 
-Source: [`packages/core/tools/src/index.ts:653`](../packages/core/tools/src/index.ts)
+Source: [`packages/core/tools/src/index.ts:657`](../packages/core/tools/src/index.ts)
 
 <a id="coding-typert-loader"></a>
 
@@ -3699,6 +3704,7 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 - `coding-client-ui-layout` ([`packages/client/ui-layout/src/index.ts`](../packages/client/ui-layout/src/index.ts))
 - `coding-client-ui-message-feedback` ([`packages/client/ui-message-feedback/src/index.ts`](../packages/client/ui-message-feedback/src/index.ts))
 - `coding-client-ui-model-selection` ([`packages/client/ui-model-selection/src/index.ts`](../packages/client/ui-model-selection/src/index.ts))
+- `coding-client-ui-notes` ([`packages/client/ui-notes/src/index.ts`](../packages/client/ui-notes/src/index.ts))
 - `coding-client-ui-open-in-app` ([`packages/client/ui-open-in-app/src/index.ts`](../packages/client/ui-open-in-app/src/index.ts))
 - `coding-client-ui-permission-presets` ([`packages/client/ui-permission-presets/src/index.ts`](../packages/client/ui-permission-presets/src/index.ts))
 - `coding-client-ui-plan` ([`packages/client/ui-plan/src/index.ts`](../packages/client/ui-plan/src/index.ts))
@@ -3728,6 +3734,7 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 - `coding-cordis-client-runner` ([`packages/extensions/cordis-client-runner/src/index.ts`](../packages/extensions/cordis-client-runner/src/index.ts))
 - `coding-fs-e2b` — requires `e2b` ([`packages/e2b/fs-e2b/src/index.ts`](../packages/e2b/fs-e2b/src/index.ts))
 - `coding-fs-observation-policy` ([`packages/fs/fs-observation-policy/src/index.ts`](../packages/fs/fs-observation-policy/src/index.ts))
+- `coding-git-local` ([`packages/git/git-local/src/index.ts`](../packages/git/git-local/src/index.ts))
 - `coding-goal-round-driver` — requires `agents` · `goals` · `sessions` ([`packages/goal/goal-round-driver/src/index.ts`](../packages/goal/goal-round-driver/src/index.ts))
 - `coding-host-directory-picker-auto` — requires `webServer` · `loader` ([`packages/host/directory-picker-auto/src/index.ts`](../packages/host/directory-picker-auto/src/index.ts))
 - `coding-host-directory-picker-native` ([`packages/host/directory-picker-native/src/index.ts`](../packages/host/directory-picker-native/src/index.ts))
@@ -3748,7 +3755,6 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 - `coding-skill-frontend-development` — requires `skills` · `fs` ([`packages/skill/skill-frontend-development/src/index.ts`](../packages/skill/skill-frontend-development/src/index.ts))
 - `coding-skill-go-backend` — requires `skills` · `fs` ([`packages/skill/skill-go-backend/src/index.ts`](../packages/skill/skill-go-backend/src/index.ts))
 - `coding-skill-project-init` — requires `skills` · `fs` ([`packages/skill/skill-project-init/src/index.ts`](../packages/skill/skill-project-init/src/index.ts))
-- `coding-skill-stylekit` — requires `skills` · `fs` ([`packages/skill/skill-stylekit/src/index.ts`](../packages/skill/skill-stylekit/src/index.ts))
 - `coding-storage` ([`packages/storage/storage/src/index.ts`](../packages/storage/storage/src/index.ts))
 - `coding-subagent` ([`packages/subagent/subagent/src/index.ts`](../packages/subagent/subagent/src/index.ts))
 - `coding-subprocess-local` ([`packages/subprocess/subprocess-local/src/index.ts`](../packages/subprocess/subprocess-local/src/index.ts))
@@ -3763,6 +3769,7 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 - `coding-tool-cordis` — requires `tools` · `systemPrompt` · `dynamicCordisRunner` · `cordisInspect` ([`packages/extensions/tool-cordis/src/index.ts`](../packages/extensions/tool-cordis/src/index.ts))
 - `coding-tool-memory` — requires `tools` · `memory` ([`packages/memory/tool-memory/src/index.ts`](../packages/memory/tool-memory/src/index.ts))
 - `coding-tool-ppt` — requires `tools` · `llm` · `attachments` ([`packages/ppt/tool-ppt/src/index.ts`](../packages/ppt/tool-ppt/src/index.ts))
+- `coding-tool-status` — requires `tools` ([`packages/session/tool-status/src/index.ts`](../packages/session/tool-status/src/index.ts))
 - `coding-user-questions` ([`packages/interaction/user-questions/src/index.ts`](../packages/interaction/user-questions/src/index.ts))
 - `coding-workspace` — requires `storageDomain` · `sessionPersistence` ([`packages/workspace/workspace/src/index.ts`](../packages/workspace/workspace/src/index.ts))
 
@@ -3777,6 +3784,7 @@ Abstract service classes — a deployment loads a concrete implementation packag
 - `coding-credentials` — abstract `CredentialProvider` ([`packages/credentials/credentials/src/index.ts`](../packages/credentials/credentials/src/index.ts))
 - `coding-file-reference` — abstract `FileReferenceService` ([`packages/context/file-reference/src/index.ts`](../packages/context/file-reference/src/index.ts))
 - `coding-fs` — abstract `FileSystem` ([`packages/fs/fs/src/index.ts`](../packages/fs/fs/src/index.ts))
+- `coding-git` — abstract `Git` ([`packages/git/git/src/index.ts`](../packages/git/git/src/index.ts))
 - `coding-host-directory-picker` — abstract `DirectoryPicker` ([`packages/host/directory-picker/src/index.ts`](../packages/host/directory-picker/src/index.ts))
 - `coding-jobs` — abstract `JobRegistry` ([`packages/jobs/jobs/src/index.ts`](../packages/jobs/jobs/src/index.ts))
 - `coding-sandbox` — abstract `SandboxProvider` ([`packages/sandbox/sandbox/src/index.ts`](../packages/sandbox/sandbox/src/index.ts))

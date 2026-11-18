@@ -101,7 +101,6 @@
     "coding-skill-browser-use": "workspace:^",
     "coding-skill-go-backend": "workspace:^",
     "coding-skill-frontend-development": "workspace:^",
-    "coding-skill-stylekit": "workspace:^",
     "coding-skill-filesystem": "workspace:^",
     "coding-skill-project-init": "workspace:^",
     "coding-spill": "workspace:^",

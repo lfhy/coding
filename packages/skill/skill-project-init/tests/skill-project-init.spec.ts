@@ -34,6 +34,8 @@ describe('bundled project-init skill', () => {
         provider: 'project-init',
         source: 'bundled',
         resourceBase: { kind: 'alias', path: resourcePrefix },
+        // 目录顺序：新项目先定地基，所以这条技能排在默认 0 的随包技能之前。
+        order: -20,
       }])
       const loaded = await ctx.skills.get('project-init')
       if (loaded === undefined) throw new Error('bundled project-init skill is unavailable')

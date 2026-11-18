@@ -207,7 +207,6 @@
     { "path": "./packages/skill/skill-go-backend" },
     { "path": "./packages/skill/skill-project-init" },
     { "path": "./packages/skill/skill-frontend-development" },
-    { "path": "./packages/skill/skill-stylekit" },
     { "path": "./packages/skill/skill-filesystem" },
     { "path": "./packages/skill/tool-skill" },
     { "path": "./packages/interaction/tool-ask-user" },

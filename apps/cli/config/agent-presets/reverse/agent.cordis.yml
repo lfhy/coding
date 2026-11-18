@@ -137,9 +137,6 @@
 - id: skill-frontend-development
   name: 'coding-skill-frontend-development'
 
-- id: skill-stylekit
-  name: 'coding-skill-stylekit'
-
 - id: tool-skill
   name: 'coding-tool-skill'
 
