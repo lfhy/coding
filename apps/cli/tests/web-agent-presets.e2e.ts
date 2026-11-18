@@ -230,6 +230,12 @@ describe('the shipped Web composition', () => {
       setup: agentCtx => ctx.agentPresets.mount(agentCtx, 'standard').then(() => undefined),
     })
     try {
+      // 对话模式复用标准模式，工作目录就是用户家目录；通用提问必须先去联网检索，
+      // 而不是拿文件系统工具在本地磁盘翻答案。这条判断只有写进模型真正读到的提示词才有效。
+      const prompt = (await ctx.systemPrompt.assemble({ scope: handle.agent })).sections
+        .map(section => section.text).join('\n')
+      expect(prompt).toContain('先用 web_search 联网检索再回答')
+      expect(prompt).toContain('不要把它当作项目来扫描')
       // 固定本预设完整的工具面，包含宿主共享工具。
       // `glob`/`grep` 依赖运行环境提供 ripgrep，故不纳入此处。
       expect(toolNames(ctx, handle.agent).filter(name => name !== 'glob' && name !== 'grep')).toEqual([
@@ -249,7 +255,7 @@ describe('the shipped Web composition', () => {
         'job_output', 'list_agents', 'list_subagent_models', 'memory_delete',
         'memory_list', 'memory_read', 'memory_save', 'memory_update', 'ralph',
         'read', 'read_image', 'render_ui', 'run_code', 'send_message', 'set_status', 'skill',
-        'subagent', 'subagent_fork', 'todo_write', 'update_goal', 'validate_gen_ui',
+        'skill_read', 'subagent', 'subagent_fork', 'todo_write', 'update_goal', 'validate_gen_ui',
         'web_search', 'workflow', 'write',
       ])
     } finally {

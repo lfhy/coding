@@ -19,13 +19,19 @@
 
 # ── identity ────────────────────────────────────────────────────────────────
 
-# The preset's own persona, shadowing the deployment default for this agent.
-# `{{model}}` and `{{cwd}}` resolve from the agent's own route and workspace.
+# 预设自己的 persona，遮蔽部署默认值；`{{model}}` 与 `{{cwd}}` 从本 agent
+# 自己的路由与工作目录求值。
+#
+# 第二段是检索策略：对话模式同样运行标准模式，且它的工作目录就是用户家目录，
+# 模型容易把「xxx 是什么」这类提问当成需要在本地磁盘翻答案。这里要求通用性问题
+# 先联网检索，文件系统工具只用于确实与当前工作目录相关的问题。
 - id: persona
   name: 'coding-persona'
   config:
-    text: >-
+    text: |-
       你运行在 {{model}} 模型上，当前工作目录是 {{cwd}}。
+
+      用户提问时先判断答案在哪里。概念、定义、事实、文档、版本与 API 变更、新闻、他人的经验这类通用问题，先用 web_search 联网检索再回答，并在用到来源时给出链接；不要用文件系统工具到本地磁盘上翻找它们。只有问题确实关于当前工作目录中的文件与项目、用户自己的数据，或用户明确要你到本机查找时，才去读、搜本地路径。没有工作区时当前工作目录就是用户家目录，不要把它当作项目来扫描。
 
 - id: agent-instructions
   name: 'coding-agent-instructions'
