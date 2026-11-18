@@ -239,7 +239,7 @@ export function ConversationRoot({
           {renderSlot('conversation.hero.actions', { sidebarCollapsed })}
         </div>
       )}
-      {renderSlot('conversation.session.header', { overviewExpanded, toggleOverview })}
+      {!inPageAssistant && renderSlot('conversation.session.header', { overviewExpanded, toggleOverview })}
       <div className={css.scrollBody} data-conversation-scroll=""
         role={projectHero ? 'tabpanel' : undefined}
         id={projectHero ? `${modeId}-panel` : undefined}

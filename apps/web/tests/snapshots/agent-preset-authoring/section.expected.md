@@ -132,6 +132,16 @@
       - 'button "复制: 网页复刻模式"':
         - img
         - text: 复制
+    - listitem:
+      - 'button "设为默认: 笔记专用模式"':
+        - text: 笔记专用模式 内置 专注于笔记的读写、整理、改写与归纳，保留 Markdown 结构并核对每次修改。
+        - code: notes
+      - 'button "查看: 笔记专用模式"':
+        - img
+        - text: 查看
+      - 'button "复制: 笔记专用模式"':
+        - img
+        - text: 复制
   - heading "自定义" [level=3]
   - button "用「创造模式」创作自定义预设":
     - img

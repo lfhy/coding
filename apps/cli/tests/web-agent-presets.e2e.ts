@@ -219,7 +219,7 @@ describe('the shipped Web composition', () => {
     const listed = await ctx.agentPresets.list()
 
     expect(listed.map(preset => preset.id).sort())
-      .toEqual(['codex', 'cordis', 'image', 'longrun', 'minimal', 'ppt', 'reverse', 'standard', 'webclone'])
+      .toEqual(['codex', 'cordis', 'image', 'longrun', 'minimal', 'notes', 'ppt', 'reverse', 'standard', 'webclone'])
     expect(listed.every(preset => preset.trust === 'system')).toBe(true)
     expect(ctx.agentPresets.defaultId).toBe('standard')
   })
@@ -351,7 +351,7 @@ describe('the shipped Web composition', () => {
    * 除极简模式外，图像服务就绪时各模式的会话都要拿到画图工具：四件套按模式共享，
    * codex 走 `variant: codex` 只注册 `image_gen`（在静态断言与它自己的预设里核对）。
    */
-  it.each(['standard', 'cordis', 'webclone'] as const)(
+  it.each(['standard', 'cordis', 'webclone', 'notes'] as const)(
     'surfaces the standard image tools in the %s preset once the image service is ready',
     async (preset) => {
       const handle = await ctx.agents.create({

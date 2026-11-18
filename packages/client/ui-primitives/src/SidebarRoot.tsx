@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import type { CSSProperties, ReactNode } from 'react'
+import type { CSSProperties, MouseEvent, ReactNode } from 'react'
 import clsx from 'clsx'
 import { Icon, type IconName } from 'coding-client-ui-icons'
 import css from './SidebarRoot.module.css'
@@ -20,12 +20,12 @@ export interface SidebarRootItem {
   iconTone?: 'amber' | 'green' | 'blue' | 'violet'
   /** `media` 变体里的缩略图；`rows` 变体忽略该字段。 */
   media?: ReactNode
-  /** 摘要行的次要信息；图标轨不显示。 */
-  description?: string
   /** 摘要行右侧的一小段元数据。 */
   meta?: string
   active?: boolean
   onSelect?: () => void
+  /** 右键菜单入口；调用方负责根据事件位置打开上下文操作。 */
+  onContextMenu?: (event: MouseEvent<HTMLButtonElement>) => void
   /** 树形条目的缩进层级（0 起）；非树条目缺省 0。 */
   depth?: number
   /** 目录行：图标前渲染展开箭头，点击只切换展开状态。 */
@@ -43,7 +43,7 @@ export interface SidebarRootProps {
   collapsed: boolean
   /** 对话侧栏的实际宽度，由根布局计算；收起时为 56px。 */
   width: number
-  /** 行几何：紧凑图标行，或带缩略图的行。宽度与折叠行为两者一致。 */
+  /** 行几何：紧凑图标行、带元数据的摘要行，或带缩略图的行。 */
   variant?: 'rows' | 'media' | 'summary'
   /** 无条目时的说明；收起态不显示。 */
   empty?: string
@@ -109,22 +109,18 @@ export function SidebarRoot({
                     className={clsx(css.row, variant === 'media' && css.mediaRow, variant === 'summary' && css.summaryRow)}
                     style={{ '--tree-depth': item.depth ?? 0 } as CSSProperties}
                     aria-current={item.active === true ? 'true' : undefined} data-icon-tone={item.iconTone}
-                    aria-expanded={item.folder ? item.open === true : undefined} onClick={item.onSelect}>
-                    {item.folder && <span className={css.chevron} data-open={item.open ? '' : undefined} aria-hidden="true" />}
+                    aria-expanded={item.folder ? item.open === true : undefined} onClick={item.onSelect}
+                    onContextMenu={item.onContextMenu}>
+                    {(item.folder || variant === 'summary') && (
+                      <span className={css.chevronSlot} aria-hidden="true">
+                        {item.folder && <span className={css.chevron} data-open={item.open ? '' : undefined} />}
+                      </span>
+                    )}
                     {variant === 'media' && item.media !== undefined
                       ? <span className={css.mediaBox}>{item.media}</span>
                       : <span className={css.rowIcon} aria-hidden="true"><Icon name={item.icon} size={16} /></span>}
-                    {variant === 'summary' ? (
-                      <span className={css.summaryText}>
-                        <span className={css.rowLabel}>{item.label}</span>
-                        {(item.description !== undefined || item.meta !== undefined) && (
-                          <span className={css.summaryDetails}>
-                            <span>{item.description}</span>
-                            <span>{item.meta}</span>
-                          </span>
-                        )}
-                      </span>
-                    ) : <span className={css.rowLabel}>{item.label}</span>}
+                    <span className={css.rowLabel}>{item.label}</span>
+                    {variant === 'summary' && item.meta !== undefined && <span className={css.summaryMeta}>{item.meta}</span>}
                   </button>
                 ))}
               </div>
@@ -134,7 +130,7 @@ export function SidebarRoot({
             {items.filter(item => !item.folder).map(item => (
               <button key={item.id} type="button" className={css.railButton}
                 aria-label={item.label} title={item.label} aria-pressed={item.active === true} data-icon-tone={item.iconTone}
-                onClick={item.onSelect}>
+                onClick={item.onSelect} onContextMenu={item.onContextMenu}>
                 <Icon name={item.icon} size={18} />
               </button>
             ))}

@@ -13,6 +13,7 @@ describe('Web 笔记工作区', () => {
 
   beforeAll(async () => {
     scaffold = await launchWebScaffold()
+    await scaffold.ctx.fileLibrary.createNoteDirectory('Ideas')
     await scaffold.ctx.fileLibrary.saveNote('Release notes.md', '# Release checklist\n\n- Review docs\n')
     const executablePath = process.env.DSH_PLAYWRIGHT_EXECUTABLE_PATH
     browser = await chromium.launch(executablePath === undefined ? {} : { executablePath })
@@ -38,6 +39,24 @@ describe('Web 笔记工作区', () => {
     expect(await editor.isVisible()).toBe(true)
     expect(await page.locator('[data-conversation-scroll]:visible').count()).toBe(1)
 
+    const directory = main.getByRole('complementary', { name: 'Note directory' })
+    const alignment = await directory.getByRole('listitem').evaluateAll(rows => rows.map((row) => {
+      const box = row.getBoundingClientRect()
+      const label = [...row.querySelectorAll('span')].find(span => span.textContent === row.getAttribute('title'))!
+      const labelBox = label.getBoundingClientRect()
+      const iconBox = row.querySelector('svg')!.getBoundingClientRect()
+      return {
+        height: box.height,
+        labelStart: labelBox.left,
+        offset: Math.abs(labelBox.top + labelBox.height / 2 - (iconBox.top + iconBox.height / 2)),
+      }
+    }))
+    expect(alignment).toHaveLength(2)
+    const [first, second] = alignment
+    expect(first?.height).toBe(second?.height)
+    expect(first?.labelStart).toBe(second?.labelStart)
+    expect(Math.max(...alignment.map(row => row.offset))).toBeLessThanOrEqual(1)
+
     const revised = '# Release checklist\n\n- Review docs\n- Check notes layout\n'
     await editor.fill(revised)
     await expect.poll(async () => (await scaffold.ctx.fileLibrary.readNote('Release notes.md')).content).toBe(revised)
@@ -45,7 +64,7 @@ describe('Web 笔记工作区', () => {
     await dock.getByRole('button', { name: 'Summarize', exact: true }).click()
     const prompt = await assistantInput.inputValue()
     expect(prompt).toContain('Summarize this content')
-    expect(await assistantInput.evaluate(element => document.activeElement === element)).toBe(true)
+    await expect.poll(() => assistantInput.evaluate(element => document.activeElement === element)).toBe(true)
     expect(await dock.getByRole('tab', { name: 'Work', exact: true }).count()).toBe(0)
 
     await page.setViewportSize({ width: 620, height: 800 })

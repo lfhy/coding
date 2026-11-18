@@ -229,7 +229,7 @@ describe('the shipped Codex preset', () => {
   }, 30_000)
 
   it('仅 Codex 不装配进度提醒，其余随包模式保持原阈值', async () => {
-    for (const preset of ['codex', 'standard', 'minimal', 'cordis', 'image', 'ppt', 'reverse', 'webclone', 'longrun']) {
+    for (const preset of ['codex', 'standard', 'minimal', 'cordis', 'image', 'ppt', 'reverse', 'webclone', 'longrun', 'notes']) {
       const rows = loadCordisYaml(await readFile(join(CONFIG, 'agent-presets', preset, 'agent.cordis.yml'), 'utf8')) as {
         id?: string
         name: string

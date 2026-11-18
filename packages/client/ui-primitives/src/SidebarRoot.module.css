@@ -96,12 +96,17 @@
 
 .mediaRows { gap: 4px; }
 
-.chevron {
-  display: inline-block;
+.chevronSlot {
+  display: grid;
+  place-items: center;
   flex: none;
+  width: 10px;
+  height: 16px;
+}
+
+.chevron {
   width: 6px;
   height: 6px;
-  margin-left: 2px;
   border-right: 1.5px solid var(--dsw-alias-label-tertiary);
   border-bottom: 1.5px solid var(--dsw-alias-label-tertiary);
   transform: rotate(-45deg);
@@ -155,34 +160,21 @@
   font: var(--dsw-font-s-strong-14);
 }
 
-.summaryRow { height: 52px; }
+.summaryRow {
+  display: grid;
+  grid-template-columns: 10px 16px minmax(0, 1fr) auto;
+}
 .summaryRow[aria-current='true'] { background: var(--dsw-alias-state-business-tertiary); }
 
-.summaryText {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
-
-.summaryDetails {
-  display: flex;
-  justify-content: space-between;
-  gap: 6px;
-  min-width: 0;
+.summaryMeta {
   color: var(--dsw-alias-label-secondary);
   font: var(--dsw-font-xxs-12);
-}
-
-.summaryDetails > span {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
-
-.summaryDetails > :last-child { flex: none; }
 
 .shell[data-variant='summary'] .railButton[aria-pressed='true'] {
   background: var(--dsw-alias-state-business-tertiary);

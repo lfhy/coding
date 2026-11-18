@@ -3038,6 +3038,9 @@ importers:
       '@types/react':
         specifier: ~18.3.1
         version: 18.3.31
+      coding-api-remotes:
+        specifier: workspace:^
+        version: link:../../api/remotes
       coding-client-locale:
         specifier: workspace:^
         version: link:../locale

@@ -451,6 +451,7 @@ describe('ConversationRoot resident composer', () => {
     expect(b.view.container.querySelector('[data-assistant-welcome]')).toBeTruthy()
     expect(b.view.container.querySelector('[data-assistant-welcome]')?.closest('[data-composer-seat]')).toBeNull()
     expect(b.view.getByText('可以帮你写作、总结、优化或处理代码')).toBeTruthy()
+    expect(b.slotCalls).not.toContain('conversation.session.header')
     expect(b.slotCalls).not.toContain('conversation.hero.mode')
     expect(b.slotCalls).not.toContain('conversation.hero.workspace')
     expect(b.slotCalls).not.toContain('conversation.hero.actions')
