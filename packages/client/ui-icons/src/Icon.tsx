@@ -15,6 +15,11 @@ import SemiGallery from '@douyinfe/semi-icons/lib/es/icons/IconGallery'
 import SemiFolderOpen from '@douyinfe/semi-icons/lib/es/icons/IconFolderOpenStroked'
 import SemiInbox from '@douyinfe/semi-icons/lib/es/icons/IconInbox'
 import SemiTextStroked from '@douyinfe/semi-icons/lib/es/icons/IconTextStroked'
+import SemiBold from '@douyinfe/semi-icons/lib/es/icons/IconBold'
+import SemiItalic from '@douyinfe/semi-icons/lib/es/icons/IconItalic'
+import SemiHeading from '@douyinfe/semi-icons/lib/es/icons/IconH2'
+import SemiList from '@douyinfe/semi-icons/lib/es/icons/IconList'
+import SemiQuote from '@douyinfe/semi-icons/lib/es/icons/IconQuote'
 import { IconTerminalOutline16, IconThinkOutline16 } from './legacy.tsx'
 import { PptMark } from './PptMark.tsx'
 import type { IconProps } from './props.ts'
@@ -24,6 +29,15 @@ export type IconName = 'sidebar' | 'files-panel' | 'bottom-panel' | 'terminal-me
   | 'model-vision' | 'model-reasoning' | 'open-window' | 'favorite' | 'ppt-workbench' | 'undo' | 'redo'
   | 'drag-handle' | 'home' | 'conversation' | 'recent' | 'file' | 'file-slides' | 'files' | 'file-other'
   | 'notes'
+  | 'format-bold' | 'format-italic' | 'format-heading' | 'format-list' | 'format-quote'
+
+const formatting = {
+  'format-bold': SemiBold,
+  'format-italic': SemiItalic,
+  'format-heading': SemiHeading,
+  'format-list': SemiList,
+  'format-quote': SemiQuote,
+}
 
 /** 产品语义名称加上共享的布局属性。 */
 export interface SemanticIconProps extends IconProps {
@@ -36,6 +50,11 @@ export interface SemanticIconProps extends IconProps {
  * @returns 隐藏于无障碍树的语义图标。
  */
 export function Icon({ name, size = 16, className }: SemanticIconProps) {
+  if (name === 'format-bold' || name === 'format-italic' || name === 'format-heading'
+    || name === 'format-list' || name === 'format-quote') {
+    const Glyph = formatting[name]
+    return <Glyph size="inherit" style={{ fontSize: size }} className={className} aria-hidden="true" />
+  }
   if (name === 'conversation') {
     return <SemiConversation size="inherit" style={{ fontSize: size }} className={className} aria-hidden="true" />
   }

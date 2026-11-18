@@ -86,11 +86,11 @@ export interface ILayout {
   /** 返回打开独立页面前的会话，页面所属会话已不是当前选择时不切换。 */
   closePage(): void
   /**
-   * 为当前主内容页打开或收起 AI 助手轨；页面本身关闭时由根布局重置。
-   * @param open - 是否显示助手轨。
+   * 设置当前主内容页的 AI 助手；没有页面时不记录偏好。
+   * @param open - 显示、收起，或只在空间足够时自动并排。
    * @returns 无返回值。
    */
-  setPageAssistant(open: boolean): void
+  setPageAssistant(open: boolean | 'auto'): void
   /**
    * 显示指定当前会话的对话；全屏工作台中打开原有悬浮对话。
    * @param sessionId - 发起动作时所属的会话。
@@ -271,8 +271,8 @@ export class LayoutController implements ILayout {
     this.#require().togglePage(kind, sessionId, returnSessionId)
   }
 
-  /** 当前主内容页是否附带 AI 助手轨；打开页面时重置为收起。 */
-  setPageAssistant(open: boolean): void {
+  /** @param open - 当前页的助手显隐或自动并排偏好。 */
+  setPageAssistant(open: boolean | 'auto'): void {
     this.#require().setPageAssistant(open)
   }
 

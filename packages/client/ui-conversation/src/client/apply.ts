@@ -236,6 +236,7 @@ export function apply(ctx: Context): void {
       selectWorkspace: workspaceId => blankSelection.workspace(sessionId, workspaceId),
       selectWithoutWorkspace: () => blankSelection.withoutWorkspace(sessionId),
       abortBlankSelection: blankSelection.abort,
+      focusInput: () => { if (sessionId !== undefined) inputHub.requestFocus(sessionId) },
     }),
   }, ConversationRoot)
 

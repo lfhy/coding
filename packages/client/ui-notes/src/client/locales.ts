@@ -2,34 +2,51 @@
 export const NS = 'notes'
 
 export type NotesLocaleKey =
-  | 'nav' | 'title' | 'space' | 'source' | 'preview'
-  | 'empty' | 'emptyHint' | 'newNote' | 'noteName' | 'create' | 'cancel' | 'placeholder'
-  | 'saved' | 'saving' | 'unsaved' | 'conflict' | 'reload'
+  | 'nav' | 'title' | 'space' | 'allNotes' | 'source' | 'assistant'
+  | 'search' | 'clearSearch' | 'noMatches' | 'dateLocale' | 'noteType'
+  | 'view' | 'edit' | 'split' | 'preview' | 'format' | 'inlineCode' | 'list'
+  | 'heading' | 'bold' | 'italic' | 'bullets' | 'quote' | 'link'
+  | 'empty' | 'emptyHint' | 'loading' | 'chooseNote' | 'newNote' | 'noteName' | 'create' | 'creating' | 'cancel' | 'close' | 'placeholder'
+  | 'saved' | 'saving' | 'unsaved' | 'conflict' | 'reload' | 'reloadConfirm' | 'draftKept' | 'discardDraft' | 'retry'
   | 'loadError' | 'saveError' | 'createError' | 'treeError'
-  | 'copy' | 'copied' | 'codeLabel'
+  | 'copy' | 'copied'
 
 /** 简体中文文案。 */
 export const zh: Record<NotesLocaleKey, string> = {
-  nav: '笔记', title: '笔记', space: '目录', source: '原始文本', preview: '预览',
-  empty: '还没有笔记', emptyHint: '新建一篇笔记，或让 AI 助手帮你起草。',
-  newNote: '新建笔记', noteName: '笔记名称', create: '创建', cancel: '取消',
+  nav: '笔记', title: '笔记', space: '笔记目录', allNotes: '全部笔记', source: '原始文本', assistant: 'AI 助手',
+  search: '搜索笔记', clearSearch: '清除搜索', noMatches: '找不到匹配的笔记', dateLocale: 'zh-CN', noteType: 'Markdown',
+  view: '正文视图', edit: '编辑', split: '并排', preview: '预览',
+  format: '文本格式', inlineCode: '行内代码', list: '待办列表',
+  heading: '二级标题', bold: '粗体', italic: '斜体', bullets: '无序列表', quote: '引用', link: '链接',
+  empty: '还没有笔记', emptyHint: '点击目录顶部的「新建笔记」开始。',
+  loading: '正在读取笔记…', chooseNote: '在目录中选择一篇笔记',
+  newNote: '新建笔记', noteName: '笔记名称', create: '创建', creating: '正在创建…', cancel: '取消', close: '关闭',
   placeholder: '在这里写 Markdown…',
-  saved: '已保存', saving: '正在保存…', unsaved: '有未保存的改动',
+  saved: '已保存', saving: '正在保存…', unsaved: '未保存',
   conflict: '笔记已被外部修改', reload: '重新加载',
-  loadError: '无法读取笔记', saveError: '保存失败，你的改动仍保留在编辑器里',
+  draftKept: '未保存的改动仍保留在编辑器里。', reloadConfirm: '重新加载会舍弃未保存的改动，并读取最新版本。',
+  discardDraft: '舍弃并重新加载', retry: '重试保存',
+  loadError: '无法读取笔记', saveError: '保存失败',
   createError: '无法创建笔记', treeError: '无法读取笔记目录',
-  copy: '复制', copied: '已复制', codeLabel: '代码',
+  copy: '复制', copied: '已复制',
 }
 
 /** 英文文案。 */
 export const en: Record<NotesLocaleKey, string> = {
-  nav: 'Notes', title: 'Notes', space: 'Tree', source: 'Plain text', preview: 'Preview',
-  empty: 'No notes yet', emptyHint: 'Create a note, or let the AI assistant draft one.',
-  newNote: 'New note', noteName: 'Note name', create: 'Create', cancel: 'Cancel',
+  nav: 'Notes', title: 'Notes', space: 'Note directory', allNotes: 'All notes', source: 'Plain text', assistant: 'AI Assistant',
+  search: 'Search notes', clearSearch: 'Clear search', noMatches: 'No matching notes', dateLocale: 'en-US', noteType: 'Markdown',
+  view: 'Note view', edit: 'Edit', split: 'Split', preview: 'Preview',
+  format: 'Formatting', inlineCode: 'Inline code', list: 'Task list',
+  heading: 'Level 2 heading', bold: 'Bold', italic: 'Italic', bullets: 'Bulleted list', quote: 'Quote', link: 'Link',
+  empty: 'No notes yet', emptyHint: 'Choose New note at the top of the directory to get started.',
+  loading: 'Loading notes…', chooseNote: 'Choose a note from the directory',
+  newNote: 'New note', noteName: 'Note name', create: 'Create', creating: 'Creating…', cancel: 'Cancel', close: 'Close',
   placeholder: 'Write Markdown here…',
-  saved: 'Saved', saving: 'Saving…', unsaved: 'Unsaved changes',
+  saved: 'Saved', saving: 'Saving…', unsaved: 'Unsaved',
   conflict: 'Note changed externally', reload: 'Reload',
-  loadError: 'Could not load the note', saveError: 'Save failed; your edits are kept in the editor',
+  draftKept: 'Unsaved changes are still in the editor.', reloadConfirm: 'Reloading discards unsaved changes and opens the latest version.',
+  discardDraft: 'Discard and reload', retry: 'Try saving again',
+  loadError: 'Could not load the note', saveError: 'Save failed',
   createError: 'Could not create the note', treeError: 'Could not load the note tree',
-  copy: 'Copy', copied: 'Copied', codeLabel: 'Code',
+  copy: 'Copy', copied: 'Copied',
 }

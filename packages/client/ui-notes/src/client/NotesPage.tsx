@@ -1,19 +1,21 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
-import type { CSSProperties } from 'react'
-import { MarkdownText, Modal, SidebarRoot, Toast, type SidebarRootItem } from 'coding-client-ui-primitives'
+import type { FormEvent, MouseEvent } from 'react'
+import {
+  Button, Icon, IconCheckOutline14, IconCloseOutline16, IconPlusOutline16, IconSearchOutline16, IconSparkle16,
+  Input, Modal, SidebarRoot, Toast, type SidebarRootItem,
+} from 'coding-client-ui-primitives'
 import type { PropsLocale, PropsRuntime } from 'coding-client-ui-slots'
-import { NS } from './locales.ts'
-import { NoteConflictError, notesCreate, notesRead, notesSave, notesTree, type NotesTreeEntry } from './wire.ts'
+import { NS, type NotesLocaleKey } from './locales.ts'
+import { NotesEditor } from './NotesEditor.tsx'
+import { useNoteDraft } from './useNoteDraft.ts'
+import { notesCreate, notesTree, type NotesTreeEntry } from './wire.ts'
 import css from './NotesPage.module.css'
 
 export type NotesPageProps = PropsRuntime<'shell.page'> & PropsLocale<typeof NS>
 
-/** 编辑器停顿后多久视为稳定并自动保存；与手动保存共用同一路径。 */
-const AUTOSAVE_DELAY_MS = 900
 /** AI 助手改动检测的目录轮询间隔。 */
 const TREE_POLL_MS = 4000
-
-type SaveState = 'idle' | 'saving' | 'saved' | 'conflict' | 'failed'
+type DirectoryState = 'loading' | 'ready' | 'failed'
 
 /** 去掉 Markdown 扩展名的文件名，供目录树显示。 */
 function labelOf(name: string): string {
@@ -32,158 +34,120 @@ function findEntry(entries: readonly NotesTreeEntry[], path: string): NotesTreeE
   return undefined
 }
 
-/** 笔记页：目录树侧栏、原始文本编辑与 Markdown 预览三分区；右半区的 AI 助手轨由根布局挂载。 */
-export function NotesPage({ closePage, t, sidebarCollapsed, sidebarWidth }: NotesPageProps) {
+function firstNote(
+  entries: readonly NotesTreeEntry[], parents: readonly string[] = [],
+): { path: string; parents: readonly string[] } | undefined {
+  const first = entries.find(entry => entry.kind === 'file')
+  if (first !== undefined) return { path: first.path, parents }
+  for (const entry of entries) {
+    if (entry.children === undefined) continue
+    const nested = firstNote(entry.children, [...parents, entry.path])
+    if (nested !== undefined) return nested
+  }
+  return undefined
+}
+
+/**
+ * 独立笔记页：目录和编辑器由本页持有，助手显隐由同会话的根布局持有。
+ * @param props - 根布局提供的实际侧栏和助手状态、动作，以及本地化文案。
+ * @returns 笔记目录与正文编辑区。
+ */
+export function NotesPage({
+  closePage, t, sidebarCollapsed, sidebarWidth, assistantOpen, assistantPanelId, toggleAssistant,
+}: NotesPageProps) {
   const titleId = useId()
+  const searchId = useId()
+  const formId = useId()
+  const nameId = useId()
   const titleRef = useRef<HTMLHeadingElement | null>(null)
-  const previousFocus = useRef<HTMLElement | null>(null)
+  const searchTrigger = useRef<HTMLButtonElement>(null)
+  const dialogTrigger = useRef<HTMLButtonElement | null>(null)
+  const creatingRequest = useRef<AbortController | null>(null)
   const [tree, setTree] = useState<NotesTreeEntry[]>([])
-  const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set<string>())
-  const [selected, setSelected] = useState<string | null>(null)
-  const [content, setContent] = useState('')
-  const [baseMtimeMs, setBaseMtimeMs] = useState<number | null>(null)
-  const [dirty, setDirty] = useState(false)
-  const [saveState, setSaveState] = useState<SaveState>('idle')
-  const [createOpen, setCreateOpen] = useState(false)
+  const [treeState, setTreeState] = useState<DirectoryState>('loading')
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set())
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [query, setQuery] = useState('')
+  const [dialog, setDialog] = useState<'create' | 'reload' | null>(null)
   const [draftName, setDraftName] = useState('')
   const [creating, setCreating] = useState(false)
-  const [toast, setToast] = useState<{ id: number; text: string } | null>(null)
+  const [toast, setToast] = useState<{ id: number; key: NotesLocaleKey } | null>(null)
   const toastId = useRef(0)
 
-  const selectedRef = useRef(selected)
-  const dirtyRef = useRef(dirty)
-  const contentRef = useRef(content)
-  const baseMtimeRef = useRef(baseMtimeMs)
-  selectedRef.current = selected
-  dirtyRef.current = dirty
-  contentRef.current = content
-  baseMtimeRef.current = baseMtimeMs
-
-  const showToast = useCallback((text: string) => {
+  const notify = useCallback((key: NotesLocaleKey) => {
     toastId.current += 1
-    setToast({ id: toastId.current, text })
+    setToast({ id: toastId.current, key })
   }, [])
 
-  /** 把树里指定路径的条目刷新为最新修改时间，保存成功后避免轮询误判外部改动。 */
-  const noteMtimes = useCallback((entries: readonly NotesTreeEntry[], path: string, mtimeMs: number): NotesTreeEntry[] =>
-    entries.map((entry) => {
-      if (entry.path === path) return { ...entry, mtimeMs }
-      if (entry.kind === 'dir' && entry.children !== undefined) {
-        return { ...entry, children: noteMtimes(entry.children, path, mtimeMs) }
-      }
-      return entry
-    }), [])
-
-  const save = useCallback(async (): Promise<boolean> => {
-    const path = selectedRef.current
-    if (path === null || !dirtyRef.current) return true
-    setSaveState('saving')
-    try {
-      /* v8 ignore next -- 选中笔记必然已读取并持有基准修改时间，空基准只防御异常时序。 */
-      const result = await notesSave(path, contentRef.current, baseMtimeRef.current ?? undefined)
-      setBaseMtimeMs(result.mtimeMs)
-      setDirty(false)
-      setSaveState('saved')
-      setTree(previous => noteMtimes(previous, result.path, result.mtimeMs))
-      return true
-    } catch (error) {
-      if (error instanceof NoteConflictError) {
-        setSaveState('conflict')
-        return false
-      }
-      setSaveState('failed')
-      return false
-    }
-  }, [noteMtimes])
-
-  /** 重新加载被外部修改的笔记，丢弃编辑器缓冲并采用磁盘内容。 */
-  const reload = useCallback(async () => {
-    const path = selectedRef.current
-    /* v8 ignore next -- 重新加载只在选中笔记且处于冲突状态时可点，空选择只防御弹窗残留。 */
-    if (path === null) return
-    try {
-      const read = await notesRead(path, new AbortController().signal)
-      setContent(read.content)
-      setBaseMtimeMs(read.mtimeMs)
-      setDirty(false)
-      setSaveState('saved')
-    } catch {
-      setSaveState('conflict')
-    }
-  }, [])
-
-  const selectNote = useCallback(async (path: string) => {
-    if (path === selectedRef.current) return
-    // 切换前先把未保存的改动落盘；冲突时保存失败，旧笔记保留外部版本并提示。
-    if (dirtyRef.current && !(await save())) {
-      showToast(t('conflict'))
-    }
-    try {
-      const read = await notesRead(path, new AbortController().signal)
-      setSelected(path)
-      setContent(read.content)
-      setBaseMtimeMs(read.mtimeMs)
-      setDirty(false)
-      setSaveState('idle')
-    } catch {
-      showToast(t('loadError'))
-    }
-  }, [save, showToast, t])
+  const { draft, saveLabel, select, edit, save, reload, refresh, getPath, flush } = useNoteDraft(notify)
 
   useEffect(() => {
     /* v8 ignore next -- jsdom 中 activeElement 恒为元素；null 臂只防御焦点位于其他文档或窗口的浏览器。 */
-    previousFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
-    titleRef.current?.focus()
+    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    titleRef.current?.focus({ preventScroll: true })
+    return () => { previousFocus?.focus({ preventScroll: true }) }
+  }, [])
+
+  useEffect(() => {
+    const lifetime = new AbortController()
     const onKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || document.querySelector('[role="dialog"], [role="menu"], [role="listbox"]')) return
       if ((event.key === 's' || event.key === 'S') && (event.metaKey || event.ctrlKey)) {
         event.preventDefault()
         void save()
-        return
+      } else if (event.key === 'Escape') {
+        void flush(lifetime.signal).then((ok) => { if (ok && !lifetime.signal.aborted) closePage() })
       }
-      if (event.key !== 'Escape' || event.defaultPrevented) return
-      if (document.querySelector('[role="dialog"][aria-modal="true"], [role="menu"], [role="listbox"]')) return
-      closePage()
     }
+    const onBlur = () => { void save() }
     document.addEventListener('keydown', onKeyDown)
-    const controller = new AbortController()
-    notesTree(controller.signal).then((entries) => {
-      setTree(entries)
-      const first = entries.find(entry => entry.kind === 'file')
-      if (first !== undefined) void selectNote(first.path)
-    }).catch(() => { showToast(t('treeError')) })
+    window.addEventListener('blur', onBlur)
     return () => {
+      lifetime.abort()
       document.removeEventListener('keydown', onKeyDown)
-      previousFocus.current?.focus()
+      window.removeEventListener('blur', onBlur)
     }
-  }, [closePage, save, selectNote, showToast, t])
+  }, [closePage, flush, save])
 
-  // 停顿 900ms 的自动保存；切换笔记与手动保存走同一 save 路径。
   useEffect(() => {
-    if (!dirty) return
-    const timer = window.setTimeout(() => { void save() }, AUTOSAVE_DELAY_MS)
-    return () => { window.clearTimeout(timer) }
-  }, [content, dirty, save])
-
-  // 目录轮询：AI 助手写入笔记后更新树；当前笔记被外部修改且编辑器无未保存改动时静默采用。
-  useEffect(() => {
-    const poll = window.setInterval(async () => {
+    const controller = new AbortController()
+    const { signal } = controller
+    let timer: number | undefined
+    let status: DirectoryState = 'loading'
+    const poll = async () => {
       try {
-        const fresh = await notesTree(new AbortController().signal)
+        const fresh = await notesTree(signal)
+        signal.throwIfAborted()
         setTree(fresh)
-        const path = selectedRef.current
-        if (path === null || dirtyRef.current) return
-        const entry = findEntry(fresh, path)
-        if (entry !== undefined && entry.mtimeMs !== baseMtimeRef.current) {
-          const read = await notesRead(path, new AbortController().signal)
-          setContent(read.content)
-          setBaseMtimeMs(read.mtimeMs)
+        const path = getPath()
+        if (path !== undefined) {
+          await refresh(findEntry(fresh, path)?.mtimeMs, signal)
+        } else if (status !== 'ready' && creatingRequest.current === null) {
+          const first = firstNote(fresh)
+          if (first !== undefined) {
+            setExpanded(new Set(first.parents))
+            await select(first.path)
+          }
         }
+        status = 'ready'
+        if (!signal.aborted) setTreeState('ready')
       } catch {
-        /* 网络抖动保留现有树与内容，下一轮重试。 */
+        if (status === 'loading' && !signal.aborted) {
+          status = 'failed'
+          setTreeState('failed')
+          notify('treeError')
+        }
+      } finally {
+        if (!signal.aborted) timer = window.setTimeout(() => { void poll() }, TREE_POLL_MS)
       }
-    }, TREE_POLL_MS)
-    return () => { window.clearInterval(poll) }
-  }, [])
+    }
+    void poll()
+    return () => {
+      controller.abort()
+      window.clearTimeout(timer)
+      creatingRequest.current?.abort()
+    }
+  }, [getPath, notify, refresh, select])
 
   const toggleDir = useCallback((path: string) => {
     setExpanded((previous) => {
@@ -194,19 +158,31 @@ export function NotesPage({ closePage, t, sidebarCollapsed, sidebarWidth }: Note
     })
   }, [])
 
+  const locale = t('dateLocale')
+  const typeLabel = t('noteType')
+  const needle = searchOpen && !sidebarCollapsed ? query.trim().toLocaleLowerCase(locale) : ''
   const treeItems = useMemo(() => {
+    const date = new Intl.DateTimeFormat(locale, { month: 'short', day: 'numeric' })
     const flatten = (entries: readonly NotesTreeEntry[], out: SidebarRootItem[], depth: number): void => {
       for (const entry of entries) {
         if (entry.kind === 'dir') {
+          if (needle !== '') {
+            if (entry.children !== undefined) flatten(entry.children, out, 0)
+            continue
+          }
           out.push({
             id: entry.path, label: entry.name, icon: 'files', folder: true, open: expanded.has(entry.path), depth,
             onSelect: () => { toggleDir(entry.path) },
           })
           if (expanded.has(entry.path) && entry.children !== undefined) flatten(entry.children, out, depth + 1)
         } else {
+          const label = labelOf(entry.name)
+          if (needle !== '' && !label.toLocaleLowerCase(locale).includes(needle)) continue
           out.push({
-            id: entry.path, label: labelOf(entry.name), icon: 'notes', depth, active: selected === entry.path,
-            onSelect: () => { void selectNote(entry.path) },
+            id: entry.path, label, icon: 'notes', iconTone: 'blue', depth, active: draft?.path === entry.path,
+            description: entry.path.split('/').at(-2) ?? typeLabel,
+            meta: date.format(entry.mtimeMs),
+            onSelect: () => { void select(entry.path) },
           })
         }
       }
@@ -214,112 +190,143 @@ export function NotesPage({ closePage, t, sidebarCollapsed, sidebarWidth }: Note
     const items: SidebarRootItem[] = []
     flatten(tree, items, 0)
     return items
-  }, [tree, expanded, selected, selectNote, toggleDir])
+  }, [tree, expanded, draft?.path, locale, needle, typeLabel, select, toggleDir])
 
-  const createNote = useCallback(async () => {
+  const closeSearch = () => {
+    setSearchOpen(false)
+    setQuery('')
+    searchTrigger.current?.focus({ preventScroll: true })
+  }
+
+  useEffect(() => {
+    if (dialog !== null || dialogTrigger.current === null) return
+    dialogTrigger.current.focus({ preventScroll: true })
+    dialogTrigger.current = null
+  }, [dialog])
+
+  const closeDialog = () => {
+    if (creatingRequest.current !== null) return
+    setDialog(null)
+  }
+
+  const openDialog = (kind: 'create' | 'reload', event: MouseEvent<HTMLButtonElement>) => {
+    dialogTrigger.current = event.currentTarget
+    if (kind === 'create') setDraftName('')
+    setDialog(kind)
+  }
+
+  const createNote = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
     const name = draftName.trim()
-    if (name === '') return
+    if (name === '' || creatingRequest.current !== null) return
+    const request = new AbortController()
+    creatingRequest.current = request
     setCreating(true)
     try {
       const { path } = await notesCreate(name)
-      const fresh = await notesTree(new AbortController().signal)
-      setTree(fresh)
-      setExpanded((previous) => {
-        const next = new Set(previous)
-        const segments = path.split('/')
-        for (let i = 1; i < segments.length; i++) {
-          /* v8 ignore next -- 新建笔记只落在笔记根目录，父链展开只防御将来支持子目录创建。 */
-          next.add(segments.slice(0, i).join('/'))
-        }
-        return next
+      request.signal.throwIfAborted()
+      const fresh = notesTree(request.signal).then((entries) => {
+        if (!request.signal.aborted) setTree(entries)
+      }, () => {
+        if (!request.signal.aborted) notify('treeError')
       })
-      setCreateOpen(false)
-      setDraftName('')
-      await selectNote(path)
+      await Promise.all([fresh, select(path)])
+      if (!request.signal.aborted) setDialog(null)
     } catch {
-      showToast(t('createError'))
+      if (!request.signal.aborted) notify('createError')
     } finally {
-      setCreating(false)
+      creatingRequest.current = null
+      if (!request.signal.aborted) setCreating(false)
     }
-  }, [draftName, selectNote, showToast, t])
+  }
 
-  const selectedLabel = selected === null ? t('empty') : labelOf(findEntry(tree, selected)?.name ?? selected.replace(/^.*\//u, ''))
-  const saveLabel = saveState === 'saving' ? t('saving')
-    : saveState === 'saved' ? t('saved')
-      : saveState === 'conflict' || saveState === 'failed' ? t(saveState === 'conflict' ? 'conflict' : 'saveError')
-        : dirty ? t('unsaved') : ''
+  const selectedLabel = draft === null ? t('title') : labelOf(findEntry(tree, draft.path)?.name ?? draft.path.replace(/^.*\//u, ''))
 
   return (
-    <main className={css.page} aria-labelledby={titleId}
-      style={{ '--page-sidebar-width': `${sidebarWidth}px` } as CSSProperties}>
+    <main className={css.page} aria-labelledby={titleId}>
       <SidebarRoot
-        label={t('space')} title={t('space')}
-        collapsed={sidebarCollapsed} width={sidebarWidth}
-        header={
-          <button type="button" className={css.newNote} onClick={() => { setCreateOpen(true); setDraftName('') }}>
-            {t('newNote')}
-          </button>
-        }
-        items={treeItems}
-        empty={t('empty')} />
-      <section className={css.source} aria-label={t('source')}>
-        <header className={css.paneHeader}>
-          <h1 ref={titleRef} id={titleId} className={css.title} tabIndex={-1}>{selectedLabel}</h1>
-          <span className={css.saveState} data-state={saveState} aria-live="polite">{saveLabel}</span>
-        </header>
-        {selected === null ? (
-          <div className={css.paneBody}>
-            <p className={css.emptyHint}>{t('emptyHint')}</p>
-            <button type="button" className={css.primary} onClick={() => { setCreateOpen(true); setDraftName('') }}>
-              {t('newNote')}
-            </button>
+        label={t('space')} title={t('allNotes')}
+        collapsed={sidebarCollapsed} width={sidebarWidth} variant="summary"
+        headerAction={<div className={css.directoryActions}>
+          {!sidebarCollapsed && (
+            <Button ref={searchTrigger} size="sm" className={css.directoryButton} icon={<IconSearchOutline16 />}
+              aria-label={t('search')} title={t('search')} aria-expanded={searchOpen}
+              aria-controls={searchOpen ? searchId : undefined}
+              onClick={() => { if (searchOpen) closeSearch(); else setSearchOpen(true) }} />
+          )}
+          <Button size="sm" className={css.newNote} icon={<IconPlusOutline16 />}
+            aria-label={t('newNote')} title={t('newNote')} aria-haspopup="dialog" disabled={creating}
+            onClick={(event) => { openDialog('create', event) }} />
+        </div>}
+        {...(needle !== '' ? { empty: t('noMatches') } : {})}
+        toolbar={searchOpen && <div id={searchId} className={css.searchRow}>
+          <Input className={css.searchField} value={query} autoFocus aria-label={t('search')} placeholder={t('search')}
+            onChange={(event) => { setQuery(event.target.value) }}
+            onKeyDown={(event) => { if (event.key === 'Escape') { event.preventDefault(); closeSearch() } }} />
+          <Button size="sm" className={css.directoryButton} aria-label={t('clearSearch')} title={t('clearSearch')}
+            icon={<IconCloseOutline16 />} onClick={closeSearch} />
+        </div>}
+        items={treeItems} />
+      <div className={css.document}>
+        <header className={css.documentHeader}>
+          <div className={css.heading}>
+            <span className={css.documentIcon} aria-hidden="true"><Icon name="notes" size={18} /></span>
+            <h1 ref={titleRef} id={titleId} className={css.title} title={selectedLabel} tabIndex={-1}>{selectedLabel}</h1>
+            {saveLabel !== undefined && (
+              <span className={css.saveState} data-state={saveLabel} role="status">
+                {saveLabel === 'saved' && <IconCheckOutline14 />}{t(saveLabel)}
+              </span>
+            )}
           </div>
-        ) : (
-          <div className={css.paneBody}>
-            <textarea
-              className={css.editor}
-              value={content}
-              spellCheck={false}
-              placeholder={t('placeholder')}
-              aria-label={t('source')}
-              onChange={(event) => { setContent(event.target.value); setDirty(true) }}
-              onBlur={() => { void save() }} />
+          <Button size="sm" className={css.assistant} icon={<IconSparkle16 />}
+            aria-label={t('assistant')} title={t('assistant')} aria-expanded={assistantOpen}
+            aria-controls={assistantPanelId} onClick={toggleAssistant}>
+            <span className={css.assistantLabel}>{t('assistant')}</span>
+          </Button>
+        </header>
+        {(saveLabel === 'conflict' || saveLabel === 'saveError') && (
+          <div className={css.recovery}>
+            <p>{t('draftKept')}</p>
+            {saveLabel === 'conflict'
+              ? <Button size="sm" variant="outline" aria-haspopup="dialog"
+                onClick={(event) => { openDialog('reload', event) }}>{t('reload')}</Button>
+              : <Button size="sm" variant="outline" onClick={() => { void save() }}>{t('retry')}</Button>}
           </div>
         )}
-      </section>
-      <section className={css.preview} aria-label={t('preview')}>
-        <header className={css.paneHeader}>
-          <h2 className={css.title}>{t('preview')}</h2>
-          {saveState === 'conflict' && (
-            <button type="button" className={css.reload} onClick={() => { void reload() }}>{t('reload')}</button>
-          )}
-        </header>
-        <div className={css.paneBody}>
-          {selected === null
-            ? <p className={css.emptyHint}>{t('empty')}</p>
-            : <MarkdownText text={content} codeLabels={{ copyLabel: t('copy'), copiedLabel: t('copied') }}
-              onOpenUrl={(href) => { window.open(href, '_blank', 'noopener,noreferrer') }} />}
-        </div>
-      </section>
-      <Modal
-        open={createOpen}
-        onClose={() => { if (!creating) setCreateOpen(false) }}
-        title={t('newNote')}
-        closeLabel={t('cancel')}
-        trapFocus>
-        <label className={css.formLabel} htmlFor="notes-new-name">{t('noteName')}</label>
-        <input id="notes-new-name" className={css.formInput} value={draftName}
-          placeholder="想法.md" onChange={(event) => { setDraftName(event.target.value) }}
-          onKeyDown={(event) => { if (event.key === 'Enter') { void createNote() } }} />
-        <div className={css.modalFooter}>
-          <button type="button" className={css.secondary} onClick={() => { setCreateOpen(false) }}>{t('cancel')}</button>
-          <button type="button" className={css.primary} disabled={creating || draftName.trim() === ''}
-            onClick={() => { void createNote() }}>
-            {t('create')}
-          </button>
-        </div>
+        {draft !== null
+          ? <NotesEditor content={draft.content} onChange={edit} onBlur={() => { void save() }} t={t} />
+          : <div className={css.empty} role="status">
+            {treeState === 'loading' ? <p>{t('loading')}</p>
+              : treeState === 'failed' ? <p>{t('treeError')}</p>
+                : <><strong>{t(tree.length === 0 ? 'empty' : 'chooseNote')}</strong>
+                  {tree.length === 0 && <p>{t('emptyHint')}</p>}</>}
+          </div>}
+      </div>
+      <Modal open={dialog === 'create'} onClose={closeDialog} title={t('newNote')} closeLabel={t('close')} trapFocus
+        footer={<>
+          <Button variant="outline" disabled={creating} onClick={closeDialog}>{t('cancel')}</Button>
+          <Button variant="primary" type="submit" form={formId} disabled={creating || draftName.trim() === ''}>
+            {t(creating ? 'creating' : 'create')}
+          </Button>
+        </>}>
+        <form id={formId} className={css.form} onSubmit={(event) => { void createNote(event) }}>
+          <label htmlFor={nameId}>{t('noteName')}</label>
+          <Input id={nameId} value={draftName} autoFocus readOnly={creating}
+            onChange={(event) => { setDraftName(event.target.value) }} />
+        </form>
       </Modal>
-      {toast !== null && <Toast key={toast.id} text={toast.text} onDone={() => { setToast(null) }} />}
+      <Modal open={dialog === 'reload'} onClose={closeDialog} title={t('reload')} closeLabel={t('close')}
+        description={t('reloadConfirm')} trapFocus footer={<>
+          <Button variant="outline" autoFocus onClick={closeDialog}>{t('cancel')}</Button>
+          <Button variant="primary" onClick={() => {
+            dialogTrigger.current = null
+            closeDialog()
+            titleRef.current?.focus({ preventScroll: true })
+            void reload()
+          }}>{t('discardDraft')}</Button>
+        </>}>
+      </Modal>
+      {toast !== null && <Toast key={toast.id} text={t(toast.key)} onDone={() => { setToast(null) }} />}
     </main>
   )
 }

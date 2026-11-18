@@ -9,6 +9,7 @@ import { useEffect, useState, useSyncExternalStore } from 'react'
 import { Menu } from 'coding-client-ui-primitives'
 import { AppFrame } from 'coding-client-ui-layout/src/client/AppFrame.tsx'
 import type { AppFrameProps } from 'coding-client-ui-layout/src/client/AppFrame.tsx'
+import type { ShellPageOwnerProps } from 'coding-client-ui-layout/client'
 import {
   DETAILS_MAX,
   DETAILS_MIN,
@@ -32,6 +33,8 @@ const selectedSession = { current: 's-test' as SessionId | undefined }
 const selectedSessionBlank = { current: false }
 const baselinesReady = { current: true }
 const layoutLabels: Record<string, string> = {
+  'assistant.title': 'AI 助手',
+  'assistant.close': '收起 AI 助手',
   'floating.open': '继续对话',
   'floating.open.label': '打开悬浮对话',
   'floating.dialog.label': '悬浮对话',
@@ -141,7 +144,13 @@ function mountFrame(options: {
     if (key === 'workbench') return <div data-testid="workbench-content" />
     if (key === 'workbench.bottom') return <div data-testid="bottom-content" />
     if (key === 'conversation.empty') return <div data-testid="empty-content" />
-    if (key === 'shell.page') return <main data-testid="gallery-page" />
+    if (key === 'shell.page') {
+      const { assistantOpen, assistantPanelId, toggleAssistant } = owner as ShellPageOwnerProps
+      return <main data-testid="gallery-page">
+        <button type="button" aria-expanded={assistantOpen} aria-controls={assistantPanelId}
+          onClick={toggleAssistant}>切换 AI 助手</button>
+      </main>
+    }
     return <div data-testid="other-content" />
   }) as AppFrameProps['renderSlot']
   const useSessions = ((sel: (s: SessionListState) => unknown) => {
@@ -738,22 +747,59 @@ describe('AppFrame', () => {
     expect(b.getByTestId('center-content')).toBeTruthy()
   })
 
-  it('把对话 slot 渲染进页面助手轨，页面关闭后随状态一并收起', () => {
+  it('宽屏助手复用常驻对话，收起时保留草稿与笔记页', () => {
     const b = mountFrame()
-    act(() => { b.instance.actions.openPage('image-gallery', 's-test' as SessionId) })
+    const input = b.getByRole('textbox', { name: '测试会话草稿' }) as HTMLTextAreaElement
+    fireEvent.change(input, { target: { value: '助手草稿' } })
+    act(() => { b.instance.actions.openPage('notes', 's-test' as SessionId) })
     expect(b.frame.querySelector('[data-page-assistant-track]')).toBeNull()
-    expect(b.frame.querySelector('[data-shell-page]')?.getAttribute('data-page-assistant')).toBeNull()
-    act(() => { b.instance.actions.setPageAssistant(true) })
-    const track = b.frame.querySelector('[data-page-assistant-track]')
-    expect(track).not.toBeNull()
-    // 助手轨承载真实的对话视图，页面内容仍在左侧原区域。
-    expect(track?.querySelector('[data-testid="center-content"]')).not.toBeNull()
-    expect(track?.querySelector('[data-testid="gallery-page"]')).toBeNull()
-    expect(b.frame.querySelector('[data-shell-page]')?.getAttribute('data-page-assistant')).toBe('true')
-    expect(b.ownerFor('conversation')).toMatchObject({ sidebarCollapsed: false })
+    act(() => { b.instance.actions.setPageAssistant('auto') })
+    const toggle = b.getByRole('button', { name: '切换 AI 助手' })
+    const track = b.getByRole('complementary', { name: 'AI 助手' })
+    expect(track.id).toBe(toggle.getAttribute('aria-controls'))
+    expect(b.getByRole('textbox', { name: '测试会话草稿' })).toBe(input)
+    expect(input.value).toBe('助手草稿')
+    expect(b.ownerFor('conversation')).toMatchObject({ sidebarCollapsed: false, inPageAssistant: true })
+    fireEvent.click(b.getByRole('button', { name: '收起 AI 助手' }))
+    expect(b.queryByRole('complementary', { name: 'AI 助手' })).toBeNull()
+    expect(document.activeElement).toBe(toggle)
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+    fireEvent.click(toggle)
+    expect(b.getByRole('textbox', { name: '测试会话草稿' })).toBe(input)
     act(() => { (b.ownerFor('shell.page') as { closePage(): void }).closePage() })
     expect(b.frame.querySelector('[data-page-assistant-track]')).toBeNull()
-    expect(b.instance.store.getSnapshot().pageAssistant).toBe(false)
+    expect(b.instance.store.getSnapshot().pageAssistant).toBeNull()
+    expect(b.getByRole('textbox', { name: '测试会话草稿' })).toBe(input)
+  })
+
+  it('窄屏默认收起，按需打开抽屉，缩放或关闭不卸载对话', () => {
+    frameWidth = 768
+    const b = mountFrame({ menuMode: 'inline-anchor' })
+    act(() => {
+      b.instance.actions.openPage('notes', 's-test' as SessionId)
+      b.instance.actions.setPageAssistant('auto')
+    })
+    const toggle = b.getByRole('button', { name: '切换 AI 助手' })
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+    fireEvent.click(toggle)
+    const drawer = b.getByRole('dialog', { name: 'AI 助手' })
+    expect(document.activeElement).toBe(drawer)
+    expect(b.getByTestId('gallery-page').closest('[inert]')).not.toBeNull()
+    const input = b.getByRole('textbox', { name: '测试会话草稿' })
+    frameWidth = 1920
+    act(() => { fireResize?.(); vi.advanceTimersByTime(20) })
+    expect(b.getByRole('complementary', { name: 'AI 助手' })).toBe(drawer)
+    expect(b.getByTestId('gallery-page').closest('[inert]')).toBeNull()
+    frameWidth = 768
+    act(() => { fireResize?.(); vi.advanceTimersByTime(20) })
+    expect(b.getByRole('textbox', { name: '测试会话草稿' })).toBe(input)
+    fireEvent.click(b.getByRole('button', { name: '内部菜单' }))
+    fireEvent.keyDown(input, { key: 'Escape' })
+    expect(b.getByRole('dialog', { name: 'AI 助手' })).toBe(drawer)
+    fireEvent.keyDown(input, { key: 'Escape' })
+    expect(b.queryByRole('dialog', { name: 'AI 助手' })).toBeNull()
+    expect(document.activeElement).toBe(toggle)
+    expect(b.getByTestId('gallery-page').closest('[inert]')).toBeNull()
   })
 
   it.each([1920, 768])('shares sidebar collapse and width across conversation, files, and gallery at %ipx', (width) => {

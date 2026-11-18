@@ -87,7 +87,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     doc: '对话主区域；无当前会话时仍保持同一个 `session-maybe` entry。',
     registerOptions: [],
     ownerProps: [
-      '/** 对话区域需要知道侧边栏的实际收起状态，以呈现欢迎页入口。 */\nexport interface ConvOwnerProps {\n  /** 响应式折叠后的实际状态，而非用户保存的宽度偏好。 */\n  sidebarCollapsed: boolean\n}',
+      '/** 对话区域需要知道侧边栏的实际收起状态，以呈现欢迎页入口。 */\nexport interface ConvOwnerProps {\n  /** 响应式折叠后的实际状态，而非用户保存的宽度偏好。 */\n  sidebarCollapsed: boolean\n  /** 作为独立页面的上下文助手时，隐藏完整对话页才需要的入口。 */\n  inPageAssistant?: boolean | undefined\n}',
     ],
     ownerPropsReferences: [],
     standardProps: [
@@ -108,7 +108,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'shadows-shipped-ui',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'conversation\', () => ctx.slots.register(\n      { name: \'conversation\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-layout/src/client/index.ts:42',
+    source: 'packages/client/ui-layout/src/client/index.ts:43',
   },
   {
     key: 'conversation.chat.assistant-actions',
@@ -1367,7 +1367,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'shadows-shipped-ui',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'details\', () => ctx.slots.register(\n      { name: \'details\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-layout/src/client/index.ts:44',
+    source: 'packages/client/ui-layout/src/client/index.ts:45',
   },
   {
     key: 'root',
@@ -1789,11 +1789,13 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     slotInject: '',
     declaredBy: 'an entry in \'root\' (client-ui-layout), so it exists while that entry is mounted',
     occupants: [
+      'client-ui-files FilesNavigationEntry id \'files\'',
       'client-ui-image-gen NavigationEntry id \'image-generation\'',
+      'client-ui-notes NotesNavigationEntry id \'notes\'',
     ],
     replaceRisk: 'none',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'shell.navigation.entry\', () => ctx.slots.register(\n      { name: \'shell.navigation.entry\', id: \'my-entry\', order: 100, label: \'My entry\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-layout/src/client/index.ts:56',
+    source: 'packages/client/ui-layout/src/client/index.ts:57',
   },
   {
     key: 'shell.overlay',
@@ -1834,7 +1836,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     occupants: [],
     replaceRisk: 'none',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'shell.overlay\', () => ctx.slots.register(\n      { name: \'shell.overlay\', id: \'my-entry\', order: 100, label: \'My entry\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-layout/src/client/index.ts:52',
+    source: 'packages/client/ui-layout/src/client/index.ts:53',
   },
   {
     key: 'shell.page',
@@ -1851,7 +1853,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
       },
     ],
     ownerProps: [
-      '/** 独立页面只负责内容与返回动作，会话身份由框架标准 seat 注入。 */\nexport interface ShellPageOwnerProps {\n  closePage: () => void\n}',
+      '/** 独立页面接收返回动作与内层侧栏的当前事实；会话身份由框架标准 seat 注入。 */\nexport interface ShellPageOwnerProps {\n  closePage: () => void\n  /** 与对话侧栏相同的响应式折叠状态，页面切换时不重置。 */\n  sidebarCollapsed: boolean\n  /** 与对话侧栏相同的实际宽度，包含窄屏的 56px 图标轨。 */\n  sidebarWidth: number\n  /** 助手的实际显隐；自动模式下由主内容可用宽度决定。 */\n  assistantOpen: boolean\n  /** 供页头开关通过 aria-controls 关联同一会话区域。 */\n  assistantPanelId: string\n  /** 切换当前页面的助手，不切换会话。 */\n  toggleAssistant: () => void\n}',
     ],
     ownerPropsReferences: [],
     standardProps: [
@@ -1868,11 +1870,13 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     slotInject: '',
     declaredBy: 'an entry in \'root\' (client-ui-layout), so it exists while that entry is mounted',
     occupants: [
+      'client-ui-files FilesPage',
       'client-ui-image-gen GalleryView',
+      'client-ui-notes NotesPage',
     ],
     replaceRisk: 'none',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'shell.page\', () => ctx.slots.register(\n      { name: \'shell.page\', key: \'<one key the owner dispatches>\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-layout/src/client/index.ts:54',
+    source: 'packages/client/ui-layout/src/client/index.ts:55',
   },
   {
     key: 'shell.settings',
@@ -1898,7 +1902,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'shadows-shipped-ui',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'shell.settings\', () => ctx.slots.register(\n      { name: \'shell.settings\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-layout/src/client/index.ts:58',
+    source: 'packages/client/ui-layout/src/client/index.ts:59',
   },
   {
     key: 'sidebar',
@@ -1924,7 +1928,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'shadows-shipped-ui',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'sidebar\', () => ctx.slots.register(\n      { name: \'sidebar\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-layout/src/client/index.ts:40',
+    source: 'packages/client/ui-layout/src/client/index.ts:41',
   },
   {
     key: 'sidebar.footer.action',
@@ -2101,7 +2105,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     doc: 'The workspace/session browsing region: section header, search, the\ngrouped/flat session list, and every workspace dialog. Declared by this\npackage\'s \'sidebar\' entry (declaring is claiming); ui-workspace\nregisters the browser.',
     registerOptions: [],
     ownerProps: [
-      '/**\n * 浏览区域的 owner share：壳层与区域之间唯一跨越边界的事实。业务数据与动作走区域\n * 自己的 inject。\n */\nexport interface SidebarSectionOwnerProps {\n  /** 壳层折叠状态：true 渲染完整浏览器，false 渲染 56px rail 的图标列。 */\n  wide: boolean\n  /** rail 图标请求展开；浏览器跟随 wide 翻转处理焦点。 */\n  expandSidebar: () => void\n  /** 宽侧栏的标题行用它渲染收起按钮；已展开时才会真正收起。 */\n  collapseSidebar: () => void\n  /** 独立主内容页打开时，会话行不显示选中态。 */\n  conversationVisible: boolean\n  /** 返回对话视图，不改变当前会话。 */\n  showConversation: () => void\n}',
+      '/**\n * 浏览区域的 owner share：壳层与区域之间唯一跨越边界的事实。业务数据与动作走区域\n * 自己的 inject。\n */\nexport interface SidebarSectionOwnerProps {\n  /** 壳层折叠状态：true 渲染完整浏览器，false 渲染 56px rail 的图标列。 */\n  wide: boolean\n  /** rail 图标请求展开；浏览器跟随 wide 翻转处理焦点。 */\n  expandSidebar: () => void\n  /** 独立主内容页打开时，会话行不显示选中态。 */\n  conversationVisible: boolean\n  /** 返回对话视图，不改变当前会话。 */\n  showConversation: () => void\n}',
     ],
     ownerPropsReferences: [],
     standardProps: [
@@ -2269,7 +2273,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'shadows-shipped-ui',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'workbench\', () => ctx.slots.register(\n      { name: \'workbench\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-layout/src/client/index.ts:48',
+    source: 'packages/client/ui-layout/src/client/index.ts:49',
   },
   {
     key: 'workbench.bottom',
@@ -2297,7 +2301,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'shadows-shipped-ui',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'workbench.bottom\', () => ctx.slots.register(\n      { name: \'workbench.bottom\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-layout/src/client/index.ts:50',
+    source: 'packages/client/ui-layout/src/client/index.ts:51',
   },
   {
     key: 'workbench.browser',

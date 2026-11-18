@@ -3,7 +3,7 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   Button, ChatAssistantBody, ChatComposerAction, ChatComposerCard, ChatUserBubble,
-  ConnectionBanner, Input, Menu, Modal, Pill,
+  ConnectionBanner, Input, MarkdownTextarea, Menu, Modal, Pill,
 } from 'coding-client-ui-primitives'
 import { POINTER_GRACE_MS } from '../src/pointer-grace.ts'
 
@@ -91,6 +91,24 @@ describe('Input', () => {
     fireEvent.change(input, { target: { value: 'qq' } })
     expect(onChange).toHaveBeenCalled()
     expect(screen.getByTestId('ic')).toBeDefined()
+  })
+})
+
+describe('MarkdownTextarea', () => {
+  it('保留原生文本域引用、选区及输入事件', () => {
+    const ref = { current: null as HTMLTextAreaElement | null }
+    const onChange = vi.fn()
+    const { rerender } = render(<MarkdownTextarea ref={ref} aria-label="笔记" defaultValue="草稿" onChange={onChange} />)
+    const textarea = screen.getByRole<HTMLTextAreaElement>('textbox', { name: '笔记' })
+    expect(ref.current).toBe(textarea)
+    expect(textarea.getAttribute('spellcheck')).toBe('false')
+    textarea.setSelectionRange(0, 2)
+    expect(textarea.value.slice(textarea.selectionStart, textarea.selectionEnd)).toBe('草稿')
+    fireEvent.change(textarea, { target: { value: '新草稿' } })
+    expect(onChange).toHaveBeenCalledOnce()
+    rerender(<MarkdownTextarea ref={ref} aria-label="笔记" spellCheck readOnly />)
+    expect(textarea.getAttribute('spellcheck')).toBe('true')
+    expect(textarea.readOnly).toBe(true)
   })
 })
 

@@ -74,6 +74,8 @@ export interface SidebarOwnerProps {
 export interface ConvOwnerProps {
   /** 响应式折叠后的实际状态，而非用户保存的宽度偏好。 */
   sidebarCollapsed: boolean
+  /** 作为独立页面的上下文助手时，隐藏完整对话页才需要的入口。 */
+  inPageAssistant?: boolean | undefined
 }
 
 /** 详情栏没有额外 owner 数据；会话 id 由框架提供。 */
@@ -104,6 +106,12 @@ export interface ShellPageOwnerProps {
   sidebarCollapsed: boolean
   /** 与对话侧栏相同的实际宽度，包含窄屏的 56px 图标轨。 */
   sidebarWidth: number
+  /** 助手的实际显隐；自动模式下由主内容可用宽度决定。 */
+  assistantOpen: boolean
+  /** 供页头开关通过 aria-controls 关联同一会话区域。 */
+  assistantPanelId: string
+  /** 切换当前页面的助手，不切换会话。 */
+  toggleAssistant: () => void
 }
 
 /** 设置触发器的呈现约定；外层导航固定使用紧凑图标。 */

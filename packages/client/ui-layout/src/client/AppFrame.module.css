@@ -237,27 +237,84 @@
   background: var(--dsw-alias-bg-base);
 }
 
-/* 带 AI 助手轨的页面：页面内容区与对话视图各占主内容的一半，中间一条分隔。 */
-.pageMain {
-  display: flex;
-  flex: 1 1 50%;
-  min-width: 0;
-  min-height: 0;
+.pageCol[data-page-assistant='dock'] {
+  margin-inline-end: var(--layout-page-assistant-width);
 }
 
-.pageMain > * {
+.pageCol > * {
   flex: 1 1 auto;
   min-width: 0;
   min-height: 0;
 }
 
-.pageAssistant {
+/* 保持原对话节点；宽屏为正文留足空间，窄屏覆盖在独立页上。 */
+.centerCol[data-page-assistant-track] {
+  position: absolute;
+  grid-column: auto;
+  grid-row: auto;
+  z-index: 4;
+  inset-block: 0;
+  inset-inline-end: 0;
+  box-sizing: border-box;
+  width: min(100%, var(--layout-page-assistant-width));
+  border-inline-start: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-base);
+}
+
+.centerCol[data-page-assistant-track='drawer'] {
+  z-index: 6;
+  box-shadow: var(--dsw-shadow-lv3);
+  animation: assistant-enter var(--ds-transition-duration-fast) var(--ds-ease-in-out);
+}
+
+@keyframes assistant-enter {
+  from { opacity: 0; transform: translateX(16px); }
+}
+
+.assistantMask {
+  position: absolute;
+  z-index: 5;
+  inset: 0;
+  background: var(--dsw-alias-bg-mask-1);
+}
+
+.assistantHeader {
   display: flex;
-  flex: 1 1 50%;
-  flex-direction: column;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 52px;
+  padding: 8px calc(12px + var(--app-safe-area-inset-right, 0px)) 8px 16px;
+  border-block-end: 1px solid var(--dsw-alias-border-l2);
+}
+
+.assistantTitle {
+  display: flex;
   min-width: 0;
-  min-height: 0;
-  border-left: 1px solid var(--dsw-alias-border-l2);
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: var(--dsw-alias-label-primary);
+  font: var(--dsw-font-s-strong-14);
+}
+
+.assistantTitle svg {
+  flex: none;
+  color: var(--dsw-alias-state-business-primary);
+}
+
+.assistantClose {
+  flex: none;
+  width: 28px;
+  padding: 0;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.assistantClose:focus-visible,
+.centerCol[data-page-assistant-track='drawer']:focus-visible {
+  outline: 2px solid var(--dsw-alias-state-business-primary);
+  outline-offset: -2px;
 }
 
 .frame[data-page-open] .sidebarCol {
@@ -380,6 +437,8 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .centerCol[data-page-assistant-track='drawer'] { animation: none; }
+
   .frame,
   .handle,
   .handle::after {

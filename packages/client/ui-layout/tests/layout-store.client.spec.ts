@@ -29,7 +29,7 @@ const initialState = {
   pendingNewConversation: false,
   activeBlankSession: null,
   page: null,
-  pageAssistant: false,
+  pageAssistant: null,
   conversationRequest: null,
   conversationReturn: null,
   conversationRequestSeq: 0,
@@ -141,16 +141,21 @@ describe('createLayoutStore', () => {
   it('tracks the page AI assistant and resets it when the page closes or is replaced', () => {
     const { store, actions } = createLayoutStore().create()
     actions.openPage('notes', SESSION)
-    actions.setPageAssistant(true)
-    expect(store.getSnapshot()).toMatchObject({ page: { kind: 'notes', sessionId: SESSION }, pageAssistant: true })
+    actions.setPageAssistant('auto')
+    expect(store.getSnapshot()).toMatchObject({ page: { kind: 'notes', sessionId: SESSION }, pageAssistant: 'auto' })
+    actions.setPageAssistant(false)
+    expect(store.getSnapshot().pageAssistant).toBe(false)
     actions.openPage('files', NEXT_SESSION)
-    expect(store.getSnapshot()).toMatchObject({ page: { kind: 'files', sessionId: NEXT_SESSION }, pageAssistant: false })
+    expect(store.getSnapshot()).toMatchObject({ page: { kind: 'files', sessionId: NEXT_SESSION }, pageAssistant: null })
     actions.setPageAssistant(true)
     actions.closePage()
-    expect(store.getSnapshot()).toMatchObject({ page: null, pageAssistant: false })
+    expect(store.getSnapshot()).toMatchObject({ page: null, pageAssistant: null })
+    actions.setPageAssistant(true)
+    expect(store.getSnapshot().pageAssistant).toBeNull()
+    actions.openPage('notes', SESSION)
     actions.setPageAssistant(true)
     actions.discardPage()
-    expect(store.getSnapshot()).toMatchObject({ page: null, pageAssistant: false })
+    expect(store.getSnapshot()).toMatchObject({ page: null, pageAssistant: null })
   })
 
   it('remembers the originating conversation across files and gallery, then returns it once', () => {

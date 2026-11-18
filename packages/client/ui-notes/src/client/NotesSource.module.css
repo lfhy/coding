@@ -1,0 +1,57 @@
+.root {
+  position: relative;
+  height: 100%;
+  --note-source-top: 20px;
+  --note-source-start: 20px;
+}
+
+.root[data-mirrored] { --note-source-start: 48px; }
+
+.root .field,
+.mirror {
+  padding: var(--note-source-top) 18px 20px var(--note-source-start);
+  font: var(--dsw-font-markdown-code-block);
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  tab-size: 2;
+}
+
+.root .field {
+  position: relative;
+  border-radius: 0;
+  caret-color: var(--dsw-alias-label-primary);
+}
+
+.root[data-mirrored]:not([data-composing]) .field { color: transparent; }
+.root[data-mirrored]:not([data-composing]) .field::selection {
+  background: var(--dsw-alias-state-business-tertiary);
+  color: var(--dsw-alias-label-primary);
+}
+
+.mirror {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 0;
+  box-sizing: border-box;
+  pointer-events: none;
+  overflow: hidden;
+  color: var(--dsw-alias-label-primary);
+}
+
+.line { position: relative; }
+.line[data-heading] { color: var(--dsw-alias-state-business-primary); }
+
+.line::before {
+  content: attr(data-line);
+  position: absolute;
+  inset-inline-end: calc(100% + 12px);
+  color: var(--dsw-alias-label-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+.root[data-composing] .mirror { visibility: hidden; }
+
+@media (forced-colors: active) {
+  .root[data-mirrored]:not([data-composing]) .field { color: CanvasText; }
+  .mirror { visibility: hidden; }
+}

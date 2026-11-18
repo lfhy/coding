@@ -12,7 +12,7 @@ import css from './Input.module.css'
  */
 export function Input({ icon, className, ...rest }: {
   icon?: ReactNode
-  className?: string
+  className?: string | undefined
 } & InputHTMLAttributes<HTMLInputElement>) {
   return (
     <span className={clsx(css.wrap, className)}>

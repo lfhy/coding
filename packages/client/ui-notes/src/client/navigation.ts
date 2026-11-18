@@ -1,4 +1,4 @@
-/** 打开笔记页：先取笔记根目录，复用或创建以它为工作目录的会话，再打开页面并挂上 AI 助手轨。 */
+/** 打开笔记页：复用笔记目录的会话，并由布局在空间充足时自动展开助手。 */
 import type { ClientContext } from 'coding-client-runtime/client'
 import { notesCwd } from './wire.ts'
 
@@ -24,7 +24,7 @@ export function createNotesNavigation(ctx: ClientContext): () => Promise<void> {
     for (let attempt = 0; attempt < 30; attempt++) {
       try {
         ctx.layout.togglePage(PAGE, target, origin)
-        ctx.layout.setPageAssistant(true)
+        ctx.layout.setPageAssistant('auto')
         return
       } catch {
         await new Promise<void>((resolve) => { window.setTimeout(resolve, 32) })

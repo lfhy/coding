@@ -20,6 +20,10 @@ export interface SidebarRootItem {
   iconTone?: 'amber' | 'green' | 'blue' | 'violet'
   /** `media` 变体里的缩略图；`rows` 变体忽略该字段。 */
   media?: ReactNode
+  /** 摘要行的次要信息；图标轨不显示。 */
+  description?: string
+  /** 摘要行右侧的一小段元数据。 */
+  meta?: string
   active?: boolean
   onSelect?: () => void
   /** 树形条目的缩进层级（0 起）；非树条目缺省 0。 */
@@ -40,7 +44,7 @@ export interface SidebarRootProps {
   /** 对话侧栏的实际宽度，由根布局计算；收起时为 56px。 */
   width: number
   /** 行几何：紧凑图标行，或带缩略图的行。宽度与折叠行为两者一致。 */
-  variant?: 'rows' | 'media'
+  variant?: 'rows' | 'media' | 'summary'
   /** 无条目时的说明；收起态不显示。 */
   empty?: string
   /**
@@ -48,6 +52,10 @@ export interface SidebarRootProps {
    * 宽度、安全区与折叠动画仍由本组件持有；展开与收起时的呈现由调用方按 `collapsed` 自行切换。
    */
   header?: ReactNode
+  /** 标题同行的紧凑动作；收起后保留在图标轨顶部，调用方提供无障碍名称。 */
+  headerAction?: ReactNode
+  /** 标题下方的搜索或筛选；始终位于滚动区域之外。 */
+  toolbar?: ReactNode
 }
 
 /**
@@ -57,7 +65,7 @@ export interface SidebarRootProps {
  * @returns 展开列或收起轨。
  */
 export function SidebarRoot({
-  label, title, items, collapsed, width, variant = 'rows', empty, header,
+  label, title, items, collapsed, width, variant = 'rows', empty, header, headerAction, toolbar,
 }: SidebarRootProps) {
   // 与对话侧栏同一套折叠时序：宽度先滑动，宽内容就地淡出 150ms，落定后换成图标轨并淡入。
   const [settled, setSettled] = useState(collapsed)
@@ -75,25 +83,30 @@ export function SidebarRoot({
   return (
     <aside
       className={clsx(
-        css.shell, collapsed && css.collapsed, collapsed && wide && css.fading,
+        css.shell, !wide && css.collapsed, collapsed && wide && css.fading,
         !wide && everWide.current && css.railIn,
       )}
       style={{ width: wide && collapsed ? lastWideWidth.current : width }}
       aria-label={label}
+      data-variant={variant}
     >
       {header}
-      {wide ? (
-        <>
-          <div className={css.headerRow}>
-            <span className={css.sectionLabel}>{title}</span>
-          </div>
-          {items.length === 0 && empty !== undefined
+      {(wide || headerAction !== undefined) && (
+        <div className={clsx(css.headerRow, !wide && css.railHeader)}>
+          {wide && <span className={css.sectionLabel} title={title}>{title}</span>}
+          {headerAction}
+        </div>
+      )}
+      {wide && toolbar}
+      <div className={css.viewport}>
+        {wide ? (
+          items.length === 0 && empty !== undefined
             ? <p className={css.empty}>{empty}</p>
             : (
               <div className={clsx(css.rows, variant === 'media' && css.mediaRows)} role="list">
                 {items.map(item => (
-                  <button key={item.id} type="button" role="listitem"
-                    className={clsx(css.row, variant === 'media' && css.mediaRow, item.folder && css.folderRow)}
+                  <button key={item.id} type="button" role="listitem" title={item.label}
+                    className={clsx(css.row, variant === 'media' && css.mediaRow, variant === 'summary' && css.summaryRow)}
                     style={{ '--tree-depth': item.depth ?? 0 } as CSSProperties}
                     aria-current={item.active === true ? 'true' : undefined} data-icon-tone={item.iconTone}
                     aria-expanded={item.folder ? item.open === true : undefined} onClick={item.onSelect}>
@@ -101,23 +114,33 @@ export function SidebarRoot({
                     {variant === 'media' && item.media !== undefined
                       ? <span className={css.mediaBox}>{item.media}</span>
                       : <span className={css.rowIcon} aria-hidden="true"><Icon name={item.icon} size={16} /></span>}
-                    <span className={css.rowLabel}>{item.label}</span>
+                    {variant === 'summary' ? (
+                      <span className={css.summaryText}>
+                        <span className={css.rowLabel}>{item.label}</span>
+                        {(item.description !== undefined || item.meta !== undefined) && (
+                          <span className={css.summaryDetails}>
+                            <span>{item.description}</span>
+                            <span>{item.meta}</span>
+                          </span>
+                        )}
+                      </span>
+                    ) : <span className={css.rowLabel}>{item.label}</span>}
                   </button>
                 ))}
               </div>
-            )}
-        </>
-      ) : (
-        <>
-          {items.filter(item => !item.folder).map(item => (
-            <button key={item.id} type="button" className={css.railButton}
-              aria-label={item.label} title={item.label} aria-pressed={item.active === true} data-icon-tone={item.iconTone}
-              onClick={item.onSelect}>
-              <Icon name={item.icon} size={18} />
-            </button>
-          ))}
-        </>
-      )}
+            )
+        ) : (
+          <div className={css.rail}>
+            {items.filter(item => !item.folder).map(item => (
+              <button key={item.id} type="button" className={css.railButton}
+                aria-label={item.label} title={item.label} aria-pressed={item.active === true} data-icon-tone={item.iconTone}
+                onClick={item.onSelect}>
+                <Icon name={item.icon} size={18} />
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
     </aside>
   )
 }

@@ -473,6 +473,26 @@
   overflow-y: auto;
 }
 
+/* 欢迎内容从顶部开始，助手栏保持与笔记正文一致的主题表面。 */
+.root[data-phase='assistant'] { background: var(--dsw-alias-bg-base); }
+
+.root[data-phase='assistant'] .windowDragStrip {
+  display: none;
+}
+
+.root[data-phase='assistant'] .composerSeat {
+  position: sticky;
+  bottom: 0;
+  z-index: 7;
+  width: 100%;
+  margin-top: auto;
+  background: linear-gradient(
+    180deg,
+    transparent 0px,
+    var(--dsw-alias-bg-base) 24px
+  );
+}
+
 /* Settling (session replaying, hero/docked unknown): keep the composer seat
    mounted but invisible so no wrong layout flashes before the phase lands. */
 .root[data-phase='settling'] .composerSeat {

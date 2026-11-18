@@ -4,10 +4,10 @@
  * 改变网格尺寸、可见性和 inert 状态，不销毁占用者。
  */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import type { CSSProperties, KeyboardEvent, PointerEvent, ReactNode } from 'react'
+import type { CSSProperties, ReactNode } from 'react'
 import type { HostObservable, InjectFace, PropsLocale, PropsRenderSlots, PropsRuntime, PropsStore } from 'coding-client-ui-slots'
 import type { ThemeSnapshot } from 'coding-client-ui-theme/client'
-import { Icon, IconChevronDownOutline14, IconChevronUpOutline14 } from 'coding-client-ui-icons'
+import { IconChevronUpOutline14 } from 'coding-client-ui-icons'
 import type { SessionId } from 'coding-session/types'
 import type { WorkbenchLayoutSnapshot } from './service.ts'
 import {
@@ -29,8 +29,9 @@ import {
 } from './columns.ts'
 import type { createLayoutStore } from './stores.ts'
 import type { PageRoute } from './stores.ts'
-import { clampFloatingPoint, snapFloatingDock } from './floating-dock.ts'
-import type { FloatingBounds, FloatingDock, FloatingPoint, FloatingSize } from './floating-dock.ts'
+import type { FloatingDock } from './floating-dock.ts'
+import { CONVERSATION_COLUMN_ID, ConversationColumn } from './ConversationColumn.tsx'
+import { DragHandle } from './DragHandle.tsx'
 import css from './AppFrame.module.css'
 
 /** AppFrame 向布局服务回报工作区级工作台投影的注入面。 */
@@ -63,225 +64,13 @@ const SIDEBAR_ID = 'dsh-layout-sidebar'
 const DETAILS_ID = 'dsh-layout-details'
 const WORKBENCH_ID = 'dsh-layout-workbench'
 const WORKBENCH_BOTTOM_ID = 'dsh-layout-workbench-bottom'
-const FLOATING_CONVERSATION_ID = 'dsh-layout-floating-conversation'
-const FLOATING_DOCK_HELP_ID = 'dsh-layout-floating-dock-help'
 const FLOATING_GAP = 12
-const KEYBOARD_STEP = 16
-const INNER_POPUP_SELECTOR = '[role="menu"], [role="listbox"], [role="dialog"]'
-const OPEN_POPUP_TRIGGER_SELECTOR = '[aria-haspopup][aria-expanded="true"]'
-
-function isPopupVisible(element: Element): boolean {
-  for (let node: Element | null = element; node !== null; node = node.parentElement) {
-    if (node.matches('[hidden], [inert], [aria-hidden="true"]')) return false
-    const style = getComputedStyle(node)
-    if (style.display === 'none' || style.visibility === 'hidden') return false
-  }
-  return true
-}
-
-/** 内层弹层可能只在 document 的原生键盘监听器里关闭，不一定取消 Escape 默认行为。 */
-function hasInnerPopup(root: HTMLElement, target: EventTarget | null): boolean {
-  if (target instanceof Element) {
-    const targetPopup = target.closest(INNER_POPUP_SELECTOR)
-    if (targetPopup !== null && targetPopup !== root && isPopupVisible(targetPopup)) return true
-  }
-
-  const candidates = root.querySelectorAll(`${INNER_POPUP_SELECTOR}, ${OPEN_POPUP_TRIGGER_SELECTOR}`)
-  if (Array.from(candidates).some(isPopupVisible)) return true
-
-  // Portal 也可能使用 region，而不是 menu/dialog；由展开触发器的标准关联识别，避免把普通展开区当成浮层。
-  const triggers = root.querySelectorAll('[aria-expanded="true"][aria-controls]')
-  return Array.from(triggers).some((trigger) => {
-    if (!isPopupVisible(trigger)) return false
-    const controls = trigger.getAttribute('aria-controls')
-    if (controls === null) return false
-    return controls.trim().split(/\s+/u).some((id) => {
-      const popup = root.ownerDocument.getElementById(id)
-      return popup !== null && !root.contains(popup) && isPopupVisible(popup)
-    })
-  })
-}
+const PAGE_ASSISTANT_WIDTH = 376
+const PAGE_BODY_MIN = 648
 
 interface SurfaceProps {
   children?: ReactNode
   hidden: boolean
-}
-
-interface ConversationColumnProps extends SurfaceProps {
-  floating: boolean
-  dock: FloatingDock
-  bounds: FloatingBounds
-  title: string
-  dialogLabel: string
-  minimizeLabel: string
-  dragLabel: string
-  dragHint: string
-  onMinimize: () => void
-  onDock: (dock: FloatingDock) => void
-}
-
-interface FloatingDrag {
-  readonly pointerId: number
-  readonly handle: HTMLButtonElement
-  readonly origin: FloatingPoint
-  readonly size: FloatingSize
-  readonly startX: number
-  readonly startY: number
-  x: number
-  y: number
-  frame: number | null
-}
-
-/** 对话列仅切换呈现位置；子 slot 与输入草稿始终位于同一棵树。 */
-function ConversationColumn({
-  children, hidden, floating, dock, bounds, title, dialogLabel, minimizeLabel, dragLabel, dragHint, onMinimize, onDock,
-}: ConversationColumnProps) {
-  const hiddenAttributes = hidden ? { 'aria-hidden': true, inert: '' } as const : {}
-  const columnRef = useRef<HTMLDivElement | null>(null)
-  const minimizeButtonRef = useRef<HTMLButtonElement | null>(null)
-  const activeDrag = useRef<FloatingDrag | null>(null)
-  const boundsRef = useRef(bounds)
-  boundsRef.current = bounds
-  const [dragPoint, setDragPoint] = useState<FloatingPoint | null>(null)
-
-  const cancelDrag: () => void = useCallback(() => {
-    const current = activeDrag.current
-    if (current === null) return
-    activeDrag.current = null
-    if (current.frame !== null) cancelAnimationFrame(current.frame)
-    window.removeEventListener('blur', cancelDrag)
-    if (current.handle.hasPointerCapture(current.pointerId)) current.handle.releasePointerCapture(current.pointerId)
-    setDragPoint(null)
-  }, [])
-
-  useEffect(() => () => { cancelDrag() }, [cancelDrag])
-  useLayoutEffect(() => { if (!floating) cancelDrag() }, [floating, cancelDrag])
-
-  const sizeOf = useCallback((current: FloatingDrag): FloatingSize => {
-    const rect = columnRef.current?.getBoundingClientRect()
-    return rect === undefined ? current.size : { width: rect.width, height: rect.height }
-  }, [])
-  const pointOf = useCallback((current: FloatingDrag, x: number, y: number): FloatingPoint => clampFloatingPoint({
-    left: current.origin.left + x - current.startX,
-    top: current.origin.top + y - current.startY,
-  }, sizeOf(current), boundsRef.current), [sizeOf])
-
-  // 边界也可能由终端或窗口变化推进；指针静止时仍须让小窗留在新的工作区内。
-  useLayoutEffect(() => {
-    const current = activeDrag.current
-    if (current !== null) setDragPoint(pointOf(current, current.x, current.y))
-  }, [bounds.left, bounds.right, bounds.top, bounds.bottom, pointOf])
-
-  const startDrag = (event: PointerEvent<HTMLButtonElement>): void => {
-    const column = columnRef.current
-    if (!floating || event.button !== 0 || activeDrag.current !== null || column === null) return
-    const rect = column.getBoundingClientRect()
-    const frame = column.parentElement?.getBoundingClientRect()
-    if (frame === undefined) return
-    event.preventDefault()
-    event.currentTarget.focus()
-    event.currentTarget.setPointerCapture(event.pointerId)
-    const current: FloatingDrag = {
-      pointerId: event.pointerId,
-      handle: event.currentTarget,
-      origin: { left: rect.left - frame.left, top: rect.top - frame.top },
-      size: { width: rect.width, height: rect.height },
-      startX: event.clientX, startY: event.clientY,
-      x: event.clientX, y: event.clientY, frame: null,
-    }
-    activeDrag.current = current
-    setDragPoint(pointOf(current, current.x, current.y))
-    window.addEventListener('blur', cancelDrag)
-  }
-  const moveDrag = (event: PointerEvent<HTMLButtonElement>): void => {
-    const current = activeDrag.current
-    if (current?.pointerId !== event.pointerId) return
-    current.x = event.clientX
-    current.y = event.clientY
-    current.frame ??= requestAnimationFrame(() => {
-      current.frame = null
-      if (activeDrag.current === current) setDragPoint(pointOf(current, current.x, current.y))
-    })
-  }
-  const finishDrag = (event: PointerEvent<HTMLButtonElement>): void => {
-    const current = activeDrag.current
-    if (current?.pointerId !== event.pointerId) return
-    const point = pointOf(current, event.clientX, event.clientY)
-    const next = snapFloatingDock(point.left, sizeOf(current), boundsRef.current, dock)
-    cancelDrag()
-    onDock(next)
-  }
-  const cancelPointer = (event: PointerEvent<HTMLButtonElement>): void => {
-    if (activeDrag.current?.pointerId === event.pointerId) cancelDrag()
-  }
-  const moveDock = (event: KeyboardEvent<HTMLButtonElement>): void => {
-    if (event.key === 'Escape' && activeDrag.current !== null) {
-      event.preventDefault()
-      cancelDrag()
-      return
-    }
-    if (activeDrag.current !== null) return
-    let next: FloatingDock
-    switch (event.key) {
-      case 'ArrowLeft': next = dock === 'right' ? 'center' : 'left'; break
-      case 'ArrowRight': next = dock === 'left' ? 'center' : 'right'; break
-      case 'Home': next = 'left'; break
-      case 'End': next = 'right'; break
-      default: return
-    }
-    event.preventDefault()
-    onDock(next)
-  }
-  useLayoutEffect(() => {
-    if (floating) minimizeButtonRef.current?.focus()
-  }, [floating])
-  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    if (floating && event.key === 'Escape' && !event.defaultPrevented
-      && !hasInnerPopup(event.currentTarget, event.target)) {
-      event.preventDefault()
-      onMinimize()
-    }
-  }
-  return (
-    <div
-      ref={columnRef}
-      id={FLOATING_CONVERSATION_ID}
-      className={css.centerCol}
-      style={dragPoint === null ? undefined : {
-        '--layout-floating-left': `${dragPoint.left}px`,
-        '--layout-floating-top': `${dragPoint.top}px`,
-      } as CSSProperties}
-      data-hidden={hidden || undefined}
-      data-floating-open={floating || undefined}
-      data-floating-dragging={dragPoint !== null || undefined}
-      role={floating ? 'dialog' : undefined}
-      aria-label={floating ? dialogLabel : undefined}
-      onKeyDown={onKeyDown}
-      {...hiddenAttributes}
-    >
-      <div className={css.floatingHeader} aria-hidden={!floating} {...(!floating ? { inert: '' as const } : {})}>
-        <span className={css.floatingTitle} title={title}>{title}</span>
-        <button type="button" className={css.floatingGrip} aria-label={dragLabel} title={dragLabel}
-          aria-describedby={FLOATING_DOCK_HELP_ID}
-          onPointerDown={startDrag} onPointerMove={moveDrag} onPointerUp={finishDrag}
-          onPointerCancel={cancelPointer} onLostPointerCapture={cancelPointer} onKeyDown={moveDock}>
-          <Icon name="drag-handle" size={16} />
-        </button>
-        <span id={FLOATING_DOCK_HELP_ID} className={css.dockHelp}>{dragHint}</span>
-        <button
-          ref={minimizeButtonRef}
-          className={css.minimizeButton}
-          type="button"
-          aria-label={minimizeLabel}
-          title={minimizeLabel}
-          onClick={onMinimize}
-        >
-          <IconChevronDownOutline14 />
-        </button>
-      </div>
-      <div className={css.conversationBody}>{children}</div>
-    </div>
-  )
 }
 
 /** 内层侧栏列；独立主内容页打开时随页面隐藏，页面关闭后按用户的栏宽偏好恢复。 */
@@ -341,139 +130,6 @@ function WorkbenchBottom({ children, hidden }: SurfaceProps) {
     >
       {children}
     </div>
-  )
-}
-
-type DragOrientation = 'vertical' | 'horizontal'
-type DragSide = 'sidebar' | 'details' | 'workbench' | 'bottom'
-
-interface DragHandleProps {
-  side: DragSide
-  orientation: DragOrientation
-  position: number
-  startInset?: number
-  endInset?: number
-  value: number
-  min: number
-  max: number
-  controls: string
-  onStart: () => void
-  onDrag: (delta: number) => void
-  onNudge: (delta: number) => void
-  onSet: (value: number) => void
-  onEnd: () => void
-}
-
-/**
- * 可访问的尺寸分隔条。指针移动按动画帧合并；pointer cancel、capture 丢失、
- * 窗口失焦和卸载都会释放 capture、取消待处理帧并结束父级拖拽状态。
- */
-function DragHandle(props: DragHandleProps) {
-  const [dragging, setDragging] = useState(false)
-  const origin = useRef(0)
-  const latest = useRef(0)
-  const frame = useRef<number | null>(null)
-  const capture = useRef<{ element: HTMLDivElement; id: number } | null>(null)
-  const callbacks = useRef(props)
-  callbacks.current = props
-
-  const endDrag = useCallback((updateLocalState = true) => {
-    const active = capture.current
-    if (active === null) return
-    capture.current = null
-    if (frame.current !== null) {
-      cancelAnimationFrame(frame.current)
-      frame.current = null
-    }
-    if (active.element.hasPointerCapture(active.id)) active.element.releasePointerCapture(active.id)
-    if (updateLocalState) setDragging(false)
-    callbacks.current.onEnd()
-  }, [])
-
-  useEffect(() => {
-    if (!dragging) return
-    const handleBlur = () => { endDrag() }
-    window.addEventListener('blur', handleBlur)
-    return () => {
-      window.removeEventListener('blur', handleBlur)
-      endDrag(false)
-    }
-  }, [dragging, endDrag])
-
-  const coordinate = (event: PointerEvent<HTMLDivElement>): number =>
-    callbacks.current.orientation === 'vertical' ? event.clientX : event.clientY
-
-  const onPointerDown = useCallback((event: PointerEvent<HTMLDivElement>) => {
-    if (event.button !== 0 || capture.current !== null) return
-    event.preventDefault()
-    event.currentTarget.setPointerCapture(event.pointerId)
-    capture.current = { element: event.currentTarget, id: event.pointerId }
-    const point = coordinate(event)
-    origin.current = point
-    latest.current = point
-    callbacks.current.onStart()
-    setDragging(true)
-  }, [])
-
-  const onPointerMove = useCallback((event: PointerEvent<HTMLDivElement>) => {
-    if (capture.current?.id !== event.pointerId) return
-    latest.current = coordinate(event)
-    frame.current ??= requestAnimationFrame(() => {
-      frame.current = null
-      callbacks.current.onDrag(latest.current - origin.current)
-    })
-  }, [])
-
-  const onPointerUp = useCallback((event: PointerEvent<HTMLDivElement>) => {
-    if (capture.current?.id !== event.pointerId) return
-    callbacks.current.onDrag(coordinate(event) - origin.current)
-    endDrag()
-  }, [endDrag])
-
-  const onPointerCancel = useCallback((event: PointerEvent<HTMLDivElement>) => {
-    if (capture.current?.id === event.pointerId) endDrag()
-  }, [endDrag])
-
-  const onKeyDown = useCallback((event: KeyboardEvent<HTMLDivElement>) => {
-    const current = callbacks.current
-    const negativeKey = current.orientation === 'vertical' ? 'ArrowLeft' : 'ArrowUp'
-    const positiveKey = current.orientation === 'vertical' ? 'ArrowRight' : 'ArrowDown'
-    if (event.key === negativeKey || event.key === positiveKey) {
-      event.preventDefault()
-      current.onNudge(event.key === negativeKey ? -KEYBOARD_STEP : KEYBOARD_STEP)
-      return
-    }
-    if (event.key === 'Home' || event.key === 'End') {
-      event.preventDefault()
-      current.onSet(event.key === 'Home' ? current.min : current.max)
-    }
-  }, [])
-
-  const style: CSSProperties = props.orientation === 'vertical'
-    ? { left: props.position, bottom: props.endInset ?? 0 }
-    : { top: props.position, left: props.startInset }
-
-  return (
-    <div
-      className={css.handle}
-      style={style}
-      role="separator"
-      tabIndex={0}
-      aria-orientation={props.orientation}
-      aria-controls={props.controls}
-      aria-valuemin={props.min}
-      aria-valuemax={props.max}
-      aria-valuenow={Math.round(props.value)}
-      data-side={props.side}
-      data-orientation={props.orientation}
-      data-dragging={dragging || undefined}
-      onKeyDown={onKeyDown}
-      onPointerDown={onPointerDown}
-      onPointerMove={onPointerMove}
-      onPointerUp={onPointerUp}
-      onPointerCancel={onPointerCancel}
-      onLostPointerCapture={onPointerCancel}
-    />
   )
 }
 
@@ -617,6 +273,23 @@ export function AppFrame({
     workbenchFullscreen,
   )
   const sidebarWidth = workbenchShown ? workbenchColumns.sidebar : detailsColumns.sidebar
+  const canDockAssistant = viewport.width - sidebarWidth >= PAGE_BODY_MIN + PAGE_ASSISTANT_WIDTH
+  const hasPageAssistant = pageVisible && rootPanels.pageAssistant !== null
+  const assistantOpen = hasPageAssistant && (rootPanels.pageAssistant === 'auto' ? canDockAssistant : rootPanels.pageAssistant === true)
+  const assistantMode = assistantOpen ? (canDockAssistant ? 'dock' : 'drawer') : null
+  const pageRef = useRef<HTMLDivElement>(null)
+  const restoreAssistantFocus = useRef(false)
+  const closePage = useCallback(() => { actions.closePage() }, [actions])
+  const toggleAssistant = () => { actions.setPageAssistant(!assistantOpen) }
+  const closeAssistant = () => {
+    restoreAssistantFocus.current = true
+    actions.setPageAssistant(false)
+  }
+  useLayoutEffect(() => {
+    if (assistantOpen || !restoreAssistantFocus.current) return
+    restoreAssistantFocus.current = false
+    pageRef.current?.querySelector<HTMLElement>(`[aria-controls="${CONVERSATION_COLUMN_ID}"]`)?.focus({ preventScroll: true })
+  }, [assistantOpen])
   const detailsWidth = workbenchShown ? 0 : detailsColumns.details
   const workbenchWidth = workbenchShown ? workbenchColumns.workbench : 0
   const rightWidth = detailsWidth + workbenchWidth
@@ -731,6 +404,7 @@ export function AppFrame({
         '--layout-sidebar-width': `${sidebarWidth}px`,
         '--layout-bottom-height': `${bottomHeight}px`,
         '--layout-floating-edge': `${FLOATING_GAP}px`,
+        '--layout-page-assistant-width': `${PAGE_ASSISTANT_WIDTH}px`,
       } as CSSProperties}
       data-sidebar-collapsed={sidebarCollapsed || undefined}
       data-details-collapsed={detailsWidth === 0 || undefined}
@@ -744,8 +418,22 @@ export function AppFrame({
       <SidebarColumn hidden={pageVisible}>
         {renderSlot('sidebar', { collapsed: sidebarCollapsed, width: sidebarWidth, welcomeActionsVisible })}
       </SidebarColumn>
+      {pageVisible && (
+        <div ref={pageRef} className={css.pageCol} data-shell-page data-page-assistant={assistantMode ?? undefined}
+          {...(assistantMode === 'drawer' ? { 'aria-hidden': true, inert: '' } as const : {})}>
+          {renderSlot('shell.page', {
+            closePage,
+            sidebarCollapsed,
+            sidebarWidth,
+            assistantOpen,
+            assistantPanelId: CONVERSATION_COLUMN_ID,
+            toggleAssistant,
+          }, { entryKey: page.kind })}
+        </div>
+      )}
+      {assistantMode === 'drawer' && <div className={css.assistantMask} aria-hidden="true" onClick={closeAssistant} />}
       <ConversationColumn
-        hidden={(workbenchFullscreen || pageVisible) && !floatingOpen}
+        hidden={(workbenchFullscreen || pageVisible) && !floatingOpen && !assistantOpen}
         floating={floatingOpen}
         dock={floatingDock}
         bounds={{
@@ -761,15 +449,19 @@ export function AppFrame({
         dragHint={t('floating.drag.hint', { position: t(`floating.dock.${floatingDock}`) })}
         onMinimize={minimizeConversation}
         onDock={setFloatingDock}
+        assistant={assistantMode}
+        assistantLabel={t('assistant.title')}
+        assistantCloseLabel={t('assistant.close')}
+        onCloseAssistant={closeAssistant}
       >
-        {renderSlot('conversation', { sidebarCollapsed })}
+        {renderSlot('conversation', { sidebarCollapsed, ...(hasPageAssistant ? { inPageAssistant: true } : {}) })}
       </ConversationColumn>
       <button
         ref={launcherRef}
         className={css.floatingLauncher}
         type="button"
         aria-label={t('floating.open.label')}
-        aria-controls={FLOATING_CONVERSATION_ID}
+        aria-controls={CONVERSATION_COLUMN_ID}
         aria-expanded={floatingOpen}
         aria-hidden={!floatingEligible || floatingOpen}
         {...(!floatingEligible || floatingOpen ? { inert: '' as const } : {})}
@@ -796,23 +488,6 @@ export function AppFrame({
       <div className={css.overlayLayer} data-shell-overlay>
         {renderSlot('shell.overlay', {})}
       </div>
-      {pageVisible && (
-        <div className={css.pageCol} data-shell-page data-page-assistant={rootPanels.pageAssistant || undefined}>
-          <div className={css.pageMain}>
-            {renderSlot('shell.page', {
-              closePage: () => { actions.closePage() },
-              sidebarCollapsed,
-              sidebarWidth,
-            }, { entryKey: page.kind })}
-          </div>
-          {rootPanels.pageAssistant && (
-            <div className={css.pageAssistant} data-page-assistant-track>
-              {renderSlot('conversation', { sidebarCollapsed })}
-            </div>
-          )}
-        </div>
-      )}
-
       {!sidebarCollapsed && (
         <DragHandle
           side="sidebar"

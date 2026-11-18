@@ -29,7 +29,7 @@ function stubCwd(): void {
 afterEach(() => { vi.unstubAllGlobals() })
 
 describe('notes navigation', () => {
-  it('复用工作目录相同的已有会话，打开页面并挂上助手轨', () => {
+  it('复用工作目录相同的已有会话，打开页面并启用自动并排的助手', () => {
     const sessions = {
       list: { getSnapshot: () => ({ current: 's-cur', byId: { 's-old': { id: 's-old', cwd: CWD }, 's-cur': { id: 's-cur' } } }) },
       create: vi.fn(), open: vi.fn(),
@@ -41,7 +41,7 @@ describe('notes navigation', () => {
       expect(sessions.create).not.toHaveBeenCalled()
       expect(sessions.open).toHaveBeenCalledWith('s-old')
       expect(layout.togglePage).toHaveBeenCalledWith('notes', 's-old', 's-cur')
-      expect(layout.setPageAssistant).toHaveBeenCalledWith(true)
+      expect(layout.setPageAssistant).toHaveBeenCalledWith('auto')
     })
   })
 
@@ -59,7 +59,7 @@ describe('notes navigation', () => {
     expect(sessions.create).toHaveBeenCalledWith({ cwd: CWD })
     expect(sessions.open).toHaveBeenCalledWith('s-new')
     expect(layout.togglePage).toHaveBeenCalledWith('notes', 's-new', 's-orig')
-    expect(layout.setPageAssistant).toHaveBeenCalledWith(true)
+    expect(layout.setPageAssistant).toHaveBeenCalledWith('auto')
   })
 
   it('页面槽未就绪时按 32ms 间隔重试打开', async () => {
@@ -76,7 +76,7 @@ describe('notes navigation', () => {
     stubCwd()
     await createNotesNavigation(makeContext(sessions, layout))()
     expect(layout.togglePage).toHaveBeenCalledTimes(3)
-    expect(layout.setPageAssistant).toHaveBeenCalledWith(true)
+    expect(layout.setPageAssistant).toHaveBeenCalledWith('auto')
   })
 
   it('进行中的打开流程不会被并发调用重复启动', async () => {

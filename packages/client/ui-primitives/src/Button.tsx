@@ -1,31 +1,30 @@
-// Button: token-styled button atom. Variants map to the --dsw-alias-button-*
-// fill families; no framework imports, all behavior via props.
-
+import { forwardRef } from 'react'
 import type { ButtonHTMLAttributes, ReactNode } from 'react'
 import clsx from 'clsx'
 import css from './Button.module.css'
 
-/** Visual variant, each backed by its --dsw-alias-button-* token family. */
+/** 按钮的主题呈现，各变体使用对应的语义填充令牌。 */
 export type ButtonVariant = 'primary' | 'ghost' | 'outline' | 'toolbar'
 
 /**
- * Render a button.
- * @param props.variant - visual family (default 'ghost').
- * @param props.size - 'md' 36px capsule (figma Button) or 'sm' 28px compact.
- * @param props.icon - optional leading 16px icon node.
- * @returns the button element; native button attributes pass through.
+ * 渲染共享按钮，保留原生属性和供弹层恢复焦点的引用。
+ * @param props - 视觉变体、尺寸、前导图标和原生按钮属性。
+ * @param ref - 按钮节点的引用。
+ * @returns 主题化的原生按钮。
  */
-export function Button({ variant = 'ghost', size = 'md', icon, className, children, ...rest }: {
+export const Button = forwardRef<HTMLButtonElement, {
   variant?: ButtonVariant
   size?: 'md' | 'sm'
   icon?: ReactNode
   className?: string | undefined
   children?: ReactNode
-} & ButtonHTMLAttributes<HTMLButtonElement>) {
-  return (
-    <button type="button" className={clsx(css.button, css[variant], css[size], className)} {...rest}>
-      {icon != null && <span className={css.icon}>{icon}</span>}
-      {children}
-    </button>
-  )
-}
+} & ButtonHTMLAttributes<HTMLButtonElement>>(
+  function Button({ variant = 'ghost', size = 'md', icon, className, children, ...rest }, ref) {
+    return (
+      <button ref={ref} type="button" className={clsx(css.button, css[variant], css[size], className)} {...rest}>
+        {icon != null && <span className={css.icon}>{icon}</span>}
+        {children}
+      </button>
+    )
+  },
+)

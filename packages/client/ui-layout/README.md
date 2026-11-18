@@ -17,16 +17,20 @@ kind: "package-reference"
 | Slot | Scope | Owner 数据 |
 | --- | --- | --- |
 | `sidebar` | `root` | `collapsed`、实际 `width`、欢迎页操作行是否可见 |
-| `conversation` | `session-maybe` | 空 owner share |
+| `conversation` | `session-maybe` | `sidebarCollapsed`；在页面助手中附加 `inPageAssistant` |
 | `details` | `session` | 空 owner share |
 | `workbench` | `root` | `shown`、`fullscreen`、`bottomOpen`；当前工作区由占用者通过 `useSessions` 读取 |
 | `workbench.bottom` | `root` | 当前 Session id 与底栏可见性；占用者按工作区保留终端标签 |
 | `shell.navigation.entry` | `root` | 空 owner share 的有序 list，排在主页图标之后、底部主题切换和设置之前；注册者自带 36×36 图标按钮，[ui-image-gen](../ui-image-gen/README.md) 用它承载画图入口 |
 | `shell.settings` | `root` | `wide: boolean`，外层固定传 `false`；[ui-settings-general](../ui-settings-general/README.md) 提供设置图标入口与设置页 |
 | `shell.overlay` | `root` | 无 owner 数据的有序 list |
-| `shell.page` | `session` | 按 `entryKey` 选择主内容页，owner 提供 `closePage()`、`sidebarCollapsed` 与 `sidebarWidth` |
+| `shell.page` | `session` | 按 `entryKey` 选择主内容页；owner 提供关闭动作、实际侧栏状态，以及助手的 `assistantOpen`、`assistantPanelId` 和 `toggleAssistant()` |
 
-`ctx.layout` 提供全局的 `toggleSidebar()`、`openDetails()`、`closeDetails()`，以及接收工作区键的 `openWorkbench()`、`closeWorkbench()`、`toggleWorkbench()`、`toggleWorkbenchFullscreen()`、`toggleWorkbenchBottom()`、`closeWorkbenchBottom()` 和欢迎页专用的 `toggleHeroPanel()`。`beginNewConversation()` 同步清除空白会话的手动右栏选择并更新新对话意图版本；等待创建会话的欢迎页面板操作须核对该版本，不能在新对话操作后抢占选择。`workbench(workspaceKey)` 返回供会话页头、欢迎页与工作台顶栏面板开关订阅的显隐投影。`openPage(kind, sessionId, returnSessionId?)` 和 `togglePage(kind, sessionId, returnSessionId?)` 在侧栏右侧打开会话所属主内容页；提供不同的原对话 id 后，关闭页或再次点击当前入口会选回该对话。`setPageAssistant(open)` 让当前主内容页在自身内容之外追加一条等宽的 AI 助手轨，由 `AppFrame` 把 `conversation` slot 渲染进页面右半区；打开新页面、关闭或丢弃页面时该状态重置为收起，页面 owner 不需要自行实现对话视图。页面间切换须沿用已有 `returnSessionId`，未提供时返回当前页会话；若用户另行选中了会话或原对话已不存在，过期页面和返回请求不会抢回选择。切换或移除页面所属会话会关闭页面。打开工作台会关闭详情栏；打开详情栏会暂时覆盖工作台，关闭详情栏后恢复该工作区的状态。
+`ctx.layout` 提供全局的 `toggleSidebar()`、`openDetails()`、`closeDetails()`，以及接收工作区键的 `openWorkbench()`、`closeWorkbench()`、`toggleWorkbench()`、`toggleWorkbenchFullscreen()`、`toggleWorkbenchBottom()`、`closeWorkbenchBottom()` 和欢迎页专用的 `toggleHeroPanel()`。`beginNewConversation()` 同步清除空白会话的手动右栏选择并更新新对话意图版本；等待创建会话的欢迎页面板操作须核对该版本，不能在新对话操作后抢占选择。`workbench(workspaceKey)` 返回供会话页头、欢迎页与工作台顶栏面板开关订阅的显隐投影。打开工作台会关闭详情栏；打开详情栏会暂时覆盖工作台，关闭详情栏后恢复该工作区的状态。
+
+`openPage(kind, sessionId, returnSessionId?)` 和 `togglePage(kind, sessionId, returnSessionId?)` 在主内容区打开会话所属页面。页面间切换须沿用已有 `returnSessionId`；未提供时返回当前页会话。若用户已切换会话或原对话已不存在，过期页面不会抢回选择。
+
+`setPageAssistant('auto')` 为当前页面启用 AI 助手，空间充足时自动并排；显式设为 `true` 时，空间不足便以右侧抽屉显示。`false` 收起助手并保留草稿。`AppFrame` 在所有呈现中复用常驻 `conversation` 组件；关闭或替换页面清除助手偏好。调用方只提供关联同一对话容器的开关，无须再次渲染对话。
 
 `openWorkbench(workspaceKey, sessionId?)` 的可选会话 id 标识动作目标：目标明确是同工作区的其他会话时，只更新供目标恢复的共享打开状态，不展开当前空白会话的右栏，也不清除它手动选择的最大化状态；省略 id 或指向当前空白会话时可直接展开其右栏。已知目标会话的调用方应传入 id。
 

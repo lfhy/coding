@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { Button } from '../src/Button.tsx'
 import { SidebarRoot, type SidebarRootItem } from '../src/SidebarRoot.tsx'
 
 afterEach(cleanup)
@@ -85,5 +86,29 @@ describe('SidebarRoot', () => {
     expect(screen.getByTestId('page-entry')).toBeTruthy()
     expect(screen.queryByText('最近生成')).toBeNull()
     expect(screen.getAllByRole('button')).toHaveLength(items.length + 1)
+  })
+
+  it('标题同行的动作不随卷动列表卸载，收起后仍是原按钮', async () => {
+    const name = '这是一篇需要保留完整提示的长标题笔记'
+    const onCreate = vi.fn()
+    const headerAction = <Button onClick={onCreate}>新建</Button>
+    const tree: SidebarRootItem[] = [{ id: 'a', label: name, icon: 'notes' }]
+    const view = render(<SidebarRoot label="笔记" title="全部笔记" items={tree} collapsed={false} width={280} headerAction={headerAction} />)
+    const action = screen.getByRole('button', { name: '新建' })
+    expect(action.parentElement?.textContent).toContain('全部笔记')
+    expect(screen.getByRole('listitem').getAttribute('title')).toBe(name)
+    expect(screen.getByRole('list').contains(action)).toBe(false)
+    vi.useFakeTimers()
+    try {
+      view.rerender(<SidebarRoot label="笔记" title="全部笔记" items={tree} collapsed width={56} headerAction={headerAction} />)
+      await act(async () => { vi.advanceTimersByTime(150) })
+      expect(screen.queryByText('全部笔记')).toBeNull()
+      expect(screen.getByRole('button', { name: '新建' })).toBe(action)
+      expect(screen.getAllByRole('button')).toEqual([action, screen.getByRole('button', { name })])
+      fireEvent.click(action)
+      expect(onCreate).toHaveBeenCalledOnce()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

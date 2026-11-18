@@ -513,6 +513,8 @@ export interface ConversationInjected {
   selectWithoutWorkspace: () => Promise<SessionId | undefined>
   /** 撤销本轮页面请求的导航与草稿迁移权，不删除 Host 已成功创建的会话。 */
   abortBlankSelection: () => void
+  /** 请求当前会话输入栏在布局提交后聚焦，并将光标放到草稿末尾。 */
+  focusInput?: () => void
   /**
    * Framework-bound sources. `composerBlock` is this session's block when a
    * plugin raised one; the reason is the blocker's own localized copy, which

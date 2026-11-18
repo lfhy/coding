@@ -8,6 +8,15 @@ import {
 afterEach(cleanup)
 
 describe('语义图标适配', () => {
+  it.each(['format-bold', 'format-italic', 'format-heading', 'format-list', 'format-quote'] as const)(
+    '%s 用在具有独立可访问名称的格式按钮内', (name) => {
+      const view = render(<Icon name={name} size={14} className="format-icon" />)
+      const icon = view.container.querySelector<HTMLElement>('.format-icon')!
+      expect(icon.style.fontSize).toBe('14px')
+      expect(icon.getAttribute('aria-hidden')).toBe('true')
+      expect(icon.querySelector('svg')).not.toBeNull()
+    },
+  )
   it.each(['conversation', 'recent'] as const)('%s 使用线性语义图形并继承主题颜色', (name) => {
     const view = render(<Icon name={name} size={14} className="view-icon" />)
     const icon = view.container.querySelector<HTMLElement>('.view-icon')!

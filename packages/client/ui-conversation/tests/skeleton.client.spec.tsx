@@ -103,6 +103,8 @@ function mount(
     composerBlock?: { reason: string }
     /** 当前会话的模式，用于验证空白状态不受预设切换影响。 */
     agentPreset?: string
+    /** 以主内容页助手姿态渲染，跳过项目 Hero 选择。 */
+    inPageAssistant?: boolean
     /** Mutable view ledger used by registration-order regressions. */
     viewTabs?: ViewTab[]
   } = {},
@@ -130,6 +132,7 @@ function mount(
   const { wiring, sink } = fakeWiring()
   const useInput = bindSnapshotSelector(wiring.state)
   const inputActions = wiring.actions
+  const focusInput = vi.fn()
   const stop = vi.fn()
   const slotCalls: string[] = []
   const viewTabs = options.viewTabs ?? [
@@ -260,11 +263,13 @@ function mount(
     selectWorkspace: retargetWorkspace,
     selectWithoutWorkspace: vi.fn(async () => SID),
     abortBlankSelection: vi.fn(),
+    focusInput,
+    inPageAssistant: options.inPageAssistant,
     t,
   }
   const view = render(<ConversationRoot {...props} />)
   return {
-    view, chat, sink, retargetWorkspace, sessions, session, slotCalls, seatOwners,
+    view, chat, sink, retargetWorkspace, sessions, session, slotCalls, seatOwners, focusInput,
     pickerOwner: () => pickerOwner,
     rerender: () => { view.rerender(<ConversationRoot {...props} />) },
   }
@@ -433,6 +438,67 @@ describe('ConversationRoot resident composer', () => {
     act(() => { owner.onPick(wid('second')) })
     expect(b.retargetWorkspace).toHaveBeenCalledWith(wid('second'))
     expect(b.view.getByText('Selected Folder')).toBeTruthy()
+  })
+
+  it('嵌入助手空态跳过项目 Hero，快捷项追加草稿且只请求聚焦', () => {
+    const b = mount(
+      conversationSnapshot({ composerPhase: 'blank', blank: true }),
+      [],
+      undefined,
+      { summaryBlank: true, inPageAssistant: true },
+    )
+    expect(b.view.container.querySelector('[data-phase]')?.getAttribute('data-phase')).toBe('assistant')
+    expect(b.view.container.querySelector('[data-assistant-welcome]')).toBeTruthy()
+    expect(b.view.container.querySelector('[data-assistant-welcome]')?.closest('[data-composer-seat]')).toBeNull()
+    expect(b.view.getByText('可以帮你写作、总结、优化或处理代码')).toBeTruthy()
+    expect(b.slotCalls).not.toContain('conversation.hero.mode')
+    expect(b.slotCalls).not.toContain('conversation.hero.workspace')
+    expect(b.slotCalls).not.toContain('conversation.hero.actions')
+
+    const box = b.view.getByRole('textbox') as HTMLTextAreaElement
+    expect(box.placeholder).toBe('给智能体发消息')
+    const before = box.value
+    fireEvent.click(b.view.getByRole('button', { name: '写作润色' }))
+
+    expect(box.value).toBe(`${before}\n\n帮我润色这段文字，保留原意并让表达更自然：`)
+    expect(b.sink).not.toHaveBeenCalled()
+    expect(b.focusInput).toHaveBeenCalledOnce()
+  })
+
+  it('助手欢迎卡只显示同目录已同步的真实历史，不渲染切换死按钮', () => {
+    const b = mount(
+      conversationSnapshot({ composerPhase: 'blank', blank: true }),
+      [],
+      undefined,
+      { summaryBlank: true, inPageAssistant: true },
+    )
+    const sessions = b.sessions.getSnapshot()
+    const sibling = sid('notes-history')
+    b.sessions.set({
+      ...sessions,
+      ids: [...sessions.ids, sibling],
+      byId: {
+        ...sessions.byId,
+        [sibling]: { id: sibling, displayTitle: '本目录旧对话', cwd: '/projects/one', running: false, blank: false, updatedAt: 3 },
+      },
+    })
+    b.rerender()
+    expect(b.view.getByText('最近对话')).toBeTruthy()
+    expect(b.view.queryByText('本目录旧对话')).toBeNull()
+    expect(b.view.queryByRole('button', { name: '本目录旧对话' })).toBeNull()
+  })
+
+  it('助手欢迎页在 376px 轨道内不让欢迎内容横向溢出', () => {
+    const welcome = mount(
+      conversationSnapshot({ composerPhase: 'blank', blank: true }),
+      [],
+      undefined,
+      { summaryBlank: true, inPageAssistant: true },
+    )
+    const root = welcome.view.container.querySelector('[data-assistant-welcome]') as HTMLElement
+    expect(root).toBeTruthy()
+    expect(root.style.boxSizing || 'border-box').toBe('border-box')
+    expect(root.className).toContain('root')
   })
 
   it('第二次点击工作区按钮会收起菜单，同一指针手势不会先关再重开', () => {
