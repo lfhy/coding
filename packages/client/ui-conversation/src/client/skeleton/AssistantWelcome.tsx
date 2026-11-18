@@ -1,5 +1,8 @@
 import clsx from 'clsx'
-import { BrandMark, Button, IconCodeOutline16, IconEditOutline16, IconLightOutline16, IconListPenOutline16 } from 'coding-client-ui-primitives'
+import {
+  BrandMark, Button, IconChevronRightOutline14, IconCodeOutline16, IconEditOutline16, IconLightOutline16,
+  IconListPenOutline16,
+} from 'coding-client-ui-primitives'
 import { useId, type ReactNode } from 'react'
 import type { SessionId } from 'coding-client-runtime/client'
 import type { ConversationSlotProps } from '../contract/slots.ts'
@@ -16,7 +19,7 @@ interface Shortcut {
   readonly tone: 'writing' | 'summary' | 'code' | 'inspiration'
 }
 
-/** 仅展示同一笔记目录已有的真实会话摘要，不承担切换动作。 */
+/** 同一笔记目录里已有的一轮对话；点开即接续该会话。 */
 interface AssistantRecentSession {
   readonly id: SessionId
   readonly title: string | undefined
@@ -24,13 +27,14 @@ interface AssistantRecentSession {
 
 /**
  * 笔记页助手的紧凑空态；快捷项只预填共享草稿，不替用户提交消息。
- * @param props - 本地化、共享草稿预填动作及当前笔记目录已有的会话摘要。
+ * @param props - 本地化、共享草稿预填动作、当前笔记目录已有的会话摘要及其接续动作。
  * @returns 助手欢迎内容。
  */
-export function AssistantWelcome({ t, onPrompt, recentSessions }: {
+export function AssistantWelcome({ t, onPrompt, recentSessions, onResume }: {
   t: AssistantTranslate
   onPrompt: ((prompt: string) => void) | undefined
   recentSessions: readonly AssistantRecentSession[] | undefined
+  onResume: (sessionId: SessionId) => void
 }) {
   const id = useId()
   const shortcuts: readonly Shortcut[] = [
@@ -87,7 +91,15 @@ export function AssistantWelcome({ t, onPrompt, recentSessions }: {
           : <ul className={css.recentList}>
             {recentSessions.map((session) => {
               const title = session.title?.trim() || t('assistant.recent.untitled')
-              return <li key={session.id} className={css.recentSession} title={title}>{title}</li>
+              return (
+                <li key={session.id}>
+                  <Button className={css.recentSession} size="sm" title={title}
+                    onClick={() => { onResume(session.id) }}>
+                    <span className={css.recentSessionTitle}>{title}</span>
+                    <IconChevronRightOutline14 />
+                  </Button>
+                </li>
+              )
             })}
           </ul>}
       </section>}

@@ -58,6 +58,7 @@ async function bench() {
   })
   const layoutFake = {
     openDetails: vi.fn(), closeDetails: vi.fn(), beginNewConversation: vi.fn(),
+    openPage: vi.fn(), setPageAssistant: vi.fn(),
     conversationIntent: 1, page: createSnapshotStore<PageRoute | null>(null),
   }
   runtime.provide('layout', layoutFake)
@@ -145,6 +146,44 @@ describe('conversation slot inject API', () => {
       { method: 'startSession', args: [undefined] },
       { method: 'startSession', args: [undefined] },
     ])
+    await b.runtime.dispose()
+  })
+
+  it('助手接续历史对话时选中该会话并把独立页交给它', async () => {
+    const b = await bench()
+    await b.runtime.sessions.add({
+      id: 'notes-history',
+      summary: { title: 'H', displayTitle: 'H', cwd: '/proj' },
+      session: sessionFakeFor(),
+    }, { current: false })
+    b.layoutFake.page.set({ kind: 'notes', sessionId: ROOT, returnSessionId: 'origin' as SessionId })
+    b.residentApi(ROOT).resumeSession('notes-history' as SessionId)
+    await vi.waitFor(() => {
+      expect(b.runtime.sessions.calls).toContainEqual({ method: 'open', args: ['notes-history'] })
+    })
+    // 页面保留原 kind 与来处，助手在续接后仍然可见。
+    expect(b.layoutFake.openPage).toHaveBeenCalledWith('notes', 'notes-history', 'origin')
+    expect(b.layoutFake.setPageAssistant).toHaveBeenCalledWith(true)
+    await b.runtime.dispose()
+  })
+
+  it('没有独立页或页面已属于目标会话时只切换会话', async () => {
+    const b = await bench()
+    await b.runtime.sessions.add({
+      id: 'notes-history',
+      summary: { title: 'H', displayTitle: 'H', cwd: '/proj' },
+      session: sessionFakeFor(),
+    }, { current: false })
+    b.residentApi(ROOT).resumeSession('notes-history' as SessionId)
+    await vi.waitFor(() => {
+      expect(b.runtime.sessions.calls).toContainEqual({ method: 'open', args: ['notes-history'] })
+    })
+    expect(b.layoutFake.openPage).not.toHaveBeenCalled()
+
+    b.layoutFake.page.set({ kind: 'notes', sessionId: 'notes-history' as SessionId })
+    b.residentApi(ROOT).resumeSession('notes-history' as SessionId)
+    expect(b.layoutFake.openPage).not.toHaveBeenCalled()
+    expect(b.layoutFake.setPageAssistant).not.toHaveBeenCalled()
     await b.runtime.dispose()
   })
 

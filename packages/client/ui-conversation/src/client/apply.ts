@@ -236,6 +236,15 @@ export function apply(ctx: Context): void {
       selectWorkspace: workspaceId => blankSelection.workspace(sessionId, workspaceId),
       selectWithoutWorkspace: () => blankSelection.withoutWorkspace(sessionId),
       abortBlankSelection: blankSelection.abort,
+      resumeSession: (id) => {
+        const page = layout.page.getSnapshot()
+        // 先选中目标会话，再让页面跟过来；反过来页面会因所属会话不是当前选择而被丢弃。
+        sessions.open(id)
+        if (page === null || page.sessionId === id) return
+        layout.openPage(page.kind, id, page.returnSessionId)
+        // openPage 会清空页面助手偏好，续接对话后保持助手可见。
+        layout.setPageAssistant(true)
+      },
       focusInput: () => { if (sessionId !== undefined) inputHub.requestFocus(sessionId) },
     }),
   }, ConversationRoot)

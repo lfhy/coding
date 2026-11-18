@@ -169,15 +169,46 @@
   list-style: none;
 }
 
+.recentList li {
+  display: flex;
+}
+
+/* 每一轮对话是整行可点的接续入口，长标题截断而不撑破助手宽度。 */
 .recentSession {
-  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  height: auto;
+  min-width: 0;
   padding: 6px 8px;
   border-radius: 8px;
   background: var(--dsw-alias-button-elevated-fill);
   color: var(--dsw-alias-label-secondary);
   font: var(--dsw-font-xxs-12);
+  text-align: left;
+}
+
+.recentSession:hover:not(:disabled) {
+  color: var(--dsw-alias-label-primary);
+}
+
+.recentSession:focus-visible {
+  outline: 2px solid var(--dsw-alias-state-business-primary);
+  outline-offset: 2px;
+}
+
+.recentSessionTitle {
+  overflow: hidden;
+  min-width: 0;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.recentSession svg {
+  flex: none;
+  color: var(--dsw-alias-label-tertiary);
 }
 
 @container (min-width: 480px) {

@@ -19,7 +19,7 @@ const OVERVIEW_MIN_COLUMN_WIDTH = 1_388
 
 export function ConversationRoot({
   sessionId, sidebarCollapsed, useSession, useSessions, useWorkspaces, useInput, inputActions, useComposerBlock,
-  renderSlot, renderSlotChain, selectWorkspace, selectWithoutWorkspace, abortBlankSelection, t,
+  renderSlot, renderSlotChain, selectWorkspace, selectWithoutWorkspace, abortBlankSelection, resumeSession, t,
   focusInput, inPageAssistant = false,
 }: ConversationRootProps) {
   const openState = useSession(s => s.openState)
@@ -250,6 +250,7 @@ export function ConversationRoot({
           t={t}
           onPrompt={canApplyAssistantPrompt ? applyAssistantPrompt : undefined}
           recentSessions={recentAssistantSessions}
+          onResume={resumeSession}
         />}
         {renderSlot('conversation.session', {})}
         {composerSeat}

@@ -133,6 +133,7 @@ function mount(
   const useInput = bindSnapshotSelector(wiring.state)
   const inputActions = wiring.actions
   const focusInput = vi.fn()
+  const resumeSession = vi.fn()
   const stop = vi.fn()
   const slotCalls: string[] = []
   const viewTabs = options.viewTabs ?? [
@@ -263,13 +264,14 @@ function mount(
     selectWorkspace: retargetWorkspace,
     selectWithoutWorkspace: vi.fn(async () => SID),
     abortBlankSelection: vi.fn(),
+    resumeSession,
     focusInput,
     inPageAssistant: options.inPageAssistant,
     t,
   }
   const view = render(<ConversationRoot {...props} />)
   return {
-    view, chat, sink, retargetWorkspace, sessions, session, slotCalls, seatOwners, focusInput,
+    view, chat, sink, retargetWorkspace, sessions, session, slotCalls, seatOwners, focusInput, resumeSession,
     pickerOwner: () => pickerOwner,
     rerender: () => { view.rerender(<ConversationRoot {...props} />) },
   }
@@ -466,7 +468,30 @@ describe('ConversationRoot resident composer', () => {
     expect(b.focusInput).toHaveBeenCalledOnce()
   })
 
-  it('助手欢迎卡只显示同目录已同步的真实历史，不渲染切换死按钮', () => {
+  it('助手欢迎卡只列出同目录已同步的真实历史', () => {
+    const b = mount(
+      conversationSnapshot({ composerPhase: 'blank', blank: true }),
+      [],
+      undefined,
+      { summaryBlank: true, inPageAssistant: true },
+    )
+    const sessions = b.sessions.getSnapshot()
+    const elsewhere = sid('other-folder')
+    b.sessions.set({
+      ...sessions,
+      ids: [...sessions.ids, elsewhere],
+      byId: {
+        ...sessions.byId,
+        [elsewhere]: { id: elsewhere, title: '别的目录对话', displayTitle: '别的目录对话', cwd: '/projects/two', running: false, blank: false, updatedAt: 3 },
+      },
+    })
+    b.rerender()
+    expect(b.view.getByText('最近对话')).toBeTruthy()
+    expect(b.view.queryByText('别的目录对话')).toBeNull()
+    expect(b.view.queryByRole('button', { name: '别的目录对话' })).toBeNull()
+  })
+
+  it('助手欢迎卡把同目录真实历史做成接续入口，点击交给会话层打开', () => {
     const b = mount(
       conversationSnapshot({ composerPhase: 'blank', blank: true }),
       [],
@@ -480,13 +505,12 @@ describe('ConversationRoot resident composer', () => {
       ids: [...sessions.ids, sibling],
       byId: {
         ...sessions.byId,
-        [sibling]: { id: sibling, displayTitle: '本目录旧对话', cwd: '/projects/one', running: false, blank: false, updatedAt: 3 },
+        [sibling]: { id: sibling, title: '本目录旧对话', displayTitle: '本目录旧对话', cwd: '/projects/one', running: false, blank: false, updatedAt: 3 },
       },
     })
     b.rerender()
-    expect(b.view.getByText('最近对话')).toBeTruthy()
-    expect(b.view.queryByText('本目录旧对话')).toBeNull()
-    expect(b.view.queryByRole('button', { name: '本目录旧对话' })).toBeNull()
+    fireEvent.click(b.view.getByRole('button', { name: '本目录旧对话' }))
+    expect(b.resumeSession).toHaveBeenCalledWith(sibling)
   })
 
   it('助手欢迎页在 376px 轨道内不让欢迎内容横向溢出', () => {

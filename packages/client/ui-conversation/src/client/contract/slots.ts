@@ -513,6 +513,13 @@ export interface ConversationInjected {
   selectWithoutWorkspace: () => Promise<SessionId | undefined>
   /** 撤销本轮页面请求的导航与草稿迁移权，不删除 Host 已成功创建的会话。 */
   abortBlankSelection: () => void
+  /**
+   * 继续一次已有对话：选中该会话；当前处在独立页助手时让页面跟随目标会话，
+   * 助手保持打开，不关闭页面。
+   * @param sessionId - 要接续的会话 id。
+   * @returns 无返回值。
+   */
+  resumeSession: (sessionId: SessionId) => void
   /** 请求当前会话输入栏在布局提交后聚焦，并将光标放到草稿末尾。 */
   focusInput?: () => void
   /**
