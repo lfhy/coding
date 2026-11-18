@@ -190,8 +190,10 @@ export function installFileRoutes(ctx: Context, service: FileLibrary): void {
         if (req.method !== 'POST') { res.writeHead(405, { allow: 'POST' }); res.end(); return }
         try {
           const body = await readJsonBody(req)
-          if (typeof body.name !== 'string') throw new TypeError('新建载荷无效')
-          json(res, 201, await service.createNote(body.name))
+          if (typeof body.name !== 'string' || body.directory !== undefined && typeof body.directory !== 'string') {
+            throw new TypeError('新建载荷无效')
+          }
+          json(res, 201, await service.createNote(body.name, body.directory ?? ''))
         } catch (error) {
           if (error instanceof TypeError) { json(res, 400, { error: error.message }); return }
           webCtx.logger.warn('file-library notes create request failed', error)
@@ -199,6 +201,24 @@ export function installFileRoutes(ctx: Context, service: FileLibrary): void {
         }
       },
     }), 'file-library: POST /api/notes/create')
+    webCtx.effect(() => webCtx.webServer.register({
+      kind: 'exact', path: '/api/notes/create-directory',
+      handler: async (req, res) => {
+        if (!trusted(webCtx, req, res)) return
+        if (req.method !== 'POST') { res.writeHead(405, { allow: 'POST' }); res.end(); return }
+        try {
+          const body = await readJsonBody(req)
+          if (typeof body.name !== 'string' || body.parent !== undefined && typeof body.parent !== 'string') {
+            throw new TypeError('新建目录载荷无效')
+          }
+          json(res, 201, await service.createNoteDirectory(body.name, body.parent ?? ''))
+        } catch (error) {
+          if (error instanceof TypeError) { json(res, 400, { error: error.message }); return }
+          webCtx.logger.warn('file-library notes directory create request failed', error)
+          json(res, 503, { error: '笔记目录暂不可创建' })
+        }
+      },
+    }), 'file-library: POST /api/notes/create-directory')
     webCtx.effect(() => webCtx.webServer.register({
       kind: 'exact', path: '/api/notes/cwd',
       handler: (req, res) => {

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { assertNotePath, notesCreate, notesCwd, notesRead, notesSave, notesTree, NoteConflictError } from '../src/client/wire.ts'
+import { assertNotePath, notesCreate, notesCreateDirectory, notesCwd, notesRead, notesSave, notesTree, NoteConflictError } from '../src/client/wire.ts'
 
 const treeBody = {
   children: [
@@ -10,6 +10,11 @@ const treeBody = {
 
 function stubFetch(handler: (url: string, init?: RequestInit) => Response | Promise<Response>): void {
   vi.stubGlobal('fetch', vi.fn(async (input: string | URL, init?: RequestInit) => handler(String(input), init)))
+}
+
+function requestJson(init?: RequestInit): unknown {
+  if (typeof init?.body !== 'string') throw new Error('预期请求包含 JSON 正文')
+  return JSON.parse(init.body) as unknown
 }
 
 afterEach(() => { vi.unstubAllGlobals() })
@@ -47,12 +52,24 @@ describe('notes wire', () => {
   })
 
   it('创建笔记并校验返回路径', async () => {
-    stubFetch(() => Response.json({ path: '想法.md' }))
-    expect(await notesCreate('想法')).toEqual({ path: '想法.md' })
+    stubFetch((_, init) => {
+      expect(requestJson(init)).toEqual({ name: '想法', directory: '项目' })
+      return Response.json({ path: '项目/想法.md' })
+    })
+    expect(await notesCreate('想法', '项目')).toEqual({ path: '项目/想法.md' })
     stubFetch(() => new Response('exists', { status: 409 }))
     await expect(notesCreate('a.md')).rejects.toThrow('notes create HTTP 409')
     stubFetch(() => Response.json({ path: 'ok.md' }))
     await expect(notesCreate('a/../../b.md')).resolves.toEqual({ path: 'ok.md' })
+  })
+
+  it('创建目录并校验返回路径', async () => {
+    stubFetch((url, init) => {
+      expect(url).toBe('/api/notes/create-directory')
+      expect(requestJson(init)).toEqual({ name: '项目', parent: '资料' })
+      return Response.json({ path: '资料/项目' })
+    })
+    await expect(notesCreateDirectory('项目', '资料')).resolves.toEqual({ path: '资料/项目' })
   })
 
   it('笔记根目录必须是绝对路径', async () => {
@@ -65,14 +82,15 @@ describe('notes wire', () => {
   })
 
   it('路径校验拒绝非字符串、超长、绝对路径、盘符、空段与越级段', () => {
-    expect(() => assertNotePath('a/b.md')).not.toThrow()
-    expect(() => assertNotePath(undefined as unknown as string)).toThrow('Invalid note path')
-    expect(() => assertNotePath('x'.repeat(4097))).toThrow('Invalid note path')
-    expect(() => assertNotePath('/abs.md')).toThrow('Invalid note path')
-    expect(() => assertNotePath('C:\\win.md')).toThrow('Invalid note path')
-    expect(() => assertNotePath('a/../b.md')).toThrow('Invalid note path')
-    expect(() => assertNotePath('a/./b.md')).toThrow('Invalid note path')
-    expect(() => assertNotePath('a//b.md')).toThrow('Invalid note path')
+    expect(() => { assertNotePath('a/b.md') }).not.toThrow()
+    expect(() => { assertNotePath(undefined as unknown as string) }).toThrow('Invalid note path')
+    expect(() => { assertNotePath('x'.repeat(4097)) }).toThrow('Invalid note path')
+    expect(() => { assertNotePath('/abs.md') }).toThrow('Invalid note path')
+    expect(() => { assertNotePath('C:\\win.md') }).toThrow('Invalid note path')
+    expect(() => { assertNotePath('a/../b.md') }).toThrow('Invalid note path')
+    expect(() => { assertNotePath('a/./b.md') }).toThrow('Invalid note path')
+    expect(() => { assertNotePath('a//b.md') }).toThrow('Invalid note path')
+    expect(() => { assertNotePath('a/\u0001/b.md') }).toThrow('Invalid note path')
   })
 
   it('读取、保存、创建的数值与类型字段均做运行时校验', async () => {

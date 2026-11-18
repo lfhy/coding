@@ -1,14 +1,15 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import type { FormEvent, MouseEvent } from 'react'
 import {
-  Button, Icon, IconCheckOutline14, IconCloseOutline16, IconPlusOutline16, IconSearchOutline16, IconSparkle16,
-  Input, Modal, SidebarRoot, Toast, type SidebarRootItem,
+  Button, Icon, IconCheckOutline14, IconCloseOutline16, IconFolderOpenOutline16, IconPlusOutline16,
+  IconSearchOutline16, IconSparkle16, Input, Menu, Modal, SidebarRoot, Toast,
+  type MenuEntry, type SidebarRootItem,
 } from 'coding-client-ui-primitives'
 import type { PropsLocale, PropsRuntime } from 'coding-client-ui-slots'
 import { NS, type NotesLocaleKey } from './locales.ts'
 import { NotesEditor } from './NotesEditor.tsx'
 import { useNoteDraft } from './useNoteDraft.ts'
-import { notesCreate, notesTree, type NotesTreeEntry } from './wire.ts'
+import { notesCreate, notesCreateDirectory, notesTree, type NotesTreeEntry } from './wire.ts'
 import css from './NotesPage.module.css'
 
 export type NotesPageProps = PropsRuntime<'shell.page'> & PropsLocale<typeof NS>
@@ -32,6 +33,13 @@ function findEntry(entries: readonly NotesTreeEntry[], path: string): NotesTreeE
     }
   }
   return undefined
+}
+
+/** 返回当前笔记所在目录；未选笔记时使用笔记根目录。 */
+function selectedDirectory(path: string | undefined): string {
+  if (path === undefined) return ''
+  const slash = path.lastIndexOf('/')
+  return slash < 0 ? '' : path.slice(0, slash)
 }
 
 function firstNote(
@@ -61,14 +69,17 @@ export function NotesPage({
   const nameId = useId()
   const titleRef = useRef<HTMLHeadingElement | null>(null)
   const searchTrigger = useRef<HTMLButtonElement>(null)
+  const createTrigger = useRef<HTMLButtonElement>(null)
   const dialogTrigger = useRef<HTMLButtonElement | null>(null)
   const creatingRequest = useRef<AbortController | null>(null)
   const [tree, setTree] = useState<NotesTreeEntry[]>([])
   const [treeState, setTreeState] = useState<DirectoryState>('loading')
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set())
+  const [creationDirectory, setCreationDirectory] = useState('')
   const [searchOpen, setSearchOpen] = useState(false)
   const [query, setQuery] = useState('')
-  const [dialog, setDialog] = useState<'create' | 'reload' | null>(null)
+  const [createMenuOpen, setCreateMenuOpen] = useState(false)
+  const [dialog, setDialog] = useState<'create' | 'folder' | 'reload' | null>(null)
   const [draftName, setDraftName] = useState('')
   const [creating, setCreating] = useState(false)
   const [toast, setToast] = useState<{ id: number; key: NotesLocaleKey } | null>(null)
@@ -121,11 +132,13 @@ export function NotesPage({
         setTree(fresh)
         const path = getPath()
         if (path !== undefined) {
+          setCreationDirectory(selectedDirectory(path))
           await refresh(findEntry(fresh, path)?.mtimeMs, signal)
         } else if (status !== 'ready' && creatingRequest.current === null) {
           const first = firstNote(fresh)
           if (first !== undefined) {
             setExpanded(new Set(first.parents))
+            setCreationDirectory(selectedDirectory(first.path))
             await select(first.path)
           }
         }
@@ -172,7 +185,8 @@ export function NotesPage({
           }
           out.push({
             id: entry.path, label: entry.name, icon: 'files', folder: true, open: expanded.has(entry.path), depth,
-            onSelect: () => { toggleDir(entry.path) },
+            description: t('folderType'), meta: date.format(entry.mtimeMs),
+            onSelect: () => { setCreationDirectory(entry.path); toggleDir(entry.path) },
           })
           if (expanded.has(entry.path) && entry.children !== undefined) flatten(entry.children, out, depth + 1)
         } else {
@@ -182,7 +196,7 @@ export function NotesPage({
             id: entry.path, label, icon: 'notes', iconTone: 'blue', depth, active: draft?.path === entry.path,
             description: entry.path.split('/').at(-2) ?? typeLabel,
             meta: date.format(entry.mtimeMs),
-            onSelect: () => { void select(entry.path) },
+            onSelect: () => { setCreationDirectory(selectedDirectory(entry.path)); void select(entry.path) },
           })
         }
       }
@@ -190,7 +204,7 @@ export function NotesPage({
     const items: SidebarRootItem[] = []
     flatten(tree, items, 0)
     return items
-  }, [tree, expanded, draft?.path, locale, needle, typeLabel, select, toggleDir])
+  }, [tree, expanded, draft?.path, locale, needle, typeLabel, select, toggleDir, t])
 
   const closeSearch = () => {
     setSearchOpen(false)
@@ -209,9 +223,16 @@ export function NotesPage({
     setDialog(null)
   }
 
-  const openDialog = (kind: 'create' | 'reload', event: MouseEvent<HTMLButtonElement>) => {
+  const openCreateDialog = (kind: 'create' | 'folder') => {
+    const trigger = createTrigger.current
+    if (trigger === null) return
+    setCreateMenuOpen(false)
+    openDialog(kind, { currentTarget: trigger } as MouseEvent<HTMLButtonElement>)
+  }
+
+  const openDialog = (kind: 'create' | 'folder' | 'reload', event: MouseEvent<HTMLButtonElement>) => {
     dialogTrigger.current = event.currentTarget
-    if (kind === 'create') setDraftName('')
+    if (kind === 'create' || kind === 'folder') setDraftName('')
     setDialog(kind)
   }
 
@@ -223,22 +244,36 @@ export function NotesPage({
     creatingRequest.current = request
     setCreating(true)
     try {
-      const { path } = await notesCreate(name)
+      const parent = creationDirectory
+      const { path } = dialog === 'folder'
+        ? await notesCreateDirectory(name, parent)
+        : await notesCreate(name, parent)
       request.signal.throwIfAborted()
       const fresh = notesTree(request.signal).then((entries) => {
         if (!request.signal.aborted) setTree(entries)
       }, () => {
         if (!request.signal.aborted) notify('treeError')
       })
-      await Promise.all([fresh, select(path)])
+      if (dialog === 'folder') {
+        setExpanded(previous => new Set(previous).add(path))
+        setCreationDirectory(path)
+        await fresh
+      } else {
+        await Promise.all([fresh, select(path)])
+      }
       if (!request.signal.aborted) setDialog(null)
     } catch {
-      if (!request.signal.aborted) notify('createError')
+      if (!request.signal.aborted) notify(dialog === 'folder' ? 'createFolderError' : 'createError')
     } finally {
       creatingRequest.current = null
       if (!request.signal.aborted) setCreating(false)
     }
   }
+
+  const createEntries: readonly MenuEntry[] = [
+    { id: 'note', label: t('newNote'), icon: <Icon name="notes" size={16} /> },
+    { id: 'folder', label: t('newFolder'), icon: <IconFolderOpenOutline16 size={16} /> },
+  ]
 
   const selectedLabel = draft === null ? t('title') : labelOf(findEntry(tree, draft.path)?.name ?? draft.path.replace(/^.*\//u, ''))
 
@@ -254,9 +289,20 @@ export function NotesPage({
               aria-controls={searchOpen ? searchId : undefined}
               onClick={() => { if (searchOpen) closeSearch(); else setSearchOpen(true) }} />
           )}
-          <Button size="sm" className={css.newNote} icon={<IconPlusOutline16 />}
-            aria-label={t('newNote')} title={t('newNote')} aria-haspopup="dialog" disabled={creating}
-            onClick={(event) => { openDialog('create', event) }} />
+          <Menu
+            open={createMenuOpen}
+            anchor={<Button ref={createTrigger} size="sm" className={css.newNote} icon={<IconPlusOutline16 />}
+              aria-label={t('newNote')} title={t('newNote')} aria-haspopup="menu" disabled={creating}
+              onClick={() => { setCreateMenuOpen(open => !open) }} />}
+            items={createEntries}
+            onSelect={(id) => {
+              if (id === 'note') openCreateDialog('create')
+              if (id === 'folder') openCreateDialog('folder')
+            }}
+            onClose={() => { setCreateMenuOpen(false) }}
+            side="bottom"
+            portal
+          />
         </div>}
         {...(needle !== '' ? { empty: t('noMatches') } : {})}
         toolbar={searchOpen && <div id={searchId} className={css.searchRow}>
@@ -302,7 +348,8 @@ export function NotesPage({
                   {tree.length === 0 && <p>{t('emptyHint')}</p>}</>}
           </div>}
       </div>
-      <Modal open={dialog === 'create'} onClose={closeDialog} title={t('newNote')} closeLabel={t('close')} trapFocus
+      <Modal open={dialog === 'create' || dialog === 'folder'} onClose={closeDialog}
+        title={dialog === 'folder' ? t('newFolder') : t('newNote')} closeLabel={t('close')} trapFocus
         footer={<>
           <Button variant="outline" disabled={creating} onClick={closeDialog}>{t('cancel')}</Button>
           <Button variant="primary" type="submit" form={formId} disabled={creating || draftName.trim() === ''}>
@@ -310,7 +357,7 @@ export function NotesPage({
           </Button>
         </>}>
         <form id={formId} className={css.form} onSubmit={(event) => { void createNote(event) }}>
-          <label htmlFor={nameId}>{t('noteName')}</label>
+          <label htmlFor={nameId}>{dialog === 'folder' ? t('folderName') : t('noteName')}</label>
           <Input id={nameId} value={draftName} autoFocus readOnly={creating}
             onChange={(event) => { setDraftName(event.target.value) }} />
         </form>

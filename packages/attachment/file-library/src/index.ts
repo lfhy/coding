@@ -88,15 +88,18 @@ function identity(value: string, field: string): string {
   return value
 }
 
-async function privateDirectory(path: string): Promise<void> {
+async function privateDirectory(path: string, repairPermissions = false): Promise<void> {
   // 已存在的条目也按 lstat 检查，不跟随被替换进目录树的符号链接。
   try { await mkdir(path, { mode: 0o700 }) }
   catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error }
   const info = await lstat(path)
   const currentUid = process.getuid?.()
-  if (!info.isDirectory() || info.isSymbolicLink() || currentUid !== undefined && info.uid !== currentUid
-    || process.platform !== 'win32' && (info.mode & 0o077) !== 0) {
+  if (!info.isDirectory() || info.isSymbolicLink() || currentUid !== undefined && info.uid !== currentUid) {
     throw new Error(`文件库目录不是仅限当前用户访问的真实目录: ${path}`)
+  }
+  if (process.platform !== 'win32' && (info.mode & 0o077) !== 0) {
+    if (!repairPermissions) throw new Error(`文件库目录不是仅限当前用户访问的真实目录: ${path}`)
+    await chmod(path, 0o700)
   }
 }
 
@@ -151,7 +154,7 @@ export class FileLibrary extends Service {
       throw new Error('文件库根目录已更换')
     }
     const path = join(this.root, kind)
-    await privateDirectory(path)
+    await privateDirectory(path, kind === 'notes')
     return path
   }
 
@@ -423,10 +426,12 @@ export class FileLibrary extends Service {
    * @returns 规范化相对路径（斜杠分隔）与笔记根目录绝对路径。
    */
   private noteTarget(relativePath: string): { rel: string; target: string } {
-    if (typeof relativePath !== 'string' || relativePath.length === 0 || relativePath.length > 4096 || relativePath.includes('\0')) {
+    if (typeof relativePath !== 'string' || relativePath.length === 0 || relativePath.length > 4096
+      || relativePath.includes('\0') || /[\u0001-\u001f\u007f]/u.test(relativePath)
+      || /^[a-zA-Z]:/u.test(relativePath)) {
       throw new TypeError('笔记路径无效')
     }
-    const segments = relativePath.split(/[\\/]+/u)
+    const segments = relativePath.split(/[\\/]/u)
     if (segments[0] === '' || segments.some(segment => segment === '' || segment === '.' || segment === '..')) {
       throw new TypeError('笔记路径无效')
     }
@@ -458,6 +463,28 @@ export class FileLibrary extends Service {
     }
     if (!info.isFile() || info.isSymbolicLink()) throw new TypeError('笔记不是真实文件')
     if (!NOTE_EXTENSIONS.has(extname(target).toLowerCase())) throw new TypeError('笔记扩展名无效')
+    return { target, rel }
+  }
+
+  /** 校验笔记父目录属于笔记根目录，并返回其真实目录。 */
+  private async safeNoteDirectory(relativePath: string): Promise<{ target: string; rel: string }> {
+    if (relativePath === '') {
+      const target = await this.directory('notes')
+      return { target, rel: '' }
+    }
+    const { rel, target } = this.noteTarget(relativePath)
+    const notesDir = await this.directory('notes')
+    const realNotes = await realpath(notesDir)
+    let info
+    try { info = await lstat(target) }
+    catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw new TypeError('笔记目录不存在')
+      throw error
+    }
+    if (!info.isDirectory() || info.isSymbolicLink()) throw new TypeError('笔记目录无效')
+    const realTarget = await realpath(target)
+    if (realTarget !== realNotes && !realTarget.startsWith(realNotes + sep)) throw new TypeError('笔记目录无效')
+    await this.ensurePrivateDirs(notesDir, target)
     return { target, rel }
   }
 
@@ -535,7 +562,10 @@ export class FileLibrary extends Service {
     const realNotes = await realpath(notesDir)
     const dir = dirname(target)
     if (dir !== notesDir) {
-      const exists = await lstat(dir).then(() => true).catch((error: unknown) => (error as NodeJS.ErrnoException).code === 'ENOENT' ? false : Promise.reject(error))
+      const exists = await lstat(dir).then(() => true).catch((error: unknown) => {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false
+        throw error
+      })
       if (!exists) {
         await mkdir(dir, { recursive: true, mode: 0o700 })
         await this.ensurePrivateDirs(notesDir, dir)
@@ -570,23 +600,55 @@ export class FileLibrary extends Service {
   }
 
   /**
-   * 在笔记根目录创建空笔记；名称按文件库规则净化，缺省扩展名补 `.md`，同名已存在时拒绝。
+   * 在指定笔记目录创建空笔记；名称按文件库规则净化，缺省扩展名补 `.md`，同名已存在时拒绝。
    * @param name - 用户提交的文件名。
+   * @param directory - 相对笔记根目录的父目录，空字符串表示根目录。
    * @returns 相对笔记根目录的路径。
    */
-  async createNote(name: string): Promise<{ path: string }> {
+  async createNote(name: string, directory = ''): Promise<{ path: string }> {
     const leaf = safeName(name)
     const fileName = NOTE_EXTENSIONS.has(extname(leaf).toLowerCase()) ? leaf : `${leaf}.md`
-    const notesDir = await this.directory('notes')
-    const target = join(notesDir, fileName)
+    const parent = await this.safeNoteDirectory(directory)
+    const target = join(parent.target, fileName)
     const flags = constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW
     const handle = await open(target, flags, 0o600).catch((error: unknown) => {
       if ((error as NodeJS.ErrnoException).code === 'EEXIST') throw new TypeError('笔记已存在')
       throw error
     })
     await handle.close()
-    await syncDirectory(notesDir)
-    return { path: fileName }
+    await syncDirectory(parent.target)
+    return { path: parent.rel === '' ? fileName : `${parent.rel}/${fileName}` }
+  }
+
+  /**
+   * 在指定笔记目录创建子目录；只接受单个目录名，拒绝覆盖现有条目。
+   * @param name - 用户提交的目录名。
+   * @param parent - 相对笔记根目录的父目录，空字符串表示根目录。
+   * @returns 相对笔记根目录的新目录路径。
+   */
+  async createNoteDirectory(name: string, parent = ''): Promise<{ path: string }> {
+    if (typeof name !== 'string' || name.length === 0 || name.length > 1024 || name.includes('\0')
+      || /[\u0001-\u001f\u007f]/u.test(name) || /[\\/]/u.test(name) || name === '.' || name === '..'
+      || /^[a-zA-Z]:/u.test(name)) {
+      throw new TypeError('目录名无效')
+    }
+    const leaf = safeName(name)
+    const parentDirectory = await this.safeNoteDirectory(parent)
+    const parentSegments = parentDirectory.rel === '' ? [] : parentDirectory.rel.split('/')
+    if (parentSegments.length + 1 > NOTE_MAX_DEPTH) throw new TypeError('笔记目录层级过深')
+    const currentTree = await this.notesTree()
+    const countNodes = (entries: readonly NotesTreeNode[]): number => entries.reduce((count, entry) => (
+      count + 1 + (entry.children === undefined ? 0 : countNodes(entry.children))
+    ), 0)
+    if (countNodes(currentTree) >= NOTE_MAX_NODES) throw new TypeError('笔记条目过多')
+    const target = join(parentDirectory.target, leaf)
+    try { await mkdir(target, { mode: 0o700 }) }
+    catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'EEXIST') throw new TypeError('笔记目录已存在')
+      throw error
+    }
+    await syncDirectory(parentDirectory.target)
+    return { path: parentDirectory.rel === '' ? leaf : `${parentDirectory.rel}/${leaf}` }
   }
 
   /**

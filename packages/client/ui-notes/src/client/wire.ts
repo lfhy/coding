@@ -29,6 +29,7 @@ function isObject(value: unknown): value is Record<string, unknown> {
 export function assertNotePath(path: string): void {
   if (typeof path !== 'string' || path.length === 0 || path.length > 4096
     || /^[\\/]/.test(path) || /^[a-zA-Z]:/.test(path) || path.includes('\0')
+    || /[\u0001-\u001f\u007f]/u.test(path)
     || path.split(/[\\/]/).some(segment => segment === '' || segment === '.' || segment === '..')) {
     throw new Error('Invalid note path')
   }
@@ -114,19 +115,34 @@ export async function notesSave(path: string, content: string, baseMtimeMs?: num
 }
 
 /**
- * 在笔记根目录创建一篇空笔记。
+ * 在当前笔记目录创建一篇空笔记。
  * @param name - 笔记名称；Host 会净化并补 Markdown 扩展名。
+ * @param directory - 相对笔记根目录的父目录，空字符串表示根目录。
  * @returns 新建笔记的相对路径。
  */
-export async function notesCreate(name: string): Promise<{ path: string }> {
+export async function notesCreate(name: string, directory = ''): Promise<{ path: string }> {
   const response = await fetch('/api/notes/create', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ name }),
+    body: JSON.stringify({ name, ...(directory === '' ? {} : { directory }) }),
   })
   if (!response.ok) throw new Error(`notes create HTTP ${response.status}`)
   const body = (await response.json()) as unknown
   if (!isObject(body) || !nonemptyString(body.path)) throw new Error('Invalid note create payload')
+  assertNotePath(body.path)
+  return { path: body.path }
+}
+
+/** 在笔记目录下新建子目录，返回相对笔记根目录的路径。 */
+export async function notesCreateDirectory(name: string, parent = ''): Promise<{ path: string }> {
+  const response = await fetch('/api/notes/create-directory', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ name, ...(parent === '' ? {} : { parent }) }),
+  })
+  if (!response.ok) throw new Error(`notes create directory HTTP ${response.status}`)
+  const body = (await response.json()) as unknown
+  if (!isObject(body) || !nonemptyString(body.path)) throw new Error('Invalid note directory payload')
   assertNotePath(body.path)
   return { path: body.path }
 }

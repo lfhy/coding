@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import { lstat, mkdir, mkdtemp, readdir, rm, symlink, utimes, writeFile } from 'node:fs/promises'
+import { chmod, lstat, mkdir, mkdtemp, readdir, rm, symlink, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import Storage from 'coding-storage'
@@ -51,6 +51,15 @@ describe('无目录笔记域', () => {
     expect(deep?.children?.map(node => node.path)).toEqual(['ideas/deep/two.markdown'])
   })
 
+  it('笔记根目录被会话初始化放宽权限后会重新收紧', async () => {
+    const { library } = await harness()
+    await library.notesTree()
+    const notesDir = library.notesRootPath()
+    await chmod(notesDir, 0o755)
+    await library.notesTree()
+    if (process.platform !== 'win32') expect((await lstat(notesDir)).mode & 0o777).toBe(0o700)
+  })
+
   it('读取笔记返回全文与修改时间；越界路径与非 Markdown 文件被拒绝', async () => {
     const { library } = await harness()
     await library.notesTree()
@@ -97,6 +106,19 @@ describe('无目录笔记域', () => {
     await expect(library.createNote('会议纪要.md')).rejects.toThrow(/笔记已存在/)
     const tree = await library.notesTree()
     expect(tree.map(node => node.path)).toEqual(['会议纪要.md', '周报.markdown'])
+  })
+
+  it('在指定目录新建笔记和子目录，并拒绝目录逃逸与同名覆盖', async () => {
+    const { library } = await harness()
+    await library.notesTree()
+    expect((await library.createNoteDirectory('项目资料')).path).toBe('项目资料')
+    expect((await library.createNote('会议纪要', '项目资料')).path).toBe('项目资料/会议纪要.md')
+    await expect(library.createNoteDirectory('项目资料')).rejects.toThrow(/目录已存在/)
+    await expect(library.createNote('越界', '../')).rejects.toThrow(TypeError)
+    await expect(library.createNoteDirectory('越界', '../')).rejects.toThrow(TypeError)
+    await expect(library.notesTree()).resolves.toEqual([
+      expect.objectContaining({ kind: 'dir', path: '项目资料' }),
+    ])
   })
 
   it('无目录笔记并入未分组列表与 note 过滤，子目录笔记不出现', async () => {
