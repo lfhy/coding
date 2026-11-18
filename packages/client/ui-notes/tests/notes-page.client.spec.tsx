@@ -65,6 +65,23 @@ function makeServer() {
       state.tree.unshift({ name: body.name, kind: 'file', path, mtimeMs: 3000 })
       return Response.json({ path })
     }
+    if (url.pathname === '/api/notes/rename') {
+      const body = requestJson(init) as { path: string; name: string }
+      const entry = state.files.get(body.path)
+      if (entry === undefined) return new Response('missing', { status: 404 })
+      const path = body.name.includes('.') ? body.name : `${body.name}.md`
+      state.files.set(path, entry)
+      state.files.delete(body.path)
+      state.tree = state.tree.map(node => node.path === body.path
+        ? { ...node, name: body.name, path } : node)
+      return Response.json({ path })
+    }
+    if (url.pathname === '/api/notes/delete') {
+      const body = requestJson(init) as { path: string }
+      state.files.delete(body.path)
+      state.tree = state.tree.filter(node => node.path !== body.path)
+      return new Response(null, { status: 204 })
+    }
     return new Response('not found', { status: 404 })
   }
   vi.stubGlobal('fetch', vi.fn(route))
@@ -113,6 +130,25 @@ describe('NotesPage', () => {
     expect(screen.queryByRole('heading', { name: '预览' })).toBeNull()
     expect(saveState().textContent).toBe('已保存')
     expect(screen.getByRole('button', { name: '并排' }).getAttribute('aria-pressed')).toBe('true')
+  })
+
+  it('右键笔记可重命名和删除，目录行不显示类型副标题', async () => {
+    makeServer()
+    await mount()
+    const row = treeRow('a')
+    fireEvent.contextMenu(row)
+    expect(screen.getByRole('menuitem', { name: '重命名' })).toBeTruthy()
+    fireEvent.click(screen.getByRole('menuitem', { name: '重命名' }))
+    const input = screen.getByRole('textbox', { name: '笔记名称' })
+    fireEvent.change(input, { target: { value: 'renamed' } })
+    await act(async () => { fireEvent.submit(input.closest('form')!) })
+    expect(treeRow('renamed')).toBeTruthy()
+    expect(within(directory()).queryByText('目录')).toBeNull()
+    fireEvent.contextMenu(treeRow('renamed'))
+    fireEvent.click(screen.getByRole('menuitem', { name: '删除' }))
+    fireEvent.click(screen.getByRole('button', { name: '删除' }))
+    await act(async () => {})
+    expect(within(directory()).queryByTitle('renamed')).toBeNull()
   })
 
   it('以中央宽度而非窗口宽度切换默认视图，保留手动预览和草稿', async () => {
@@ -300,17 +336,19 @@ describe('NotesPage', () => {
     expect((editor as HTMLTextAreaElement).value).toBe('local stays')
   })
 
-  it('空目录只保留标题同行的新建入口，折叠后仍可创建', async () => {
+  it('未选中笔记时显示纯欢迎页；新建入口只在目录中，折叠后仍可用', async () => {
     vi.stubGlobal('fetch', vi.fn(async (input: string | URL) => {
       const url = new URL(String(input), 'http://localhost')
       return url.pathname === '/api/notes/tree'
-        ? Response.json({ children: [] })
+        ? Response.json({ children: [{ name: '想法', kind: 'dir', path: '想法', mtimeMs: 1000, children: [] }] })
         : new Response('not found', { status: 404 })
     }))
     const { rerender } = await mount()
     expect(screen.queryByRole('textbox', { name: '原始文本' })).toBeNull()
-    expect(screen.getByText('还没有笔记')).toBeTruthy()
-    expect(screen.getByRole('button', { name: '新建笔记' })).toBe(createTrigger())
+    expect(screen.getByRole('heading', { level: 2, name: /好呀/u })).toBeTruthy()
+    expect(screen.getByText('在这里记录你的想法、灵感与工作内容')).toBeTruthy()
+    expect(screen.queryByText('在目录中选择一篇笔记')).toBeNull()
+    expect(screen.getAllByRole('button', { name: '新建笔记' })).toEqual([createTrigger()])
     rerender(<NotesPage {...props} sidebarCollapsed sidebarWidth={56} />)
     await act(async () => { vi.advanceTimersByTime(150) })
     fireEvent.click(createTrigger())

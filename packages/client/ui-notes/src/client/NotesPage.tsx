@@ -1,15 +1,17 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import type { FormEvent, MouseEvent } from 'react'
 import {
-  Button, Icon, IconCheckOutline14, IconCloseOutline16, IconFolderOpenOutline16, IconPlusOutline16,
+  Button, Icon, IconCheckOutline14, IconCloseOutline16, IconEditOutline16, IconFolderOpenOutline16, IconPlusOutline16,
   IconSearchOutline16, IconSparkle16, Input, Menu, Modal, SidebarRoot, Toast,
+  IconTrashOutline16,
   type MenuEntry, type SidebarRootItem,
 } from 'coding-client-ui-primitives'
 import type { PropsLocale, PropsRuntime } from 'coding-client-ui-slots'
 import { NS, type NotesLocaleKey } from './locales.ts'
 import { NotesEditor } from './NotesEditor.tsx'
+import { NotesWelcome } from './NotesWelcome.tsx'
 import { useNoteDraft } from './useNoteDraft.ts'
-import { notesCreate, notesCreateDirectory, notesTree, type NotesTreeEntry } from './wire.ts'
+import { notesCreate, notesCreateDirectory, notesDelete, notesRename, notesTree, type NotesTreeEntry } from './wire.ts'
 import css from './NotesPage.module.css'
 
 export type NotesPageProps = PropsRuntime<'shell.page'> & PropsLocale<typeof NS>
@@ -17,6 +19,8 @@ export type NotesPageProps = PropsRuntime<'shell.page'> & PropsLocale<typeof NS>
 /** AI 助手改动检测的目录轮询间隔。 */
 const TREE_POLL_MS = 4000
 type DirectoryState = 'loading' | 'ready' | 'failed'
+type NoteActionTarget = Pick<NotesTreeEntry, 'kind' | 'name' | 'path'>
+type DialogKind = 'create' | 'folder' | 'reload' | 'rename' | 'delete'
 
 /** 去掉 Markdown 扩展名的文件名，供目录树显示。 */
 function labelOf(name: string): string {
@@ -79,7 +83,9 @@ export function NotesPage({
   const [searchOpen, setSearchOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [createMenuOpen, setCreateMenuOpen] = useState(false)
-  const [dialog, setDialog] = useState<'create' | 'folder' | 'reload' | null>(null)
+  const [dialog, setDialog] = useState<DialogKind | null>(null)
+  const [actionTarget, setActionTarget] = useState<NoteActionTarget | null>(null)
+  const [contextMenu, setContextMenu] = useState<{ target: NoteActionTarget; x: number; y: number } | null>(null)
   const [draftName, setDraftName] = useState('')
   const [creating, setCreating] = useState(false)
   const [toast, setToast] = useState<{ id: number; key: NotesLocaleKey } | null>(null)
@@ -90,7 +96,7 @@ export function NotesPage({
     setToast({ id: toastId.current, key })
   }, [])
 
-  const { draft, saveLabel, select, edit, save, reload, refresh, getPath, flush } = useNoteDraft(notify)
+  const { draft, saveLabel, select, edit, save, reload, refresh, getPath, flush, renamePath, clear } = useNoteDraft(notify)
 
   useEffect(() => {
     /* v8 ignore next -- jsdom 中 activeElement 恒为元素；null 臂只防御焦点位于其他文档或窗口的浏览器。 */
@@ -171,8 +177,25 @@ export function NotesPage({
     })
   }, [])
 
+  const refreshTree = useCallback(async () => {
+    const fresh = await notesTree(new AbortController().signal)
+    setTree(fresh)
+    return fresh
+  }, [])
+
+  const openContextMenu = useCallback((target: NoteActionTarget, event: MouseEvent<HTMLButtonElement>) => {
+    event.preventDefault()
+    setContextMenu({ target, x: event.clientX, y: event.clientY })
+  }, [])
+
+  useEffect(() => {
+    if (contextMenu === null) return
+    const close = () => { setContextMenu(null) }
+    window.addEventListener('resize', close)
+    return () => { window.removeEventListener('resize', close) }
+  }, [contextMenu])
+
   const locale = t('dateLocale')
-  const typeLabel = t('noteType')
   const needle = searchOpen && !sidebarCollapsed ? query.trim().toLocaleLowerCase(locale) : ''
   const treeItems = useMemo(() => {
     const date = new Intl.DateTimeFormat(locale, { month: 'short', day: 'numeric' })
@@ -185,8 +208,9 @@ export function NotesPage({
           }
           out.push({
             id: entry.path, label: entry.name, icon: 'files', folder: true, open: expanded.has(entry.path), depth,
-            description: t('folderType'), meta: date.format(entry.mtimeMs),
+            meta: date.format(entry.mtimeMs),
             onSelect: () => { setCreationDirectory(entry.path); toggleDir(entry.path) },
+            onContextMenu: (event: MouseEvent<HTMLButtonElement>) => { openContextMenu(entry, event) },
           })
           if (expanded.has(entry.path) && entry.children !== undefined) flatten(entry.children, out, depth + 1)
         } else {
@@ -194,9 +218,9 @@ export function NotesPage({
           if (needle !== '' && !label.toLocaleLowerCase(locale).includes(needle)) continue
           out.push({
             id: entry.path, label, icon: 'notes', iconTone: 'blue', depth, active: draft?.path === entry.path,
-            description: entry.path.split('/').at(-2) ?? typeLabel,
             meta: date.format(entry.mtimeMs),
             onSelect: () => { setCreationDirectory(selectedDirectory(entry.path)); void select(entry.path) },
+            onContextMenu: (event: MouseEvent<HTMLButtonElement>) => { openContextMenu(entry, event) },
           })
         }
       }
@@ -204,7 +228,7 @@ export function NotesPage({
     const items: SidebarRootItem[] = []
     flatten(tree, items, 0)
     return items
-  }, [tree, expanded, draft?.path, locale, needle, typeLabel, select, toggleDir, t])
+  }, [tree, expanded, draft?.path, locale, needle, select, toggleDir, openContextMenu])
 
   const closeSearch = () => {
     setSearchOpen(false)
@@ -230,10 +254,81 @@ export function NotesPage({
     openDialog(kind, { currentTarget: trigger } as MouseEvent<HTMLButtonElement>)
   }
 
-  const openDialog = (kind: 'create' | 'folder' | 'reload', event: MouseEvent<HTMLButtonElement>) => {
+  const openDialog = (kind: DialogKind, event: MouseEvent<HTMLButtonElement>) => {
     dialogTrigger.current = event.currentTarget
     if (kind === 'create' || kind === 'folder') setDraftName('')
     setDialog(kind)
+  }
+
+  const openTargetDialog = (kind: 'rename' | 'delete', target: NoteActionTarget) => {
+    setContextMenu(null)
+    setActionTarget(target)
+    dialogTrigger.current = null
+    if (kind === 'rename') setDraftName(target.kind === 'file' ? labelOf(target.name) : target.name)
+    setDialog(kind)
+  }
+
+  const remapPath = (from: string, to: string, path: string): string | undefined => {
+    if (path === from) return to
+    if (path.startsWith(`${from}/`)) return `${to}${path.slice(from.length)}`
+    return undefined
+  }
+
+  const renameTarget = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const target = actionTarget
+    const name = draftName.trim()
+    if (target === null || name === '' || creatingRequest.current !== null) return
+    const request = new AbortController()
+    creatingRequest.current = request
+    setCreating(true)
+    try {
+      const extension = target.kind === 'file' && /\.(md|markdown)$/iu.test(target.name)
+        ? target.name.slice(target.name.lastIndexOf('.')) : ''
+      const { path } = await notesRename(target.path, target.kind === 'file' ? `${name}${extension || '.md'}` : name)
+      const fresh = await refreshTree()
+      request.signal.throwIfAborted()
+      renamePath(target.path, path)
+      if (creationDirectory === target.path || creationDirectory.startsWith(`${target.path}/`)) {
+        setCreationDirectory(remapPath(target.path, path, creationDirectory) ?? creationDirectory)
+      }
+      if (target.kind === 'dir') setExpanded((previous) => {
+        const next = new Set<string>()
+        for (const item of previous) next.add(remapPath(target.path, path, item) ?? item)
+        return next
+      })
+      if (findEntry(fresh, path) === undefined) throw new Error('笔记目录刷新失败')
+      setDialog(null)
+      setActionTarget(null)
+    } catch {
+      if (!request.signal.aborted) notify('renameError')
+    } finally {
+      creatingRequest.current = null
+      if (!request.signal.aborted) setCreating(false)
+    }
+  }
+
+  const deleteTarget = async () => {
+    const target = actionTarget
+    if (target === null || creatingRequest.current !== null) return
+    const request = new AbortController()
+    creatingRequest.current = request
+    setCreating(true)
+    try {
+      await flush(request.signal)
+      await notesDelete(target.path)
+      await refreshTree()
+      request.signal.throwIfAborted()
+      if (draft !== null && (draft.path === target.path || draft.path.startsWith(`${target.path}/`))) clear()
+      if (creationDirectory === target.path || creationDirectory.startsWith(`${target.path}/`)) setCreationDirectory(selectedDirectory(target.path))
+      setDialog(null)
+      setActionTarget(null)
+    } catch {
+      if (!request.signal.aborted) notify('deleteError')
+    } finally {
+      creatingRequest.current = null
+      if (!request.signal.aborted) setCreating(false)
+    }
   }
 
   const createNote = async (event: FormEvent<HTMLFormElement>) => {
@@ -303,6 +398,21 @@ export function NotesPage({
             side="bottom"
             portal
           />
+          {contextMenu !== null && (
+            <Menu
+              open
+              anchor={null}
+              items={[
+                { id: 'rename', label: t('rename'), icon: <IconEditOutline16 size={16} /> },
+                { id: 'delete', label: t('delete'), danger: true, icon: <IconTrashOutline16 size={16} /> },
+              ]}
+              onSelect={(id) => { openTargetDialog(id as 'rename' | 'delete', contextMenu.target) }}
+              onClose={() => { setContextMenu(null) }}
+              portal
+              keyboardNavigation
+              getAnchorRect={() => new DOMRect(contextMenu.x, contextMenu.y, 1, 1)}
+            />
+          )}
         </div>}
         {...(needle !== '' ? { empty: t('noMatches') } : {})}
         toolbar={searchOpen && <div id={searchId} className={css.searchRow}>
@@ -341,27 +451,35 @@ export function NotesPage({
         )}
         {draft !== null
           ? <NotesEditor content={draft.content} onChange={edit} onBlur={() => { void save() }} t={t} />
-          : <div className={css.empty} role="status">
-            {treeState === 'loading' ? <p>{t('loading')}</p>
-              : treeState === 'failed' ? <p>{t('treeError')}</p>
-                : <><strong>{t(tree.length === 0 ? 'empty' : 'chooseNote')}</strong>
-                  {tree.length === 0 && <p>{t('emptyHint')}</p>}</>}
-          </div>}
+          : treeState === 'ready' ? <NotesWelcome t={t} />
+            : <div className={css.documentStatus} role="status">
+              {t(treeState === 'loading' ? 'loading' : 'treeError')}
+            </div>}
       </div>
-      <Modal open={dialog === 'create' || dialog === 'folder'} onClose={closeDialog}
-        title={dialog === 'folder' ? t('newFolder') : t('newNote')} closeLabel={t('close')} trapFocus
+      <Modal open={dialog === 'create' || dialog === 'folder' || dialog === 'rename'} onClose={closeDialog}
+        title={dialog === 'folder' ? t('newFolder') : dialog === 'rename'
+          ? actionTarget?.kind === 'dir' ? t('renameFolder') : t('renameNote') : t('newNote')} closeLabel={t('close')} trapFocus
         footer={<>
           <Button variant="outline" disabled={creating} onClick={closeDialog}>{t('cancel')}</Button>
           <Button variant="primary" type="submit" form={formId} disabled={creating || draftName.trim() === ''}>
-            {t(creating ? 'creating' : 'create')}
+            {t(dialog === 'rename' ? creating ? 'renaming' : 'rename' : creating ? 'creating' : 'create')}
           </Button>
         </>}>
-        <form id={formId} className={css.form} onSubmit={(event) => { void createNote(event) }}>
-          <label htmlFor={nameId}>{dialog === 'folder' ? t('folderName') : t('noteName')}</label>
+        <form id={formId} className={css.form} onSubmit={(event) => {
+          void (dialog === 'rename' ? renameTarget(event) : createNote(event))
+        }}>
+          <label htmlFor={nameId}>{dialog === 'folder' ? t('folderName') : dialog === 'rename'
+            ? actionTarget?.kind === 'dir' ? t('folderName') : t('noteName') : t('noteName')}</label>
           <Input id={nameId} value={draftName} autoFocus readOnly={creating}
             onChange={(event) => { setDraftName(event.target.value) }} />
         </form>
       </Modal>
+      <Modal open={dialog === 'delete'} onClose={closeDialog}
+        title={t('delete')} closeLabel={t('close')} description={actionTarget?.kind === 'dir' ? t('deleteFolderConfirm') : t('deleteConfirm')}
+        trapFocus footer={<>
+          <Button variant="outline" disabled={creating} onClick={closeDialog}>{t('cancel')}</Button>
+          <Button variant="primary" disabled={creating} onClick={() => { void deleteTarget() }}>{t('delete')}</Button>
+        </>} />
       <Modal open={dialog === 'reload'} onClose={closeDialog} title={t('reload')} closeLabel={t('close')}
         description={t('reloadConfirm')} trapFocus footer={<>
           <Button variant="outline" autoFocus onClick={closeDialog}>{t('cancel')}</Button>

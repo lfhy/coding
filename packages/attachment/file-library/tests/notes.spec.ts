@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import Storage from 'coding-storage'
 import { DomainFacility } from 'coding-storage-domain'
 import { SqliteStorageBackend } from 'coding-storage-sqlite'
-import FileLibrary, { StaleNoteError } from '../src/index.ts'
+import FileLibrary, { NoteConflictError, NoteNotFoundError, StaleNoteError } from '../src/index.ts'
 
 const homes: string[] = []
 const contexts: Context[] = []
@@ -97,6 +97,41 @@ describe('无目录笔记域', () => {
     await expect(library.saveNote('conflict.md', '第二版', first.mtimeMs)).rejects.toThrow(StaleNoteError)
     await expect(library.readNote('conflict.md')).resolves.toMatchObject({ content: '第一版' })
     await expect(library.saveNote('conflict.md', '第二版', undefined)).resolves.toMatchObject({ path: 'conflict.md' })
+  })
+
+  it('改名和删除笔记条目；目录删除不递归且非空时拒绝', async () => {
+    const { library } = await harness()
+    await library.saveNote('draft.md', '草稿')
+    expect(await library.renameNote('draft.md', 'published')).toEqual({ path: 'published.md' })
+    await expect(library.renameNote('published.md', 'published')).resolves.toEqual({ path: 'published.md' })
+    await expect(library.saveNote('published.md', '更新')).resolves.toMatchObject({ path: 'published.md' })
+
+    await library.createNoteDirectory('empty')
+    expect(await library.renameNote('empty', 'renamed')).toEqual({ path: 'renamed' })
+    await library.deleteNote('renamed')
+    await library.deleteNote('published.md')
+    await expect(library.deleteNote('published.md')).rejects.toThrow(NoteNotFoundError)
+
+    await library.createNoteDirectory('non-empty')
+    await library.createNote('child', 'non-empty')
+    await expect(library.deleteNote('non-empty')).rejects.toThrow(NoteConflictError)
+    await expect(library.readNote('non-empty/child.md')).resolves.toMatchObject({ content: '' })
+  })
+
+  it('带修改时间的迟到保存不会在改名或删除后复活旧路径', async () => {
+    const { library } = await harness()
+    const created = await library.saveNote('old.md', '旧内容')
+    expect(await library.renameNote('old.md', 'new')).toEqual({ path: 'new.md' })
+    await expect(library.saveNote('old.md', '迟到内容', created.mtimeMs)).rejects.toThrow(NoteNotFoundError)
+    await expect(library.readNote('old.md')).rejects.toThrow(/笔记不存在/)
+
+    const nested = await library.saveNote('stale/note.md', '嵌套内容')
+    await library.deleteNote('stale/note.md')
+    await library.deleteNote('stale')
+    await expect(library.saveNote('stale/note.md', '迟到内容', nested.mtimeMs)).rejects.toThrow(NoteNotFoundError)
+    await expect(library.notesTree()).resolves.not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ path: 'stale' }),
+    ]))
   })
 
   it('新建笔记补 Markdown 扩展名，同名拒绝', async () => {

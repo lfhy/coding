@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { assertNotePath, notesCreate, notesCreateDirectory, notesCwd, notesRead, notesSave, notesTree, NoteConflictError } from '../src/client/wire.ts'
+import { assertNotePath, notesCreate, notesCreateDirectory, notesCwd, notesDelete, notesRead, notesRename, notesSave, notesTree, NoteConflictError } from '../src/client/wire.ts'
 
 const treeBody = {
   children: [
@@ -70,6 +70,23 @@ describe('notes wire', () => {
       return Response.json({ path: '资料/项目' })
     })
     await expect(notesCreateDirectory('项目', '资料')).resolves.toEqual({ path: '资料/项目' })
+  })
+
+  it('重命名和删除使用受校验的路径载荷', async () => {
+    stubFetch((url, init) => {
+      if (url === '/api/notes/rename') {
+        expect(init?.method).toBe('POST')
+        expect(requestJson(init)).toEqual({ path: 'a.md', name: 'b.md' })
+        return Response.json({ path: 'b.md' })
+      }
+      expect(url).toBe('/api/notes/delete')
+      expect(init?.method).toBe('DELETE')
+      expect(requestJson(init)).toEqual({ path: 'b.md' })
+      return new Response(null, { status: 204 })
+    })
+    await expect(notesRename('a.md', 'b.md')).resolves.toEqual({ path: 'b.md' })
+    await expect(notesDelete('b.md')).resolves.toBeUndefined()
+    await expect(notesRename('../a.md', 'b.md')).rejects.toThrow('Invalid note path')
   })
 
   it('笔记根目录必须是绝对路径', async () => {

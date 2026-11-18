@@ -7,9 +7,15 @@ import { createNotesNavigation } from '../src/client/navigation.ts'
 const CWD = '/home/u/.coding/files/notes'
 
 interface FakeSessions {
-  list: { getSnapshot: () => { current: string | null; byId: Record<string, { id: string; cwd?: string }> } }
+  list: {
+    getSnapshot: () => {
+      current: string | null
+      byId: Record<string, { id: string; cwd?: string; blank?: boolean; agentPreset?: string }>
+    }
+  }
   create: ReturnType<typeof vi.fn>
   open: ReturnType<typeof vi.fn>
+  noteAgentPreset: ReturnType<typeof vi.fn>
 }
 
 interface FakeLayout {
@@ -19,7 +25,7 @@ interface FakeLayout {
 }
 
 function makeContext(sessions: FakeSessions, layout: FakeLayout): ClientContext {
-  return { sessions, layout } as unknown as ClientContext
+  return { sessions, layout, get: () => ({ api: { agentPresets: { select: vi.fn(async () => ({ result: { ok: true, value: { agentPreset: 'notes' } } })) } } }) } as unknown as ClientContext
 }
 
 function stubCwd(): void {
@@ -31,8 +37,8 @@ afterEach(() => { vi.unstubAllGlobals() })
 describe('notes navigation', () => {
   it('复用工作目录相同的已有会话，打开页面并启用自动并排的助手', () => {
     const sessions = {
-      list: { getSnapshot: () => ({ current: 's-cur', byId: { 's-old': { id: 's-old', cwd: CWD }, 's-cur': { id: 's-cur' } } }) },
-      create: vi.fn(), open: vi.fn(),
+      list: { getSnapshot: () => ({ current: 's-cur', byId: { 's-old': { id: 's-old', cwd: CWD, agentPreset: 'notes' }, 's-cur': { id: 's-cur' } } }) },
+      create: vi.fn(), open: vi.fn(), noteAgentPreset: vi.fn(),
     }
     const layout = { page: { getSnapshot: () => null }, togglePage: vi.fn(), setPageAssistant: vi.fn() }
     stubCwd()
@@ -48,7 +54,7 @@ describe('notes navigation', () => {
   it('没有同工作目录会话时新建会话；来处取自当前页的 returnSessionId', async () => {
     const sessions = {
       list: { getSnapshot: () => ({ current: 's-cur', byId: { 's-cur': { id: 's-cur', cwd: '/other' } } }) },
-      create: vi.fn(async () => 's-new'), open: vi.fn(),
+      create: vi.fn(async () => 's-new'), open: vi.fn(), noteAgentPreset: vi.fn(),
     }
     const layout = {
       page: { getSnapshot: () => ({ kind: 'files', sessionId: 's-cur', returnSessionId: 's-orig' }) as PageRoute },
@@ -64,8 +70,8 @@ describe('notes navigation', () => {
 
   it('页面槽未就绪时按 32ms 间隔重试打开', async () => {
     const sessions = {
-      list: { getSnapshot: () => ({ current: 's-cur', byId: { 's-cur': { id: 's-cur', cwd: CWD } } }) },
-      create: vi.fn(), open: vi.fn(),
+      list: { getSnapshot: () => ({ current: 's-cur', byId: { 's-cur': { id: 's-cur', cwd: CWD, agentPreset: 'notes' } } }) },
+      create: vi.fn(), open: vi.fn(), noteAgentPreset: vi.fn(),
     }
     let calls = 0
     const layout = {
@@ -83,7 +89,7 @@ describe('notes navigation', () => {
     const sessions = {
       list: { getSnapshot: () => ({ current: null, byId: {} as Record<string, { id: string; cwd?: string }> }) },
       create: vi.fn().mockImplementation(() => new Promise((resolve) => { window.setTimeout(() => { resolve('s-new') }, 40) })),
-      open: vi.fn(),
+      open: vi.fn(), noteAgentPreset: vi.fn(),
     }
     const layout = { page: { getSnapshot: () => null }, togglePage: vi.fn(), setPageAssistant: vi.fn() }
     stubCwd()

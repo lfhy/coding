@@ -128,10 +128,24 @@ export function useNoteDraft(notify: (key: NotesLocaleKey) => void) {
 
   const getPath = useCallback(() => current.current?.path, [])
 
+  /** 笔记被外部重命名或删除后，更新/清除当前编辑缓冲。 */
+  const renamePath = useCallback((from: string, to: string) => {
+    const before = current.current
+    if (before === null || (before.path !== from && !before.path.startsWith(`${from}/`))) return
+    const path = before.path === from ? to : `${to}${before.path.slice(from.length)}`
+    update({ ...before, path })
+  }, [update])
+
+  const clear = useCallback(() => {
+    reading.current?.abort()
+    current.current = null
+    setDraft(null)
+  }, [])
+
   const saveLabel: NotesLocaleKey | undefined = draft === null ? undefined
     : draft.status === 'idle' ? dirty ? 'unsaved' : 'saved'
       : draft.status === 'failed' ? 'saveError'
         : draft.status
 
-  return { draft, saveLabel, select, edit, save, reload, refresh, getPath, flush }
+  return { draft, saveLabel, select, edit, save, reload, refresh, getPath, flush, renamePath, clear }
 }

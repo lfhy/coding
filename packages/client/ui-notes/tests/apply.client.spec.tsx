@@ -34,7 +34,7 @@ function registration(): { entries: { options: Record<string, unknown>; inject: 
 
 describe('ui-notes registration', () => {
   it('注入声明只覆盖真实读到的服务', () => {
-    expect(inject).toEqual(['slots', 'locale', 'layout', 'sessions'])
+    expect(inject).toEqual(['slots', 'locale', 'layout', 'sessions', 'connection'])
   })
 
   it('注册文案、导航入口与主内容页，入口注入页面快照钩子', () => {

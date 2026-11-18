@@ -1,7 +1,7 @@
 /** 全局受管理文件：私有磁盘对象、持久领域元数据和只读列表。@module coding-file-library */
 import { createHash, randomUUID } from 'node:crypto'
 import { constants } from 'node:fs'
-import { lstat, mkdir, open, readdir, readFile, rename, chmod, realpath, unlink } from 'node:fs/promises'
+import { lstat, mkdir, open, readdir, readFile, rename, chmod, realpath, rmdir, unlink } from 'node:fs/promises'
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import type { Stats } from 'node:fs'
 import { Readable } from 'node:stream'
@@ -46,8 +46,16 @@ const NOTE_MAX_DEPTH = 8
 /** 单棵笔记树的节点总数上限；目录与文件条目共用这一个预算。 */
 const NOTE_MAX_NODES = 4096
 
+/** 笔记或目录已不存在，调用方可以刷新目录。 */
+export class NoteNotFoundError extends Error {
+  constructor() { super('笔记不存在') }
+}
+
+/** 笔记操作与当前磁盘状态冲突；调用方应刷新目录后重试。 */
+export class NoteConflictError extends Error {}
+
 /** 保存时检测到笔记在读后被外部修改；编辑端应重新加载而不是被覆盖。 */
-export class StaleNoteError extends Error {
+export class StaleNoteError extends NoteConflictError {
   constructor() { super('笔记已被外部修改') }
 }
 
@@ -118,6 +126,14 @@ export class FileLibrary extends Service {
   readonly root: string
   private domain!: Domain<typeof fileDomainSpec>
   private rootIdentity!: { dev: number; ino: number }
+
+  /** 笔记写操作串行队列，避免改名/删除后的迟到保存重建旧路径。 */
+  private notesWriteQueue: Promise<void> = Promise.resolve()
+  private scheduleNotesWrite<T>(fn: () => Promise<T>): Promise<T> {
+    const next = this.notesWriteQueue.then(fn, fn)
+    this.notesWriteQueue = next.then(() => undefined, () => undefined)
+    return next
+  }
 
   /** 从宿主工作区注册表解析会话归属；未装载注册表或未分组会话返回 undefined。 */
   private workspaceIdForSession(sessionId: string): string | undefined {
@@ -546,57 +562,71 @@ export class FileLibrary extends Service {
   }
 
   /**
-   * 写入笔记，按需创建中间目录；写入经临时文件原子改名，目录落盘同步。
-   * 传入 `baseMtimeMs` 时做冲突检测：文件在读后被外部修改则拒绝写入并抛 {@link StaleNoteError}。
+   * 写入笔记；没有修改时间基准时按需创建中间目录，写入经临时文件原子改名并同步目录。
+   * 传入 `baseMtimeMs` 时目标文件与父目录必须仍存在，外部修改或删除都拒绝覆盖。
    * @param relativePath - 相对笔记根目录的路径，必须使用 Markdown 扩展名。
    * @param content - 笔记全文。
    * @param baseMtimeMs - 读取时的修改时间（可选）。
    * @returns 规范化路径与写入后的修改时间。
    */
   async saveNote(relativePath: string, content: string, baseMtimeMs?: number): Promise<{ path: string; mtimeMs: number }> {
-    const { rel, target } = this.noteTarget(relativePath)
-    if (!NOTE_EXTENSIONS.has(extname(target).toLowerCase())) throw new TypeError('笔记必须使用 Markdown 扩展名')
-    if (Buffer.byteLength(content, 'utf8') > NOTE_MAX_BYTES) throw new TypeError('笔记超过大小上限')
-    // 笔记根目录按需创建；中间目录可能尚不存在，先建后查符号链接逃逸。
-    const notesDir = await this.directory('notes')
-    const realNotes = await realpath(notesDir)
-    const dir = dirname(target)
-    if (dir !== notesDir) {
-      const exists = await lstat(dir).then(() => true).catch((error: unknown) => {
-        if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false
-        throw error
-      })
-      if (!exists) {
-        await mkdir(dir, { recursive: true, mode: 0o700 })
-        await this.ensurePrivateDirs(notesDir, dir)
+    return this.scheduleNotesWrite(async () => {
+      const { rel, target } = this.noteTarget(relativePath)
+      if (!NOTE_EXTENSIONS.has(extname(target).toLowerCase())) throw new TypeError('笔记必须使用 Markdown 扩展名')
+      if (Buffer.byteLength(content, 'utf8') > NOTE_MAX_BYTES) throw new TypeError('笔记超过大小上限')
+      const notesDir = await this.directory('notes')
+      const realNotes = await realpath(notesDir)
+      const dir = dirname(target)
+      // 只有没有版本基准的首次写入才允许创建父目录；带基准的迟到保存不得复活旧路径。
+      if (baseMtimeMs === undefined && dir !== notesDir) {
+        const exists = await lstat(dir).then(() => true).catch((error: unknown) => {
+          if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false
+          throw error
+        })
+        if (!exists) {
+          await mkdir(dir, { recursive: true, mode: 0o700 })
+          await this.ensurePrivateDirs(notesDir, dir)
+        }
       }
-    }
-    const realParent = await realpath(dir)
-    if (realParent !== realNotes && !realParent.startsWith(realNotes + sep)) throw new TypeError('笔记路径无效')
-    let existing: Stats | undefined
-    try { existing = await lstat(target) }
-    catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error }
-    if (existing !== undefined) {
-      if (!existing.isFile() || existing.isSymbolicLink()) throw new TypeError('笔记不是真实文件')
-      if (baseMtimeMs !== undefined && Math.floor(existing.mtimeMs) !== Math.floor(baseMtimeMs)) throw new StaleNoteError()
-    }
-    const tmp = `${target}.${randomUUID()}.tmp`
-    const handle = await open(tmp, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600)
-    try {
-      await handle.writeFile(Buffer.from(content, 'utf8'))
-      await handle.sync()
-    } finally {
-      await handle.close()
-    }
-    try {
-      await rename(tmp, target)
-      await syncDirectory(dir)
-      if (dir !== notesDir) await syncDirectory(notesDir)
-    } catch (error) {
-      try { await unlink(tmp) } catch { /* 原错误是改名失败；只回滚本次仍拥有的临时文件。 */ }
-      throw error
-    }
-    return { path: rel, mtimeMs: (await lstat(target)).mtimeMs }
+      let realParent: string
+      try { realParent = await realpath(dir) }
+      catch (error) {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw new NoteNotFoundError()
+        throw error
+      }
+      if (realParent !== realNotes && !realParent.startsWith(realNotes + sep)) throw new TypeError('笔记路径无效')
+      let existing: Stats | undefined
+      try { existing = await lstat(target) }
+      catch (error) {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+          if (baseMtimeMs !== undefined) throw new NoteNotFoundError()
+          existing = undefined
+        } else {
+          throw error
+        }
+      }
+      if (existing !== undefined) {
+        if (!existing.isFile() || existing.isSymbolicLink()) throw new TypeError('笔记不是真实文件')
+        if (baseMtimeMs !== undefined && Math.floor(existing.mtimeMs) !== Math.floor(baseMtimeMs)) throw new StaleNoteError()
+      }
+      const tmp = `${target}.${randomUUID()}.tmp`
+      const handle = await open(tmp, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600)
+      try {
+        await handle.writeFile(Buffer.from(content, 'utf8'))
+        await handle.sync()
+      } finally {
+        await handle.close()
+      }
+      try {
+        await rename(tmp, target)
+        await syncDirectory(dir)
+        if (dir !== notesDir) await syncDirectory(notesDir)
+      } catch (error) {
+        try { await unlink(tmp) } catch { /* 原错误是改名失败；只回滚本次仍拥有的临时文件。 */ }
+        throw error
+      }
+      return { path: rel, mtimeMs: (await lstat(target)).mtimeMs }
+    })
   }
 
   /**
@@ -649,6 +679,85 @@ export class FileLibrary extends Service {
     }
     await syncDirectory(parentDirectory.target)
     return { path: parentDirectory.rel === '' ? leaf : `${parentDirectory.rel}/${leaf}` }
+  }
+
+  /**
+   * 在原笔记或目录的同一父目录内安全改名；不覆盖已有条目。
+   * @param relativePath - 要改名的笔记或目录路径。
+   * @param name - 新的单段名称。
+   * @returns 改名后的相对路径。
+   */
+  async renameNote(relativePath: string, name: string): Promise<{ path: string }> {
+    return this.scheduleNotesWrite(async () => {
+      const { rel, target } = this.noteTarget(relativePath)
+      if (typeof name !== 'string' || name.length === 0 || name.length > 1024
+        || name.includes('\0') || /[\\/]/u.test(name) || name === '.' || name === '..'
+        || /^[a-zA-Z]:/u.test(name)) throw new TypeError('名称无效')
+      const notesDir = await this.directory('notes')
+      const realNotes = await realpath(notesDir)
+      const parent = dirname(target)
+      const realParent = await realpath(parent).catch((error: unknown) => {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw new NoteNotFoundError()
+        throw error
+      })
+      if (realParent !== realNotes && !realParent.startsWith(realNotes + sep)) throw new TypeError('笔记路径无效')
+      const current = await lstat(target).catch((error: unknown) => {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw new NoteNotFoundError()
+        throw error
+      })
+      if (current.isSymbolicLink() || !current.isFile() && !current.isDirectory()) throw new TypeError('笔记条目无效')
+      if (current.isFile() && !NOTE_EXTENSIONS.has(extname(target).toLowerCase())) throw new TypeError('笔记扩展名无效')
+      const leaf = safeName(name)
+      const fileName = current.isFile() && !NOTE_EXTENSIONS.has(extname(leaf).toLowerCase()) ? `${leaf}.md` : leaf
+      const targetPath = join(parent, fileName)
+      if (targetPath === target) return { path: rel }
+      try { await lstat(targetPath); throw new NoteConflictError('笔记已存在') }
+      catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+          throw error
+        }
+      }
+      await rename(target, targetPath)
+      await syncDirectory(parent)
+      return { path: relative(notesDir, targetPath).split(sep).join('/') }
+    })
+  }
+
+  /**
+   * 删除笔记或空目录；目录不递归，含任意磁盘条目时拒绝。
+   * @param relativePath - 要删除的笔记或目录路径。
+   * @returns 无返回值。
+   */
+  async deleteNote(relativePath: string): Promise<void> {
+    return this.scheduleNotesWrite(async () => {
+      const { target } = this.noteTarget(relativePath)
+      const notesDir = await this.directory('notes')
+      const realNotes = await realpath(notesDir)
+      const parent = dirname(target)
+      const realParent = await realpath(parent).catch((error: unknown) => {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw new NoteNotFoundError()
+        throw error
+      })
+      if (realParent !== realNotes && !realParent.startsWith(realNotes + sep)) throw new TypeError('笔记路径无效')
+      const current = await lstat(target).catch((error: unknown) => {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw new NoteNotFoundError()
+        throw error
+      })
+      if (current.isSymbolicLink() || !current.isFile() && !current.isDirectory()) throw new TypeError('笔记条目无效')
+      if (current.isFile() && !NOTE_EXTENSIONS.has(extname(target).toLowerCase())) throw new TypeError('笔记扩展名无效')
+      if (current.isDirectory()) {
+        try { await rmdir(target) }
+        catch (error) {
+          if ((error as NodeJS.ErrnoException).code === 'ENOTEMPTY' || (error as NodeJS.ErrnoException).code === 'EEXIST') {
+            throw new NoteConflictError('笔记目录不为空')
+          }
+          throw error
+        }
+      } else {
+        await unlink(target)
+      }
+      await syncDirectory(parent)
+    })
   }
 
   /**

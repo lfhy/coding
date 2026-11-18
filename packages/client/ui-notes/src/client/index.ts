@@ -18,17 +18,18 @@ declare module 'coding-client-ui-slots' {
 }
 
 /** 笔记插件的注入声明。 */
-export const inject = ['slots', 'locale', 'layout', 'sessions']
+export const inject = ['slots', 'locale', 'layout', 'sessions', 'connection']
 
 /**
  * 注册笔记导航入口与主内容页。
  * @param ctx - 浏览器插件 Context。
  */
 export function apply(ctx: ClientContext): void {
+  const openNotes = createNotesNavigation(ctx)
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-notes: dictionaries')
   ctx.slots.inject('shell.navigation.entry', () => ctx.slots.register({
     name: 'shell.navigation.entry', id: 'notes', order: 15, locale: NS,
-    inject: () => ({ hooks: { notesPage: ctx.layout.page }, openNotes: createNotesNavigation(ctx) }),
+    inject: () => ({ hooks: { notesPage: ctx.layout.page }, openNotes }),
   }, NotesNavigationEntry))
   ctx.slots.inject('shell.page', () => ctx.slots.register({
     name: 'shell.page', key: PAGE, locale: NS,

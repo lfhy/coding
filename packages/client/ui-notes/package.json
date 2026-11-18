@@ -19,13 +19,14 @@
     "./package.json": "./package.json"
   },
   "dsh": { "client": {
-    "inject": ["coding-client-locale", "coding-client-runtime", "coding-client-ui-layout"],
+    "inject": ["coding-api-remotes", "coding-client-locale", "coding-client-runtime", "coding-client-ui-layout"],
     "platform": "web"
   } },
   "scripts": { "bundle": "tsdown", "watch": "tsdown --watch" },
   "license": "MIT",
   "peerDependencies": {
     "@deepseek-ai/cordis": "workspace:^",
+    "coding-api-remotes": "workspace:^",
     "coding-client-locale": "workspace:^",
     "coding-client-runtime": "workspace:^",
     "coding-client-ui-layout": "workspace:^",
@@ -35,6 +36,7 @@
     "@deepseek-ai/cordis": "workspace:^",
     "@testing-library/react": "^16.1.0",
     "@types/react": "~18.3.1",
+    "coding-api-remotes": "workspace:^",
     "coding-client-locale": "workspace:^",
     "coding-client-runtime": "workspace:^",
     "coding-client-test-runtime": "workspace:^",

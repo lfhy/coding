@@ -147,6 +147,33 @@ export async function notesCreateDirectory(name: string, parent = ''): Promise<{
   return { path: body.path }
 }
 
+/** 重命名笔记或目录，返回更新后的相对路径。 */
+export async function notesRename(path: string, name: string): Promise<{ path: string }> {
+  assertNotePath(path)
+  if (typeof name !== 'string' || name.trim() === '' || /[\\/\u0000-\u001f\u007f]/u.test(name)) {
+    throw new Error('Invalid note name')
+  }
+  const response = await fetch('/api/notes/rename', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ path, name }),
+  })
+  if (!response.ok) throw new Error(`notes rename HTTP ${response.status}`)
+  const body = (await response.json()) as unknown
+  if (!isObject(body) || !nonemptyString(body.path)) throw new Error('Invalid note rename payload')
+  assertNotePath(body.path)
+  return { path: body.path }
+}
+
+/** 删除笔记或空目录。非空目录由 Host 拒绝，避免误删整棵树。 */
+export async function notesDelete(path: string): Promise<void> {
+  assertNotePath(path)
+  const response = await fetch('/api/notes/delete', {
+    method: 'DELETE', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ path }),
+  })
+  if (!response.ok) throw new Error(`notes delete HTTP ${response.status}`)
+}
+
 /**
  * 读取笔记根目录的绝对路径，供会话工作目录使用。
  * @param signal - 取消请求的中断信号。

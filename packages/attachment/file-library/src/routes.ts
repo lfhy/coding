@@ -1,9 +1,9 @@
-/** 只读文件列表路由；鉴权和严格回环同源检查先于领域读取。@module coding-file-library/routes */
+/** 文件库与笔记路由；鉴权和严格回环同源检查先于领域读写。@module coding-file-library/routes */
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from 'coding-client-connection'
 import type {} from 'coding-host-webserver'
-import { StaleNoteError, type FileLibrary } from './index.ts'
+import { NoteConflictError, NoteNotFoundError, type FileLibrary } from './index.ts'
 
 function trusted(ctx: Context, req: IncomingMessage, res: ServerResponse): boolean {
   const rejected = ctx.connection.requestRejection(req)
@@ -58,7 +58,7 @@ function optionalCategory(value: string | null): 'image' | 'presentation' | 'doc
   return value
 }
 
-/** 按服务的插件生命周期注册可撤销的只读路由。
+/** 按服务的插件生命周期注册可撤销的文件库与笔记路由。
  * @param ctx - 持有可选 Web 服务及连接信任检查的上下文。
  * @param service - 只在通过来源检查后读取的文件库。
  */
@@ -176,7 +176,8 @@ export function installFileRoutes(ctx: Context, service: FileLibrary): void {
           }
           json(res, 200, await service.saveNote(body.path, body.content, body.baseMtimeMs))
         } catch (error) {
-          if (error instanceof StaleNoteError) { json(res, 409, { error: error.message }); return }
+          if (error instanceof NoteConflictError) { json(res, 409, { error: error.message }); return }
+          if (error instanceof NoteNotFoundError) { json(res, 404, { error: error.message }); return }
           if (error instanceof TypeError) { json(res, 400, { error: error.message }); return }
           webCtx.logger.warn('file-library notes save request failed', error)
           json(res, 503, { error: '笔记暂不可写' })
@@ -219,6 +220,43 @@ export function installFileRoutes(ctx: Context, service: FileLibrary): void {
         }
       },
     }), 'file-library: POST /api/notes/create-directory')
+    webCtx.effect(() => webCtx.webServer.register({
+      kind: 'exact', path: '/api/notes/rename',
+      handler: async (req, res) => {
+        if (!trusted(webCtx, req, res)) return
+        if (req.method !== 'POST') { res.writeHead(405, { allow: 'POST' }); res.end(); return }
+        try {
+          const body = await readJsonBody(req)
+          if (typeof body.path !== 'string' || typeof body.name !== 'string') throw new TypeError('重命名载荷无效')
+          json(res, 200, await service.renameNote(body.path, body.name))
+        } catch (error) {
+          if (error instanceof NoteConflictError) { json(res, 409, { error: error.message }); return }
+          if (error instanceof NoteNotFoundError) { json(res, 404, { error: error.message }); return }
+          if (error instanceof TypeError) { json(res, 400, { error: error.message }); return }
+          webCtx.logger.warn('file-library notes rename request failed', error)
+          json(res, 503, { error: '笔记暂不可重命名' })
+        }
+      },
+    }), 'file-library: POST /api/notes/rename')
+    webCtx.effect(() => webCtx.webServer.register({
+      kind: 'exact', path: '/api/notes/delete',
+      handler: async (req, res) => {
+        if (!trusted(webCtx, req, res)) return
+        if (req.method !== 'DELETE') { res.writeHead(405, { allow: 'DELETE' }); res.end(); return }
+        try {
+          const body = await readJsonBody(req)
+          if (typeof body.path !== 'string') throw new TypeError('删除载荷无效')
+          await service.deleteNote(body.path)
+          res.writeHead(204, { 'cache-control': 'private, no-store' }); res.end()
+        } catch (error) {
+          if (error instanceof NoteConflictError) { json(res, 409, { error: error.message }); return }
+          if (error instanceof NoteNotFoundError) { json(res, 404, { error: error.message }); return }
+          if (error instanceof TypeError) { json(res, 400, { error: error.message }); return }
+          webCtx.logger.warn('file-library notes delete request failed', error)
+          json(res, 503, { error: '笔记暂不可删除' })
+        }
+      },
+    }), 'file-library: DELETE /api/notes/delete')
     webCtx.effect(() => webCtx.webServer.register({
       kind: 'exact', path: '/api/notes/cwd',
       handler: (req, res) => {
