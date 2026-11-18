@@ -3217,7 +3217,7 @@ The read-before-write/edit policy is added by `coding-fs-observation-policy` (an
 
 ### `apply_patch`
 
-Apply a Codex-style patch to workspace files. The input must be a string containing `*** Begin Patch` and `*** End Patch`; do not wrap the patch syntax in another JSON object. Supports `*** Add File` and `*** Update File`. `*** Delete File` and `*** Move to` are not supported; use the shell for deletes and moves.
+Apply a Codex-style patch to workspace files. The input must be a string containing `*** Begin Patch` and `*** End Patch`; do not wrap the patch syntax in another JSON object. One patch can create files and edit existing ones: each section starts with a header line of the form `*** Add File: <path>` or `*** Update File: <path>`, followed by that section's lines. This composition cannot delete or rename files; use the shell for those.
 
 ```json
 {

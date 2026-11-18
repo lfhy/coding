@@ -1,12 +1,10 @@
 /**
- * Model-facing Codex-style patch application over `ctx.fs`.
+ * 面向模型的 Codex 风格补丁工具，落在 `ctx.fs` seam 上。
  *
- * The tool accepts a JSON object with one required `input` string because the
- * current LLM seam is function/JSON based. The string itself uses Codex's
- * `*** Begin Patch` / `*** End Patch` envelope. Add and Update File are
- * supported; Delete File and Move to are rejected because `FileSystem` has no
- * delete or rename operation. All writes still pass through `fs/*` policy
- * listeners and the provider's sandbox boundary.
+ * 当前 LLM seam 是 function/JSON 形式，所以工具接收一个必填的 `input` 字符串；
+ * 字符串本身使用 Codex 的 `*** Begin Patch` / `*** End Patch` 封套。本组合只支持
+ * 新建与编辑文件：删除和改名会被明确拒绝，因为 `FileSystem` 没有删除或重命名原语，
+ * 需要时由 shell 承担。所有写入仍会经过 `fs/*` 策略监听与提供方的沙箱边界。
  *
  * @module coding-tool-apply-patch
  */
@@ -26,12 +24,13 @@ export const inject = ['tools', 'fs', 'systemPrompt']
 
 const DESCRIPTION = 'Apply a Codex-style patch to workspace files. The input must be a string containing '
   + '`*** Begin Patch` and `*** End Patch`; do not wrap the patch syntax in another JSON object. '
-  + 'Supports `*** Add File` and `*** Update File`. `*** Delete File` and `*** Move to` are not supported; '
-  + 'use the shell for deletes and moves.'
+  + 'One patch can create files and edit existing ones: each section starts with a header line of the form '
+  + '`*** Add File: <path>` or `*** Update File: <path>`, followed by that section\'s lines. '
+  + 'This composition cannot delete or rename files; use the shell for those.'
 
 const GUIDANCE = 'Use apply_patch for a small, targeted batch of file changes. Send the complete patch envelope '
-  + 'as the input string; `*** Add File` and `*** Update File` are sections inside that envelope, not separate tools. '
-  + 'Delete File and Move to are not available in this filesystem composition. Read existing files before updating them.'
+  + 'as the input string. Read existing files before editing them; deleting or moving a file is not '
+  + 'available in this filesystem composition.'
 
 interface ApplyPatchArgs { input: string }
 

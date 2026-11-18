@@ -46,6 +46,18 @@ function applyPatch(input: string) {
 }
 
 describe('apply_patch integration', () => {
+  it('describes creating and editing files without naming per-operation tools', () => {
+    const schema = ctx.tools.schemas().find(entry => entry.name === 'apply_patch')
+    const description = schema?.description ?? ''
+    // 展示一条模型可执行的操作面：新建与编辑；删除和改名明确不可用，交给 shell。
+    expect(description).toContain('create files and edit existing ones')
+    expect(description).toContain('cannot delete or rename files')
+    // 补丁节只作为 `input` 内部的头部行出现，不能写成看起来像独立工具的能力清单。
+    expect(description).toContain('`*** Add File: <path>`')
+    expect(description).toContain('`*** Update File: <path>`')
+    expect(description).not.toMatch(/Supports `\*\*\* (Add|Update) File`/)
+  })
+
   it('accepts an absolute path and records an update read before requesting the guarded edit', async () => {
     const path = join(dir, 'src/components/files/files-page.tsx')
     await mkdir(join(dir, 'src/components/files'), { recursive: true })
