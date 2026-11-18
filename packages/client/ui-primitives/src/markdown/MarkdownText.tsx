@@ -13,6 +13,7 @@
 
 import { memo, useCallback, useLayoutEffect, useMemo, useRef } from 'react'
 import type { ReactNode } from 'react'
+import clsx from 'clsx'
 import { IncrementalMarkdownParser } from './incremental.ts'
 import { parseGfm, parseGfmWithMath } from './parse.ts'
 import {
@@ -151,14 +152,17 @@ class StreamingRenderer {
  * `codeLabels` 向围栏代码块提供本地化复制文案，须保持引用稳定，否则会重建流式缓存。
  * `fileMentions` 只在定稿时解析真实文件，因为流式冻结元素不能固化可能过期的文件入口。
  * `onOpenUrl` 仅拦截 HTTP(S) 链接未经修饰的主键激活（含 Enter），冻结链接在激活时读取最新回调。
+ * `small` 切换到 14px/24px 弱化刻度（字号、颜色、间距随 small 档样式表整体缩小），供 Think 展开正文等次级 Markdown 面使用。
  * @returns GFM 与 KaTeX 文档；原始 HTML、相对链接和危险协议不可交互，绝对 HTTP(S) 图片可显示。
  */
-export const MarkdownText = memo(function MarkdownText({ text, streaming = false, codeLabels, fileMentions, onOpenUrl }: {
+export const MarkdownText = memo(function MarkdownText({ text, streaming = false, codeLabels, fileMentions, onOpenUrl, small = false }: {
   text: string
   streaming?: boolean
   codeLabels?: MarkdownCodeLabels | undefined
   fileMentions?: MarkdownFileMentions | undefined
   onOpenUrl?: ((href: string) => void) | undefined
+  /** 14px/24px 弱化刻度；默认 false 保持 16px/28px 正文刻度。 */
+  small?: boolean
 }) {
   const streamRef = useRef<StreamingRenderer | null>(null)
   const streamLabelsRef = useRef<MarkdownCodeLabels | undefined>(codeLabels)
@@ -182,5 +186,5 @@ export const MarkdownText = memo(function MarkdownText({ text, streaming = false
     }
     return streamRef.current.render(text)
   }, [text, streaming, codeLabels, fileMentions, openUrl])
-  return <div className={css.markdown}>{children}</div>
+  return <div className={clsx(css.markdown, small && css.small)}>{children}</div>
 })

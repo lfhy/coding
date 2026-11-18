@@ -1,6 +1,6 @@
 /** Assistant reasoning disclosure, independent of Tool-call presentation. */
 import { useEffect, useRef, useState } from 'react'
-import { DisclosureRow, IconThinkOutline14 } from 'coding-client-ui-primitives'
+import { DisclosureRow, IconThinkOutline14, MarkdownText } from 'coding-client-ui-primitives'
 import type { ChatViewSlotProps } from '../contract/slots.ts'
 import { useThrottledVisualUpdate } from './use-throttled-visual-update.ts'
 import a11yCss from './accessibility.module.css'
@@ -58,7 +58,9 @@ export function ReasoningRow({ text, running, t }: { text: string; running: bool
           </>
         )}
       >
-        <div className={css.thinkBody}>{text}</div>
+        <div className={css.thinkBody}>
+          <MarkdownText text={text} streaming={running} small />
+        </div>
       </DisclosureRow>
     </div>
   )

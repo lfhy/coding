@@ -1,6 +1,6 @@
-/* Visual baseline: deepsuite `@deepseek/md` markdown.css, adapted to CSS
-   Modules. Cite pills, header anchors, and thinking-small variants are
-   intentionally absent (no matching DOM). Token names match that sheet. */
+/* 视觉基线：deepsuite `@deepseek/md` markdown.css 改写为 CSS Modules。
+   cite pill 与标题锚点因无对应 DOM 而未移植；token 名与原表一致。
+   small 档即原表的 thinking-small 变体，现挂载于 Think 展开正文。 */
 
 .markdown {
   min-width: 0;
@@ -11,6 +11,58 @@
 
 .markdown strong {
   font-weight: 600;
+}
+
+/* small 档：Think 展开正文的 14px/24px 弱化刻度，标题只提字重不提字号，
+   间距按正文档减半，颜色落到 tertiary，与折叠摘要同一弱化级。 */
+.markdown.small {
+  font: var(--dsw-font-markdown-small);
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.markdown.small h1,
+.markdown.small h2,
+.markdown.small h3 {
+  font: var(--dsw-font-markdown-small-strong);
+  margin: 16px 0 8px;
+}
+
+.markdown.small h4,
+.markdown.small :where(h5, h6) {
+  font: var(--dsw-font-markdown-small-strong);
+  margin: 8px 0;
+}
+
+.markdown.small p {
+  margin: 8px 0;
+}
+
+.markdown.small :where(ul, ol) {
+  margin: 8px 0;
+}
+
+.markdown.small li:not(:first-child) {
+  margin-top: 4px;
+}
+
+.markdown.small li::marker {
+  line-height: 24px;
+}
+
+.markdown.small li > p {
+  margin: 4px 0;
+}
+
+.markdown.small hr {
+  margin: 16px 0;
+}
+
+.markdown.small blockquote {
+  margin: 8px 0 0;
+}
+
+.markdown.small pre {
+  margin: 8px 0;
 }
 
 .markdown h1 {

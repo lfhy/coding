@@ -105,7 +105,7 @@ describe('ReasoningRow', () => {
     expect(row.getAttribute('aria-expanded')).toBe('false')
   })
 
-  it('expanded Think drops the inline summary and renders plain prose, no IN card', () => {
+  it('expanded Think drops the inline summary and renders the markdown body, no IN card', () => {
     const view = render(
       <AssistantMarkdown
         t={t}
@@ -119,5 +119,20 @@ describe('ReasoningRow', () => {
     expect(view.queryByText('IN')).toBeNull()
     expect(view.container.querySelector('[class*="ioCard"]')).toBeNull()
     expect(view.container.querySelector('[class*="thinkBody"]')).not.toBeNull()
+  })
+
+  it('renders the expanded Think body as markdown', () => {
+    const view = render(
+      <AssistantMarkdown
+        t={t}
+        blocks={[{ kind: 'reasoning', text: 'Check **persistence** in `session.ts`' }]}
+        streaming={false}
+        renderMessageImages={renderMessageImages}
+      />,
+    )
+    fireEvent.click(view.getByText('Think'))
+    const body = view.container.querySelector('[class*="thinkBody"]')
+    expect(body?.querySelector('strong')?.textContent).toBe('persistence')
+    expect(body?.querySelector('code')?.textContent).toBe('session.ts')
   })
 })
