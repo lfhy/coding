@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
-import type { CSSProperties, FormEvent, RefObject } from 'react'
+import type { CSSProperties, FormEvent, ReactNode, RefObject } from 'react'
 import { createPortal } from 'react-dom'
 import {
   IconBranchOutline16, IconChevronRightOutline14, IconDownloadOutline16, IconListPenOutline16,
@@ -211,6 +211,19 @@ export function GitOverview({
     {git.deletions > 0 && <> <span className={css.deletions}>−{git.deletions}</span></>}
   </>
 
+  // 三个操作按钮共用同一套几何：运行态只把左侧图标换成同宽圆环，文案保持不变，避免换字撑破三列等宽按钮。
+  const actionButton = (
+    action: 'push' | 'pull' | 'refresh',
+    icon: ReactNode,
+    label: string,
+    onRun: () => void,
+  ) => (
+    <button type="button" disabled={busy !== null} aria-busy={busy === action ? true : undefined} onClick={onRun}>
+      {busy === action ? <span className={css.spinner} aria-hidden="true" /> : icon}
+      {label}
+    </button>
+  )
+
   const toggleBranches = async () => {
     if (showBranches) {
       setShowBranches(false)
@@ -400,18 +413,12 @@ export function GitOverview({
             </div>}
           </div>
           <div className={css.actions}>
-            <button type="button" disabled={busy !== null} onClick={() => { void run('push') }}>
-              <IconDownloadOutline16 className={css.pushIcon} aria-hidden="true" />
-              {busy === 'push' ? t('overview.git.pushRunning') : t('overview.git.push')}
-            </button>
-            <button type="button" disabled={busy !== null} onClick={() => { void run('pull') }}>
-              <IconDownloadOutline16 aria-hidden="true" />
-              {busy === 'pull' ? t('overview.git.pullRunning') : t('overview.git.pull')}
-            </button>
-            <button type="button" disabled={busy !== null} onClick={() => { void refresh() }}>
-              <IconRefreshOutline16 aria-hidden="true" />
-              {busy === 'refresh' ? t('overview.git.refreshRunning') : t('overview.git.refresh')}
-            </button>
+            {actionButton('push', <IconDownloadOutline16 className={css.pushIcon} aria-hidden="true" />,
+              t('overview.git.push'), () => { void run('push') })}
+            {actionButton('pull', <IconDownloadOutline16 aria-hidden="true" />,
+              t('overview.git.pull'), () => { void run('pull') })}
+            {actionButton('refresh', <IconRefreshOutline16 aria-hidden="true" />,
+              t('overview.git.refresh'), () => { void refresh() })}
           </div>
           {conflict && <div role="alert" className={css.feedback}>
             <p>{t('overview.git.conflict')}</p>

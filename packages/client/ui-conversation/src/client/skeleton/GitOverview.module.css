@@ -237,6 +237,29 @@
   transform: rotate(180deg);
 }
 
+/* 运行态圆环占位与图标同为 16px（14px 圆环加 1px 外边距），按钮宽度和三列对齐都不随状态变化。 */
+.spinner {
+  flex: none;
+  box-sizing: border-box;
+  width: 14px;
+  height: 14px;
+  margin: 0 1px;
+  border: 1.5px solid var(--dsw-alias-border-l2);
+  border-top-color: var(--dsw-alias-state-business-primary);
+  border-radius: 50%;
+  animation: git-overview-spin 0.8s linear infinite;
+}
+
+@keyframes git-overview-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation: none;
+  }
+}
+
 .actions button,
 .feedback button,
 .authActions button {
