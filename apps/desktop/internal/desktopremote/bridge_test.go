@@ -385,3 +385,60 @@ func TestRemoteBridgeCancelledRebindLeavesOldRouteUntilActiveDispatchReturns(t *
 		t.Fatalf("settled rebind = %d, %v", newGeneration, err)
 	}
 }
+
+func TestBridgeAdoptsDiskMarkerIdentityAfterRestart(t *testing.T) {
+	token := "abcdefghijklmnopqrstuvwxyz0123456789abcdef"
+	connection := remoteagent.ConnectionInfo{ID: "conn-restarted", Mode: remoteagent.ModeBasic}
+	var calls atomic.Int32
+	proxy := func(context.Context, string, string, string, []byte) (int, []byte, error) {
+		calls.Add(1)
+		return http.StatusOK, []byte(`{"ok":true}`), nil
+	}
+	// 第一次启动：发布 marker，得到磁盘与内存一致的世代。
+	before, err := NewBridge(token, proxy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	before.connection = func(string) (remoteagent.ConnectionInfo, error) { return connection, nil }
+	t.Cleanup(func() { _ = before.Close() })
+	marker := publishRemoteBridgeTestMarker(t, before, connection.ID, 0)
+
+	// 模拟 helper 重启：新桥接器没有任何内存路由，只剩磁盘上的 marker。
+	after, err := NewBridge(token, proxy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	after.connection = func(id string) (remoteagent.ConnectionInfo, error) {
+		if id != connection.ID {
+			return remoteagent.ConnectionInfo{}, errors.New("unknown connection")
+		}
+		return connection, nil
+	}
+	t.Cleanup(func() { _ = after.Close() })
+
+	request := httptest.NewRequest(http.MethodPost, "/v1/exec", strings.NewReader(`{"root":"/remote/project","path":"/remote/project","shell":"bash","command":"true"}`))
+	request.Header.Set("Authorization", "Bearer "+token)
+	request.Header.Set("Content-Type", "application/json")
+	setRemoteBridgeMarkerHeaders(request, marker, false)
+	response := httptest.NewRecorder()
+	after.serveHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("adopted request = %d %s", response.Code, response.Body.String())
+	}
+	if calls.Load() != 1 {
+		t.Fatalf("proxy calls = %d", calls.Load())
+	}
+
+	// 采纳之后世代仍然严格：换一个世代即被视为过期。
+	stale := marker
+	stale.generation++
+	conflict := httptest.NewRequest(http.MethodPost, "/v1/exec", strings.NewReader(`{"root":"/remote/project","path":"/remote/project","shell":"bash","command":"true"}`))
+	conflict.Header.Set("Authorization", "Bearer "+token)
+	conflict.Header.Set("Content-Type", "application/json")
+	setRemoteBridgeMarkerHeaders(conflict, stale, false)
+	conflictResponse := httptest.NewRecorder()
+	after.serveHTTP(conflictResponse, conflict)
+	if conflictResponse.Code != http.StatusConflict {
+		t.Fatalf("stale generation = %d %s", conflictResponse.Code, conflictResponse.Body.String())
+	}
+}

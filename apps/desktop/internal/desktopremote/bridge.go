@@ -335,8 +335,14 @@ func (b *Bridge) serveHTTP(writer http.ResponseWriter, request *http.Request) {
 	b.markerAdmissionMu.Unlock()
 	if !b.authorizesMarkerLocked(identity, cleanup, request.Method, request.URL.Path) {
 		b.markerMu.RUnlock()
-		writeBridgeError(writer, http.StatusConflict, "stale-marker")
-		return
+		// 路由表只在内存里：桥接器重启后它为空，而磁盘 marker 仍是上一次发布的身份。
+		// 该身份指向一条活连接时按需采纳，恢复出来的会话因此不必先手动重连；已有
+		// 路由时绝不采纳，旧文件不能覆盖新一轮重绑。
+		if !b.adoptMarker(identity, cleanup) {
+			writeBridgeError(writer, http.StatusConflict, "stale-marker")
+			return
+		}
+		b.markerMu.RLock()
 	}
 	if b.connection != nil {
 		info, lookupErr := b.connection(connectionID)
@@ -408,6 +414,35 @@ func bridgeMarkerIdentity(request *http.Request, connectionID string) (remoteBri
 	return remoteBridgeMarkerIdentity{
 		markerRoot: markerRoot, connectionID: connectionID, remoteRoot: remoteRoot, generation: generation,
 	}, cleanup, ""
+}
+
+// adoptMarker 在内存路由缺失时，按请求携带的 marker 身份恢复路由。
+//
+// 桥接器只把路由保存在内存，进程或 helper 重启后路由为空，磁盘 marker 仍是上一次
+// 发布的结果。此时只要该身份仍指向一条活连接，就把它采纳回路由表，让重启后恢复的
+// 会话直接可用；`markerRoute` 已存在时一律拒绝，旧文件不能覆盖新一轮重绑，退役清理
+// 请求也不参与采纳。连接模式、能力与请求根目录的校验仍由后续常规检查负责。
+// @param identity - 请求头携带的 marker 身份。
+// @param cleanup - 该请求是否声明为已退役资源的清理路由。
+// @returns 采纳成功时为 true。
+func (b *Bridge) adoptMarker(identity remoteBridgeMarkerIdentity, cleanup bool) bool {
+	if cleanup || b.connection == nil {
+		return false
+	}
+	if _, err := b.connection(identity.connectionID); err != nil {
+		return false
+	}
+	b.markerMu.Lock()
+	defer b.markerMu.Unlock()
+	if _, exists := b.markerRoutes[identity.markerRoot]; exists {
+		return false
+	}
+	b.markerRoutes[identity.markerRoot] = remoteBridgeMarkerRoute{
+		connectionID: identity.connectionID,
+		remoteRoot:   identity.remoteRoot,
+		generation:   identity.generation,
+	}
+	return true
 }
 
 func (b *Bridge) authorizesMarkerLocked(identity remoteBridgeMarkerIdentity, cleanup bool, method, requestPath string) bool {
