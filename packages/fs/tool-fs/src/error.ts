@@ -14,6 +14,8 @@ import type { FsErrorCode } from 'coding-fs'
 const REMEDIES: Partial<Record<FsErrorCode, string>> = {
   FS_STALE_VERSION: 're-read the file, then retry',
   FS_NOT_OBSERVED: 'read the file, then retry',
+  // 编辑不再要求先读：字面量没匹配上时，读一遍当前内容才是唯一正确的下一步。
+  FS_EDIT_NOT_FOUND: 'read the file first to confirm its current content, then retry',
 }
 
 /**

@@ -146,14 +146,21 @@ describe('default deployment (with dsh-fs-observation-policy)', () => {
       expect(await readFile(join(dir, 'a.txt'), 'utf8')).toBe('hello there')
     })
 
-    it('rejects an edit before any read, leaving the file untouched', async () => {
+    it('edits an unread file when the literal text matches', async () => {
       await writeFile(join(dir, 'a.txt'), 'hello world')
+      // 编辑不再要求先读：字面量匹配成功即落盘。
       const result = await call('edit', { file_path: 'a.txt', old_string: 'world', new_string: 'there' })
+      expect(result.isError).toBe(false)
+      expect(await readFile(join(dir, 'a.txt'), 'utf8')).toBe('hello there')
+    })
+
+    it('tells the model to read the file when the literal text does not match', async () => {
+      await writeFile(join(dir, 'a.txt'), 'hello world')
+      const result = await call('edit', { file_path: 'a.txt', old_string: 'nowhere', new_string: 'there' })
       expect(result.isError).toBe(true)
-      expect(result.error).toMatchObject({ info: { code: 'FS_NOT_OBSERVED' } })
-      // The policy's refusal reaches the model with the read remedy appended.
-      expect(text(result)).toContain('edit requires reading')
-      expect(text(result)).toContain('read the file, then retry')
+      expect(result.error).toMatchObject({ info: { code: 'FS_EDIT_NOT_FOUND' } })
+      // 失败时才提示先读：这是模型能唯一正确恢复的动作。
+      expect(text(result)).toContain('read the file first')
       expect(await readFile(join(dir, 'a.txt'), 'utf8')).toBe('hello world')
     })
 
@@ -223,14 +230,14 @@ describe('default deployment (with dsh-fs-observation-policy)', () => {
   })
 
   describe('the gate records only through the events (no method coupling)', () => {
-    it('a direct ctx.fs.readText records no observed-state, so a later edit rejects', async () => {
+    it('a direct ctx.fs.readText records no observed-state, so a later edit stays unguarded', async () => {
       await writeFile(join(dir, 'a.txt'), 'hello world')
       // Reach AROUND the tool — an explicit escape hatch for non-tool consumers.
       await ctx.fs.readText(await ctx.fs.resolve('a.txt'))
-      // The model-facing edit still rejects: the read did not emit fs/observed.
+      // The read emitted no fs/observed, so the edit has no CAS basis and runs unconditionally.
       const result = await call('edit', { file_path: 'a.txt', old_string: 'world', new_string: 'there' })
-      expect(result.isError).toBe(true)
-      expect(result.error).toMatchObject({ info: { code: 'FS_NOT_OBSERVED' } })
+      expect(result.isError).toBe(false)
+      expect(await readFile(join(dir, 'a.txt'), 'utf8')).toBe('hello there')
     })
   })
 

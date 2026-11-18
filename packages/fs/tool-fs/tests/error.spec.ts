@@ -23,8 +23,14 @@ describe('remediateFsError', () => {
     expect(remedied.code).toBe('FS_NOT_OBSERVED')
   })
 
+  it('appends the read remedy to a failed literal edit', () => {
+    const remedied = remediateFsError(new FsError('old_string was not found in "x"', 'FS_EDIT_NOT_FOUND')) as FsError
+    expect(remedied.message).toBe('old_string was not found in "x" — read the file first to confirm its current content, then retry')
+    expect(remedied.code).toBe('FS_EDIT_NOT_FOUND')
+  })
+
   it('leaves other FsError codes untouched', () => {
-    const original = new FsError('no match anywhere', 'FS_EDIT_NOT_FOUND')
+    const original = new FsError('too many matches', 'FS_AMBIGUOUS_EDIT')
     expect(remediateFsError(original)).toBe(original)
   })
 

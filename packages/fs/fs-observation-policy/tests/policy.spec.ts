@@ -79,19 +79,20 @@ describe('write-intent decision', () => {
 })
 
 describe('edit-intent decision', () => {
-  it('rejects an unread edit with FS_NOT_OBSERVED', async () => {
+  it('leaves an unread edit unconditional instead of requiring a prior read', async () => {
     const { ctx } = await setup()
-    await expect(editIntent(ctx, target('a.txt'), ownerExec({}))).rejects.toMatchObject({ code: 'FS_NOT_OBSERVED' })
+    // 编辑本身是字面量匹配：没读过就无条件编辑，匹配不上时由 FS_EDIT_NOT_FOUND 提示读文件。
+    expect(await editIntent(ctx, target('a.txt'), ownerExec({}))).toBeUndefined()
   })
 
-  it('rejects an edit with no owner (cannot prove prior observation)', async () => {
+  it('leaves an edit with no owner unconditional', async () => {
     const { ctx } = await setup()
-    await expect(editIntent(ctx, target('a.txt'), undefined)).rejects.toMatchObject({ code: 'FS_NOT_OBSERVED' })
+    expect(await editIntent(ctx, target('a.txt'), undefined)).toBeUndefined()
   })
 
-  it('rejects an edit whose actor has an agent but no session (no owner)', async () => {
+  it('leaves an edit whose actor has an agent but no session unconditional', async () => {
     const { ctx } = await setup()
-    await expect(editIntent(ctx, target('a.txt'), { agent: {} })).rejects.toMatchObject({ code: 'FS_NOT_OBSERVED' })
+    expect(await editIntent(ctx, target('a.txt'), { agent: {} })).toBeUndefined()
   })
 
   it('returns the observed version as the CAS basis after an observation', async () => {
@@ -131,8 +132,8 @@ describe('observed-state is the prior-observation record', () => {
   it('a no-owner observation records nothing', async () => {
     const { ctx } = await setup()
     ctx.emit('fs/observed', target('a.txt'), present('v0'), undefined)
-    // Still unobserved for any owner.
-    await expect(editIntent(ctx, target('a.txt'), ownerExec({}))).rejects.toMatchObject({ code: 'FS_NOT_OBSERVED' })
+    // Still unobserved for any owner: the edit stays unconditional rather than gaining a CAS basis.
+    expect(await editIntent(ctx, target('a.txt'), ownerExec({}))).toBeUndefined()
   })
 
   it('supports present → absent → present transitions for one owner', async () => {
@@ -152,12 +153,13 @@ describe('observed-state is the prior-observation record', () => {
 })
 
 describe('multi-owner isolation', () => {
-  it('owner A observing does not grant owner B edit authority', async () => {
+  it('owner A observing does not grant owner B a version guard', async () => {
     const { ctx } = await setup()
     const a = ownerExec({})
     const b = ownerExec({})
     ctx.emit('fs/observed', target('a.txt'), present('v0'), a)
-    await expect(editIntent(ctx, target('a.txt'), b)).rejects.toMatchObject({ code: 'FS_NOT_OBSERVED' })
+    // B 没有观测记录，因此没有 CAS 基准；A 的观测只属于 A。
+    expect(await editIntent(ctx, target('a.txt'), b)).toBeUndefined()
     expect(await editIntent(ctx, target('a.txt'), a)).toEqual({ version: 'v0' })
   })
 
@@ -222,8 +224,8 @@ describe('disposal releases recorded state (HMR safety)', () => {
     await fiber.dispose()
 
     await ctx.plugin(FsPolicy)
-    // Same owner object, but state was released on disposal.
-    await expect(editIntent(ctx, target('a.txt'), exec)).rejects.toMatchObject({ code: 'FS_NOT_OBSERVED' })
+    // Same owner object, but state was released on disposal: no CAS basis remains.
+    expect(await editIntent(ctx, target('a.txt'), exec)).toBeUndefined()
   })
 
   it('no listeners remain after disposal (the gate no longer decides)', async () => {

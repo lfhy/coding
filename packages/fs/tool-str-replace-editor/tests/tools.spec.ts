@@ -458,26 +458,26 @@ describe('tool-str-replace-editor', () => {
     })).error).toMatchObject({ info: { code: 'FS_NOT_REGULAR_FILE' } })
   })
 
-  it('delegates read-before-edit decisions to fs-observation-policy', async () => {
+  it('edits without a prior read and keeps the observed-version guard once viewed', async () => {
     const { ctx, root, owner } = await setup({}, { fsPolicy: true })
     const existing = join(root, 'existing.txt')
     const created = join(root, 'created.txt')
     await writeFile(existing, 'before')
 
-    const blindEdit = await call(ctx, owner, {
+    // 没有先读也允许编辑：字面量匹配成功即落盘（不再有 read-before-edit 拒绝）。
+    expect((await call(ctx, owner, {
       command: 'str_replace',
       path: existing,
       old_str: 'before',
-      new_str: 'after',
-    })
-    expect(blindEdit.error).toMatchObject({ info: { code: 'FS_NOT_OBSERVED' } })
-    expect(await readFile(existing, 'utf8')).toBe('before')
+      new_str: 'first',
+    })).isError).toBe(false)
+    expect(await readFile(existing, 'utf8')).toBe('first')
 
     await call(ctx, owner, { command: 'view', path: existing })
     expect((await call(ctx, owner, {
       command: 'str_replace',
       path: existing,
-      old_str: 'before',
+      old_str: 'first',
       new_str: 'after',
     })).isError).toBe(false)
     expect(await readFile(existing, 'utf8')).toBe('after')

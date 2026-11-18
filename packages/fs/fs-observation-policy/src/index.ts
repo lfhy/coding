@@ -71,16 +71,20 @@ class ObservedStateGate {
   }
 
   /**
-   * Decide the edit version guard: unseen rejects with `FS_NOT_OBSERVED`,
-   * confirmed absence rejects with `FS_NOT_FOUND`, and presence supplies the
-   * observed version as the CAS basis.
+   * Decide the edit version guard.
+   *
+   * 没有先读过的目标不再被拒绝：编辑本身就是字面量匹配，匹配不上会以
+   * `FS_EDIT_NOT_FOUND` 明确失败，并在那里提示先读文件。这里只拒绝已确认不存在
+   * 的目标，其余情况——见过就是 CAS 基准，从没见过就无条件编辑（返回 undefined，
+   * 与没有策略插件时的默认一致）。
+   * @param target - 已解析的目标。
+   * @param actor - 本次执行的 actor，用于找到观测所有者。
+   * @returns 观测到的版本作为 CAS 基准；没有观测时为 undefined。
    */
-  editIntent(target: FsTarget, actor: object | undefined): { version: FsVersion } {
+  editIntent(target: FsTarget, actor: object | undefined): { version: FsVersion } | undefined {
     const owner = this.owner(actor)
     const prior = owner ? this.get(owner, target.targetKey) : undefined
-    if (!owner || prior === undefined) {
-      throw new FsError(`edit requires reading "${target.displayPath}" first`, 'FS_NOT_OBSERVED')
-    }
+    if (prior === undefined) return undefined
     if (prior.kind === 'absent') {
       throw new FsError(`cannot edit "${target.displayPath}": not found`, 'FS_NOT_FOUND')
     }
