@@ -112,6 +112,27 @@
 
 .searchField { flex: 1; min-width: 0; }
 
+.documentActions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+}
+
+.documentHeader .exportButton {
+  flex: none;
+  width: 30px;
+  padding: 0;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.documentHeader .exportButton:focus-visible {
+  outline: 2px solid var(--dsw-alias-state-business-primary);
+  outline-offset: -2px;
+}
+
 .documentHeader .assistant {
   flex: none;
   border: 1px solid var(--dsw-alias-border-l2);

@@ -29,6 +29,12 @@ describe('Web 笔记工作区', () => {
   it('宽屏并排编辑，缩窄后按需打开助手和预览，关闭时保留草稿', async () => {
     onTestFailed(() => saveFailureShot(page, 'notes-page'))
     await page.getByRole('button', { name: 'Notes', exact: true }).click()
+    // 进入笔记页先停在欢迎页；点目录里的笔记才打开正文。
+    const welcome = page.getByRole('main', { name: 'Notes', exact: true })
+    await welcome.getByRole('heading', { level: 2 }).first().waitFor()
+    const directory = page.getByRole('complementary', { name: 'Note directory' })
+    await directory.getByTitle('Release notes').click()
+
     const main = page.getByRole('main', { name: 'Release notes', exact: true })
     const editor = main.locator('textarea')
     const heading = main.getByRole('heading', { name: 'Release checklist', exact: true })
@@ -41,7 +47,15 @@ describe('Web 笔记工作区', () => {
     expect(await editor.isVisible()).toBe(true)
     expect(await page.locator('[data-conversation-scroll]:visible').count()).toBe(1)
 
-    const directory = main.getByRole('complementary', { name: 'Note directory' })
+    // 导出入口只作用于已打开的笔记：菜单给出四种格式。
+    const exportButton = main.getByRole('button', { name: 'Export', exact: true })
+    await exportButton.click()
+    for (const name of ['Markdown (.md)', 'Word (.docx)', 'PDF (print to save)', 'Image (.png)']) {
+      await page.getByRole('menuitem', { name, exact: true }).waitFor()
+    }
+    await page.keyboard.press('Escape')
+    await expect.poll(() => page.getByRole('menuitem', { name: 'Markdown (.md)', exact: true }).count()).toBe(0)
+
     const alignment = await directory.getByRole('listitem').evaluateAll(rows => rows.map((row) => {
       const box = row.getBoundingClientRect()
       const label = [...row.querySelectorAll('span')].find(span => span.textContent === row.getAttribute('title'))!

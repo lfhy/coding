@@ -5,6 +5,15 @@ import type { NotesPageProps } from '../src/client/NotesPage.tsx'
 import { NotesPage } from '../src/client/NotesPage.tsx'
 import { zh } from '../src/client/locales.ts'
 
+// 导出动作在专门的文件里单测；这里只验证页面的接线与提示。
+const exportMocks = vi.hoisted(() => ({
+  exportMarkdown: vi.fn(),
+  exportWord: vi.fn(async () => {}),
+  exportPdf: vi.fn(),
+  exportImage: vi.fn(async () => {}),
+}))
+vi.mock('../src/client/export.tsx', () => exportMocks)
+
 interface ServerNote { content: string; mtimeMs: number }
 interface TreeNode { name: string; kind: 'dir' | 'file'; path: string; mtimeMs: number; children?: TreeNode[] }
 
@@ -100,9 +109,23 @@ const props = {
   toggleAssistant,
 } as unknown as NotesPageProps
 
-async function mount(overrides?: Partial<NotesPageProps>) {
+/**
+ * 挂载笔记页；默认点开目录里的 a 笔记，模拟用户进入页面后的第一步选择。
+ * @param overrides - 覆盖页头 owner props。
+ * @param options - `openNote: null` 保留未打开任何笔记的欢迎页。
+ */
+async function mount(
+  overrides?: Partial<NotesPageProps>,
+  options: { openNote?: string | null } = {},
+) {
   const view = render(<NotesPage {...props} {...overrides} />)
   await act(async () => {})
+  const title = options.openNote === undefined ? 'a' : options.openNote
+  const row = title === null ? null : within(directory()).queryByTitle(title)
+  if (row !== null) {
+    await act(async () => { fireEvent.click(row) })
+    await act(async () => {})
+  }
   return view
 }
 
@@ -119,9 +142,14 @@ describe('NotesPage', () => {
   beforeEach(() => { vi.useFakeTimers() })
   afterEach(() => { cleanup(); vi.useRealTimers(); vi.unstubAllGlobals(); vi.restoreAllMocks(); vi.clearAllMocks() })
 
-  it('加载目录树并选中第一篇笔记，编辑与预览同源', async () => {
+  it('进入页面保持欢迎页；选中笔记后编辑与预览同源', async () => {
     makeServer()
-    await mount()
+    await mount(undefined, { openNote: null })
+    expect(screen.queryByRole('textbox', { name: '原始文本' })).toBeNull()
+    expect(screen.getByRole('heading', { level: 2, name: /好呀/u })).toBeTruthy()
+    const row = treeRow('a')
+    await act(async () => { fireEvent.click(row) })
+    await act(async () => {})
     const editor = screen.getByRole('textbox', { name: '原始文本' })
     expect((editor as HTMLTextAreaElement).value).toBe('hello a')
     const preview = screen.getByRole('region', { name: '预览' })
@@ -264,12 +292,17 @@ describe('NotesPage', () => {
     expect(closePage).not.toHaveBeenCalled()
   })
 
-  it('仅有子目录笔记时展开父链并打开第一篇', async () => {
+  it('仅有子目录笔记时先展开父目录，再点开子笔记', async () => {
     const state = makeServer()
     state.tree.shift()
-    await mount()
-    expect(screen.getByRole('heading', { name: 'b' })).toBeTruthy()
+    await mount(undefined, { openNote: null })
+    expect(screen.queryByRole('textbox', { name: '原始文本' })).toBeNull()
+    act(() => { fireEvent.click(treeRow('d')) })
+    await act(async () => {})
     expect(treeRow('d').closest('button')?.getAttribute('aria-expanded')).toBe('true')
+    await act(async () => { fireEvent.click(treeRow('b')) })
+    await act(async () => {})
+    expect(screen.getByRole('heading', { name: 'b' })).toBeTruthy()
     expect(treeRow('b').closest('button')?.getAttribute('aria-current')).toBe('true')
   })
 
@@ -560,6 +593,70 @@ describe('NotesPage', () => {
     await act(async () => { vi.advanceTimersByTime(4000) })
     await act(async () => {})
     expect(screen.getByRole('heading', { name: 'a' })).toBeTruthy()
+    expect((editor as HTMLTextAreaElement).value).toBe('hello a')
+  })
+
+  it('未打开笔记时导出入口不可用；打开后按格式交给导出动作', async () => {
+    makeServer()
+    await mount(undefined, { openNote: null })
+    expect(screen.getByRole('button', { name: '导出' }).hasAttribute('disabled')).toBe(true)
+
+    const row = treeRow('a')
+    await act(async () => { fireEvent.click(row) })
+    await act(async () => {})
+    const trigger = screen.getByRole('button', { name: '导出' })
+    expect(trigger.hasAttribute('disabled')).toBe(false)
+
+    fireEvent.click(trigger)
+    await act(async () => {})
+    await act(async () => { fireEvent.click(screen.getByRole('menuitem', { name: 'Markdown（.md）' })) })
+    expect(exportMocks.exportMarkdown).toHaveBeenCalledWith('a', 'hello a')
+    expect(screen.queryByRole('menuitem', { name: 'Markdown（.md）' })).toBeNull()
+
+    fireEvent.click(trigger)
+    await act(async () => {})
+    await act(async () => { fireEvent.click(screen.getByRole('menuitem', { name: 'Word（.docx）' })) })
+    expect(exportMocks.exportWord).toHaveBeenCalledWith('a', 'hello a')
+
+    fireEvent.click(trigger)
+    await act(async () => {})
+    await act(async () => { fireEvent.click(screen.getByRole('menuitem', { name: 'PDF（打印保存）' })) })
+    expect(exportMocks.exportPdf).toHaveBeenCalledWith('a', 'hello a')
+    expect(screen.getByText('在打印对话框里选择「另存为 PDF」保存')).toBeTruthy()
+  })
+
+  it('导出图片等待编码完成，失败时提示且恢复按钮', async () => {
+    makeServer()
+    await mount()
+    const trigger = screen.getByRole('button', { name: '导出' })
+
+    let settle: (() => void) | undefined
+    exportMocks.exportImage.mockImplementationOnce(() => new Promise<void>((resolve) => { settle = resolve }))
+    fireEvent.click(trigger)
+    await act(async () => {})
+    await act(async () => { fireEvent.click(screen.getByRole('menuitem', { name: '图片（.png）' })) })
+    expect(exportMocks.exportImage).toHaveBeenCalledWith('a', 'hello a')
+    expect(screen.getByRole('button', { name: '导出' }).hasAttribute('disabled')).toBe(true)
+    await act(async () => { settle?.() })
+    expect(screen.getByRole('button', { name: '导出' }).hasAttribute('disabled')).toBe(false)
+
+    exportMocks.exportImage.mockImplementationOnce(async () => { throw new Error('boom') })
+    fireEvent.click(screen.getByRole('button', { name: '导出' }))
+    await act(async () => {})
+    await act(async () => { fireEvent.click(screen.getByRole('menuitem', { name: '图片（.png）' })) })
+    await act(async () => {})
+    expect(screen.getByText('导出失败')).toBeTruthy()
+  })
+
+  it('同步导出抛错时提示，不影响正文与保存状态', async () => {
+    makeServer()
+    await mount()
+    exportMocks.exportMarkdown.mockImplementationOnce(() => { throw new Error('boom') })
+    fireEvent.click(screen.getByRole('button', { name: '导出' }))
+    await act(async () => {})
+    await act(async () => { fireEvent.click(screen.getByRole('menuitem', { name: 'Markdown（.md）' })) })
+    expect(screen.getByText('导出失败')).toBeTruthy()
+    const editor = screen.getByRole('textbox', { name: '原始文本' })
     expect((editor as HTMLTextAreaElement).value).toBe('hello a')
   })
 

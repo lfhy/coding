@@ -13,6 +13,7 @@ export type NotesLocaleKey =
   | 'rename' | 'renaming' | 'renameNote' | 'renameFolder' | 'delete' | 'deleteConfirm' | 'deleteFolderConfirm'
   | 'renameError' | 'deleteError'
   | 'copy' | 'copied'
+  | 'export' | 'exportMarkdown' | 'exportWord' | 'exportPdf' | 'exportImage' | 'exportPdfHint' | 'exportError'
 
 /** 简体中文文案。 */
 export const zh: Record<NotesLocaleKey, string> = {
@@ -36,6 +37,9 @@ export const zh: Record<NotesLocaleKey, string> = {
   deleteConfirm: '确定删除这篇笔记吗？此操作不可撤销。', deleteFolderConfirm: '确定删除这个目录吗？目录必须为空，此操作不可撤销。',
   renameError: '无法重命名', deleteError: '无法删除',
   copy: '复制', copied: '已复制',
+  export: '导出', exportMarkdown: 'Markdown（.md）', exportWord: 'Word（.docx）',
+  exportPdf: 'PDF（打印保存）', exportImage: '图片（.png）',
+  exportPdfHint: '在打印对话框里选择「另存为 PDF」保存', exportError: '导出失败',
 }
 
 /** 英文文案。 */
@@ -60,4 +64,7 @@ export const en: Record<NotesLocaleKey, string> = {
   deleteConfirm: 'Delete this note? This cannot be undone.', deleteFolderConfirm: 'Delete this folder? It must be empty, and this cannot be undone.',
   renameError: 'Could not rename', deleteError: 'Could not delete',
   copy: 'Copy', copied: 'Copied',
+  export: 'Export', exportMarkdown: 'Markdown (.md)', exportWord: 'Word (.docx)',
+  exportPdf: 'PDF (print to save)', exportImage: 'Image (.png)',
+  exportPdfHint: 'Choose "Save as PDF" in the print dialog', exportError: 'Export failed',
 }

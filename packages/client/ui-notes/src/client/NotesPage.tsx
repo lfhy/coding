@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import type { FormEvent, MouseEvent } from 'react'
 import {
-  Button, Icon, IconCheckOutline14, IconCloseOutline16, IconEditOutline16, IconFolderOpenOutline16, IconPlusOutline16,
-  IconSearchOutline16, IconSparkle16, Input, Menu, Modal, SidebarRoot, Toast,
-  IconTrashOutline16,
+  Button, Icon, IconCheckOutline14, IconCloseOutline16, IconDownloadOutline16, IconEditOutline16,
+  IconFolderOpenOutline16, IconPlusOutline16, IconSearchOutline16, IconSparkle16, Input, Menu, Modal, SidebarRoot,
+  Toast, IconTrashOutline16,
   type MenuEntry, type SidebarRootItem,
 } from 'coding-client-ui-primitives'
 import type { PropsLocale, PropsRuntime } from 'coding-client-ui-slots'
@@ -12,6 +12,7 @@ import { NotesEditor } from './NotesEditor.tsx'
 import { NotesWelcome } from './NotesWelcome.tsx'
 import { useNoteDraft } from './useNoteDraft.ts'
 import { notesCreate, notesCreateDirectory, notesDelete, notesRename, notesTree, type NotesTreeEntry } from './wire.ts'
+import { exportImage, exportMarkdown, exportPdf, exportWord, type NoteExportFormat } from './export.tsx'
 import css from './NotesPage.module.css'
 
 export type NotesPageProps = PropsRuntime<'shell.page'> & PropsLocale<typeof NS>
@@ -44,19 +45,6 @@ function selectedDirectory(path: string | undefined): string {
   if (path === undefined) return ''
   const slash = path.lastIndexOf('/')
   return slash < 0 ? '' : path.slice(0, slash)
-}
-
-function firstNote(
-  entries: readonly NotesTreeEntry[], parents: readonly string[] = [],
-): { path: string; parents: readonly string[] } | undefined {
-  const first = entries.find(entry => entry.kind === 'file')
-  if (first !== undefined) return { path: first.path, parents }
-  for (const entry of entries) {
-    if (entry.children === undefined) continue
-    const nested = firstNote(entry.children, [...parents, entry.path])
-    if (nested !== undefined) return nested
-  }
-  return undefined
 }
 
 /** 目录树中的一篇笔记；`parents` 是展开该行所需的各级目录。 */
@@ -113,6 +101,8 @@ export function NotesPage({
   const creatingRequest = useRef<AbortController | null>(null)
   /** 上一次目录轮询看到的笔记修改时间；用于识别助手写入并自动打开。 */
   const seenNotes = useRef(new Map<string, number>())
+  /** 首次轮询只建立修改时间基线：进入页面时不打开任何笔记。 */
+  const notesSynced = useRef(false)
   const [tree, setTree] = useState<NotesTreeEntry[]>([])
   const [treeState, setTreeState] = useState<DirectoryState>('loading')
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set())
@@ -120,6 +110,8 @@ export function NotesPage({
   const [searchOpen, setSearchOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [createMenuOpen, setCreateMenuOpen] = useState(false)
+  const [exportMenuOpen, setExportMenuOpen] = useState(false)
+  const [exporting, setExporting] = useState(false)
   const [dialog, setDialog] = useState<DialogKind | null>(null)
   const [actionTarget, setActionTarget] = useState<NoteActionTarget | null>(null)
   const [contextMenu, setContextMenu] = useState<{ target: NoteActionTarget; x: number; y: number } | null>(null)
@@ -174,20 +166,18 @@ export function NotesPage({
         signal.throwIfAborted()
         setTree(fresh)
         const notes = noteFiles(fresh)
-        const written = latestWritten(notes, seenNotes.current)
+        const written = notesSynced.current ? latestWritten(notes, seenNotes.current) : undefined
         seenNotes.current = new Map(notes.map(note => [note.path, note.mtimeMs]))
+        notesSynced.current = true
         const path = getPath()
         if (path !== undefined) {
           setCreationDirectory(selectedDirectory(path))
           await refresh(findEntry(fresh, path)?.mtimeMs, signal)
-        } else if (creatingRequest.current === null) {
-          // 首次进入打开第一篇；之后只在没有打开文档时打开助手刚写入的一篇，显示更新后的内容。
-          const target = status === 'ready' ? written : firstNote(fresh)
-          if (target !== undefined) {
-            setExpanded(new Set(target.parents))
-            setCreationDirectory(selectedDirectory(target.path))
-            await select(target.path)
-          }
+        } else if (creatingRequest.current === null && written !== undefined) {
+          // 进入页面时保持欢迎页；只在助手刚写入后自动打开那一篇，显示更新后的内容。
+          setExpanded(new Set(written.parents))
+          setCreationDirectory(selectedDirectory(written.path))
+          await select(written.path)
         }
         status = 'ready'
         if (!signal.aborted) setTreeState('ready')
@@ -413,6 +403,37 @@ export function NotesPage({
 
   const selectedLabel = draft === null ? t('title') : labelOf(findEntry(tree, draft.path)?.name ?? draft.path.replace(/^.*\//u, ''))
 
+  const exportEntries: readonly MenuEntry[] = [
+    { id: 'markdown', label: t('exportMarkdown') },
+    { id: 'word', label: t('exportWord') },
+    { id: 'pdf', label: t('exportPdf') },
+    { id: 'image', label: t('exportImage') },
+  ]
+
+  /** 导出当前草稿；Word 与图片要等编码完成，失败时提示且不改动正文。 */
+  const runExport = (format: NoteExportFormat) => {
+    const current = draft
+    if (current === null) return
+    setExportMenuOpen(false)
+    if (format === 'word' || format === 'image') {
+      setExporting(true)
+      const task = format === 'word'
+        ? exportWord(selectedLabel, current.content)
+        : exportImage(selectedLabel, current.content)
+      void task.catch(() => { notify('exportError') }).finally(() => { setExporting(false) })
+      return
+    }
+    try {
+      if (format === 'markdown') exportMarkdown(selectedLabel, current.content)
+      else {
+        exportPdf(selectedLabel, current.content)
+        notify('exportPdfHint')
+      }
+    } catch {
+      notify('exportError')
+    }
+  }
+
   return (
     <main className={css.page} aria-labelledby={titleId}>
       <SidebarRoot
@@ -475,11 +496,25 @@ export function NotesPage({
               </span>
             )}
           </div>
-          <Button size="sm" className={css.assistant} icon={<IconSparkle16 />}
-            aria-label={t('assistant')} title={t('assistant')} aria-expanded={assistantOpen}
-            aria-controls={assistantPanelId} onClick={toggleAssistant}>
-            <span className={css.assistantLabel}>{t('assistant')}</span>
-          </Button>
+          <div className={css.documentActions}>
+            <Menu
+              open={exportMenuOpen}
+              anchor={<Button size="sm" className={css.exportButton} icon={<IconDownloadOutline16 />}
+                aria-label={t('export')} title={t('export')} aria-haspopup="menu"
+                disabled={draft === null || exporting}
+                onClick={() => { setExportMenuOpen(open => !open) }} />}
+              items={exportEntries}
+              onSelect={(id) => { runExport(id as NoteExportFormat) }}
+              onClose={() => { setExportMenuOpen(false) }}
+              side="bottom"
+              portal
+            />
+            <Button size="sm" className={css.assistant} icon={<IconSparkle16 />}
+              aria-label={t('assistant')} title={t('assistant')} aria-expanded={assistantOpen}
+              aria-controls={assistantPanelId} onClick={toggleAssistant}>
+              <span className={css.assistantLabel}>{t('assistant')}</span>
+            </Button>
+          </div>
         </header>
         {(saveLabel === 'conflict' || saveLabel === 'saveError') && (
           <div className={css.recovery}>
