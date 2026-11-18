@@ -47,9 +47,15 @@ export interface AppFrameInjected {
   /** 解析会话所属的工作区键；工作台偏好按它保存。 */
   workspaceKeyOf: (sessionId: SessionId) => string
   /** 当前主题快照，供外层导航根据生效明暗更新图标。 */
-  hooks: { theme: HostObservable<ThemeSnapshot> }
+  hooks: {
+    theme: HostObservable<ThemeSnapshot>
+    /** 独立页助手是否存在「新对话」入口；为真时手势交给 startPageConversation。 */
+    pageConversation: HostObservable<boolean>
+  }
   /** 切换到指定的主题偏好。 */
   setTheme: (id: 'light' | 'dark') => void
+  /** 发起独立页助手的「新对话」；页面插件未登记入口时无动作。 */
+  startPageConversation: () => void
 }
 
 /** AppFrame 的框架派生 props。 */
@@ -154,6 +160,8 @@ export function AppFrame({
   publishPage,
   restoreConversation,
   workspaceKeyOf,
+  startPageConversation,
+  usePageConversation,
   t,
 }: AppFrameProps) {
   const rootPanels = useStore(state => state)
@@ -281,6 +289,7 @@ export function AppFrame({
   const restoreAssistantFocus = useRef(false)
   const closePage = useCallback(() => { actions.closePage() }, [actions])
   const toggleAssistant = () => { actions.setPageAssistant(!assistantOpen) }
+  const pageConversationAvailable = usePageConversation(available => available)
   const closeAssistant = () => {
     restoreAssistantFocus.current = true
     actions.setPageAssistant(false)
@@ -452,6 +461,8 @@ export function AppFrame({
         assistant={assistantMode}
         assistantLabel={t('assistant.title')}
         assistantCloseLabel={t('assistant.close')}
+        assistantNewLabel={t('assistant.new')}
+        onNewAssistantConversation={pageConversationAvailable ? startPageConversation : undefined}
         onCloseAssistant={closeAssistant}
       >
         {renderSlot('conversation', { sidebarCollapsed, ...(hasPageAssistant ? { inPageAssistant: true } : {}) })}

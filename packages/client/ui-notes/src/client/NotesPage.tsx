@@ -59,6 +59,41 @@ function firstNote(
   return undefined
 }
 
+/** 目录树中的一篇笔记；`parents` 是展开该行所需的各级目录。 */
+interface NoteFile {
+  path: string
+  mtimeMs: number
+  parents: readonly string[]
+}
+
+/** 按目录树显示顺序扁平化所有笔记文件。 */
+function noteFiles(entries: readonly NotesTreeEntry[], parents: readonly string[] = []): NoteFile[] {
+  const notes: NoteFile[] = []
+  for (const entry of entries) {
+    if (entry.kind === 'file') {
+      notes.push({ path: entry.path, mtimeMs: entry.mtimeMs, parents })
+    } else if (entry.children !== undefined) {
+      notes.push(...noteFiles(entry.children, [...parents, entry.path]))
+    }
+  }
+  return notes
+}
+
+/**
+ * 找出本次轮询新增或修改过的一篇笔记。
+ * @param notes - 本次目录树中的全部笔记。
+ * @param seen - 上一次轮询记录的修改时间。
+ * @returns 修改时间最新的变化项；没有变化时返回 undefined。
+ */
+function latestWritten(notes: readonly NoteFile[], seen: ReadonlyMap<string, number>): NoteFile | undefined {
+  let latest: NoteFile | undefined
+  for (const note of notes) {
+    if (seen.get(note.path) === note.mtimeMs) continue
+    if (latest === undefined || note.mtimeMs > latest.mtimeMs) latest = note
+  }
+  return latest
+}
+
 /**
  * 独立笔记页：目录和编辑器由本页持有，助手显隐由同会话的根布局持有。
  * @param props - 根布局提供的实际侧栏和助手状态、动作，以及本地化文案。
@@ -76,6 +111,8 @@ export function NotesPage({
   const createTrigger = useRef<HTMLButtonElement>(null)
   const dialogTrigger = useRef<HTMLButtonElement | null>(null)
   const creatingRequest = useRef<AbortController | null>(null)
+  /** 上一次目录轮询看到的笔记修改时间；用于识别助手写入并自动打开。 */
+  const seenNotes = useRef(new Map<string, number>())
   const [tree, setTree] = useState<NotesTreeEntry[]>([])
   const [treeState, setTreeState] = useState<DirectoryState>('loading')
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set())
@@ -136,16 +173,20 @@ export function NotesPage({
         const fresh = await notesTree(signal)
         signal.throwIfAborted()
         setTree(fresh)
+        const notes = noteFiles(fresh)
+        const written = latestWritten(notes, seenNotes.current)
+        seenNotes.current = new Map(notes.map(note => [note.path, note.mtimeMs]))
         const path = getPath()
         if (path !== undefined) {
           setCreationDirectory(selectedDirectory(path))
           await refresh(findEntry(fresh, path)?.mtimeMs, signal)
-        } else if (status !== 'ready' && creatingRequest.current === null) {
-          const first = firstNote(fresh)
-          if (first !== undefined) {
-            setExpanded(new Set(first.parents))
-            setCreationDirectory(selectedDirectory(first.path))
-            await select(first.path)
+        } else if (creatingRequest.current === null) {
+          // 首次进入打开第一篇；之后只在没有打开文档时打开助手刚写入的一篇，显示更新后的内容。
+          const target = status === 'ready' ? written : firstNote(fresh)
+          if (target !== undefined) {
+            setExpanded(new Set(target.parents))
+            setCreationDirectory(selectedDirectory(target.path))
+            await select(target.path)
           }
         }
         status = 'ready'

@@ -80,6 +80,10 @@ describe('ui-layout client apply', () => {
     expect(typeof injected.retainWorkbenchViews).toBe('function')
     expect(typeof injected.publishPage).toBe('function')
     expect(typeof injected.setTheme).toBe('function')
+    expect(typeof injected.startPageConversation).toBe('function')
+    expect(injected.hooks.pageConversation.getSnapshot()).toBe(false)
+    // 页面插件未登记入口时，助手头部的新对话手势不产生动作。
+    injected.startPageConversation()
     expect(injected.hooks.theme.getSnapshot().active.colorScheme).toBe('light')
     injected.setTheme('dark')
     expect(injected.hooks.theme.getSnapshot().active.colorScheme).toBe('dark')

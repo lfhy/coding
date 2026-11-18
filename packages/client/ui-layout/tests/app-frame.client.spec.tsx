@@ -35,6 +35,7 @@ const baselinesReady = { current: true }
 const layoutLabels: Record<string, string> = {
   'assistant.title': 'AI 助手',
   'assistant.close': '收起 AI 助手',
+  'assistant.new': '新对话',
   'floating.open': '继续对话',
   'floating.open.label': '打开悬浮对话',
   'floating.dialog.label': '悬浮对话',
@@ -126,6 +127,8 @@ function mountFrame(options: {
   const publishPage = vi.fn()
   const restoreConversation = vi.fn((sessionId: SessionId) => { selectedSession.current = sessionId })
   const retainWorkbenchViews = vi.fn()
+  const pageConversation = { available: false }
+  const startPageConversation = vi.fn()
   const consumeEscape = { current: false }
   const slotCalls: { key: string; props: unknown }[] = []
   const renderSlot = ((key: string, owner: object) => {
@@ -198,6 +201,8 @@ function mountFrame(options: {
       retainWorkbenchViews={retainWorkbenchViews}
       workspaceKeyOf={options.workspaceKeyOf ?? workspaceKeyOf}
       useTheme={hookOf(themeSource)}
+      usePageConversation={((sel: (available: boolean) => unknown) => sel(pageConversation.available)) as never}
+      startPageConversation={startPageConversation}
       setTheme={setTheme}
       t={(key, params) => Object.entries(params ?? {}).reduce(
         (message, [name, value]) => message.replaceAll(`{${name}}`, String(value)),
@@ -216,6 +221,8 @@ function mountFrame(options: {
     publishPage,
     restoreConversation,
     consumeEscape,
+    pageConversation,
+    startPageConversation,
     rerenderFrame: () => { utils.rerender(element()) },
     ownerFor: (key: string) => slotCalls.filter(call => call.key === key).at(-1)?.props,
     ...utils,
@@ -770,6 +777,20 @@ describe('AppFrame', () => {
     expect(b.frame.querySelector('[data-page-assistant-track]')).toBeNull()
     expect(b.instance.store.getSnapshot().pageAssistant).toBeNull()
     expect(b.getByRole('textbox', { name: '测试会话草稿' })).toBe(input)
+  })
+
+  it('页面登记新对话入口后助手头部才显示按钮，点击交给该入口', () => {
+    const b = mountFrame()
+    act(() => {
+      b.instance.actions.openPage('notes', 's-test' as SessionId)
+      b.instance.actions.setPageAssistant('auto')
+    })
+    expect(b.getByRole('complementary', { name: 'AI 助手' })).toBeTruthy()
+    expect(b.queryByRole('button', { name: '新对话' })).toBeNull()
+    act(() => { b.pageConversation.available = true })
+    act(() => { b.rerenderFrame() })
+    fireEvent.click(b.getByRole('button', { name: '新对话' }))
+    expect(b.startPageConversation).toHaveBeenCalledOnce()
   })
 
   it('窄屏默认收起，按需打开抽屉，缩放或关闭不卸载对话', () => {

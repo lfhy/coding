@@ -165,7 +165,8 @@ export function apply(ctx: ClientContext): void {
           publishWorkbench: (key, state) => { layout.publishWorkbench(key, state) },
           retainWorkbenchViews: (keys) => { layout.retainWorkbenchViews(keys) },
           publishPage: (page) => { layout.publishPage(page) },
-          hooks: { theme: themeSource },
+          startPageConversation: () => { layout.startPageConversation() },
+          hooks: { theme: themeSource, pageConversation: layout.pageConversation },
           setTheme: (id) => { theme.setTheme(id) },
         }
       },

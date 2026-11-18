@@ -481,6 +481,76 @@ describe('NotesPage', () => {
     expect((editor as HTMLTextAreaElement).value).toBe('ai edited')
   })
 
+  it('未打开文档时打开助手刚写入的笔记，显示写入后的内容', async () => {
+    const state = makeServer()
+    state.tree = []
+    state.files.clear()
+    await mount()
+    expect(screen.queryByRole('textbox', { name: '原始文本' })).toBeNull()
+    // 助手在笔记目录里新建并写入一篇笔记：下一次目录轮询打开它并读取最新内容。
+    state.tree.push({ name: '助手写入', kind: 'file', path: '助手写入.md', mtimeMs: 5000 })
+    state.files.set('助手写入.md', { content: '助手写入的内容', mtimeMs: 5000 })
+    await act(async () => { vi.advanceTimersByTime(4000) })
+    await act(async () => {})
+    const editor = screen.getByRole('textbox', { name: '原始文本' })
+    expect((editor as HTMLTextAreaElement).value).toBe('助手写入的内容')
+  })
+
+  it('没有新写入时轮询保持未打开文档的欢迎页', async () => {
+    const state = makeServer()
+    state.tree = []
+    state.files.clear()
+    await mount()
+    expect(screen.queryByRole('textbox', { name: '原始文本' })).toBeNull()
+    // 只有目录、没有新增笔记的轮询不应把正文拽到任何文档。
+    state.tree.push({ name: '想法', kind: 'dir', path: '想法', mtimeMs: 900 })
+    await act(async () => { vi.advanceTimersByTime(4000) })
+    await act(async () => {})
+    expect(screen.queryByRole('textbox', { name: '原始文本' })).toBeNull()
+  })
+
+  it('创建请求进行中时轮询不抢先打开别的笔记，创建完成后打开新篇', async () => {
+    const state = makeServer()
+    state.tree = []
+    state.files.clear()
+    let resolveCreate: ((response: Response) => void) | undefined
+    vi.stubGlobal('fetch', vi.fn(async (input: string | URL, init?: RequestInit) => {
+      const url = new URL(String(input), 'http://localhost')
+      if (url.pathname === '/api/notes/create') {
+        const body = requestJson(init) as { name: string }
+        return await new Promise<Response>((resolve) => {
+          resolveCreate = () => {
+            const path = `${body.name}.md`
+            state.files.set(path, { content: '', mtimeMs: 3000 })
+            state.tree.unshift({ name: body.name, kind: 'file', path, mtimeMs: 3000 })
+            resolve(Response.json({ path }))
+          }
+        })
+      }
+      if (url.pathname === '/api/notes/tree') return Response.json({ children: state.tree })
+      const path = url.searchParams.get('path') ?? ''
+      const entry = state.files.get(path)
+      if (entry === undefined) return new Response('missing', { status: 404 })
+      return Response.json({ path, content: entry.content, mtimeMs: entry.mtimeMs })
+    }))
+    await mount()
+    act(() => { fireEvent.click(screen.getByRole('button', { name: '新建笔记' })) })
+    await act(async () => { fireEvent.click(screen.getByRole('menuitem', { name: '新建笔记' })) })
+    await act(async () => {})
+    act(() => { fireEvent.change(screen.getByLabelText('笔记名称'), { target: { value: '待建' } }) })
+    act(() => { fireEvent.click(screen.getByRole('button', { name: '创建' })) })
+    await act(async () => {})
+    // 创建请求挂起期间的轮询不插入另一篇笔记，避免和创建结果抢同一个正文。
+    await act(async () => { vi.advanceTimersByTime(4000) })
+    await act(async () => {})
+    expect(screen.queryByRole('textbox', { name: '原始文本' })).toBeNull()
+    resolveCreate?.(Response.json({ path: '待建.md' }))
+    await act(async () => { vi.advanceTimersByTime(50) })
+    await act(async () => {})
+    const editor = screen.getByRole('textbox', { name: '原始文本' })
+    expect((editor as HTMLTextAreaElement).value).toBe('')
+  })
+
   it('笔记被移除后标题回退文件名，编辑内容保留', async () => {
     const state = makeServer()
     state.treeVersions.push(structuredClone(state.tree), [{ name: 'd', kind: 'dir', path: 'd', mtimeMs: 900, children: [] }])

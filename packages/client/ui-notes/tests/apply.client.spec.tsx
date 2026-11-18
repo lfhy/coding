@@ -10,26 +10,30 @@ import { apply as nodeApply } from '../src/index.ts'
 import * as invariant from '../src/invariant.ts'
 import type { PageRoute } from 'coding-client-ui-layout/client'
 
-function registration(): { entries: { options: Record<string, unknown>; inject: () => unknown; component: unknown }[] } {
+function registration(): {
+  entries: { options: Record<string, unknown>; inject: () => unknown; component: unknown }[]
+  attachPageConversation: ReturnType<typeof vi.fn>
+} {
   const entries: { options: Record<string, unknown>; inject: () => unknown; component: unknown }[] = []
+  const attachPageConversation = vi.fn((_start: () => Promise<void>) => () => {})
   const ctx = {
     effect: (install: () => unknown) => { install() },
     locale: {
       register: vi.fn((_namespace: string, _dictionaries: unknown) => () => {}),
       bind: () => (key: string) => zh[key as keyof typeof zh],
     },
-    layout: { page: { getSnapshot: () => null } },
+    layout: { page: { getSnapshot: () => null }, attachPageConversation },
     sessions: { list: { getSnapshot: () => ({ current: 's-cur', byId: {} }) }, create: vi.fn(async () => 's-new'), open: vi.fn() },
     slots: {
       inject: (_name: string, install: () => unknown) => { install() },
       register: (options: Record<string, unknown>, component: unknown) => {
-        entries.push({ options, component, inject: (options.inject as () => unknown | undefined) ?? (() => ({})) })
+        entries.push({ options, component, inject: (options.inject as (() => unknown) | undefined) ?? (() => ({})) })
         return () => { entries.pop() }
       },
     },
   }
   apply(ctx as never)
-  return { entries }
+  return { entries, attachPageConversation }
 }
 
 describe('ui-notes registration', () => {
@@ -38,7 +42,9 @@ describe('ui-notes registration', () => {
   })
 
   it('注册文案、导航入口与主内容页，入口注入页面快照钩子', () => {
-    const { entries } = registration()
+    const { entries, attachPageConversation } = registration()
+    // 助手头部的「新对话」入口由笔记插件登记，宿主随后才会渲染按钮。
+    expect(attachPageConversation).toHaveBeenCalledWith(expect.any(Function))
     expect(entries).toHaveLength(2)
     const entry = entries[0]
     if (entry === undefined) throw new Error('导航入口未注册')

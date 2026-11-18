@@ -111,6 +111,46 @@ describe('LayoutController', () => {
     expect(() => { service.showConversation(SESSION) }).toThrow(/panel actions not wired/)
   })
 
+  it('登记并触发页面助手的新对话入口，进行中忽略重复点击', async () => {
+    const service = new LayoutController()
+    expect(service.pageConversation.getSnapshot()).toBe(false)
+    // 未登记入口时点击不改变任何状态。
+    service.startPageConversation()
+
+    let finish: (() => void) | undefined
+    const starter = vi.fn(() => new Promise<void>((resolve) => { finish = resolve }))
+    const detach = service.attachPageConversation(starter)
+    expect(service.pageConversation.getSnapshot()).toBe(true)
+
+    service.startPageConversation()
+    service.startPageConversation()
+    expect(starter).toHaveBeenCalledTimes(1)
+
+    finish?.()
+    await new Promise<void>((resolve) => { setTimeout(resolve, 0) })
+    service.startPageConversation()
+    expect(starter).toHaveBeenCalledTimes(2)
+    finish?.()
+    detach()
+    expect(service.pageConversation.getSnapshot()).toBe(false)
+  })
+
+  it('页面新对话失败时保留现有页面，旧登记方的注销不影响新入口', async () => {
+    const service = new LayoutController()
+    const failing = vi.fn(async () => { throw new Error('boom') })
+    const detach = service.attachPageConversation(failing)
+    service.startPageConversation()
+    await new Promise<void>((resolve) => { setTimeout(resolve, 0) })
+    expect(service.pageConversation.getSnapshot()).toBe(true)
+
+    const next = vi.fn(async () => {})
+    const detachNext = service.attachPageConversation(next)
+    detach()
+    expect(service.pageConversation.getSnapshot()).toBe(true)
+    detachNext()
+    expect(service.pageConversation.getSnapshot()).toBe(false)
+  })
+
   it('publishes stable per-workspace workbench snapshots for header controls', () => {
     const service = new LayoutController()
     const source = service.workbench(SESSION)

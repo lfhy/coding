@@ -99,6 +99,16 @@ export interface ILayout {
   showConversation(sessionId: SessionId): void
   /** 供导航入口显示是否正处于主内容页。 */
   readonly page: ObservableSnapshot<PageRoute | null>
+  /**
+   * 登记独立页助手的「新对话」入口；页面插件不登记时助手头部不渲染该按钮。
+   * @param start - 在当前页面上下文开始新的助手对话；失败由登记方决定如何提示。
+   * @returns 注销函数，页面插件卸载时移除入口。
+   */
+  attachPageConversation(start: () => Promise<void>): () => void
+  /** 发起当前页面的助手新对话；未登记或上一次尚未完成时不重复触发。 */
+  startPageConversation(): void
+  /** 助手「新对话」入口是否可用，供根布局决定是否渲染按钮。 */
+  readonly pageConversation: ObservableSnapshot<boolean>
 }
 
 /** `ctx.layout` 的具体实现。 */
@@ -107,8 +117,12 @@ export class LayoutController implements ILayout {
   #views: SnapshotStore<Readonly<Record<string, WorkbenchLayoutSnapshot | undefined>>> = createSnapshotStore({})
   #sources = new Map<string, ObservableSnapshot<WorkbenchLayoutSnapshot>>()
   #page = createSnapshotStore<PageRoute | null>(null)
+  #pageConversation = createSnapshotStore(false)
+  #pageConversationStarter: (() => Promise<void>) | undefined
+  #pageConversationRunning = false
   #conversationIntent = 0
   readonly page: ObservableSnapshot<PageRoute | null> = this.#page
+  readonly pageConversation: ObservableSnapshot<boolean> = this.#pageConversation
 
   /** 新对话意图的同步版本；异步欢迎页操作只可完成同版本手势。 */
   get conversationIntent(): number { return this.#conversationIntent }
@@ -245,6 +259,35 @@ export class LayoutController implements ILayout {
   beginNewConversation(): void {
     this.#require().beginNewConversation()
     this.#conversationIntent++
+  }
+
+  /**
+   * 登记独立页助手的「新对话」入口；同一时刻只有一个登记方生效。
+   * @param start - 在当前页面上下文开始新的助手对话。
+   * @returns 注销函数；只有仍是当前登记方时才撤回，避免旧实例撤销新入口。
+   */
+  attachPageConversation(start: () => Promise<void>): () => void {
+    this.#pageConversationStarter = start
+    this.#pageConversation.set(true)
+    return () => {
+      if (this.#pageConversationStarter !== start) return
+      this.#pageConversationStarter = undefined
+      this.#pageConversation.set(false)
+    }
+  }
+
+  /**
+   * 发起当前页面的助手新对话；未登记或上一次仍在进行时忽略本次点击。
+   * 失败不改动现有页面与对话，用户可再次点击重试。
+   * @returns 无返回值。
+   */
+  startPageConversation(): void {
+    const start = this.#pageConversationStarter
+    if (start === undefined || this.#pageConversationRunning) return
+    this.#pageConversationRunning = true
+    void start().catch(() => {
+      // 由登记方决定失败提示；不改变当前页面，保留会话与助手草稿。
+    }).finally(() => { this.#pageConversationRunning = false })
   }
 
   /** 在主内容区打开会话页面，可选提供页面关闭后要恢复的会话。 */

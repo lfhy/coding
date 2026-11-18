@@ -2,7 +2,7 @@
 import type { ClientContext } from 'coding-client-runtime/client'
 import type {} from 'coding-client-locale/client'
 import type {} from 'coding-client-ui-layout/client'
-import { createNotesNavigation } from './navigation.ts'
+import { createNotesConversation, createNotesNavigation } from './navigation.ts'
 import { NotesNavigationEntry } from './NavigationEntry.tsx'
 import { NotesPage } from './NotesPage.tsx'
 import { en, zh, type NotesLocaleKey } from './locales.ts'
@@ -26,7 +26,10 @@ export const inject = ['slots', 'locale', 'layout', 'sessions', 'connection']
  */
 export function apply(ctx: ClientContext): void {
   const openNotes = createNotesNavigation(ctx)
+  const startConversation = createNotesConversation(ctx)
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-notes: dictionaries')
+  // 助手头部的「新对话」入口由笔记页提供：新会话仍以笔记目录为工作目录。
+  ctx.effect(() => ctx.layout.attachPageConversation(startConversation), 'ui-notes: new assistant conversation')
   ctx.slots.inject('shell.navigation.entry', () => ctx.slots.register({
     name: 'shell.navigation.entry', id: 'notes', order: 15, locale: NS,
     inject: () => ({ hooks: { notesPage: ctx.layout.page }, openNotes }),

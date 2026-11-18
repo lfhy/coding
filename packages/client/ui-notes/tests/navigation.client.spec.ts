@@ -2,7 +2,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ClientContext } from 'coding-client-runtime/client'
 import type { PageRoute } from 'coding-client-ui-layout/client'
-import { createNotesNavigation } from '../src/client/navigation.ts'
+import { createNotesConversation, createNotesNavigation } from '../src/client/navigation.ts'
 
 const CWD = '/home/u/.coding/files/notes'
 
@@ -21,6 +21,8 @@ interface FakeSessions {
 interface FakeLayout {
   page: { getSnapshot: () => PageRoute | null }
   togglePage: ReturnType<typeof vi.fn>
+  /** 只有「新对话」用例读取页面切换；旧的打开流程不涉及画页。 */
+  openPage?: ReturnType<typeof vi.fn>
   setPageAssistant: ReturnType<typeof vi.fn>
 }
 
@@ -49,6 +51,58 @@ describe('notes navigation', () => {
       expect(layout.togglePage).toHaveBeenCalledWith('notes', 's-old', 's-cur')
       expect(layout.setPageAssistant).toHaveBeenCalledWith('auto')
     })
+  })
+
+  it('同目录有多个会话时优先复用笔记专用模式', async () => {
+    const sessions = {
+      list: { getSnapshot: () => ({ current: 's-cur', byId: {
+        's-note-old': { id: 's-note-old', cwd: CWD, agentPreset: 'notes', updatedAt: 10 },
+        's-blank': { id: 's-blank', cwd: CWD, blank: true, updatedAt: 20 },
+        's-cur': { id: 's-cur', updatedAt: 1 },
+      } }) },
+      create: vi.fn(), open: vi.fn(), noteAgentPreset: vi.fn(),
+    }
+    const layout = { page: { getSnapshot: () => null }, togglePage: vi.fn(), setPageAssistant: vi.fn() }
+    stubCwd()
+    await createNotesNavigation(makeContext(sessions, layout))()
+    expect(sessions.create).not.toHaveBeenCalled()
+    expect(sessions.open).toHaveBeenCalledWith('s-note-old')
+  })
+
+  it('同目录只有空白会话时复用它并切到笔记专用模式', async () => {
+    const sessions = {
+      list: { getSnapshot: () => ({ current: 's-cur', byId: {
+        's-blank': { id: 's-blank', cwd: CWD, blank: true, updatedAt: 20 },
+        's-cur': { id: 's-cur', updatedAt: 1 },
+      } }) },
+      create: vi.fn(), open: vi.fn(), noteAgentPreset: vi.fn(),
+    }
+    const layout = { page: { getSnapshot: () => null }, togglePage: vi.fn(), setPageAssistant: vi.fn() }
+    stubCwd()
+    await createNotesNavigation(makeContext(sessions, layout))()
+    expect(sessions.create).not.toHaveBeenCalled()
+    expect(sessions.noteAgentPreset).toHaveBeenCalledWith('s-blank', 'notes')
+    expect(sessions.open).toHaveBeenCalledWith('s-blank')
+  })
+
+  it('复用的会话在打开过程中被切成非空白时拒绝继续', async () => {
+    const notes = { id: 's-notes', cwd: CWD, agentPreset: 'notes' }
+    const current = { id: 's-cur', updatedAt: 1 }
+    let reads = 0
+    const sessions = {
+      // 前两次读取用于定位可复用会话；模式检查时该会话已被其他客户端切走。
+      list: { getSnapshot: () => {
+        reads += 1
+        return { current: 's-cur', byId: reads <= 2
+          ? { 's-notes': notes, 's-cur': current }
+          : { 's-notes': { ...notes, agentPreset: 'standard' }, 's-cur': current } }
+      } },
+      create: vi.fn(), open: vi.fn(), noteAgentPreset: vi.fn(),
+    }
+    const layout = { page: { getSnapshot: () => null }, togglePage: vi.fn(), setPageAssistant: vi.fn() }
+    stubCwd()
+    await expect(createNotesNavigation(makeContext(sessions, layout))()).rejects.toThrow(/笔记助手需要空白会话/u)
+    expect(sessions.open).not.toHaveBeenCalled()
   })
 
   it('没有同工作目录会话时新建会话；来处取自当前页的 returnSessionId', async () => {
@@ -95,6 +149,64 @@ describe('notes navigation', () => {
     stubCwd()
     const openNotes = createNotesNavigation(makeContext(sessions, layout))
     await Promise.all([openNotes(), openNotes()])
+    expect(sessions.create).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('notes new conversation', () => {
+  function setup(select: (input: unknown) => unknown = async () => ({ result: { ok: true, value: { agentPreset: 'notes' } } })) {
+    const sessions = {
+      list: { getSnapshot: () => ({ current: 's-old', byId: { 's-old': { id: 's-old', cwd: CWD, agentPreset: 'notes' } } }) },
+      create: vi.fn(async () => 's-new'), open: vi.fn(), noteAgentPreset: vi.fn(),
+    }
+    const layout = {
+      page: { getSnapshot: () => ({ kind: 'notes', sessionId: 's-old', returnSessionId: 's-orig' }) as PageRoute },
+      togglePage: vi.fn(), openPage: vi.fn(), setPageAssistant: vi.fn(),
+    }
+    const ctx = {
+      sessions,
+      layout,
+      get: () => ({ api: { agentPresets: { select: vi.fn(select) } } }),
+    } as unknown as ClientContext
+    return { ctx, sessions, layout }
+  }
+
+  it('在当前笔记页新建会话，沿用笔记专用模式并保持页面与助手', async () => {
+    stubCwd()
+    const { ctx, sessions, layout } = setup()
+    await createNotesConversation(ctx)()
+    expect(sessions.create).toHaveBeenCalledWith({ cwd: CWD })
+    expect(sessions.noteAgentPreset).toHaveBeenCalledWith('s-new', 'notes')
+    expect(sessions.open).toHaveBeenCalledWith('s-new')
+    expect(layout.openPage).toHaveBeenCalledWith('notes', 's-new', 's-orig')
+    expect(layout.setPageAssistant).toHaveBeenCalledWith('auto')
+  })
+
+  it('不在笔记页时不创建会话', async () => {
+    stubCwd()
+    const { ctx, sessions, layout } = setup()
+    layout.page.getSnapshot = () => ({ kind: 'files', sessionId: 's-old' }) as PageRoute
+    await createNotesConversation(ctx)()
+    expect(sessions.create).not.toHaveBeenCalled()
+    expect(layout.openPage).not.toHaveBeenCalled()
+  })
+
+  it('笔记专用模式不可用时抛出，不选中新会话也不切换页面', async () => {
+    stubCwd()
+    const { ctx, sessions, layout } = setup(async () => ({ result: { ok: true, value: { agentPreset: 'standard' } } }))
+    await expect(createNotesConversation(ctx)()).rejects.toThrow(/笔记专用模式暂不可用/u)
+    expect(sessions.open).not.toHaveBeenCalled()
+    expect(layout.openPage).not.toHaveBeenCalled()
+  })
+
+  it('进行中的新对话不会被重复点击再建一个会话', async () => {
+    stubCwd()
+    const { ctx, sessions } = setup()
+    sessions.create.mockImplementation(() => new Promise((resolve) => {
+      window.setTimeout(() => { resolve('s-new') }, 40)
+    }))
+    const start = createNotesConversation(ctx)
+    await Promise.all([start(), start()])
     expect(sessions.create).toHaveBeenCalledTimes(1)
   })
 })

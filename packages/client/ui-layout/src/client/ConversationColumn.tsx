@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { CSSProperties, KeyboardEvent, PointerEvent, ReactNode } from 'react'
-import { Icon, IconChevronDownOutline14, IconCloseOutline16, IconSparkle16 } from 'coding-client-ui-icons'
+import { Icon, IconChevronDownOutline14, IconCloseOutline16, IconNewChatOutline16, IconSparkle16 } from 'coding-client-ui-icons'
 import { Button } from 'coding-client-ui-primitives'
 import { clampFloatingPoint, snapFloatingDock } from './floating-dock.ts'
 import type { FloatingBounds, FloatingDock, FloatingPoint, FloatingSize } from './floating-dock.ts'
@@ -60,6 +60,9 @@ interface ConversationColumnProps {
   assistant: 'dock' | 'drawer' | null
   assistantLabel: string
   assistantCloseLabel: string
+  assistantNewLabel: string
+  /** 页面插件登记了助手「新对话」入口时提供；未提供时不渲染该按钮。 */
+  onNewAssistantConversation: (() => void) | undefined
   onCloseAssistant: () => void
 }
 
@@ -82,7 +85,7 @@ interface FloatingDrag {
  */
 export function ConversationColumn({
   children, hidden, floating, dock, bounds, title, dialogLabel, minimizeLabel, dragLabel, dragHint, onMinimize, onDock,
-  assistant, assistantLabel, assistantCloseLabel, onCloseAssistant,
+  assistant, assistantLabel, assistantCloseLabel, assistantNewLabel, onNewAssistantConversation, onCloseAssistant,
 }: ConversationColumnProps) {
   const hiddenAttributes = hidden ? { 'aria-hidden': true, inert: '' } as const : {}
   const columnRef = useRef<HTMLDivElement | null>(null)
@@ -237,6 +240,10 @@ export function ConversationColumn({
       {assistant !== null && (
         <header className={css.assistantHeader}>
           <h2 className={css.assistantTitle}><IconSparkle16 />{assistantLabel}</h2>
+          {onNewAssistantConversation !== undefined && (
+            <Button size="sm" className={css.assistantNew} aria-label={assistantNewLabel}
+              title={assistantNewLabel} onClick={onNewAssistantConversation} icon={<IconNewChatOutline16 />} />
+          )}
           <Button size="sm" className={css.assistantClose} aria-label={assistantCloseLabel}
             title={assistantCloseLabel} onClick={onCloseAssistant} icon={<IconCloseOutline16 />} />
         </header>

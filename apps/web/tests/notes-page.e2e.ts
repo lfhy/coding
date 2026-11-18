@@ -36,6 +36,8 @@ describe('Web 笔记工作区', () => {
     const dock = page.getByRole('complementary', { name: 'AI assistant', exact: true })
     await heading.waitFor()
     await dock.waitFor()
+    // 助手页头的「新对话」由笔记页登记入口后才渲染。
+    await dock.getByRole('button', { name: 'New conversation', exact: true }).waitFor()
     expect(await editor.isVisible()).toBe(true)
     expect(await page.locator('[data-conversation-scroll]:visible').count()).toBe(1)
 
