@@ -27,6 +27,15 @@ async function localGit(cwd: string, ...args: string[]): Promise<string> {
   return stdout.trim()
 }
 
+/** 默认侧栏展开时对话列窄于概览卡的最小宽度，卡片会先折叠；用例显式展开后再断言行布局。 */
+async function expandOverview(page: Page): Promise<void> {
+  const card = page.locator('#dsh-conversation-overview')
+  await card.waitFor({ state: 'attached', timeout: 15_000 })
+  const toggle = page.locator('button[aria-controls="dsh-conversation-overview"]')
+  if (await toggle.getAttribute('aria-expanded') !== 'true') await toggle.click()
+  await card.waitFor({ timeout: 15_000 })
+}
+
 describe('web e2e: assembled Git overview', () => {
   let scaffold: WebScaffold
   let browser: Browser
@@ -55,15 +64,13 @@ describe('web e2e: assembled Git overview', () => {
   it('hides non-repositories and keeps Git details in anchored overlays without changing the overview layout', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-git-overview'))
     const sidebar = page.getByRole('tree', { name: 'Sessions' })
-    const group = sidebar.getByRole('treeitem').first()
-    await group.waitFor({ timeout: 15_000 })
-    await group.click()
+    // 新环境没有工作区，侧栏默认停在对话范围，两份种子会话直接平铺在树里。
     await expect.poll(() => sidebar.getByRole('treeitem').count(), { timeout: 15_000 })
-      .toBeGreaterThanOrEqual(3)
+      .toBeGreaterThanOrEqual(2)
     const nonRepoStatus = page.waitForResponse(response => response.url().endsWith('/api/workspace.gitStatus'))
     await sidebar.getByRole('treeitem').last().click()
     const overview = page.locator('#dsh-conversation-overview')
-    await overview.waitFor({ timeout: 15_000 })
+    await expandOverview(page)
     const gitArea = page.locator('[data-overview-git]')
     // 非仓库 RPC 返回 null，组件不占概览空间。
     expect((await (await nonRepoStatus).json() as { result: { ok: boolean; value: unknown } }).result)
@@ -87,13 +94,15 @@ describe('web e2e: assembled Git overview', () => {
 
     // 切换至另一份冷会话，令真实组件对同一工作目录重新查询 Git。
     const repoStatus = page.waitForResponse(response => response.url().endsWith('/api/workspace.gitStatus'))
-    await sidebar.getByRole('treeitem').nth(1).click()
+    await sidebar.getByRole('treeitem').first().click()
     const repoResult = (await (await repoStatus).json() as {
       result: { ok: boolean; value: { branch: string; additions: number; deletions: number; files: { path: string }[] } }
     }).result
     expect(repoResult).toMatchObject({ ok: true, value: { branch: 'main', ahead: 1, behind: 0, additions: 4, deletions: 2 } })
     expect(repoResult.value.files.map(file => file.path).sort())
       .toEqual(['added.txt', 'edited.txt', 'removed.txt'])
+    // 切换会话会重置概览的展开偏好，重新展开后再断言行布局与浮层。
+    await expandOverview(page)
     await expect.poll(() => gitArea.count(), { timeout: 15_000 }).toBe(1)
     const gitRow = gitArea.getByRole('button', { name: /Git changes/ })
     await expect.poll(() => gitRow.textContent(), { timeout: 15_000 }).toContain('3 files · +4 −2')

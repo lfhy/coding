@@ -2,7 +2,7 @@
 
 共享 Workspace 浏览器与选择器插件。`WorkspaceBrowser` 填充侧边栏的 `sidebar.workspaces` slot，`WorkspacePicker` 填充欢迎页的 `conversation.hero.workspace` slot，两个界面使用同一套 Workspace 菜单和添加流程；`NewConversationModeSwitch` 填充欢迎页顶部的 `conversation.hero.mode` slot。独立主内容页（`shell.page`）打开时，会话行不显示选中；点击当前会话行会通过[布局服务](../ui-layout/README.md)关闭该页并返回对话，保留当前 Session。
 
-该浏览器通过全局运行时钩子读取 Session 与 Workspace，并负责 Workspace 添加／重命名／重排序以及 Session 重排序。侧栏顶部入口下方、工作区标题行上方提供带图标的**工作｜对话｜最近**胶囊分段切换，默认选中工作，整体不绘制外圈描边，仅选中项保留浅底与边框：
+该浏览器通过全局运行时钩子读取 Session 与 Workspace，并负责 Workspace 添加／重命名／重排序以及 Session 重排序。侧栏顶部入口下方、工作区标题行上方提供带图标的**工作｜对话｜最近**胶囊分段切换，默认选中工作，整体不绘制外圈描边，仅选中项保留浅底与边框；一个工作区都没有时工作范围必然为空，浏览器改为落在对话列表并把工作页签暂时收起，出现第一个工作区后工作页签回到原位并重新成为默认范围（用户显式选过的对话或最近仍然保留）：
 
 - **工作**（默认）：只显示真实 Workspace 项目分组及其会话，不显示未分组会话。
 - **对话**：只平铺不属于任何 Workspace 的普通会话。

@@ -8,6 +8,7 @@ import {
 import type { SessionId, WorkspaceId } from 'coding-client-runtime/client'
 import type { WorkspaceBrowserProps } from './contract/slots.ts'
 import type { SessionNode } from './tree.ts'
+import type { WorkspaceViewMode } from './stores.ts'
 import { UNGROUPED_KEY } from './tree.ts'
 import { WorkspaceViewTabs } from './WorkspaceViewTabs.tsx'
 import { ViewOptionsMenu } from './WorkspaceViewOptions.tsx'
@@ -26,6 +27,9 @@ import css from './WorkspaceBrowser.module.css'
 const EXPAND_SLIDE_MS = 300
 /** Pause between the latest keystroke and a Host content-search request. */
 const SEARCH_DEBOUNCE_MS = 250
+/** 三种浏览范围；没有任何工作区时工作范围必然为空，只留对话与最近。 */
+const ALL_VIEWS: readonly WorkspaceViewMode[] = ['work', 'conversations', 'recent']
+const WORKLESS_VIEWS: readonly WorkspaceViewMode[] = ['conversations', 'recent']
 
 /**
  * Render the browsing region.
@@ -74,7 +78,11 @@ export function WorkspaceBrowser({
     && newSessionError.attempt !== dismissedNewSessionAttempt
   // 目录流未装配时不显示添加入口。
   const directoryFlowAvailable = useDirectoryFlow(occupied => occupied)
-  const view = useStore(state => state.view ?? 'work')
+  const storedView = useStore(state => state.view ?? 'work')
+  // 一个工作区都没有时「工作」范围必然为空：默认停在对话列表，
+  // 并把页签收成对话／最近，免得新环境打开就是一片点不动的空范围。
+  const workScopeEmpty = workspacePhase === 'ready' && workspaces.length === 0
+  const view = workScopeEmpty && storedView === 'work' ? 'conversations' : storedView
   const tabsId = useId()
   const orderBy = useStore(s => s.orderBy)
   const groupExpansion = useStore(s => s.groupExpansion)
@@ -285,7 +293,10 @@ export function WorkspaceBrowser({
 
   return (
     <div className={clsx(css.root, !wide && css.rail)}>
-      {wide && <WorkspaceViewTabs view={view} onSelect={actions.setView} id={tabsId} t={t} />}
+      {wide && (
+        <WorkspaceViewTabs view={view} onSelect={actions.setView} id={tabsId} t={t}
+          views={workScopeEmpty ? WORKLESS_VIEWS : ALL_VIEWS} />
+      )}
       <div className={css.sectionHeader}>
         {wide && (
           <span className={clsx(css.sectionLabel, css.wide, searchExpanded && css.sectionLabelHidden)}>

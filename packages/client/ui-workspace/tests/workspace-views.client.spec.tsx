@@ -89,6 +89,20 @@ describe('Workspace browser scopes', () => {
     expect(screen.queryByText('loose')).toBeNull()
   })
 
+  it('没有工作区时默认停在对话范围，工作范围从页签里收起', () => {
+    const { update } = mount(list([summary('loose', 4)]), workspaces([]))
+    // 本地偏好仍是工作，但一个工作区都没有时先落到对话列表，并隐藏空的工作范围。
+    expect(screen.queryByRole('tab', { name: '工作' })).toBeNull()
+    expect(screen.getByRole('tab', { name: '对话' }).getAttribute('aria-selected')).toBe('true')
+    expect(screen.getByRole('tab', { name: '最近' })).toBeTruthy()
+    expect(rowTitles()).toEqual([expect.stringContaining('loose')])
+
+    update({ useWorkspaces: hook(workspaces([workspace(['loose'])])) })
+    // 出现第一个工作区后，工作范围回到页签并重新成为默认着陆点。
+    expect(screen.getByRole('tab', { name: '工作' }).getAttribute('aria-selected')).toBe('true')
+    expect(rowTitles()).toEqual([expect.stringContaining('真实项目')])
+  })
+
   it('keeps Recent strictly newest-first with stable id ties after activity, regardless of persisted manual orders', () => {
     const items = [summary('old', 1), summary('tie-b', 2), summary('tie-a', 2)]
     const browser = mount(list(items), workspaces([workspace(['old'])]))
@@ -140,7 +154,7 @@ describe('Workspace browser scopes', () => {
   })
 
   it('provides roving Tab focus, arrow wrapping, Home/End and a labelled panel without losing the last view in rail or reload', () => {
-    const browser = mount(list([]), workspaces([]))
+    const browser = mount(list([]), workspaces([workspace([])]))
     const work = screen.getByRole('tab', { name: '工作' })
     const conversations = screen.getByRole('tab', { name: '对话' })
     const recent = screen.getByRole('tab', { name: '最近' })

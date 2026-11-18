@@ -136,8 +136,9 @@ describe('WorkspaceBrowser', () => {
     rerender(b, { useWorkspaces: hook(workspaceState([])) })
     await waitFor(() => {
       expect(b.store.getSnapshot().groupExpansion).toEqual({})
-      expect(b.store.getSnapshot().sessionOrderByAccount).toEqual({})
-      expect(b.store.getSnapshot().sessionUpdatedAtByAccount).toEqual({})
+      // 已删除工作区的记账被清掉；没有工作区时默认停在对话范围，只留下未分组那一份空记账。
+      expect(b.store.getSnapshot().sessionOrderByAccount).toEqual({ [UNGROUPED_KEY]: [] })
+      expect(b.store.getSnapshot().sessionUpdatedAtByAccount).toEqual({ [UNGROUPED_KEY]: {} })
     })
   })
 
@@ -735,7 +736,7 @@ describe('WorkspaceBrowser', () => {
   })
 
   it('wide header keeps the title on the left and draws no inline collapse control', () => {
-    mount()
+    mount({ useWorkspaces: hook(workspaceState([workspace('alpha', [])])) })
     const label = screen.getByText('工作区')
     const search = screen.getByRole('button', { name: '搜索会话' })
     // 侧栏开关由外层导航底部持有，标题行只留标题、搜索与尾部动作。
