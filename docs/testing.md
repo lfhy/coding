@@ -10,7 +10,7 @@
 - **快照**（`pnpm run test:snapshot`）：无密钥预期输出覆盖对外行为（传输约定与呈现），持久化日志则固定组装后的后端行为。ACP 启动真实的自动化服务器示例、回放录制会话，并对归一化 JSON-RPC 与重新持久化的日志执行 diff；headless 后端场景通过未导出的 JSONL 测试 driver 启动各自显式的示例组装，而 `apps/cli` 则单独负责产品 CLI（命令行界面）`dsh --profile headless` 的验收。当模型 transcript（文本记录）发生变化时使用 `pnpm run test:snapshot:record`，回放输入仍然有效时使用 `pnpm run test:snapshot:refresh`；请审查每一处 JSONL 与预期输出差异。一个 ACP 场景（`text-turn`）固定完整的系统提示词与工具 schema 内容；其他 fixture（测试前置数据）将其 token 化，因此修改只会扰动一行。
 - **Web 浏览器快照**（`pnpm run test:web`；也由可选的 `check:ci:linux-primary`、`check:ci:consumers` 检查命令运行）：Chromium 将回放后的浏览器输出与 `apps/web/tests/snapshots/` 比较。这些检查命令强制只读的 `DSH_SNAPSHOT=replay`，绝不写入预期输出；record/refresh 留在本地，每处 diff 都须评审。`test:web` 先构建并加载交付的客户端和插件 CSS。
 
-Web 回放先串行运行会改写源码和构建产物的 HMR 用例及 Cordis 动态插件用例，再按文件使用独立进程并行执行其余场景；默认至多使用 2 个 worker，且不超过可用 CPU 数。需要调整并发数时设置 `DSH_WEB_SNAPSHOT_WORKERS` 为大于 1 的整数。`DSH_SNAPSHOT=record` 与 `DSH_SNAPSHOT=refresh` 使用串行模式；可选的 `check:ci:*` 中，Web 回放在其他读取源码和构建产物的检查结束后运行。GitHub Actions 的发版 tag 工作流不运行 Web 回放。
+Web 回放先串行运行会改写源码和构建产物的 HMR 用例及 Cordis 动态插件用例，再按文件使用独立进程并行执行其余场景；默认按可用 CPU 数的一半并行、封顶 4 个 worker（4 核及以下为 2 个，单核退回一次串行 Vitest），因为每个 worker 都要启动完整 Host 组合和一个 Chromium。需要更高或更低并发时设置 `DSH_WEB_SNAPSHOT_WORKERS` 为大于 1 的整数。`DSH_SNAPSHOT=record` 与 `DSH_SNAPSHOT=refresh` 使用串行模式；可选的 `check:ci:*` 中，Web 回放在其他读取源码和构建产物的检查结束后运行。GitHub Actions 的发版 tag 工作流不运行 Web 回放。
 
 签入仓库的会话格式 JSONL 使用规范打包行布局，无密钥快照门禁会通过 `session` header 发现每一份此类 fixture；[临时迁移器](../scripts/migrate-packed-session-fixtures.ts)会改写旧版 fixture 布局。
 

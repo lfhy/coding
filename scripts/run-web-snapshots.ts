@@ -35,7 +35,11 @@ export function planWebSnapshotRuns(options: WebSnapshotOptions): string[][] {
   }
 
   const baseArgs = [pnpmEntrypoint, 'exec', 'vitest', 'run', '--config', 'vitest.web.config.ts']
-  const workers = workerRaw === undefined || workerRaw === '' ? Math.min(2, availableCpus) : Number(workerRaw)
+  // 每个并行 worker 都要启动完整 Host 组合和一个 Chromium：没有显式覆盖时按可用 CPU 的一半并行，
+  // 封顶 4 个（再多只换内存争用），单核退回一次串行 Vitest。
+  const workers = workerRaw === undefined || workerRaw === ''
+    ? availableCpus < 2 ? 1 : Math.min(4, Math.max(2, Math.floor(availableCpus / 2)))
+    : Number(workerRaw)
   if (snapshotMode === 'record' || snapshotMode === 'refresh' || workers < 2) return [baseArgs]
 
   return [

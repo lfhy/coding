@@ -9,11 +9,13 @@ function plan(snapshotMode: string | undefined, workerRaw: string | undefined, a
 
 describe('web snapshot dispatch', () => {
   it.each([
-    ['explicit replay', 'replay', 8, 2],
-    ['default replay', undefined, 3, 2],
-    ['explicit override', 'replay', 2, 6],
-  ] as const)('runs the shared-state owners before a bounded pool for %s', (_label, mode, cpus, workers) => {
-    const override = workers === 6 ? '6' : undefined
+    ['explicit replay', 'replay', 8, 4, undefined],
+    ['default replay on three cores', undefined, 3, 2, undefined],
+    ['default replay on a four-core CI runner', undefined, 4, 2, undefined],
+    ['default replay on a ten-core development machine', undefined, 10, 4, undefined],
+    ['default replay on a wide machine capped at four', undefined, 32, 4, undefined],
+    ['explicit override', 'replay', 2, 6, '6'],
+  ] as const)('runs the shared-state owners before a bounded pool for %s', (_label, mode, cpus, workers, override) => {
     expect(plan(mode, override, cpus)).toEqual([
       [...base, 'apps/web/tests/hmr-live.e2e.ts'],
       [...base, 'apps/web/tests/cordis-tool-round.e2e.ts'],
