@@ -85,12 +85,39 @@ func NewService(options Options) (*Service, error) {
 		ctx = context.Background()
 	}
 	ctx, cancel := context.WithCancel(ctx)
+	service := &Service{home: options.Home, ctx: ctx, cancel: cancel, remoteManager: options.Manager, remoteBridge: options.Bridge,
+		profiles: options.Profiles, onProgress: options.OnProgress, onCleanupError: options.OnCleanupError,
+		remoteMarkers: make(map[string]string), remoteProfiles: make(map[string]string)}
 	if bridge, ok := options.Bridge.(*Bridge); ok {
 		bridge.connection = options.Manager.Connection
+		// 请求携带的身份指向一条已经不存在的连接时，桥接器用保存的档案自动重连一次。
+		bridge.reconnect = service.reconnectMarker
 	}
-	return &Service{home: options.Home, ctx: ctx, cancel: cancel, remoteManager: options.Manager, remoteBridge: options.Bridge,
-		profiles: options.Profiles, onProgress: options.OnProgress, onCleanupError: options.OnCleanupError,
-		remoteMarkers: make(map[string]string), remoteProfiles: make(map[string]string)}, nil
+	return service, nil
+}
+
+// reconnectMarker 用保存的档案为一个 marker 根自动重连，并重新发布 marker。
+//
+// 只有桥接器判定请求指向的连接已经不在时才会调用它；此时请求尚未 dispatch，重连后
+// 沿用新路由继续不会重复执行变更。重连失败保持快速失败，由调用方报过期身份。
+// @param ctx - 触发本次重连的请求 context。
+// @param markerRoot - 需要恢复的 marker 根。
+// @returns 重连并重新发布成功时返回 nil。
+func (s *Service) reconnectMarker(ctx context.Context, markerRoot string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if s.profiles == nil {
+		return errors.New("SSH profile store is unavailable")
+	}
+	result, err := s.RemoteSSHReconnectWorkspace(markerRoot)
+	if err != nil {
+		return err
+	}
+	if result.Kind != "ready" {
+		return errors.New("remote workspace reconnect did not become ready")
+	}
+	return nil
 }
 
 // CloseAll 撤销握手，归还 SSH 连接，再停止回环 bridge；重复调用无副作用。

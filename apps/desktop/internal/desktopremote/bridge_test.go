@@ -442,3 +442,109 @@ func TestBridgeAdoptsDiskMarkerIdentityAfterRestart(t *testing.T) {
 		t.Fatalf("stale generation = %d %s", conflictResponse.Code, conflictResponse.Body.String())
 	}
 }
+
+func TestBridgeReconnectsOnceWhenTheConnectionIsGone(t *testing.T) {
+	token := "abcdefghijklmnopqrstuvwxyz0123456789abcdef"
+	live := atomic.Bool{}
+	var reconnects atomic.Int32
+	var proxied atomic.Int32
+	connectionID := "conn-reconnected"
+	bridge, err := NewBridge(token, func(_ context.Context, connection string, _, _ string, _ []byte) (int, []byte, error) {
+		proxied.Add(1)
+		if connection != connectionID {
+			t.Fatalf("proxy connection = %q", connection)
+		}
+		return http.StatusOK, []byte(`{"ok":true}`), nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = bridge.Close() })
+	bridge.connection = func(id string) (remoteagent.ConnectionInfo, error) {
+		if !live.Load() || id != connectionID {
+			return remoteagent.ConnectionInfo{}, remoteagent.ErrConnectionNotFound
+		}
+		return remoteagent.ConnectionInfo{ID: connectionID, Mode: remoteagent.ModeBasic}, nil
+	}
+	// 自动重连：建立连接并重新发布 marker（真实实现走保存的档案）。
+	bridge.reconnect = func(_ context.Context, markerRoot string) error {
+		reconnects.Add(1)
+		live.Store(true)
+		_, err := bridge.PublishMarker(context.Background(), markerRoot, "/remote/project", connectionID, 0, func(uint64) error { return nil })
+		return err
+	}
+	stale := remoteBridgeTestMarker{
+		root: t.TempDir(), remoteRoot: "/remote/project", connection: "conn-lost", generation: 3,
+	}
+	request := func() *httptest.ResponseRecorder {
+		call := httptest.NewRequest(http.MethodPost, "/v1/exec", strings.NewReader(`{"root":"/remote/project","path":"/remote/project","shell":"bash","command":"true"}`))
+		call.Header.Set("Authorization", "Bearer "+token)
+		call.Header.Set("Content-Type", "application/json")
+		setRemoteBridgeMarkerHeaders(call, stale, false)
+		recorder := httptest.NewRecorder()
+		bridge.serveHTTP(recorder, call)
+		return recorder
+	}
+
+	// 连接已经不在：自动重连一次，并在新路由上完成这次请求。
+	if response := request(); response.Code != http.StatusOK {
+		t.Fatalf("reconnected request = %d %s", response.Code, response.Body.String())
+	}
+	if reconnects.Load() != 1 || proxied.Load() != 1 {
+		t.Fatalf("reconnects = %d, proxy calls = %d", reconnects.Load(), proxied.Load())
+	}
+
+	// 重连成功后身份过期仍是硬错误：不重复重连，也不放行旧世代。
+	duplicate := request()
+	if duplicate.Code != http.StatusConflict {
+		t.Fatalf("stale generation after reconnect = %d %s", duplicate.Code, duplicate.Body.String())
+	}
+	if reconnects.Load() != 1 {
+		t.Fatalf("reconnects after conflict = %d", reconnects.Load())
+	}
+}
+
+func TestBridgeReconnectsWhenTheRoutedConnectionDrops(t *testing.T) {
+	token := "abcdefghijklmnopqrstuvwxyz0123456789abcdef"
+	// 会话中途掉线：路由还在，但那条连接已经不在 manager 里。
+	var reconnects atomic.Int32
+	var proxied atomic.Int32
+	replacement := "conn-after-drop"
+	bridge, err := NewBridge(token, func(_ context.Context, connection string, _, _ string, _ []byte) (int, []byte, error) {
+		proxied.Add(1)
+		if connection != replacement {
+			t.Fatalf("proxy connection = %q", connection)
+		}
+		return http.StatusOK, []byte(`{"ok":true}`), nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = bridge.Close() })
+	marker := publishRemoteBridgeTestMarker(t, bridge, "conn-dropped", 0)
+	bridge.connection = func(id string) (remoteagent.ConnectionInfo, error) {
+		if id != replacement {
+			return remoteagent.ConnectionInfo{}, remoteagent.ErrConnectionNotFound
+		}
+		return remoteagent.ConnectionInfo{ID: replacement, Mode: remoteagent.ModeBasic}, nil
+	}
+	bridge.reconnect = func(_ context.Context, markerRoot string) error {
+		reconnects.Add(1)
+		_, err := bridge.PublishMarker(context.Background(), markerRoot, "/remote/project", replacement, 0, func(uint64) error { return nil })
+		return err
+	}
+
+	call := httptest.NewRequest(http.MethodPost, "/v1/exec", strings.NewReader(`{"root":"/remote/project","path":"/remote/project","shell":"bash","command":"true"}`))
+	call.Header.Set("Authorization", "Bearer "+token)
+	call.Header.Set("Content-Type", "application/json")
+	setRemoteBridgeMarkerHeaders(call, marker, false)
+	response := httptest.NewRecorder()
+	bridge.serveHTTP(response, call)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("reconnected request = %d %s", response.Code, response.Body.String())
+	}
+	if reconnects.Load() != 1 || proxied.Load() != 1 {
+		t.Fatalf("reconnects = %d, proxy calls = %d", reconnects.Load(), proxied.Load())
+	}
+}

@@ -79,6 +79,16 @@ type Bridge struct {
 	markerRoutes        map[string]remoteBridgeMarkerRoute
 	retiredMarkerRoutes map[remoteBridgeMarkerIdentity]struct{}
 	retiredMarkerOrder  []remoteBridgeMarkerIdentity
+
+	// reconnect 让桥接器在连接丢失时按保存的档案自动重连并重新发布 marker。
+	// nil 表示该部署不支持自动重连，请求按过期身份直接失败。
+	reconnect func(ctx context.Context, markerRoot string) error
+	// reconnectMu 序列化同一 marker 根的重连，避免并发请求各发起一轮 SSH 握手。
+	reconnectMu  sync.Mutex
+	reconnecting map[string]chan struct{}
+	// reconnectCool 记录每个 marker 根上一次成功自动重连的时间：一串携带旧身份的
+	// 请求在重连后仍可能抵达，冷却期内直接按过期拒绝，不再各触发一轮 SSH 握手。
+	reconnectCool map[string]time.Time
 }
 
 // NewBridge 启动一个随机回环端口的 HTTP bridge。
@@ -97,6 +107,8 @@ func NewBridge(token string, proxy Proxy) (*Bridge, error) {
 		token: token, proxy: proxy, listener: listener,
 		markerRoutes:        map[string]remoteBridgeMarkerRoute{},
 		retiredMarkerRoutes: map[remoteBridgeMarkerIdentity]struct{}{},
+		reconnecting:        map[string]chan struct{}{},
+		reconnectCool:       map[string]time.Time{},
 	}
 	bridge.server = &http.Server{
 		Handler:           http.HandlerFunc(bridge.serveHTTP),
@@ -339,13 +351,35 @@ func (b *Bridge) serveHTTP(writer http.ResponseWriter, request *http.Request) {
 		// 该身份指向一条活连接时按需采纳，恢复出来的会话因此不必先手动重连；已有
 		// 路由时绝不采纳，旧文件不能覆盖新一轮重绑。
 		if !b.adoptMarker(identity, cleanup) {
-			writeBridgeError(writer, http.StatusConflict, "stale-marker")
-			return
+			// 连接已经不在（重启、断线或超时）时，用保存的档案自动重连一次并重新
+			// 发布 marker，然后在这条新路由上继续这次请求。重连失败仍然快速失败。
+			repaired, ok := b.reconnectMarker(request.Context(), identity, cleanup)
+			if !ok {
+				writeBridgeError(writer, http.StatusConflict, "stale-marker")
+				return
+			}
+			identity = repaired
 		}
 		b.markerMu.RLock()
 	}
+	// 采纳或自动重连之后，本请求按路由上的连接继续；请求头里的连接 id 只用于
+	// 校验身份，不再参与 dispatch。
+	connectionID = identity.connectionID
 	if b.connection != nil {
 		info, lookupErr := b.connection(connectionID)
+		if lookupErr != nil {
+			// 身份仍在路由上，但那条连接已经断开（会话中途掉线）：同样自动重连一次，
+			// 在这条新连接上继续。重连要发布 marker（写锁），因此先放开本次读锁，
+			// 否则两边互等。
+			b.markerMu.RUnlock()
+			repaired, ok := b.reconnectMarker(request.Context(), identity, cleanup)
+			b.markerMu.RLock()
+			if ok {
+				identity = repaired
+				connectionID = identity.connectionID
+				info, lookupErr = b.connection(connectionID)
+			}
+		}
 		if lookupErr != nil || info.Mode != remoteagent.ModeAgent && info.Mode != remoteagent.ModeBasic {
 			b.markerMu.RUnlock()
 			writeBridgeError(writer, http.StatusConflict, "stale-marker")
@@ -414,6 +448,109 @@ func bridgeMarkerIdentity(request *http.Request, connectionID string) (remoteBri
 	return remoteBridgeMarkerIdentity{
 		markerRoot: markerRoot, connectionID: connectionID, remoteRoot: remoteRoot, generation: generation,
 	}, cleanup, ""
+}
+
+// reconnectMarker 在一个 marker 根因连接丢失而无法路由时自动重连一次。
+//
+// 只在该身份指向的连接已经不存在时触发：此时请求尚未 dispatch，重连后重试不会
+// 重复执行变更。同一 marker 根的并发请求共享同一次重连——等待在途的那一轮，而不是
+// 各发起一轮 SSH 握手。重连成功后重新发布 marker，调用方用返回的新身份继续请求。
+// @param ctx - 本次请求的 context，用于约束重连等待。
+// @param identity - 请求携带的 marker 身份。
+// @param cleanup - 清理请求不参与重连。
+// @returns 重连后的路由身份；不可重连或重连失败时为 false。
+func (b *Bridge) reconnectMarker(
+	ctx context.Context,
+	identity remoteBridgeMarkerIdentity,
+	cleanup bool,
+) (remoteBridgeMarkerIdentity, bool) {
+	if cleanup || b.reconnect == nil || b.connection == nil {
+		return identity, false
+	}
+	// 只有“这条连接已经不在了”才值得重连：世代不符是真正的过期身份，重连也不该
+	// 替它兜底，否则任何旧请求都能触发一轮 SSH 握手。
+	if _, err := b.connection(identity.connectionID); !errors.Is(err, remoteagent.ErrConnectionNotFound) {
+		return identity, false
+	}
+	if b.reconnectingRecently(identity.markerRoot) {
+		return identity, false
+	}
+	waited, leader := b.beginReconnect(identity.markerRoot)
+	defer b.endReconnect(identity.markerRoot, leader)
+	if !leader {
+		select {
+		case <-waited:
+		case <-ctx.Done():
+			return identity, false
+		}
+		return b.currentRoute(identity.markerRoot)
+	}
+	if err := b.reconnect(ctx, identity.markerRoot); err != nil {
+		return identity, false
+	}
+	b.noteReconnect(identity.markerRoot)
+	return b.currentRoute(identity.markerRoot)
+}
+
+// reconnectCooldown 是自动重连后的静默期：期间携带旧身份的请求直接按过期拒绝。
+const reconnectCooldown = 5 * time.Second
+
+// reconnectingRecently 报告该 marker 根是否还在自动重连的冷却期内。
+func (b *Bridge) reconnectingRecently(markerRoot string) bool {
+	b.reconnectMu.Lock()
+	defer b.reconnectMu.Unlock()
+	last, ok := b.reconnectCool[markerRoot]
+	return ok && time.Since(last) < reconnectCooldown
+}
+
+// noteReconnect 记录一次成功的自动重连时间。
+func (b *Bridge) noteReconnect(markerRoot string) {
+	b.reconnectMu.Lock()
+	defer b.reconnectMu.Unlock()
+	b.reconnectCool[markerRoot] = time.Now()
+}
+
+// beginReconnect 让同一 marker 根同时只有一个重连，其余调用方等待那一轮。
+// @returns 等待完成信号，以及本次调用是否负责执行重连。
+func (b *Bridge) beginReconnect(markerRoot string) (chan struct{}, bool) {
+	b.reconnectMu.Lock()
+	defer b.reconnectMu.Unlock()
+	if pending, ok := b.reconnecting[markerRoot]; ok {
+		return pending, false
+	}
+	pending := make(chan struct{})
+	b.reconnecting[markerRoot] = pending
+	return pending, true
+}
+
+// endReconnect 结束一轮重连并唤醒等待者。
+func (b *Bridge) endReconnect(markerRoot string, leader bool) {
+	if !leader {
+		return
+	}
+	b.reconnectMu.Lock()
+	pending := b.reconnecting[markerRoot]
+	delete(b.reconnecting, markerRoot)
+	b.reconnectMu.Unlock()
+	if pending != nil {
+		close(pending)
+	}
+}
+
+// currentRoute 读取该 marker 根当前发布的路由身份。
+func (b *Bridge) currentRoute(markerRoot string) (remoteBridgeMarkerIdentity, bool) {
+	b.markerMu.RLock()
+	defer b.markerMu.RUnlock()
+	route, exists := b.markerRoutes[markerRoot]
+	if !exists {
+		return remoteBridgeMarkerIdentity{}, false
+	}
+	return remoteBridgeMarkerIdentity{
+		markerRoot:   markerRoot,
+		connectionID: route.connectionID,
+		remoteRoot:   route.remoteRoot,
+		generation:   route.generation,
+	}, true
 }
 
 // adoptMarker 在内存路由缺失时，按请求携带的 marker 身份恢复路由。
