@@ -2566,7 +2566,7 @@ The only globally visible tool is computer_use_activate; loading the Skill repla
 
 ### `run_code`
 
-Execute a TypeScript program against the available tools. Takes two required arguments: `code`, the BODY of an async function (erasable syntax only; top-level `await` and `return` work), and `description`, a short summary of what the program does. `require` loads Node built-in modules only, and only in a local workspace; a remote isolate has none, so shell, file and network work goes through the tools — `await tools.name(args)` per the declarations in the system prompt. Only what you print or return is program output — curate it. Image-bearing subtool results are attached after the run.
+Execute a TypeScript program against the available tools. Takes one required argument, `code` — the BODY of an async function (erasable syntax only; top-level `await` and `return` work) — plus an optional `description`, a short summary of what the program does. `require` loads Node built-in modules only, and only in a local workspace; a remote isolate has none, so shell, file and network work goes through the tools — `await tools.name(args)` per the declarations in the system prompt. Only what you print or return is program output — curate it. Image-bearing subtool results are attached after the run.
 
 ```json
 {
@@ -2578,12 +2578,11 @@ Execute a TypeScript program against the available tools. Takes two required arg
     },
     "description": {
       "type": "string",
-      "description": "Clear, concise description of what this program does in active voice, 5-10 words (shown in the UI). Examples: \"Count TODO markers across packages\"; \"Read failing test and its fixture\"; \"Rename config key in every cordis.yml\"."
+      "description": "Optional clear, concise description of what this program does in active voice, 5-10 words (shown in the UI). Omit to show the program's first line. Examples: \"Count TODO markers across packages\"; \"Read failing test and its fixture\"; \"Rename config key in every cordis.yml\"."
     }
   },
   "required": [
-    "code",
-    "description"
+    "code"
   ]
 }
 ```
@@ -2637,7 +2636,7 @@ Execute a bash command (`bash -c`) and return its stdout/stderr. Each call runs 
     },
     "description": {
       "type": "string",
-      "description": "Clear, concise description of what this command does in active voice, 5-10 words (shown in the UI). Examples: \"ls\" → \"List files in current directory\"; \"git status\" → \"Show working tree status\"; \"npm install\" → \"Install package dependencies\"."
+      "description": "Optional clear, concise description of what this command does in active voice, 5-10 words (shown in the UI). Omit to show the command itself. Examples: \"ls\" → \"List files in current directory\"; \"git status\" → \"Show working tree status\"; \"npm install\" → \"Install package dependencies\"."
     },
     "timeoutMs": {
       "type": "number",
@@ -2657,8 +2656,7 @@ Execute a bash command (`bash -c`) and return its stdout/stderr. Each call runs 
     }
   },
   "required": [
-    "command",
-    "description"
+    "command"
   ]
 }
 ```
@@ -2685,7 +2683,7 @@ Execute a PowerShell command (`pwsh -Command`) and return its stdout/stderr. Eac
     },
     "description": {
       "type": "string",
-      "description": "Clear, concise description of what this command does in active voice, 5-10 words (shown in the UI). Examples: \"ls\" → \"List files in current directory\"; \"git status\" → \"Show working tree status\"; \"Get-Process\" → \"List running processes\"."
+      "description": "Optional clear, concise description of what this command does in active voice, 5-10 words (shown in the UI). Omit to show the command itself. Examples: \"ls\" → \"List files in current directory\"; \"git status\" → \"Show working tree status\"; \"Get-Process\" → \"List running processes\"."
     },
     "timeoutMs": {
       "type": "number",
@@ -2701,8 +2699,7 @@ Execute a PowerShell command (`pwsh -Command`) and return its stdout/stderr. Eac
     }
   },
   "required": [
-    "command",
-    "description"
+    "command"
   ]
 }
 ```
@@ -4846,7 +4843,7 @@ Delegate a self-contained task to a subagent (a separate agent that works in its
   "properties": {
     "description": {
       "type": "string",
-      "description": "A short (3-5 word) description of the delegated task, for display."
+      "description": "Optional short (3-5 word) description of the delegated task, for display. Omit to use the beginning of the prompt."
     },
     "prompt": {
       "type": "string",
@@ -4866,7 +4863,6 @@ Delegate a self-contained task to a subagent (a separate agent that works in its
     }
   },
   "required": [
-    "description",
     "prompt"
   ]
 }

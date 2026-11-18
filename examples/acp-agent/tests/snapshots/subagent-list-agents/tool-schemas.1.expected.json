@@ -12,7 +12,7 @@
           },
           "description": {
             "type": "string",
-            "description": "Clear, concise description of what this command does in active voice, 5-10 words (shown in the UI). Examples: \"ls\" → \"List files in current directory\"; \"git status\" → \"Show working tree status\"; \"npm install\" → \"Install package dependencies\"."
+            "description": "Optional clear, concise description of what this command does in active voice, 5-10 words (shown in the UI). Omit to show the command itself. Examples: \"ls\" → \"List files in current directory\"; \"git status\" → \"Show working tree status\"; \"npm install\" → \"Install package dependencies\"."
           },
           "timeoutMs": {
             "type": "number",
@@ -45,8 +45,7 @@
           }
         },
         "required": [
-          "command",
-          "description"
+          "command"
         ]
       }
     },
@@ -370,7 +369,7 @@
         "properties": {
           "description": {
             "type": "string",
-            "description": "A short (3-5 word) description of the delegated task, for display."
+            "description": "Optional short (3-5 word) description of the delegated task, for display. Omit to use the beginning of the prompt."
           },
           "prompt": {
             "type": "string",
@@ -390,7 +389,6 @@
           }
         },
         "required": [
-          "description",
           "prompt"
         ]
       }
@@ -403,7 +401,7 @@
         "properties": {
           "description": {
             "type": "string",
-            "description": "A short (3-5 word) description of the delegated task, for display."
+            "description": "Optional short (3-5 word) description of the delegated task, for display. Omit to use the beginning of the prompt."
           },
           "prompt": {
             "type": "string",
@@ -419,7 +417,6 @@
           }
         },
         "required": [
-          "description",
           "prompt"
         ]
       }

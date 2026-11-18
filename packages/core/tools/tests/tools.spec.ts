@@ -172,9 +172,10 @@ describe('ToolRuntime', () => {
     const result = await ctx.tools.execute({ signal: testToolSignal, callId: CallId('c1'), name: 'closed', arguments: args })
     expect(result).toMatchObject({ isError: false, value: 'ok' })
     expect(seen).toEqual([{ text: 'ok' }, { text: 'ok' }])
+    // 展示字段不是强制校验：非字符串 summary 直接丢弃，业务调用照常成功。
     const invalid = await ctx.tools.execute({ signal: testToolSignal, callId: CallId('c2'), name: 'closed', arguments: { text: 'ok', summary: 9 } })
-    expect(invalid).toMatchObject({ isError: true, error: { info: { code: 'INVALID_ARGS' } } })
-    expect(seen).toHaveLength(2)
+    expect(invalid).toMatchObject({ isError: false, value: 'ok' })
+    expect(seen).toEqual([{ text: 'ok' }, { text: 'ok' }, { text: 'ok' }])
   })
 
   it('rejects business parameters colliding with the reserved description key', async () => {

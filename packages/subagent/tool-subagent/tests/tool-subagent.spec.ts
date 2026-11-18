@@ -112,6 +112,17 @@ describe('dsh-tool-subagent', () => {
     const props = (schema!.parameters as { properties?: Record<string, unknown> }).properties ?? {}
     expect(Object.keys(props).sort()).toEqual(['description', 'model', 'model_provider', 'prompt', 'run_in_background'])
     expect(schema!.description).toContain('job_output')
+    // description 只用于展示：只有 prompt 是必填业务参数。
+    expect((schema!.parameters as { required?: string[] }).required).toContain('prompt')
+    expect((schema!.parameters as { required?: string[] }).required).not.toContain('description')
+  })
+
+  it('falls back to the prompt first line when the display description is omitted', async () => {
+    let label: string | undefined
+    const ctx = await setup({ provider: 'mock' }, { onStart: (request) => { label = request.label } })
+    const result = await callSubagent(ctx, { prompt: 'go research X\nsecond line' })
+    expect(result.isError).toBe(false)
+    expect(label).toBe('go research X')
   })
 
   it('omits run_in_background entirely when the instance disables it (schema and capability never disagree)', async () => {

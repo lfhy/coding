@@ -1409,11 +1409,24 @@ describe('the run_code dispatch bridge', () => {
     })
   })
 
-  it('rejects a whitespace-only description with a structured isError', async () => {
+  it('treats a blank or omitted description as display-only and falls back to the program first line', async () => {
     const { ctx } = await setup({ mode: 'code' })
-    const result = await runCode(ctx, 'return 1', { description: '   ' })
-    expect(result.isError).toBe(true)
-    expect((result.content[0] as { text: string }).text).toContain('invalid description')
+    const tool = ctx.tools.get(RUN_CODE_NAME)!
+    const blank = await runCode(ctx, 'return 1', { description: '   ' })
+    expect(blank.isError).toBe(false)
+    // 空白说明等价于省略：卡片标题取程序首行，调用本身照常运行。
+    expect(tool.presentCall?.({ code: 'return 1', description: '   ' })).toEqual({
+      card: 'generic',
+      title: 'return 1',
+      kind: 'execute',
+      rawInput: 'return 1',
+    })
+    expect(tool.presentCall?.({ code: 'return 1' })).toEqual({
+      card: 'generic',
+      title: 'return 1',
+      kind: 'execute',
+      rawInput: 'return 1',
+    })
   })
 
   it.each([

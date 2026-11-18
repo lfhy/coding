@@ -312,7 +312,7 @@ describe('registration', () => {
       workdir: { type: 'string' },
       run_in_background: { type: 'boolean' },
     })
-    expect(schema?.parameters.required).toEqual(['command', 'description'])
+    expect(schema?.parameters.required).toEqual(['command'])
     const prompt = renderPrompt(await ctx.systemPrompt.assemble())
     expect(prompt).toContain('Non-zero exits are reported as `[exit code: N]` markers')
     expect(prompt).toContain('without a signal marker')
@@ -340,12 +340,19 @@ describe('registration', () => {
 })
 
 describe('argument validation', () => {
-  it('rejects a blank command or description and a non-positive timeoutMs', async () => {
+  it('rejects a blank command and a non-positive timeoutMs, but not a blank description', async () => {
     const { ctx } = await setup()
     expect(text(await call(ctx, 'pwsh', { command: '  ', description: 'd' }))).toContain('expected a non-empty string')
-    expect(text(await call(ctx, 'pwsh', { command: 'Write-Output hi', description: ' ' }))).toContain('expected a non-empty string')
+    // description 只用于展示：空白值不是调用错误，运行照常成功。
+    expect((await call(ctx, 'pwsh', { command: 'Write-Output hi', description: ' ' })).isError).toBe(false)
     expect(text(await call(ctx, 'pwsh', { command: 'Write-Output hi', description: 'd', timeoutMs: -1 })))
       .toContain('invalid timeoutMs: expected a positive number')
+  })
+
+  it('omits the description parameter from the required list', async () => {
+    const { ctx } = await setup()
+    const schema = ctx.tools.schemas().find(s => s.name === 'pwsh')
+    expect(schema?.parameters.required).toEqual(['command'])
   })
 })
 

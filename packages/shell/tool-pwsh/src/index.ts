@@ -57,10 +57,13 @@ export const Config: z<Config> = z.object({
   enableRunInBackground: z.boolean().default(true),
 })
 
-/** Parsed tool args; execute validates value constraints absent from ParameterSchemaSpec. */
+/**
+ * Parsed tool args; execute validates value constraints absent from ParameterSchemaSpec.
+ * `description` 只用于界面展示，缺省时由呈现器回退到命令本身。
+ */
 interface PwshToolArgs {
   command: string
-  description: string
+  description?: string
   timeoutMs?: number
   workdir?: string
   run_in_background?: boolean
@@ -86,9 +89,7 @@ function validatePwshArgs(args: PwshToolArgs, effectiveMode?: SandboxMode): void
   if (args.command.trim().length === 0) {
     throw new Error('invalid command: expected a non-empty string')
   }
-  if (args.description.trim().length === 0) {
-    throw new Error('invalid description: expected a non-empty string')
-  }
+  // description 只参与展示：缺失或空白都由呈现器回退到命令，不做调用期校验。
   if (args.timeoutMs !== undefined && (!Number.isFinite(args.timeoutMs) || args.timeoutMs <= 0)) {
     throw new Error(`invalid timeoutMs: expected a positive number, got ${JSON.stringify(args.timeoutMs)}`)
   }
@@ -253,9 +254,8 @@ export function apply(ctx: Context, config: Config = {}): void {
       command: { type: 'string', required: true, description: 'The PowerShell command to execute.' },
       description: {
         type: 'string',
-        required: true,
-        description: 'Clear, concise description of what this command does in active voice, '
-          + '5-10 words (shown in the UI). Examples: "ls" → "List files in current directory"; '
+        description: 'Optional clear, concise description of what this command does in active voice, '
+          + '5-10 words (shown in the UI). Omit to show the command itself. Examples: "ls" → "List files in current directory"; '
           + '"git status" → "Show working tree status"; "Get-Process" → "List running processes".',
       },
       timeoutMs: { type: 'number', description: 'Timeout in milliseconds. The executor applies its configured default and cap, and kills the command on expiry.' },
@@ -408,19 +408,22 @@ export function apply(ctx: Context, config: Config = {}): void {
     presentCall: (args: PwshToolArgs): TerminalCallView | GenericCallView => {
       // Background acknowledgements carry no terminal exit status; the generic
       // card mirrors the bash tool's background presentation.
+      // 说明缺省时回退到命令本身，模型可以省略这个仅用于展示的字段。
+      const description = args.description?.trim() ?? ''
+      const label = description === '' ? args.command : description
       if (args.run_in_background === true) {
         return {
           card: 'generic',
           title: args.command,
           kind: 'execute',
           rawInput: args.command,
-          content: [{ type: 'text', text: args.description }],
+          content: [{ type: 'text', text: label }],
         }
       }
       return {
         card: 'terminal',
         title: args.command,
-        description: args.description,
+        description: label,
         ...args.workdir !== undefined ? { cwd: args.workdir } : {},
       }
     },

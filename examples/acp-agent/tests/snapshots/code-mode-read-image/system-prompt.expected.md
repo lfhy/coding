@@ -47,8 +47,8 @@ interface ToolArgsMap {
   bash: {
     /** The bash command to execute. */
     command: string;
-    /** Clear, concise description of what this command does in active voice, 5-10 words (shown in the UI). Examples: "ls" → "List files in current directory"; "git status" → "Show working tree status"; "npm install" → "Install package dependencies". */
-    description: string;
+    /** Optional clear, concise description of what this command does in active voice, 5-10 words (shown in the UI). Omit to show the command itself. Examples: "ls" → "List files in current directory"; "git status" → "Show working tree status"; "npm install" → "Install package dependencies". */
+    description?: string;
     /** Timeout in milliseconds. The executor applies its configured default and cap, and kills the command on expiry. */
     timeoutMs?: number;
     /** Working directory for this command. Defaults to the session workspace; a relative path is resolved against it. */
@@ -170,8 +170,8 @@ interface ToolArgsMap {
   } & Record<string, JsonValue>;
   /** Delegate a self-contained task to a subagent (a separate agent that works in its own context) to offload focused, independent work — research, a scoped implementation, an analysis — so it does not consume this conversation's context. The subagent returns its result, not its intermediate steps. Give it a complete, standalone prompt: it does not see this conversation. This tool runs in the background by default, immediately returns a durable subagent id, and keeps the child conversation available for later turns. When that run settles, the runtime sends the parent a notice containing its outcome and any final assistant message; `send_message` starts a later turn in the same child conversation. Set `run_in_background: false` only when your next action depends on receiving the result. */
   subagent: {
-    /** A short (3-5 word) description of the delegated task, for display. */
-    description: string;
+    /** Optional short (3-5 word) description of the delegated task, for display. Omit to use the beginning of the prompt. */
+    description?: string;
     /** The complete, self-contained task for the subagent. It does not share this conversation's context, so include everything it needs. */
     prompt: string;
     /** Model id for this child. Omit or leave empty to use the model of the current request. Use list_subagent_models to discover available ids. */
@@ -183,8 +183,8 @@ interface ToolArgsMap {
   } & Record<string, JsonValue>;
   /** Delegate a task to a subagent that inherits this conversation: a child agent seeded with all completed turns so far (it does not see the current in-flight turn). Use this when the subtask builds on this conversation's context — a follow-up analysis, a review, a continuation — without consuming this conversation's context for the work itself. You receive its result, not its intermediate steps. This call waits for the subagent and returns its result. */
   subagent_fork: {
-    /** A short (3-5 word) description of the delegated task, for display. */
-    description: string;
+    /** Optional short (3-5 word) description of the delegated task, for display. Omit to use the beginning of the prompt. */
+    description?: string;
     /** The task for the subagent. It already sees this conversation's completed turns, so build on them freely and state only what is new. */
     prompt: string;
     /** Model id for this child. Omit or leave empty to use the model of the current request. Use list_subagent_models to discover available ids. */

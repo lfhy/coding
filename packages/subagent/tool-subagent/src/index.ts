@@ -141,6 +141,20 @@ function outputValueText(values: JsonValue[]): string {
     .join('')
 }
 
+/**
+ * 子级创建标签与后台任务摘要使用的展示文案：模型给了 `description` 就用它，
+ * 否则取 prompt 首行，避免委派调用在任务列表里没有可读标签。
+ * @param args - 已解析的委派参数。
+ * @param fallback - 会话与 prompt 都没有可用文本时使用的工具名。
+ * @returns 非空单行标签。
+ */
+function delegationLabel(args: DelegationArgs, fallback: string): string {
+  const description = args.description?.trim() ?? ''
+  if (description !== '') return description
+  const firstLine = args.prompt.split(/[\r\n]/, 1)[0]?.trim() ?? ''
+  return firstLine === '' ? fallback : firstLine
+}
+
 /** Settle pending startup without rejecting the task producer contract. */
 async function settleStart(start: Promise<SubagentRun>, signal: AbortSignal): Promise<JobOutcome> {
   try {
@@ -281,6 +295,12 @@ interface DelegationRunRequest {
   readonly run_in_background?: boolean
 }
 
+/** 委派调用携带的业务参数；`description` 只用于展示，可以省略。 */
+interface DelegationArgs extends DelegationRunRequest {
+  readonly description?: string
+  readonly prompt: string
+}
+
 interface DelegationRunSpec {
   readonly runInBackground: boolean
 }
@@ -349,8 +369,7 @@ export function apply(ctx: Context, config: Config): void {
       parameters: {
         description: {
           type: 'string',
-          required: true,
-          description: 'A short (3-5 word) description of the delegated task, for display.',
+          description: 'Optional short (3-5 word) description of the delegated task, for display. Omit to use the beginning of the prompt.',
         },
         prompt: {
           type: 'string',
@@ -447,8 +466,9 @@ export function apply(ctx: Context, config: Config): void {
           await llm.resolveCallConfig({ provider: agentOptions.provider, model: agentOptions.model }, exec.signal)
         }
         const maxDepth = typeof config.maxDepth === 'number' ? config.maxDepth : undefined
+        const label = delegationLabel(args, toolName)
         const request = {
-          label: args.description,
+          label,
           prompt: [{ type: 'text', text: args.prompt }] as ContentBlock[],
           parent,
           ...Object.keys(agentOptions).length === 0 ? {} : { agentOptions },
@@ -464,7 +484,7 @@ export function apply(ctx: Context, config: Config): void {
             // there, so this call neither waits for nor collects a result.
             const started = await ctx.subagents.startContinuable({
               provider: config.provider,
-              label: args.description,
+              label,
               request,
               signal: exec.signal,
             })
@@ -478,7 +498,7 @@ export function apply(ctx: Context, config: Config): void {
           // starter can spawn, and the task-owned signal covers startup.
           const id = jobs.start({
             kind: 'subagent',
-            label: args.description,
+            label,
             owner: parent,
             run: () => {
               const controller = new AbortController()

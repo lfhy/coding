@@ -45,9 +45,9 @@ interface RunCodeFlavor {
  */
 const TYPESCRIPT_FLAVOR: RunCodeFlavor = {
   description:
-    'Execute a TypeScript program against the available tools. Takes two required '
-    + 'arguments: `code`, the BODY of an async function (erasable syntax only; top-level '
-    + '`await` and `return` work), and `description`, a short summary of what the program '
+    'Execute a TypeScript program against the available tools. Takes one required '
+    + 'argument, `code` — the BODY of an async function (erasable syntax only; top-level '
+    + '`await` and `return` work) — plus an optional `description`, a short summary of what the program '
     + 'does. `require` loads Node built-in modules only, and only in a local workspace; a '
     + 'remote isolate has none, so shell, file and network work goes through the tools — '
     + '`await tools.name(args)` per the declarations in the system prompt. Only what you '
@@ -63,9 +63,9 @@ const TYPESCRIPT_FLAVOR: RunCodeFlavor = {
  */
 const PYTHON_FLAVOR: RunCodeFlavor = {
   description:
-    'Execute a Python program against the available tools. Takes two required '
-    + 'arguments: `code`, the BODY of an async function (top-level `await` and `return` '
-    + 'work), and `description`, a short summary of what the program does. Call tools as '
+    'Execute a Python program against the available tools. Takes one required '
+    + 'argument, `code` — the BODY of an async function (top-level `await` and `return` '
+    + 'work) — plus an optional `description`, a short summary of what the program does. Call tools as '
     + '`await tools.name(args)` per the declarations in the system prompt. Use '
     + '`print(...)` and/or `return <value>` for program output — curate it. Image-bearing '
     + 'subtool results are attached after the run.',
@@ -93,12 +93,25 @@ const RUN_CODE_FLAVORS: Record<string, RunCodeFlavor> = {
  * The `description` parameter's model-facing description: language-independent
  * (the UI label contract is the same for every runtime), shared between the
  * static spec and the language-aware `parameters` getter so the two emissions
- * can never drift.
+ * can never drift. 该字段只用于界面展示，可以省略；省略时卡片标题回退到程序首行。
  */
 const RUN_CODE_DESCRIPTION_PARAM_DESCRIPTION
-  = 'Clear, concise description of what this program does in active voice, '
-    + '5-10 words (shown in the UI). Examples: "Count TODO markers across packages"; '
+  = 'Optional clear, concise description of what this program does in active voice, '
+    + '5-10 words (shown in the UI). Omit to show the program\'s first line. Examples: "Count TODO markers across packages"; '
     + '"Read failing test and its fixture"; "Rename config key in every cordis.yml".'
+
+/**
+ * 折叠行与卡片标题使用的展示说明：模型给了非空 `description` 就用它，
+ * 否则取程序第一行，避免运行代码的调用在界面上没有标题。
+ * @param args - 已解析的调用参数。
+ * @returns 非空的单行说明。
+ */
+function runCodeLabel(args: { code: string; description?: string }): string {
+  const description = args.description?.trim() ?? ''
+  if (description !== '') return description
+  const firstLine = args.code.split(/[\r\n]/, 1)[0]?.trim() ?? ''
+  return firstLine === '' ? RUN_CODE_NAME : firstLine
+}
 
 /**
  * Resolve the {@link RunCodeFlavor} for the loaded runtime's language, read at
@@ -313,8 +326,8 @@ function agentWorkspaceCwd(agent: {
 }
 
 /**
- * Build the `run_code` {@link ToolDefinition}: required `code` and
- * `description` parameters, executed through the dispatch bridge described
+ * Build the `run_code` {@link ToolDefinition}: required `code` plus an optional
+ * display-only `description`, executed through the dispatch bridge described
  * above. The
  * registry reserves it as presentation infrastructure under non-native modes,
  * outside the filterable global/scoped capability layers.
@@ -338,7 +351,6 @@ export function createRunCodeTool(registry: ToolRuntime, options: RunCodeBridgeO
       code: { type: 'string', required: true, description: TYPESCRIPT_FLAVOR.codeDescription },
       description: {
         type: 'string',
-        required: true,
         description: RUN_CODE_DESCRIPTION_PARAM_DESCRIPTION,
       },
     },
@@ -358,9 +370,6 @@ export function createRunCodeTool(registry: ToolRuntime, options: RunCodeBridgeO
       },
     },
     async execute(args, exec): Promise<RunCodeOutput> {
-      if (args.description.trim().length === 0) {
-        throw new Error('invalid description: expected a non-empty string')
-      }
       const runtime = requireRuntime()
 
       // The run-scoped abort: follows the outer signal in, and fires when the
@@ -683,11 +692,11 @@ export function createRunCodeTool(registry: ToolRuntime, options: RunCodeBridgeO
         exec.signal.removeEventListener('abort', onOuterAbort)
       }
     },
-    // The model-authored description is the call's always-visible UI label
-    // (the bash `description` precedent); the program itself rides rawInput.
+    // 模型给的 `description` 是调用在界面上的常驻标题；省略时回退到程序首行，
+    // 程序本身仍走 rawInput，不回灌到折叠行。
     presentCall: args => ({
       card: 'generic',
-      title: args.description,
+      title: runCodeLabel(args),
       kind: 'execute',
       rawInput: args.code,
     }),
@@ -709,7 +718,7 @@ export function createRunCodeTool(registry: ToolRuntime, options: RunCodeBridgeO
     // the emitted schema always matches the validated specification.
     get: () => parameterSchemaSpecToJsonSchema({
       code: { type: 'string', required: true, description: resolveFlavor(peekRuntime).codeDescription },
-      description: { type: 'string', required: true, description: RUN_CODE_DESCRIPTION_PARAM_DESCRIPTION },
+      description: { type: 'string', description: RUN_CODE_DESCRIPTION_PARAM_DESCRIPTION },
     }) as unknown as Record<string, unknown>,
   })
   return definition

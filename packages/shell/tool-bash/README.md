@@ -16,7 +16,7 @@
 | 参数 | 类型 | 说明 |
 |---|---|---|
 | `command` | string（必填） | 通过 `bash -c` 运行。调用之间不保留状态；请使用 `workdir`，不要使用 `cd`。 |
-| `description` | string（必填） | 用一行主动语态概述命令（5～10 个词），仅用于 UI／日志显示，不影响执行。 |
+| `description` | string | 可省略的一行主动语态概述（5～10 个词），仅用于 UI／日志显示，不影响执行。省略或空白时调用照常运行，展示回退到命令本身。 |
 | `timeoutMs` | number | 以毫秒为单位覆盖超时时间。执行器会应用其配置的默认值和上限。 |
 | `tty` | boolean | 在伪终端里运行命令，让它从交互式 stdin 读取输入。只有执行器声明 `tty` 能力时该参数才公开；后台 `tty` 会话可以用 `write_stdin` 写入并把 Ctrl-C 当作终端输入。 |
 | `workdir` | string | 本次调用的工作目录。默认为调用方 agent（智能体）会话 cwd 的文件系统标识（`session.header.cwd`），使每个会话都在自己的工作区中运行；相对 `workdir` 也以同一标识为基准解析。在 Remote-SSH marker Workspace 中，会话工作区的宿主占位路径、该 marker 内的子路径与远端绝对路径都落到同一远端工作区：宿主绝对路径先按本地语义解析（与 `dsh-fs-local` 一致），所以系统提示交给模型的占位路径可直接用作 `workdir`；无法归入同一 marker 的路径在派生请求前失败，并在诊断里报出可用的远端根目录。subprocess 提供方随后会在该 target 上运行前台或后台工作。 |
@@ -132,7 +132,7 @@ renderer 先输出依数据而定的 stdout 尾部，再输出可选的 `[stderr
 
 #### 模型看到的内容
 
-验证和策略失败统一为 `Error: <message>`。此包的稳定消息包括 `invalid command: expected a non-empty string`、`invalid description: expected a non-empty string`、`invalid timeoutMs: expected a positive number, got <value>`、`invalid escalation: sandbox_permissions requires a justification`、`invalid escalation: justification is only valid together with sandbox_permissions`、`invalid justification: expected a non-empty sentence`、`background execution is disabled for this bash tool`、`background jobs unavailable: load coding-jobs and coding-tool-jobs`、`sandbox_permissions is not available in this composition (no sandboxing executor to escalate)`、`sandbox escalation to "<requested>" is not strictly wider than this call's current "<effective>" mode`、审批不可用／拒绝／取消变体，以及 `tool call aborted`。
+验证和策略失败统一为 `Error: <message>`。此包的稳定消息包括 `invalid command: expected a non-empty string`、`invalid timeoutMs: expected a positive number, got <value>`、`invalid escalation: sandbox_permissions requires a justification`、`invalid escalation: justification is only valid together with sandbox_permissions`、`invalid justification: expected a non-empty sentence`、`background execution is disabled for this bash tool`、`background jobs unavailable: load coding-jobs and coding-tool-jobs`、`sandbox_permissions is not available in this composition (no sandboxing executor to escalate)`、`sandbox escalation to "<requested>" is not strictly wider than this call's current "<effective>" mode`、审批不可用／拒绝／取消变体，以及 `tool call aborted`。
 
 #### Token 影响
 
