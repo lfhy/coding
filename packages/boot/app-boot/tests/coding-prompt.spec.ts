@@ -62,6 +62,12 @@ describe('addCodingPromptSections', () => {
       expect(rendered).toContain('单元格垂直居中')
       expect(rendered).toContain('认证与首屏表单：登录、注册、创建管理员、重置密码')
       expect(rendered).toContain('不要把营销文案或功能清单塞成左栏')
+      expect(rendered).toContain('# 工作方式')
+      expect(rendered).toContain('确认根因后立即修复')
+      expect(rendered).toContain('调查只为消除当前不确定性')
+      expect(rendered).toContain('验证失败就根据失败结果直接修复并重试')
+      expect(rendered).toContain('中间不需要重复汇报')
+      expect(rendered).not.toContain('先读代码，再动手')
       expect(rendered).not.toContain('未经要求不提交')
     } finally {
       await ctx.fiber.dispose()

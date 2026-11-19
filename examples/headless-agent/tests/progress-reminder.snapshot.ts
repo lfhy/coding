@@ -73,7 +73,8 @@ describe('progress reminder transcript snapshot', () => {
           expect(reminder.data.content).toHaveLength(1)
           const block = reminder.data.content[0]
           if (block?.type !== 'text') throw new Error('progress reminder did not contain one text block')
-          expect(block.text).toContain('你已连续执行 3 次工具调用')
+          expect(block.text).toContain('只需用一句话说明当前进展，然后立即继续执行')
+          expect(block.text).toContain('找到根因后立即修复，验证失败就修复后重试')
         }
         expect(events.findLast(event => event.type === 'todo/write')?.data.todos)
           .toEqual([{ content: 'Finish the progress reminder proof', status: 'completed' }])
