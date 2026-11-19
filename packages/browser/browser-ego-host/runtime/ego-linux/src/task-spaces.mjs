@@ -1,8 +1,10 @@
 import { readFileSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 
+import { join } from "node:path";
+
 import { agentIdentity } from "./agent-identity.mjs";
-import { STATE_DIR, TASK_SPACE_FILE } from "./paths.mjs";
+import { STATE_DIR } from "./paths.mjs";
 
 /**
  * Task spaces, emulated as tracked sets of tabs.
@@ -117,9 +119,11 @@ export function createTaskSpacesApi(cdp) {
     return state.selectedId;
   }
 
+  const taskSpaceFile = () => join(STATE_DIR, "task-spaces.json");
+
   async function readState() {
     try {
-      const parsed = JSON.parse(await readFile(TASK_SPACE_FILE, "utf8"));
+      const parsed = JSON.parse(await readFile(taskSpaceFile(), "utf8"));
       return { ...EMPTY, ...parsed };
     } catch {
       return { ...EMPTY };
@@ -128,7 +132,7 @@ export function createTaskSpacesApi(cdp) {
 
   async function writeState(state) {
     await mkdir(STATE_DIR, { recursive: true });
-    await writeFile(TASK_SPACE_FILE, JSON.stringify(state, null, 2));
+    await writeFile(taskSpaceFile(), JSON.stringify(state, null, 2));
   }
 
   async function livePageTargets() {
@@ -764,6 +768,23 @@ export function createTaskSpacesApi(cdp) {
         browserContextId: space.browserContextId || null,
         targetIds: new Set(space.targetIds || []),
       };
+    },
+
+    /**
+     * Read one named space without selecting it, reconciling state, or creating
+     * an anchor tab. Missing spaces return an empty scope so list operations are
+     * genuinely read-only and cannot expose another session's tabs.
+     */
+    async listTabsForSpace(name, tabs) {
+      const state = await readState();
+      const matches = state.spaces.filter((space) => space.name === name);
+      if (matches.length !== 1) return { tabs: [] };
+      const space = matches[0];
+      const scope = {
+        browserContextId: space.browserContextId || null,
+        targetIds: new Set(space.targetIds || []),
+      };
+      return tabs.listTabs(scope);
     },
 
     async createTabInSelectedSpace(tabs, url) {

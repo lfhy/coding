@@ -2393,7 +2393,6 @@ function registerActionTools(ctx: EgoContext, cfg: EgoRuntimeConfig, reg: (tool:
         const action = str(args.action, 'list')
         const targetId = str(args.targetId, '')
         const url = str(args.url, '')
-        const space = useSpace(str(args.space, cfg.defaultSpace))
         const done = (extra: string): string =>
           'const __tabs = await browser.listTabs()\n' +
           `console.log('${SENTINEL}' + JSON.stringify({ ok: true${extra}, tabs: __tabs }))\n`
@@ -2402,35 +2401,48 @@ function registerActionTools(ctx: EgoContext, cfg: EgoRuntimeConfig, reg: (tool:
         // of a raw ReferenceError/TypeError inside the heredoc.
         const fail = (message: string): string =>
           `console.log('${SENTINEL}' + JSON.stringify({ ok: false, error: ${j(message)} }))\n`
-        const guard = (expr: string, missing: string, body: string): string =>
+        const guard = (space: string, expr: string, missing: string, body: string): string =>
           `${space}if (${expr}) {\n${fail(`runtime capability missing: ${missing}; use the bundled runtime or extend your bridge with it`)}${space}} else {\n${body}${space}}\n`
+        const readOnlyGuard = (expr: string, missing: string, body: string): string =>
+          `if (${expr}) {\n${fail(`runtime capability missing: ${missing}; use the bundled runtime or extend your bridge with it`)}} else {\n${body}}\n`
         const noBrowser = (cap: string): string =>
           `typeof browser === 'undefined' || typeof browser.${cap} !== 'function'`
         if (action === 'switch') {
+          const space = useSpace(str(args.space, cfg.defaultSpace))
           if (!targetId) return `${space}${fail('targetId is required for action=switch')}`
           return guard(
+            space,
             `${noBrowser('switchTab')} || ${noBrowser('listTabs')}`,
             'browser.switchTab / browser.listTabs',
             `${space}await browser.switchTab(${j(targetId)})\n${done(`, switched: ${j(targetId)}`)}`,
           )
         }
         if (action === 'open') {
+          const space = useSpace(str(args.space, cfg.defaultSpace))
           return guard(
+            space,
             `${noBrowser('listTabs')} || typeof ego === 'undefined' || typeof ego.createTab !== 'function'`,
             'ego.createTab / browser.listTabs',
             `${space}const __created = await ego.createTab(${j(url || 'about:blank')})\n${done(', created: __created && __created.targetId || null')}`,
           )
         }
         if (action === 'close') {
+          const space = useSpace(str(args.space, cfg.defaultSpace))
           if (!targetId) return `${space}${fail('targetId is required for action=close')}`
           return guard(
+            space,
             `${noBrowser('closeTab')} || ${noBrowser('listTabs')}`,
             'browser.closeTab / browser.listTabs',
             `${space}await browser.closeTab(${j(targetId)})\n${done(`, closed: ${j(targetId)}`)}`,
           )
         }
-        if (action !== 'list') return `${space}${fail(`unknown action: ${action}`)}`
-        return guard(noBrowser('listTabs'), 'browser.listTabs', `${space}${done('')}`)
+        if (action !== 'list') return `${useSpace(str(args.space, cfg.defaultSpace))}${fail(`unknown action: ${action}`)}`
+        return readOnlyGuard(
+          `typeof ego === 'undefined' || typeof ego.listTabsForSpace !== 'function'`,
+          'ego.listTabsForSpace',
+          `const __listed = await ego.listTabsForSpace(${j(str(args.space, cfg.defaultSpace))})\n` +
+            `console.log('${SENTINEL}' + JSON.stringify({ ok: true, tabs: __listed.tabs || [] }))\n`,
+        )
       },
       // Tab switches must move the per-space cursor too, otherwise the next
       // page tool would re-pin the tab this call just left.

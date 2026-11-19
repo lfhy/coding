@@ -30,6 +30,7 @@ export function scriptFor(name: string, args: Record<string, unknown>, sessionId
     case 'ego_page_info':
       return enter + choose + result('{ ok: true, page: await page.info() }')
     case 'ego_tabs':
+      // list 由上游生产入口生成；此旧模板只保留变更动作的空间前置逻辑。
       return enter + result('{ ok: true, tabs: await browser.listTabs() }')
     case 'ego_click':
       return enter + choose + `await page.locator(${encode(args.selector)}).click()\n` + result('{ ok: true, page: await page.info() }')

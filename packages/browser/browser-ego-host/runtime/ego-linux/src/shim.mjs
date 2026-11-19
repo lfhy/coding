@@ -88,6 +88,8 @@ export async function createEgoShim({ headless = false, reconcile = true, intent
 
     // --- Task spaces --------------------------------------------------------
     listTaskSpaces: taskSpaces.listTaskSpaces,
+    // Host 的 tabs list 直接按空间名读取，不选中空间也不创建锚页。
+    listTabsForSpace: (name) => taskSpaces.listTabsForSpace(name, tabs),
     // Host 只对当前会话请求恢复；普通目录查询不会重新导航页面。
     restoreTaskSpace: taskSpaces.restoreTaskSpace,
     // Arming on Page.navigate is too late for that same navigation — the claim

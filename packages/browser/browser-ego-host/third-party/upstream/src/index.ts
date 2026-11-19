@@ -2503,7 +2503,6 @@ function registerActionTools(ctx: EgoContext, cfg: EgoRuntimeConfig, reg: (tool:
         const action = str(args.action, 'list')
         const targetId = str(args.targetId, '')
         const url = str(args.url, '')
-        const space = useSpace(str(args.space, cfg.defaultSpace))
         const done = (extra: string): string =>
           `const __tabs = await browser.listTabs()\n` +
           `console.log('${SENTINEL}' + JSON.stringify({ ok: true${extra}, tabs: __tabs }))\n`
@@ -2512,11 +2511,11 @@ function registerActionTools(ctx: EgoContext, cfg: EgoRuntimeConfig, reg: (tool:
         // of a raw ReferenceError/TypeError inside the heredoc.
         const fail = (message: string): string =>
           `console.log('${SENTINEL}' + JSON.stringify({ ok: false, error: ${j(message)} }))\n`
-        // `space` declares `task` once, ahead of the guard. Repeating it inside
-        // either branch produced `Identifier 'task' has already been declared`,
-        // which made every browser_tabs action fail as a syntax error.
-        const guard = (expr: string, missing: string, body: string): string =>
+        // Mutating actions select a space; the read-only list branch deliberately does not.
+        const guard = (space: string, expr: string, missing: string, body: string): string =>
           `${space}if (${expr}) {\n${fail(`runtime capability missing: ${missing}; use the bundled runtime or extend your bridge with it`)}} else {\n${body}}\n`
+        const readOnlyGuard = (expr: string, missing: string, body: string): string =>
+          `if (${expr}) {\n${fail(`runtime capability missing: ${missing}; use the bundled runtime or extend your bridge with it`)}} else {\n${body}}\n`
         const noBrowser = (cap: string): string =>
           `typeof browser === 'undefined' || typeof browser.${cap} !== 'function'`
         // A targetId from an earlier call can name a tab that this task space
@@ -2531,16 +2530,19 @@ function registerActionTools(ctx: EgoContext, cfg: EgoRuntimeConfig, reg: (tool:
           `  console.log('${SENTINEL}' + JSON.stringify({ ok: false, error: 'targetId ' + ${target} + ' is not open in this task space (open ids: ' + __openIds + '); call action=list and reuse one of them' }))\n` +
           `} else {\n${body}}\n`
         if (action === 'switch') {
+          const space = useSpace(str(args.space, cfg.defaultSpace))
           if (!targetId) return `${space}${fail('targetId is required for action=switch')}`
           return guard(
+            space,
             `${noBrowser('switchTab')} || ${noBrowser('listTabs')}`,
-            'browser.switchTab / browser.listTabs',
             `${knownTabs}${withKnownTarget(j(targetId),
               `await browser.switchTab(${j(targetId)})\n${done(`, switched: ${j(targetId)}`)}`)}`,
           )
         }
         if (action === 'open') {
+          const space = useSpace(str(args.space, cfg.defaultSpace))
           return guard(
+            space,
             `${noBrowser('listTabs')} || typeof ego === 'undefined' || typeof ego.createTab !== 'function'`,
             'ego.createTab / browser.listTabs',
             `let __created = null\n` +
@@ -2551,16 +2553,23 @@ function registerActionTools(ctx: EgoContext, cfg: EgoRuntimeConfig, reg: (tool:
           )
         }
         if (action === 'close') {
+          const space = useSpace(str(args.space, cfg.defaultSpace))
           if (!targetId) return `${space}${fail('targetId is required for action=close')}`
           return guard(
+            space,
             `${noBrowser('closeTab')} || ${noBrowser('listTabs')}`,
             'browser.closeTab / browser.listTabs',
             `${knownTabs}${withKnownTarget(j(targetId),
               `await browser.closeTab(${j(targetId)})\n${done(`, closed: ${j(targetId)}`)}`)}`,
           )
         }
-        if (action !== 'list') return `${space}${fail(`unknown action: ${action}`)}`
-        return guard(noBrowser('listTabs'), 'browser.listTabs', `${done('')}`)
+        if (action !== 'list') return `${useSpace(str(args.space, cfg.defaultSpace))}${fail(`unknown action: ${action}`)}`
+        return readOnlyGuard(
+          `typeof ego === 'undefined' || typeof ego.listTabsForSpace !== 'function'`,
+          'ego.listTabsForSpace',
+          `const __listed = await ego.listTabsForSpace(${j(str(args.space, cfg.defaultSpace))})\n` +
+            `console.log('${SENTINEL}' + JSON.stringify({ ok: true, tabs: __listed.tabs || [] }))\n`,
+        )
       },
       // Tab switches must move the per-space cursor too, otherwise the next
       // page tool would re-pin the tab this call just left.

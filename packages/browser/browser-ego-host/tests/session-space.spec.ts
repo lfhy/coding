@@ -33,6 +33,10 @@ describe('会话空间归属', () => {
     expect(scriptFor('ego_tabs', { space: spaceNameForSession(second) }, first)).not.toContain(spaceNameForSession(second))
   })
 
+  it('tabs list 的旧模板仍保持兼容，生产入口负责只读空间查询', () => {
+    expect(scriptFor('ego_tabs', {}, SessionId('session-abcdefgh-first'))).toContain('useOrCreate')
+  })
+
   it('显式打开默认空间、脚本和其它空间参数都受当前会话约束', () => {
     const first = SessionId('session-abcdefgh-first')
     const second = SessionId('session-abcdefgh-second')
