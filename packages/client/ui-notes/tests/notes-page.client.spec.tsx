@@ -69,13 +69,24 @@ function makeServer() {
       if (node !== undefined) node.mtimeMs = 2000
       return Response.json({ path: body.path, mtimeMs: 2000 })
     }
-    if (url.pathname === '/api/notes/create') {
+    if (url.pathname === '/api/notes/create' || url.pathname === '/api/notes/create-directory') {
       if (state.createFail) return new Response('boom', { status: 500 })
-      const body = requestJson(init) as { name: string }
-      const path = `${body.name}.md`
-      state.files.set(path, { content: '', mtimeMs: 3000 })
-      state.tree.unshift({ name: body.name, kind: 'file', path, mtimeMs: 3000 })
-      return Response.json({ path })
+      const folder = url.pathname.endsWith('/create-directory')
+      const body = requestJson(init) as { name: string; parent?: string; directory?: string }
+      const parent = (folder ? body.parent : body.directory) ?? ''
+      const name = folder ? body.name : `${body.name}.md`
+      const path = parent === '' ? name : `${parent}/${name}`
+      let siblings = state.tree
+      let prefix = ''
+      for (const segment of parent === '' ? [] : parent.split('/')) {
+        prefix = prefix === '' ? segment : `${prefix}/${segment}`
+        const children = siblings.find(entry => entry.path === prefix)?.children
+        if (children === undefined) return new Response('missing parent', { status: 404 })
+        siblings = children
+      }
+      if (!folder) state.files.set(path, { content: '', mtimeMs: 3000 })
+      siblings.unshift({ name, kind: folder ? 'dir' : 'file', path, mtimeMs: 3000, ...(folder ? { children: [] } : {}) })
+      return Response.json({ path }, { status: 201 })
     }
     if (url.pathname === '/api/notes/rename') {
       const body = requestJson(init) as { path: string; name: string }
@@ -172,6 +183,8 @@ describe('NotesPage', () => {
     await mount()
     const row = treeRow('a')
     fireEvent.contextMenu(row)
+    expect(screen.queryByRole('menuitem', { name: '新建笔记' })).toBeNull()
+    expect(screen.queryByRole('menuitem', { name: '新建目录' })).toBeNull()
     expect(screen.getByRole('menuitem', { name: '重命名' })).toBeTruthy()
     fireEvent.click(screen.getByRole('menuitem', { name: '重命名' }))
     const input = screen.getByRole('textbox', { name: '笔记名称' })
@@ -204,6 +217,47 @@ describe('NotesPage', () => {
     expect(document.activeElement).toBe(remove)
     expect(treeRow('d').getAttribute('aria-expanded')).toBe('false')
     expect(state.deleteCalls).toEqual([])
+  })
+
+  it('目录行的新建位置不会被当前笔记或轮询覆盖', async () => {
+    const state = makeServer()
+    await mount()
+    const create = within(directory()).getByRole('button', { name: '在「d」中新建笔记' })
+    fireEvent.click(create)
+    const dialog = screen.getByRole('dialog', { name: '新建笔记' })
+    expect(treeRow('d').getAttribute('aria-expanded')).toBe('false')
+    await act(async () => { vi.advanceTimersByTime(4000) })
+    expect(within(dialog).getByRole('button', { name: '保存到 d' })).toBeTruthy()
+    fireEvent.change(within(dialog).getByLabelText('笔记名称'), { target: { value: '会议纪要' } })
+    await act(async () => { fireEvent.click(within(dialog).getByRole('button', { name: '创建' })) })
+    expect(state.files.has('d/会议纪要.md')).toBe(true)
+    expect(state.files.has('会议纪要.md')).toBe(false)
+    expect(treeRow('d').getAttribute('aria-expanded')).toBe('true')
+    expect(treeRow('会议纪要')).toBeTruthy()
+    expect(screen.getByRole('heading', { name: '会议纪要' })).toBeTruthy()
+    expect(document.activeElement).toBe(create)
+  })
+
+  it('目录行和右键菜单都可在同一目录内新建子目录', async () => {
+    const state = makeServer()
+    await mount()
+    const folder = treeRow('d')
+    fireEvent.click(within(directory()).getByRole('button', { name: '在「d」中新建目录' }))
+    let dialog = screen.getByRole('dialog', { name: '新建目录' })
+    expect(within(dialog).getByRole('button', { name: '保存到 d' })).toBeTruthy()
+    fireEvent.click(within(dialog).getByRole('button', { name: '取消' }))
+    fireEvent.contextMenu(folder)
+    const menu = screen.getByRole('menu')
+    expect(within(menu).getByRole('menuitem', { name: '新建笔记' })).toBeTruthy()
+    fireEvent.click(within(menu).getByRole('menuitem', { name: '新建目录' }))
+    dialog = screen.getByRole('dialog', { name: '新建目录' })
+    expect(within(dialog).getByRole('button', { name: '保存到 d' })).toBeTruthy()
+    fireEvent.change(within(dialog).getByLabelText('目录名称'), { target: { value: '归档' } })
+    await act(async () => { fireEvent.click(within(dialog).getByRole('button', { name: '创建' })) })
+    expect(state.tree.find(entry => entry.path === 'd')?.children?.map(entry => entry.path)).toContain('d/归档')
+    expect(treeRow('归档')).toBeTruthy()
+    expect(screen.getByRole('heading', { name: 'a' })).toBeTruthy()
+    expect(document.activeElement).toBe(folder)
   })
 
   it('删除含有当前草稿的目录不用等待保存，迟到的目录轮询也不能恢复该行', async () => {
@@ -761,7 +815,7 @@ describe('NotesPage', () => {
   })
 
   it('新建笔记落盘后选中新篇；空名称不可提交', async () => {
-    makeServer()
+    const state = makeServer()
     await mount()
     act(() => { fireEvent.click(screen.getByRole('button', { name: '新建笔记' })) })
     await act(async () => { fireEvent.click(screen.getByRole('menuitem', { name: '新建笔记' })) })
@@ -769,11 +823,38 @@ describe('NotesPage', () => {
     const input = screen.getByLabelText('笔记名称')
     const createButton = screen.getByRole('button', { name: '创建' })
     expect((createButton as HTMLButtonElement).disabled).toBe(true)
+    expect(screen.getByRole('button', { name: '保存到 全部笔记', exact: true })).toBeTruthy()
     act(() => { fireEvent.change(input, { target: { value: '想法' } }) })
     act(() => { fireEvent.submit(input.closest('form')!) })
     await act(async () => {})
     expect(screen.getByRole('heading', { name: '想法' })).toBeTruthy()
     expect(screen.getByRole<HTMLTextAreaElement>('textbox', { name: '原始文本' }).value).toBe('')
+    expect(state.files.has('想法.md')).toBe(true)
+  })
+
+  it('折叠侧栏后仍能改选任意子目录，保存到明确选择的位置', async () => {
+    const state = makeServer()
+    state.tree.find(entry => entry.path === 'd')?.children?.push({ name: '归档', kind: 'dir', path: 'd/归档', mtimeMs: 700, children: [] })
+    await mount({ sidebarCollapsed: true, sidebarWidth: 56 })
+    fireEvent.click(createTrigger())
+    fireEvent.click(screen.getByRole('menuitem', { name: '新建笔记' }))
+    const dialog = screen.getByRole('dialog', { name: '新建笔记' })
+    const root = within(dialog).getByRole('button', { name: '保存到 全部笔记', exact: true })
+    fireEvent.click(root)
+    const locations = within(dialog).getByRole('menu')
+    expect(within(locations).getAllByRole('menuitem').map(item => item.querySelector('[title]')?.getAttribute('title')))
+      .toEqual(['全部笔记', 'd', 'd / 归档'])
+    expect(within(locations).queryByRole('menuitem', { name: 'b' })).toBeNull()
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(within(dialog).queryByRole('menu')).toBeNull()
+    expect(document.activeElement).toBe(root)
+    fireEvent.click(root)
+    fireEvent.click(within(dialog).getByRole('menuitem', { name: 'd / 归档' }))
+    expect(within(dialog).getByRole('button', { name: '保存到 d / 归档' })).toBe(root)
+    fireEvent.change(within(dialog).getByLabelText('笔记名称'), { target: { value: '方案' } })
+    await act(async () => { fireEvent.click(within(dialog).getByRole('button', { name: '创建' })) })
+    expect(state.files.has('d/归档/方案.md')).toBe(true)
+    expect(document.activeElement).toBe(createTrigger())
   })
 
   it('再次点选当前笔记无副作用，目录可以重新收起', async () => {
@@ -799,22 +880,25 @@ describe('NotesPage', () => {
     open.mockRestore()
   })
 
-  it('空名称不能提交，创建失败给出提示并保留表单', async () => {
+  it('空名称不能提交，创建失败保留名称和目录，重试仍落在原目录', async () => {
     const state = makeServer()
     await mount()
-    act(() => { fireEvent.click(screen.getByRole('button', { name: '新建笔记' })) })
-    await act(async () => { fireEvent.click(screen.getByRole('menuitem', { name: '新建笔记' })) })
-    await act(async () => {})
-    const input = screen.getByLabelText('笔记名称')
-    act(() => { fireEvent.submit(input.closest('form')!) })
-    await act(async () => {})
-    expect(screen.queryByLabelText('笔记名称')).toBeTruthy()
-    act(() => { fireEvent.change(input, { target: { value: '坏名字' } }) })
+    fireEvent.click(within(directory()).getByRole('button', { name: '在「d」中新建笔记' }))
+    const dialog = screen.getByRole('dialog', { name: '新建笔记' })
+    const input = within(dialog).getByLabelText('笔记名称')
+    const form = input.closest('form')!
+    await act(async () => { fireEvent.submit(form) })
+    expect(within(dialog).queryByRole('alert')).toBeNull()
+    fireEvent.change(input, { target: { value: '待整理' } })
     state.createFail = true
-    act(() => { fireEvent.submit(input.closest('form')!) })
-    await act(async () => {})
-    expect(screen.getByRole('alert').textContent).toContain('无法创建笔记')
-    expect(screen.getByLabelText('笔记名称')).toHaveProperty('value', '坏名字')
+    await act(async () => { fireEvent.submit(form) })
+    expect(within(dialog).getByRole('alert').textContent).toContain('无法创建笔记')
+    expect(input).toHaveProperty('value', '待整理')
+    expect(within(dialog).getByRole('button', { name: '保存到 d', exact: true })).toBeTruthy()
+    state.createFail = false
+    await act(async () => { fireEvent.submit(form) })
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(state.files.has('d/待整理.md')).toBe(true)
   })
 
   it('目录读取失败显示提示，无选中笔记时 Cmd+S 不落盘', async () => {

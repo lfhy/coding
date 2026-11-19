@@ -74,7 +74,7 @@
 
 ## 笔记目录
 
-- **路线**：[笔记页](../../packages/client/ui-notes/README.md)用共享 `SidebarRootItem.actions` 放置行尾操作，右键与行尾按钮共用确认框；确认后由 `wire.ts` 发同源 `DELETE /api/notes/delete`，由[文件库](../../packages/attachment/file-library/README.md)检查根目录边界并删除文件或整个目录。成功后页面立即移除对应子树和打开的草稿，忽略仍在途的旧目录轮询。
+- **路线**：[笔记页](../../packages/client/ui-notes/README.md)用共享 `SidebarRootItem.actions` 放置行尾操作。`NoteNameDialog` 用笔记树提供新建位置选择，目录行和右键菜单预选所在目录；`wire.ts` 向[文件库](../../packages/attachment/file-library/README.md)提交新建位置。删除仍由同一确认框发同源 `DELETE /api/notes/delete`；文件库检查根目录边界并删除笔记或整个目录，页面立即移除对应子树和打开的草稿。
 - **验证**：保持笔记和目录使用同一确认流程，覆盖取消、非空目录、根目录与符号链接边界、保存与删除时序；共享侧栏改动还需检查文件管理与画图页不变。定向运行 `pnpm exec vitest run packages/client/ui-notes/tests packages/client/ui-primitives/tests/sidebar-root.client.spec.tsx packages/attachment/file-library/tests`，实装场景见 [Web 笔记用例](../../apps/web/tests/notes-page.e2e.ts)。
 
 ## 图像生成与 AI 画布

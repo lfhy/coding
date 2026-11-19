@@ -323,6 +323,43 @@
   font: var(--dsw-font-xs-13);
 }
 
+.locationField { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; margin-top: 4px; }
+
+.locationField .locationButton {
+  width: 100%;
+  min-width: 0;
+  justify-content: flex-start;
+  gap: 8px;
+  padding-inline: 10px;
+  border-radius: 8px;
+  font: var(--dsw-font-xs-13);
+}
+
+.locationButton > svg { flex: none; color: var(--dsw-alias-label-secondary); }
+.locationButton:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: -2px; }
+
+.locationValue {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: start;
+}
+
+.locationOption {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-inline-start: min(calc(var(--notes-location-depth, 0) * 14px), 46%);
+}
+
+.locationOption > svg { flex: none; color: var(--dsw-alias-label-tertiary); }
+.locationOptionName { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.locationAccessiblePath { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+
+.formError { margin: 0; color: var(--dsw-alias-state-error-primary); overflow-wrap: anywhere; }
+
 @container note-document (width < 480px) {
   .heading { flex-wrap: wrap; gap: 3px 6px; }
   .documentIcon { display: none; }
