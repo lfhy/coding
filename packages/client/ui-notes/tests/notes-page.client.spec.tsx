@@ -9,10 +9,10 @@ import { zh } from '../src/client/locales.ts'
 const exportMocks = vi.hoisted(() => ({
   exportMarkdown: vi.fn(),
   exportWord: vi.fn(async () => {}),
-  exportPdf: vi.fn(),
+  exportPdf: vi.fn(async () => {}),
   exportImage: vi.fn(async () => {}),
 }))
-vi.mock('../src/client/export.tsx', () => exportMocks)
+vi.mock('../src/client/export/index.ts', () => exportMocks)
 
 interface ServerNote { content: string; mtimeMs: number }
 interface TreeNode { name: string; kind: 'dir' | 'file'; path: string; mtimeMs: number; children?: TreeNode[] }
@@ -757,9 +757,9 @@ describe('NotesPage', () => {
 
     fireEvent.click(trigger)
     await act(async () => {})
-    await act(async () => { fireEvent.click(screen.getByRole('menuitem', { name: 'PDF（打印保存）' })) })
+    await act(async () => { fireEvent.click(screen.getByRole('menuitem', { name: 'PDF（.pdf）' })) })
+    await act(async () => {})
     expect(exportMocks.exportPdf).toHaveBeenCalledWith('a', 'hello a')
-    expect(screen.getByText('在打印对话框里选择「另存为 PDF」保存')).toBeTruthy()
   })
 
   it('导出图片等待编码完成，失败时提示且恢复按钮', async () => {

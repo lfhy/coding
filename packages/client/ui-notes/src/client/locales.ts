@@ -14,7 +14,7 @@ export type NotesLocaleKey =
   | 'rename' | 'renaming' | 'renameNote' | 'renameFolder' | 'delete' | 'deleteConfirm' | 'deleteFolderConfirm'
   | 'renameEntry' | 'deleteEntry' | 'deleting' | 'deleted' | 'renameError' | 'deleteError'
   | 'copy' | 'copied'
-  | 'export' | 'exportMarkdown' | 'exportWord' | 'exportPdf' | 'exportImage' | 'exportPdfHint' | 'exportError'
+  | 'export' | 'exportMarkdown' | 'exportWord' | 'exportPdf' | 'exportImage' | 'exportError'
 
 /** 简体中文文案。 */
 export const zh: Record<NotesLocaleKey, string> = {
@@ -45,8 +45,7 @@ export const zh: Record<NotesLocaleKey, string> = {
   renameError: '无法重命名', deleteError: '无法删除，请重试。',
   copy: '复制', copied: '已复制',
   export: '导出', exportMarkdown: 'Markdown（.md）', exportWord: 'Word（.docx）',
-  exportPdf: 'PDF（打印保存）', exportImage: '图片（.png）',
-  exportPdfHint: '在打印对话框里选择「另存为 PDF」保存', exportError: '导出失败',
+  exportPdf: 'PDF（.pdf）', exportImage: '图片（.png）', exportError: '导出失败',
 }
 
 /** 英文文案。 */
@@ -78,6 +77,5 @@ export const en: Record<NotesLocaleKey, string> = {
   renameError: 'Could not rename', deleteError: 'Could not delete. Try again.',
   copy: 'Copy', copied: 'Copied',
   export: 'Export', exportMarkdown: 'Markdown (.md)', exportWord: 'Word (.docx)',
-  exportPdf: 'PDF (print to save)', exportImage: 'Image (.png)',
-  exportPdfHint: 'Choose "Save as PDF" in the print dialog', exportError: 'Export failed',
+  exportPdf: 'PDF (.pdf)', exportImage: 'Image (.png)', exportError: 'Export failed',
 }

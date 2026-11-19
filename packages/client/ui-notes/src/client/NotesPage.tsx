@@ -14,7 +14,7 @@ import { NotesEditor } from './NotesEditor.tsx'
 import { NotesWelcome } from './NotesWelcome.tsx'
 import { useNoteDraft } from './useNoteDraft.ts'
 import { notesCreate, notesCreateDirectory, notesDelete, notesRename, notesTree, type NotesTreeEntry } from './wire.ts'
-import { exportImage, exportMarkdown, exportPdf, exportWord, type NoteExportFormat } from './export.tsx'
+import { exportImage, exportMarkdown, exportPdf, exportWord, type NoteExportFormat } from './export/index.ts'
 import css from './NotesPage.module.css'
 
 export type NotesPageProps = PropsRuntime<'shell.page'> & PropsLocale<typeof NS>
@@ -433,28 +433,26 @@ export function NotesPage({
     { id: 'image', label: t('exportImage') },
   ]
 
-  /** 导出当前草稿；Word 与图片要等编码完成，失败时提示且不改动正文。 */
+  /** 导出当前草稿；Word、PDF 与图片要等生成完成，失败时提示且不改动正文。 */
   const runExport = (format: NoteExportFormat) => {
     const current = draft
     if (current === null) return
     setExportMenuOpen(false)
-    if (format === 'word' || format === 'image') {
-      setExporting(true)
-      const task = format === 'word'
-        ? exportWord(selectedLabel, current.content)
-        : exportImage(selectedLabel, current.content)
-      void task.catch(() => { notify('exportError') }).finally(() => { setExporting(false) })
+    if (format === 'markdown') {
+      try {
+        exportMarkdown(selectedLabel, current.content)
+      } catch {
+        notify('exportError')
+      }
       return
     }
-    try {
-      if (format === 'markdown') exportMarkdown(selectedLabel, current.content)
-      else {
-        exportPdf(selectedLabel, current.content)
-        notify('exportPdfHint')
-      }
-    } catch {
-      notify('exportError')
-    }
+    const task = format === 'word'
+      ? exportWord(selectedLabel, current.content)
+      : format === 'pdf'
+        ? exportPdf(selectedLabel, current.content)
+        : exportImage(selectedLabel, current.content)
+    setExporting(true)
+    void task.catch(() => { notify('exportError') }).finally(() => { setExporting(false) })
   }
 
   return (

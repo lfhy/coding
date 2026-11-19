@@ -87,6 +87,7 @@ External packages that a workspace package resolves at runtime. The tier covers 
 | [`node-pty`](https://github.com/microsoft/node-pty) | MIT |
 | [`open`](https://github.com/sindresorhus/open) | MIT |
 | [`parse5`](https://github.com/inikulin/parse5) | MIT |
+| [`pdf-lib`](https://github.com/Hopding/pdf-lib) | MIT |
 | [`picomatch`](https://github.com/micromatch/picomatch) | MIT |
 | [`playwright`](https://github.com/microsoft/playwright) | Apache-2.0 |
 | [`react`](https://github.com/facebook/react) | MIT |
@@ -163,6 +164,7 @@ External packages **directly declared** only by repository tooling, test infrast
 | [`istanbul-lib-report`](https://github.com/istanbuljs/istanbuljs) | BSD-3-Clause |
 | [`jscpd`](https://github.com/kucherenko/jscpd) | MIT |
 | [`jsdom`](https://github.com/jsdom/jsdom) | MIT |
+| [`jszip`](https://github.com/Stuk/jszip) | (MIT OR GPL-3.0-or-later) |
 | [`knip`](https://github.com/webpro-nl/knip) | ISC |
 | [`lefthook`](https://github.com/evilmartians/lefthook) | MIT |
 | [`lightningcss`](https://github.com/parcel-bundler/lightningcss) | MPL-2.0 |
