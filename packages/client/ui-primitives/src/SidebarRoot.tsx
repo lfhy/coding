@@ -22,6 +22,8 @@ export interface SidebarRootItem {
   media?: ReactNode
   /** 摘要行右侧的一小段元数据。 */
   meta?: string
+  /** 展开态的行尾按钮；悬停或键盘聚焦时替代元数据，独立于主按钮。 */
+  actions?: ReactNode
   active?: boolean
   onSelect?: () => void
   /** 右键菜单入口；调用方负责根据事件位置打开上下文操作。 */
@@ -104,25 +106,37 @@ export function SidebarRoot({
             ? <p className={css.empty}>{empty}</p>
             : (
               <div className={clsx(css.rows, variant === 'media' && css.mediaRows)} role="list">
-                {items.map(item => (
-                  <button key={item.id} type="button" role="listitem" title={item.label}
-                    className={clsx(css.row, variant === 'media' && css.mediaRow, variant === 'summary' && css.summaryRow)}
-                    style={{ '--tree-depth': item.depth ?? 0 } as CSSProperties}
-                    aria-current={item.active === true ? 'true' : undefined} data-icon-tone={item.iconTone}
-                    aria-expanded={item.folder ? item.open === true : undefined} onClick={item.onSelect}
-                    onContextMenu={item.onContextMenu}>
-                    {(item.folder || variant === 'summary') && (
-                      <span className={css.chevronSlot} aria-hidden="true">
-                        {item.folder && <span className={css.chevron} data-open={item.open ? '' : undefined} />}
-                      </span>
-                    )}
-                    {variant === 'media' && item.media !== undefined
-                      ? <span className={css.mediaBox}>{item.media}</span>
-                      : <span className={css.rowIcon} aria-hidden="true"><Icon name={item.icon} size={16} /></span>}
-                    <span className={css.rowLabel}>{item.label}</span>
-                    {variant === 'summary' && item.meta !== undefined && <span className={css.summaryMeta}>{item.meta}</span>}
-                  </button>
-                ))}
+                {items.map((item) => {
+                  const meta = variant === 'summary' && item.meta !== undefined ? <span className={css.summaryMeta}>{item.meta}</span> : null
+                  const row = (
+                    <button key={item.id} type="button" role={item.actions == null ? 'listitem' : undefined} title={item.label}
+                      className={clsx(css.row, variant === 'media' && css.mediaRow, variant === 'summary' && css.summaryRow)}
+                      style={{ '--tree-depth': item.depth ?? 0 } as CSSProperties}
+                      aria-current={item.active === true ? 'true' : undefined} data-icon-tone={item.iconTone}
+                      aria-expanded={item.folder ? item.open === true : undefined} onClick={item.onSelect}
+                      onContextMenu={item.onContextMenu}>
+                      {(item.folder || variant === 'summary') && (
+                        <span className={css.chevronSlot} aria-hidden="true">
+                          {item.folder && <span className={css.chevron} data-open={item.open ? '' : undefined} />}
+                        </span>
+                      )}
+                      {variant === 'media' && item.media !== undefined
+                        ? <span className={css.mediaBox}>{item.media}</span>
+                        : <span className={css.rowIcon} aria-hidden="true"><Icon name={item.icon} size={16} /></span>}
+                      <span className={css.rowLabel}>{item.label}</span>
+                      {item.actions == null && meta}
+                    </button>
+                  )
+                  return item.actions == null ? row : (
+                    <div key={item.id} role="listitem" className={css.rowSeat}>
+                      {row}
+                      <div className={css.rowEnd}>
+                        <div className={css.rowActions}>{item.actions}</div>
+                        {meta}
+                      </div>
+                    </div>
+                  )
+                })}
               </div>
             )
         ) : (

@@ -164,7 +164,11 @@ export async function notesRename(path: string, name: string): Promise<{ path: s
   return { path: body.path }
 }
 
-/** 删除笔记或空目录。非空目录由 Host 拒绝，避免误删整棵树。 */
+/**
+ * 删除笔记或整个目录；调用方须先取得用户确认。
+ * @param path - 相对笔记根目录的斜杠路径。
+ * @returns Host 完成删除后兑现；请求失败时拒绝。
+ */
 export async function notesDelete(path: string): Promise<void> {
   assertNotePath(path)
   const response = await fetch('/api/notes/delete', {

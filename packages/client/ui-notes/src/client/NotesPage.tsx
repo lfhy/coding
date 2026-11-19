@@ -8,6 +8,7 @@ import {
 } from 'coding-client-ui-primitives'
 import type { PropsLocale, PropsRuntime } from 'coding-client-ui-slots'
 import { NS, type NotesLocaleKey } from './locales.ts'
+import { NoteDeleteDialog } from './NoteDeleteDialog.tsx'
 import { NotesEditor } from './NotesEditor.tsx'
 import { NotesWelcome } from './NotesWelcome.tsx'
 import { useNoteDraft } from './useNoteDraft.ts'
@@ -21,6 +22,7 @@ export type NotesPageProps = PropsRuntime<'shell.page'> & PropsLocale<typeof NS>
 const TREE_POLL_MS = 4000
 type DirectoryState = 'loading' | 'ready' | 'failed'
 type NoteActionTarget = Pick<NotesTreeEntry, 'kind' | 'name' | 'path'>
+type NoteContextMenu = { target: NoteActionTarget; x: number; y: number; trigger: HTMLButtonElement }
 type DialogKind = 'create' | 'folder' | 'reload' | 'rename' | 'delete'
 
 /** 去掉 Markdown 扩展名的文件名，供目录树显示。 */
@@ -38,6 +40,12 @@ function findEntry(entries: readonly NotesTreeEntry[], path: string): NotesTreeE
     }
   }
   return undefined
+}
+
+function removeTreeEntry(entries: readonly NotesTreeEntry[], path: string): NotesTreeEntry[] {
+  return entries.filter(entry => entry.path !== path).map(entry =>
+    entry.children !== undefined && path.startsWith(`${entry.path}/`)
+      ? { ...entry, children: removeTreeEntry(entry.children, path) } : entry)
 }
 
 /** 返回当前笔记所在目录；未选笔记时使用笔记根目录。 */
@@ -99,6 +107,7 @@ export function NotesPage({
   const createTrigger = useRef<HTMLButtonElement>(null)
   const dialogTrigger = useRef<HTMLButtonElement | null>(null)
   const creatingRequest = useRef<AbortController | null>(null)
+  const treeRevision = useRef(0)
   /** 上一次目录轮询看到的笔记修改时间；用于识别助手写入并自动打开。 */
   const seenNotes = useRef(new Map<string, number>())
   /** 首次轮询只建立修改时间基线：进入页面时不打开任何笔记。 */
@@ -114,7 +123,8 @@ export function NotesPage({
   const [exporting, setExporting] = useState(false)
   const [dialog, setDialog] = useState<DialogKind | null>(null)
   const [actionTarget, setActionTarget] = useState<NoteActionTarget | null>(null)
-  const [contextMenu, setContextMenu] = useState<{ target: NoteActionTarget; x: number; y: number } | null>(null)
+  const [deleteFailed, setDeleteFailed] = useState(false)
+  const [contextMenu, setContextMenu] = useState<NoteContextMenu | null>(null)
   const [draftName, setDraftName] = useState('')
   const [creating, setCreating] = useState(false)
   const [toast, setToast] = useState<{ id: number; key: NotesLocaleKey } | null>(null)
@@ -125,7 +135,7 @@ export function NotesPage({
     setToast({ id: toastId.current, key })
   }, [])
 
-  const { draft, saveLabel, select, edit, save, reload, refresh, getPath, flush, renamePath, clear } = useNoteDraft(notify)
+  const { draft, saveLabel, select, edit, save, reload, refresh, getPath, flush, renamePath, removePath } = useNoteDraft(notify)
 
   useEffect(() => {
     /* v8 ignore next -- jsdom 中 activeElement 恒为元素；null 臂只防御焦点位于其他文档或窗口的浏览器。 */
@@ -161,9 +171,12 @@ export function NotesPage({
     let timer: number | undefined
     let status: DirectoryState = 'loading'
     const poll = async () => {
+      const revision = treeRevision.current
       try {
         const fresh = await notesTree(signal)
         signal.throwIfAborted()
+        // 旧轮询不能把已删除的条目放回目录。
+        if (revision !== treeRevision.current) return
         setTree(fresh)
         const notes = noteFiles(fresh)
         const written = notesSynced.current ? latestWritten(notes, seenNotes.current) : undefined
@@ -216,7 +229,16 @@ export function NotesPage({
 
   const openContextMenu = useCallback((target: NoteActionTarget, event: MouseEvent<HTMLButtonElement>) => {
     event.preventDefault()
-    setContextMenu({ target, x: event.clientX, y: event.clientY })
+    setContextMenu({ target, x: event.clientX, y: event.clientY, trigger: event.currentTarget })
+  }, [])
+
+  const openTargetDialog = useCallback((kind: 'rename' | 'delete', target: NoteActionTarget, trigger: HTMLButtonElement) => {
+    setContextMenu(null)
+    setActionTarget(target)
+    dialogTrigger.current = trigger
+    if (kind === 'rename') setDraftName(target.kind === 'file' ? labelOf(target.name) : target.name)
+    else setDeleteFailed(false)
+    setDialog(kind)
   }, [])
 
   useEffect(() => {
@@ -232,34 +254,40 @@ export function NotesPage({
     const date = new Intl.DateTimeFormat(locale, { month: 'short', day: 'numeric' })
     const flatten = (entries: readonly NotesTreeEntry[], out: SidebarRootItem[], depth: number): void => {
       for (const entry of entries) {
-        if (entry.kind === 'dir') {
-          if (needle !== '') {
-            if (entry.children !== undefined) flatten(entry.children, out, 0)
-            continue
-          }
-          out.push({
-            id: entry.path, label: entry.name, icon: 'files', folder: true, open: expanded.has(entry.path), depth,
-            meta: date.format(entry.mtimeMs),
-            onSelect: () => { setCreationDirectory(entry.path); toggleDir(entry.path) },
-            onContextMenu: (event: MouseEvent<HTMLButtonElement>) => { openContextMenu(entry, event) },
-          })
-          if (expanded.has(entry.path) && entry.children !== undefined) flatten(entry.children, out, depth + 1)
-        } else {
-          const label = labelOf(entry.name)
-          if (needle !== '' && !label.toLocaleLowerCase(locale).includes(needle)) continue
-          out.push({
-            id: entry.path, label, icon: 'notes', iconTone: 'blue', depth, active: draft?.path === entry.path,
-            meta: date.format(entry.mtimeMs),
-            onSelect: () => { setCreationDirectory(selectedDirectory(entry.path)); void select(entry.path) },
-            onContextMenu: (event: MouseEvent<HTMLButtonElement>) => { openContextMenu(entry, event) },
-          })
+        const folder = entry.kind === 'dir'
+        if (folder && needle !== '') {
+          if (entry.children !== undefined) flatten(entry.children, out, 0)
+          continue
         }
+        const label = folder ? entry.name : labelOf(entry.name)
+        if (needle !== '' && !label.toLocaleLowerCase(locale).includes(needle)) continue
+        const open = folder && expanded.has(entry.path)
+        out.push({
+          id: entry.path, label, icon: folder ? 'files' : 'notes', depth,
+          ...(folder ? { folder, open } : { iconTone: 'blue', active: draft?.path === entry.path }),
+          meta: date.format(entry.mtimeMs),
+          actions: <>
+            <Button size="sm" className={css.rowAction} icon={<IconEditOutline16 size={14} />}
+              aria-label={t('renameEntry', { name: label })} title={t('rename')} aria-haspopup="dialog"
+              onClick={(event) => { openTargetDialog('rename', entry, event.currentTarget) }} />
+            <Button size="sm" className={css.rowAction} data-danger icon={<IconTrashOutline16 size={14} />}
+              aria-label={t('deleteEntry', { name: label })} title={t('delete')} aria-haspopup="dialog"
+              onClick={(event) => { openTargetDialog('delete', entry, event.currentTarget) }} />
+          </>,
+          onSelect: () => {
+            setCreationDirectory(folder ? entry.path : selectedDirectory(entry.path))
+            if (folder) toggleDir(entry.path)
+            else void select(entry.path)
+          },
+          onContextMenu: (event) => { openContextMenu(entry, event) },
+        })
+        if (open && entry.children !== undefined) flatten(entry.children, out, depth + 1)
       }
     }
     const items: SidebarRootItem[] = []
     flatten(tree, items, 0)
     return items
-  }, [tree, expanded, draft?.path, locale, needle, select, toggleDir, openContextMenu])
+  }, [tree, expanded, draft?.path, locale, needle, select, toggleDir, openContextMenu, openTargetDialog, t])
 
   const closeSearch = () => {
     setSearchOpen(false)
@@ -268,8 +296,10 @@ export function NotesPage({
   }
 
   useEffect(() => {
-    if (dialog !== null || dialogTrigger.current === null) return
-    dialogTrigger.current.focus({ preventScroll: true })
+    const trigger = dialogTrigger.current
+    if (dialog !== null || trigger === null) return
+    const next = trigger.isConnected ? trigger : createTrigger.current
+    next?.focus({ preventScroll: true })
     dialogTrigger.current = null
   }, [dialog])
 
@@ -288,14 +318,6 @@ export function NotesPage({
   const openDialog = (kind: DialogKind, event: MouseEvent<HTMLButtonElement>) => {
     dialogTrigger.current = event.currentTarget
     if (kind === 'create' || kind === 'folder') setDraftName('')
-    setDialog(kind)
-  }
-
-  const openTargetDialog = (kind: 'rename' | 'delete', target: NoteActionTarget) => {
-    setContextMenu(null)
-    setActionTarget(target)
-    dialogTrigger.current = null
-    if (kind === 'rename') setDraftName(target.kind === 'file' ? labelOf(target.name) : target.name)
     setDialog(kind)
   }
 
@@ -345,17 +367,22 @@ export function NotesPage({
     const request = new AbortController()
     creatingRequest.current = request
     setCreating(true)
+    setDeleteFailed(false)
     try {
-      await flush(request.signal)
       await notesDelete(target.path)
-      await refreshTree()
       request.signal.throwIfAborted()
-      if (draft !== null && (draft.path === target.path || draft.path.startsWith(`${target.path}/`))) clear()
-      if (creationDirectory === target.path || creationDirectory.startsWith(`${target.path}/`)) setCreationDirectory(selectedDirectory(target.path))
+      const deleted = (path: string) => path === target.path || path.startsWith(`${target.path}/`)
+      treeRevision.current += 1
+      setTree(previous => removeTreeEntry(previous, target.path))
+      for (const path of seenNotes.current.keys()) if (deleted(path)) seenNotes.current.delete(path)
+      removePath(target.path)
+      setExpanded(previous => new Set([...previous].filter(path => !deleted(path))))
+      setCreationDirectory(previous => deleted(previous) ? selectedDirectory(target.path) : previous)
       setDialog(null)
       setActionTarget(null)
+      notify('deleted')
     } catch {
-      if (!request.signal.aborted) notify('deleteError')
+      if (!request.signal.aborted) setDeleteFailed(true)
     } finally {
       creatingRequest.current = null
       if (!request.signal.aborted) setCreating(false)
@@ -468,7 +495,7 @@ export function NotesPage({
                 { id: 'rename', label: t('rename'), icon: <IconEditOutline16 size={16} /> },
                 { id: 'delete', label: t('delete'), danger: true, icon: <IconTrashOutline16 size={16} /> },
               ]}
-              onSelect={(id) => { openTargetDialog(id as 'rename' | 'delete', contextMenu.target) }}
+              onSelect={(id) => { openTargetDialog(id as 'rename' | 'delete', contextMenu.target, contextMenu.trigger) }}
               onClose={() => { setContextMenu(null) }}
               portal
               keyboardNavigation
@@ -550,12 +577,10 @@ export function NotesPage({
             onChange={(event) => { setDraftName(event.target.value) }} />
         </form>
       </Modal>
-      <Modal open={dialog === 'delete'} onClose={closeDialog}
-        title={t('delete')} closeLabel={t('close')} description={actionTarget?.kind === 'dir' ? t('deleteFolderConfirm') : t('deleteConfirm')}
-        trapFocus footer={<>
-          <Button variant="outline" disabled={creating} onClick={closeDialog}>{t('cancel')}</Button>
-          <Button variant="primary" disabled={creating} onClick={() => { void deleteTarget() }}>{t('delete')}</Button>
-        </>} />
+      {dialog === 'delete' && actionTarget !== null && <NoteDeleteDialog t={t}
+        description={actionTarget.kind === 'dir'
+          ? t('deleteFolderConfirm', { name: actionTarget.name }) : t('deleteConfirm', { name: labelOf(actionTarget.name) })}
+        deleting={creating} failed={deleteFailed} onClose={closeDialog} onConfirm={() => { void deleteTarget() }} />}
       <Modal open={dialog === 'reload'} onClose={closeDialog} title={t('reload')} closeLabel={t('close')}
         description={t('reloadConfirm')} trapFocus footer={<>
           <Button variant="outline" autoFocus onClick={closeDialog}>{t('cancel')}</Button>

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { Button } from '../src/Button.tsx'
 import { SidebarRoot, type SidebarRootItem } from '../src/SidebarRoot.tsx'
 
@@ -110,5 +110,26 @@ describe('SidebarRoot', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  it('展开态的行尾动作独立于行按钮，收起时不进入图标轨', () => {
+    const onSelect = vi.fn()
+    const onRename = vi.fn()
+    const notes = [{ id: 'draft', label: '草稿', icon: 'notes', meta: '11月19日', onSelect,
+      actions: <Button aria-label="重命名草稿" onClick={onRename} /> }] satisfies SidebarRootItem[]
+    const { unmount } = render(<SidebarRoot label="笔记" title="全部笔记" items={notes} collapsed={false} width={280} variant="summary" />)
+    const row = within(screen.getByRole('listitem'))
+    const note = row.getByRole('button', { name: '草稿' })
+    const rename = row.getByRole('button', { name: '重命名草稿' })
+    expect(row.getByText('11月19日')).toBeTruthy()
+    expect(note.contains(rename)).toBe(false)
+    fireEvent.click(rename)
+    expect(onRename).toHaveBeenCalledOnce()
+    expect(onSelect).not.toHaveBeenCalled()
+
+    unmount()
+    render(<SidebarRoot label="笔记" title="全部笔记" items={notes} collapsed width={56} variant="summary" />)
+    expect(screen.queryByRole('button', { name: '重命名草稿' })).toBeNull()
+    expect(screen.getByRole('button', { name: '草稿' })).toBeTruthy()
   })
 })

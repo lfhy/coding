@@ -1,7 +1,7 @@
 /** 全局受管理文件：私有磁盘对象、持久领域元数据和只读列表。@module coding-file-library */
 import { createHash, randomUUID } from 'node:crypto'
 import { constants } from 'node:fs'
-import { lstat, mkdir, open, readdir, readFile, rename, chmod, realpath, rmdir, unlink } from 'node:fs/promises'
+import { lstat, mkdir, open, readdir, readFile, rename, chmod, realpath, rm, unlink } from 'node:fs/promises'
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import type { Stats } from 'node:fs'
 import { Readable } from 'node:stream'
@@ -724,9 +724,9 @@ export class FileLibrary extends Service {
   }
 
   /**
-   * 删除笔记或空目录；目录不递归，含任意磁盘条目时拒绝。
+   * 删除笔记或整个目录；拒绝将符号链接作为目标，目录中的链接只移除链接本身。
    * @param relativePath - 要删除的笔记或目录路径。
-   * @returns 无返回值。
+   * @returns 删除完成后兑现；目标不存在或路径越界时拒绝。
    */
   async deleteNote(relativePath: string): Promise<void> {
     return this.scheduleNotesWrite(async () => {
@@ -739,24 +739,21 @@ export class FileLibrary extends Service {
         throw error
       })
       if (realParent !== realNotes && !realParent.startsWith(realNotes + sep)) throw new TypeError('笔记路径无效')
-      const current = await lstat(target).catch((error: unknown) => {
+      const entry = join(realParent, basename(target))
+      const current = await lstat(entry).catch((error: unknown) => {
         if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw new NoteNotFoundError()
         throw error
       })
       if (current.isSymbolicLink() || !current.isFile() && !current.isDirectory()) throw new TypeError('笔记条目无效')
-      if (current.isFile() && !NOTE_EXTENSIONS.has(extname(target).toLowerCase())) throw new TypeError('笔记扩展名无效')
       if (current.isDirectory()) {
-        try { await rmdir(target) }
-        catch (error) {
-          if ((error as NodeJS.ErrnoException).code === 'ENOTEMPTY' || (error as NodeJS.ErrnoException).code === 'EEXIST') {
-            throw new NoteConflictError('笔记目录不为空')
-          }
-          throw error
-        }
+        // 递归前确认实际目录是根目录的真子路径，不能通过文件系统别名选中根目录本身。
+        if (!(await realpath(entry)).startsWith(realNotes + sep)) throw new TypeError('笔记路径无效')
+        await rm(entry, { recursive: true })
       } else {
-        await unlink(target)
+        if (!NOTE_EXTENSIONS.has(extname(entry).toLowerCase())) throw new TypeError('笔记扩展名无效')
+        await unlink(entry)
       }
-      await syncDirectory(parent)
+      await syncDirectory(realParent)
     })
   }
 

@@ -72,6 +72,11 @@
 - **运行进度路线**：[`tool-status`](../../packages/session/tool-status/README.md) 持有 `set_status`、逐轮次进度事实与 `turnStatus` 投影；待办写入及轮次边界清除手动覆盖。`chat/ChatView.tsx` 通过标准投影按手动进度、进行中待办、活跃目标、随机短语选择，`chat/TurnStatus.tsx` 只负责一行展示与计时；[`progress-reminder`](../../packages/guard/progress-reminder/README.md) 引导适时更新。定向测试与 `apps/web/tests/turn-status.e2e.ts` 覆盖实时接管、显式清除、轮次隔离、刷新恢复和无任务回退；不往 runtime 添加领域事件分发。
 - **连带与验证**：改变输入提交要核对 `packages/client/runtime` 的 Session 与 Host RPC；改变持久 Chat 行须更新 `ConversationNodeDefinition` 和 keyed renderer；改模型可见内容还要核对 session 事件与 snapshot。定向运行 `pnpm exec vitest run packages/client/ui-conversation/tests packages/client/ui-commands/tests packages/client/ui-input-trigger/tests packages/client/ui-tool/tests packages/client/ui-trajectory/tests`，可见输出再跑 keyless `DSH_SNAPSHOT=replay pnpm run test:web`。
 
+## 笔记目录
+
+- **路线**：[笔记页](../../packages/client/ui-notes/README.md)用共享 `SidebarRootItem.actions` 放置行尾操作，右键与行尾按钮共用确认框；确认后由 `wire.ts` 发同源 `DELETE /api/notes/delete`，由[文件库](../../packages/attachment/file-library/README.md)检查根目录边界并删除文件或整个目录。成功后页面立即移除对应子树和打开的草稿，忽略仍在途的旧目录轮询。
+- **验证**：保持笔记和目录使用同一确认流程，覆盖取消、非空目录、根目录与符号链接边界、保存与删除时序；共享侧栏改动还需检查文件管理与画图页不变。定向运行 `pnpm exec vitest run packages/client/ui-notes/tests packages/client/ui-primitives/tests/sidebar-root.client.spec.tsx packages/attachment/file-library/tests`，实装场景见 [Web 笔记用例](../../apps/web/tests/notes-page.e2e.ts)。
+
 ## 图像生成与 AI 画布
 
 - **路线**：图片附件负责输入和持久字节；`packages/image/image-gen` 持有设置、提供方调用、比例尺寸表、会话图库／画布数据与包内灵感缩略图静态路由，`packages/image/tool-image-gen` 贡献按预设选择的模型工具。`packages/client/ui-image-gen` 在外层窄导航栏提供画图图标入口，工具结果可进入同会话画图工作台；主内容 `shell.page` 的「工作台／灵感／图库」子页切换位于页内 `SidebarRoot` 顶部的 `StudioTabs` 按钮组，收藏位于图库内；画廊打开时 `ui-layout` 用独立页覆盖整行，原对话侧栏与网格列宽保持挂载，页内 `SidebarRoot`（切换组 + 最近生成）承接同一折叠状态并在三个子页间保持挂载；工作台中央以图片预览和本次结果为默认视图；比例、分辨率档位与生成质量并排，图生图最多使用十张参考图。本机参考图通过同会话 Host 路由经附件准入后用于图生图；976 条灵感案例使用随包附带的 320px WebP 缩略图，不直连第三方 CDN。选择画图模式不会触发首条对话，也不会自动打开画廊；点击入口才打开页面。

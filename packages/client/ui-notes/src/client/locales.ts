@@ -11,7 +11,7 @@ export type NotesLocaleKey =
   | 'saved' | 'saving' | 'unsaved' | 'conflict' | 'reload' | 'reloadConfirm' | 'draftKept' | 'discardDraft' | 'retry'
   | 'loadError' | 'saveError' | 'createError' | 'createFolderError' | 'treeError'
   | 'rename' | 'renaming' | 'renameNote' | 'renameFolder' | 'delete' | 'deleteConfirm' | 'deleteFolderConfirm'
-  | 'renameError' | 'deleteError'
+  | 'renameEntry' | 'deleteEntry' | 'deleting' | 'deleted' | 'renameError' | 'deleteError'
   | 'copy' | 'copied'
   | 'export' | 'exportMarkdown' | 'exportWord' | 'exportPdf' | 'exportImage' | 'exportPdfHint' | 'exportError'
 
@@ -34,8 +34,10 @@ export const zh: Record<NotesLocaleKey, string> = {
   loadError: '无法读取笔记', saveError: '保存失败',
   createError: '无法创建笔记', createFolderError: '无法创建目录', treeError: '无法读取笔记目录',
   rename: '重命名', renaming: '正在重命名…', renameNote: '重命名笔记', renameFolder: '重命名目录', delete: '删除',
-  deleteConfirm: '确定删除这篇笔记吗？此操作不可撤销。', deleteFolderConfirm: '确定删除这个目录吗？目录必须为空，此操作不可撤销。',
-  renameError: '无法重命名', deleteError: '无法删除',
+  renameEntry: '重命名「{name}」', deleteEntry: '删除「{name}」', deleting: '正在删除…', deleted: '已删除',
+  deleteConfirm: '删除笔记「{name}」？此操作不可撤销。',
+  deleteFolderConfirm: '删除目录「{name}」及其中的所有文件和子目录？此操作不可撤销。',
+  renameError: '无法重命名', deleteError: '无法删除，请重试。',
   copy: '复制', copied: '已复制',
   export: '导出', exportMarkdown: 'Markdown（.md）', exportWord: 'Word（.docx）',
   exportPdf: 'PDF（打印保存）', exportImage: '图片（.png）',
@@ -61,8 +63,10 @@ export const en: Record<NotesLocaleKey, string> = {
   loadError: 'Could not load the note', saveError: 'Save failed',
   createError: 'Could not create the note', createFolderError: 'Could not create the folder', treeError: 'Could not load the note tree',
   rename: 'Rename', renaming: 'Renaming…', renameNote: 'Rename note', renameFolder: 'Rename folder', delete: 'Delete',
-  deleteConfirm: 'Delete this note? This cannot be undone.', deleteFolderConfirm: 'Delete this folder? It must be empty, and this cannot be undone.',
-  renameError: 'Could not rename', deleteError: 'Could not delete',
+  renameEntry: 'Rename “{name}”', deleteEntry: 'Delete “{name}”', deleting: 'Deleting…', deleted: 'Deleted',
+  deleteConfirm: 'Delete the note “{name}”? This cannot be undone.',
+  deleteFolderConfirm: 'Delete the folder “{name}” and all its files and subfolders? This cannot be undone.',
+  renameError: 'Could not rename', deleteError: 'Could not delete. Try again.',
   copy: 'Copy', copied: 'Copied',
   export: 'Export', exportMarkdown: 'Markdown (.md)', exportWord: 'Word (.docx)',
   exportPdf: 'PDF (print to save)', exportImage: 'Image (.png)',

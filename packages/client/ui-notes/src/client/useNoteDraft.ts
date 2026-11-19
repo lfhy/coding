@@ -25,7 +25,7 @@ export function useNoteDraft(notify: (key: NotesLocaleKey) => void) {
   const [draft, setDraft] = useState<NoteDraft | null>(null)
   const current = useRef<NoteDraft | null>(null)
   const writing = useRef<Promise<boolean> | null>(null)
-  const reading = useRef<AbortController | null>(null)
+  const reading = useRef<{ path: string; request: AbortController } | null>(null)
 
   const update = useCallback((next: NoteDraft) => {
     current.current = next
@@ -44,18 +44,18 @@ export function useNoteDraft(notify: (key: NotesLocaleKey) => void) {
     if (before.status === 'conflict') return false
 
     update({ ...before, status: 'saving' })
-    const pending = notesSave(before.path, before.content, before.mtimeMs).then(({ mtimeMs }) => {
+    const pending: Promise<boolean> = notesSave(before.path, before.content, before.mtimeMs).then(({ mtimeMs }) => {
+      if (writing.current !== pending) return true
       // 只把本次写入的版本标为已保存；网络等待期间的新输入仍留在草稿中。
       const latest = current.current
-      /* v8 ignore next -- 写入期间切换与轮询不能替换当前笔记。 */
       if (latest?.path === before.path) update({ ...latest, mtimeMs, savedContent: before.content, status: 'idle' })
       return true
     }, (error: unknown) => {
+      if (writing.current !== pending) return true
       const latest = current.current
-      /* v8 ignore next -- 写入期间切换与轮询不能替换当前笔记。 */
       if (latest?.path === before.path) update({ ...latest, status: error instanceof NoteConflictError ? 'conflict' : 'failed' })
       return false
-    }).finally(() => { writing.current = null })
+    }).finally(() => { if (writing.current === pending) writing.current = null })
     writing.current = pending
     return pending
   }, [update])
@@ -84,11 +84,12 @@ export function useNoteDraft(notify: (key: NotesLocaleKey) => void) {
   }, [content, dirty, save, status])
 
   const select = useCallback(async (path: string) => {
-    reading.current?.abort()
+    reading.current?.request.abort()
     if (path === current.current?.path) return
     const request = new AbortController()
     const { signal } = request
-    reading.current = request
+    const pending = { path, request }
+    reading.current = pending
     try {
       if (!(await flush(signal))) return
       const next = await read(path, signal)
@@ -96,7 +97,7 @@ export function useNoteDraft(notify: (key: NotesLocaleKey) => void) {
     } catch {
       if (!signal.aborted) notify('loadError')
     } finally {
-      if (reading.current === request) reading.current = null
+      if (reading.current === pending) reading.current = null
     }
   }, [flush, notify, read, update])
 
@@ -104,16 +105,17 @@ export function useNoteDraft(notify: (key: NotesLocaleKey) => void) {
     const before = current.current
     /* v8 ignore next -- 重新加载入口仅作用于已加载的笔记。 */
     if (before === null) return
-    reading.current?.abort()
+    reading.current?.request.abort()
     const request = new AbortController()
-    reading.current = request
+    const pending = { path: before.path, request }
+    reading.current = pending
     try {
       const next = await read(before.path, request.signal)
       if (!request.signal.aborted && current.current === before) update(next)
     } catch {
       if (!request.signal.aborted) notify('loadError')
     } finally {
-      if (reading.current === request) reading.current = null
+      if (reading.current === pending) reading.current = null
     }
   }, [notify, read, update])
 
@@ -124,11 +126,11 @@ export function useNoteDraft(notify: (key: NotesLocaleKey) => void) {
     if (!signal.aborted && current.current === before) update(next)
   }, [read, update])
 
-  useEffect(() => () => { reading.current?.abort() }, [])
+  useEffect(() => () => { reading.current?.request.abort() }, [])
 
   const getPath = useCallback(() => current.current?.path, [])
 
-  /** 笔记被外部重命名或删除后，更新/清除当前编辑缓冲。 */
+  /** 更新改名后仍打开的笔记路径，包括被改名目录中的笔记。 */
   const renamePath = useCallback((from: string, to: string) => {
     const before = current.current
     if (before === null || (before.path !== from && !before.path.startsWith(`${from}/`))) return
@@ -136,10 +138,17 @@ export function useNoteDraft(notify: (key: NotesLocaleKey) => void) {
     update({ ...before, path })
   }, [update])
 
-  const clear = useCallback(() => {
-    reading.current?.abort()
-    current.current = null
-    setDraft(null)
+  /** 只关闭被删条目的草稿，并取消仍在读取该条目的请求。 */
+  const removePath = useCallback((path: string) => {
+    const includes = (candidate: string) => candidate === path || candidate.startsWith(`${path}/`)
+    const pending = reading.current
+    if (pending !== null && includes(pending.path)) pending.request.abort()
+    if (current.current !== null && includes(current.current.path)) {
+      // 已删除草稿的保存回执不再阻塞打开其他笔记。
+      writing.current = null
+      current.current = null
+      setDraft(null)
+    }
   }, [])
 
   const saveLabel: NotesLocaleKey | undefined = draft === null ? undefined
@@ -147,5 +156,5 @@ export function useNoteDraft(notify: (key: NotesLocaleKey) => void) {
       : draft.status === 'failed' ? 'saveError'
         : draft.status
 
-  return { draft, saveLabel, select, edit, save, reload, refresh, getPath, flush, renamePath, clear }
+  return { draft, saveLabel, select, edit, save, reload, refresh, getPath, flush, renamePath, removePath }
 }

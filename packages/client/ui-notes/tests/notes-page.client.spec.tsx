@@ -33,6 +33,9 @@ function makeServer() {
       ['d/b.md', { content: 'hello b', mtimeMs: 800 }],
     ]),
     saveCalls: [] as { path: string; content: string; baseMtimeMs?: number }[],
+    deleteCalls: [] as string[],
+    failDelete: false,
+    treeDelay: undefined as Promise<TreeNode[]> | undefined,
     conflictNext: false,
     failSave: false,
     saveDelay: undefined as Promise<undefined> | undefined,
@@ -42,7 +45,7 @@ function makeServer() {
   const route = async (input: string | URL, init?: RequestInit): Promise<Response> => {
     const url = new URL(String(input), 'http://localhost')
     if (url.pathname === '/api/notes/tree') {
-      const next = state.treeVersions.shift() ?? state.tree
+      const next = state.treeDelay === undefined ? state.treeVersions.shift() ?? state.tree : await state.treeDelay
       return Response.json({ children: next })
     }
     if (url.pathname === '/api/notes/read') {
@@ -87,8 +90,12 @@ function makeServer() {
     }
     if (url.pathname === '/api/notes/delete') {
       const body = requestJson(init) as { path: string }
-      state.files.delete(body.path)
-      state.tree = state.tree.filter(node => node.path !== body.path)
+      state.deleteCalls.push(body.path)
+      if (state.failDelete) return new Response('unavailable', { status: 503 })
+      for (const path of state.files.keys()) if (path === body.path || path.startsWith(`${body.path}/`)) state.files.delete(path)
+      const remove = (nodes: TreeNode[]): TreeNode[] => nodes.filter(node => node.path !== body.path).map(node =>
+        node.children === undefined ? node : { ...node, children: remove(node.children) })
+      state.tree = remove(state.tree)
       return new Response(null, { status: 204 })
     }
     return new Response('not found', { status: 404 })
@@ -101,7 +108,7 @@ const closePage = vi.fn()
 const toggleAssistant = vi.fn()
 const props = {
   closePage,
-  t: (key: keyof typeof zh) => zh[key],
+  t: (key: keyof typeof zh, params?: { name: string }) => params === undefined ? zh[key] : zh[key].replace('{name}', params.name),
   sidebarCollapsed: false,
   sidebarWidth: 280,
   assistantOpen: false,
@@ -177,6 +184,82 @@ describe('NotesPage', () => {
     fireEvent.click(screen.getByRole('button', { name: '删除' }))
     await act(async () => {})
     expect(within(directory()).queryByTitle('renamed')).toBeNull()
+  })
+
+  it('行尾重命名不打开笔记；取消删除不发请求，焦点回到行尾按钮', async () => {
+    const state = makeServer()
+    await mount(undefined, { openNote: null })
+    fireEvent.click(screen.getByRole('button', { name: '重命名「a」' }))
+    expect(screen.getByRole('dialog', { name: '重命名笔记' })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: '取消' }))
+    expect(screen.queryByRole('textbox', { name: '原始文本' })).toBeNull()
+
+    const remove = screen.getByRole('button', { name: '删除「d」' })
+    fireEvent.click(remove)
+    const dialog = screen.getByRole('dialog', { name: '删除' })
+    expect(dialog.textContent).toContain('所有文件和子目录')
+    const cancel = within(dialog).getByRole('button', { name: '取消' })
+    expect(document.activeElement).toBe(cancel)
+    fireEvent.click(cancel)
+    expect(document.activeElement).toBe(remove)
+    expect(treeRow('d').getAttribute('aria-expanded')).toBe('false')
+    expect(state.deleteCalls).toEqual([])
+  })
+
+  it('删除含有当前草稿的目录不用等待保存，迟到的目录轮询也不能恢复该行', async () => {
+    const state = makeServer()
+    await mount()
+    fireEvent.click(treeRow('d'))
+    await act(async () => { fireEvent.click(treeRow('b')) })
+    const save = Promise.withResolvers<undefined>()
+    state.saveDelay = save.promise
+    fireEvent.change(screen.getByRole('textbox', { name: '原始文本' }), { target: { value: '未保存的草稿' } })
+    await act(async () => { vi.advanceTimersByTime(900) })
+    expect(state.saveCalls).toHaveLength(1)
+
+    const stale = structuredClone(state.tree)
+    const poll = Promise.withResolvers<TreeNode[]>()
+    state.treeDelay = poll.promise
+    await act(async () => { vi.advanceTimersByTime(3100) })
+    fireEvent.click(screen.getByRole('button', { name: '删除「d」' }))
+    const dialog = screen.getByRole('dialog', { name: '删除' })
+    await act(async () => { fireEvent.click(within(dialog).getByRole('button', { name: '删除' })) })
+    expect(state.deleteCalls).toEqual(['d'])
+    expect(state.files.has('d/b.md')).toBe(false)
+    expect(state.files.has('a.md')).toBe(true)
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(screen.getByRole('alert').textContent).toBe('已删除')
+    expect(screen.queryByRole('textbox', { name: '原始文本' })).toBeNull()
+    expect(within(directory()).queryByTitle('d')).toBeNull()
+    expect(document.activeElement).toBe(createTrigger())
+
+    await act(async () => { poll.resolve(stale) })
+    expect(within(directory()).queryByTitle('d')).toBeNull()
+    expect(within(directory()).queryByTitle('b')).toBeNull()
+    await act(async () => { fireEvent.click(treeRow('a')) })
+    await act(async () => { save.resolve(undefined) })
+    expect(screen.getByRole<HTMLTextAreaElement>('textbox', { name: '原始文本' }).value).toBe('hello a')
+    expect(saveState().textContent).toBe('已保存')
+  })
+
+  it('删除请求失败时保留目录和当前笔记，允许在确认框重试', async () => {
+    const state = makeServer()
+    state.failDelete = true
+    await mount()
+    fireEvent.click(screen.getByRole('button', { name: '删除「d」' }))
+    const dialog = screen.getByRole('dialog', { name: '删除' })
+    const confirm = within(dialog).getByRole('button', { name: '删除' })
+    await act(async () => { fireEvent.click(confirm) })
+    expect(within(dialog).getByRole('alert').textContent).toBe('无法删除，请重试。')
+    expect(treeRow('d')).toBeTruthy()
+    expect(confirm.hasAttribute('disabled')).toBe(false)
+
+    state.failDelete = false
+    await act(async () => { fireEvent.click(confirm) })
+    expect(state.deleteCalls).toEqual(['d', 'd'])
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(within(directory()).queryByTitle('d')).toBeNull()
+    expect(screen.getByRole<HTMLTextAreaElement>('textbox', { name: '原始文本' }).value).toBe('hello a')
   })
 
   it('以中央宽度而非窗口宽度切换默认视图，保留手动预览和草稿', async () => {

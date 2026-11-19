@@ -1,12 +1,12 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import { chmod, lstat, mkdir, mkdtemp, readdir, rm, symlink, utimes, writeFile } from 'node:fs/promises'
+import { chmod, lstat, mkdir, mkdtemp, readFile, readdir, rm, symlink, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import Storage from 'coding-storage'
 import { DomainFacility } from 'coding-storage-domain'
 import { SqliteStorageBackend } from 'coding-storage-sqlite'
-import FileLibrary, { NoteConflictError, NoteNotFoundError, StaleNoteError } from '../src/index.ts'
+import FileLibrary, { NoteNotFoundError, StaleNoteError } from '../src/index.ts'
 
 const homes: string[] = []
 const contexts: Context[] = []
@@ -99,7 +99,7 @@ describe('无目录笔记域', () => {
     await expect(library.saveNote('conflict.md', '第二版', undefined)).resolves.toMatchObject({ path: 'conflict.md' })
   })
 
-  it('改名和删除笔记条目；目录删除不递归且非空时拒绝', async () => {
+  it('改名和删除单篇笔记与空目录', async () => {
     const { library } = await harness()
     await library.saveNote('draft.md', '草稿')
     expect(await library.renameNote('draft.md', 'published')).toEqual({ path: 'published.md' })
@@ -110,12 +110,48 @@ describe('无目录笔记域', () => {
     expect(await library.renameNote('empty', 'renamed')).toEqual({ path: 'renamed' })
     await library.deleteNote('renamed')
     await library.deleteNote('published.md')
+    await expect(readdir(library.notesRootPath())).resolves.toEqual([])
     await expect(library.deleteNote('published.md')).rejects.toThrow(NoteNotFoundError)
+  })
 
-    await library.createNoteDirectory('non-empty')
-    await library.createNote('child', 'non-empty')
-    await expect(library.deleteNote('non-empty')).rejects.toThrow(NoteConflictError)
-    await expect(library.readNote('non-empty/child.md')).resolves.toMatchObject({ content: '' })
+  it('递归删除多层笔记、其他文件和隐藏条目，保留相邻目录', async () => {
+    const { library } = await harness()
+    await library.saveNote('archive/deep/note.markdown', '二级笔记')
+    await library.saveNote('archive-keep/keep.md', '相邻笔记')
+    const notesDir = library.notesRootPath()
+    const target = join(notesDir, 'archive')
+    const data = join(target, 'deep', 'data.txt')
+    await writeFile(data, '非 Markdown 文件')
+    await writeFile(join(target, '.DS_Store'), '隐藏文件')
+    await mkdir(join(target, '.git'))
+    await writeFile(join(target, '.git', 'HEAD'), 'ref: refs/heads/main\n')
+
+    await expect(library.deleteNote('archive/deep/data.txt')).rejects.toThrow(TypeError)
+    await expect(readFile(data, 'utf8')).resolves.toBe('非 Markdown 文件')
+    await library.deleteNote('archive')
+    await expect(readdir(notesDir)).resolves.toEqual(['archive-keep'])
+    await expect(library.readNote('archive-keep/keep.md')).resolves.toMatchObject({ content: '相邻笔记' })
+  })
+
+  it('拒绝删除笔记根目录、越界路径和链接目标，递归时不跟随内部链接', async () => {
+    const { library } = await harness()
+    await library.saveNote('archive/child.md', '内部笔记')
+    const notesDir = library.notesRootPath()
+    const outside = join(notesDir, '..', 'notes-outside')
+    const outsideNote = join(outside, 'sub', 'keep.md')
+    await mkdir(join(outside, 'sub'), { recursive: true })
+    await writeFile(outsideNote, '外部笔记')
+    const link = join(notesDir, 'archive', 'linked')
+    await symlink(outside, link, process.platform === 'win32' ? 'junction' : 'dir')
+
+    for (const path of ['', '.', '../notes-outside', outside, 'archive/linked', 'archive/linked/sub']) {
+      await expect(library.deleteNote(path), JSON.stringify(path)).rejects.toThrow(TypeError)
+    }
+    expect((await lstat(link)).isSymbolicLink()).toBe(true)
+    await expect(library.readNote('archive/child.md')).resolves.toMatchObject({ content: '内部笔记' })
+    await library.deleteNote('archive')
+    await expect(lstat(link)).rejects.toMatchObject({ code: 'ENOENT' })
+    await expect(readFile(outsideNote, 'utf8')).resolves.toBe('外部笔记')
   })
 
   it('带修改时间的迟到保存不会在改名或删除后复活旧路径', async () => {
@@ -126,7 +162,6 @@ describe('无目录笔记域', () => {
     await expect(library.readNote('old.md')).rejects.toThrow(/笔记不存在/)
 
     const nested = await library.saveNote('stale/note.md', '嵌套内容')
-    await library.deleteNote('stale/note.md')
     await library.deleteNote('stale')
     await expect(library.saveNote('stale/note.md', '迟到内容', nested.mtimeMs)).rejects.toThrow(NoteNotFoundError)
     await expect(library.notesTree()).resolves.not.toEqual(expect.arrayContaining([

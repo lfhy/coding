@@ -249,7 +249,6 @@ export function installFileRoutes(ctx: Context, service: FileLibrary): void {
           await service.deleteNote(body.path)
           res.writeHead(204, { 'cache-control': 'private, no-store' }); res.end()
         } catch (error) {
-          if (error instanceof NoteConflictError) { json(res, 409, { error: error.message }); return }
           if (error instanceof NoteNotFoundError) { json(res, 404, { error: error.message }); return }
           if (error instanceof TypeError) { json(res, 400, { error: error.message }); return }
           webCtx.logger.warn('file-library notes delete request failed', error)

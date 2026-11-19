@@ -76,6 +76,14 @@
 
 .rail { display: grid; justify-items: center; gap: 8px; }
 
+.rowSeat {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  border-radius: 8px;
+}
+
 .row {
   display: flex;
   align-items: center;
@@ -117,8 +125,13 @@
 
 .mediaRow { height: 52px; padding: 0 6px; gap: 8px; }
 
-.row:hover { background: var(--dsw-alias-interactive-bg-hover); }
-.row[aria-current='true'] { background: var(--dsw-alias-interactive-bg-hover); font-weight: 600; }
+/* 主按钮覆盖整行；显示的行尾按钮位于这层之上，不触发行选择。 */
+.rowSeat > .row::after { content: ''; position: absolute; inset: 0; border-radius: inherit; }
+.rowSeat > .row:focus-visible { outline: none; }
+.rowSeat > .row:focus-visible::after { outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: -2px; }
+.row:hover, .row[aria-current='true'],
+.rowSeat:hover, .rowSeat:has(.row[aria-current='true']) { background: var(--dsw-alias-interactive-bg-hover); }
+.row[aria-current='true'] { font-weight: 600; }
 .row:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: -2px; }
 
 .rowIcon {
@@ -137,7 +150,8 @@
 .row[data-icon-tone='blue'], .railButton[data-icon-tone='blue'] { --sidebar-item-icon: var(--dsw-alias-state-business-primary); }
 .row[data-icon-tone='violet'], .railButton[data-icon-tone='violet'] { --sidebar-item-icon: var(--dsw-alias-icon-accent-violet); }
 .row:not([data-icon-tone])[aria-current='true'] .rowIcon,
-.row:not([data-icon-tone]):hover .rowIcon { color: var(--dsw-alias-state-warn-primary); }
+.row:not([data-icon-tone]):hover .rowIcon,
+.rowSeat:hover .row:not([data-icon-tone]) .rowIcon { color: var(--dsw-alias-state-warn-primary); }
 
 .mediaBox {
   display: inline-flex;
@@ -164,7 +178,31 @@
   display: grid;
   grid-template-columns: 10px 16px minmax(0, 1fr) auto;
 }
-.summaryRow[aria-current='true'] { background: var(--dsw-alias-state-business-tertiary); }
+.rowSeat > .summaryRow { grid-template-columns: 10px 16px minmax(0, 1fr); }
+.summaryRow[aria-current='true'],
+.shell[data-variant='summary'] .rowSeat:has(.row[aria-current='true']) { background: var(--dsw-alias-state-business-tertiary); }
+.rowSeat > .row { background: transparent; }
+
+.rowEnd {
+  display: grid;
+  place-items: center end;
+  min-width: 0;
+  padding-inline-end: 8px;
+  pointer-events: none;
+}
+
+.rowEnd > * { grid-area: 1 / 1; }
+
+/* 保留行尾宽度和 Tab 顺序，隐藏时让指针落在主按钮。 */
+.rowActions {
+  z-index: 1;
+  display: flex;
+  gap: 2px;
+  opacity: 0;
+}
+
+.rowSeat:is(:hover, :has(:focus-visible)) .rowActions { opacity: 1; pointer-events: auto; }
+.rowSeat:is(:hover, :has(:focus-visible)) .rowActions + .summaryMeta { opacity: 0; }
 
 .summaryMeta {
   color: var(--dsw-alias-label-secondary);
