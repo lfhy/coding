@@ -632,9 +632,9 @@ describe('ChatView', () => {
     const h = makeHarness({ nodes: [assistant(1, 'working')], queue: [queued, pending], running: true })
     const view = render(<h.ChatView {...h.props} />)
 
-    expect(view.getByText('interrupt now').closest('[data-pending-steering]')).not.toBeNull()
-    expect(view.queryByText('later')).toBeNull()
-    const pendingBubble = view.getByText('interrupt now').closest('[data-pending-steering]')
+    expect(view.getByText('interrupt now').closest('[data-pending-message]')).not.toBeNull()
+    expect(view.getByText('later').closest('[data-pending-message]')).not.toBeNull()
+    const pendingBubble = view.getByText('interrupt now').closest('[data-pending-message]')
     expect(pendingBubble).not.toBeNull()
     fireEvent.click(within(pendingBubble as HTMLElement).getByRole('button', { name: '复制' }))
     expect(writeText).toHaveBeenCalledWith('interrupt now')
@@ -656,11 +656,11 @@ describe('ChatView', () => {
       })
     })
     expect(view.getAllByText('interrupt now')).toHaveLength(1)
-    expect(view.container.querySelector('[data-pending-steering]')).toBeNull()
-    // Only the durable steering bubble: the turn is still running, so its
-    // assistant narration owns no footer yet, and a steering bubble never
-    // carries a branch action.
-    expect(view.getAllByRole('button', { name: '复制' })).toHaveLength(1)
+    expect(view.getByText('later').closest('[data-pending-message]')).not.toBeNull()
+    expect(view.getByText('interrupt now').closest('[data-pending-message]')).toBeNull()
+    // The queued message remains pending while the consumed steering message
+    // has handed off to its durable node.
+    expect(view.getAllByRole('button', { name: '复制' })).toHaveLength(2)
     const durableBubble = view.getByText('interrupt now').closest('[class*="userRow"]') as HTMLElement
     expect(within(durableBubble).queryByRole('button', { name: '在新对话中分支' })).toBeNull()
 
@@ -696,7 +696,7 @@ describe('ChatView', () => {
     const view = render(<h.ChatView {...h.props} />)
 
     expect(view.getAllByText('same steering')).toHaveLength(2)
-    expect(view.container.querySelectorAll('[data-pending-steering]')).toHaveLength(1)
+    expect(view.container.querySelectorAll('[data-pending-message]')).toHaveLength(1)
   })
 
   it('animates only the latest unresolved model retry', () => {

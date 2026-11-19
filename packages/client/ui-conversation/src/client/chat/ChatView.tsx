@@ -1,4 +1,4 @@
-// ChatView：以稳定 key 呈现最终业务节点，处理分页、待处理引导与底部跟随。
+// ChatView：以稳定 key 呈现最终业务节点，处理分页、待处理消息与底部跟随。
 // 各行经 conversation.chat.node 分发；ui-tool 持有工具调用行的展示。
 // 注入的文件与浏览器链接打开动作若被拒绝，由视图显示页面内对话框。
 //
@@ -16,7 +16,7 @@ import { Button, IconChevronDownOutline14, Modal } from 'coding-client-ui-primit
 import type { ChatViewSlotProps, RenderMessageImages } from '../contract/slots.ts'
 import { buildConversationAnchors, type ConversationAnchor } from './conversation-anchors.ts'
 import { ConversationAnchorRail } from './ConversationAnchorRail.tsx'
-import { PendingSteeringBubble } from './MessageItem.tsx'
+import { PendingQueueBubble } from './MessageItem.tsx'
 import { ChatNodeSeat } from './ChatNodeSeat.tsx'
 import { TurnStatus } from './TurnStatus.tsx'
 import css from './ChatView.module.css'
@@ -276,8 +276,8 @@ export function ChatView({
     setBrowserOpenRetry(null)
   }, [])
 
-  const pendingSteering = useMemo(
-    () => inbox.filter(item => item.placement === 'steering'),
+  const pendingMessages = useMemo(
+    () => inbox.filter(item => item.placement === 'queued' || item.placement === 'steering'),
     [inbox],
   )
   const imageAnchorLabel = t('chat.anchors.image')
@@ -305,7 +305,7 @@ export function ChatView({
   const firstSeqRef = useRef<number | null>(null)
   const openedRef = useRef(false)
   const lastKeyRef = useRef<string | null>(null)
-  const lastSteeringIdRef = useRef<string | null>(null)
+  const lastPendingMessageIdRef = useRef<string | null>(null)
   /** Flow tip signature — follow-scroll only when this moves, never on a
    *  scroll-driven at-bottom chrome re-render (which would snap inertial
    *  scrolls the rest of the way to the floor). */
@@ -319,8 +319,8 @@ export function ChatView({
   const firstSeq = firstKey === undefined ? null : nodeStore.get(firstKey)?.anchorSeq ?? null
   const lastKey = order.at(-1) ?? null
   const lastNode = lastKey === null ? undefined : nodeStore.get(lastKey)
-  const lastSteeringId = pendingSteering[pendingSteering.length - 1]?.id ?? null
-  const followSig = `${openState}:${firstSeq}:${lastKey}:${order.length}:${running ? 1 : 0}:${lastSteeringId ?? ''}`
+  const lastPendingMessageId = pendingMessages[pendingMessages.length - 1]?.id ?? null
+  const followSig = `${openState}:${firstSeq}:${lastKey}:${order.length}:${running ? 1 : 0}:${lastPendingMessageId ?? ''}`
 
   const measureAnchorRail = useCallback(() => {
     const local = listRef.current
@@ -423,7 +423,7 @@ export function ChatView({
       }
       firstSeqRef.current = firstSeq
       lastKeyRef.current = lastKey
-      lastSteeringIdRef.current = lastSteeringId
+      lastPendingMessageIdRef.current = lastPendingMessageId
       followSigRef.current = followSig
       return
     }
@@ -439,7 +439,7 @@ export function ChatView({
       firstSeqRef.current = firstSeq
       /* v8 ignore next -- ?? arm: a prepend adds nodes, so the flow list here is never empty. */
       lastKeyRef.current = lastKey
-      lastSteeringIdRef.current = lastSteeringId
+      lastPendingMessageIdRef.current = lastPendingMessageId
       followSigRef.current = followSig
       return
     }
@@ -447,14 +447,14 @@ export function ChatView({
     // Own words must be visible: a new trailing user node force-scrolls
     // (send lives in the composer, so arrival is detected here, not armed there).
     const appendedUser = lastKey !== lastKeyRef.current && lastNode?.kind === 'user'
-    const appendedSteering = lastSteeringId !== null && lastSteeringId !== lastSteeringIdRef.current
+    const appendedPending = lastPendingMessageId !== null && lastPendingMessageId !== lastPendingMessageIdRef.current
     const tipMoved = followSigRef.current !== followSig
     lastKeyRef.current = lastKey
-    lastSteeringIdRef.current = lastSteeringId
+    lastPendingMessageIdRef.current = lastPendingMessageId
     followSigRef.current = followSig
     // Follow new flow content while pinned; do NOT re-pin on every render
     // merely because atBottomRef is true (scroll threshold → setState → snap).
-    if (appendedUser || appendedSteering || (tipMoved && atBottomRef.current)) toBottom(el)
+    if (appendedUser || appendedPending || (tipMoved && atBottomRef.current)) toBottom(el)
   })
 
   // 滚动、正文与编辑器尺寸变化共用已有 ResizeObserver；轨道重测按帧合并。
@@ -657,8 +657,8 @@ export function ChatView({
               double-render the same wait. */}
           {/* 回合活动行跨首 token、工具执行与流式输出保留，进度变化不重置计时。 */}
           {running && <TurnStatus startTime={runningTurnStart} label={statusLabel} t={t} />}
-          {pendingSteering.map(item => (
-            <PendingSteeringBubble
+          {pendingMessages.map(item => (
+            <PendingQueueBubble
               key={item.id}
               content={item.content}
               renderMessageImages={renderMessageImages}

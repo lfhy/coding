@@ -210,6 +210,32 @@ describe('queue snapshot intake', () => {
 
     expect(session.getSnapshot().queue).toEqual([])
   })
+
+  it('hands off one queued occurrence when its durable user message arrives', async () => {
+    const session = makeSession()
+    await session.open()
+    const message = createUserMessage({
+      content: text('queued message'),
+      source: { kind: 'user' },
+    })
+    session.handleMuxEnvelope(rid('env-queued'), queueFrame([
+      { id: 'q-first', body: '', message },
+      { id: 'q-second', body: '', message },
+    ]))
+
+    session.handleMuxEnvelope(rid('env-queued-durable'), {
+      type: 'session/event', sessionId: SID,
+      event: {
+        seq: 0,
+        time: 1_700_000_000_000,
+        type: 'user/message',
+        surfaceOp: 'append',
+        data: message,
+      } as SessionEvent,
+    })
+
+    expect(session.getSnapshot().queue.map(item => item.id)).toEqual(['q-second'])
+  })
 })
 
 describe('queue operation transport', () => {

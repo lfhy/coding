@@ -61,15 +61,16 @@ export class SessionQueueMirror {
   }
 
   /**
-   * Retire a transient steering row once its durable message enters the log.
-   * @param event - newly contiguous durable Session event.
-   * @returns whether the projection changed.
+   * 持久用户消息进入日志后，折叠一个对应的瞬态排队项。
+   * 同一 MessageId 可能有多个待处理出现，因此只消费当前最早的一项。
+   * @param event - 新到达且已连续的 Session 事件。
+   * @returns 投影是否发生变化。
    */
   acceptDurable(event: SessionEvent): boolean {
     if (event.type !== 'user/message') return false
     const messageId = event.data.id
     const index = this.current.findIndex(item =>
-      item.placement === 'steering' && item.messageId === messageId)
+      (item.placement === 'queued' || item.placement === 'steering') && item.messageId === messageId)
     if (index < 0) return false
     this.current = this.current.filter((_item, candidate) => candidate !== index)
     return true

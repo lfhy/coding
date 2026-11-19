@@ -1,7 +1,6 @@
-// MessageItem: simple chat nodes — user and consumed-steering bubbles
-// (right-aligned, with clock + copy IconActions; branch lives only under
-// assistant answers), pending steering (copy only), context injection,
-// compaction marker, retry disclosure, and unknown-surface JSON rows.
+// MessageItem：简单聊天节点——用户消息与已消费的插话气泡
+// （右对齐，带时间与复制操作；分支只出现在助手回答下）、待处理消息（仅复制）、
+// 上下文注入、压缩标记、重试展开和未知事件 JSON 行。
 
 import { memo, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
@@ -253,7 +252,7 @@ function UserStyleBubble({
   renderMessageImages: ChatNodeOwnerProps['renderMessageImages']
   /** Optional IconActions (or similar) below the bubble; receives the joined text. */
   actions?: (text: string) => ReactNode
-  /** Whether this is the Host-authoritative pre-admission steering projection. */
+  /** 是否为 Host 权威的待处理消息投影。 */
   pending?: boolean
   /** Exact session mention labels associated by the adjacent recall node. */
   referenceLabels?: readonly string[]
@@ -263,7 +262,12 @@ function UserStyleBubble({
   const truncated = (total: number): string => t('json.truncated', { total })
   const showBubble = text !== '' || rest.length > 0
   return (
-    <div className={css.userRow} data-pending-steering={pending || undefined} data-time-hover-root>
+    <div
+      className={css.userRow}
+      data-pending-message={pending || undefined}
+      data-pending-steering={pending || undefined}
+      data-time-hover-root
+    >
       <div className={css.userStack}>
         {renderMessageImages({ images, align: 'end' })}
         {showBubble && <ChatUserBubble>
@@ -282,12 +286,11 @@ function UserStyleBubble({
 }
 
 /**
- * Render one Host-authoritative pending steering item with the same visual
- * language as its eventual durable transcript node.
- * @param props - Pending message content and conversation translator.
- * @returns the pending steering bubble.
+ * Render one Host 权威的待处理排队项，使用与最终持久消息相同的视觉形式。
+ * @param props - 待处理消息内容和对话翻译器。
+ * @returns 待处理排队消息气泡。
  */
-export function PendingSteeringBubble({ content, renderMessageImages, t }: {
+export function PendingQueueBubble({ content, renderMessageImages, t }: {
   content: readonly unknown[]
   renderMessageImages: ChatNodeOwnerProps['renderMessageImages']
   t: ChatViewSlotProps['t']
@@ -310,7 +313,7 @@ export function PendingSteeringBubble({ content, renderMessageImages, t }: {
   )
 }
 
-/** User and admitted-steering keyed Chat renderer. */
+export const PendingSteeringBubble = PendingQueueBubble
 export const UserMessageNodeView = memo(function UserMessageNodeView({
   node, renderMessageImages, t,
 }: ChatNodeViewProps<'user' | 'steering'>) {
