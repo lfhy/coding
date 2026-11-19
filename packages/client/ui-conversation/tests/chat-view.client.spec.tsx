@@ -633,7 +633,7 @@ describe('ChatView', () => {
     const view = render(<h.ChatView {...h.props} />)
 
     expect(view.getByText('interrupt now').closest('[data-pending-message]')).not.toBeNull()
-    expect(view.getByText('later').closest('[data-pending-message]')).not.toBeNull()
+    expect(view.queryByText('later')).toBeNull()
     const pendingBubble = view.getByText('interrupt now').closest('[data-pending-message]')
     expect(pendingBubble).not.toBeNull()
     fireEvent.click(within(pendingBubble as HTMLElement).getByRole('button', { name: '复制' }))
@@ -656,11 +656,10 @@ describe('ChatView', () => {
       })
     })
     expect(view.getAllByText('interrupt now')).toHaveLength(1)
-    expect(view.getByText('later').closest('[data-pending-message]')).not.toBeNull()
+    expect(view.queryByText('later')).toBeNull()
     expect(view.getByText('interrupt now').closest('[data-pending-message]')).toBeNull()
-    // The queued message remains pending while the consumed steering message
-    // has handed off to its durable node.
-    expect(view.getAllByRole('button', { name: '复制' })).toHaveLength(2)
+    // 普通排队消息只由输入区显示；确认插队的消息交接到正式节点。
+    expect(view.getAllByRole('button', { name: '复制' })).toHaveLength(1)
     const durableBubble = view.getByText('interrupt now').closest('[class*="userRow"]') as HTMLElement
     expect(within(durableBubble).queryByRole('button', { name: '在新对话中分支' })).toBeNull()
 

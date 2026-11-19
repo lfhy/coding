@@ -277,7 +277,7 @@ export function ChatView({
   }, [])
 
   const pendingMessages = useMemo(
-    () => inbox.filter(item => item.placement === 'queued' || item.placement === 'steering'),
+    () => inbox.filter(item => item.placement === 'steering'),
     [inbox],
   )
   const imageAnchorLabel = t('chat.anchors.image')

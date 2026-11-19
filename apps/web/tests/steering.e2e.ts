@@ -108,6 +108,8 @@ describe('web e2e: mid-turn steering lands durably and visibly', () => {
     await input.press('Enter')
     const queuedRow = page.getByRole('listitem').filter({ hasText: STEER })
     await queuedRow.waitFor({ timeout: 10_000 })
+    const chat = page.locator('[data-chat-flow]')
+    expect(await chat.getByText(STEER, { exact: true }).count()).toBe(0)
     const steerButton = queuedRow.getByRole('button', { name: 'Steer queued message' })
     await expect.poll(() => steerButton.isEnabled(), { timeout: 10_000 }).toBe(true)
     await steerButton.click({ timeout: 10_000 })
@@ -115,6 +117,7 @@ describe('web e2e: mid-turn steering lands durably and visibly', () => {
     // A timeout while the Queue row remains means strict steer lost to a
     // closing window (`steer-unavailable`); inspect replay pacing first.
     await pendingSteering.waitFor({ timeout: 10_000 })
+    expect(await queuedRow.count()).toBe(0)
 
     // The blocked composer keeps steering pending long enough to observe the
     // Host-authoritative mirror before the loop admits it durably.
