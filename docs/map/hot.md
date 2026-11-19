@@ -223,7 +223,7 @@
 ## packages/client/ui-open-in-app
 
 - **拥有**：工作区打开能力的浏览器半：会话页头分体入口（`OpenInAppAction`）及右侧边栏、终端底栏开关（`WorkbenchPanelToggles`），均占用 `conversation.session.header.utilities`；欢迎页开关占用 `conversation.hero.actions`；内置工作台（`WorkspaceWorkbench`，占用 root scope `workbench`）按 Session 持有功能菜单、唯一共享新增入口、文件管理器／文件预览／终端／外部标签、文件视图及右侧终端，声明 keyed `sidebar.right.pane.tab`／`.title` 子 slot；保留式底栏终端（`RetainedTerminalPanel`）独立占用 `workbench.bottom`；另有 `OpenInAppController`。
-- **不拥有**：浏览器页面、实时画面及人工输入属于 `packages/browser/browser-ego-host` 和 `packages/client/ui-browser-ego`；Host 路由（应用启动、文件 list/read、终端 WebSocket）属于 `packages/host/open-in-app`；workbench 壳层几何与 `ctx.layout` 属于 `packages/client/ui-layout`；`conversation.session.header.utilities` 与 `conversation.hero.actions` 座位声明属于 `packages/client/ui-conversation`。
+- **不拥有**：浏览器页面、实时画面及人工输入属于 `packages/browser/browser-ego-host` 和 `packages/client/ui-browser-ego`；Host 路由（应用启动、文件 list/locate/read、终端 WebSocket）属于 `packages/host/open-in-app`；workbench 壳层几何与 `ctx.layout` 属于 `packages/client/ui-layout`；`conversation.session.header.utilities` 与 `conversation.hero.actions` 座位声明属于 `packages/client/ui-conversation`。
 - **入口**：`packages/client/ui-open-in-app/src/client/index.ts`（注入 `slots`、`locale`、`layout`、`sessions`、`workspaces`；通过 `ctx.slots.inject(...)` 在各座位注册）；node 半是空 apply。
 - **接线**：`packages/bundle/web-app/cordis.patch.yml` 的 `ui-open-in-app` 行与 host 行 `open-in-app` 并排挂载；共享常量经 `coding-host-open-in-app/shared`。
 - **关键文件**：`packages/client/ui-open-in-app/src/client/index.ts`、`packages/client/ui-open-in-app/src/client/controller.ts`、`packages/client/ui-open-in-app/src/client/store.ts`、`packages/client/ui-open-in-app/src/client/WorkspaceWorkbench.tsx`、`packages/client/ui-open-in-app/src/client/sidebar-tab-registry.ts`、`packages/client/ui-open-in-app/src/client/sidebar-tab-service.ts`、`packages/client/ui-open-in-app/src/client/TerminalPanel.tsx`、`packages/client/ui-open-in-app/src/client/RetainedTerminalPanel.tsx`。
@@ -307,7 +307,7 @@
 - **接线**：`packages/bundle/web-app/cordis.patch.yml` 的行 `open-in-app`，与客户端行 `ui-open-in-app` 成对。
 - **关键文件**：`packages/host/open-in-app/src/index.ts`、`packages/host/open-in-app/src/attach.ts`、`packages/host/open-in-app/src/workspace.ts`、`packages/host/open-in-app/src/terminal.ts`、`packages/host/open-in-app/src/resolver.ts`、`packages/host/open-in-app/src/catalog.ts`。
 - **改这里要同步**：`packages/client/ui-open-in-app`（wire 与交互）、`packages/attachment/file-library`（上传语义与元数据）、`docs/map/wiring.md`、包 README 的路由与安全表。
-- **不变量**：每条 HTTP 路由与 upgrade 先调 connection 的 `requestRejection`（只收 loopback 且同源），拒绝发生在读载荷、查 Session、分配 PTY 之前；工作区根只从 `Session.header.cwd` 解析，路径逐段匹配 `ctx.fs.listDir` 子项并以 `ctx.fs.contains` 复核，浏览器字符串绝不拼成 OS 路径；Remote-SSH marker 或 SSH 启动一律 fail-closed 到 `files` 分支。
+- **不变量**：每条 HTTP 路由与 upgrade 先调 connection 的 `requestRejection`（只收 loopback 且同源），拒绝发生在读载荷、查 Session、分配 PTY 之前；工作区根只从 `Session.header.cwd` 解析，路径逐段匹配 `ctx.fs.listDir` 子项并以 `ctx.fs.contains` 复核，浏览器字符串绝不拼成 OS 路径；`locate` 是唯一把模型路径翻译成段链的入口，必须在 Session 的执行世界里 `ctx.fs.resolve` 并复核 containment，只回传工作区内普通文件的段；Remote-SSH marker 或 SSH 启动一律 fail-closed 到 `files` 分支。
 - **测试**：`pnpm exec vitest run packages/host/open-in-app/tests/host-routes.spec.ts`
 
 ## packages/host/directory-picker（含 -native、-browse、-auto）
