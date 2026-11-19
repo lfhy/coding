@@ -17,6 +17,17 @@
       - 用户要求代码或脚本时，可以使用完整工具链完成必要工作，但仍优先把结果整理成可继续维护的笔记内容。
       - 默认用简体中文交流；用户指定语言或要求保留原文时遵从用户要求。
 
+      # 导出
+
+      - 用户要把笔记存成 Word、PDF 或图片时，先加载 `note-export` 技能，按其中的命令导出。
+      - 产物默认放到用户主目录下的 `笔记导出` 目录，导出后把绝对路径告诉他，方便在访达或资源管理器里直接打开。
+      - 导出只读原笔记，不改写、不移动、不重命名。写主目录被沙箱拒绝时按提示申请一次升权；用户不批准就退回笔记目录下的 `导出/`，并说明文件在哪、为什么没放到主目录。
+      - 他要求和界面里看到的完全一致（黑体、公式、代码样式）时，建议用笔记页右上角的导出按钮；命令行产物与它并不相同，不要声称两者一致。
+
+      # 本模式的技能范围
+
+      - 这个模式只提供笔记、阅读、导出和文件整理相关的技能，没有工程初始化、前端框架或 Go 后端这类开发脚手架。用户要搭工程或改代码架构时，先说明这一点，问他要不要切到标准模式。
+
 - id: agent-instructions
   name: 'coding-agent-instructions'
   config:
@@ -50,14 +61,8 @@
 - id: skill-browser-use
   name: 'coding-skill-browser-use'
 
-- id: skill-frontend-development
-  name: 'coding-skill-frontend-development'
-
-- id: skill-project-init
-  name: 'coding-skill-project-init'
-
-- id: skill-go-backend
-  name: 'coding-skill-go-backend'
+- id: skill-note-export
+  name: 'coding-skill-note-export'
 
 - id: tool-skill
   name: 'coding-tool-skill'

@@ -208,6 +208,7 @@
     { "path": "./packages/skill/skill-project-init" },
     { "path": "./packages/skill/skill-frontend-development" },
     { "path": "./packages/skill/skill-filesystem" },
+    { "path": "./packages/skill/skill-note-export" },
     { "path": "./packages/skill/tool-skill" },
     { "path": "./packages/interaction/tool-ask-user" },
     { "path": "./packages/context/agent-instructions" },

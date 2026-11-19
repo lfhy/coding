@@ -102,6 +102,7 @@
     "coding-skill-go-backend": "workspace:^",
     "coding-skill-frontend-development": "workspace:^",
     "coding-skill-filesystem": "workspace:^",
+    "coding-skill-note-export": "workspace:^",
     "coding-skill-project-init": "workspace:^",
     "coding-spill": "workspace:^",
     "coding-storage": "workspace:^",

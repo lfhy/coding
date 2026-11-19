@@ -946,7 +946,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/host/open-in-app/src/index.ts:75`](../packages/host/open-in-app/src/index.ts)
+Source: [`packages/host/open-in-app/src/index.ts:78`](../packages/host/open-in-app/src/index.ts)
 
 <a id="coding-host-webserver"></a>
 
@@ -1701,7 +1701,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/guard/progress-reminder/src/index.ts:30`](../packages/guard/progress-reminder/src/index.ts)
+Source: [`packages/guard/progress-reminder/src/index.ts:31`](../packages/guard/progress-reminder/src/index.ts)
 
 <a id="coding-proxy-pool"></a>
 
@@ -3754,6 +3754,7 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 - `coding-skill-browser-use` — requires `skills` · `fs` ([`packages/skill/skill-browser-use/src/index.ts`](../packages/skill/skill-browser-use/src/index.ts))
 - `coding-skill-frontend-development` — requires `skills` · `fs` ([`packages/skill/skill-frontend-development/src/index.ts`](../packages/skill/skill-frontend-development/src/index.ts))
 - `coding-skill-go-backend` — requires `skills` · `fs` ([`packages/skill/skill-go-backend/src/index.ts`](../packages/skill/skill-go-backend/src/index.ts))
+- `coding-skill-note-export` — requires `skills` · `fs` ([`packages/skill/skill-note-export/src/index.ts`](../packages/skill/skill-note-export/src/index.ts))
 - `coding-skill-project-init` — requires `skills` · `fs` ([`packages/skill/skill-project-init/src/index.ts`](../packages/skill/skill-project-init/src/index.ts))
 - `coding-storage` ([`packages/storage/storage/src/index.ts`](../packages/storage/storage/src/index.ts))
 - `coding-subagent` ([`packages/subagent/subagent/src/index.ts`](../packages/subagent/subagent/src/index.ts))

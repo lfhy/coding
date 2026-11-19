@@ -172,6 +172,7 @@ const packageFileExtras: Readonly<Record<string, readonly string[]>> = {
   'coding-session-persistence-sqlite': ['resources/sql/**/*.sql'],
   'coding-skill-badge': ['assets'],
   'coding-skill-browser-use': ['assets'],
+  'coding-skill-note-export': ['assets'],
   // 前端技能随包分发 StyleKit 风格目录快照，上游 MIT 来源说明也要一起交付。
   'coding-skill-frontend-development': ['assets', 'NOTICE.md'],
   // Agent 浏览器的内嵌 CLI、观察 worker 与两级 MIT 来源声明必须与 Host 同包交付。

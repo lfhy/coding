@@ -59,6 +59,7 @@
     "coding-skill-go-backend": "workspace:^",
     "coding-skill-project-init": "workspace:^",
     "coding-skill-filesystem": "workspace:^",
+    "coding-skill-note-export": "workspace:^",
     "coding-jobs-local": "workspace:^",
     "coding-tmux-context": "workspace:^",
     "coding-token-meter": "workspace:^",
