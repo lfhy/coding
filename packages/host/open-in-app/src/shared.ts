@@ -18,6 +18,9 @@ export const OPEN_IN_APP_OPEN_ROUTE = '/open-in-app/open'
 /** 按 Session 工作区逐层列出目录的 POST 路由。 */
 export const OPEN_IN_APP_FILES_ROUTE = '/open-in-app/files'
 
+/** 在 Session 的执行世界中把一条路径解析为工作区段链的 POST 路由。 */
+export const OPEN_IN_APP_LOCATE_ROUTE = '/open-in-app/locate'
+
 /** 读取一个 Session 工作区文件预览的 POST 路由。 */
 export const OPEN_IN_APP_READ_ROUTE = '/open-in-app/read'
 
@@ -57,6 +60,20 @@ export interface OpenInAppOpenResult {
 /** 内置工作台的一次 Session 绑定路径请求。 */
 export interface OpenInAppFilesRequest {
   readonly sessionId: string
+  readonly segments: readonly string[]
+}
+
+/**
+ * 一次 Session 内的路径定位请求：`path` 是模型或界面给出的原始路径
+ * （工作区相对、执行世界里的绝对路径或 `~` 形式），由 Host 在 Session 的执行世界里解析。
+ */
+export interface OpenInAppLocateRequest {
+  readonly sessionId: string
+  readonly path: string
+}
+
+/** 路径定位结果：从 Session 工作区根开始的 provider 段链。 */
+export interface OpenInAppLocatePayload {
   readonly segments: readonly string[]
 }
 

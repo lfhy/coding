@@ -59,6 +59,7 @@ kind: "package-reference"
 | `GET /open-in-app/icon/<id>` | 返回缓存的 PNG/SVG 应用图标，或 404。 |
 | `POST /open-in-app/open` | 启动已验证的本地应用；目标已变成远端时返回 `action: files`。 |
 | `POST /open-in-app/files` | 用 `{ sessionId, segments }` 在 Session 工作区内列出一层目录。 |
+| `POST /open-in-app/locate` | 用 `{ sessionId, path }` 在 Session 的执行世界里把一条原始路径定位成工作区内的 `{ segments }`。 |
 | `POST /open-in-app/read` | 用 `{ sessionId, segments }` 返回有界文本、图片或 unsupported 预览。 |
 | `POST /open-in-app/attach` | 用 `x-session-id`、`x-file-name` 和原始字节保存文件到全局文件库，返回绝对 `{ path }`。 |
 | `WS /open-in-app/terminal` | 用唯一的 `sessionId`、`cols`、`rows` query 启动连接独占用户终端。 |
@@ -79,7 +80,9 @@ target 与 open 路由会在读取应用可用性前检查 Remote-SSH marker。�
 <a id="workspace-files"></a>
 ## 工作区文件
 
-文件路由先用 `sessionId` 查找当前 live Session，再只从其 `header.cwd` 解析根；客户端除了 Session id 只能提交 provider 返回的 `segments`，不能提供根目录或展示路径。每个路径段只能精确匹配 `ctx.fs.listDir` 返回的子项，并在进入下一层或读取文件前用 `ctx.fs.contains` 复核 containment；浏览器字符串从不拼成 OS 路径。因此同一协议覆盖本地、SSH Host、Remote-SSH marker、Windows 盘符与 UNC 展示路径。
+文件路由先用 `sessionId` 查找当前 live Session，再只从其 `header.cwd` 解析根；列目录与读取预览的客户端除了 Session id 只能提交 provider 返回的 `segments`，不能提供根目录或展示路径。每个路径段只能精确匹配 `ctx.fs.listDir` 返回的子项，并在进入下一层或读取文件前用 `ctx.fs.contains` 复核 containment；浏览器字符串从不拼成 OS 路径。因此同一协议覆盖本地、SSH Host、Remote-SSH marker、Windows 盘符与 UNC 展示路径。
+
+`locate` 是这条路径链唯一的入口翻译：模型给出的工具路径可能是工作区相对路径、本地占位目录下的绝对路径，也可能是 Remote-SSH 执行世界里的远端绝对路径，浏览器无法自己换算。它用 `ctx.fs.resolve(path, { cwd })` 在 Session 自己的执行世界解析一次，要求结果仍被 `ctx.fs.contains` 判定在工作区根内，再逐层用 `ctx.fs.listDir` 子项名称拼出段链；末段必须是普通文件，越级、工作区外、无法解析和目录一律 404，不返回 provider 诊断或解析后路径。调用方拿到的段可以继续交给 `files`／`read`，因此远端文件与本地文件走同一份预览。
 
 只有目录 target 可以推进名称链，预览的最后一段必须仍是普通文件。列表响应包含 `displayPath`、普通 entry 元数据和 `truncated`，单层最多 2,000 项。预览在 `previewMaxBytes` 内完整读取：Markdown、代码和其他严格 UTF-8 文本返回 `kind: text`；支持的图片返回 `kind: image`、MIME 与 base64；含 NUL、无效 UTF-8 或超限文件返回 `kind: unsupported`，不返回原始内容。超限响应以 `truncated: true` 明确区分。
 

@@ -7,6 +7,8 @@ import type {
   OpenInAppFileEntry,
   OpenInAppFilesPayload,
   OpenInAppFilesRequest,
+  OpenInAppLocatePayload,
+  OpenInAppLocateRequest,
   OpenInAppReadPayload,
   OpenInAppReadRequest,
 } from './shared.ts'
@@ -101,11 +103,32 @@ export function parseReadRequest(value: unknown): OpenInAppReadRequest | undefin
   return parseRequest(value, true)
 }
 
+/**
+ * 解析封闭的路径定位请求。
+ * @param value - JSON 请求体。
+ * @returns 通过校验的 Session 与原始路径；畸形或含多余字段时返回 undefined。
+ */
+export function parseLocateRequest(value: unknown): OpenInAppLocateRequest | undefined {
+  const body = recordOf(value)
+  if (body === undefined
+    || Object.keys(body).some(key => key !== 'sessionId' && key !== 'path')
+    || typeof body.sessionId !== 'string'
+    || body.sessionId.length === 0
+    || body.sessionId.includes(NUL)
+    || Buffer.byteLength(body.sessionId, 'utf8') > MAX_SESSION_ID_BYTES
+    || typeof body.path !== 'string'
+    || body.path.trim().length === 0
+    || body.path.includes(NUL)
+    || Buffer.byteLength(body.path, 'utf8') > MAX_FILE_PATH_BYTES) return undefined
+  return { sessionId: body.sessionId, path: body.path }
+}
+
 function workspaceUnavailable(message: string): WorkspaceProtocolError {
   return new WorkspaceProtocolError(404, 'not-found', message)
 }
 
-async function rootFor(ctx: Context, sessionId: string): Promise<FsTarget> {
+/** 读出 Session 的工作区根路径；Session 或工作区缺席时给出协议错误。 */
+function sessionCwdOf(ctx: Context, sessionId: string): string {
   const session = ctx.sessions.get(SessionId(sessionId))
   if (session === undefined) {
     throw new WorkspaceProtocolError(404, 'session-not-found', `session is not live: ${sessionId}`)
@@ -114,6 +137,11 @@ async function rootFor(ctx: Context, sessionId: string): Promise<FsTarget> {
   if (cwd === undefined) {
     throw new WorkspaceProtocolError(409, 'workspace-unavailable', 'session has no workspace directory')
   }
+  return cwd
+}
+
+async function rootFor(ctx: Context, sessionId: string): Promise<FsTarget> {
+  const cwd = sessionCwdOf(ctx, sessionId)
   return ctx.fs.resolve(cwd, { cwd })
 }
 
@@ -140,6 +168,61 @@ function wireEntry(entry: FsDirEntry): OpenInAppFileEntry {
     type: entry.type,
     ...entry.size === undefined ? {} : { size: entry.size },
   }
+}
+
+/** 两个 provider target 是否指向同一项；只比较不透明的 target key。 */
+function sameTarget(left: FsTarget, right: FsTarget): boolean {
+  return String(left.targetKey) === String(right.targetKey)
+}
+
+/**
+ * 逐个 provider 子项把根到目标的名称链找出来：每一层只接受 `listDir` 返回的子项，
+ * 目录才能继续深入，末段必须是普通文件。返回 undefined 表示这条路径无法用名称链表达。
+ */
+async function segmentsToward(
+  ctx: Context,
+  root: FsTarget,
+  target: FsTarget,
+): Promise<string[] | undefined> {
+  const segments: string[] = []
+  let current = root
+  for (let depth = 0; depth <= MAX_FILE_SEGMENTS; depth += 1) {
+    // 兄弟项互不包含，因此唯一的命中项就是通往目标的下一层。
+    const child = (await ctx.fs.listDir(current)).find(entry => ctx.fs.contains(entry.target, target))
+    if (child === undefined) return undefined
+    segments.push(child.name)
+    if (sameTarget(child.target, target)) return child.type === 'file' ? segments : undefined
+    current = child.target
+  }
+  return undefined
+}
+
+/**
+ * 在 Session 自己的执行世界里把一条模型/界面路径定位成工作区内的名称链。
+ *
+ * 远端工作区的 cwd 是本地占位目录，模型给出的工具路径属于远端执行世界，浏览器无法自己
+ * 换算；这里用 `ctx.fs.resolve` 在正确执行世界解析，并要求目标仍落在工作区根内。返回的
+ * 段与 `files`／`read` 路由使用同一套 provider 子项名称，因此可以继续复用文件树与预览。
+ * @param ctx - 携带 Session store 与组合文件系统的 Host 上下文。
+ * @param request - 已验证的 Session 与原始路径。
+ * @returns 从工作区根开始、末段为普通文件的名称链。
+ */
+export async function locateWorkspaceFile(
+  ctx: Context,
+  request: OpenInAppLocateRequest,
+): Promise<OpenInAppLocatePayload> {
+  const cwd = sessionCwdOf(ctx, request.sessionId)
+  const root = await ctx.fs.resolve(cwd, { cwd })
+  let target: FsTarget
+  try {
+    target = await ctx.fs.resolve(request.path, { cwd })
+  } catch {
+    throw workspaceUnavailable('workspace path is unavailable')
+  }
+  if (!ctx.fs.contains(root, target)) throw workspaceUnavailable('workspace path is unavailable')
+  const segments = await segmentsToward(ctx, root, target)
+  if (segments === undefined) throw workspaceUnavailable('workspace path is unavailable')
+  return { segments }
 }
 
 /**

@@ -47,6 +47,7 @@ import {
   OPEN_IN_APP_ATTACH_ROUTE,
   OPEN_IN_APP_FILES_ROUTE,
   OPEN_IN_APP_ICON_PREFIX,
+  OPEN_IN_APP_LOCATE_ROUTE,
   OPEN_IN_APP_OPEN_ROUTE,
   OPEN_IN_APP_READ_ROUTE,
   OPEN_IN_APP_TARGET_ROUTE,
@@ -58,7 +59,9 @@ import {
 } from './shared.ts'
 import {
   listWorkspaceFiles,
+  locateWorkspaceFile,
   parseFilesRequest,
+  parseLocateRequest,
   parseReadRequest,
   readWorkspaceFile,
   WorkspaceProtocolError,
@@ -426,6 +429,30 @@ export function apply(ctx: Context, config: Config): void {
       }
     },
   }), `open-in-app: POST ${OPEN_IN_APP_FILES_ROUTE}`)
+
+  ctx.effect(() => ctx.webServer.register({
+    kind: 'exact',
+    path: OPEN_IN_APP_LOCATE_ROUTE,
+    handler: async (req, res) => {
+      if (rejected(req, res)) return
+      if (req.method !== 'POST') {
+        sendMethodNotAllowed(res, 'POST')
+        return
+      }
+      const raw = await acceptedJson(req, res)
+      if (raw === undefined) return
+      const body = parseLocateRequest(raw)
+      if (body === undefined) {
+        sendJson(res, 400, { code: 'bad-request', message: 'invalid session workspace path request' })
+        return
+      }
+      try {
+        sendJson(res, 200, await locateWorkspaceFile(ctx, body))
+      } catch (error) {
+        sendWorkspaceError(res, error)
+      }
+    },
+  }), `open-in-app: POST ${OPEN_IN_APP_LOCATE_ROUTE}`)
 
   ctx.effect(() => ctx.webServer.register({
     kind: 'exact',

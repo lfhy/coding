@@ -224,6 +224,7 @@ describe('open-in-app host routes (real Loader composition)', () => {
     expect((await fetch(`${base}/open-in-app/open`, { method: 'POST' })).status).toBe(403)
     expect((await fetch(`${base}/open-in-app/target`, { method: 'POST' })).status).toBe(403)
     expect((await fetch(`${base}/open-in-app/files`, { method: 'POST' })).status).toBe(403)
+    expect((await fetch(`${base}/open-in-app/locate`, { method: 'POST' })).status).toBe(403)
     expect((await fetch(`${base}/open-in-app/read`, { method: 'POST' })).status).toBe(403)
     expect((await attach(base, 'denied.pptx', 'payload')).status).toBe(403)
     expect(run).not.toHaveBeenCalled()
@@ -355,6 +356,25 @@ describe('open-in-app host routes (real Loader composition)', () => {
       expect(missingPreview.status).toBe(404)
       expect((await post(['..'])).status).toBe(404)
       expect((await post(['README.md'])).status).toBe(404)
+
+      const locate = (sessionId: string, path: string): Promise<Response> => fetch(`${base}/open-in-app/locate`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ sessionId, path }),
+      })
+      const relative = await locate('session', 'src/index.ts')
+      expect(relative.status).toBe(200)
+      expect(await relative.json()).toEqual({ segments: ['src', 'index.ts'] })
+      const absolute = await locate('session', join(workspace, 'README.md'))
+      expect(await absolute.json()).toEqual({ segments: ['README.md'] })
+      // 工作区外、缺失、目录和越级路径都不给段链：预览只接受工作区根内的普通文件。
+      expect((await locate('session', join(workspace, '..'))).status).toBe(404)
+      expect((await locate('session', join(workspace, 'missing.txt'))).status).toBe(404)
+      expect((await locate('session', 'src')).status).toBe(404)
+      expect((await locate('session', '../outside.txt')).status).toBe(404)
+      expect((await locate('missing', 'README.md')).status).toBe(404)
+      setSession(undefined, 'no-cwd')
+      expect((await locate('no-cwd', 'README.md')).status).toBe(409)
     } finally {
       await rm(workspace, { recursive: true, force: true })
     }
@@ -370,11 +390,15 @@ describe('open-in-app host routes (real Loader composition)', () => {
     })
     expect((await fetch(`${base}/open-in-app/target`)).status).toBe(405)
     expect((await fetch(`${base}/open-in-app/files`)).status).toBe(405)
+    expect((await fetch(`${base}/open-in-app/locate`)).status).toBe(405)
     expect((await fetch(`${base}/open-in-app/read`)).status).toBe(405)
     expect((await fetch(`${base}/open-in-app/target`, {
       method: 'POST', headers: { 'content-type': 'application/json' }, body: 'not-json',
     })).status).toBe(400)
     expect((await fetch(`${base}/open-in-app/files`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: 'not-json',
+    })).status).toBe(400)
+    expect((await fetch(`${base}/open-in-app/locate`, {
       method: 'POST', headers: { 'content-type': 'application/json' }, body: 'not-json',
     })).status).toBe(400)
     expect((await fetch(`${base}/open-in-app/read`, {
@@ -412,6 +436,25 @@ describe('open-in-app host routes (real Loader composition)', () => {
     }
     expect((await post('/open-in-app/files', { sessionId: 'missing', segments: [] })).status).toBe(404)
     expect((await post('/open-in-app/read', { sessionId: 'session', segments: [] })).status).toBe(400)
+
+    const invalidPaths: unknown[] = [
+      null,
+      [],
+      { sessionId: 7, path: root },
+      { sessionId: 'session' },
+      { sessionId: 'session', path: 7 },
+      { sessionId: 'session', path: '' },
+      { sessionId: 'session', path: '   ' },
+      { sessionId: 'session', path: `x${String.fromCharCode(0)}y` },
+      { sessionId: 'session', path: root, segments: [] },
+      { sessionId: '', path: root },
+      { sessionId: 'x\0y', path: root },
+      { sessionId: 'session', path: 'x'.repeat(8_193) },
+    ]
+    for (const value of invalidPaths) {
+      expect((await post('/open-in-app/locate', value)).status).toBe(400)
+    }
+    expect((await post('/open-in-app/locate', { sessionId: 'missing', path: root })).status).toBe(404)
   })
 
   it('traverses opaque provider targets without interpreting a Windows display path', async () => {
@@ -464,6 +507,39 @@ describe('open-in-app host routes (real Loader composition)', () => {
     expect((await post('session', ['missing'])).status).toBe(404)
     expect((await post('session', ['plain.txt'])).status).toBe(404)
     expect((await post('throw-session', [])).status).toBe(502)
+  })
+
+  it('locates a model path in the session execution world instead of reading it as a display path', async () => {
+    const rootTarget = { targetKey: 'root', displayPath: '/remote/repo' }
+    const nestedTarget = { targetKey: 'nested', displayPath: '/remote/repo/src' }
+    const fileTarget = { targetKey: 'file', displayPath: '/remote/repo/src/index.ts' }
+    const outsideTarget = { targetKey: 'outside', displayPath: '/remote/other/x.ts' }
+    const filesystem = {
+      resolve: vi.fn(async (path: string) => {
+        if (path === '/marker') return rootTarget
+        if (path === '/remote/repo/src/index.ts') return fileTarget
+        if (path === '/remote/other/x.ts') return outsideTarget
+        throw new Error('provider cannot resolve')
+      }),
+      listDir: vi.fn(async (target: { targetKey: string }) => target.targetKey === 'root'
+        ? [{ name: 'src', type: 'directory', target: nestedTarget }]
+        : [{ name: 'index.ts', type: 'file', target: fileTarget }]),
+      contains: vi.fn((_root: unknown, target: { targetKey: string }) => target.targetKey !== 'outside'),
+    }
+    internals.catalog = { platform: 'aix', resolveExecutable: pathTable() }
+    const base = await boot([], filesystem)
+    setSession('/marker')
+    const locate = (path: string): Promise<Response> => fetch(`${base}/open-in-app/locate`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ sessionId: 'session', path }),
+    })
+    const located = await locate('/remote/repo/src/index.ts')
+    expect(located.status).toBe(200)
+    expect(await located.json()).toEqual({ segments: ['src', 'index.ts'] })
+    // 工作区外的远端路径、无法解析的路径都不给段链，也不回传 provider 诊断。
+    expect((await locate('/remote/other/x.ts')).status).toBe(404)
+    expect((await locate('/unresolvable')).status).toBe(404)
   })
 
   it('resolves the catalog once: list reads, menu opens, and launches share the pass', async () => {
@@ -709,6 +785,7 @@ describe('open-in-app host routes (real Loader composition)', () => {
     expect((await fetch(`${base}/open-in-app/open`, { method: 'POST' })).status).toBe(404)
     expect((await fetch(`${base}/open-in-app/target`, { method: 'POST' })).status).toBe(404)
     expect((await fetch(`${base}/open-in-app/files`, { method: 'POST' })).status).toBe(404)
+    expect((await fetch(`${base}/open-in-app/locate`, { method: 'POST' })).status).toBe(404)
     expect((await fetch(`${base}/open-in-app/read`, { method: 'POST' })).status).toBe(404)
     expect((await attach(base, 'released.pptx', 'payload')).status).toBe(404)
   })
