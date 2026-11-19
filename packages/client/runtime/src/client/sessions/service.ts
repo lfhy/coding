@@ -30,6 +30,7 @@ import { createSnapshotStore } from '../contract/store.ts'
 import type { SessionFace } from '../contract/session.ts'
 import type { AgentContext, ISessions } from '../contract/sessions.ts'
 import { createScope, scopeOf as scopeTagOf } from '../agents/scope.ts'
+import { remoteWorkspaceDisplayPath } from '../workspaces/service.ts'
 import type { ConversationRuntime } from './conversation-assembler.ts'
 import { SessionManager } from './manager.ts'
 import type { SessionRemotes } from './remotes.ts'
@@ -43,7 +44,7 @@ export interface SessionSummary {
   id: SessionId
   /** Latest durable log-backed title, absent until the host projects one. */
   title?: string
-  /** Human-facing label: durable title, project basename, then session id. */
+  /** 展示标题优先使用持久标题，其次使用项目目录名，最后回退到会话标识。 */
   displayTitle: string
   cwd?: string
   /**
@@ -162,14 +163,11 @@ export function workspaceTitleOf(cwd: string): string {
   return cwd.replace(/[/\\]+$/, '').split(/[/\\]/).pop() ?? ''
 }
 
-/**
- * Display title projection: durable title, project directory basename, then
- * the raw id.
- */
+/** 持久标题缺失时，远端项目与本地项目都使用可读的目录名，而非 SSH 路由标识。 */
 function displayTitleOf(title: string | undefined, cwd: string | undefined, id: SessionId): string {
   if (title !== undefined) return title
   if (cwd !== undefined && cwd !== '') {
-    const base = workspaceTitleOf(cwd)
+    const base = workspaceTitleOf(remoteWorkspaceDisplayPath(cwd) ?? cwd)
     if (base !== '') return base
   }
   return id

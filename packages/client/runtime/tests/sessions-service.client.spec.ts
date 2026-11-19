@@ -72,6 +72,29 @@ describe('list store projection', () => {
     expect(state.byId[sid('s2')]?.title).toBeUndefined()
   })
 
+  it('shows the same title fallback and title revisions for SSH and local sessions', async () => {
+    const b = bench()
+    const remote = sid('remote')
+    const local = sid('local')
+    const marker = '/data/remote-workspaces/0123456789abcdef0123/ihep-chat-fedcba9876543210fedc'
+    await feedList(b, [{ id: remote, cwd: marker }, { id: local, cwd: '/projects/ihep-chat' }])
+    for (const id of [remote, local]) {
+      expect(b.svc.list.getSnapshot().byId[id]?.displayTitle).toBe('ihep-chat')
+      expect(b.svc.list.getSnapshot().byId[id]?.title).toBeUndefined()
+      b.svc.handleMuxEnvelope({
+        rpcId: 'first-prompt-title' as never,
+        payload: { type: 'session/projection', sessionId: id, key: 'title', value: '定位首条消息延迟', seq: 4 },
+      })
+    }
+    await Promise.resolve()
+    for (const id of [remote, local]) {
+      expect(b.svc.list.getSnapshot().byId[id]).toMatchObject({
+        title: '定位首条消息延迟', displayTitle: '定位首条消息延迟',
+      })
+    }
+    expect(b.svc.list.getSnapshot().byId[remote]?.cwd).toBe(marker)
+  })
+
   it('reprojects a blank session whose composition switched and nothing else moved', async () => {
     const b = bench()
     await feedList(b, [{ id: 's1', blank: true, agentPreset: 'standard' }])
