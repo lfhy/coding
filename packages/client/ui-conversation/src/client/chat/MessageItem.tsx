@@ -244,33 +244,36 @@ function projectUserText(text: string, sessionLabels: readonly string[]): ReactN
   return <>{parts}</>
 }
 
-/** Right-aligned bubble shared by user and steering rows. */
+/** 普通、插队与发送中消息共用右侧气泡；仅已发送的内容提供正式操作。 */
 function UserStyleBubble({
-  content, renderMessageImages, actions, pending = false, referenceLabels = [], t,
+  content, renderMessageImages, actions, pending, pendingImageCount = 0, referenceLabels = [], t,
 }: {
   content: readonly unknown[]
   renderMessageImages: ChatNodeOwnerProps['renderMessageImages']
-  /** Optional IconActions (or similar) below the bubble; receives the joined text. */
+  /** 气泡下方的操作区，接收完整的可复制文本。 */
   actions?: (text: string) => ReactNode
-  /** 是否为 Host 权威的待处理消息投影。 */
-  pending?: boolean
-  /** Exact session mention labels associated by the adjacent recall node. */
+  pending?: 'sending' | 'preparing' | 'steering'
+  pendingImageCount?: number
+  /** 相邻召回节点关联的会话名。 */
   referenceLabels?: readonly string[]
   t: ChatViewSlotProps['t']
 }): ReactNode {
   const { text, images, rest } = contentParts(content)
   const truncated = (total: number): string => t('json.truncated', { total })
-  const showBubble = text !== '' || rest.length > 0
+  const showBubble = text !== '' || rest.length > 0 || pendingImageCount > 0
   return (
     <div
       className={css.userRow}
-      data-pending-message={pending || undefined}
-      data-pending-steering={pending || undefined}
+      data-pending-message={pending}
+      data-pending-steering={pending === 'steering' || undefined}
       data-time-hover-root
     >
       <div className={css.userStack}>
         {renderMessageImages({ images, align: 'end' })}
         {showBubble && <ChatUserBubble>
+          {pendingImageCount > 0 && <div className={css.referenceSummary}>
+            {t('message.pendingImages', { count: pendingImageCount })}
+          </div>}
           {projectUserText(text, referenceLabels)}
           {rest.map((block, i) => <JsonBlock key={i} label={t('message.extraBlock')} payload={block} truncatedLabel={truncated} />)}
         </ChatUserBubble>}
@@ -280,40 +283,40 @@ function UserStyleBubble({
           </div>
         )}
       </div>
+      {(pending === 'sending' || pending === 'preparing') && (
+        <span role="status" className={css.referenceSummary}>{t(`message.${pending}`)}</span>
+      )}
       {actions?.(text)}
     </div>
   )
 }
 
 /**
- * Render one Host 权威的待处理排队项，使用与最终持久消息相同的视觉形式。
- * @param props - 待处理消息内容和对话翻译器。
- * @returns 待处理排队消息气泡。
+ * 呈现未收到接纳结果的首发回执、已领取的消息或已确认的插队消息。
+ * @param props - 消息内容、阶段与图片呈现方式。
+ * @returns 尚未写入对话历史的气泡；排队项不在这里渲染。
  */
-export function PendingQueueBubble({ content, renderMessageImages, t }: {
+export function PendingQueueBubble({ content, renderMessageImages, t, phase, pendingImageCount = 0 }: {
   content: readonly unknown[]
   renderMessageImages: ChatNodeOwnerProps['renderMessageImages']
   t: ChatViewSlotProps['t']
+  phase: NonNullable<Parameters<typeof UserStyleBubble>[0]['pending']>
+  pendingImageCount?: number
 }): ReactNode {
   return (
     <UserStyleBubble
       content={content}
       renderMessageImages={renderMessageImages}
-      pending
+      pending={phase}
+      pendingImageCount={pendingImageCount}
       t={t}
-      actions={text => (
-        <MessageIconActions
-          text={text}
-          clock="start"
-          className={css.actions}
-          t={t}
-        />
-      )}
+      {...phase !== 'steering' ? {} : { actions: text => (
+        <MessageIconActions text={text} clock="start" className={css.actions} t={t} />
+      ) }}
     />
   )
 }
 
-export const PendingSteeringBubble = PendingQueueBubble
 export const UserMessageNodeView = memo(function UserMessageNodeView({
   node, renderMessageImages, t,
 }: ChatNodeViewProps<'user' | 'steering'>) {

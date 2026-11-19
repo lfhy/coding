@@ -116,7 +116,8 @@ export interface IApiClient {
     selectModel(payload: RequestPayload<'session.selectModel'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'session.selectModel'>>>
     rename(payload: RequestPayload<'session.rename'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'session.rename'>>>
     fork(payload: RequestPayload<'session.fork'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'session.fork'>>>
-    prompt(payload: RequestPayload<'session.prompt'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'session.prompt'>>>
+    /** 发送前同步提供传输层生成的标识，供本地回执与 Host 消息对账。 */
+    prompt(payload: RequestPayload<'session.prompt'>, signal?: AbortSignal, onRequest?: (rpcId: RpcId) => void): Promise<RpcResponse<ResponseValue<'session.prompt'>>>
     attachment(payload: RequestPayload<'session.attachment'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'session.attachment'>>>
     updateQueue(payload: RequestPayload<'session.updateQueue'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'session.updateQueue'>>>
     cancel(payload: RequestPayload<'session.cancel'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'session.cancel'>>>
@@ -384,18 +385,16 @@ export abstract class AbstractApiClient implements IApiClient {
     return response
   }
 
-  /**
-   * Unary protocol path: mint → tap → POST full form → envelope parse → verify
-   * echo → value parse → tap → narrow. Virtual so a fake carrier (fixture) can
-   * override transport at this layer.
-   */
+  /** 分配请求标识后发送完整信封；返回前校验响应使用同一个标识。Fixture 可覆盖传输。 */
   protected async callUnary<K extends keyof RpcMethodMap>(
     method: K,
     payload: RequestPayload<K>,
     signal?: AbortSignal,
     timeoutPolicy: UnaryTimeoutPolicy = 'default',
+    onRequest?: (rpcId: RpcId) => void,
   ): Promise<RpcResponse<ResponseValue<K>>> {
     const message: ClientRequest = { type: 'client-request', rpcId: this.mintRpcId(), method, payload }
+    onRequest?.(message.rpcId)
     // 密码只进入请求体；诊断订阅者不得观察到凭据载荷。
     if ((method !== 'workspace.gitPush' && method !== 'workspace.gitPull' && method !== 'workspace.gitClone')
       || !('credentials' in payload)) this.onEnvelope(message)
@@ -481,7 +480,7 @@ export abstract class AbstractApiClient implements IApiClient {
     selectModel: (payload, signal) => this.callUnary('session.selectModel', payload, signal),
     rename: (payload, signal) => this.callUnary('session.rename', payload, signal),
     fork: (payload, signal) => this.callUnary('session.fork', payload, signal),
-    prompt: (payload, signal) => this.callUnary('session.prompt', payload, signal),
+    prompt: (payload, signal, onRequest) => this.callUnary('session.prompt', payload, signal, 'default', onRequest),
     attachment: (payload, signal) => this.callUnary('session.attachment', payload, signal),
     updateQueue: (payload, signal) => this.callUnary('session.updateQueue', payload, signal),
     cancel: (payload, signal) => this.callUnary('session.cancel', payload, signal),

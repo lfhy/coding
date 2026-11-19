@@ -562,10 +562,11 @@ describe('events frame schemas', () => {
       id: 'm', placement,
       message: { id: 'm', role: 'user', content: [], source: { kind: 'user' } },
     }] })
-    for (const placement of ['queued', 'steering', 'context']) {
-      expect(() => muxFrameSchema.parse(item(placement))).not.toThrow()
+    for (const placement of ['queued', 'steering', 'preparing', 'context']) {
+      expect(muxFrameSchema.parse({ ...item(placement), asOfSeq: 21 })).toMatchObject({ asOfSeq: 21, items: [{ placement }] })
     }
     expect(() => muxFrameSchema.parse(item('bogus'))).toThrow()
+    expect(() => muxFrameSchema.parse({ ...item('preparing'), asOfSeq: -2 })).toThrow()
   })
 
   it('rejects a queue snapshot with malformed items', () => {

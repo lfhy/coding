@@ -26,20 +26,28 @@ export interface ProjectionsFace {
   faceOf(key: string): ObservableSnapshot<unknown>
 }
 
-/** Identity plus the behavior verbs features may invoke on a session. */
+/** 本地回显只用草稿文本和图片数量；异步准备的结果才发给 Host。 */
+export interface PromptPreparation {
+  readonly text: string
+  readonly imageCount: number
+  prepare(): Promise<PromptContentPart[]>
+}
+
+/** 会话标识与界面可调用的会话操作。 */
 export interface ISession {
   /** The session's host identity (agent id — same axis). */
   readonly sessionId: SessionId
   /** Host-computed projection values by key (the useProjection seat). */
   readonly projections: ProjectionsFace
   /**
-   * Send a prompt into the session.
-   * @param content - text plus browser-owned temporary image uploads.
-   * @param mode - 'queue' appends a turn; 'steer' interrupts the running one.
-   * @returns acceptance, or the business error (also mirrored into snapshot.promptError).
+   * 提交普通消息；本地回显不等同于 Host 接纳或写入历史。
+   * @param content - 已准备好的输入，或带有草稿回显的准备操作。
+   * @param mode - 排到下一轮，或提交给当前轮的下一步。
+   * @param signal - 调用方的取消信号。
+   * @returns Host 接纳结果；失败也反映到 `promptError`。
    */
   prompt(
-    content: PromptContentPart[],
+    content: PromptContentPart[] | PromptPreparation,
     mode: 'queue' | 'steer',
     signal?: AbortSignal,
   ): Promise<RpcResult<{ accepted: true }>>

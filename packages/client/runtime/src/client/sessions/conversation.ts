@@ -310,18 +310,24 @@ export interface RunningToolCall {
 /** One running or settled call, recursively owning its child calls. */
 export type ToolCallBlock = RunningToolCall | ToolResultNode
 
-/** One transient inbox occurrence from the authoritative `session/queue` snapshot. */
+/** 一次由 Host 接纳、尚未进入对话历史的输入。 */
 export interface QueuedMessage {
   readonly id: MessageId
-  /** Stable message identity used for transient-to-durable steering handoff. */
+  /** 与写入历史的消息交接时使用的标识。 */
   readonly messageId: MessageId
-  /** Agent-resolved placement; only queued rows accept queue mutations. */
-  readonly placement: 'queued' | 'steering' | 'context'
-  /** Complete content used to render pending steering before it becomes durable. */
+  /** 仅排队项能通过输入栏编辑、移除或插入当前轮。 */
+  readonly placement: 'queued' | 'steering' | 'preparing' | 'context'
+  /** Host 接纳的内容，不包含本地草稿数据。 */
   readonly content: readonly ContentBlock[]
   readonly preview: string
   /** Complete editable text; null when the message contains non-text blocks. */
   readonly text: string | null
+}
+
+/** 本地普通发送回执；不属于历史，也不能操作 Host 的队列。 */
+export interface SendingPrompt {
+  readonly content: readonly ContentBlock[]
+  readonly imageCount: number
 }
 
 /** In-progress assistant output (chunk accumulator product). */
@@ -446,8 +452,10 @@ export interface ConversationSnapshot {
   partial: PartialAssistant | null
   runningCalls: readonly RunningToolCall[]
   pending: readonly PendingInteraction[]
-  /** Authoritative transient inbox snapshot, including queued and steering placements. */
+  /** Host 权威的已接纳输入，包括已领取、正在准备的项。 */
   queue: readonly QueuedMessage[]
+  /** 本地正在提交，且尚未由 Host 消息接手的回执。 */
+  sendingPrompt?: SendingPrompt
   running: boolean
   /**
    * Catalog-discovered continuation address. Its parent availability controls

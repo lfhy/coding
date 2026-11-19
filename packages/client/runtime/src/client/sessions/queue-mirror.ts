@@ -21,11 +21,12 @@ function textOf(content: readonly ContentBlock[]): string | null {
   return content.map(block => block.text).join('')
 }
 
-type QueueItems = Extract<MuxFrame, { type: 'session/queue' }>['items']
+type QueueFrame = Extract<MuxFrame, { type: 'session/queue' }>
 
-/** Authoritative transient queue projection and durable steering handoff. */
+/** Host 队列镜像；在正式消息可呈现时交接已领取项。 */
 export class SessionQueueMirror {
   private current: readonly QueuedMessage[] = []
+  private asOfSeq: number | undefined
 
   /**
    * Return the current immutable queue projection.
@@ -40,17 +41,19 @@ export class SessionQueueMirror {
    * @returns whether any projected queue row was removed.
    */
   reset(): boolean {
+    this.asOfSeq = undefined
     if (this.current.length === 0) return false
     this.current = []
     return true
   }
 
   /**
-   * Replace from one authoritative stream queue frame.
-   * @param items - complete host queue snapshot.
+   * 用同一 Host 序号的整份队列快照替换镜像。
+   * @param frame - mux 中收到的完整队列快照。
    */
-  replace(items: QueueItems): void {
-    this.current = items.map(item => ({
+  replace(frame: QueueFrame): void {
+    this.asOfSeq = frame.asOfSeq
+    this.current = frame.items.map(item => ({
       id: item.id,
       messageId: item.message.id,
       placement: item.placement,
@@ -61,16 +64,18 @@ export class SessionQueueMirror {
   }
 
   /**
-   * 持久用户消息进入日志后，折叠一个对应的瞬态排队项。
-   * 同一 MessageId 可能有多个待处理出现，因此只消费当前最早的一项。
-   * @param event - 新到达且已连续的 Session 事件。
+   * 正式消息进入窗口后，消费一个对应的临时项。快照已覆盖的事件不能删除后来复用同一标识的排队项。
+   * @param event - 已加载到连续窗口的会话事件。
    * @returns 投影是否发生变化。
    */
-  acceptDurable(event: SessionEvent): boolean {
-    if (event.type !== 'user/message') return false
+  acceptDurable(event: SessionEvent, fromHistory = false): boolean {
+    if (event.type !== 'user/message' || event.surfaceOp !== 'append') return false
+    if (this.asOfSeq === undefined ? fromHistory : event.seq <= this.asOfSeq) return false
     const messageId = event.data.id
-    const index = this.current.findIndex(item =>
-      (item.placement === 'queued' || item.placement === 'steering') && item.messageId === messageId)
+    const matches = (item: QueuedMessage): boolean => item.messageId === messageId
+    const claimed = this.current.findIndex(item => item.placement === 'preparing' && matches(item))
+    const index = claimed >= 0 ? claimed : this.current.findIndex(item =>
+      (item.placement === 'steering' || (this.asOfSeq === undefined && item.placement === 'queued')) && matches(item))
     if (index < 0) return false
     this.current = this.current.filter((_item, candidate) => candidate !== index)
     return true

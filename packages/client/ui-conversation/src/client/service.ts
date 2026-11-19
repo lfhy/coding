@@ -13,7 +13,7 @@ import type { Context } from '@deepseek-ai/cordis'
 // error, so scope resolution goes through the sessions service (scopeOf
 // method) instead of the standalone helper.
 import type {
-  ConversationSnapshot, ISessions, SessionFace, SessionId, UserMessageNode,
+  ConversationSnapshot, ISessions, PromptPreparation, SessionFace, SessionId, UserMessageNode,
 } from 'coding-client-runtime/client'
 import type { SubmitImageAttachment, SubmitOutcome } from 'coding-client-ui-input-trigger/client'
 import type { ImageAttachmentRef, ImageMediaType } from 'coding-attachment'
@@ -24,7 +24,7 @@ import type { DraftAttachmentId, SessionInputResolver } from './input/contract.t
 import type { InputSubmitMode } from './contract/composer-submission.ts'
 
 /** 一次 prompt 提交的完整内容（文本与已编码图片，顺序即提交顺序）。 */
-type PromptParts = Parameters<SessionFace['prompt']>[0]
+type PromptParts = Awaited<ReturnType<PromptPreparation['prepare']>>
 
 /**
  * The outward conversation face (`ctx.conversation`): the scope-addressed
@@ -193,13 +193,13 @@ export class ConversationController extends Service implements IConversation {
   }
 
   /**
-   * Submit ordered draft images with text through one host admission.
-   * @param session - target session.
-   * @param text - serialized prompt text.
-   * @param imageIds - ordered draft-local attachment ids.
-   * @param mode - queue or steer delivery selected by composer policy.
-   * @param signal - optional cancellation for the complete Host admission.
-   * @returns the Host admission outcome; local attachment preparation failures reject.
+   * 提交文本与图片；Host 接纳后才释放草稿图片。
+   * @param session - 目标会话。
+   * @param text - 已序列化引用的文本。
+   * @param imageIds - 按发送顺序排列的草稿图片标识。
+   * @param mode - 输入区选定的投递方式。
+   * @param signal - 整次提交的中止信号。
+   * @returns Host 接纳结果；失败时保留草稿。
    */
   async sendSession(
     session: SessionFace,
@@ -212,9 +212,15 @@ export class ConversationController extends Service implements IConversation {
     if (attachments.length !== imageIds.length) {
       throw new Error('conversation.sendSession: one or more draft images are no longer available')
     }
-    const uploaded = await this.serializeImages(attachments.map(attachment => attachment.file))
-    const content = [...uploaded, ...(text === '' ? [] : [{ type: 'text' as const, text }])]
-    const result = await session.prompt(content, mode, signal)
+    const content: PromptParts = text === '' ? [] : [{ type: 'text', text }]
+    const result = await session.prompt(attachments.length === 0 ? content : {
+      text,
+      imageCount: attachments.length,
+      prepare: async () => [
+        ...await this.serializeImages(attachments.map(attachment => attachment.file)),
+        ...content,
+      ],
+    }, mode, signal)
     if (!result.ok) return { kind: 'error' }
     this.releaseDraftImages(attachments)
     return { kind: 'success' }
@@ -391,8 +397,8 @@ export class ConversationController extends Service implements IConversation {
     return sessions
   }
 
-  /** Convert browser files to canonical base64 prompt parts. */
-  private serializeImages(images: readonly File[]): Promise<Parameters<SessionFace['prompt']>[0]> {
+  /** 按原顺序编码浏览器图片；准入与尺寸限制仍由 Host 处理。 */
+  private serializeImages(images: readonly File[]): Promise<PromptParts> {
     return Promise.all(images.map(async file => ({ type: 'image' as const, ...await this.encodeImage(file) })))
   }
 

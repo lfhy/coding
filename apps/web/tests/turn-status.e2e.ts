@@ -1,4 +1,4 @@
-/** 真实 Web 进度回归：只替换外部模型，工具、日志、投影与浏览器传输均走交付组合。 */
+/** 真实 Web 回归：验证首条消息交接和轮次进度，模型输出由回放脚本提供。 */
 import { existsSync } from 'node:fs'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -7,6 +7,7 @@ import type { Browser, Locator, Page } from 'playwright'
 import { chromium } from 'playwright'
 import { afterEach, describe, expect, it, onTestFailed } from 'vitest'
 import type { Agent } from 'coding-agent'
+import type { ClientRequest } from 'coding-host-apiproxy'
 import { CallId, type GenerateOptions, type StreamChunk } from 'coding-llm'
 import type { ReplayEntry } from 'coding-llm-replay'
 import type {} from 'coding-goal'
@@ -14,7 +15,7 @@ import type {} from 'coding-tool-status'
 import {
   acknowledgeReloadConnectionLoss, launchWebScaffold, watchConsole, webSnapshotMode, type WebScaffold,
 } from './scaffold.ts'
-import { connectFreshWorkspace, newEnglishPage, saveFailureShot } from './support.ts'
+import { connectFreshWorkspace, connectFreshWorkspaceZh, newEnglishPage, saveFailureShot, ZH_BROWSER_LOCALE } from './support.ts'
 
 const MODE = webSnapshotMode()
 const MANUAL = '正在定位会话进度的更新入口'
@@ -52,13 +53,13 @@ function textResponse(text: string): ReplayEntry {
   }
 }
 
-/** 门控只暂停外部模型响应；取消时立即释放监听器，不阻塞 Host 清理。 */
+/** 暂停测试控制的异步边界；取消时不等放行即可退出。 */
 async function waitForRelease(released: Promise<void>, signal: AbortSignal | undefined): Promise<void> {
   signal?.throwIfAborted()
   let abort: (() => void) | undefined
   try {
     await new Promise<void>((resolve, reject) => {
-      abort = () => { reject(signal?.reason instanceof Error ? signal.reason : new Error('turn-status model gate aborted')) }
+      abort = () => { reject(signal?.reason instanceof Error ? signal.reason : new Error('测试等待已取消')) }
       signal?.addEventListener('abort', abort, { once: true })
       void released.then(resolve, reject)
     })
@@ -111,7 +112,7 @@ async function expectBoundedStatus(page: Page, status: Locator, width: number, h
   expect(layout.textOverflow).toBe('ellipsis')
 }
 
-describe.skipIf(MODE === 'record')('web e2e: current-turn status follows model, todos, goal and fallback', () => {
+describe.skipIf(MODE === 'record')('web e2e: first prompt and current-turn status', () => {
   let scaffold: WebScaffold | undefined
   let browser: Browser | undefined
   let page: Page
@@ -291,4 +292,137 @@ describe.skipIf(MODE === 'record')('web e2e: current-turn status follows model, 
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])
   }, 150_000)
+
+  it.each([
+    { outcome: '接纳后只显示一条正式消息', prompt: '首发回显验证：蓝杉', refuse: false },
+    { outcome: '拒绝后保留可编辑草稿', prompt: '首发草稿验证：银杏', refuse: true },
+  ])('首条普通消息：$outcome', async ({ prompt, refuse }) => {
+    const reply = '收到这条测试消息。'
+    const options = {
+      localePreference: 'zh' as const,
+      defaultModel: { provider: 'deepseek-official', model: 'deepseek-v4-flash' },
+    }
+    if (refuse) {
+      // 无回放的组装只提供模型目录；若拒绝后仍发起模型调用，测试会失败。
+      scaffold = await launchWebScaffold(options)
+    } else {
+      sidecarRoot = await mkdtemp(join(tmpdir(), 'dsh-web-first-prompt-'))
+      const fixture = join(sidecarRoot, 'session.jsonl')
+      const override = join(sidecarRoot, 'replay.override.json')
+      await writeFile(fixture, '{"type":"session","version":0,"id":"first-prompt-script","createdAt":0}\n')
+      await writeFile(override, JSON.stringify([textResponse(reply)]))
+      scaffold = await launchWebScaffold({ ...options, replayFixture: fixture, replayOverride: override })
+    }
+
+    const executablePath = process.env.DSH_PLAYWRIGHT_EXECUTABLE_PATH
+    browser = await chromium.launch(executablePath === undefined ? {} : { executablePath })
+    page = await browser.newPage({ viewport: { width: 1680, height: 1000 }, locale: ZH_BROWSER_LOCALE })
+    page.setDefaultTimeout(10_000)
+    const tripwire = watchConsole(page)
+    await page.goto(scaffold.baseUrl, { waitUntil: 'load' })
+    await connectFreshWorkspaceZh(page, scaffold.workspaceCwd)
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-first-prompt'))
+    agent = scaffold.ctx.agents.roots()[0]
+    if (agent === undefined) throw new Error('测试工作区未创建空白会话')
+    const owner = agent
+    const chat = page.locator('[data-chat-flow]')
+    const input = page.locator('[data-composer-seat] textarea')
+    const sentText = chat.getByText(prompt, { exact: true })
+    const formalRow = chat.locator('[data-chat-flow-kind="user"]').getByText(prompt, { exact: true })
+    const activity = () => owner.session.events.filter(event => event.type === 'turn/start' || event.type === 'user/message')
+    expect(activity()).toEqual([])
+    expect(await sentText.count()).toBe(0)
+
+    const promptUrl = `${scaffold.baseUrl}/api/session.prompt`
+    const requests: ClientRequest[] = []
+    const forward = Promise.withResolvers<boolean>()
+    const prepare = Promise.withResolvers<undefined>()
+    let atPreStep = false
+    const offPrepare = scaffold.ctx.on('agent/pre-step', async ({ agent: candidate, turn, step, signal }, next) => {
+      if (candidate === owner && turn === 1 && step === 1) {
+        atPreStep = true
+        await waitForRelease(prepare.promise, signal)
+      }
+      return await next()
+    })
+    await page.route(promptUrl, async (route) => {
+      const request = route.request().postDataJSON() as ClientRequest & { payload: Record<string, unknown> }
+      requests.push(request)
+      if (!await forward.promise) {
+        await route.abort()
+        return
+      }
+      if (refuse) {
+        // 用真实 Host 执行准入拒绝；保留请求标识、会话和消息，不替换响应或下行帧。
+        await route.continue({
+          postData: JSON.stringify({ ...request, payload: { ...request.payload, clientTimeZone: 'Test/Invalid_Zone' } }),
+        })
+      } else {
+        await route.continue()
+      }
+    })
+
+    try {
+      await input.fill(prompt)
+      await input.press('Enter')
+      await expect.poll(() => requests.length, { timeout: 10_000 }).toBe(1)
+      const [request] = requests
+      if (request === undefined) throw new Error('未捕获首条消息请求')
+      expect(request).toMatchObject({
+        type: 'client-request', method: 'session.prompt',
+        payload: { sessionId: owner.id, mode: 'queue', content: [{ type: 'text', text: prompt }] },
+      })
+
+      const sending = chat.locator('[data-pending-message="sending"]')
+      await sending.getByText(prompt, { exact: true }).waitFor({ timeout: 10_000 })
+      await sending.getByRole('status').filter({ hasText: /^正在发送…$/u }).waitFor({ timeout: 10_000 })
+      expect(await sentText.count()).toBe(1)
+      expect(await formalRow.count()).toBe(0)
+      expect(activity()).toEqual([])
+
+      const response = page.waitForResponse(promptUrl, { timeout: 15_000 })
+      forward.resolve(true)
+      const envelope: unknown = await (await response).json()
+      if (refuse) {
+        expect(envelope).toMatchObject({ rpcId: request.rpcId, result: { ok: false, error: { code: 'invalid-time-zone' } } })
+        await expect.poll(async () => ({
+          editable: await input.isEditable(), draft: await input.inputValue(), copies: await sentText.count(),
+        }), { timeout: 10_000 }).toEqual({ editable: true, draft: prompt, copies: 0 })
+        expect(owner.inbox.hasPending).toBe(false)
+        expect(activity()).toEqual([])
+      } else {
+        expect(envelope).toMatchObject({ rpcId: request.rpcId, result: { ok: true, value: { accepted: true } } })
+        // 首步暂停在领取之后、写入会话历史之前。
+        await expect.poll(() => atPreStep, { timeout: 15_000 }).toBe(true)
+        await chat.locator('[data-pending-message="preparing"]').getByText(prompt, { exact: true })
+          .waitFor({ timeout: 10_000 })
+        expect(await sending.count()).toBe(0)
+        expect(await sentText.count()).toBe(1)
+        expect(await formalRow.count()).toBe(0)
+        expect(owner.inbox.nextTurn).toHaveLength(0)
+        expect(activity().map(event => event.type)).toEqual(['turn/start'])
+
+        const settled = scaffold.whenTurnSettled()
+        prepare.resolve(undefined)
+        expect(await settled).toBe(owner.id)
+        await formalRow.waitFor({ timeout: 10_000 })
+        await chat.getByText(reply, { exact: true }).waitFor({ timeout: 10_000 })
+        expect(await sentText.count()).toBe(1)
+        expect(await chat.locator('[data-pending-message]').count()).toBe(0)
+        await expect.poll(() => input.inputValue(), { timeout: 10_000 }).toBe('')
+        const recorded = owner.session.events.filter(event =>
+          event.type === 'user/message' && event.data.source.kind === 'user')
+        expect(recorded.map(event => event.data)).toMatchObject([{
+          content: [{ type: 'text', text: prompt }], source: { rpcId: request.rpcId },
+        }])
+      }
+      expect(requests).toHaveLength(1)
+      expect(tripwire.pageErrors).toEqual([])
+    } finally {
+      forward.resolve(false)
+      prepare.resolve(undefined)
+      offPrepare()
+      if (!page.isClosed()) await page.unrouteAll({ behavior: 'wait' })
+    }
+  })
 })

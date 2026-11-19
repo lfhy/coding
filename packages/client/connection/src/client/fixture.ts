@@ -2613,8 +2613,8 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
           return { type: 'image', attachment }
         })
         if (mode === 'steer' && replays.has(id)) {
-          // Steering: the durable user/message lands inside the current turn; the replay continues.
-          append(id, { type: 'user/message', surfaceOp: 'append', data: userMessage(durable) })
+          // 插队消息进入当前轮，后续内容继续回放。
+          append(id, { type: 'user/message', surfaceOp: 'append', data: userMessage(durable, { kind: 'user', rpcId: request.rpcId }) })
           return ok(request, { accepted: true as const })
         }
         const turn = nextTurn.get(id) ?? 0
@@ -2627,7 +2627,7 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
         if (plan.wanted !== null && plan.wanted !== plan.active) {
           append(id, { type: 'plan/mode', data: { active: plan.wanted } })
         }
-        append(id, { type: 'user/message', surfaceOp: 'append', data: userMessage(durable) })
+        append(id, { type: 'user/message', surfaceOp: 'append', data: userMessage(durable, { kind: 'user', rpcId: request.rpcId }) })
         // Capacity parallel of the host token-meter's request/context record:
         // log-only, appended inside the open turn, and deduplicated against the
         // route already recorded (the fixture never varies contextWindow).
@@ -3296,8 +3296,11 @@ export class FixtureApiClient extends AbstractApiClient {
     method: K,
     payload: RequestPayload<K>,
     signal?: AbortSignal,
+    _timeoutPolicy?: 'default' | 'caller-signal-only',
+    onRequest?: (rpcId: ReturnType<typeof RpcId>) => void,
   ): Promise<RpcResponse<ResponseValue<K>>> {
     const request = rpcRequest(payload)
+    onRequest?.(request.rpcId)
     const full: ClientRequest = { type: 'client-request', rpcId: request.rpcId, method, payload }
     this.onEnvelope(full)
     const response = await this.dispatch(

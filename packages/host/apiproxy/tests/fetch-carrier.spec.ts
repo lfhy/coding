@@ -469,7 +469,12 @@ describe('unary round trip (handler ⇄ client, no network)', () => {
     })
     const renamed = await c.sessions.rename({ sessionId: 's' as never, title: 'named' })
     expect(renamed.result).toMatchObject({ ok: true, value: { title: 'named', seq: 0 } })
-    expect((await c.sessions.prompt({ sessionId: 's' as never, mode: 'queue', content: [{ type: 'text', text: 'x' }] })).result.ok).toBe(true)
+    const onRequest = vi.fn()
+    const sending = c.sessions.prompt({ sessionId: 's' as never, mode: 'queue', content: [{ type: 'text', text: 'x' }] }, undefined, onRequest)
+    expect(onRequest).toHaveBeenCalledOnce()
+    const accepted = await sending
+    expect(accepted.result.ok).toBe(true)
+    expect(onRequest).toHaveBeenCalledWith(accepted.rpcId)
     expect((await c.sessions.attachment({ sessionId: 's' as never, attachmentId: 'a' as never })).result.ok).toBe(true)
     expect((await c.sessions.updateQueue({
       sessionId: 's' as never,

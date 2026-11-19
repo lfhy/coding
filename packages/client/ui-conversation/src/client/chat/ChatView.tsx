@@ -153,6 +153,7 @@ export function ChatView({
   const nodeStore = useSession(s => s.chat.nodes)
   const timeline = useSession(s => s.chat.timeline)
   const inbox = useSession(s => s.queue)
+  const sendingPrompt = useSession(s => s.sendingPrompt)
   // Workspace root off the session list row: path summaries display relative to it.
   const cwd = useSessions(s => s.byId[sessionId]?.cwd)
   const running = useSession(s => s.running)
@@ -277,7 +278,8 @@ export function ChatView({
   }, [])
 
   const pendingMessages = useMemo(
-    () => inbox.filter(item => item.placement === 'steering'),
+    () => inbox.flatMap(item => item.placement === 'steering' || item.placement === 'preparing'
+      ? [{ id: item.id, content: item.content, phase: item.placement }] : []),
     [inbox],
   )
   const imageAnchorLabel = t('chat.anchors.image')
@@ -319,7 +321,7 @@ export function ChatView({
   const firstSeq = firstKey === undefined ? null : nodeStore.get(firstKey)?.anchorSeq ?? null
   const lastKey = order.at(-1) ?? null
   const lastNode = lastKey === null ? undefined : nodeStore.get(lastKey)
-  const lastPendingMessageId = pendingMessages[pendingMessages.length - 1]?.id ?? null
+  const lastPendingMessageId = sendingPrompt !== undefined ? 'sending' : pendingMessages.at(-1)?.id ?? null
   const followSig = `${openState}:${firstSeq}:${lastKey}:${order.length}:${running ? 1 : 0}:${lastPendingMessageId ?? ''}`
 
   const measureAnchorRail = useCallback(() => {
@@ -659,12 +661,20 @@ export function ChatView({
           {running && <TurnStatus startTime={runningTurnStart} label={statusLabel} t={t} />}
           {pendingMessages.map(item => (
             <PendingQueueBubble
-              key={item.id}
+              key={`${item.phase}:${item.id}`}
               content={item.content}
               renderMessageImages={renderMessageImages}
+              phase={item.phase}
               t={t}
             />
           ))}
+          {sendingPrompt !== undefined && <PendingQueueBubble
+            content={sendingPrompt.content}
+            phase="sending"
+            pendingImageCount={sendingPrompt.imageCount}
+            renderMessageImages={renderMessageImages}
+            t={t}
+          />}
         </div>
         {!atBottom && (
           <div className={css.toBottomSlot}>

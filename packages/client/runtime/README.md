@@ -40,13 +40,21 @@ SlotRegistry 分别为 renderer 提供 `useSessions` 与 `useWorkspaces` 的裸 
 
 `startSession` 仍是 fire-and-forget 的 UI 动作，但不会再静默吞掉连接或创建失败：失败会以 `WorkspaceListState.startSessionError` 投影为单调递增的 attempt、目标 Workspace 和安全错误文本，新的尝试会先清除旧错误，成功后也会清除该投影。侧栏浏览器据此显示可重试的错误对话框；较旧的并发完成不会覆盖较新的尝试。
 
-`SessionSummary.blank` 镜像主机派生的空日志位，在客户端只降不升：由 `session.list`／`host/session-added` 帧播种，本地首次获 Host 接受的 `prompt()`（RPC 成功响应时——受理即证明用户消息已入主机日志；首讯被拒则会话保持 blank、保持可复用）与任何 `running: true` 状态帧翻为 false，每次列表重拉重新对齐。列表界面隐藏 blank 行；store 保留全部行。`SessionRuntime.create` 接受可选的、由调用方预先分配的 SessionId，失败时抛出 `SessionCreateError`（携带 `requestedSessionId`）。
+`SessionSummary.blank` 镜像 Host 按轮次派生的空白状态，在客户端只降不升：由 `session.list`／`host/session-added` 帧播种，本地首次获 Host 接纳的 `prompt()` 成功响应或 `running: true` 状态帧将其翻为 false，每次列表重拉会重新对齐。发送尝试本身不改变 blank；首发被拒且没有启动轮次时，会话仍可复用。列表界面隐藏 blank 行；store 保留全部行。`SessionRuntime.create` 接受可选的、由调用方预先分配的 SessionId，失败时抛出 `SessionCreateError`（携带 `requestedSessionId`）。
 
 `Session.composerPhase` 把任何可见的非命令 Chat Node 视为对话内容，因此客户端插件可以在不打开轮次的情况下投影持久用户输入，而仅包含通用命令行的窗口仍保持 Host blank 状态。列表隐藏和空白会话复用仍遵循 Host blank 位。缺少插件输入 Node 的历史窗口会恢复该空白状态，直到加载更早页面后该 Node 恢复。
 
+## 首条消息的发送回执
+
+`Session` 持有本地首发回执，不把它写入会话历史或当作 Host 队列项。RPC 成功只表示 Host 接纳，并不证明消息已写入历史。客户端按 `message.source.rpcId` 识别同一次提交；收到对应的 `preparing` 投影、实际排队项或持久 `user/message` 时，由该 Host 状态接替本地回执。
+
 ## 待处理队列投影
 
-`ConversationSnapshot.queue` 是 Host 提供的 `agent.inbox.nextTurn` 权威瞬态快照；待处理的 next-step steering（中途引导）也会进入同一投影，并按 placement 区分用户消息与注入上下文。每行携带其 `MessageId`、所有内容块均为文本时的完整可编辑文本，以及扁平化预览；预览跳过宿主为已发送图片追加的路径说明（`isImageEnvelope`），因此带图消息显示图片占位而不是本机路径。Host 根据持久 `agent/inbox/spliced` 变更派生完整 `session/queue` 快照，并在重连时发送基线；面向单条消息的 `agent/inbox/inserted`、`claimed` 与 `discarded` 通知不用于重建该投影。`Session.updateQueue()` 经 Host 侧 `Inbox.splice()` 发送编辑／移除操作，客户端不做乐观变更，因此下一份 Host 快照是唯一可见的提交结果，claim 竞态则可能呈现 `queue-item-not-found`。
+`ConversationSnapshot.queue` 以 Host 的瞬态快照为准，包含等待下一轮的 `agent.inbox.nextTurn` 与待处理的 next-step steering（中途引导）；非用户来源的 next-step 项以 `context` 区分。Host 根据持久 `agent/inbox/spliced` 变更发布完整的 `session/queue` 快照，重连时发送基线；客户端不靠逐条的 `agent/inbox/inserted`、`claimed` 或 `discarded` 通知重建投影。
+
+Host 的 `preparing` 是消息已被领取、尚未写入对话历史的权威状态，不属于可编辑、删除或插队的排队项。对应的持久 `user/message` 接替临时项，客户端在同一次快照更新中完成替换，避免同一条消息消失或重复显示。Host 在对应的持久事件进入 mux 流后撤下已确认插队的临时项；旧历史事件不能移除后来复用同一 `MessageId` 的入队项。重连从 Host 基线和会话历史恢复。
+
+快照各项携带 `MessageId`、纯文本项的完整文本和扁平化预览。预览跳过 Host 为已发送图片追加的路径说明（`isImageEnvelope`），因此带图消息显示图片占位而不是本机路径。`Session.updateQueue()` 请求编辑或移除时，Host 经 `Inbox.splice()` 提交变更；客户端不做乐观变更，以下一份 Host 快照为准。若该项已被领取，可能返回 `queue-item-not-found`。
 
 ## Conversation 组装
 

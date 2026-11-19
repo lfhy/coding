@@ -10,12 +10,12 @@ import type {
 // Value import from the inline-safe wire layer (not the connection plugin):
 // plugin-to-plugin value imports are a bundle purity error.
 import { transportError } from 'coding-host-apiproxy/api'
-import type { SessionFace } from '../contract/session.ts'
+import type { PromptPreparation, SessionFace } from '../contract/session.ts'
 import { ConversationNodeAssembler } from './conversation-assembler.ts'
 import type { ConversationRuntime } from './conversation-assembler.ts'
 import type { ConversationEventInput, ConversationPublication } from '../contract/conversation.ts'
 import type {
-  ChatSnapshot, ComposerPhase, ConversationSnapshot, OpenState, PromptError,
+  ChatSnapshot, ComposerPhase, ConversationSnapshot, OpenState, PromptError, SendingPrompt,
 } from './conversation.ts'
 import { EMPTY_CHAT_SNAPSHOT } from './conversation.ts'
 import type { PendingInteraction } from './pending.ts'
@@ -83,6 +83,8 @@ export class Session implements SessionFace {
   private pendingCache: { rev: number; value: PendingInteraction[] } | null = null
   /** Authoritative stream-only inbox snapshot; pending work never hits history. */
   private readonly queueMirror = new SessionQueueMirror()
+  /** 仅用于空闲空白会话的普通首发，不进入队列或历史。 */
+  private sending: { preview: SendingPrompt; rpcId?: RpcId } | undefined
   /** Session-owned business Context engine over the contiguous raw window. */
   private readonly conversation: ConversationNodeAssembler
   private running = false
@@ -182,33 +184,37 @@ export class Session implements SessionFace {
   // ---- Operations ----
 
   /**
-   * Send (queue/steer passed through 1:1); failures land in the snapshot's promptError.
-   * @param content - text plus browser-owned temporary image uploads.
-   * @param mode - queue appends after the current turn; steer interrupts it.
-   * @returns the prompt result (also mirrored into promptError on failure).
+   * 发送普通消息；只有空闲空白会话显示本地首发回执。
+   * @param input - 发送内容，或需先完成的本地图片准备。
+   * @param mode - 下一轮排队或插入当前轮。
+   * @param signal - 提交中止信号。
+   * @returns Host 接纳结果；失败写入 `promptError`。
    */
   async prompt(
-    content: PromptContentPart[],
+    input: PromptContentPart[] | PromptPreparation,
     mode: 'queue' | 'steer',
     signal?: AbortSignal,
   ): Promise<RpcResult<{ accepted: true }>> {
     this.promptError = null
     this.lastAgentError = null
-    // Synchronous, before the first await: the blank → engaging edge must be
-    // visible on the session area's very first frame when a caller sends
-    // ahead of navigation (first-send flow).
+    // 提交后立即切出空白引导；排队与插队请求仍由 Host 确认其位置。
     this.promptAttempted = true
     if (this.blankBit) this.firstPromptPendingTurn = true
-    this.notifier.markDirty()
+    const receipt = this.beginSending(input, mode, signal)
+    if (receipt === undefined) this.notifier.markDirty()
+    else this.notifier.notifyNow()
     let result: RpcResult<{ accepted: true }>
     try {
+      signal?.throwIfAborted()
+      const content = Array.isArray(input) ? input : await input.prepare()
+      signal?.throwIfAborted()
       if (this.address === undefined) {
         result = (await this.api.sessions.prompt({
           sessionId: this.sessionId,
           mode,
           content,
           clientTimeZone: resolvedClientTimeZone(),
-        }, signal)).result
+        }, signal, receipt === undefined ? undefined : (rpcId) => { receipt.rpcId = rpcId })).result
       } else if (this.address.mode === 'one-shot') {
         result = {
           ok: false,
@@ -242,25 +248,38 @@ export class Session implements SessionFace {
     } catch (error) {
       result = transportError(error)
     }
+    // POST 与 mux 独立到达。成功时等 Host 的同一消息接手，拒绝时撤下回执。
+    if (receipt !== undefined && this.sending === receipt
+      && (!result.ok || receipt.rpcId === undefined)) this.clearSending()
     if (!result.ok) {
       this.promptError = { op: 'send', error: result.error }
       this.notifier.markDirty()
       return result
     }
-    // Blank flips on ACCEPTANCE, not attempt: an accepted prompt starts the
-    // conversation's first turn on the host (the host criterion — a logged
-    // turn/start — is fact, not optimism; standalone command and projection
-    // events never flip it), while a rejected first prompt must keep the
-    // session blank — the client-side blank mirror only ever lowers, so
-    // flipping early on a failure would surface the session forever and
-    // strip its connectWorkspace reuse eligibility against the host's
-    // authority.
+    // 只有接纳才显示会话行；准入失败保留空白会话的复用资格。
     if (this.blankBit) {
       this.blankBit = false
       this.options.onEngaged?.(this)
       this.notifier.markDirty()
     }
     return result
+  }
+
+  private beginSending(input: PromptContentPart[] | PromptPreparation, mode: 'queue' | 'steer', signal?: AbortSignal): typeof this.sending {
+    if (this.sending !== undefined || this.address !== undefined || !this.blankBit || this.running || this.removed
+      || mode !== 'queue' || signal?.aborted || this.queueMirror.snapshot().length !== 0) return undefined
+    const preview: SendingPrompt = Array.isArray(input)
+      ? { content: input.filter(part => part.type === 'text'), imageCount: input.filter(part => part.type === 'image').length }
+      : { content: input.text === '' ? [] : [{ type: 'text', text: input.text }], imageCount: input.imageCount }
+    const receipt = { preview }
+    this.sending = receipt
+    return receipt
+  }
+
+  private clearSending(): void {
+    if (this.sending === undefined) return
+    this.sending = undefined
+    this.notifier.markDirty()
   }
 
   /**
@@ -475,7 +494,10 @@ export class Session implements SessionFace {
         return
       }
       case 'session/queue': {
-        this.queueMirror.replace(frame.items)
+        this.queueMirror.replace(frame)
+        const rpcId = this.sending?.rpcId
+        if (rpcId !== undefined && frame.items.some(({ message }) =>
+          message.source.kind === 'user' && 'rpcId' in message.source && message.source.rpcId === rpcId)) this.clearSending()
         this.notifier.markDirty()
         return
       }
@@ -578,7 +600,13 @@ export class Session implements SessionFace {
   /** host/session-removed relay: flag the snapshot (instance survives — resident-instance rule). */
   handleRemoved(): void {
     this.removed = true
+    this.clearSending()
     this.notifier.markDirty()
+  }
+
+  /** 断线时舍弃发送回执；重连由新一代的 Host 队列与历史恢复真实状态。 */
+  handleDisconnected(): void {
+    this.clearSending()
   }
 
   /**
@@ -660,6 +688,7 @@ export class Session implements SessionFace {
     this.baseSeq = this.events[0]?.seq ?? 0
     this.hasMore = hasMore
     if (this.events.some(event => event.type === 'turn/start')) this.firstPromptPendingTurn = false
+    for (const { event } of entries) this.acceptPromptEvent(event, true)
     this.conversation.replaceWindow(entries.map(conversationInput), hasMore)
     if (projections !== undefined) this.projections.seed(projections)
     const buffered = this.liveBuffer
@@ -675,9 +704,17 @@ export class Session implements SessionFace {
     this.events.push(event)
     this.views.push(view)
     if (event.type === 'turn/start') this.firstPromptPendingTurn = false
-    const queueChanged = this.queueMirror.acceptDurable(event)
+    const queueChanged = this.acceptPromptEvent(event)
     const publication = this.conversation.append({ event, view })
     return queueChanged ? 'immediate' : publication
+  }
+
+  /** 历史和连续实时事件都能接走回执；只承认拥有同一请求标识的真人消息。 */
+  private acceptPromptEvent(event: SessionEvent, fromHistory = false): boolean {
+    if (event.type === 'user/message' && event.surfaceOp === 'append' && event.data.source.kind === 'user'
+      && 'rpcId' in event.data.source && this.sending?.rpcId !== undefined
+      && event.data.source.rpcId === this.sending.rpcId) this.clearSending()
+    return this.queueMirror.acceptDurable(event, fromHistory)
   }
 
   /** Land a live session/event (open/repair in flight -> buffer; overlapping seq -> drop;
@@ -749,6 +786,7 @@ export class Session implements SessionFace {
       runningCalls: legacy.runningCalls,
       pending: this.pendingCache.value,
       queue: this.queueMirror.snapshot(),
+      ...this.sending === undefined ? {} : { sendingPrompt: this.sending.preview },
       running: this.running,
       subagent: this.address === undefined
         ? null

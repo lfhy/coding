@@ -17,7 +17,7 @@ import { contentHasImage, createUserMessage, freezeMessage, imageEnvelopeText, R
 import { errorChain } from 'coding-llm'
 import type { ContentBlock, MessageSource } from 'coding-llm'
 import { isAppendSurfaceEvent, isJsonValue, SessionId } from 'coding-session'
-import type { JsonValue, Session, SessionEvent, SessionEventMap, SessionHeader, UserMessage } from 'coding-session'
+import type { JsonValue, Session, SessionEvent, SessionHeader, UserMessage } from 'coding-session'
 import type { SessionPersistence } from 'coding-session-persistence'
 import { SessionQueryError, type SessionSearchCursor } from 'coding-session-query'
 import { SubagentError } from 'coding-subagent'
@@ -41,9 +41,10 @@ import type {
   ModelReasoning, MuxFrame, PromptContentPart, QuestionResponsePayload,
   SessionListMetadata, SessionProjectionsBlock, SessionSearchItem,
   ProxyGroupView, ProxyHealthView, ProxyNodeView,
-  QueuedInboxItem, SessionSummary, SettingsNamespaceView, SubagentAddress, JobView, ToolEventView,
+  SessionSummary, SettingsNamespaceView, SubagentAddress, JobView, ToolEventView,
   WorkspaceId, WorkspaceView,
 } from './api/index.ts'
+import { installPromptQueue } from './prompt-queue.ts'
 import { MANAGED_HOST_RECORD_TOKEN_ENV } from './api/host.ts'
 import {
   DEFAULT_SESSION_LOG_COMPRESSION_LEVEL,
@@ -1362,37 +1363,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
     })
   })
 
-  /** Project both durable inbox lists, optionally including the splice currently being emitted. */
-  const queueItems = (
-    agent: Agent,
-    splice?: SessionEventMap['agent/inbox/spliced'],
-  ): QueuedInboxItem[] => {
-    const project = (target: 'next-turn' | 'next-step'): readonly UserMessage[] => {
-      const messages = target === 'next-turn' ? agent.inbox.nextTurn : agent.inbox.nextStep
-      return splice?.target === target
-        ? messages.toSpliced(splice.start, splice.removedCount ?? 0, ...splice.inserted)
-        : messages
-    }
-    return [
-      ...project('next-turn').map(message => ({ id: message.id, placement: 'queued' as const, message })),
-      ...project('next-step').map(message => ({
-        id: message.id,
-        // Only user-origin messages are steering; injected context (approval
-        // notices, task completion, attached snapshots) is not a user action
-        // and must not render as a pending steering bubble.
-        placement: message.source.kind === 'user' ? 'steering' as const : 'context' as const,
-        message,
-      })),
-    ]
-  }
-
-  ctx.on('session/event', (session, event) => {
-    if (session.transient) return
-    if (event.type !== 'agent/inbox/spliced') return
-    const agent = ctx.agents.get(session.id)
-    if (agent?.session !== session) return
-    broadcast({ type: 'session/queue', sessionId: session.id, items: queueItems(agent, event.data) })
-  })
+  const promptQueue = installPromptQueue(ctx, broadcast)
 
   /** Remove a wait before settling it: synchronous deletion makes the first claimant win. */
   function claimQuestion(pending: PendingQuestion, outcome: 'answered' | 'cancelled'): void {
@@ -3864,15 +3835,13 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         for (const pending of pendingApprovals.values()) {
           if (!pending.transient) queue.push(requestedFrame(pending))
         }
-        // Queue snapshot baseline (pendingQuestions precedent): frames replayed
-        // in arrival order per session; a reconnecting client rebuilds its
-        // queue view from these alone.
+        // 重连同时恢复等待中的队列和已领取、尚未进入正式历史的输入。
         for (const session of ctx.sessions.list()) {
           if (session.transient) continue
           const agent = ctx.agents.get(session.id)
-          if (agent?.session === session && agent.inbox.hasPending) {
-            queue.push(frame({ type: 'session/queue', sessionId: session.id, items: queueItems(agent) }))
-          }
+          if (agent?.session !== session) continue
+          const pending = promptQueue(agent)
+          if (pending.items.length > 0) queue.push(frame(pending))
         }
         // Background-task baseline. `ctx.agents.get` is the non-resuming read:
         // a session with no live Agent owns no tasks, so it correctly sees only

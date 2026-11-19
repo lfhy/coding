@@ -33,13 +33,13 @@ export type ToolEventView =
   | { for: 'call'; view: ToolCallView }
   | { for: 'result'; view: ToolResultView }
 
-/** One pending inbox occurrence in the authoritative `session/queue` snapshot. */
+/** 尚未进入对话历史的一次已接纳输入。 */
 export interface QueuedInboxItem {
-  /** Message identity used by inbox mutations. */
+  /** 消息标识；只有 `queued` 可通过队列操作修改。 */
   id: MessageId
-  /** Agent-resolved FIFO placement; queued and steering items render on different surfaces, context items stay invisible until claimed. */
-  placement: 'queued' | 'steering' | 'context'
-  /** Complete pending message; it is not durable until the Agent claims it. */
+  /** `preparing` 已被领取，正在等待首步检查或写入；`context` 不显示临时气泡。 */
+  placement: 'queued' | 'steering' | 'preparing' | 'context'
+  /** Host 接纳的完整输入。 */
   message: Message
 }
 
@@ -73,15 +73,8 @@ export type MuxFrame =
   | { type: 'approval/resolved'; sessionId: SessionId; approvalId: ApprovalRequestId; outcome: ApprovalOutcome }
   | { type: 'question/requested'; sessionId: SessionId; questions: AskUserQuestionItem[] }
   | { type: 'question/resolved'; sessionId: SessionId; questionRpcId: RpcId; outcome: 'answered' | 'cancelled' }
-  /**
-   * Complete transient inbox state after every enqueue, mutation, claim, or
-   * discard. Pending work is not model-visible and therefore has no durable
-   * session event; the whole snapshot makes edit, deletion, cancel, and
-   * reconnect converge through one authoritative signal. `session/queue`
-   * covers both resolved placements: queued items render
-   * in QueueDock, while pending steering renders at the conversation tail.
-   */
-  | { type: 'session/queue'; sessionId: SessionId; items: QueuedInboxItem[] }
+  /** 已接纳输入的完整实时快照；`asOfSeq` 为快照覆盖的最后会话事件，旧载体可省略。 */
+  | { type: 'session/queue'; sessionId: SessionId; asOfSeq?: number; items: QueuedInboxItem[] }
   /**
    * Complete set of background jobs this session can see, after every registry
    * commit that changes it: registration, the stopping transition, settlement,

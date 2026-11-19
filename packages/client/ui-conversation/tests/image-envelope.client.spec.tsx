@@ -6,7 +6,7 @@ import { cleanup, render } from '@testing-library/react'
 import { makeTranslate } from 'coding-client-test-runtime'
 import { zh as commonZh } from 'coding-client-locale/src/locales/zh.ts'
 import { isImageEnvelope } from 'coding-client-runtime/client'
-import { PendingSteeringBubble } from '../src/client/chat/MessageItem.tsx'
+import { PendingQueueBubble } from '../src/client/chat/MessageItem.tsx'
 import { zh } from '../src/client/locales.ts'
 
 afterEach(cleanup)
@@ -22,7 +22,8 @@ it('recognizes only the whole Host envelope', () => {
 })
 
 it('renders the image without exposing the model-only path envelope', () => {
-  const view = render(<PendingSteeringBubble
+  const view = render(<PendingQueueBubble
+    phase="steering"
     content={[{ type: 'text', text: envelope }, { type: 'image', attachment }]}
     renderMessageImages={({ images }) => <div data-testid="images">{String(images.length)}</div>}
     t={t}

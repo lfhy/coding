@@ -7,10 +7,10 @@ import { describe, expect, it } from 'vitest'
 import { createUserMessage } from 'coding-llm'
 import type { ContentBlock, UserMessage } from 'coding-llm/types'
 import type { SessionEvent } from 'coding-session/types'
-import type { MessageId, MuxFrame, RpcId, SessionId } from 'coding-api-remotes/client'
+import type { HistoryEntry, MessageId, MuxFrame, RpcId, SessionId } from 'coding-api-remotes/client'
 import { Session } from '../src/client/sessions/session.ts'
 import { SessionManager } from '../src/client/sessions/manager.ts'
-import { FakeApiClient, fakeRemote } from './fake-api.client.ts'
+import { FakeApiClient, deferred, err, fakeRemote, ok } from './fake-api.client.ts'
 
 const SID = 'fk-q1' as SessionId
 const text = (value: string): ContentBlock[] => [{ type: 'text', text: value }]
@@ -21,15 +21,16 @@ interface QueueFixture {
   id: string
   body: string
   content?: ContentBlock[]
-  placement?: 'queued' | 'steering'
+  placement?: 'queued' | 'steering' | 'preparing'
   message?: UserMessage
 }
 
 /** Build one authoritative queue snapshot. */
-function queueFrame(items: QueueFixture[]): MuxFrame {
+function queueFrame(items: QueueFixture[], asOfSeq?: number): MuxFrame {
   return {
     type: 'session/queue',
     sessionId: SID,
+    ...asOfSeq === undefined ? {} : { asOfSeq },
     items: items.map(item => ({
       id: iid(item.id),
       placement: item.placement ?? 'queued',
@@ -44,6 +45,85 @@ function queueFrame(items: QueueFixture[]): MuxFrame {
 function makeSession(): Session {
   return new Session(SID, new FakeApiClient(), fakeRemote())
 }
+
+function messageEvent(seq: number, message: UserMessage): Extract<SessionEvent, { type: 'user/message' }> {
+  return { seq, time: 1_700_000_000_000, type: 'user/message', surfaceOp: 'append', data: message }
+}
+
+describe('首发回执', () => {
+  it.each([true, false])('按同一个 rpcId 交接，不取决于 POST 和 mux 的到达顺序：%s', async (ackFirst) => {
+    const api = new FakeApiClient()
+    const session = new Session(SID, api, fakeRemote())
+    await session.open()
+    const ack = deferred<ReturnType<typeof ok<{ accepted: true }>>>()
+    const admitted = deferred<UserMessage>()
+    api.onPrompt = (_payload, rpcId) => {
+      admitted.resolve(createUserMessage({ content: text('相同文本'), source: { kind: 'user', rpcId } }))
+      return ack.promise
+    }
+
+    const sent = session.prompt([{ type: 'text', text: '相同文本' }], 'queue')
+    expect(session.getSnapshot().sendingPrompt).toEqual({ content: text('相同文本'), imageCount: 0 })
+    expect(session.getSnapshot()).toMatchObject({ blank: true, queue: [], nodes: [] })
+    const message = await admitted.promise
+    if (ackFirst) {
+      ack.resolve(ok({ accepted: true }))
+      await sent
+      expect(session.getSnapshot().sendingPrompt).toBeDefined()
+    }
+
+    session.handleMuxEnvelope(rid('other'), queueFrame([{ id: 'other', body: '相同文本' }], 0))
+    expect(session.getSnapshot().sendingPrompt).toBeDefined()
+    session.handleMuxEnvelope(rid('claimed'), queueFrame([{ id: message.id, body: '', message, placement: 'preparing' }], 1))
+    expect(session.getSnapshot().sendingPrompt).toBeUndefined()
+    expect(session.getSnapshot().queue).toMatchObject([{ placement: 'preparing', content: text('相同文本') }])
+    session.handleMuxEnvelope(rid('durable'), { type: 'session/event', sessionId: SID, event: messageEvent(2, message) })
+    expect(session.getSnapshot().queue).toEqual([])
+    if (!ackFirst) ack.resolve(ok({ accepted: true }))
+    await sent
+    expect(session.getSnapshot().sendingPrompt).toBeUndefined()
+  })
+
+  it('在图片编码完成前显示回执，准入拒绝后撤回，不把会话记为已发送', async () => {
+    const api = new FakeApiClient()
+    const session = new Session(SID, api, fakeRemote())
+    const prepared = deferred<Array<{ type: 'text'; text: string }>>()
+    api.onPrompt = () => Promise.resolve(err({ code: 'agent-busy', message: 'busy', details: { reason: 'test' } }))
+    const sent = session.prompt({ text: '带图消息', imageCount: 1, prepare: () => prepared.promise }, 'queue')
+    expect(session.getSnapshot().sendingPrompt).toEqual({ content: text('带图消息'), imageCount: 1 })
+    expect(api.callsOf('session.prompt')).toEqual([])
+    prepared.resolve([{ type: 'text', text: '带图消息' }])
+    await expect(sent).resolves.toMatchObject({ ok: false })
+    expect(session.getSnapshot().sendingPrompt).toBeUndefined()
+    expect(session.getSnapshot()).toMatchObject({ blank: true, queue: [], nodes: [], promptError: { op: 'send' } })
+  })
+
+  it('忙时排队或直接插队都不预先把消息画进正文', async () => {
+    const session = makeSession()
+    const steering = session.prompt([{ type: 'text', text: '明确插队' }], 'steer')
+    expect(session.getSnapshot().sendingPrompt).toBeUndefined()
+    session.handleRunning(true)
+    const queued = session.prompt([{ type: 'text', text: '继续排队' }], 'queue')
+    expect(session.getSnapshot().sendingPrompt).toBeUndefined()
+    await Promise.all([steering, queued])
+  })
+
+  it('历史窗口中已写入的消息接走准备中项，不误删随后复用标识的队列项', async () => {
+    const api = new FakeApiClient()
+    const session = new Session(SID, api, fakeRemote())
+    const history = deferred<ReturnType<typeof ok<{ events: HistoryEntry[]; hasMore: boolean }>>>()
+    api.onHistory = () => history.promise
+    const opened = session.open()
+    const message = createUserMessage({ content: text('准备中'), source: { kind: 'user' } })
+    session.handleMuxEnvelope(rid('claimed'), queueFrame([
+      { id: 'claimed', body: '', message, placement: 'preparing' },
+      { id: 'queued-later', body: '', message },
+    ], 1))
+    history.resolve(ok({ events: [{ event: messageEvent(2, message) }], hasMore: false }))
+    await opened
+    expect(session.getSnapshot().queue.map(item => item.id)).toEqual(['queued-later'])
+  })
+})
 
 describe('queue snapshot intake', () => {
   it('projects stable ids, flat previews, and complete text', () => {
