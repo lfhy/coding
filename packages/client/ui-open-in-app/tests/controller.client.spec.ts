@@ -16,6 +16,7 @@ afterEach(() => {
 const SESSION = 'session-1' as SessionId
 const ROUTES: OpenInAppRoutes = {
   files: '/open-in-app/files',
+  locate: '/open-in-app/locate',
   readFile: '/open-in-app/files/read',
   terminal: '/open-in-app/terminal',
 }
@@ -230,6 +231,28 @@ describe('OpenInAppController workspace files', () => {
         .readFile(SESSION, [])).rejects.toThrow(/invalid (file|code)/)
     }
   })
+
+  it('locates a raw path through the Host and rejects empty or malformed segment chains', async () => {
+    const fetcher = vi.fn(async (_input: string | URL, _init?: RequestInit) => jsonResponse({
+      segments: ['src', 'index.ts'],
+    }))
+    const controller = new OpenInAppController(fetcher, ROUTES)
+    const abort = new AbortController()
+    await expect(controller.locateFile(SESSION, '/home/me/proj/src/index.ts', abort.signal))
+      .resolves.toEqual({ segments: ['src', 'index.ts'] })
+    expect(String(fetcher.mock.calls[0]?.[0])).toBe('http://dsh.internal/open-in-app/locate')
+    expect(fetcher.mock.calls[0]?.[1]).toMatchObject({
+      method: 'POST',
+      body: JSON.stringify({ sessionId: SESSION, path: '/home/me/proj/src/index.ts' }),
+      signal: abort.signal,
+    })
+    await expect(new OpenInAppController(async () => jsonResponse({}, 404), ROUTES)
+      .locateFile(SESSION, '/absent')).rejects.toThrow('workspace locate failed: HTTP 404')
+    for (const payload of [{}, { segments: [] }, { segments: 'nope' }, { segments: [7] }, { segments: [''] }]) {
+      await expect(new OpenInAppController(async () => jsonResponse(payload), ROUTES)
+        .locateFile(SESSION, '/w/a.ts')).rejects.toThrow('invalid workspace path')
+    }
+  })
 })
 
 describe('OpenInAppController terminal URL and shared routes', () => {
@@ -243,9 +266,10 @@ describe('OpenInAppController terminal URL and shared routes', () => {
   })
 
   it('fails loudly when Host shared omits a required route', async () => {
-    const missing: OpenInAppRoutes = { files: '', readFile: '', terminal: '' }
+    const missing: OpenInAppRoutes = { files: '', locate: '', readFile: '', terminal: '' }
     const controller = new OpenInAppController(async () => jsonResponse({}), missing)
     await expect(controller.listFiles(SESSION, [])).rejects.toThrow('files route')
+    await expect(controller.locateFile(SESSION, '/w/a.ts')).rejects.toThrow('locate route')
     await expect(controller.readFile(SESSION, [])).rejects.toThrow('file read route')
     expect(() => controller.terminalUrl(SESSION)).toThrow('terminal route')
   })

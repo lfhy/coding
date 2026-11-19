@@ -17,6 +17,7 @@ import {
   type WorkspaceFileEntry,
   type WorkspaceFilePayload,
   type WorkspaceFilesPayload,
+  type WorkspaceLocatedPath,
 } from './wire.ts'
 
 type Fetch = (input: string | URL, init?: RequestInit) => Promise<Response>
@@ -149,6 +150,15 @@ function readPayload(value: Record<string, unknown>): WorkspaceFilePayload {
   return { path: value.displayPath, content }
 }
 
+/** 校验路径定位响应。 */
+function locatePayload(value: Record<string, unknown>): WorkspaceLocatedPath {
+  if (!Array.isArray(value.segments) || value.segments.length === 0
+    || value.segments.some(segment => typeof segment !== 'string' || segment === '')) {
+    throw new Error('open-in-app host returned an invalid workspace path')
+  }
+  return { segments: value.segments as string[] }
+}
+
 function requiredRoute(value: string, name: string): string {
   if (typeof value !== 'string' || value === '') throw new Error(`open-in-app host shared is missing ${name}`)
   return value
@@ -236,6 +246,28 @@ export class OpenInAppController {
     })
     if (!response.ok) throw new Error(`workspace files failed: HTTP ${String(response.status)}`)
     return filesPayload(await responseRecord(response), pathSegments)
+  }
+
+  /**
+   * 让 Host 在 Session 自己的执行世界里把一条路径定位成 provider 段链。
+   * @param sessionId - 当前 Session。
+   * @param path - 模型或界面给出的原始路径，可跨执行世界。
+   * @param signal - 取消当前请求。
+   * @returns 从工作区根开始的段链；路径不在工作区或不可预览时拒绝。
+   */
+  async locateFile(
+    sessionId: SessionId,
+    path: string,
+    signal?: AbortSignal,
+  ): Promise<WorkspaceLocatedPath> {
+    const response = await this.fetcher(new URL(requiredRoute(this.routes.locate, 'locate route'), hostBase()), {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ sessionId, path }),
+      ...signal === undefined ? {} : { signal },
+    })
+    if (!response.ok) throw new Error(`workspace locate failed: HTTP ${String(response.status)}`)
+    return locatePayload(await responseRecord(response))
   }
 
   /**

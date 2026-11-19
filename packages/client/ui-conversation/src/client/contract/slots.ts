@@ -377,8 +377,9 @@ export interface ChatFileOpener {
   /**
    * 在指定 Session 的右侧工作台打开文件或工作区目录。
    * @param sessionId - 目标会话。
-   * @param path - 工作区相对路径、工作区内绝对路径或 `.`。
-   * @returns 已交给工作台时的 Promise；服务未就绪或路径不属于工作区时返回 undefined。
+   * @param path - 工作区相对路径、工作区内绝对路径、远端执行世界里的路径或 `.`。
+   * @returns 已交给工作台时的 Promise；服务未就绪或需要回退到 Host 打开器时返回 undefined，
+   * 远端工作区无法在工作台打开该路径时以拒绝给出可展示的原因。
    */
   open(sessionId: SessionId, path: string): Promise<void> | undefined
 }

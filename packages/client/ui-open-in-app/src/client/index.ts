@@ -1,7 +1,7 @@
 /** 工作区本地启动入口、功能工作台与底栏终端的浏览器插件。 */
 
 import type { ConnectionHandle } from 'coding-client-connection/client'
-import type { ClientContext } from 'coding-client-runtime/client'
+import { isRemoteWorkspacePath, type ClientContext } from 'coding-client-runtime/client'
 import type { SessionId } from 'coding-session/types'
 import type { HostObservable } from 'coding-client-ui-slots'
 import type {} from 'coding-client-connection/client'
@@ -95,15 +95,35 @@ export function apply(ctx: ClientContext): void {
     { openWorkbench: (sessionId) => { ctx.layout.openWorkbench(workspaceKey(sessionId), sessionId) } },
     () => activeSessionId(ctx),
   )
+  const t = ctx.locale.bind(NS)
+  // 远端工作区的 cwd 只是本地占位目录：工具路径属于远端执行世界，本机打开器打不开，
+  // 由 Host 在 Session 自己的执行世界里定位成 provider 段后再进内置工作台预览。
+  const openRemoteFile = async (sessionId: SessionId, path: string): Promise<void> => {
+    const located = await controller.locateFile(sessionId, path).catch(() => {
+      throw new Error(t('file.remoteUnavailable', { path }))
+    })
+    const opened = sidebarRight.openFileForSession(sessionId, {
+      // 定位结果至少一段，最后一段就是预览标签的文件名。
+      name: located.segments[located.segments.length - 1] as string,
+      segments: located.segments,
+    })
+    if (!opened) throw new Error(t('file.workbenchUnavailable'))
+  }
   const chatFileOpener: ChatFileOpener = {
     open: (sessionId, path) => {
       if (path === '.') return sidebarRight.openFileManagerForSession(sessionId) ? Promise.resolve() : undefined
       const cwd = ctx.sessions.list.getSnapshot().byId[sessionId]?.cwd
+      // 远端工作区不能回落到 Host 的系统打开器：那些路径只存在于远端主机上。
+      const remote = cwd !== undefined && isRemoteWorkspacePath(cwd)
       const segments = workspaceFileSegments(cwd, path)
-      if (segments === undefined) return undefined
-      return sidebarRight.openFileForSession(sessionId, {
-        name: workspaceFileName(path), segments,
-      }) ? Promise.resolve() : undefined
+      if (segments !== undefined) {
+        const opened = sidebarRight.openFileForSession(sessionId, {
+          name: workspaceFileName(path), segments,
+        })
+        if (opened) return Promise.resolve()
+        return remote ? Promise.reject(new Error(t('file.workbenchUnavailable'))) : undefined
+      }
+      return remote ? openRemoteFile(sessionId, path) : undefined
     },
   }
   ctx.provide('chatFileOpener', chatFileOpener)

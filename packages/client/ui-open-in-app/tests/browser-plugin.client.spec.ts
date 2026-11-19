@@ -212,6 +212,73 @@ describe('open-in-app browser half', () => {
     expect(ctx.get('chatFileOpener')).toBeUndefined()
   })
 
+  it('opens remote workspace tool paths through Host locate instead of the local opener', async () => {
+    const marker = '/home/me/.coding/remote-workspaces/0123456789abcdef0123/hep-chat-0123456789abcdef0123'
+    const fetcher = vi.fn(async (input: string | URL, _init?: RequestInit) => {
+      const url = String(input)
+      if (url.includes('/open-in-app/locate')) {
+        return new Response(JSON.stringify({ segments: ['service', 'registry', 'types.go'] }), { status: 200 })
+      }
+      return new Response(JSON.stringify({}), { status: 404 })
+    })
+    vi.stubGlobal('fetch', fetcher)
+    vi.stubGlobal('location', { origin: 'http://dsh.example' })
+    const b = await bench()
+    type Opener = { open: (sessionId: SessionId, path: string) => Promise<void> | undefined }
+    const openSession = (id: string): void => {
+      b.sessionList.set({
+        ...b.sessionList.getSnapshot(),
+        byId: { [SESSION]: { id: SESSION, blank: false, cwd: id } },
+      } as never)
+    }
+    const opener = b.ctx.get('chatFileOpener') as Opener
+    openSession(marker)
+    // 工作台未挂载时远端路径既不进预览也不回落到本机打开器。
+    expect(opener.open(SESSION, '.')).toBeUndefined()
+    await expect(opener.open(SESSION, 'src/a.ts')).rejects.toThrow('没有可用的内置工作台')
+    await expect(opener.open(SESSION, '/home/me/hep-chat/src/a.ts')).rejects.toThrow('没有可用的内置工作台')
+    // 本地工作区在同样的未挂载状态下仍返回 undefined，交给 Host 的系统打开器。
+    openSession('/w')
+    expect(opener.open(SESSION, 'README.md')).toBeUndefined()
+    openSession(marker)
+
+    const entry = b.ctx.slots.entries('workbench')[0]!
+    const store = (entry.store as ReturnType<typeof createRetainedWorkbenchStore>).create()
+    const face = (entry.inject as unknown as (actions: typeof store.actions) => WorkspaceWorkbenchInjected)(store.actions)
+    expect(face).toBeDefined()
+    const opened = opener.open(SESSION, '/home/me/hep-chat/service/registry/types.go')
+    expect(opened).toBeInstanceOf(Promise)
+    await opened
+    const locateCall = fetcher.mock.calls.at(-1)
+    expect(String(locateCall?.[0] as URL)).toBe('http://dsh.example/open-in-app/locate')
+    expect(locateCall?.[1]).toMatchObject({
+      body: JSON.stringify({
+        sessionId: SESSION,
+        path: '/home/me/hep-chat/service/registry/types.go',
+      }),
+    })
+    expect(store.getSnapshot().sessions[SESSION]).toMatchObject({
+      view: 'files', tabs: [{ type: 'file', name: 'types.go', segments: ['service', 'registry', 'types.go'] }],
+    })
+    expect(b.openWorkbench).toHaveBeenLastCalledWith('workspace-browser-plugin', SESSION)
+    // 工作台已挂载时 `.` 打开文件管理器，不再经过定位。
+    await opener.open(SESSION, '.')
+    // 工作区相对路径在工作台已挂载时不占用 Host 定位。
+    const before = fetcher.mock.calls.length
+    await opener.open(SESSION, 'service/registry/types.go')
+    expect(fetcher.mock.calls).toHaveLength(before)
+
+    // Host 判定路径不在远端工作区内时，打开失败并交给对话层的错误对话框。
+    fetcher.mockImplementationOnce(async () => new Response(JSON.stringify({ code: 'not-found' }), { status: 404 }))
+    await expect(opener.open(SESSION, '/etc/outside.ts'))
+      .rejects.toThrow('这个文件不在远端工作区内，无法在这里打开：/etc/outside.ts')
+    // 本地工作区仍交回 Host 的系统打开器。
+    openSession('/w')
+    expect(opener.open(SESSION, 'README.md')).toBeInstanceOf(Promise)
+    expect(opener.open(SESSION, '/outside/notes.md')).toBeUndefined()
+    await b.fiber.dispose()
+  })
+
   it('injects session-bound panel toggles independently of later selection', async () => {
     const { ctx, toggleWorkbench, toggleWorkbenchBottom } = await bench()
     const headerPanels = ctx.slots.entries('conversation.session.header.utilities')[1]

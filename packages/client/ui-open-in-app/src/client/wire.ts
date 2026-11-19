@@ -2,6 +2,7 @@
 
 import {
   OPEN_IN_APP_FILES_ROUTE,
+  OPEN_IN_APP_LOCATE_ROUTE,
   OPEN_IN_APP_READ_ROUTE,
   OPEN_IN_APP_TERMINAL_ROUTE,
 } from 'coding-host-open-in-app/shared'
@@ -13,6 +14,7 @@ import type {
 /** 本包所有 Host 请求使用的集中路由表。 */
 export interface OpenInAppRoutes {
   readonly files: string
+  readonly locate: string
   readonly readFile: string
   readonly terminal: string
 }
@@ -20,8 +22,14 @@ export interface OpenInAppRoutes {
 /** 默认值直接来自 Host shared；本包不复制协议路径。 */
 export const OPEN_IN_APP_ROUTES: OpenInAppRoutes = {
   files: OPEN_IN_APP_FILES_ROUTE,
+  locate: OPEN_IN_APP_LOCATE_ROUTE,
   readFile: OPEN_IN_APP_READ_ROUTE,
   terminal: OPEN_IN_APP_TERMINAL_ROUTE,
+}
+
+/** 路径定位结果：Host 在自己的执行世界里解析出的 provider 段链。 */
+export interface WorkspaceLocatedPath {
+  readonly segments: readonly string[]
 }
 
 /** 文件树条目携带 provider 返回的完整 segment 地址。 */
