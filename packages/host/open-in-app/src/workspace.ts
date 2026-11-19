@@ -27,14 +27,15 @@ const IMAGE_MIME_TYPES: Readonly<Record<string, string>> = {
   jpeg: 'image/jpeg',
   jpg: 'image/jpeg',
   png: 'image/png',
-  svg: 'image/svg+xml',
   webp: 'image/webp',
 }
 
 const MARKDOWN_EXTENSIONS = new Set(['md', 'markdown', 'mdx'])
+const HTML_EXTENSIONS = new Set(['htm', 'html'])
+const SVG_EXTENSIONS = new Set(['svg'])
 const CODE_EXTENSIONS = new Set([
   'bat', 'bash', 'c', 'cc', 'cjs', 'cmd', 'cpp', 'cs', 'css', 'fish', 'go',
-  'graphql', 'h', 'hpp', 'htm', 'html', 'java', 'js', 'json', 'jsonc', 'jsx',
+  'graphql', 'h', 'hpp', 'java', 'js', 'json', 'jsonc', 'jsx',
   'kt', 'kts', 'mjs', 'php', 'ps1', 'py', 'rb', 'rs', 'scss', 'sh', 'sql',
   'svelte', 'swift', 'toml', 'ts', 'tsx', 'vue', 'xml', 'yaml', 'yml', 'zsh',
 ])
@@ -277,9 +278,11 @@ function extensionOf(name: string): string {
   return dot < 0 ? '' : name.slice(dot + 1).toLowerCase()
 }
 
-function textFormat(name: string): 'markdown' | 'code' | 'text' {
+function textFormat(name: string): 'markdown' | 'code' | 'html' | 'svg' | 'text' {
   const extension = extensionOf(name)
   if (MARKDOWN_EXTENSIONS.has(extension)) return 'markdown'
+  if (HTML_EXTENSIONS.has(extension)) return 'html'
+  if (SVG_EXTENSIONS.has(extension)) return 'svg'
   if (CODE_EXTENSIONS.has(extension) || CODE_FILENAMES.has(name.toLowerCase())) return 'code'
   return 'text'
 }

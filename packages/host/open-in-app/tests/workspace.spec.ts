@@ -146,6 +146,8 @@ describe('bounded file previews', () => {
       file('Makefile', 'makefile'),
       file('NOTICE', 'text'),
       file('logo.png', 'image'),
+      file('index.html', 'html'),
+      file('icon.svg', 'svg'),
     ]
     state.entries.set('root', files)
     for (const entry of files) state.info.set(String(entry.target.targetKey), {
@@ -158,6 +160,8 @@ describe('bounded file previews', () => {
     state.contents.set('makefile', Buffer.from('all:'))
     state.contents.set('text', Buffer.from('notice'))
     state.contents.set('image', Uint8Array.from([1, 2, 3]))
+    state.contents.set('html', Buffer.from('<!doctype html><h1>hello</h1>'))
+    state.contents.set('svg', Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"/>'))
 
     await expect(readWorkspaceFile(state.ctx, { sessionId: 'session', segments: ['README.md'] }, 100))
       .resolves.toMatchObject({ kind: 'text', format: 'markdown', text: '# title', truncated: false })
@@ -176,6 +180,10 @@ describe('bounded file previews', () => {
         name: 'logo.png',
         truncated: false,
       })
+    await expect(readWorkspaceFile(state.ctx, { sessionId: 'session', segments: ['index.html'] }, 100))
+      .resolves.toMatchObject({ kind: 'text', format: 'html', text: '<!doctype html><h1>hello</h1>' })
+    await expect(readWorkspaceFile(state.ctx, { sessionId: 'session', segments: ['icon.svg'] }, 100))
+      .resolves.toMatchObject({ kind: 'text', format: 'svg', text: '<svg xmlns="http://www.w3.org/2000/svg"/>' })
   })
 
   it('classifies invalid UTF-8, NUL content, and every oversize path without returning bytes', async () => {

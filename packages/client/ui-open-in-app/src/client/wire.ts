@@ -51,6 +51,8 @@ export interface WorkspaceFilesPayload {
 export type WorkspaceFileContent =
   | { readonly kind: 'markdown'; readonly text: string }
   | { readonly kind: 'code'; readonly text: string; readonly language?: string }
+  | { readonly kind: 'html'; readonly text: string }
+  | { readonly kind: 'svg'; readonly text: string }
   | { readonly kind: 'text'; readonly text: string }
   | { readonly kind: 'image'; readonly mimeType: string; readonly data: string }
   | { readonly kind: 'unsupported'; readonly mimeType?: string }

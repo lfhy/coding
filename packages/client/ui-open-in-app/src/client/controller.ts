@@ -136,7 +136,9 @@ function readPayload(value: Record<string, unknown>): WorkspaceFilePayload {
     else if (value.format === 'code') {
       const language = previewLanguage(value.name)
       content = { kind: 'code', text: value.text, ...(language === undefined ? {} : { language }) }
-    } else if (value.format === 'text') content = { kind: 'text', text: value.text }
+    } else if (value.format === 'html') content = { kind: 'html', text: value.text }
+    else if (value.format === 'svg') content = { kind: 'svg', text: value.text }
+    else if (value.format === 'text') content = { kind: 'text', text: value.text }
     else throw new Error('open-in-app host returned invalid file content')
   } else if (value.kind === 'image' && typeof value.mime === 'string'
     && value.mime.startsWith('image/') && typeof value.dataBase64 === 'string') {

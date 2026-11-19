@@ -5,6 +5,15 @@ import { describe, expect, it } from 'vitest'
 const css = readFileSync(fileURLToPath(new URL('../src/client/WorkspaceWorkbench.module.css', import.meta.url)), 'utf8')
 const terminalCss = readFileSync(fileURLToPath(new URL('../src/client/TerminalPanel.module.css', import.meta.url)), 'utf8')
 
+describe('workbench file preview modes', () => {
+  it('uses a themed capsule with selected and keyboard focus states', () => {
+    expect(css).toMatch(/\.previewModes\s*\{[^}]*border:\s*1px solid var\(--dsw-alias-border-l2\)/)
+    expect(css).toMatch(/\.previewMode\[aria-pressed='true'\]\s*\{[^}]*background:\s*var\(--dsw-alias-button-primary-fill\)/)
+    expect(css).toMatch(/\.previewMode:focus-visible\s*\{[^}]*box-shadow:/)
+    expect(css).toContain('.htmlFrame')
+  })
+})
+
 describe('workbench desktop titlebar', () => {
   it('allows dragging empty topbar space while controls remain interactive', () => {
     expect(css).toMatch(/\.topbar\s*\{[^}]*-webkit-app-region:\s*no-drag/)

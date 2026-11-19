@@ -177,6 +177,8 @@ describe('OpenInAppController workspace files', () => {
       [{ kind: 'text', format: 'markdown', text: '# title' }, { kind: 'markdown', text: '# title' }],
       [{ kind: 'text', format: 'text', text: 'a\nb' }, { kind: 'text', text: 'a\nb' }],
       [{ kind: 'text', format: 'code', text: 'const a = 1' }, { kind: 'code', text: 'const a = 1' }],
+      [{ kind: 'text', format: 'html', text: '<h1>hello</h1>' }, { kind: 'html', text: '<h1>hello</h1>' }],
+      [{ kind: 'text', format: 'svg', text: '<svg/>' }, { kind: 'svg', text: '<svg/>' }],
       [{ kind: 'image', mime: 'image/png', dataBase64: 'AAAA' }, { kind: 'image', mimeType: 'image/png', data: 'AAAA' }],
       [{ kind: 'unsupported', reason: 'binary' }, { kind: 'unsupported' }],
       [{ kind: 'unsupported', reason: 'too-large' }, { kind: 'unsupported' }],

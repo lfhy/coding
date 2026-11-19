@@ -856,6 +856,8 @@ describe('WorkspaceWorkbench shell', () => {
       'doc.md': { path: '/w/doc.md', content: { kind: 'markdown', text: '# Heading' } },
       'code.ts': { path: '/w/code.ts', content: { kind: 'code', text: 'const x = 1\n', language: 'ts' } },
       'notes.txt': { path: '/w/notes.txt', content: { kind: 'text', text: 'plain\ntext' } },
+      'page.html': { path: '/w/page.html', content: { kind: 'html', text: '<h1>Safe preview</h1><script>window.evil = true</script>' } },
+      'icon.svg': { path: '/w/icon.svg', content: { kind: 'svg', text: '<svg xmlns="http://www.w3.org/2000/svg"><circle/></svg>' } },
       'logo.png': { path: '/w/logo.png', content: { kind: 'image', mimeType: 'image/png', data: 'AAAA' } },
       'archive.zip': { path: '/w/archive.zip', content: { kind: 'unsupported', mimeType: 'application/zip' } },
       'unknown.bin': { path: '/w/unknown.bin', content: { kind: 'unsupported' } },
@@ -880,6 +882,25 @@ describe('WorkspaceWorkbench shell', () => {
       if (name === 'notes.txt') {
         expect(within(article).getByText((_, element) => element?.tagName === 'PRE'
           && element.textContent === 'plain\ntext')).toBeDefined()
+      }
+      if (name === 'page.html') {
+        const mode = within(article).getByRole('group', { name: zh['preview.view.mode'] })
+        expect(within(mode).getByRole('button', { name: zh['preview.view.rendered'] }).getAttribute('aria-pressed'))
+          .toBe('true')
+        const frame = within(article).getByTitle('page.html') as HTMLIFrameElement
+        expect(frame.hasAttribute('sandbox')).toBe(true)
+        expect(frame.srcdoc).toContain('Content-Security-Policy')
+        fireEvent.click(within(mode).getByRole('button', { name: zh['preview.view.source'] }))
+        expect(within(article).getByText((_, element) => element?.tagName === 'PRE'
+          && element.textContent?.includes('<script>window.evil = true</script>'))).toBeDefined()
+      }
+      if (name === 'icon.svg') {
+        const mode = within(article).getByRole('group', { name: zh['preview.view.mode'] })
+        const image = within(article).getByRole('img', { name: 'icon.svg' }) as HTMLImageElement
+        expect(image.src).toContain('data:image/svg+xml;base64,')
+        fireEvent.click(within(mode).getByRole('button', { name: zh['preview.view.source'] }))
+        expect(within(article).getByText((_, element) => element?.tagName === 'PRE'
+          && element.textContent?.includes('<svg'))).toBeDefined()
       }
       if (name === 'logo.png') {
         const image = within(article).getByRole('img', { name: 'logo.png' }) as HTMLImageElement

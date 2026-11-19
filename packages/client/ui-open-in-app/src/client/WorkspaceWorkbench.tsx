@@ -341,17 +341,72 @@ interface PreviewState {
   readonly payload?: WorkspaceFilePayload
 }
 
-function PreviewContent({ payload, name, t }: {
+type PreviewView = 'rendered' | 'source'
+
+/** 文本文件使用同一组胶囊按钮切换渲染结果与不加工的原文。 */
+function PreviewSegmented({ value, onChange, t }: {
+  value: PreviewView
+  onChange: (next: PreviewView) => void
+  t: WorkspaceWorkbenchProps['t']
+}): React.JSX.Element {
+  return (
+    <div className={css.previewModes} role="group" aria-label={t('preview.view.mode')}>
+      {(['rendered', 'source'] as const).map(mode => (
+        <button
+          key={mode}
+          type="button"
+          className={css.previewMode}
+          aria-pressed={value === mode}
+          onClick={() => { onChange(mode) }}
+        >
+          {t(mode === 'rendered' ? 'preview.view.rendered' : 'preview.view.source')}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+function base64FromText(text: string): string {
+  const bytes = new TextEncoder().encode(text)
+  let binary = ''
+  for (let index = 0; index < bytes.length; index += 1) binary += String.fromCharCode(bytes[index] as number)
+  return btoa(binary)
+}
+
+/** HTML 文件只在无脚本、无同源权限的沙箱里展示，避免把工作区内容并入应用 DOM。 */
+function isolatedHtml(text: string): string {
+  const policy = '<meta http-equiv="Content-Security-Policy" '
+    + 'content="default-src \'none\'; style-src \'unsafe-inline\'; img-src data: blob:; '
+    + 'font-src data:; media-src data: blob:;">'
+  const head = /<head(?:\s[^>]*)?>/iu
+  return head.test(text) ? text.replace(head, match => `${match}${policy}`) : `${policy}${text}`
+}
+
+function PreviewContent({ payload, name, t, view }: {
   payload: WorkspaceFilePayload
   name: string
   t: WorkspaceWorkbenchProps['t']
+  view: PreviewView
 }): React.JSX.Element {
   const content = payload.content
-  if (content.kind === 'markdown') {
+  if (content.kind === 'markdown' && view === 'rendered') {
     return <div className={css.markdown}><MarkdownText text={content.text} /></div>
   }
+  if (content.kind === 'html' && view === 'rendered') {
+    return <iframe className={css.htmlFrame} title={name} sandbox="" referrerPolicy="no-referrer" srcDoc={isolatedHtml(content.text)} />
+  }
+  if (content.kind === 'svg' && view === 'rendered') {
+    return <div className={css.imageStage}>
+      <img src={`data:image/svg+xml;base64,${base64FromText(content.text)}`} alt={name} />
+    </div>
+  }
   if (content.kind === 'code') {
-    return <CodeBlock bare className={css.source} code={content.text} lang={content.language} />
+    return view === 'rendered'
+      ? <CodeBlock bare className={css.source} code={content.text} lang={content.language} />
+      : <pre className={css.source}>{content.text}</pre>
+  }
+  if (content.kind === 'markdown' || content.kind === 'html' || content.kind === 'svg') {
+    return <pre className={css.source}>{content.text}</pre>
   }
   if (content.kind === 'text') return <pre className={css.source}>{content.text}</pre>
   if (content.kind === 'image') {
@@ -378,10 +433,12 @@ function FilePreview({ tab, visible, readFile, t }: {
 }): React.JSX.Element {
   const [revision, setRevision] = useState(0)
   const [state, setState] = useState<PreviewState>({ phase: 'loading' })
+  const [view, setView] = useState<PreviewView>('rendered')
 
   useEffect(() => {
     const request = new AbortController()
     setState({ phase: 'loading' })
+    setView('rendered')
     void readFile(tab.segments, request.signal).then(
       (payload) => { if (!request.signal.aborted) setState({ phase: 'ready', payload }) },
       () => { if (!request.signal.aborted) setState({ phase: 'error' }) },
@@ -393,6 +450,10 @@ function FilePreview({ tab, visible, readFile, t }: {
     <article className={css.preview} hidden={!visible} aria-label={tab.name}>
       <header className={css.previewHeader}>
         <span className={css.previewPath} title={state.payload?.path}>{state.payload?.path ?? tab.name}</span>
+        {state.phase === 'ready' && state.payload !== undefined && state.payload.content.kind !== 'image'
+          && state.payload.content.kind !== 'unsupported' && (
+          <PreviewSegmented value={view} onChange={setView} t={t} />
+        )}
         <ToolbarButton
           label={t('preview.refresh')}
           onClick={() => { setRevision(value => value + 1) }}
@@ -410,7 +471,7 @@ function FilePreview({ tab, visible, readFile, t }: {
           </div>
         )}
         {state.phase === 'ready' && state.payload !== undefined && (
-          <PreviewContent payload={state.payload} name={tab.name} t={t} />
+          <PreviewContent payload={state.payload} name={tab.name} t={t} view={view} />
         )}
       </div>
     </article>

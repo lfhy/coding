@@ -108,7 +108,7 @@ export interface OpenInAppReadBase {
 export type OpenInAppReadPayload = OpenInAppReadBase & (
   | {
     readonly kind: 'text'
-    readonly format: 'markdown' | 'code' | 'text'
+    readonly format: 'markdown' | 'code' | 'html' | 'svg' | 'text'
     readonly text: string
   }
   | {

@@ -84,7 +84,7 @@ target 与 open 路由会在读取应用可用性前检查 Remote-SSH marker。�
 
 `locate` 是这条路径链唯一的入口翻译：模型给出的工具路径可能是工作区相对路径、本地占位目录下的绝对路径，也可能是 Remote-SSH 执行世界里的远端绝对路径，浏览器无法自己换算。它用 `ctx.fs.resolve(path, { cwd })` 在 Session 自己的执行世界解析一次，要求结果仍被 `ctx.fs.contains` 判定在工作区根内，再逐层用 `ctx.fs.listDir` 子项名称拼出段链；末段必须是普通文件，越级、工作区外、无法解析和目录一律 404，不返回 provider 诊断或解析后路径。调用方拿到的段可以继续交给 `files`／`read`，因此远端文件与本地文件走同一份预览。
 
-只有目录 target 可以推进名称链，预览的最后一段必须仍是普通文件。列表响应包含 `displayPath`、普通 entry 元数据和 `truncated`，单层最多 2,000 项。预览在 `previewMaxBytes` 内完整读取：Markdown、代码和其他严格 UTF-8 文本返回 `kind: text`；支持的图片返回 `kind: image`、MIME 与 base64；含 NUL、无效 UTF-8 或超限文件返回 `kind: unsupported`，不返回原始内容。超限响应以 `truncated: true` 明确区分。
+只有目录 target 可以推进名称链，预览的最后一段必须仍是普通文件。列表响应包含 `displayPath`、普通 entry 元数据和 `truncated`，单层最多 2,000 项。预览在 `previewMaxBytes` 内完整读取：Markdown、HTML、SVG、代码和其他严格 UTF-8 文本返回 `kind: text` 与对应 format；支持的图片返回 `kind: image`、MIME 与 base64；含 NUL、无效 UTF-8 或超限文件返回 `kind: unsupported`，不返回原始内容。超限响应以 `truncated: true` 明确区分。
 
 上传请求使用 `Content-Type: application/octet-stream`、`x-session-id: <live session id>` 和 `x-file-name: encodeURIComponent(file.name)`，body 是原始文件字节。仅本机回环同源、有普通本地工作区的 live Session 可上传；经 SSH 启动的 Host、Remote-SSH marker（包括损坏 marker）、缺少或替换的工作区均拒绝。文件由 `ctx.fileLibrary` 保存到解析后的 Coding home 的 `files/uploads/` 并在 SQLite 登记，工作区不创建 `.dsh-uploads/`。文件名合成重音，只保留 Unicode 字母数字、空格及 `._-`；其他字符替换为 `_`，保留安全扩展名并按 UTF-8 字节截短。空名、无法解码或无可见名称拒绝。字节写完后服务复核原 live Session、cwd 与工作区身份，登记成功才返回绝对 `{ path }`，可供本地 `@file` 引用；跨会话文件列表由文件库持有。原始流超过 32 MiB（或声明长度已超限）返回 413；无本机工作区、远端或存储失败返回 409；无 live Session 返回 404，其他无效请求返回 4xx。失败响应不包含内部路径。
 

@@ -348,6 +348,25 @@ describe('open-in-app host routes (real Loader composition)', () => {
       expect(await preview.json()).toMatchObject({
         kind: 'text', format: 'markdown', text: 'readme', name: 'README.md', truncated: false,
       })
+      await writeFile(join(workspace, 'index.html'), '<h1>hello</h1>')
+      await writeFile(join(workspace, 'icon.svg'), '<svg xmlns="http://www.w3.org/2000/svg"/>')
+      const readByPath = async (path: string) => {
+        const located = await fetch(`${base}/open-in-app/locate`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ sessionId: 'session', path }),
+        })
+        const locatedBody = await located.json() as { segments: readonly string[] }
+        return fetch(`${base}/open-in-app/read`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ sessionId: 'session', segments: locatedBody.segments }),
+        })
+      }
+      expect(await (await readByPath(join(workspace, 'index.html'))).json())
+        .toMatchObject({ kind: 'text', format: 'html' })
+      expect(await (await readByPath(join(workspace, 'icon.svg'))).json())
+        .toMatchObject({ kind: 'text', format: 'svg' })
       const missingPreview = await fetch(`${base}/open-in-app/read`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
