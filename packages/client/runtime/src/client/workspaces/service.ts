@@ -84,6 +84,9 @@ export interface RemoteWorkspaceActivation {
   activate(path: string): Promise<void>
 }
 
+/** Host 打开失败时的稳定上下文前缀；Host 与 Client 共用同一个，避免重复。 */
+const PATH_OPEN_FAILED = 'path open failed: '
+
 /** 桌面端生成的远端工作区占位路径：remote-workspaces/<20 hex>/<label>-<20 hex>。 */
 const REMOTE_WORKSPACE_PATH = /(?:^|[\\/])remote-workspaces[\\/][a-f0-9]{20}[\\/][A-Za-z0-9_-]+-[a-f0-9]{20}$/u
 
@@ -432,13 +435,16 @@ export class WorkspaceRuntime implements IWorkspaces {
   }
 
   /**
-   * Open a filesystem path with the Host operating system's default application.
-   * @param path - absolute or host-resolvable path.
+   * 用 Host 操作系统的默认程序打开一个路径。
+   * @param path - 绝对路径或 Host 能解析的路径。
+   * @throws 当 Host 拒绝或打开失败时；Host 已经给出 `path open failed` 前缀时不再重复。
    */
   async openPath(path: string): Promise<void> {
     const response = await this.api.host.openPath({ path })
     if (!response.result.ok) {
-      throw new Error(`path open failed: ${response.result.error.message}`)
+      // Host 的 `openTarget` 已经带同一个前缀，这里只补缺失的上下文，避免出现两遍。
+      const message = response.result.error.message
+      throw new Error(message.startsWith(PATH_OPEN_FAILED) ? message : `${PATH_OPEN_FAILED}${message === '' ? 'unknown error' : message}`)
     }
   }
 

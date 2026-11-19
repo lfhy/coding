@@ -468,7 +468,15 @@ describe('WorkspaceRuntime', () => {
     await expect(workspaces.openPath('/w/alpha/a.ts')).resolves.toBeUndefined()
     expect(api.callsOf('host.openPath')).toEqual([{ path: '/w/alpha/a.ts' }])
     api.onOpenPath = () => Promise.resolve(err({ code: 'internal', message: 'boom', details: {} }))
-    await expect(workspaces.openPath('/missing')).rejects.toThrow(/path open failed/)
+    await expect(workspaces.openPath('/missing')).rejects.toThrow('path open failed: boom')
+    // Host 的消息已带同一前缀时不再重复；空消息也给出一条可读原因。
+    api.onOpenPath = () => Promise.resolve(err({
+      code: 'internal', message: 'path open failed: open /missing: no such file', details: {},
+    }))
+    await expect(workspaces.openPath('/missing')).rejects
+      .toThrow('path open failed: open /missing: no such file')
+    api.onOpenPath = () => Promise.resolve(err({ code: 'internal', message: '', details: {} }))
+    await expect(workspaces.openPath('/missing')).rejects.toThrow('path open failed: unknown error')
   })
 
   it('deletes a Workspace or preserves it when the Host rejects deletion', async () => {
