@@ -667,11 +667,16 @@ describe('NotesPage', () => {
     expect((editor as HTMLTextAreaElement).value).toBe('local stays')
   })
 
-  it('未选中笔记时显示纯欢迎页；新建入口只在目录中，折叠后仍可用', async () => {
+  it('未选中笔记时显示纯欢迎页；折叠后只保留新建入口，不显示目录文件图标', async () => {
     vi.stubGlobal('fetch', vi.fn(async (input: string | URL) => {
       const url = new URL(String(input), 'http://localhost')
       return url.pathname === '/api/notes/tree'
-        ? Response.json({ children: [{ name: '想法', kind: 'dir', path: '想法', mtimeMs: 1000, children: [] }] })
+        ? Response.json({ children: [
+          { name: '想法', kind: 'dir', path: '想法', mtimeMs: 1000, children: [
+            { name: '会议.md', kind: 'file', path: '想法/会议.md', mtimeMs: 900 },
+          ] },
+          { name: '根笔记.md', kind: 'file', path: '根笔记.md', mtimeMs: 800 },
+        ] })
         : new Response('not found', { status: 404 })
     }))
     const { rerender } = await mount()
@@ -680,8 +685,12 @@ describe('NotesPage', () => {
     expect(screen.getByText('在这里记录你的想法、灵感与工作内容')).toBeTruthy()
     expect(screen.queryByText('在目录中选择一篇笔记')).toBeNull()
     expect(screen.getAllByRole('button', { name: '新建笔记' })).toEqual([createTrigger()])
+    expect(within(directory()).getAllByRole('listitem').length).toBeGreaterThan(0)
     rerender(<NotesPage {...props} sidebarCollapsed sidebarWidth={56} />)
     await act(async () => { vi.advanceTimersByTime(150) })
+    expect(within(directory()).getAllByRole('button')).toEqual([createTrigger()])
+    expect(within(directory()).queryByRole('button', { name: '根笔记' })).toBeNull()
+    expect(within(directory()).queryByRole('button', { name: '会议' })).toBeNull()
     fireEvent.click(createTrigger())
     await act(async () => {})
     fireEvent.click(screen.getByRole('menuitem', { name: '新建笔记' }))

@@ -585,7 +585,7 @@ export function NotesPage({
           <Button size="sm" className={css.directoryButton} aria-label={t('clearSearch')} title={t('clearSearch')}
             icon={<IconCloseOutline16 />} onClick={closeSearch} />
         </div>}
-        items={treeItems} />
+        items={sidebarCollapsed ? [] : treeItems} />
       <div className={css.document}>
         <NotesTabs paths={openTabs} activePath={activePath} panelId={panelId}
           idPrefix={tabId} labelOfPath={labelOfPath} onSelect={(path) => { void selectTab(path) }}
