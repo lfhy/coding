@@ -20,6 +20,11 @@
   overflow-y: hidden;
 }
 
+/* 标签栏位于窗口拖拽区内，但标签本身必须继续接收鼠标点击。 */
+.tabs :is(button, a, input, select, textarea, [role='button'], [role='tab']) {
+  -webkit-app-region: no-drag;
+}
+
 .tab {
   display: flex;
   flex: 0 1 184px;
