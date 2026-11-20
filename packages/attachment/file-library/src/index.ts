@@ -43,6 +43,9 @@ const NOTE_TREE_FILE_EXTENSIONS: ReadonlySet<string> = new Set([...NOTE_EXTENSIO
 /** 单篇笔记的原始字节上限；原文区把全文载入内存，超限的条目拒绝读写。 */
 const NOTE_MAX_BYTES = 1024 * 1024
 
+/** Host 侧暂存 PPTX 源文件的原始字节上限；PPT 服务负责后续格式与内容解析。 */
+const NOTE_PPTX_MAX_BYTES = 8 * 1024 * 1024
+
 /** 笔记目录树的最大深度；超出说明目录结构异常，整棵树拒绝而不是静默截断。 */
 const NOTE_MAX_DEPTH = 8
 
@@ -652,6 +655,63 @@ export class FileLibrary extends Service {
     await handle.close()
     await syncDirectory(parent.target)
     return { path: parent.rel === '' ? fileName : `${parent.rel}/${fileName}` }
+  }
+
+  /**
+   * 在笔记树中独占落盘已由 PPT 服务准入的源文件；这是只供 Host 调用的 PPT 服务 seam。
+   * 名称缺少扩展名时补 `.pptx`，显式扩展名必须是 `.pptx`；文件与父目录同步后才返回。
+   * @param name - 按文件库规则净化的安全文件名。
+   * @param directory - 相对笔记根目录的真实私有父目录，空字符串表示根目录。
+   * @param data - 非空且不超过 8 MiB 的 PPTX 字节。
+   * @returns 相对笔记根目录的路径。
+   * @throws TypeError 名称、父目录或数据不安全，目标已存在，或数据大小不在允许范围内。
+   */
+  async createNotePptx(name: string, directory = '', data: Uint8Array): Promise<{ path: string }> {
+    return this.scheduleNotesWrite(async () => {
+      const leaf = safeName(name)
+      const extension = extname(leaf)
+      if (extension !== '' && (!NOTE_TREE_FILE_EXTENSIONS.has(extension.toLowerCase()) || extension.toLowerCase() !== '.pptx')) {
+        throw new TypeError('PPTX 文件必须使用 .pptx 扩展名')
+      }
+      if (!(data instanceof Uint8Array) || data.byteLength < 1) throw new TypeError('PPTX 数据不能为空')
+      if (data.byteLength > NOTE_PPTX_MAX_BYTES) throw new TypeError('PPTX 文件不能超过 8 MiB')
+      const fileName = extension === '' ? `${leaf}.pptx` : leaf
+      const parent = await this.safeNoteDirectory(directory)
+      const target = join(parent.target, fileName)
+      const flags = constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW
+      let handle
+      try {
+        handle = await open(target, flags, 0o600)
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === 'EEXIST') throw new TypeError('笔记已存在')
+        if ((error as NodeJS.ErrnoException).code === 'ELOOP') throw new TypeError('笔记条目不是安全文件')
+        throw error
+      }
+      let writeFailed = false
+      let writeFailure: unknown
+      try {
+        await handle.writeFile(Buffer.from(data))
+        await handle.sync()
+      } catch (error) {
+        writeFailed = true
+        writeFailure = error
+      } finally {
+        await handle.close()
+      }
+      if (writeFailed) {
+        try { await unlink(target) } catch { /* 只清理本次独占创建的失败条目。 */ }
+        throw writeFailure
+      }
+      try {
+        await syncDirectory(parent.target)
+        const notesDir = await this.directory('notes')
+        if (parent.target !== notesDir) await syncDirectory(notesDir)
+      } catch (error) {
+        try { await unlink(target) } catch { /* 原错误是同步失败；只回滚本次创建的条目。 */ }
+        throw error
+      }
+      return { path: parent.rel === '' ? fileName : `${parent.rel}/${fileName}` }
+    })
   }
 
   /**

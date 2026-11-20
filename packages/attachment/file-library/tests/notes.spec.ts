@@ -318,6 +318,37 @@ describe('无目录笔记域', () => {
     await expect(library.readNote('源稿.pptx.md')).resolves.toMatchObject({ content: '' })
   })
 
+  it('Host-only PPTX seam 安全落盘并拒绝错误名称、大小、重复和链接路径', async () => {
+    const { library } = await harness()
+    await library.notesTree()
+    const notesDir = library.notesRootPath()
+    const created = await library.createNotePptx('演示稿', '', pptxBytes)
+    expect(created).toEqual({ path: '演示稿.pptx' })
+    expect(await readFile(join(notesDir, '演示稿.pptx'))).toEqual(pptxBytes)
+    expect((await lstat(join(notesDir, '演示稿.pptx'))).mode & 0o777).toBe(0o600)
+    await expect(library.createNotePptx('演示稿', '', pptxBytes)).rejects.toThrow(/笔记已存在/)
+    await expect(library.createNotePptx('错误.md', '', pptxBytes)).rejects.toThrow(/\.pptx 扩展名/)
+    await expect(library.createNotePptx('空稿', '', new Uint8Array())).rejects.toThrow(/不能为空/)
+    await expect(library.createNotePptx('大稿', '', new Uint8Array(8 * 1024 * 1024 + 1))).rejects.toThrow(/8 MiB/)
+
+    await library.createNoteDirectory('project')
+    await expect(library.createNotePptx('nested.PPTX', 'project', pptxBytes)).resolves.toEqual({ path: 'project/nested.PPTX' })
+    await expect(library.createNotePptx('越界', '../', pptxBytes)).rejects.toThrow(TypeError)
+
+    const outside = join(notesDir, '..', 'pptx-seam-outside')
+    await mkdir(outside)
+    const linkedDirectory = join(notesDir, 'linked')
+    await symlink(outside, linkedDirectory, process.platform === 'win32' ? 'junction' : 'dir')
+    await expect(library.createNotePptx('escape', 'linked', pptxBytes)).rejects.toThrow(TypeError)
+    await expect(lstat(join(outside, 'escape.pptx'))).rejects.toMatchObject({ code: 'ENOENT' })
+
+    const linkedFile = join(notesDir, 'linked-file.pptx')
+    await symlink(join(outside, 'keep.pptx'), linkedFile)
+    await writeFile(join(outside, 'keep.pptx'), pptxBytes)
+    await expect(library.createNotePptx('linked-file.pptx', '', pptxBytes)).rejects.toThrow(TypeError)
+    await expect(readFile(join(outside, 'keep.pptx'))).resolves.toEqual(pptxBytes)
+  })
+
   it('在指定目录新建笔记和子目录，并拒绝目录逃逸与同名覆盖', async () => {
     const { library } = await harness()
     await library.notesTree()
