@@ -24,13 +24,15 @@ function requestJson(init?: RequestInit): unknown {
   return JSON.parse(init.body) as unknown
 }
 
-function makeServer() {
+function makeServer(withPpt = false) {
   const state = {
     tree: [
+      ...(withPpt ? [{ name: 'deck.pptx', kind: 'file' as const, path: 'deck.pptx', mtimeMs: 700 }] : []),
       { name: 'a.md', kind: 'file', path: 'a.md', mtimeMs: 1000 },
       { name: 'd', kind: 'dir', path: 'd', mtimeMs: 900, children: [{ name: 'b.md', kind: 'file', path: 'd/b.md', mtimeMs: 800 }] },
     ] as TreeNode[],
     files: new Map<string, ServerNote>([
+      ...(withPpt ? [['deck.pptx', { content: '', mtimeMs: 700 }] as const] : []),
       ['a.md', { content: 'hello a', mtimeMs: 1000 }],
       ['d/b.md', { content: 'hello b', mtimeMs: 800 }],
     ]),
@@ -209,6 +211,29 @@ describe('NotesPage', () => {
     expect(screen.queryByRole('heading', { name: '预览' })).toBeNull()
     expect(saveState().textContent).toBe('已保存')
     expect(screen.getByRole('button', { name: '并排' }).getAttribute('aria-pressed')).toBe('true')
+  })
+
+  it('打开 PPTX 后与 Markdown 共用标签，并在中央内容区切换和关闭', async () => {
+    makeServer(true)
+    await mount(undefined, { openNote: null })
+    await act(async () => { fireEvent.click(treeRow('deck')) })
+    const tabs = screen.getByRole('tablist', { name: '打开的笔记' })
+    expect(within(tabs).getByRole('tab', { name: 'deck' }).getAttribute('aria-selected')).toBe('true')
+    expect(screen.getByText('演示文稿 deck.pptx')).toBeTruthy()
+    expect(uiStore.instance.getSnapshot().activePath).toBe('deck.pptx')
+
+    await act(async () => { fireEvent.click(treeRow('a')) })
+    expect(screen.getByRole<HTMLTextAreaElement>('textbox', { name: '原始文本' }).value).toBe('hello a')
+    expect(screen.queryByText('演示文稿 deck.pptx')).toBeNull()
+    expect(within(tabs).getByRole('tab', { name: 'a' }).getAttribute('aria-selected')).toBe('true')
+
+    await act(async () => { fireEvent.click(within(tabs).getByRole('tab', { name: 'deck' })) })
+    expect(screen.getByText('演示文稿 deck.pptx')).toBeTruthy()
+    expect(within(tabs).getByRole('tab', { name: 'deck' }).getAttribute('aria-selected')).toBe('true')
+    await act(async () => { fireEvent.click(within(tabs).getByRole('button', { name: '关闭「deck」' })) })
+    expect(within(tabs).queryByRole('tab', { name: 'deck' })).toBeNull()
+    expect(within(tabs).getByRole('tab', { name: 'a' }).getAttribute('aria-selected')).toBe('true')
+    expect(screen.getByRole<HTMLTextAreaElement>('textbox', { name: '原始文本' }).value).toBe('hello a')
   })
 
   it('顶栏标签切换共享正文容器，关闭后选中相邻笔记，最后一页回到欢迎区', async () => {
