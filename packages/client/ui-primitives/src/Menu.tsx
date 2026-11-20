@@ -16,17 +16,19 @@ import { IconCheckOutline16 } from 'coding-client-ui-icons'
 import { usePointerGrace } from './pointer-grace.ts'
 import css from './Menu.module.css'
 
-/** Selectable row (optionally with a nested submenu). */
+/** 可选择的菜单行，可带子菜单或独立的行尾动作。 */
 export interface MenuItem {
   id: string
   label: ReactNode
   disabled?: boolean
-  /** Leading icon (figma .Menu_cell gap 8). */
+  /** 行首图标，与文字间隔 8px。 */
   icon?: ReactNode
-  /** Destructive row: error-colored text/icon and danger hover fill. */
+  /** 危险操作使用错误色文字和图标，并在悬停时显示危险底色。 */
   danger?: boolean
-  /** Nested card opened to the right on hover/focus. */
+  /** 鼠标悬停或聚焦时向右展开的子菜单。 */
   submenu?: readonly MenuItem[]
+  /** 独立于行选择的行尾图标按钮；禁用行也会禁用该动作。 */
+  action?: { id: string; label: string; icon: ReactNode; disabled?: boolean }
 }
 
 /** Hairline between item groups (not selectable). */
@@ -69,7 +71,7 @@ const MEASURE_STYLE: CSSProperties = { visibility: 'hidden', left: 0, top: 0 }
  * @param props.selectedIds - 存在独立选项组时显示为选中的行。
  * @param props.multiSelect - 选项允许同时选中时使用复选菜单项语义；其状态由 selectedIds 提供。
  * @param props.highlightSelected - 为已选行填充业务强调底色，默认只显示行尾勾选。
- * @param props.onSelect - 行点击回调；禁用行及仅展开子菜单的父行不会调用。
+ * @param props.onSelect - 行或独立行尾动作的 id 点击回调；禁用项及仅展开子菜单的父行不会调用。
  * @param props.onClose - 外部点击或 Escape 时调用。
  * @param props.align - 相对锚点的列表对齐方式，默认 start。
  * @param props.side - 在锚点下方（默认 bottom）或上方（top）展开。
@@ -233,6 +235,40 @@ export function Menu({ open, anchor, header, items, selectedId, selectedIds, mul
   // scroll clip would crop it, so only submenu-free menus get the height cap.
   const scrollable = !items.some(entry => !isSeparator(entry) && !isLabel(entry) && entry.submenu !== undefined && entry.submenu.length > 0)
 
+  const renderAction = (entry: MenuItem, topLevel: boolean) => {
+    const action = entry.action
+    if (action === undefined) return null
+    return (
+      <button
+        type="button"
+        role="menuitem"
+        className={css.itemAction}
+        aria-label={action.label}
+        title={action.label}
+        disabled={entry.disabled || action.disabled}
+        onMouseEnter={topLevel ? () => { setOpenSubmenuId(null) } : undefined}
+        onFocus={topLevel ? () => { setOpenSubmenuId(null) } : undefined}
+        onClick={() => { onSelect(action.id) }}
+      >
+        <span aria-hidden="true">{action.icon}</span>
+      </button>
+    )
+  }
+
+  const renderSubmenuPrimary = (sub: MenuItem) => (
+    <button
+      key={sub.id}
+      type="button"
+      role="menuitem"
+      className={css.item}
+      disabled={sub.disabled}
+      onClick={() => { onSelect(sub.id) }}
+    >
+      {sub.icon !== undefined && <span className={css.itemIcon}>{sub.icon}</span>}
+      <span className={css.itemLabel}>{sub.label}</span>
+    </button>
+  )
+
   const renderEntry = (entry: MenuEntry) => {
     if (isSeparator(entry)) {
       return <div key={entry.id} className={css.separator} role="separator" />
@@ -246,7 +282,7 @@ export function Menu({ open, anchor, header, items, selectedId, selectedIds, mul
     return (
       <div
         key={entry.id}
-        className={css.itemWrap}
+        className={clsx(css.itemWrap, entry.action !== undefined && css.itemWrapWithAction)}
         onMouseEnter={() => { setOpenSubmenuId(hasSub ? entry.id : null) }}
         onMouseLeave={() => { setOpenSubmenuId(null) }}
       >
@@ -270,23 +306,21 @@ export function Menu({ open, anchor, header, items, selectedId, selectedIds, mul
         >
           {entry.icon !== undefined && <span className={css.itemIcon}>{entry.icon}</span>}
           <span className={css.itemLabel}>{entry.label}</span>
-          {/* Selection marker is a trailing check (figma .Menu_cell), not a fill. */}
+          {/* 选中标记留在主按钮行尾，不代替底色。 */}
           {selected && <IconCheckOutline16 className={css.check} />}
         </button>
+        {renderAction(entry, true)}
         {subOpen && entry.submenu !== undefined && (
           <div className={clsx(css.submenu, compact && css.compactList)} role="menu">
             {entry.submenu.map(sub => (
-              <button
-                key={sub.id}
-                type="button"
-                role="menuitem"
-                className={css.item}
-                disabled={sub.disabled}
-                onClick={() => { onSelect(sub.id) }}
-              >
-                {sub.icon !== undefined && <span className={css.itemIcon}>{sub.icon}</span>}
-                <span className={css.itemLabel}>{sub.label}</span>
-              </button>
+              sub.action === undefined ? (
+                renderSubmenuPrimary(sub)
+              ) : (
+                <div key={sub.id} className={clsx(css.itemWrap, css.itemWrapWithAction)}>
+                  {renderSubmenuPrimary(sub)}
+                  {renderAction(sub, false)}
+                </div>
+              )
             ))}
           </div>
         )}

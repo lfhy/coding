@@ -24,6 +24,29 @@ export function removeTreeEntry(entries: readonly NotesTreeEntry[], path: string
       ? { ...entry, children: removeTreeEntry(entry.children, path) } : entry)
 }
 
+/**
+ * 保留已确认创建的目录，供创建成功但目录刷新失败时继续选择；缺失的父级一并补齐。
+ * @param entries - 当前显示的笔记树。
+ * @param path - Host 确认创建的相对目录路径。
+ * @param mtimeMs - 创建时间，下一次目录刷新后由 Host 的修改时间替换。
+ * @returns 包含该目录的新树，不改变原有条目。
+ */
+export function addTreeDirectory(entries: readonly NotesTreeEntry[], path: string, mtimeMs: number): NotesTreeEntry[] {
+  const segments = path.split('/')
+  const insert = (nodes: readonly NotesTreeEntry[], depth: number): NotesTreeEntry[] => {
+    const currentPath = segments.slice(0, depth + 1).join('/')
+    const existing = nodes.find(entry => entry.path === currentPath)
+    const directory: NotesTreeEntry = existing?.kind === 'dir' ? existing : {
+      name: currentPath.slice(currentPath.lastIndexOf('/') + 1), path: currentPath, kind: 'dir', mtimeMs, children: [],
+    }
+    const updated = depth === segments.length - 1 ? directory : {
+      ...directory, children: insert(directory.children ?? [], depth + 1),
+    }
+    return [...nodes.filter(entry => entry.path !== currentPath), updated].sort((a, b) => a.name.localeCompare(b.name))
+  }
+  return insert(entries, 0)
+}
+
 /** 目录树中的一篇笔记；`parents` 是展开该行所需的各级目录。 */
 export interface NoteFile {
   path: string

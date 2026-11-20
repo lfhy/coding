@@ -8,7 +8,7 @@ export type NotesLocaleKey =
   | 'heading' | 'bold' | 'italic' | 'bullets' | 'quote' | 'link'
   | 'welcomeMorning' | 'welcomeAfternoon' | 'welcomeEvening' | 'welcomeDescription'
   | 'loading' | 'newNote' | 'newFolder' | 'noteName' | 'folderName' | 'create' | 'creating' | 'cancel' | 'close' | 'placeholder'
-  | 'newNoteIn' | 'newFolderIn' | 'saveLocation' | 'noteCreated' | 'folderCreated' | 'createdRefreshError'
+  | 'newNoteIn' | 'newFolderIn' | 'newSubfolder' | 'newSubfolderIn' | 'saveLocation' | 'noteCreated' | 'folderCreated' | 'createdRefreshError'
   | 'saved' | 'saving' | 'unsaved' | 'conflict' | 'reload' | 'reloadConfirm' | 'draftKept' | 'discardDraft' | 'retry'
   | 'loadError' | 'saveError' | 'createError' | 'createFolderError' | 'treeError'
   | 'rename' | 'renaming' | 'renameNote' | 'renameFolder' | 'delete' | 'deleteConfirm' | 'deleteFolderConfirm'
@@ -29,6 +29,7 @@ export const zh: Record<NotesLocaleKey, string> = {
   loading: '正在读取笔记…',
   newNote: '新建笔记', newFolder: '新建目录', noteName: '笔记名称', folderName: '目录名称', create: '创建', creating: '正在创建…', cancel: '取消', close: '关闭',
   newNoteIn: '在「{name}」中新建笔记', newFolderIn: '在「{name}」中新建目录',
+  newSubfolder: '新建子目录', newSubfolderIn: '在「{name}」中新建子目录',
   saveLocation: '保存到', noteCreated: '笔记已创建', folderCreated: '目录已创建',
   createdRefreshError: '已创建，目录暂未刷新，请稍候。',
   placeholder: '在这里写 Markdown…',
@@ -62,6 +63,7 @@ export const en: Record<NotesLocaleKey, string> = {
   loading: 'Loading notes…',
   newNote: 'New note', newFolder: 'New folder', noteName: 'Note name', folderName: 'Folder name', create: 'Create', creating: 'Creating…', cancel: 'Cancel', close: 'Close',
   newNoteIn: 'New note in “{name}”', newFolderIn: 'New folder in “{name}”',
+  newSubfolder: 'New subfolder', newSubfolderIn: 'New subfolder in “{name}”',
   saveLocation: 'Save to', noteCreated: 'Note created', folderCreated: 'Folder created',
   createdRefreshError: 'Created. The list will refresh shortly.',
   placeholder: 'Write Markdown here…',

@@ -99,6 +99,54 @@
   position: relative;
 }
 
+.itemWrapWithAction {
+  display: flex;
+  align-items: center;
+}
+
+.itemWrapWithAction > .item {
+  flex: 1;
+  min-width: 0;
+  width: auto;
+}
+
+.itemAction {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  margin-right: 4px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+}
+
+.itemAction:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.itemAction:focus-visible {
+  outline: 2px solid var(--dsw-alias-state-business-primary);
+  outline-offset: -2px;
+}
+
+.itemAction:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.compactList .itemAction {
+  width: 22px;
+  height: 22px;
+  margin-right: 2px;
+}
+
 /* Menu cell (figma .Menu_cell): min-h 40, r10, pad 10/8, 14/22 primary,
  * gap 8 between leading icon / label / trailing check. */
 .item {

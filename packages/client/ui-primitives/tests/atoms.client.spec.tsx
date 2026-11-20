@@ -150,6 +150,80 @@ describe('Menu', () => {
     expect(onClose).not.toHaveBeenCalled()
   })
 
+  it('selects a trailing action independently from its row and keeps sibling buttons accessible', () => {
+    const onSelect = vi.fn()
+    const { container } = render(<Menu open anchor={<span>trigger</span>} items={[
+      { id: 'folder', label: 'Folder', action: { id: 'new-folder', label: '新建子目录', icon: <svg data-testid="action-icon" /> } },
+      { id: 'plain', label: 'Plain' },
+    ]} onSelect={onSelect} onClose={() => {}} />)
+    const row = screen.getByRole('menuitem', { name: 'Folder' })
+    const action = screen.getByRole('menuitem', { name: '新建子目录' })
+    expect(action.getAttribute('title')).toBe('新建子目录')
+    expect(action.querySelector('[aria-hidden="true"]')?.contains(screen.getByTestId('action-icon'))).toBe(true)
+    expect(row.parentElement).toBe(action.parentElement)
+    expect(container.querySelector('button button')).toBeNull()
+    expect(screen.getByRole('menuitem', { name: 'Plain' }).parentElement?.querySelectorAll('button')).toHaveLength(1)
+    fireEvent.click(action)
+    expect(onSelect).toHaveBeenCalledExactlyOnceWith('new-folder')
+    fireEvent.click(row)
+    expect(onSelect).toHaveBeenNthCalledWith(2, 'folder')
+  })
+
+  it('navigates the trailing action as its own target and skips either disabled action', () => {
+    const onSelect = vi.fn()
+    render(<Menu open keyboardNavigation anchor={<span>trigger</span>} items={[
+      { id: 'a', label: 'Alpha', action: { id: 'a-action', label: 'Action A', icon: <svg /> } },
+      { id: 'b', label: 'Beta', action: { id: 'b-action', label: 'Action B', icon: <svg />, disabled: true } },
+      { id: 'c', label: 'Gamma', disabled: true, action: { id: 'c-action', label: 'Action C', icon: <svg /> } },
+      { id: 'd', label: 'Delta' },
+    ]} onSelect={onSelect} onClose={() => {}} />)
+    const a = screen.getByRole('menuitem', { name: 'Alpha' })
+    const actionA = screen.getByRole('menuitem', { name: 'Action A' })
+    const b = screen.getByRole('menuitem', { name: 'Beta' })
+    const d = screen.getByRole('menuitem', { name: 'Delta' })
+    expect(document.activeElement).toBe(a)
+    fireEvent.keyDown(a, { key: 'ArrowDown' })
+    expect(document.activeElement).toBe(actionA)
+    fireEvent.keyDown(actionA, { key: 'ArrowDown' })
+    expect(document.activeElement).toBe(b)
+    fireEvent.keyDown(b, { key: 'ArrowDown' })
+    expect(document.activeElement).toBe(d)
+    fireEvent.keyDown(d, { key: 'Home' })
+    expect(document.activeElement).toBe(a)
+    fireEvent.keyDown(a, { key: 'End' })
+    expect(document.activeElement).toBe(d)
+    fireEvent.keyDown(d, { key: 'ArrowUp' })
+    expect(document.activeElement).toBe(b)
+    for (const name of ['Action B', 'Action C']) {
+      const disabled = screen.getByRole('menuitem', { name }) as HTMLButtonElement
+      expect(disabled.disabled).toBe(true)
+      fireEvent.click(disabled)
+    }
+    expect(onSelect).not.toHaveBeenCalled()
+  })
+
+  it('does not open a parent submenu when its trailing action is hovered or focused', () => {
+    const onSelect = vi.fn()
+    render(<Menu open anchor={<span>trigger</span>} items={[{
+      id: 'parent', label: 'Parent',
+      action: { id: 'new', label: 'Create child', icon: <svg /> },
+      submenu: [{ id: 'child', label: 'Child', action: { id: 'nested', label: 'Nested action', icon: <svg /> } }],
+    }]} onSelect={onSelect} onClose={() => {}} />)
+    const row = screen.getByRole('menuitem', { name: 'Parent' })
+    const action = screen.getByRole('menuitem', { name: 'Create child' })
+    fireEvent.mouseEnter(action)
+    expect(screen.queryByRole('menuitem', { name: 'Child' })).toBeNull()
+    fireEvent.focus(action)
+    expect(screen.queryByRole('menuitem', { name: 'Child' })).toBeNull()
+    fireEvent.click(action)
+    expect(onSelect).toHaveBeenCalledExactlyOnceWith('new')
+    fireEvent.focus(row)
+    const nested = screen.getByRole('menuitem', { name: 'Nested action' })
+    fireEvent.focus(nested)
+    fireEvent.click(nested)
+    expect(onSelect).toHaveBeenNthCalledWith(2, 'nested')
+  })
+
   it('maxHeight caps the card so the item area scrolls instead of growing', () => {
     const many = Array.from({ length: 12 }, (_, index) => ({ id: `i${index}`, label: `Item ${index}` }))
     render(

@@ -1057,7 +1057,7 @@ describe('NotesPage', () => {
     fireEvent.click(root)
     const locations = within(dialog).getByRole('menu')
     expect(within(locations).getAllByRole('menuitem').map(item => item.querySelector('[title]')?.getAttribute('title')))
-      .toEqual(['全部笔记', 'd', 'd / 归档'])
+      .toEqual(['全部笔记', undefined, 'd', undefined, 'd / 归档', undefined])
     expect(within(locations).queryByRole('menuitem', { name: 'b' })).toBeNull()
     fireEvent.keyDown(document, { key: 'Escape' })
     expect(within(dialog).queryByRole('menu')).toBeNull()
@@ -1069,6 +1069,183 @@ describe('NotesPage', () => {
     await act(async () => { fireEvent.click(within(dialog).getByRole('button', { name: '创建' })) })
     expect(state.files.has('d/归档/方案.md')).toBe(true)
     expect(document.activeElement).toBe(createTrigger())
+  })
+
+  it('保存位置菜单在根目录和嵌套目录新建子目录，保留原笔记名并选中新目录', async () => {
+    const state = makeServer()
+    state.tree.find(entry => entry.path === 'd')?.children?.push({ name: '归档', kind: 'dir', path: 'd/归档', mtimeMs: 700, children: [] })
+    await mount()
+    fireEvent.click(createTrigger())
+    fireEvent.click(screen.getByRole('menuitem', { name: '新建笔记' }))
+    const dialog = screen.getByRole('dialog', { name: '新建笔记' })
+    fireEvent.change(within(dialog).getByRole('textbox', { name: '笔记名称' }), { target: { value: '会议纪要' } })
+
+    fireEvent.click(within(dialog).getByRole('button', { name: '保存到 全部笔记' }))
+    fireEvent.click(within(dialog).getByRole('menuitem', { name: '在「全部笔记」中新建子目录' }))
+    expect(screen.getByRole('dialog', { name: '新建子目录' })).toBe(dialog)
+    fireEvent.change(within(dialog).getByRole('textbox', { name: '目录名称' }), { target: { value: '项目' } })
+    await act(async () => { fireEvent.click(within(dialog).getByRole('button', { name: '创建' })) })
+    expect(screen.getByRole('dialog', { name: '新建笔记' })).toBe(dialog)
+    expect(within(dialog).getByRole<HTMLInputElement>('textbox', { name: '笔记名称' }).value).toBe('会议纪要')
+    expect(within(dialog).getByRole('button', { name: '保存到 项目' })).toBeTruthy()
+
+    fireEvent.click(within(dialog).getByRole('button', { name: '保存到 项目' }))
+    fireEvent.click(within(dialog).getByRole('menuitem', { name: '在「d / 归档」中新建子目录' }))
+    expect(within(dialog).getByText('在「d / 归档」中新建目录')).toBeTruthy()
+    fireEvent.change(within(dialog).getByRole('textbox', { name: '目录名称' }), { target: { value: '深层' } })
+    await act(async () => { fireEvent.click(within(dialog).getByRole('button', { name: '创建' })) })
+    expect(within(dialog).getByRole('button', { name: '保存到 d / 归档 / 深层' })).toBeTruthy()
+    expect(within(dialog).getByRole<HTMLInputElement>('textbox', { name: '笔记名称' }).value).toBe('会议纪要')
+    await act(async () => { fireEvent.click(within(dialog).getByRole('button', { name: '创建' })) })
+    expect(state.files.has('d/归档/深层/会议纪要.md')).toBe(true)
+    expect(state.tree.some(entry => entry.path === '项目')).toBe(true)
+    expect(state.tree.find(entry => entry.path === 'd')?.children?.find(entry => entry.path === 'd/归档')?.children?.some(entry => entry.path === 'd/归档/深层')).toBe(true)
+  })
+
+  it('子目录表单取消、Escape 和遮罩点击只返回新建笔记，不改变名称和已选位置', async () => {
+    makeServer()
+    await mount()
+    fireEvent.click(within(directory()).getByRole('button', { name: '在「d」中新建笔记' }))
+    const dialog = screen.getByRole('dialog', { name: '新建笔记' })
+    fireEvent.change(within(dialog).getByRole('textbox', { name: '笔记名称' }), { target: { value: '提纲' } })
+    let location = within(dialog).getByRole('button', { name: '保存到 d' })
+    fireEvent.click(location)
+    fireEvent.click(within(dialog).getByRole('menuitem', { name: '在「d」中新建子目录' }))
+    fireEvent.change(within(dialog).getByRole('textbox', { name: '目录名称' }), { target: { value: '草稿' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: '取消' }))
+    expect(screen.getByRole('dialog', { name: '新建笔记' })).toBe(dialog)
+    location = within(dialog).getByRole('button', { name: '保存到 d' })
+    expect(document.activeElement).toBe(location)
+    expect(within(dialog).getByRole<HTMLInputElement>('textbox', { name: '笔记名称' }).value).toBe('提纲')
+
+    fireEvent.click(location)
+    fireEvent.click(within(dialog).getByRole('menuitem', { name: '在「d」中新建子目录' }))
+    fireEvent.click(dialog.parentElement!.querySelector('[aria-hidden="true"]')!)
+    expect(screen.getByRole('dialog', { name: '新建笔记' })).toBe(dialog)
+    location = within(dialog).getByRole('button', { name: '保存到 d' })
+    expect(document.activeElement).toBe(location)
+    expect(within(dialog).getByRole<HTMLInputElement>('textbox', { name: '笔记名称' }).value).toBe('提纲')
+
+    fireEvent.click(location)
+    fireEvent.click(within(dialog).getByRole('menuitem', { name: '在「d」中新建子目录' }))
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(screen.getByRole('dialog', { name: '新建笔记' })).toBe(dialog)
+    location = within(dialog).getByRole('button', { name: '保存到 d' })
+    expect(document.activeElement).toBe(location)
+    expect(within(dialog).getByRole<HTMLInputElement>('textbox', { name: '笔记名称' }).value).toBe('提纲')
+  })
+
+  it('新建子目录失败保留表单与输入，重试后仍在原父目录创建', async () => {
+    const state = makeServer()
+    await mount()
+    fireEvent.click(createTrigger())
+    fireEvent.click(screen.getByRole('menuitem', { name: '新建笔记' }))
+    const dialog = screen.getByRole('dialog', { name: '新建笔记' })
+    fireEvent.change(within(dialog).getByRole('textbox', { name: '笔记名称' }), { target: { value: '原笔记' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: '保存到 全部笔记' }))
+    fireEvent.click(within(dialog).getByRole('menuitem', { name: '在「d」中新建子目录' }))
+    const input = within(dialog).getByRole<HTMLInputElement>('textbox', { name: '目录名称' })
+    fireEvent.change(input, { target: { value: '待建' } })
+    state.createFail = true
+    await act(async () => { fireEvent.click(within(dialog).getByRole('button', { name: '创建' })) })
+    expect(screen.getByRole('dialog', { name: '新建子目录' })).toBe(dialog)
+    expect(within(dialog).getByRole('alert').textContent).toContain('无法创建目录')
+    expect(input.value).toBe('待建')
+    state.createFail = false
+    await act(async () => { fireEvent.click(within(dialog).getByRole('button', { name: '创建' })) })
+    expect(screen.getByRole('dialog', { name: '新建笔记' })).toBe(dialog)
+    expect(within(dialog).getByRole('button', { name: '保存到 d / 待建' })).toBeTruthy()
+    expect(within(dialog).getByRole<HTMLInputElement>('textbox', { name: '笔记名称' }).value).toBe('原笔记')
+    expect(state.tree.find(entry => entry.path === 'd')?.children?.some(entry => entry.path === 'd/待建')).toBe(true)
+  })
+
+  it('新建子目录请求挂起时不可重复提交或关闭，完成后返回原表单', async () => {
+    const state = makeServer()
+    const originalFetch = globalThis.fetch
+    const pending = Promise.withResolvers<undefined>()
+    let createCalls = 0
+    vi.stubGlobal('fetch', vi.fn((input: string | URL, init?: RequestInit) => {
+      if (new URL(String(input), 'http://localhost').pathname === '/api/notes/create-directory') {
+        createCalls += 1
+        return pending.promise.then(() => originalFetch(input, init))
+      }
+      return originalFetch(input, init)
+    }))
+    await mount()
+    fireEvent.click(createTrigger())
+    fireEvent.click(screen.getByRole('menuitem', { name: '新建笔记' }))
+    const dialog = screen.getByRole('dialog', { name: '新建笔记' })
+    fireEvent.click(within(dialog).getByRole('button', { name: '保存到 全部笔记' }))
+    fireEvent.click(within(dialog).getByRole('menuitem', { name: '在「d」中新建子目录' }))
+    const input = within(dialog).getByRole<HTMLInputElement>('textbox', { name: '目录名称' })
+    fireEvent.change(input, { target: { value: '挂起' } })
+    const form = input.closest('form')!
+    await act(async () => { fireEvent.submit(form) })
+    expect(createCalls).toBe(1)
+    expect(input.readOnly || input.disabled).toBe(true)
+    await act(async () => { fireEvent.submit(form); fireEvent.keyDown(document, { key: 'Escape' }) })
+    expect(createCalls).toBe(1)
+    expect(screen.getByRole('dialog', { name: '新建子目录' })).toBe(dialog)
+    expect(within(dialog).getByRole('button', { name: '取消' }).hasAttribute('disabled')).toBe(true)
+    await act(async () => { pending.resolve(undefined) })
+    expect(screen.getByRole('dialog', { name: '新建笔记' })).toBe(dialog)
+    expect(state.tree.find(entry => entry.path === 'd')?.children?.some(entry => entry.path === 'd/挂起')).toBe(true)
+  })
+
+  it('子目录创建完成后刷新失败仍选择新目录并保留可选择项', async () => {
+    const state = makeServer()
+    const originalFetch = globalThis.fetch
+    let failRefresh = false
+    vi.stubGlobal('fetch', vi.fn((input: string | URL, init?: RequestInit) => {
+      if (new URL(String(input), 'http://localhost').pathname === '/api/notes/tree' && failRefresh) {
+        failRefresh = false
+        return Promise.resolve(new Response('unavailable', { status: 503 }))
+      }
+      return originalFetch(input, init)
+    }))
+    await mount()
+    fireEvent.click(createTrigger())
+    fireEvent.click(screen.getByRole('menuitem', { name: '新建笔记' }))
+    const dialog = screen.getByRole('dialog', { name: '新建笔记' })
+    fireEvent.change(within(dialog).getByRole('textbox', { name: '笔记名称' }), { target: { value: '原笔记' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: '保存到 全部笔记' }))
+    fireEvent.click(within(dialog).getByRole('menuitem', { name: '在「d」中新建子目录' }))
+    fireEvent.change(within(dialog).getByRole('textbox', { name: '目录名称' }), { target: { value: '离线目录' } })
+    failRefresh = true
+    await act(async () => { fireEvent.click(within(dialog).getByRole('button', { name: '创建' })) })
+    expect(screen.getByRole('dialog', { name: '新建笔记' })).toBe(dialog)
+    expect(within(dialog).getByRole('button', { name: '保存到 d / 离线目录' })).toBeTruthy()
+    expect(within(dialog).getByRole<HTMLInputElement>('textbox', { name: '笔记名称' }).value).toBe('原笔记')
+    expect(screen.getByRole('alert').textContent).toContain('已创建，目录暂未刷新')
+    fireEvent.click(within(dialog).getByRole('button', { name: '保存到 d / 离线目录' }))
+    expect(within(dialog).getByRole('menuitem', { name: 'd / 离线目录' })).toBeTruthy()
+    expect(state.tree.find(entry => entry.path === 'd')?.children?.some(entry => entry.path === 'd/离线目录')).toBe(true)
+  })
+
+  it('新建子目录期间卸载页面后，迟到的响应不能继续刷新目录', async () => {
+    makeServer()
+    const originalFetch = globalThis.fetch
+    const pending = Promise.withResolvers<Response>()
+    let treeCalls = 0
+    vi.stubGlobal('fetch', vi.fn((input: string | URL, init?: RequestInit) => {
+      const path = new URL(String(input), 'http://localhost').pathname
+      if (path === '/api/notes/create-directory') return pending.promise
+      if (path === '/api/notes/tree') treeCalls += 1
+      return originalFetch(input, init)
+    }))
+    const view = await mount()
+    fireEvent.click(createTrigger())
+    fireEvent.click(screen.getByRole('menuitem', { name: '新建笔记' }))
+    const dialog = screen.getByRole('dialog', { name: '新建笔记' })
+    fireEvent.click(within(dialog).getByRole('button', { name: '保存到 全部笔记' }))
+    fireEvent.click(within(dialog).getByRole('menuitem', { name: '在「d」中新建子目录' }))
+    fireEvent.change(within(dialog).getByRole('textbox', { name: '目录名称' }), { target: { value: '迟到' } })
+    await act(async () => { fireEvent.click(within(dialog).getByRole('button', { name: '创建' })) })
+    const beforeUnmount = treeCalls
+    view.unmount()
+    await act(async () => { pending.resolve(Response.json({ path: 'd/迟到' }, { status: 201 })) })
+    expect(treeCalls).toBe(beforeUnmount)
+    expect(screen.queryByRole('dialog')).toBeNull()
   })
 
   it('再次点选当前笔记无副作用，目录可以重新收起', async () => {

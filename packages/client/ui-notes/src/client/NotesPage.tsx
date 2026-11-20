@@ -12,7 +12,7 @@ import { NoteDeleteDialog } from './NoteDeleteDialog.tsx'
 import { NoteNameDialog } from './NoteNameDialog.tsx'
 import { NotesDocument } from './NotesDocument.tsx'
 import { NotesTabs } from './NotesTabs.tsx'
-import { filePaths, findEntry, labelOf, latestWritten, noteFiles, removeTreeEntry } from './notes-tree.ts'
+import { addTreeDirectory, filePaths, findEntry, labelOf, latestWritten, noteFiles, removeTreeEntry } from './notes-tree.ts'
 import type { createNotesUiStore } from './notes-ui-store.ts'
 import { useNoteDraft } from './useNoteDraft.ts'
 import { usePublishNotesTabs } from './usePublishNotesTabs.ts'
@@ -452,6 +452,41 @@ export function NotesPage({
     }
   }
 
+  const createDestinationDirectory = async (name: string, parent: string): Promise<string | undefined> => {
+    if (creatingRequest.current !== null) return undefined
+    const request = new AbortController()
+    creatingRequest.current = request
+    setCreating(true)
+    try {
+      const { path } = await notesCreateDirectory(name, parent)
+      request.signal.throwIfAborted()
+      treeRevision.current += 1
+      setCreationDirectory(path)
+      setExpanded((previous) => {
+        const next = new Set(previous)
+        for (let slash = path.indexOf('/'); slash !== -1; slash = path.indexOf('/', slash + 1)) next.add(path.slice(0, slash))
+        next.add(path)
+        return next
+      })
+      try {
+        const fresh = await notesTree(request.signal)
+        request.signal.throwIfAborted()
+        setTree(fresh)
+      } catch {
+        request.signal.throwIfAborted()
+        setTree(previous => addTreeDirectory(previous, path, Date.now()))
+        notify('createdRefreshError')
+      }
+      return path
+    } catch (error) {
+      if (!request.signal.aborted) throw error
+      return undefined
+    } finally {
+      creatingRequest.current = null
+      if (!request.signal.aborted) setCreating(false)
+    }
+  }
+
   const createEntries: readonly MenuEntry[] = [
     { id: 'create', label: t('newNote'), icon: <IconPlusOutline16 /> },
     { id: 'folder', label: t('newFolder'), icon: <IconProjectAddOutline16 /> },
@@ -562,7 +597,9 @@ export function NotesPage({
         kind={dialog === 'rename' ? actionTarget?.kind === 'dir' ? 'renameFolder' : 'renameNote' : dialog}
         name={draftName} busy={creating} onClose={closeDialog} onNameChange={setDraftName}
         error={createFailed && dialog !== 'rename' ? t(dialog === 'folder' ? 'createFolderError' : 'createError') : undefined}
-        destination={dialog === 'rename' ? undefined : { tree, path: creationDirectory, onChange: setCreationDirectory }}
+        destination={dialog === 'rename' ? undefined : {
+          tree, path: creationDirectory, onChange: setCreationDirectory, onCreateDirectory: createDestinationDirectory,
+        }}
         onSubmit={(event) => { void (dialog === 'rename' ? renameTarget(event) : createEntry(event)) }} />}
       {dialog === 'delete' && actionTarget !== null && <NoteDeleteDialog t={t}
         description={actionTarget.kind === 'dir'
