@@ -247,6 +247,8 @@ export interface PptPage {
   /** `null` 表示使用主题底色。 */
   readonly background: string | null
   readonly transition: SlideTransition
+  /** 演讲词；当前工程 JSON 会保存，导出为标准 `.pptx` 时暂不写入备注页。 */
+  readonly notes?: string
   readonly elements: readonly PptElement[]
 }
 
@@ -540,6 +542,7 @@ export function parsePage(value: unknown, at: string): PptPage {
     name: text(value.name, `${at}.name`, 200),
     background: value.background === null ? null : color(value.background, `${at}.background`),
     transition: oneOf(value.transition ?? 'none', `${at}.transition`, ['none', 'fade', 'push'] as const),
+    ...value.notes === undefined ? {} : { notes: text(value.notes, `${at}.notes`, 10_000) },
     elements,
   }
 }

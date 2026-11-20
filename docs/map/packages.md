@@ -67,7 +67,7 @@ workspace 共 280 个包，按 group 分节。每行给出包目录、职责（R
 - `packages/client/ui-jobs` — Web 后台任务特性的归属方：向 `conversation.overview.jobs` 贡献一个会话作用域列表… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 2）
 - `packages/client/ui-layout` — 本包拥有浏览器根布局、瞬时面板几何和 `ctx.layout` [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 9）
 - `packages/client/ui-message-feedback` — 单条消息反馈插件的浏览器侧：一对 Like/Dislike 按钮加一个可选备注… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 4）
-- `packages/client/ui-model-selection` — 模型选择插件（浏览器侧）：**两个入口共用一份会话级目录**，由 `ModelDirectoryResolver`… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 2）
+- `packages/client/ui-model-selection` — 模型选择插件（浏览器侧）：**两个入口共用一份会话级目录**，由 `ModelDirectoryResolver`… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 3）
 - `packages/client/ui-notes` — 笔记界面：外侧窄导航的「笔记」入口、独立主内容页，以及完全复用对话的 AI 助手栏 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 10）
 - `packages/client/ui-open-in-app` — 右侧工作台的标签、功能菜单与显隐按 Session 管理；文件管理器、文件预览、Git 历史、终端和外部插件内容共用顶栏 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 17）
 - `packages/client/ui-permission-presets` — 面向两种不同生命周期的浏览器权限界面 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 3）
@@ -175,7 +175,7 @@ workspace 共 280 个包，按 group 分节。每行给出包目录、职责（R
 - `packages/fs/fs-observation-policy` — **fs-observation-policy 插件**：它记录观测到的存在或缺失状态，并在 `ctx.fs` 提供方约定… 入口 `src/index.ts`（tests 1）
 - `packages/fs/fs-sandbox` — 它原样复用本地后端配置：`cwd` 仍是相对路径的解析默认值，`diffBasisMaxBytes` 则限制可选的覆写上下文 diff 基础 入口 `src/index.ts`（tests 3）
 - `packages/fs/fs-workspace` — `coding-fs` 的多后端装配：加载它即由 `ctx.fs` 提供 `FsRegistry`，默认注册两个后端——包了沙箱围栏的本地后端… 入口 `src/index.ts`（tests 1）
-- `packages/fs/tool-apply-patch` — The parser accepts Codex's `*** Begin Patch` / `*** End Patch` envelope,… 入口 `src/index.ts`（tests 2）
+- `packages/fs/tool-apply-patch` — 基于 `ctx.fs` 的模型可见 `apply_patch` 工具 入口 `src/index.ts`（tests 2）
 - `packages/fs/tool-fs` — **面向模型的文件系统工具**（`read`、`read_image`、`write`、`edit`）及其**执行器** 入口 `src/index.ts`（tests 6）
 - `packages/fs/tool-fs-search` — **面向模型的文件系统发现工具**（`glob`、`grep`）在普通本地 Workspace 中使用打包的 ripgrep 二进制… 入口 `src/index.ts`（tests 7）
 - `packages/fs/tool-str-replace-editor` — 基于 `ctx.fs`、面向模型的独立 `str_replace_editor` 入口 `src/index.ts`（tests 1）
@@ -248,7 +248,7 @@ workspace 共 280 个包，按 group 分节。每行给出包目录、职责（R
 - `packages/llm/llm` — 提供方无关的 LLM（大语言模型）词汇与抽象服务 入口 `src/index.ts`（tests 13）
 - `packages/llm/llm-deepseek` — harness LLM（大语言模型）seam 的 DeepSeek chat-completions 适配器：直接 `fetch` + SSE… 入口 `src/index.ts`（tests 7）
 - `packages/llm/llm-opencode` — 内置 **Free** 渠道适配器：把本项目维护的免费模型注册成 harness 的一个原生 LLM 提供方 入口 `src/index.ts`（tests 2）
-- `packages/llm/llm-pi-ai` — 基于 `@earendil-works/pi-ai` 的 harness LLM（大语言模型）seam 通用多提供方适配器 入口 `src/index.ts`（tests 9）
+- `packages/llm/llm-pi-ai` — 基于 `@earendil-works/pi-ai` 的 harness LLM（大语言模型）seam 通用多提供方适配器 入口 `src/index.ts`（tests 11）
 - `packages/llm/llm-retry` — 一个函数插件，通过 agent loop（智能体循环）在已关闭步骤上触发的 `agent/request-error` waterfall… 入口 `src/index.ts`（tests 5）
 - `packages/llm/llm-vision-fallback` — 本插件在 `agent/request-history` 中处理主模型明确不支持图片输入、而当前会话 surface 包含图片的请求 入口 `src/index.ts`（tests 1）
 - `packages/llm/token-meter` — 通过单例 `ctx.tokenMeter` 服务进行具备回放感知能力的 token 测量 [client] 入口 `src/index.ts`（tests 3）

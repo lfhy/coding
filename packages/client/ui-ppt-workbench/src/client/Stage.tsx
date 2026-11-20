@@ -20,6 +20,8 @@ export interface StageProps {
   readonly selectedId: string | null
   readonly editingId: string | null
   readonly busy: boolean
+  /** 演示预览时只渲染，不进入选择、拖动或编辑流程。 */
+  readonly readOnly?: boolean
   readonly t: Translate<PptWorkbenchKey>
   readonly onSelect: (id: string | null) => void
   readonly onBeginEdit: (id: string) => void
@@ -58,7 +60,7 @@ export function fitWidth(box: { width: number; height: number }, ratio: number):
  * @returns 自适应宽度的画布。
  */
 export function Stage({
-  deck, page, selectedId, editingId, busy, t, onSelect, onBeginEdit, onEndEdit, onMove, onResize, onEditCell, mediaUrl,
+  deck, page, selectedId, editingId, busy, readOnly = false, t, onSelect, onBeginEdit, onEndEdit, onMove, onResize, onEditCell, mediaUrl,
   hasClipboard, onCopySelected, onCutSelected, onPaste, onInsert, onChooseImage,
   onDeleteSelected, onDuplicateSelected,
 }: StageProps) {
@@ -143,13 +145,14 @@ export function Stage({
       data-busy={busy ? 'true' : undefined}
       tabIndex={-1}
       onPointerDown={(event) => {
+        if (readOnly) return
         if (event.target === host.current) {
           setContext(null)
           host.current.focus({ preventScroll: true })
         }
       }}
       onKeyDown={(event) => {
-        if (busy || editingId !== null || context !== null || event.target instanceof HTMLInputElement
+        if (readOnly || busy || editingId !== null || context !== null || event.target instanceof HTMLInputElement
           || event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLSelectElement) return
         const command = event.metaKey || event.ctrlKey
         const key = event.key.toLowerCase()
@@ -184,7 +187,8 @@ export function Stage({
             onCommit: () => { onEndEdit(draft) },
             onCancel: () => { onEndEdit(null) },
           }}
-          interaction={{ onSelect, onBeginEdit, onMove, onResize, onEditCell,
+          {...readOnly ? {} : { interaction: {
+            onSelect, onBeginEdit, onMove, onResize, onEditCell,
             onFocusCanvas: () => { host.current?.focus({ preventScroll: true }) },
             onContextMenu: (id, at) => {
               if (busy || editingId !== null) return
@@ -192,7 +196,7 @@ export function Stage({
               host.current?.focus({ preventScroll: true })
               setContext({ ...at, id })
             },
-          }}
+          } }}
           emptyHint={t('emptyPage')}
           cellLabel={(row, column) => t('cellPosition', { row, column })}
           mediaUrl={mediaUrl}

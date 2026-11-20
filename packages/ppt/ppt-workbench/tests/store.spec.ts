@@ -100,6 +100,17 @@ describe('工程存储', () => {
     expect(redone.deck.pages[0]?.name).toBe('封面页')
   })
 
+  it('演讲词落盘并随撤销重做恢复', async () => {
+    const dir = join(root, 'ppt', 'speaker-notes')
+    const created = await createProject(dir, { title: '演讲词' })
+    const page = created.deck.pages[0]?.id ?? ''
+    const edited = await editProject(dir, [{ op: 'update_page', page, notes: '先讲背景，再讲结论。' }], created.revision)
+    expect(edited.deck.pages[0]?.notes).toBe('先讲背景，再讲结论。')
+    expect((await loadProject(dir)).deck.pages[0]?.notes).toBe('先讲背景，再讲结论。')
+    expect((await undoProject(dir, 1)).deck.pages[0]?.notes).toBeUndefined()
+    expect((await redoProject(dir, 1)).deck.pages[0]?.notes).toBe('先讲背景，再讲结论。')
+  })
+
   it('撤销到底与重做到顶都明确报错', async () => {
     const dir = join(root, 'ppt', 'deck')
     await createProject(dir, { title: '边界' })

@@ -169,6 +169,129 @@
   min-height: 0;
 }
 
+.speakerNotes {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  min-height: 42px;
+  margin: 0 16px 12px;
+  padding: 6px 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 16px;
+  background: var(--dsw-alias-bg-layer-2);
+  box-shadow: var(--dsw-shadow-lv1);
+}
+
+.speakerNotesLabel {
+  flex: none;
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-xs-strong-13);
+}
+
+.speakerNotesInput {
+  flex: 1;
+  min-width: 0;
+  min-height: 28px;
+  max-height: 88px;
+  padding: 5px 7px;
+  resize: vertical;
+  border: 0;
+  border-radius: 9px;
+  outline: none;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  font: var(--dsw-font-xs-13);
+}
+
+.speakerNotesInput:focus-visible {
+  outline: 2px solid var(--dsw-alias-state-business-primary);
+  outline-offset: 1px;
+}
+
+.presentation {
+  position: absolute;
+  z-index: 20;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  padding: 12px 20px 14px;
+  background: var(--dsw-alias-bg-base);
+}
+
+.presentationToolbar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  min-height: 36px;
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-xs-13);
+}
+
+.presentationTitle {
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.presentationPage { color: var(--dsw-alias-label-tertiary); }
+
+.presentationExit,
+.presentationNav {
+  padding: 5px 10px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-xs-13);
+  cursor: pointer;
+}
+
+.presentationExit { position: absolute; top: 12px; right: 20px; }
+
+.presentationExit:hover,
+.presentationNav:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover); }
+
+.presentationExit:focus-visible,
+.presentationNav:focus-visible {
+  outline: 2px solid var(--dsw-alias-state-business-primary);
+  outline-offset: 2px;
+}
+
+.presentationNav:disabled { opacity: 0.4; cursor: default; }
+
+.presentationStage {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.presentationStage > div {
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  background: transparent;
+}
+
+.presentationFooter {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 12px;
+  min-height: 52px;
+}
+
+.presentationFooter .speakerNotes { flex: 1; margin: 0; }
+
 .inspectorOverlay {
   position: absolute;
   z-index: 10;

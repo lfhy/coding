@@ -42,13 +42,15 @@ export interface MovePageOp {
   readonly to: number
 }
 
-/** 改页面名称、底色或转场。 */
+/** 改页面名称、底色、转场或演讲词。 */
 export interface UpdatePageOp {
   readonly op: 'update_page'
   readonly page: string
   readonly name?: string
   readonly background?: string | null
   readonly transition?: SlideTransition
+  /** 演讲词；空字符串用于清空。 */
+  readonly notes?: string
 }
 
 /** 新增元素；`element.id` 缺省时自动生成。 */
@@ -164,6 +166,13 @@ function shortText(value: unknown, at: string, max: number): string {
   return value
 }
 
+function noteText(value: unknown, at: string): string {
+  if (typeof value !== 'string' || value.length > 10_000) {
+    throw new PptModelError(`${at} 必须是 10000 字符以内的字符串`)
+  }
+  return value
+}
+
 function optionalColor(value: unknown, at: string): string | null {
   return value === null ? null : color(value, at)
 }
@@ -274,6 +283,7 @@ function parseOp(value: unknown, at: string): PptOp {
         ...value.transition === undefined
           ? {}
           : { transition: pick(TRANSITIONS, value.transition, `${at}.transition`) },
+        ...value.notes === undefined ? {} : { notes: noteText(value.notes, `${at}.notes`) },
       }
     case 'add_element':
       if (!isRecord(value.element)) throw new PptModelError(`${at}.element 必须是对象`)
@@ -481,6 +491,7 @@ export function applyOps(deck: PptDeck, ops: readonly PptOp[]): { deck: PptDeck;
           ...op.name === undefined ? {} : { name: op.name },
           ...op.background === undefined ? {} : { background: op.background },
           ...op.transition === undefined ? {} : { transition: op.transition },
+          ...op.notes === undefined ? {} : { notes: op.notes },
         })
         touched.push(op.page)
         break

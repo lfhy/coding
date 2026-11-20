@@ -201,6 +201,24 @@ describe('PPT 工作台面板', () => {
     expect(panel.props.selectPage).toHaveBeenCalledWith(1)
   })
 
+  it('预览在工作台内放大当前页，隐藏质检入口并可切页与编辑演讲词', () => {
+    const panel = mount(ready, true, zh)
+    expect(screen.queryByRole('button', { name: '质检' })).toBeNull()
+    const notes = screen.getByRole('textbox', { name: '演讲词' })
+    fireEvent.change(notes, { target: { value: '这一页先介绍背景。' } })
+    fireEvent.blur(notes)
+    expect(panel.props.updatePage).toHaveBeenCalledWith({ notes: '这一页先介绍背景。' })
+
+    fireEvent.click(screen.getByRole('button', { name: '预览' }))
+    expect(panel.props.preview).not.toHaveBeenCalled()
+    expect(screen.queryByRole('complementary', { name: 'PPT 工作台' })).toBeNull()
+    expect(screen.getByRole('region', { name: '预览' })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: '下一页' }))
+    expect(panel.props.selectPage).toHaveBeenCalledWith(1)
+    fireEvent.click(screen.getByRole('button', { name: '退出预览' }))
+    expect(screen.getByRole('complementary', { name: 'PPT 工作台' })).toBeTruthy()
+  })
+
   it('拖动缩略图移动的是拖源页，忙碌时不会提交排序', () => {
     const project = deck()
     const threePageProject: PptSnapshotView = {

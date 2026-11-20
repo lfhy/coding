@@ -15,8 +15,9 @@ import {
   IconChevronDownOutline14, IconCloseOutline16, IconDownloadOutline16, IconEllipsisOutline16,
   IconPanelLeftOutline16, IconPlusOutline16, IconSettingsOutline16,
 } from 'coding-client-ui-icons'
-import type { PptElementKind, SlideTransition } from 'coding-ppt-model'
+import type { PptElementKind, PptPage, SlideTransition } from 'coding-ppt-model'
 import type { PptPanelState } from './controller.ts'
+import type { PptSnapshotView } from './wire.ts'
 import { currentPage } from './helpers.ts'
 import type { ElementPatch } from './Inspector.tsx'
 import { Inspector } from './Inspector.tsx'
@@ -53,7 +54,7 @@ export interface PptWorkbenchInjected {
   removeElement: (id: string) => Promise<void>
   updateElement: (id: string, patch: ElementPatch) => Promise<void>
   editCell: (id: string, row: number, column: number, content: string) => Promise<void>
-  updatePage: (patch: { name?: string; background?: string | null; transition?: SlideTransition }) => Promise<void>
+  updatePage: (patch: { name?: string; background?: string | null; transition?: SlideTransition; notes?: string }) => Promise<void>
   updateDeck: (patch: { title?: string; theme?: string; size?: '16:9' | '4:3' }) => Promise<void>
   duplicateElement: (id: string) => Promise<void>
   copyElement: (id: string) => void
@@ -61,8 +62,6 @@ export interface PptWorkbenchInjected {
   pasteElement: (at?: { x: number; y: number }) => Promise<void>
   reorderElement: (id: string, to: 'front' | 'back' | 'forward' | 'backward') => Promise<void>
   insertImage: (file: File, replaceId?: string, labelId?: string) => Promise<void>
-  checkDeck: () => Promise<void>
-  preview: (pages?: readonly number[]) => Promise<void>
   mediaUrl: (dir: string | undefined, source: string) => string
 }
 
@@ -93,7 +92,7 @@ export function PptWorkbench(props: PptWorkbenchProps) {
     shown, t, usePpt, show, refresh, open, openSource, undo, redo, exportDeck,
     selectPage, selectElement, setEditing, addPage, removePage, movePage,
     addElement, removeElement, updateElement, editCell, updatePage, updateDeck,
-    duplicateElement, copyElement, cutElement, pasteElement, reorderElement, insertImage, checkDeck, preview, mediaUrl,
+    duplicateElement, copyElement, cutElement, pasteElement, reorderElement, insertImage, mediaUrl,
     useTemplateCatalog, catalogActions,
   } = props
   const sourcePath = 'path' in props ? props.path : undefined
@@ -101,7 +100,7 @@ export function PptWorkbench(props: PptWorkbenchProps) {
   const [menu, setMenu] = useState<'new' | 'insert' | 'page' | 'more' | null>(null)
   const [showThumbs, setShowThumbs] = useState(true)
   const [showInspector, setShowInspector] = useState(false)
-  const [showIssues, setShowIssues] = useState(false)
+  const [presentationMode, setPresentationMode] = useState(false)
   const [catalogOpen, setCatalogOpen] = useState(false)
   const fileInput = useRef<HTMLInputElement>(null)
   const replacingImage = useRef<{ id: string; label?: string } | undefined>(undefined)
@@ -127,12 +126,19 @@ export function PptWorkbench(props: PptWorkbenchProps) {
     setMenu(null)
     replacingImage.current = undefined
     setShowInspector(false)
-    setShowIssues(false)
+    setPresentationMode(false)
   }, [state.project?.dir])
 
   useEffect(() => {
-    if (state.issues !== null) setShowIssues(true)
-  }, [state.issues])
+    if (!presentationMode) return undefined
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || event.target instanceof HTMLTextAreaElement) return
+      event.preventDefault()
+      setPresentationMode(false)
+    }
+    document.addEventListener('keydown', onKeyDown, true)
+    return () => { document.removeEventListener('keydown', onKeyDown, true) }
+  }, [presentationMode])
 
   useEffect(() => {
     if (!showInspector) return undefined
@@ -283,10 +289,7 @@ export function PptWorkbench(props: PptWorkbenchProps) {
               <IconSettingsOutline16 size={14} />{t('properties')}
             </button>
             <button type="button" className={css.action} disabled={state.busy}
-              onClick={() => { setShowIssues(true); void checkDeck() }}>
-              {t('check')}
-            </button>
-            <button type="button" className={css.action} disabled={state.busy} onClick={() => { void preview() }}>{t('preview')}</button>
+              onClick={() => { setPresentationMode(true) }}>{t('preview')}</button>
             <button type="button" className={css.action} disabled={state.busy} onClick={() => { void exportDeck() }}>
               <IconDownloadOutline16 size={14} />{t('export')}
             </button>
@@ -315,23 +318,21 @@ export function PptWorkbench(props: PptWorkbenchProps) {
                 else void insertImage(file, replacement.id, replacement.label)
               }
             }} />
-          {showIssues && state.issues !== null ? (
-            <div className={css.issuesPanel}>
-              <button type="button" className={css.issuesClose} onClick={() => { setShowIssues(false) }}
-                aria-label={t('closeCheck')}>{t('close')}</button>
-              <ul className={css.issues}>
-                {state.issues.length === 0
-                  ? <li data-severity="ok">{t('checkClean')}</li>
-                  : state.issues.map((issue, index) => (
-                    <li key={`${issue.code}-${index}`} data-severity={issue.severity}>{issue.message}</li>
-                  ))}
-              </ul>
-            </div>
-          ) : null}
         </header>
       )}
 
-      {state.phase === 'error' ? (
+      {presentationMode && project !== null ? (
+        <PptPresentation
+          project={project}
+          pageIndex={state.pageIndex}
+          busy={state.busy}
+          t={t}
+          mediaUrl={mediaUrlOf}
+          selectPage={selectPage}
+          updatePage={updatePage}
+          onExit={() => { setPresentationMode(false) }}
+        />
+      ) : state.phase === 'error' ? (
         <div className={css.blank}>
           <p className={css.blankTitle}>{t(state.sourceError && sourcePath !== undefined ? 'sourceErrorTitle' : 'errorTitle')}</p>
           {state.sourceError && sourcePath !== undefined
@@ -383,6 +384,8 @@ export function PptWorkbench(props: PptWorkbenchProps) {
                 onDuplicateSelected={(id) => { void duplicateElement(id) }}
               />
             )}
+            {page !== null && <SpeakerNotesCapsule page={page} busy={state.busy} t={t}
+              onSave={notes => updatePage({ notes })} />}
           </main>
           {page === null || !showInspector ? null : (
             <div className={css.inspectorOverlay} role="dialog" aria-label={t('properties')}>
@@ -444,6 +447,103 @@ export function PptWorkbench(props: PptWorkbenchProps) {
       {catalogModal}
 
     </div>
+  )
+}
+
+interface SpeakerNotesProps {
+  readonly page: PptPage
+  readonly busy: boolean
+  readonly t: PptWorkbenchProps['t']
+  readonly onSave: (notes: string) => Promise<void>
+}
+
+/** 底部演讲词胶囊；内容先保存到工程 JSON，标准 `.pptx` 备注页导出仍待后续协议支持。 */
+function SpeakerNotesCapsule({ page, busy, t, onSave }: SpeakerNotesProps) {
+  const [draft, setDraft] = useState(page.notes ?? '')
+  useEffect(() => { setDraft(page.notes ?? '') }, [page.id, page.notes])
+  const commit = () => {
+    if (!busy && draft !== (page.notes ?? '')) void onSave(draft)
+  }
+  return (
+    <div className={css.speakerNotes} onClick={(event) => { event.stopPropagation() }}>
+      <span className={css.speakerNotesLabel}>{t('speakerNotes')}</span>
+      <textarea
+        className={css.speakerNotesInput}
+        aria-label={t('speakerNotes')}
+        placeholder={t('speakerNotesPlaceholder')}
+        value={draft}
+        disabled={busy}
+        onChange={(event) => { setDraft(event.target.value) }}
+        onBlur={commit}
+        onKeyDown={(event) => {
+          if (event.key === 'Escape') event.stopPropagation()
+        }}
+      />
+    </div>
+  )
+}
+
+interface PptPresentationProps {
+  readonly project: PptSnapshotView
+  readonly pageIndex: number
+  readonly busy: boolean
+  readonly t: PptWorkbenchProps['t']
+  readonly mediaUrl: (source: string) => string
+  readonly selectPage: (index: number) => void
+  readonly updatePage: (patch: { notes?: string }) => Promise<void>
+  readonly onExit: () => void
+}
+
+/** 本地演示预览：不调用 Agent 浏览器渲染，点击画布左右区域切换页面。 */
+function PptPresentation({ project, pageIndex, busy, t, mediaUrl, selectPage, updatePage, onExit }: PptPresentationProps) {
+  const page = project.deck.pages[pageIndex]
+  if (page === undefined) return null
+  const previous = () => { if (pageIndex > 0) selectPage(pageIndex - 1) }
+  const next = () => { if (pageIndex < project.deck.pages.length - 1) selectPage(pageIndex + 1) }
+  return (
+    <section className={css.presentation} aria-label={t('preview')}>
+      <header className={css.presentationToolbar}>
+        <span className={css.presentationTitle}>{project.title}</span>
+        <span className={css.presentationPage}>{pageIndex + 1} / {project.deck.pages.length}</span>
+        <button type="button" className={css.presentationExit} onClick={onExit}>{t('exitPreview')}</button>
+      </header>
+      <div className={css.presentationStage} onClick={(event) => {
+        if (event.target instanceof HTMLButtonElement || event.target instanceof HTMLTextAreaElement) return
+        const rect = event.currentTarget.getBoundingClientRect()
+        if (event.clientX < rect.left + rect.width / 2) previous()
+        else next()
+      }}>
+        <Stage
+          deck={project.deck}
+          page={page}
+          selectedId={null}
+          editingId={null}
+          busy={busy}
+          t={t}
+          readOnly
+          onSelect={() => {}}
+          onBeginEdit={() => {}}
+          onEndEdit={() => {}}
+          onMove={() => {}}
+          onResize={() => {}}
+          onEditCell={() => {}}
+          mediaUrl={mediaUrl}
+          hasClipboard={false}
+          onCopySelected={() => {}}
+          onCutSelected={() => {}}
+          onPaste={() => {}}
+          onInsert={() => {}}
+          onChooseImage={() => {}}
+          onDeleteSelected={() => {}}
+          onDuplicateSelected={() => {}}
+        />
+      </div>
+      <div className={css.presentationFooter}>
+        <button type="button" className={css.presentationNav} disabled={pageIndex === 0} onClick={previous}>{t('previousPage')}</button>
+        <SpeakerNotesCapsule page={page} busy={busy} t={t} onSave={notes => updatePage({ notes })} />
+        <button type="button" className={css.presentationNav} disabled={pageIndex === project.deck.pages.length - 1} onClick={next}>{t('nextPage')}</button>
+      </div>
+    </section>
   )
 }
 

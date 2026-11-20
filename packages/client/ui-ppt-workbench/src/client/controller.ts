@@ -612,7 +612,7 @@ export class PptPanelController {
    * 修改当前页的名称、底色或转场。
    * @param patch - 页面属性。
    */
-  async updatePage(patch: { name?: string; background?: string | null; transition?: SlideTransition }): Promise<void> {
+  async updatePage(patch: { name?: string; background?: string | null; transition?: SlideTransition; notes?: string }): Promise<void> {
     const state = this.view.getSnapshot()
     const page = currentPage(state.project, state.pageIndex)
     if (page === null) return
