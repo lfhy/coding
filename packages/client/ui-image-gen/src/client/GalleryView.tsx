@@ -389,8 +389,8 @@ export function GalleryView({ sessionId, closePage, sidebarCollapsed, sidebarWid
             {/* Prompt 默认折叠两行，长文本点「展开」看全文；短文本不出现开关。 */}
             <div className={css.resultPrompt}>
               <p className={promptExpanded ? css.promptFull : css.promptClamp} title={studioItem.prompt}>{studioItem.prompt || t('image')}</p>
-              {(studioItem.prompt ?? '').length > 60
-                ? <button type="button" onClick={() => setPromptExpanded(value => !value)}>
+              {studioItem.prompt.length > 60
+                ? <button type="button" onClick={() => { setPromptExpanded(value => !value) }}>
                   {promptExpanded ? t('showLess') : t('showMore')}</button>
                 : undefined}
             </div>

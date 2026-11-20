@@ -79,6 +79,7 @@ describe('Linux 运行时的只读标签查询', () => {
     const spaces = createTaskSpacesApi(cdp)
     const listed = await spaces.listTabsForSpace('owned', tabs)
     expect(listed).toMatchObject({ tabs: [{ targetId: 'owned' }] })
-    expect(JSON.parse(await readFile(join(stateDir, 'task-spaces.json'), 'utf8')).selectedId).toBeNull()
+    const savedState = JSON.parse(await readFile(join(stateDir, 'task-spaces.json'), 'utf8')) as { selectedId: unknown }
+    expect(savedState.selectedId).toBeNull()
   })
 })
