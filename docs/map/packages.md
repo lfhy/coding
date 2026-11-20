@@ -3,7 +3,7 @@
 
 # 包清单
 
-workspace 共 279 个包，按 group 分节。每行给出包目录、职责（README 首段）、源码入口与 `tests/` 下的 spec 文件数；标 `client` 的包导出 `./client` 浏览器半，标 `bundle` 的包是 profile/bundle 装配层。
+workspace 共 280 个包，按 group 分节。每行给出包目录、职责（README 首段）、源码入口与 `tests/` 下的 spec 文件数；标 `client` 的包导出 `./client` 浏览器半，标 `bundle` 的包是 profile/bundle 装配层。
 
 模型可见工具的名称与 schema 见 [tool-catalog.md](../tool-catalog.md)，插件可配置项见 [config-catalog.md](../config-catalog.md)，依赖边见 [module-graph.md](../module-graph.md)。
 
@@ -274,6 +274,10 @@ workspace 共 279 个包，按 group 分节。每行给出包目录、职责（R
 
 - `packages/net/proxy-pool` — 出站代理池：把一组代理节点（HTTP/SOCKS5/VLESS/VMess/Hysteria2 分享链接导入）聚合成 入口 `src/index.ts`（tests 4）
 
+## packages/notes
+
+- `packages/notes/tool-notes-tabs` — 笔记专用模式的临时标签发布路由与模型工具 入口 `src/index.ts`（tests 1）
+
 ## packages/plan
 
 - `packages/plan/plan-mode` — 按 agent（智能体）分别记录到日志的 plan 协作状态，提供由部署方配置的引导内容、用于直接进入的 `/plan [message]` 命… [client] 入口 `src/index.ts`（tests 4）
@@ -281,7 +285,7 @@ workspace 共 279 个包，按 group 分节。每行给出包目录、职责（R
 ## packages/ppt
 
 - `packages/ppt/model` — PPT 工程的数据模型与校验：演示文稿（`PptDeck`）、页面（`PptPage`）、元素（`PptElement`）、主题配色与画布尺寸… 入口 `src/index.ts`
-- `packages/ppt/ppt-workbench` — PPT 创作模式的宿主能力：工程存储（`ppt/<工程目录>/deck.json`）、版本与撤销历史、`.pptx` 导出… 入口 `src/index.ts`（tests 15）
+- `packages/ppt/ppt-workbench` — PPT 创作模式的宿主能力：工程存储（`ppt/<工程目录>/deck.json`）、版本与撤销历史、`.pptx` 导出… 入口 `src/index.ts`（tests 16）
 - `packages/ppt/tool-ppt` — PPT 创作模式的十九个模型工具覆盖工程创建、打开、读写、撤销/重做、渲染、质检、导入与导出、同会话图库图片接入，以及用户模板的制作、套用和管理 入口 `src/index.ts`（tests 4）
 
 ## packages/preset

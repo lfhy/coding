@@ -25,17 +25,18 @@ import { buildPdf } from './export/pdf.ts'
 import { buildPptx } from './export/pptx.ts'
 import { collectFonts, listSystemFontFamilies, systemFontDirs, type SkippedFont } from './fonts.ts'
 import {
-  extractPptxPageEvidence, importPptx, PPT_IMPORT_MAX_BYTES, slicePptxPageEvidence,
+  assertSourceEditable, extractPptxPageEvidence, importPptx, PPT_IMPORT_MAX_BYTES, slicePptxPageEvidence,
   type PptImportReport, type PptPageEvidenceChunk,
 } from './import.ts'
 import { renderPages, type PageCapture, type RenderedPage } from './render.ts'
+import { assertSourceVersion, linkedCommit, readSourceVersion, sourcePath, withSourceRead } from './source-bound.ts'
 import { parseDeck, PptModelError, type SlideSizeId, type ThemeId } from 'coding-ppt-model'
 import { installRoutes } from './routes.ts'
 import { publishProject, readWorkspaceFile, readWorkspaceMedia } from './template-project.ts'
 import { PptTemplateStore, type PptTemplateDetail, type PptTemplateSummary } from './template-store.ts'
 import {
   createProject, editProject, listProjects, loadProject, readProjectMedia, redoProject,
-  resolveProjectDir, suggestProjectDir, undoProject, writeExport, writeProjectMedia,
+  resolveProjectDir, suggestProjectDir, undoProject, withLock, writeExport, writeProjectMedia,
   PptStoreError, type PptProjectSummary, type PptSnapshot,
 } from './store.ts'
 
@@ -200,8 +201,7 @@ export default class PptProjects extends Service {
   async state(sessionId: string): Promise<PptWorkbenchState> {
     const root = this.rootOf(sessionId)
     const activeDir = this.activeDir(sessionId)
-    const active = activeDir === undefined ? null
-      : await loadProject(resolveProjectDir(root, activeDir)).catch(() => null)
+    const active = activeDir === undefined ? null : await this.read(sessionId, activeDir)
     return {
       projects: await listProjects(root),
       active,
@@ -252,9 +252,26 @@ export default class PptProjects extends Service {
    */
   async open(sessionId: string, dir: string): Promise<PptSnapshot> {
     const absolute = this.resolveDir(sessionId, dir)
-    const snapshot = await loadProject(absolute)
+    const snapshot = await withSourceRead(this.rootOf(sessionId), absolute, () => loadProject(absolute))
     this.focus(sessionId, absolute)
     return snapshot
+  }
+
+  /** 将工作区内的真实 .pptx 导入为可编辑工程，并将后续编辑绑定回原文件。 */
+  async openSource(sessionId: string, relativePath: string): Promise<PptSnapshot> {
+    const root = await this.localRoot(sessionId)
+    const source = sourcePath(root, relativePath)
+    return withLock(source, async () => {
+      const { binding, bytes } = await readSourceVersion(root, source)
+      const title = basename(source).replace(/\.pptx$/iu, '')
+      const imported = importPptx(bytes, { title })
+      assertSourceEditable(bytes, imported)
+      await assertSourceVersion(root, binding)
+      const dir = await suggestProjectDir(root, title)
+      const snapshot = await publishProject(root, dir, imported.deck, imported.media, binding)
+      this.focus(sessionId, dir)
+      return snapshot
+    })
   }
 
   /**
@@ -263,8 +280,10 @@ export default class PptProjects extends Service {
    * @param dir - 相对或绝对目录；缺省为当前工程。
    * @returns 工程快照。
    */
-  read(sessionId: string, dir?: string): Promise<PptSnapshot> {
-    return loadProject(this.resolveDir(sessionId, dir))
+  async read(sessionId: string, dir?: string): Promise<PptSnapshot> {
+    const root = this.rootOf(sessionId)
+    const absolute = this.resolveDir(sessionId, dir)
+    return withSourceRead(root, absolute, () => loadProject(absolute))
   }
 
   /**
@@ -276,7 +295,9 @@ export default class PptProjects extends Service {
    * @returns 写入后的快照。
    */
   edit(sessionId: string, dir: string | undefined, ops: unknown, baseRevision?: number): Promise<PptSnapshot> {
-    return editProject(this.resolveDir(sessionId, dir), ops, baseRevision)
+    const root = this.rootOf(sessionId)
+    const absolute = this.resolveDir(sessionId, dir)
+    return editProject(absolute, ops, baseRevision, linkedCommit(root, absolute))
   }
 
   /**
@@ -287,7 +308,9 @@ export default class PptProjects extends Service {
    * @returns 撤销后的快照。
    */
   undo(sessionId: string, dir: string | undefined, steps: number): Promise<PptSnapshot> {
-    return undoProject(this.resolveDir(sessionId, dir), steps)
+    const root = this.rootOf(sessionId)
+    const absolute = this.resolveDir(sessionId, dir)
+    return undoProject(absolute, steps, linkedCommit(root, absolute))
   }
 
   /**
@@ -298,7 +321,9 @@ export default class PptProjects extends Service {
    * @returns 重做后的快照。
    */
   redo(sessionId: string, dir: string | undefined, steps: number): Promise<PptSnapshot> {
-    return redoProject(this.resolveDir(sessionId, dir), steps)
+    const root = this.rootOf(sessionId)
+    const absolute = this.resolveDir(sessionId, dir)
+    return redoProject(absolute, steps, linkedCommit(root, absolute))
   }
 
   /**

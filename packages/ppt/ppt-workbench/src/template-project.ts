@@ -4,6 +4,7 @@ import { lstat, mkdir, mkdtemp, open, realpath, rename, rm, rmdir, stat, writeFi
 import { basename, dirname, join, relative, resolve, sep } from 'node:path'
 import { mediaPath, parseDeck, type PptDeck } from 'coding-ppt-model'
 import { PptStoreError, createProjectFromDeck, resolveProjectDir, type PptSnapshot } from './store.ts'
+import type { PptSourceBinding } from './source-bound.ts'
 
 const MAX_MEDIA_BYTES = 100 * 1024 * 1024
 
@@ -115,7 +116,7 @@ export async function readWorkspaceMedia(root: string, dir: string, deck: PptDec
 export async function publishProject(root: string, target: string, deck: PptDeck, media: readonly {
   part: string
   bytes: Uint8Array
-}[]): Promise<PptSnapshot> {
+}[], source?: PptSourceBinding): Promise<PptSnapshot> {
   const path = await localPath(root, target, true)
   const parent = dirname(path)
   if (path === resolve(root) || basename(path) === '.') {
@@ -142,6 +143,7 @@ export async function publishProject(root: string, target: string, deck: PptDeck
     const snapshot = await createProjectFromDeck(temp, parsed)
     if (files.size > 0) await mkdir(join(temp, 'media'))
     for (const [part, bytes] of files) await writeFile(join(temp, part), bytes, { flag: 'wx' })
+    if (source !== undefined) await writeFile(join(temp, 'source.json'), `${JSON.stringify(source, null, 2)}\n`, { flag: 'wx', mode: 0o600 })
     try { await mkdir(path) } catch (error) { failure(error, path) }
     reserved = true
     reservation = await stat(path)

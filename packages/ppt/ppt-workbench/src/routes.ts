@@ -224,6 +224,13 @@ export function installRoutes(ctx: Context, service: PptProjects): void {
     return snapshotBody(await service.open(sessionId, dir))
   })
 
+  route('source/open', ['POST'], async (body) => {
+    const sessionId = sessionIdOf(body)
+    const source = optionalString(body.source, 'source')
+    if (source === undefined) throw new PptStoreError('bad-request', 'source 必须提供')
+    return snapshotBody(await service.openSource(sessionId, source))
+  })
+
   route('create', ['POST'], async (body) => {
     const sessionId = sessionIdOf(body)
     const title = optionalString(body.title, 'title')

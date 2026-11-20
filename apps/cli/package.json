@@ -73,6 +73,7 @@
     "coding-tool-fs-search": "workspace:^",
     "coding-tool-goal": "workspace:^",
     "coding-tool-image-gen": "workspace:^",
+    "coding-tool-notes-tabs": "workspace:^",
     "coding-tool-ppt": "workspace:^",
     "coding-tool-pwsh": "workspace:^",
     "coding-tool-ralph": "workspace:^",

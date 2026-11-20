@@ -49,6 +49,13 @@ export interface PptProjectSummary {
   readonly updatedAt: number
 }
 
+/** 编辑候选已算出、工程尚未写盘时的提交回调；来源联动在同一工程队列内使用。 */
+export interface PptCommit {
+  /** 在读取旧工程版本前恢复未完成的原件事务；必须在工程队列内调用。 */
+  prepare(): Promise<void>
+  (current: PptSnapshot, previous: PptHistory, next: PptSnapshot, history: PptHistory): Promise<void>
+}
+
 /** 工程操作失败时抛出；`code` 供路由映射成 HTTP 状态码。 */
 export class PptStoreError extends Error {
   constructor(readonly code: 'not-found' | 'conflict' | 'forbidden' | 'bad-request', message: string) {
@@ -315,9 +322,11 @@ export async function editProject(
   dir: string,
   rawOps: unknown,
   baseRevision?: number,
+  commit?: PptCommit,
 ): Promise<PptSnapshot> {
   const ops: PptOp[] = parseOps(rawOps)
   return withLock(dir, async () => {
+    await commit?.prepare()
     const current = await loadProject(dir)
     if (baseRevision !== undefined && baseRevision !== current.revision) {
       throw new PptStoreError(
@@ -335,14 +344,16 @@ export async function editProject(
     const entries = [...history.entries.slice(0, history.cursor + 1), { revision, deck }]
     const pruned = entries.length > MAX_ENTRIES ? entries.slice(entries.length - MAX_ENTRIES) : entries
     const next: PptHistory = { cursor: pruned.length - 1, nextRevision: revision + 1, entries: pruned }
-    await writeJson(join(dir, DECK_FILE), { revision, deck })
-    await writeJson(join(dir, HISTORY_FILE), next)
-    return snapshotOf(dir, revision, deck, next, Date.now())
+    const snapshot = snapshotOf(dir, revision, deck, next, Date.now())
+    if (commit === undefined) await writeProjectVersion(dir, snapshot, next)
+    else await commit(current, history, snapshot, next)
+    return snapshot
   })
 }
 
-async function moveCursor(dir: string, steps: number, delta: -1 | 1): Promise<PptSnapshot> {
+async function moveCursor(dir: string, steps: number, delta: -1 | 1, commit?: PptCommit): Promise<PptSnapshot> {
   return withLock(dir, async () => {
+    await commit?.prepare()
     const current = await loadProject(dir)
     const history = await readJson(join(dir, HISTORY_FILE)).then(historyOf).catch(() => ({
       cursor: 0,
@@ -356,10 +367,17 @@ async function moveCursor(dir: string, steps: number, delta: -1 | 1): Promise<Pp
     const entry = history.entries[cursor]
     if (entry === undefined) throw new PptStoreError('bad-request', '历史游标越界')
     const next: PptHistory = { ...history, cursor }
-    await writeJson(join(dir, DECK_FILE), { revision: entry.revision, deck: entry.deck })
-    await writeJson(join(dir, HISTORY_FILE), next)
-    return snapshotOf(dir, entry.revision, entry.deck, next, Date.now())
+    const snapshot = snapshotOf(dir, entry.revision, entry.deck, next, Date.now())
+    if (commit === undefined) await writeProjectVersion(dir, snapshot, next)
+    else await commit(current, history, snapshot, next)
+    return snapshot
   })
+}
+
+/** 原件提交后恢复工程版本时复用同一写入顺序。 */
+export async function writeProjectVersion(dir: string, snapshot: PptSnapshot, history: PptHistory): Promise<void> {
+  await writeJson(join(dir, HISTORY_FILE), history)
+  await writeJson(join(dir, DECK_FILE), { revision: snapshot.revision, deck: snapshot.deck })
 }
 
 /**
@@ -368,8 +386,8 @@ async function moveCursor(dir: string, steps: number, delta: -1 | 1): Promise<Pp
  * @param steps - 步数（1–20）。
  * @returns 撤销后的快照。
  */
-export async function undoProject(dir: string, steps: number): Promise<PptSnapshot> {
-  return moveCursor(dir, clampSteps(steps), -1)
+export async function undoProject(dir: string, steps: number, commit?: PptCommit): Promise<PptSnapshot> {
+  return moveCursor(dir, clampSteps(steps), -1, commit)
 }
 
 /**
@@ -378,8 +396,8 @@ export async function undoProject(dir: string, steps: number): Promise<PptSnapsh
  * @param steps - 步数（1–20）。
  * @returns 重做后的快照。
  */
-export async function redoProject(dir: string, steps: number): Promise<PptSnapshot> {
-  return moveCursor(dir, clampSteps(steps), 1)
+export async function redoProject(dir: string, steps: number, commit?: PptCommit): Promise<PptSnapshot> {
+  return moveCursor(dir, clampSteps(steps), 1, commit)
 }
 
 function clampSteps(steps: number): number {

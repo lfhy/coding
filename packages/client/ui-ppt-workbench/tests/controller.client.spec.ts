@@ -69,6 +69,40 @@ function editingFetcher(initial: unknown = editableProject()) {
   return { fetcher, requests, failNextEdit: () => { failEdit = true }, setActive: (next: unknown) => { active = next } }
 }
 
+/** 来源切换期间保留可控响应，用于核对旧轮询和旧源不能覆盖新稿。 */
+function sourceFetcher() {
+  let active: unknown = project
+  let fail = false
+  let release: ((response: Response) => void) | null = null
+  let holdNext = false
+  const requests: { path: string; body: unknown }[] = []
+  const fetcher = vi.fn(async (path: string, init?: RequestInit): Promise<Response> => {
+    const body: unknown = typeof init?.body === 'string' ? JSON.parse(init.body) : null
+    requests.push({ path, body })
+    if (path === '/api/ppt/source/open') {
+      if (fail) return Response.json({ ok: false, error: { message: '原稿不存在 /private/path' } }, { status: 404 })
+      if (holdNext) {
+        holdNext = false
+        return new Promise((resolve) => { release = resolve })
+      }
+      active = { ...project, dir: `${ROOT}/ppt/source`, revision: 2 }
+      return Response.json({ ok: true, project: active })
+    }
+    if (path.startsWith('/api/ppt/state?')) return Response.json({ ok: true, state: {
+      root: ROOT, projects: [], active, openRequest: null,
+    } })
+    if (path === '/api/ppt/fonts') return Response.json({ ok: true, fonts: [] })
+    throw new Error(`unexpected request: ${path}`)
+  })
+  return {
+    fetcher, requests,
+    setActive: (snapshot: unknown) => { active = snapshot },
+    setFail: (next: boolean) => { fail = next },
+    hold: () => { holdNext = true },
+    resolve: (snapshot: unknown) => { const done = release; release = null; done?.(Response.json({ ok: true, project: snapshot })) },
+  }
+}
+
 describe('本机字体目录', () => {
   it('读取一次字体列表并去重，失败时保留空列表不影响画布', async () => {
     const calls: string[] = []
@@ -160,6 +194,56 @@ describe('PPT 面板轮询', () => {
     await panel.refresh()
     expect(panel.view.getSnapshot()).toMatchObject({ phase: 'ready', project: null })
     expect(empty.requests).toHaveLength(1)
+    panel.dispose()
+  })
+
+  it('笔记页按会话和来源路径打开原稿，并继续采纳该工程的新修订', async () => {
+    const service = sourceFetcher()
+    const panel = new PptPanelController(SESSION, service.fetcher)
+    panel.show(true, true)
+    await panel.openSource('slides/report.pptx')
+    expect(service.requests.find(item => item.path === '/api/ppt/source/open')?.body)
+      .toEqual({ sessionId: SESSION, source: 'slides/report.pptx' })
+    expect(panel.view.getSnapshot()).toMatchObject({ phase: 'ready', sourceError: false,
+      project: { dir: `${ROOT}/ppt/source`, revision: 2 } })
+    await panel.openSource('slides/report.pptx')
+    expect(service.requests.filter(item => item.path === '/api/ppt/source/open')).toHaveLength(1)
+    service.setActive({ ...project, dir: `${ROOT}/ppt/source`, revision: 3 })
+    await panel.refresh()
+    expect(panel.view.getSnapshot().project?.revision).toBe(3)
+    panel.show(false, true)
+    panel.dispose()
+  })
+
+  it('原稿失败清掉旧工程与敏感错误，允许同路径重试', async () => {
+    const service = sourceFetcher()
+    const panel = new PptPanelController(SESSION, service.fetcher)
+    await panel.refresh()
+    service.setFail(true)
+    await panel.openSource('slides/missing.pptx')
+    expect(panel.view.getSnapshot()).toMatchObject({ phase: 'error', sourceError: true, project: null, notice: null })
+    await panel.openSource('slides/missing.pptx')
+    expect(service.requests.filter(item => item.path === '/api/ppt/source/open')).toHaveLength(2)
+    panel.dispose()
+  })
+
+  it('旧来源响应和打开期间轮询不会覆盖较新的来源', async () => {
+    const service = sourceFetcher()
+    const panel = new PptPanelController(SESSION, service.fetcher)
+    service.hold()
+    panel.show(true, true)
+    const old = panel.openSource('slides/old.pptx')
+    await vi.waitFor(() => { expect(service.requests.some(item => item.path === '/api/ppt/source/open')).toBe(true) })
+    const next = panel.openSource('slides/new.pptx')
+    await panel.refresh()
+    expect(panel.view.getSnapshot()).toMatchObject({ phase: 'loading', project: null })
+    service.resolve({ ...project, dir: `${ROOT}/ppt/old` })
+    await Promise.all([old, next])
+    expect(service.requests.filter(item => item.path === '/api/ppt/source/open').map(item => item.body))
+      .toEqual([{ sessionId: SESSION, source: 'slides/old.pptx' },
+        { sessionId: SESSION, source: 'slides/new.pptx' }])
+    expect(panel.view.getSnapshot()).toMatchObject({ phase: 'ready', project: { dir: `${ROOT}/ppt/source` } })
+    panel.show(false, true)
     panel.dispose()
   })
 

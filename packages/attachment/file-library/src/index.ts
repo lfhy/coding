@@ -37,6 +37,9 @@ const EXTENSION = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp
 /** 笔记接受的 Markdown 扩展名；其他扩展名一律不是笔记。 */
 const NOTE_EXTENSIONS = new Set(['.md', '.markdown'])
 
+/** 目录树及单文件改名、删除允许的扩展名；不扩大 Markdown 读写与文件管理记录范围。 */
+const NOTE_TREE_FILE_EXTENSIONS: ReadonlySet<string> = new Set([...NOTE_EXTENSIONS, '.pptx'])
+
 /** 单篇笔记的原始字节上限；原文区把全文载入内存，超限的条目拒绝读写。 */
 const NOTE_MAX_BYTES = 1024 * 1024
 
@@ -521,7 +524,7 @@ export class FileLibrary extends Service {
   }
 
   /**
-   * 扫描笔记根目录返回目录树：全部目录与全部 Markdown 文件，符号链接条目不进入树。
+   * 扫描笔记根目录返回目录树：全部目录、Markdown 与真实普通 `.pptx` 文件，符号链接条目不进入树。
    * 深度与节点总数超限视为结构异常，整棵树拒绝。
    * @returns 根级条目数组；子节点按名称排序。
    */
@@ -540,8 +543,9 @@ export class FileLibrary extends Service {
         const rel = `${prefix}${entry.name}`
         if (entry.isDirectory()) {
           nodes.push({ name: entry.name, kind: 'dir', path: rel, mtimeMs: (await lstat(full)).mtimeMs, children: await scan(full, `${rel}/`, depth + 1) })
-        } else if (entry.isFile() && NOTE_EXTENSIONS.has(extname(entry.name).toLowerCase())) {
-          nodes.push({ name: entry.name, kind: 'file', path: rel, mtimeMs: (await lstat(full)).mtimeMs })
+        } else if (entry.isFile() && NOTE_TREE_FILE_EXTENSIONS.has(extname(entry.name).toLowerCase())) {
+          const info = await lstat(full)
+          if (info.isFile() && !info.isSymbolicLink()) nodes.push({ name: entry.name, kind: 'file', path: rel, mtimeMs: info.mtimeMs })
         }
       }
       return nodes
@@ -682,9 +686,9 @@ export class FileLibrary extends Service {
   }
 
   /**
-   * 在原笔记或目录的同一父目录内安全改名；不覆盖已有条目。
-   * @param relativePath - 要改名的笔记或目录路径。
-   * @param name - 新的单段名称。
+   * 在原文件或目录的同一父目录内安全改名；文件保留原扩展名，不覆盖已有条目。
+   * @param relativePath - 要改名的 Markdown、PPTX 或目录路径。
+   * @param name - 新的单段名称；文件可省略扩展名，但不能指定其他扩展名。
    * @returns 改名后的相对路径。
    */
   async renameNote(relativePath: string, name: string): Promise<{ path: string }> {
@@ -706,9 +710,14 @@ export class FileLibrary extends Service {
         throw error
       })
       if (current.isSymbolicLink() || !current.isFile() && !current.isDirectory()) throw new TypeError('笔记条目无效')
-      if (current.isFile() && !NOTE_EXTENSIONS.has(extname(target).toLowerCase())) throw new TypeError('笔记扩展名无效')
+      const sourceExtension = current.isFile() ? extname(target) : ''
+      if (current.isFile() && !NOTE_TREE_FILE_EXTENSIONS.has(sourceExtension.toLowerCase())) throw new TypeError('笔记扩展名无效')
       const leaf = safeName(name)
-      const fileName = current.isFile() && !NOTE_EXTENSIONS.has(extname(leaf).toLowerCase()) ? `${leaf}.md` : leaf
+      const requestedExtension = current.isFile() ? extname(leaf) : ''
+      if (current.isFile() && requestedExtension !== '' && requestedExtension.toLowerCase() !== sourceExtension.toLowerCase()) {
+        throw new TypeError('文件扩展名不可更改')
+      }
+      const fileName = current.isFile() ? `${requestedExtension === '' ? leaf : leaf.slice(0, -requestedExtension.length)}${sourceExtension}` : leaf
       const targetPath = join(parent, fileName)
       if (targetPath === target) return { path: rel }
       try { await lstat(targetPath); throw new NoteConflictError('笔记已存在') }
@@ -724,8 +733,8 @@ export class FileLibrary extends Service {
   }
 
   /**
-   * 删除笔记或整个目录；拒绝将符号链接作为目标，目录中的链接只移除链接本身。
-   * @param relativePath - 要删除的笔记或目录路径。
+   * 删除单个 Markdown、PPTX 文件或整个目录；拒绝将符号链接作为目标，目录中的链接只移除链接本身。
+   * @param relativePath - 要删除的文件或目录路径。
    * @returns 删除完成后兑现；目标不存在或路径越界时拒绝。
    */
   async deleteNote(relativePath: string): Promise<void> {
@@ -750,7 +759,7 @@ export class FileLibrary extends Service {
         if (!(await realpath(entry)).startsWith(realNotes + sep)) throw new TypeError('笔记路径无效')
         await rm(entry, { recursive: true })
       } else {
-        if (!NOTE_EXTENSIONS.has(extname(entry).toLowerCase())) throw new TypeError('笔记扩展名无效')
+        if (!NOTE_TREE_FILE_EXTENSIONS.has(extname(entry).toLowerCase())) throw new TypeError('笔记扩展名无效')
         await unlink(entry)
       }
       await syncDirectory(realParent)

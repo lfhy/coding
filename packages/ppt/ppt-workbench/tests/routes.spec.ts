@@ -9,6 +9,8 @@ import Include from '@deepseek-ai/cordis-plugin-include'
 import { WebServer } from 'coding-host-webserver'
 import { HostConnectionService } from 'coding-client-connection'
 import SessionStore, { SessionId } from 'coding-session'
+import { buildPptx } from '../src/export/pptx.ts'
+import { importPptx } from '../src/import.ts'
 import PptProjects from '../src/index.ts'
 
 const SESSION = 'ppt-route-session'
@@ -60,6 +62,36 @@ async function state(base: string, sessionId = SESSION, init?: RequestInit): Pro
 }
 
 describe('PPT 状态路由的真实 HTTP 组合', () => {
+  it('来源打开路由复用面板编辑，并在源文件外部变化时轮询返回冲突', async () => {
+    const { base } = await boot()
+    const source = join(root!, 'presentation.pptx')
+    const deck = {
+      format: 1 as const, title: '讲稿', size: '16:9' as const, theme: 'ink' as const,
+      pages: [{ id: 'slide', name: '标题页', background: null, transition: 'none' as const, elements: [] }],
+    }
+    await writeFile(source, buildPptx(deck))
+    const post = (path: string, body: Record<string, unknown>) => fetch(`${base}/api/ppt/${path}`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ sessionId: SESSION, ...body }),
+    })
+    const opened = await post('source/open', { source: 'presentation.pptx' })
+    expect(opened.status).toBe(200)
+    const result = await opened.json() as { project: { revision: number; deck: { pages: { id: string }[] } } }
+    expect(result.project.revision).toBe(1)
+    const edited = await post('edit', { baseRevision: 1, ops: [
+      { op: 'add_page', title: '新页' },
+    ] })
+    expect(edited.status).toBe(200)
+    expect(importPptx(await readFile(source), { title: '回读' }).deck.pages).toHaveLength(2)
+    const legacy = await post('source/open', {})
+    expect(legacy.status).toBe(400)
+    expect(await legacy.json()).toMatchObject({ ok: false, error: { code: 'bad-request', message: 'source 必须提供' } })
+    await writeFile(source, buildPptx(deck))
+    const conflict = await state(base)
+    expect(conflict.status).toBe(409)
+    expect(await conflict.json()).toMatchObject({ error: { code: 'conflict' } })
+  })
+
   it('上传图片由工程服务统一校验，成功路径可从媒体路由读回', async () => {
     const { base, projects } = await boot()
     const created = await projects.create(SESSION, { title: '配图' })

@@ -206,6 +206,7 @@
 - `skill-note-export` → `coding-skill-note-export`
 - `tool-skill` → `coding-tool-skill`
 - `tool-goal` → `coding-tool-goal`
+- `tool-notes-tabs` → `coding-tool-notes-tabs`
 - `planning` → `cordis:group`
 - `plan-mode` → `coding-plan-mode`
 - `compaction` → `cordis:group`
@@ -227,6 +228,7 @@
 - `tool-browser` → `coding-tool-browser-ego`
 - `tool-image-gen` → `coding-tool-image-gen`
 - `tool-presentation` → `coding-agent-tool-presentation`
+- `tool-ppt` → `coding-tool-ppt`
 
 ## `apps/cli/config/agent-presets/ppt/agent.cordis.yml`
 

@@ -148,6 +148,8 @@ const props = {
   assistantOpen: false,
   assistantPanelId: 'note-assistant',
   toggleAssistant,
+  sessionId: 's-notes',
+  renderSlot: (_key: string, owner: { path: string }) => <div>演示文稿 {owner.path}</div>,
   useStore: uiStore.useStore,
   actions: uiStore.actions,
 } as unknown as NotesPageProps
@@ -234,7 +236,7 @@ describe('NotesPage', () => {
     await act(async () => { fireEvent.click(within(tabs).getByRole('button', { name: '关闭「b」' })) })
     expect(within(tabs).queryByRole('tab', { name: 'b' })).toBeNull()
     expect(screen.getByRole('heading', { level: 2, name: /好呀/u })).toBeTruthy()
-    expect(uiStore.instance.getSnapshot()).toEqual({ path: null, tabs: [], expanded: ['d'] })
+    expect(uiStore.instance.getSnapshot()).toEqual({ path: null, activePath: null, tabs: [], expanded: ['d'] })
   })
 
   it('关闭或切换标签前保存草稿；冲突时不丢失标签和内容', async () => {
@@ -820,7 +822,7 @@ describe('NotesPage', () => {
     await act(async () => { fireEvent.click(treeRow('b')) })
     await act(async () => {})
     expect(screen.getByRole<HTMLTextAreaElement>('textbox', { name: '原始文本' }).value).toBe('hello b')
-    expect(uiStore.instance.getSnapshot()).toEqual({ path: 'd/b.md', tabs: ['d/b.md'], expanded: ['d'] })
+    expect(uiStore.instance.getSnapshot()).toEqual({ path: 'd/b.md', activePath: 'd/b.md', tabs: ['d/b.md'], expanded: ['d'] })
     // 卸载页面等价于离开笔记页：正文与目录位置都应留给下一次挂载。
     first.unmount()
     await mount(undefined, { openNote: null })

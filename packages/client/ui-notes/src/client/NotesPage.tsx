@@ -6,21 +6,23 @@ import {
   Toast, IconTrashOutline16,
   type MenuEntry, type SidebarRootItem,
 } from 'coding-client-ui-primitives'
-import type { PropsLocale, PropsRuntime, PropsStore } from 'coding-client-ui-slots'
+import type { PropsLocale, PropsRenderSlots, PropsRuntime, PropsStore } from 'coding-client-ui-slots'
 import { NS, type NotesLocaleKey } from './locales.ts'
 import { NoteDeleteDialog } from './NoteDeleteDialog.tsx'
 import { NoteNameDialog } from './NoteNameDialog.tsx'
 import { NotesDocument } from './NotesDocument.tsx'
 import { NotesTabs } from './NotesTabs.tsx'
-import { findEntry, labelOf, latestWritten, noteFiles, removeTreeEntry } from './notes-tree.ts'
+import { filePaths, findEntry, labelOf, latestWritten, noteFiles, removeTreeEntry } from './notes-tree.ts'
 import type { createNotesUiStore } from './notes-ui-store.ts'
 import { useNoteDraft } from './useNoteDraft.ts'
+import { usePublishNotesTabs } from './usePublishNotesTabs.ts'
 import { notesCreate, notesCreateDirectory, notesDelete, notesRename, notesTree, type NotesTreeEntry } from './wire.ts'
 import { exportImage, exportMarkdown, exportPdf, exportWord, type NoteExportFormat } from './export/index.ts'
 import css from './NotesPage.module.css'
 
 export type NotesPageProps = PropsRuntime<'shell.page'> & PropsLocale<typeof NS>
   & PropsStore<ReturnType<typeof createNotesUiStore>>
+  & PropsRenderSlots<'notes.document.ppt'>
 
 /** AI 助手改动检测的目录轮询间隔。 */
 const TREE_POLL_MS = 4000
@@ -36,7 +38,7 @@ type DialogKind = 'create' | 'folder' | 'reload' | 'rename' | 'delete'
  */
 export function NotesPage({
   closePage, t, sidebarCollapsed, sidebarWidth, assistantOpen, assistantPanelId, toggleAssistant,
-  useStore, actions,
+  sessionId, useStore, actions, renderSlot,
 }: NotesPageProps) {
   const titleId = useId()
   const tabId = useId()
@@ -56,12 +58,16 @@ export function NotesPage({
   const rememberedPath = useStore(state => state.path)
   const storedTabs = useStore(state => state.tabs)
   const openTabs = storedTabs ?? (rememberedPath === null ? [] : [rememberedPath])
+  const activePath = useStore(state => state.activePath ?? state.path)
+  const pptPath = activePath !== null && /\.pptx$/iu.test(activePath) ? activePath : null
   const rememberedExpanded = useStore(state => state.expanded)
-  const restored = useRef({ path: rememberedPath, expanded: rememberedExpanded })
-  /** 待恢复的笔记路径；第一次目录就绪时打开它，之后保持 null。 */
-  const restorePending = useRef(restored.current.path)
+  const restored = useRef({ path: rememberedPath, activePath, expanded: rememberedExpanded })
+  /** 待恢复的 Markdown 路径；第一次目录就绪时打开它，之后保持 null。 */
+  const restorePending = useRef(restored.current.activePath !== null
+    && /\.pptx$/iu.test(restored.current.activePath) ? null : restored.current.path)
   const [tree, setTree] = useState<NotesTreeEntry[]>([])
   const [treeState, setTreeState] = useState<DirectoryState>('loading')
+  const [treeReady, setTreeReady] = useState(false)
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set(restored.current.expanded))
   const [creationDirectory, setCreationDirectory] = useState('')
   const [createFailed, setCreateFailed] = useState(false)
@@ -85,14 +91,15 @@ export function NotesPage({
   }, [])
 
   const { draft, saveLabel, select, clear, edit, save, reload, refresh, getPath, flush, renamePath, removePath } = useNoteDraft(notify)
+  usePublishNotesTabs(sessionId, openTabs, activePath ?? null, treeReady)
 
   // 当前正文路径写入会话级浏览位置：切走页面或关掉窗口后再回来仍打开同一篇。
   // 恢复尚未完成时保留记住的路径，避免挂载瞬间被清空。
   const draftPath = draft?.path
   useEffect(() => {
     if (draftPath === undefined && restorePending.current !== null) return
-    actions.rememberNote(draftPath ?? null)
-  }, [actions, draftPath])
+    if (draftPath !== undefined && draftPath !== rememberedPath) actions.rememberNote(draftPath)
+  }, [actions, draftPath, rememberedPath])
 
   useEffect(() => { actions.rememberExpanded([...expanded]) }, [actions, expanded])
 
@@ -148,21 +155,22 @@ export function NotesPage({
         const pending = restorePending.current
         restorePending.current = null
         if (status === 'loading') {
-          actions.restoreTabs(notes.map(note => note.path))
+          actions.restoreTabs(filePaths(fresh))
         }
-        if (path !== undefined) {
+        setTreeReady(true)
+        if (path !== undefined && !/\.pptx$/iu.test(path)) {
           await refresh(findEntry(fresh, path)?.mtimeMs, signal)
         } else if (creatingRequest.current === null && pending !== null) {
           // 切回页面时恢复上次打开的笔记；它已被删除则停在欢迎页。
           if (findEntry(fresh, pending)?.kind === 'file') {
-            await select(pending)
+            if (await select(pending)) actions.openNote(pending)
           } else {
             actions.rememberNote(null)
           }
-        } else if (creatingRequest.current === null && written !== undefined) {
-          // 进入页面时保持欢迎页；只在助手刚写入后自动打开那一篇，显示更新后的内容。
+        } else if (creatingRequest.current === null && written !== undefined && restored.current.activePath === null) {
+          // 欢迎页只在助手刚写入 Markdown 后自动打开它；不盖掉已恢复的 PPTX 标签。
           setExpanded(new Set(written.parents))
-          await select(written.path)
+          if (await select(written.path)) actions.openNote(written.path)
         }
         status = 'ready'
         if (!signal.aborted) setTreeState('ready')
@@ -184,21 +192,40 @@ export function NotesPage({
     }
   }, [actions, getPath, notify, refresh, select])
 
+  const selectTab = useCallback(async (path: string) => {
+    if (/\.pptx$/iu.test(path)) {
+      if (await flush()) {
+        actions.openPpt(path)
+      }
+    } else if (await select(path)) {
+      actions.openNote(path)
+    }
+  }, [actions, flush, select])
+
   const closeTab = useCallback(async (path: string) => {
-    if (getPath() !== path) {
+    if (activePath !== path) {
       // 关闭尚在读取的标签也必须撤销它的加载，避免迟到响应把已关闭的标签重新打开。
-      removePath(path)
+      if (getPath() === path) {
+        if (!await clear()) return
+      } else removePath(path)
       actions.closeTab(path)
       return
     }
     const index = openTabs.indexOf(path)
     const next = openTabs[index + 1] ?? openTabs[index - 1]
-    if (next === undefined ? await clear() : await select(next)) {
-      if (next !== undefined) actions.rememberNote(next)
-      actions.closeTab(path)
-      if (next === undefined) titleRef.current?.focus({ preventScroll: true })
-    }
-  }, [actions, clear, getPath, openTabs, removePath, select])
+    if (/\.pptx$/iu.test(path)) {
+      if (next !== undefined && !/\.pptx$/iu.test(next)) {
+        if (!await select(next)) return
+      } else if (next === undefined) {
+        if (!await clear()) return
+      }
+    } else if (next === undefined || /\.pptx$/iu.test(next)) {
+      if (!await clear()) return
+    } else if (!await select(next)) return
+    if (next !== undefined && !/\.pptx$/iu.test(next)) actions.openNote(next)
+    actions.closeTab(path)
+    if (next === undefined) titleRef.current?.focus({ preventScroll: true })
+  }, [actions, activePath, clear, getPath, openTabs, removePath, select])
 
   const labelOfPath = (path: string) => labelOf(findEntry(tree, path)?.name ?? path.replace(/^.*\//u, ''))
 
@@ -264,8 +291,8 @@ export function NotesPage({
         if (needle !== '' && !label.toLocaleLowerCase(locale).includes(needle)) continue
         const open = folder && expanded.has(entry.path)
         out.push({
-          id: entry.path, label, icon: folder ? 'files' : 'notes', depth,
-          ...(folder ? { folder, open } : { iconTone: 'blue', active: draft?.path === entry.path }),
+          id: entry.path, label, icon: folder || /\.pptx$/iu.test(entry.path) ? 'files' : 'notes', depth,
+          ...(folder ? { folder, open } : { iconTone: 'blue', active: activePath === entry.path }),
           meta: date.format(entry.mtimeMs),
           actions: <>
             {folder && <>
@@ -285,7 +312,7 @@ export function NotesPage({
           </>,
           onSelect: () => {
             if (folder) toggleDir(entry.path)
-            else void select(entry.path)
+            else void selectTab(entry.path)
           },
           onContextMenu: (event) => { openContextMenu(entry, event) },
         })
@@ -295,7 +322,7 @@ export function NotesPage({
     const items: SidebarRootItem[] = []
     flatten(tree, items, 0)
     return items
-  }, [tree, expanded, draft?.path, locale, needle, select, toggleDir, openContextMenu, openCreateDialog, openTargetDialog, t])
+  }, [tree, expanded, activePath, locale, needle, selectTab, toggleDir, openContextMenu, openCreateDialog, openTargetDialog, t])
 
   const closeSearch = () => {
     setSearchOpen(false)
@@ -331,7 +358,7 @@ export function NotesPage({
     creatingRequest.current = request
     setCreating(true)
     try {
-      const extension = target.kind === 'file' && /\.(md|markdown)$/iu.test(target.name)
+      const extension = target.kind === 'file' && /\.(md|markdown|pptx)$/iu.test(target.name)
         ? target.name.slice(target.name.lastIndexOf('.')) : ''
       const { path } = await notesRename(target.path, target.kind === 'file' ? `${name}${extension || '.md'}` : name)
       const fresh = await refreshTree()
@@ -368,11 +395,13 @@ export function NotesPage({
       treeRevision.current += 1
       setTree(previous => removeTreeEntry(previous, target.path))
       for (const path of seenNotes.current.keys()) if (deleted(path)) seenNotes.current.delete(path)
-      const activeRemoved = draft !== null && deleted(draft.path)
+      const activeRemoved = activePath !== null && deleted(activePath)
       const remaining = openTabs.filter(path => !deleted(path))
       removePath(target.path)
       actions.removeTabs(target.path)
-      if (activeRemoved && remaining[0] !== undefined) void select(remaining[0])
+      if (activeRemoved && remaining[0] !== undefined && !/\.pptx$/iu.test(remaining[0])) {
+        if (await select(remaining[0])) actions.openNote(remaining[0])
+      }
       setExpanded(previous => new Set([...previous].filter(path => !deleted(path))))
       setDialog(null)
       setActionTarget(null)
@@ -411,7 +440,7 @@ export function NotesPage({
         if (!request.signal.aborted) setTree(entries)
         return true
       }, () => false)
-      const [updated] = await Promise.all([fresh, folder ? undefined : select(path)])
+      const [updated] = await Promise.all([fresh, folder ? undefined : selectTab(path)])
       request.signal.throwIfAborted()
       setDialog(null)
       notify(updated ? folder ? 'folderCreated' : 'noteCreated' : 'createdRefreshError')
@@ -428,7 +457,7 @@ export function NotesPage({
     { id: 'folder', label: t('newFolder'), icon: <IconProjectAddOutline16 /> },
   ]
 
-  const selectedLabel = draft === null ? t('title') : labelOfPath(draft.path)
+  const selectedLabel = activePath === null ? t('title') : labelOfPath(activePath)
 
   const exportEntries: readonly MenuEntry[] = [
     { id: 'markdown', label: t('exportMarkdown') },
@@ -514,12 +543,14 @@ export function NotesPage({
         </div>}
         items={treeItems} />
       <div className={css.document}>
-        <NotesTabs paths={openTabs} activePath={draft?.path} panelId={panelId}
-          idPrefix={tabId} labelOfPath={labelOfPath} onSelect={(path) => { void select(path) }}
+        <NotesTabs paths={openTabs} activePath={activePath} panelId={panelId}
+          idPrefix={tabId} labelOfPath={labelOfPath} onSelect={(path) => { void selectTab(path) }}
           onClose={(path) => { void closeTab(path) }} t={t} />
         <NotesDocument title={selectedLabel} titleId={titleId} titleRef={titleRef} panelId={panelId}
-          tabId={draft === null ? undefined : `${tabId}-${openTabs.indexOf(draft.path)}`}
-          content={draft?.content} saveLabel={saveLabel} treeState={treeState}
+          tabId={activePath === null ? undefined : `${tabId}-${openTabs.indexOf(activePath)}`}
+          content={pptPath === null ? draft?.content : undefined} saveLabel={pptPath === null ? saveLabel : undefined}
+          pptContent={pptPath === null ? undefined : renderSlot('notes.document.ppt', { shown: true, path: pptPath })}
+          treeState={treeState}
           exporting={exporting} exportMenuOpen={exportMenuOpen} exportEntries={exportEntries}
           assistantOpen={assistantOpen} assistantPanelId={assistantPanelId}
           onToggleAssistant={toggleAssistant} onToggleExport={() => { setExportMenuOpen(open => !open) }}

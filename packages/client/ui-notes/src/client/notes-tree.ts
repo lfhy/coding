@@ -2,7 +2,7 @@ import type { NotesTreeEntry } from './wire.ts'
 
 /** 去掉 Markdown 扩展名的文件名，供目录与标签显示。 */
 export function labelOf(name: string): string {
-  return name.replace(/\.(md|markdown)$/iu, '')
+  return name.replace(/\.(md|markdown|pptx)$/iu, '')
 }
 
 /** 在目录树中查找指定相对路径的条目。 */
@@ -31,11 +31,17 @@ export interface NoteFile {
   parents: readonly string[]
 }
 
-/** 按目录树显示顺序扁平化所有笔记文件。 */
+/** 按目录树显示顺序收集可打开的 Markdown 和 PPTX 路径。 */
+export function filePaths(entries: readonly NotesTreeEntry[]): string[] {
+  return entries.flatMap(entry => entry.kind === 'file' ? [entry.path]
+    : entry.children === undefined ? [] : filePaths(entry.children))
+}
+
+/** 按目录树显示顺序扁平化所有 Markdown 文件，供助手写入检测使用。 */
 export function noteFiles(entries: readonly NotesTreeEntry[], parents: readonly string[] = []): NoteFile[] {
   const notes: NoteFile[] = []
   for (const entry of entries) {
-    if (entry.kind === 'file') {
+    if (entry.kind === 'file' && !/\.pptx$/iu.test(entry.path)) {
       notes.push({ path: entry.path, mtimeMs: entry.mtimeMs, parents })
     } else if (entry.children !== undefined) {
       notes.push(...noteFiles(entry.children, [...parents, entry.path]))

@@ -83,8 +83,20 @@ describe('notes composition', () => {
     // 工程脚手架技能从这份 roster 里移除；要搭工程应切到标准模式。
     for (const skill of DEVELOPER_SKILLS) expect(names.has(skill), skill).toBe(false)
     // 文件与对话能力仍是完整的一套，本模式不是删减版工具面。
-    for (const tool of ['coding-tool-fs', 'coding-tool-skill', 'coding-tool-bash']) {
+    for (const tool of ['coding-tool-fs', 'coding-tool-skill', 'coding-tool-bash', 'coding-tool-ppt']) {
       expect(names.has(tool), tool).toBe(true)
+    }
+  })
+
+  it('只在笔记模式挂载标签发布路由与模型工具', async () => {
+    const notes = activeRows(await loadEntries(COMPOSITION))
+    expect(notes.filter(row => row.name === 'coding-tool-notes-tabs')).toEqual([
+      expect.objectContaining({ id: 'tool-notes-tabs', name: 'coding-tool-notes-tabs' }),
+    ])
+    const others = ['standard', 'ppt', 'chat']
+    for (const id of others) {
+      const entries = activeRows(await loadEntries(join(PRESET_ROOT, id, 'agent.cordis.yml')))
+      expect(entries.some(row => row.name === 'coding-tool-notes-tabs'), id).toBe(false)
     }
   })
 

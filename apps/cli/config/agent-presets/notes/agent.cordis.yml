@@ -72,6 +72,10 @@
 - id: tool-goal
   name: 'coding-tool-goal'
 
+# 标签快照只属于笔记会话；工具和发布路由在同一预设生命周期内挂载。
+- id: tool-notes-tabs
+  name: 'coding-tool-notes-tabs'
+
 - id: planning
   name: cordis:group
   group: true
@@ -165,3 +169,6 @@
   name: 'coding-agent-tool-presentation'
   config:
     mode: both
+
+- id: tool-ppt
+  name: 'coding-tool-ppt'

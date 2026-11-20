@@ -1,6 +1,6 @@
 /**
- * 右侧工作台的「PPT 工作台」标签：把 `coding-ppt-workbench` 的浏览器半挂进外部标签槽位，
- * 仅让已开始对话的 PPT 创作会话自动打开所属工作台标签。
+ * PPT 工作台注册在右侧标签和笔记页内容区，两个入口共用会话控制器。
+ * 仅让已开始对话的 PPT 创作会话自动打开所属右侧标签。
  *
  * 面板只经 `/api/ppt/*` 与宿主往返（同一份工程服务也供模型工具使用），轮询承担
  * 「宿主 → 浏览器」的推送：模型打开别的工程、或在别处改了同一份工程，面板下一次
@@ -15,6 +15,7 @@ import type {} from 'coding-client-locale/client'
 import type {} from 'coding-client-ui-open-in-app/client'
 import type {} from 'coding-client-ui-conversation/client'
 import type {} from 'coding-client-ui-layout/client'
+import type {} from 'coding-client-ui-notes/client'
 import { PptPanelController } from './controller.ts'
 import { PptWorkbench, type PptWorkbenchInjected } from './PptWorkbench.tsx'
 import { TemplateCatalogController } from './template-catalog.ts'
@@ -101,49 +102,58 @@ export function apply(ctx: ClientContext): void {
     inject: () => ({ hooks: { templateCatalog: catalog.view }, ...catalogActions }),
   }, TemplateSettingsSection))
 
+  /** 两处座位只共享动作工厂，不共享挂载与显隐计数。 */
+  const workbenchActions = (sessionId: SessionId): PptWorkbenchInjected => {
+    const controller = controllerFor(sessionId)
+    return {
+      hooks: { ppt: controller.view, templateCatalog: catalog.view },
+      catalogActions,
+      show: (visible, source) => { controller.show(visible, source) },
+      refresh: () => { void controller.refresh() },
+      open: dir => controller.open(dir),
+      openSource: path => controller.openSource(path),
+      create: title => controller.create(title),
+      undo: () => controller.undo(),
+      redo: () => controller.redo(),
+      exportDeck: () => controller.exportDeck(),
+      selectPage: (index) => { controller.selectPage(index) },
+      selectElement: (id) => { controller.selectElement(id) },
+      setEditing: (id) => { controller.setEditing(id) },
+      addPage: template => controller.addPage(template),
+      removePage: pageId => controller.removePage(pageId),
+      movePage: (pageId, to) => controller.movePage(pageId, to),
+      addElement: kind => controller.addElement(kind),
+      removeElement: id => controller.removeElement(id),
+      updateElement: (id, patch) => controller.updateElement(id, patch),
+      editCell: (id, row, column, content) => controller.editCell(id, row, column, content),
+      updatePage: patch => controller.updatePage(patch),
+      updateDeck: patch => controller.updateDeck(patch),
+      duplicateElement: id => controller.duplicateElement(id),
+      copyElement: (id) => { controller.copyElement(id) },
+      cutElement: id => controller.cutElement(id),
+      pasteElement: at => controller.pasteElement(at),
+      reorderElement: (id, to) => controller.reorderElement(id, to),
+      insertImage: (file, replaceId, labelId) => controller.insertImage(file, replaceId, labelId),
+      checkDeck: () => controller.checkDeck(),
+      preview: pages => controller.preview(pages),
+      mediaUrl: (dir, source) => {
+        const query = new URLSearchParams({ sessionId, path: source })
+        if (dir !== undefined) query.set('dir', dir)
+        return `/api/ppt/media?${query.toString()}`
+      },
+    }
+  }
+
   ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register({
     name: 'sidebar.right.pane.tab',
     key: TAB_ID,
     locale: NS,
-    inject: (sessionId: SessionId): PptWorkbenchInjected => {
-      const controller = controllerFor(sessionId)
-      return {
-        hooks: { ppt: controller.view, templateCatalog: catalog.view },
-        catalogActions,
-        show: (visible) => { controller.show(visible) },
-        refresh: () => { void controller.refresh() },
-        open: dir => controller.open(dir),
-        create: title => controller.create(title),
-        undo: () => controller.undo(),
-        redo: () => controller.redo(),
-        exportDeck: () => controller.exportDeck(),
-        selectPage: (index) => { controller.selectPage(index) },
-        selectElement: (id) => { controller.selectElement(id) },
-        setEditing: (id) => { controller.setEditing(id) },
-        addPage: template => controller.addPage(template),
-        removePage: pageId => controller.removePage(pageId),
-        movePage: (pageId, to) => controller.movePage(pageId, to),
-        addElement: kind => controller.addElement(kind),
-        removeElement: id => controller.removeElement(id),
-        updateElement: (id, patch) => controller.updateElement(id, patch),
-        editCell: (id, row, column, content) => controller.editCell(id, row, column, content),
-        updatePage: patch => controller.updatePage(patch),
-        updateDeck: patch => controller.updateDeck(patch),
-        duplicateElement: id => controller.duplicateElement(id),
-        copyElement: (id) => { controller.copyElement(id) },
-        cutElement: id => controller.cutElement(id),
-        pasteElement: at => controller.pasteElement(at),
-        reorderElement: (id, to) => controller.reorderElement(id, to),
-        insertImage: (file, replaceId, labelId) => controller.insertImage(file, replaceId, labelId),
-        checkDeck: () => controller.checkDeck(),
-        preview: pages => controller.preview(pages),
-        mediaUrl: (dir, source) => {
-          const query = new URLSearchParams({ sessionId, path: source })
-          if (dir !== undefined) query.set('dir', dir)
-          return `/api/ppt/media?${query.toString()}`
-        },
-      }
-    },
+    inject: workbenchActions,
+  }, PptWorkbench))
+  ctx.slots.inject('notes.document.ppt', () => ctx.slots.register({
+    name: 'notes.document.ppt',
+    locale: NS,
+    inject: workbenchActions,
   }, PptWorkbench))
 
   /**

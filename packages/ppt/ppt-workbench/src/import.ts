@@ -575,6 +575,31 @@ export function importPptx(bytes: Uint8Array, options: { title: string; design?:
   } }
 }
 
+/** 原件回写不能默默丢掉模型无法表达的对象；普通导入仍可报告损失并另存副本。 */
+export function assertSourceEditable(bytes: Uint8Array, imported: PptImportResult): void {
+  const { files, slidePaths, decode } = readSource(bytes)
+  if (imported.report.pages.some(page => page.losses.length > 0)
+    || imported.dropped.some(item => item !== '复杂母版与版式' && item !== '动画与高级转场')) {
+    throw new PptImportError('原稿包含无法保留的内容，不能原位编辑；请先保存副本')
+  }
+  for (const path of slidePaths) {
+    const xml = decode(path)
+    const rels = decode(path.replace('slides/', 'slides/_rels/') + '.rels')
+    if (/<p:(?:timing|extLst)\b/u.test(xml)
+      || /<a:(?:effectRef|gradFill|pattFill)\b/u.test(xml)
+      || /(?:notesSlide|oleObject|hyperlink|comment)/u.test(rels)) {
+      bad('原稿包含母版、动画或复杂设计，不能原位编辑；请先保存副本')
+    }
+  }
+  const presentation = decode('ppt/presentation.xml')
+  if (Object.keys(files).some(path => /^(?:ppt\/(?:notesSlides|notesMasters|embeddings|diagrams|comments)|docProps)\//u.test(path))) {
+    bad('原稿包含备注或复杂对象，不能原位编辑；请先保存副本')
+  }
+  if (/<p:(?:sectionLst|customShowLst|extLst)\b/u.test(presentation)) {
+    bad('原稿包含无法保留的文稿设置，不能原位编辑；请先保存副本')
+  }
+}
+
 function previewText(xml: string): { text: string[]; truncated: boolean } {
   const text: string[] = []
   let remaining = 600

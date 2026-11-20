@@ -5,9 +5,10 @@
  */
 
 import { createSnapshotStore } from 'coding-client-runtime/client'
-import type { PptElement, PptElementKind, PptPage, SlideTransition } from 'coding-ppt-model'
+import type { PptElement, PptElementKind, SlideTransition } from 'coding-ppt-model'
 import { pastedElement } from './clipboard.ts'
 import { imageReplacementTarget } from './image-target.ts'
+import { clampPageIndex, currentPage, newElement, parseCheck, toBase64 } from './helpers.ts'
 import {
   errorOf, parseExport, parseFonts, parseSnapshot, parseState,
   type PptProjectView, type PptSnapshotView,
@@ -24,6 +25,8 @@ export type PptNotice =
 /** 面板订阅的完整状态。 */
 export interface PptPanelState {
   readonly phase: 'loading' | 'ready' | 'error'
+  /** 仅来源文件打开失败时为 true；笔记页用本地化指引代替宿主原始诊断。 */
+  readonly sourceError: boolean
   readonly root: string
   readonly projects: readonly PptProjectView[]
   readonly project: PptSnapshotView | null
@@ -52,7 +55,7 @@ type Fetcher = (input: string, init?: RequestInit) => Promise<Response>
 type MutablePanelState = { -readonly [K in keyof PptPanelState]: PptPanelState[K] }
 
 const INITIAL: PptPanelState = {
-  phase: 'loading', root: '', projects: [], project: null, pageIndex: 0,
+  phase: 'loading', sourceError: false, root: '', projects: [], project: null, pageIndex: 0,
   selectedId: null, editingId: null, hasClipboard: false, fonts: [],
   busy: false, notice: null, issues: null,
 }
@@ -66,6 +69,7 @@ export class PptPanelController {
   /** 渲染层订阅的快照。 */
   readonly view = createSnapshotStore<PptPanelState>(INITIAL)
   private visible = 0
+  private sourceVisible = 0
   private timer: ReturnType<typeof setInterval> | null = null
   private inflight: Promise<unknown> = Promise.resolve()
   /** 仅在本会话内保留元素数据；粘贴时仍由当前工程版本校验。 */
@@ -73,6 +77,13 @@ export class PptPanelController {
   private pasteCount = 0
   private clipboardDir: string | null = null
   private disposed = false
+  /** 笔记页活动文件与已打开工程分开记录，避免旧轮询覆盖刚切换的来源。 */
+  private sourcePath: string | null = null
+  private sourceProjectDir: string | null = null
+  private sourceGeneration = 0
+  private sourceOpening: Promise<void> | null = null
+  private sourceOpenPath: string | null = null
+  private sourceAttempted = false
 
   constructor(
     private readonly sessionId: string,
@@ -80,14 +91,16 @@ export class PptPanelController {
   ) {}
 
   /**
-   * 面板显隐；隐藏时停止轮询，显示时立即刷新一次。
-   * @param shown - 面板是否可见。
+   * 可见入口的计数独立于 React 实例；最后一个入口隐藏后停止轮询。
+   * @param shown - 当前入口是否可见。
+   * @param source - 当前入口是否是笔记页 PPTX。
    */
-  show(shown: boolean): void {
+  show(shown: boolean, source = false): void {
     this.visible = Math.max(0, this.visible + (shown ? 1 : -1))
+    if (source) this.sourceVisible = Math.max(0, this.sourceVisible + (shown ? 1 : -1))
     if (this.visible > 0 && this.timer === null) {
       if (this.view.getSnapshot().fonts.length === 0) void this.loadFonts()
-      void this.refresh()
+      if (this.sourceVisible === 0 || this.sourcePath === null || this.sourceAttempted) void this.refresh()
       this.timer = setInterval(() => { void this.refresh() }, POLL_MS)
     } else if (this.visible === 0 && this.timer !== null) {
       clearInterval(this.timer)
@@ -101,6 +114,8 @@ export class PptPanelController {
     this.clipboard = null
     this.clipboardDir = null
     this.visible = 0
+    this.sourceVisible = 0
+    this.sourceGeneration += 1
     if (this.timer !== null) clearInterval(this.timer)
     this.timer = null
   }
@@ -149,10 +164,15 @@ export class PptPanelController {
 
   /** 读取一次会话工程状态；宿主已把模型选定的工程设为当前工程。 */
   async refresh(): Promise<void> {
+    if (this.sourceVisible > 0 && this.sourcePath !== null && !this.sourceAttempted) return
+    const generation = this.sourceGeneration
     try {
       const payload = await this.request(`state?${new URLSearchParams({ sessionId: this.sessionId }).toString()}`)
+      if (generation !== this.sourceGeneration || this.sourceVisible > 0 && this.sourcePath !== null
+        && !this.sourceAttempted) return
       const state = parseState(payload)
       if (state === null) throw new Error('state payload is malformed')
+      if (this.sourceVisible > 0 && this.sourceProjectDir !== null && state.active?.dir !== this.sourceProjectDir) return
       const current = this.view.getSnapshot()
       const project = state.active
       const pageIndex = project === null ? 0 : clampPageIndex(project, current.pageIndex)
@@ -181,11 +201,74 @@ export class PptPanelController {
         await this.post('ack', { at: state.openRequest.at }).catch(() => undefined)
       }
     } catch (reason) {
+      if (generation !== this.sourceGeneration) return
       this.patch((draft) => {
         draft.phase = 'error'
         draft.notice = { tone: 'error', reason: reason instanceof Error ? reason.message : String(reason) }
       })
     }
+  }
+
+  /**
+   * 打开笔记页选中的工作区相对 PPTX 原件；同一来源在多个入口间只打开一次。
+   * 切换来源后丢弃旧请求结果，失败时保留重试机会，不回显上一个文件。
+   * @param path - 相对会话 cwd 的 .pptx 路径。
+   */
+  openSource(path: string): Promise<void> {
+    if (this.disposed) return Promise.resolve()
+    if (this.sourcePath === path && this.sourceOpenPath === path && this.sourceOpening !== null) return this.sourceOpening
+    const current = this.view.getSnapshot()
+    if (this.sourcePath === path && !current.sourceError && current.phase === 'ready'
+      && current.project?.dir === this.sourceProjectDir) return Promise.resolve()
+
+    this.sourcePath = path
+    this.sourceProjectDir = null
+    this.sourceAttempted = false
+    const generation = ++this.sourceGeneration
+    this.clipboard = null
+    this.clipboardDir = null
+    this.pasteCount = 0
+    this.patch((draft) => {
+      draft.phase = 'loading'
+      draft.sourceError = false
+      draft.project = null
+      draft.hasClipboard = false
+      draft.pageIndex = 0
+      draft.selectedId = null
+      draft.editingId = null
+      draft.issues = null
+      draft.notice = null
+    })
+    const task = this.inflight.then(async () => {
+      if (this.disposed || generation !== this.sourceGeneration) return
+      try {
+        const payload = await this.post('source/open', { source: path })
+        if (generation !== this.sourceGeneration) return
+        const snapshot = parseSnapshot((payload as { project?: unknown } | null)?.project)
+        if (snapshot === null) throw new Error('project payload is malformed')
+        this.sourceProjectDir = snapshot.dir
+        this.adopt(payload)
+      } catch {
+        if (generation !== this.sourceGeneration) return
+        this.patch((draft) => {
+          draft.phase = 'error'
+          draft.sourceError = true
+          draft.project = null
+        })
+      } finally {
+        if (generation === this.sourceGeneration) this.sourceAttempted = true
+      }
+    })
+    this.inflight = task
+    this.sourceOpening = task
+    this.sourceOpenPath = path
+    void task.finally(() => {
+      if (this.sourceOpening === task) {
+        this.sourceOpening = null
+        this.sourceOpenPath = null
+      }
+    })
+    return task
   }
 
   /**
@@ -220,6 +303,7 @@ export class PptPanelController {
     }
     this.patch((draft) => {
       draft.phase = 'ready'
+      draft.sourceError = false
       draft.project = snapshot
       draft.hasClipboard = this.clipboard !== null
       draft.pageIndex = clampPageIndex(snapshot, draft.pageIndex)
@@ -542,76 +626,4 @@ export class PptPanelController {
   async updateDeck(patch: { title?: string; size?: '16:9' | '4:3'; theme?: string }): Promise<void> {
     await this.edit([{ op: 'update_deck', ...patch }])
   }
-}
-
-/**
- * 取当前页。
- * @param project - 工程快照。
- * @param index - 页码下标。
- * @returns 页面；没有工程或下标越界时 null。
- */
-export function currentPage(project: PptSnapshotView | null, index: number): PptPage | null {
-  if (project === null) return null
-  return project.deck.pages[index] ?? null
-}
-
-function toBase64(bytes: Uint8Array): string {
-  let binary = ''
-  for (const byte of bytes) binary += String.fromCharCode(byte)
-  return btoa(binary)
-}
-
-/**
- * 解析质检响应。
- * @param value - 响应里的 `check` 字段。
- * @returns 问题列表；结构不完整时 null。
- */
-export function parseCheck(value: unknown): PptPanelState['issues'] {
-  if (typeof value !== 'object' || value === null) return null
-  const issues = (value as { issues?: unknown }).issues
-  if (!Array.isArray(issues)) return null
-  return issues.flatMap((entry) => {
-    if (typeof entry !== 'object' || entry === null) return []
-    const record = entry as Record<string, unknown>
-    const severity = record.severity === 'error' ? 'error' : record.severity === 'warning' ? 'warning' : null
-    if (severity === null || typeof record.code !== 'string'
-      || typeof record.pageName !== 'string' || typeof record.message !== 'string') return []
-    return [{ severity, code: record.code, pageName: record.pageName, message: record.message }]
-  })
-}
-
-function clampPageIndex(project: PptSnapshotView, index: number): number {
-  return Math.min(Math.max(index, 0), Math.max(project.deck.pages.length - 1, 0))
-}
-
-/** 新元素的默认几何：按已有元素数量错位摆放，避免完全重叠。 */
-function newElement(kind: PptElementKind, count: number): Record<string, unknown> {
-  const offset = (count % 6) * 24
-  const base = { x: 120 + offset, y: 140 + offset }
-  if (kind === 'table') {
-    return {
-      kind, ...base, w: 720, h: 264, rows: 3, columns: 3, header: true,
-      cells: [
-        [{ content: '项目' }, { content: '本期' }, { content: '上期' }],
-        [{ content: '' }, { content: '' }, { content: '' }],
-        [{ content: '' }, { content: '' }, { content: '' }],
-      ],
-    }
-  }
-  if (kind === 'text') {
-    return {
-      kind, ...base, w: 520, h: 96,
-      text: { content: '双击编辑文字', size: 32, bold: false, align: 'left', valign: 'top' },
-    }
-  }
-  if (kind === 'line') return { kind, ...base, w: 640, h: 0, color: '#9aa7b4', width: 4 }
-  if (kind === 'chart') {
-    return {
-      kind, ...base, w: 720, h: 360, chart: 'bar',
-      categories: ['一季度', '二季度', '三季度', '四季度'],
-      series: [{ name: '本期', values: [32, 45, 38, 56], color: '#4f8cff' }],
-      textColor: '#9aa7b4',
-    }
-  }
-  return { kind, ...base, w: 320, h: 200, fill: '#4f8cff' }
 }

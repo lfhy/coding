@@ -17,7 +17,7 @@ import {
 } from 'coding-client-ui-icons'
 import type { PptElementKind, SlideTransition } from 'coding-ppt-model'
 import type { PptPanelState } from './controller.ts'
-import { currentPage } from './controller.ts'
+import { currentPage } from './helpers.ts'
 import type { ElementPatch } from './Inspector.tsx'
 import { Inspector } from './Inspector.tsx'
 import { NS } from './locales.ts'
@@ -35,9 +35,10 @@ export interface PptWorkbenchInjected {
     templateCatalog: SnapshotStore<TemplateCatalogState>
   }
   catalogActions: Omit<TemplateCatalogInjected, 'hooks'>
-  show: (visible: boolean) => void
+  show: (visible: boolean, source?: boolean) => void
   refresh: () => void
   open: (dir: string) => Promise<void>
+  openSource: (path: string) => Promise<void>
   create: (title: string) => Promise<void>
   undo: () => Promise<void>
   redo: () => Promise<void>
@@ -65,8 +66,9 @@ export interface PptWorkbenchInjected {
   mediaUrl: (dir: string | undefined, source: string) => string
 }
 
+/** 右侧标签和笔记正文各自提供 owner，业务动作来自同一会话控制器。 */
 export type PptWorkbenchProps =
-  PropsRuntime<'sidebar.right.pane.tab'>
+  (PropsRuntime<'sidebar.right.pane.tab'> | PropsRuntime<'notes.document.ppt'>)
   & PropsLocale<typeof NS>
   & InjectFace<PptWorkbenchInjected>
 
@@ -86,13 +88,15 @@ const LABEL_OF: Readonly<Record<string, (t: PptWorkbenchProps['t']) => string>> 
  * @param props - 会话、显隐、文案与注入的动作。
  * @returns 工作台或空态。
  */
-export function PptWorkbench({
-  shown, t, usePpt, show, refresh, open, undo, redo, exportDeck,
-  selectPage, selectElement, setEditing, addPage, removePage, movePage,
-  addElement, removeElement, updateElement, editCell, updatePage, updateDeck,
-  duplicateElement, copyElement, cutElement, pasteElement, reorderElement, insertImage, checkDeck, preview, mediaUrl,
-  useTemplateCatalog, catalogActions,
-}: PptWorkbenchProps) {
+export function PptWorkbench(props: PptWorkbenchProps) {
+  const {
+    shown, t, usePpt, show, refresh, open, openSource, undo, redo, exportDeck,
+    selectPage, selectElement, setEditing, addPage, removePage, movePage,
+    addElement, removeElement, updateElement, editCell, updatePage, updateDeck,
+    duplicateElement, copyElement, cutElement, pasteElement, reorderElement, insertImage, checkDeck, preview, mediaUrl,
+    useTemplateCatalog, catalogActions,
+  } = props
+  const sourcePath = 'path' in props ? props.path : undefined
   const state = usePpt(snapshot => snapshot)
   const [menu, setMenu] = useState<'new' | 'insert' | 'page' | 'more' | null>(null)
   const [showThumbs, setShowThumbs] = useState(true)
@@ -110,9 +114,14 @@ export function PptWorkbench({
 
   useEffect(() => {
     if (!shown) return undefined
-    show(true)
-    return () => { show(false) }
-  }, [shown, show])
+    show(true, sourcePath !== undefined)
+    return () => { show(false, sourcePath !== undefined) }
+  }, [shown, show, sourcePath !== undefined])
+
+  useEffect(() => {
+    if (!shown || sourcePath === undefined) return
+    void openSource(sourcePath)
+  }, [shown, sourcePath, openSource])
 
   useEffect(() => {
     setMenu(null)
@@ -324,9 +333,12 @@ export function PptWorkbench({
 
       {state.phase === 'error' ? (
         <div className={css.blank}>
-          <p className={css.blankTitle}>{t('errorTitle')}</p>
-          {state.notice?.tone === 'error' ? <p className={css.errorReason} role="alert">{state.notice.reason}</p> : null}
-          <button type="button" className={css.primary} onClick={refresh}>{t('errorRetry')}</button>
+          <p className={css.blankTitle}>{t(state.sourceError && sourcePath !== undefined ? 'sourceErrorTitle' : 'errorTitle')}</p>
+          {state.sourceError && sourcePath !== undefined
+            ? <p className={css.errorReason} role="alert">{t('sourceErrorHint')}</p>
+            : state.notice?.tone === 'error' ? <p className={css.errorReason} role="alert">{state.notice.reason}</p> : null}
+          <button type="button" className={css.primary}
+            onClick={sourcePath === undefined ? refresh : () => { void openSource(sourcePath) }}>{t('errorRetry')}</button>
         </div>
       ) : state.phase === 'loading' ? (
         <div className={css.blank}><p className={css.blankTitle}>{t('loading')}</p></div>

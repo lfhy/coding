@@ -5,7 +5,7 @@ import css from './NotesTabs.module.css'
 
 interface NotesTabsProps {
   paths: readonly string[]
-  activePath: string | undefined
+  activePath: string | null | undefined
   panelId: string
   idPrefix: string
   labelOfPath: (path: string) => string
@@ -54,8 +54,8 @@ export function NotesTabs({ paths, activePath, panelId, idPrefix, labelOfPath, o
         const selected = path === activePath
         return <div key={path} className={css.tab} data-active={selected} role="presentation">
           <Button className={css.select} role="tab" id={`${idPrefix}-${index}`} aria-controls={panelId}
-            aria-selected={selected} tabIndex={selected || activePath === undefined && index === 0 ? 0 : -1} title={name}
-            icon={<Icon name="notes" size={14} />} onClick={() => { onSelect(path) }}>
+            aria-selected={selected} tabIndex={selected || activePath == null && index === 0 ? 0 : -1} title={name}
+            icon={<Icon name={/\.pptx$/iu.test(path) ? 'files' : 'notes'} size={14} />} onClick={() => { onSelect(path) }}>
             <span className={css.name}>{name}</span>
           </Button>
           <Button className={css.close} icon={<IconCloseOutline16 size={12} />}

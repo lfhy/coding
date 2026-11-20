@@ -48,14 +48,15 @@ function deck(): PptSnapshotView {
 }
 
 const ready: PptPanelState = {
-  phase: 'ready', root: '/workspace', projects: [], project: deck(),
+  phase: 'ready', sourceError: false, root: '/workspace', projects: [], project: deck(),
   pageIndex: 0, selectedId: null, editingId: null, hasClipboard: false, fonts: [], busy: false, notice: null, issues: null,
 }
 
-function mount(state: PptPanelState, shown = true, locale: typeof en = en) {
+function mount(state: PptPanelState, shown = true, locale: typeof en = en, path?: string) {
   const props = {
     sessionId: 'session-one',
-    useTabInfo: () => ({ shown, tab: { id: 'ppt-1', params: {} } }),
+    shown,
+    ...(path === undefined ? {} : { path }),
     usePpt: (choose: (snapshot: PptPanelState) => unknown) => choose(state),
     useTemplateCatalog: (choose: (snapshot: unknown) => unknown) => choose({
       phase: 'ready', templates: [], details: {}, error: null,
@@ -73,6 +74,7 @@ function mount(state: PptPanelState, shown = true, locale: typeof en = en) {
     show: vi.fn(),
     refresh: vi.fn(),
     open: vi.fn(async () => {}),
+    openSource: vi.fn(async () => {}),
     create: vi.fn(async () => {}),
     undo: vi.fn(async () => {}),
     redo: vi.fn(async () => {}),
@@ -491,5 +493,26 @@ describe('PPT 工作台面板', () => {
   it('面板隐藏时停止轮询', () => {
     const panel = mount(ready, false)
     expect(panel.props.show).not.toHaveBeenCalled()
+  })
+
+  it('笔记正文以 owner 路径打开原件，路径变化时只切源、不重复显隐计数', () => {
+    const panel = mount(ready, true, zh, 'slides/first.pptx')
+    expect(panel.props.show).toHaveBeenCalledOnce()
+    expect(panel.props.show).toHaveBeenCalledWith(true, true)
+    expect(panel.props.openSource).toHaveBeenCalledWith('slides/first.pptx')
+    panel.rerender(<PptWorkbench {...{ ...panel.props, path: 'slides/second.pptx' }} />)
+    expect(panel.props.show).toHaveBeenCalledOnce()
+    expect(panel.props.openSource).toHaveBeenCalledWith('slides/second.pptx')
+    panel.unmount()
+    expect(panel.props.show).toHaveBeenLastCalledWith(false, true)
+  })
+
+  it('笔记原件失败不显示宿主诊断，重试仍打开当前路径', () => {
+    const panel = mount({ ...ready, phase: 'error', project: null, sourceError: true,
+      notice: { tone: 'error', reason: '/private/bad/path' } }, true, zh, 'slides/missing.pptx')
+    expect(screen.getByRole('alert').textContent).toContain('原文件可能已移动')
+    expect(panel.container.textContent).not.toContain('/private/bad/path')
+    fireEvent.click(screen.getByRole('button', { name: '重试' }))
+    expect(panel.props.openSource).toHaveBeenCalledWith('slides/missing.pptx')
   })
 })

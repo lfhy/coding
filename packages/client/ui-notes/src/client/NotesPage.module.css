@@ -31,6 +31,15 @@
   overflow: hidden;
 }
 
+/* 演示文稿占据活动内容层，工作台画布与缩略图在容器内部滚动。 */
+.pptContent {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
 .documentHeader {
   display: flex;
   align-items: center;

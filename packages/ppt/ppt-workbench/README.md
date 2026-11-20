@@ -11,10 +11,12 @@ PPT 创作模式的宿主能力：工程存储（`ppt/<工程目录>/deck.json`�
   deck.json            { revision, deck }  —— 唯一事实源
   history.json         { cursor, nextRevision, entries[] }  —— 撤销/重做快照
   media/<file>         工程图片（可由本会话图库复制或在工作台上传）
-  export/<title>-v<n>.pptx —— 导出产物
+  source.json          原件相对路径、SHA-256 和文件身份指纹（来源直开工程）
+  .source-transaction.json  原件回写中的恢复记录（成功后删除）
+  export/<title>-v<n>.pptx 导出产物
 ```
 
-`deck.json` 先写临时文件再 rename，进程中断不会留下半个 JSON。`history.json` 保存最近 60 个版本；撤销只移动游标，已知的版本号仍然存在，重做因此天然成立。
+`deck.json` 与 `history.json` 先写同父临时文件再 rename，进程中断不会留下半个 JSON。
 
 用户模板库独立于会话工作区，默认位于 Host 用户目录 `resolveDshHome()/ppt-templates/`；宿主配置 `templatesDir` 可指定另一绝对目录。每个模板保存完整 `deck` 与其引用的 `media/` 字节快照，跨会话、本机工作区可复用；保存、套用均不修改模板原稿，套用会在目标工作区新建可编辑工程并打开工作台。模板名称可修改，删除只影响模板库，不删除从中创建的工程。模板写操作由 `ppt` 模式的模型工具调用服务完成；HTTP 只提供目录与预览读取，内置单页版式不写入用户模板库。
 
@@ -22,7 +24,7 @@ PPT 创作模式的宿主能力：工程存储（`ppt/<工程目录>/deck.json`�
 
 ## 行为
 
-- **版本与冲突**：每次 `ppt_edit` 生成一个新版本。调用方给出 `baseRevision` 时，与当前版本不一致即返回 409，绝不覆盖别处的改动；工作台与模型工具都走这条规则。`ops` 首选非空操作对象数组，兼容一次 JSON 编码的数组字符串（UTF-8 不超过 1 MiB）；空数组、非数组或非法操作均拒绝，不生成版本。表格内容可通过一次 `update_element.cells` 整表提交，单元格允许空文本，最长 5000 个字符；维度必须与原表一致。`replace_image` 保持原元素 id、位置、尺寸与层级，将图片或矩形变为图片；指定紧邻且同尺寸的覆盖文字时一并移除，失败时整次编辑不生效。不要直接覆写 `deck.json` 或 `history.json`：这样会绕过版本历史和冲突检查。
+- **来源直开与原位写回**：`POST /api/ppt/source/open` 接受 `{ sessionId, source }`，其中 `source` 必须是当前会话工作区内的相对 `.pptx` 路径；成功返回 `{ ok: true, project }`，并在工程写入 `source.json`。原件导入只允许模型可完整表达的内容，复杂图表、SmartArt、OLE、动画、复杂表格或设计设置会拒绝原位编辑，不生成半成品；需要保留原件时请使用普通 `import` 另存工程。来源绑定保存 SHA-256、设备号、inode、大小和修改时间，服务重挂时从 `source.json` 恢复；原件被移动、替换或外部修改时，读取、编辑、撤销和重做均返回 409，不会覆盖外部版本。原位保存使用源文件旁临时文件和 rename，并保留 `.source-transaction.json` 直到工程版本发布完成；中断后下次读取会完成可确认的发布或报告冲突。`source/open` 不接受旧的 `relativePath` 字段。
 - **串行写入**：同一工程目录的写操作在进程内排队（`withLock`），两次编辑不会交错；跨进程的并发由版本号兜底。
 - **工作区边界**：工程目录必须落在会话工作区内，越界路径直接拒绝（`forbidden`）。
 - **图片媒体**：`upload` 供工作台上传与模型的 `ppt_attach_gallery_image` 共用，要求工程已存在，仅接受 1 字节至 8 MiB 的 PNG／JPEG／GIF／WebP，并检查格式和内容；SVG 因同源脚本风险明确拒绝。写入前检查工程与 `media/` 目录的工作区边界和符号链接，路径不安全时拒绝。它在工程 `media/` 写入一份新文件并返回 `media/<file>`，不修改 `deck.json` 或修订号；图库身份只由[模型工具](../tool-ppt/README.md#行为)在本次会话内校验，本服务不从图库取图。后续 `ppt_edit` 需引用返回的 source 才加入页面；复制与编辑不原子，冲突可能留下未引用媒体，不覆盖原有工程改动。
