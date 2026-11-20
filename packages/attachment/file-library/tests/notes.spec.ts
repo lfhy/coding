@@ -322,7 +322,7 @@ describe('无目录笔记域', () => {
     const { library } = await harness()
     await library.notesTree()
     const notesDir = library.notesRootPath()
-    const created = await library.createNotePptx('演示稿', '', pptxBytes)
+    const created = await library.createNotePptx('演示稿', undefined, pptxBytes)
     expect(created).toEqual({ path: '演示稿.pptx' })
     expect(await readFile(join(notesDir, '演示稿.pptx'))).toEqual(pptxBytes)
     expect((await lstat(join(notesDir, '演示稿.pptx'))).mode & 0o777).toBe(0o600)

@@ -4,7 +4,8 @@
   align-items: center;
   min-width: 0;
   height: 42px;
-  padding: var(--app-safe-area-inset-top, 0px) 18px 0 12px;
+  /* 主内容区已位于外层导航栏右侧，窗口交通灯不需要再撑高标签栏。 */
+  padding: 0 18px 0 12px;
   box-sizing: content-box;
   border-bottom: 1px solid var(--dsw-alias-border-l2);
   background: var(--dsw-alias-bg-layer-1);
