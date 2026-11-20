@@ -1,10 +1,10 @@
 /**
  * 面向模型的 Codex 风格补丁工具，落在 `ctx.fs` seam 上。
  *
- * 当前 LLM seam 是 function/JSON 形式，所以工具接收一个必填的 `input` 字符串；
- * 字符串本身使用 Codex 的 `*** Begin Patch` / `*** End Patch` 封套。本组合只支持
- * 新建与编辑文件：删除和改名会被明确拒绝，因为 `FileSystem` 没有删除或重命名原语，
- * 需要时由 shell 承担。所有写入仍会经过 `fs/*` 策略监听与提供方的沙箱边界。
+ * Responses 原生语法工具直接接收补丁文本；其他协议仍以 JSON `input` 字符串传递。
+ * 两者共用 Codex `*** Begin Patch` / `*** End Patch` 封套与执行器，仅支持新建和
+ * 编辑：删除和改名会被明确拒绝，因为 `FileSystem` 没有对应原语，需要时由 shell
+ * 承担。所有写入仍会经过 `fs/*` 策略监听与提供方的沙箱边界。
  *
  * @module coding-tool-apply-patch
  */
@@ -31,6 +31,27 @@ const DESCRIPTION = 'Apply a Codex-style patch to workspace files. The input mus
 const GUIDANCE = 'Use apply_patch for a small, targeted batch of file changes. Send the complete patch envelope '
   + 'as the input string. Read existing files before editing them; deleting or moving a file is not '
   + 'available in this filesystem composition.'
+
+// 改编自 Codex 的 Apache-2.0 apply_patch.lark：仅保留本文件系统执行器支持的新增与更新。
+// 原始来源：https://github.com/openai/codex/blob/main/codex-rs/core/assets/tools/apply_patch.lark
+const APPLY_PATCH_LARK_GRAMMAR = `start: begin_patch hunk+ end_patch
+begin_patch: "*** Begin Patch" LF
+end_patch: "*** End Patch" LF?
+
+hunk: add_hunk | update_hunk
+add_hunk: "*** Add File: " filename LF add_line+
+update_hunk: "*** Update File: " filename LF change+
+
+filename: /(.+)/
+add_line: "+" /(.*)/ LF -> line
+
+change: change_context change_line+ eof_line?
+change_context: ("@@" | "@@ " /(.+)/) LF
+change_line: ("+" | "-" | " ") /(.*)/ LF
+eof_line: "*** End of File" LF
+
+%import common.LF
+`
 
 interface ApplyPatchArgs { input: string }
 
@@ -97,12 +118,23 @@ function patchDiffs(value: ApplyPatchValue): DiffCallView['diffs'] {
   return value.files.map(file => ({ path: file.path, oldText: file.before, newText: file.after }))
 }
 
-/** Register the Codex-style patch tool. */
+/**
+ * 注册 Codex 风格补丁工具，所有文件操作仍通过文件系统策略。
+ * @param ctx - 提供工具注册、提示词与文件系统能力的插件上下文。
+ * @returns 无返回值；注册随插件卸载撤销。
+ */
 export function apply(ctx: Context): void {
   ctx.systemPrompt.section({ name: 'tool:apply_patch', order: 103, text: GUIDANCE })
   ctx.tools.register(defineTool({
     name: 'apply_patch',
     description: DESCRIPTION,
+    summaryParameter: false,
+    inputFormat: {
+      type: 'grammar',
+      syntax: 'lark',
+      definition: APPLY_PATCH_LARK_GRAMMAR,
+      description: 'The `apply_patch` tool can be used to edit files. This is a FREEFORM tool, so do not wrap the patch in JSON.',
+    },
     parameters: {
       input: { type: 'string', required: true, description: 'The complete Codex patch text; pass it as one string.' },
     },

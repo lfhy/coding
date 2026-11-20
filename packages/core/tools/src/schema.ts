@@ -1,7 +1,7 @@
 /** Unified JSON-value schema DSL, inference, compilation, and typed tool helper. @module dsh-tools/schema */
 
 import { HarnessError } from 'coding-llm'
-import type { ContentBlock } from 'coding-llm'
+import type { ContentBlock, ToolSchema } from 'coding-llm'
 import type { JsonValue } from 'coding-session'
 import type { ToolDefinition, ToolExecution, ToolExecutionResult, ToolRunContext, ToolResult } from './index.ts'
 import { assertSupportedJsonSchema, isJsonSchemaRecord, isPlainJsonArray, JsonSchemaError, validateJsonSchemaValue } from './json-schema.ts'
@@ -485,6 +485,10 @@ export interface DefineToolOptions<S extends ParameterSchemaSpec, O extends Valu
   readonly name: string
   /** Human-readable description sent to the model. */
   readonly description: string
+  /** 原生模型调用的语法；JSON 参数继续用于校验、执行和回退。 */
+  readonly inputFormat?: ToolSchema['inputFormat']
+  /** 原始载荷工具禁止自动注入用于展示的 `summary` 参数。 */
+  readonly summaryParameter?: false
   /** Per-property parameter schema compiled to an implicit open object root. */
   readonly parameters: S
   /** Canonical output schema plus pure Native and presentation projections. */
@@ -569,6 +573,8 @@ export function defineTool<const S extends ParameterSchemaSpec, const O extends 
   const tool: ToolDefinition = {
     name: options.name,
     description: options.description,
+    ...(options.inputFormat === undefined ? {} : { inputFormat: options.inputFormat }),
+    ...(options.summaryParameter === undefined ? {} : { summaryParameter: options.summaryParameter }),
     parameters: parameters as unknown as Record<string, unknown>,
     output: {
       schema: outputSchema,

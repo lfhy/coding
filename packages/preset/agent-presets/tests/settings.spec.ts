@@ -71,6 +71,52 @@ describe('the default preset as a user setting', () => {
     expect(ctx.agentPresets.defaultId).toBe('minimal')
   })
 
+  it('uses an exact model override and inherits later global changes after unset', async () => {
+    const { ctx } = await harness()
+    await ctx.settings.mutate(NS, [
+      { op: 'set', path: ['modelDefaults', 'gateway.one', 'model/v1'], value: 'minimal' },
+    ])
+
+    expect(ctx.agentPresets.defaultIdForModel('gateway.one', 'model/v1')).toBe('minimal')
+    expect(ctx.agentPresets.defaultIdForModel('gateway.one', 'model/v2')).toBe('standard')
+    expect(ctx.agentPresets.defaultIdForModel('gateway.two', 'model/v1')).toBe('standard')
+    await ctx.settings.update(NS, { default: 'chat' })
+    expect(ctx.agentPresets.defaultIdForModel('gateway.one', 'model/v1')).toBe('minimal')
+    expect(ctx.agentPresets.defaultIdForModel('gateway.one', 'model/v2')).toBe('chat')
+
+    await ctx.settings.mutate(NS, [
+      { op: 'unset', path: ['modelDefaults', 'gateway.one', 'model/v1'] },
+    ])
+    expect(ctx.agentPresets.defaultIdForModel('gateway.one', 'model/v1')).toBe('chat')
+    expect(ctx.agentPresets.defaultId).toBe('chat')
+  })
+
+  it('rejects an empty model preset id at the settings boundary', async () => {
+    const { ctx } = await harness()
+
+    await expect(ctx.settings.mutate(NS, [
+      { op: 'set', path: ['modelDefaults', 'gateway', 'model'], value: '' },
+    ])).rejects.toThrow()
+    await expect(ctx.settings.mutate(NS, [
+      { op: 'set', path: ['modelDefaults', '', 'model'], value: 'minimal' },
+    ])).rejects.toThrow()
+    await expect(ctx.settings.mutate(NS, [
+      { op: 'set', path: ['modelDefaults', 'gateway', ''], value: 'minimal' },
+    ])).rejects.toThrow()
+    await expect(ctx.settings.update(NS, { default: '' })).rejects.toThrow()
+    expect(ctx.agentPresets.defaultIdForModel('gateway', 'model')).toBe('standard')
+  })
+
+  it('does not mistake inherited object properties for explicit model keys', async () => {
+    const { ctx } = await harness()
+
+    expect(ctx.agentPresets.defaultIdForModel('constructor', 'toString')).toBe('standard')
+    await ctx.settings.mutate(NS, [
+      { op: 'set', path: ['modelDefaults', 'gateway', 'ordinary'], value: 'minimal' },
+    ])
+    expect(ctx.agentPresets.defaultIdForModel('gateway', 'toString')).toBe('standard')
+  })
+
   it('composes a new session from the user default', async () => {
     const { ctx } = await harness()
     await ctx.settings.update(NS, { default: 'minimal' })
@@ -159,5 +205,6 @@ describe('a settings provider that goes away', () => {
     await settingsFiber.dispose()
 
     expect(ctx.agentPresets.defaultId).toBe('standard')
+    expect(ctx.agentPresets.defaultIdForModel('gateway', 'model')).toBe('standard')
   })
 })

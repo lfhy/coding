@@ -392,6 +392,15 @@ Registry over the deployment's agent presets. Discovery is unmemoized: `list()` 
 
 ```ts cordis-catalog
 /**
+ * 读取具体模型在新会话中的默认模式；未设置覆盖时实时继承全局默认值。
+ * 提供方和模型 id 是不拆分的字典键，尚不存在的模式仍由挂载时的解析拒绝。
+ * @param provider - 提供方路由 id。
+ * @param model - 该路由下的精确模型 id。
+ * @returns 模型覆盖的模式 id，或当前全局默认模式 id。
+ */
+defaultIdForModel(provider: string, model: string): string
+
+/**
  * Every preset the configured roots currently supply.
  * @returns the presets, first-root-wins per id.
  */
@@ -539,7 +548,7 @@ async standingKeyFor(id?: string): Promise<ScopeKey>
 
 Types: [ScopeKey](scope.md)
 
-Source: [`packages/preset/agent-presets/src/index.ts:79`](../../packages/preset/agent-presets/src/index.ts)
+Source: [`packages/preset/agent-presets/src/index.ts:82`](../../packages/preset/agent-presets/src/index.ts)
 
 <a id="ctxagents--agentregistry"></a>
 

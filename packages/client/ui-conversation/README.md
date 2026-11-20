@@ -42,6 +42,8 @@ Chat 视图左缘的细轨为当前已加载的持久用户消息与中途引导
 
 Think 行默认保持折叠，并在不展开思维链的情况下暴露实时推理（reasoning）吞吐：当推理块是流式输出尾部时，摘要从结算后的首行切换到最新的非空行，其单行滚动区会随每个 delta 追到行内末端。展开该行会移除移动摘要，让完整推理进入普通页面流，因此页面阅读不会与内部跟随器争夺滚动；结算后恢复左对齐的稳定首行摘要（决策）。
 
+推理块结算后若只有空白文本，Think 行不渲染；只有提供方加密回放状态而没有可读摘要时，界面不会呈现空的思考内容。
+
 聊天视图把 Assistant 正文的 HTTP(S) 链接交给可选的 `chatBrowserLinks` 服务，以点击时的 Session 创建 Agent 浏览器页面并在导航成功后展开右侧工作台；加载中状态留在对话区，失败时弹窗可对同一链接重试。服务未装配时明确提示不可用，不让当前应用或系统浏览器代为导航。
 
 聊天视图保留工具的消息流位置，但委托其展示。每个已排序的 `tool-call` Conversation Node 都通过 `conversation.chat.node` 的同名 key 分发；详情壳层则通过 `conversation.details.tool` 传递当前选中的调用。组装后的 Web bundle 为该 Chat Node key 注册 [`ui-tool`](../ui-tool/README.md)，由后者渲染运行时已投影的递归 root/child 树，并负责按名称分发、通用展示和 render-intent 卡片；只有详情席位会在该 renderer 缺席时保留 raw-result fallback。经注入的 `openFile` 点击路径会优先请求可选的 `chatFileOpener`；正式 Web 组合将工作区内路径转换为 provider segments，在右侧工作台创建或激活文件预览标签并展示工作台，无法映射或工作台未挂载时才请 Host 打开该路径（相对路径按会话 cwd 解析），Remote-SSH 工作区的远端路径则先经 Host 定位成段链，不在本地回退。Host 或操作系统拒绝时，页面内对话框展示抛出的原因，并提供对同一路径的重试；取消、Escape、关闭控件和点击遮罩会关掉对话框（决策）。

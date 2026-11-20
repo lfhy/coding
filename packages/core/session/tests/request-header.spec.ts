@@ -56,6 +56,12 @@ describe('headerEquals', () => {
     expect(headerEquals(base, { ...base, system: 'other' })).toBe(false)
     expect(headerEquals(base, { ...base, tools: [] })).toBe(false)
     expect(headerEquals(base, { ...base, tools: [tool('a', 'changed')] })).toBe(false)
+    const grammarTool: ToolSchema = {
+      ...tool('a'),
+      inputFormat: { type: 'grammar', syntax: 'lark', definition: 'start: /.+/' },
+    }
+    expect(headerEquals(base, { ...base, tools: [grammarTool] })).toBe(false)
+    expect(headerEquals({ ...base, tools: [grammarTool] }, structuredClone({ ...base, tools: [grammarTool] }))).toBe(true)
     expect(headerEquals({ config: CONFIG, tools: [tool('a'), tool('b')] }, { config: CONFIG, tools: [tool('b'), tool('a')] })).toBe(false)
   })
 

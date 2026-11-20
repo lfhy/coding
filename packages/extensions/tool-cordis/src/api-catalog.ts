@@ -136,6 +136,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     description: 'Registry over the deployment\'s agent presets. Discovery is unmemoized: `list()` and `resolve()` re-read the roots on every call so a preset authored while the process runs is visible immediately, and a preset deleted underneath a picker disappears from the next read.',
     methods: [
       {
+        signature: 'defaultIdForModel(provider: string, model: string): string',
+        description: '读取具体模型在新会话中的默认模式；未设置覆盖时实时继承全局默认值。 提供方和模型 id 是不拆分的字典键，尚不存在的模式仍由挂载时的解析拒绝。',
+        parameters: [{ name: 'provider', description: '提供方路由 id。' }, { name: 'model', description: '该路由下的精确模型 id。' }],
+        returns: '模型覆盖的模式 id，或当前全局默认模式 id。',
+      },
+      {
         signature: 'async list(): Promise<AgentPreset[]>',
         description: 'Every preset the configured roots currently supply.',
         parameters: [],
@@ -5939,7 +5945,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ToolSchema',
-    declaration: 'export interface ToolSchema {\n    name: string;\n    description: string;\n    parameters: Record<string, unknown>;\n}',
+    declaration: 'export interface ToolSchema {\n    name: string;\n    description: string;\n    parameters: Record<string, unknown>;\n    inputFormat?: {\n        type: \'grammar\';\n        syntax: \'lark\';\n        definition: string;\n        description?: string;\n    };\n}',
   },
   {
     name: 'TurnEndCancelCause',

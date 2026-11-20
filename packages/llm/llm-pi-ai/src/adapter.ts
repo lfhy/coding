@@ -190,6 +190,24 @@ function requestHeaders(headers: Readonly<Record<string, string>> | undefined, r
   }
 }
 
+/** 哪些协议能发出 Responses 原生语法工具。 */
+function isResponsesModel(model: Model<Api>): model is Model<
+  'openai-responses' | 'azure-openai-responses' | 'openai-codex-responses'
+> {
+  return model.api === 'openai-responses'
+    || model.api === 'azure-openai-responses'
+    || model.api === 'openai-codex-responses'
+}
+
+/** Responses 原生语法仅由所选模型协议和配置决定，不由模型 ID 猜测。 */
+function nativeGrammarModel(model: Model<Api>, options: GenerateOptions): Model<Api> {
+  if (!isResponsesModel(model) || !options.tools?.some(tool => tool.inputFormat?.type === 'grammar')
+    || model.compat?.supportsOpenAIGrammarTools === false) return model
+  if (model.compat?.supportsOpenAIGrammarTools === true) return model
+  // pi-ai 对未声明的模型默认关闭原生语法；单次克隆不改写已注册模型或在途请求。
+  return { ...model, compat: { ...model.compat, supportsOpenAIGrammarTools: true } }
+}
+
 /**
  * pi-ai-backed multi-provider adapter. Each operation reads the current
  * profiles, so a configuration change reaches the next request without a
@@ -298,7 +316,9 @@ export class PiAiAdapter extends LlmAdapter {
     const profile = this.profileOf(snapshot, options.provider)
     // 归因基线也来自同一份快照：渠道配置了 User-Agent 就用它，否则用产品默认值。
     const requestUserAgent = resolveUserAgent(profile.userAgent)
-    const model = this.modelOf(snapshot, options.provider, options.model)
+    const model = nativeGrammarModel(this.modelOf(snapshot, options.provider, options.model), options)
+    const nativeGrammarTools = isResponsesModel(model)
+      && model.compat?.supportsOpenAIGrammarTools === true
     const reasoning = resolveReasoningLevel(
       model,
       options.reasoningEffort ?? profile.reasoning ?? (model.reasoning ? getSupportedThinkingLevels(model).at(-1) : undefined),
@@ -325,8 +345,8 @@ export class PiAiAdapter extends LlmAdapter {
         this.config.onReplayDegrade?.({ provider: options.provider, model: options.model, reason })
       }
       const context = attachments === undefined
-        ? toPiContext(options, undefined, onReplayDegrade)
-        : await toPiContext(options, attachments, onReplayDegrade, profile.maxRequestImageBytes)
+        ? toPiContext(options, undefined, onReplayDegrade, undefined, nativeGrammarTools)
+        : await toPiContext(options, attachments, onReplayDegrade, profile.maxRequestImageBytes, nativeGrammarTools)
       const events = snapshot.models.streamSimple(model, context, {
         ...profileOptions(profile, reasoning, apiKey),
         ...options.temperature === undefined ? {} : { temperature: options.temperature },

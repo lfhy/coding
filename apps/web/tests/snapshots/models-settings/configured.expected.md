@@ -64,7 +64,44 @@
       - button "获取可用模型":
         - img
         - text: 获取可用模型
-      - button "添加模型":
+      - region "模型目录":
+        - textbox "模型 ID 1" [disabled]:
+          - /placeholder: 模型 ID
+          - text: MiniMax-M2.7
+        - textbox "模型名称 1":
+          - /placeholder: 模型名称
+          - text: MiniMax-M2.7
+        - img "视觉未声明"
+        - img "推理未声明"
+        - button "模型设置 1":
+          - img
+        - button "删除模型 1" [disabled]:
+          - img
+        - textbox "模型 ID 2" [disabled]:
+          - /placeholder: 模型 ID
+          - text: MiniMax-M2.7-highspeed
+        - textbox "模型名称 2":
+          - /placeholder: 模型名称
+          - text: MiniMax-M2.7-highspeed
+        - img "视觉未声明"
+        - img "推理未声明"
+        - button "模型设置 2":
+          - img
+        - button "删除模型 2" [disabled]:
+          - img
+        - textbox "模型 ID 3" [disabled]:
+          - /placeholder: 模型 ID
+          - text: MiniMax-M3
+        - textbox "模型名称 3":
+          - /placeholder: 模型名称
+          - text: MiniMax-M3
+        - img "视觉未声明"
+        - img "推理未声明"
+        - button "模型设置 3":
+          - img
+        - button "删除模型 3" [disabled]:
+          - img
+      - button "添加模型" [disabled]:
         - img
         - text: 添加模型
     - button "取消"

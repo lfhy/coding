@@ -9,6 +9,7 @@
 发现过程不做缓存：`list()` 与 `resolve()` 每次调用都重新读取各个根目录，因此进程运行期间新写的 preset 立即可见，被删除的 preset 也会在下一次读取时消失。发现过程同时负责 preset 的**健康**：组装文件缺失或不可加载（YAML 无法解析——用加载器自己的方言检查，含 `!!js`——或不是由具名插件行组成的列表）的目录会作为携带 `broken` 原因的行列出而不是被跳过，因为被跳过的目录仍在磁盘上占着它的 id，而各个界面却没有任何可删的东西。目录名不是可用 preset id（`[a-z0-9][a-z0-9-]*`）的目录才被直接跳过：复制永远不可能占用那种名字。
 
 - `ctx.agentPresets.defaultId: string` 调用方未指定时挂载的 preset id。
+- `ctx.agentPresets.defaultIdForModel(provider, model): string` 按提供方与模型 id 读取其默认 preset；未设置模型专属值时返回实时的全局 `defaultId`，只供新会话缺省选择使用。
 - `ctx.agentPresets.list(): Promise<AgentPreset[]>` 当前各根目录提供的全部 preset；id 重复时靠前的根目录胜出；损坏的 preset 也在其中，各自携带原因。
 - `ctx.agentPresets.resolve(id?): Promise<AgentPreset>` 按 id 取一个 preset，缺省取 `defaultId`。没有任何根目录提供该 id 时抛错，并列出可用 id。损坏的 preset 照样解析——删除、读取与上报都需要这一行。
 - `ctx.agentPresets.mount(agentCtx, id?): Promise<AgentPreset>` 用一个 preset 组装一个 agent——确保其常驻挂载（并发去重）并把 agent 的 scope key 认父到它——返回该 preset 供调用方记录。对损坏的 preset 直接以发现时记下的原因拒绝，所以每种不可加载的形态都在加载器介入之前以同一方式失败。
@@ -106,9 +107,12 @@ description: 仅提供持久 bash 与 str_replace_editor 的双工具编码 Agen
 ```yaml
 agent-presets:
   default: minimal
+  modelDefaults:
+    my-gateway:
+      my-model: codex
 ```
 
-该值在每次解析时读取而非快照，因此热重载的文档对**此后创建**的会话生效，而每个运行中的会话仍停留在它当初据以组装的 preset 上。清空用户字段即重新继承组装默认值。若默认值指向没有任何根目录提供的 preset，写入时不会报错，而在下一次 `resolve()` 时失败——名单是一个活动目录，此刻不存在的名字，等到某个会话真正索取时可能已经存在。
+`modelDefaults` 只属于 `agent-presets` 的用户 settings 分节，按提供方和模型 id 精确查找；没有条目时继承当下生效的全局 `default`，清除模型条目便恢复继承。清空用户层的全局 `default` 会重新继承组装中的 `config.default`。新会话显式选择的 preset 优先于模型默认值；模型默认值不改变已有、恢复或 fork 的会话，也不在已有会话切换模型时更换模式。全局默认值和模型映射在创建新会话时读取而非快照，因此设置更新只影响此后创建的会话。若默认值指向没有任何根目录提供的 preset，写入时不会报错，而在真正解析时失败。
 
 ## 挂载会拒绝什么
 

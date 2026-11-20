@@ -1033,6 +1033,18 @@ export class ToolRuntime extends Service {
    */
   register(definition: ToolDefinition): () => void {
     const name = definition.name
+    const inputFormat = definition.inputFormat
+    if (inputFormat !== undefined) {
+      const value: unknown = snapshotJsonValue(inputFormat)
+      const snapshot = typeof value === 'object' && value !== null && !Array.isArray(value)
+        ? value as Record<string, unknown> : undefined
+      if (snapshot === undefined || snapshot.type !== 'grammar' || snapshot.syntax !== 'lark'
+        || typeof snapshot.definition !== 'string' || snapshot.definition.length === 0
+        || (snapshot.description !== undefined && typeof snapshot.description !== 'string')
+        || Object.keys(snapshot).some(key => !['type', 'syntax', 'definition', 'description'].includes(key))) {
+        throw new TypeError(`tool "${name}" inputFormat must declare grammar/lark with a non-empty definition and optional string description`)
+      }
+    }
     const output = (definition as Partial<ToolDefinition>).output
     if (output === undefined || typeof output !== 'object'
       || typeof output.render !== 'function'
@@ -1261,7 +1273,7 @@ export class ToolRuntime extends Service {
 
   /** 仅为缺少现成友好说明的工具投影展示字段。 */
   private schemaOf(definition: ToolDefinition): ToolSchema {
-    const { name, description, parameters } = definition
+    const { name, description, parameters, inputFormat } = definition
     const detached = snapshotJsonValue(parameters) as JsonSchemaNode | undefined
     if (detached === undefined) {
       throw new Error(`tool "${name}" parameters must be lossless JSON before schema projection`)
@@ -1277,6 +1289,7 @@ export class ToolRuntime extends Service {
       name,
       description,
       parameters: detached as Record<string, unknown>,
+      ...(inputFormat === undefined ? {} : { inputFormat: { ...inputFormat } }),
     }
   }
 

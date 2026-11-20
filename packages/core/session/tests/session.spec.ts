@@ -400,6 +400,36 @@ describe('Session', () => {
     }
   })
 
+  it('round-trips native tool grammar and rejects malformed imported formats', () => {
+    const valid: SessionEvent<'request/header'> = {
+      type: 'request/header', seq: 0, time: 1,
+      data: {
+        header: {
+          config: { provider: 'mock', model: 'model' },
+          tools: [{
+            name: 'apply_patch', description: 'JSON fallback',
+            parameters: { type: 'object', properties: { input: { type: 'string' } }, required: ['input'] },
+            inputFormat: { type: 'grammar', syntax: 'lark', definition: 'start: /.+/', description: 'FREEFORM input' },
+          }],
+        },
+        reason: 'initial',
+      },
+    }
+    expect(Session.create(SessionId('grammar'), [valid]).events[0]).toEqual(valid)
+    for (const inputFormat of [
+      null,
+      { type: 'grammar', syntax: 'regex', definition: 'start: /.+/' },
+      { type: 'grammar', syntax: 'lark', definition: '' },
+      { type: 'grammar', syntax: 'lark', definition: 'start: /.+/', description: 1 },
+      { type: 'grammar', syntax: 'lark', definition: 'start: /.+/', extra: true },
+    ]) {
+      const invalid = structuredClone(valid)
+      ;(invalid.data.header.tools![0] as unknown as Record<string, unknown>)['inputFormat'] = inputFormat
+      expect(() => Session.create(SessionId('invalid-grammar'), [invalid]))
+        .toThrow('seed request/header at index 0 tool 0 has invalid inputFormat')
+    }
+  })
+
   it('round-trips adapter-default markers and rejects invalid durable values', () => {
     const valid = {
       type: 'request/header',

@@ -38,6 +38,14 @@ export interface ProviderRow {
 /** `llm.models` 给出的一条模型条目：能力字段缺席表示提供方未声明。 */
 export type CatalogModel = ModelProviderGroup['models'][number]
 
+/** 设置页只使用模式名单中可供选择的显示事实。 */
+export interface ModelPresetOption {
+  id: string
+  name?: string
+  isDefault: boolean
+  broken?: string
+}
+
 /** 目录中的渠道模型；视觉候选另按显式图片输入能力筛选。 */
 export interface ModelChoice {
   provider: string
@@ -75,6 +83,10 @@ export interface ModelsSettingsState {
   rows: readonly ProviderRow[]
   /** Namespace views by ns, for the editor's schema/layers/secrets. */
   namespaces: ReadonlyMap<string, SettingsNamespaceView>
+  /** 可选的 Agent 模式名单；缺席的已存模式仍由设置镜像保留。 */
+  presets: readonly ModelPresetOption[]
+  /** 名单读取失败不阻止渠道编辑。 */
+  presetsError: string | null
   /** 每条路由当前服务的模型目录，按路由 id 归组；内置渠道的只读卡片读它。 */
   catalog: ReadonlyMap<string, readonly CatalogModel[]>
   visionModels: readonly ModelChoice[]
@@ -149,6 +161,7 @@ export class ModelsSettingsStore {
   /** The snapshot the section renders from (uSES-safe store). */
   readonly store: SnapshotStore<ModelsSettingsState> = createSnapshotStore<ModelsSettingsState>({
     status: 'idle', hasLoaded: false, error: null, credentialError: null, writable: false, rows: [], namespaces: new Map(),
+    presets: [], presetsError: null,
     catalog: new Map(),
     visionModels: [], visionModelsError: null,
     usableModels: [], usableModelsError: null, onboardingModelFailures: [], onboardingDefault: null,
@@ -162,7 +175,7 @@ export class ModelsSettingsStore {
    * @param describeFace - the shared mirror's describe face (namespace views and writability).
    */
   constructor(
-    private readonly api: Pick<IApiClient, 'settings' | 'credentials' | 'llm'>,
+    private readonly api: Pick<IApiClient, 'settings' | 'credentials' | 'llm' | 'agentPresets'>,
     private readonly schema: SettingsSchemaOperations,
     private readonly describeFace: SettingsDescribeFace,
   ) {}
@@ -351,6 +364,15 @@ export class ModelsSettingsStore {
       return
     }
     const namespaces = new Map(views.map(view => [view.ns, view]))
+    let presets: readonly ModelPresetOption[] = []
+    let presetsError: string | null = null
+    try {
+      const response = await this.api.agentPresets.list({})
+      if (response.result.ok) presets = response.result.value.presets
+      else presetsError = response.result.error.message
+    } catch (error) {
+      presetsError = messageOf(error)
+    }
     const defaultSection = namespaces.get('agent-default-model')
     const defaultProvider = defaultSection === undefined ? undefined : this.schema.getPath(defaultSection.value, ['provider'])
     const defaultModel = defaultSection === undefined ? undefined : this.schema.getPath(defaultSection.value, ['model'])
@@ -439,6 +461,8 @@ export class ModelsSettingsStore {
       s.writable = writable
       s.rows = joinedRows
       s.namespaces = namespaces
+      s.presets = presets
+      s.presetsError = presetsError
       s.catalog = catalog
       s.visionModels = visionModels
       s.visionModelsError = visionModelsError

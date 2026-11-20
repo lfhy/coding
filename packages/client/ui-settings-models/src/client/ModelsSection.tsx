@@ -381,6 +381,9 @@ function Loaded({ injected, hideHeader }: { injected: ModelsSectionFace; hideHea
               </div> : null}
               <ProviderEditor key={`${currentTarget.provider}:${editorEpoch}`} {...currentTarget} namespace={currentNamespace}
                 schema={schema} api={api} t={t} readOnly={!state.writable || state.status !== 'ready'} hideTitle channelLayout
+                presetNamespace={state.namespaces.get('agent-presets')} presets={state.presets}
+                presetsError={state.presetsError}
+                catalogModels={state.catalog.get(currentTarget.provider)}
                 onSettingsCommitted={(view) => { controller.acceptSettingsView(view) }}
                 onClose={async (changed) => {
                   if (changed) await announceSaved(currentTarget)
@@ -395,6 +398,8 @@ function Loaded({ injected, hideHeader }: { injected: ModelsSectionFace; hideHea
           contentClassName={styles['customChannelContent'] as string}>
           {declaring ? <CustomProviderCard embedded autoFocusName taken={[...takenRoutes]}
             protocols={protocols} revision={state.namespaces.get('llm-pi-ai')?.revision ?? 0}
+            presetNamespace={state.namespaces.get('agent-presets')} presets={state.presets}
+            presetsError={state.presetsError} schema={schema}
             api={api} t={t} readOnly={!state.writable || state.status !== 'ready'}
             onBusyChange={recordCustomBusy}
             onSettingsCommitted={(view, provider) => {

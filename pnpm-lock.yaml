@@ -7148,6 +7148,9 @@ importers:
       coding-llm-deepseek:
         specifier: workspace:^
         version: link:../llm-deepseek
+      coding-session:
+        specifier: workspace:^
+        version: link:../../core/session
       coding-settings:
         specifier: workspace:^
         version: link:../../settings/settings

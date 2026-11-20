@@ -269,6 +269,24 @@ function assertCurrentLlmShape(event: Record<string, unknown>, index: number): v
       throw new Error(`seed request/header at index ${index} has an invalid reasoningEffort`)
     }
     assertAdapterDefaults(headerRecord?.['adapterDefaults'], configRecord, index)
+    const tools = headerRecord?.['tools']
+    if (Array.isArray(tools)) {
+      const entries: readonly unknown[] = tools
+      for (const [toolIndex, tool] of entries.entries()) {
+        if (typeof tool !== 'object' || tool === null || !Object.hasOwn(tool, 'inputFormat')) continue
+        const format = (tool as Record<string, unknown>)['inputFormat']
+        if (typeof format !== 'object' || format === null || Array.isArray(format)) {
+          throw new Error(`seed request/header at index ${index} tool ${toolIndex} has invalid inputFormat`)
+        }
+        const fields = format as Record<string, unknown>
+        if (fields['type'] !== 'grammar' || fields['syntax'] !== 'lark'
+          || typeof fields['definition'] !== 'string' || fields['definition'].length === 0
+          || (fields['description'] !== undefined && typeof fields['description'] !== 'string')
+          || Object.keys(fields).some(key => !['type', 'syntax', 'definition', 'description'].includes(key))) {
+          throw new Error(`seed request/header at index ${index} tool ${toolIndex} has invalid inputFormat`)
+        }
+      }
+    }
   }
   const type = event['type']
   if (type !== 'user/message' && type !== 'assistant/message'

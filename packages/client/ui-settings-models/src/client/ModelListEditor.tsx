@@ -15,6 +15,7 @@ import {
 import { formatCapacity, parseCapacity } from './DeepSeekModelsEditor.tsx'
 import type { DeepSeekModelDraft } from './DeepSeekModelsEditor.tsx'
 import { messageOf } from './store.ts'
+import type { ModelPresetOption } from './store.ts'
 import type { en } from './locales.ts'
 import styles from './ModelsSection.module.css'
 
@@ -165,6 +166,26 @@ export interface ModelListEditorProps {
   inheritedReasoningEfforts?: readonly string[]
   /** 渠道级 thinking=disabled 时不能启用非 off 档位。 */
   reasoningDisabled?: boolean
+  /** pi-ai 支持的模型上游协议；DeepSeek 不显示该字段。 */
+  protocols?: readonly string[]
+  /** 空的模型协议选择继承这条渠道的协议。 */
+  channelProtocol?: string | undefined
+  /** 当前可选模式，来自 Host 的模式名单。 */
+  presets?: readonly ModelPresetOption[]
+  /** 名单读取失败时保留当前模式及继承选项，并展示诊断。 */
+  presetsError?: string | null | undefined
+  /** 模型到模式的当前设置及尚未提交的渠道草稿。 */
+  presetForModel?: (model: string) => string | undefined
+  /** 仅把本行模式选择纳入渠道草稿，不提交设置。 */
+  onPresetChange?: (model: string, preset: string | undefined) => void
+  /** 模式设置分节不可用时禁止选择。 */
+  presetDisabled?: boolean
+  /** 适配器 catalog 行使用 modelOverrides，不能在本列表改动模型身份或整份目录。 */
+  catalogOnly?: boolean
+  /** 模型身份改变时，外层迁移尚未提交的模式映射。 */
+  onModelIdChange?: (index: number, oldId: string, newId: string, duplicate: boolean) => void
+  /** 删除模型时，外层清除对应的模式映射。 */
+  onModelRemove?: (index: number, id: string) => void
 }
 
 /** 模型设置按钮展开时旋转箭头，指向悬浮表单。 */
@@ -254,6 +275,8 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
   const [levelsOpen, setLevelsOpen] = useState(false)
   const [draft, setDraft] = useState<ModelDraft | null>(null)
   const [draftDirty, setDraftDirty] = useState(false)
+  const [presetDraft, setPresetDraft] = useState<string | undefined>(undefined)
+  const [presetOriginal, setPresetOriginal] = useState<string | undefined>(undefined)
   const [capacityDraft, setCapacityDraft] = useState<Partial<Record<CapacityField, string>>>({})
   const [rememberedReasoning, setRememberedReasoning] = useState<unknown>(undefined)
   const levelsTriggerRef = useRef<HTMLButtonElement>(null)
@@ -281,6 +304,8 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
     setActiveIndex(null)
     setDraft(null)
     setDraftDirty(false)
+    setPresetDraft(undefined)
+    setPresetOriginal(undefined)
     setCapacityDraft({})
     setRememberedReasoning(undefined)
     if (anchorRef.current?.isConnected === true) anchorRef.current.focus({ preventScroll: true })
@@ -293,6 +318,9 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
     setLevelsOpen(false)
     setCapacityDraft({})
     setDraftDirty(false)
+    const preset = props.presetForModel?.(textOf(model, 'id'))
+    setPresetDraft(preset)
+    setPresetOriginal(preset)
     setRememberedReasoning(undefined)
     setDraft({ ...model })
     setActiveIndex(index)
@@ -307,11 +335,14 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
       const fields = {
         ...modalityKey === undefined ? {} : { [modalityKey]: draft[modalityKey] },
         reasoningEfforts: draft['reasoningEfforts'],
+        ...probe.settingsNs === 'llm-pi-ai' ? { api: draft['api'] } : {},
         contextWindow: draft['contextWindow'],
         maxTokens: draft['maxTokens'],
       }
       onChange(models.map((model, index) => index === openedIndex ? withModelFields(model, fields) : model))
     }
+    const id = textOf(models[openedIndex] as ModelDraft, 'id')
+    if (id.length > 0 && presetDraft !== presetOriginal) props.onPresetChange?.(id, presetDraft)
     closeSettings()
   }
 
@@ -493,8 +524,13 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
                 value={textOf(model, 'id')}
                 placeholder={t('modelId')}
                 aria-label={`${t('modelId')} ${index + 1}`}
-                disabled={disabled}
-                onChange={(event) => { patch(index, { id: event.target.value }) }}
+                disabled={disabled || props.catalogOnly === true}
+                onChange={(event) => {
+                  const next = event.target.value
+                  props.onModelIdChange?.(index, textOf(model, 'id'), next,
+                    models.some((other, at) => at !== index && textOf(other, 'id') === next))
+                  patch(index, { id: next })
+                }}
               />
               <input
                 className={styles['input']}
@@ -538,8 +574,9 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
                 className={`${styles['iconButton']} ${styles['iconButtonDanger']}`}
                 aria-label={`${t('removeModel')} ${index + 1}`}
                 title={t('removeModel')}
-                disabled={disabled}
+                disabled={disabled || props.catalogOnly === true}
                 onClick={() => {
+                  props.onModelRemove?.(index, textOf(model, 'id'))
                   onChange(models.filter((_model, at) => at !== index))
                   // 删除当前行时关闭表单；删去前面的行则跟随原有模型前移。
                   setActiveIndex(current => current === null || current === index
@@ -669,6 +706,41 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
                   </button>}
                 />
               </div>}
+              {probe.settingsNs === 'llm-pi-ai' && props.protocols !== undefined ? (
+                <label className={styles['modelField']}>
+                  <span className={styles['modelFieldLabel']}>{t('modelApi')}</span>
+                  <select className={`${styles['input']} ${styles['selectInput']}`}
+                    aria-label={t('modelApi')} value={textOf(model, 'api')}
+                    disabled={disabled} onChange={(event) => { patchDraft({ api: event.target.value || undefined }) }}>
+                    <option value="">{props.channelProtocol === undefined ? t('modelApiInherit')
+                      : `${t('modelApiInherit')} (${props.channelProtocol})`}</option>
+                    {props.protocols.map(protocol => <option key={protocol} value={protocol}>{protocol}</option>)}
+                  </select>
+                </label>
+              ) : null}
+              {props.presetForModel !== undefined ? (
+                <div className={styles['modelField']}>
+                  <label className={styles['modelField']}>
+                    <span className={styles['modelFieldLabel']}>{t('modelDefaultPreset')}</span>
+                    <select className={`${styles['input']} ${styles['selectInput']}`}
+                      aria-label={t('modelDefaultPreset')} value={presetDraft ?? ''}
+                      disabled={disabled || props.presetDisabled === true}
+                      onChange={(event) => { setPresetDraft(event.target.value || undefined) }}>
+                      <option value="">{t('modelPresetInherit')}</option>
+                      {presetDraft !== undefined && !props.presets?.some(preset => preset.id === presetDraft)
+                        ? <option value={presetDraft}>{`${presetDraft} (${t(props.presetsError === undefined || props.presetsError === null
+                          ? 'modelPresetUnavailable' : 'modelPresetUnverified')})`}</option> : null}
+                      {props.presets?.map(preset => <option key={preset.id} value={preset.id}
+                        disabled={preset.broken !== undefined && preset.id !== presetDraft}>
+                        {preset.name ?? preset.id}{preset.broken === undefined ? '' : ` (${t('modelPresetUnavailable')})`}
+                      </option>)}
+                    </select>
+                  </label>
+                  {props.presetsError !== undefined && props.presetsError !== null
+                    ? <p className={styles['modelFieldError']} role="alert">{`${t('modelPresetListFailed')}: ${props.presetsError}`}</p>
+                    : null}
+                </div>
+              ) : null}
               <label className={styles['modelField']}>
                 <span className={styles['modelFieldLabel']}>{t('modelContextWindow')}</span>
                 <input
@@ -710,7 +782,7 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
       <button
         type="button"
         className={styles['addModelButton']}
-        disabled={disabled}
+        disabled={disabled || props.catalogOnly === true}
         onClick={() => { onChange([...models, adopt({ id: '' }, probe.settingsNs, props.reasoningDisabled === true)]) }}
       >
         <IconPlusOutline16 size={16} />{t('addModel')}

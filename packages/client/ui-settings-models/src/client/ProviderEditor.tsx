@@ -9,7 +9,7 @@
  * {@link BuiltinChannelCard}，不经过这里。
  */
 
-import { useEffect, useId, useMemo, useState } from 'react'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { CredentialView, IApiClient, SettingsNamespaceView, SettingsPathOpView } from 'coding-api-remotes/client'
 import { OutboundSelect } from 'coding-client-ui-primitives'
@@ -20,7 +20,10 @@ import { apiKeyFailure } from './apiKey.ts'
 import { MAX_USER_AGENT_LENGTH, validChannelUserAgent } from './user-agent.ts'
 import { EditorFooter } from './EditorFooter.tsx'
 import { ModelListEditor } from './ModelListEditor.tsx'
+import { identitiesAfterRemoval, modelPresetOf, removeModelPreset, renameModelPreset, saveModelPresetChanges } from './model-presets.ts'
+import type { ModelIdentity } from './model-presets.ts'
 import { deriveKeyRef, messageOf, protocolChoices } from './store.ts'
+import type { CatalogModel, ModelPresetOption } from './store.ts'
 import type { SettingsSchemaOperations } from './schema-operations.ts'
 import type { en } from './locales.ts'
 import styles from './ModelsSection.module.css'
@@ -80,6 +83,12 @@ export interface ProviderEditorProps {
   onClose: (changed: boolean) => void | Promise<void>
   /** 本卡片成功写入后的脱敏分节应答，交给设置镜像而非另读文档。 */
   onSettingsCommitted?: (view: SettingsNamespaceView) => void
+  /** 模型默认模式所属分节与可选名单，均来自共享设置镜像。 */
+  presetNamespace?: SettingsNamespaceView | undefined
+  presets?: readonly ModelPresetOption[]
+  presetsError?: string | null | undefined
+  /** 适配器实际列出的目录行，仅在 profile 未声明 models 时供独立设置窗口使用。 */
+  catalogModels?: readonly CatalogModel[] | undefined
 }
 
 /** A user-section subtree as a plain draft object (absent → empty). */
@@ -176,6 +185,10 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
     () => schema.getPath(namespace.user, settingsPath),
   )
   const [expectedRevision, setExpectedRevision] = useState(() => namespace.revision)
+  const [presetView, setPresetView] = useState(() => props.presetNamespace)
+  const [presetChanges, setPresetChanges] = useState<ReadonlyMap<string, string | undefined>>(() => new Map())
+  const modelIdentity = useRef(new Map<number, ModelIdentity>())
+  const [keyCommitted, setKeyCommitted] = useState(false)
   const root = useMemo(() => schema.rehydrate(namespace.schema), [namespace.schema, schema])
   const node = useMemo(() => schema.nodeAtPath(root, settingsPath), [root, schema, settingsPath])
   const fallback = schema.getPath(namespace.value, settingsPath)
@@ -250,7 +263,7 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
   // as "no key supplied" rather than as a key — that is how a card whose
   // provider already has a stored key is edited without re-entering it.
   const keyValue = keyDraft.trim()
-  const credentialRequiredFailure = props.credentialRequired === true
+  const credentialRequiredFailure = props.credentialRequired === true && !keyCommitted
     && keyDraft.length > 0 && keyValue.length === 0
     ? 'keyRequired' as const
     : undefined
@@ -325,8 +338,16 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
     if (keyValue.length > 0) {
       const stored = await api.credentials.set({ ref: keyRef, value: keyValue })
       if (!stored.result.ok) return stored.result.error.message
+      setKeyCommitted(true)
+      setKeyDraft('')
     }
-    setKeyDraft('')
+    const presetResult = await saveModelPresetChanges(api, presetView, presetChanges, props.provider,
+      props.onSettingsCommitted, t('conflict'))
+    if (presetResult.failure !== undefined) return presetResult.failure
+    if (presetResult.view !== undefined) {
+      setPresetView(presetResult.view)
+      setPresetChanges(new Map())
+    }
     return undefined
   }
 
@@ -382,7 +403,17 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
     const ownsIdentity = family === 'pi-ai' && props.declared === true
     const customModels = schema.getPath(draft, ['models'])
     const modelsOverridden = schema.hasPath(draft, ['models'])
-    const models = modelDrafts(modelsOverridden ? customModels : inheritedModels())
+    const inherited = modelDrafts(modelsOverridden ? customModels : inheritedModels())
+    const catalogOnly = family === 'pi-ai' && inherited.length === 0 && (props.catalogModels?.length ?? 0) > 0
+    const models: Record<string, unknown>[] = catalogOnly ? (props.catalogModels ?? []).map((model) => {
+      const fromBase = schema.getPath(namespace.base, [...settingsPath, 'modelOverrides', model.id])
+      const fromDraft = schema.getPath(draft, ['modelOverrides', model.id])
+      const base = typeof fromBase === 'object' && fromBase !== null && !Array.isArray(fromBase)
+        ? fromBase as Record<string, unknown> : {}
+      const override = typeof fromDraft === 'object' && fromDraft !== null && !Array.isArray(fromDraft)
+        ? fromDraft as Record<string, unknown> : {}
+      return { id: model.id, name: model.name, ...base, ...override }
+    }) : inherited
     const defaultContextWindow = schema.getPath(fallback, ['defaultContextWindow'])
     const defaultMaxTokens = schema.getPath(fallback, ['maxTokens'])
     const keyPlaceholder = keyLocked
@@ -397,9 +428,78 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
       t,
       disabled,
       onChange: (next: Record<string, unknown>[]) => {
-        setDraft(current => schema.setPath(current, ['models'], next))
+        if (!catalogOnly || next.length !== models.length) {
+          // 端点导入将整份目录具化；行已合入原有覆盖，不能再并存 modelOverrides。
+          setDraft((current) => {
+            const updated = schema.setPath(current, ['models'], next)
+            return catalogOnly ? schema.deletePath(updated, ['modelOverrides']) : updated
+          })
+          return
+        }
+        // catalog 仍由适配器持有；就地更正只写 modelOverrides，不生成替换目录。
+        setDraft((current) => {
+          let updated = current
+          for (const [index, before] of models.entries()) {
+            const after = next[index]
+            const id = before['id']
+            if (after === undefined || typeof id !== 'string' || after['id'] !== id) continue
+            const stored = schema.getPath(updated, ['modelOverrides', id])
+            const override = typeof stored === 'object' && stored !== null && !Array.isArray(stored)
+              ? { ...stored as Record<string, unknown> } : {}
+            for (const key of ['name', 'api', 'contextWindow', 'maxTokens', 'input', 'reasoningEfforts']) {
+              if (JSON.stringify(before[key]) === JSON.stringify(after[key])) continue
+              const value = after[key]
+              if (value === undefined) Reflect.deleteProperty(override, key)
+              else override[key] = value
+            }
+            updated = Object.keys(override).length === 0
+              ? schema.deletePath(updated, ['modelOverrides', id])
+              : schema.setPath(updated, ['modelOverrides', id], override)
+          }
+          return updated
+        })
       },
       onReset: () => { setDraft(current => schema.deletePath(current, ['models'])) },
+      onModelIdChange: (index: number, oldId: string, newId: string, duplicate: boolean) => {
+        const prior = modelIdentity.current.get(index)
+          ?? { original: oldId || newId, invalid: false, lastValid: oldId || newId }
+        const invalid = duplicate || newId.length === 0
+        if (newId === prior.original && !invalid) modelIdentity.current.delete(index)
+        else modelIdentity.current.set(index, {
+          original: prior.original, invalid, lastValid: invalid ? prior.lastValid : newId,
+        })
+        setPresetChanges(current => renameModelPreset(current, presetView, schema, props.provider,
+          prior.original, prior.invalid ? prior.lastValid : oldId, newId, invalid))
+      },
+      onModelRemove: (index: number, id: string) => {
+        const identity = modelIdentity.current.get(index)
+        const original = identity?.original ?? id
+        const { shifted, recovered } = identitiesAfterRemoval(modelIdentity.current, models, index)
+        modelIdentity.current = shifted
+        setPresetChanges((current) => {
+          let next = removeModelPreset(current, presetView, schema, props.provider,
+            original, identity?.invalid === true ? identity.lastValid : id)
+          for (const row of recovered) {
+            next = renameModelPreset(next, presetView, schema, props.provider,
+              row.identity.original, row.identity.lastValid, row.id, false)
+          }
+          return next
+        })
+      },
+      presets: props.presets ?? [],
+      presetsError: props.presetsError,
+      presetForModel: (id: string) => presetChanges.has(id)
+        ? presetChanges.get(id) : modelPresetOf(presetView, schema, props.provider, id),
+      onPresetChange: (id: string, preset: string | undefined) => {
+        setPresetChanges((current) => {
+          const next = new Map(current)
+          const original = modelPresetOf(presetView, schema, props.provider, id)
+          if (preset === original) next.delete(id)
+          else next.set(id, preset)
+          return next
+        })
+      },
+      presetDisabled: presetView === undefined,
     }
     /**
      * 渠道级出站：直连／内置代理池／自定义代理。写入草稿的 `outbound` 路径，
@@ -607,7 +707,12 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
                   defaultMaxTokens={typeof defaultMaxTokens === 'number' ? defaultMaxTokens : undefined}
                 />
               )
-              : <ModelListEditor {...catalogProps} probe={probe} probeBlocked={keyFailure} api={api}
+              : <ModelListEditor {...catalogProps} probe={probe}
+                probeBlocked={keyFailure ?? (catalogOnly
+                  && schema.getPath(namespace.base, [...settingsPath, 'modelOverrides']) !== undefined
+                  ? 'catalogManaged' : undefined)} api={api}
+                {...family === 'pi-ai' ? { protocols, channelProtocol: probeApi } : {}}
+                catalogOnly={catalogOnly}
                 providerName={props.displayName}
                 {...family === 'deepseek' ? { inheritedReasoningEfforts:
                   schema.getPath(fallback, ['thinking']) === 'disabled' ? ['off'] : ['off', 'low', 'high', 'max'] } : {}}
@@ -650,7 +755,7 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
           || outboundFailure !== undefined
           || userAgentFailure !== undefined
           || shownKeyFailure !== undefined
-          || (props.credentialRequired === true && keyValue.length === 0)}
+          || (props.credentialRequired === true && !keyCommitted && keyValue.length === 0)}
         submitLabel={props.submitLabel ?? 'apply'}
         submitBusyLabel={props.submitBusyLabel ?? 'applying'}
         {...props.cancelLabel === undefined ? {} : { cancelLabel: props.cancelLabel }}

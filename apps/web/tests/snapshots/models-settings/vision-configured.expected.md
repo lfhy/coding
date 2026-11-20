@@ -53,5 +53,6 @@
       - option "Free / Dots3 Note Preview (Kilo)"
       - option "Free / Nemotron 3 Nano Omni (Kilo)"
       - option "minimax-cn / MiniMax-M3"
+      - option "cerebras / Gemma 4 31B IT"
       - option "cerebras / Acme Beta" [selected]
       - option "cerebras / Orion Basic"

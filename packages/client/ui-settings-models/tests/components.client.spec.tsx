@@ -166,6 +166,9 @@ function scriptedFace(overrides: {
   const set = overrides.set ?? vi.fn(() => Promise.resolve(ok({})))
   const unset = overrides.unset ?? vi.fn(() => Promise.resolve(ok({})))
   const face = {
+    agentPresets: {
+      list: vi.fn(() => Promise.resolve(ok({ presets: [], authorable: false, hasDocument: false }))),
+    },
     llm: {
       providers: vi.fn(() => {
         const channelName = settingsSchema.getPath(namespaces().find(view => view.ns === 'llm-deepseek')?.value, ['channelName'])

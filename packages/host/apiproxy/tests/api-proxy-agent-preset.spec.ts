@@ -39,17 +39,26 @@ function stubAgent(session: Session): Agent {
  * `apps/cli`. Ids listed in `userIds` present as locally authored; the rest
  * ship with the deployment.
  */
-function roster(ids: readonly string[], userIds: readonly string[] = [], defaultId = ids[0]): unknown {
+function roster(
+  ids: readonly string[], userIds: readonly string[] = [], defaultId = ids[0],
+  modelDefaults: Readonly<Record<string, Readonly<Record<string, string>>>> = {},
+  beforeResolve?: () => Promise<void>,
+): unknown {
   const trustOf = (id: string): 'system' | 'user' => (userIds.includes(id) ? 'user' : 'system')
   const presetOf = (id: string): object =>
     ({ id, trust: trustOf(id), path: `/presets/${id}/agent.cordis.yml` })
   return {
     defaultId,
+    defaultIdForModel: (provider: string, model: string) => {
+      const models = Object.hasOwn(modelDefaults, provider) ? modelDefaults[provider] : undefined
+      return models !== undefined && Object.hasOwn(models, model) ? models[model] : defaultId
+    },
     list: () => Promise.resolve(ids.map(presetOf)),
-    resolve: (id?: string) => {
+    resolve: async (id?: string) => {
+      await beforeResolve?.()
       const wanted = id ?? defaultId ?? ''
-      if (!ids.includes(wanted)) return Promise.reject(new UnknownPresetError(wanted, ids))
-      return Promise.resolve(presetOf(wanted))
+      if (!ids.includes(wanted)) throw new UnknownPresetError(wanted, ids)
+      return presetOf(wanted)
     },
     mount: (_ctx: Context, id?: string) => Promise.resolve(presetOf(id ?? defaultId ?? '')),
     // What a real mount leaves behind: a service instance only the agent that
@@ -108,7 +117,9 @@ async function harness(
     userIds?: readonly string[]
     defaults?: Record<string, unknown>
     defaultPresetId?: string
+    modelDefaults?: Readonly<Record<string, Readonly<Record<string, string>>>>
     imageAvailable?: boolean
+    beforeResolve?: () => Promise<void>
   } = {},
 ) {
   const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'dsh-apiproxy-preset-')))
@@ -117,14 +128,20 @@ async function harness(
   await ctx.plugin(AgentRegistry)
   await ctx.plugin(UserQuestionService)
   ctx.provide('sessionPersistence', (persistence ?? { list: () => Promise.resolve([]) }) as never)
-  if (presets !== undefined) ctx.provide('agentPresets', roster(presets, options.userIds, options.defaultPresetId) as never)
+  if (presets !== undefined) {
+    ctx.provide('agentPresets', roster(
+      presets, options.userIds, options.defaultPresetId, options.modelDefaults, options.beforeResolve,
+    ) as never)
+  }
   let imageAvailable = options.imageAvailable ?? false
   if (options.imageAvailable !== undefined) {
     ctx.provide('imageGeneration', { status: () => Promise.resolve({ available: imageAvailable }) } as never)
   }
 
+  const createdOptions = new Map<string, { provider?: string; model?: string }>()
   const factory: AgentFactory = {
     async createAgent(_ownerCtx, options) {
+      createdOptions.set(String(options.sessionId), options.agentOptions ?? {})
       const session = ctx.sessions.create(
         options.sessionId,
         options.meta === undefined ? {} : { meta: options.meta },
@@ -149,7 +166,7 @@ async function harness(
     cwd,
     ...options.defaults,
   })
-  return { api, ctx, cwd, setImageAvailable: (available: boolean) => { imageAvailable = available } }
+  return { api, ctx, cwd, createdOptions, setImageAvailable: (available: boolean) => { imageAvailable = available } }
 }
 
 describe('session.create with an agent preset', () => {
@@ -168,6 +185,84 @@ describe('session.create with an agent preset', () => {
     await api.sessions.create(request({ sessionId: SessionId('s2') }))
 
     expect(ctx.sessions.get(SessionId('s2'))?.header.agentPreset).toBe('standard')
+  })
+
+  it('chooses a preset from the exact current default model only for fresh sessions', async () => {
+    let model = 'model-one'
+    const { api, ctx } = await harness(['standard', 'minimal'], undefined, {
+      modelDefaults: { test: { 'model-one': 'minimal' } },
+      defaults: { defaultModelSelection: () => ({ provider: 'test', model }) },
+    })
+
+    const listed = await api.agentPresets.list(request({}))
+    await api.sessions.create(request({ sessionId: SessionId('model-one') }))
+    model = 'model-two'
+    await api.sessions.create(request({ sessionId: SessionId('model-two') }))
+    await api.sessions.create(request({ sessionId: SessionId('explicit'), agentPreset: 'standard' }))
+    await api.sessions.create(request({ sessionId: SessionId('model-one') }))
+
+    expect(ctx.sessions.get(SessionId('model-one'))?.header.agentPreset).toBe('minimal')
+    expect(ctx.sessions.get(SessionId('model-two'))?.header.agentPreset).toBe('standard')
+    expect(ctx.sessions.get(SessionId('explicit'))?.header.agentPreset).toBe('standard')
+    expect(listed.result.ok && listed.result.value.presets.find(preset => preset.isDefault)?.id).toBe('standard')
+  })
+
+  it('keeps the model and preset from one creation snapshot while composition awaits', async () => {
+    const selected = { provider: 'test', model: 'model-one' }
+    let reads = 0
+    let enteredResolve!: () => void
+    let releaseResolve!: () => void
+    const entered = new Promise<void>((resolve) => { enteredResolve = resolve })
+    const held = new Promise<void>((resolve) => { releaseResolve = resolve })
+    const { api, ctx, createdOptions } = await harness(['standard', 'minimal'], undefined, {
+      modelDefaults: { test: { 'model-one': 'minimal' } },
+      defaults: { defaultModelSelection: () => { reads++; return selected } },
+      beforeResolve: async () => { enteredResolve(); await held },
+    })
+
+    const pending = api.sessions.create(request({ sessionId: SessionId('snapshot') }))
+    await entered
+    selected.model = 'model-two'
+    releaseResolve()
+    const created = await pending
+
+    expect(created.result.ok).toBe(true)
+    expect(ctx.sessions.get(SessionId('snapshot'))?.header.agentPreset).toBe('minimal')
+    expect(createdOptions.get('snapshot')).toEqual({ provider: 'test', model: 'model-one' })
+    expect(reads).toBe(1)
+  })
+
+  it('keeps an explicit preset over a model override', async () => {
+    const { api, ctx } = await harness(['standard', 'minimal'], undefined, {
+      modelDefaults: { test: { 'test-model': 'minimal' } },
+    })
+
+    await api.sessions.create(request({ sessionId: SessionId('explicit-mode'), agentPreset: 'standard' }))
+
+    expect(ctx.sessions.get(SessionId('explicit-mode'))?.header.agentPreset).toBe('standard')
+  })
+
+  it('rejects an unavailable model preset without creating a session', async () => {
+    const { api, ctx } = await harness(['standard', 'minimal'], undefined, {
+      modelDefaults: { test: { 'test-model': 'missing' } },
+    })
+
+    const created = await api.sessions.create(request({ sessionId: SessionId('unknown-mode') }))
+
+    expect(created.result.ok).toBe(false)
+    if (created.result.ok) throw new Error('unreachable')
+    expect(created.result.error.code).toBe('agent-preset-not-found')
+    expect(ctx.sessions.get(SessionId('unknown-mode'))).toBeUndefined()
+  })
+
+  it('applies the existing image availability fallback to a model preset', async () => {
+    const { api, ctx } = await harness(['minimal', 'image', 'standard'], undefined, {
+      modelDefaults: { test: { 'test-model': 'image' } }, imageAvailable: false,
+    })
+
+    await api.sessions.create(request({ sessionId: SessionId('model-image') }))
+
+    expect(ctx.sessions.get(SessionId('model-image'))?.header.agentPreset).toBe('standard')
   })
 
   it('rejects a fresh image session without a ready provider, but preserves an existing one', async () => {

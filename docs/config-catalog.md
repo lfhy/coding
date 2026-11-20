@@ -1210,6 +1210,8 @@ export interface PiAiProviderProfile {
 export interface PiAiModelProfile {
   /** Model id sent to the provider and accepted by {@link GenerateOptions.model}. */
   id: string
+  /** 本模型的请求协议；省略时继承渠道协议，再继承目录中的模型协议。 */
+  api?: string
   /** Display name for selectors; defaults to the catalog name, then the id. */
   name?: string
   /** Maximum combined request and response context in tokens. */
@@ -1310,6 +1312,8 @@ export interface PiAiCompatProfile {
    * `openai-completions`, the three Responses protocols, `bedrock-converse-stream`.
    */
   supportsStrictMode?: boolean
+  /** 是否使用 Responses 原生语法工具；设为 false 时保留 JSON 工具调用。 */
+  supportsOpenAIGrammarTools?: boolean
   /** Prompt-cache marker convention; `openai-completions`. */
   cacheControlFormat?: NonNullable<OpenAICompletionsCompat['cacheControlFormat']>
   /**
@@ -1650,10 +1654,12 @@ export interface Config {
   complete?: boolean
   /** Suppress dynamic runtime-context snapshots for this persona's agent scope. */
   includeRuntimeContext?: boolean
+  /** 是否保留部署级 Coding 身份段；false 仅遮蔽当前 agent 的该段。 */
+  includeHarnessIdentity?: boolean
 }
 ```
 
-Source: [`packages/preset/persona/src/index.ts:34`](../packages/preset/persona/src/index.ts)
+Source: [`packages/preset/persona/src/index.ts:32`](../packages/preset/persona/src/index.ts)
 
 <a id="coding-plan-mode"></a>
 
@@ -2613,7 +2619,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/core/system-prompt/src/index.ts:186`](../packages/core/system-prompt/src/index.ts)
+Source: [`packages/core/system-prompt/src/index.ts:192`](../packages/core/system-prompt/src/index.ts)
 
 <a id="coding-terminal-bash"></a>
 

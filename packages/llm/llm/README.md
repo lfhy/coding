@@ -65,6 +65,8 @@
 
 流式输出是原始分片协议（`block-start`、`text-delta`、`reasoning-delta`、`tool-call-delta`、`block-end`、`usage`、`finish`）。每个适配器结果都以一个终止 `finish` 到达消费方；运行故障使用 `error` 或 `aborted` 作为结束原因，而不会跨流 API 抛出。`BlockAssembler` 是将分片组装为块／消息的唯一共享实现。成功的 `finish` 可以携带 `ReplayEnvelope`——不透明的响应级回放元数据，加上与发射块序列对齐的可选逐块条目。组装对内容与元数据只做一次保留/丢弃决定：`max-tokens` 结束会丢弃可能被截断的工具调用，数据在每个被丢弃的位置同步失去对应条目，因此存储的元数据始终描述存储的内容。
 
+`ToolSchema` 始终携带用于参数校验、执行和 JSON 函数调用回退的 `parameters`；可选 `inputFormat: { type: 'grammar', syntax: 'lark', definition, description? }` 允许适配器为支持的原生协议改用 Lark 语法输入。`inputFormat.description` 仅用于原生语法路径，不能代替普通函数工具的 `description`；是否启用语法由所选适配器和协议决定。
+
 ### 调用配置（`call-config.ts`）
 
 `LlmCallConfig` 记录一个会话的模型请求所使用的提供方、模型、由适配器定义的可选推理强度，以及采样参数（`provider`、`model`、`reasoningEffort`、`temperature`、`maxTokens`、`stop`，分别与同名 `GenerateOptions` 字段一一对应）。它是作为请求标头一部分记录在会话日志中的每会话状态（见 dsh-session `request/header` 事件），绝不是可静默调整的每次调用旋钮：`agent/request` waterfall 会提议替换，`prepareCall()` 在轮次 signal 控制下校验它并填入适配器默认值，loop 随后记录生效值以及标明哪些字段由适配器默认值填入的标记，再使用已准备调用中与注册绑定的流。下一次提议会省略带标记的默认值，使变更后的路由解析自身的值；未带标记的显式字段会保留。`callConfigEquals(a, b)` 是逐字段真实变更检测器；`deepFreeze(value)` 是 loop 使用的请求所有权辅助函数：每个构造完成的请求都会在分发前深度冻结；`llm/stream` 监听器和适配器只能读取，绝不能改写。`markAgentLoopRequest()` 将该精确对象标记为由进程本地 agent loop 创建，`isAgentLoopRequest()` 让观测方可以将其与同样可能冻结并关联会话、但独立记录的辅助调用区分。`GenerateOptions.purpose` 会对已记录的辅助压缩和会话标题调用进行分类，使适配器可以按调用目的应用不同的传输策略，而不改变普通会话请求。

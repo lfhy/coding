@@ -135,4 +135,29 @@ describe('ReasoningRow', () => {
     expect(body?.querySelector('strong')?.textContent).toBe('persistence')
     expect(body?.querySelector('code')?.textContent).toBe('session.ts')
   })
+
+  it('does not show an empty completed Think disclosure for opaque-only reasoning', () => {
+    const view = render(
+      <AssistantMarkdown
+        t={t}
+        blocks={[{ kind: 'reasoning', text: '' }, { kind: 'text', text: 'The answer' }]}
+        streaming={false}
+        renderMessageImages={renderMessageImages}
+      />,
+    )
+    expect(view.getByText('The answer')).toBeTruthy()
+    expect(view.queryByText('Think')).toBeNull()
+    expect(view.queryByRole('button')).toBeNull()
+
+    view.rerender(
+      <AssistantMarkdown
+        t={t}
+        blocks={[{ kind: 'reasoning', text: '' }]}
+        streaming
+        renderMessageImages={renderMessageImages}
+      />,
+    )
+    expect(view.getByText('Think')).toBeTruthy()
+    expect(view.getByText('运行中')).toBeTruthy()
+  })
 })

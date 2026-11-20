@@ -2,14 +2,8 @@
  * Construction of the pi-ai `Provider` that one configured route registers into
  * the adapter's `Models` collection.
  *
- * Two constructions, one decision: a route the installed catalog ships, whose
- * profile does not override the wire protocol, **reuses that catalog provider**
- * with its models replaced — the catalog provider owns API implementations this
- * package cannot reconstruct (Bedrock loads its Smithy module through a
- * separate entry point), so rebuilding it from parts would silently narrow
- * which providers work. Every other route — one pi-ai has never heard of, or a
- * catalog route pointed at a different protocol — is built by `createProvider`
- * over the protocol table below.
+ * 目录渠道保留原提供方的协议实现；其新增协议由单独的 pi-ai 实现承接。
+ * 自定义渠道或显式改写整条渠道协议时，按模型协议构造提供方。
  *
  * Credentials never reach this module's storage: the harness resolves a route's
  * key through `ctx.credentials` before the request enters pi-ai and hands it
@@ -90,7 +84,7 @@ export interface ProviderSpec {
   provider: string
   /** Display name for selectors and status labels. */
   displayName: string
-  /** Wire protocol override; absent means each model keeps its catalog protocol. */
+  /** 渠道协议覆盖；模型自身的协议选择仍优先。 */
   api?: string
   /** Endpoint override already applied to {@link models}; kept for provider-level display. */
   baseURL?: string
@@ -159,34 +153,64 @@ function reuseCatalogProvider(base: Provider, spec: ProviderSpec): Provider {
 }
 
 /**
- * Build the pi-ai provider for one resolved route.
- * @param spec - the resolved route facts.
- * @returns the provider to register in the adapter's `Models` collection.
- * @throws Error when the route names a wire protocol this build cannot serve.
+ * 按模型协议构建请求实现；目录渠道保留原生实现，只有新增的协议走显式工厂。
+ * @param spec - 已解析的渠道与模型。
+ * @returns 注册到适配器模型集合的提供方。
+ * @throws Error 显式协议没有可用的请求实现时抛出。
  */
 export function buildProvider(spec: ProviderSpec): Provider {
   const catalog = catalogProvider(spec.provider)
-  // A catalog route keeping its catalog protocol reuses the catalog provider;
-  // an explicit protocol means the deployment is repointing the route at a
-  // different wire format, which only the protocol table can serve.
-  if (catalog !== undefined && spec.api === undefined) return reuseCatalogProvider(catalog, spec)
-
-  // Every model on this path carries the route's protocol: model resolution
-  // requires one for a route the catalog cannot default, and an explicit one
-  // replaces each catalog model's own. So the route has a single API.
-  const factory = spec.api === undefined ? undefined : PROTOCOLS[spec.api]
-  if (factory === undefined) {
+  if (spec.api !== undefined && PROTOCOLS[spec.api] === undefined) {
     throw new Error(
       `llm-pi-ai: provider "${spec.provider}" names api "${spec.api}", which this build cannot serve;`
       + ` supported protocols are ${supportedProtocols().join(', ')}`,
     )
   }
-  return createProvider({
+
+  const nativeApis = catalog === undefined || spec.api !== undefined
+    ? new Set<string>()
+    : new Set(catalog.getModels().map(model => model.api))
+  const delegated = spec.models.filter(model => !nativeApis.has(model.api))
+  if (catalog === undefined && delegated.length === 0) {
+    throw new Error(
+      `llm-pi-ai: provider "${spec.provider}" names api "${spec.api}", which this build cannot serve;`
+      + ` supported protocols are ${supportedProtocols().join(', ')}`,
+    )
+  }
+  if (delegated.length === 0 && catalog !== undefined) return reuseCatalogProvider(catalog, spec)
+
+  const streams: Record<string, ProviderStreams> = {}
+  for (const model of delegated) {
+    const factory = PROTOCOLS[model.api]
+    if (factory === undefined) {
+      throw new Error(
+        `llm-pi-ai: provider "${spec.provider}" model "${model.id}" names api "${model.api}",`
+        + ` which this build cannot serve; supported protocols are ${supportedProtocols().join(', ')}`,
+      )
+    }
+    streams[model.api] ??= factory()
+  }
+  const auth = routeAuth(spec, catalog)
+  const custom = createProvider({
     id: spec.provider,
     name: spec.displayName,
     ...spec.baseURL === undefined ? {} : { baseUrl: spec.baseURL },
-    auth: routeAuth(spec, catalog),
-    models: spec.models,
-    api: factory(),
+    auth,
+    models: delegated,
+    api: streams,
   })
+  if (catalog === undefined || spec.api !== undefined) return custom
+
+  // 目录提供方可能包含无法仅凭密钥重建的原生协议；只替换其目录没有的协议。
+  const native = reuseCatalogProvider(catalog, spec)
+  const delegatedIds = new Set(delegated.map(model => model.id))
+  return {
+    ...native,
+    stream: (model, context, options) => delegatedIds.has(model.id)
+      ? custom.stream(model, context, options)
+      : native.stream(model, context, options),
+    streamSimple: (model, context, options) => delegatedIds.has(model.id)
+      ? custom.streamSimple(model, context, options)
+      : native.streamSimple(model, context, options),
+  }
 }

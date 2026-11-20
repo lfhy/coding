@@ -1098,9 +1098,9 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
     ?? DEFAULT_SESSION_LOG_COMPRESSION_LEVEL
   const coldBlankProbeMaxBytes = defaults.coldBlankProbeMaxBytes
     ?? DEFAULT_COLD_BLANK_PROBE_MAX_BYTES
-  /** The seed model each create/resume declares; re-read so it never goes stale. */
-  const agentOptions = (): AgentOptions => {
-    const { provider, model } = defaults.defaultModelSelection()
+  /** 创建时可传同一次模式解析的模型快照；恢复与 fork 仍读取调用当下的默认值。 */
+  const agentOptions = (selection: ModelSelection = defaults.defaultModelSelection()): AgentOptions => {
+    const { provider, model } = selection
     return { provider, model }
   }
   type WebModelSelectionRef = ModelSelectionRef & { current: ModelSelection }
@@ -1225,14 +1225,18 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
     return { visible, defaultId, imageUnavailable }
   }
 
-  /** 只约束本次新建；冷恢复与 fork 必须使用已记录的画图预设。 */
-  async function freshPresetId(requested: string | undefined): Promise<string | undefined> {
+  /** 新建时依次采用显式模式、所捕获模型的覆盖及全局默认；冷恢复与 fork 使用会话记录。 */
+  async function freshPresetId(requested: string | undefined, selection: ModelSelection): Promise<string | undefined> {
     const presets = ctx.get('agentPresets')
     if (presets === undefined || requested !== undefined && requested !== 'image') return requested
-    const configuredDefault = presets.defaultId
-    if (requested === undefined && configuredDefault !== 'image') return configuredDefault
+    let configuredDefault = requested
+    if (configuredDefault === undefined) {
+      const { provider, model } = selection
+      configuredDefault = presets.defaultIdForModel(provider, model)
+    }
+    if (configuredDefault !== 'image') return configuredDefault
     const selectable = await selectablePresets(presets, configuredDefault)
-    if (!selectable.imageUnavailable) return requested ?? configuredDefault
+    if (!selectable.imageUnavailable) return configuredDefault
     if (requested === 'image' || selectable.defaultId === undefined) {
       throw new PresetMountError('image', IMAGE_PRESET_UNAVAILABLE)
     }
@@ -1682,10 +1686,11 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         } catch (error: unknown) {
           throw new Error(`failed to ensure project directory "${cwd}": ${String(error)}`, { cause: error })
         }
-        const composition = await composeAgent(await freshPresetId(presetId))
+        const selection = { ...defaults.defaultModelSelection() }
+        const composition = await composeAgent(await freshPresetId(presetId, selection))
         return (await ctx.agents.create({
           sessionId,
-          agentOptions: agentOptions(),
+          agentOptions: agentOptions(selection),
           meta: {
             cwd,
             ...composition.agentPreset === undefined ? {} : { agentPreset: composition.agentPreset },

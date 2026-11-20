@@ -315,7 +315,8 @@ describe('SystemPrompt', () => {
     const ctx = new Context()
     await ctx.plugin(SystemPrompt)
     ctx.systemPrompt.section({ name: 'base', order: 0, text: 'base' })
-    ctx.systemPrompt.tools(() => ({ schemas: [{ name: 't', description: 'tool', parameters: { type: 'object', properties: {} } }] }))
+    const inputFormat = { type: 'grammar' as const, syntax: 'lark' as const, definition: 'start: /.+/', description: 'Freeform text' }
+    ctx.systemPrompt.tools(() => ({ schemas: [{ name: 't', description: 'tool', parameters: { type: 'object', properties: {} }, inputFormat }] }))
 
     const first = await ctx.systemPrompt.assemble()
     first.sections[0]!.name = 'mutated'
@@ -324,12 +325,13 @@ describe('SystemPrompt', () => {
     first.tools[0]!.description = 'mutated'
     const firstParameters = first.tools[0]!.parameters as { properties: Record<string, unknown> }
     firstParameters.properties['leak'] = { type: 'string' }
+    first.tools[0]!.inputFormat!.description = 'mutated'
 
     const second = await ctx.systemPrompt.assemble()
     expect(second.sections.map(section => section.name)).toEqual(['harness:identity', 'deployment:persona', 'base'])
     expect(second.sections[0]!.text).toBe(IDENTITY)
     expect(second.contexts).toEqual([])
-    expect(second.tools).toEqual([{ name: 't', description: 'tool', parameters: { type: 'object', properties: {} } }])
+    expect(second.tools).toEqual([{ name: 't', description: 'tool', parameters: { type: 'object', properties: {} }, inputFormat }])
   })
 
   it('filters out empty section text from renderPrompt', () => {

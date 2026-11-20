@@ -5,6 +5,7 @@ import { SettingsDescribeMirror } from 'coding-client-ui-settings/src/client/set
 import { settingsSchema } from './settings-schema.client.ts'
 import { messageOf, ModelsSettingsStore } from '../src/client/store.ts'
 import { onboardingReadiness } from '../src/client/store.ts'
+import { modelPresetOf, renameModelPreset, saveModelPresetChanges } from '../src/client/model-presets.ts'
 
 let nextRpc = 0
 function ok<T>(value: T): RpcResponse<T> {
@@ -66,6 +67,7 @@ function api(overrides: {
     failures: Array<{ id: string; name: string; message: string }>
   }>>
   mutate?: (payload: unknown) => Promise<unknown>
+  presets?: () => Promise<unknown>
 } = {}) {
   const seenRefs: string[][] = []
   const face = {
@@ -89,12 +91,68 @@ function api(overrides: {
       set: () => Promise.resolve(ok({})),
       unset: () => Promise.resolve(ok({})),
     },
+    agentPresets: {
+      list: overrides.presets ?? (() => Promise.resolve(ok({ presets: [], authorable: false, hasDocument: false }))),
+    },
   }
   const wire = face as never
   return { face: wire, mirror: new SettingsDescribeMirror(wire), seenRefs }
 }
 
 describe('ModelsSettingsStore', () => {
+  it('joins a mode roster without treating it as the per-model source of truth', async () => {
+    const namespace = { ns: 'agent-presets', schema: {}, value: {
+      default: 'standard', modelDefaults: { 'provider.with.dot': { 'model.with.dot': 'removed-preset' } },
+    }, user: {}, revision: 6, applies: 'live' as const, secrets: [] }
+    const { face, mirror } = api({
+      describeSettings: async () => ok({ writable: true, namespaces: [...NAMESPACES, namespace] } as never),
+      presets: async () => ok({ presets: [{ id: 'standard', trust: 'system', isDefault: true },
+        { id: 'minimal', trust: 'system', isDefault: false }], authorable: false, hasDocument: false }),
+    })
+    const store = new ModelsSettingsStore(face, settingsSchema, mirror)
+    await store.load()
+    const state = store.store.getSnapshot()
+    expect(state.presets.map(preset => preset.id)).toEqual(['standard', 'minimal'])
+    expect(modelPresetOf(state.namespaces.get('agent-presets'), settingsSchema, 'provider.with.dot', 'model.with.dot'))
+      .toBe('removed-preset')
+    expect(modelPresetOf(state.namespaces.get('agent-presets'), settingsSchema, 'toString', 'constructor'))
+      .toBeUndefined()
+  })
+
+  it('mutates exact model paths with the mode namespace revision', async () => {
+    const namespace = { ns: 'agent-presets', schema: {}, value: {}, user: {}, revision: 3,
+      applies: 'live' as const, secrets: [] }
+    const mutate = vi.fn(async () => ok({ ...namespace, revision: 4 }))
+    const { face } = api({ mutate })
+    const result = await saveModelPresetChanges(face, namespace, new Map([['model.with.dot', 'minimal']]),
+      'provider.with.dot')
+    expect(result.view?.revision).toBe(4)
+    expect(mutate).toHaveBeenCalledWith({ ns: 'agent-presets', expectedRevision: 3,
+      ops: [{ op: 'set', path: ['modelDefaults', 'provider.with.dot', 'model.with.dot'], value: 'minimal' }] })
+  })
+
+  it('defers a duplicate model ID without borrowing its mode when corrected', () => {
+    const namespace = { ns: 'agent-presets', schema: {}, value: {
+      modelDefaults: { openai: { old: 'minimal', occupied: 'standard' } },
+    }, user: {}, revision: 3, applies: 'live' as const, secrets: [] }
+    const selected = new Map<string, string | undefined>([['old', 'minimal']])
+    expect(renameModelPreset(selected, namespace, settingsSchema, 'openai', 'old', 'old', 'occupied', true))
+      .toBe(selected)
+    const corrected = renameModelPreset(selected, namespace, settingsSchema, 'openai',
+      'old', 'old', 'new', false)
+    expect([...corrected]).toEqual([['old', undefined], ['new', 'minimal']])
+    const existingTarget = renameModelPreset(selected, namespace, settingsSchema, 'openai',
+      'old', 'old', 'occupied', false)
+    expect([...existingTarget]).toEqual([['old', undefined]])
+  })
+
+  it('keeps the settings mirror usable while reporting a failed mode roster separately', async () => {
+    const { face, mirror } = api({ presets: async () => fail('roster offline') })
+    const store = new ModelsSettingsStore(face, settingsSchema, mirror)
+    await store.load()
+    expect(store.store.getSnapshot()).toMatchObject({ status: 'ready', presets: [], presetsError: 'roster offline' })
+    expect(store.store.getSnapshot().namespaces.has('llm-pi-ai')).toBe(true)
+  })
   it('requires a successfully listed model even after a key is configured', async () => {
     const { face, mirror } = api()
     const store = new ModelsSettingsStore(face, settingsSchema, mirror)

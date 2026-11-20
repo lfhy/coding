@@ -15,7 +15,7 @@ tools:
 
 ### 公开 API
 
-- `ctx.tools.register(definition: ToolDefinition): () => void`：注册一个受信任、带类型的同进程定义，其中必须包含规范的 `output` 声明。所在层由调用上下文的作用域决定：普通插件上下文会全局注册；agent 的 `agent.ctx` 只为该 agent 注册，并在此处遮蔽同名全局工具。同一层内名称重复会抛出；非原生模式还会拒绝保留的 `run_code` 传输名称。缺失或不受支持的输出声明，以及非正数或非有限的 `timeoutMs`，都会使注册失败。可选的同步 `finalizeContent` 回调会在调用开始时纳入快照；在所有流水线结果（包括实体化其他结果字段时发现的错误）规范化之后，它只能替换最终面向模型的内容。该注册会随调用方 fiber 一同 dispose（资源释放）。
+- `ctx.tools.register(definition: ToolDefinition): () => void`：注册一个受信任、带类型的同进程定义，其中必须包含规范的 `output` 声明。所在层由调用上下文的作用域决定：普通插件上下文会全局注册；agent 的 `agent.ctx` 只为该 agent 注册，并在此处遮蔽同名全局工具。同一层内名称重复会抛出；非原生模式还会拒绝保留的 `run_code` 传输名称。缺失或不受支持的输出声明、无效的可选 Lark `inputFormat`，以及非正数或非有限的 `timeoutMs`，都会使注册失败。可选的同步 `finalizeContent` 回调会在调用开始时纳入快照；在所有流水线结果（包括实体化其他结果字段时发现的错误）规范化之后，它只能替换最终面向模型的内容。该注册会随调用方 fiber 一同 dispose（资源释放）。
 - `ctx.tools.presentAs(mode: ToolPresentationMode): () => void`：为本 agent 选择面向模型的呈现方式，仅对该 agent 遮蔽 `mode` 配置；从普通上下文调用会抛出（进程级呈现方式是那个配置字段），同一 scope 内第二次声明也会抛出。code 类模式还会为该 agent 注册它自己的 `tools:sdk` 段。工具目录保持不变：`schemas(agent)` 仍会报告该 agent 的能力；只有组装结果中的工具列表会按所选呈现方式收束。随调用方 fiber dispose。
 - `ctx.tools.restrict(filter)`：对全局工具应用 agent 作用域的允许／拒绝掩码；从普通上下文调用会抛出。筛选器在注册时创建快照；多个掩码取交集，随后再合并作用域本地工具。拒绝掩码会接纳后来出现且未点名的全局工具，而允许掩码会排除后来出现的名称。未知、本地或保留名称以及空筛选器都会被拒绝。这是实时可见性组合，不是权限边界；参见作用域安全非目标。
 - `ctx.tools.get(name: string, scope?: ScopeKey): ToolDefinition | undefined`：返回指定作用域可见的解析结果，其中已应用名称遮蔽；被作用域限制排除的全局工具会被视为不存在。呈现器会传入发起调用的 agent，使卡片与实际执行内容一致。
@@ -31,6 +31,8 @@ tools:
 ### 模型调用的操作说明
 
 `ToolRuntime.schemaOf` 只对缺少友好逐次说明且动作不能静态描述的对象根工具，在模型可见的原生 schema 和 Code Mode SDK 绑定中加入可选字符串 `summary`，供模型描述本次动作。已有 `description` 的工具及 `workflow.meta.description`、`team_task_create.subject`、`cordis_define.purpose`、`computer_confirm.reason` 等现成业务说明直接用于展示；等待、列表、浏览器截图等固定动作使用静态说明，不需模型填写。`ask_user_question` 使用自身等待和回答状态，`render_ui` 使用卡片 `spec.title` 和静态状态，均不注入额外摘要。`set_status` 固定显示「更新当前进度」，进度正文只用于当前运行状态，不额外要求动作摘要。动态 `structured_output` 和全部 MCP 工具免注入，保留其业务参数（包括业务 `summary`）的原有含义。注入字段不代替必需的业务参数；说明只用于展示，空白、超长或非字符串一律按“没有说明”处理并从业务参数里剥离，绝不因为展示字段让调用失败。说明仅用于展示，不应包含密钥、原始 JSON 或内部标识，也不能作为授权依据；模型工具自带的展示 `description`（`bash`、`exec_command`、`pwsh`、`run_code`、`subagent` 等）同样只用于展示、可以省略，缺省时回退到调用自身的内容（命令或程序首行）。
+
+工具定义可显式设置 `summaryParameter: false`，阻止为原始载荷工具自动注入展示用 `summary`；`defineTool()` 也接受该选项及可选 `inputFormat`。`inputFormat` 限定为 `{ type: 'grammar', syntax: 'lark', definition: <非空字符串>, description?: string }`，原始 `register()` 同样校验并将其安全快照到工具 schema；普通 JSON 参数声明仍用于执行与回退，语法不会放宽审批或文件系统权限。
 
 agent loop 将模型给出的原始参数写入 `tool/call`；Code Mode 子调用也在 `tool/code-dispatch-start`／`tool/code-dispatch` 中保存原始参数以供回放。注册表在并发分类和执行开始前只剥离符合注入规则的展示 `summary`，因此前置策略、审批、守卫、工具主体、输出投影与后置观测只接收业务参数；Host 的调用／结果呈现器也使用业务参数。未注入时业务参数保持原样，包括 `structured_output` 与 MCP 的业务 `summary`。Client 按工具名读取：适用的新调用优先取有效 `summary`，旧日志兼容读取 `display_description`；GenUI 工具行仅回放已结算旧日志中的 `display_description`，不读取新 `summary`。对话与轨迹共用已知工具的动作标题和缺省对象提取；补丁调用显示目标文件而非补丁正文，后台会话与子代理通信调用区分动作与受控成功回执，不从命令输出或消息正文生成折叠摘要；其余无有效说明时不把脚本或完整 JSON 放进折叠行，详情中的原始调用参数不受影响。
 

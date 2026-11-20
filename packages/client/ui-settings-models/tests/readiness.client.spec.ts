@@ -62,6 +62,8 @@ function state(overrides: Partial<ModelsSettingsState> = {}): ModelsSettingsStat
     writable: true,
     rows: [row()],
     namespaces: new Map(),
+    presets: [],
+    presetsError: null,
     catalog: new Map(),
     visionModels: [],
     visionModelsError: null,

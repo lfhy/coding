@@ -18,6 +18,8 @@
     "./package.json": "./package.json"
   },
   "files": [
+    "NOTICE.md",
+    "LICENSE.Codex",
     "lib/index.js",
     "lib/invariant.js",
     "lib/types/**/*.d.ts"

@@ -7,6 +7,19 @@
   - text: 思考档位
   - 'button "思考档位: 无, low, high"':
     - img
+  - text: 默认模式
+  - combobox "默认模式":
+    - option "继承全局默认模式" [selected]
+    - option "标准模式"
+    - option "长线任务模式"
+    - option "极简模式"
+    - option "创造模式"
+    - option "Codex 模式"
+    - option "逆向分析模式"
+    - option "PPT 创作模式"
+    - option "网页复刻模式"
+    - option "笔记专用模式"
+    - option "对话模式"
   - text: 上下文窗口
   - textbox "上下文窗口 2":
     - /placeholder: 256K

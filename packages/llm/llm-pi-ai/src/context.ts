@@ -76,19 +76,24 @@ async function userContent(
   return content
 }
 
-function toolsOf(options: GenerateOptions): PiTool[] | undefined {
+function toolsOf(options: GenerateOptions, nativeGrammarTools: boolean): PiTool[] | undefined {
   return options.tools?.map(tool => ({
     name: tool.name,
-    description: tool.description,
+    description: nativeGrammarTools && tool.inputFormat?.description !== undefined
+      ? tool.inputFormat.description
+      : tool.description,
     // ToolSchema.parameters is a JSON Schema object; pi-ai's TSchema
     // (TypeBox) is structurally JSON Schema, so it assigns directly.
     parameters: tool.parameters,
+    ...nativeGrammarTools && tool.inputFormat?.type === 'grammar' ? {
+      constrainedSampling: { type: 'grammar' as const, variants: { openai_lark: tool.inputFormat.definition } },
+    } : {},
   }))
 }
 
 /** Assemble the request-level pi-ai context envelope shared by both conversion paths. */
-function piContext(options: GenerateOptions, messages: PiMessage[]): PiContext {
-  const tools = toolsOf(options)
+function piContext(options: GenerateOptions, messages: PiMessage[], nativeGrammarTools: boolean): PiContext {
+  const tools = toolsOf(options, nativeGrammarTools)
   return {
     ...options.system !== undefined ? { systemPrompt: options.system } : {},
     messages,
@@ -96,7 +101,11 @@ function piContext(options: GenerateOptions, messages: PiMessage[]): PiContext {
   }
 }
 
-function textOnlyContext(options: GenerateOptions, onReplayDegrade?: (reason: string) => void): PiContext {
+function textOnlyContext(
+  options: GenerateOptions,
+  onReplayDegrade?: (reason: string) => void,
+  nativeGrammarTools = false,
+): PiContext {
   const toolNames = new Map<CallId, string>()
   const messages: PiMessage[] = []
   for (const message of options.messages) {
@@ -130,7 +139,7 @@ function textOnlyContext(options: GenerateOptions, onReplayDegrade?: (reason: st
       })
     }
   }
-  return piContext(options, messages)
+  return piContext(options, messages, nativeGrammarTools)
 }
 
 /**
@@ -139,12 +148,16 @@ function textOnlyContext(options: GenerateOptions, onReplayDegrade?: (reason: st
  * @param options - the harness request; `options.system` maps to pi-ai's single `systemPrompt` slot.
  * @param attachments - absent; selects the synchronous conversion.
  * @param onReplayDegrade - forwarded to {@link toPiAssistant} for each assistant message.
+ * @param maxRequestImageBytes - unused without image attachments.
+ * @param nativeGrammarTools - 原生语法已选中时采用语法专用的工具说明。
  * @returns the pi-ai context; `tools` is omitted when the request declares none.
  */
 export function toPiContext(
   options: GenerateOptions,
   attachments?: undefined,
   onReplayDegrade?: (reason: string) => void,
+  maxRequestImageBytes?: undefined,
+  nativeGrammarTools?: boolean,
 ): PiContext
 /**
  * Convert harness history to a pi-ai Context while resolving durable images.
@@ -156,6 +169,7 @@ export function toPiContext(
  * @param attachments - durable byte resolver for image references.
  * @param onReplayDegrade - forwarded to {@link toPiAssistant} for each assistant message.
  * @param maxRequestImageBytes - request-level bound on base64-encoded image payload; omission leaves every image in place.
+ * @param nativeGrammarTools - 原生语法已选中时采用语法专用的工具说明。
  * @returns the asynchronously resolved pi-ai context.
  */
 export function toPiContext(
@@ -163,16 +177,18 @@ export function toPiContext(
   attachments: AttachmentStore,
   onReplayDegrade?: (reason: string) => void,
   maxRequestImageBytes?: number,
+  nativeGrammarTools?: boolean,
 ): Promise<PiContext>
 export function toPiContext(
   options: GenerateOptions,
   attachments?: AttachmentStore,
   onReplayDegrade?: (reason: string) => void,
   maxRequestImageBytes?: number,
+  nativeGrammarTools = false,
 ): PiContext | Promise<PiContext> {
   return attachments === undefined
-    ? textOnlyContext(options, onReplayDegrade)
-    : toPiContextWithImages(options, attachments, onReplayDegrade, maxRequestImageBytes)
+    ? textOnlyContext(options, onReplayDegrade, nativeGrammarTools)
+    : toPiContextWithImages(options, attachments, onReplayDegrade, maxRequestImageBytes, nativeGrammarTools)
 }
 
 async function toPiContextWithImages(
@@ -180,6 +196,7 @@ async function toPiContextWithImages(
   attachments: AttachmentStore,
   onReplayDegrade?: (reason: string) => void,
   maxRequestImageBytes?: number,
+  nativeGrammarTools = false,
 ): Promise<PiContext> {
   assertSupportedImageRoles(options.messages)
   const requestMessages = offloadRequestImages(options.messages, maxRequestImageBytes)
@@ -226,5 +243,5 @@ async function toPiContextWithImages(
     }
   }
 
-  return piContext(options, messages)
+  return piContext(options, messages, nativeGrammarTools)
 }

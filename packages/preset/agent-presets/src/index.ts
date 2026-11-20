@@ -34,18 +34,21 @@ import { PresetExistsError } from './authoring.ts'
 import { PresetMountError, UnknownPresetError, type AgentPreset, type Config, type PresetRoot } from './preset.ts'
 import type {} from './types.ts'
 
-/** Settings namespace carrying the user's chosen default preset. */
+/** 用户默认模式及按模型覆盖所在的设置分节。 */
 export const SETTINGS_NAMESPACE = 'agent-presets'
 
-/** The user-writable slice of this plugin's config. */
+/** 用户可写的模式偏好；具体模型的选择不改变全局默认值。 */
 export interface AgentPresetSettings {
-  /** Preset mounted when a session names none. */
+  /** 未显式指定且具体模型没有覆盖时的模式。 */
   default?: string
+  /** 按提供方路由和精确模型 id 指定新会话的默认模式。 */
+  modelDefaults?: Record<string, Record<string, string>>
 }
 
-/** Runtime schema for the user-writable slice. */
+/** 用户模式偏好的运行时校验。 */
 export const AgentPresetSettingsSchema: z<AgentPresetSettings> = z.object({
-  default: z.string(),
+  default: z.string().min(1),
+  modelDefaults: z.dict(z.dict(z.string().min(1), z.string().min(1)), z.string().min(1)),
 })
 
 export { COMPOSITION_FILE, discoverPresets, scanRoot } from './discovery.ts'
@@ -184,6 +187,23 @@ export class AgentPresets extends Service {
    */
   get defaultId(): string {
     return this.settings?.get().default ?? this.config.default
+  }
+
+  /**
+   * 读取具体模型在新会话中的默认模式；未设置覆盖时实时继承全局默认值。
+   * 提供方和模型 id 是不拆分的字典键，尚不存在的模式仍由挂载时的解析拒绝。
+   * @param provider - 提供方路由 id。
+   * @param model - 该路由下的精确模型 id。
+   * @returns 模型覆盖的模式 id，或当前全局默认模式 id。
+   */
+  defaultIdForModel(provider: string, model: string): string {
+    const defaults = this.settings?.get().modelDefaults
+    const models = defaults !== undefined && Object.hasOwn(defaults, provider)
+      ? defaults[provider]
+      : undefined
+    return (models !== undefined && Object.hasOwn(models, model)
+      ? models[model]
+      : undefined) ?? this.defaultId
   }
 
   /**

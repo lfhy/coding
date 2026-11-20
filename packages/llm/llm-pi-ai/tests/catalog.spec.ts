@@ -554,6 +554,70 @@ describe('catalog routes with per-model configuration', () => {
     expect(server.paths).toEqual(['/v1/chat/completions'])
   })
 
+  it('dispatches models on one channel through their effective protocols', async () => {
+    const server = await mockServer([{ events: [] }, { events: textEvents }])
+    const ctx = await harness({
+      providers: {
+        'acme-gateway': {
+          apiKeyEnv: KEY_ENV,
+          api: 'openai-completions',
+          baseURL: `${server.url}/v1`,
+          models: [{ id: 'model-alpha', api: 'openai-responses' }, { id: 'gpt-sounding-but-unset' }],
+        },
+      },
+    })
+
+    await assemble(ctx, { provider: 'acme-gateway', model: 'model-alpha', messages: [] })
+    const other = await assemble(ctx, { provider: 'acme-gateway', model: 'gpt-sounding-but-unset', messages: [] })
+    expect(other.finish).toEqual({ kind: 'stop' })
+    expect(server.paths).toEqual(['/v1/responses', '/v1/chat/completions'])
+    expect(server.headers.map(headers => headers.authorization)).toEqual(['Bearer test-key', 'Bearer test-key'])
+    expect(server.requests).toMatchObject([{ model: 'model-alpha' }, { model: 'gpt-sounding-but-unset' }])
+  })
+
+  it('accepts a declared channel with protocols supplied by every model', () => {
+    const models = resolveProfiles({
+      'acme-gateway': {
+        baseURL: 'https://gateway.example/v1',
+        models: [
+          { id: 'alpha', api: 'openai-responses' },
+          { id: 'beta', api: 'openai-completions' },
+        ],
+      },
+    }).get('acme-gateway')?.piProvider.getModels() ?? []
+    expect(models.map(model => model.api)).toEqual(['openai-responses', 'openai-completions'])
+  })
+
+  it('selects model protocol before the channel and installed catalog', () => {
+    const openai = resolveProfiles({
+      openai: {
+        api: 'openai-completions',
+        models: [{ id: 'gpt-4.1', api: 'openai-responses' }, { id: 'gpt-4.1-mini' }],
+      },
+    }).get('openai')?.piProvider.getModels() ?? []
+    expect(openai.map(model => model.api)).toEqual(['openai-responses', 'openai-completions'])
+    const catalog = resolveProfiles({ openai: { models: [{ id: 'gpt-4.1' }] } })
+      .get('openai')?.piProvider.getModels() ?? []
+    expect(catalog[0]?.api).toBe('openai-responses')
+  })
+
+  it('reuses the native catalog implementation beside a model protocol override', async () => {
+    const server = await mockServer([{ events: [] }, { events: textEvents }])
+    const ctx = await harness({
+      providers: {
+        openai: {
+          apiKeyEnv: KEY_ENV,
+          baseURL: `${server.url}/v1`,
+          models: [{ id: 'gpt-4.1', api: 'openai-completions' }, { id: 'gpt-4.1-mini' }],
+        },
+      },
+    })
+
+    await assemble(ctx, { provider: 'openai', model: 'gpt-4.1', messages: [] })
+    await assemble(ctx, { provider: 'openai', model: 'gpt-4.1-mini', messages: [] })
+    expect(server.paths).toEqual(['/v1/chat/completions', '/v1/responses'])
+  })
+
   it('keeps the catalog provider’s own auth when the route repoints its protocol', () => {
     // Which environment a provider reads is a property of the provider, not of
     // the wire format its models speak: naming an api must not cost a profile
@@ -722,6 +786,28 @@ describe('modelOverrides', () => {
     expect(sibling?.maxTokens).toBe(getBuiltinModels('deepseek').find(model => model.id === sibling?.id)?.maxTokens)
   })
 
+  it('changes one model protocol without repointing catalog siblings', async () => {
+    const target = deepseekModel()
+    const sibling = getBuiltinModels('deepseek').find(model => model.id !== target.id)
+    if (sibling === undefined) throw new Error('the installed deepseek catalog needs a sibling model')
+    const server = await mockServer([{ events: [] }, { events: textEvents }])
+    const ctx = await harness({ providers: {
+      deepseek: {
+        apiKeyEnv: KEY_ENV,
+        baseURL: `${server.url}/v1`,
+        modelOverrides: { [target.id]: { api: 'openai-responses' } },
+      },
+    } })
+    const models = resolveProfiles({ deepseek: { modelOverrides: { [target.id]: { api: 'openai-responses' } } } })
+      .get('deepseek')?.piProvider.getModels() ?? []
+    expect(models.find(model => model.id === target.id)?.api).toBe('openai-responses')
+    expect(models.filter(model => model.id !== target.id).every(model => model.api === target.api)).toBe(true)
+    await assemble(ctx, { provider: 'deepseek', model: target.id, messages: [] })
+    const result = await assemble(ctx, { provider: 'deepseek', model: sibling.id, messages: [] })
+    expect(result.finish).toEqual({ kind: 'stop' })
+    expect(server.paths).toEqual(['/v1/responses', '/v1/chat/completions'])
+  })
+
   it('refuses every override that lands nowhere instead of skipping it', () => {
     expect(() => resolveProfiles({
       deepseek: { modelOverrides: { 'no-such-model': { name: 'ghost' } } },
@@ -792,6 +878,15 @@ describe('compat switches', () => {
     // The one switched field changes; the catalog's other quirks survive,
     // because configuration has no way to restate them.
     expect(models.get(catalogModel.id)?.compat).toEqual({ ...inherited, thinkingFormat: 'openai' })
+  })
+
+  it('does not inherit compatibility switches from the old model protocol', () => {
+    const [catalogModel] = getBuiltinModels('deepseek')
+    if (catalogModel === undefined) throw new Error('the installed catalog ships no deepseek model')
+    const models = modelsOf({
+      deepseek: { modelOverrides: { [catalogModel.id]: { api: 'openai-responses' } } },
+    }, 'deepseek')
+    expect(models.get(catalogModel.id)?.compat).toEqual({})
   })
 
   it('skips models of other protocols on a mixed route instead of failing them', () => {

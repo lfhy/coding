@@ -7,7 +7,7 @@ import { boot, healProfilesModuleFallback, loadOverlayPatches } from 'coding-app
 import { provideCmdline } from 'coding-cmdline'
 import { CallId, createUserMessage } from 'coding-llm'
 import { SessionId } from 'coding-session'
-import type { Agent } from 'coding-agent'
+import { assembleContextFor, type Agent } from 'coding-agent'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { settingsNamespace } from 'coding-settings'
 import { MockAdapter, textResponse, toolCallResponse } from '../../../packages/core/agent-loop/tests/mock-adapter.ts'
@@ -308,12 +308,17 @@ describe('the shipped Codex preset', () => {
   it('starts its persona with the Codex base instructions', async () => {
     const codex = await mountCodex()
     try {
-      const prompt = await ctx.systemPrompt.assemble({ scope: codex.agent })
-      const text = prompt.sections.map(section => section.text).join('\n')
+      const prompt = await ctx.systemPrompt.assemble(assembleContextFor(codex.agent))
+      const text = prompt.sections.map(section => section.text).filter(Boolean).join('\n')
+      expect(prompt.sections.find(section => section.name === 'deployment:persona')?.text
+        .startsWith('You are a coding agent running in the Codex CLI')).toBe(true)
+      expect(text).not.toContain('你是 Coding 的编程 agent')
       expect(text).toContain('You are a coding agent running in the Codex CLI')
       expect(text).toContain('## Multi agents')
       expect(text).toContain('`wait_agent`')
       expect(text).not.toContain('close_agent')
+      expect(text).toContain('Use apply_patch for a small, targeted batch of file changes.')
+      expect(prompt.contexts.length).toBeGreaterThan(0)
     } finally {
       await codex.dispose()
     }

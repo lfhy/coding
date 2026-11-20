@@ -12,7 +12,11 @@ import { EditorFooter } from './EditorFooter.tsx'
 import { validateDeepSeekModels } from './DeepSeekModelsEditor.tsx'
 import { ModelListEditor } from './ModelListEditor.tsx'
 import type { ModelDraft } from './ModelListEditor.tsx'
+import { identitiesAfterRemoval, modelPresetOf, removeModelPreset, renameModelPreset, saveModelPresetChanges } from './model-presets.ts'
+import type { ModelIdentity } from './model-presets.ts'
 import { deriveKeyRef, messageOf } from './store.ts'
+import type { ModelPresetOption } from './store.ts'
+import type { SettingsSchemaOperations } from './schema-operations.ts'
 import type { en } from './locales.ts'
 import styles from './ModelsSection.module.css'
 
@@ -45,6 +49,12 @@ export interface CustomProviderCardProps {
   onClose: (changed: boolean, provider?: string) => void | Promise<void>
   /** 新渠道 profile 已提交时折入共享设置镜像，凭据写入失败也保留该事实。 */
   onSettingsCommitted?: (view: SettingsNamespaceView, provider: string) => void
+  /** 模型默认模式所属分节与可选名单。 */
+  presetNamespace?: SettingsNamespaceView | undefined
+  presets?: readonly ModelPresetOption[]
+  presetsError?: string | null | undefined
+  /** 读取设置镜像中精确路径的操作。 */
+  schema?: SettingsSchemaOperations
 }
 
 /**
@@ -54,6 +64,7 @@ export interface CustomProviderCardProps {
  */
 export function CustomProviderCard(props: CustomProviderCardProps): ReactNode {
   const { taken, protocols, api, t } = props
+  const settingsReader = props.schema
   const fieldId = useId()
   const displayNameId = `${fieldId}-display-name`
   const baseURLId = `${fieldId}-base-url`
@@ -67,6 +78,7 @@ export function CustomProviderCard(props: CustomProviderCardProps): ReactNode {
   const submitting = useRef(false)
   const profileCommitted = useRef(false)
   const committedStoresKey = useRef(false)
+  const credentialStored = useRef(false)
   // revision 和路由 ID 都归本次草稿所有；未知写入结果也不得换 ID 重建渠道。
   const [openedAt] = useState(() => props.revision)
   const [route] = useState(() => generateChannelId(taken))
@@ -79,6 +91,9 @@ export function CustomProviderCard(props: CustomProviderCardProps): ReactNode {
   const [busy, setBusy] = useState(false)
   const [failure, setFailure] = useState<string | undefined>(undefined)
   const [committed, setCommitted] = useState(false)
+  const [presetView, setPresetView] = useState(() => props.presetNamespace)
+  const [presetChanges, setPresetChanges] = useState<ReadonlyMap<string, string | undefined>>(() => new Map())
+  const modelIdentity = useRef(new Map<number, ModelIdentity>())
 
   useLayoutEffect(() => {
     if (props.autoFocusName === true) nameInputRef.current?.focus()
@@ -100,7 +115,7 @@ export function CustomProviderCard(props: CustomProviderCardProps): ReactNode {
   const routeTaken = !committed && taken.includes(route)
   const modelFailure = validateDeepSeekModels(models)
   // 已提交 profile 指向凭据引用，重试不能把清空密钥视为创建完成。
-  const keyFailure = committed && !committedStoresKey.current ? undefined
+  const keyFailure = committed && (!committedStoresKey.current || credentialStored.current) ? undefined
     : committed && keyDraft.trim().length === 0 ? 'keyRequired' : apiKeyFailure(keyDraft)
   const keyValue = keyDraft.trim()
   const channelReady = !nameInvalid && baseURLValue.length > 0 && protocols.includes(protocol)
@@ -138,9 +153,18 @@ export function CustomProviderCard(props: CustomProviderCardProps): ReactNode {
       setCommitted(true)
       props.onSettingsCommitted?.(response.result.value, route)
     }
-    if (storesKey) {
+    if (storesKey && !credentialStored.current) {
       const stored = await api.credentials.set({ ref: keyRef, value: keyValue })
       if (!stored.result.ok) return stored.result.error.message
+      credentialStored.current = true
+      setKeyDraft('')
+    }
+    const presetResult = await saveModelPresetChanges(api, presetView, presetChanges, route,
+      view => props.onSettingsCommitted?.(view, route), t('conflict'))
+    if (presetResult.failure !== undefined) return presetResult.failure
+    if (presetResult.view !== undefined) {
+      setPresetView(presetResult.view)
+      setPresetChanges(new Map())
     }
     return undefined
   }
@@ -238,7 +262,7 @@ export function CustomProviderCard(props: CustomProviderCardProps): ReactNode {
             <input ref={keyInputRef} id={keyId} className={styles['input']} type="password" autoComplete="off"
               value={keyDraft} placeholder={t('keyPlaceholderNative')} aria-invalid={keyFailure !== undefined}
               aria-describedby={keyFailure === undefined ? undefined : `${keyId}-error`}
-              disabled={disabled || (committed && !committedStoresKey.current)}
+              disabled={disabled || credentialStored.current || (committed && !committedStoresKey.current)}
               onChange={(event) => { setKeyDraft(event.target.value) }} />
             {keyFailure === undefined ? null
               : <p id={`${keyId}-error`} className={styles['error']} role="alert">{t(keyFailure === 'keyBlank' ? 'keyBlankNew' : keyFailure)}</p>}
@@ -246,7 +270,48 @@ export function CustomProviderCard(props: CustomProviderCardProps): ReactNode {
           {routeTaken ? <p className={styles['error']} role="alert">{t('customRouteTaken')}</p> : null}
           {!nameInvalid && baseURLValue.length === 0 ? <p className={styles['advancedHint']}>{t('customNeedsBaseUrl')}</p> : null}
         </> : <>
-          <ModelListEditor models={models} onChange={setModels}
+          <ModelListEditor models={models} onChange={setModels} protocols={protocols}
+            onModelIdChange={(index, oldId, newId, duplicate) => {
+              if (settingsReader === undefined) return
+              const prior = modelIdentity.current.get(index)
+                ?? { original: oldId || newId, invalid: false, lastValid: oldId || newId }
+              const invalid = duplicate || newId.length === 0
+              if (newId === prior.original && !invalid) modelIdentity.current.delete(index)
+              else modelIdentity.current.set(index, {
+                original: prior.original, invalid, lastValid: invalid ? prior.lastValid : newId,
+              })
+              setPresetChanges(current => renameModelPreset(current, presetView, settingsReader, route,
+                prior.original, prior.invalid ? prior.lastValid : oldId, newId, invalid))
+            }}
+            onModelRemove={(index, id) => {
+              if (settingsReader === undefined) return
+              const identity = modelIdentity.current.get(index)
+              const original = identity?.original ?? id
+              const { shifted, recovered } = identitiesAfterRemoval(modelIdentity.current, models, index)
+              modelIdentity.current = shifted
+              setPresetChanges((current) => {
+                let next = removeModelPreset(current, presetView, settingsReader, route,
+                  original, identity?.invalid === true ? identity.lastValid : id)
+                for (const row of recovered) {
+                  next = renameModelPreset(next, presetView, settingsReader, route,
+                    row.identity.original, row.identity.lastValid, row.id, false)
+                }
+                return next
+              })
+            }}
+            channelProtocol={protocol} presets={props.presets ?? []} presetsError={props.presetsError}
+            presetDisabled={presetView === undefined || props.schema === undefined}
+            presetForModel={id => props.schema === undefined ? undefined
+              : presetChanges.has(id) ? presetChanges.get(id) : modelPresetOf(presetView, props.schema, route, id)}
+            onPresetChange={(id, preset) => {
+              setPresetChanges((current) => {
+                const next = new Map(current)
+                const original = props.schema === undefined ? undefined : modelPresetOf(presetView, props.schema, route, id)
+                if (preset === original) next.delete(id)
+                else next.set(id, preset)
+                return next
+              })
+            }}
             probe={{ settingsNs: NS, baseURL: baseURLValue, api: protocol,
               ...keyValue.length === 0 ? {} : { apiKey: keyValue } }}
             api={api} t={t} disabled={profileDisabled} />

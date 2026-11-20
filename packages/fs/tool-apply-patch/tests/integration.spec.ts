@@ -58,6 +58,27 @@ describe('apply_patch integration', () => {
     expect(description).not.toMatch(/Supports `\*\*\* (Add|Update) File`/)
   })
 
+  it('publishes native Codex Lark grammar for the supported add/update subset', () => {
+    const schema = ctx.tools.schemas().find(entry => entry.name === 'apply_patch')
+    expect(schema?.inputFormat).toMatchObject({
+      type: 'grammar',
+      syntax: 'lark',
+      description: 'The `apply_patch` tool can be used to edit files. This is a FREEFORM tool, so do not wrap the patch in JSON.',
+    })
+    const grammar = schema?.inputFormat?.definition ?? ''
+    expect(grammar).toContain('start: begin_patch hunk+ end_patch')
+    expect(grammar).toContain('begin_patch: "*** Begin Patch" LF')
+    expect(grammar).toContain('end_patch: "*** End Patch" LF?')
+    expect(grammar).toContain('add_hunk: "*** Add File: " filename LF add_line+')
+    expect(grammar).toContain('update_hunk: "*** Update File: " filename LF change+')
+    expect(grammar).toContain('change: change_context change_line+ eof_line?')
+    expect(grammar).not.toContain('*** Delete File: ')
+    expect(grammar).not.toContain('*** Move to: ')
+    expect(schema?.parameters).toMatchObject({ type: 'object', required: ['input'] })
+    expect(Object.keys((schema?.parameters as { properties?: Record<string, unknown> })?.properties ?? {})).toEqual(['input'])
+    expect((schema?.parameters as { properties?: Record<string, unknown> })?.properties?.input).toMatchObject({ type: 'string' })
+  })
+
   it('accepts an absolute path and records an update read before requesting the guarded edit', async () => {
     const path = join(dir, 'src/components/files/files-page.tsx')
     await mkdir(join(dir, 'src/components/files'), { recursive: true })

@@ -62,6 +62,29 @@ describe('toPiContext', () => {
     ])
   })
 
+  it('preserves grammar metadata and uses its description only on native requests', () => {
+    const options = {
+      provider: 'gateway', model: 'alpha', messages: [],
+      tools: [{
+        name: 'apply_patch', description: 'JSON instruction',
+        parameters: { type: 'object', properties: { input: { type: 'string' } }, required: ['input'] },
+        inputFormat: {
+          type: 'grammar' as const, syntax: 'lark' as const,
+          definition: 'start: /[\\s\\S]+/', description: 'Raw patch instruction',
+        },
+      }],
+    }
+    const fallback = toPiContext(options)
+    expect(fallback.tools?.[0]).toMatchObject({
+      description: 'JSON instruction',
+    })
+    expect(fallback.tools?.[0]).not.toHaveProperty('constrainedSampling')
+    const native = toPiContext(options, undefined, undefined, undefined, true)
+    expect(native.tools?.[0]).toMatchObject({ description: 'Raw patch instruction',
+      constrainedSampling: { type: 'grammar', variants: { openai_lark: 'start: /[\\s\\S]+/' } },
+    })
+  })
+
   it('omits empty tools and absent system prompt', () => {
     const context = toPiContext({ provider: 'deepseek', model: 'm', messages: [], tools: [] })
     expect(context.systemPrompt).toBeUndefined()

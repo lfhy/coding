@@ -73,6 +73,44 @@ describe('ToolRuntime', () => {
     expect(schema.execute).toBeUndefined()
   })
 
+  it('preserves a detached native grammar format without changing JSON execution arguments', async () => {
+    const ctx = await setup()
+    const inputFormat = {
+      type: 'grammar' as const, syntax: 'lark' as const,
+      definition: 'start: /[\\s\\S]+/', description: 'FREEFORM input; do not wrap in JSON.',
+    }
+    ctx.tools.register(defineTool({
+      name: 'grammar_tool', description: 'JSON fallback description', inputFormat, summaryParameter: false,
+      parameters: { input: { type: 'string', required: true } },
+      output: { schema: { type: 'string' }, render: (_args, value) => [{ type: 'text', text: value }] },
+      async execute(args) { return args.input },
+    }))
+    const schema = ctx.tools.schemas()[0]!
+    expect(schema.inputFormat).toEqual(inputFormat)
+    expect(schema.description).toBe('JSON fallback description')
+    expect(schema.parameters).toEqual({
+      type: 'object', properties: { input: { type: 'string' } }, required: ['input'],
+    })
+    schema.inputFormat!.description = 'changed'
+    expect(ctx.tools.schemas()[0]!.inputFormat).toEqual(inputFormat)
+    expect((await ctx.systemPrompt.assemble()).tools[0]!.inputFormat).toEqual(inputFormat)
+    expect(await ctx.tools.execute({ signal: testToolSignal, callId: CallId('grammar'), name: 'grammar_tool', arguments: { input: 'raw patch' } }))
+      .toMatchObject({ isError: false, value: 'raw patch' })
+  })
+
+  it.each([
+    null,
+    'grammar',
+    { type: 'grammar', syntax: 'regex', definition: 'start: WORD' },
+    { type: 'grammar', syntax: 'lark', definition: '' },
+    { type: 'grammar', syntax: 'lark', definition: 'start: WORD', description: 1 },
+    { type: 'grammar', syntax: 'lark', definition: 'start: WORD', extra: true },
+  ])('rejects malformed native grammar metadata at registration: %j', async (inputFormat) => {
+    const ctx = await setup()
+    expect(() => ctx.tools.register({ ...echoTool, inputFormat } as unknown as ToolDefinition))
+      .toThrow('inputFormat must declare grammar/lark')
+  })
+
   it('does not share writable description schema nodes across projections', async () => {
     const ctx = await setup()
     ctx.tools.register(echoTool)

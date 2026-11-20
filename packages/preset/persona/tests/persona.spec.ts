@@ -1,5 +1,5 @@
 import { Context } from '@deepseek-ai/cordis'
-import SystemPrompt, { renderPrompt } from 'coding-system-prompt'
+import SystemPrompt, { HARNESS_IDENTITY_SECTION, renderPrompt } from 'coding-system-prompt'
 import { createScope, type ScopeKey } from 'coding-scope'
 import { describe, expect, it } from 'vitest'
 import * as Persona from 'coding-persona'
@@ -124,6 +124,31 @@ describe('the persona row', () => {
     expect((await ctx.systemPrompt.assemble({ scope: key })).contexts).toEqual([
       { name: 'policy', text: 'global policy' },
     ])
+  })
+
+  it('shadows only the Coding identity for one scope and restores it on disposal', async () => {
+    const ctx = await harness('deployment identity')
+    const key: ScopeKey = { agent: 'codex' }
+    const other: ScopeKey = { agent: 'standard' }
+    const scope = createScope(ctx, key)
+    ctx.systemPrompt.section({ name: 'tool:patch', order: 103, text: 'Patch guidance.' })
+    ctx.systemPrompt.context({ name: 'policy', order: 1, text: 'Runtime policy.' })
+
+    const fiber = await scope.ctx.plugin(Persona, {
+      text: 'Codex identity.',
+      includeHarnessIdentity: false,
+    })
+    const assembly = await ctx.systemPrompt.assemble({ scope: key })
+    expect(assembly.sections.find(section => section.name === HARNESS_IDENTITY_SECTION)?.text).toBe('')
+    expect(renderPrompt(assembly)).toBe('Codex identity.\n\nPatch guidance.')
+    expect(assembly.contexts).toEqual([{ name: 'policy', text: 'Runtime policy.' }])
+    expect(renderPrompt(await ctx.systemPrompt.assemble({ scope: other })))
+      .toContain('你是 Coding 的编程 agent')
+    expect(renderPrompt(await ctx.systemPrompt.assemble())).toContain('你是 Coding 的编程 agent')
+
+    await fiber.dispose()
+    expect(renderPrompt(await ctx.systemPrompt.assemble({ scope: key })))
+      .toContain('你是 Coding 的编程 agent')
   })
 
   it('keeps runtime context by default when apply bypasses schema defaults', async () => {

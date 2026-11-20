@@ -262,7 +262,7 @@ const RESPONSES_COMPAT_GATE = {
   supportsStrictMode: 'offer',
   supportsLongCacheRetention: 'offer',
   sessionAffinityFormat: 'withhold',
-  supportsOpenAIGrammarTools: 'withhold',
+  supportsOpenAIGrammarTools: 'offer',
   supportsToolSearch: 'withhold',
   supportsExplicitPromptCacheMode: 'withhold',
 } as const satisfies Record<keyof OpenAIResponsesCompat, CompatDisposition>
@@ -389,6 +389,8 @@ export interface PiAiCompatProfile {
    * `openai-completions`, the three Responses protocols, `bedrock-converse-stream`.
    */
   supportsStrictMode?: boolean
+  /** 是否使用 Responses 原生语法工具；设为 false 时保留 JSON 工具调用。 */
+  supportsOpenAIGrammarTools?: boolean
   /** Prompt-cache marker convention; `openai-completions`. */
   cacheControlFormat?: NonNullable<OpenAICompletionsCompat['cacheControlFormat']>
   /**
@@ -554,6 +556,8 @@ function assertOfferedCompatFields(
 export interface PiAiModelProfile {
   /** Model id sent to the provider and accepted by {@link GenerateOptions.model}. */
   id: string
+  /** 本模型的请求协议；省略时继承渠道协议，再继承目录中的模型协议。 */
+  api?: string
   /** Display name for selectors; defaults to the catalog name, then the id. */
   name?: string
   /** Maximum combined request and response context in tokens. */
@@ -763,7 +767,10 @@ function resolveModelCompat(
     }
     configured[field] = value
   }
-  if (Object.keys(configured).length === 0) return {}
+  if (Object.keys(configured).length === 0) {
+    // 协议改变时旧目录的兼容开关属于另一种请求格式，不能随模型展开继承。
+    return base !== undefined && base.api !== api ? { compat: {} } : {}
+  }
   // The installed entry's compat matches the entry's OWN api — a route-level
   // `api` repoint (an anthropic catalog served through an OpenAI-compatible
   // gateway) leaves `base.compat` in the other protocol's shape, so it is
@@ -853,12 +860,15 @@ export function resolveRouteModels(request: RouteCatalogRequest): RouteCatalog {
   const models = entries.map((entry) => {
     if (entry.id.length === 0) invalid(provider, 'has a model with an empty id')
     if (seen.has(entry.id)) invalid(provider, `lists model "${entry.id}" more than once`)
+    if (Object.hasOwn(entry, 'api') && entry.api == null) {
+      invalid(provider, `model "${entry.id}" sets api with no value; name a supported protocol or omit it to inherit`)
+    }
     seen.add(entry.id)
     const base = defaults.get(entry.id)
-    const api = request.api ?? base?.api ?? routeApi
+    const api = entry.api ?? request.api ?? base?.api ?? routeApi
     if (api === undefined) {
       invalid(provider, `model "${entry.id}" needs an api; the installed catalog does not describe it, so set the`
-        + ' route\'s api to the wire protocol its endpoint speaks')
+        + ' model\'s or route\'s api to the wire protocol its endpoint speaks')
     }
     const baseUrl = request.baseURL ?? base?.baseUrl ?? providerBaseUrl
     if (baseUrl === undefined) {

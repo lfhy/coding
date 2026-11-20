@@ -127,6 +127,12 @@ export interface PromptAssembly {
  */
 export const PERSONA_SECTION = 'deployment:persona'
 
+/** 固定身份段的名称；作用域人设可用同名空段遮蔽部署默认值。 */
+export const HARNESS_IDENTITY_SECTION = 'harness:identity'
+
+/** 固定身份段在部署人设之前出现的顺序。 */
+export const HARNESS_IDENTITY_ORDER = -100
+
 /** Prompt order of the persona slot; the first section a model reads. */
 export const PERSONA_ORDER = 0
 
@@ -353,11 +359,11 @@ export class SystemPrompt extends Service {
   constructor(ctx: Context, config: Config) {
     super(ctx, 'systemPrompt')
     this.toolOrder = validateToolOrder(config.toolOrder)
-    // Keep harness-owned openers independent of the selected loop plugin.
+    // 身份开场白归提示词注册表所有，不依赖所选的循环插件。
     if (config.includeHarnessIdentity ?? true) {
       this.section({
-        name: 'harness:identity',
-        order: -100,
+        name: HARNESS_IDENTITY_SECTION,
+        order: HARNESS_IDENTITY_ORDER,
         text: '你是 Coding 的编程 agent，在用户自己的电脑上工作。',
       })
     }
@@ -492,10 +498,11 @@ export class SystemPrompt extends Service {
     const knownNames = new Set<string>()
     for (const provider of providers) {
       const result = provider(context)
-      const schemas = result.schemas.map(({ name, description, parameters }): ToolSchema => ({
+      const schemas = result.schemas.map(({ name, description, parameters, inputFormat }): ToolSchema => ({
         name,
         description,
         parameters: structuredClone(parameters),
+        ...(inputFormat === undefined ? {} : { inputFormat: structuredClone(inputFormat) }),
       }))
       const acceptedKnownNames = result.knownNames ?? schemas.map(tool => tool.name)
       collected.push(...schemas)

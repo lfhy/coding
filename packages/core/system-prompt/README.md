@@ -33,6 +33,7 @@
 - `AssembleContext`：说明一次 `assemble()` 调用的用途。它可通过合并扩展；此处声明 `scope?: ScopeKey`（层选择器）与 `signal?: AbortSignal`（显式请求控制能力），而 `dsh-agent` 声明 `agent?: Agent`（类型化 DX 字段；绝不能在没有 `scope` 时设置，应使用 `assembleContextFor(agent, signal)`）。提供方必须容忍字段缺席，因为裸 `assemble()` 携带的是无作用域、无信号的空上下文。`signal` 是请求值，不是环境 Agent 执行 frame 的一部分。
 - `PromptSection`：`{ name, order, text, complete? }`。各段按 `order` 升序拼接。顺序区间：`-100` 是 harness 身份，`0` 是部署 persona，工具引导使用 `100–199`。协作式组装完成后，一个有效的 `complete` 段会抑制其他所有段。
 - `PromptAssembly`：`{ sections: AssembledSection[], tools: ToolSchema[], variables: Record<string, string | undefined> }`。各段文本到达时已求值，但尚未插值；`variables` 保存所有已注册变量在当前上下文中求得的值。工具 schema 按设计属于组装结果：「模型获知自己能做什么」是一个连贯整体，尽管适配器把 schema 作为独立 wire 字段传输。
+- `HARNESS_IDENTITY_SECTION`／`HARNESS_IDENTITY_ORDER`：固定身份段的名称 `harness:identity` 和顺序 `-100`；作用域 persona 使用同一名称与顺序注册空段时，仅为该 agent 遮蔽部署开场白。
 - `renderPrompt(assembly)`：插值每个段中的 `{{variable}}` 引用，删除空段，并用空行连接。严格规则：未知引用（使用 `Object.hasOwn` 查找，因此 `{{constructor}}` 等原型名称未知）、已注册但无值的引用、格式错误的完整 `{{…}}` 组，或出现 `{{` 却没有形成完整组、而后文仍有 `}}`（`{{{model}}}`），都会抛出异常；明确失败胜过交付格式错误的提示词。孤立的 `{{` 如果后面任何位置都没有 `}}`，会按字面量通过；替换值绝不再次扫描。
 
 可通过合并扩展：插件可以借助声明合并，为 `PromptAssembly` 和 `AssembleContext` 声明额外字段。
@@ -73,6 +74,8 @@
 #### 模型看到的内容
 
 对于已交付工具，模型会收到[生成工具 schema](../../../docs/tool-catalog.md#tool-package-map) 中对每个 agent 可见的子集；限制与组装拦截完成后，按配置或字典序排列。扩展可以通过同一注册表贡献其他定义。段与 schema 提供方是独立的组装输入，因此工具限制不会移除独立注册的引导。
+
+工具 schema 的可选 `inputFormat` 会随 `parameters` 分离复制并传给适配器；组装不根据模型名称或协议擅自转换或移除 Lark 语法，未使用原生语法的协议仍保有 JSON 参数定义。
 
 #### Token 影响
 

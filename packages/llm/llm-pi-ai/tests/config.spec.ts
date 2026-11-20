@@ -64,3 +64,36 @@ describe('modality schema boundary', () => {
     expect(absent.providers['acme-gateway']?.defaultInput).toEqual(['text'])
   })
 })
+
+describe('model protocol schema boundary', () => {
+  it('accepts a supported model protocol and leaves an omitted one to channel fallback', () => {
+    type Configured = { providers: Record<string, { models: { api?: string }[] }> }
+    const configured = configWith({ api: 'openai-responses' })() as Configured
+    expect(configured.providers['acme-gateway']?.models[0]?.api).toBe('openai-responses')
+    const omitted = configWith({})() as Configured
+    expect(omitted.providers['acme-gateway']?.models[0]?.api).toBeUndefined()
+  })
+
+  it('rejects a model protocol the adapter cannot serve', () => {
+    expect(configWith({ api: 'azure-openai-responses' })).toThrow()
+    expect(configWith({ api: 'not-a-protocol' })).toThrow()
+    expect(routeWith({ modelOverrides: { m: { api: 'not-a-protocol' } } })).toThrow()
+  })
+
+  it('rejects a valueless model protocol instead of treating it as inherited', () => {
+    const parsed = configWith({ api: null })() as Config
+    expect(() => { assertServiceable(parsed) }).toThrow(/model "m" sets api with no value/)
+  })
+})
+
+describe('Responses grammar compatibility', () => {
+  it('accepts an explicit opt-out on Responses models', () => {
+    const parsed = configWith({ api: 'openai-responses', compat: { supportsOpenAIGrammarTools: false } })() as Config
+    expect(() => { assertServiceable(parsed) }).not.toThrow()
+  })
+
+  it('refuses the Responses-only switch on a Completions model', () => {
+    const parsed = configWith({ compat: { supportsOpenAIGrammarTools: false } })() as Config
+    expect(() => { assertServiceable(parsed) }).toThrow(/supportsOpenAIGrammarTools.*api is "openai-completions"/)
+  })
+})

@@ -39,6 +39,7 @@
         apiKeyEnv: DEEPSEEK_API_KEY
         modelOverrides:
           deepseek-v4-pro:
+            api: openai-completions
             reasoningEfforts:
               off:
               high: high
@@ -62,6 +63,7 @@
             maxTokens: 4096
           - id: acme-think
             name: Acme Think
+            api: openai-responses
             contextWindow: 262144
             maxTokens: 32768
             # key = selectable level, value = its wire spelling; only off may
@@ -76,9 +78,11 @@
 
 ## Catalog 解析
 
-profile 的 `models` 列表是*替换*该路由已安装 catalog，而不是扩充它；省略它（或留空）则原样服务该 catalog。每个条目都会从同 `id` 的已安装模型继承自身未设置的字段，因此把 catalog 路由收窄到两个模型、更正某个容量，或加入一个比已安装 catalog 更新的模型，都是一行编辑——但一旦声明了 `models` 列表，该路由要继续服务的每个模型就都必须出现在其中，条目哪怕只写一个 `id` 也足够。可配置的条目字段是 `id`、`name`、`contextWindow`、`maxTokens`、`input`、`reasoningEfforts` 与 `compat`。定价沿用已安装条目或使用默认值；`input` 决定图片准入与视觉理解降级，解析顺序见下文。
+profile 的 `models` 列表是*替换*该路由已安装 catalog，而不是扩充它；省略它（或留空）则原样服务该 catalog。每个条目都会从同 `id` 的已安装模型继承自身未设置的字段，因此把 catalog 路由收窄到两个模型、更正某个容量，或加入一个比已安装 catalog 更新的模型，都是一行编辑——但一旦声明了 `models` 列表，该路由要继续服务的每个模型就都必须出现在其中，条目哪怕只写一个 `id` 也足够。可配置的条目字段是 `id`、`name`、`api`、`contextWindow`、`maxTokens`、`input`、`reasoningEfforts` 与 `compat`。定价沿用已安装条目或使用默认值；`input` 决定图片准入与视觉理解降级，解析顺序见下文。
 
-`modelOverrides` 无需这份代价就能就地重塑单个已安装 catalog 模型：每个键是一个 catalog 模型 id，每个值可写 `models` 条目接受的同一批字段，只是 id 落在键上，而 catalog 的其余部分原样继续服务——「改一个模型、其余三十七个原样保留」只是一次三行编辑。一条覆盖会成为该 catalog 条目的配置，因此容量、模态、档位与 compat 沿与 `models` 条目相同的路径解析，携带相同的诊断与相同的请求默认值语义。覆盖只在正服务自身 catalog 的 catalog 路由上才有意义：与 `models` 列表并存的一份（该列表本就替换了 catalog）、落在手工声明路由上的一份（其模型已在 `models` 中完整写出），或点名了 catalog 未描述模型的一份，都会被拒绝而非跳过，因为一个静默保持原样的模型，就是一个否则要有人费力追查的笔误。
+`modelOverrides` 无需这份代价就能就地重塑单个已安装 catalog 模型：每个键是一个 catalog 模型 id，每个值可写 `models` 条目接受的同一批字段，只是 id 落在键上，而 catalog 的其余部分原样继续服务。一条覆盖会成为该 catalog 条目的配置，因此协议、容量、模态、档位与 compat 沿与 `models` 条目相同的路径解析。覆盖只在正服务自身 catalog 的 catalog 路由上才有意义：与 `models` 列表并存、落在手工声明路由上，或点名 catalog 未描述模型，都会被拒绝而非跳过。
+
+模型条目的 `api` 可覆盖该模型的上游协议；省略时依次继承渠道 `api`、已安装 catalog 中同 id 模型的协议，最后是该渠道 catalog 模型共有的协议。渠道级 `api` 仍可统一改指其全部模型，而同一渠道的模型级 `api` 可以各自选择协议，共用该渠道的 `baseURL` 和凭据。未被 catalog 描述、又无法从渠道取得协议的模型须显式指定 `api`；`compat` 按每个模型最终选定的协议校验。
 
 ### 按模型的推理（reasoning）档位
 
@@ -90,9 +94,9 @@ profile 的 `models` 列表是*替换*该路由已安装 catalog，而不是扩�
 
 pi-ai 依据提供方 id 与 baseURL 决定每个请求的形状：系统提示词由哪个角色承载、输出上限写在哪个字段、思考级别如何传输。私有网关的 URL 什么也说明不了，而对于 pi-ai 无法识别的端点，其检测会当作 OpenAI 本身来回答——推理模型的系统提示词以 `developer` 发出、输出上限写作 `max_completion_tokens`、思考级别只发一个裸的 `reasoning_effort`——而多数 OpenAI 兼容网关至少会拒绝其中之一。因此 `compat` 既可配置在路由上（作为其模型的默认值），也可按模型配置（逐字段胜出），解析顺序为模型 → 路由 → 已安装 catalog 条目 → pi-ai 自身的检测；路由级开关会为每个读取它的模型遮蔽 catalog 条目的值，而且除了重述其值，没有任何写法能把某个字段交还给 catalog。
 
-每个开关归属于其 pi-ai compat 类型声明了它的那些协议，且归组依据是 compat **类型**而非协议名：三个 Responses 协议（`openai-responses`、`azure-openai-responses`、`openai-codex-responses`）共用同一个 compat 类型，因此可设在其中之一的开关，三者皆可设。`supportsDeveloperRole` 可设在 `openai-completions` 与这三者上；`thinkingFormat` 只能设在 `openai-completions`；`supportsTemperature` 只能设在 `anthropic-messages`；`supportsStrictMode` 还可达 `bedrock-converse-stream`。模型级开关若其协议并不接受，解析失败并点名该协议实际提供哪些开关；路由级开关则落在读取它的模型上、跳过其余模型，只有当路由上没有任何模型能读取它时才被拒绝。
+每个开关归属于其 pi-ai compat 类型声明了它的那些协议，且归组依据是 compat **类型**而非协议名：三个 Responses 协议（`openai-responses`、`azure-openai-responses`、`openai-codex-responses`）共用同一个 compat 类型，因此可设在其中之一的开关，三者皆可设。`supportsDeveloperRole` 可设在 `openai-completions` 与这三者上；`supportsOpenAIGrammarTools` 只可设在这三个 Responses 协议上；`thinkingFormat` 只能设在 `openai-completions`；`supportsTemperature` 只能设在 `anthropic-messages`；`supportsStrictMode` 还可达 `bedrock-converse-stream`。模型级开关若其协议并不接受，解析失败并点名该协议实际提供哪些开关；路由级开关则落在读取它的模型上、跳过其余模型，只有当路由上没有任何模型能读取它时才被拒绝。
 
-三类键会被拒绝而非丢弃：没有任何协议声明的键（笔误）；pi-ai 已安装 catalog 为具名厂商掌管的键（`openRouterRouting`、`zaiToolStream`、`deferredToolsMode`、`sessionAffinityFormat`、`supportsOpenAIGrammarTools`、`supportsToolSearch`、`supportsExplicitPromptCacheMode`、`supportsToolReferences`、`vercelGatewayRouting`、`sendSessionAffinityHeaders`）——需要某厂商专属开关的路由，本就是一条应当以该厂商命名的 catalog 路由；以及完全没有写值的键（`supportsDeveloperRole:`），schemastery 会把它放行为 null，若照单收下就会用空值替换已安装 catalog 的值。开放集由漂移门禁钉在 pi-ai 的四个 compat 类型上，承载它们的协议集派生自 `Model.compat` 本身，每个字段的类型也派生自上游而非重述，因此上游新增字段、给别的协议加上 compat 类型、或拓宽某个值并集，都会使构建失败，直到有人为它做出分类。
+三类键会被拒绝而非丢弃：没有任何协议声明的键（笔误）；pi-ai 已安装 catalog 为具名厂商掌管的键（`openRouterRouting`、`zaiToolStream`、`deferredToolsMode`、`sessionAffinityFormat`、`supportsToolSearch`、`supportsExplicitPromptCacheMode`、`supportsToolReferences`、`vercelGatewayRouting`、`sendSessionAffinityHeaders`）——需要某厂商专属开关的路由，本就是一条应当以该厂商命名的 catalog 路由；以及完全没有写值的键（`supportsDeveloperRole:`），schemastery 会把它放行为 null，若照单收下就会用空值替换已安装 catalog 的值。开放集由漂移门禁钉在 pi-ai 的四个 compat 类型上，承载它们的协议集派生自 `Model.compat` 本身，每个字段的类型也派生自上游而非重述，因此上游新增字段、给别的协议加上 compat 类型、或拓宽某个值并集，都会使构建失败，直到有人为它做出分类。
 
 条目与已安装 catalog 都没有给出尺寸的模型，会采用该路由的 `defaultContextWindow`（262,144）与 `defaultMaxTokens`（32,768），因此一份只公布 id 的列表同样能产出可服务的路由。两个回退值本质上都是猜测，这正是它们作为路由字段、供网关服务更小模型的部署一次性更正的原因，而不是埋在适配器里的常量；回退值只用于给模型定尺寸，绝不会变成单次请求上限。
 
@@ -100,10 +104,10 @@ pi-ai 依据提供方 id 与 baseURL 决定每个请求的形状：系统提示�
 
 `[text]` 是保守的默认声明，而不是端点能力的验真；容量回退值同样需要部署方按实际模型校正。模型未声明图片能力时，只有显式配置了具备图片能力的[视觉理解路由](../llm-vision-fallback/README.md)，含图会话才能经图片描述交给该纯文本模型；未配置则拒绝，视觉描述失败也不会发出主请求。反过来，多声明 `image` 会让图片直接交给提供方；若端点拒绝，已持久化的原始图片仍在会话日志中，单纯重试同一路由会重复失败。
 
-路由完全无法服务时解析仍会失败得响亮，并点名出问题的路由与模型：catalog 未提供的路由需要 `api`、`baseURL`，以及一个由唯一标识的模型组成的非空 `models` 列表。该解析在分节 schema 内部运行，因此无法服务的 profile 会在**写入之处**被拒绝——`settings.mutate` 以 `settings-rejected` 点名路由与模型——而不是先存下来、再悄悄让该 namespace 下每条路由失效。对于已经存下的、在此失败的分节，settings seam 会保留该 namespace 上一份可用值，因此这不会把部署卡死。`api` 接受 `supportedProtocols()` 中的协议，且仅在 catalog 无法提供协议时才需要：catalog 中不存在的模型会继承其同门模型一致同意的协议，因此向单协议 catalog 路由添加模型无需重述任何内容。
+路由完全无法服务时解析仍会失败得响亮，并点名出问题的路由与模型：catalog 未提供的路由需要 `baseURL`、一个由唯一标识的模型组成的非空 `models` 列表，以及能覆盖各模型的渠道或模型级 `api`。该解析在分节 schema 内部运行，因此无法服务的 profile 会在**写入之处**被拒绝——`settings.mutate` 以 `settings-rejected` 点名路由与模型——而不是先存下来、再悄悄让该 namespace 下每条路由失效。对于已经存下的、在此失败的分节，settings seam 会保留该 namespace 上一份可用值。显式协议只接受 `supportedProtocols()` 中的值；catalog 中不存在的模型也可继承其同门模型一致同意的协议，因此向单协议 catalog 路由添加模型无需重述协议。
 
 
-`baseURL` 设定该路由下每个模型的端点，因此仍支持 `https://proxy.example.com:8443` 等私有 proxy；省略它的 catalog 路由会保留每个 catalog 模型自己的端点。在 catalog 路由上点名 `api` 会把整条路由改指到该协议，这正是部署把某个提供方在 Responses 与 Chat Completions 之间迁移的方式。
+`baseURL` 设定该路由下每个模型的端点，因此仍支持 `https://proxy.example.com:8443` 等私有 proxy；省略它的 catalog 路由会保留每个 catalog 模型自己的端点。在 catalog 路由上点名 `api` 会为未另行指定协议的模型选择该协议；单个模型的 `api` 优先。
 
 `supportedProtocols()` 刻意窄于 pi-ai 的完整流式 API 集合：它只保留 profile 能用密钥、端点与标头**完整描述**的那些协议。Bedrock 要用 AWS 凭据与 region 做 SigV4 签名，Vertex 需要 project、location 与应用默认凭据，Azure 需要提供方环境外加 api-version，Codex 走 OAuth——提供它们只会交回一个无法完成认证的路由。catalog 路由仍可经自己的 provider 抵达这些协议；被拒绝的只有显式覆盖。
 
@@ -137,13 +141,17 @@ pi-ai 依据提供方 id 与 baseURL 决定每个请求的形状：系统提示�
 
 ## 提供方／模型路由与回放
 
-每次解析产出一份**不可变**快照——profiles 加上一个持有各路由所建 `Provider` 的 `createModels()` 集合——每个操作都在自己第一个 `await` 之前整体捕获一份快照。配置变化会构造**新**集合，而不是改动正在被使用的那个：`Models.streamSimple()` 是惰性的，它在流首次被消费时才解析 provider，而那已在 credential await 之后，因此改动共享集合会让一个在旧配置下开始的请求在新配置下结束，或者撞上一个已不存在的 provider。这正是 seam 的每步调用冻结（`llm.prepareCall()`）能贯通到底的原因——回复途中切换模型会在下一步生效，绝不会影响在途的那一步。请求经 `Models.streamSimple()` 抵达提供方。保持 catalog 协议不变的 catalog 路由会**复用**已安装提供方，只替换其模型列表，因为该提供方持有本包无法重建的 API 实现——Bedrock 经由独立入口加载其 Smithy 模块——从零件重建会静默收窄可用提供方的范围。其余路由都由 `createProvider()` 基于 `supportedProtocols()` 背后的协议表构造，表中条目正是 pi-ai 自己的提供方工厂所用的同一批 factory。
+每次解析产出一份**不可变**快照——profiles 加上一个持有各路由所建 `Provider` 的 `createModels()` 集合——每个操作都在自己第一个 `await` 之前整体捕获一份快照。配置变化会构造**新**集合，而不是改动正在被使用的那个：`Models.streamSimple()` 是惰性的，它在流首次被消费时才解析 provider，而那已在 credential await 之后，因此改动共享集合会让一个在旧配置下开始的请求在新配置下结束，或者撞上一个已不存在的 provider。这正是 seam 的每步调用冻结（`llm.prepareCall()`）能贯通到底的原因——回复途中切换模型会在下一步生效，绝不会影响在途的那一步。请求经 `Models.streamSimple()` 抵达提供方。未改写渠道协议的 catalog 路由保留已安装提供方及其原生 API 实现（如 Bedrock 的 Smithy 模块）；该目录中新添或按模型改为其他协议的条目由对应的 pi-ai 协议工厂承接。同一渠道因而可以有不同协议的模型，而不会丢失原目录模型的请求实现。手工声明路由和显式改写整条渠道协议的路由则由协议工厂构造。
 
 凭据绝不进入该集合。harness 在请求抵达 pi-ai 之前经自身 seam 解析路由密钥，并作为请求的 `apiKey` 选项传入，而 pi-ai 将其视为优先级最高的 auth 覆盖；因此 `Models` 不持有任何凭据存储，harness 也保住了自己明确失败的引用语义。没有点名任何凭据的路由会解析为「已配置但无密钥」，把该要求留给协议——那才是它真正所在的位置。
 
 所选模型 descriptor 提供协议实现。这包括原生 API 差异，例如 descriptor 使用 Responses API 而非 Chat Completions 的 OpenAI 模型；harness 适配器不会按模型名称硬编码端点选择。
 
+`ToolSchema.inputFormat` 声明 Lark 语法时，选择 `openai-responses`、`azure-openai-responses` 或 `openai-codex-responses` 的模型会把该工具发为 Responses `custom` 语法工具，以原始文本接收调用；它在 Harness 执行与日志中仍规范为带 `input` 字段的 JSON 参数。只有实际所选协议触发这条路径，不按提供方或模型 ID 推断。模型明确设置 `compat.supportsOpenAIGrammarTools: false` 时保留普通函数工具及原 `description`；其余协议也使用 JSON 函数调用。原生语法路径使用 `inputFormat.description`（若提供），普通路径使用工具自身的 `description`。这只改变传输形态，不扩展 [`apply_patch`](../../fs/tool-apply-patch/README.md) 的 Add/Update 子集，也不改变文件权限。
+
 成功的 assistant 响应会将经版本化的无损 JSON 回放状态与生成该响应的提供方和模型一同存储，其形式是 `ReplayEnvelope`：一个响应级半区（kind、版本、API、路由、响应 id、原生停止原因），加上每个流式块一条、携带该块 signature 的逐块条目。逐块对齐正是 `BlockAssembler` 在组装丢弃某个块（`max-tokens` 下的工具调用）时裁剪的对象，因此存储的条目始终描述存储的内容——保留的块保有其 signature。请求时，`LlmRuntime` 只有在历史提供方路由与目标提供方路由当前由同一个 `PiAiAdapter` 实例拥有时，才会传递回放状态。即使目标提供方或模型改变，适配器也会验证状态并恢复 pi-ai 响应 id 与提供方 signature；随后由 pi-ai 判定目标 API 可以复用哪些元数据。没有回放状态的历史会被转换为外来的、与提供方无关的内容，绝不伪装为原生 pi-ai 响应。
+
+Responses 的加密推理内容只作为适配器私有回放元数据随会话记录保存并交还同适配器的后续请求；可读摘要才进入推理文本分片和 Chat。只有密文、没有摘要的推理块会保留空文本以维持回放块对齐，界面不据此展示空白 Think 行；密文不会被解码或当作可读思考呈现。
 
 持久化内容是权威记录；回放状态只负责恢复原生保真度。当前构建无法使用的已存状态——其他适配器的 kind、其他版本（包括旧日志携带的平铺前信封形式）、格式错误的元数据、消息与回放状态之间的提供方／模型不匹配，或内容／块不匹配——会把这一条 assistant 消息降级为同样的外来提供方无关转换而不是让请求失败，插件通过其 `onReplayDegrade` 钩子记录 `INVALID_REPLAY_STATE` 诊断。
 
@@ -202,7 +210,6 @@ pi-ai 事件会变为 harness 推理、文本、工具调用、usage 与 finish 
 - **分层合并对字典键没有删除语义**：settings seam 把组合 `base` 与用户层按键递归合并，因此 base 声明的某个 `reasoningEfforts` 档位、`modelOverrides` 条目或 `compat` 字段，用户层只能覆盖、无法移除——而 `reasoningEfforts` 里缺席本身*就是*语义（「不提供」），于是 base 声明过的档位会一直被提供。只有 `cordis.yml` entry config 为用户层正在编辑的同一模型声明了按模型推理字段才会触发；受支持的姿态是把这些字段留给 settings 文档（shipped 组合以 dormant 方式挂载该适配器），且 `models` 列表是数组、整体替换，这是带内的解决办法。
 - **`headers` 可能承载一条脱敏器看不见的凭据**：profile 的 `headers` 是纯字符串字典，因此设在其中的 `Authorization` 或 `api-key` 会被脱敏后的 `describe()` 原样返回，并被任何配置 UI 渲染出来。请把凭据存为 `apiKeyEnv` 引用；把该字典整体改为只写与其余[协议边界工作](../llm/README.md#已知限制与暂缓事项)一并暂缓。
 - **路由的 catalog 不会自我刷新**：服务模型仍由 `settings.yaml` 决定；端点询问仅返回候选，用户必须采纳并保存才会改变路由的模型列表。
-- **每条路由只有一种协议格式**：`api` 作用于整条路由，因此混合协议的 catalog 路由（跨 Responses 与 Chat Completions 的 OpenAI 式 catalog）无法承载另一种协议的模型，向这类路由添加它未描述的模型必须点名 `api` 并把全部模型一起迁过去。把该提供方拆成两个路由键是变通办法。
 - **模态声明不经端点验证**：模型列表查询不证明端点接受 `image`；多声明图片能力后，提供方可能在轮次中途拒绝，已提交的原始图片仍留在会话日志中，单纯重试同一不支持图片的模型会重复失败。可改选确实支持图片的模型，或显式配置[视觉理解路由](../llm-vision-fallback/README.md)后改选纯文本模型，将图片描述持久替换到主模型历史；没有该路由时纯文本模型仍拒绝图片，视觉调用失败时主请求也不会发送。其他恢复方式是 fork 到图片之前或开启新会话；发送失败时回滚尚未消费的图片消息仍属暂缓工作。
 - **未认证路由取决于其协议**：不点名凭据会让路由解析为「已配置但无密钥」，但 pi-ai 的 OpenAI 兼容实现仍要求 API key 或 `Authorization` 标头，因此无鉴权的本地服务需要一个由 `apiKeyEnv` 引用的占位凭据，或在 `headers` 中给出 `Authorization` 条目。
 - **不支持 `GenerateOptions.stop`**：pi-ai 的通用流选项无法保证所有提供方都支持 stop sequence，因此适配器会拒绝该字段。

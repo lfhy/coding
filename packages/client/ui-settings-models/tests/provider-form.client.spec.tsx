@@ -50,6 +50,7 @@ const PiAiConfig = Schema.object({
     baseURL: Schema.string(),
     models: Schema.array(Schema.object({
       id: Schema.string().required(),
+      api: Schema.union(PROTOCOLS),
       name: Schema.string(),
       contextWindow: Schema.number(),
       maxTokens: Schema.number(),
@@ -98,6 +99,9 @@ function scriptedFace(options: {
   discover?: ReturnType<typeof vi.fn>
   mutate?: ReturnType<typeof vi.fn>
   set?: ReturnType<typeof vi.fn>
+  presetNamespace?: SettingsNamespaceView
+  presets?: readonly { id: string; isDefault: boolean; trust: 'system' | 'user'; name?: string; broken?: string }[]
+  catalogModels?: readonly { id: string; name: string }[]
 } = {}) {
   const providers = options.providers ?? {
     openai: { apiKeyEnv: 'OPENAI_API_KEY', baseURL: 'https://proxy.example/v1' },
@@ -118,11 +122,14 @@ function scriptedFace(options: {
           declared: options.declaredRoutes?.includes(provider) ?? false,
         })),
       }))),
-      models: vi.fn(() => Promise.resolve(ok({ groups: [], failures: [] }))),
+      models: vi.fn(() => Promise.resolve(ok({ groups: options.catalogModels === undefined ? []
+        : [{ id: 'openai', name: 'openai', models: options.catalogModels }], failures: [] }))),
       discoverModels: discover,
     },
     settings: {
-      describe: vi.fn(() => Promise.resolve(ok({ writable: true, namespaces: [namespace] }))),
+      describe: vi.fn(() => Promise.resolve(ok({ writable: true, namespaces: [namespace,
+        ...options.presetNamespace === undefined ? [] : [options.presetNamespace],
+      ] }))),
       update: vi.fn(),
       replace: vi.fn(),
       mutate,
@@ -134,6 +141,7 @@ function scriptedFace(options: {
       set,
       unset: vi.fn(),
     },
+    agentPresets: { list: vi.fn(() => Promise.resolve(ok({ presets: options.presets ?? [], authorable: false, hasDocument: false }))) },
   }
   return { face, discover, mutate, set, namespace }
 }
@@ -1611,6 +1619,287 @@ describe('hand-declared providers', () => {
     expect(mutate).not.toHaveBeenCalled()
     expect(set).not.toHaveBeenCalled()
     expect(discover).not.toHaveBeenCalled()
+  })
+})
+
+describe('model-specific mode settings', () => {
+  const presetNamespace: SettingsNamespaceView = {
+    ns: 'agent-presets', schema: {}, value: { default: 'standard', modelDefaults: {} },
+    user: { default: 'standard', modelDefaults: {} }, revision: 9, applies: 'live', secrets: [],
+  }
+  const presets = [
+    { id: 'standard', trust: 'system' as const, isDefault: true, name: 'Standard' },
+    { id: 'minimal', trust: 'system' as const, isDefault: false, name: 'Minimal' },
+  ]
+
+  it('writes only the exact agent-presets model path when the adapter model stays inherited', async () => {
+    const mutate = vi.fn(() => Promise.resolve(ok({ ...presetNamespace, revision: 10 })))
+    await mountSection({ providers: { openai: { api: 'openai-completions' } },
+      catalogModels: [{ id: 'gpt.any', name: 'Catalog model' }], presetNamespace, presets, mutate })
+    openEditor('openai')
+    expandModel(1)
+    const dialog = screen.getByRole('dialog', { name: `${en.modelAdvanced} 1` })
+    const mode = within(dialog).getByRole<HTMLSelectElement>('combobox', { name: en.modelDefaultPreset })
+    expect(mode.value).toBe('')
+    fireEvent.change(mode, { target: { value: 'minimal' } })
+    saveModel(1)
+    expect(mutate).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: en.apply }))
+    await waitFor(() => { expect(mutate).toHaveBeenCalledOnce() })
+    expect(firstMutate(mutate)).toEqual({ ns: 'agent-presets', expectedRevision: 9,
+      ops: [{ op: 'set', path: ['modelDefaults', 'openai', 'gpt.any'], value: 'minimal' }] })
+  })
+
+  it('edits a catalog model through modelOverrides without replacing its catalog or losing prior overrides', async () => {
+    const profile = { api: 'openai-completions', modelOverrides: { 'catalog.v2': { contextWindow: 65_536, compat: { temperature: false } } } }
+    const mutate = vi.fn(() => Promise.resolve(ok(piAiNamespace({ openai: profile }))))
+    await mountSection({ providers: { openai: profile }, catalogModels: [{ id: 'catalog.v2', name: 'Catalog model' }],
+      presetNamespace, presets, mutate })
+    openEditor('openai')
+    expect(screen.getByRole<HTMLInputElement>('textbox', { name: `${en.modelId} 1` }).disabled).toBe(true)
+    expandModel(1)
+    const dialog = screen.getByRole('dialog', { name: `${en.modelAdvanced} 1` })
+    const protocol = within(dialog).getByRole<HTMLSelectElement>('combobox', { name: en.modelApi })
+    expect(protocol.value).toBe('')
+    fireEvent.change(protocol, { target: { value: 'openai-responses' } })
+    saveModel(1)
+    fireEvent.click(screen.getByRole('button', { name: en.apply }))
+    await waitFor(() => { expect(mutate).toHaveBeenCalledOnce() })
+    expect(firstMutate(mutate).ops).toEqual([{ op: 'set', path: ['providers', 'openai', 'modelOverrides'],
+      value: { 'catalog.v2': { contextWindow: 65_536, compat: { temperature: false }, api: 'openai-responses' } } }])
+  })
+
+  it('materializes catalog rows and preserves overrides when endpoint discovery appends a model', async () => {
+    const profile = { api: 'openai-completions', modelOverrides: {
+      catalog: { contextWindow: 65_536, compat: { supportsDeveloperRole: false } },
+    } }
+    const mutate = vi.fn(() => Promise.resolve(ok(piAiNamespace({ openai: profile }))))
+    await mountSection({ providers: { openai: profile }, catalogModels: [{ id: 'catalog', name: 'Catalog' }],
+      discover: vi.fn(() => Promise.resolve(ok({ models: [{ id: 'extra' }] }))), mutate })
+    openEditor('openai')
+    fireEvent.click(screen.getByRole('button', { name: en.fetchModels }))
+    const picker = await screen.findByRole('dialog')
+    fireEvent.click(within(picker).getByRole('button', { name: `${en.addModel} extra` }))
+    fireEvent.click(within(picker).getByRole('button', { name: en.cancel }))
+    expect(screen.getByRole('textbox', { name: `${en.modelId} 2` })).toHaveProperty('value', 'extra')
+    fireEvent.click(screen.getByRole('button', { name: en.apply }))
+    await waitFor(() => { expect(mutate).toHaveBeenCalledOnce() })
+    expect(firstMutate(mutate).ops).toEqual(expect.arrayContaining([
+      { op: 'unset', path: ['providers', 'openai', 'modelOverrides'] },
+      { op: 'set', path: ['providers', 'openai', 'models'], value: [
+        { id: 'catalog', name: 'Catalog', contextWindow: 65_536, compat: { supportsDeveloperRole: false } },
+        expect.objectContaining({ id: 'extra' }),
+      ] },
+    ]))
+  })
+
+  it('moves a saved model mode when its model ID changes, then clears that mapping on removal', async () => {
+    const saved = { ...presetNamespace, value: { default: 'standard', modelDefaults: { openai: { old: 'minimal' } } },
+      user: { default: 'standard', modelDefaults: { openai: { old: 'minimal' } } } }
+    const profile = { models: [{ id: 'old' }, { id: 'survivor' }] }
+    const mutate = vi.fn((request: MutateCall) => Promise.resolve(request.ns === 'agent-presets'
+      ? ok({ ...saved, revision: 10 })
+      : ok(piAiNamespace({ openai: profile }))))
+    await mountSection({ providers: { openai: profile }, presetNamespace: saved, presets, mutate })
+    openEditor('openai')
+    fireEvent.change(screen.getByRole('textbox', { name: `${en.modelId} 1` }), { target: { value: 'new' } })
+    expandModel(1)
+    expect(screen.getByRole<HTMLSelectElement>('combobox', { name: en.modelDefaultPreset }).value).toBe('minimal')
+    saveModel(1)
+    fireEvent.click(screen.getByRole('button', { name: en.apply }))
+    await waitFor(() => { expect(mutate).toHaveBeenCalledTimes(2) })
+    expect((mutate.mock.calls as [MutateCall][])[1]?.[0].ops).toEqual([
+      { op: 'unset', path: ['modelDefaults', 'openai', 'old'] },
+      { op: 'set', path: ['modelDefaults', 'openai', 'new'], value: 'minimal' },
+    ])
+  })
+
+  it('does not write an orphan mode for a model removed after its mode was drafted', async () => {
+    const profile = { models: [{ id: 'old' }, { id: 'survivor' }] }
+    const mutate = vi.fn(() => Promise.resolve(ok(piAiNamespace({ openai: profile }))))
+    await mountSection({ providers: { openai: profile }, presetNamespace, presets, mutate })
+    openEditor('openai')
+    expandModel(1)
+    fireEvent.change(screen.getByRole('combobox', { name: en.modelDefaultPreset }),
+      { target: { value: 'minimal' } })
+    saveModel(1)
+    fireEvent.click(screen.getByRole('button', { name: `${en.removeModel} 1` }))
+    fireEvent.click(screen.getByRole('button', { name: en.apply }))
+    await waitFor(() => { expect(mutate).toHaveBeenCalledOnce() })
+    expect(firstMutate(mutate).ns).toBe('llm-pi-ai')
+    expect(firstMutate(mutate).ops).toEqual([{ op: 'set', path: ['providers', 'openai', 'models'],
+      value: [{ id: 'survivor' }] }])
+  })
+
+  it('keeps the same drafted mode through a temporary duplicate model ID', async () => {
+    const profile = { models: [{ id: 'old' }, { id: 'occupied' }] }
+    const mutate = vi.fn((request: MutateCall) => Promise.resolve(request.ns === 'agent-presets'
+      ? ok({ ...presetNamespace, revision: 10 }) : ok(piAiNamespace({ openai: profile }))))
+    await mountSection({ providers: { openai: profile }, presetNamespace, presets, mutate })
+    openEditor('openai')
+    expandModel(1)
+    fireEvent.change(screen.getByRole('combobox', { name: en.modelDefaultPreset }),
+      { target: { value: 'minimal' } })
+    saveModel(1)
+    const id = screen.getByRole('textbox', { name: `${en.modelId} 1` })
+    fireEvent.change(id, { target: { value: 'intermediate' } })
+    fireEvent.change(id, { target: { value: 'occupied' } })
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: en.apply }).disabled).toBe(true)
+    fireEvent.change(id, { target: { value: 'final' } })
+    fireEvent.click(screen.getByRole('button', { name: en.apply }))
+    await waitFor(() => { expect(mutate).toHaveBeenCalledTimes(2) })
+    expect((mutate.mock.calls as [MutateCall][])[1]?.[0].ops).toEqual([
+      { op: 'set', path: ['modelDefaults', 'openai', 'final'], value: 'minimal' },
+    ])
+  })
+
+  it('restores a pending mode when deleting the row that caused an ID collision', async () => {
+    const profile = { models: [{ id: 'old' }, { id: 'occupied' }] }
+    const mutate = vi.fn((request: MutateCall) => Promise.resolve(request.ns === 'agent-presets'
+      ? ok({ ...presetNamespace, revision: 10 }) : ok(piAiNamespace({ openai: profile }))))
+    await mountSection({ providers: { openai: profile }, presetNamespace, presets, mutate })
+    openEditor('openai')
+    expandModel(1)
+    fireEvent.change(screen.getByRole('combobox', { name: en.modelDefaultPreset }),
+      { target: { value: 'minimal' } })
+    saveModel(1)
+    fireEvent.change(screen.getByRole('textbox', { name: `${en.modelId} 1` }),
+      { target: { value: 'occupied' } })
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: en.apply }).disabled).toBe(true)
+    fireEvent.click(screen.getByRole('button', { name: `${en.removeModel} 2` }))
+    expandModel(1)
+    expect(screen.getByRole<HTMLSelectElement>('combobox', { name: en.modelDefaultPreset }).value).toBe('minimal')
+    saveModel(1)
+    fireEvent.click(screen.getByRole('button', { name: en.apply }))
+    await waitFor(() => { expect(mutate).toHaveBeenCalledTimes(2) })
+    expect((mutate.mock.calls as [MutateCall][])[1]?.[0].ops).toEqual([
+      { op: 'set', path: ['modelDefaults', 'openai', 'occupied'], value: 'minimal' },
+    ])
+  })
+
+  it('does not repeat a committed adapter write when the mode write fails and is retried', async () => {
+    const profile = { models: [{ id: 'gpt.any' }] }
+    const mutate = vi.fn((request: MutateCall) => Promise.resolve(request.ns === 'llm-pi-ai'
+      ? ok({ ...piAiNamespace({ openai: { models: [{ id: 'gpt.any', api: 'openai-responses' }] } }), revision: 4 })
+      : mutate.mock.calls.filter(([call]: [MutateCall]) => call.ns === 'agent-presets').length === 1
+        ? fail('preset conflict', 'settings-conflict')
+        : ok({ ...presetNamespace, revision: 10 })))
+    await mountSection({ providers: { openai: profile }, presetNamespace, presets, mutate })
+    openEditor('openai')
+    expandModel(1)
+    const dialog = screen.getByRole('dialog', { name: `${en.modelAdvanced} 1` })
+    fireEvent.change(within(dialog).getByRole('combobox', { name: en.modelApi }),
+      { target: { value: 'openai-responses' } })
+    fireEvent.change(within(dialog).getByRole('combobox', { name: en.modelDefaultPreset }),
+      { target: { value: 'minimal' } })
+    saveModel(1)
+    fireEvent.click(screen.getByRole('button', { name: en.apply }))
+    await screen.findByText(en.conflict)
+    expect(mutate).toHaveBeenCalledTimes(2)
+    fireEvent.click(screen.getByRole('button', { name: en.apply }))
+    await waitFor(() => { expect(mutate).toHaveBeenCalledTimes(3) })
+    expect((mutate.mock.calls as [MutateCall][]).map(([call]) => call.ns))
+      .toEqual(['llm-pi-ai', 'agent-presets', 'agent-presets'])
+    expect((mutate.mock.calls as [MutateCall][])[0]?.[0].ops).toEqual([{ op: 'set',
+      path: ['providers', 'openai', 'models'], value: [{ id: 'gpt.any', api: 'openai-responses' }] }])
+  })
+
+  it('creates a channel once and retains its mode choice through a failed second namespace write', async () => {
+    const mutate = vi.fn((request: MutateCall) => Promise.resolve(request.ns === 'llm-pi-ai'
+      ? ok(piAiNamespace({}))
+      : mutate.mock.calls.filter(([call]: [MutateCall]) => call.ns === 'agent-presets').length === 1
+        ? fail('mode write failed', 'settings-conflict')
+        : ok({ ...presetNamespace, revision: 10 })))
+    const scripted = scriptedFace({ mutate })
+    const onClose = vi.fn()
+    render(<CustomProviderCard taken={[]} protocols={PROTOCOLS} revision={3}
+      api={scripted.face as never} t={t} readOnly={false} onClose={onClose}
+      schema={settingsSchema} presetNamespace={presetNamespace} presets={presets} />)
+    fillCustomChannel()
+    nextCustomStep()
+    addCustomModel('model.v2')
+    expandModel(1)
+    fireEvent.change(screen.getByRole('combobox', { name: en.modelDefaultPreset }),
+      { target: { value: 'minimal' } })
+    saveModel(1)
+    fireEvent.click(screen.getByRole('button', { name: en.create }))
+    await screen.findByText(en.conflict)
+    expect(onClose).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: en.retry }))
+    await waitFor(() => { expect(onClose).toHaveBeenCalledWith(true, GENERATED_ROUTE) })
+    expect((mutate.mock.calls as [MutateCall][]).map(([call]) => call.ns))
+      .toEqual(['llm-pi-ai', 'agent-presets', 'agent-presets'])
+    expect((mutate.mock.calls as [MutateCall][])[1]?.[0].ops).toEqual([{ op: 'set',
+      path: ['modelDefaults', GENERATED_ROUTE, 'model.v2'], value: 'minimal' }])
+  })
+
+  it('uses a renamed new-channel model ID for its drafted mode', async () => {
+    const mutate = vi.fn((request: MutateCall) => Promise.resolve(request.ns === 'agent-presets'
+      ? ok({ ...presetNamespace, revision: 10 }) : ok(piAiNamespace({}))))
+    const scripted = scriptedFace({ mutate })
+    render(<CustomProviderCard taken={[]} protocols={PROTOCOLS} revision={3}
+      api={scripted.face as never} t={t} readOnly={false} onClose={vi.fn()}
+      schema={settingsSchema} presetNamespace={presetNamespace} presets={presets} />)
+    fillCustomChannel()
+    nextCustomStep()
+    addCustomModel('old')
+    expandModel(1)
+    fireEvent.change(screen.getByRole('combobox', { name: en.modelDefaultPreset }),
+      { target: { value: 'minimal' } })
+    saveModel(1)
+    fireEvent.change(screen.getByRole('textbox', { name: `${en.modelId} 1` }),
+      { target: { value: 'new' } })
+    fireEvent.click(screen.getByRole('button', { name: en.create }))
+    await waitFor(() => { expect(mutate).toHaveBeenCalledTimes(2) })
+    expect((mutate.mock.calls as [MutateCall][])[1]?.[0].ops).toEqual([
+      { op: 'set', path: ['modelDefaults', GENERATED_ROUTE, 'new'], value: 'minimal' },
+    ])
+  })
+
+  it('drops a removed new-channel model choice before creating the remaining model', async () => {
+    const mutate = vi.fn(() => Promise.resolve(ok(piAiNamespace({}))))
+    const scripted = scriptedFace({ mutate })
+    render(<CustomProviderCard taken={[]} protocols={PROTOCOLS} revision={3}
+      api={scripted.face as never} t={t} readOnly={false} onClose={vi.fn()}
+      schema={settingsSchema} presetNamespace={presetNamespace} presets={presets} />)
+    fillCustomChannel()
+    nextCustomStep()
+    addCustomModel('old')
+    expandModel(1)
+    fireEvent.change(screen.getByRole('combobox', { name: en.modelDefaultPreset }),
+      { target: { value: 'minimal' } })
+    saveModel(1)
+    addCustomModel('survivor', 2)
+    fireEvent.click(screen.getByRole('button', { name: `${en.removeModel} 1` }))
+    fireEvent.click(screen.getByRole('button', { name: en.create }))
+    await waitFor(() => { expect(mutate).toHaveBeenCalledOnce() })
+    expect(firstMutate(mutate).ops[0]?.value).toMatchObject({ models: [{ id: 'survivor' }] })
+  })
+
+  it('restores a new-channel mode after removing the conflicting model row', async () => {
+    const mutate = vi.fn((request: MutateCall) => Promise.resolve(request.ns === 'agent-presets'
+      ? ok({ ...presetNamespace, revision: 10 }) : ok(piAiNamespace({}))))
+    const scripted = scriptedFace({ mutate })
+    render(<CustomProviderCard taken={[]} protocols={PROTOCOLS} revision={3}
+      api={scripted.face as never} t={t} readOnly={false} onClose={vi.fn()}
+      schema={settingsSchema} presetNamespace={presetNamespace} presets={presets} />)
+    fillCustomChannel()
+    nextCustomStep()
+    addCustomModel('old')
+    expandModel(1)
+    fireEvent.change(screen.getByRole('combobox', { name: en.modelDefaultPreset }),
+      { target: { value: 'minimal' } })
+    saveModel(1)
+    addCustomModel('occupied', 2)
+    fireEvent.change(screen.getByRole('textbox', { name: `${en.modelId} 1` }),
+      { target: { value: 'occupied' } })
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: en.create }).disabled).toBe(true)
+    fireEvent.click(screen.getByRole('button', { name: `${en.removeModel} 2` }))
+    fireEvent.click(screen.getByRole('button', { name: en.create }))
+    await waitFor(() => { expect(mutate).toHaveBeenCalledTimes(2) })
+    expect((mutate.mock.calls as [MutateCall][])[1]?.[0].ops).toEqual([
+      { op: 'set', path: ['modelDefaults', GENERATED_ROUTE, 'occupied'], value: 'minimal' },
+    ])
   })
 })
 

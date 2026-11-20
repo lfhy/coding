@@ -249,6 +249,7 @@ const compatProfile: z<PiAiCompatProfile> = z.object({
   thinkingFormat: z.union(SUPPORTED_THINKING_FORMATS),
   chatTemplateKwargs: z.dict(chatTemplateKwarg),
   supportsStrictMode: z.boolean(),
+  supportsOpenAIGrammarTools: z.boolean(),
   cacheControlFormat: z.union(CACHE_CONTROL_FORMATS),
   supportsLongCacheRetention: z.boolean(),
   supportsEagerToolInputStreaming: z.boolean(),
@@ -276,6 +277,7 @@ const reasoningEfforts = z.dict(
 
 /** The fields a `models` entry and a `modelOverrides` value share; only the id's home differs. */
 const modelFields = {
+  api: z.union(supportedProtocols()),
   name: z.string(),
   contextWindow: z.number().step(1).min(1),
   maxTokens: z.number().step(1).min(1),

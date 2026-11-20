@@ -42,6 +42,91 @@ function reasoningTrigger(card: HTMLElement): HTMLButtonElement {
 }
 
 describe('channel model catalog', () => {
+  it('keeps protocol inheritance separate from the channel and drafts only explicit model overrides', () => {
+    const onChange = vi.fn()
+    const model = { id: 'gpt.any', name: 'Example', privateField: 'kept' }
+    function Fixture() {
+      const [models, setModels] = useState<ModelDraft[]>([model])
+      return <ModelListEditor models={models} onChange={(next) => { onChange(next); setModels(next) }}
+        probe={{ settingsNs: 'llm-pi-ai', provider: 'gateway' }}
+        protocols={['openai-completions', 'openai-responses', 'anthropic-messages']}
+        channelProtocol="openai-completions" api={{ llm: {} } as never}
+        t={key => en[key]} disabled={false} />
+    }
+    render(<Fixture />)
+    fireEvent.click(screen.getByRole('button', { name: `${en.modelAdvanced} 1` }))
+    const dialog = screen.getByRole('dialog', { name: `${en.modelAdvanced} 1` })
+    const protocol = within(dialog).getByRole<HTMLSelectElement>('combobox', { name: en.modelApi })
+    expect(protocol.value).toBe('')
+    expect(protocol.options[0]?.textContent).toContain('openai-completions')
+    fireEvent.click(within(dialog).getByRole('button', { name: en.save }))
+    expect(onChange).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: `${en.modelAdvanced} 1` }))
+    fireEvent.change(screen.getByRole('combobox', { name: en.modelApi }), { target: { value: 'openai-responses' } })
+    fireEvent.click(within(screen.getByRole('dialog', { name: `${en.modelAdvanced} 1` })).getByRole('button', { name: en.cancel }))
+    expect(onChange).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: `${en.modelAdvanced} 1` }))
+    fireEvent.change(screen.getByRole('combobox', { name: en.modelApi }), { target: { value: 'anthropic-messages' } })
+    fireEvent.click(within(screen.getByRole('dialog', { name: `${en.modelAdvanced} 1` })).getByRole('button', { name: en.save }))
+    expect(onChange).toHaveBeenLastCalledWith([{ ...model, api: 'anthropic-messages' }])
+    fireEvent.click(screen.getByRole('button', { name: `${en.modelAdvanced} 1` }))
+    fireEvent.change(screen.getByRole('combobox', { name: en.modelApi }), { target: { value: '' } })
+    fireEvent.click(within(screen.getByRole('dialog', { name: `${en.modelAdvanced} 1` })).getByRole('button', { name: en.save }))
+    expect(onChange).toHaveBeenLastCalledWith([model])
+  })
+
+  it('keeps endpoint import available when showing an adapter-owned catalog', () => {
+    render(<ModelListEditor models={[{ id: 'catalog' }]} onChange={vi.fn()} catalogOnly
+      probe={{ settingsNs: 'llm-pi-ai', provider: 'openai' }} api={{ llm: {} } as never}
+      t={key => en[key]} disabled={false} />)
+    const fetch = screen.getByRole<HTMLButtonElement>('button', { name: en.fetchModels })
+    expect(fetch.disabled).toBe(false)
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: en.addModel }).disabled).toBe(true)
+  })
+
+  it('stages model mode independently, retaining an unavailable saved mode until cleared', () => {
+    const onChange = vi.fn()
+    const onPresetChange = vi.fn()
+    const saved = 'removed-preset'
+    render(<ModelListEditor models={[{ id: 'm' }]} onChange={onChange}
+      probe={{ settingsNs: 'llm-deepseek', provider: 'deepseek-official' }}
+      api={{ llm: {} } as never} t={key => en[key]} disabled={false}
+      presets={[{ id: 'standard', name: 'Standard', isDefault: true },
+        { id: 'minimal', name: 'Minimal', isDefault: false }]}
+      presetForModel={() => saved} onPresetChange={onPresetChange} />)
+    fireEvent.click(screen.getByRole('button', { name: `${en.modelAdvanced} 1` }))
+    const mode = screen.getByRole<HTMLSelectElement>('combobox', { name: en.modelDefaultPreset })
+    expect(mode.value).toBe(saved)
+    expect(within(mode).getByRole('option', { name: `${saved} (${en.modelPresetUnavailable})` })).toBeTruthy()
+    fireEvent.change(mode, { target: { value: 'minimal' } })
+    fireEvent.click(within(screen.getByRole('dialog', { name: `${en.modelAdvanced} 1` })).getByRole('button', { name: en.cancel }))
+    expect(onPresetChange).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: `${en.modelAdvanced} 1` }))
+    fireEvent.change(screen.getByRole('combobox', { name: en.modelDefaultPreset }), { target: { value: '' } })
+    fireEvent.click(within(screen.getByRole('dialog', { name: `${en.modelAdvanced} 1` })).getByRole('button', { name: en.save }))
+    expect(onPresetChange).toHaveBeenCalledWith('m', undefined)
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('reports a failed mode roster without losing the saved mode or its clear action', () => {
+    const onPresetChange = vi.fn()
+    render(<ModelListEditor models={[{ id: 'm' }]} onChange={vi.fn()}
+      probe={{ settingsNs: 'llm-deepseek', provider: 'deepseek-official' }}
+      api={{ llm: {} } as never} t={key => en[key]} disabled={false}
+      presets={[]} presetsError="roster offline" presetForModel={() => 'removed-preset'}
+      onPresetChange={onPresetChange} />)
+    fireEvent.click(screen.getByRole('button', { name: `${en.modelAdvanced} 1` }))
+    const dialog = screen.getByRole('dialog', { name: `${en.modelAdvanced} 1` })
+    expect(within(dialog).getByRole('alert').textContent).toContain(en.modelPresetListFailed)
+    expect(within(dialog).getByRole('alert').textContent).toContain('roster offline')
+    const mode = within(dialog).getByRole<HTMLSelectElement>('combobox', { name: en.modelDefaultPreset })
+    expect(mode.value).toBe('removed-preset')
+    expect([...mode.options].map(option => option.value)).toEqual(['', 'removed-preset'])
+    expect(mode.options[1]?.textContent).toContain(en.modelPresetUnverified)
+    fireEvent.change(mode, { target: { value: '' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: en.save }))
+    expect(onPresetChange).toHaveBeenCalledWith('m', undefined)
+  })
   it('does not describe an inherited provider catalog as an empty model directory', () => {
     render(<ModelListEditor models={[]} overridden={false} onChange={vi.fn()}
       probe={{ settingsNs: 'llm-pi-ai', provider: 'test' }} api={{ llm: {} } as never}

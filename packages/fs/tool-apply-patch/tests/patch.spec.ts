@@ -12,7 +12,7 @@ describe('Codex patch parser', () => {
     expect(manifest.main).toBe('lib/index.js')
     expect(manifest.exports?.['.']?.default).toBe('./lib/index.js')
     expect(manifest.exports?.['./invariant']?.default).toBe('./lib/invariant.js')
-    expect(manifest.files).toEqual(['lib/index.js', 'lib/invariant.js', 'lib/types/**/*.d.ts'])
+    expect(manifest.files).toEqual(['NOTICE.md', 'LICENSE.Codex', 'lib/index.js', 'lib/invariant.js', 'lib/types/**/*.d.ts'])
   })
 
   it('parses Add File and Update File sections', () => {

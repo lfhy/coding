@@ -324,17 +324,22 @@ export type StreamChunk =
   }
 
 /**
- * JSON-schema description of a tool, as sent to the model.
- *
- * Declared here (not in dsh-tools) because it is part of {@link GenerateOptions};
- * dsh-tools' ToolDefinition and dsh-system-prompt's PromptAssembly both import
- * it from this package.
+ * 模型请求中的工具定义：JSON 参数用于执行校验和回退，可选格式声明原生文本输入。
+ * 本类型属于 {@link GenerateOptions}，由工具注册与提示词组装共同消费。
  */
 export interface ToolSchema {
   name: string
   description: string
   /** JSON Schema object for the arguments. */
   parameters: Record<string, unknown>
+  /** 原生工具可选的 Lark 输入语法；`parameters` 仍是执行和不支持语法的适配器使用的 JSON 参数。 */
+  inputFormat?: {
+    type: 'grammar'
+    syntax: 'lark'
+    definition: string
+    /** 仅原生语法路径的调用说明，不替换 JSON 工具说明。 */
+    description?: string
+  }
 }
 
 /** A single model request, fully assembled. */

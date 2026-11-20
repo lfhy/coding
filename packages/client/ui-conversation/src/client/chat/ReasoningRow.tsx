@@ -18,11 +18,11 @@ function latestLine(text: string): string {
 }
 
 /**
- * Render one assistant reasoning block as the Think disclosure row.
- * @param props.text - complete or streaming reasoning text.
- * @param props.running - whether this block is the streaming tail.
- * @param props.t - conversation locale seat for the running status.
- * @returns the reasoning disclosure.
+ * 将可读推理显示为 Think 折叠行，不显示已完成且没有正文的推理块。
+ * @param props.text - 已完成或流式累积的可读推理文本。
+ * @param props.running - 该块是否仍处于流式输出中。
+ * @param props.t - 运行状态使用的会话文案。
+ * @returns 推理折叠行；已完成的空白块返回 null。
  */
 export function ReasoningRow({ text, running, t }: { text: string; running: boolean; t: ChatViewSlotProps['t'] }) {
   const [expanded, setExpanded] = useState(false)
@@ -36,6 +36,8 @@ export function ReasoningRow({ text, running, t }: { text: string; running: bool
   useEffect(() => {
     scheduleSummaryScroll()
   }, [running, scheduleSummaryScroll, summary])
+
+  if (!running && text.trim() === '') return null
 
   return (
     <div className={css.root} data-variant="think" data-state={running ? 'running' : 'ok'}>
