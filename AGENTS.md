@@ -76,6 +76,8 @@ CI 不代表桌面端所有平台已经支持。新增桌面壳或原生模块�
 
 独立主内容页的页内左侧栏统一使用 `ui-primitives` 的 `SidebarRoot`：宽度与内层对话侧栏同步，收起时是 56px 图标轨，并自带 macOS 交通灯安全区避让。新页面不得自建列宽、折叠动画或第二种行几何，详见[客户端协作指南](packages/client/AGENTS.md)。
 
+笔记目录支持的文件类型由[文件库](packages/attachment/file-library/README.md)准入，笔记页按类型选择内容容器。新增或移除类型时按[笔记文件类型清单](packages/client/ui-notes/AGENTS.md#新增笔记支持的文件类型)同步 Host seam、目录树、新建入口、助手标签、文档和测试，不能只在页面里加扩展名分支。
+
 ## 凭据、数据与安全
 
 出厂默认模型是内置 Free 渠道的匿名免费层，不需要本机凭据；自己接的提供方从环境变量或根目录被 gitignore 的 `.env` 读取，例如 `DEEPSEEK_API_KEY` 和可选的 `DEEPSEEK_BASE_URL`。绝不提交凭据、会话、设置、缓存或构建产物。配置文件、session log、worker 消息、工具 JSON 和 RPC 输入都视为外部数据，必须在所属解析点失败并给出具体诊断。不要为了测试方便放宽文件系统、Shell、网络或桌面权限。
