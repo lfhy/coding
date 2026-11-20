@@ -233,6 +233,22 @@ function printResult(result: PublintResult): void {
   }
 }
 
+function printFailureSummary(results: PublintResult[]): void {
+  const failed = results.filter(result => result.status === 'failed')
+  if (failed.length === 0) return
+
+  console.error(`publint-all: failed packages (${failed.length}):`)
+  for (const result of failed) {
+    console.error(`- ${result.path}`)
+    for (const message of result.messages) {
+      if (message.type !== 'error') continue
+      console.error(formatMessage(message, result.manifest, { color: false }) ?? message.code)
+    }
+    for (const violation of result.closureViolations) console.error(violation)
+    if ('failure' in result) console.error(result.failure)
+  }
+}
+
 const packages = workspacePackages()
 const concurrency = publintConcurrency(packages.length)
 console.log(`publint-all: linting ${packages.length} package(s) with ${concurrency} worker(s).`)
@@ -240,4 +256,7 @@ console.log(`publint-all: linting ${packages.length} package(s) with ${concurren
 const results = await runAll(packages, concurrency)
 for (const result of results) printResult(result)
 
-if (results.some(result => result.status === 'failed')) process.exit(1)
+if (results.some(result => result.status === 'failed')) {
+  printFailureSummary(results)
+  process.exit(1)
+}

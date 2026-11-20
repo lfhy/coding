@@ -93,6 +93,20 @@ describe('GenUI 发布清单', () => {
   })
 })
 
+describe('笔记标签协议发布清单', () => {
+  it('复用 TypeScript 已发射的协议模块，并按输出树声明发布文件', () => {
+    const manifestPath = fileURLToPath(new URL('../packages/notes/tool-notes-tabs/package.json', import.meta.url))
+    const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as WorkspaceManifest['manifest']
+    expect(manifest.exports?.['./protocol']).toEqual({
+      types: './lib/types/protocol.d.ts',
+      default: './lib/types/protocol.js',
+    })
+    expect(manifest.files).toEqual(expectedDshPackageFiles(manifest))
+    expect(manifest.files).toContain('lib/types/**/*.js')
+    expect(manifest.files).not.toContain('lib/protocol.js')
+  })
+})
+
 describe('private Electron workspace constraints', () => {
   const shell: WorkspaceManifest = {
     dir: 'apps/desktop-electron',

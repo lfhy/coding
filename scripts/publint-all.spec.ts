@@ -14,23 +14,41 @@ afterEach(() => {
 })
 
 function fixture(options: {
+  packagePath?: string
+  name?: string
   exportPath?: string
+  extraExports?: Record<string, string>
   indexSource?: string
   files?: Record<string, string>
 } = {}): string {
   const root = mkdtempSync(join(tmpdir(), 'dsh-publint-all-'))
   roots.push(root)
-  const packageDir = join(root, 'packages/core/probe')
+  addPackage(root, options)
+  return root
+}
+
+function addPackage(root: string, options: {
+  packagePath?: string
+  name?: string
+  exportPath?: string
+  extraExports?: Record<string, string>
+  indexSource?: string
+  files?: Record<string, string>
+} = {}): void {
+  const packageDir = join(root, options.packagePath ?? 'packages/core/probe')
   mkdirSync(join(packageDir, 'lib'), { recursive: true })
   writeFileSync(join(packageDir, 'package.json'), `${JSON.stringify({
-    name: 'coding-probe',
+    name: options.name ?? 'coding-probe',
     version: '0.0.1',
     type: 'module',
     license: 'MIT',
     engines: { node: '>=22.19' },
     sideEffects: false,
     files: ['lib'],
-    exports: { '.': { default: options.exportPath ?? './lib/index.js' } },
+    exports: {
+      '.': { default: options.exportPath ?? './lib/index.js' },
+      ...options.extraExports,
+    },
   }, null, 2)}\n`)
   writeFileSync(join(packageDir, 'README.md'), '# Probe\n')
   writeFileSync(join(packageDir, 'lib/index.js'), options.indexSource ?? 'export const probe = true\n')
@@ -39,7 +57,6 @@ function fixture(options: {
     writeFileSync(join(packageDir, path), source)
   }
   writeFileSync(join(packageDir, 'unpublished.js'), 'export const hidden = true\n')
-  return root
 }
 
 function run(root: string) {
@@ -71,6 +88,43 @@ describe('publint package runner', () => {
     const result = run(fixture({ exportPath: './lib/missing.js' }))
     expect(result.status).toBe(1)
     expect(result.stdout).toContain('missing.js')
+    expect(result.stderr).toContain('publint-all: failed packages (1):\n- packages/core/probe')
+    expect(result.stderr).toContain('missing.js')
+  })
+
+  it('does not fail for an unpublished source wildcard warning', () => {
+    const result = run(fixture({
+      extraExports: { './src/*': './src/*' },
+      files: { 'src/index.ts': 'export const source = true\n' },
+    }))
+    expect(result.status, result.stderr).toBe(0)
+    expect(result.stdout).toContain('./src/*')
+    expect(result.stderr).not.toContain('publint-all: failed packages')
+  })
+
+  it('summarizes an early error without listing later warning and passing packages', () => {
+    const root = fixture({
+      packagePath: 'packages/core/early',
+      name: 'coding-early',
+      exportPath: './lib/missing.js',
+    })
+    addPackage(root, {
+      packagePath: 'packages/core/later-warning',
+      name: 'coding-later-warning',
+      extraExports: { './src/*': './src/*' },
+    })
+    addPackage(root, { packagePath: 'packages/core/last-passing', name: 'coding-last-passing' })
+
+    const result = run(root)
+    expect(result.status).toBe(1)
+    expect(result.stdout).toContain('Running publint for packages/core/later-warning...')
+    expect(result.stdout).toContain('./src/*')
+    expect(result.stdout).toContain('Running publint for packages/core/last-passing...')
+    const summary = result.stderr.slice(result.stderr.lastIndexOf('publint-all: failed packages'))
+    expect(summary).toContain('publint-all: failed packages (1):\n- packages/core/early')
+    expect(summary).toContain('missing.js')
+    expect(summary).not.toContain('packages/core/later-warning')
+    expect(summary).not.toContain('packages/core/last-passing')
   })
 
   it('accepts published relative JavaScript and CSS targets', () => {
@@ -91,5 +145,6 @@ describe('publint package runner', () => {
     expect(result.status).toBe(1)
     expect(result.stderr).toContain('imports "./missing.js"')
     expect(result.stderr).toContain('imports "./missing.css"')
+    expect(result.stderr).toContain('publint-all: failed packages (1):\n- packages/core/probe')
   })
 })
