@@ -6,18 +6,20 @@ import {
   Toast, IconTrashOutline16,
   type MenuEntry, type SidebarRootItem,
 } from 'coding-client-ui-primitives'
-import type { PropsLocale, PropsRuntime } from 'coding-client-ui-slots'
+import type { PropsLocale, PropsRuntime, PropsStore } from 'coding-client-ui-slots'
 import { NS, type NotesLocaleKey } from './locales.ts'
 import { NoteDeleteDialog } from './NoteDeleteDialog.tsx'
 import { NoteNameDialog } from './NoteNameDialog.tsx'
 import { NotesEditor } from './NotesEditor.tsx'
 import { NotesWelcome } from './NotesWelcome.tsx'
+import type { createNotesUiStore } from './notes-ui-store.ts'
 import { useNoteDraft } from './useNoteDraft.ts'
 import { notesCreate, notesCreateDirectory, notesDelete, notesRename, notesTree, type NotesTreeEntry } from './wire.ts'
 import { exportImage, exportMarkdown, exportPdf, exportWord, type NoteExportFormat } from './export/index.ts'
 import css from './NotesPage.module.css'
 
 export type NotesPageProps = PropsRuntime<'shell.page'> & PropsLocale<typeof NS>
+  & PropsStore<ReturnType<typeof createNotesUiStore>>
 
 /** AI 助手改动检测的目录轮询间隔。 */
 const TREE_POLL_MS = 4000
@@ -86,11 +88,12 @@ function latestWritten(notes: readonly NoteFile[], seen: ReadonlyMap<string, num
 
 /**
  * 独立笔记页：目录和编辑器由本页持有，助手显隐由同会话的根布局持有。
- * @param props - 根布局提供的实际侧栏和助手状态、动作，以及本地化文案。
+ * @param props - 根布局提供的实际侧栏和助手状态、动作、上次浏览位置，以及本地化文案。
  * @returns 笔记目录与正文编辑区。
  */
 export function NotesPage({
   closePage, t, sidebarCollapsed, sidebarWidth, assistantOpen, assistantPanelId, toggleAssistant,
+  useStore, actions,
 }: NotesPageProps) {
   const titleId = useId()
   const searchId = useId()
@@ -102,11 +105,17 @@ export function NotesPage({
   const treeRevision = useRef(0)
   /** 上一次目录轮询看到的笔记修改时间；用于识别助手写入并自动打开。 */
   const seenNotes = useRef(new Map<string, number>())
-  /** 首次轮询只建立修改时间基线：进入页面时不打开任何笔记。 */
+  /** 首次轮询只建立修改时间基线：没有记住的笔记时，进入页面不自动打开。 */
   const notesSynced = useRef(false)
+  // 上次的浏览位置只在挂载时读取；之后由本页写回，不再反向驱动渲染。
+  const rememberedPath = useStore(state => state.path)
+  const rememberedExpanded = useStore(state => state.expanded)
+  const restored = useRef({ path: rememberedPath, expanded: rememberedExpanded })
+  /** 待恢复的笔记路径；第一次目录就绪时打开它，之后保持 null。 */
+  const restorePending = useRef(restored.current.path)
   const [tree, setTree] = useState<NotesTreeEntry[]>([])
   const [treeState, setTreeState] = useState<DirectoryState>('loading')
-  const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set())
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set(restored.current.expanded))
   const [creationDirectory, setCreationDirectory] = useState('')
   const [createFailed, setCreateFailed] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
@@ -129,6 +138,19 @@ export function NotesPage({
   }, [])
 
   const { draft, saveLabel, select, edit, save, reload, refresh, getPath, flush, renamePath, removePath } = useNoteDraft(notify)
+
+  // 当前正文路径写入会话级浏览位置：切走页面或关掉窗口后再回来仍打开同一篇。
+  // 恢复尚未完成时保留记住的路径，避免挂载瞬间被清空。
+  const draftPath = draft?.path
+  useEffect(() => {
+    if (draftPath === undefined && restorePending.current !== null) return
+    actions.rememberNote(draftPath ?? null)
+  }, [actions, draftPath])
+
+  useEffect(() => { actions.rememberExpanded([...expanded]) }, [actions, expanded])
+
+  // 离开页面时把未写入的改动交给自动保存链，切页后重新读取的是最新内容。
+  useEffect(() => () => { void save() }, [save])
 
   useEffect(() => {
     /* v8 ignore next -- jsdom 中 activeElement 恒为元素；null 臂只防御焦点位于其他文档或窗口的浏览器。 */
@@ -176,8 +198,17 @@ export function NotesPage({
         seenNotes.current = new Map(notes.map(note => [note.path, note.mtimeMs]))
         notesSynced.current = true
         const path = getPath()
+        const pending = restorePending.current
+        restorePending.current = null
         if (path !== undefined) {
           await refresh(findEntry(fresh, path)?.mtimeMs, signal)
+        } else if (creatingRequest.current === null && pending !== null) {
+          // 切回页面时恢复上次打开的笔记；它已被删除则停在欢迎页。
+          if (findEntry(fresh, pending)?.kind === 'file') {
+            await select(pending)
+          } else {
+            actions.rememberNote(null)
+          }
         } else if (creatingRequest.current === null && written !== undefined) {
           // 进入页面时保持欢迎页；只在助手刚写入后自动打开那一篇，显示更新后的内容。
           setExpanded(new Set(written.parents))
@@ -201,7 +232,7 @@ export function NotesPage({
       window.clearTimeout(timer)
       creatingRequest.current?.abort()
     }
-  }, [getPath, notify, refresh, select])
+  }, [actions, getPath, notify, refresh, select])
 
   const toggleDir = useCallback((path: string) => {
     setExpanded((previous) => {

@@ -9,6 +9,9 @@ export interface Columns { sidebar: number; center: number; details: number }
 /** 工作台模式下的三列实际宽度。 */
 export interface WorkbenchColumns { sidebar: number; conversation: number; workbench: number }
 
+/** 独立页助手的实际宽度与呈现方式；`docked: false` 时改用右侧抽屉。 */
+export interface PageAssistant { width: number; docked: boolean }
+
 /** 详情模式中优先保护的对话区宽度。 */
 export const CENTER_MIN = 640
 /** 工作台并排模式中优先保护的对话区宽度；默认 1:2 分配在窄窗口先压到这里。 */
@@ -37,6 +40,14 @@ export const WORKBENCH_MAX = 2_400
 export const WORKBENCH_DEFAULT = 0
 /** 工作台默认占据导航栏之外主内容的比例：对话 1 份、右侧 2 份。 */
 const WORKBENCH_DEFAULT_SHARE = 2 / 3
+/** 独立页助手的拖拽下限；实测 359px 卡片仍能把模型与发送键排在一行。 */
+export const PAGE_ASSISTANT_MIN = 400
+/** 独立页助手的拖拽上限。 */
+export const PAGE_ASSISTANT_MAX = 760
+/** 独立页助手的初始宽度；比原固定 376px 宽，让模型名不再被截断。 */
+export const PAGE_ASSISTANT_DEFAULT = 480
+/** 助手并排时独立页正文保留的最小宽度，取笔记页并排视图的断点。 */
+export const PAGE_BODY_MIN = 640
 /** 工作台底栏拖拽下限。 */
 export const WORKBENCH_BOTTOM_MIN = 160
 /** 工作台底栏拖拽上限。 */
@@ -125,6 +136,21 @@ export function computeWorkbenchColumns(
     conversation: Math.max(0, available - resolved),
     workbench: resolved,
   }
+}
+
+/**
+ * 求解独立主内容页的助手宽度。
+ * 空间够放下正文下限与助手下限时并排，并按可用宽度收窄用户偏好；
+ * 否则保持偏好宽度改用抽屉呈现。正文下限优先，助手只在自己的预算里让步。
+ * @param available - 独立页可用宽度（视口减去页内侧栏）。
+ * @param preferred - 用户拖拽出的助手宽度偏好。
+ * @returns 助手实际宽度，以及是否并排呈现。
+ */
+export function computePageAssistant(available: number, preferred: number): PageAssistant {
+  const width = clampWidth(preferred, PAGE_ASSISTANT_MIN, PAGE_ASSISTANT_MAX)
+  const budget = available - PAGE_BODY_MIN
+  if (budget < PAGE_ASSISTANT_MIN) return { width, docked: false }
+  return { width: Math.min(width, budget), docked: true }
 }
 
 /**

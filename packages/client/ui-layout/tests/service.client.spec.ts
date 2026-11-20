@@ -37,6 +37,7 @@ function fakePanels(): PanelActions {
     discardPage: vi.fn(),
     togglePage: vi.fn(),
     setPageAssistant: vi.fn(),
+    setPageAssistantWidth: vi.fn(),
     requestShowConversation: vi.fn(),
     acknowledgeConversationRequest: vi.fn(),
     acknowledgeConversationReturn: vi.fn(),

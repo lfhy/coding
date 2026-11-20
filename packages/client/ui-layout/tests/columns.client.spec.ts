@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
-  CENTER_MIN, clampWidth, computeColumns, computeWorkbenchBottom, computeWorkbenchColumns,
-  DETAILS_DEFAULT, DETAILS_MIN, SIDEBAR_COLLAPSED, SIDEBAR_DEFAULT, SIDEBAR_MIN,
+  CENTER_MIN, clampWidth, computeColumns, computePageAssistant, computeWorkbenchBottom, computeWorkbenchColumns,
+  DETAILS_DEFAULT, DETAILS_MIN, PAGE_ASSISTANT_DEFAULT, PAGE_ASSISTANT_MAX, PAGE_ASSISTANT_MIN,
+  SIDEBAR_COLLAPSED, SIDEBAR_DEFAULT, SIDEBAR_MIN,
   WORKBENCH_BOTTOM_DEFAULT, WORKBENCH_BOTTOM_MAX, WORKBENCH_BOTTOM_MIN,
   WORKBENCH_DEFAULT, WORKBENCH_MAX, WORKBENCH_MIN, WORKBENCH_TOP_MIN,
 } from 'coding-client-ui-layout/src/client/columns.ts'
@@ -152,6 +153,31 @@ describe('computeWorkbenchColumns', () => {
       conversation: 0,
       workbench: 980 - SIDEBAR_COLLAPSED,
     })
+  })
+})
+
+describe('computePageAssistant', () => {
+  it('docks at the preferred width while the page keeps its body minimum', () => {
+    // 1920 - 280 侧栏 = 1640；正文下限 640 之后还够放默认的 480。
+    expect(computePageAssistant(1640, PAGE_ASSISTANT_DEFAULT)).toEqual({ width: 480, docked: true })
+  })
+
+  it('shrinks the assistant to the remaining budget instead of overflowing', () => {
+    // 1200 - 640 = 560 是这份视口能给助手的上限，偏好 760 被收窄到 560。
+    expect(computePageAssistant(1200, 760)).toEqual({ width: 560, docked: true })
+    expect(computePageAssistant(1200, 1)).toEqual({ width: PAGE_ASSISTANT_MIN, docked: true })
+  })
+
+  it('falls back to the drawer when the body minimum would be starved', () => {
+    // 640 + 400 = 1040 是并排的最窄视口；再窄就保持偏好宽度改用抽屉。
+    expect(computePageAssistant(1039, PAGE_ASSISTANT_DEFAULT)).toEqual({ width: 480, docked: false })
+    expect(computePageAssistant(1040, PAGE_ASSISTANT_DEFAULT)).toEqual({ width: PAGE_ASSISTANT_MIN, docked: true })
+    expect(computePageAssistant(1200, PAGE_ASSISTANT_DEFAULT)).toEqual({ width: PAGE_ASSISTANT_DEFAULT, docked: true })
+  })
+
+  it('clamps preferences before solving', () => {
+    expect(computePageAssistant(2000, 9999)).toEqual({ width: PAGE_ASSISTANT_MAX, docked: true })
+    expect(computePageAssistant(2000, 0)).toEqual({ width: PAGE_ASSISTANT_MIN, docked: true })
   })
 })
 

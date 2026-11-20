@@ -5,6 +5,7 @@ import type {} from 'coding-client-ui-layout/client'
 import { createNotesConversation, createNotesNavigation } from './navigation.ts'
 import { NotesNavigationEntry } from './NavigationEntry.tsx'
 import { NotesPage } from './NotesPage.tsx'
+import { createNotesUiStore } from './notes-ui-store.ts'
 import { en, zh, type NotesLocaleKey } from './locales.ts'
 
 const NS = 'notes'
@@ -35,6 +36,6 @@ export function apply(ctx: ClientContext): void {
     inject: () => ({ hooks: { notesPage: ctx.layout.page }, openNotes }),
   }, NotesNavigationEntry))
   ctx.slots.inject('shell.page', () => ctx.slots.register({
-    name: 'shell.page', key: PAGE, locale: NS,
+    name: 'shell.page', key: PAGE, locale: NS, store: createNotesUiStore,
   }, NotesPage))
 }

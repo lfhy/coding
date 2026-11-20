@@ -70,6 +70,7 @@ describe('ui-layout client apply', () => {
       clearBlankWorkbench: vi.fn(), retainBlankSessions: vi.fn(),
       retainWorkbenchSessions: vi.fn(),
       openPage: vi.fn(), closePage: vi.fn(), discardPage: vi.fn(), setPageAssistant: vi.fn(),
+      setPageAssistantWidth: vi.fn(),
       requestShowConversation: vi.fn(), acknowledgeConversationRequest: vi.fn(),
       acknowledgeConversationReturn: vi.fn(), clearConversationRequest: vi.fn(),
     } satisfies PanelActions

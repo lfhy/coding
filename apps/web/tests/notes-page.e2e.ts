@@ -47,10 +47,29 @@ describe('Web 笔记工作区', () => {
     expect(await editor.isVisible()).toBe(true)
     expect(await page.locator('[data-conversation-scroll]:visible').count()).toBe(1)
 
+    // 助手默认比旧固定宽度宽，输入栏的模型与发送按钮排在同一行。
+    const track = page.locator('[data-page-assistant-track]')
+    expect(await track.evaluate(element => Math.round(element.getBoundingClientRect().width))).toBe(480)
+    const centers = await track.locator('[class*="_select"], [class*="_composerAction"]').evaluateAll(buttons =>
+      buttons.map(button => button.getBoundingClientRect().top + button.getBoundingClientRect().height / 2))
+    expect(centers.length).toBeGreaterThan(1)
+    expect(Math.max(...centers) - Math.min(...centers)).toBeLessThanOrEqual(1)
+    const separator = page.locator('[data-side="assistant"]')
+    const before = await track.evaluate(element => Math.round(element.getBoundingClientRect().width))
+    const handle = await separator.boundingBox()
+    if (handle === null) throw new Error('assistant separator is missing')
+    await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2)
+    await page.mouse.down()
+    await page.mouse.move(handle.x - 80, handle.y + handle.height / 2, { steps: 4 })
+    await page.mouse.up()
+    await expect.poll(() => track.evaluate(element => Math.round(element.getBoundingClientRect().width)))
+      .toBeGreaterThan(before + 60)
+    const widened = await track.evaluate(element => Math.round(element.getBoundingClientRect().width))
+
     // 导出入口只作用于已打开的笔记：菜单给出四种格式。
     const exportButton = main.getByRole('button', { name: 'Export', exact: true })
     await exportButton.click()
-    for (const name of ['Markdown (.md)', 'Word (.docx)', 'PDF (print to save)', 'Image (.png)']) {
+    for (const name of ['Markdown (.md)', 'Word (.docx)', 'PDF (.pdf)', 'Image (.png)']) {
       await page.getByRole('menuitem', { name, exact: true }).waitFor()
     }
     await page.keyboard.press('Escape')
@@ -82,6 +101,15 @@ describe('Web 笔记工作区', () => {
     expect(prompt).toContain('Summarize this content')
     await expect.poll(() => assistantInput.evaluate(element => document.activeElement === element)).toBe(true)
     expect(await dock.getByRole('tab', { name: 'Work', exact: true }).count()).toBe(0)
+
+    // 切回对话再打开笔记页：正文仍停在同一篇，保存状态与宽度偏好都保留。
+    await page.getByRole('button', { name: 'Back to conversation', exact: true }).click()
+    await expect.poll(() => main.count()).toBe(0)
+    await page.getByRole('button', { name: 'Notes', exact: true }).click()
+    const restored = page.getByRole('main', { name: 'Release notes', exact: true })
+    await restored.getByRole('heading', { name: 'Release checklist', exact: true }).waitFor()
+    expect(await restored.locator('textarea').inputValue()).toBe(revised)
+    expect(await track.evaluate(element => Math.round(element.getBoundingClientRect().width))).toBe(widened)
 
     await page.setViewportSize({ width: 620, height: 800 })
     await expect.poll(() => toggle.getAttribute('aria-expanded')).toBe('false')

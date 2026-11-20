@@ -30,7 +30,7 @@ kind: "package-reference"
 
 `openPage(kind, sessionId, returnSessionId?)` 和 `togglePage(kind, sessionId, returnSessionId?)` 在主内容区打开会话所属页面。页面间切换须沿用已有 `returnSessionId`；未提供时返回当前页会话。若用户已切换会话或原对话已不存在，过期页面不会抢回选择。
 
-`setPageAssistant('auto')` 为当前页面启用 AI 助手，空间充足时自动并排；显式设为 `true` 时，空间不足便以右侧抽屉显示。`false` 收起助手并保留草稿。`AppFrame` 在所有呈现中复用常驻 `conversation` 组件；关闭或替换页面清除助手偏好。调用方只提供关联同一对话容器的开关，无须再次渲染对话。
+`setPageAssistant('auto')` 为当前页面启用 AI 助手，空间充足时自动并排；显式设为 `true` 时，空间不足便以右侧抽屉显示。`false` 收起助手并保留草稿。`AppFrame` 在所有呈现中复用常驻 `conversation` 组件；关闭或替换页面清除助手偏好。调用方只提供关联同一对话容器的开关，无须再次渲染对话。并排呈现时助手左边界是一条可拖拽分隔条，宽度偏好保存在布局 store 的 `pageAssistantWidth`（默认 480px，范围 400–760px，`setPageAssistantWidth()` 写入）；求解时优先保证独立页正文 648px，剩余空间不足 400px 就改用抽屉，偏好本身不被改写。
 
 `attachPageConversation(start)` 由页面插件登记助手头部的「新对话」入口：登记后助手页头才渲染该按钮，返回的注销函数收回入口；同一时刻只有一个登记方生效，旧实例的注销不会撤销后来的登记。`startPageConversation()` 转交一次点击，未登记或上一次尚未完成时忽略重复点击，失败不改变当前页面与会话，用户可再次点击重试。
 

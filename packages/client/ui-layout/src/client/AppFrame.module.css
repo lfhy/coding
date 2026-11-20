@@ -328,6 +328,11 @@
 
 .frame[data-page-open] .handle { display: none; }
 
+/* 独立页并排的助手仍可拖拽：它是唯一在页面打开期间保留的可调边界。 */
+.frame[data-page-open] .handle[data-side='assistant'] { display: block; }
+
+.handle[data-side='assistant'] { z-index: 5; }
+
 .bottomCol {
   grid-column: 2 / 4;
   grid-row: 2;
@@ -384,9 +389,10 @@
   box-shadow: inset 0 0 0 2px var(--dsw-alias-border-l3);
 }
 
-/* 右栏和底栏边界提供小型悬停标记；导航栏边界保持不可见命中条带。 */
+/* 右栏、底栏和页内助手边界提供小型悬停标记；导航栏边界保持不可见命中条带。 */
 .handle[data-side='details']::after,
 .handle[data-side='workbench']::after,
+.handle[data-side='assistant']::after,
 .handle[data-side='bottom']::after {
   content: '';
   position: absolute;
@@ -404,7 +410,8 @@
 }
 
 .handle[data-side='details']::after,
-.handle[data-side='workbench']::after {
+.handle[data-side='workbench']::after,
+.handle[data-side='assistant']::after {
   width: 12px;
   height: 32px;
 }
@@ -422,6 +429,7 @@
 
 .handle[data-side='details']:hover::after,
 .handle[data-side='workbench']:hover::after,
+.handle[data-side='assistant']:hover::after,
 .handle[data-side='bottom']:hover::after,
 .handle[data-dragging='true']::after {
   border-color: var(--dsw-alias-border-l3);

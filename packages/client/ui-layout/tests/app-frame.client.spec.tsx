@@ -9,6 +9,12 @@ import { useEffect, useState, useSyncExternalStore } from 'react'
 import { Menu } from 'coding-client-ui-primitives'
 import { AppFrame } from 'coding-client-ui-layout/src/client/AppFrame.tsx'
 import type { AppFrameProps } from 'coding-client-ui-layout/src/client/AppFrame.tsx'
+import {
+  PAGE_ASSISTANT_DEFAULT,
+  PAGE_ASSISTANT_MAX,
+  PAGE_ASSISTANT_MIN,
+} from 'coding-client-ui-layout/src/client/columns.ts'
+import { CONVERSATION_COLUMN_ID } from 'coding-client-ui-layout/src/client/ConversationColumn.tsx'
 import type { ShellPageOwnerProps } from 'coding-client-ui-layout/client'
 import {
   DETAILS_MAX,
@@ -791,6 +797,45 @@ describe('AppFrame', () => {
     act(() => { b.rerenderFrame() })
     fireEvent.click(b.getByRole('button', { name: '新对话' }))
     expect(b.startPageConversation).toHaveBeenCalledOnce()
+  })
+
+  it('并排的页面助手可以拖拽与键盘调整宽度，宽度写回布局偏好', () => {
+    const b = mountFrame()
+    act(() => {
+      b.instance.actions.openPage('notes', 's-test' as SessionId)
+      b.instance.actions.setPageAssistant('auto')
+    })
+    const handle = handleFor(b.frame, 'assistant')
+    expect(handle.getAttribute('aria-orientation')).toBe('vertical')
+    expect(handle.getAttribute('aria-controls')).toBe(CONVERSATION_COLUMN_ID)
+    expect(handle.getAttribute('aria-valuenow')).toBe(String(PAGE_ASSISTANT_DEFAULT))
+    drag(handle, 1920 - PAGE_ASSISTANT_DEFAULT, 1920 - PAGE_ASSISTANT_DEFAULT - 80)
+    expect(b.instance.store.getSnapshot().pageAssistantWidth).toBe(PAGE_ASSISTANT_DEFAULT + 80)
+    // 拖拽结果进入下一次渲染的 CSS 变量，助手轨随之变宽。
+    expect(b.frame.style.getPropertyValue('--layout-page-assistant-width')).toBe(`${PAGE_ASSISTANT_DEFAULT + 80}px`)
+    act(() => { handle.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true })) })
+    expect(b.instance.store.getSnapshot().pageAssistantWidth).toBe(PAGE_ASSISTANT_DEFAULT + 96)
+    act(() => { handle.dispatchEvent(new KeyboardEvent('keydown', { key: 'Home', bubbles: true })) })
+    expect(b.instance.store.getSnapshot().pageAssistantWidth).toBe(PAGE_ASSISTANT_MIN)
+    act(() => { handle.dispatchEvent(new KeyboardEvent('keydown', { key: 'End', bubbles: true })) })
+    expect(b.instance.store.getSnapshot().pageAssistantWidth).toBe(PAGE_ASSISTANT_MAX)
+  })
+
+  it('助手收起或改用抽屉时不渲染拖拽手柄', () => {
+    const b = mountFrame()
+    act(() => { b.instance.actions.openPage('notes', 's-test' as SessionId) })
+    expect(b.frame.querySelector('[data-side="assistant"]')).toBeNull()
+    act(() => { b.instance.actions.setPageAssistant('auto') })
+    expect(b.frame.querySelector('[data-side="assistant"]')).not.toBeNull()
+    act(() => { b.instance.actions.setPageAssistant(false) })
+    expect(b.frame.querySelector('[data-side="assistant"]')).toBeNull()
+    frameWidth = 768
+    const narrow = mountFrame()
+    act(() => {
+      narrow.instance.actions.openPage('notes', 's-test' as SessionId)
+      narrow.instance.actions.setPageAssistant(true)
+    })
+    expect(narrow.frame.querySelector('[data-side="assistant"]')).toBeNull()
   })
 
   it('窄屏默认收起，按需打开抽屉，缩放或关闭不卸载对话', () => {

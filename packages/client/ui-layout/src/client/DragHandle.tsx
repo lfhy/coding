@@ -5,7 +5,7 @@ import css from './AppFrame.module.css'
 const KEYBOARD_STEP = 16
 
 type DragOrientation = 'vertical' | 'horizontal'
-type DragSide = 'sidebar' | 'details' | 'workbench' | 'bottom'
+type DragSide = 'sidebar' | 'details' | 'workbench' | 'bottom' | 'assistant'
 
 interface DragHandleProps {
   side: DragSide

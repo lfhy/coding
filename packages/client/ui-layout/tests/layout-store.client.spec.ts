@@ -5,6 +5,7 @@ import type { SessionId } from 'coding-session/types'
 import { createLayoutStore } from 'coding-client-ui-layout/src/client/stores.ts'
 import {
   DETAILS_DEFAULT,
+  PAGE_ASSISTANT_DEFAULT,
   SIDEBAR_DEFAULT,
   WORKBENCH_BOTTOM_MAX,
   WORKBENCH_BOTTOM_MIN,
@@ -30,6 +31,7 @@ const initialState = {
   activeBlankSession: null,
   page: null,
   pageAssistant: null,
+  pageAssistantWidth: PAGE_ASSISTANT_DEFAULT,
   conversationRequest: null,
   conversationReturn: null,
   conversationRequestSeq: 0,

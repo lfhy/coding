@@ -12,10 +12,14 @@ import type { SessionId } from 'coding-session/types'
 import type { WorkbenchLayoutSnapshot } from './service.ts'
 import {
   computeColumns,
+  computePageAssistant,
   computeWorkbenchBottom,
   computeWorkbenchColumns,
   DETAILS_MAX,
   DETAILS_MIN,
+  PAGE_ASSISTANT_MAX,
+  PAGE_ASSISTANT_MIN,
+  PAGE_BODY_MIN,
   SIDEBAR_AUTO_COLLAPSE,
   SIDEBAR_MAX,
   SIDEBAR_MIN,
@@ -71,8 +75,6 @@ const DETAILS_ID = 'dsh-layout-details'
 const WORKBENCH_ID = 'dsh-layout-workbench'
 const WORKBENCH_BOTTOM_ID = 'dsh-layout-workbench-bottom'
 const FLOATING_GAP = 12
-const PAGE_ASSISTANT_WIDTH = 376
-const PAGE_BODY_MIN = 648
 
 interface SurfaceProps {
   children?: ReactNode
@@ -281,10 +283,12 @@ export function AppFrame({
     workbenchFullscreen,
   )
   const sidebarWidth = workbenchShown ? workbenchColumns.sidebar : detailsColumns.sidebar
-  const canDockAssistant = viewport.width - sidebarWidth >= PAGE_BODY_MIN + PAGE_ASSISTANT_WIDTH
+  // 助手宽度先按用户偏好求解：正文下限不够时改抽屉，够用时按剩余空间收窄。
+  const assistant = computePageAssistant(viewport.width - sidebarWidth, rootPanels.pageAssistantWidth)
   const hasPageAssistant = pageVisible && rootPanels.pageAssistant !== null
-  const assistantOpen = hasPageAssistant && (rootPanels.pageAssistant === 'auto' ? canDockAssistant : rootPanels.pageAssistant === true)
-  const assistantMode = assistantOpen ? (canDockAssistant ? 'dock' : 'drawer') : null
+  const assistantOpen = hasPageAssistant && (rootPanels.pageAssistant === 'auto' ? assistant.docked : rootPanels.pageAssistant === true)
+  const assistantMode = assistantOpen ? (assistant.docked ? 'dock' : 'drawer') : null
+  const assistantWidth = assistant.width
   const pageRef = useRef<HTMLDivElement>(null)
   const restoreAssistantFocus = useRef(false)
   const closePage = useCallback(() => { actions.closePage() }, [actions])
@@ -368,12 +372,13 @@ export function AppFrame({
     })
   }, [activeKey, bottomRequested, panels.fullscreen, publishWorkbench, workbenchShown])
 
-  const geometry = useRef({ sidebarWidth, detailsWidth, workbenchWidth, bottomHeight })
-  geometry.current = { sidebarWidth, detailsWidth, workbenchWidth, bottomHeight }
+  const geometry = useRef({ sidebarWidth, detailsWidth, workbenchWidth, bottomHeight, assistantWidth })
+  geometry.current = { sidebarWidth, detailsWidth, workbenchWidth, bottomHeight, assistantWidth }
   const sidebarBase = useRef(0)
   const detailsBase = useRef(0)
   const workbenchBase = useRef(0)
   const bottomBase = useRef(0)
+  const assistantBase = useRef(0)
   const [dragging, setDragging] = useState(false)
   const onDragEnd = useCallback(() => { setDragging(false) }, [])
   const onSidebarStart = useCallback(() => { sidebarBase.current = geometry.current.sidebarWidth; setDragging(true) }, [])
@@ -382,6 +387,10 @@ export function AppFrame({
   const onBottomStart = useCallback(() => { bottomBase.current = geometry.current.bottomHeight; setDragging(true) }, [])
   const onSidebarDrag = useCallback((delta: number) => { actions.setSidebar(sidebarBase.current + delta) }, [actions])
   const onDetailsDrag = useCallback((delta: number) => { actions.setDetails(detailsBase.current - delta) }, [actions])
+  const onAssistantStart = useCallback(() => { assistantBase.current = geometry.current.assistantWidth; setDragging(true) }, [])
+  const onAssistantDrag = useCallback((delta: number) => {
+    actions.setPageAssistantWidth(assistantBase.current - delta)
+  }, [actions])
   const onWorkbenchDrag = useCallback((delta: number) => {
     if (activeKey !== undefined) actions.setWorkbench(activeKey, workbenchBase.current - delta)
   }, [actions, activeKey])
@@ -390,6 +399,10 @@ export function AppFrame({
   }, [actions, activeKey])
   const nudgeSidebar = useCallback((delta: number) => { actions.setSidebar(geometry.current.sidebarWidth + delta) }, [actions])
   const nudgeDetails = useCallback((delta: number) => { actions.setDetails(geometry.current.detailsWidth - delta) }, [actions])
+  const nudgeAssistant = useCallback((delta: number) => {
+    actions.setPageAssistantWidth(geometry.current.assistantWidth - delta)
+  }, [actions])
+  const setAssistantWidth = useCallback((value: number) => { actions.setPageAssistantWidth(value) }, [actions])
   const nudgeWorkbench = useCallback((delta: number) => {
     if (activeKey !== undefined) actions.setWorkbench(activeKey, geometry.current.workbenchWidth + delta)
   }, [actions, activeKey])
@@ -413,7 +426,7 @@ export function AppFrame({
         '--layout-sidebar-width': `${sidebarWidth}px`,
         '--layout-bottom-height': `${bottomHeight}px`,
         '--layout-floating-edge': `${FLOATING_GAP}px`,
-        '--layout-page-assistant-width': `${PAGE_ASSISTANT_WIDTH}px`,
+        '--layout-page-assistant-width': `${assistantWidth}px`,
       } as CSSProperties}
       data-sidebar-collapsed={sidebarCollapsed || undefined}
       data-details-collapsed={detailsWidth === 0 || undefined}
@@ -565,6 +578,25 @@ export function AppFrame({
           onDrag={onBottomDrag}
           onNudge={nudgeBottom}
           onSet={setWorkbenchBottom}
+          onEnd={onDragEnd}
+        />
+      )}
+      {assistantMode === 'dock' && (
+        <DragHandle
+          side="assistant"
+          orientation="vertical"
+          position={viewport.width - assistantWidth}
+          value={assistantWidth}
+          min={PAGE_ASSISTANT_MIN}
+          max={Math.max(
+            PAGE_ASSISTANT_MIN,
+            Math.min(PAGE_ASSISTANT_MAX, viewport.width - sidebarWidth - PAGE_BODY_MIN),
+          )}
+          controls={CONVERSATION_COLUMN_ID}
+          onStart={onAssistantStart}
+          onDrag={onAssistantDrag}
+          onNudge={nudgeAssistant}
+          onSet={setAssistantWidth}
           onEnd={onDragEnd}
         />
       )}

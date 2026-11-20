@@ -8,6 +8,9 @@ import {
   DETAILS_DEFAULT,
   DETAILS_MAX,
   DETAILS_MIN,
+  PAGE_ASSISTANT_DEFAULT,
+  PAGE_ASSISTANT_MAX,
+  PAGE_ASSISTANT_MIN,
   SIDEBAR_DEFAULT,
   SIDEBAR_MAX,
   SIDEBAR_MIN,
@@ -66,6 +69,8 @@ type LayoutState = {
   page: PageRoute | null
   /** 当前页面的助手偏好；null 表示页面未启用助手。 */
   pageAssistant: boolean | 'auto' | null
+  /** 独立页助手的宽度偏好；与详情栏一样只属于当前浏览器会话。 */
+  pageAssistantWidth: number
   conversationRequest: ConversationRequest | null
   conversationReturn: ConversationReturn | null
   conversationRequestSeq: number
@@ -110,6 +115,7 @@ type LayoutActions = {
   discardPage: (draft: LayoutState) => void
   togglePage: (draft: LayoutState, kind: string, sessionId: SessionId, returnSessionId?: SessionId) => void
   setPageAssistant: (draft: LayoutState, open: boolean | 'auto') => void
+  setPageAssistantWidth: (draft: LayoutState, px: number) => void
   requestShowConversation: (draft: LayoutState, sessionId: SessionId) => void
   acknowledgeConversationRequest: (draft: LayoutState, seq: number) => void
   acknowledgeConversationReturn: (draft: LayoutState, seq: number) => void
@@ -135,6 +141,7 @@ export function createLayoutStore(): EngineStoreHandle<LayoutState, LayoutAction
       activeBlankSession: null,
       page: null,
       pageAssistant: null,
+      pageAssistantWidth: PAGE_ASSISTANT_DEFAULT,
       conversationRequest: null,
       conversationReturn: null,
       conversationRequestSeq: 0,
@@ -361,6 +368,9 @@ export function createLayoutStore(): EngineStoreHandle<LayoutState, LayoutAction
       },
       setPageAssistant: (d, open: boolean | 'auto') => {
         if (d.page !== null) d.pageAssistant = open
+      },
+      setPageAssistantWidth: (d, px: number) => {
+        d.pageAssistantWidth = clampWidth(px, PAGE_ASSISTANT_MIN, PAGE_ASSISTANT_MAX)
       },
       requestShowConversation: (d, sessionId: SessionId) => {
         d.conversationRequest = { sessionId, seq: ++d.conversationRequestSeq }

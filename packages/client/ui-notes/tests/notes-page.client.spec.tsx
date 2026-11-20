@@ -1,8 +1,10 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { bindSnapshotSelector } from 'coding-client-test-runtime'
 import type { NotesPageProps } from '../src/client/NotesPage.tsx'
 import { NotesPage } from '../src/client/NotesPage.tsx'
+import { createNotesUiStore } from '../src/client/notes-ui-store.ts'
 import { zh } from '../src/client/locales.ts'
 
 // 导出动作在专门的文件里单测；这里只验证页面的接线与提示。
@@ -117,6 +119,12 @@ function makeServer() {
 
 const closePage = vi.fn()
 const toggleAssistant = vi.fn()
+/** 每个用例独立的会话级浏览位置 store；跨页记忆行为由专门用例覆盖。 */
+const makeUiStore = () => {
+  const instance = createNotesUiStore().create('s-notes')
+  return { useStore: bindSnapshotSelector(instance), actions: instance.actions, instance }
+}
+const uiStore = makeUiStore()
 const props = {
   closePage,
   t: (key: keyof typeof zh, params?: { name: string }) => params === undefined ? zh[key] : zh[key].replace('{name}', params.name),
@@ -125,6 +133,8 @@ const props = {
   assistantOpen: false,
   assistantPanelId: 'note-assistant',
   toggleAssistant,
+  useStore: uiStore.useStore,
+  actions: uiStore.actions,
 } as unknown as NotesPageProps
 
 /**
@@ -157,7 +167,12 @@ const confirmReload = async () => {
 }
 
 describe('NotesPage', () => {
-  beforeEach(() => { vi.useFakeTimers() })
+  beforeEach(() => {
+    vi.useFakeTimers()
+    // 浏览位置在用例之间必须归零，否则上一个用例打开的笔记会成为本用例的恢复目标。
+    uiStore.actions.rememberNote(null)
+    uiStore.actions.rememberExpanded([])
+  })
   afterEach(() => { cleanup(); vi.useRealTimers(); vi.unstubAllGlobals(); vi.restoreAllMocks(); vi.clearAllMocks() })
 
   it('进入页面保持欢迎页；选中笔记后编辑与预览同源', async () => {
@@ -677,6 +692,43 @@ describe('NotesPage', () => {
     await act(async () => { vi.advanceTimersByTime(4000) })
     await act(async () => {})
     expect(screen.queryByRole('textbox', { name: '原始文本' })).toBeNull()
+  })
+
+  it('切走再回来时重新打开上次那篇笔记并恢复展开的目录', async () => {
+    makeServer()
+    const first = await mount(undefined, { openNote: null })
+    await act(async () => { fireEvent.click(treeRow('d')) })
+    await act(async () => { fireEvent.click(treeRow('b')) })
+    await act(async () => {})
+    expect(screen.getByRole<HTMLTextAreaElement>('textbox', { name: '原始文本' }).value).toBe('hello b')
+    expect(uiStore.instance.getSnapshot()).toEqual({ path: 'd/b.md', expanded: ['d'] })
+    // 卸载页面等价于离开笔记页：正文与目录位置都应留给下一次挂载。
+    first.unmount()
+    await mount(undefined, { openNote: null })
+    expect(screen.getByRole<HTMLTextAreaElement>('textbox', { name: '原始文本' }).value).toBe('hello b')
+    expect(treeRow('d').closest('button')?.getAttribute('aria-expanded')).toBe('true')
+    // 恢复完成后不再抢回视线：用户改选另一篇，记忆随之更新。
+    await act(async () => { fireEvent.click(treeRow('a')) })
+    await act(async () => {})
+    expect(uiStore.instance.getSnapshot().path).toBe('a.md')
+  })
+
+  it('记住的笔记已被删除时回到欢迎页并清掉旧路径', async () => {
+    const state = makeServer()
+    uiStore.actions.rememberNote('gone.md')
+    uiStore.actions.rememberExpanded([])
+    await mount(undefined, { openNote: null })
+    expect(screen.queryByRole('textbox', { name: '原始文本' })).toBeNull()
+    expect(screen.getByRole('heading', { level: 2, name: /好呀/u })).toBeTruthy()
+    expect(uiStore.instance.getSnapshot().path).toBeNull()
+    expect(state.files.has('gone.md')).toBe(false)
+  })
+
+  it('没有记住的笔记时轮询保持欢迎页，不因挂载把路径写回', async () => {
+    makeServer()
+    await mount(undefined, { openNote: null })
+    expect(uiStore.instance.getSnapshot().path).toBeNull()
+    expect(uiStore.instance.getSnapshot().expanded).toEqual([])
   })
 
   it('创建请求进行中时轮询不抢先打开别的笔记，创建完成后打开新篇', async () => {
