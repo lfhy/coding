@@ -97,6 +97,23 @@ describe('ModelSelect 刷新状态', () => {
 })
 
 describe('ModelSelect reasoning effort', () => {
+  it('gives a terminal Max stop the same sparkle tone as the highest effort', () => {
+    const directory = createSnapshotStore<ModelDirectoryState>(state({
+      current: { provider: 'deepseek-official', model: 'deepseek-v4-flash', reasoningEffort: 'max' },
+    }))
+    render(<ModelSelect
+      locked={false}
+      available
+      directory={directory}
+      load={vi.fn()}
+      select={vi.fn()}
+      t={t}
+    />)
+
+    fireEvent.click(screen.getByRole('button', { name: /选择模型，当前 DeepSeek-V4-Flash，推理等级 Max/ }))
+    expect(screen.getByRole('dialog', { name: '推理等级与当前模型' }).className).toContain('toneUltra')
+  })
+
   it('opens compact effort controls, submits discrete adapter values, and resets to model default', async () => {
     const directory = createSnapshotStore<ModelDirectoryState>(state())
     const select = vi.fn(async (selection: ModelSelection) => {

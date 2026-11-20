@@ -222,6 +222,9 @@
   inset: 0;
   background: var(--dsw-specific-reasoning-stars);
   content: '';
+  pointer-events: none;
+  animation:
+    dsh-reasoning-stars-twinkle calc(var(--ds-transition-duration-slow) * 8) var(--ds-ease-in-out) infinite;
 }
 
 .railDots {
@@ -365,6 +368,31 @@
   color: var(--dsw-specific-reasoning-text);
   font: var(--dsw-font-xs-strong-13);
   cursor: pointer;
+}
+
+@keyframes dsh-reasoning-stars-twinkle {
+  0%,
+  100% {
+    opacity: 0.78;
+    filter: brightness(0.92);
+  }
+
+  38% {
+    opacity: 1;
+    filter: brightness(1.22);
+  }
+
+  64% {
+    opacity: 0.86;
+    filter: brightness(1.04);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toneUltra .sliderFill::after {
+    animation: none;
+    filter: none;
+  }
 }
 
 .browser {

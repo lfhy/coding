@@ -118,13 +118,15 @@ export function ModelSelect(
     : effortStops[draftIndex]
   const activeEffortId = activeEffort?.effort?.toLowerCase()
   const activeEffortName = activeEffort?.label.toLowerCase()
-  const effortTone = activeEffortName === 'ultra' || activeEffortId === 'ultra' || activeEffortId === 'xhigh'
+  const previewIndex = draftIndex ?? Math.max(0, effortIndex)
+  const isHighestEffort = effortStops.length > 1 && previewIndex === effortStops.length - 1
+  const effortTone = isHighestEffort
+    || activeEffortName === 'ultra' || activeEffortId === 'ultra' || activeEffortId === 'xhigh'
     ? css.toneUltra
     : activeEffortId === 'max' ? css.toneMax
       : activeEffortId === 'high' || activeEffortId === 'medium' ? css.toneHigh
         : activeEffortId === 'low' || activeEffortId === 'minimal' ? css.toneLow
           : css.toneNeutral
-  const previewIndex = draftIndex ?? Math.max(0, effortIndex)
   const sliderStyle = { '--reasoning-position': effortStops.length > 1
     ? previewIndex / (effortStops.length - 1) : 0 } as CSSProperties
   const hasEffortPanel = new Set(effortStops.map(level => level.effort)).size > 1
