@@ -75,8 +75,8 @@
 
 ## 笔记目录
 
-- **路线**：[笔记页](../../packages/client/ui-notes/README.md)用共享 `SidebarRootItem.actions` 放置行尾操作。`NoteNameDialog` 用笔记树提供新建位置选择，目录行和右键菜单预选所在目录；`wire.ts` 向[文件库](../../packages/attachment/file-library/README.md)提交新建位置。删除仍由同一确认框发同源 `DELETE /api/notes/delete`；文件库检查根目录边界并删除笔记或整个目录，页面立即移除对应子树和打开的草稿。页面注册 `shell.page` 时声明 `notes-ui-store.ts` 的 store（`dsh.notes.view`，按会话持久化），记住上次打开的路径与展开目录；挂载时第一次目录就绪后恢复，正文仍从文件库重读。助手并排宽度属于根布局的 `pageAssistantWidth`，由 `AppFrame` 的 `assistant` 分隔条写入，笔记页不持有。
-- **验证**：保持笔记和目录使用同一确认流程，覆盖取消、非空目录、根目录与符号链接边界、保存与删除时序；跨页恢复要覆盖记住的笔记、已删除的笔记与新建会话从欢迎页开始三种情况。共享侧栏改动还需检查文件管理与画图页不变。定向运行 `pnpm exec vitest run packages/client/ui-notes/tests packages/client/ui-primitives/tests/sidebar-root.client.spec.tsx packages/attachment/file-library/tests packages/client/ui-layout/tests`，实装场景见 [Web 笔记用例](../../apps/web/tests/notes-page.e2e.ts)。
+- **路线**：[笔记页](../../packages/client/ui-notes/README.md)用共享 `SidebarRootItem.actions` 放置行尾操作。`NoteNameDialog` 用笔记树提供新建位置选择，目录行和右键菜单预选所在目录；`wire.ts` 向[文件库](../../packages/attachment/file-library/README.md)提交新建位置。删除仍由同一确认框发同源 `DELETE /api/notes/delete`；文件库检查根目录边界并删除笔记或整个目录，页面立即移除对应子树和打开的草稿。页面注册 `shell.page` 时声明 `notes-ui-store.ts` 的 store（`dsh.notes.view`，按会话持久化），记住上次打开的路径与展开目录；挂载时第一次目录就绪后恢复，正文仍从文件库重读。助手会话由 `navigation.ts` 选：`index.ts` 的 apply 订阅 `layout.page`，只在本次运行内记住笔记页显示过的会话，切走再回来接续它；没有这层记忆时取同目录的空白会话，没有就新建，让助手停在带历史列表的欢迎页，带历史的旧对话只在「最近对话」里手动接续。助手并排宽度属于根布局的 `pageAssistantWidth`，由 `AppFrame` 的 `assistant` 分隔条写入，笔记页不持有。
+- **验证**：保持笔记和目录使用同一确认流程，覆盖取消、非空目录、根目录与符号链接边界、保存与删除时序；跨页恢复要覆盖记住的笔记、已删除的笔记与新建会话从欢迎页开始三种情况；助手会话选择还要覆盖接续本次运行用过的对话、该对话已被删除、对话不在笔记目录与重开窗口后从欢迎页开始。共享侧栏改动还需检查文件管理与画图页不变。定向运行 `pnpm exec vitest run packages/client/ui-notes/tests packages/client/ui-primitives/tests/sidebar-root.client.spec.tsx packages/attachment/file-library/tests packages/client/ui-layout/tests`，实装场景见 [Web 笔记用例](../../apps/web/tests/notes-page.e2e.ts)。
 
 ## 图像生成与 AI 画布
 

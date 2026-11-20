@@ -10,19 +10,39 @@ import { apply as nodeApply } from '../src/index.ts'
 import * as invariant from '../src/invariant.ts'
 import type { PageRoute } from 'coding-client-ui-layout/client'
 
+interface PageSource {
+  getSnapshot(): PageRoute | null
+  subscribe(fn: () => void): () => void
+  publish(next: PageRoute | null): void
+  listeners(): number
+}
+
+function pageSource(): PageSource {
+  let snapshot: PageRoute | null = null
+  const listeners = new Set<() => void>()
+  return {
+    getSnapshot: () => snapshot,
+    subscribe: (fn) => { listeners.add(fn); return () => { listeners.delete(fn) } },
+    publish: (next) => { snapshot = next; for (const fn of [...listeners]) fn() },
+    listeners: () => listeners.size,
+  }
+}
+
 function registration(): {
   entries: { options: Record<string, unknown>; inject: () => unknown; component: unknown }[]
   attachPageConversation: ReturnType<typeof vi.fn>
+  page: ReturnType<typeof pageSource>
 } {
   const entries: { options: Record<string, unknown>; inject: () => unknown; component: unknown }[] = []
   const attachPageConversation = vi.fn((_start: () => Promise<void>) => () => {})
+  const page = pageSource()
   const ctx = {
     effect: (install: () => unknown) => { install() },
     locale: {
       register: vi.fn((_namespace: string, _dictionaries: unknown) => () => {}),
       bind: () => (key: string) => zh[key as keyof typeof zh],
     },
-    layout: { page: { getSnapshot: () => null }, attachPageConversation },
+    layout: { page, attachPageConversation },
     sessions: { list: { getSnapshot: () => ({ current: 's-cur', byId: {} }) }, create: vi.fn(async () => 's-new'), open: vi.fn() },
     slots: {
       inject: (_name: string, install: () => unknown) => { install() },
@@ -33,7 +53,7 @@ function registration(): {
     },
   }
   apply(ctx as never)
-  return { entries, attachPageConversation }
+  return { entries, attachPageConversation, page }
 }
 
 describe('ui-notes registration', () => {
@@ -55,6 +75,17 @@ describe('ui-notes registration', () => {
     const page = entries[1]
     if (page === undefined) throw new Error('主内容页未注册')
     expect(page.options).toMatchObject({ name: 'shell.page', key: 'notes', locale: 'notes' })
+  })
+
+  it('订阅页面快照，用来记住笔记页当前显示的对话', () => {
+    const { entries, page } = registration()
+    // 页面快照由根布局发布；插件只订阅它，不反向修改路由。
+    expect(page.listeners()).toBe(1)
+    const entry = entries[0]
+    if (entry === undefined) throw new Error('导航入口未注册')
+    const face = entry.inject() as NotesNavigationEntryFace
+    act(() => { page.publish({ kind: 'notes', sessionId: 's-live', returnSessionId: 's-orig' } as PageRoute) })
+    expect(face.hooks.notesPage.getSnapshot()).toMatchObject({ sessionId: 's-live' })
   })
 })
 

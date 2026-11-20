@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { ClientContext } from 'coding-client-runtime/client'
+import type { ClientContext, SessionId } from 'coding-client-runtime/client'
 import type { PageRoute } from 'coding-client-ui-layout/client'
 import { createNotesConversation, createNotesNavigation } from '../src/client/navigation.ts'
 
@@ -37,23 +37,24 @@ function stubCwd(): void {
 afterEach(() => { vi.unstubAllGlobals() })
 
 describe('notes navigation', () => {
-  it('复用工作目录相同的已有会话，打开页面并启用自动并排的助手', () => {
+  it('同目录只有带历史的笔记对话时新建空白会话，助手停在欢迎页', async () => {
     const sessions = {
-      list: { getSnapshot: () => ({ current: 's-cur', byId: { 's-old': { id: 's-old', cwd: CWD, agentPreset: 'notes' }, 's-cur': { id: 's-cur' } } }) },
-      create: vi.fn(), open: vi.fn(), noteAgentPreset: vi.fn(),
+      list: { getSnapshot: () => ({ current: 's-cur', byId: {
+        's-old': { id: 's-old', cwd: CWD, agentPreset: 'notes', updatedAt: 30 },
+        's-cur': { id: 's-cur', updatedAt: 1 },
+      } }) },
+      create: vi.fn(async () => 's-new'), open: vi.fn(), noteAgentPreset: vi.fn(),
     }
     const layout = { page: { getSnapshot: () => null }, togglePage: vi.fn(), setPageAssistant: vi.fn() }
     stubCwd()
-    const openNotes = createNotesNavigation(makeContext(sessions, layout))
-    return openNotes().then(() => {
-      expect(sessions.create).not.toHaveBeenCalled()
-      expect(sessions.open).toHaveBeenCalledWith('s-old')
-      expect(layout.togglePage).toHaveBeenCalledWith('notes', 's-old', 's-cur')
-      expect(layout.setPageAssistant).toHaveBeenCalledWith('auto')
-    })
+    await createNotesNavigation(makeContext(sessions, layout), () => undefined)()
+    expect(sessions.create).toHaveBeenCalledWith({ cwd: CWD })
+    expect(sessions.open).toHaveBeenCalledWith('s-new')
+    expect(layout.togglePage).toHaveBeenCalledWith('notes', 's-new', 's-cur')
+    expect(layout.setPageAssistant).toHaveBeenCalledWith('auto')
   })
 
-  it('同目录有多个会话时优先复用笔记专用模式', async () => {
+  it('同目录有多个会话时优先复用空白会话', async () => {
     const sessions = {
       list: { getSnapshot: () => ({ current: 's-cur', byId: {
         's-note-old': { id: 's-note-old', cwd: CWD, agentPreset: 'notes', updatedAt: 10 },
@@ -64,9 +65,10 @@ describe('notes navigation', () => {
     }
     const layout = { page: { getSnapshot: () => null }, togglePage: vi.fn(), setPageAssistant: vi.fn() }
     stubCwd()
-    await createNotesNavigation(makeContext(sessions, layout))()
+    await createNotesNavigation(makeContext(sessions, layout), () => undefined)()
     expect(sessions.create).not.toHaveBeenCalled()
-    expect(sessions.open).toHaveBeenCalledWith('s-note-old')
+    expect(sessions.open).toHaveBeenCalledWith('s-blank')
+    expect(sessions.noteAgentPreset).toHaveBeenCalledWith('s-blank', 'notes')
   })
 
   it('同目录只有空白会话时复用它并切到笔记专用模式', async () => {
@@ -79,29 +81,77 @@ describe('notes navigation', () => {
     }
     const layout = { page: { getSnapshot: () => null }, togglePage: vi.fn(), setPageAssistant: vi.fn() }
     stubCwd()
-    await createNotesNavigation(makeContext(sessions, layout))()
+    await createNotesNavigation(makeContext(sessions, layout), () => undefined)()
     expect(sessions.create).not.toHaveBeenCalled()
     expect(sessions.noteAgentPreset).toHaveBeenCalledWith('s-blank', 'notes')
     expect(sessions.open).toHaveBeenCalledWith('s-blank')
   })
 
-  it('复用的会话在打开过程中被切成非空白时拒绝继续', async () => {
-    const notes = { id: 's-notes', cwd: CWD, agentPreset: 'notes' }
+  it('本次运行里用过的对话继续用，不被同目录的空白会话顶掉', async () => {
+    const sessions = {
+      list: { getSnapshot: () => ({ current: 's-cur', byId: {
+        's-used': { id: 's-used', cwd: CWD, agentPreset: 'notes', updatedAt: 10 },
+        's-blank': { id: 's-blank', cwd: CWD, blank: true, updatedAt: 20 },
+        's-cur': { id: 's-cur', updatedAt: 1 },
+      } }) },
+      create: vi.fn(async () => 's-new'), open: vi.fn(), noteAgentPreset: vi.fn(),
+    }
+    const layout = { page: { getSnapshot: () => null }, togglePage: vi.fn(), setPageAssistant: vi.fn() }
+    stubCwd()
+    await createNotesNavigation(makeContext(sessions, layout), () => 's-used' as SessionId)()
+    expect(sessions.create).not.toHaveBeenCalled()
+    expect(sessions.open).toHaveBeenCalledWith('s-used')
+    expect(layout.togglePage).toHaveBeenCalledWith('notes', 's-used', 's-cur')
+  })
+
+  it('记住的对话已被删除时按同目录空白会话重新开始', async () => {
+    const sessions = {
+      list: { getSnapshot: () => ({ current: 's-cur', byId: {
+        's-blank': { id: 's-blank', cwd: CWD, blank: true, updatedAt: 20 },
+        's-cur': { id: 's-cur', updatedAt: 1 },
+      } }) },
+      create: vi.fn(async () => 's-new'), open: vi.fn(), noteAgentPreset: vi.fn(),
+    }
+    const layout = { page: { getSnapshot: () => null }, togglePage: vi.fn(), setPageAssistant: vi.fn() }
+    stubCwd()
+    await createNotesNavigation(makeContext(sessions, layout), () => 's-gone' as SessionId)()
+    expect(sessions.create).not.toHaveBeenCalled()
+    expect(sessions.open).toHaveBeenCalledWith('s-blank')
+  })
+
+  it('记住的对话不在笔记目录时不接续', async () => {
+    const sessions = {
+      list: { getSnapshot: () => ({ current: 's-cur', byId: {
+        's-other': { id: 's-other', cwd: '/tmp/other', agentPreset: 'notes', updatedAt: 30 },
+        's-blank': { id: 's-blank', cwd: CWD, blank: true, updatedAt: 20 },
+        's-cur': { id: 's-cur', updatedAt: 1 },
+      } }) },
+      create: vi.fn(async () => 's-new'), open: vi.fn(), noteAgentPreset: vi.fn(),
+    }
+    const layout = { page: { getSnapshot: () => null }, togglePage: vi.fn(), setPageAssistant: vi.fn() }
+    stubCwd()
+    await createNotesNavigation(makeContext(sessions, layout), () => 's-other' as SessionId)()
+    expect(sessions.create).not.toHaveBeenCalled()
+    expect(sessions.open).toHaveBeenCalledWith('s-blank')
+  })
+
+  it('复用的空白会话在打开过程中被别的客户端占用时拒绝继续', async () => {
+    const blank = { id: 's-notes', cwd: CWD, agentPreset: 'notes', blank: true }
     const current = { id: 's-cur', updatedAt: 1 }
     let reads = 0
     const sessions = {
-      // 前两次读取用于定位可复用会话；模式检查时该会话已被其他客户端切走。
+      // 前两次读取用于定位可复用会话；模式检查时该会话已被其他客户端切走并写入历史。
       list: { getSnapshot: () => {
         reads += 1
         return { current: 's-cur', byId: reads <= 2
-          ? { 's-notes': notes, 's-cur': current }
-          : { 's-notes': { ...notes, agentPreset: 'standard' }, 's-cur': current } }
+          ? { 's-notes': blank, 's-cur': current }
+          : { 's-notes': { ...blank, agentPreset: 'standard', blank: false }, 's-cur': current } }
       } },
       create: vi.fn(), open: vi.fn(), noteAgentPreset: vi.fn(),
     }
     const layout = { page: { getSnapshot: () => null }, togglePage: vi.fn(), setPageAssistant: vi.fn() }
     stubCwd()
-    await expect(createNotesNavigation(makeContext(sessions, layout))()).rejects.toThrow(/笔记助手需要空白会话/u)
+    await expect(createNotesNavigation(makeContext(sessions, layout), () => undefined)()).rejects.toThrow(/笔记助手需要空白会话/u)
     expect(sessions.open).not.toHaveBeenCalled()
   })
 
@@ -115,7 +165,7 @@ describe('notes navigation', () => {
       togglePage: vi.fn(), setPageAssistant: vi.fn(),
     }
     stubCwd()
-    await createNotesNavigation(makeContext(sessions, layout))()
+    await createNotesNavigation(makeContext(sessions, layout), () => undefined)()
     expect(sessions.create).toHaveBeenCalledWith({ cwd: CWD })
     expect(sessions.open).toHaveBeenCalledWith('s-new')
     expect(layout.togglePage).toHaveBeenCalledWith('notes', 's-new', 's-orig')
@@ -124,7 +174,7 @@ describe('notes navigation', () => {
 
   it('页面槽未就绪时按 32ms 间隔重试打开', async () => {
     const sessions = {
-      list: { getSnapshot: () => ({ current: 's-cur', byId: { 's-cur': { id: 's-cur', cwd: CWD, agentPreset: 'notes' } } }) },
+      list: { getSnapshot: () => ({ current: 's-cur', byId: { 's-cur': { id: 's-cur', cwd: CWD, agentPreset: 'notes', blank: true } } }) },
       create: vi.fn(), open: vi.fn(), noteAgentPreset: vi.fn(),
     }
     let calls = 0
@@ -134,7 +184,7 @@ describe('notes navigation', () => {
       setPageAssistant: vi.fn(),
     }
     stubCwd()
-    await createNotesNavigation(makeContext(sessions, layout))()
+    await createNotesNavigation(makeContext(sessions, layout), () => undefined)()
     expect(layout.togglePage).toHaveBeenCalledTimes(3)
     expect(layout.setPageAssistant).toHaveBeenCalledWith('auto')
   })
@@ -147,7 +197,7 @@ describe('notes navigation', () => {
     }
     const layout = { page: { getSnapshot: () => null }, togglePage: vi.fn(), setPageAssistant: vi.fn() }
     stubCwd()
-    const openNotes = createNotesNavigation(makeContext(sessions, layout))
+    const openNotes = createNotesNavigation(makeContext(sessions, layout), () => undefined)
     await Promise.all([openNotes(), openNotes()])
     expect(sessions.create).toHaveBeenCalledTimes(1)
   })

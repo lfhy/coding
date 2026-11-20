@@ -28,10 +28,16 @@ async function applyNotesPreset(ctx: ClientContext, sessionId: SessionId, create
 
 /**
  * 创建笔记页打开动作；同一时刻只允许一个进行中的打开流程。
+ * 本次运行里已经在用的对话会继续用；重开窗口后的第一次进入从空白对话开始，
+ * 让助手停在带历史列表的欢迎页，历史对话只在「最近对话」里手动接续。
  * @param ctx - 浏览器插件 Context。
+ * @param currentConversation - 读取笔记页当前显示的会话；未进入过或已离开本次运行返回 undefined。
  * @returns 幂等的打开函数；失败时抛出供入口显示提示。
  */
-export function createNotesNavigation(ctx: ClientContext): () => Promise<void> {
+export function createNotesNavigation(
+  ctx: ClientContext,
+  currentConversation: () => SessionId | undefined,
+): () => Promise<void> {
   let opening: Promise<void> | undefined
   const run = async (): Promise<void> => {
     const current = ctx.sessions.list.getSnapshot().current
@@ -42,8 +48,11 @@ export function createNotesNavigation(ctx: ClientContext): () => Promise<void> {
     const { byId } = ctx.sessions.list.getSnapshot()
     const sameDirectory = Object.values(byId).filter(session => session.cwd === cwd)
       .sort((left, right) => right.updatedAt - left.updatedAt)
-    const existing = sameDirectory.find(session => session.agentPreset === PRESET)
-      ?? sameDirectory.find(session => session.blank)
+    const remembered = currentConversation()
+    const previous = remembered === undefined ? undefined : byId[remembered]
+    // 只接续本次运行里用过的对话，其余情况挑同目录的空白会话；带历史却不在用的
+    // 对话留在欢迎页的「最近对话」里，不自动打开。
+    const existing = previous?.cwd === cwd ? previous : sameDirectory.find(session => session.blank)
     const created = existing === undefined
     const target = existing?.id ?? await ctx.sessions.create({ cwd })
     await applyNotesPreset(ctx, target, created)
