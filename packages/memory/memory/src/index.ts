@@ -27,8 +27,8 @@ export const DEFAULT_MEMORY_FILE = 'notes.md'
 /** 没有指定小节时的默认小节标题。 */
 export const DEFAULT_MEMORY_SECTION = '要点'
 
-/** 每个记忆文件的默认字节上限。 */
-export const DEFAULT_MAX_FILE_BYTES = 64 * 1024
+/** 每个记忆文件的默认字节上限；到上限后先整理（`compact`）再继续写。 */
+export const DEFAULT_MAX_FILE_BYTES = 128 * 1024
 
 /** 单条记忆写入的默认字节上限。 */
 export const DEFAULT_MAX_ENTRY_BYTES = 8 * 1024
@@ -60,6 +60,7 @@ export interface MemoryConfig {
   projectRootMarkers?: string[]
   /** 记忆目录的绝对路径；省略时用 `<数据主目录>/memory`。 */
   root?: string
+  /** 单个文件的字节上限；到上限后先整理（`compact`）再继续写。 */
   maxFileBytes?: number
   maxEntryBytes?: number
   maxProjectBytes?: number
@@ -125,6 +126,17 @@ export interface MemoryUpdateRequest {
   file?: string
   /** 限定在同名小节内匹配；省略时在整个文件内匹配。 */
   section?: string
+}
+
+/**
+ * 一条整理请求：用新的全文替换目标记忆文件。
+ * `content` 是整理后的完整文件，必须比现有文件短，格式仍是标题行加 `- ` 条目。
+ */
+export interface MemoryCompactRequest {
+  /** 整理后的完整文件内容。 */
+  content: string
+  /** 目标文件，默认 `notes.md`。 */
+  file?: string
 }
 
 /** 一条注入摘要。 */
@@ -214,6 +226,23 @@ function byteLength(value: string): number {
  */
 export function memoryBullet(entry: string): string[] {
   return entry.trimEnd().split('\n').map((line, index) => index === 0 ? `- ${line}` : `  ${line}`)
+}
+
+/**
+ * 找出与记忆文件结构不符的第一行：只允许标题、`- ` 条目、条目续行与空行。
+ * 整理（`compact`）用它拒绝把记忆改写成任意文本，保证后续 `update` 仍能定位条目。
+ * @param content - 调用方给出的全文。
+ * @returns 第一处违规的行号（1 起）与内容；全部合规时返回 undefined。
+ */
+export function memoryShapeViolation(content: string): { line: number; text: string } | undefined {
+  const lines = content.split('\n')
+  for (const [index, line] of lines.entries()) {
+    if (line.trim().length === 0) continue
+    if (/^#{1,6}\s/.test(line)) continue
+    if (line.startsWith('- ') || line.startsWith('  ')) continue
+    return { line: index + 1, text: line }
+  }
+  return undefined
 }
 
 /**
@@ -403,7 +432,7 @@ export abstract class Memory extends Service {
     const next = appendMemoryEntry(existing ?? '', memoryTitle(basename(project.path)), section, entry)
     const nextBytes = byteLength(next)
     if (nextBytes > this.config.maxFileBytes) {
-      throw new Error(`memory: ${file} would grow to ${nextBytes} bytes, above the ${this.config.maxFileBytes}-byte file limit`)
+      throw new Error(`memory: ${file} would grow to ${nextBytes} bytes, above the ${this.config.maxFileBytes}-byte file limit; consolidate it into something shorter first`)
     }
     const projectBytes = existingFiles.reduce((total, item) => total + (item.name === file ? 0 : item.bytes), 0) + nextBytes
     if (projectBytes > this.config.maxProjectBytes) {
@@ -470,6 +499,53 @@ export abstract class Memory extends Service {
     /* v8 ignore next -- the provider just wrote the file it is asked to describe. */
     if (written === undefined) throw new Error(`memory: ${file} disappeared after writing`)
     return { summary: written, previous: target.text }
+  }
+
+  /**
+   * 整理一个记忆文件：用调用方重写好的全文替换现有内容。
+   *
+   * 只在变短时接受，因此整理不会变成绕过追加限额的写入通道；结果仍须落在单文件与
+   * 每项目总量限额内。整理后的内容保持「标题行 + `- ` 条目」的形状，后续
+   * {@link update} 与 {@link save} 才能在同一个文件上继续工作。
+   * @param project - 项目身份。
+   * @param request - 整理后的全文与目标文件。
+   * @returns 写入后的文件元数据与整理前的字节数。
+   * @throws 文件不存在、内容为空、形状不合、没有变短或越过限额时抛出。
+   */
+  async compact(
+    project: MemoryProject,
+    request: MemoryCompactRequest,
+  ): Promise<{ summary: MemoryFileSummary; previousBytes: number }> {
+    const file = memoryFileName(request.file)
+    const content = await this.readFile(project, file)
+    if (content === undefined) throw new Error(`memory: ${file} does not exist in this project's memory`)
+    const next = request.content.trim()
+    if (next.length === 0) {
+      throw new Error(`memory: refusing to replace ${file} with empty content; remove it instead`)
+    }
+    const invalid = memoryShapeViolation(next)
+    if (invalid !== undefined) {
+      throw new Error(`memory: line ${invalid.line} of the compacted ${file} is not a heading, a \`- \` entry or its indented continuation: ${JSON.stringify(invalid.text)}`)
+    }
+    const body = `${next}\n`
+    const previousBytes = byteLength(content)
+    const nextBytes = byteLength(body)
+    if (nextBytes >= previousBytes) {
+      throw new Error(`memory: compacting ${file} must shorten it; the rewrite is ${nextBytes} bytes against ${previousBytes}, so edit entries with update instead`)
+    }
+    if (nextBytes > this.config.maxFileBytes) {
+      throw new Error(`memory: compacted ${file} is still ${nextBytes} bytes, above the ${this.config.maxFileBytes}-byte file limit`)
+    }
+    const existingFiles = await this.listFiles(project)
+    const projectBytes = existingFiles.reduce((total, item) => total + (item.name === file ? 0 : item.bytes), 0) + nextBytes
+    if (projectBytes > this.config.maxProjectBytes) {
+      throw new Error(`memory: project memory would grow to ${projectBytes} bytes, above the ${this.config.maxProjectBytes}-byte limit`)
+    }
+    await this.writeFile(project, file, body)
+    const written = (await this.listFiles(project)).find(item => item.name === file)
+    /* v8 ignore next -- the provider just wrote the file it is asked to describe. */
+    if (written === undefined) throw new Error(`memory: ${file} disappeared after writing`)
+    return { summary: written, previousBytes }
   }
 
   /**

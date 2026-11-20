@@ -14,6 +14,7 @@
 - `read(project, name)`：读取一个文件，超过单文件上限时只返回头部并置 `truncated`。
 - `save(project, { content, file?, section? })`：把小节内容追加进目标文件（默认 `notes.md` 的 `要点` 小节），小节不存在时在文件末尾新建；写入前执行单条、单文件、每项目总量与文件数四项限额，任何一项越界都抛错，诊断里带实际数值。
 - `update(project, { match, content, file?, section? })`：替换一条已有条目。`match` 必须在目标文件（或 `section` 指定的小节）内唯一命中，命中零条或多条都抛错并说明实际数量；替换同样执行单条、单文件与每项目总量限额，文件数不变。
+- `compact(project, { content, file? })`：用调用方重写好的全文替换目标记忆文件，只在比现有内容短、且保持「标题行 + `- ` 条目」形状时接受；结果仍受单文件与每项目总量限额约束。它是让文件回到可读长度的整理入口，不是绕过追加限额的写入通道。
 - `remove(project, name, section?)`：删除整个文件，或只删除一个小节；删掉最后一个小节后只剩标题的空壳文件同样算清空并删除。
 - `excerpt(project)`：渲染注入提示词的有界摘要（默认 4096 字节）：按最近修改排序，每个文件给 `### <文件名>` 与开头内容，用完预算为止；被截断或省略的文件列在返回值里，让消费方提示模型去读全文。
 
@@ -24,7 +25,7 @@
 | 文件 | `notes.md` | 未指定文件时的目标文件；文件名必须是同一目录下的小写 `*.md` |
 | 小节 | `要点` | 未指定小节时的目标小节 |
 | `maxEntryBytes` | 8192 | 单条写入上限 |
-| `maxFileBytes` | 65536 | 单个记忆文件上限 |
+| `maxFileBytes` | 131072 | 单个记忆文件上限；到上限后先 `compact` 再继续写 |
 | `maxProjectBytes` | 1048576 | 一个项目的记忆总量上限 |
 | `maxFiles` | 16 | 一个项目的记忆文件数上限 |
 | `injectBytes` | 4096 | `excerpt()` 的字节预算 |
@@ -35,7 +36,7 @@
 
 ## 消费方
 
-- `coding-tool-memory`：`memory_save`／`memory_update`／`memory_read`／`memory_list`／`memory_delete` 五个工具，参数里没有任何路径，目标目录由会话项目根决定。
+- `coding-tool-memory`：`memory_save`／`memory_update`／`memory_compact`／`memory_read`／`memory_list`／`memory_delete` 六个工具，参数里没有任何路径，目标目录由会话项目根决定。
 - `coding-memory-context`：把 `excerpt()` 的摘要注入会话基线。
 
 ## 模型体验

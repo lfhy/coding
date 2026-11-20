@@ -186,6 +186,48 @@ describe('memory service limits', () => {
     await expect(memory.list(project)).resolves.toEqual([])
   })
 
+  it('compacts a file into a shorter rewrite of the same shape', async () => {
+    const memory = mountMemory()
+    await memory.save(project, { content: '第一条要点' })
+    await memory.save(project, { content: '第二条要点' })
+    const before = await memory.read(project, DEFAULT_MEMORY_FILE)
+    const previousBytes = Buffer.byteLength(before?.content ?? '', 'utf8')
+
+    const { summary, previousBytes: reported } = await memory.compact(project, {
+      content: '# repo 记忆\n\n## 要点\n\n- 合并后的一条\n',
+    })
+
+    expect(reported).toBe(previousBytes)
+    expect(summary.bytes).toBeLessThan(previousBytes)
+    await expect(memory.read(project, DEFAULT_MEMORY_FILE)).resolves.toMatchObject({
+      content: '# repo 记忆\n\n## 要点\n\n- 合并后的一条\n',
+      truncated: false,
+    })
+    // 整理后的文件仍能按条目继续更新。
+    await expect(memory.update(project, { match: '合并后的一条', content: '改名后的一条' })).resolves.toBeDefined()
+  })
+
+  it('refuses a compaction that would not shorten the file, keeps the shape, or is empty', async () => {
+    const memory = mountMemory()
+    await memory.save(project, { content: '第一条要点' })
+    const content = (await memory.read(project, DEFAULT_MEMORY_FILE))?.content ?? ''
+
+    await expect(memory.compact(project, { content: '   ' })).rejects.toThrow(/empty content/)
+    await expect(memory.compact(project, { content: `${content}\n再补一段` })).rejects.toThrow(/is not a heading/)
+    await expect(memory.compact(project, { content })).rejects.toThrow(/must shorten it/)
+    await expect(memory.compact(project, { file: 'missing.md', content: '# x\n\n- y\n' }))
+      .rejects.toThrow(/does not exist/)
+  })
+
+  it('rejects a compaction that is still above the per-file limit', async () => {
+    const memory = mountMemory({ maxFileBytes: 200 })
+    // 上限在文件写完之后被调低时才会出现：现有文件已经超限，整理也必须收进新上限。
+    memory.files.set(DEFAULT_MEMORY_FILE, `# repo 记忆\n\n## 要点\n\n- ${'z'.repeat(400)}\n`)
+
+    await expect(memory.compact(project, { content: `# repo 记忆\n\n## 要点\n\n- ${'z'.repeat(250)}\n` }))
+      .rejects.toThrow(/above the 200-byte file limit/)
+  })
+
   it('renders a bounded excerpt and reports what it left out', async () => {
     const memory = mountMemory({ injectBytes: 60 })
     await memory.save(project, { content: '第一条要点' })
