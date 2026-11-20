@@ -21,6 +21,16 @@
   overflow: hidden;
 }
 
+/* 文档容器只负责活动页的内容；标签行独立占据页头，不参与正文滚动。 */
+.documentBody {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
 .documentHeader {
   display: flex;
   align-items: center;
@@ -30,7 +40,7 @@
   min-width: 0;
   min-height: 56px;
   box-sizing: border-box;
-  padding: calc(10px + var(--app-safe-area-inset-top, 0px)) 18px 10px 20px;
+  padding: 10px 18px 10px 20px;
   background: var(--dsw-alias-bg-layer-1);
 }
 

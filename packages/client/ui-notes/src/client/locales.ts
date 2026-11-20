@@ -2,7 +2,7 @@
 export const NS = 'notes'
 
 export type NotesLocaleKey =
-  | 'nav' | 'title' | 'space' | 'allNotes' | 'source' | 'assistant'
+  | 'nav' | 'title' | 'space' | 'allNotes' | 'source' | 'assistant' | 'openTabs' | 'closeTab'
   | 'search' | 'clearSearch' | 'noMatches' | 'dateLocale'
   | 'view' | 'edit' | 'split' | 'preview' | 'format' | 'inlineCode' | 'list'
   | 'heading' | 'bold' | 'italic' | 'bullets' | 'quote' | 'link'
@@ -19,6 +19,7 @@ export type NotesLocaleKey =
 /** 简体中文文案。 */
 export const zh: Record<NotesLocaleKey, string> = {
   nav: '笔记', title: '笔记', space: '笔记目录', allNotes: '全部笔记', source: '原始文本', assistant: 'AI 助手',
+  openTabs: '打开的笔记', closeTab: '关闭「{name}」',
   search: '搜索笔记', clearSearch: '清除搜索', noMatches: '找不到匹配的笔记', dateLocale: 'zh-CN',
   view: '正文视图', edit: '编辑', split: '并排', preview: '预览',
   format: '文本格式', inlineCode: '行内代码', list: '待办列表',
@@ -51,6 +52,7 @@ export const zh: Record<NotesLocaleKey, string> = {
 /** 英文文案。 */
 export const en: Record<NotesLocaleKey, string> = {
   nav: 'Notes', title: 'Notes', space: 'Note directory', allNotes: 'All notes', source: 'Plain text', assistant: 'AI Assistant',
+  openTabs: 'Open notes', closeTab: 'Close “{name}”',
   search: 'Search notes', clearSearch: 'Clear search', noMatches: 'No matching notes', dateLocale: 'en-US',
   view: 'Note view', edit: 'Edit', split: 'Split', preview: 'Preview',
   format: 'Formatting', inlineCode: 'Inline code', list: 'Task list',

@@ -83,23 +83,43 @@ export function useNoteDraft(notify: (key: NotesLocaleKey) => void) {
     return () => { window.clearTimeout(timer) }
   }, [content, dirty, save, status])
 
-  const select = useCallback(async (path: string) => {
+  const select = useCallback(async (path: string): Promise<boolean> => {
     reading.current?.request.abort()
-    if (path === current.current?.path) return
+    if (path === current.current?.path) return true
     const request = new AbortController()
     const { signal } = request
     const pending = { path, request }
     reading.current = pending
     try {
-      if (!(await flush(signal))) return
+      if (!(await flush(signal))) return false
       const next = await read(path, signal)
-      if (await flush(signal) && !signal.aborted) update(next)
+      if (await flush(signal) && !signal.aborted) {
+        update(next)
+        return true
+      }
     } catch {
       if (!signal.aborted) notify('loadError')
     } finally {
       if (reading.current === pending) reading.current = null
     }
+    return false
   }, [flush, notify, read, update])
+
+  /** 关闭最后一篇笔记前等待保存，失败时保留原文与标签。 */
+  const clear = useCallback(async (): Promise<boolean> => {
+    const request = new AbortController()
+    reading.current?.request.abort()
+    const pending = { path: '', request }
+    reading.current = pending
+    try {
+      if (!(await flush(request.signal)) || request.signal.aborted) return false
+      current.current = null
+      setDraft(null)
+      return true
+    } finally {
+      if (reading.current === pending) reading.current = null
+    }
+  }, [flush])
 
   const reload = useCallback(async () => {
     const before = current.current
@@ -156,5 +176,5 @@ export function useNoteDraft(notify: (key: NotesLocaleKey) => void) {
       : draft.status === 'failed' ? 'saveError'
         : draft.status
 
-  return { draft, saveLabel, select, edit, save, reload, refresh, getPath, flush, renamePath, removePath }
+  return { draft, saveLabel, select, clear, edit, save, reload, refresh, getPath, flush, renamePath, removePath }
 }

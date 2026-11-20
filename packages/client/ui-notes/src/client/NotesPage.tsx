@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import type { FormEvent, MouseEvent } from 'react'
 import {
-  Button, Icon, IconCheckOutline14, IconCloseOutline16, IconDownloadOutline16, IconEditOutline16,
-  IconPlusOutline16, IconProjectAddOutline16, IconSearchOutline16, IconSparkle16, Input, Menu, Modal, SidebarRoot,
+  Button, IconCloseOutline16, IconEditOutline16,
+  IconPlusOutline16, IconProjectAddOutline16, IconSearchOutline16, Input, Menu, Modal, SidebarRoot,
   Toast, IconTrashOutline16,
   type MenuEntry, type SidebarRootItem,
 } from 'coding-client-ui-primitives'
@@ -10,8 +10,9 @@ import type { PropsLocale, PropsRuntime, PropsStore } from 'coding-client-ui-slo
 import { NS, type NotesLocaleKey } from './locales.ts'
 import { NoteDeleteDialog } from './NoteDeleteDialog.tsx'
 import { NoteNameDialog } from './NoteNameDialog.tsx'
-import { NotesEditor } from './NotesEditor.tsx'
-import { NotesWelcome } from './NotesWelcome.tsx'
+import { NotesDocument } from './NotesDocument.tsx'
+import { NotesTabs } from './NotesTabs.tsx'
+import { findEntry, labelOf, latestWritten, noteFiles, removeTreeEntry } from './notes-tree.ts'
 import type { createNotesUiStore } from './notes-ui-store.ts'
 import { useNoteDraft } from './useNoteDraft.ts'
 import { notesCreate, notesCreateDirectory, notesDelete, notesRename, notesTree, type NotesTreeEntry } from './wire.ts'
@@ -28,64 +29,6 @@ type NoteActionTarget = Pick<NotesTreeEntry, 'kind' | 'name' | 'path'>
 type NoteContextMenu = { target: NoteActionTarget; x: number; y: number; trigger: HTMLButtonElement }
 type DialogKind = 'create' | 'folder' | 'reload' | 'rename' | 'delete'
 
-/** 去掉 Markdown 扩展名的文件名，供目录树显示。 */
-function labelOf(name: string): string {
-  return name.replace(/\.(md|markdown)$/iu, '')
-}
-
-/** 在树中查找指定相对路径的条目。 */
-function findEntry(entries: readonly NotesTreeEntry[], path: string): NotesTreeEntry | undefined {
-  for (const entry of entries) {
-    if (entry.path === path) return entry
-    if (entry.kind === 'dir' && entry.children !== undefined) {
-      const found = findEntry(entry.children, path)
-      if (found !== undefined) return found
-    }
-  }
-  return undefined
-}
-
-function removeTreeEntry(entries: readonly NotesTreeEntry[], path: string): NotesTreeEntry[] {
-  return entries.filter(entry => entry.path !== path).map(entry =>
-    entry.children !== undefined && path.startsWith(`${entry.path}/`)
-      ? { ...entry, children: removeTreeEntry(entry.children, path) } : entry)
-}
-
-/** 目录树中的一篇笔记；`parents` 是展开该行所需的各级目录。 */
-interface NoteFile {
-  path: string
-  mtimeMs: number
-  parents: readonly string[]
-}
-
-/** 按目录树显示顺序扁平化所有笔记文件。 */
-function noteFiles(entries: readonly NotesTreeEntry[], parents: readonly string[] = []): NoteFile[] {
-  const notes: NoteFile[] = []
-  for (const entry of entries) {
-    if (entry.kind === 'file') {
-      notes.push({ path: entry.path, mtimeMs: entry.mtimeMs, parents })
-    } else if (entry.children !== undefined) {
-      notes.push(...noteFiles(entry.children, [...parents, entry.path]))
-    }
-  }
-  return notes
-}
-
-/**
- * 找出本次轮询新增或修改过的一篇笔记。
- * @param notes - 本次目录树中的全部笔记。
- * @param seen - 上一次轮询记录的修改时间。
- * @returns 修改时间最新的变化项；没有变化时返回 undefined。
- */
-function latestWritten(notes: readonly NoteFile[], seen: ReadonlyMap<string, number>): NoteFile | undefined {
-  let latest: NoteFile | undefined
-  for (const note of notes) {
-    if (seen.get(note.path) === note.mtimeMs) continue
-    if (latest === undefined || note.mtimeMs > latest.mtimeMs) latest = note
-  }
-  return latest
-}
-
 /**
  * 独立笔记页：目录和编辑器由本页持有，助手显隐由同会话的根布局持有。
  * @param props - 根布局提供的实际侧栏和助手状态、动作、上次浏览位置，以及本地化文案。
@@ -96,6 +39,8 @@ export function NotesPage({
   useStore, actions,
 }: NotesPageProps) {
   const titleId = useId()
+  const tabId = useId()
+  const panelId = useId()
   const searchId = useId()
   const titleRef = useRef<HTMLHeadingElement | null>(null)
   const searchTrigger = useRef<HTMLButtonElement>(null)
@@ -109,6 +54,8 @@ export function NotesPage({
   const notesSynced = useRef(false)
   // 上次的浏览位置只在挂载时读取；之后由本页写回，不再反向驱动渲染。
   const rememberedPath = useStore(state => state.path)
+  const storedTabs = useStore(state => state.tabs)
+  const openTabs = storedTabs ?? (rememberedPath === null ? [] : [rememberedPath])
   const rememberedExpanded = useStore(state => state.expanded)
   const restored = useRef({ path: rememberedPath, expanded: rememberedExpanded })
   /** 待恢复的笔记路径；第一次目录就绪时打开它，之后保持 null。 */
@@ -137,7 +84,7 @@ export function NotesPage({
     setToast({ id: toastId.current, key })
   }, [])
 
-  const { draft, saveLabel, select, edit, save, reload, refresh, getPath, flush, renamePath, removePath } = useNoteDraft(notify)
+  const { draft, saveLabel, select, clear, edit, save, reload, refresh, getPath, flush, renamePath, removePath } = useNoteDraft(notify)
 
   // 当前正文路径写入会话级浏览位置：切走页面或关掉窗口后再回来仍打开同一篇。
   // 恢复尚未完成时保留记住的路径，避免挂载瞬间被清空。
@@ -200,6 +147,9 @@ export function NotesPage({
         const path = getPath()
         const pending = restorePending.current
         restorePending.current = null
+        if (status === 'loading') {
+          actions.restoreTabs(notes.map(note => note.path))
+        }
         if (path !== undefined) {
           await refresh(findEntry(fresh, path)?.mtimeMs, signal)
         } else if (creatingRequest.current === null && pending !== null) {
@@ -233,6 +183,24 @@ export function NotesPage({
       creatingRequest.current?.abort()
     }
   }, [actions, getPath, notify, refresh, select])
+
+  const closeTab = useCallback(async (path: string) => {
+    if (getPath() !== path) {
+      // 关闭尚在读取的标签也必须撤销它的加载，避免迟到响应把已关闭的标签重新打开。
+      removePath(path)
+      actions.closeTab(path)
+      return
+    }
+    const index = openTabs.indexOf(path)
+    const next = openTabs[index + 1] ?? openTabs[index - 1]
+    if (next === undefined ? await clear() : await select(next)) {
+      if (next !== undefined) actions.rememberNote(next)
+      actions.closeTab(path)
+      if (next === undefined) titleRef.current?.focus({ preventScroll: true })
+    }
+  }, [actions, clear, getPath, openTabs, removePath, select])
+
+  const labelOfPath = (path: string) => labelOf(findEntry(tree, path)?.name ?? path.replace(/^.*\//u, ''))
 
   const toggleDir = useCallback((path: string) => {
     setExpanded((previous) => {
@@ -368,13 +336,14 @@ export function NotesPage({
       const { path } = await notesRename(target.path, target.kind === 'file' ? `${name}${extension || '.md'}` : name)
       const fresh = await refreshTree()
       request.signal.throwIfAborted()
+      if (findEntry(fresh, path) === undefined) throw new Error('笔记目录刷新失败')
       renamePath(target.path, path)
+      actions.moveTabs(target.path, path)
       if (target.kind === 'dir') setExpanded((previous) => {
         const next = new Set<string>()
         for (const item of previous) next.add(remapPath(target.path, path, item) ?? item)
         return next
       })
-      if (findEntry(fresh, path) === undefined) throw new Error('笔记目录刷新失败')
       setDialog(null)
       setActionTarget(null)
     } catch {
@@ -399,7 +368,11 @@ export function NotesPage({
       treeRevision.current += 1
       setTree(previous => removeTreeEntry(previous, target.path))
       for (const path of seenNotes.current.keys()) if (deleted(path)) seenNotes.current.delete(path)
+      const activeRemoved = draft !== null && deleted(draft.path)
+      const remaining = openTabs.filter(path => !deleted(path))
       removePath(target.path)
+      actions.removeTabs(target.path)
+      if (activeRemoved && remaining[0] !== undefined) void select(remaining[0])
       setExpanded(previous => new Set([...previous].filter(path => !deleted(path))))
       setDialog(null)
       setActionTarget(null)
@@ -455,7 +428,7 @@ export function NotesPage({
     { id: 'folder', label: t('newFolder'), icon: <IconProjectAddOutline16 /> },
   ]
 
-  const selectedLabel = draft === null ? t('title') : labelOf(findEntry(tree, draft.path)?.name ?? draft.path.replace(/^.*\//u, ''))
+  const selectedLabel = draft === null ? t('title') : labelOfPath(draft.path)
 
   const exportEntries: readonly MenuEntry[] = [
     { id: 'markdown', label: t('exportMarkdown') },
@@ -541,51 +514,18 @@ export function NotesPage({
         </div>}
         items={treeItems} />
       <div className={css.document}>
-        <header className={css.documentHeader}>
-          <div className={css.heading}>
-            <span className={css.documentIcon} aria-hidden="true"><Icon name="notes" size={18} /></span>
-            <h1 ref={titleRef} id={titleId} className={css.title} title={selectedLabel} tabIndex={-1}>{selectedLabel}</h1>
-            {saveLabel !== undefined && (
-              <span className={css.saveState} data-state={saveLabel} role="status">
-                {saveLabel === 'saved' && <IconCheckOutline14 />}{t(saveLabel)}
-              </span>
-            )}
-          </div>
-          <div className={css.documentActions}>
-            <Menu
-              open={exportMenuOpen}
-              anchor={<Button size="sm" className={css.exportButton} icon={<IconDownloadOutline16 />}
-                aria-label={t('export')} title={t('export')} aria-haspopup="menu"
-                disabled={draft === null || exporting}
-                onClick={() => { setExportMenuOpen(open => !open) }} />}
-              items={exportEntries}
-              onSelect={(id) => { runExport(id as NoteExportFormat) }}
-              onClose={() => { setExportMenuOpen(false) }}
-              side="bottom"
-              portal
-            />
-            <Button size="sm" className={css.assistant} icon={<IconSparkle16 />}
-              aria-label={t('assistant')} title={t('assistant')} aria-expanded={assistantOpen}
-              aria-controls={assistantPanelId} onClick={toggleAssistant}>
-              <span className={css.assistantLabel}>{t('assistant')}</span>
-            </Button>
-          </div>
-        </header>
-        {(saveLabel === 'conflict' || saveLabel === 'saveError') && (
-          <div className={css.recovery}>
-            <p>{t('draftKept')}</p>
-            {saveLabel === 'conflict'
-              ? <Button size="sm" variant="outline" aria-haspopup="dialog"
-                onClick={(event) => { dialogTrigger.current = event.currentTarget; setDialog('reload') }}>{t('reload')}</Button>
-              : <Button size="sm" variant="outline" onClick={() => { void save() }}>{t('retry')}</Button>}
-          </div>
-        )}
-        {draft !== null
-          ? <NotesEditor content={draft.content} onChange={edit} onBlur={() => { void save() }} t={t} />
-          : treeState === 'ready' ? <NotesWelcome t={t} />
-            : <div className={css.documentStatus} role="status">
-              {t(treeState === 'loading' ? 'loading' : 'treeError')}
-            </div>}
+        <NotesTabs paths={openTabs} activePath={draft?.path} panelId={panelId}
+          idPrefix={tabId} labelOfPath={labelOfPath} onSelect={(path) => { void select(path) }}
+          onClose={(path) => { void closeTab(path) }} t={t} />
+        <NotesDocument title={selectedLabel} titleId={titleId} titleRef={titleRef} panelId={panelId}
+          tabId={draft === null ? undefined : `${tabId}-${openTabs.indexOf(draft.path)}`}
+          content={draft?.content} saveLabel={saveLabel} treeState={treeState}
+          exporting={exporting} exportMenuOpen={exportMenuOpen} exportEntries={exportEntries}
+          assistantOpen={assistantOpen} assistantPanelId={assistantPanelId}
+          onToggleAssistant={toggleAssistant} onToggleExport={() => { setExportMenuOpen(open => !open) }}
+          onCloseExport={() => { setExportMenuOpen(false) }} onExport={(id) => { runExport(id as NoteExportFormat) }}
+          onReload={(trigger) => { dialogTrigger.current = trigger; setDialog('reload') }}
+          onRetry={() => { void save() }} onChange={edit} onBlur={() => { void save() }} t={t} />
       </div>
       {(dialog === 'create' || dialog === 'folder' || dialog === 'rename') && <NoteNameDialog t={t}
         kind={dialog === 'rename' ? actionTarget?.kind === 'dir' ? 'renameFolder' : 'renameNote' : dialog}

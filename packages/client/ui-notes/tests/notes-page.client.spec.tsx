@@ -92,13 +92,28 @@ function makeServer() {
     }
     if (url.pathname === '/api/notes/rename') {
       const body = requestJson(init) as { path: string; name: string }
+      const directory = state.tree.some(node => node.path === body.path && node.kind === 'dir')
       const entry = state.files.get(body.path)
-      if (entry === undefined) return new Response('missing', { status: 404 })
-      const path = body.name.includes('.') ? body.name : `${body.name}.md`
-      state.files.set(path, entry)
-      state.files.delete(body.path)
-      state.tree = state.tree.map(node => node.path === body.path
-        ? { ...node, name: body.name, path } : node)
+      if (!directory && entry === undefined) return new Response('missing', { status: 404 })
+      const path = directory ? body.name : body.name.includes('.') ? body.name : `${body.name}.md`
+      if (directory) {
+        const move = (nodes: TreeNode[]): TreeNode[] => nodes.map((node) => {
+          const nextPath = node.path === body.path ? path
+            : node.path.startsWith(`${body.path}/`) ? `${path}${node.path.slice(body.path.length)}` : node.path
+          return { ...node, name: node.path === body.path ? body.name : node.name, path: nextPath,
+            ...(node.children === undefined ? {} : { children: move(node.children) }) }
+        })
+        state.tree = move(state.tree)
+        for (const [key, file] of [...state.files]) if (key.startsWith(`${body.path}/`)) {
+          state.files.delete(key)
+          state.files.set(`${path}${key.slice(body.path.length)}`, file)
+        }
+      } else {
+        state.files.set(path, entry!)
+        state.files.delete(body.path)
+        state.tree = state.tree.map(node => node.path === body.path
+          ? { ...node, name: body.name, path } : node)
+      }
       return Response.json({ path })
     }
     if (url.pathname === '/api/notes/delete') {
@@ -172,6 +187,7 @@ describe('NotesPage', () => {
     // 浏览位置在用例之间必须归零，否则上一个用例打开的笔记会成为本用例的恢复目标。
     uiStore.actions.rememberNote(null)
     uiStore.actions.rememberExpanded([])
+    uiStore.actions.restoreTabs([])
   })
   afterEach(() => { cleanup(); vi.useRealTimers(); vi.unstubAllGlobals(); vi.restoreAllMocks(); vi.clearAllMocks() })
 
@@ -191,6 +207,109 @@ describe('NotesPage', () => {
     expect(screen.queryByRole('heading', { name: '预览' })).toBeNull()
     expect(saveState().textContent).toBe('已保存')
     expect(screen.getByRole('button', { name: '并排' }).getAttribute('aria-pressed')).toBe('true')
+  })
+
+  it('顶栏标签切换共享正文容器，关闭后选中相邻笔记，最后一页回到欢迎区', async () => {
+    makeServer()
+    await mount()
+    await act(async () => { fireEvent.click(treeRow('d')) })
+    await act(async () => { fireEvent.click(treeRow('b')) })
+    const tabs = screen.getByRole('tablist', { name: '打开的笔记' })
+    const a = within(tabs).getByRole('tab', { name: 'a' })
+    const b = within(tabs).getByRole('tab', { name: 'b' })
+    expect(within(tabs).getAllByRole('tab')).toHaveLength(2)
+    expect(b.getAttribute('aria-selected')).toBe('true')
+    const panel = screen.getByRole('tabpanel')
+    expect(panel.getAttribute('aria-labelledby')).toBe(b.id)
+    fireEvent.keyDown(b, { key: 'Home' })
+    await act(async () => {})
+    expect(a.getAttribute('aria-selected')).toBe('true')
+    expect(document.activeElement).toBe(a)
+    expect(screen.getByRole<HTMLTextAreaElement>('textbox', { name: '原始文本' }).value).toBe('hello a')
+    await act(async () => { fireEvent.click(within(tabs).getByRole('button', { name: '关闭「a」' })) })
+    expect(within(tabs).queryByRole('tab', { name: 'a' })).toBeNull()
+    expect(b.getAttribute('aria-selected')).toBe('true')
+    expect(document.activeElement).toBe(b)
+    expect(screen.getByRole<HTMLTextAreaElement>('textbox', { name: '原始文本' }).value).toBe('hello b')
+    await act(async () => { fireEvent.click(within(tabs).getByRole('button', { name: '关闭「b」' })) })
+    expect(within(tabs).queryByRole('tab', { name: 'b' })).toBeNull()
+    expect(screen.getByRole('heading', { level: 2, name: /好呀/u })).toBeTruthy()
+    expect(uiStore.instance.getSnapshot()).toEqual({ path: null, tabs: [], expanded: ['d'] })
+  })
+
+  it('关闭或切换标签前保存草稿；冲突时不丢失标签和内容', async () => {
+    const state = makeServer()
+    await mount()
+    await act(async () => { fireEvent.click(treeRow('d')) })
+    await act(async () => { fireEvent.click(treeRow('b')) })
+    const tabs = screen.getByRole('tablist', { name: '打开的笔记' })
+    const editor = screen.getByRole<HTMLTextAreaElement>('textbox', { name: '原始文本' })
+    fireEvent.input(editor, { target: { value: '改动 b' } })
+    await act(async () => { fireEvent.click(within(tabs).getByRole('tab', { name: 'a' })) })
+    expect(state.saveCalls.at(-1)?.content).toBe('改动 b')
+    fireEvent.input(editor, { target: { value: '改动 a' } })
+    state.conflictNext = true
+    await act(async () => { fireEvent.click(within(tabs).getByRole('button', { name: '关闭「a」' })) })
+    expect(within(tabs).getByRole('tab', { name: 'a' }).getAttribute('aria-selected')).toBe('true')
+    expect(editor.value).toBe('改动 a')
+    expect(screen.getByRole('status').textContent).toContain('已被外部修改')
+    expect(uiStore.instance.getSnapshot().tabs).toEqual(['a.md', 'd/b.md'])
+  })
+
+  it('关闭读取中的非活动标签后，迟到的响应不能重新打开它', async () => {
+    makeServer()
+    await mount()
+    await act(async () => { fireEvent.click(treeRow('d')) })
+    await act(async () => { fireEvent.click(treeRow('b')) })
+    const tabs = screen.getByRole('tablist', { name: '打开的笔记' })
+    await act(async () => { fireEvent.click(within(tabs).getByRole('tab', { name: 'a' })) })
+
+    const delayed = Promise.withResolvers<Response>()
+    const originalFetch = globalThis.fetch
+    vi.stubGlobal('fetch', vi.fn((input: string | URL, init?: RequestInit) => {
+      const url = new URL(String(input), 'http://localhost')
+      if (url.pathname === '/api/notes/read' && url.searchParams.get('path') === 'd/b.md') return delayed.promise
+      return originalFetch(input, init)
+    }))
+    await act(async () => { fireEvent.click(within(tabs).getByRole('tab', { name: 'b' })) })
+    expect(within(tabs).getByRole('tab', { name: 'a' }).getAttribute('aria-selected')).toBe('true')
+    await act(async () => { fireEvent.click(within(tabs).getByRole('button', { name: '关闭「b」' })) })
+    expect(within(tabs).queryByRole('tab', { name: 'b' })).toBeNull()
+    await act(async () => { delayed.resolve(Response.json({ path: 'd/b.md', content: 'late', mtimeMs: 800 })) })
+    expect(screen.getByRole<HTMLTextAreaElement>('textbox', { name: '原始文本' }).value).toBe('hello a')
+    expect(uiStore.instance.getSnapshot().tabs).toEqual(['a.md'])
+  })
+
+  it('重命名目录同步子笔记标签，删除目录清理标签并保留其他文档', async () => {
+    makeServer()
+    await mount()
+    await act(async () => { fireEvent.click(treeRow('d')) })
+    await act(async () => { fireEvent.click(treeRow('b')) })
+    fireEvent.click(screen.getByRole('button', { name: '重命名「d」' }))
+    const input = screen.getByRole('textbox', { name: '目录名称' })
+    fireEvent.change(input, { target: { value: '档案' } })
+    await act(async () => { fireEvent.submit(input.closest('form')!) })
+    expect(uiStore.instance.getSnapshot().tabs).toEqual(['a.md', '档案/b.md'])
+    expect(uiStore.instance.getSnapshot().path).toBe('档案/b.md')
+    expect(screen.getByRole('tab', { name: 'b' }).getAttribute('aria-selected')).toBe('true')
+    fireEvent.click(screen.getByRole('button', { name: '删除「档案」' }))
+    await act(async () => { fireEvent.click(within(screen.getByRole('dialog', { name: '删除' })).getByRole('button', { name: '删除' })) })
+    await act(async () => {})
+    expect(uiStore.instance.getSnapshot().tabs).toEqual(['a.md'])
+    expect(screen.getByRole('tab', { name: 'a' }).getAttribute('aria-selected')).toBe('true')
+  })
+
+  it('跨页恢复打开的标签，只重读活动文档并移除已经消失的标签', async () => {
+    const state = makeServer()
+    const first = await mount()
+    await act(async () => { fireEvent.click(treeRow('d')) })
+    await act(async () => { fireEvent.click(treeRow('b')) })
+    first.unmount()
+    state.tree[0] = { name: 'a.md', kind: 'file', path: 'a.md', mtimeMs: 1000 }
+    await mount(undefined, { openNote: null })
+    expect(within(screen.getByRole('tablist', { name: '打开的笔记' })).getAllByRole('tab')).toHaveLength(2)
+    expect(screen.getByRole<HTMLTextAreaElement>('textbox', { name: '原始文本' }).value).toBe('hello b')
+    expect(uiStore.instance.getSnapshot().tabs).toEqual(['a.md', 'd/b.md'])
   })
 
   it('右键笔记可重命名和删除，目录行不显示类型副标题', async () => {
@@ -298,7 +417,7 @@ describe('NotesPage', () => {
     expect(state.files.has('a.md')).toBe(true)
     expect(screen.queryByRole('dialog')).toBeNull()
     expect(screen.getByRole('alert').textContent).toBe('已删除')
-    expect(screen.queryByRole('textbox', { name: '原始文本' })).toBeNull()
+    expect(screen.getByRole<HTMLTextAreaElement>('textbox', { name: '原始文本' }).value).toBe('hello a')
     expect(within(directory()).queryByTitle('d')).toBeNull()
     expect(document.activeElement).toBe(createTrigger())
 
@@ -701,7 +820,7 @@ describe('NotesPage', () => {
     await act(async () => { fireEvent.click(treeRow('b')) })
     await act(async () => {})
     expect(screen.getByRole<HTMLTextAreaElement>('textbox', { name: '原始文本' }).value).toBe('hello b')
-    expect(uiStore.instance.getSnapshot()).toEqual({ path: 'd/b.md', expanded: ['d'] })
+    expect(uiStore.instance.getSnapshot()).toEqual({ path: 'd/b.md', tabs: ['d/b.md'], expanded: ['d'] })
     // 卸载页面等价于离开笔记页：正文与目录位置都应留给下一次挂载。
     first.unmount()
     await mount(undefined, { openNote: null })
@@ -722,6 +841,22 @@ describe('NotesPage', () => {
     expect(screen.getByRole('heading', { level: 2, name: /好呀/u })).toBeTruthy()
     expect(uiStore.instance.getSnapshot().path).toBeNull()
     expect(state.files.has('gone.md')).toBe(false)
+  })
+
+  it('恢复时过滤已删除的非活动标签，并接纳只有路径的旧浏览记录', async () => {
+    makeServer()
+    uiStore.actions.rememberNote('a.md')
+    uiStore.actions.rememberNote('gone.md')
+    uiStore.actions.rememberNote('a.md')
+    await mount(undefined, { openNote: null })
+    expect(uiStore.instance.getSnapshot().tabs).toEqual(['a.md'])
+    expect(screen.getByRole('tab', { name: 'a' }).getAttribute('aria-selected')).toBe('true')
+
+    cleanup()
+    uiStore.instance.store.set({ path: 'd/b.md', expanded: ['d'] })
+    await mount(undefined, { openNote: null })
+    expect(uiStore.instance.getSnapshot().tabs).toEqual(['d/b.md'])
+    expect(screen.getByRole('tab', { name: 'b' }).getAttribute('aria-selected')).toBe('true')
   })
 
   it('没有记住的笔记时轮询保持欢迎页，不因挂载把路径写回', async () => {
