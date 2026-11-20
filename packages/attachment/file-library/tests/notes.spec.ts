@@ -323,7 +323,7 @@ describe('无目录笔记域', () => {
     await library.notesTree()
     const notesDir = library.notesRootPath()
     const created = await library.createNotePptx('演示稿', undefined, pptxBytes)
-    expect(created).toEqual({ path: '演示稿.pptx' })
+    expect(created).toMatchObject({ path: '演示稿.pptx' })
     expect(await readFile(join(notesDir, '演示稿.pptx'))).toEqual(pptxBytes)
     expect((await lstat(join(notesDir, '演示稿.pptx'))).mode & 0o777).toBe(0o600)
     await expect(library.createNotePptx('演示稿', '', pptxBytes)).rejects.toThrow(/笔记已存在/)
@@ -332,7 +332,7 @@ describe('无目录笔记域', () => {
     await expect(library.createNotePptx('大稿', '', new Uint8Array(8 * 1024 * 1024 + 1))).rejects.toThrow(/8 MiB/)
 
     await library.createNoteDirectory('project')
-    await expect(library.createNotePptx('nested.PPTX', 'project', pptxBytes)).resolves.toEqual({ path: 'project/nested.PPTX' })
+    await expect(library.createNotePptx('nested.PPTX', 'project', pptxBytes)).resolves.toMatchObject({ path: 'project/nested.PPTX' })
     await expect(library.createNotePptx('越界', '../', pptxBytes)).rejects.toThrow(TypeError)
 
     const outside = join(notesDir, '..', 'pptx-seam-outside')
@@ -347,6 +347,8 @@ describe('无目录笔记域', () => {
     await writeFile(join(outside, 'keep.pptx'), pptxBytes)
     await expect(library.createNotePptx('linked-file.pptx', '', pptxBytes)).rejects.toThrow(TypeError)
     await expect(readFile(join(outside, 'keep.pptx'))).resolves.toEqual(pptxBytes)
+    await created.remove()
+    await expect(lstat(join(notesDir, '演示稿.pptx'))).rejects.toMatchObject({ code: 'ENOENT' })
   })
 
   it('在指定目录新建笔记和子目录，并拒绝目录逃逸与同名覆盖', async () => {

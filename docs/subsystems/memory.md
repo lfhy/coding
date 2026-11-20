@@ -85,6 +85,19 @@ async save(project: MemoryProject, request: MemorySaveRequest): Promise<MemoryFi
 async update( project: MemoryProject, request: MemoryUpdateRequest, ): Promise<{ summary: MemoryFileSummary; previous: string }>
 
 /**
+ * 整理一个记忆文件：用调用方重写好的全文替换现有内容。
+ *
+ * 只在变短时接受，因此整理不会变成绕过追加限额的写入通道；结果仍须落在单文件与
+ * 每项目总量限额内。整理后的内容保持「标题行 + `- ` 条目」的形状，后续
+ * {@link update} 与 {@link save} 才能在同一个文件上继续工作。
+ * @param project - 项目身份。
+ * @param request - 整理后的全文与目标文件。
+ * @returns 写入后的文件元数据与整理前的字节数。
+ * @throws 文件不存在、内容为空、形状不合、没有变短或越过限额时抛出。
+ */
+async compact( project: MemoryProject, request: MemoryCompactRequest, ): Promise<{ summary: MemoryFileSummary; previousBytes: number }>
+
+/**
  * 删除整个记忆文件，或只删除其中一个小节。
  * @param project - 项目身份。
  * @param name - 记忆文件名。
@@ -102,5 +115,5 @@ async remove(project: MemoryProject, name: string, section?: string): Promise<bo
 async excerpt(project: MemoryProject): Promise<MemoryExcerpt>
 ```
 
-Source: [`packages/memory/memory/src/index.ts:328`](../../packages/memory/memory/src/index.ts)
+Source: [`packages/memory/memory/src/index.ts:357`](../../packages/memory/memory/src/index.ts)
 <!-- END GENERATED cordis-surface -->

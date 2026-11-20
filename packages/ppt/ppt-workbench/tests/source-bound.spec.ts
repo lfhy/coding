@@ -1,6 +1,6 @@
-import { mkdtemp, mkdir, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import SessionStore, { SessionId } from 'coding-session'
 import { PPT_FORMAT, type PptDeck } from 'coding-ppt-model'
@@ -31,6 +31,20 @@ beforeEach(async () => {
   ctx = new Context()
   await ctx.plugin(SessionStore)
   ctx.sessions.create(SessionId(SESSION), { meta: { cwd: root } })
+  ctx.provide('fileLibrary', {
+    notesRootPath: () => root,
+    createNotePptx: async (name: string, directory: string, bytes: Uint8Array) => {
+      const fileName = name.toLowerCase().endsWith('.pptx') ? name : `${name}.pptx`
+      const notesRoot = resolve(root)
+      const target = resolve(notesRoot, directory, fileName)
+      if (target !== notesRoot && !target.startsWith(`${notesRoot}/`)) throw new TypeError('笔记路径无效')
+      await mkdir(dirname(target), { recursive: true })
+      try { await writeFile(target, bytes, { flag: 'wx' }) }
+      catch (error) { if ((error as NodeJS.ErrnoException).code === 'EEXIST') throw new TypeError('笔记已存在'); throw error }
+      return { path: directory === '' ? fileName : `${directory}/${fileName}` }
+    },
+    deleteNote: async (path: string) => { await rm(resolve(root, path), { force: true }) },
+  } as never)
   ctx.provide('webServer', { register: () => () => undefined } as never)
   ctx.provide('connection', { requestRejection: () => undefined } as never)
   await ctx.plugin(PptProjects)
@@ -133,5 +147,29 @@ describe('源 PPTX 原位编辑', () => {
     expect(await readFile(join(root, 'chart.pptx'))).toEqual(Buffer.from(bytes))
     expect(service.activeDir(SESSION)).toBeUndefined()
     expect(await readdir(root)).not.toContain('ppt')
+  })
+})
+
+describe('笔记 PPTX 源文件', () => {
+  it('生成可解析的初始稿，不创建工程焦点', async () => {
+    const created = await service.createNoteSource(SESSION, { name: '会议汇报' })
+    expect(created).toEqual({ source: '会议汇报.pptx' })
+    const imported = importPptx(await readFile(join(root, created.source)), { title: '回读' })
+    expect(imported.deck.pages.length).toBeGreaterThan(0)
+    expect(service.activeDir(SESSION)).toBeUndefined()
+    expect(await readdir(root)).toContain('会议汇报.pptx')
+  })
+
+  it('限制笔记会话、重复名和越界目录，失败不留下源文件', async () => {
+    await service.createNoteSource(SESSION, { name: '重复稿' })
+    await expect(service.createNoteSource(SESSION, { name: '重复稿' })).rejects.toMatchObject({ code: 'conflict' })
+    expect(await readdir(root)).toEqual(['重复稿.pptx'])
+
+    const other = 'other-session'
+    ctx.sessions.create(SessionId(other), { meta: { cwd: join(root, 'other') } })
+    await expect(service.createNoteSource(other, { name: '越界' })).rejects.toMatchObject({ code: 'forbidden' })
+    await expect(service.createNoteSource(SESSION, { name: '越界', directory: '../outside' }))
+      .rejects.toMatchObject({ code: 'bad-request' })
+    expect(await readdir(root)).toEqual(['重复稿.pptx'])
   })
 })

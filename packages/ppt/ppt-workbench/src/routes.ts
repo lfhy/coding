@@ -231,6 +231,18 @@ export function installRoutes(ctx: Context, service: PptProjects): void {
     return snapshotBody(await service.openSource(sessionId, source))
   })
 
+  route('notes/create', ['POST'], async (body) => {
+    const sessionId = sessionIdOf(body)
+    const name = optionalString(body.name, 'name')
+    if (name === undefined) throw new PptStoreError('bad-request', 'name 必须提供')
+    const directory = optionalString(body.directory, 'directory')
+    const created = await service.createNoteSource(sessionId, {
+      name,
+      ...directory === undefined ? {} : { directory },
+    })
+    return { ok: true, source: created.source }
+  })
+
   route('create', ['POST'], async (body) => {
     const sessionId = sessionIdOf(body)
     const title = optionalString(body.title, 'title')

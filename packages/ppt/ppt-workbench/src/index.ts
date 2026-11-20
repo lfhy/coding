@@ -48,6 +48,13 @@ export { PptStoreError } from './store.ts'
 export type { PptTemplateDetail, PptTemplateId, PptTemplateSummary } from './template-store.ts'
 export type { PptImportReport, PptPageEvidenceChunk } from './import.ts'
 
+/** 从用户输入提取文稿标题；文件名净化和扩展名规则仍由文件库唯一拥有。 */
+function noteSourceTitle(name: string): string {
+  const leaf = basename(name.replaceAll('\\', '/')).replace(/\.pptx$/iu, '')
+    .replace(/[\u0000-\u001f\u007f]/gu, ' ').trim().slice(0, 160)
+  return leaf === '' ? '演示文稿' : leaf
+}
+
 /** 本机模板仓库路径；远程 marker 工作区不通过此设置转为本机工程。 */
 export interface Config {
   /** 模板仓库的绝对路径；默认使用 Harness home 下的 `ppt-templates`。 */
@@ -257,7 +264,12 @@ export default class PptProjects extends Service {
     return snapshot
   }
 
-  /** 将工作区内的真实 .pptx 导入为可编辑工程，并将后续编辑绑定回原文件。 */
+  /**
+   * 将工作区内的真实 .pptx 导入为可编辑工程，并将后续编辑绑定回原文件。
+   * @param sessionId - 会话身份。
+   * @param relativePath - 当前会话工作区内的相对 `.pptx` 路径。
+   * @returns 新建的可编辑工程快照。
+   */
   async openSource(sessionId: string, relativePath: string): Promise<PptSnapshot> {
     const root = await this.localRoot(sessionId)
     const source = sourcePath(root, relativePath)
@@ -272,6 +284,72 @@ export default class PptProjects extends Service {
       this.focus(sessionId, dir)
       return snapshot
     })
+  }
+
+  /**
+   * 在笔记目录创建一个可由工作台打开的初始 PPTX 源文件。
+   *
+   * 只有工作目录正好是文件库笔记根目录的本机会话可以调用；工程绑定与会话焦点
+   * 仍由随后唯一一次 `openSource` 完成，避免一次创建产生两份工程或重复打开事件。
+   * @param sessionId - 会话身份。
+   * @param options - 文件名与笔记根目录下的父目录。
+   * @returns 文件库返回的笔记根目录相对来源路径。
+   * @throws PptStoreError 会话不是本机笔记会话、文件库不可用或输入不安全时。
+   */
+  async createNoteSource(sessionId: string, options: {
+    name: string
+    directory?: string
+  }): Promise<{ source: string }> {
+    const root = await this.localRoot(sessionId)
+    const library = this.ctx.get('fileLibrary') as {
+      notesRootPath?: () => string
+      createNotePptx?: (name: string, directory: string, data: Uint8Array) => Promise<{
+        path: string
+        remove?: () => Promise<void>
+      }>
+      deleteNote?: (path: string) => Promise<void>
+    } | undefined
+    if (library?.notesRootPath === undefined || library.createNotePptx === undefined) {
+      throw new PptStoreError('forbidden', '创建笔记幻灯片需要可用的文件库')
+    }
+    let notesRoot: string
+    try { notesRoot = library.notesRootPath() } catch {
+      throw new PptStoreError('forbidden', '创建笔记幻灯片需要可用的笔记目录')
+    }
+    if (resolve(root) !== resolve(notesRoot)) {
+      throw new PptStoreError('forbidden', '只有笔记会话可以创建笔记幻灯片')
+    }
+    if (typeof options.name !== 'string') throw new PptStoreError('bad-request', 'name 必须提供')
+    const title = noteSourceTitle(options.name)
+    const deck = parseDeck(createDefaultDeck(title))
+    const bytes = buildPptx(deck)
+    if (bytes.byteLength === 0 || bytes.byteLength > PPT_IMPORT_MAX_BYTES) {
+      throw new PptStoreError('bad-request', '初始 PPTX 超过 8 MiB')
+    }
+    const directory = options.directory ?? ''
+    if (typeof directory !== 'string') throw new PptStoreError('bad-request', 'directory 必须是字符串')
+    let source: string | undefined
+    let removeCreated: (() => Promise<void>) | undefined
+    try {
+      const created = await library.createNotePptx(options.name, directory, bytes)
+      source = created.path
+      removeCreated = created.remove
+      if (typeof source !== 'string' || source.length === 0) {
+        throw new PptStoreError('bad-request', '文件库返回的来源路径无效')
+      }
+      // 复用原位编辑同一版本读取准入，确保返回路径确实指向刚写入的普通 PPTX。
+      await readSourceVersion(root, source)
+      return { source }
+    } catch (reason) {
+      if (removeCreated !== undefined) await removeCreated().catch(() => undefined)
+      else if (source !== undefined && library.deleteNote !== undefined) await library.deleteNote(source).catch(() => undefined)
+      if (reason instanceof PptStoreError) throw reason
+      if (reason instanceof TypeError) {
+        const code = /已存在|重复/u.test(reason.message) ? 'conflict' : 'bad-request'
+        throw new PptStoreError(code, reason.message)
+      }
+      throw new PptStoreError('conflict', '笔记幻灯片创建失败')
+    }
   }
 
   /**

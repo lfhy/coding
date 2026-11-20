@@ -6,6 +6,7 @@ import {
   Toast, IconTrashOutline16,
   type MenuEntry, type SidebarRootItem,
 } from 'coding-client-ui-primitives'
+import { Icon } from 'coding-client-ui-icons'
 import type { PropsLocale, PropsRenderSlots, PropsRuntime, PropsStore } from 'coding-client-ui-slots'
 import { NS, type NotesLocaleKey } from './locales.ts'
 import { NoteDeleteDialog } from './NoteDeleteDialog.tsx'
@@ -16,7 +17,7 @@ import { addTreeDirectory, filePaths, findEntry, labelOf, latestWritten, noteFil
 import type { createNotesUiStore } from './notes-ui-store.ts'
 import { useNoteDraft } from './useNoteDraft.ts'
 import { usePublishNotesTabs } from './usePublishNotesTabs.ts'
-import { notesCreate, notesCreateDirectory, notesDelete, notesRename, notesTree, type NotesTreeEntry } from './wire.ts'
+import { notesCreate, notesCreateDirectory, notesCreateSlide, notesDelete, notesRename, notesTree, type NotesTreeEntry } from './wire.ts'
 import { exportImage, exportMarkdown, exportPdf, exportWord, type NoteExportFormat } from './export/index.ts'
 import css from './NotesPage.module.css'
 
@@ -29,7 +30,7 @@ const TREE_POLL_MS = 4000
 type DirectoryState = 'loading' | 'ready' | 'failed'
 type NoteActionTarget = Pick<NotesTreeEntry, 'kind' | 'name' | 'path'>
 type NoteContextMenu = { target: NoteActionTarget; x: number; y: number; trigger: HTMLButtonElement }
-type DialogKind = 'create' | 'folder' | 'reload' | 'rename' | 'delete'
+type DialogKind = 'create' | 'folder' | 'presentation' | 'reload' | 'rename' | 'delete'
 
 /**
  * 独立笔记页：目录和编辑器由本页持有，助手显隐由同会话的根布局持有。
@@ -250,7 +251,7 @@ export function NotesPage({
     setContextMenu({ target, x: event.clientX, y: event.clientY, trigger: event.currentTarget })
   }, [])
 
-  const openCreateDialog = useCallback((kind: 'create' | 'folder', path: string, trigger: HTMLButtonElement | null) => {
+  const openCreateDialog = useCallback((kind: 'create' | 'folder' | 'presentation', path: string, trigger: HTMLButtonElement | null) => {
     setCreateMenuOpen(false)
     setContextMenu(null)
     dialogTrigger.current = trigger
@@ -423,10 +424,13 @@ export function NotesPage({
     setCreating(true)
     setCreateFailed(false)
     const folder = dialog === 'folder'
+    const presentation = dialog === 'presentation'
     try {
       const { path } = folder
         ? await notesCreateDirectory(name, creationDirectory)
-        : await notesCreate(name, creationDirectory)
+        : presentation
+          ? await notesCreateSlide(sessionId, name, creationDirectory)
+          : await notesCreate(name, creationDirectory)
       request.signal.throwIfAborted()
       treeRevision.current += 1
       setExpanded((previous) => {
@@ -443,7 +447,7 @@ export function NotesPage({
       const [updated] = await Promise.all([fresh, folder ? undefined : selectTab(path)])
       request.signal.throwIfAborted()
       setDialog(null)
-      notify(updated ? folder ? 'folderCreated' : 'noteCreated' : 'createdRefreshError')
+      notify(updated ? folder ? 'folderCreated' : presentation ? 'presentationCreated' : 'noteCreated' : 'createdRefreshError')
     } catch {
       if (!request.signal.aborted) setCreateFailed(true)
     } finally {
@@ -487,9 +491,14 @@ export function NotesPage({
     }
   }
 
-  const createEntries: readonly MenuEntry[] = [
+  const noteCreateEntries: readonly MenuEntry[] = [
     { id: 'create', label: t('newNote'), icon: <IconPlusOutline16 /> },
     { id: 'folder', label: t('newFolder'), icon: <IconProjectAddOutline16 /> },
+  ]
+  const launcherEntries: readonly MenuEntry[] = [
+    ...noteCreateEntries,
+    { type: 'separator', id: 'new-presentation-separator' },
+    { id: 'presentation', label: t('newPresentation'), icon: <Icon name="file-slides" size={16} /> },
   ]
 
   const selectedLabel = activePath === null ? t('title') : labelOfPath(activePath)
@@ -540,9 +549,9 @@ export function NotesPage({
             anchor={<Button ref={createTrigger} size="sm" className={css.newNote} icon={<IconPlusOutline16 />}
               aria-label={t('newNote')} title={t('newNote')} aria-haspopup="menu" aria-expanded={createMenuOpen}
               disabled={creating} onClick={() => { setContextMenu(null); setCreateMenuOpen(open => !open) }} />}
-            items={createEntries}
+            items={launcherEntries}
             onSelect={(id) => {
-              if (id === 'create' || id === 'folder') openCreateDialog(id, '', createTrigger.current)
+              if (id === 'create' || id === 'folder' || id === 'presentation') openCreateDialog(id, '', createTrigger.current)
             }}
             onClose={() => { setCreateMenuOpen(false); createTrigger.current?.focus({ preventScroll: true }) }}
             portal keyboardNavigation
@@ -552,7 +561,7 @@ export function NotesPage({
               open
               anchor={null}
               items={[
-                ...(contextMenu.target.kind === 'dir' ? [...createEntries, { type: 'separator' as const, id: 'edit' }] : []),
+                ...(contextMenu.target.kind === 'dir' ? [...noteCreateEntries, { type: 'separator' as const, id: 'edit' }] : []),
                 { id: 'rename', label: t('rename'), icon: <IconEditOutline16 size={16} /> },
                 { id: 'delete', label: t('delete'), danger: true, icon: <IconTrashOutline16 size={16} /> },
               ]}
@@ -593,10 +602,10 @@ export function NotesPage({
           onReload={(trigger) => { dialogTrigger.current = trigger; setDialog('reload') }}
           onRetry={() => { void save() }} onChange={edit} onBlur={() => { void save() }} t={t} />
       </div>
-      {(dialog === 'create' || dialog === 'folder' || dialog === 'rename') && <NoteNameDialog t={t}
+      {(dialog === 'create' || dialog === 'folder' || dialog === 'presentation' || dialog === 'rename') && <NoteNameDialog t={t}
         kind={dialog === 'rename' ? actionTarget?.kind === 'dir' ? 'renameFolder' : 'renameNote' : dialog}
         name={draftName} busy={creating} onClose={closeDialog} onNameChange={setDraftName}
-        error={createFailed && dialog !== 'rename' ? t(dialog === 'folder' ? 'createFolderError' : 'createError') : undefined}
+        error={createFailed && dialog !== 'rename' ? t(dialog === 'folder' ? 'createFolderError' : dialog === 'presentation' ? 'createPresentationError' : 'createError') : undefined}
         destination={dialog === 'rename' ? undefined : {
           tree, path: creationDirectory, onChange: setCreationDirectory, onCreateDirectory: createDestinationDirectory,
         }}

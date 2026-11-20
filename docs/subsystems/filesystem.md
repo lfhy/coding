@@ -388,6 +388,17 @@ abstract contains(parent: FsTarget, child: FsTarget): boolean
 abstract stat(target: FsTarget, signal?: AbortSignal): Promise<FsInfo | undefined>
 
 /**
+ * 只读探测：返回元数据，但版本不保证能通过条件写守卫。
+ *
+ * 远端 basic 实现把内容绑进版本，因此 `stat` 会读取整份文件；只想确认“存在与大小”
+ * 的调用方用这个方法，远端就不必为一次探测传输内容。默认实现与 {@link stat} 相同。
+ * @param target - 已解析的目标。
+ * @param signal - 取消元数据往返。
+ * @returns 元数据；目标不存在时 `undefined`。
+ */
+statMetadata(target: FsTarget, signal?: AbortSignal): Promise<FsInfo | undefined>
+
+/**
  * Return path metadata without following the final path component when it is a
  * symbolic link. This is intentionally path-shaped, not target-shaped:
  * {@link resolve} follows symlinks to produce the stable identity used by

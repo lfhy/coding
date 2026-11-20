@@ -133,6 +133,42 @@ export async function notesCreate(name: string, directory = ''): Promise<{ path:
   return { path: body.path }
 }
 
+/**
+ * 在笔记目录新建一份可编辑的幻灯片文件。
+ *
+ * PPT 宿主负责生成合法的 `.pptx`、落盘并建立原位编辑绑定；本函数只提交名称与目标目录，
+ * 再把响应收敛成相对笔记根目录的路径。Host 拒绝同名或非法名称时按状态码失败，
+ * 因此调用方不会看到半成品路径。
+ *
+ * @param sessionId - 当前笔记会话；其工作目录必须已指向笔记根目录。
+ * @param name - 用户输入的演示文稿名称，Host 会净化并补 `.pptx` 扩展名。
+ * @param directory - 相对笔记根目录的父目录，空字符串表示根目录。
+ * @returns 新建幻灯片的相对路径。
+ */
+export async function notesCreateSlide(sessionId: string, name: string, directory = ''): Promise<{ path: string }> {
+  if (typeof sessionId !== 'string' || sessionId.length === 0 || sessionId.length > 128
+    || /[\u0000-\u001f\u007f]/u.test(sessionId)) {
+    throw new Error('Invalid notes session')
+  }
+  if (typeof name !== 'string' || name.trim() === '' || name.length > 1024 || /[\u0000-\u001f\u007f]/u.test(name)) {
+    throw new Error('Invalid note name')
+  }
+  if (directory !== '') assertNotePath(directory)
+  const response = await fetch('/api/ppt/notes/create', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ sessionId, name, ...(directory === '' ? {} : { directory }) }),
+  })
+  if (!response.ok) throw new Error(`notes slide create HTTP ${response.status}`)
+  const body = (await response.json()) as unknown
+  if (!isObject(body) || body.ok !== true || !nonemptyString(body.source)) {
+    throw new Error('Invalid note slide payload')
+  }
+  assertNotePath(body.source)
+  if (!/\.pptx$/iu.test(body.source)) throw new Error('Invalid note slide payload')
+  return { path: body.source }
+}
+
 /** 在笔记目录下新建子目录，返回相对笔记根目录的路径。 */
 export async function notesCreateDirectory(name: string, parent = ''): Promise<{ path: string }> {
   const response = await fetch('/api/notes/create-directory', {

@@ -188,22 +188,134 @@ Source: [`packages/attachment/attachment/src/index.ts:33`](../../packages/attach
  * @param input - 原名、会话身份、数据流和提交前的会话有效性检查。
  * @returns 持久记录和只供 Host 内部使用的绝对路径。
  */
-async saveUpload(input: { name: string sessionId: string stream: AsyncIterable<Uint8Array> verify: () => Promise<void> }): Promise<{ record: ManagedFileRecord; path: string }>
+async saveUpload(input: { name: string sessionId: string workspaceId?: string stream: AsyncIterable<Uint8Array> verify: () => Promise<void> }): Promise<{ record: ManagedFileRecord; path: string }>
 
 /**
  * 复制已由附件服务准入的不可变生成图片；原附件继续由附件服务拥有，字节限额仍由附件提供方控制。
  * @param input - 会话、图库、附件引用及已准入编码字节。
  * @returns 副本的持久元数据，以及模型侧需要引用的绝对路径。
  */
-async saveGeneratedImage(input: { sessionId: string galleryId?: string attachmentId: string mediaType: GeneratedImageMediaType data: Uint8Array }): Promise<{ record: ManagedFileRecord; path: string }>
+async saveGeneratedImage(input: { sessionId: string workspaceId?: string galleryId?: string attachmentId: string mediaType: GeneratedImageMediaType data: Uint8Array }): Promise<{ record: ManagedFileRecord; path: string }>
+
+/**
+ * 把已由附件服务准入的输入图片复制到文件库，供文件管理页集中查看。
+ * @param input - 会话、附件身份、媒体类型、可选文件名与已准入字节。
+ * @returns 文件库记录和仅供 Host 使用的绝对路径。
+ */
+async saveInputImage(input: { sessionId: string workspaceId?: string attachmentId: string mediaType: GeneratedImageMediaType name?: string data: Uint8Array }): Promise<{ record: ManagedFileRecord; path: string }>
+
+/**
+ * 把会话导出的成品登记到全局文件库。导出文件与工作区里的原始产物
+ * 保持两份独立副本，便于无工作区会话在 Coding home 中集中管理。
+ * @param input - 成品文件名、会话身份、媒体类型与已生成字节。
+ * @returns 文件库记录和仅供 Host 使用的绝对路径。
+ */
+async saveExport(input: { name: string sessionId: string workspaceId?: string mediaType: string data: Uint8Array }): Promise<{ record: ManagedFileRecord; path: string }>
 
 /**
  * 从领域快照按创建时间倒序分页；不返回本机路径。
  * @param offset - 从零开始的偏移，默认零。
  * @param limit - 每页最多 100 条，默认 50。
+ * @param filter - 可选的会话、工作区、范围、类型和分类过滤条件。
  * @returns 当前快照的一页、总数和可选后续偏移。
  */
-list(offset: number = 0, limit: number = 50): ManagedFilePage
+list(offset: number = 0, limit: number = 50, filter: { sessionId?: string workspaceId?: string unscoped?: boolean kind?: ManagedFileKind category?: ManagedFileCategory } = {}): ManagedFilePage
+
+/**
+ * 文件列表并入无目录笔记：领域快照的过滤结果与笔记根目录的实时记录合并后分页。
+ * 笔记只出现在未分组视图或 `kind: 'note'` 过滤下；已登记记录与实时记录相对路径重复时只取登记记录。
+ * @param offset - 从零开始的偏移，默认零。
+ * @param limit - 每页最多 100 条，默认 50。
+ * @param filter - 与 {@link FileLibrary.list} 相同的过滤条件。
+ * @returns 合并视图的一页、总数和可选后续偏移。
+ */
+async listWithNotes(offset: number = 0, limit: number = 50, filter: { sessionId?: string workspaceId?: string unscoped?: boolean kind?: ManagedFileKind category?: ManagedFileCategory } = {}): Promise<ManagedFilePage>
+
+/**
+ * 按文件库 ID 读取已登记的本地字节；绝对路径永远不离开 Host。未登记 id 落到无目录笔记的实时记录。
+ * @param id - 文件库或实时笔记的标识。
+ * @returns 记录与字节；标识不存在或文件不再安全时为 undefined。
+ */
+async read(id: string): Promise<{ record: ManagedFileRecord; data: Uint8Array } | undefined>
+
+/**
+ * 笔记根目录的绝对路径；只供 Host 侧会话工作目录使用，不进入浏览器响应。
+ * @returns 笔记根目录绝对路径。
+ */
+notesRootPath(): string
+
+/**
+ * 扫描笔记根目录返回目录树：全部目录、Markdown 与真实普通 `.pptx` 文件，符号链接条目不进入树。
+ * 深度与节点总数超限视为结构异常，整棵树拒绝。
+ * @returns 根级条目数组；子节点按名称排序。
+ */
+async notesTree(): Promise<NotesTreeNode[]>
+
+/**
+ * 读取笔记原文与其修改时间；保存冲突检测的基准时间由此取得。
+ * @param relativePath - 相对笔记根目录的路径。
+ * @returns 规范化路径、全文与毫秒修改时间。
+ */
+async readNote(relativePath: string): Promise<{ path: string; content: string; mtimeMs: number }>
+
+/**
+ * 写入笔记；没有修改时间基准时按需创建中间目录，写入经临时文件原子改名并同步目录。
+ * 传入 `baseMtimeMs` 时目标文件与父目录必须仍存在，外部修改或删除都拒绝覆盖。
+ * @param relativePath - 相对笔记根目录的路径，必须使用 Markdown 扩展名。
+ * @param content - 笔记全文。
+ * @param baseMtimeMs - 读取时的修改时间（可选）。
+ * @returns 规范化路径与写入后的修改时间。
+ */
+async saveNote(relativePath: string, content: string, baseMtimeMs?: number): Promise<{ path: string; mtimeMs: number }>
+
+/**
+ * 在指定笔记目录创建空笔记；名称按文件库规则净化，缺省扩展名补 `.md`，同名已存在时拒绝。
+ * @param name - 用户提交的文件名。
+ * @param directory - 相对笔记根目录的父目录，空字符串表示根目录。
+ * @returns 相对笔记根目录的路径。
+ */
+async createNote(name: string, directory: string = ''): Promise<{ path: string }>
+
+/**
+ * 在笔记树中独占落盘已由 PPT 服务准入的源文件；这是只供 Host 调用的 PPT 服务 seam。
+ * 名称缺少扩展名时补 `.pptx`，显式扩展名必须是 `.pptx`；文件与父目录同步后才返回。
+ * @param name - 按文件库规则净化的安全文件名。
+ * @param directory - 相对笔记根目录的真实私有父目录，空字符串表示根目录。
+ * @param data - 非空且不超过 8 MiB 的 PPTX 字节。
+ * @returns 相对笔记根目录的路径，以及只删除本次独占文件的清理句柄。
+ * @throws TypeError 名称、父目录或数据不安全，目标已存在，或数据大小不在允许范围内。
+ */
+async createNotePptx(name: string, directory: string = '', data: Uint8Array): Promise<{ path: string; remove: () => Promise<void> }>
+
+/**
+ * 在指定笔记目录创建子目录；只接受单个目录名，拒绝覆盖现有条目。
+ * @param name - 用户提交的目录名。
+ * @param parent - 相对笔记根目录的父目录，空字符串表示根目录。
+ * @returns 相对笔记根目录的新目录路径。
+ */
+async createNoteDirectory(name: string, parent: string = ''): Promise<{ path: string }>
+
+/**
+ * 在原文件或目录的同一父目录内安全改名；文件保留原扩展名，不覆盖已有条目。
+ * @param relativePath - 要改名的 Markdown、PPTX 或目录路径。
+ * @param name - 新的单段名称；文件可省略扩展名，但不能指定其他扩展名。
+ * @returns 改名后的相对路径。
+ */
+async renameNote(relativePath: string, name: string): Promise<{ path: string }>
+
+/**
+ * 删除单个 Markdown、PPTX 文件或整个目录；拒绝将符号链接作为目标，目录中的链接只移除链接本身。
+ * @param relativePath - 要删除的文件或目录路径。
+ * @returns 删除完成后兑现；目标不存在或路径越界时拒绝。
+ */
+async deleteNote(relativePath: string): Promise<void>
+
+/**
+ * 无目录笔记的实时记录：笔记根目录直属的 Markdown 文件（不含子目录条目），
+ * 已被领域表登记的同名相对路径不重复出现。
+ * @returns 按修改时间表达创建时间的记录数组。
+ */
+async noteRecords(): Promise<ManagedFileRecord[]>
 
 /**
  * 读取真实且仍归本库登记的上传记录；目录和文件均需通过当前身份检查。
@@ -220,7 +332,7 @@ async getUpload(path: string): Promise<ManagedFileRecord | undefined>
 async isManagedUploadPath(path: string): Promise<boolean>
 ```
 
-Source: [`packages/attachment/file-library/src/index.ts:90`](../../packages/attachment/file-library/src/index.ts)
+Source: [`packages/attachment/file-library/src/index.ts:127`](../../packages/attachment/file-library/src/index.ts)
 
 <a id="ctximagegeneration--imagegeneration"></a>
 

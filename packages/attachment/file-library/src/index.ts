@@ -231,7 +231,11 @@ export class FileLibrary extends Service {
     return record
   }
 
-  /** 把已由附件服务准入的输入图片复制到文件库，供文件管理页集中查看。 */
+  /**
+   * 把已由附件服务准入的输入图片复制到文件库，供文件管理页集中查看。
+   * @param input - 会话、附件身份、媒体类型、可选文件名与已准入字节。
+   * @returns 文件库记录和仅供 Host 使用的绝对路径。
+   */
   async saveInputImage(input: {
     sessionId: string
     workspaceId?: string
@@ -325,6 +329,7 @@ export class FileLibrary extends Service {
    * 从领域快照按创建时间倒序分页；不返回本机路径。
    * @param offset - 从零开始的偏移，默认零。
    * @param limit - 每页最多 100 条，默认 50。
+   * @param filter - 可选的会话、工作区、范围、类型和分类过滤条件。
    * @returns 当前快照的一页、总数和可选后续偏移。
    */
   list(offset: number = 0, limit: number = 50, filter: {
@@ -393,7 +398,11 @@ export class FileLibrary extends Service {
     return { items, total: combined.length, ...(offset + items.length < combined.length ? { nextOffset: offset + items.length } : {}) }
   }
 
-  /** 按文件库 ID 读取已登记的本地字节；绝对路径永远不离开 Host。未登记 id 落到无目录笔记的实时记录。 */
+  /**
+   * 按文件库 ID 读取已登记的本地字节；绝对路径永远不离开 Host。未登记 id 落到无目录笔记的实时记录。
+   * @param id - 文件库或实时笔记的标识。
+   * @returns 记录与字节；标识不存在或文件不再安全时为 undefined。
+   */
   async read(id: string): Promise<{ record: ManagedFileRecord; data: Uint8Array } | undefined> {
     let fileId
     try { fileId = FileId(id) } catch { return undefined }
@@ -423,7 +432,10 @@ export class FileLibrary extends Service {
     } catch { return undefined }
   }
 
-  /** 笔记根目录的绝对路径；只供 Host 侧会话工作目录使用，不进入浏览器响应。 */
+  /**
+   * 笔记根目录的绝对路径；只供 Host 侧会话工作目录使用，不进入浏览器响应。
+   * @returns 笔记根目录绝对路径。
+   */
   notesRootPath(): string {
     return resolve(join(this.root, 'notes'))
   }
@@ -642,7 +654,7 @@ export class FileLibrary extends Service {
    * @param directory - 相对笔记根目录的父目录，空字符串表示根目录。
    * @returns 相对笔记根目录的路径。
    */
-  async createNote(name: string, directory = ''): Promise<{ path: string }> {
+  async createNote(name: string, directory: string = ''): Promise<{ path: string }> {
     const leaf = safeName(name)
     const fileName = NOTE_EXTENSIONS.has(extname(leaf).toLowerCase()) ? leaf : `${leaf}.md`
     const parent = await this.safeNoteDirectory(directory)
@@ -663,10 +675,10 @@ export class FileLibrary extends Service {
    * @param name - 按文件库规则净化的安全文件名。
    * @param directory - 相对笔记根目录的真实私有父目录，空字符串表示根目录。
    * @param data - 非空且不超过 8 MiB 的 PPTX 字节。
-   * @returns 相对笔记根目录的路径。
+   * @returns 相对笔记根目录的路径，以及只删除本次独占文件的清理句柄。
    * @throws TypeError 名称、父目录或数据不安全，目标已存在，或数据大小不在允许范围内。
    */
-  async createNotePptx(name: string, directory = '', data: Uint8Array): Promise<{ path: string }> {
+  async createNotePptx(name: string, directory: string = '', data: Uint8Array): Promise<{ path: string; remove: () => Promise<void> }> {
     return this.scheduleNotesWrite(async () => {
       const leaf = safeName(name)
       const extension = extname(leaf)
@@ -710,7 +722,18 @@ export class FileLibrary extends Service {
         try { await unlink(target) } catch { /* 原错误是同步失败；只回滚本次创建的条目。 */ }
         throw error
       }
-      return { path: parent.rel === '' ? fileName : `${parent.rel}/${fileName}` }
+      const owned = await lstat(target)
+      return {
+        path: parent.rel === '' ? fileName : `${parent.rel}/${fileName}`,
+        remove: async () => {
+          try {
+            const current = await lstat(target)
+            if (!current.isFile() || current.isSymbolicLink() || current.dev !== owned.dev || current.ino !== owned.ino) return
+            await unlink(target)
+            await syncDirectory(parent.target)
+          } catch { /* 清理只在仍拥有原文件时尝试，不能覆盖原始创建错误。 */ }
+        },
+      }
     })
   }
 
@@ -720,7 +743,7 @@ export class FileLibrary extends Service {
    * @param parent - 相对笔记根目录的父目录，空字符串表示根目录。
    * @returns 相对笔记根目录的新目录路径。
    */
-  async createNoteDirectory(name: string, parent = ''): Promise<{ path: string }> {
+  async createNoteDirectory(name: string, parent: string = ''): Promise<{ path: string }> {
     if (typeof name !== 'string' || name.length === 0 || name.length > 1024 || name.includes('\0')
       || /[\u0001-\u001f\u007f]/u.test(name) || /[\\/]/u.test(name) || name === '.' || name === '..'
       || /^[a-zA-Z]:/u.test(name)) {

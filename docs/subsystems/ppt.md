@@ -98,12 +98,32 @@ create(sessionId: string, options: { title: string dir?: string size?: SlideSize
 async open(sessionId: string, dir: string): Promise<PptSnapshot>
 
 /**
+ * 将工作区内的真实 .pptx 导入为可编辑工程，并将后续编辑绑定回原文件。
+ * @param sessionId - 会话身份。
+ * @param relativePath - 当前会话工作区内的相对 `.pptx` 路径。
+ * @returns 新建的可编辑工程快照。
+ */
+async openSource(sessionId: string, relativePath: string): Promise<PptSnapshot>
+
+/**
+ * 在笔记目录创建一个可由工作台打开的初始 PPTX 源文件。
+ *
+ * 只有工作目录正好是文件库笔记根目录的本机会话可以调用；工程绑定与会话焦点
+ * 仍由随后唯一一次 `openSource` 完成，避免一次创建产生两份工程或重复打开事件。
+ * @param sessionId - 会话身份。
+ * @param options - 文件名与笔记根目录下的父目录。
+ * @returns 文件库返回的笔记根目录相对来源路径。
+ * @throws PptStoreError 会话不是本机笔记会话、文件库不可用或输入不安全时。
+ */
+async createNoteSource(sessionId: string, options: { name: string directory?: string }): Promise<{ source: string }>
+
+/**
  * 读取工程。
  * @param sessionId - 会话身份。
  * @param dir - 相对或绝对目录；缺省为当前工程。
  * @returns 工程快照。
  */
-read(sessionId: string, dir?: string): Promise<PptSnapshot>
+async read(sessionId: string, dir?: string): Promise<PptSnapshot>
 
 /**
  * 应用一次编辑。
@@ -139,7 +159,7 @@ redo(sessionId: string, dir: string | undefined, steps: number): Promise<PptSnap
  * @param dir - 工程目录；缺省为当前工程。
  * @returns 导出文件路径与大小。
  */
-async exportPdf(sessionId: string, dir?: string): Promise<{ path: string; bytes: number; revision: number }>
+async exportPdf(sessionId: string, dir?: string): Promise<{ path: string; bytes: number; revision: number; fileId?: string }>
 
 /**
  * 把页面渲染成 PNG（工作台与导出一致的那一版）。
@@ -288,5 +308,5 @@ async createFromTemplate(sessionId: string, id: string, options: { title?: strin
 async export(sessionId: string, dir?: string, options: { skipCheck?: boolean } = {}): Promise<PptExportResult>
 ```
 
-Source: [`packages/ppt/ppt-workbench/src/index.ts:95`](../../packages/ppt/ppt-workbench/src/index.ts)
+Source: [`packages/ppt/ppt-workbench/src/index.ts:106`](../../packages/ppt/ppt-workbench/src/index.ts)
 <!-- END GENERATED cordis-surface -->

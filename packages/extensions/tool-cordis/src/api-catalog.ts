@@ -810,22 +810,107 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [],
       },
       {
-        signature: 'async saveUpload(input: { name: string sessionId: string stream: AsyncIterable<Uint8Array> verify: () => Promise<void> }): Promise<{ record: ManagedFileRecord; path: string }>',
+        signature: 'async saveUpload(input: { name: string sessionId: string workspaceId?: string stream: AsyncIterable<Uint8Array> verify: () => Promise<void> }): Promise<{ record: ManagedFileRecord; path: string }>',
         description: '将上传流写入独占私有文件，校验发起会话后写入领域记录。 拒绝空文件或超过 32 MiB 的流；失败仅删除本次仍持有的文件，不回滚其他介质已持久化的事实。',
         parameters: [{ name: 'input', description: '原名、会话身份、数据流和提交前的会话有效性检查。' }],
         returns: '持久记录和只供 Host 内部使用的绝对路径。',
       },
       {
-        signature: 'async saveGeneratedImage(input: { sessionId: string galleryId?: string attachmentId: string mediaType: GeneratedImageMediaType data: Uint8Array }): Promise<{ record: ManagedFileRecord; path: string }>',
+        signature: 'async saveGeneratedImage(input: { sessionId: string workspaceId?: string galleryId?: string attachmentId: string mediaType: GeneratedImageMediaType data: Uint8Array }): Promise<{ record: ManagedFileRecord; path: string }>',
         description: '复制已由附件服务准入的不可变生成图片；原附件继续由附件服务拥有，字节限额仍由附件提供方控制。',
         parameters: [{ name: 'input', description: '会话、图库、附件引用及已准入编码字节。' }],
         returns: '副本的持久元数据，以及模型侧需要引用的绝对路径。',
       },
       {
-        signature: 'list(offset: number = 0, limit: number = 50): ManagedFilePage',
+        signature: 'async saveInputImage(input: { sessionId: string workspaceId?: string attachmentId: string mediaType: GeneratedImageMediaType name?: string data: Uint8Array }): Promise<{ record: ManagedFileRecord; path: string }>',
+        description: '把已由附件服务准入的输入图片复制到文件库，供文件管理页集中查看。',
+        parameters: [{ name: 'input', description: '会话、附件身份、媒体类型、可选文件名与已准入字节。' }],
+        returns: '文件库记录和仅供 Host 使用的绝对路径。',
+      },
+      {
+        signature: 'async saveExport(input: { name: string sessionId: string workspaceId?: string mediaType: string data: Uint8Array }): Promise<{ record: ManagedFileRecord; path: string }>',
+        description: '把会话导出的成品登记到全局文件库。导出文件与工作区里的原始产物 保持两份独立副本，便于无工作区会话在 Coding home 中集中管理。',
+        parameters: [{ name: 'input', description: '成品文件名、会话身份、媒体类型与已生成字节。' }],
+        returns: '文件库记录和仅供 Host 使用的绝对路径。',
+      },
+      {
+        signature: 'list(offset: number = 0, limit: number = 50, filter: { sessionId?: string workspaceId?: string unscoped?: boolean kind?: ManagedFileKind category?: ManagedFileCategory } = {}): ManagedFilePage',
         description: '从领域快照按创建时间倒序分页；不返回本机路径。',
-        parameters: [{ name: 'offset', description: '从零开始的偏移，默认零。' }, { name: 'limit', description: '每页最多 100 条，默认 50。' }],
+        parameters: [{ name: 'offset', description: '从零开始的偏移，默认零。' }, { name: 'limit', description: '每页最多 100 条，默认 50。' }, { name: 'filter', description: '可选的会话、工作区、范围、类型和分类过滤条件。' }],
         returns: '当前快照的一页、总数和可选后续偏移。',
+      },
+      {
+        signature: 'async listWithNotes(offset: number = 0, limit: number = 50, filter: { sessionId?: string workspaceId?: string unscoped?: boolean kind?: ManagedFileKind category?: ManagedFileCategory } = {}): Promise<ManagedFilePage>',
+        description: '文件列表并入无目录笔记：领域快照的过滤结果与笔记根目录的实时记录合并后分页。 笔记只出现在未分组视图或 `kind: \'note\'` 过滤下；已登记记录与实时记录相对路径重复时只取登记记录。',
+        parameters: [{ name: 'offset', description: '从零开始的偏移，默认零。' }, { name: 'limit', description: '每页最多 100 条，默认 50。' }, { name: 'filter', description: '与 {@link FileLibrary.list} 相同的过滤条件。' }],
+        returns: '合并视图的一页、总数和可选后续偏移。',
+      },
+      {
+        signature: 'async read(id: string): Promise<{ record: ManagedFileRecord; data: Uint8Array } | undefined>',
+        description: '按文件库 ID 读取已登记的本地字节；绝对路径永远不离开 Host。未登记 id 落到无目录笔记的实时记录。',
+        parameters: [{ name: 'id', description: '文件库或实时笔记的标识。' }],
+        returns: '记录与字节；标识不存在或文件不再安全时为 undefined。',
+      },
+      {
+        signature: 'notesRootPath(): string',
+        description: '笔记根目录的绝对路径；只供 Host 侧会话工作目录使用，不进入浏览器响应。',
+        parameters: [],
+        returns: '笔记根目录绝对路径。',
+      },
+      {
+        signature: 'async notesTree(): Promise<NotesTreeNode[]>',
+        description: '扫描笔记根目录返回目录树：全部目录、Markdown 与真实普通 `.pptx` 文件，符号链接条目不进入树。 深度与节点总数超限视为结构异常，整棵树拒绝。',
+        parameters: [],
+        returns: '根级条目数组；子节点按名称排序。',
+      },
+      {
+        signature: 'async readNote(relativePath: string): Promise<{ path: string; content: string; mtimeMs: number }>',
+        description: '读取笔记原文与其修改时间；保存冲突检测的基准时间由此取得。',
+        parameters: [{ name: 'relativePath', description: '相对笔记根目录的路径。' }],
+        returns: '规范化路径、全文与毫秒修改时间。',
+      },
+      {
+        signature: 'async saveNote(relativePath: string, content: string, baseMtimeMs?: number): Promise<{ path: string; mtimeMs: number }>',
+        description: '写入笔记；没有修改时间基准时按需创建中间目录，写入经临时文件原子改名并同步目录。 传入 `baseMtimeMs` 时目标文件与父目录必须仍存在，外部修改或删除都拒绝覆盖。',
+        parameters: [{ name: 'relativePath', description: '相对笔记根目录的路径，必须使用 Markdown 扩展名。' }, { name: 'content', description: '笔记全文。' }, { name: 'baseMtimeMs', description: '读取时的修改时间（可选）。' }],
+        returns: '规范化路径与写入后的修改时间。',
+      },
+      {
+        signature: 'async createNote(name: string, directory: string = \'\'): Promise<{ path: string }>',
+        description: '在指定笔记目录创建空笔记；名称按文件库规则净化，缺省扩展名补 `.md`，同名已存在时拒绝。',
+        parameters: [{ name: 'name', description: '用户提交的文件名。' }, { name: 'directory', description: '相对笔记根目录的父目录，空字符串表示根目录。' }],
+        returns: '相对笔记根目录的路径。',
+      },
+      {
+        signature: 'async createNotePptx(name: string, directory: string = \'\', data: Uint8Array): Promise<{ path: string; remove: () => Promise<void> }>',
+        description: '在笔记树中独占落盘已由 PPT 服务准入的源文件；这是只供 Host 调用的 PPT 服务 seam。 名称缺少扩展名时补 `.pptx`，显式扩展名必须是 `.pptx`；文件与父目录同步后才返回。',
+        parameters: [{ name: 'name', description: '按文件库规则净化的安全文件名。' }, { name: 'directory', description: '相对笔记根目录的真实私有父目录，空字符串表示根目录。' }, { name: 'data', description: '非空且不超过 8 MiB 的 PPTX 字节。' }],
+        returns: '相对笔记根目录的路径，以及只删除本次独占文件的清理句柄。',
+        throws: ['TypeError 名称、父目录或数据不安全，目标已存在，或数据大小不在允许范围内。'],
+      },
+      {
+        signature: 'async createNoteDirectory(name: string, parent: string = \'\'): Promise<{ path: string }>',
+        description: '在指定笔记目录创建子目录；只接受单个目录名，拒绝覆盖现有条目。',
+        parameters: [{ name: 'name', description: '用户提交的目录名。' }, { name: 'parent', description: '相对笔记根目录的父目录，空字符串表示根目录。' }],
+        returns: '相对笔记根目录的新目录路径。',
+      },
+      {
+        signature: 'async renameNote(relativePath: string, name: string): Promise<{ path: string }>',
+        description: '在原文件或目录的同一父目录内安全改名；文件保留原扩展名，不覆盖已有条目。',
+        parameters: [{ name: 'relativePath', description: '要改名的 Markdown、PPTX 或目录路径。' }, { name: 'name', description: '新的单段名称；文件可省略扩展名，但不能指定其他扩展名。' }],
+        returns: '改名后的相对路径。',
+      },
+      {
+        signature: 'async deleteNote(relativePath: string): Promise<void>',
+        description: '删除单个 Markdown、PPTX 文件或整个目录；拒绝将符号链接作为目标，目录中的链接只移除链接本身。',
+        parameters: [{ name: 'relativePath', description: '要删除的文件或目录路径。' }],
+        returns: '删除完成后兑现；目标不存在或路径越界时拒绝。',
+      },
+      {
+        signature: 'async noteRecords(): Promise<ManagedFileRecord[]>',
+        description: '无目录笔记的实时记录：笔记根目录直属的 Markdown 文件（不含子目录条目）， 已被领域表登记的同名相对路径不重复出现。',
+        parameters: [],
+        returns: '按修改时间表达创建时间的记录数组。',
       },
       {
         signature: 'async getUpload(path: string): Promise<ManagedFileRecord | undefined>',
@@ -901,6 +986,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Return target metadata, or `undefined` when the target does not exist.',
         parameters: [{ name: 'target', description: 'the resolved target to stat.' }, { name: 'signal', description: 'aborts the metadata round-trip.' }],
         returns: 'metadata only, never content; undefined for an absent target.',
+      },
+      {
+        signature: 'statMetadata(target: FsTarget, signal?: AbortSignal): Promise<FsInfo | undefined>',
+        description: '只读探测：返回元数据，但版本不保证能通过条件写守卫。\n\n远端 basic 实现把内容绑进版本，因此 `stat` 会读取整份文件；只想确认“存在与大小” 的调用方用这个方法，远端就不必为一次探测传输内容。默认实现与 stat 相同。',
+        parameters: [{ name: 'target', description: '已解析的目标。' }, { name: 'signal', description: '取消元数据往返。' }],
+        returns: '元数据；目标不存在时 `undefined`。',
       },
       {
         signature: 'abstract lstat(path: string, opts?: { cwd?: string }, signal?: AbortSignal): Promise<FsPathInfo | undefined>',
@@ -1372,6 +1463,13 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         throws: ['目标文件不存在、未唯一命中或越过任一限额时抛出，诊断里带上实际数值。'],
       },
       {
+        signature: 'async compact( project: MemoryProject, request: MemoryCompactRequest, ): Promise<{ summary: MemoryFileSummary; previousBytes: number }>',
+        description: '整理一个记忆文件：用调用方重写好的全文替换现有内容。\n\n只在变短时接受，因此整理不会变成绕过追加限额的写入通道；结果仍须落在单文件与 每项目总量限额内。整理后的内容保持「标题行 + `- ` 条目」的形状，后续 update 与 save 才能在同一个文件上继续工作。',
+        parameters: [{ name: 'project', description: '项目身份。' }, { name: 'request', description: '整理后的全文与目标文件。' }],
+        returns: '写入后的文件元数据与整理前的字节数。',
+        throws: ['文件不存在、内容为空、形状不合、没有变短或越过限额时抛出。'],
+      },
+      {
         signature: 'async remove(project: MemoryProject, name: string, section?: string): Promise<boolean>',
         description: '删除整个记忆文件，或只删除其中一个小节。',
         parameters: [{ name: 'project', description: '项目身份。' }, { name: 'name', description: '记忆文件名。' }, { name: 'section', description: '省略时删除整个文件。' }],
@@ -1516,7 +1614,20 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: '工程快照。',
       },
       {
-        signature: 'read(sessionId: string, dir?: string): Promise<PptSnapshot>',
+        signature: 'async openSource(sessionId: string, relativePath: string): Promise<PptSnapshot>',
+        description: '将工作区内的真实 .pptx 导入为可编辑工程，并将后续编辑绑定回原文件。',
+        parameters: [{ name: 'sessionId', description: '会话身份。' }, { name: 'relativePath', description: '当前会话工作区内的相对 `.pptx` 路径。' }],
+        returns: '新建的可编辑工程快照。',
+      },
+      {
+        signature: 'async createNoteSource(sessionId: string, options: { name: string directory?: string }): Promise<{ source: string }>',
+        description: '在笔记目录创建一个可由工作台打开的初始 PPTX 源文件。\n\n只有工作目录正好是文件库笔记根目录的本机会话可以调用；工程绑定与会话焦点 仍由随后唯一一次 `openSource` 完成，避免一次创建产生两份工程或重复打开事件。',
+        parameters: [{ name: 'sessionId', description: '会话身份。' }, { name: 'options', description: '文件名与笔记根目录下的父目录。' }],
+        returns: '文件库返回的笔记根目录相对来源路径。',
+        throws: ['PptStoreError 会话不是本机笔记会话、文件库不可用或输入不安全时。'],
+      },
+      {
+        signature: 'async read(sessionId: string, dir?: string): Promise<PptSnapshot>',
         description: '读取工程。',
         parameters: [{ name: 'sessionId', description: '会话身份。' }, { name: 'dir', description: '相对或绝对目录；缺省为当前工程。' }],
         returns: '工程快照。',
@@ -1540,7 +1651,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: '重做后的快照。',
       },
       {
-        signature: 'async exportPdf(sessionId: string, dir?: string): Promise<{ path: string; bytes: number; revision: number }>',
+        signature: 'async exportPdf(sessionId: string, dir?: string): Promise<{ path: string; bytes: number; revision: number; fileId?: string }>',
         description: '把工程导出成 PDF：先渲染每页 PNG（会同时在 Agent 浏览器里打开），再拼成 PDF。',
         parameters: [{ name: 'sessionId', description: '会话身份。' }, { name: 'dir', description: '工程目录；缺省为当前工程。' }],
         returns: '导出文件路径与大小。',
@@ -4459,6 +4570,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface ManualCompactAgentContext extends CompactionAgentContext {\n    runMaintenance<T>(task: (signal: AbortSignal) => Promise<T>): Promise<T>;\n}',
   },
   {
+    name: 'MemoryCompactRequest',
+    declaration: 'export interface MemoryCompactRequest {\n    content: string;\n    file?: string;\n}',
+  },
+  {
     name: 'MemoryExcerpt',
     declaration: 'export interface MemoryExcerpt {\n    text: string;\n    files: string[];\n    omitted: string[];\n    truncated: boolean;\n}',
   },
@@ -4587,6 +4702,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface ModelModalityMap {\n    text: \'text\';\n    image: \'image\';\n}',
   },
   {
+    name: 'NotesTreeNode',
+    declaration: 'export interface NotesTreeNode {\n    name: string;\n    kind: \'dir\' | \'file\';\n    path: string;\n    mtimeMs: number;\n    children?: NotesTreeNode[] | undefined;\n}',
+  },
+  {
     name: 'ObjectJsonSchema',
     declaration: 'export type ObjectJsonSchema = JsonSchemaNode & {\n    type: \'object\';\n};',
   },
@@ -4632,7 +4751,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'PptExportResult',
-    declaration: 'export interface PptExportResult {\n    readonly path: string;\n    readonly bytes: number;\n    readonly revision: number;\n    readonly fonts: readonly {\n        readonly family: string;\n        readonly readonly: boolean;\n        readonly subset: boolean;\n    }[];\n    readonly skippedFonts: readonly SkippedFont[];\n}',
+    declaration: 'export interface PptExportResult {\n    readonly path: string;\n    readonly bytes: number;\n    readonly revision: number;\n    readonly fonts: readonly {\n        readonly family: string;\n        readonly readonly: boolean;\n        readonly subset: boolean;\n    }[];\n    readonly skippedFonts: readonly SkippedFont[];\n    readonly fileId?: string;\n}',
   },
   {
     name: 'PptImageElement',
@@ -5360,7 +5479,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SkillSummary',
-    declaration: 'export interface SkillSummary {\n    readonly name: string;\n    readonly description: string;\n    readonly whenToUse?: string;\n    readonly invocation: SkillInvocationPolicy;\n    readonly source: SkillSource;\n    readonly provider: string;\n    readonly resourceBase?: SkillResourceBase;\n}',
+    declaration: 'export interface SkillSummary {\n    readonly name: string;\n    readonly description: string;\n    readonly whenToUse?: string;\n    readonly invocation: SkillInvocationPolicy;\n    readonly source: SkillSource;\n    readonly provider: string;\n    readonly resourceBase?: SkillResourceBase;\n    readonly order?: number;\n}',
   },
   {
     name: 'SkillViewOptions',

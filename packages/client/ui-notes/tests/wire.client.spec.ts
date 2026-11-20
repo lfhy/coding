@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { assertNotePath, notesCreate, notesCreateDirectory, notesCwd, notesDelete, notesRead, notesRename, notesSave, notesTree, NoteConflictError } from '../src/client/wire.ts'
+import { assertNotePath, notesCreate, notesCreateDirectory, notesCreateSlide, notesCwd, notesDelete, notesRead, notesRename, notesSave, notesTree, NoteConflictError } from '../src/client/wire.ts'
 
 const treeBody = {
   children: [
@@ -61,6 +61,36 @@ describe('notes wire', () => {
     await expect(notesCreate('a.md')).rejects.toThrow('notes create HTTP 409')
     stubFetch(() => Response.json({ path: 'ok.md' }))
     await expect(notesCreate('a/../../b.md')).resolves.toEqual({ path: 'ok.md' })
+  })
+
+  it('新建幻灯片只接受 notes 相对的 pptx 路径', async () => {
+    stubFetch((url, init) => {
+      expect(url).toBe('/api/ppt/notes/create')
+      expect(init?.method).toBe('POST')
+      expect(requestJson(init)).toEqual({ sessionId: 's-notes', name: '演示', directory: '项目' })
+      return Response.json({ ok: true, source: '项目/演示.pptx' })
+    })
+    await expect(notesCreateSlide('s-notes', '演示', '项目')).resolves.toEqual({ path: '项目/演示.pptx' })
+
+    stubFetch(() => Response.json({ ok: true, source: '../演示.pptx' }))
+    await expect(notesCreateSlide('s-notes', '演示')).rejects.toThrow('Invalid note path')
+    stubFetch(() => Response.json({ ok: true, source: '演示.md' }))
+    await expect(notesCreateSlide('s-notes', '演示')).rejects.toThrow('Invalid note slide payload')
+    stubFetch(() => Response.json({ ok: true }))
+    await expect(notesCreateSlide('s-notes', '演示')).rejects.toThrow('Invalid note slide payload')
+    stubFetch(() => new Response('exists', { status: 409 }))
+    await expect(notesCreateSlide('s-notes', '演示')).rejects.toThrow('notes slide create HTTP 409')
+    stubFetch((_, init) => {
+      expect(requestJson(init)).toEqual({ sessionId: 's-notes', name: 'a/演示' })
+      return Response.json({ ok: true, source: '演示.pptx' })
+    })
+    await expect(notesCreateSlide('s-notes', 'a/演示')).resolves.toEqual({ path: '演示.pptx' })
+    stubFetch(() => {
+      throw new Error('请求不应发出')
+    })
+    await expect(notesCreateSlide('', '演示')).rejects.toThrow('Invalid notes session')
+    await expect(notesCreateSlide('s-notes', 7 as unknown as string)).rejects.toThrow('Invalid note name')
+    await expect(notesCreateSlide('s-notes', '演示', '../项目')).rejects.toThrow('Invalid note path')
   })
 
   it('创建目录并校验返回路径', async () => {

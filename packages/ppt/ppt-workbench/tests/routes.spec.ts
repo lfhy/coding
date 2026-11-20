@@ -1,7 +1,7 @@
 import { Context } from '@deepseek-ai/cordis'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
@@ -17,6 +17,23 @@ const SESSION = 'ppt-route-session'
 let ctx: Context | undefined
 let root: string | undefined
 
+function noteLibrary(notesRoot: string): object {
+  return {
+    notesRootPath: () => notesRoot,
+    createNotePptx: async (name: string, directory: string, bytes: Uint8Array) => {
+      const fileName = name.toLowerCase().endsWith('.pptx') ? name : `${name}.pptx`
+      const rootPath = resolve(notesRoot)
+      const target = resolve(rootPath, directory, fileName)
+      if (target !== rootPath && !target.startsWith(`${rootPath}/`)) throw new TypeError('笔记路径无效')
+      await mkdir(dirname(target), { recursive: true })
+      try { await writeFile(target, bytes, { flag: 'wx' }) }
+      catch (error) { if ((error as NodeJS.ErrnoException).code === 'EEXIST') throw new TypeError('笔记已存在'); throw error }
+      return { path: directory === '' ? fileName : `${directory}/${fileName}` }
+    },
+    deleteNote: async (path: string) => { await rm(resolve(notesRoot, path), { force: true }) },
+  }
+}
+
 afterEach(async () => {
   await ctx?.fiber.dispose()
   ctx = undefined
@@ -31,6 +48,7 @@ async function boot(): Promise<{ base: string; projects: PptProjects }> {
   ctx.baseUrl = pathToFileURL(root).href + '/'
   await ctx.plugin(SessionStore)
   ctx.sessions.create(SessionId(SESSION), { meta: { cwd: root } })
+  ctx.provide('fileLibrary', noteLibrary(root) as never)
   await ctx.plugin(Loader)
   ctx.loader.builtins.include = Include
   ctx.loader.internal = { version: 'v2', async import(specifier: string) {
@@ -62,6 +80,23 @@ async function state(base: string, sessionId = SESSION, init?: RequestInit): Pro
 }
 
 describe('PPT 状态路由的真实 HTTP 组合', () => {
+  it('笔记源创建校验载荷并返回相对 source', async () => {
+    const { base } = await boot()
+    const post = (body: Record<string, unknown>) => fetch(`${base}/api/ppt/notes/create`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+    })
+    const created = await post({ sessionId: SESSION, name: '笔记演示' })
+    expect(created.status).toBe(200)
+    expect(await created.json()).toEqual({ ok: true, source: '笔记演示.pptx' })
+    const duplicate = await post({ sessionId: SESSION, name: '笔记演示' })
+    expect(duplicate.status).toBe(409)
+    expect(await duplicate.json()).toMatchObject({ ok: false, error: { code: 'conflict' } })
+    const missing = await post({ sessionId: SESSION })
+    expect(missing.status).toBe(400)
+    const escaped = await post({ sessionId: SESSION, name: '越界', directory: '../outside' })
+    expect(escaped.status).toBe(400)
+  })
+
   it('来源打开路由复用面板编辑，并在源文件外部变化时轮询返回冲突', async () => {
     const { base } = await boot()
     const source = join(root!, 'presentation.pptx')
