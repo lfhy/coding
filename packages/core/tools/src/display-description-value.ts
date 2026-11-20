@@ -9,7 +9,7 @@ const DESCRIPTION_TOOLS = new Set([
 
 const STATIC_SUMMARY_TOOLS = new Set([
   'structured_output', 'wait_agent', 'list_agents', 'list_subagent_models', 'ask_user_question', 'report',
-  'memory_list', 'memory_read', 'memory_delete', 'memory_save', 'memory_update',
+  'memory_list', 'memory_read', 'memory_delete', 'memory_save', 'memory_update', 'memory_compact',
   'read', 'write', 'edit', 'read_image', 'grep', 'glob', 'web_search', 'web_fetch',
   'apply_patch', 'str_replace_editor', 'write_stdin', 'send_message', 'followup_task',
   'interrupt_agent', 'job_list', 'job_output', 'job_kill', 'update_plan', 'todo_write', 'set_status',

@@ -15,13 +15,14 @@
 
 `save` 把小节内容作为 Markdown 列表项追加进目标文件，多行内容缩进续行；未指定时写入 `notes.md` 的 `要点` 小节，小节不存在时在文件末尾新建。
 写入前依次检查单条、单文件、每项目总量与文件数四项限额，任何一项越界都抛错并在诊断里带实际数值。
+`compact` 用重写好的全文替换一个文件，只在变短且保持「标题行 + `- ` 条目」形状时接受，结果同样受单文件与每项目总量限额约束：文件长到上限时靠它回到可读长度，而不是靠继续追加或绕过限额。
 `remove` 删除整个文件或一个小节，删掉最后一个小节后只剩标题的文件同样按清空处理并删除；`read` 在超过单文件上限时只返回头部并置 `truncated`。
 `save` 是「读—改—写」，两个会话同时写同一文件时后者覆盖前者：记忆是笔记，不是事务存储，也不是安全边界——同机同用户的进程都读得到，凭据与隐私不写进记忆。
 
 ## 注入与消费
 
 `excerpt` 按最近修改排序渲染有界摘要（默认 4096 字节），每个文件给标题与开头内容，被截断或省略的文件列在返回值里，由消费方提示模型去读全文。
-`memory-context` 把这份摘要注入会话基线；`tool-memory` 提供 `memory_save`、`memory_update`、`memory_read`、`memory_list`、`memory_delete` 五个工具，参数里没有任何路径，目标目录由会话项目根决定。
+`memory-context` 把这份摘要注入会话基线；`tool-memory` 提供 `memory_save`、`memory_update`、`memory_compact`、`memory_read`、`memory_list`、`memory_delete` 六个工具，参数里没有任何路径，目标目录由会话项目根决定。
 
 以下跨包类型声明来自 [`packages/memory/memory/src/index.ts`](../../packages/memory/memory/src/index.ts)。服务方法的完整签名与 JSDoc 由下方 Cordis API 区域生成。
 

@@ -13,6 +13,7 @@ import type { Agent } from 'coding-agent'
 import {
   DEFAULT_MEMORY_FILE,
   DEFAULT_MEMORY_SECTION,
+  type MemoryCompactRequest,
   type MemoryProject,
   type MemorySaveRequest,
   type MemoryUpdateRequest,
@@ -45,7 +46,7 @@ function projectOf(agent: Agent | undefined, projectFor: (cwd: string) => Memory
 }
 
 /**
- * Register the five project-scoped memory tools on `ctx.tools`.
+ * Register the six project-scoped memory tools on `ctx.tools`.
  * @param ctx - registrant context carrying the tool registry and the memory service.
  */
 export function apply(ctx: Context): void {
@@ -56,7 +57,8 @@ export function apply(ctx: Context): void {
     description:
       `Append one entry to this project's memory. ${DESCRIPTION_SHARED} `
       + `Entries land under a the given section (default \`${DEFAULT_MEMORY_SECTION}\`) of the target file `
-      + `(default \`${DEFAULT_MEMORY_FILE}\`). Write one durable point per call, in the language the user writes.`,
+      + `(default \`${DEFAULT_MEMORY_FILE}\`). Write one durable point per call, in the language the user writes. `
+      + 'A file that reached its size limit refuses the entry: consolidate it with memory_compact first.',
     parameters: {
       content: {
         type: 'string',
@@ -155,6 +157,52 @@ export function apply(ctx: Context): void {
       }))
     },
     presentCall: args => ({ card: 'generic', title: 'Update project memory', kind: 'other', rawInput: args.content }),
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'memory_compact',
+    description:
+      'Rewrite one memory file into a shorter version of itself. Read the file first, then pass the whole '
+      + 'consolidated file: merge duplicate points, drop entries that the code or AGENTS.md now document, and '
+      + 'keep the durable conclusions. The result must be shorter than the current file and keep the same shape '
+      + '(heading lines and `- ` entries); use memory_update to correct a single entry. Run it before a file '
+      + 'reaches its size limit, or when memory_save reports the limit.',
+    parameters: {
+      content: {
+        type: 'string',
+        required: true,
+        description: 'The complete new body of the file: headings plus `- ` entries, shorter than the current content.',
+      },
+      file: {
+        type: 'string',
+        description: `Target memory file name ending in .md (default \`${DEFAULT_MEMORY_FILE}\`).`,
+      },
+    },
+    output: {
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          file: { type: 'string', required: true },
+          bytes: { type: 'integer', required: true },
+          previousBytes: { type: 'integer', required: true },
+        },
+      },
+      render: (_args, value) => [{
+        type: 'text',
+        text: `Compacted project memory ${value.file}: ${value.previousBytes} → ${value.bytes} bytes.`,
+      }],
+    },
+    execute(args, exec) {
+      const request: MemoryCompactRequest = { content: args.content }
+      if (args.file !== undefined) request.file = args.file
+      return ctx.memory.compact(projectOf(exec.agent, projectFor), request).then(({ summary, previousBytes }) => ({
+        file: summary.name,
+        bytes: summary.bytes,
+        previousBytes,
+      }))
+    },
+    presentCall: args => ({ card: 'generic', title: 'Compact project memory', kind: 'other', rawInput: args.file ?? DEFAULT_MEMORY_FILE }),
   }))
 
   ctx.tools.register(defineTool({

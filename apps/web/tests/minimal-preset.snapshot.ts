@@ -112,6 +112,7 @@ describe('minimal agent preset', () => {
         "tools": [
           "bash",
           "list_subagent_models",
+          "memory_compact",
           "memory_delete",
           "memory_list",
           "memory_read",

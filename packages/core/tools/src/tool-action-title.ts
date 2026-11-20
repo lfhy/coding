@@ -16,6 +16,7 @@ const ACTION_TITLES: Readonly<Record<string, string>> = {
   memory_read: 'Read memory',
   memory_save: 'Save memory',
   memory_update: 'Update memory',
+  memory_compact: 'Compact memory',
   memory_delete: 'Delete memory',
   list_subagent_models: 'Browse models',
   spawn_agent: 'Delegate task',

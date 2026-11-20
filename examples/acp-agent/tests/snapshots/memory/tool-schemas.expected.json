@@ -240,6 +240,26 @@
       }
     },
     {
+      "name": "memory_compact",
+      "description": "Rewrite one memory file into a shorter version of itself. Read the file first, then pass the whole consolidated file: merge duplicate points, drop entries that the code or AGENTS.md now document, and keep the durable conclusions. The result must be shorter than the current file and keep the same shape (heading lines and `- ` entries); use memory_update to correct a single entry. Run it before a file reaches its size limit, or when memory_save reports the limit.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "content": {
+            "type": "string",
+            "description": "The complete new body of the file: headings plus `- ` entries, shorter than the current content."
+          },
+          "file": {
+            "type": "string",
+            "description": "Target memory file name ending in .md (default `notes.md`)."
+          }
+        },
+        "required": [
+          "content"
+        ]
+      }
+    },
+    {
       "name": "memory_delete",
       "description": "Delete a whole memory file, or just one section of it. Only do this when the user asks to forget something or when an entry is provably obsolete; when in doubt, keep it.",
       "parameters": {
@@ -285,7 +305,7 @@
     },
     {
       "name": "memory_save",
-      "description": "Append one entry to this project's memory. Memory is this project's own notes under the user's data home: it survives sessions, but it is not part of the repository. Save what a later session would need and cannot read from the code: the user's preferences, non-obvious conventions of this repository, pitfalls with their conclusions, and cross-task follow-ups. Never save credentials, secrets, or anything already documented in the code or AGENTS.md. Entries land under a the given section (default `要点`) of the target file (default `notes.md`). Write one durable point per call, in the language the user writes.",
+      "description": "Append one entry to this project's memory. Memory is this project's own notes under the user's data home: it survives sessions, but it is not part of the repository. Save what a later session would need and cannot read from the code: the user's preferences, non-obvious conventions of this repository, pitfalls with their conclusions, and cross-task follow-ups. Never save credentials, secrets, or anything already documented in the code or AGENTS.md. Entries land under a the given section (default `要点`) of the target file (default `notes.md`). Write one durable point per call, in the language the user writes. A file that reached its size limit refuses the entry: consolidate it with memory_compact first.",
       "parameters": {
         "type": "object",
         "properties": {

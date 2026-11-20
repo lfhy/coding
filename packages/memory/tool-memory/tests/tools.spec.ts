@@ -109,6 +109,27 @@ describe('project memory tools', () => {
     }
   })
 
+  it('compacts a memory file through the tool and reports the byte drop', async () => {
+    const live = await mount()
+    const agent = stubAgent(live.project)
+    try {
+      await call(live.ctx, agent, 'memory_save', { content: '第一条要点' })
+      await call(live.ctx, agent, 'memory_save', { content: '第二条要点' })
+
+      const compacted = await call(live.ctx, agent, 'memory_compact', {
+        content: '# repo 记忆\n\n## 要点\n\n- 合并后的一条\n',
+      })
+
+      expect(compacted.isError).toBe(false)
+      expect(compacted.content).toMatchObject([{ type: 'text', text: expect.stringMatching(/^Compacted project memory notes\.md: \d+ → \d+ bytes\.$/) as unknown as string }])
+      const read = await call(live.ctx, agent, 'memory_read', { file: 'notes.md' })
+      expect((read.content[0] as { text: string }).text).toContain('合并后的一条')
+      expect((read.content[0] as { text: string }).text).not.toContain('第二条要点')
+    } finally {
+      await live.ctx.fiber.dispose()
+    }
+  })
+
   it('rejects a caller without an owning session', async () => {
     const live = await mount()
     try {

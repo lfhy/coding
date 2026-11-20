@@ -15,7 +15,7 @@ This table connects model-visible tool names to the plugin package and service s
 
 | Tool package | Model-visible names | Requires | Writes / affects | Shipped aliases | Deployment note |
 | --- | --- | --- | --- | --- | --- |
-| `coding-tool-memory` | `memory_delete`, `memory_list`, `memory_read`, `memory_save`, `memory_update` | `ctx.tools`, `ctx.memory` | `tool/call`, `tool/result for project-scoped memory reads and writes` | - | The five memory tools take no path: the owning session decides which project they read and write, and each call resolves it from the session cwd. |
+| `coding-tool-memory` | `memory_compact`, `memory_delete`, `memory_list`, `memory_read`, `memory_save`, `memory_update` | `ctx.tools`, `ctx.memory` | `tool/call`, `tool/result for project-scoped memory reads and writes` | - | The memory tools take no path: the owning session decides which project they read and write, and each call resolves it from the session cwd. |
 | `coding-tool-ask-user` | `ask_user_question` | `ctx.tools`, `ctx.userQuestions` | `tool/call`, `tool/result after a UI/provider answers the question` | - | ask_user_question pauses the tool call until the active UI provider returns a human answer. |
 | `coding-tool-browser` | `browser_act`, `browser_click`, `browser_close`, `browser_fill`, `browser_navigate`, `browser_screenshot`, `browser_scroll`, `browser_snapshot`, `browser_upload`, `browser_viewport` | `ctx.tools`, `ctx.browserUse`, `ctx.attachments`, `ctx.approval and a calling Agent at execution time` | `tool/call`, `durable attachment on screenshot`, `tool/result` | - | Each operation is bound to the active tab and session revision. Full access with approval prompts disabled proceeds directly; otherwise only allowed-once approval proceeds if that target remains current. A remote workspace is rejected. Only explicit screenshots save a PNG attachment and render an image block. The browser provider owns URL/network policy and session tab lifetime. |
 | `coding-tool-browser-ego` | `browser_auth_flush`, `browser_captcha`, `browser_cdp`, `browser_check`, `browser_cli`, `browser_click`, `browser_dialog`, `browser_doctor`, `browser_download`, `browser_drag`, `browser_fill`, `browser_help`, `browser_hover`, `browser_http`, `browser_js`, `browser_key`, `browser_login_import`, `browser_navigate`, `browser_page_info`, `browser_read_element`, `browser_screenshot`, `browser_script`, `browser_scroll`, `browser_select`, `browser_snapshot`, `browser_space_close`, `browser_space_open`, `browser_status`, `browser_tabs`, `browser_upload`, `browser_wait`, `browser_wait_for_human`, `browser_wait_for_response`, `browser_wait_for_selector`, `browser_wait_for_url` | `ctx.tools`, `ctx.egoBrowser`, `ctx.attachments`, `ctx.approval and a calling Agent at execution time` | `tool/call`, `durable screenshot attachment`, `tool/result` | - | The default Web and desktop browser tools use session-scoped ego-lite pages. The model sees only the Host safe subset under browser_* names; every call checks session sandbox and approval, remote workspaces are denied, and an explicit screenshot persists an image attachment. |
@@ -54,6 +54,31 @@ This table connects model-visible tool names to the plugin package and service s
 <a id="coding-tool-memory"></a>
 
 ## `coding-tool-memory`
+
+### `memory_compact`
+
+Rewrite one memory file into a shorter version of itself. Read the file first, then pass the whole consolidated file: merge duplicate points, drop entries that the code or AGENTS.md now document, and keep the durable conclusions. The result must be shorter than the current file and keep the same shape (heading lines and `- ` entries); use memory_update to correct a single entry. Run it before a file reaches its size limit, or when memory_save reports the limit.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "content": {
+      "type": "string",
+      "description": "The complete new body of the file: headings plus `- ` entries, shorter than the current content."
+    },
+    "file": {
+      "type": "string",
+      "description": "Target memory file name ending in .md (default `notes.md`)."
+    }
+  },
+  "required": [
+    "content"
+  ]
+}
+```
+
+Source: [`packages/memory/tool-memory/src/index.ts`](../packages/memory/tool-memory/src/index.ts)
 
 ### `memory_delete`
 
@@ -116,7 +141,7 @@ Source: [`packages/memory/tool-memory/src/index.ts`](../packages/memory/tool-mem
 
 ### `memory_save`
 
-Append one entry to this project's memory. Memory is this project's own notes under the user's data home: it survives sessions, but it is not part of the repository. Save what a later session would need and cannot read from the code: the user's preferences, non-obvious conventions of this repository, pitfalls with their conclusions, and cross-task follow-ups. Never save credentials, secrets, or anything already documented in the code or AGENTS.md. Entries land under a the given section (default `要点`) of the target file (default `notes.md`). Write one durable point per call, in the language the user writes.
+Append one entry to this project's memory. Memory is this project's own notes under the user's data home: it survives sessions, but it is not part of the repository. Save what a later session would need and cannot read from the code: the user's preferences, non-obvious conventions of this repository, pitfalls with their conclusions, and cross-task follow-ups. Never save credentials, secrets, or anything already documented in the code or AGENTS.md. Entries land under a the given section (default `要点`) of the target file (default `notes.md`). Write one durable point per call, in the language the user writes. A file that reached its size limit refuses the entry: consolidate it with memory_compact first.
 
 ```json
 {
@@ -177,7 +202,7 @@ Replace exactly one existing entry in this project's memory. Use it when an entr
 
 Source: [`packages/memory/tool-memory/src/index.ts`](../packages/memory/tool-memory/src/index.ts)
 
-The five memory tools take no path: the owning session decides which project they read and write, and each call resolves it from the session cwd.
+The memory tools take no path: the owning session decides which project they read and write, and each call resolves it from the session cwd.
 
 <a id="coding-tool-ask-user"></a>
 
