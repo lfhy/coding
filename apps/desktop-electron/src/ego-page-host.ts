@@ -6,8 +6,8 @@
  * 点击与截图；呈现时把同一个视图移进应用窗口，不再经过截图或视频流。
  */
 import { randomUUID } from 'node:crypto'
-import { mkdirSync } from 'node:fs'
-import { join } from 'node:path'
+import { existsSync, mkdirSync } from 'node:fs'
+import { basename, extname, join } from 'node:path'
 import { app, session, WebContentsView, type BrowserWindow, type Session } from 'electron'
 import { createBackgroundStage } from './browser-guest-stage.ts'
 import type { EgoHostedPage, EgoPageHost } from './ego-cdp-broker.ts'
@@ -46,7 +46,8 @@ export type EgoDownloadEvent =
     state: 'inProgress' | 'completed' | 'canceled'
   }
 
-const DEFAULT_DOWNLOAD_DIR = 'coding-ego-downloads'
+/** 运行时没有指定目录时，页面自己触发的下载落到系统下载目录。 */
+const DEFAULT_DOWNLOAD_SUBDIR = ''
 
 /** 页面宿主对外能力：broker 面向的接口加呈现控制。 */
 export interface EgoPageHostHandle extends EgoPageHost {
@@ -103,7 +104,6 @@ export function createEgoPageHost(options: { window: () => BrowserWindow | undef
   /** 每个上下文的下载决定；未登记的上下文按允许落到应用临时目录处理。 */
   const downloads = new Map<string, EgoDownloadSettings>()
   const downloadListeners = new Set<(event: EgoDownloadEvent) => void>()
-  let downloadRoot: string | undefined
   let presented: { targetId: string; bounds: EgoPresentation['bounds'] } | undefined
   let disposed = false
 
@@ -115,12 +115,27 @@ export function createEgoPageHost(options: { window: () => BrowserWindow | undef
     return partition
   }
 
-  /** 下载落点：ego 给的目录优先，否则用应用临时目录，绝不让系统弹保存框。 */
+  /** 下载落点：ego 给的目录优先，否则用系统下载目录，绝不让系统弹保存框。 */
   function downloadDirectory(contextId: string): string {
     const settings = downloads.get(contextId)
     if (settings?.downloadPath !== undefined && settings.downloadPath.length > 0) return settings.downloadPath
-    downloadRoot ??= join(app.getPath('temp'), DEFAULT_DOWNLOAD_DIR)
-    return downloadRoot
+    return join(app.getPath('downloads'), DEFAULT_DOWNLOAD_SUBDIR)
+  }
+
+  /**
+   * 运行时的下载路径由它自己按 suggestedFilename 拼出来，因此指定目录时不得改名；
+   * 只有落到系统下载目录（页面自己触发）时才避开已存在的同名文件。
+   */
+  function uniqueDownloadPath(directory: string, filename: string): string {
+    const candidate = join(directory, filename)
+    if (!existsSync(candidate)) return candidate
+    const extension = extname(filename)
+    const stem = extension === '' ? filename : filename.slice(0, -extension.length)
+    for (let index = 1; index < 1000; index += 1) {
+      const next = join(directory, `${stem} (${index})${extension}`)
+      if (!existsSync(next)) return next
+    }
+    return join(directory, `${stem}-${randomUUID()}${extension}`)
   }
 
   /**
@@ -143,11 +158,15 @@ export function createEgoPageHost(options: { window: () => BrowserWindow | undef
         const filename = item.getFilename()
         const directory = downloadDirectory(contextId)
         try { mkdirSync(directory, { recursive: true }) } catch { /* 目录不可用时仍让 Chromium 自己决定落点。 */ }
-        item.setSavePath(join(directory, filename))
+        const explicit = downloads.get(contextId)?.downloadPath
+        const target = explicit !== undefined && explicit.length > 0
+          ? join(directory, filename) : uniqueDownloadPath(directory, filename)
+        item.setSavePath(target)
         const notify = (payload: EgoDownloadEvent): void => {
           for (const listener of [...downloadListeners]) listener(payload)
         }
-        notify({ kind: 'begin', contextId, guid, url: item.getURL(), filename })
+        // 事件里的文件名必须是真实落盘名：运行时按它拼 download.path()。
+        notify({ kind: 'begin', contextId, guid, url: item.getURL(), filename: basename(target) })
         // `updated` 只会带 progressing／interrupted，两者分别映射为下载中与已中断。
         item.on('updated', (_event, state) => {
           notify({ kind: 'progress', contextId, guid, receivedBytes: item.getReceivedBytes(),

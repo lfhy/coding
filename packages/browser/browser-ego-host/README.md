@@ -4,7 +4,7 @@
 
 ## 当前能力
 
-上游 v0.9.7 的 35 个工具全部移植：`status`、`auth_flush`、`login_import`、`space_open`、`space_close`、`snapshot`、`navigate`、`click`、`fill`、`js`、`cdp`、`screenshot`、`page_info`、`tabs`（列出/打开/切换/关闭）、`wait`、`wait_for_selector`、`wait_for_url`、`wait_for_response`、`key`、`hover`、`read_element`、`select`、`drag`、`scroll`、`upload`、`download`、`check`、`dialog`、`http`、`cli`、`captcha`、`wait_for_human`、`help`、`doctor`、`script`。消费方统一以 `browser_*` 注册，参数形状与上游 schema 一致；审批、远程工作区的本机文件边界与结果上限由消费方执行。Host 将省略的 `space`、空字符串与 `default` 都视为当前会话空间，并将 `space_open`／`space_close` 的 `name: "default"` 映射到本会话；显式指定其他空间仍拒绝，不能用空值绕过隔离。`cli`／`script` 执行前先进入当前会话空间，页面才会出现在该会话工作台。默认每个会话独立任务空间（上游 `sessionScopedSpaces`），浏览器 Profile 持久保存在用户目录，跨会话共享登录态但页面/标签隔离。
+上游 v0.9.7 的 35 个工具全部移植：`status`、`auth_flush`、`login_import`、`space_open`、`space_close`、`snapshot`、`navigate`、`click`、`fill`、`js`、`cdp`、`screenshot`、`page_info`、`tabs`（列出/打开/切换/关闭）、`wait`、`wait_for_selector`、`wait_for_url`、`wait_for_response`、`key`、`hover`、`read_element`、`select`、`drag`、`scroll`、`upload`、`download`、`check`、`dialog`、`http`、`cli`、`captcha`、`wait_for_human`、`help`、`doctor`、`script`。消费方统一以 `browser_*` 注册，参数形状与上游 schema 一致；审批、远程工作区的本机文件边界与结果上限由消费方执行。Host 将省略的 `space`、空字符串与 `default` 都视为当前会话空间，并将 `space_open`／`space_close` 的 `name: "default"` 映射到本会话；显式指定其他空间仍拒绝，不能用空值绕过隔离。`cli`／`script` 执行前先进入当前会话空间，页面才会出现在该会话工作台。默认每个会话独立任务空间（上游 `sessionScopedSpaces`），浏览器 Profile 持久保存在用户目录，跨会话共享登录态但页面/标签隔离。桌面壳承载页面时（进程环境里有 `EGO_LINUX_CDP_URL`）不再为任务空间开独立 cookie jar：页面落在桌面壳的持久分区里，新登录跨会话与重启保留，空间之间只有页面级隔离。
 
 宿主的 `third-party/upstream/src/` 是上游 Host 源码，构建产物 `third-party/upstream/lib/index.js` 才是运行时入口；`apply()` 收集全部工具定义并由本包暴露，同时注册上游观察窗路由。上游 `/api/ego/*` 与 `/ego/api/*` 统一经过本项目 `connection.requestRejection` 与回环同源栅栏；`spaces`、`stream`、`frame`、`input`、`navigation`、`close`、`status`、`history` 使用本项目按会话过滤的实现，其余上游路由（设置网关、登录导入、watch、video 等）在通过同一栅栏后可用。
 
@@ -12,7 +12,7 @@
 
 `POST /api/ego/navigation` 接受 JSON `{sessionId,targetId?,action,url?}`，`action` 仅为 `navigate`、`reload`、`back`、`forward`；`navigate` 必须带绝对无凭据 HTTP(S) 或严格本地 `file:///` URL，其他动作不得带 URL。Host 拒绝多余字段与跨会话 target，确认目标仍存在并清洗转发到 worker 封闭的 `POST /api/navigation`；worker 对已有 target 分别执行 CDP `Page.navigate`、`Page.reload`、`Page.getNavigationHistory` + `Page.navigateToHistoryEntry`，无历史项或 CDP 失败返回 `ok:false`，不调用模型工具。仅在该会话没有登记页面且没有提供 `targetId` 的 `navigate` 请求中，Host 用 ego-lite CLI 的 `taskSpaces.useOrCreate`/`ego.createTab` 在本会话空间创建页面，再复核目标归属；CLI 脚本以 `page` 为预置变量，Host 的局部变量不得与其同名。其他缺少目标的请求均拒绝。人工操作不写入模型输入或其他会话。
 
-浏览器 Profile/状态由 ego-lite 在用户目录保存，不在 Coding 项目根：Unix/macOS 默认分别为 `~/.local/share/ego-lite-linux/profile` 与 `~/.local/state/ego-lite-linux/`，Windows 默认 `%LOCALAPPDATA%/ego-lite-linux/`；可使用 `XDG_DATA_HOME`、`XDG_STATE_HOME`、`EGO_LINUX_STATE_DIR` 与 `EGO_LINUX_PROFILE` 设置实际位置。这些目录可能含网站登录态、浏览记录和空间 target 信息，**不要提交或分享**。Host 强制 `EGO_ISOLATE_SPACES=1`，每个任务空间使用独立 Chromium context；context 创建失败会拒绝运行而不是降级共用页面。运行时依赖本机已经安装的浏览器，不下载浏览器或 FFmpeg。临时目录中隔离的真机 Edge 测试不会触碰默认 Profile。
+浏览器 Profile/状态由 ego-lite 在用户目录保存，不在 Coding 项目根：Unix/macOS 默认分别为 `~/.local/share/ego-lite-linux/profile` 与 `~/.local/state/ego-lite-linux/`，Windows 默认 `%LOCALAPPDATA%/ego-lite-linux/`；可使用 `XDG_DATA_HOME`、`XDG_STATE_HOME`、`EGO_LINUX_STATE_DIR` 与 `EGO_LINUX_PROFILE` 设置实际位置。这些目录可能含网站登录态、浏览记录和空间 target 信息，**不要提交或分享**。Web/CLI 下 Host 强制 `EGO_ISOLATE_SPACES=1`，每个任务空间使用独立 Chromium context；context 创建失败会拒绝运行而不是降级共用页面。桌面壳承载页面时改为共用它的持久分区，目的是让用户新登录的账号在重启后仍然有效。运行时依赖本机已经安装的浏览器，不下载浏览器或 FFmpeg。临时目录中隔离的真机 Edge 测试不会触碰默认 Profile。
 
 ## 运行位置与交互细节
 

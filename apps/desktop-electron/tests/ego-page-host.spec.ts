@@ -72,7 +72,7 @@ const electron = vi.hoisted(() => {
     electron: {
       WebContentsView,
       BaseWindow,
-      app: { getPath: vi.fn(() => '/tmp/coding-ego-host-test') },
+      app: { getPath: vi.fn((name: string) => `/tmp/coding-ego-host-test/${name}`) },
       session: {
         fromPartition: vi.fn((partition: string) => {
           const existing = partitions.get(partition)
@@ -240,12 +240,18 @@ describe('桌面 Agent 页面宿主', () => {
     const prevented = { preventDefault: vi.fn() }
     handler!(prevented, item)
     expect(prevented.preventDefault).not.toHaveBeenCalled()
-    expect(item.setSavePath).toHaveBeenCalledWith('/tmp/coding-ego-host-test/coding-ego-downloads/报告.zip')
+    // 运行时没有指定目录：落到系统下载目录，文件名保持原样。
+    expect(item.setSavePath).toHaveBeenCalledWith('/tmp/coding-ego-host-test/downloads/报告.zip')
     expect(events[0]).toMatchObject({ kind: 'begin', filename: '报告.zip', url: 'https://example.test/报告.zip' })
     const updated = item.on.mock.calls.find(call => call[0] === 'updated')?.[1] as
       (event: unknown, state: string) => void
     updated({}, 'interrupted')
     expect(events.at(-1)).toMatchObject({ kind: 'progress', state: 'canceled', receivedBytes: 1, totalBytes: 2 })
+    host.setDownloadBehavior(host.defaultContext(), { behavior: 'allow', downloadPath: '/tmp/coding-ego-runtime' })
+    item.setSavePath.mockClear()
+    handler!(prevented, item)
+    // 运行时自己拼 download.path()，所以指定目录时必须严格用它的文件名。
+    expect(item.setSavePath).toHaveBeenCalledWith('/tmp/coding-ego-runtime/报告.zip')
     host.setDownloadBehavior(host.defaultContext(), { behavior: 'deny' })
     handler!(prevented, item)
     expect(prevented.preventDefault).toHaveBeenCalledTimes(1)

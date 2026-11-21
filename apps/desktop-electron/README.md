@@ -36,7 +36,9 @@ helper 的启动取消、协议失败和 fallback 关闭都保留 12 秒清理�
 
 [Agent 浏览器面板](../../packages/client/ui-browser-ego/README.md)在桌面端不再显示帧流：面板把内容区矩形经 preload 的 `egoBrowser.present` 交给主进程（`coding:ego-present`，只接受 Host 主 frame、回环 origin 与窗口内整数矩形），由主进程把同一个视图移进窗口，鼠标、键盘、滚动与人机验证都在真实页面上进行；隐藏面板、切换标签或换页时撤回呈现，页面本身继续由 Host 使用。preload 除该呈现方法与受限 Remote-SSH 外不暴露其它能力，页面内容、输入与命令都走 Host 侧通道。
 
-下载走运行时原本的通道：端点把 `Browser.setDownloadBehavior`（以及旧版 `Page.setDownloadBehavior` 回退）记到页面宿主，页面发起的下载直接保存到运行时的临时目录，不弹系统保存框；开始与进度被翻译成 `Page.downloadWillBegin`、`Page.downloadProgress`，因此 `ego_download`／`page.waitForEvent('download')` 照常拿到文件路径。没有运行时指定目录时落到应用临时目录下的 `coding-ego-downloads`；只有运行时明确要求 `deny` 时才阻止下载。
+登录态由 Electron 的持久分区保存：桌面端共用一个 `persist:ego-default` 分区，登录一次之后跨任务空间、跨重启都保留，不需要导入旧 ego Profile 的 Cookie。任务空间仍各自持有页面，只是不再开独立 cookie jar；Web/CLI 保持按空间隔离。
+
+下载走运行时原本的通道：端点把 `Browser.setDownloadBehavior`（以及旧版 `Page.setDownloadBehavior` 回退）记到页面宿主，页面发起的下载直接保存到运行时的临时目录，不弹系统保存框；开始与进度被翻译成 `Page.downloadWillBegin`、`Page.downloadProgress`，因此 `ego_download`／`page.waitForEvent('download')` 照常拿到文件路径。没有运行时指定目录时（页面自己触发的下载）落到系统下载目录，重名文件加 `(1)` 之类的后缀；只有运行时明确要求 `deny` 时才阻止下载。
 
 Web 与 CLI 不受影响：没有这个端点时运行时照旧启动本机 Edge、Chrome 或 Chromium，面板按会话订阅画面。桌面端当前不使用镜像帧流，因此采集与视频相关设置只在 Web/CLI 生效。
 

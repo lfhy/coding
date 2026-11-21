@@ -50,7 +50,9 @@ async function fixture() {
   let screenshotFails = false
   ctx = new Context()
   ctx.provide('sessions', { get: (id: string) => [first, second].includes(SessionId(id)) ? { id } : undefined } as never)
+  const spawnEnvironments: NodeJS.ProcessEnv[] = []
   ctx.provide('subprocess', { spawn: (spec: SubprocessSpawnSpec) => {
+    spawnEnvironments.push(spec.env)
     let stdout = ''
     const script = typeof spec.stdio.stdin === 'string' ? '' : spec.stdio.stdin.data
     const done = (async () => {
@@ -91,10 +93,30 @@ async function fixture() {
     return { done, collected: { stdout: { readFrom: () => ({ text: stdout }) } } }
   } } as never)
   await ctx.plugin(EgoBrowserHost).await()
-  return { first, second, navigations, screenshots, spaces, cursorStyles,
+  return { first, second, navigations, screenshots, spaces, cursorStyles, spawnEnvironments,
     setLoadSucceeds: (value: boolean) => { loadSucceeds = value },
     setScreenshotFails: (value: boolean) => { screenshotFails = value } }
 }
+
+describe('任务空间隔离开关', () => {
+  it('桌面壳承载页面时不覆盖隔离开关，登录态留在持久 Profile 里', async () => {
+    const { spawnEnvironments } = await fixture()
+    const host = (ctx as Context & { egoBrowser: EgoBrowserHost }).egoBrowser
+    const previous = process.env.EGO_LINUX_CDP_URL
+    try {
+      delete process.env.EGO_LINUX_CDP_URL
+      await host.createSessionPage(SessionId('capture-session-one'), 'about:blank').catch(() => false)
+      expect(spawnEnvironments.at(-1)?.EGO_ISOLATE_SPACES).toBe('1')
+      process.env.EGO_LINUX_CDP_URL = 'ws://127.0.0.1:9/token'
+      await host.createSessionPage(SessionId('capture-session-one'), 'about:blank').catch(() => false)
+      // 桌面端沿用上游按配置算出的关闭值（'0' 与未设置等价），不再强制隔离。
+      expect(spawnEnvironments.at(-1)?.EGO_ISOLATE_SPACES).not.toBe('1')
+    } finally {
+      if (previous === undefined) delete process.env.EGO_LINUX_CDP_URL
+      else process.env.EGO_LINUX_CDP_URL = previous
+    }
+  })
+})
 
 describe('会话页面截图', () => {
   it('同一路径覆盖后导航到新文档、复用本会话标签并正确编码文件路径', async () => {

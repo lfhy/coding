@@ -103,6 +103,27 @@ export default class EgoBrowserHost extends Service {
   toolDefinitions(): readonly ToolDefinition[] { return this.definitions }
 
   /**
+   * 是否给任务空间开独立的 cookie jar。
+   *
+   * 桌面壳把 Agent 页面放进自己的 `persist:` 分区（环境里带着 `EGO_LINUX_CDP_URL` 就
+   * 是这种运行方式），用户要求登录一次之后跨会话、跨重启都保留，所以那里只做页面级
+   * 隔离：各任务空间仍各自持有 target，但共用一个持久 Profile。Web 与 CLI 继续按
+   * 任务空间开独立 context，避免不同会话之间的 Cookie 串扰。
+   */
+  private isolatedSpaces(): boolean {
+    const endpoint = process.env.EGO_LINUX_CDP_URL
+    return endpoint === undefined || endpoint.length === 0
+  }
+
+  /** 浏览器子进程的环境：桌面端不覆盖隔离开关，其它入口维持隔离。 */
+  private spawnEnv(): NodeJS.ProcessEnv {
+    return {
+      ...(this.browserEnv?.() ?? process.env),
+      ...this.isolatedSpaces() ? { EGO_ISOLATE_SPACES: '1' } : {},
+    }
+  }
+
+  /**
    * 把 Agent 浏览器换成真实可见窗口（用户在面板里主动要求时使用）。
    *
    * 默认的无窗口模式无法完成登录扫码或人机验证，因此这一步由用户触发；
@@ -150,7 +171,7 @@ export default class EgoBrowserHost extends Service {
     const script = `await taskSpaces.useOrCreate(${JSON.stringify(space)})\n` +
       `const createdTab = await ego.createTab(${JSON.stringify(url)})\n` +
       'console.log(\'@@DSH_RESULT@@\' + JSON.stringify({ ok: true, targetId: createdTab.targetId }))\n'
-    const env: NodeJS.ProcessEnv = { ...(this.browserEnv?.() ?? process.env), EGO_ISOLATE_SPACES: '1' }
+    const env = this.spawnEnv()
     try {
       const handle = this.ctx.subprocess.spawn({
         argv: [process.execPath, CLI, 'nodejs'], cwd: process.cwd(), env,
@@ -227,7 +248,7 @@ export default class EgoBrowserHost extends Service {
       + '  await page.evaluate(id => { document.getElementById(id)?.remove() }, cursorStyleId)\n'
       + '}\n'
       + "console.log('@@DSH_RESULT@@' + JSON.stringify({ ok: true, targetId: tab.targetId }))\n"
-    const env: NodeJS.ProcessEnv = { ...(this.browserEnv?.() ?? process.env), EGO_ISOLATE_SPACES: '1' }
+    const env = this.spawnEnv()
     try {
       const handle = this.ctx.subprocess.spawn({
         argv: [process.execPath, CLI, 'nodejs'], cwd: process.cwd(), env,
@@ -266,7 +287,7 @@ export default class EgoBrowserHost extends Service {
       'const existingTabs = await browser.listTabs()\n' +
       `const targetId = ${blankAnchor} ?? (await ego.createTab('about:blank')).targetId\n` +
       'console.log(\'@@DSH_RESULT@@\' + JSON.stringify({ ok: true, targetId }))\n'
-    const env: NodeJS.ProcessEnv = { ...(this.browserEnv?.() ?? process.env), EGO_ISOLATE_SPACES: '1' }
+    const env = this.spawnEnv()
     try {
       const handle = this.ctx.subprocess.spawn({
         argv: [process.execPath, CLI, 'nodejs'], cwd: process.cwd(), env,
@@ -295,7 +316,7 @@ export default class EgoBrowserHost extends Service {
     const space = spaceNameForSession(sessionId)
     const script = `const restored = await ego.restoreTaskSpace(${JSON.stringify(space)})\n` +
       'console.log(\'@@DSH_RESULT@@\' + JSON.stringify({ ok: restored }))\n'
-    const env: NodeJS.ProcessEnv = { ...(this.browserEnv?.() ?? process.env), EGO_ISOLATE_SPACES: '1' }
+    const env = this.spawnEnv()
     try {
       const handle = this.ctx.subprocess.spawn({
         argv: [process.execPath, CLI, 'nodejs'], cwd: process.cwd(), env,
