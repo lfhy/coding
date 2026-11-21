@@ -84,6 +84,11 @@ describe('ModelsSection theme styles', () => {
     expect(block('.modelSettingsDialog')).not.toMatch(/\b(?:position|left|top|transform|z-index)\s*:/)
     expect(block('.modelSettingsContent')).toContain('overflow-y: auto')
     expect(block('.modelAdvancedFields')).toContain('grid-template-columns: repeat(auto-fit, minmax(min(160px, 100%), 1fr))')
+    // 自动列宽以 min-content 为下限：不锁住，长继承标签会把相邻列挤成窄条。
+    expect(css).toContain('.modelAdvancedFields > * { min-width: 0; }')
+    // 每个下拉字段独占一行，并铺满该行，避免和另一列互相覆盖。
+    expect(block('.modelFieldWide')).toContain('grid-column: 1 / -1')
+    expect(block('.modelFieldWide .protocolMenu,\n.modelFieldWide select.input')).toContain('width: 100%')
     expect(block('.modelEntry')).not.toContain('grid-template-rows')
     expect(css).not.toContain('.modelSettingsPopover')
   })

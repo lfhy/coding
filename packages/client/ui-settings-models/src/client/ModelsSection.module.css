@@ -587,6 +587,8 @@
   grid-template-columns: repeat(auto-fit, minmax(min(160px, 100%), 1fr));
   gap: 16px 12px;
 }
+/* 自动列宽以字段的 min-content 为下限：不锁住，长标签会把相邻列挤成窄条。 */
+.modelAdvancedFields > * { min-width: 0; }
 .modelAdvancedFields:focus-visible {
   outline: 2px solid var(--dsw-alias-state-business-primary);
   outline-offset: 2px;
@@ -671,6 +673,12 @@
   flex-direction: column;
   gap: 4px;
 }
+
+/* 下拉字段独占一整行：继承文案很长，与另一列并排时只能截断或被挤成窄条。 */
+.modelFieldWide { grid-column: 1 / -1; }
+/* 独占行后控件铺满行宽，和渠道编辑里的同名字段一致。 */
+.modelFieldWide .protocolMenu,
+.modelFieldWide select.input { width: 100%; max-width: none; }
 
 .modelFieldLabel {
   color: var(--dsw-alias-label-tertiary);

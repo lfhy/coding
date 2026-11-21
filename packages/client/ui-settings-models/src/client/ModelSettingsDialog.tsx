@@ -201,7 +201,7 @@ export function ModelSettingsDialog(props: ModelSettingsDialogProps): ReactNode 
         />
       </div>}
       {view.protocols !== undefined && view.protocols.length > 0 ? (
-        <div className={styles['modelField']}>
+        <div className={`${styles['modelField']} ${styles['modelFieldWide']}`}>
           <span className={styles['modelFieldLabel']}>{t('modelApi')}</span>
           <ProtocolPicker label={t('modelApi')} protocols={view.protocols}
             unsetLabel={inheritedApi === undefined ? inheritedLabel : `${inheritedLabel} (${protocolName(inheritedApi)})`}
@@ -210,7 +210,7 @@ export function ModelSettingsDialog(props: ModelSettingsDialogProps): ReactNode 
         </div>
       ) : null}
       {canEditPreset ? (
-        <div className={styles['modelField']}>
+        <div className={`${styles['modelField']} ${styles['modelFieldWide']}`}>
           <label className={styles['modelField']}>
             <span className={styles['modelFieldLabel']}>{t('modelDefaultPreset')}</span>
             <select className={`${styles['input']} ${styles['selectInput']}`}
