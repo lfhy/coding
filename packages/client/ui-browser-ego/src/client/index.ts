@@ -175,15 +175,19 @@ export function apply(ctx: ClientContext): void {
     name: 'settings.plugin.item', key: EGO_SETTINGS_NS, locale: NS,
     inject: () => card.inject(),
   }, EgoBrowserCard))
+  // 只展开用户正在看的会话：后台会话跑浏览器时展开，只会把不属于当前对话的面板推上来。
   ctx.effect(() => watchActivity((rawId) => {
     const sessionId = rawId as SessionId
-    if (ctx.sessions.list.getSnapshot().byId[sessionId] === undefined) {
+    const snapshot = ctx.sessions.list.getSnapshot()
+    if (snapshot.byId[sessionId] === undefined) {
       throw new Error('browser session is not loaded yet')
     }
+    if (snapshot.current !== sessionId) return false
     const controller = controllerFor(sessionId)
     const page = controller.view.getSnapshot().pages.find(item => item.active)
       ?? controller.view.getSnapshot().pages[0]
     ctx.sidebarRight.openResourceForSession(sessionId, page ? addressFor(page.targetId) : fallback,
       { kind: WATCH_KIND, reuseAddress: true, ...(page ? { params: { targetId: page.targetId } } : {}) })
+    return true
   }), 'ui-browser-ego: activity')
 }

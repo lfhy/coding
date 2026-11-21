@@ -50,7 +50,9 @@ describe('Agent 浏览器插件注册与生命周期', () => {
     const openResourceForSession = vi.fn()
     const syncTabsForSession = vi.fn()
     ctx.provide('sidebarRight', { openResourceForSession, syncTabsForSession })
-    ctx.provide('sessions', { list: { getSnapshot: () => ({ byId: { 'session-one': {}, 'session-two': {} } }) } })
+    // 活动只为当前会话展开视图；切走再切回时仍应展开一次。
+    const sessions = { current: 'session-one' as string | undefined, byId: { 'session-one': {}, 'session-two': {} } }
+    ctx.provide('sessions', { list: { getSnapshot: () => sessions } })
     const stream = new FakeStream()
     vi.stubGlobal('EventSource', class extends EventTarget { constructor() { super(); return stream } })
     const fiber = ctx.plugin({ inject: [...inject], apply })
@@ -76,8 +78,18 @@ describe('Agent 浏览器插件注册与生命周期', () => {
     stream.emit('unknown', 4)
     expect(openResourceForSession.mock.calls).toEqual([
       ['session-one', 'sidebar://ego-browser%3Awatch', { kind: WATCH_KIND, reuseAddress: true }],
-      ['session-two', 'sidebar://ego-browser%3Awatch', { kind: WATCH_KIND, reuseAddress: true }],
     ])
+    // 后台会话的活动不抢用户正在看的工作台，轮到它时再展开。
+    sessions.current = 'session-two'
+    stream.emit('session-two', 5)
+    stream.emit('session-two', 6)
+    expect(openResourceForSession.mock.calls.at(-1)).toEqual(
+      ['session-two', 'sidebar://ego-browser%3Awatch', { kind: WATCH_KIND, reuseAddress: true }])
+    expect(openResourceForSession).toHaveBeenCalledTimes(2)
+    // 没有选中会话时既不展开，也不把该会话记成已展开。
+    sessions.current = undefined
+    stream.emit('session-one', 7)
+    expect(openResourceForSession).toHaveBeenCalledTimes(2)
     root()
     expect(ctx.slots.entries('sidebar.right.pane.tab')).toEqual([])
     await fiber.dispose()

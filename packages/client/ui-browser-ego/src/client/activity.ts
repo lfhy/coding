@@ -6,11 +6,12 @@ export const WATCH_ID = 'client.browser-ego.watch'
 
 /**
  * 活动通道可缺席；重连后按服务端最近活动补足首次错过的页面。
- * @param open - 定向打开侧栏的调用方回调。
+ * @param open - 定向打开侧栏的调用方回调；返回 false 表示这次不该展开（例如活动属于别的会话），
+ * 该会话随后仍可因新活动展开。
  * @param connect - 注入的 EventSource 工厂，便于测试断线和迟到事件。
  * @returns 停止监听并防止迟到通知的 disposer。
  */
-export function watchActivity(open: (sessionId: string) => void,
+export function watchActivity(open: (sessionId: string) => boolean | void,
   connect: (url: string) => EventSource = url => new EventSource(url)): () => void {
   let source: EventSource | null = null
   const seen = new Map<string, number>()
@@ -19,10 +20,15 @@ export function watchActivity(open: (sessionId: string) => void,
   let disposed = false
   let retry: ReturnType<typeof setTimeout> | null = null
   let pendingRetry: ReturnType<typeof setTimeout> | null = null
+  /** 只有真正展开过才记为已打开；跳过（返回 false）的会话留给下一次活动。 */
+  const tryOpen = (sessionId: string): void => {
+    if (open(sessionId) === false) return
+    opened.add(sessionId)
+  }
   const retryPending = (): void => {
     pendingRetry = null
     for (const [sessionId] of pending) {
-      try { open(sessionId); pending.delete(sessionId); opened.add(sessionId) }
+      try { tryOpen(sessionId); pending.delete(sessionId) }
       catch { /* 会话载入后再尝试；不会重复打开已成功的会话。 */ }
     }
     if (pending.size > 0 && !disposed && source !== null) pendingRetry = setTimeout(retryPending, 1500)
@@ -36,9 +42,8 @@ export function watchActivity(open: (sessionId: string) => void,
     seen.set(activity.sessionId, activity.count)
     if (opened.has(activity.sessionId)) return
     try {
-      open(activity.sessionId)
+      tryOpen(activity.sessionId)
       pending.delete(activity.sessionId)
-      opened.add(activity.sessionId)
     } catch {
       pending.set(activity.sessionId, activity.count)
       if (pendingRetry === null) pendingRetry = setTimeout(retryPending, 1500)

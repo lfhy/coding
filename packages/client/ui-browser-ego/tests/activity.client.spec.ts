@@ -80,4 +80,18 @@ describe('Agent 浏览器自动展开', () => {
     dispose()
     vi.useRealTimers()
   })
+
+  it('这次不展开（返回 false）的会话留给后续活动，不算抢过焦点', () => {
+    const stream = new FakeStream()
+    const open = vi.fn(() => false)
+    const dispose = watchActivity(open, () => stream as unknown as EventSource)
+    stream.emit({ sessionId: 'first', count: 1 })
+    stream.emit({ sessionId: 'first', count: 2 })
+    expect(open).toHaveBeenCalledTimes(2)
+    open.mockReturnValue(true)
+    stream.emit({ sessionId: 'first', count: 3 })
+    stream.emit({ sessionId: 'first', count: 4 })
+    expect(open).toHaveBeenCalledTimes(3)
+    dispose()
+  })
 })

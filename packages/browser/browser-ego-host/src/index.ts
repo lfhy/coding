@@ -11,7 +11,7 @@ import type {} from 'coding-host-webserver'
 import type {} from 'coding-session'
 import type {} from 'coding-subprocess'
 import type { SessionId } from 'coding-session/types'
-import { markToolStart } from './activity.ts'
+import { markToolStart, revealsBrowserView } from './activity.ts'
 import { parseScriptResult } from './scripts.ts'
 import { sessionSpaceArgs, spaceNameForSession, targetIdsForSession } from './session-space.ts'
 import { installRoutes, trusted } from './routes.ts'
@@ -309,7 +309,12 @@ export default class EgoBrowserHost extends Service {
     } catch { return false }
   }
 
-  /** 在执行入口记录活动历史，失败仍交给上游工具自己报告。 */
+  /**
+   * 在执行入口记录活动历史，失败仍交给上游工具自己报告。
+   *
+   * 所有调用都写入动作历史，但只有会改变用户所见画面的调用才广播展开事件：
+   * 列标签、读页面、查状态与同步登录态不该从用户手里抢走侧栏。
+   */
   private observe(definition: ToolDefinition): ToolDefinition {
     const execute = definition.execute.bind(definition)
     return {
@@ -321,7 +326,7 @@ export default class EgoBrowserHost extends Service {
           throw new Error('browser tool requires a live session')
         }
         const scoped = sessionSpaceArgs(args, id as SessionId, definition.name)
-        markToolStart(id as SessionId, definition.name)
+        markToolStart(id as SessionId, definition.name, revealsBrowserView(definition.name, scoped))
         return execute(scoped, exec)
       },
     }
