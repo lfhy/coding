@@ -177,7 +177,7 @@ Agent 使用 `ask_user_question` 询问选择或缺失信息时，可在对话�
 
 ### 让 Agent 操作本机应用
 
-在本地 macOS Session 中提出本机应用任务，例如“打开备忘录，新建一条并写上今天的待办”。标准、Codex、长线任务、逆向分析、网页复刻与对话模式提供这一能力，其他模式不注册它的工具或技能。使用前 Agent 需要先加载随预设提供的 `dsh-computer-use` 技能，加载后会看到 `computer_list_apps`、`computer_observe`、`computer_click`、`computer_type_text`、`computer_press_key`、`computer_scroll`、`computer_drag`、`computer_set_value`、`computer_perform_action`、`computer_wait` 与 `computer_confirm`；支持代码执行的两个形态提供同一套工具名，未加载技能时只有一个说明如何加载的引导工具。整个能力只在本地 macOS 宿主上装配，其他平台不注册任何工具或技能。
+在本地 macOS Session 中提出本机应用任务，例如“打开备忘录，新建一条并写上今天的待办”。标准、Codex、长线任务、逆向分析、网页复刻与对话模式提供这一能力，其他模式不注册它的工具或技能。使用前 Agent 需要先加载随预设提供的 `dsh-computer-use` 技能，加载后会看到 `computer_list_apps`、`computer_observe`、`computer_click`、`computer_type_text`、`computer_press_key`、`computer_scroll`、`computer_drag`、`computer_set_value`、`computer_perform_action`、`computer_wait` 与 `computer_confirm`；支持代码执行的两个形态提供同一套工具名，未加载技能时只有一个说明如何加载的引导工具。整个能力只在本地 macOS 宿主上装配，其他平台不注册任何工具或技能。开关、后端、按应用授权与交互策略在**设置 → 电脑操作**里调整：关闭后所有模式都不再向模型提供这套工具，重新打开即恢复。
 
 Agent 先列出运行中的应用，再对选定应用取一份观察：有界可访问性树、当时的元素表，需要时加一张截图；随后按元素或坐标执行动作，每次成功动作都会返回动作之后的新观察，元素消失或观察过期会明确失败而不会点到别处。观察与输入都需要 macOS 的辅助功能权限，只有截图需要屏幕录制权限；请在**系统设置 → 隐私与安全性**里把这两项授予运行 Coding 的程序，未授权时工具会给出可操作的错误，不会带权限缺口继续操作。
 

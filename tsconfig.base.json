@@ -265,6 +265,7 @@
       "coding-client-ui-workspace": ["./packages/client/ui-workspace/src"],
       "coding-client-ui-theme": ["./packages/client/ui-theme/src"],
       "coding-client-ui-settings": ["./packages/client/ui-settings/src"],
+      "coding-client-ui-settings-computer-use": ["./packages/client/ui-settings-computer-use/src"],
       "coding-client-ui-settings-general": ["./packages/client/ui-settings-general/src"],
       "coding-client-ui-settings-models": ["./packages/client/ui-settings-models/src"],
       "coding-client-ui-settings-proxy-pool": ["./packages/client/ui-settings-proxy-pool/src"],

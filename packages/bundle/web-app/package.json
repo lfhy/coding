@@ -80,6 +80,7 @@
     "coding-client-ui-reference": "workspace:^",
     "coding-client-ui-renderer": "workspace:^",
     "coding-client-ui-settings": "workspace:^",
+    "coding-client-ui-settings-computer-use": "workspace:^",
     "coding-client-ui-settings-general": "workspace:^",
     "coding-client-ui-settings-models": "workspace:^",
     "coding-client-ui-settings-plugin-inventory": "workspace:^",

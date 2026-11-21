@@ -1,0 +1,87 @@
+/* 电脑操作设置分区：只使用语义 token，宽度与其它设置分区一致。 */
+.section {
+  width: min(680px, 100%);
+  min-width: 0;
+  padding: 24px;
+  box-sizing: border-box;
+  color: var(--dsw-alias-label-primary);
+}
+
+.title { margin: 0; font: var(--dsw-font-l-20); font-weight: 600; }
+.intro { margin: 8px 0 24px; color: var(--dsw-alias-label-secondary); font: var(--dsw-font-xs-13); }
+.hint,
+.fieldHint,
+.groupHint { margin: 0; color: var(--dsw-alias-label-secondary); font: var(--dsw-font-xxs-12); }
+.error { margin: 0; color: var(--dsw-alias-state-error-primary); font: var(--dsw-font-xxs-12); }
+
+/* 当前状态带：模型能否看到这套工具，比下面的表单更靠前。 */
+.statusRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-radius: 12px;
+  background: var(--dsw-alias-bg-module-platform);
+}
+.statusText { display: flex; flex: 1; flex-direction: column; gap: 4px; min-width: 0; padding-right: 24px; }
+.statusLabel { font: var(--dsw-font-s-strong-14); }
+.statusHint { color: var(--dsw-alias-label-tertiary); font: var(--dsw-font-xxs-12); }
+.statusValue { flex: none; padding: 4px 12px; border-radius: 14px; background: var(--dsw-alias-bg-layer-2); font: var(--dsw-font-xs-13); }
+
+.groupTitle { margin: 28px 0 4px; font: var(--dsw-font-s-strong-14); }
+.groupHint { margin: 0 0 12px; }
+.subTitle { margin: 20px 0 8px; font: var(--dsw-font-xs-13); font-weight: 600; }
+
+/* 运行方式两选一：整行可点，选中的一行用强调色描边。 */
+.choices { display: flex; flex-direction: column; gap: 8px; }
+.choice {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 14px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-layer-2);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.choice:hover:not(:disabled) { border-color: var(--dsw-alias-border-l3); }
+.choice:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: 2px; }
+.choice:disabled { cursor: default; opacity: .6; }
+.choiceActive { border-color: var(--dsw-alias-state-business-primary); }
+.choiceLabel { font: var(--dsw-font-xs-13); font-weight: 600; }
+.choiceHint { color: var(--dsw-alias-label-secondary); font: var(--dsw-font-xxs-12); }
+
+.field { display: flex; flex-direction: column; gap: 6px; margin: 0 0 16px; font: var(--dsw-font-xs-13); }
+.field :global(.input) { width: 100%; }
+
+.switch { display: flex; align-items: center; gap: 10px; margin: 16px 0 0; font: var(--dsw-font-s-strong-14); }
+.switch input { accent-color: var(--dsw-alias-state-business-primary); }
+.switch input:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: 3px; }
+.switchHint { margin: 6px 0 0 26px; color: var(--dsw-alias-label-secondary); font: var(--dsw-font-xxs-12); }
+
+/* 按应用授权：固定行高的单行列表，长标识截断不换行。 */
+.grantList { display: flex; flex-direction: column; gap: 2px; margin: 8px 0 0; padding: 0; list-style: none; }
+.grantRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  align-items: center;
+  gap: 12px;
+  min-height: 40px;
+}
+.grantId { overflow: hidden; font: var(--dsw-font-xs-13); text-overflow: ellipsis; white-space: nowrap; }
+.grantToggle { display: inline-flex; align-items: center; gap: 6px; color: var(--dsw-alias-label-secondary); font: var(--dsw-font-xxs-12); }
+.grantToggle input { accent-color: var(--dsw-alias-state-business-primary); }
+
+.addRow { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
+.addRow > span { flex: 1; }
+
+.actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 24px; }
+
+@media (max-width: 620px) {
+  .section { padding: 16px; }
+  .grantRow { grid-template-columns: minmax(0, 1fr) auto auto; }
+  .grantRow > :last-child { grid-column: 1 / -1; justify-self: end; }
+}

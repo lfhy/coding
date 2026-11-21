@@ -344,6 +344,10 @@
     - id: ui-settings-search
       name: 'coding-client-ui-settings-search'
 
+    # 电脑操作：开关、后端、按应用授权与交互策略，写入 `computer-use` 命名空间。
+    - id: ui-settings-computer-use
+      name: 'coding-client-ui-settings-computer-use'
+
     # Plan control: the composer plan seat over the plan projection + /plan channel.
     - id: ui-plan
       name: 'coding-client-ui-plan'

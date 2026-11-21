@@ -7,7 +7,7 @@ import { createPortal } from 'react-dom'
 import clsx from 'clsx'
 import { Tooltip } from 'coding-client-ui-primitives'
 import {
-  IconAgentPresetOutline16, IconChevronLeftOutline14, IconDataOutline16,
+  IconAgentPresetOutline16, IconBrowseOutline16, IconChevronLeftOutline14, IconDataOutline16,
   IconPersonalizationOutline16, IconSettingsOutline16, IconSparkle16,
 } from 'coding-client-ui-icons'
 import type { SettingsRootComponentProps, SettingsSectionRow } from './shell-contract.ts'
@@ -19,6 +19,7 @@ function navIcon(id: string) {
   if (id === 'vision-understanding') return <IconSparkle16 className={css.navIcon} size={16} />
   if (id === 'agent-presets') return <IconAgentPresetOutline16 className={css.navIcon} size={16} />
   if (id === 'plugins') return <IconPersonalizationOutline16 className={css.navIcon} size={16} />
+  if (id === 'computer-use') return <IconBrowseOutline16 className={css.navIcon} size={16} />
   return <IconSettingsOutline16 className={css.navIcon} size={16} />
 }
 
