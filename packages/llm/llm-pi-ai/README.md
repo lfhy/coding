@@ -1,6 +1,6 @@
 # coding-llm-pi-ai
 
-基于 [`@earendil-works/pi-ai`](https://www.npmjs.com/package/@earendil-works/pi-ai) 的 harness LLM（大语言模型）seam 通用多提供方适配器。一个插件实例拥有一份以路由为键的提供方 profile 字典；每个请求使用 `GenerateOptions.provider` 选择 profile，并针对该路由已配置的 catalog 解析 `GenerateOptions.model`。点名了已安装 pi-ai 提供方的路由会继承其端点、协议格式（wire format）与模型 catalog 作为默认值，并逐字段覆盖；pi-ai 未提供的路由则整体声明出来，因此接入 OpenAI 兼容网关、自建服务，或比已安装 catalog 更新的提供方，都属于配置而非改代码。
+基于 [`@earendil-works/pi-ai`](https://www.npmjs.com/package/@earendil-works/pi-ai) 的 harness LLM（大语言模型）seam 通用多提供方适配器。一个插件实例拥有一份以路由为键的提供方 profile 字典；每个请求使用 `GenerateOptions.provider` 选择 profile，并针对该路由已配置的 catalog 解析 `GenerateOptions.model`。点名了已安装 pi-ai 提供方的路由会继承其端点、协议格式（wire format）与模型 catalog 作为默认值，并逐字段覆盖；省略渠道级 `api` 时，已安装 catalog 路由仍按各模型自身协议继承，pi-ai 未提供的手工声明路由则默认使用 `openai-completions`（OpenAI Chat Completions）；显式渠道级 `api` 可覆盖相应的协议选择，因此接入 OpenAI 兼容网关、自建服务，或比已安装 catalog 更新的提供方，都属于配置而非改代码。
 
 包根入口导出 Cordis 插件约定、`PiAiAdapter` 与 `supportedProtocols()`；profile 解析、catalog 物化、提供方构造、回放转换和流转换保留在包内部。
 
@@ -43,12 +43,10 @@
             reasoningEfforts:
               off:
               high: high
-      # Hand-declared route: pi-ai ships nothing under this key, so the profile
-      # supplies the whole provider.
+      # 手工声明路由：省略 api 时默认使用 OpenAI Chat Completions；仅在选择其他协议时填写。
       acme-gateway:
         displayName: Acme Gateway
         apiKeyEnv: ACME_GATEWAY_API_KEY
-        api: openai-completions
         baseURL: https://gateway.acme.example/v1
         # Request shape for an endpoint whose URL pi-ai cannot recognize; it
         # would otherwise be addressed as though it were OpenAI itself.
@@ -82,7 +80,7 @@ profile 的 `models` 列表是*替换*该路由已安装 catalog，而不是扩�
 
 `modelOverrides` 无需这份代价就能就地重塑单个已安装 catalog 模型：每个键是一个 catalog 模型 id，每个值可写 `models` 条目接受的同一批字段，只是 id 落在键上，而 catalog 的其余部分原样继续服务。一条覆盖会成为该 catalog 条目的配置，因此协议、容量、模态、档位与 compat 沿与 `models` 条目相同的路径解析。覆盖只在正服务自身 catalog 的 catalog 路由上才有意义：与 `models` 列表并存、落在手工声明路由上，或点名 catalog 未描述模型，都会被拒绝而非跳过。
 
-模型条目的 `api` 可覆盖该模型的上游协议；省略时依次继承渠道 `api`、已安装 catalog 中同 id 模型的协议，最后是该渠道 catalog 模型共有的协议。渠道级 `api` 仍可统一改指其全部模型，而同一渠道的模型级 `api` 可以各自选择协议，共用该渠道的 `baseURL` 和凭据。未被 catalog 描述、又无法从渠道取得协议的模型须显式指定 `api`；`compat` 按每个模型最终选定的协议校验。
+模型条目的 `api` 可覆盖该模型的上游协议；已安装 catalog 路由省略模型级和渠道级 `api` 时，按已安装 catalog 中同 id 模型的协议，或该路由 catalog 模型共有的协议继承；pi-ai 未提供的手工声明路由省略渠道级 `api` 时，默认使用 `openai-completions`（OpenAI Chat Completions）。显式渠道级 `api` 可统一改指其全部模型，模型级 `api` 优先并可让同一渠道的模型各自选择协议，共用该渠道的 `baseURL` 和凭据；`compat` 按每个模型最终选定的协议校验。
 
 ### 按模型的推理（reasoning）档位
 
@@ -104,7 +102,7 @@ pi-ai 依据提供方 id 与 baseURL 决定每个请求的形状：系统提示�
 
 `[text]` 是保守的默认声明，而不是端点能力的验真；容量回退值同样需要部署方按实际模型校正。模型未声明图片能力时，只有显式配置了具备图片能力的[视觉理解路由](../llm-vision-fallback/README.md)，含图会话才能经图片描述交给该纯文本模型；未配置则拒绝，视觉描述失败也不会发出主请求。反过来，多声明 `image` 会让图片直接交给提供方；若端点拒绝，已持久化的原始图片仍在会话日志中，单纯重试同一路由会重复失败。
 
-路由完全无法服务时解析仍会失败得响亮，并点名出问题的路由与模型：catalog 未提供的路由需要 `baseURL`、一个由唯一标识的模型组成的非空 `models` 列表，以及能覆盖各模型的渠道或模型级 `api`。该解析在分节 schema 内部运行，因此无法服务的 profile 会在**写入之处**被拒绝——`settings.mutate` 以 `settings-rejected` 点名路由与模型——而不是先存下来、再悄悄让该 namespace 下每条路由失效。对于已经存下的、在此失败的分节，settings seam 会保留该 namespace 上一份可用值。显式协议只接受 `supportedProtocols()` 中的值；catalog 中不存在的模型也可继承其同门模型一致同意的协议，因此向单协议 catalog 路由添加模型无需重述协议。
+路由完全无法服务时解析仍会失败得响亮，并点名出问题的路由与模型：catalog 未提供的路由需要 `baseURL`、一个由唯一标识的模型组成的非空 `models` 列表，以及可由渠道默认或模型级设置覆盖各模型的协议；省略渠道级 `api` 时使用 `openai-completions`（OpenAI Chat Completions）。该解析在分节 schema 内部运行，因此无法服务的 profile 会在**写入之处**被拒绝——`settings.mutate` 以 `settings-rejected` 点名路由与模型——而不是先存下来、再悄悄让该 namespace 下每条路由失效。对于已经存下的、在此失败的分节，settings seam 会保留该 namespace 上一份可用值。显式协议只接受 `supportedProtocols()` 中的值；catalog 中不存在的模型也可继承其同门模型一致同意的协议，因此向单协议 catalog 路由添加模型无需重述协议。
 
 
 `baseURL` 设定该路由下每个模型的端点，因此仍支持 `https://proxy.example.com:8443` 等私有 proxy；省略它的 catalog 路由会保留每个 catalog 模型自己的端点。在 catalog 路由上点名 `api` 会为未另行指定协议的模型选择该协议；单个模型的 `api` 优先。

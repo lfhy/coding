@@ -6,7 +6,6 @@ const routeWith = (profile: Record<string, unknown>): (() => unknown) =>
   () => Config({
     providers: {
       'acme-gateway': {
-        api: 'openai-completions',
         baseURL: 'https://acme.test',
         models: [{ id: 'm' }],
         ...profile,
@@ -66,6 +65,12 @@ describe('modality schema boundary', () => {
 })
 
 describe('model protocol schema boundary', () => {
+  it('defaults an omitted hand-declared route protocol to OpenAI Chat Completions', () => {
+    const parsed = routeWith({})() as Config
+    expect(parsed.providers?.['acme-gateway']?.api).toBeUndefined()
+    expect(() => { assertServiceable(parsed) }).not.toThrow()
+  })
+
   it('accepts a supported model protocol and leaves an omitted one to channel fallback', () => {
     type Configured = { providers: Record<string, { models: { api?: string }[] }> }
     const configured = configWith({ api: 'openai-responses' })() as Configured

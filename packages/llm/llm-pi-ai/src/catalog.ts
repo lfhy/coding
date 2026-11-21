@@ -606,7 +606,11 @@ export type PiAiModelOverride = Omit<PiAiModelProfile, 'id'>
 export interface RouteCatalogRequest {
   /** Provider route key, stamped onto every materialized model. */
   provider: string
-  /** Wire protocol override; absent defers to each catalog model's own API. */
+  /**
+   * Wire protocol override. An omitted value uses the default Chat Completions
+   * protocol for a route the installed catalog does not describe; catalog model
+   * metadata remains the fallback for models that the catalog does describe.
+   */
   api?: string
   /** Endpoint override; absent defers to the catalog model, then the catalog provider. */
   baseURL?: string

@@ -302,12 +302,16 @@ describe('hand-declared providers', () => {
     })).toThrow(/more than once/)
   })
 
-  it('rejects a declaration that names no wire protocol or endpoint', () => {
-    expect(() => resolveProfiles({
+  it('defaults an undeclared route to OpenAI Chat Completions', () => {
+    const resolved = resolveProfiles({
       'acme-gateway': { baseURL: 'https://acme.test', models: [{ id: 'm', contextWindow: 1, maxTokens: 1 }] },
-    })).toThrow(/needs an api/)
+    })
+    expect(resolved.get('acme-gateway')?.piProvider.getModels()[0]?.api).toBe('openai-completions')
+  })
+
+  it('rejects a declaration that names no endpoint', () => {
     expect(() => resolveProfiles({
-      'acme-gateway': { api: 'openai-completions', models: [{ id: 'm', contextWindow: 1, maxTokens: 1 }] },
+      'acme-gateway': { models: [{ id: 'm', contextWindow: 1, maxTokens: 1 }] },
     })).toThrow(/needs a baseURL/)
   })
 

@@ -45,10 +45,8 @@ export interface ProviderEditorProps {
   hideTitle?: boolean
   /**
    * Whether the adapter reports this route as hand-declared — absent from its
-   * installed catalog. Such a route carries its own wire protocol, chosen when
-   * it was created and editable here for the same reason; a catalog route's
-   * models each carry theirs, so a route-level protocol there could only
-   * override every one of them and the card does not offer it.
+   * installed catalog. This only controls whether the route's display name is
+   * editable; every editable pi-ai profile can set its channel protocol.
    */
   declared?: boolean
   /** The owning namespace view (schema, layers, secrets). */
@@ -268,8 +266,12 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
     ? 'keyRequired' as const
     : undefined
   const shownKeyFailure = credentialRequiredFailure ?? keyFailure
-  // What the form currently shows, which is what an interrogation must ask:
-  // an edited-but-unsaved endpoint, and a key typed but not yet stored.
+  // 渠道级协议的编辑值只沿用户层和 composition base 继承；清空用户覆盖后不能从
+  // effective 层读取旧值，否则控件会把刚清除的覆盖重新显示出来。未声明时交给 Host
+  // 使用默认的 Chat Completions 协议，但页面仍保留“未设置”状态以便清除覆盖。
+  const inheritedApi = stringAt(schema.getPath(namespace.base, settingsPath), 'api')
+  const channelApi = stringAt(draft, 'api') ?? inheritedApi
+  // 探测使用 effective profile：目录默认协议和已保存的路由协议都应影响请求。
   const probeApi = stringAt(draft, 'api') ?? stringAt(fallback, 'api')
   const probeBaseURL = stringAt(draft, 'baseURL') ?? stringAt(fallback, 'baseURL')
   const probe = {
@@ -641,26 +643,20 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
                 </div>
               )
               : null}
-            {/* 上游请求格式属于手工声明的路由本身：它描述的是端点讲哪种协议，
-                与创建表单上的同一字段共用目录选项。 */}
-            {ownsIdentity
+            {/* 渠道协议可覆盖已安装目录的默认模型协议；未设置时交给 Host 默认或目录继承，
+                因此它与仅手工声明路由可改的显示名称是两条独立能力。 */}
+            {family === 'pi-ai'
               ? (
                 <div className={styles['field']}>
                   <span className={styles['fieldLabel']}>{t('customApi')}</span>
                   <select
                     className={`${styles['input']} ${styles['selectInput']}`}
-                    value={probeApi ?? ''}
+                    value={channelApi ?? ''}
                     aria-label={t('customApi')}
                     disabled={disabled}
                     onChange={(event) => { setField('api', event.target.value) }}
                   >
-                    {/* A profile naming no protocol — hand-written into
-                        settings.yaml with no model to need one — selects
-                        nothing rather than reading as if it had picked the
-                        first choice. The option is named because a screen
-                        reader announces it either way, and an empty one is
-                        announced as a choice with no identity. */}
-                    {probeApi === undefined ? <option value="">{t('customApiUnset')}</option> : null}
+                    {channelApi === undefined ? <option value="">{t('customApiUnset')}</option> : null}
                     {protocols.map(choice => <option key={choice} value={choice}>{choice}</option>)}
                   </select>
                 </div>

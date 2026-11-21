@@ -26,6 +26,7 @@ import {
   CHAT_TEMPLATE_VARS,
   MAX_TOKENS_FIELDS,
   MODALITIES,
+  catalogProvider,
   resolveRouteModels,
   SUPPORTED_THINKING_FORMATS,
   THINKING_LEVELS,
@@ -38,6 +39,9 @@ import type {
   PiAiReasoningEfforts,
 } from './catalog.ts'
 import { buildProvider, supportedProtocols } from './provider.ts'
+
+/** 未声明渠道协议时使用 OpenAI Chat Completions 请求格式。 */
+export const DEFAULT_PROTOCOL = 'openai-completions'
 
 /** Default maximum idle interval while an adapter stream read is outstanding. */
 export const DEFAULT_STREAM_IDLE_TIMEOUT_MS = 300_000
@@ -87,9 +91,9 @@ export interface PiAiProviderProfile {
   /** Name shown by configuration surfaces; defaults to the route key. */
   displayName?: string
   /**
-   * Wire protocol every model on this route speaks. Omission keeps each
-   * installed catalog model's own protocol, which is why a catalog route needs
-   * no protocol at all; a route the catalog does not ship must name one.
+   * 本渠道所有模型使用的上游协议。省略时，未被已安装 catalog 描述的渠道使用
+   * OpenAI Chat Completions（`openai-completions`）；catalog 渠道仍保留模型自身的
+   * 协议，显式的模型级 api 可以单独覆盖。
    */
   api?: string
   /** Endpoint for this route's models; defaults to the installed catalog's endpoint. */
@@ -424,7 +428,11 @@ export function resolveProfiles(
     const displayName = source.displayName ?? provider
     const catalog = resolveRouteModels({
       provider,
-      ...source.api === undefined ? {} : { api: source.api },
+      // 手工声明路由没有 catalog 可以提供协议，省略 api 时默认走 Chat Completions；
+      // 已安装路由则把 catalog 模型协议留给解析器继承。
+      ...source.api === undefined && catalogProvider(provider) === undefined
+        ? { api: DEFAULT_PROTOCOL }
+        : source.api === undefined ? {} : { api: source.api },
       ...source.baseURL === undefined ? {} : { baseURL: source.baseURL },
       ...source.models === undefined ? {} : { models: source.models },
       ...source.modelOverrides === undefined ? {} : { modelOverrides: source.modelOverrides },

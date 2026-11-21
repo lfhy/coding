@@ -166,7 +166,7 @@ llm-pi-ai:
 
 ### 请求兼容性
 
-同一自定义渠道的模型可以明确指定不同上游协议，同时共用渠道 API 地址和凭据。在模型设置中单独选择**上游请求格式**，或在 `settings.yaml` 的 `models` 条目设置 `api`；已安装目录中的单个模型可用 `modelOverrides.<模型 ID>.api`。未设置的模型依次使用渠道 `api`、该模型在已安装目录中的协议，或目录模型共有的协议；没有可继承协议的新模型必须显式指定。支持的协议见[配置参考](../../config-catalog.md#coding-llm-pi-ai)。
+同一自定义渠道的模型可以明确指定不同上游协议，同时共用渠道 API 地址和凭据。在模型设置中单独选择**上游请求格式**，或在 `settings.yaml` 的 `models` 条目设置 `api`；已安装目录中的单个模型可用 `modelOverrides.<模型 ID>.api`。已安装 catalog 路由未设置渠道级或模型级协议时继承该模型在目录中的协议；pi-ai 未提供的手工声明渠道未设置渠道级 `api` 时默认使用 `openai-completions`（OpenAI Chat Completions）。显式渠道级 `api` 可统一指定协议，模型级 `api` 优先。支持的协议见[配置参考](../../config-catalog.md#coding-llm-pi-ai)。
 
 网关可能持有可用的密钥、地址也通得到，却仍然拒绝每一个请求。pi-ai 依据端点的 URL 决定请求的形状——系统提示词由哪个角色承载、输出上限写在哪个字段、思考级别如何传输——而对于它无法识别的地址，会当作 OpenAI 本身来对待。多数 OpenAI 兼容网关至少会拒绝 OpenAI 所接受的某一样东西。
 

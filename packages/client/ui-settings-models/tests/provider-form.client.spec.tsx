@@ -869,7 +869,7 @@ describe('channel directory and detail', () => {
     fireEvent.change(search, { target: { value: '' } })
     openEditor('openai')
     expect(screen.queryByRole('textbox', { name: en.customDisplayName })).toBeNull()
-    expect(screen.queryByRole('combobox', { name: en.customApi })).toBeNull()
+    expect(screen.getByRole('combobox', { name: en.customApi })).toBeTruthy()
   })
 
   it('does not claim a hand-declared identity when the adapter reports no distinction', async () => {
@@ -896,7 +896,7 @@ describe('channel directory and detail', () => {
 
     openEditor('openai')
     expect(screen.queryByRole('textbox', { name: en.customDisplayName })).toBeNull()
-    expect(screen.queryByRole('combobox', { name: en.customApi })).toBeNull()
+    expect(screen.getByRole('combobox', { name: en.customApi })).toBeTruthy()
   })
 })
 
@@ -1197,7 +1197,7 @@ describe('hand-declared providers', () => {
     expect(screen.getByLabelText(en.keyInput)).toBeTruthy()
     expect(screen.getByRole('textbox', { name: en.baseUrl })).toBeTruthy()
     expect(screen.queryByRole('textbox', { name: en.customDisplayName })).toBeNull()
-    expect(screen.queryByRole('combobox', { name: en.customApi })).toBeNull()
+    expect(screen.getByRole('combobox', { name: en.customApi })).toBeTruthy()
     cleanup()
     await mountSection({
       providers: { 'acme-gateway': { api: 'openai-completions', baseURL: 'https://gateway.acme.example/v1' } },
@@ -1326,10 +1326,7 @@ describe('hand-declared providers', () => {
     })
   })
 
-  it('selects nothing for a declared route whose profile names no protocol', async () => {
-    // A route hand-written into settings.yaml with no model needs no protocol
-    // to resolve, so the card can be opened over one. The select must not read
-    // as if that route had picked its first choice.
+  it('shows the default protocol for a declared route whose profile names no protocol', async () => {
     await mountSection({
       providers: { 'acme-gateway': { baseURL: 'https://gateway.acme.example/v1' } },
       declaredRoutes: ['acme-gateway'],
@@ -1337,6 +1334,8 @@ describe('hand-declared providers', () => {
     openEditor('acme-gateway')
 
     expect(screen.getByLabelText<HTMLSelectElement>(en.customApi).value).toBe('')
+    expect(screen.getByLabelText<HTMLSelectElement>(en.customApi).selectedOptions[0]?.textContent)
+      .toBe(en.customApiUnset)
   })
 
   it('retries only the key after the profile landed and keeps the generated ID stable', async () => {

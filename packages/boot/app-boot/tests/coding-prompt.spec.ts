@@ -64,6 +64,8 @@ describe('addCodingPromptSections', () => {
       expect(rendered).toContain('不要把营销文案或功能清单塞成左栏')
       expect(rendered).toContain('# 工作方式')
       expect(rendered).toContain('确认根因后立即修复')
+      expect(rendered).toContain('确认根因、修改边界和首个目标文件后，必须立即调用 `edit` 或 `apply_patch`')
+      expect(rendered).toContain('不得继续以读取更多提示词、文档、快照或重复搜索代替首次写入')
       expect(rendered).toContain('调查只为消除当前不确定性')
       expect(rendered).toContain('验证失败就根据失败结果直接修复并重试')
       expect(rendered).toContain('中间不需要重复汇报')
