@@ -9,6 +9,7 @@
 - `availability()`／`watchAvailability(listener)`：开关状态与变化通知；设置提交或提供方代次替换后通知一次。
 - `status()`：当前开关、平台、提供方名、代次、helper 路径与最近一次健康结果，不触发探测。
 - `health(signal)`：重新执行不修改权限与界面的健康检查，失败时抛出并把原因记入状态。
+- 挂载与切换提供方都不做探测：托管 helper 的源码构建、辅助功能授权提示与外部驱动进程都不进入宿主启动，第一次真实调用或显式 `health()` 才会接触本机界面。
 - `openPermissionSettings(kind, signal)`：响应用户的显式设置操作打开 macOS 隐私面板；插件不自行授予权限。
 - `listApps(context)`：列出有界的运行中用户应用，不读取界面内容，因此不需要读取租约。
 - `observe(request, context)`：在读取租约通过后取得新鲜观察，冻结观察 id、有界树文本、元素表、可选截图产物与当时的权限状态。
