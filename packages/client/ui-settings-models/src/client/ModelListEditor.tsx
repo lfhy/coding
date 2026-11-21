@@ -4,61 +4,26 @@
  * 端点不可发现时显示诊断，手工模型编辑仍可使用。
  */
 
-import { useEffect, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { DiscoveredModelView, IApiClient } from 'coding-api-remotes/client'
-import { Button, Menu, Modal } from 'coding-client-ui-primitives'
+import { Button, Modal } from 'coding-client-ui-primitives'
 import {
-  Icon, IconCheckOutline14, IconChevronDownOutline14, IconCloseOutline16, IconPlusOutline16, IconRefreshOutline16,
+  IconCheckOutline14, IconChevronDownOutline14, IconCloseOutline16, IconPlusOutline16, IconRefreshOutline16,
   IconQuestionOutline14, IconSearchOutline16, IconTrashOutline16,
 } from 'coding-client-ui-icons'
-import { formatCapacity, parseCapacity } from './DeepSeekModelsEditor.tsx'
-import type { DeepSeekModelDraft } from './DeepSeekModelsEditor.tsx'
+import { defaultReasoning, modelText as textOf, withModelFields } from './model-editor-helpers.ts'
+import type { ModelDraft as ModelDraftRecord } from './model-editor-helpers.ts'
+import type { ModelEditorSchema } from './model-editor-schema.ts'
+import { ModelSettingsDialog } from './ModelSettingsDialog.tsx'
 import { messageOf } from './store.ts'
 import type { ModelPresetOption } from './store.ts'
 import type { en } from './locales.ts'
 import styles from './ModelsSection.module.css'
 
-/**
- * One configured model row. Structurally open, exactly like the DeepSeek
- * catalog editor's rows: a profile field this card does not edit — one a future
- * schema adds, or one hand-written in `settings.yaml` — has to survive being
- * edited here rather than being dropped by a rebuild.
- */
-export type ModelDraft = DeepSeekModelDraft
-
+/** 开放草稿会保留编辑器未展示的模型字段。 */
+export type ModelDraft = ModelDraftRecord
 type Capability = 'supported' | 'unsupported' | 'unknown'
-
-/**
- * 精选家族在模型行上的形态差异。缺席的模态字段表示该家族的 schema 根本没有
- * 这个字段——那种情况下页面不推断输入模态，也不会写一个 schema 不认识的值。
- */
-interface ModelFamily {
-  /** 声明输入模态的字段名；缺席表示该家族没有模态字段。 */
-  modalityKey?: 'inputModalities' | 'input'
-  /** 推理档位以字符串数组存储；false 表示 pi-ai 的档位映射对象。 */
-  arrayEfforts: boolean
-  /** 模型设置窗口提供的档位。 */
-  levels: readonly string[]
-}
-
-/** DeepSeek 目录的推理档位。 */
-const DEEPSEEK_REASONING_LEVELS = ['off', 'low', 'high', 'max'] as const
-/** OpenAI 兼容端点的推理档位；pi-ai 家族的模型行在这个词汇里取值。 */
-const PI_AI_REASONING_LEVELS = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const
-
-/**
- * 按 settings namespace 选择模型行的字段形态：未知 namespace 沿用 pi-ai 形态，
- * 它同时也是 `llm-pi-ai` 之外的默认。
- * @param settingsNs - 拥有该模型目录的设置 namespace。
- * @returns 该家族的行字段、档位存储形态与可选档位。
- */
-function familyOf(settingsNs: string): ModelFamily {
-  if (settingsNs === 'llm-deepseek') {
-    return { modalityKey: 'inputModalities', arrayEfforts: true, levels: DEEPSEEK_REASONING_LEVELS }
-  }
-  return { modalityKey: 'input', arrayEfforts: false, levels: PI_AI_REASONING_LEVELS }
-}
 
 /**
  * 一行声明的推理能力：档位列表里有非 off 项就是支持，显式声明无档位就是不支持，
@@ -66,14 +31,15 @@ function familyOf(settingsNs: string): ModelFamily {
  */
 function reasoningCapability(
   model: ModelDraft,
-  family: ModelFamily,
+  schema: ModelEditorSchema,
   inheritedReasoningEfforts: readonly string[] | undefined,
 ): Capability {
   const declared = model['reasoningEfforts']
-  if (family.arrayEfforts) {
+  if (schema.reasoningShape === 'none') return 'unknown'
+  if (schema.reasoningShape === 'array') {
     return Array.isArray(declared)
       ? declared.some(level => level !== 'off') ? 'supported' : 'unsupported'
-      : inheritedReasoningEfforts === undefined
+      : declared === false ? 'unsupported' : inheritedReasoningEfforts === undefined
         ? 'unknown'
         : inheritedReasoningEfforts.some(level => level !== 'off') ? 'supported' : 'unsupported'
   }
@@ -87,34 +53,14 @@ function reasoningCapability(
 /** 只投影显式声明或已知渠道继承的模型能力；缺失的 pi-ai catalog 元数据不等于不支持。 */
 export function modelCapabilities(
   model: ModelDraft,
-  settingsNs: string,
+  schema: ModelEditorSchema,
   inheritedReasoningEfforts?: readonly string[],
 ): { vision: Capability; reasoning: Capability } {
-  const family = familyOf(settingsNs)
-  const input = family.modalityKey === undefined ? undefined : model[family.modalityKey]
+  const input = schema.modalityKey === undefined ? undefined : model[schema.modalityKey]
   const vision: Capability = Array.isArray(input) && input.length > 0
     ? input.includes('image') ? 'supported' : 'unsupported'
     : 'unknown'
-  return { vision, reasoning: reasoningCapability(model, family, inheritedReasoningEfforts) }
-}
-
-/** A row's text field, or the empty string when unset or not a string. */
-function textOf(model: ModelDraft, key: string): string {
-  const value = model[key]
-  return typeof value === 'string' ? value : ''
-}
-
-/** A row's numeric field, or `undefined` when unset or not a number. */
-function numberOf(model: ModelDraft, key: string): number | undefined {
-  const value = model[key]
-  return typeof value === 'number' ? value : undefined
-}
-
-/** 局部草稿只替换表单能编辑的字段，保留目录行里未展示的提供方扩展字段。 */
-function withModelFields(model: ModelDraft, next: Record<string, unknown>): ModelDraft {
-  const cleared = new Set(Object.entries(next)
-    .filter(([, value]) => value === undefined || value === '').map(([key]) => key))
-  return Object.fromEntries(Object.entries({ ...model, ...next }).filter(([key]) => !cleared.has(key)))
+  return { vision, reasoning: reasoningCapability(model, schema, inheritedReasoningEfforts) }
 }
 
 /** What an interrogation needs, taken from the live form. */
@@ -139,6 +85,10 @@ export interface ProbeTarget {
 export interface ModelListEditorProps {
   /** The rows as currently drafted. */
   models: readonly ModelDraft[]
+  /** 由所属 settings schema 声明的模型字段。 */
+  modelSchema: ModelEditorSchema
+  /** 空容量字段显示的渠道默认上限。 */
+  capacityHints?: { contextWindow: string; maxTokens: string }
   /** Whether the user layer currently owns the whole array; absent on a create. */
   overridden?: boolean
   /** Replace the drafted rows. */
@@ -166,10 +116,12 @@ export interface ModelListEditorProps {
   inheritedReasoningEfforts?: readonly string[]
   /** 渠道级 thinking=disabled 时不能启用非 off 档位。 */
   reasoningDisabled?: boolean
-  /** pi-ai 支持的模型上游协议；DeepSeek 不显示该字段。 */
+  /** 模型字段的 schema 声明的可选协议。 */
   protocols?: readonly string[]
   /** 空的模型协议选择继承这条渠道的协议。 */
   channelProtocol?: string | undefined
+  /** 已安装目录中由部署层为单模型固定的协议，优先于渠道协议。 */
+  deploymentModelProtocols?: ReadonlyMap<string, string>
   /** 当前可选模式，来自 Host 的模式名单。 */
   presets?: readonly ModelPresetOption[]
   /** 名单读取失败时保留当前模式及继承选项，并展示诊断。 */
@@ -198,52 +150,16 @@ function IconTrash(): ReactNode {
   return <IconTrashOutline16 size={14} />
 }
 
-/** The two token counts edited as K/M-suffixed text behind a row's disclosure. */
-type CapacityField = 'contextWindow' | 'maxTokens'
-
-/**
- * 空容量字段的占位提示，按家族给出该渠道真正套用的回退值，让人知道留空会得到
- * 什么：`llm-pi-ai` 路由是 `defaultContextWindow`（262,144）与 `defaultMaxTokens`
- * （32,768），`llm-deepseek` 渠道是 256K 上下文与 256K 输出。它们只是提示而非
- * 镜像——本页把 `K` 读作 1000，输入 `256K` 存 256000，留空则仍用适配器的常量；
- * 在 `settings.yaml` 里改过渠道级回退的部署不会反映到这里。
- */
-const CAPACITY_HINTS: Readonly<Record<'pi-ai' | 'deepseek', Readonly<Record<CapacityField, string>>>> = {
-  'pi-ai': { contextWindow: '256K', maxTokens: '32K' },
-  deepseek: { contextWindow: '256K', maxTokens: '256K' },
-}
-
-/**
- * Spell a stored count for a field that may be unset. The spelling itself is
- * {@link formatCapacity}, shared with the DeepSeek catalog editor so both
- * surfaces read and write one K/M vocabulary.
- * @param value - stored capacity, or `undefined` for an unset field.
- * @returns the field text, empty when unset.
- */
-function capacitySpelling(value: number | undefined): string {
-  return value === undefined ? '' : formatCapacity(value)
-}
-
-/**
- * 空容量字段的占位提示，取该 settings namespace 所属家族的回退写法。
- * @param settingsNs - 拥有该模型目录的设置 namespace。
- * @returns 两项容量的占位文本。
- */
-function capacityHints(settingsNs: string): Readonly<Record<CapacityField, string>> {
-  return settingsNs === 'llm-deepseek' ? CAPACITY_HINTS.deepseek : CAPACITY_HINTS['pi-ai']
-}
-
-/** Adopt a candidate, keeping whatever capacities the provider disclosed. */
-function adopt(candidate: DiscoveredModelView, namespace: string, reasoningDisabled: boolean): ModelDraft {
+/** 发现服务不返回能力；用可编辑的默认值填入草稿，不作远端能力断言。 */
+function adopt(candidate: DiscoveredModelView, schema: ModelEditorSchema, disabled: boolean): ModelDraft {
+  const reasoning = defaultReasoning(schema, disabled)
   return {
     id: candidate.id,
     ...candidate.name === undefined ? {} : { name: candidate.name },
     ...candidate.contextWindow === undefined ? {} : { contextWindow: candidate.contextWindow },
     ...candidate.maxTokens === undefined ? {} : { maxTokens: candidate.maxTokens },
-    // 发现协议不带能力元数据：导入的行按家族声明默认能力，用户可在模型设置窗口里改。
-    ...namespace === 'llm-deepseek'
-      ? { inputModalities: ['text', 'image'], reasoningEfforts: reasoningDisabled ? ['off'] : ['off', 'low', 'high', 'max'] }
-      : { input: ['text', 'image'], reasoningEfforts: { off: null, low: 'low', high: 'high', max: 'max' } },
+    ...schema.modalityKey === undefined ? {} : { [schema.modalityKey]: ['text', 'image'] },
+    ...reasoning === undefined ? {} : { reasoningEfforts: reasoning },
   }
 }
 
@@ -258,7 +174,7 @@ export function modelFamily(id: string): string {
  * @returns the model-list editor.
  */
 export function ModelListEditor(props: ModelListEditorProps): ReactNode {
-  const { models, onChange, probe, api, t, disabled } = props
+  const { models, onChange, probe, api, t, disabled, modelSchema } = props
   const [busy, setBusy] = useState(false)
   const [failure, setFailure] = useState<string | undefined>(undefined)
   const [candidates, setCandidates] = useState<readonly DiscoveredModelView[] | undefined>(undefined)
@@ -268,116 +184,21 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
   // 同时只编辑一行；草稿留在独立窗口中，不进入模型目录表格的布局。
   const [activeIndex, setActiveIndex] = useState<number | null>(null)
   const anchorRef = useRef<HTMLButtonElement | null>(null)
-  const modalBodyRef = useRef<HTMLDivElement>(null)
-  const firstFieldRef = useRef<HTMLButtonElement>(null)
-  const reasoningToggleRef = useRef<HTMLButtonElement>(null)
-  const openedIndex = activeIndex !== null && activeIndex < models.length ? activeIndex : null
-  const [levelsOpen, setLevelsOpen] = useState(false)
-  const [draft, setDraft] = useState<ModelDraft | null>(null)
-  const [draftDirty, setDraftDirty] = useState(false)
-  const [presetDraft, setPresetDraft] = useState<string | undefined>(undefined)
-  const [presetOriginal, setPresetOriginal] = useState<string | undefined>(undefined)
-  const [capacityDraft, setCapacityDraft] = useState<Partial<Record<CapacityField, string>>>({})
-  const [rememberedReasoning, setRememberedReasoning] = useState<unknown>(undefined)
-  const levelsTriggerRef = useRef<HTMLButtonElement>(null)
-  const invalidCapacity = (field: CapacityField): boolean => {
-    const value = draft === null ? undefined : numberOf(draft, field)
-    return value !== undefined && (!Number.isSafeInteger(value) || value <= 0)
-  }
-  const editCapacity = (field: CapacityField, text: string): void => {
-    setDraftDirty(true)
-    setCapacityDraft(current => ({ ...current, [field]: text }))
-    setDraft(current => current === null ? null : withModelFields(current, { [field]: parseCapacity(text) }))
-  }
-
-  /** 输入期间保持原文，避免把正在键入的 1000 中途改写为 1K。 */
-  const capacityText = (model: ModelDraft, field: CapacityField): string =>
-    capacityDraft[field] ?? capacitySpelling(numberOf(model, field))
-
-  const effortsOf = (model: ModelDraft): readonly string[] =>
-    Array.isArray(model['reasoningEfforts'])
-      ? model['reasoningEfforts'] as string[]
-      : model['reasoningEfforts'] === undefined ? props.inheritedReasoningEfforts ?? [] : []
+  const openedModel = activeIndex === null ? undefined : models[activeIndex]
 
   const closeSettings = (): void => {
-    setLevelsOpen(false)
     setActiveIndex(null)
-    setDraft(null)
-    setDraftDirty(false)
-    setPresetDraft(undefined)
-    setPresetOriginal(undefined)
-    setCapacityDraft({})
-    setRememberedReasoning(undefined)
     if (anchorRef.current?.isConnected === true) anchorRef.current.focus({ preventScroll: true })
   }
 
   const openSettings = (index: number, anchor: HTMLButtonElement): void => {
-    const model = models[index]
-    if (model === undefined) return
+    if (index === activeIndex) {
+      closeSettings()
+      return
+    }
     anchorRef.current = anchor
-    setLevelsOpen(false)
-    setCapacityDraft({})
-    setDraftDirty(false)
-    const preset = props.presetForModel?.(textOf(model, 'id'))
-    setPresetDraft(preset)
-    setPresetOriginal(preset)
-    setRememberedReasoning(undefined)
-    setDraft({ ...model })
     setActiveIndex(index)
   }
-
-  const saveSettings = (): void => {
-    if (openedIndex === null || draft === null || disabled
-      || invalidCapacity('contextWindow') || invalidCapacity('maxTokens')) return
-    if (draftDirty) {
-      // 行 ID／名称仍可在窗口打开期间编辑；提交只覆盖模型设置窗口拥有的字段。
-      const { modalityKey } = familyOf(probe.settingsNs)
-      const fields = {
-        ...modalityKey === undefined ? {} : { [modalityKey]: draft[modalityKey] },
-        reasoningEfforts: draft['reasoningEfforts'],
-        ...probe.settingsNs === 'llm-pi-ai' ? { api: draft['api'] } : {},
-        contextWindow: draft['contextWindow'],
-        maxTokens: draft['maxTokens'],
-      }
-      onChange(models.map((model, index) => index === openedIndex ? withModelFields(model, fields) : model))
-    }
-    const id = textOf(models[openedIndex] as ModelDraft, 'id')
-    if (id.length > 0 && presetDraft !== presetOriginal) props.onPresetChange?.(id, presetDraft)
-    closeSettings()
-  }
-
-  const patchDraft = (next: Record<string, unknown>): void => {
-    setDraftDirty(true)
-    setDraft(current => current === null ? null : withModelFields(current, next))
-  }
-
-  useEffect(() => {
-    if (openedIndex === null) return
-    // 首个可聚焦的开关胜出；都没有时焦点落在窗口本体。
-    const first = firstFieldRef.current ?? reasoningToggleRef.current
-    if (first?.disabled === false) first.focus({ preventScroll: true })
-    else modalBodyRef.current?.focus({ preventScroll: true })
-  }, [openedIndex])
-
-  useEffect(() => {
-    if (openedIndex === null) return
-    const escape = (event: KeyboardEvent): void => {
-      if (event.key !== 'Escape') return
-      // 内层菜单或窗口先消费 Escape，不能再关闭后方的设置窗口。
-      event.preventDefault()
-      event.stopImmediatePropagation()
-      if (levelsOpen) {
-        setLevelsOpen(false)
-        levelsTriggerRef.current?.focus({ preventScroll: true })
-        return
-      }
-      closeSettings()
-    }
-    document.addEventListener('keydown', escape, true)
-    return () => {
-      document.removeEventListener('keydown', escape, true)
-    }
-  }, [openedIndex, levelsOpen])
 
   const patch = (index: number, next: Record<string, unknown>): void => {
     onChange(models.map((model, at) => at === index ? withModelFields(model, next) : model))
@@ -429,7 +250,7 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
     for (const candidate of items) {
       if (knownIds.has(candidate.id)) continue
       knownIds.add(candidate.id)
-      next.push(adopt(candidate, probe.settingsNs, props.reasoningDisabled === true))
+      next.push(adopt(candidate, modelSchema, props.reasoningDisabled === true))
     }
     onChange(next)
   }
@@ -485,10 +306,10 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
       <div className={styles['modelListHead']}>
         <div className={styles['modelCatalogHeading']}>
           <span className={styles['modelCatalogTitle']}>{t('models')}</span>
-          {props.overridden === false
+          {props.overridden === false || (props.overridden === true && props.onReset !== undefined)
             ? (
               <span className={styles['modelCatalogMeta']}>
-                {t('modelsInherited')}
+                {t(props.overridden ? 'modelsCustomized' : 'modelsInherited')}
               </span>
             ) : null}
         </div>
@@ -505,6 +326,12 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
           <IconRefreshOutline16 size={16} />{busy ? t('fetching') : t('fetchModels')}
         </button>
       </div>
+      {props.overridden === true && props.onReset !== undefined && (
+        <Button variant="ghost" size="sm" disabled={disabled} onClick={() => {
+          closeSettings()
+          props.onReset?.()
+        }}>{t('resetModels')}</Button>
+      )}
       {models.length === 0 && props.overridden !== false
         ? <p className={styles['modelEmpty']}>{t('modelsEmpty')}</p> : null}
       {models.length > 0 ? <div className={styles['modelTableScroller']} role="region"
@@ -542,7 +369,7 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
                 onChange={(event) => { patch(index, { name: event.target.value === '' ? undefined : event.target.value }) }}
               />
               {(['vision', 'reasoning'] as const).map((capability) => {
-                const state = modelCapabilities(model, probe.settingsNs, props.inheritedReasoningEfforts)[capability]
+                const state = modelCapabilities(model, modelSchema, props.inheritedReasoningEfforts)[capability]
                 const label = capability === 'vision'
                   ? t(state === 'supported' ? 'visionSupport' : state === 'unsupported' ? 'visionUnsupported' : 'visionUnspecified')
                   : t(state === 'supported' ? 'reasoningSupport' : state === 'unsupported' ? 'reasoningUnsupported' : 'reasoningUnspecified')
@@ -559,15 +386,15 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
                 className={styles['iconButton']}
                 aria-label={`${t('modelAdvanced')} ${index + 1}`}
                 aria-haspopup="dialog"
-                aria-expanded={openedIndex === index}
+                aria-expanded={activeIndex === index}
                 title={t('modelAdvanced')}
-                ref={openedIndex === index ? anchorRef : undefined}
+                ref={activeIndex === index ? anchorRef : undefined}
                 onClick={(event) => {
-                  if (openedIndex === index) closeSettings()
+                  if (activeIndex === index) closeSettings()
                   else openSettings(index, event.currentTarget)
                 }}
               >
-                <IconChevron open={openedIndex === index} />
+                <IconChevron open={activeIndex === index} />
               </button>
               <button
                 type="button"
@@ -581,10 +408,6 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
                   // 删除当前行时关闭表单；删去前面的行则跟随原有模型前移。
                   setActiveIndex(current => current === null || current === index
                     ? null : current > index ? current - 1 : current)
-                  if (openedIndex === index) {
-                    setDraft(null)
-                    setLevelsOpen(false)
-                  }
                 }}
               >
                 <IconTrash />
@@ -593,197 +416,22 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
           </div>
         ))}</div>
       </div> : null}
-      {openedIndex !== null && <Modal open trapFocus onClose={closeSettings}
-        title={t('modelAdvanced')} ariaLabel={`${t('modelAdvanced')} ${openedIndex + 1}`}
-        closeLabel={t('close')}
-        className={styles['modelSettingsDialog'] ?? ''}
-        contentClassName={styles['modelSettingsContent'] ?? ''}
-        footer={<>
-          <Button variant="outline" onClick={closeSettings}>{t('cancel')}</Button>
-          <Button variant="primary"
-            disabled={disabled || invalidCapacity('contextWindow') || invalidCapacity('maxTokens')}
-            onClick={saveSettings}>{t('save')}</Button>
-        </>}>
-        <div ref={modalBodyRef} tabIndex={-1} className={styles['modelAdvancedFields']}>
-          {(() => {
-            const index = openedIndex
-            const model = draft
-            if (model === null) return null
-            const family = familyOf(probe.settingsNs)
-            const declared = model['reasoningEfforts']
-            const declaredLevels = family.arrayEfforts
-              ? effortsOf(model)
-              : typeof declared === 'object' && declared !== null && !Array.isArray(declared)
-                ? Object.keys(declared) : []
-            const reasoningOn = declaredLevels.some(level => level !== 'off')
-            const selectedLevels = family.arrayEfforts ? effortsOf(model)
-              : typeof declared === 'object' && declared !== null && !Array.isArray(declared)
-                ? Object.keys(declared) : ['off']
-            const visionField = family.modalityKey
-            const visionOn = visionField !== undefined && Array.isArray(model[visionField])
-              && (model[visionField] as string[]).includes('image')
-            return <>
-              <div className={styles['capabilityControls']}>
-                {visionField === undefined ? null : (
-                  <button type="button" ref={firstFieldRef} className={styles['capabilityToggle']}
-                    aria-label={t('visionSupport')} aria-pressed={visionOn} disabled={disabled}
-                    onClick={() => { patchDraft({ [visionField]: visionOn ? ['text'] : ['text', 'image'] }) }}>
-                    <Icon name="model-vision" size={16} /><span>{t('visionSupport')}</span>
-                  </button>
-                )}
-                <button type="button" ref={reasoningToggleRef} className={styles['capabilityToggle']}
-                  aria-label={t('reasoningSupport')} aria-pressed={reasoningOn}
-                  disabled={disabled || props.reasoningDisabled === true}
-                  onClick={() => {
-                    if (!reasoningOn) {
-                      const restored = family.arrayEfforts
-                        ? Array.isArray(rememberedReasoning) && rememberedReasoning.some(level => level !== 'off')
-                          ? rememberedReasoning : [...family.levels]
-                        : typeof rememberedReasoning === 'object' && rememberedReasoning !== null
-                            && !Array.isArray(rememberedReasoning)
-                            && Object.keys(rememberedReasoning).some(level => level !== 'off')
-                          ? rememberedReasoning : { off: null, low: 'low', high: 'high', max: 'max' }
-                      patchDraft({ reasoningEfforts: restored })
-                    } else {
-                      setRememberedReasoning(family.arrayEfforts ? effortsOf(model) : declared)
-                      setLevelsOpen(false)
-                      patchDraft({ reasoningEfforts: family.arrayEfforts ? ['off'] : false })
-                    }
-                  }}>
-                  <Icon name="model-reasoning" size={16} /><span>{t('reasoningSupport')}</span>
-                </button>
-              </div>
-              {reasoningOn && <div className={styles['reasoningField']}>
-                <span className={styles['modelFieldLabel']}>{t('reasoningLevels')}</span>
-                <Menu portal open={levelsOpen} compact multiSelect matchAnchorWidth highlightSelected keyboardNavigation
-                  portalContainer={levelsTriggerRef.current?.closest('[role="dialog"]') ?? null}
-                  className={styles['reasoningDropdown'] ?? ''}
-                  selectedIds={selectedLevels}
-                  items={family.levels
-                    .map(level => ({ id: level, label: level === 'off' ? t('reasoningNone') : level }))}
-                  onClose={() => { setLevelsOpen(false) }}
-                  onSelect={(level) => {
-                    if (family.arrayEfforts) {
-                      const next = selectedLevels.includes(level)
-                        ? selectedLevels.filter(value => value !== level) : [...selectedLevels, level]
-                      if (next.every(value => value === 'off')) {
-                        setLevelsOpen(false)
-                        reasoningToggleRef.current?.focus({ preventScroll: true })
-                      }
-                      patchDraft({ reasoningEfforts: next.length === 0 ? ['off'] : next })
-                    } else {
-                      const prior = typeof declared === 'object' && declared !== null && !Array.isArray(declared)
-                        ? declared as Record<string, string | null> : { off: null }
-                      const next = { ...prior }
-                      if (level in next) Reflect.deleteProperty(next, level)
-                      else next[level] = level === 'off' ? null : level
-                      const offOnly = Object.keys(next).every(value => value === 'off')
-                      if (offOnly) {
-                        setLevelsOpen(false)
-                        reasoningToggleRef.current?.focus({ preventScroll: true })
-                      }
-                      patchDraft({ reasoningEfforts: offOnly ? false : next })
-                    }
-                  }}
-                  anchor={<button type="button" ref={levelsTriggerRef} className={styles['reasoningTrigger']}
-                    aria-label={`${t('reasoningLevels')}: ${selectedLevels.map(level => level === 'off'
-                      ? t('reasoningNone') : level).join(', ')}`}
-                    aria-haspopup="menu" aria-expanded={levelsOpen}
-                    disabled={disabled || props.reasoningDisabled === true}
-                    onKeyDown={(event) => {
-                      if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-                        event.preventDefault()
-                        setLevelsOpen(true)
-                      }
-                    }}
-                    onClick={() => { setLevelsOpen(current => !current) }}>
-                    <span className={styles['reasoningSelection']} aria-hidden="true">
-                      {selectedLevels.map(level => <span key={level} className={styles['reasoningChip']}>
-                        {level === 'off' ? t('reasoningNone') : level}
-                      </span>)}
-                    </span>
-                    <IconChevronDownOutline14 size={14} />
-                  </button>}
-                />
-              </div>}
-              {probe.settingsNs === 'llm-pi-ai' && props.protocols !== undefined ? (
-                <label className={styles['modelField']}>
-                  <span className={styles['modelFieldLabel']}>{t('modelApi')}</span>
-                  <select className={`${styles['input']} ${styles['selectInput']}`}
-                    aria-label={t('modelApi')} value={textOf(model, 'api')}
-                    disabled={disabled} onChange={(event) => { patchDraft({ api: event.target.value || undefined }) }}>
-                    <option value="">{props.channelProtocol === undefined ? t('modelApiInherit')
-                      : `${t('modelApiInherit')} (${props.channelProtocol})`}</option>
-                    {props.protocols.map(protocol => <option key={protocol} value={protocol}>{protocol}</option>)}
-                  </select>
-                </label>
-              ) : null}
-              {props.presetForModel !== undefined ? (
-                <div className={styles['modelField']}>
-                  <label className={styles['modelField']}>
-                    <span className={styles['modelFieldLabel']}>{t('modelDefaultPreset')}</span>
-                    <select className={`${styles['input']} ${styles['selectInput']}`}
-                      aria-label={t('modelDefaultPreset')} value={presetDraft ?? ''}
-                      disabled={disabled || props.presetDisabled === true}
-                      onChange={(event) => { setPresetDraft(event.target.value || undefined) }}>
-                      <option value="">{t('modelPresetInherit')}</option>
-                      {presetDraft !== undefined && !props.presets?.some(preset => preset.id === presetDraft)
-                        ? <option value={presetDraft}>{`${presetDraft} (${t(props.presetsError === undefined || props.presetsError === null
-                          ? 'modelPresetUnavailable' : 'modelPresetUnverified')})`}</option> : null}
-                      {props.presets?.map(preset => <option key={preset.id} value={preset.id}
-                        disabled={preset.broken !== undefined && preset.id !== presetDraft}>
-                        {preset.name ?? preset.id}{preset.broken === undefined ? '' : ` (${t('modelPresetUnavailable')})`}
-                      </option>)}
-                    </select>
-                  </label>
-                  {props.presetsError !== undefined && props.presetsError !== null
-                    ? <p className={styles['modelFieldError']} role="alert">{`${t('modelPresetListFailed')}: ${props.presetsError}`}</p>
-                    : null}
-                </div>
-              ) : null}
-              <label className={styles['modelField']}>
-                <span className={styles['modelFieldLabel']}>{t('modelContextWindow')}</span>
-                <input
-                  className={styles['input']}
-                  type="text"
-                  inputMode="numeric"
-                  value={capacityText(model, 'contextWindow')}
-                  placeholder={capacityHints(props.probe.settingsNs).contextWindow}
-                  aria-label={`${t('modelContextWindow')} ${index + 1}`}
-                  aria-invalid={invalidCapacity('contextWindow')}
-                  disabled={disabled}
-                  onChange={(event) => { editCapacity('contextWindow', event.target.value) }}
-                />
-                {invalidCapacity('contextWindow') && <span className={styles['modelFieldError']} role="alert">
-                  {t('modelContextInvalid')}
-                </span>}
-              </label>
-              <label className={styles['modelField']}>
-                <span className={styles['modelFieldLabel']}>{t('modelMaxTokens')}</span>
-                <input
-                  className={styles['input']}
-                  type="text"
-                  inputMode="numeric"
-                  value={capacityText(model, 'maxTokens')}
-                  placeholder={capacityHints(props.probe.settingsNs).maxTokens}
-                  aria-label={`${t('modelMaxTokens')} ${index + 1}`}
-                  aria-invalid={invalidCapacity('maxTokens')}
-                  disabled={disabled}
-                  onChange={(event) => { editCapacity('maxTokens', event.target.value) }}
-                />
-                {invalidCapacity('maxTokens') && <span className={styles['modelFieldError']} role="alert">
-                  {t('modelMaxTokensInvalid')}
-                </span>}
-              </label>
-            </>
-          })()}
-        </div>
-      </Modal>}
+      {openedModel !== undefined && activeIndex !== null && <ModelSettingsDialog
+        key={activeIndex} row={openedModel} index={activeIndex} view={props}
+        canEditPreset={props.presetForModel !== undefined}
+        initialPreset={props.presetForModel?.(textOf(openedModel, 'id'))}
+        onClose={closeSettings}
+        onSave={(fields, preset) => {
+          if (fields !== undefined) patch(activeIndex, fields)
+          const id = textOf(openedModel, 'id')
+          if (id.length > 0 && preset !== props.presetForModel?.(id)) props.onPresetChange?.(id, preset)
+          closeSettings()
+        }} />}
       <button
         type="button"
         className={styles['addModelButton']}
         disabled={disabled || props.catalogOnly === true}
-        onClick={() => { onChange([...models, adopt({ id: '' }, probe.settingsNs, props.reasoningDisabled === true)]) }}
+        onClick={() => { onChange([...models, adopt({ id: '' }, modelSchema, props.reasoningDisabled === true)]) }}
       >
         <IconPlusOutline16 size={16} />{t('addModel')}
       </button>

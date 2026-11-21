@@ -1,9 +1,6 @@
 /**
- * `DeepSeekAdapter`: fetch + SSE against a DeepSeek (OpenAI-compatible)
- * chat-completions endpoint, emitting harness StreamChunks. The adapter is
- * transport-only: connection facts arrive through a thunk resolved once per
- * operation and the bearer token through a per-request resolver, so the
- * registering plugin owns validation, layering, and credential policy.
+ * DeepSeek 渠道的请求路由。Chat 使用原生编码与 SSE；其余协议复用通用转换。
+ * 每次请求使用同一份连接快照和凭据，设置分层与校验由注册插件负责。
  *
  * @module dsh-llm-deepseek/adapter
  */
@@ -20,20 +17,25 @@ import type {
 } from 'coding-llm'
 import type { AttachmentStore } from 'coding-attachment'
 import type { CredentialRef } from 'coding-credentials'
-import { idleWatchdog, timeoutOf } from 'coding-timeout'
+import { streamChannelRequest } from 'coding-llm-pi-ai'
+import type { ConfiguredProtocol } from 'coding-llm-pi-ai'
 import type { AnonymousUserId } from 'coding-anonymous-user-id'
-import { dispatcherOf } from './outbound.ts'
+import { fetchForOutbound } from './outbound.ts'
 import type { DeepSeekOutbound, DeepSeekOutboundConfig } from './outbound.ts'
+import { streamCompatibleRequest } from './protocol.ts'
+import type { DeepSeekRequestOptions } from './protocol.ts'
 import { serializeRequest, serializeRequestWithImages } from './serialize.ts'
 import type { RequestDefaults } from './serialize.ts'
 import { parseSse } from './sse.ts'
 import { translate } from './translate.ts'
 import type { WireError } from './types.ts'
 
-/** One optional model entry advertised by the direct-fetch adapter. */
+/** 渠道目录中的可选模型条目。 */
 export interface DeepSeekCatalogModel {
   /** Wire model id accepted by the configured endpoint. */
   id: string
+  /** 只覆盖当前模型的上游协议；省略时继承渠道。 */
+  api?: ConfiguredProtocol
   /** Selector label; defaults to {@link id}. */
   name?: string
   /** Optional selector detail for deployments with similar model variants. */
@@ -55,8 +57,10 @@ export interface DeepSeekCatalogModel {
  * makes a configuration change reach the next request without re-registration.
  */
 export interface DeepSeekConnectionOptions {
-  /** Endpoint base; `/chat/completions` is appended. */
+  /** 上游端点的基址；请求路径由有效协议决定。 */
   baseURL: string
+  /** 渠道协议；模型显式配置时优先。 */
+  api: ConfiguredProtocol
   /**
    * Credential reference of this same resolution, resolved per request.
    * Travelling with the endpoint is the point: a request can never pair one
@@ -119,7 +123,6 @@ export const DEFAULT_CONTEXT_WINDOW = 262_144
 export const DEFAULT_MAX_TOKENS = 256_000
 /** Default bound on accumulated base64 image payload per request. */
 export const DEFAULT_MAX_REQUEST_IMAGE_BYTES = 20 * 1024 * 1024
-const STREAM_IDLE_TIMEOUT_CODE = 'LLM_STREAM_IDLE_TIMEOUT'
 const OFF_REASONING_EFFORT = ReasoningEffortId('off')
 const LOW_REASONING_EFFORT = ReasoningEffortId('low')
 const HIGH_REASONING_EFFORT = ReasoningEffortId('high')
@@ -134,8 +137,16 @@ const OFF_ONLY_REASONING_EFFORTS = [
   { id: OFF_REASONING_EFFORT, name: 'Off' },
 ] as const
 
-function modelReasoningEfforts(model: DeepSeekCatalogModel | undefined, thinking: RequestDefaults['thinking']) {
-  const available = thinking === 'disabled' ? OFF_ONLY_REASONING_EFFORTS : REASONING_EFFORTS
+function modelReasoningEfforts(model: DeepSeekCatalogModel | undefined, connection: DeepSeekConnectionOptions) {
+  // 通用网关不因路由叫 DeepSeek 就支持推理；须由模型或渠道显式声明。
+  const defaults = connection.defaults
+  const enabled = defaults.thinking !== 'disabled' && (
+    (model?.api ?? connection.api) === 'openai-completions'
+    || model?.reasoningEfforts !== undefined
+    || defaults.thinking === 'enabled'
+    || (defaults.reasoningEffort !== undefined && defaults.reasoningEffort !== 'off')
+  )
+  const available = enabled ? REASONING_EFFORTS : OFF_ONLY_REASONING_EFFORTS
   return model?.reasoningEfforts === undefined
     ? available
     : available.filter(effort => model.reasoningEfforts?.some(id => id === effort.id))
@@ -217,7 +228,7 @@ export class DeepSeekAdapter extends LlmAdapter {
   ): Promise<LlmResolvedModelInfo> {
     const connection = this.config.options()
     const configured = connection.models.find(entry => entry.id === model)
-    const efforts = modelReasoningEfforts(configured, connection.defaults.thinking)
+    const efforts = modelReasoningEfforts(configured, connection)
     const requestedDefault = connection.defaults.thinking === 'disabled'
       ? OFF_REASONING_EFFORT
       : connection.defaults.reasoningEffort === undefined
@@ -244,14 +255,15 @@ export class DeepSeekAdapter extends LlmAdapter {
     // 密钥或 User-Agent。
     const connection = this.config.options()
     const model = connection.models.find(entry => entry.id === options.model)
-    const availableEfforts = modelReasoningEfforts(model, connection.defaults.thinking)
+    const api = model?.api ?? connection.api
+    const availableEfforts = modelReasoningEfforts(model, connection)
     const defaultEffort = (connection.defaults.reasoningEffort === undefined
       ? availableEfforts.at(-1)
       : availableEfforts.find(entry => entry.id === connection.defaults.reasoningEffort))
       ?? availableEfforts.at(0) ?? REASONING_EFFORTS[0]
     const effectiveDefault = defaultEffort.id as NonNullable<RequestDefaults['reasoningEffort']>
-    if (options.purpose !== 'session-title' && model?.reasoningEfforts !== undefined) {
-      const effort = options.reasoningEffort ?? effectiveDefault
+    const effort = options.purpose === 'session-title' ? 'off' : options.reasoningEffort ?? effectiveDefault
+    if (options.purpose !== 'session-title' && (api !== 'openai-completions' || model?.reasoningEfforts !== undefined)) {
       if (!availableEfforts.some(entry => entry.id === effort)) {
         throw new LlmError(`Model "${options.model}" does not support reasoning effort "${effort}"`, 'UNSUPPORTED_REASONING_EFFORT')
       }
@@ -274,112 +286,69 @@ export class DeepSeekAdapter extends LlmAdapter {
       }
     }
     const apiKey = await this.config.resolveApiKey(connection)
-    const userId = this.config.resolveUserId()
-    const consumer = new AbortController()
-    const upstream = options.signal === undefined
-      ? consumer.signal
-      : AbortSignal.any([options.signal, consumer.signal])
-    using watchdog = idleWatchdog(upstream, connection.streamIdleTimeoutMs, STREAM_IDLE_TIMEOUT_CODE)
-    const iterator = this.request(
-      options,
-      watchdog.signal,
-      model?.reasoningEfforts === undefined ? connection : {
-        ...connection,
-        defaults: { ...connection.defaults, reasoningEffort: effectiveDefault },
-      },
-      apiKey,
-      userId,
-      attachments,
-      () => { watchdog.pulse() },
-    )[Symbol.asyncIterator]()
-    let exhausted = false
+    const headers = {
+      'user-agent': connection.userAgent,
+      'x-deepseek-harness-user-id': String(this.config.resolveUserId()),
+      ...options.sessionId !== undefined ? { 'x-deepseek-harness-session-id': String(options.sessionId) } : {},
+      ...options.purpose === 'compaction' ? { 'x-deepseek-harness-compact': '1' } : {},
+    }
+    const requestFetch = fetchForOutbound(this.config.resolveOutbound?.(connection.outbound) ?? { kind: 'direct' })
     try {
-      while (true) {
-        const result = await watchdog.next(iterator)
-        if (result.done) {
-          exhausted = true
-          return
-        }
-        yield result.value
-      }
+      yield* streamChannelRequest({
+        signal: options.signal,
+        idleTimeoutMs: connection.streamIdleTimeoutMs,
+        open: (signal, heartbeat) => {
+          const requestOptions = { apiKey, headers, signal, fetch: requestFetch }
+          return api === 'openai-completions'
+            ? this.requestChat(
+              options, connection,
+              model?.reasoningEfforts === undefined ? connection.defaults : { ...connection.defaults, reasoningEffort: effectiveDefault },
+              requestOptions, attachments, heartbeat,
+            )
+            : streamCompatibleRequest(options, { api, connection, model, efforts: availableEfforts, effort, requestOptions, attachments })
+        },
+      })
     } catch (error: unknown) {
-      if (timeoutOf(watchdog.signal, STREAM_IDLE_TIMEOUT_CODE) !== undefined) {
-        throw new LlmError(
-          `Stream idle timeout after ${connection.streamIdleTimeoutMs}ms`,
-          'TIMEOUT',
-          { cause: error },
-        )
-      }
-      if (options.signal?.aborted) {
-        throw new LlmError('Request aborted by caller', 'ABORTED', { cause: error })
-      }
       if (error instanceof LlmError) throw error
       throw new LlmError(`API stream from ${connection.baseURL} failed`, 'TRANSPORT', { cause: error })
-    } finally {
-      consumer.abort('stream consumer stopped')
-      if (!exhausted && iterator.return !== undefined) {
-        try {
-          await iterator.return()
-        } catch (_abortedTransportTeardown) {
-          // The consumer controller already owns termination; a return-time abort cannot add a second outcome.
-        }
-      }
     }
   }
 
-  private async * request(
+  private async * requestChat(
     options: GenerateOptions,
-    signal: AbortSignal,
     connection: DeepSeekConnectionOptions,
-    apiKey: string,
-    userId: AnonymousUserId,
+    defaults: RequestDefaults,
+    request: DeepSeekRequestOptions,
     attachments: AttachmentStore | undefined,
     onComment: () => void,
   ): AsyncIterable<StreamChunk> {
     const body = attachments === undefined
-      ? serializeRequest(options, connection.defaults)
+      ? serializeRequest(options, defaults)
       : await serializeRequestWithImages(options, {
         attachments,
         maxRequestImageBytes: connection.maxRequestImageBytes,
-        signal,
-      }, connection.defaults)
-    // Prepared outside the try so the TRANSPORT label below covers exactly the
-    // transport boundary, never a serialization failure.
+        signal: request.signal,
+      }, defaults)
+    // 编码失败不是传输失败；这里只归类真正发出的 HTTP 请求。
     const payload = JSON.stringify(body)
     const headers = {
-      'authorization': `Bearer ${apiKey}`,
+      'authorization': `Bearer ${request.apiKey}`,
       'content-type': 'application/json',
       'accept': 'text/event-stream',
-      'user-agent': connection.userAgent,
-      'x-deepseek-harness-user-id': String(userId),
-      ...options.sessionId !== undefined
-        ? { 'x-deepseek-harness-session-id': String(options.sessionId) }
-        : {},
-      ...options.purpose === 'compaction'
-        ? { 'x-deepseek-harness-compact': '1' }
-        : {},
+      ...request.headers,
     }
 
-    // 出站按渠道选择逐请求解析：直连不注入 dispatcher，代理池或自定义代理走
-    // 该地址的 ProxyAgent。TODO(http): 需要共享传输配置时改用 Cordis HTTP 服务。
-    const outbound = this.config.resolveOutbound?.(connection.outbound) ?? { kind: 'direct' }
-    const dispatcher = dispatcherOf(outbound)
     let response: Response
     try {
-      response = await fetch(`${connection.baseURL}/chat/completions`, {
+      response = await request.fetch(`${connection.baseURL}/chat/completions`, {
         method: 'POST',
         headers,
         body: payload,
-        signal,
-        ...dispatcher === undefined ? {} : { dispatcher },
+        signal: request.signal,
       })
     } catch (error: unknown) {
-      // The outer stream distinguishes caller cancellation and watchdog expiry.
-      if (signal.aborted) throw error
-      // fetch wraps every transport failure (DNS, refused connection, TLS,
-      // proxy) in a bare `TypeError: fetch failed` whose actionable detail
-      // lives on `cause`. Wrapping with the endpoint and chaining the cause
-      // lets `errorChain` render the full diagnosis at every reporting boundary.
+      // 调用方取消与空闲超时由外层区分。保留 fetch 的 cause 供错误诊断。
+      if (request.signal.aborted) throw error
       throw new LlmError(
         `API request to ${connection.baseURL} failed`,
         'TRANSPORT',

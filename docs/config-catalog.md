@@ -1045,6 +1045,8 @@ export interface Config {
   apiKeyEnv?: string
   /** Endpoint base; falls back to $DEEPSEEK_BASE_URL from a trusted environment layer, then the public API. */
   baseURL?: string
+  /** 渠道的默认请求协议；省略时使用 OpenAI Chat Completions。 */
+  api?: ConfiguredProtocol
   /** Deployment thinking policy; `disabled` limits every conversation request to `off`. */
   thinking?: 'enabled' | 'disabled'
   /** 默认思考档位；省略时使用所选模型支持的最高档位；`off` 关闭思考。 */
@@ -1073,10 +1075,12 @@ export interface Config {
   outbound?: OutboundConfig
 }
 
-/** One optional model entry advertised by the direct-fetch adapter. */
+/** 渠道目录中的可选模型条目。 */
 export interface DeepSeekCatalogModel {
   /** Wire model id accepted by the configured endpoint. */
   id: string
+  /** 只覆盖当前模型的上游协议；省略时继承渠道。 */
+  api?: ConfiguredProtocol
   /** Selector label; defaults to {@link id}. */
   name?: string
   /** Optional selector detail for deployments with similar model variants. */
@@ -1092,9 +1096,9 @@ export interface DeepSeekCatalogModel {
 }
 ```
 
-Depends on: [`ModelModality`](subsystems/llm-streaming.md) · [`OutboundConfig`](../packages/net/proxy-pool/src/index.ts) · [`RetryPolicyConfig`](../packages/llm/llm/src/index.ts)
+Depends on: [`ConfiguredProtocol`](../packages/llm/llm-pi-ai/src/index.ts) · [`ModelModality`](subsystems/llm-streaming.md) · [`OutboundConfig`](../packages/net/proxy-pool/src/index.ts) · [`RetryPolicyConfig`](../packages/llm/llm/src/index.ts)
 
-Source: [`packages/llm/llm-deepseek/src/index.ts:74`](../packages/llm/llm-deepseek/src/index.ts)
+Source: [`packages/llm/llm-deepseek/src/index.ts:78`](../packages/llm/llm-deepseek/src/index.ts)
 
 <a id="coding-llm-pi-ai"></a>
 
@@ -1120,9 +1124,9 @@ export interface PiAiProviderProfile {
   /** Name shown by configuration surfaces; defaults to the route key. */
   displayName?: string
   /**
-   * Wire protocol every model on this route speaks. Omission keeps each
-   * installed catalog model's own protocol, which is why a catalog route needs
-   * no protocol at all; a route the catalog does not ship must name one.
+   * 本渠道所有模型使用的上游协议。省略时，未被已安装 catalog 描述的渠道使用
+   * OpenAI Chat Completions（`openai-completions`）；catalog 渠道仍保留模型自身的
+   * 协议，显式的模型级 api 可以单独覆盖。
    */
   api?: string
   /** Endpoint for this route's models; defaults to the installed catalog's endpoint. */
@@ -1354,7 +1358,7 @@ export type PiAiThinkingFormat = NonNullable<OpenAICompletionsCompat['thinkingFo
 
 Depends on: `Api` (`@earendil-works/pi-ai`) · `CacheRetention` (`@earendil-works/pi-ai`) · `Model` (`@earendil-works/pi-ai`) · `ModelThinkingLevel` (`@earendil-works/pi-ai`) · `OpenAICompletionsCompat` (`@earendil-works/pi-ai`) · [`RetryPolicyConfig`](../packages/llm/llm/src/index.ts) · `ThinkingBudgets` (`@earendil-works/pi-ai`) · `Transport` (`@earendil-works/pi-ai`)
 
-Source: [`packages/llm/llm-pi-ai/src/config.ts:207`](../packages/llm/llm-pi-ai/src/config.ts)
+Source: [`packages/llm/llm-pi-ai/src/config.ts:214`](../packages/llm/llm-pi-ai/src/config.ts)
 
 <a id="coding-llm-replay"></a>
 

@@ -9,6 +9,7 @@ export type Behavior =
 
 export interface MockServer {
   url: string
+  paths: string[]
   /** Bodies of received requests, in order. */
   requests: unknown[]
   /** Header bags of received requests, in order (parallel to `requests`). */
@@ -32,14 +33,16 @@ export const textEvents = [
   '[DONE]',
 ]
 
-/** Local chat-completions stand-in: replays scripted behaviors per request. */
+/** 本地上游：依次回放请求对应的 SSE 或 HTTP 错误。 */
 export async function mockServer(script: Behavior[]): Promise<MockServer> {
+  const paths: string[] = []
   const requests: unknown[] = []
   const headers: IncomingMessage['headers'][] = []
   const server = createServer((request: IncomingMessage, response: ServerResponse) => {
     let body = ''
     request.on('data', (chunk: Buffer) => { body += chunk.toString('utf8') })
     request.on('end', () => {
+      paths.push(request.url ?? '')
       requests.push(JSON.parse(body))
       headers.push(request.headers)
       const behavior = script.shift()
@@ -62,7 +65,9 @@ export async function mockServer(script: Behavior[]): Promise<MockServer> {
           else response.destroy() // close-early: drop the socket mid-stream
           return
         }
-        response.write(`data: ${behavior.events[index]}\n\n`)
+        const event = behavior.events[index]
+        // Anthropic SDK 只消费带 SSE event 名称的 Messages 帧。
+        response.write(event?.startsWith('event: ') ? `${event}\n\n` : `data: ${event}\n\n`)
         setTimeout(() => { write(index + 1) }, behavior.kind === 'sse' ? behavior.delayMs ?? 0 : 5)
       }
       write(0)
@@ -74,6 +79,7 @@ export async function mockServer(script: Behavior[]): Promise<MockServer> {
   if (address === null || typeof address === 'string') throw new Error('no port')
   return {
     url: `http://127.0.0.1:${address.port}`,
+    paths,
     requests,
     headers,
     script,

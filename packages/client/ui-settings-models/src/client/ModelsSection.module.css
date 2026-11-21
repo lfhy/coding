@@ -751,6 +751,25 @@ select.input {
   cursor: default;
 }
 
+.protocolMenu {
+  display: grid;
+  width: min(100%, 300px);
+  min-width: 0;
+}
+
+.protocolTrigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+  text-align: start;
+  cursor: pointer;
+}
+
+.protocolTrigger span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.protocolTrigger svg { flex: none; color: var(--dsw-alias-label-tertiary); }
+
 /* Select variant of .input: replaces the OS arrow (which sits flush against
    the right edge) with the shared 12px chevron inset like the composer's
    .select chips; the right pad reserves its cell. */
@@ -1083,6 +1102,7 @@ select.input {
 }
 .customChannelTab:disabled { opacity: .4; cursor: default; }
 .customChannelPanel { display: flex; flex-direction: column; min-width: 0; gap: 14px; }
+.customChannelPanel .protocolMenu { width: 100%; }
 .customChannelPanel select.input { max-width: none; }
 .customChannelPanel > .modelCatalog { padding-top: 0; border-top: 0; }
 .customChannelActions { display: flex; align-items: center; justify-content: space-between; gap: 8px; }

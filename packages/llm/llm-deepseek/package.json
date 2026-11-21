@@ -1,6 +1,6 @@
 {
   "name": "coding-llm-deepseek",
-  "description": "DeepSeek chat-completions adapter for the DeepSeek Harness LLM seam",
+  "description": "Configurable DeepSeek channel with native Chat Completions and shared request protocols",
   "version": "0.1.0-rc.8",
   "publishConfig": {
     "access": "public"
@@ -37,6 +37,7 @@
     "coding-launch-environment": "workspace:^",
     "coding-invariants": "workspace:^",
     "coding-llm": "workspace:^",
+    "coding-llm-pi-ai": "workspace:^",
     "coding-settings": "workspace:^",
     "coding-timeout": "workspace:^",
     "coding-anonymous-user-id": "workspace:^",
@@ -54,6 +55,7 @@
     "coding-launch-environment": "workspace:^",
     "coding-invariants": "workspace:^",
     "coding-llm": "workspace:^",
+    "coding-llm-pi-ai": "workspace:^",
     "coding-settings": "workspace:^",
     "coding-timeout": "workspace:^",
     "coding-anonymous-user-id": "workspace:^",

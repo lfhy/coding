@@ -61,6 +61,8 @@ describe.skipIf(MODE === 'record')('web e2e: first-run DeepSeek credential setup
     await introChannels.getByRole('button', { name: /^DeepSeek/ }).click()
     const keyInput = onboarding.getByLabel('API 密钥', { exact: true })
     await keyInput.waitFor({ timeout: 10_000 })
+    expect(await onboarding.getByRole('button', { name: '上游请求格式', exact: true }).textContent())
+      .toBe('自动 (OpenAI Chat Completions)')
     const initial = await captureStableAria(page, '[role="dialog"][aria-label="配置模型，开始使用"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(MISSING_EXPECTED, initial, MODE)
     if (process.env.DSH_SCREENSHOT_DIR !== undefined) {
@@ -81,6 +83,8 @@ describe.skipIf(MODE === 'record')('web e2e: first-run DeepSeek credential setup
     const onboardingCard = page.getByRole('dialog', { name: '模型设置 2' })
     expect(await onboardingCard.evaluate(node => node.parentElement?.parentElement === document.body)).toBe(true)
     expect(await onboarding.count()).toBe(1)
+    expect(await onboardingCard.getByRole('button', { name: '上游请求格式', exact: true }).textContent())
+      .toBe('继承渠道格式 (OpenAI Chat Completions)')
     await onboardingCard.getByLabel('最大输出 token 2').fill('32K')
     await onboardingCard.getByRole('button', { name: '保存', exact: true }).click()
     await onboardingCard.waitFor({ state: 'detached' })

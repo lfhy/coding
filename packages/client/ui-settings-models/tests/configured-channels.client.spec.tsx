@@ -5,7 +5,7 @@ import Schema from '@deepseek-ai/schemastery'
 import type { CredentialView, SettingsNamespaceView, SettingsPathOpView } from 'coding-api-remotes/client'
 import { bindSnapshotSelector } from 'coding-client-test-runtime'
 import { SettingsDescribeMirror } from 'coding-client-ui-settings/src/client/settings-mirror.ts'
-import { DeepSeekOnboardingDialog } from '../src/client/DeepSeekOnboardingDialog.tsx'
+import { ModelsOnboardingDialog } from '../src/client/ModelsOnboardingDialog.tsx'
 import { ModelsSection } from '../src/client/ModelsSection.tsx'
 import { ModelsSettingsStore } from '../src/client/store.ts'
 import { en } from '../src/client/locales.ts'
@@ -102,7 +102,7 @@ async function mount(options: FixtureOptions = {}) {
   const complete = vi.fn()
   const unusedHook = (() => { throw new Error('unused hook') }) as never
   if (options.onboarding === true) {
-    render(<DeepSeekOnboardingDialog stepId="deepseek-official" complete={complete} openSection={vi.fn()}
+    render(<ModelsOnboardingDialog stepId="models" complete={complete} openSection={vi.fn()}
       useSessions={unusedHook} useWorkspaces={unusedHook} controller={controller}
       useModels={bindSnapshotSelector(controller.store)} api={api as never} schema={settingsSchema} t={key => en[key]} />)
   } else {

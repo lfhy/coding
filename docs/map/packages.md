@@ -246,7 +246,7 @@ workspace 共 280 个包，按 group 分节。每行给出包目录、职责（R
 ## packages/llm
 
 - `packages/llm/llm` — 提供方无关的 LLM（大语言模型）词汇与抽象服务 入口 `src/index.ts`（tests 13）
-- `packages/llm/llm-deepseek` — harness LLM（大语言模型）seam 的 DeepSeek 适配器：默认的 Chat Completions 请求使用专用的 `fetc… 入口 `src/index.ts`（tests 7）
+- `packages/llm/llm-deepseek` — 本包为内置 `deepseek-official` 路由提供存量兼容，保留 `llm-deepseek` 配置分节… 入口 `src/index.ts`（tests 7）
 - `packages/llm/llm-opencode` — 内置 **Free** 渠道适配器：把本项目维护的免费模型注册成 harness 的一个原生 LLM 提供方 入口 `src/index.ts`（tests 2）
 - `packages/llm/llm-pi-ai` — 基于 `@earendil-works/pi-ai` 的 harness LLM（大语言模型）seam 通用多提供方适配器 入口 `src/index.ts`（tests 11）
 - `packages/llm/llm-retry` — 一个函数插件，通过 agent loop（智能体循环）在已关闭步骤上触发的 `agent/request-error` waterfall… 入口 `src/index.ts`（tests 5）

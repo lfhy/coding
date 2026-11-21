@@ -8,6 +8,7 @@ import type { Message, ToolSchema } from 'coding-llm'
 import { LocalCredentialProvider } from 'coding-credentials-local'
 import * as LlmDeepSeek from 'coding-llm-deepseek'
 import type { Config } from 'coding-llm-deepseek'
+import * as LlmPiAi from 'coding-llm-pi-ai'
 import { assemble, type AssembledResult } from './assemble.ts'
 
 /**
@@ -194,5 +195,28 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY)('llm-deepseek e2e (real API)', ()
     expect(kinds.filter(kind => kind === 'finish')).toHaveLength(1)
     // usage precedes finish (deferred-emit contract)
     expect(kinds.indexOf('usage')).toBeLessThan(kinds.indexOf('finish'))
+  })
+
+  it('produces the same block structure through both adapters for the same prompt', async () => {
+    const deepseekCtx = await harness(FLASH, { thinking: 'disabled' })
+    const piCtx = new Context()
+    contexts.push(piCtx)
+    await piCtx.plugin(LlmRuntime)
+    await piCtx.plugin(LlmPiAi, {
+      providers: {
+        deepseek: {
+          ...process.env.DEEPSEEK_API_KEY === undefined ? {} : { apiKey: process.env.DEEPSEEK_API_KEY },
+          ...process.env.DEEPSEEK_BASE_URL === undefined ? {} : { baseURL: process.env.DEEPSEEK_BASE_URL },
+          reasoning: 'off',
+        },
+      },
+    })
+    const messages = ask('Reply with exactly the word: pong')
+    const [fromDeepSeek, fromPiAi] = await Promise.all([
+      assemble(deepseekCtx, { model: FLASH, messages, maxTokens: 50 }),
+      assemble(piCtx, { provider: 'deepseek', model: FLASH, messages, maxTokens: 50 }),
+    ])
+    expect(fromPiAi.message.content.map(block => block.type)).toEqual(fromDeepSeek.message.content.map(block => block.type))
+    expect(fromPiAi.finish.kind).toBe(fromDeepSeek.finish.kind)
   })
 })

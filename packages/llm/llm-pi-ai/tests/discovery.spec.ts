@@ -270,7 +270,8 @@ describe('draft-provider model discovery', () => {
     })
     await expect(discoverModels({ baseURL: redirect.url, apiKey: 'secret' }))
       .rejects.toMatchObject({ code: 'DISCOVERY_FAILED' })
-    expect(requests[0]?.redirect).toBe('error')
+    expect(requests).toHaveLength(1)
+    expect(requests[0]?.redirect).toBe('manual')
     expect(target.paths).toEqual([])
   })
 

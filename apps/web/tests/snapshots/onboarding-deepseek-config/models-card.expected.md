@@ -7,6 +7,10 @@
   - text: 思考档位
   - 'button "思考档位: 无, low, high"':
     - img
+  - text: 上游请求格式
+  - button "上游请求格式":
+    - text: 继承渠道格式 (OpenAI Chat Completions)
+    - img
   - text: 默认模式
   - combobox "默认模式":
     - option "继承全局默认模式" [selected]

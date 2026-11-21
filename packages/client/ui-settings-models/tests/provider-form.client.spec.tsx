@@ -8,7 +8,7 @@ import type { RpcResponse, SettingsNamespaceView } from 'coding-api-remotes/clie
 import { ModelsSection, providerCopy } from '../src/client/ModelsSection.tsx'
 import type { ModelsSectionInjected, ModelsSectionProps } from '../src/client/ModelsSection.tsx'
 import { CustomProviderCard } from '../src/client/CustomProviderCard.tsx'
-import { formatCapacity, parseCapacity } from '../src/client/DeepSeekModelsEditor.tsx'
+import { formatCapacity, parseCapacity } from '../src/client/model-editor-helpers.ts'
 import { SettingsDescribeMirror } from 'coding-client-ui-settings/src/client/settings-mirror.ts'
 import { ModelsSettingsStore, deriveKeyRef, protocolChoices } from '../src/client/store.ts'
 import { en } from '../src/client/locales.ts'
@@ -29,6 +29,10 @@ afterEach(() => {
 
 const t: ModelsSectionInjected['t'] = key => en[key]
 
+const PI_AI_REASONING_LEVELS = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']
+const PI_AI_MODEL_SCHEMA = {
+  modalityKey: 'input', reasoningShape: 'map', reasoningLevels: PI_AI_REASONING_LEVELS,
+} as const
 const PROTOCOLS = ['openai-completions', 'openai-responses', 'anthropic-messages']
 const PI_AI_CAPABILITIES = {
   input: ['text', 'image'],
@@ -40,7 +44,18 @@ function piAiModel(fields: Record<string, unknown>): Record<string, unknown> {
   return { ...fields, ...PI_AI_CAPABILITIES }
 }
 
-/** The pi-ai profile shape as the host serializes it, including the layer-1 fields. */
+const PiAiModelFields = {
+  api: Schema.union<string>(PROTOCOLS),
+  name: Schema.string(),
+  contextWindow: Schema.number().step(1).min(1),
+  maxTokens: Schema.number().step(1).min(1),
+  input: Schema.array(Schema.union(['text', 'image'])),
+  reasoningEfforts: Schema.union([
+    Schema.const(false),
+    Schema.dict(Schema.union([Schema.string(), Schema.const(null)]), Schema.union(PI_AI_REASONING_LEVELS)),
+  ]),
+  compat: Schema.object({ temperature: Schema.boolean(), supportsDeveloperRole: Schema.boolean() }),
+}
 const PiAiConfig = Schema.object({
   providers: Schema.dict(Schema.object({
     apiKey: Schema.string().role('secret'),
@@ -48,13 +63,8 @@ const PiAiConfig = Schema.object({
     displayName: Schema.string(),
     api: Schema.union(PROTOCOLS),
     baseURL: Schema.string(),
-    models: Schema.array(Schema.object({
-      id: Schema.string().required(),
-      api: Schema.union(PROTOCOLS),
-      name: Schema.string(),
-      contextWindow: Schema.number(),
-      maxTokens: Schema.number(),
-    })),
+    models: Schema.array(Schema.object({ id: Schema.string().required(), ...PiAiModelFields })),
+    modelOverrides: Schema.dict(Schema.object(PiAiModelFields)),
     reasoning: Schema.union(['off', 'high']),
   })),
 })
@@ -257,6 +267,18 @@ function addCustomModel(id = 'm', index = 1): void {
 /** 打开指定模型行的设置浮层。 */
 function expandModel(index: number): void {
   fireEvent.click(screen.getByRole('button', { name: `${en.modelAdvanced} ${index}` }))
+}
+
+/** 通过共享协议菜单选择一项；空值选项用于恢复继承。 */
+function selectProtocol(scope: HTMLElement, label: string): void {
+  fireEvent.click(within(scope).getByRole('button', { name: en.customApi }))
+  fireEvent.click(within(scope).getByRole('menuitem', { name: label }))
+}
+
+/** 在模型设置窗口中选择协议或继承渠道格式。 */
+function selectModelProtocol(scope: HTMLElement, label: string): void {
+  fireEvent.click(within(scope).getByRole('button', { name: en.modelApi }))
+  fireEvent.click(within(scope).getByRole('menuitem', { name: label }))
 }
 
 /** 浮层保存只提交到提供方草稿，持久化仍由提供方表单负责。 */
@@ -728,7 +750,7 @@ describe('endpoint interrogation', () => {
     })
     render(
       <CustomProviderCard
-        taken={[]} protocols={PROTOCOLS} revision={7} api={scripted.face as never}
+        taken={[]} protocols={PROTOCOLS} modelSchema={PI_AI_MODEL_SCHEMA} revision={7} api={scripted.face as never}
         t={t} readOnly={false} onClose={vi.fn()}
       />,
     )
@@ -740,7 +762,7 @@ describe('endpoint interrogation', () => {
     fireEvent.click(screen.getByRole('button', { name: en.customBack }))
     fireEvent.change(screen.getByLabelText(en.baseUrl), { target: { value: 'https://edited.test/v1' } })
     fireEvent.change(screen.getByLabelText(en.keyInput), { target: { value: '  typed-key  ' } })
-    fireEvent.change(screen.getByLabelText(en.customApi), { target: { value: 'openai-responses' } })
+    selectProtocol(document.body, 'OpenAI Responses')
     nextCustomStep()
     fireEvent.click(screen.getByRole('button', { name: en.fetchModels }))
     await waitFor(() => { expect(scripted.discover).toHaveBeenCalledTimes(2) })
@@ -865,11 +887,11 @@ describe('channel directory and detail', () => {
     openEditor('acme-gateway')
     expect(screen.getByRole('textbox', { name: en.baseUrl })).toHaveProperty('value', 'https://acme.test/v1')
     expect(screen.getByRole('textbox', { name: en.customDisplayName })).toBeTruthy()
-    expect(screen.getByRole('combobox', { name: en.customApi })).toBeTruthy()
+    expect(screen.getByRole('button', { name: en.customApi })).toBeTruthy()
     fireEvent.change(search, { target: { value: '' } })
     openEditor('openai')
     expect(screen.queryByRole('textbox', { name: en.customDisplayName })).toBeNull()
-    expect(screen.getByRole('combobox', { name: en.customApi })).toBeTruthy()
+    expect(screen.getByRole('button', { name: en.customApi })).toBeTruthy()
   })
 
   it('does not claim a hand-declared identity when the adapter reports no distinction', async () => {
@@ -896,7 +918,7 @@ describe('channel directory and detail', () => {
 
     openEditor('openai')
     expect(screen.queryByRole('textbox', { name: en.customDisplayName })).toBeNull()
-    expect(screen.getByRole('combobox', { name: en.customApi })).toBeTruthy()
+    expect(screen.getByRole('button', { name: en.customApi })).toBeTruthy()
   })
 })
 
@@ -909,7 +931,7 @@ describe('hand-declared providers', () => {
     const onClose = vi.fn()
     const view = render(
       <CustomProviderCard
-        taken={['openai']} protocols={PROTOCOLS} revision={7}
+        taken={['openai']} protocols={PROTOCOLS} modelSchema={PI_AI_MODEL_SCHEMA} revision={7}
         api={scripted.face as never} t={t} readOnly={false} onClose={onClose}
         {...overrides}
       />,
@@ -917,9 +939,10 @@ describe('hand-declared providers', () => {
     return { ...scripted, onClose, view }
   }
 
-  it('associates all visible channel labels with native controls and hides the generated ID', () => {
+  it('names the channel controls accessibly and hides the generated ID', () => {
     mountCard()
-    for (const label of [en.channelName, en.baseUrl, en.customApi, en.keyInput]) {
+    expect(screen.getByRole('button', { name: en.customApi }).textContent).toBe('Automatic (OpenAI Chat Completions)')
+    for (const label of [en.channelName, en.baseUrl, en.keyInput]) {
       const field = screen.getByLabelText(label)
       const visibleLabel = screen.getByText<HTMLLabelElement>(label, { selector: 'label' })
       expect(visibleLabel.control).toBe(field)
@@ -946,9 +969,8 @@ describe('hand-declared providers', () => {
     fireEvent.change(screen.getByLabelText(en.baseUrl), { target: { value: '   ' } })
     expect(buttonNamed(en.customNext).disabled).toBe(true)
     fireEvent.change(screen.getByLabelText(en.baseUrl), { target: { value: 'https://acme.test/v1' } })
-    fireEvent.change(screen.getByLabelText(en.customApi), { target: { value: '' } })
-    expect(buttonNamed(en.customNext).disabled).toBe(true)
-    fireEvent.change(screen.getByLabelText(en.customApi), { target: { value: 'openai-completions' } })
+    expect(screen.getByRole('button', { name: en.customApi }).textContent)
+      .toBe('Automatic (OpenAI Chat Completions)')
     fireEvent.change(screen.getByLabelText(en.keyInput), { target: { value: 'sk-\u{1F600}' } })
     expect(screen.getByText(en.keyIllegalCharacters)).toBeTruthy()
     expect(buttonNamed(en.customNext).disabled).toBe(true)
@@ -968,7 +990,7 @@ describe('hand-declared providers', () => {
     fireEvent.keyDown(information, { key: 'ArrowRight' })
     expect(information.getAttribute('aria-selected')).toBe('true')
     fillCustomChannel('Acme Gateway', 'https://acme.test/v1', 'gw-key')
-    fireEvent.change(screen.getByLabelText(en.customApi), { target: { value: 'anthropic-messages' } })
+    selectProtocol(document.body, 'Anthropic Messages')
     fireEvent.keyDown(information, { key: 'ArrowLeft' })
     expect(document.activeElement).toBe(models)
     expect(models.getAttribute('aria-selected')).toBe('true')
@@ -993,7 +1015,7 @@ describe('hand-declared providers', () => {
     expect(screen.getByLabelText(en.channelName)).toHaveProperty('value', 'Acme Gateway')
     expect(screen.getByLabelText(en.baseUrl)).toHaveProperty('value', 'https://acme.test/v1')
     expect(screen.getByLabelText(en.keyInput)).toHaveProperty('value', 'gw-key')
-    expect(screen.getByLabelText(en.customApi)).toHaveProperty('value', 'anthropic-messages')
+    expect(screen.getByRole('button', { name: en.customApi }).textContent).toBe('Anthropic Messages')
     nextCustomStep()
     expect(screen.getByLabelText(`${en.modelId} 1`)).toHaveProperty('value', 'm')
     fireEvent.click(screen.getByRole('button', { name: en.customBack }))
@@ -1011,8 +1033,7 @@ describe('hand-declared providers', () => {
     fireEvent.click(screen.getByRole('button', { name: en.fetchModels }))
     await waitFor(() => { expect(discover).toHaveBeenCalledOnce() })
     expect(firstProbe(discover)).toEqual({
-      settingsNs: 'llm-pi-ai', baseURL: 'https://gateway.acme.example/v1',
-      api: 'openai-completions', apiKey: 'gw-key',
+      settingsNs: 'llm-pi-ai', baseURL: 'https://gateway.acme.example/v1', apiKey: 'gw-key',
     })
     const picker = await screen.findByRole('dialog')
     fireEvent.click(within(picker).getByRole('button', { name: en.cancel }))
@@ -1034,7 +1055,7 @@ describe('hand-declared providers', () => {
       ops: [{
         op: 'set', path: ['providers', GENERATED_ROUTE], value: {
           displayName: 'Renamed Gateway', apiKeyEnv: deriveKeyRef(GENERATED_ROUTE),
-          api: 'openai-completions', baseURL: 'https://gateway.acme.example/v1',
+          baseURL: 'https://gateway.acme.example/v1',
           models: [piAiModel({ id: 'acme-large', contextWindow: 65_536 })],
         },
       }],
@@ -1065,7 +1086,7 @@ describe('hand-declared providers', () => {
     nextCustomStep()
     addCustomModel()
     const rerenderTaken = (taken: readonly string[]): void => {
-      view.rerender(<CustomProviderCard taken={taken} protocols={PROTOCOLS} revision={8}
+      view.rerender(<CustomProviderCard taken={taken} protocols={PROTOCOLS} modelSchema={PI_AI_MODEL_SCHEMA} revision={8}
         api={face as never} t={t} readOnly={false} onClose={onClose} />)
     }
     rerenderTaken(['openai', GENERATED_ROUTE])
@@ -1189,7 +1210,7 @@ describe('hand-declared providers', () => {
     expect(screen.queryByRole('textbox', { name: 'Provider ID' })).toBeNull()
     expect(screen.getByRole('textbox', { name: en.channelName })).toBeTruthy()
     expect(screen.getByRole('textbox', { name: en.baseUrl })).toBeTruthy()
-    expect(screen.getByRole('combobox', { name: en.customApi })).toBeTruthy()
+    expect(screen.getByRole('button', { name: en.customApi })).toBeTruthy()
     expect(screen.getByLabelText(en.keyInput)).toBeTruthy()
     cleanup()
     await mountSection({ providers: { openai: { apiKeyEnv: 'OPENAI_API_KEY' } } })
@@ -1197,7 +1218,7 @@ describe('hand-declared providers', () => {
     expect(screen.getByLabelText(en.keyInput)).toBeTruthy()
     expect(screen.getByRole('textbox', { name: en.baseUrl })).toBeTruthy()
     expect(screen.queryByRole('textbox', { name: en.customDisplayName })).toBeNull()
-    expect(screen.getByRole('combobox', { name: en.customApi })).toBeTruthy()
+    expect(screen.getByRole('button', { name: en.customApi })).toBeTruthy()
     cleanup()
     await mountSection({
       providers: { 'acme-gateway': { api: 'openai-completions', baseURL: 'https://gateway.acme.example/v1' } },
@@ -1205,7 +1226,7 @@ describe('hand-declared providers', () => {
     })
     openEditor('acme-gateway')
     expect(screen.getByRole('textbox', { name: en.customDisplayName })).toBeTruthy()
-    expect(screen.getByRole('combobox', { name: en.customApi })).toBeTruthy()
+    expect(screen.getByRole('button', { name: en.customApi })).toBeTruthy()
     expect(screen.queryByRole('textbox', { name: 'Provider ID' })).toBeNull()
   })
 
@@ -1311,9 +1332,9 @@ describe('hand-declared providers', () => {
     })
     openEditor('acme-gateway')
 
-    const protocol = screen.getByLabelText<HTMLSelectElement>(en.customApi)
-    expect(protocol.value).toBe('openai-completions')
-    fireEvent.change(protocol, { target: { value: 'anthropic-messages' } })
+    const protocol = screen.getByRole<HTMLButtonElement>('button', { name: en.customApi })
+    expect(protocol.textContent).toBe('OpenAI Chat Completions')
+    selectProtocol(document.body, 'Anthropic Messages')
     fireEvent.click(screen.getByText(en.apply))
 
     await waitFor(() => { expect(mutate).toHaveBeenCalledTimes(1) })
@@ -1333,9 +1354,29 @@ describe('hand-declared providers', () => {
     })
     openEditor('acme-gateway')
 
-    expect(screen.getByLabelText<HTMLSelectElement>(en.customApi).value).toBe('')
-    expect(screen.getByLabelText<HTMLSelectElement>(en.customApi).selectedOptions[0]?.textContent)
-      .toBe(en.customApiUnset)
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: en.customApi }).textContent)
+      .toBe('Automatic (OpenAI Chat Completions)')
+  })
+
+  it('probes a manually declared channel with Chat before saving a cleared format', async () => {
+    const route = 'acme-gateway'
+    const baseURL = 'https://gateway.acme.example/v1'
+    const discover = vi.fn(() => Promise.resolve(ok({ models: [{ id: 'candidate' }] })))
+    const { mutate } = await mountSection({
+      providers: { [route]: { api: 'openai-responses', baseURL, models: [{ id: 'acme-large' }] } },
+      declaredRoutes: [route], discover,
+    })
+    openEditor(route)
+    selectProtocol(document.body, 'Automatic (OpenAI Chat Completions)')
+    fireEvent.click(screen.getByRole('button', { name: en.fetchModels }))
+
+    const picker = await screen.findByRole('dialog')
+    expect(firstProbe(discover)).toEqual({ settingsNs: 'llm-pi-ai', provider: route, baseURL, api: 'openai-completions' })
+    expect(mutate).not.toHaveBeenCalled()
+    fireEvent.click(within(picker).getByRole('button', { name: en.cancel }))
+    fireEvent.click(screen.getByRole('button', { name: en.apply }))
+    await waitFor(() => { expect(mutate).toHaveBeenCalledOnce() })
+    expect(firstMutate(mutate).ops).toEqual([{ op: 'unset', path: ['providers', route, 'api'] }])
   })
 
   it('retries only the key after the profile landed and keeps the generated ID stable', async () => {
@@ -1352,7 +1393,7 @@ describe('hand-declared providers', () => {
     expect(mutate).toHaveBeenCalledOnce()
     expect(screen.getByLabelText<HTMLInputElement>(en.channelName).disabled).toBe(true)
     expect(screen.getByLabelText<HTMLInputElement>(en.baseUrl).disabled).toBe(true)
-    expect(screen.getByLabelText<HTMLSelectElement>(en.customApi).disabled).toBe(true)
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: en.customApi }).disabled).toBe(true)
     expect(screen.getByLabelText<HTMLInputElement>(en.keyInput).disabled).toBe(false)
     expect(set).toHaveBeenNthCalledWith(1, { ref: deriveKeyRef(GENERATED_ROUTE), value: 'gw-key' })
     fireEvent.click(screen.getByRole('tab', { name: en.customModelsStep }))
@@ -1473,7 +1514,7 @@ describe('hand-declared providers', () => {
   it('creates without capacities or a key while retaining the chosen protocol and required name', async () => {
     const { mutate, set, onClose } = mountCard()
     fillCustomChannel('  Native Gateway  ')
-    fireEvent.change(screen.getByLabelText(en.customApi), { target: { value: 'anthropic-messages' } })
+    selectProtocol(document.body, 'Anthropic Messages')
     nextCustomStep()
     addCustomModel('bare')
     fireEvent.click(screen.getByRole('button', { name: en.create }))
@@ -1525,7 +1566,7 @@ describe('hand-declared providers', () => {
   it('offers no protocol when the namespace declares none and cannot advance', () => {
     mountCard({ protocols: [] })
     fillCustomChannel()
-    expect(screen.getByLabelText<HTMLSelectElement>(en.customApi).value).toBe('')
+    expect(screen.queryByRole('button', { name: en.customApi })).toBeNull()
     expect(buttonNamed(en.customNext).disabled).toBe(true)
   })
 
@@ -1658,9 +1699,9 @@ describe('model-specific mode settings', () => {
     expect(screen.getByRole<HTMLInputElement>('textbox', { name: `${en.modelId} 1` }).disabled).toBe(true)
     expandModel(1)
     const dialog = screen.getByRole('dialog', { name: `${en.modelAdvanced} 1` })
-    const protocol = within(dialog).getByRole<HTMLSelectElement>('combobox', { name: en.modelApi })
-    expect(protocol.value).toBe('')
-    fireEvent.change(protocol, { target: { value: 'openai-responses' } })
+    const protocol = within(dialog).getByRole<HTMLButtonElement>('button', { name: en.modelApi })
+    expect(protocol.textContent).toBe('Use channel format (OpenAI Chat Completions)')
+    selectModelProtocol(dialog, 'OpenAI Responses')
     saveModel(1)
     fireEvent.click(screen.getByRole('button', { name: en.apply }))
     await waitFor(() => { expect(mutate).toHaveBeenCalledOnce() })
@@ -1668,12 +1709,38 @@ describe('model-specific mode settings', () => {
       value: { 'catalog.v2': { contextWindow: 65_536, compat: { temperature: false }, api: 'openai-responses' } } }])
   })
 
+  it('inherits the deployed catalog-model format ahead of the channel when clearing a user override', async () => {
+    const id = 'catalog.v2'
+    const api = 'openai-completions'
+    const deployed = { api, modelOverrides: { [id]: { api: 'openai-responses' } } }
+    const user = { modelOverrides: { [id]: { api: 'anthropic-messages', contextWindow: 65_536 } } }
+    const { mutate } = await mountSection({
+      providers: { openai: { api, ...user } }, baseProviders: { openai: deployed }, userProviders: { openai: user },
+      catalogModels: [{ id, name: 'Catalog model' }],
+    })
+    openEditor('openai')
+    expect(screen.getByRole('button', { name: en.fetchModels })).toHaveProperty('disabled', true)
+    expect(screen.getByRole('button', { name: en.fetchModels }).getAttribute('title')).toBe(en.catalogManaged)
+    expandModel(1)
+    const dialog = screen.getByRole('dialog', { name: `${en.modelAdvanced} 1` })
+    const model = within(dialog).getByRole('button', { name: en.modelApi })
+    expect(model.textContent).toBe('Anthropic Messages')
+    selectModelProtocol(dialog, 'Use deployment format (OpenAI Responses)')
+    expect(model.textContent).toBe('Use deployment format (OpenAI Responses)')
+    saveModel(1)
+    fireEvent.click(screen.getByRole('button', { name: en.apply }))
+    await waitFor(() => { expect(mutate).toHaveBeenCalledOnce() })
+    expect(firstMutate(mutate).ops).toEqual([{ op: 'set', path: ['providers', 'openai', 'modelOverrides'],
+      value: { [id]: { contextWindow: 65_536 } } }])
+  })
+
   it('materializes catalog rows and preserves overrides when endpoint discovery appends a model', async () => {
     const profile = { api: 'openai-completions', modelOverrides: {
       catalog: { contextWindow: 65_536, compat: { supportsDeveloperRole: false } },
     } }
     const mutate = vi.fn(() => Promise.resolve(ok(piAiNamespace({ openai: profile }))))
-    await mountSection({ providers: { openai: profile }, catalogModels: [{ id: 'catalog', name: 'Catalog' }],
+    await mountSection({ providers: { openai: profile }, baseProviders: { openai: { modelOverrides: {} } },
+      catalogModels: [{ id: 'catalog', name: 'Catalog' }],
       discover: vi.fn(() => Promise.resolve(ok({ models: [{ id: 'extra' }] }))), mutate })
     openEditor('openai')
     fireEvent.click(screen.getByRole('button', { name: en.fetchModels }))
@@ -1787,8 +1854,7 @@ describe('model-specific mode settings', () => {
     openEditor('openai')
     expandModel(1)
     const dialog = screen.getByRole('dialog', { name: `${en.modelAdvanced} 1` })
-    fireEvent.change(within(dialog).getByRole('combobox', { name: en.modelApi }),
-      { target: { value: 'openai-responses' } })
+    selectModelProtocol(dialog, 'OpenAI Responses')
     fireEvent.change(within(dialog).getByRole('combobox', { name: en.modelDefaultPreset }),
       { target: { value: 'minimal' } })
     saveModel(1)
@@ -1811,7 +1877,7 @@ describe('model-specific mode settings', () => {
         : ok({ ...presetNamespace, revision: 10 })))
     const scripted = scriptedFace({ mutate })
     const onClose = vi.fn()
-    render(<CustomProviderCard taken={[]} protocols={PROTOCOLS} revision={3}
+    render(<CustomProviderCard taken={[]} protocols={PROTOCOLS} modelSchema={PI_AI_MODEL_SCHEMA} revision={3}
       api={scripted.face as never} t={t} readOnly={false} onClose={onClose}
       schema={settingsSchema} presetNamespace={presetNamespace} presets={presets} />)
     fillCustomChannel()
@@ -1836,7 +1902,7 @@ describe('model-specific mode settings', () => {
     const mutate = vi.fn((request: MutateCall) => Promise.resolve(request.ns === 'agent-presets'
       ? ok({ ...presetNamespace, revision: 10 }) : ok(piAiNamespace({}))))
     const scripted = scriptedFace({ mutate })
-    render(<CustomProviderCard taken={[]} protocols={PROTOCOLS} revision={3}
+    render(<CustomProviderCard taken={[]} protocols={PROTOCOLS} modelSchema={PI_AI_MODEL_SCHEMA} revision={3}
       api={scripted.face as never} t={t} readOnly={false} onClose={vi.fn()}
       schema={settingsSchema} presetNamespace={presetNamespace} presets={presets} />)
     fillCustomChannel()
@@ -1858,7 +1924,7 @@ describe('model-specific mode settings', () => {
   it('drops a removed new-channel model choice before creating the remaining model', async () => {
     const mutate = vi.fn(() => Promise.resolve(ok(piAiNamespace({}))))
     const scripted = scriptedFace({ mutate })
-    render(<CustomProviderCard taken={[]} protocols={PROTOCOLS} revision={3}
+    render(<CustomProviderCard taken={[]} protocols={PROTOCOLS} modelSchema={PI_AI_MODEL_SCHEMA} revision={3}
       api={scripted.face as never} t={t} readOnly={false} onClose={vi.fn()}
       schema={settingsSchema} presetNamespace={presetNamespace} presets={presets} />)
     fillCustomChannel()
@@ -1879,7 +1945,7 @@ describe('model-specific mode settings', () => {
     const mutate = vi.fn((request: MutateCall) => Promise.resolve(request.ns === 'agent-presets'
       ? ok({ ...presetNamespace, revision: 10 }) : ok(piAiNamespace({}))))
     const scripted = scriptedFace({ mutate })
-    render(<CustomProviderCard taken={[]} protocols={PROTOCOLS} revision={3}
+    render(<CustomProviderCard taken={[]} protocols={PROTOCOLS} modelSchema={PI_AI_MODEL_SCHEMA} revision={3}
       api={scripted.face as never} t={t} readOnly={false} onClose={vi.fn()}
       schema={settingsSchema} presetNamespace={presetNamespace} presets={presets} />)
     fillCustomChannel()

@@ -18,6 +18,10 @@
     - text: API 密钥
     - textbox "API 密钥":
       - /placeholder: 输入 API 密钥
+    - text: 上游请求格式
+    - button "上游请求格式":
+      - text: 自动 (OpenAI Chat Completions)
+      - img
     - group: 高级设置
     - region "模型目录":
       - text: 模型目录 正在使用适配器默认模型

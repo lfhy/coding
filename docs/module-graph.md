@@ -494,15 +494,6 @@ flowchart TD
   pkg_settings_file --> pkg_home_paths
   pkg_settings_file --> pkg_invariants
   pkg_settings_file --> pkg_settings
-  pkg_llm_deepseek --> pkg_anonymous_user_id
-  pkg_llm_deepseek --> pkg_attachment
-  pkg_llm_deepseek --> pkg_credentials
-  pkg_llm_deepseek --> pkg_invariants
-  pkg_llm_deepseek --> pkg_launch_environment
-  pkg_llm_deepseek --> pkg_llm
-  pkg_llm_deepseek --> pkg_proxy_pool
-  pkg_llm_deepseek --> pkg_settings
-  pkg_llm_deepseek --> pkg_timeout
   pkg_llm_opencode --> pkg_attachment
   pkg_llm_opencode --> pkg_invariants
   pkg_llm_opencode --> pkg_llm
@@ -537,6 +528,16 @@ flowchart TD
   pkg_lsp --> pkg_brand
   pkg_lsp --> pkg_invariants
   pkg_lsp --> pkg_llm
+  pkg_llm_deepseek --> pkg_anonymous_user_id
+  pkg_llm_deepseek --> pkg_attachment
+  pkg_llm_deepseek --> pkg_credentials
+  pkg_llm_deepseek --> pkg_invariants
+  pkg_llm_deepseek --> pkg_launch_environment
+  pkg_llm_deepseek --> pkg_llm
+  pkg_llm_deepseek --> pkg_llm_pi_ai
+  pkg_llm_deepseek --> pkg_proxy_pool
+  pkg_llm_deepseek --> pkg_settings
+  pkg_llm_deepseek --> pkg_timeout
   pkg_agent --> pkg_invariants
   pkg_agent --> pkg_llm
   pkg_agent --> pkg_scope
@@ -1910,7 +1911,6 @@ flowchart TD
 | [`memory-local`](../packages/memory/memory-local) | `memory` | [`atomic-write`](../packages/util/atomic-write), [`invariants`](../packages/runtime-diagnostics/invariants), [`memory`](../packages/memory/memory) |
 | [`proxy-pool`](../packages/net/proxy-pool) | `net` | [`invariants`](../packages/runtime-diagnostics/invariants), [`settings`](../packages/settings/settings) |
 | [`settings-file`](../packages/settings/settings-file) | `settings` | [`atomic-write`](../packages/util/atomic-write), [`home-paths`](../packages/util/home-paths), [`invariants`](../packages/runtime-diagnostics/invariants), [`settings`](../packages/settings/settings) |
-| [`llm-deepseek`](../packages/llm/llm-deepseek) | `llm` | [`anonymous-user-id`](../packages/identity/anonymous-user-id), [`attachment`](../packages/attachment/attachment), [`credentials`](../packages/credentials/credentials), [`invariants`](../packages/runtime-diagnostics/invariants), [`launch-environment`](../packages/util/launch-environment), [`llm`](../packages/llm/llm), [`proxy-pool`](../packages/net/proxy-pool), [`settings`](../packages/settings/settings), [`timeout`](../packages/util/timeout) |
 | [`llm-opencode`](../packages/llm/llm-opencode) | `llm` | [`attachment`](../packages/attachment/attachment), [`invariants`](../packages/runtime-diagnostics/invariants), [`llm`](../packages/llm/llm), [`proxy-pool`](../packages/net/proxy-pool), [`settings`](../packages/settings/settings), [`timeout`](../packages/util/timeout) |
 | [`llm-pi-ai`](../packages/llm/llm-pi-ai) | `llm` | [`attachment`](../packages/attachment/attachment), [`credentials`](../packages/credentials/credentials), [`invariants`](../packages/runtime-diagnostics/invariants), [`launch-environment`](../packages/util/launch-environment), [`llm`](../packages/llm/llm), [`settings`](../packages/settings/settings), [`timeout`](../packages/util/timeout) |
 | [`session`](../packages/core/session) | `core` | [`brand`](../packages/util/brand), [`invariants`](../packages/runtime-diagnostics/invariants), [`llm`](../packages/llm/llm), [`scope`](../packages/core/scope), [`typert-protocol`](../packages/typert/protocol) |
@@ -1919,6 +1919,7 @@ flowchart TD
 | [`web`](../packages/web/web) | `web` | [`invariants`](../packages/runtime-diagnostics/invariants), [`llm`](../packages/llm/llm) |
 | [`git-local`](../packages/git/git-local) | `git` | [`credentials`](../packages/credentials/credentials), [`git`](../packages/git/git), [`invariants`](../packages/runtime-diagnostics/invariants), [`proxy-pool`](../packages/net/proxy-pool), [`subprocess`](../packages/subprocess/subprocess) |
 | [`lsp`](../packages/lsp/lsp) | `lsp` | [`brand`](../packages/util/brand), [`invariants`](../packages/runtime-diagnostics/invariants), [`llm`](../packages/llm/llm) |
+| [`llm-deepseek`](../packages/llm/llm-deepseek) | `llm` | [`anonymous-user-id`](../packages/identity/anonymous-user-id), [`attachment`](../packages/attachment/attachment), [`credentials`](../packages/credentials/credentials), [`invariants`](../packages/runtime-diagnostics/invariants), [`launch-environment`](../packages/util/launch-environment), [`llm`](../packages/llm/llm), [`llm-pi-ai`](../packages/llm/llm-pi-ai), [`proxy-pool`](../packages/net/proxy-pool), [`settings`](../packages/settings/settings), [`timeout`](../packages/util/timeout) |
 | [`agent`](../packages/core/agent) | `core` | [`invariants`](../packages/runtime-diagnostics/invariants), [`llm`](../packages/llm/llm), [`scope`](../packages/core/scope), [`session`](../packages/core/session), [`system-prompt`](../packages/core/system-prompt), [`typert-protocol`](../packages/typert/protocol) |
 | [`web-fetch-http`](../packages/web/web-fetch-http) | `web` | [`invariants`](../packages/runtime-diagnostics/invariants), [`timeout`](../packages/util/timeout), [`web`](../packages/web/web) |
 | [`web-search-anysearch`](../packages/web/web-search-anysearch) | `web` | [`invariants`](../packages/runtime-diagnostics/invariants), [`launch-environment`](../packages/util/launch-environment), [`proxy-pool`](../packages/net/proxy-pool), [`settings`](../packages/settings/settings), [`web`](../packages/web/web) |

@@ -38,22 +38,34 @@ import { catalogProvider } from './catalog.ts'
  * still reach every protocol through their own provider; only an explicit
  * override is refused.
  */
-const PROTOCOLS: Readonly<Record<string, () => ProviderStreams>> = {
+const PROTOCOLS = {
   'openai-completions': openAICompletionsApi,
   'openai-responses': openAIResponsesApi,
   'anthropic-messages': anthropicMessagesApi,
+} satisfies Record<string, () => ProviderStreams>
+
+/** 仅用端点和 API 密钥就能显式配置的协议。 */
+export type ConfiguredProtocol = keyof typeof PROTOCOLS
+
+/**
+ * 设置 schema 和渠道表单使用同一份显式协议列表。
+ * @returns 支持的协议标识，OpenAI Chat Completions 排在首位。
+ */
+export function supportedProtocols(): readonly ConfiguredProtocol[] {
+  return Object.keys(PROTOCOLS) as ConfiguredProtocol[]
 }
 
 /**
- * Every wire protocol a configured route may name, most-reached first. The
- * order is the table's and therefore stable; a configuration surface offering
- * a choice presents the first as its default, which is why the protocol a
- * hand-declared gateway most often speaks — and the one endpoint interrogation
- * can read — leads.
- * @returns the supported protocol identifiers.
+ * 创建已知协议的惰性请求实现，不加载提供方目录或解析凭据。
+ * @param api - 调用方已校验的协议。
+ * @returns 该协议的流请求入口。
  */
-export function supportedProtocols(): readonly string[] {
-  return Object.keys(PROTOCOLS)
+export function configuredProtocolStreams(api: ConfiguredProtocol): ProviderStreams {
+  return PROTOCOLS[api]()
+}
+
+function isConfiguredProtocol(api: string): api is ConfiguredProtocol {
+  return Object.hasOwn(PROTOCOLS, api)
 }
 
 /**
@@ -160,7 +172,7 @@ function reuseCatalogProvider(base: Provider, spec: ProviderSpec): Provider {
  */
 export function buildProvider(spec: ProviderSpec): Provider {
   const catalog = catalogProvider(spec.provider)
-  if (spec.api !== undefined && PROTOCOLS[spec.api] === undefined) {
+  if (spec.api !== undefined && !isConfiguredProtocol(spec.api)) {
     throw new Error(
       `llm-pi-ai: provider "${spec.provider}" names api "${spec.api}", which this build cannot serve;`
       + ` supported protocols are ${supportedProtocols().join(', ')}`,
@@ -181,14 +193,13 @@ export function buildProvider(spec: ProviderSpec): Provider {
 
   const streams: Record<string, ProviderStreams> = {}
   for (const model of delegated) {
-    const factory = PROTOCOLS[model.api]
-    if (factory === undefined) {
+    if (!isConfiguredProtocol(model.api)) {
       throw new Error(
         `llm-pi-ai: provider "${spec.provider}" model "${model.id}" names api "${model.api}",`
         + ` which this build cannot serve; supported protocols are ${supportedProtocols().join(', ')}`,
       )
     }
-    streams[model.api] ??= factory()
+    streams[model.api] ??= configuredProtocolStreams(model.api)
   }
   const auth = routeAuth(spec, catalog)
   const custom = createProvider({

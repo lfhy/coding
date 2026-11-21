@@ -21,6 +21,9 @@
       "path": "../../llm/llm"
     },
     {
+      "path": "../llm-pi-ai"
+    },
+    {
       "path": "../../credentials/credentials"
     },
     {

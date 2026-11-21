@@ -57,12 +57,17 @@
     - text: API 密钥
     - textbox "API 密钥":
       - /placeholder: 已配置——输入新值可替换
+    - text: 上游请求格式
+    - button "上游请求格式":
+      - text: 自动 (OpenAI Chat Completions)
+      - img
     - group: 高级设置
     - region "模型目录":
-      - text: 模型目录
+      - text: 模型目录 已自定义模型目录
       - button "获取可用模型":
         - img
         - text: 获取可用模型
+      - button "恢复默认模型"
       - region "模型目录":
         - textbox "模型 ID 1":
           - /placeholder: 模型 ID

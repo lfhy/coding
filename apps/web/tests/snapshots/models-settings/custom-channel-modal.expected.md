@@ -13,10 +13,9 @@
     - textbox "API 地址":
       - /placeholder: https://gateway.example/v1
     - text: 上游请求格式
-    - combobox "上游请求格式":
-      - option "openai-completions" [selected]
-      - option "openai-responses"
-      - option "anthropic-messages"
+    - button "上游请求格式":
+      - text: 自动 (OpenAI Chat Completions)
+      - img
     - text: API 密钥
     - textbox "API 密钥":
       - /placeholder: 输入 API 密钥，或留空使用环境认证

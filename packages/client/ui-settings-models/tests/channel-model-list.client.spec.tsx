@@ -4,17 +4,22 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { useState } from 'react'
 import { ModelListEditor, modelCapabilities, modelFamily } from '../src/client/ModelListEditor.tsx'
 import type { ModelDraft } from '../src/client/ModelListEditor.tsx'
-import { validateDeepSeekModels } from '../src/client/DeepSeekModelsEditor.tsx'
+import { validateModels } from '../src/client/model-editor-helpers.ts'
 import { en } from '../src/client/locales.ts'
 
 afterEach(cleanup)
+
+const piModel = { modalityKey: 'input', reasoningShape: 'map',
+  reasoningLevels: ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] } as const
+const deepseekModel = { modalityKey: 'inputModalities', reasoningShape: 'array',
+  reasoningLevels: ['off', 'low', 'high', 'max'] } as const
 
 function mount(settingsNs = 'llm-pi-ai', reasoningDisabled = false) {
   const onChange = vi.fn()
   const discoverModels = vi.fn(async () => ({ result: { ok: true, value: { models: [
     { id: 'agnes-2.5-flash' }, { id: 'agnes-2.5-pro' }, { id: 'ag-1.0' },
   ] } } }))
-  render(<ModelListEditor models={[]} onChange={onChange} probe={{ settingsNs, provider: 'test' }}
+  render(<ModelListEditor models={[]} onChange={onChange} modelSchema={settingsNs === 'llm-deepseek' ? deepseekModel : piModel} probe={{ settingsNs, provider: 'test' }}
     api={{ llm: { discoverModels } } as never} t={key => en[key]} disabled={false}
     reasoningDisabled={reasoningDisabled} providerName="HaiChat" />)
   return { onChange, discoverModels }
@@ -28,7 +33,7 @@ function mountStateful(initial: ModelDraft[] = [], settingsNs = 'llm-pi-ai') {
   function Fixture() {
     const [models, setModels] = useState<ModelDraft[]>(initial)
     return <ModelListEditor models={models} onChange={(next) => { onChange(next); setModels(next) }}
-      probe={{ settingsNs, provider: 'test' }} api={{ llm: { discoverModels } } as never}
+      modelSchema={settingsNs === 'llm-deepseek' ? deepseekModel : piModel} probe={{ settingsNs, provider: 'test' }} api={{ llm: { discoverModels } } as never}
       t={key => en[key]} disabled={false} providerName="HaiChat" />
   }
   render(<Fixture />)
@@ -41,6 +46,12 @@ function reasoningTrigger(card: HTMLElement): HTMLButtonElement {
   })
 }
 
+/** 通过共享协议菜单选择一项；菜单项名称就是用户可见的格式名称。 */
+function selectProtocol(scope: HTMLElement, option: string): void {
+  fireEvent.click(within(scope).getByRole('button', { name: en.modelApi }))
+  fireEvent.click(within(scope).getByRole('menuitem', { name: option }))
+}
+
 describe('channel model catalog', () => {
   it('keeps protocol inheritance separate from the channel and drafts only explicit model overrides', () => {
     const onChange = vi.fn()
@@ -48,7 +59,7 @@ describe('channel model catalog', () => {
     function Fixture() {
       const [models, setModels] = useState<ModelDraft[]>([model])
       return <ModelListEditor models={models} onChange={(next) => { onChange(next); setModels(next) }}
-        probe={{ settingsNs: 'llm-pi-ai', provider: 'gateway' }}
+        modelSchema={piModel} probe={{ settingsNs: 'llm-pi-ai', provider: 'gateway' }}
         protocols={['openai-completions', 'openai-responses', 'anthropic-messages']}
         channelProtocol="openai-completions" api={{ llm: {} } as never}
         t={key => en[key]} disabled={false} />
@@ -56,28 +67,38 @@ describe('channel model catalog', () => {
     render(<Fixture />)
     fireEvent.click(screen.getByRole('button', { name: `${en.modelAdvanced} 1` }))
     const dialog = screen.getByRole('dialog', { name: `${en.modelAdvanced} 1` })
-    const protocol = within(dialog).getByRole<HTMLSelectElement>('combobox', { name: en.modelApi })
-    expect(protocol.value).toBe('')
-    expect(protocol.options[0]?.textContent).toContain('openai-completions')
+    const protocol = within(dialog).getByRole<HTMLButtonElement>('button', { name: en.modelApi })
+    expect(protocol.textContent).toBe('Use channel format (OpenAI Chat Completions)')
+    fireEvent.click(protocol)
+    expect(within(dialog).getAllByRole('menuitem').map(item => item.textContent)).toEqual([
+      'Use channel format (OpenAI Chat Completions)',
+      'OpenAI Chat Completions',
+      'OpenAI Responses',
+      'Anthropic Messages',
+    ])
+    fireEvent.click(within(dialog).getByRole('menuitem', { name: 'Use channel format (OpenAI Chat Completions)' }))
     fireEvent.click(within(dialog).getByRole('button', { name: en.save }))
     expect(onChange).not.toHaveBeenCalled()
     fireEvent.click(screen.getByRole('button', { name: `${en.modelAdvanced} 1` }))
-    fireEvent.change(screen.getByRole('combobox', { name: en.modelApi }), { target: { value: 'openai-responses' } })
-    fireEvent.click(within(screen.getByRole('dialog', { name: `${en.modelAdvanced} 1` })).getByRole('button', { name: en.cancel }))
+    const cancelled = screen.getByRole('dialog', { name: `${en.modelAdvanced} 1` })
+    selectProtocol(cancelled, 'OpenAI Responses')
+    fireEvent.click(within(cancelled).getByRole('button', { name: en.cancel }))
     expect(onChange).not.toHaveBeenCalled()
     fireEvent.click(screen.getByRole('button', { name: `${en.modelAdvanced} 1` }))
-    fireEvent.change(screen.getByRole('combobox', { name: en.modelApi }), { target: { value: 'anthropic-messages' } })
-    fireEvent.click(within(screen.getByRole('dialog', { name: `${en.modelAdvanced} 1` })).getByRole('button', { name: en.save }))
+    const changed = screen.getByRole('dialog', { name: `${en.modelAdvanced} 1` })
+    selectProtocol(changed, 'Anthropic Messages')
+    fireEvent.click(within(changed).getByRole('button', { name: en.save }))
     expect(onChange).toHaveBeenLastCalledWith([{ ...model, api: 'anthropic-messages' }])
     fireEvent.click(screen.getByRole('button', { name: `${en.modelAdvanced} 1` }))
-    fireEvent.change(screen.getByRole('combobox', { name: en.modelApi }), { target: { value: '' } })
-    fireEvent.click(within(screen.getByRole('dialog', { name: `${en.modelAdvanced} 1` })).getByRole('button', { name: en.save }))
+    const restored = screen.getByRole('dialog', { name: `${en.modelAdvanced} 1` })
+    selectProtocol(restored, 'Use channel format (OpenAI Chat Completions)')
+    fireEvent.click(within(restored).getByRole('button', { name: en.save }))
     expect(onChange).toHaveBeenLastCalledWith([model])
   })
 
   it('keeps endpoint import available when showing an adapter-owned catalog', () => {
     render(<ModelListEditor models={[{ id: 'catalog' }]} onChange={vi.fn()} catalogOnly
-      probe={{ settingsNs: 'llm-pi-ai', provider: 'openai' }} api={{ llm: {} } as never}
+      modelSchema={piModel} probe={{ settingsNs: 'llm-pi-ai', provider: 'openai' }} api={{ llm: {} } as never}
       t={key => en[key]} disabled={false} />)
     const fetch = screen.getByRole<HTMLButtonElement>('button', { name: en.fetchModels })
     expect(fetch.disabled).toBe(false)
@@ -89,7 +110,7 @@ describe('channel model catalog', () => {
     const onPresetChange = vi.fn()
     const saved = 'removed-preset'
     render(<ModelListEditor models={[{ id: 'm' }]} onChange={onChange}
-      probe={{ settingsNs: 'llm-deepseek', provider: 'deepseek-official' }}
+      modelSchema={deepseekModel} probe={{ settingsNs: 'llm-deepseek', provider: 'deepseek-official' }}
       api={{ llm: {} } as never} t={key => en[key]} disabled={false}
       presets={[{ id: 'standard', name: 'Standard', isDefault: true },
         { id: 'minimal', name: 'Minimal', isDefault: false }]}
@@ -111,7 +132,7 @@ describe('channel model catalog', () => {
   it('reports a failed mode roster without losing the saved mode or its clear action', () => {
     const onPresetChange = vi.fn()
     render(<ModelListEditor models={[{ id: 'm' }]} onChange={vi.fn()}
-      probe={{ settingsNs: 'llm-deepseek', provider: 'deepseek-official' }}
+      modelSchema={deepseekModel} probe={{ settingsNs: 'llm-deepseek', provider: 'deepseek-official' }}
       api={{ llm: {} } as never} t={key => en[key]} disabled={false}
       presets={[]} presetsError="roster offline" presetForModel={() => 'removed-preset'}
       onPresetChange={onPresetChange} />)
@@ -129,24 +150,24 @@ describe('channel model catalog', () => {
   })
   it('does not describe an inherited provider catalog as an empty model directory', () => {
     render(<ModelListEditor models={[]} overridden={false} onChange={vi.fn()}
-      probe={{ settingsNs: 'llm-pi-ai', provider: 'test' }} api={{ llm: {} } as never}
+      modelSchema={piModel} probe={{ settingsNs: 'llm-pi-ai', provider: 'test' }} api={{ llm: {} } as never}
       t={key => en[key]} disabled={false} />)
     expect(screen.getByText(en.modelsInherited)).toBeTruthy()
     expect(screen.queryByText(en.modelsEmpty)).toBeNull()
   })
 
   it('shows row-level vision and reasoning facts without opening capacities or guessing absent metadata', () => {
-    expect(modelCapabilities({ id: 'known', input: ['text', 'image'], reasoningEfforts: { off: null, high: 'high' } }, 'llm-pi-ai'))
+    expect(modelCapabilities({ id: 'known', input: ['text', 'image'], reasoningEfforts: { off: null, high: 'high' } }, piModel))
       .toEqual({ vision: 'supported', reasoning: 'supported' })
-    expect(modelCapabilities({ id: 'missing' }, 'llm-pi-ai')).toEqual({ vision: 'unknown', reasoning: 'unknown' })
-    expect(modelCapabilities({ id: 'inherited' }, 'llm-deepseek', ['off', 'high']))
+    expect(modelCapabilities({ id: 'missing' }, piModel)).toEqual({ vision: 'unknown', reasoning: 'unknown' })
+    expect(modelCapabilities({ id: 'inherited' }, deepseekModel, ['off', 'high']))
       .toEqual({ vision: 'unknown', reasoning: 'supported' })
     const onChange = vi.fn()
     render(<ModelListEditor models={[
       { id: 'known', input: ['text', 'image'], reasoningEfforts: { off: null, high: 'high' } },
       { id: 'missing' },
       { id: 'unsupported', input: ['text'], reasoningEfforts: false },
-    ]} onChange={onChange} probe={{ settingsNs: 'llm-pi-ai', provider: 'test' }}
+    ]} onChange={onChange} modelSchema={piModel} probe={{ settingsNs: 'llm-pi-ai', provider: 'test' }}
     api={{ llm: {} } as never} t={key => en[key]} disabled={false} />)
     const table = screen.getAllByRole('region', { name: en.models }).find(node => node.hasAttribute('tabindex'))
     expect(table).toBeDefined()
@@ -188,7 +209,7 @@ describe('channel model catalog', () => {
   it('centers the independent model modal outside the owning settings dialog without adding a table row', () => {
     render(<div role="dialog" aria-modal="true" aria-label="Settings fixture">
       <ModelListEditor models={[{ id: 'owned' }]} onChange={vi.fn()}
-        probe={{ settingsNs: 'llm-pi-ai', provider: 'test' }} api={{ llm: {} } as never}
+        modelSchema={piModel} probe={{ settingsNs: 'llm-pi-ai', provider: 'test' }} api={{ llm: {} } as never}
         t={key => en[key]} disabled={false} />
     </div>)
     const owner = screen.getByRole('dialog', { name: 'Settings fixture' })
@@ -403,6 +424,8 @@ describe('channel model catalog', () => {
 
   it('hints the capacity fallback its channel actually applies', () => {
     const face = {
+      modelSchema: piModel,
+      capacityHints: { contextWindow: '256K', maxTokens: '32K' },
       models: [{ id: 'probe' }],
       onChange: vi.fn(),
       probe: { settingsNs: 'llm-pi-ai' },
@@ -420,7 +443,8 @@ describe('channel model catalog', () => {
       .toBe('32K')
     cleanup()
     // DeepSeek 渠道按它自己的回退提示，否则留空时推理容量与提示相左。
-    render(<ModelListEditor {...face} probe={{ settingsNs: 'llm-deepseek' }} />)
+    render(<ModelListEditor {...face} modelSchema={deepseekModel}
+      capacityHints={{ contextWindow: '256K', maxTokens: '256K' }} probe={{ settingsNs: 'llm-deepseek' }} />)
     fireEvent.click(screen.getByRole('button', { name: `${en.modelAdvanced} 1` }))
     card = screen.getByRole('dialog', { name: `${en.modelAdvanced} 1` })
     expect(within(card).getByRole<HTMLInputElement>('textbox', { name: `${en.modelContextWindow} 1` }).placeholder)
@@ -573,13 +597,11 @@ describe('channel model catalog', () => {
   })
 
   it('keeps row ID/name edits while the floating editor saves its own draft without a reset control', () => {
-    const onReset = vi.fn()
     const onChange = vi.fn()
     function Fixture() {
       const [models, setModels] = useState<ModelDraft[]>([{ id: 'same', contextWindow: 2_000 }])
       return <ModelListEditor models={models} overridden={true} onChange={(next) => { onChange(next); setModels(next) }}
-        onReset={onReset}
-        probe={{ settingsNs: 'llm-pi-ai', provider: 'test' }} api={{ llm: {} } as never}
+        modelSchema={piModel} probe={{ settingsNs: 'llm-pi-ai', provider: 'test' }} api={{ llm: {} } as never}
         t={key => en[key]} disabled={false} />
     }
     render(<Fixture />)
@@ -594,13 +616,12 @@ describe('channel model catalog', () => {
     expect(onChange).toHaveBeenCalledTimes(2)
     fireEvent.click(within(card).getByRole('button', { name: en.save }))
     expect(onChange).toHaveBeenLastCalledWith([{ id: 'edited', name: 'Visible', contextWindow: 4_000 }])
-    expect(onReset).not.toHaveBeenCalled()
   })
 
   it('does not emit a change when an inherited model editor is saved untouched', () => {
     const onChange = vi.fn()
     render(<ModelListEditor models={[{ id: 'inherited' }]} overridden={false} onChange={onChange}
-      probe={{ settingsNs: 'llm-deepseek', provider: 'deepseek-official' }} api={{ llm: {} } as never}
+      modelSchema={deepseekModel} probe={{ settingsNs: 'llm-deepseek', provider: 'deepseek-official' }} api={{ llm: {} } as never}
       inheritedReasoningEfforts={['off', 'low', 'high', 'max']}
       t={key => en[key]} disabled={false} />)
     fireEvent.click(screen.getByRole('button', { name: `${en.modelAdvanced} 1` }))
@@ -611,17 +632,17 @@ describe('channel model catalog', () => {
   })
 
   it('rejects DeepSeek false and empty levels before a settings write', () => {
-    expect(validateDeepSeekModels([{ id: 'x', reasoningEfforts: false }], 'deepseek')?.key).toBe('modelReasoningInvalid')
-    expect(validateDeepSeekModels([{ id: 'x', reasoningEfforts: [] }], 'deepseek')?.key).toBe('modelReasoningInvalid')
-    expect(validateDeepSeekModels([{ id: 'x', reasoningEfforts: ['off'] }], 'deepseek')).toBeUndefined()
-    expect(validateDeepSeekModels([{ id: 'x', reasoningEfforts: false }], 'pi-ai')).toBeUndefined()
+    expect(validateModels([{ id: 'x', reasoningEfforts: false }], { reasoning: 'array' })?.key).toBe('modelReasoningInvalid')
+    expect(validateModels([{ id: 'x', reasoningEfforts: [] }], { reasoning: 'array' })?.key).toBe('modelReasoningInvalid')
+    expect(validateModels([{ id: 'x', reasoningEfforts: ['off'] }], { reasoning: 'array' })).toBeUndefined()
+    expect(validateModels([{ id: 'x', reasoningEfforts: false }], { reasoning: 'map' })).toBeUndefined()
   })
 
   it('converts the DeepSeek reasoning switch to off-only without losing inherited default support', () => {
     const onChange = vi.fn()
     render(<ModelListEditor models={[{ id: 'inherited' }]} onChange={onChange}
       inheritedReasoningEfforts={['off', 'low', 'high', 'max']}
-      probe={{ settingsNs: 'llm-deepseek', provider: 'deepseek-official' }} api={{ llm: {} } as never}
+      modelSchema={deepseekModel} probe={{ settingsNs: 'llm-deepseek', provider: 'deepseek-official' }} api={{ llm: {} } as never}
       t={key => en[key]} disabled={false} />)
     fireEvent.click(screen.getByRole('button', { name: `${en.modelAdvanced} 1` }))
     const card = screen.getByRole('dialog', { name: `${en.modelAdvanced} 1` })

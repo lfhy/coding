@@ -45,10 +45,10 @@
 
 ## 设置界面与凭据
 
-- **路线**：`packages/client/ui-settings/src/client/index.ts`/`settings-mirror.ts` 持有唯一的 `settings.describe` 镜像与设置 slot；`packages/client/ui-settings-general/src/client/SettingsRoot.tsx` 持有独立的全视口设置页面、左侧导航、返回控件及引导步骤协调；`packages/client/ui-settings-models/src/client/ModelsSection.tsx`/`ProviderEditor.tsx` 持有模型分区的提供方列表与详情，`VisionSection.tsx` 占用独立的图片识别分区，`DeepSeekOnboardingDialog.tsx` 复用模型配置来选择可启动的默认模型；`packages/client/ui-settings-search/src/client/controller.ts`/`SearchSettingsSection.tsx` 持有搜索来源选择及各提供方的独立配置；`packages/client/ui-files/src/client/FilesSection.tsx` 展示只读分页文件列表。设置与凭据的 Host 协议在 `packages/host/apiproxy/src/api/settings.schema.ts`/`credentials.schema.ts`，持久设置和机密分别由 `packages/settings/settings-*` 与 `packages/credentials/credentials-*` 管；文件列表由 `packages/attachment/file-library/src/routes.ts` 独立提供。
+- **路线**：`packages/client/ui-settings/src/client/index.ts`/`settings-mirror.ts` 持有唯一的 `settings.describe` 镜像与设置 slot；`packages/client/ui-settings-general/src/client/SettingsRoot.tsx` 持有独立的全视口设置页面、左侧导航、返回控件及引导步骤协调；`packages/client/ui-settings-models/src/client/ModelsSection.tsx`/`ProviderEditor.tsx` 持有模型分区的提供方列表与详情，`VisionSection.tsx` 占用独立的图片识别分区，`ModelsOnboardingDialog.tsx` 复用模型配置来选择可启动的默认模型；`packages/client/ui-settings-search/src/client/controller.ts`/`SearchSettingsSection.tsx` 持有搜索来源选择及各提供方的独立配置；`packages/client/ui-files/src/client/FilesSection.tsx` 展示只读分页文件列表。设置与凭据的 Host 协议在 `packages/host/apiproxy/src/api/settings.schema.ts`/`credentials.schema.ts`，持久设置和机密分别由 `packages/settings/settings-*` 与 `packages/credentials/credentials-*` 管；文件列表由 `packages/attachment/file-library/src/routes.ts` 独立提供。
 - **主题外观**：`packages/client/ui-theme/src/client/ThemeGallery.tsx`/`AppearanceAdvanced.tsx` 是「主题外观」分区（id `appearance`），卡片墙来自 `src/themes/catalog.ts` 的内置目录（幻梦／轴伊／OpenCode 调色板，数据在 `src/themes/data/`，来源见包内 `NOTICE.md`；缩略图在 `src/themes/thumbnails/`，由 `scripts/gen-thumbnails.mjs` 内联成 `thumbnails.generated.ts`，换图后重跑该脚本），点击即 `ctx.theme.setTheme`；强调色、壁纸、玻璃与主题包由 `appearance-runtime.ts` 换算成一层 `overrideTokens` 覆盖，壁纸层是 `src/styles/wallpaper.css` 的 `body::before`。主题运行时同时支持固定明暗与 `auto`（跟随外观）两类主题：`auto` 用 `palettes.light`/`palettes.dark` 两套令牌，宿主引导脚本按预设自己的明暗铺首帧底色。主题选择、强调色、壁纸、玻璃、收藏与导入的主题包都在 `ui-theme` 设置分节里持久化。
 - **技术与边界**：普通设置的模型分区使用三列变体，内置渠道出站由 `ModelsSection.tsx` 置于只读目录上方并由 `ChannelOutboundRow.tsx` 写入渠道分节；模型请求 User-Agent 是渠道级字段，由 `ProviderEditor.tsx` 写进渠道 profile（内置渠道不提供）；图片识别使用独立的普通分区；文件管理（`ui-files`）是直连回环 Host 路由的只读分区，不经设置 RPC；欢迎引导在单独的阻断式弹窗中呈现提供方与模型两列，已有可用默认模型直接完成，否则须取得可用提供方及至少一个目录模型并选择默认值才能开始。各 UI 行从共享镜像派生作用域，机密配置只传引用，真实值归 Credentials Provider；详见 [ui-settings](../../packages/client/ui-settings/README.md)、[ui-settings-models](../../packages/client/ui-settings-models/README.md) 及所属 Provider README。
-- **模型级选择**：pi-ai 模型协议归 `packages/llm/llm-pi-ai` 的 `models`／`modelOverrides` 字段；新会话默认 Agent 模式归 `packages/preset/agent-presets` 的 `modelDefaults` 设置分节。模型设置窗口承载两项选择，提供方详情保存时按拥有者写入；既有会话切换模型不切模式。
+- **渠道与模型**：设置和欢迎引导共用 `ProviderEditor.tsx`、`ModelListEditor.tsx`；`CustomProviderCard.tsx` 是唯一新增表单，不选渠道类型，新路由写入 `llm-pi-ai.providers`。内置 DeepSeek 记录仍用 `llm-deepseek` 的 `api`／`models[].api`；pi-ai 模型用 `models[].api` 或 `modelOverrides.<模型 ID>.api`。清除协议覆盖后恢复继承，只有 Free 的协议固定且不展示。新会话默认 Agent 模式仍写入 `packages/preset/agent-presets` 的 `modelDefaults`，切换既有会话的模型不切模式。
 - **连带与验证**：模型导航、欢迎引导或列布局变化时同步 `ui-settings-general`、`ui-settings-models` 与用户指南；搜索配置需同步 `ui-settings-search`、所属 Web 提供方和用户指南；搜索出站与模型渠道共用 `coding-proxy-pool` 的 `OutboundConfig`（直连／内置代理池／自定义代理），`pool` 模式按池自己的出站规则解析，因此改池规则要一并验证搜索请求路径；文件分区改动同步 `ui-files`、`file-library` 的列表协议与用户指南，并验证分页和同源拒绝；新 namespace 同步 schema、Host RPC、设置卡片和包 README；凭据字段不能只改表单，需验证来源及遮蔽拒绝。改主题目录或外观层时同步 `ui-theme` 的包 README、`NOTICE.md` 与用户指南：新增令牌映射要在 `themes/opencode.ts` 与样式表之间对齐（catalog 规格断言主题只覆盖本包声明或消费的变量），改壁纸 `body::before` 要看真实渲染。定向运行 `pnpm exec vitest run packages/client/ui-settings/tests packages/client/ui-settings-general/tests packages/client/ui-settings-models/tests packages/client/ui-settings-search/tests packages/client/ui-theme/tests packages/host/apiproxy/tests/api-proxy-config.spec.ts`，可见界面再跑 `pnpm run test:gui`。
 
 ## PPT 创作模式的工作台
@@ -153,13 +153,13 @@
 
 ## packages/llm/llm-deepseek
 
-- **拥有**：`deepseek-official` 路由的 `DeepSeekAdapter`（直接 fetch + SSE、wire ↔ `StreamChunk`）、每请求动态解析的连接与凭据事实（settings 分节 + `ctx.credentials`）、catalog 与推理强度默认值、图片处理与 `LlmError` 错误码映射。它是 `packages/llm/llm` seam 的 Provider。
-- **不拥有**：`LlmRuntime`/`ctx.llm` 与 `StreamChunk` 词汇（`packages/llm/llm`）；重试执行（`packages/llm/llm-retry`）；pi-ai 的 `deepseek` 路由（`packages/llm/llm-pi-ai`，同一 seam 的另一个 Provider）。
+- **拥有**：`deepseek-official` 兼容路由的 `DeepSeekAdapter`、渠道配置与每请求解析的凭据和出站、模型目录与推理默认值、图片处理与错误映射。Chat Completions 保留 DeepSeek 原生编码和 SSE 解码；显式选择 Responses 或 Messages 时使用通用协议实现。
+- **不拥有**：`LlmRuntime`／`ctx.llm` 与 `StreamChunk`（`packages/llm/llm`）；重试执行（`packages/llm/llm-retry`）；新建渠道和 pi-ai 目录路由（[llm-pi-ai](../../packages/llm/llm-pi-ai/README.md)）。
 - **入口**：`packages/llm/llm-deepseek/src/index.ts`（函数插件：`name`/`inject = ['llm']`/`Config`/`apply`）。
-- **接线**：`packages/bundle/base/cordis.patch.yml` 的 `llm-deepseek` 行；`apply` 内 `ctx.llm.registerAdapter([PROVIDER], adapter)`。
-- **关键文件**：`packages/llm/llm-deepseek/src/index.ts`、`packages/llm/llm-deepseek/src/adapter.ts`、`packages/llm/llm-deepseek/src/sse.ts`。
-- **改这里要同步**：包 README、`docs/config-catalog.md`（`pnpm run gen-config-catalog`）、`tests/adapter.spec.ts` 与 `tests/mock-server.ts`。
-- **不变量**：连接与凭据事实是同一份解析快照，被拒的 settings 世代整体不生效（旧 endpoint 绝不配新 key）；唯一注册期事实是 retryPolicy，变化时原地 `registration.replace([PROVIDER])`；重复注册同一 provider 抛 `LlmError('DUPLICATE_ADAPTER')`。
+- **接线**：`packages/bundle/base/cordis.patch.yml` 的 `llm-deepseek` 行；与 pi-ai 共用 `registerChannels` 管理注册、`streamChannelRequest` 管理流生命周期、`queryModelListing` 查询 OpenAI 兼容模型清单。存量 DeepSeek 清单地址仍按原规则生成，不受对话协议限制。
+- **关键文件**：`packages/llm/llm-deepseek/src/` 下的 `index.ts`、`adapter.ts`、`sse.ts`、`protocol.ts`（通用协议）与 `discovery.ts`（清单地址兼容）。
+- **改这里要同步**：包 README、[模型渠道用户指南](../user/guide/providers.md)、`docs/config-catalog.md`（`pnpm run gen-config-catalog`）、`tests/adapter.spec.ts` 与 `tests/mock-server.ts`。
+- **不变量**：保留 `deepseek-official`、`llm-deepseek`、凭据引用、模型 ID 与出站设置，早期会话无需迁移。连接与凭据取自同一份设置快照，被拒的设置不生效；模型协议优先于渠道，均未设置时走原生 Chat Completions。显示名称或重试策略变化时原地更新注册，重复注册同一路由抛 `LlmError('DUPLICATE_ADAPTER')`。
 - **测试**：`pnpm exec vitest run packages/llm/llm-deepseek/tests`
 
 ## packages/session/session-persistence-jsonl

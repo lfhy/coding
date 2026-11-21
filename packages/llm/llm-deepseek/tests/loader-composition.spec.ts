@@ -23,8 +23,33 @@ import { settingsNamespace } from 'coding-settings'
 import FileSettingsProvider from 'coding-settings-file'
 import { getOrCreateAnonymousUserId } from 'coding-anonymous-user-id'
 import * as LlmDeepSeek from 'coding-llm-deepseek'
+import * as LlmPiAi from 'coding-llm-pi-ai'
 import { assemble } from './assemble.ts'
 import { closeMockServers, mockServer, textEvents } from './mock-server.ts'
+
+const responsesEvents = [
+  { type: 'response.output_item.added', output_index: 0, item: { type: 'message', id: 'msg_1', role: 'assistant', content: [] } },
+  { type: 'response.content_part.added', output_index: 0, content_index: 0, part: { type: 'output_text', text: '', annotations: [] } },
+  { type: 'response.output_text.delta', output_index: 0, content_index: 0, delta: 'responses' },
+  { type: 'response.output_item.done', output_index: 0, item: {
+    type: 'message', id: 'msg_1', role: 'assistant', content: [{ type: 'output_text', text: 'responses', annotations: [] }],
+  } },
+  { type: 'response.completed', response: {
+    id: 'resp_1', status: 'completed', output: [], usage: { input_tokens: 3, output_tokens: 1, total_tokens: 4 },
+  } },
+].map(event => JSON.stringify(event))
+
+const messagesEvents = [
+  { type: 'message_start', message: {
+    id: 'msg_anthropic', type: 'message', role: 'assistant', model: 'special-model', content: [],
+    stop_reason: null, stop_sequence: null, usage: { input_tokens: 3, output_tokens: 0 },
+  } },
+  { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } },
+  { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'messages' } },
+  { type: 'content_block_stop', index: 0 },
+  { type: 'message_delta', delta: { stop_reason: 'end_turn', stop_sequence: null }, usage: { output_tokens: 1 } },
+  { type: 'message_stop' },
+].map(event => `event: ${event.type}\ndata: ${JSON.stringify(event)}`)
 
 const NS = settingsNamespace('llm-deepseek')
 const KEY_REF = credentialRef('DEEPSEEK_API_KEY')
@@ -42,7 +67,7 @@ afterEach(async () => {
 })
 
 async function loadComposition(
-  options: { withDynamic: boolean; baseURL: string; reuseRoot?: string },
+  options: { withDynamic: boolean; baseURL: string; reuseRoot?: string; withGeneric?: boolean },
 ): Promise<{ ctx: Context; settingsPath: string; credentialsPath: string }> {
   // A reused root is the restart case: the same harness home, its documents
   // exactly as the previous process left them.
@@ -53,7 +78,11 @@ async function loadComposition(
   const credentialsPath = join(root, '.credentials.yaml')
   if (options.withDynamic && fresh) {
     await writeFile(settingsPath, '# personal settings\n')
-    await writeFile(credentialsPath, 'DEEPSEEK_API_KEY: boot-key\n', { mode: 0o600 })
+    await writeFile(credentialsPath, [
+      'DEEPSEEK_API_KEY: boot-key',
+      ...options.withGeneric === true ? ['GATEWAY_API_KEY: gateway-key'] : [],
+      '',
+    ].join('\n'), { mode: 0o600 })
   }
 
   const configPath = join(root, 'cordis.yml')
@@ -78,6 +107,7 @@ async function loadComposition(
     "  name: 'coding-llm-deepseek'",
     '  config:',
     `    baseURL: ${JSON.stringify(options.baseURL)}`,
+    ...options.withGeneric === true ? ['- id: llm-pi-ai', "  name: 'coding-llm-pi-ai'"] : [],
     '',
   ].join('\n'))
 
@@ -91,6 +121,7 @@ async function loadComposition(
     ['coding-settings-file', FileSettingsProvider],
     ['coding-credentials-local', LocalCredentialProvider],
     ['coding-llm-deepseek', LlmDeepSeek],
+    ['coding-llm-pi-ai', LlmPiAi],
   ])
   ctx.loader.internal = {
     version: 'v2',
@@ -108,6 +139,133 @@ async function loadComposition(
 }
 
 describe('llm-deepseek real dynamic composition', () => {
+  it('loads legacy and newly declared channels together without changing the legacy route', async () => {
+    vi.stubEnv('DEEPSEEK_API_KEY', '')
+    const legacy = await mockServer([{ kind: 'sse', events: textEvents }])
+    const gateway = await mockServer([{ kind: 'sse', events: textEvents }])
+    const { ctx } = await loadComposition({ withDynamic: true, withGeneric: true, baseURL: legacy.url })
+    const settings = ctx.get('settings')!
+    const legacyBefore = settings.get(NS)
+    await settings.update(settingsNamespace('llm-pi-ai'), {
+      providers: { gateway: {
+        displayName: 'Gateway', baseURL: gateway.url, apiKeyEnv: 'GATEWAY_API_KEY', models: [{ id: 'model' }],
+      } },
+    })
+
+    for (const [provider, model] of [['deepseek-official', 'deepseek-v4-flash'], ['gateway', 'model']] as const) {
+      const result = await assemble(ctx, { provider, model, messages: [] })
+      expect(result.finish).toEqual({ kind: 'stop' })
+      expect(result.message.content).toContainEqual({ type: 'text', text: 'hello' })
+    }
+    expect(legacy.paths).toEqual(['/chat/completions'])
+    expect(gateway.paths).toEqual(['/chat/completions'])
+    expect(legacy.headers[0]?.authorization).toBe('Bearer boot-key')
+    expect(gateway.headers[0]?.authorization).toBe('Bearer gateway-key')
+    expect(settings.get(NS)).toEqual(legacyBefore)
+  })
+
+  it('uses the channel protocol unless a model overrides it, and returns to Chat after clearing', async () => {
+    vi.stubEnv('DEEPSEEK_API_KEY', '')
+    const server = await mockServer([textEvents, responsesEvents, messagesEvents, textEvents]
+      .map(events => ({ kind: 'sse', events })))
+    const initial = await loadComposition({ withDynamic: true, baseURL: server.url })
+    let ctx = initial.ctx
+    const generate = (model: string) => assemble(ctx, {
+      model, messages: [], system: 'Use plain text.', maxTokens: 64,
+    })
+    const expectText = async (model: string, text: string): Promise<void> => {
+      const result = await generate(model)
+      expect(result.finish).toEqual({ kind: 'stop' })
+      expect(result.message.content).toContainEqual({ type: 'text', text })
+    }
+
+    await expectText('deepseek-v4-flash', 'hello')
+    const settings = ctx.get('settings')!
+    await settings.update(NS, {
+      api: 'openai-responses',
+      userAgent: 'test-channel/1.0',
+      models: [{ id: 'inherited-model' }, { id: 'special-model', api: 'anthropic-messages' }],
+    })
+    const home = root!
+    await ctx.fiber.dispose()
+    const restarted = await loadComposition({ withDynamic: true, baseURL: server.url, reuseRoot: home })
+    ctx = restarted.ctx
+    await expectText('inherited-model', 'responses')
+    await expectText('special-model', 'messages')
+    const responses = server.requests[1] as Record<string, unknown>
+    const messages = server.requests[2] as Record<string, unknown>
+    expect(responses).toMatchObject({ model: 'inherited-model', max_output_tokens: 64 })
+    expect(Array.isArray(responses['input'])).toBe(true)
+    expect(responses).not.toHaveProperty('reasoning')
+    expect(messages).toMatchObject({ model: 'special-model', max_tokens: 64 })
+    expect(Array.isArray(messages['messages'])).toBe(true)
+    expect(server.headers[1]).toMatchObject({ authorization: 'Bearer boot-key', 'user-agent': 'test-channel/1.0' })
+    expect(server.headers[2]).toMatchObject({ 'x-api-key': 'boot-key', 'user-agent': 'test-channel/1.0' })
+    expect(server.headers[2]?.['x-deepseek-harness-user-id']).toBe(server.headers[0]?.['x-deepseek-harness-user-id'])
+    const reloadedSettings = ctx.get('settings')!
+    await expect(reloadedSettings.update(NS, { api: 'chat' })).rejects.toThrow()
+    await expect(reloadedSettings.update(NS, { models: [{ id: 'bad-model', api: 'unknown' }] })).rejects.toThrow()
+
+    // 模拟用户移除两级覆盖；不需要改密钥、重启或换模型 ID。
+    await writeFile(restarted.settingsPath, 'llm-deepseek:\n  models:\n    - id: special-model\n')
+    await vi.waitFor(() => {
+      expect(reloadedSettings.get(NS)).toMatchObject({ models: [{ id: 'special-model' }] })
+      expect(reloadedSettings.get(NS)).not.toHaveProperty('api')
+    }, { timeout: 5000 })
+    await expectText('special-model', 'hello')
+    expect(server.paths).toEqual(['/chat/completions', '/responses', '/v1/messages', '/chat/completions'])
+  })
+
+  it('uses the configured outbound proxy in all formats without changing direct requests', async () => {
+    vi.stubEnv('DEEPSEEK_API_KEY', '')
+    const upstream = await mockServer([{ kind: 'sse', events: textEvents }])
+    // HTTP 代理接收绝对形式的 URL，直接回放上游响应；不能绕过它联系上游。
+    const proxy = await mockServer([textEvents, responsesEvents, messagesEvents].map(events => ({ kind: 'sse', events })))
+    const { ctx } = await loadComposition({ withDynamic: true, baseURL: upstream.url })
+    const settings = ctx.get('settings')!
+    const generate = () => assemble(ctx, { model: 'deepseek-v4-flash', messages: [] })
+    for (const api of ['openai-completions', 'openai-responses', 'anthropic-messages'] as const) {
+      await settings.update(NS, { api, outbound: { mode: 'custom', customUrl: proxy.url } })
+      expect((await generate()).finish).toEqual({ kind: 'stop' })
+    }
+    expect(upstream.paths).toEqual([])
+    expect(proxy.paths).toEqual(['/chat/completions', '/responses', '/v1/messages'].map(path => upstream.url + path))
+    await settings.replace(NS, {})
+    expect((await generate()).finish).toEqual({ kind: 'stop' })
+    expect(upstream.paths).toEqual(['/chat/completions'])
+  })
+
+  it.each([
+    ['openai-responses', '/responses', responsesEvents],
+    ['anthropic-messages', '/v1/messages', messagesEvents],
+  ] as const)('cancels an in-flight %s request through the channel signal', async (api, path, events) => {
+    vi.stubEnv('DEEPSEEK_API_KEY', '')
+    const upstream = await mockServer([{ kind: 'sse', events, delayMs: 100 }])
+    const { ctx } = await loadComposition({ withDynamic: true, baseURL: upstream.url })
+    await ctx.get('settings')!.update(NS, { api })
+    const caller = new AbortController()
+    const result = assemble(ctx, { model: 'deepseek-v4-flash', messages: [], signal: caller.signal })
+    try {
+      await vi.waitFor(() => { expect(upstream.paths).toEqual([path]) })
+    } finally {
+      caller.abort()
+    }
+    expect((await result).finish).toMatchObject({ kind: 'aborted', failure: { code: 'ABORTED' } })
+  })
+
+  it('does not forward the Messages credential to a redirected endpoint', async () => {
+    vi.stubEnv('DEEPSEEK_API_KEY', '')
+    const destination = await mockServer([{ kind: 'sse', events: messagesEvents }])
+    const upstream = await mockServer([{
+      kind: 'http-error', status: 307, body: '', headers: { location: `${destination.url}/v1/messages` },
+    }])
+    const { ctx } = await loadComposition({ withDynamic: true, baseURL: upstream.url })
+    await ctx.get('settings')!.update(NS, { api: 'anthropic-messages' })
+    expect((await assemble(ctx, { model: 'deepseek-v4-flash', messages: [] })).finish.kind).toBe('error')
+    expect(upstream.headers[0]?.['x-api-key']).toBe('boot-key')
+    expect(destination.paths).toEqual([])
+  })
+
   it('reloads the channel directory name from external settings and a real restart', async () => {
     const { ctx, settingsPath } = await loadComposition({ withDynamic: true, baseURL: 'http://127.0.0.1:1' })
     const home = root!

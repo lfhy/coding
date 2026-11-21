@@ -10,10 +10,8 @@ import {
   ModelsSection, needsSetup, providerCopy, providerTargetLabel, removeProviderProfile,
 } from '../src/client/ModelsSection.tsx'
 import type { ModelsSectionInjected, ModelsSectionProps } from '../src/client/ModelsSection.tsx'
-import { pathOps } from '../src/client/ProviderEditor.tsx'
-import {
-  DeepSeekModelsEditor, formatCapacity, modelDrafts, parseCapacity, validateDeepSeekModels,
-} from '../src/client/DeepSeekModelsEditor.tsx'
+import { pathOps } from '../src/client/provider-draft.ts'
+import { formatCapacity, modelDrafts, parseCapacity, validateModels } from '../src/client/model-editor-helpers.ts'
 import { apiKeyFailure } from '../src/client/apiKey.ts'
 import { SettingsDescribeMirror } from 'coding-client-ui-settings/src/client/settings-mirror.ts'
 import { deriveKeyRef, ModelsSettingsStore } from '../src/client/store.ts'
@@ -49,30 +47,70 @@ function cancelRow(position: number): void {
     .getByRole('button', { name: en.cancel }))
 }
 
+const PI_AI_REASONING_LEVELS = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']
+const PiAiApi = Schema.union<string>(['openai-completions', 'openai-responses'])
+const PiAiModelFields = {
+  api: PiAiApi,
+  name: Schema.string(),
+  contextWindow: Schema.number().step(1).min(1),
+  maxTokens: Schema.number().step(1).min(1),
+  input: Schema.array(Schema.union(['text', 'image'])),
+  reasoningEfforts: Schema.union([
+    Schema.const(false),
+    Schema.dict(Schema.union([Schema.string(), Schema.const(null)]), Schema.union(PI_AI_REASONING_LEVELS)),
+  ]),
+}
+
 const PiAiConfig = Schema.object({
   providers: Schema.dict(Schema.object({
     apiKeyEnv: Schema.string().role('credential-ref'),
     baseURL: Schema.string(),
-    api: Schema.union(['openai-completions', 'openai-responses']),
+    api: PiAiApi,
     reasoning: Schema.union(['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']),
     headers: Schema.dict(Schema.string()),
+    models: Schema.array(Schema.object({ id: Schema.string().required(), ...PiAiModelFields })),
+    modelOverrides: Schema.dict(Schema.object(PiAiModelFields)),
   })),
+})
+
+const DeepSeekApi = Schema.union<string>(['openai-completions', 'openai-responses', 'anthropic-messages'])
+
+const DeepSeekModel: Schema<{
+  id: string
+  api?: string
+  name?: string
+  description?: string
+  contextWindow?: number
+  maxTokens?: number
+  inputModalities?: ('text' | 'image')[]
+  reasoningEfforts?: ('off' | 'low' | 'high' | 'max')[]
+}> = Schema.object({
+  id: Schema.string().required(),
+  api: DeepSeekApi,
+  name: Schema.string(),
+  description: Schema.string(),
+  contextWindow: Schema.number().step(1).min(1),
+  maxTokens: Schema.number().step(1).min(1),
+  inputModalities: Schema.array(Schema.union(['text', 'image'])),
+  reasoningEfforts: Schema.union([Schema.array(Schema.union(['off', 'low', 'high', 'max']))]),
 })
 
 const DeepSeekConfig = Schema.object({
   channelName: Schema.string().min(1).max(64).pattern(/\S/u).default('DeepSeek'),
-  apiKeyEnv: Schema.string().role('credential-ref'),
+  apiKeyEnv: Schema.string().role('credential-ref').default('DEEPSEEK_API_KEY'),
   baseURL: Schema.string().pattern(/^https:\/\//),
+  userAgent: Schema.string().min(1).max(256),
+  outbound: Schema.object({
+    mode: Schema.union(['direct', 'pool', 'custom']),
+    customUrl: Schema.string(),
+  }),
+  api: DeepSeekApi,
+  thinking: Schema.union(['enabled', 'disabled']),
   reasoningEffort: Schema.union(['off', 'low', 'high', 'max']),
   defaultContextWindow: Schema.number().step(1).min(1),
-  models: Schema.array(Schema.object({
-    id: Schema.string().required(),
-    name: Schema.string(),
-    description: Schema.string(),
-    contextWindow: Schema.number().step(1).min(1),
-  // The adapter declares its catalog as a schema default rather than a
-  // composition entry, which is what the restore-defaults path has to read.
-  })).default([
+  maxTokens: Schema.number().step(1).min(1),
+  // 适配器将目录声明为 schema 默认值，恢复默认模型不能只读取部署层。
+  models: Schema.array(DeepSeekModel).default([
     {
       id: 'deepseek-v4-flash',
       name: 'DeepSeek-V4-Flash',
@@ -348,7 +386,9 @@ describe('ModelsSection', () => {
 
     fireEvent.click(screen.getByRole('button', { name: en.fetchModels }))
     const dialog = await screen.findByRole('dialog', { name: `DeepSeek ${en.models}` })
-    expect(discover).toHaveBeenCalledWith({ settingsNs: 'llm-deepseek', provider: 'deepseek-official', baseURL: 'https://base' })
+    expect(discover).toHaveBeenCalledWith({
+      settingsNs: 'llm-deepseek', provider: 'deepseek-official', baseURL: 'https://base',
+    })
     const candidate = within(dialog).getByRole<HTMLInputElement>('checkbox', { name: 'deepseek-v5-preview' })
     expect(candidate.checked).toBe(false)
     expect(mutate).not.toHaveBeenCalled()
@@ -534,19 +574,46 @@ describe('ModelsSection', () => {
     })
     openAdvanced()
     const baseURL = screen.getByLabelText<HTMLInputElement>(en.baseUrl)
-    // The deepseek placeholder is pinned to the public endpoint, not the
-    // effective value (which may reflect a launch-environment override).
+    // 公开端点占位提示保持稳定，不回显可能来自启动环境的生效地址。
     expect(baseURL.placeholder).toBe('https://api.deepseek.com')
     fireEvent.change(baseURL, { target: { value: 'https://next2' } })
     fireEvent.click(screen.getByText(en.apply))
     await waitFor(() => { expect(mutate).toHaveBeenCalledTimes(1) })
-    // Only the field that actually changed: reasoningEffort was already
-    // 'high' in the loaded profile, so it produces no op.
     expect(mutate.mock.calls[0]?.[0]).toEqual({
       ns: 'llm-deepseek',
       ops: [{ op: 'set', path: ['baseURL'], value: 'https://next2' }],
       expectedRevision: 0,
     })
+  })
+
+  it('clears the stored DeepSeek channel and model formats back to automatic Chat', async () => {
+    const original = wireNamespaces()[0]!
+    const stored = { api: 'openai-responses', models: [{ id: 'deepseek-custom', api: 'anthropic-messages' }] }
+    const namespace = { ...original, user: stored, value: { ...original.value as object, ...stored } }
+    const mutate = vi.fn(() => Promise.resolve(ok(original)))
+    await mountDeepSeekCard({ mutate, namespaces: () => [namespace, ...wireNamespaces().slice(1)] })
+
+    const channel = screen.getByRole('button', { name: en.customApi })
+    expect(channel.textContent).toBe('OpenAI Responses')
+    fireEvent.click(channel)
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Automatic (OpenAI Chat Completions)' }))
+    expect(channel.textContent).toBe('Automatic (OpenAI Chat Completions)')
+
+    expandRow(1)
+    const dialog = screen.getByRole('dialog', { name: `${en.modelAdvanced} 1` })
+    const model = within(dialog).getByRole('button', { name: en.modelApi })
+    expect(model.textContent).toBe('Anthropic Messages')
+    fireEvent.click(model)
+    fireEvent.click(within(dialog).getByRole('menuitem', { name: 'Use channel format (OpenAI Chat Completions)' }))
+    expect(model.textContent).toBe('Use channel format (OpenAI Chat Completions)')
+    saveRow(1)
+    expect(mutate).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: en.apply }))
+
+    await waitFor(() => { expect(mutate).toHaveBeenCalledWith({ ns: 'llm-deepseek', expectedRevision: 0, ops: [
+      { op: 'set', path: ['models'], value: [{ id: 'deepseek-custom' }] },
+      { op: 'unset', path: ['api'] },
+    ] }) })
   })
 
   it('writes the channel User-Agent only when it changes and refuses unprintable values', async () => {
@@ -796,25 +863,25 @@ describe('ModelsSection', () => {
   it('validates every adapter-owned model catalog invariant', () => {
     expect(modelDrafts(undefined)).toEqual([])
     expect(modelDrafts([null, 'bad', { id: 'ok' }])).toEqual([{}, {}, { id: 'ok' }])
-    expect(validateDeepSeekModels([{}])).toEqual({ index: 0, key: 'modelIdRequired' })
-    expect(validateDeepSeekModels([{ id: 'same' }, { id: 'same' }]))
+    expect(validateModels([{}])).toEqual({ index: 0, key: 'modelIdRequired' })
+    expect(validateModels([{ id: 'same' }, { id: 'same' }]))
       .toEqual({ index: 1, key: 'modelIdDuplicate' })
-    expect(validateDeepSeekModels([{ id: 'model', name: '' }]))
+    expect(validateModels([{ id: 'model', name: '' }]))
       .toEqual({ index: 0, key: 'modelNameInvalid' })
-    expect(validateDeepSeekModels([{ id: 'model', contextWindow: null }]))
+    expect(validateModels([{ id: 'model', contextWindow: null }]))
       .toEqual({ index: 0, key: 'modelContextInvalid' })
-    expect(validateDeepSeekModels([{ id: 'model', contextWindow: 1.5 }]))
+    expect(validateModels([{ id: 'model', contextWindow: 1.5 }]))
       .toEqual({ index: 0, key: 'modelContextInvalid' })
-    expect(validateDeepSeekModels([{ id: 'model', contextWindow: 0 }]))
+    expect(validateModels([{ id: 'model', contextWindow: 0 }]))
       .toEqual({ index: 0, key: 'modelContextInvalid' })
-    expect(validateDeepSeekModels([{ id: 'model', contextWindow: 1 }])).toBeUndefined()
-    expect(validateDeepSeekModels([{ id: 'model', maxTokens: null }]))
+    expect(validateModels([{ id: 'model', contextWindow: 1 }])).toBeUndefined()
+    expect(validateModels([{ id: 'model', maxTokens: null }]))
       .toEqual({ index: 0, key: 'modelMaxTokensInvalid' })
-    expect(validateDeepSeekModels([{ id: 'model', maxTokens: 1.5 }]))
+    expect(validateModels([{ id: 'model', maxTokens: 1.5 }]))
       .toEqual({ index: 0, key: 'modelMaxTokensInvalid' })
-    expect(validateDeepSeekModels([{ id: 'model', maxTokens: 0 }]))
+    expect(validateModels([{ id: 'model', maxTokens: 0 }]))
       .toEqual({ index: 0, key: 'modelMaxTokensInvalid' })
-    expect(validateDeepSeekModels([{ id: 'model', maxTokens: 8192 }])).toBeUndefined()
+    expect(validateModels([{ id: 'model', maxTokens: 8192 }])).toBeUndefined()
   })
 
   it('reads context windows written as counts, thousands, or millions', () => {
@@ -915,9 +982,7 @@ describe('ModelsSection', () => {
     ['the schema default', undefined],
     ['the composition entry', { models: [{ id: 'pinned-by-deployment' }] }],
   ])('restores %s the moment the override is dropped, not after a reload', async (_label, base) => {
-    // The regression: reset read the EFFECTIVE value, which still carries the
-    // stored override until the unset is applied — so the rows did not change
-    // and the catalog only looked restored after reopening the card.
+    // 重置应立即展示部署目录或 schema 默认目录，不能沿用仍含用户覆盖的生效快照。
     const { face } = scriptedFace()
     const stored = { models: [{ id: 'user-only-model', name: 'User Only' }] }
     const overridden: SettingsNamespaceView = {
@@ -1069,28 +1134,9 @@ describe('ModelsSection', () => {
 
     // An id that is only whitespace is as absent as an empty one, and a padded
     // id is a duplicate of its trimmed twin.
-    expect(validateDeepSeekModels([{ id: '   ' }])).toEqual({ index: 0, key: 'modelIdRequired' })
-    expect(validateDeepSeekModels([{ id: 'model' }, { id: 'model ' }]))
+    expect(validateModels([{ id: '   ' }])).toEqual({ index: 0, key: 'modelIdRequired' })
+    expect(validateModels([{ id: 'model' }, { id: 'model ' }]))
       .toEqual({ index: 1, key: 'modelIdDuplicate' })
-  })
-
-  it('renders malformed draft fallbacks without inventing catalog values', () => {
-    render(<DeepSeekModelsEditor
-      models={[{}]}
-      overridden={false}
-      defaultContextWindow={undefined}
-      defaultMaxTokens={undefined}
-      t={t}
-      disabled={true}
-      onChange={vi.fn()}
-      onReset={vi.fn()}
-    />)
-    expect(screen.getByLabelText<HTMLInputElement>(`${en.modelId} 1`).value).toBe('')
-    expandRow(1)
-    expect(screen.getByLabelText<HTMLInputElement>(`${en.contextWindow} 1`).placeholder)
-      .toBe(en.contextWindowPlaceholder)
-    expect(screen.getByLabelText<HTMLInputElement>(`${en.maxTokens} 1`).placeholder)
-      .toBe(en.maxTokensPlaceholder)
   })
 
   it('clears optional model fields without dropping hidden data in channel layout', async () => {
@@ -1219,7 +1265,7 @@ describe('ModelsSection', () => {
     expect(mutate.mock.calls[0]?.[0]).toEqual({
       ns: 'llm-pi-ai', expectedRevision: 0,
       ops: [{ op: 'set', path: ['providers', route], value: {
-        displayName: 'Acme', apiKeyEnv: deriveKeyRef(route), api: 'openai-completions', baseURL: 'https://acme.test/v1',
+        displayName: 'Acme', apiKeyEnv: deriveKeyRef(route), baseURL: 'https://acme.test/v1',
         models: [{ id: 'acme-chat', input: ['text', 'image'], reasoningEfforts: {
           off: null, low: 'low', high: 'high', max: 'max',
         } }],

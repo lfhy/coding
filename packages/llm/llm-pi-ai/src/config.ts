@@ -40,6 +40,9 @@ import type {
 } from './catalog.ts'
 import { buildProvider, supportedProtocols } from './provider.ts'
 
+// 程序化装配允许输入任意字符串，由解析器给出指向渠道或模型的具体错误。
+const protocolSchema = z.union<string>(supportedProtocols())
+
 /** 未声明渠道协议时使用 OpenAI Chat Completions 请求格式。 */
 export const DEFAULT_PROTOCOL = 'openai-completions'
 
@@ -281,7 +284,7 @@ const reasoningEfforts = z.dict(
 
 /** The fields a `models` entry and a `modelOverrides` value share; only the id's home differs. */
 const modelFields = {
-  api: z.union(supportedProtocols()),
+  api: protocolSchema,
   name: z.string(),
   contextWindow: z.number().step(1).min(1),
   maxTokens: z.number().step(1).min(1),
@@ -307,7 +310,7 @@ const modelOverride: z<PiAiModelOverride> = z.object(modelFields)
 const profile = z.object({
   apiKeyEnv: z.string().role('credential-ref'),
   displayName: z.string(),
-  api: z.union(supportedProtocols()),
+  api: protocolSchema,
   baseURL: z.string(),
   models: z.array(modelProfile),
   modelOverrides: z.dict(modelOverride),

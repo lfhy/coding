@@ -58,9 +58,10 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { launchEnvironmentOf } from 'coding-launch-environment'
 import { assertUsableApiKey, LlmError, resolveUserAgent } from 'coding-llm'
-import type { AdapterRegistrationHandle, DirectoryRegistrationHandle, LlmConfigurableProvider } from 'coding-llm'
-import { deepEqualJson, installSettingsSection, settingsNamespace } from 'coding-settings'
+import type { LlmConfigurableProvider } from 'coding-llm'
+import { installSettingsSection, settingsNamespace } from 'coding-settings'
 import { PiAiAdapter } from './adapter.ts'
+import { registerChannels } from './channel-registry.ts'
 import { catalogModels, catalogProvider, catalogProviderIds, catalogProviderTakesApiKey } from './catalog.ts'
 import { assertServiceable, Config, resolveProfiles } from './config.ts'
 import type { ResolvedPiAiProviderProfile } from './config.ts'
@@ -79,30 +80,18 @@ export type {
   PiAiThinkingFormat,
   ResolvedPiAiProviderProfile,
 } from './config.ts'
-export { supportedProtocols } from './provider.ts'
+export { configuredProtocolStreams, supportedProtocols } from './provider.ts'
+export type { ConfiguredProtocol } from './provider.ts'
+export { streamPiAiRequest } from './stream-request.ts'
+export type { PiAiStreamRequest } from './stream-request.ts'
+export { streamChannelRequest } from './channel-stream.ts'
+export { queryModelListing } from './discovery.ts'
+export { registerChannels } from './channel-registry.ts'
 
 export const name = 'llm-pi-ai'
 export const inject = ['llm']
 
 const NS = settingsNamespace('llm-pi-ai')
-
-/**
- * The registry captures these per route; a change here must re-register.
- * Sorted by provider so a settings document that merely reorders its keys is
- * not mistaken for a route change.
- */
-function registrationFacts(profiles: ReadonlyMap<string, ResolvedPiAiProviderProfile>): unknown {
-  return [...profiles.entries()]
-    // `displayName` rides along because the registry hands it to every selector
-    // through `providerInfo()`: a rename that did not re-register would leave
-    // the old label showing until some unrelated fact happened to change.
-    .map(([provider, profile]) => ({
-      provider,
-      displayName: profile.displayName,
-      retryPolicy: profile.retryPolicy,
-    }))
-    .sort((left, right) => left.provider.localeCompare(right.provider))
-}
 
 /**
  * The configurable-provider directory: every installed catalog route this
@@ -208,28 +197,10 @@ export function apply(ctx: Context, config: Config): void {
       )
     },
   })
-  // The full installed catalog is configurable from the moment the plugin
-  // mounts — dormant or not — so configuration surfaces can offer every
-  // pi-ai provider before any route exists. Hand-declared routes join it as
-  // profiles appear, and leave with them.
-  let directory: DirectoryRegistrationHandle | undefined
-  let directoryFacts: unknown
-  const ensureDirectory = (): void => {
-    const entries = directoryEntries(profiles())
-    if (deepEqualJson(entries, directoryFacts)) return
-    // Atomic replace, never dispose-then-register: a route another adapter
-    // family already declares (a profile keyed `deepseek-official`) would
-    // otherwise leave this plugin's whole directory withdrawn and the Models
-    // page empty. The candidate set is validated first, so a collision keeps
-    // the previous entries serving and only costs a diagnostic.
-    if (directory === undefined) {
-      directory = ctx.llm.registerConfigurableProviders(entries)
-    } else {
-      directory.replace(entries)
-    }
-    directoryFacts = entries
-  }
-  ensureDirectory()
+  const refreshChannels = registerChannels(ctx, adapter, () => {
+    const currentProfiles = profiles()
+    return { entries: directoryEntries(currentProfiles), routes: [...currentProfiles.keys()] }
+  })
   /** 已保存路由提供端点与协议；凭据只在查询确认端点相同后才解析。 */
   const storedRoute = (provider: string | undefined) => {
     if (provider === undefined) return undefined
@@ -252,69 +223,12 @@ export function apply(ctx: Context, config: Config): void {
     const stored = request.provider === undefined ? undefined : profiles().get(request.provider)
     return discoverModels(request, () => storedRoute(request.provider), resolveUserAgent(stored?.userAgent))
   })
-  // Route effects bind to this apply fiber via the stable `ctx` reference,
-  // even when a swap runs inside the scoped settings callback below. A bare
-  // mount (zero routes) is the dormant posture: nothing registers until a
-  // settings section supplies profiles, and routes drop when it empties.
-  let registration: AdapterRegistrationHandle | undefined
-  let registeredFacts: unknown
-  const ensureRegistrationFacts = (): void => {
-    const facts = registrationFacts(profiles())
-    if (deepEqualJson(facts, registeredFacts)) return
-    // The registry captures the route set and each route's retry policy at
-    // registration, so a change to either must re-register. The swap is
-    // atomic (same adapter instance, validated before anything moves): a
-    // conflicting route leaves the previous routes serving requests, and
-    // `registeredFacts` only advances once the registry actually holds the
-    // new set — so returning to a working configuration always re-applies.
-    const routes = [...profiles().keys()]
-    if (registration === undefined) {
-      // Dormant bare mount: nothing is registered until a section supplies
-      // profiles, and an empty section keeps it that way.
-      if (routes.length === 0) {
-        registeredFacts = facts
-        return
-      }
-      registration = ctx.llm.registerAdapter(routes, adapter)
-    } else {
-      registration.replace(routes)
-    }
-    registeredFacts = facts
-  }
-  ensureRegistrationFacts()
-
   installSettingsSection(ctx, NS, Config, config, {
-    // Refuse an unserviceable section where it is written: without this a
-    // schema-valid profile the adapter cannot serve would be stored and then
-    // silently disable every route in this namespace.
+    // 无法服务的配置在写入时拒绝，不撤掉已可用的路由。
     validate: assertServiceable,
     setSource: (source) => {
       current = source
     },
-    onChange: () => {
-      // Named here rather than left to the settings watcher: `assertServiceable`
-      // cannot see the llm registry, so a profile claiming a route another
-      // adapter family owns is stored successfully and only fails at this swap.
-      // Without its own diagnostic that refusal reaches the operator as a
-      // generic "settings: watcher failed", naming neither the route nor why it
-      // is not serving. The previous routes keep serving either way.
-      try {
-        ensureRegistrationFacts()
-      } catch (error) {
-        ctx.logger.error('llm-pi-ai: keeping the previously registered routes after a refused update')
-        ctx.logger.error(error)
-      }
-      // The directory follows the profiles the registry accepted, so a route
-      // that failed to register is not advertised as configurable. A refused
-      // directory swap is contained here for the same reason the registry's
-      // is: the previous entries keep serving, and `directoryFacts` stays put
-      // so returning to a working configuration re-applies.
-      try {
-        ensureDirectory()
-      } catch (error) {
-        ctx.logger.error('llm-pi-ai: keeping the previous configurable-provider directory after a refused update')
-        ctx.logger.error(error)
-      }
-    },
+    onChange: refreshChannels,
   })
 }

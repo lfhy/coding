@@ -9,9 +9,11 @@ import type { IApiClient, SettingsNamespaceView } from 'coding-api-remotes/clien
 import { apiKeyFailure } from './apiKey.ts'
 import { generateChannelId } from './channel-id.ts'
 import { EditorFooter } from './EditorFooter.tsx'
-import { validateDeepSeekModels } from './DeepSeekModelsEditor.tsx'
+import { validateModels } from './model-editor-helpers.ts'
 import { ModelListEditor } from './ModelListEditor.tsx'
 import type { ModelDraft } from './ModelListEditor.tsx'
+import type { ModelEditorSchema } from './model-editor-schema.ts'
+import { ProtocolPicker, protocolName } from './ProtocolPicker.tsx'
 import { identitiesAfterRemoval, modelPresetOf, removeModelPreset, renameModelPreset, saveModelPresetChanges } from './model-presets.ts'
 import type { ModelIdentity } from './model-presets.ts'
 import { deriveKeyRef, messageOf } from './store.ts'
@@ -31,6 +33,9 @@ export interface CustomProviderCardProps {
   taken: readonly string[]
   /** 适配器支持的上游请求格式，按 schema 顺序展示。 */
   protocols: readonly string[]
+  /** 由渠道表单和模型行各自的 schema 提供。 */
+  modelSchema: ModelEditorSchema
+  modelProtocols?: readonly string[]
   /** 打开草稿时的 revision；后续并发变更必须拒绝创建。 */
   revision: number
   /** 设置、凭据写入及端点模型发现接口。 */
@@ -68,7 +73,6 @@ export function CustomProviderCard(props: CustomProviderCardProps): ReactNode {
   const fieldId = useId()
   const displayNameId = `${fieldId}-display-name`
   const baseURLId = `${fieldId}-base-url`
-  const protocolId = `${fieldId}-protocol`
   const keyId = `${fieldId}-key`
   const formRef = useRef<HTMLDivElement>(null)
   const nameInputRef = useRef<HTMLInputElement>(null)
@@ -85,7 +89,7 @@ export function CustomProviderCard(props: CustomProviderCardProps): ReactNode {
   const [activeTab, setActiveTab] = useState<DraftTab>('channel')
   const [displayName, setDisplayName] = useState('')
   const [baseURL, setBaseURL] = useState('')
-  const [protocol, setProtocol] = useState(protocols[0] ?? '')
+  const [protocol, setProtocol] = useState<string | undefined>(undefined)
   const [keyDraft, setKeyDraft] = useState('')
   const [models, setModels] = useState<readonly ModelDraft[]>([])
   const [busy, setBusy] = useState(false)
@@ -113,12 +117,15 @@ export function CustomProviderCard(props: CustomProviderCardProps): ReactNode {
   const nameInvalid = nameValue.length === 0 || nameValue.length > MAX_CHANNEL_NAME_LENGTH
   const baseURLValue = baseURL.trim()
   const routeTaken = !committed && taken.includes(route)
-  const modelFailure = validateDeepSeekModels(models)
+  const modelFailure = validateModels(models, {
+    reasoning: props.modelSchema.reasoningShape, reasoningLevels: props.modelSchema.reasoningLevels,
+  })
   // 已提交 profile 指向凭据引用，重试不能把清空密钥视为创建完成。
   const keyFailure = committed && (!committedStoresKey.current || credentialStored.current) ? undefined
     : committed && keyDraft.trim().length === 0 ? 'keyRequired' : apiKeyFailure(keyDraft)
   const keyValue = keyDraft.trim()
-  const channelReady = !nameInvalid && baseURLValue.length > 0 && protocols.includes(protocol)
+  const channelReady = !nameInvalid && baseURLValue.length > 0 && protocols.length > 0
+    && (protocol === undefined || protocols.includes(protocol))
     && !routeTaken && keyFailure === undefined
   const ready = committed ? keyFailure === undefined
     : channelReady && models.length > 0 && modelFailure === undefined
@@ -137,7 +144,7 @@ export function CustomProviderCard(props: CustomProviderCardProps): ReactNode {
         displayName: nameValue,
         // 留空密钥保持原生认证路径，不记录无人设置的凭据引用。
         ...storesKey ? { apiKeyEnv: keyRef } : {},
-        api: protocol,
+        ...protocol === undefined ? {} : { api: protocol },
         baseURL: baseURLValue,
         models: models.map(model => ({ ...model })),
       }
@@ -250,12 +257,10 @@ export function CustomProviderCard(props: CustomProviderCardProps): ReactNode {
               onChange={(event) => { setBaseURL(event.target.value) }} />
           </div>
           <div className={styles['field']}>
-            <label className={styles['fieldLabel']} htmlFor={protocolId}>{t('customApi')}</label>
-            <select id={protocolId} className={`${styles['input']} ${styles['selectInput']}`}
-              value={protocol} disabled={profileDisabled}
-              onChange={(event) => { setProtocol(event.target.value) }}>
-              {protocols.map(choice => <option key={choice} value={choice}>{choice}</option>)}
-            </select>
+            <span className={styles['fieldLabel']}>{t('customApi')}</span>
+            {protocols.length > 0 && <ProtocolPicker label={t('customApi')}
+              unsetLabel={`${t('customApiUnset')} (${protocolName('openai-completions')})`}
+              protocols={protocols} value={protocol} disabled={profileDisabled} onChange={setProtocol} />}
           </div>
           <div className={styles['field']}>
             <label className={styles['fieldLabel']} htmlFor={keyId}>{t('keyInput')}</label>
@@ -270,7 +275,9 @@ export function CustomProviderCard(props: CustomProviderCardProps): ReactNode {
           {routeTaken ? <p className={styles['error']} role="alert">{t('customRouteTaken')}</p> : null}
           {!nameInvalid && baseURLValue.length === 0 ? <p className={styles['advancedHint']}>{t('customNeedsBaseUrl')}</p> : null}
         </> : <>
-          <ModelListEditor models={models} onChange={setModels} protocols={protocols}
+          <ModelListEditor models={models} onChange={setModels} modelSchema={props.modelSchema}
+            {...props.modelProtocols === undefined ? {} : { protocols: props.modelProtocols }}
+            capacityHints={{ contextWindow: '256K', maxTokens: '32K' }}
             onModelIdChange={(index, oldId, newId, duplicate) => {
               if (settingsReader === undefined) return
               const prior = modelIdentity.current.get(index)
@@ -299,7 +306,7 @@ export function CustomProviderCard(props: CustomProviderCardProps): ReactNode {
                 return next
               })
             }}
-            channelProtocol={protocol} presets={props.presets ?? []} presetsError={props.presetsError}
+            channelProtocol={protocol ?? 'openai-completions'} presets={props.presets ?? []} presetsError={props.presetsError}
             presetDisabled={presetView === undefined || props.schema === undefined}
             presetForModel={id => props.schema === undefined ? undefined
               : presetChanges.has(id) ? presetChanges.get(id) : modelPresetOf(presetView, props.schema, route, id)}
@@ -312,7 +319,7 @@ export function CustomProviderCard(props: CustomProviderCardProps): ReactNode {
                 return next
               })
             }}
-            probe={{ settingsNs: NS, baseURL: baseURLValue, api: protocol,
+            probe={{ settingsNs: NS, baseURL: baseURLValue, ...protocol === undefined ? {} : { api: protocol },
               ...keyValue.length === 0 ? {} : { apiKey: keyValue } }}
             api={api} t={t} disabled={profileDisabled} />
           {modelFailure === undefined

@@ -80,52 +80,6 @@ describe('DeepSeek official model discovery', () => {
       .rejects.toMatchObject({ code: 'DISCOVERY_FAILED' })
   })
 
-  it('ends discovery when its ten-second budget expires', async () => {
-    const controller = new AbortController()
-    controller.abort(new Error('timed out'))
-    const timeout = vi.spyOn(AbortSignal, 'timeout').mockReturnValue(controller.signal)
-    const fetcher = vi.fn()
-    vi.stubGlobal('fetch', fetcher)
-    try {
-      const ctx = await boot()
-      await expect(ctx.llm.discoverModels('llm-deepseek', { provider: 'deepseek-official' }))
-        .rejects.toMatchObject({ code: 'DISCOVERY_FAILED' })
-      expect(timeout).toHaveBeenCalledWith(10_000)
-      expect(fetcher).not.toHaveBeenCalled()
-    } finally {
-      timeout.mockRestore()
-    }
-  })
-
-  it.each(['caller', 'timeout'] as const)('settles while stored credential lookup hangs on %s cancellation', async (kind) => {
-    const caller = new AbortController()
-    const deadline = new AbortController()
-    const timeout = vi.spyOn(AbortSignal, 'timeout').mockReturnValue(deadline.signal)
-    const fetcher = vi.fn()
-    vi.stubGlobal('fetch', fetcher)
-    let rejectCredential: (reason: Error) => void = () => { throw new Error('lookup not started') }
-    const credential = vi.fn(() => new Promise<string>((_resolve, reject) => {
-      rejectCredential = reject
-    }))
-    try {
-      const result = discoverModels(
-        { provider: 'deepseek-official', ...kind === 'caller' ? { signal: caller.signal } : {} },
-        DeepSeek.resolveAdapterOptions({ baseURL: 'https://api.deepseek.com' }),
-        credential,
-      )
-      await vi.waitFor(() => { expect(credential).toHaveBeenCalledOnce() })
-      if (kind === 'caller') caller.abort()
-      else deadline.abort(new Error('deadline exceeded'))
-      await expect(result).rejects.toMatchObject({ code: kind === 'caller' ? 'ABORTED' : 'DISCOVERY_FAILED' })
-      rejectCredential(new Error('late credential rejection'))
-      await Promise.resolve()
-      expect(fetcher).not.toHaveBeenCalled()
-      expect(timeout).toHaveBeenCalledWith(10_000)
-    } finally {
-      timeout.mockRestore()
-    }
-  })
-
   it('settles when a fetch implementation ignores its abort signal', async () => {
     const controller = new AbortController()
     let rejectFetch: (reason: Error) => void = () => { throw new Error('fetch not started') }
@@ -167,29 +121,12 @@ describe('DeepSeek official model discovery', () => {
       .rejects.toThrow(/could not read https:\/\/api\.deepseek\.com\/v1\/models: fetch failed: getaddrinfo ENOTFOUND gateway\.test/)
   })
 
-  it('reports a probe that never answers after retrying, before it sends anything', async () => {
-    const deadline = new AbortController()
-    deadline.abort(new Error('deadline exceeded'))
-    const timeout = vi.spyOn(AbortSignal, 'timeout').mockReturnValue(deadline.signal)
-    const fetcher = vi.fn()
-    vi.stubGlobal('fetch', fetcher)
-    try {
-      const ctx = await boot()
-      // 草稿自带密钥，因此十秒窗口只属于探测本身：两次都到期才报超时。
-      await expect(ctx.llm.discoverModels('llm-deepseek', { provider: 'deepseek-official', apiKey: 'draft-key' }))
-        .rejects.toThrow(/did not answer within 20s \(2 attempts\)/)
-      expect(fetcher).not.toHaveBeenCalled()
-    } finally {
-      timeout.mockRestore()
-    }
-  })
-
   it('reports a reply that is not JSON', async () => {
     vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(new Response('not json at all'))))
     const ctx = await boot()
 
     await expect(ctx.llm.discoverModels('llm-deepseek', { provider: 'deepseek-official' }))
-      .rejects.toThrow(/Model listing is not JSON/)
+      .rejects.toThrow(/did not answer with JSON/)
   })
 
   it('reports a stored credential it could not read, keeping its own failure code', async () => {
@@ -199,7 +136,7 @@ describe('DeepSeek official model discovery', () => {
       { provider: 'deepseek-official' },
       options,
       () => Promise.reject(new Error('keychain is locked')),
-    )).rejects.toThrow(/could not read this route's stored API key for https:\/\/api\.deepseek\.com\/v1\/models/)
+    )).rejects.toThrow(/could not read this provider's stored API key for https:\/\/api\.deepseek\.com\/v1\/models/)
 
     await expect(discoverModels(
       { provider: 'deepseek-official' },

@@ -10,6 +10,7 @@ import { Button, Modal } from 'coding-client-ui-primitives'
 import { IconChevronLeftOutline14, IconPlusOutline16, IconSearchOutline16 } from 'coding-client-ui-icons'
 import type { InjectFace } from 'coding-client-ui-slots'
 import { CustomProviderCard } from './CustomProviderCard.tsx'
+import { describeModelSchema } from './model-editor-schema.ts'
 import { BuiltinChannelCard } from './BuiltinChannelCard.tsx'
 import { ChannelOutboundRow } from './ChannelOutboundRow.tsx'
 import { channelOutboundOf, deriveKeyRef, isBuiltinChannel, messageOf, protocolChoices } from './store.ts'
@@ -287,7 +288,12 @@ function Loaded({ injected, hideHeader }: { injected: ModelsSectionFace; hideHea
   const builtin = state.rows.filter(row => isBuiltinChannel(row) && row.entry.active)
   const listed = [...builtin, ...channels]
   // 自定义渠道由 pi-ai 分节持有；未挂载该分节时不能声明渠道。
-  const protocols = protocolChoices(state.namespaces.get('llm-pi-ai'), schema)
+  const customNamespace = state.namespaces.get('llm-pi-ai')
+  const protocols = protocolChoices(customNamespace, schema)
+  const newModelPath = ['providers', 'channel-draft', 'models', '0']
+  const modelSchema = describeModelSchema(customNamespace === undefined ? undefined
+    : schema.nodeAtPath(schema.rehydrate(customNamespace.schema), newModelPath))
+  const modelProtocols = protocolChoices(customNamespace, schema, [...newModelPath, 'api'])
   // 目录可能尚未联接新 profile；生成 ID 时同时保留所有设置层已占用的键。
   const takenRoutes = new Set(state.rows.map(row => row.entry.provider))
   for (const namespace of state.namespaces.values()) {
@@ -397,7 +403,8 @@ function Loaded({ injected, hideHeader }: { injected: ModelsSectionFace; hideHea
           className={styles['customChannelDialog'] as string}
           contentClassName={styles['customChannelContent'] as string}>
           {declaring ? <CustomProviderCard embedded autoFocusName taken={[...takenRoutes]}
-            protocols={protocols} revision={state.namespaces.get('llm-pi-ai')?.revision ?? 0}
+            protocols={protocols} modelSchema={modelSchema} modelProtocols={modelProtocols}
+            revision={customNamespace?.revision ?? 0}
             presetNamespace={state.namespaces.get('agent-presets')} presets={state.presets}
             presetsError={state.presetsError} schema={schema}
             api={api} t={t} readOnly={!state.writable || state.status !== 'ready'}

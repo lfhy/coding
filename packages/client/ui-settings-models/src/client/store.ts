@@ -124,20 +124,19 @@ export function deriveKeyRef(provider: string): string {
 }
 
 /**
- * The wire protocols a hand-declared route may name, read out of the owning
- * namespace's own schema. This stays a schema read rather than a wire field so
- * the choices the page offers cannot drift from the ones the adapter accepts:
- * both come from the same `Config`.
- * @param namespace - the namespace view whose schema declares the profile shape.
- * @param schema - settings schema operations.
- * @returns the protocol identifiers, or an empty list when the schema has none.
+ * 读取负责写入该字段的设置 schema，避免按渠道名称推断可选协议。
+ * @param namespace - 持有渠道或模型配置的设置分节。
+ * @param schema - 设置 schema 操作。
+ * @param path - `api` 字段的位置；默认读取自定义渠道创建表单的字段。
+ * @returns schema 声明的协议；没有该能力时返回空数组。
  */
 export function protocolChoices(
   namespace: SettingsNamespaceView | undefined,
   schema: SettingsSchemaOperations,
+  path: readonly string[] = ['providers', PROBE_ROUTE, 'api'],
 ): string[] {
   if (namespace === undefined) return []
-  const node = schema.nodeAtPath(schema.rehydrate(namespace.schema), ['providers', PROBE_ROUTE, 'api'])
+  const node = schema.nodeAtPath(schema.rehydrate(namespace.schema), path)
   const list = (node as { type?: string; list?: readonly { value?: unknown }[] } | undefined)
   if (list?.type !== 'union' || list.list === undefined) return []
   return list.list.map(entry => entry.value).filter((value): value is string => typeof value === 'string')

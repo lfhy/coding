@@ -69,4 +69,5 @@ minimumReleaseAgeExclude:
   - isomorphic-git@1.44.14
 
 patchedDependencies:
+  '@earendil-works/pi-ai@0.82.1': patches/@earendil-works__pi-ai@0.82.1.patch
   node-pty@1.2.0-beta.15: patches/node-pty@1.2.0-beta.15.patch

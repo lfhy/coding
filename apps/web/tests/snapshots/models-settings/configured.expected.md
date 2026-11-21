@@ -43,8 +43,8 @@
     - img
     - textbox "搜索模型平台…"
     - button "Free"
-    - button "DeepSeek 已配置"
     - button "minimax-cn 已配置"
+    - button "DeepSeek 已配置"
     - button "添加渠道":
       - img
       - text: 添加渠道
@@ -58,6 +58,10 @@
     - text: API 密钥
     - textbox "API 密钥":
       - /placeholder: 已配置——输入新值可替换
+    - text: 上游请求格式
+    - button "上游请求格式":
+      - text: 自动
+      - img
     - group: 高级设置
     - region "模型目录":
       - text: 模型目录 正在使用适配器默认模型

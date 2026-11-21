@@ -12,10 +12,10 @@ import type { SettingsSchemaOperations } from './schema-operations.ts'
 import { ModelsSection } from './ModelsSection.tsx'
 import type { en } from './locales.ts'
 import { OnboardingModal } from './OnboardingModal.tsx'
-import styles from './DeepSeekOnboardingDialog.module.css'
+import styles from './ModelsOnboardingDialog.module.css'
 
 /** 引导步骤从模型设置页共享的联接快照读取事实。 */
-export interface DeepSeekOnboardingInjected {
+export interface ModelsOnboardingInjected {
   hooks: { models: SnapshotStore<ModelsSettingsState> }
   controller: ModelsSettingsStore
   api: Pick<IApiClient, 'settings' | 'credentials' | 'llm'>
@@ -24,15 +24,15 @@ export interface DeepSeekOnboardingInjected {
 }
 
 /** 引导槽拥有的完成回调与模型页注入项。 */
-export type DeepSeekOnboardingDialogProps =
-  PropsRuntime<'settings.onboarding'> & InjectFace<DeepSeekOnboardingInjected>
+export type ModelsOnboardingDialogProps =
+  PropsRuntime<'settings.onboarding'> & InjectFace<ModelsOnboardingInjected>
 
 /**
  * 在渠道及模型目录具备可启动候选前保留引导；已有可用默认模型时直接完成。
  * @param props - 引导完成回调及模型设置页共享的联接能力。
  * @returns 同一容器中的设置与启动选择，或已完成时的空视图。
  */
-export function DeepSeekOnboardingDialog(props: DeepSeekOnboardingDialogProps): ReactNode {
+export function ModelsOnboardingDialog(props: ModelsOnboardingDialogProps): ReactNode {
   const { complete, controller, useModels, api, schema, t } = props
   const state = useModels(snapshot => snapshot)
   const readiness = onboardingReadiness(state)

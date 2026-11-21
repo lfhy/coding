@@ -9,8 +9,8 @@ import { Modal } from 'coding-client-ui-primitives'
 import type { RpcResponse, SettingsNamespaceView } from 'coding-api-remotes/client'
 import { bindSnapshotSelector } from 'coding-client-test-runtime'
 import { SettingsDescribeMirror } from 'coding-client-ui-settings/src/client/settings-mirror.ts'
-import { DeepSeekOnboardingDialog } from '../src/client/DeepSeekOnboardingDialog.tsx'
-import type { DeepSeekOnboardingDialogProps } from '../src/client/DeepSeekOnboardingDialog.tsx'
+import { ModelsOnboardingDialog } from '../src/client/ModelsOnboardingDialog.tsx'
+import type { ModelsOnboardingDialogProps } from '../src/client/ModelsOnboardingDialog.tsx'
 import { ModelsSettingsStore } from '../src/client/store.ts'
 import { OnboardingModal } from '../src/client/OnboardingModal.tsx'
 import { en } from '../src/client/locales.ts'
@@ -133,8 +133,8 @@ function harness(options: {
   const complete = vi.fn()
   const openSection = vi.fn()
   const unusedHook = (() => { throw new Error('unused hook') }) as never
-  const props: DeepSeekOnboardingDialogProps = {
-    stepId: 'deepseek-official', complete, openSection,
+  const props: ModelsOnboardingDialogProps = {
+    stepId: 'models', complete, openSection,
     useSessions: unusedHook, useWorkspaces: unusedHook,
     controller, useModels: bindSnapshotSelector(controller.store),
     api: face as never, schema: settingsSchema, t: key => en[key],
@@ -150,12 +150,12 @@ function harness(options: {
   }
 }
 
-describe('DeepSeekOnboardingDialog', () => {
+describe('ModelsOnboardingDialog', () => {
   it('blocks the workbench while the initial catalog is unresolved without flashing a dialog', async () => {
     const h = harness({ configured: true, models: true, defaultModel: true })
     const release = h.pauseCatalog()
     const appRoot = document.getElementById('root')!
-    const view = render(<DeepSeekOnboardingDialog {...h.props} />)
+    const view = render(<ModelsOnboardingDialog {...h.props} />)
     expect(appRoot.inert).toBe(true)
     expect(screen.queryByRole('dialog')).toBeNull()
     await act(async () => { release() })
@@ -170,7 +170,7 @@ describe('DeepSeekOnboardingDialog', () => {
     const h = harness({ configured: true })
     const release = h.pauseCatalog()
     const appRoot = document.getElementById('root')!
-    const view = render(<DeepSeekOnboardingDialog {...h.props} />)
+    const view = render(<ModelsOnboardingDialog {...h.props} />)
     expect(appRoot.inert).toBe(true)
     expect(screen.queryByRole('dialog')).toBeNull()
     await act(async () => { release() })
@@ -182,7 +182,7 @@ describe('DeepSeekOnboardingDialog', () => {
 
   it('keeps one modal through loading and missing provider, without opening Settings', async () => {
     const h = harness({ provider: 'none' })
-    render(<DeepSeekOnboardingDialog {...h.props} />)
+    render(<ModelsOnboardingDialog {...h.props} />)
     expect(screen.queryByRole('dialog')).toBeNull()
     await screen.findByText(en.onboardingProviderUnavailable)
     const dialog = screen.getByRole('dialog', { name: en.onboardingTitle })
@@ -197,7 +197,7 @@ describe('DeepSeekOnboardingDialog', () => {
 
   it('keeps a provider without models in setup until a model is actually available', async () => {
     const h = harness({ configured: true })
-    render(<DeepSeekOnboardingDialog {...h.props} />)
+    render(<ModelsOnboardingDialog {...h.props} />)
     await screen.findByText(en.onboardingNoModels)
     expect(screen.getByLabelText(en.keyInput)).toBeTruthy()
     expect(screen.getByRole<HTMLButtonElement>('button', { name: en.onboardingStart }).disabled).toBe(true)
@@ -206,7 +206,7 @@ describe('DeepSeekOnboardingDialog', () => {
 
   it('keeps the selected channel and unsaved draft mounted throughout a refresh', async () => {
     const h = harness({ secondProvider: true, configured: true, models: true })
-    render(<DeepSeekOnboardingDialog {...h.props} />)
+    render(<ModelsOnboardingDialog {...h.props} />)
     await screen.findByText(en.onboardingSelectHint)
     fireEvent.click(screen.getByRole('button', { name: /^Other AI/ }))
     expect(screen.getByRole('main', { name: 'Other AI' })).toBeTruthy()
@@ -235,7 +235,7 @@ describe('DeepSeekOnboardingDialog', () => {
 
   it('preserves key and manual model drafts on a failed refresh, disables saving, and retries', async () => {
     const h = harness()
-    render(<DeepSeekOnboardingDialog {...h.props} />)
+    render(<ModelsOnboardingDialog {...h.props} />)
     await screen.findByText(en.onboardingCredentialMissing)
     const key = screen.getByLabelText<HTMLInputElement>(en.keyInput)
     fireEvent.change(key, { target: { value: 'sk-unsaved' } })
@@ -263,7 +263,7 @@ describe('DeepSeekOnboardingDialog', () => {
 
   it('preserves drafts and refuses completion when the held settings mirror fails to refresh', async () => {
     const h = harness({ configured: true, models: true })
-    render(<DeepSeekOnboardingDialog {...h.props} />)
+    render(<ModelsOnboardingDialog {...h.props} />)
     await screen.findByText(en.onboardingSelectHint)
     const key = screen.getByLabelText<HTMLInputElement>(en.keyInput)
     fireEvent.change(key, { target: { value: 'sk-held-draft' } })
@@ -283,7 +283,7 @@ describe('DeepSeekOnboardingDialog', () => {
 
   it('configures a key and a model in the embedded editor, then saves the default', async () => {
     const h = harness()
-    render(<DeepSeekOnboardingDialog {...h.props} />)
+    render(<ModelsOnboardingDialog {...h.props} />)
     await screen.findByText(en.onboardingCredentialMissing)
     expect(screen.getByLabelText(en.baseUrl)).toBeTruthy()
     fireEvent.change(screen.getByLabelText(en.keyInput), { target: { value: 'sk-first-run' } })
@@ -310,7 +310,7 @@ describe('DeepSeekOnboardingDialog', () => {
 
   it('offers another provider model and skips when a saved default already matches', async () => {
     const h = harness({ provider: 'other', configured: true, models: true })
-    const view = render(<DeepSeekOnboardingDialog {...h.props} />)
+    const view = render(<ModelsOnboardingDialog {...h.props} />)
     await screen.findByText(en.onboardingSelectHint)
     expect(screen.getByRole('option', { name: /Other AI.*Model One/ })).toBeTruthy()
     expect(h.complete).not.toHaveBeenCalled()
@@ -318,14 +318,14 @@ describe('DeepSeekOnboardingDialog', () => {
     document.getElementById('root')?.remove()
 
     const ready = harness({ provider: 'other', configured: true, models: true, defaultModel: true })
-    render(<DeepSeekOnboardingDialog {...ready.props} />)
+    render(<ModelsOnboardingDialog {...ready.props} />)
     await waitFor(() => { expect(ready.complete).toHaveBeenCalledOnce() })
     expect(screen.queryByRole('dialog')).toBeNull()
   })
 
   it('shows partial model directory failures while retaining an available choice and retry', async () => {
     const h = harness({ configured: true, models: true, modelFailure: 'gateway timeout' })
-    render(<DeepSeekOnboardingDialog {...h.props} />)
+    render(<ModelsOnboardingDialog {...h.props} />)
     await screen.findByText(text => text.includes('gateway timeout'))
     expect(screen.getByRole('option', { name: /Model One/ })).toBeTruthy()
     expect(screen.getByRole('button', { name: en.retry })).toBeTruthy()
@@ -341,7 +341,7 @@ describe('DeepSeekOnboardingDialog', () => {
       [{ keyWritable: false }, en.onboardingCredentialReadOnly],
     ] as const) {
       const h = harness(options)
-      const view = render(<DeepSeekOnboardingDialog {...h.props} />)
+      const view = render(<ModelsOnboardingDialog {...h.props} />)
       await screen.findByText(text => text.includes(diagnostic))
       expect(screen.getByRole('dialog', { name: en.onboardingTitle })).toBeTruthy()
       expect(h.complete).not.toHaveBeenCalled()
@@ -353,7 +353,7 @@ describe('DeepSeekOnboardingDialog', () => {
 
   it('reports a failed default write without closing', async () => {
     const h = harness({ configured: true, models: true, writeError: 'revision conflict' })
-    render(<DeepSeekOnboardingDialog {...h.props} />)
+    render(<ModelsOnboardingDialog {...h.props} />)
     await screen.findByText(en.onboardingSelectHint)
     fireEvent.change(screen.getByLabelText(en.onboardingModel), { target: { value: 'deepseek-official\u0000model-one' } })
     fireEvent.click(screen.getByRole('button', { name: en.onboardingStart }))
@@ -369,7 +369,7 @@ describe('DeepSeekOnboardingDialog', () => {
     const h = harness({ configured: true, models: true })
     const appRoot = document.getElementById('root')!
     appRoot.inert = true
-    const view = render(<DeepSeekOnboardingDialog {...h.props} />)
+    const view = render(<ModelsOnboardingDialog {...h.props} />)
     await screen.findByText(en.onboardingSelectHint)
     expect(appRoot.inert).toBe(true)
     expect(document.activeElement).toBe(screen.getByRole('heading', { name: en.onboardingTitle }))

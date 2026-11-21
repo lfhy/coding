@@ -32,7 +32,6 @@ import type {
   ThinkingLevel,
 } from '@earendil-works/pi-ai'
 import {
-  contentHasImage,
   LlmAdapter,
   LlmError,
   ReasoningEffortId,
@@ -48,10 +47,9 @@ import type {
   StreamChunk,
 } from 'coding-llm'
 import type { AttachmentStore } from 'coding-attachment'
-import { idleWatchdog, timeoutOf } from 'coding-timeout'
+import { streamChannelRequest } from './channel-stream.ts'
 import type { ResolvedPiAiProviderProfile } from './config.ts'
-import { toPiContext } from './context.ts'
-import { toStreamChunks } from './stream.ts'
+import { streamPiAiRequest } from './stream-request.ts'
 
 /** One resolution's frozen view: the profiles and the collection built from them. */
 interface PiAiSnapshot {
@@ -190,24 +188,6 @@ function requestHeaders(headers: Readonly<Record<string, string>> | undefined, r
   }
 }
 
-/** 哪些协议能发出 Responses 原生语法工具。 */
-function isResponsesModel(model: Model<Api>): model is Model<
-  'openai-responses' | 'azure-openai-responses' | 'openai-codex-responses'
-> {
-  return model.api === 'openai-responses'
-    || model.api === 'azure-openai-responses'
-    || model.api === 'openai-codex-responses'
-}
-
-/** Responses 原生语法仅由所选模型协议和配置决定，不由模型 ID 猜测。 */
-function nativeGrammarModel(model: Model<Api>, options: GenerateOptions): Model<Api> {
-  if (!isResponsesModel(model) || !options.tools?.some(tool => tool.inputFormat?.type === 'grammar')
-    || model.compat?.supportsOpenAIGrammarTools === false) return model
-  if (model.compat?.supportsOpenAIGrammarTools === true) return model
-  // pi-ai 对未声明的模型默认关闭原生语法；单次克隆不改写已注册模型或在途请求。
-  return { ...model, compat: { ...model.compat, supportsOpenAIGrammarTools: true } }
-}
-
 /**
  * pi-ai-backed multi-provider adapter. Each operation reads the current
  * profiles, so a configuration change reaches the next request without a
@@ -316,80 +296,28 @@ export class PiAiAdapter extends LlmAdapter {
     const profile = this.profileOf(snapshot, options.provider)
     // 归因基线也来自同一份快照：渠道配置了 User-Agent 就用它，否则用产品默认值。
     const requestUserAgent = resolveUserAgent(profile.userAgent)
-    const model = nativeGrammarModel(this.modelOf(snapshot, options.provider, options.model), options)
-    const nativeGrammarTools = isResponsesModel(model)
-      && model.compat?.supportsOpenAIGrammarTools === true
+    const model = this.modelOf(snapshot, options.provider, options.model)
     const reasoning = resolveReasoningLevel(
       model,
       options.reasoningEffort ?? profile.reasoning ?? (model.reasoning ? getSupportedThinkingLevels(model).at(-1) : undefined),
     )
     const apiKey = await this.config.resolveApiKey(options.provider, profile)
 
-    const consumer = new AbortController()
-    const upstream = options.signal === undefined
-      ? consumer.signal
-      : AbortSignal.any([options.signal, consumer.signal])
-    const streamIdleTimeoutMs = profile.streamIdleTimeoutMs
-    using watchdog = idleWatchdog(upstream, streamIdleTimeoutMs, 'LLM_STREAM_IDLE_TIMEOUT')
-
-    try {
-      const containsImage = options.messages.some(message => contentHasImage(message.content))
-      if (containsImage && !model.input.includes('image')) {
-        throw new LlmError(`pi-ai model "${model.id}" does not support image input`, 'UNSUPPORTED_CONTENT')
-      }
-      const attachments = containsImage ? this.config.resolveAttachments?.() : undefined
-      if (containsImage && attachments === undefined) {
-        throw new LlmError('pi-ai image input requires the durable attachment service', 'UNSUPPORTED_CONTENT')
-      }
-      const onReplayDegrade = (reason: string): void => {
-        this.config.onReplayDegrade?.({ provider: options.provider, model: options.model, reason })
-      }
-      const context = attachments === undefined
-        ? toPiContext(options, undefined, onReplayDegrade, undefined, nativeGrammarTools)
-        : await toPiContext(options, attachments, onReplayDegrade, profile.maxRequestImageBytes, nativeGrammarTools)
-      const events = snapshot.models.streamSimple(model, context, {
-        ...profileOptions(profile, reasoning, apiKey),
-        ...options.temperature === undefined ? {} : { temperature: options.temperature },
-        ...options.maxTokens === undefined ? {} : { maxTokens: options.maxTokens },
-        ...options.sessionId === undefined ? {} : { sessionId: String(options.sessionId) },
-        signal: watchdog.signal,
-        // Profile headers are deployment-owned; attribution names are
-        // Harness-owned and therefore win collisions.
-        headers: requestHeaders(profile.headers, requestUserAgent),
-      })
-      const iterator = toStreamChunks(events, model.contextWindow)[Symbol.asyncIterator]()
-      let exhausted = false
-      try {
-        while (true) {
-          const result = await watchdog.next(iterator)
-          const timeout = timeoutOf(watchdog.signal, 'LLM_STREAM_IDLE_TIMEOUT')
-          if (timeout !== undefined) throw timeout
-          if (result.done) {
-            exhausted = true
-            return
-          }
-          yield result.value
-        }
-      } finally {
-        if (!exhausted) {
-          consumer.abort('pi-ai stream consumer stopped')
-          try {
-            await iterator.return(undefined)
-          } catch (_abortedSdkTeardown) {
-            // The stable signal already owns SDK termination; return-time abort cannot add an outcome.
-          }
-        }
-      }
-    } catch (error: unknown) {
-      if (timeoutOf(watchdog.signal, 'LLM_STREAM_IDLE_TIMEOUT') !== undefined) {
-        throw new LlmError(`pi-ai stream idle timeout after ${streamIdleTimeoutMs}ms`, 'TIMEOUT', { cause: error })
-      }
-      if (options.signal?.aborted) {
-        throw new LlmError('pi-ai request aborted by caller', 'ABORTED', { cause: error })
-      }
-      throw error
-    } finally {
-      consumer.abort('pi-ai stream consumer stopped')
-    }
+    yield* streamChannelRequest({
+      signal: options.signal,
+      idleTimeoutMs: profile.streamIdleTimeoutMs,
+      open: signal => streamPiAiRequest(options, {
+        model,
+        stream: (model, context, request) => snapshot.models.streamSimple(model, context, request),
+        maxRequestImageBytes: profile.maxRequestImageBytes,
+        ...this.config.resolveAttachments === undefined ? {} : { resolveAttachments: this.config.resolveAttachments },
+        onReplayDegrade: reason => this.config.onReplayDegrade?.({ provider: options.provider, model: options.model, reason }),
+        streamOptions: {
+          ...profileOptions(profile, reasoning, apiKey),
+          signal,
+          headers: requestHeaders(profile.headers, requestUserAgent),
+        },
+      }),
+    })
   }
 }

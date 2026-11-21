@@ -2,7 +2,9 @@
 
 基于 [`@earendil-works/pi-ai`](https://www.npmjs.com/package/@earendil-works/pi-ai) 的 harness LLM（大语言模型）seam 通用多提供方适配器。一个插件实例拥有一份以路由为键的提供方 profile 字典；每个请求使用 `GenerateOptions.provider` 选择 profile，并针对该路由已配置的 catalog 解析 `GenerateOptions.model`。点名了已安装 pi-ai 提供方的路由会继承其端点、协议格式（wire format）与模型 catalog 作为默认值，并逐字段覆盖；省略渠道级 `api` 时，已安装 catalog 路由仍按各模型自身协议继承，pi-ai 未提供的手工声明路由则默认使用 `openai-completions`（OpenAI Chat Completions）；显式渠道级 `api` 可覆盖相应的协议选择，因此接入 OpenAI 兼容网关、自建服务，或比已安装 catalog 更新的提供方，都属于配置而非改代码。
 
-包根入口导出 Cordis 插件约定、`PiAiAdapter` 与 `supportedProtocols()`；profile 解析、catalog 物化、提供方构造、回放转换和流转换保留在包内部。
+「添加渠道」只创建 `llm-pi-ai.providers` 下的通用路由，不增加 [DeepSeek 兼容记录](../llm-deepseek/README.md)；该记录仍由原配置分节维护。
+
+包根入口导出 Cordis 插件约定、`PiAiAdapter`、协议流工厂 `configuredProtocolStreams`、返回具体协议标识的 `supportedProtocols()`，以及通用请求入口 `streamPiAiRequest`。两套适配器共用 `registerChannels` 管理渠道注册、`streamChannelRequest` 管理流生命周期、`queryModelListing` 获取 OpenAI 兼容模型清单。DeepSeek 的 Responses 和 Messages 复用通用请求，按请求传入代理和标头，不改全局 HTTP 设置。各适配器仍负责自身的设置、凭据和清单地址；profile 解析、目录与协议的内部转换不对外导出。
 
 ## 配置
 
@@ -133,7 +135,7 @@ pi-ai 依据提供方 id 与 baseURL 决定每个请求的形状：系统提示�
 
 草稿携带的是用户当下键入的凭据（如果有）；已经存好凭据的路由，在配置界面上只呈现一个脱敏描述符，因此端点与已保存端点相同时才会解析该路由的 `apiKeyEnv`。草稿端点不同且没有本次输入的密钥时，询问会在网络 I/O 前失败，避免旧密钥发送到新端点。键入的密钥优先，且不会被保存。用户提供或已存储的探测密钥都经过去除空白与格式校验，不能放入 HTTP 标头的值会以 `INVALID_CREDENTIAL` 拒绝。
 
-询问只读 `openai-completions` 与 `openai-responses`，它们「`GET /models` + bearer 认证」的形状是网关、自建服务与官方端点三方一致认可的那一种。Azure 尽管出身 OpenAI 也被排除——它用 `api-key` 标头认证并要求 `api-version` 查询参数——Codex 则走 OAuth；其余协议一律以 `DISCOVERY_UNSUPPORTED` 回答，让界面回退到手工填写，而不是把认证失败报成一个没有模型的提供方。`baseURL` 按前缀而非待解析 URL 处理，因此 `https://gateway.example/openai/v1` 这类部署路径会保留其路径段。
+pi-ai 路由仅在 `openai-completions` 和 `openai-responses` 下使用 OpenAI 兼容的 `GET /models` 和 Bearer 认证；其他协议返回 `DISCOVERY_UNSUPPORTED`，可手工录入。基址的部署路径会保留，例如 `https://gateway.example/openai/v1` 查询 `https://gateway.example/openai/v1/models`。存量 DeepSeek 使用同一清单读取实现，但按其[兼容地址规则](../llm-deepseek/README.md#端点探测)选定目标，不受对话协议限制。
 
 多数列表只公布 id；`context_window`/`context_length` 与 `max_output_tokens`/`max_tokens` 在网关提供时会被读取，没有可用 id 的条目会被跳过而不是让整份列表失败，其余仍由采纳方补齐。端点允许 HTTP(S) 的私网与环回地址，但不接受 URL 中的 userinfo、查询参数或 fragment；请求不跟随重定向。读取已保存路由的凭据与每次网络尝试各有十秒上限，超时与传输层失败会换连接重试一次，两次都失败才放弃——一次闲置连接被中间设备丢弃、DNS 首次答到不可达地址，都不必让用户再点一次「获取可用模型」。端点已经给出的答复（状态码、非 JSON、没有 `data` 数组）不重试，因为重发只会得到同一结果。回复有四兆字节上限，上限落在实际收到的字节上，声明长度仅用于及早拒绝。失败说明按原因分开：两次尝试都没有响应时报出总时长与尝试次数；连接直接失败时用 `coding-llm` 的 `errorChain` 带上 `cause` 链里的底层原因（如 `getaddrinfo ENOTFOUND`、`ECONNREFUSED`、TLS 证书错误），否则界面上只剩一句超时，用户无从判断该查地址、证书还是网络。仅当 401 或 403 时才提示核对凭据。调用方在凭据解析、请求或读取期间取消会呈现为 `ABORTED`。
 

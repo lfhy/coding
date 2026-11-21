@@ -73,7 +73,9 @@ describe.skipIf(MODE === 'record')('web e2e: another usable provider ends first-
     await name.waitFor()
     expect(await name.evaluate(node => document.activeElement === node)).toBe(true)
     expect(await createDialog.getByRole('textbox', { name: 'Provider ID' }).count()).toBe(0)
-    await createDialog.getByRole('combobox', { name: '上游请求格式', exact: true }).waitFor()
+    const format = createDialog.getByRole('button', { name: '上游请求格式', exact: true })
+    await format.waitFor()
+    expect(await format.textContent()).toBe('自动 (OpenAI Chat Completions)')
     expect(await createDialog.getByRole('tab').count()).toBe(2)
     expect(await createDialog.getByRole('button', { name: '创建渠道', exact: true }).count()).toBe(0)
     expect(await createDialog.getByRole('button', { name: 'minimax-cn', exact: true }).count()).toBe(0)
@@ -128,13 +130,14 @@ describe.skipIf(MODE === 'record')('web e2e: another usable provider ends first-
     await createDialog.getByRole('button', { name: '创建渠道', exact: true }).click()
     await createDialog.waitFor({ state: 'detached', timeout: 15_000 })
     const configuredDocument = load(await readFile(join(scaffold.harnessHome, 'settings.yaml'), 'utf8')) as {
-      'llm-pi-ai'?: { providers?: Record<string, { displayName?: string; apiKeyEnv?: string }> }
+      'llm-pi-ai'?: { providers?: Record<string, { displayName?: string; apiKeyEnv?: string; api?: string }> }
     }
     const created = Object.entries(configuredDocument['llm-pi-ai']?.providers ?? {})
       .find(([, profile]) => profile.displayName === 'E2E Gateway')
     if (created === undefined) throw new Error('新渠道 profile 未保存')
     const [customRoute, profile] = created
     expect(customRoute).toMatch(/^channel-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/)
+    expect(profile).not.toHaveProperty('api')
     // import { deriveKeyRef } from 'coding-client-ui-settings-models/src/client/store.ts'
     // 不引入 Client 图；镜像约定并同时验证 Host 落盘的引用。
     const keyRef = `${customRoute.toUpperCase().replace(/[^A-Z0-9]+/g, '_')}_API_KEY`

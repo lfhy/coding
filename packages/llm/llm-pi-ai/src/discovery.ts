@@ -62,7 +62,7 @@ interface ListingEntry {
 /** A positive integer field of a listing entry, or `undefined` when absent or unusable. */
 function capacity(...candidates: readonly unknown[]): number | undefined {
   for (const candidate of candidates) {
-    if (typeof candidate === 'number' && Number.isInteger(candidate) && candidate > 0) return candidate
+    if (typeof candidate === 'number' && Number.isSafeInteger(candidate) && candidate > 0) return candidate
   }
   return undefined
 }
@@ -157,7 +157,7 @@ function readListing(body: unknown): LlmDiscoveredModel[] {
   for (const raw of data) {
     const entry = raw as ListingEntry | null
     const id = label(entry?.id)
-    if (id === undefined) continue
+    if (id === undefined || id.trim().length === 0) continue
     const name = label(entry?.name, entry?.display_name)
     const contextWindow = capacity(entry?.context_window, entry?.context_length)
     const maxTokens = capacity(entry?.max_output_tokens, entry?.max_tokens)
@@ -232,15 +232,19 @@ function probeWindow(caller: AbortSignal, timeoutMs: number): ProbeWindow {
  * @param url - GET /models 地址。
  * @param headers - 本次探测的请求标头。
  * @param signal - 本次尝试的窗口信号（调用方取消与本次超时的合并）。
+ * @param requestFetch - 本次尝试采用的出站传输。
  * @returns 端点返回顺序的候选模型。
  */
 async function attemptListing(
   url: string,
   headers: Record<string, string>,
   signal: AbortSignal,
+  requestFetch: typeof fetch,
 ): Promise<readonly LlmDiscoveredModel[]> {
-  const response = await fetch(url, { method: 'GET', redirect: 'error', headers, signal })
+  signal.throwIfAborted()
+  const response = await requestFetch(url, { method: 'GET', redirect: 'manual', headers, signal })
   if (!response.ok) {
+    await response.body?.cancel()
     throw new LlmError(
       `${url} answered ${response.status}${response.status === 401 || response.status === 403 ? '; check the API key' : ''}`,
       'DISCOVERY_FAILED',
@@ -273,7 +277,7 @@ function windowAborted(signal: AbortSignal): Promise<never> {
  * 读取已保存路由的密钥，并让读取同样受一次尝试的上限约束。凭据服务没有取消信号，
  * race 会丢弃它迟到的结果，因此窗口结束后绝不会再发出请求。
  * @param url - 本次探测地址，只用于失败说明。
- * @param saved - 已保存路由的凭据解析器。
+ * @param loadKey - 已保存路由的凭据解析器。
  * @param callerSignal - 已接上调用方取消的探测信号。
  * @param caller - 调用方原始信号，用来区分「用户取消」与「本地超时」。
  * @returns 存储的密钥；没有存储时为 undefined。
@@ -281,13 +285,14 @@ function windowAborted(signal: AbortSignal): Promise<never> {
  */
 async function storedProbeKey(
   url: string,
-  saved: { apiKey: () => Promise<string | undefined> },
+  loadKey: () => Promise<string | undefined>,
   callerSignal: AbortSignal,
   caller: AbortSignal | undefined,
 ): Promise<string | undefined> {
   const window = probeWindow(callerSignal, ATTEMPT_TIMEOUT_MS)
   try {
-    return await Promise.race([Promise.resolve().then(saved.apiKey), windowAborted(window.signal)])
+    window.signal.throwIfAborted()
+    return await Promise.race([Promise.resolve().then(loadKey), windowAborted(window.signal)])
   } catch (error: unknown) {
     if (caller?.aborted === true) {
       throw new LlmError('model discovery aborted by caller', 'ABORTED', { cause: error })
@@ -356,14 +361,33 @@ export async function discoverModels(
   if (request.apiKey === undefined && saved?.hasStoredKey && listingUrl(saved.baseURL) !== url) {
     throw new LlmError(`${url} differs from the saved endpoint; enter an API key for this probe`, 'DISCOVERY_FAILED')
   }
+  return queryModelListing(url, request, requestUserAgent, saved?.apiKey)
+}
+
+/**
+ * 探测已经校验的模型清单地址，不跟随重定向；只在调用者确认目标匹配时查询已存凭据。
+ * @param url - 调用者已校验的 HTTP(S) 模型清单 URL。
+ * @param request - 临时密钥和取消信号。
+ * @param requestUserAgent - 渠道本次请求的 User-Agent。
+ * @param loadKey - 与目标端点匹配的已存凭据读取函数。
+ * @param requestFetch - 渠道的请求级出站；缺省使用直连的 Fetch API。
+ * @returns 模型清单，传输失败或超时最多尝试两次。
+ */
+export async function queryModelListing(
+  url: string,
+  request: Pick<LlmModelDiscoveryRequest, 'apiKey' | 'signal'>,
+  requestUserAgent: string,
+  loadKey?: () => Promise<string | undefined>,
+  requestFetch: typeof fetch = fetch,
+): Promise<readonly LlmDiscoveredModel[]> {
   const controller = new AbortController()
   const onAbort = (): void => { controller.abort(request.signal?.reason) }
   request.signal?.addEventListener('abort', onAbort, { once: true })
   if (request.signal?.aborted) onAbort()
   try {
     let supplied = request.apiKey
-    if (supplied === undefined && saved !== undefined) {
-      supplied = await storedProbeKey(url, saved, controller.signal, request.signal)
+    if (supplied === undefined && loadKey !== undefined) {
+      supplied = await storedProbeKey(url, loadKey, controller.signal, request.signal)
     }
     controller.signal.throwIfAborted()
     const apiKey = supplied === undefined ? undefined : usableProbeKey(supplied)
@@ -379,7 +403,10 @@ export async function discoverModels(
     for (let attempt = 0; attempt < DISCOVERY_ATTEMPTS; attempt++) {
       const window = probeWindow(controller.signal, ATTEMPT_TIMEOUT_MS)
       try {
-        return await attemptListing(url, headers, window.signal)
+        return await Promise.race([
+          attemptListing(url, headers, window.signal, requestFetch),
+          windowAborted(window.signal),
+        ])
       } catch (error: unknown) {
         if (request.signal?.aborted === true) {
           throw new LlmError('model discovery aborted by caller', 'ABORTED', { cause: error })

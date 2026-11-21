@@ -64,10 +64,9 @@
       - /placeholder: channel-{{uuid}}
       - text: Acme Gateway
     - text: 上游请求格式
-    - combobox "上游请求格式":
-      - option "openai-completions" [selected]
-      - option "openai-responses"
-      - option "anthropic-messages"
+    - button "上游请求格式":
+      - text: 自动 (OpenAI Chat Completions)
+      - img
     - group: 高级设置
     - region "模型目录":
       - text: 模型目录

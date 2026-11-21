@@ -13,7 +13,7 @@
  * @module coding-llm-deepseek/outbound
  */
 
-import { ProxyAgent } from 'undici'
+import { ProxyAgent, fetch as proxyFetch } from 'undici'
 
 export type { OutboundConfig as DeepSeekOutboundConfig } from 'coding-proxy-pool'
 
@@ -30,7 +30,7 @@ const agents = new Map<string, ProxyAgent>()
  * @param url - http(s) 代理地址。
  * @returns 该地址的 ProxyAgent。
  */
-export function proxyDispatcher(url: string): ProxyAgent {
+function proxyDispatcher(url: string): ProxyAgent {
   const existing = agents.get(url)
   if (existing !== undefined) return existing
   const agent = new ProxyAgent({ uri: url })
@@ -39,10 +39,15 @@ export function proxyDispatcher(url: string): ProxyAgent {
 }
 
 /**
- * 出站对应的 dispatcher；直连返回 undefined，fetch 因此保持默认传输。
+ * 一次请求使用的 fetch；代理使用同版本的 fetch 与 dispatcher，直连保留原生传输。
  * @param outbound - 本次请求解析出的出站。
- * @returns 代理 dispatcher 或 undefined。
+ * @returns 不改变全局 dispatcher 的请求函数。
  */
-export function dispatcherOf(outbound: DeepSeekOutbound): ProxyAgent | undefined {
-  return outbound.kind === 'proxy' ? proxyDispatcher(outbound.url) : undefined
+export function fetchForOutbound(outbound: DeepSeekOutbound): typeof fetch {
+  if (outbound.kind === 'direct') return fetch
+  const dispatcher = proxyDispatcher(outbound.url)
+  // 运行时均为 Fetch API，Node 与独立 Undici 的类型声明和 dispatcher 版本有别。
+  return (input, init) => proxyFetch(input as Parameters<typeof proxyFetch>[0], {
+    ...init as Parameters<typeof proxyFetch>[1], dispatcher,
+  }) as unknown as Promise<Response>
 }

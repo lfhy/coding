@@ -14,12 +14,14 @@
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { assertUsableApiKey, LlmError, MODEL_USER_AGENT_PATTERN, resolveRetryPolicy, resolveUserAgent, RetryPolicySchema } from 'coding-llm'
-import type { LlmModelDiscoveryRequest, ModelModality, RetryPolicyConfig } from 'coding-llm'
+import type { ModelModality, RetryPolicyConfig } from 'coding-llm'
 import { credentialRef } from 'coding-credentials'
 import { launchEnvironmentOf, type LaunchEnvironmentSnapshot } from 'coding-launch-environment'
-import { deepEqualJson, installSettingsSection, settingsNamespace } from 'coding-settings'
+import { installSettingsSection, settingsNamespace } from 'coding-settings'
 import { MAX_TIMER_DELAY_MS } from 'coding-timeout'
 import { getOrCreateAnonymousUserId, type AnonymousUserId } from 'coding-anonymous-user-id'
+import { registerChannels, supportedProtocols } from 'coding-llm-pi-ai'
+import type { ConfiguredProtocol } from 'coding-llm-pi-ai'
 import {
   DEFAULT_CONTEXT_WINDOW,
   DEFAULT_MAX_REQUEST_IMAGE_BYTES,
@@ -64,6 +66,8 @@ const DEFAULT_MODELS: DeepSeekCatalogModel[] = [
 
 const MODEL_MODALITIES = ['text', 'image'] as const satisfies readonly ModelModality[]
 const MODEL_REASONING_EFFORTS = ['off', 'low', 'high', 'max'] as const
+const DEFAULT_API = 'openai-completions'
+const REQUEST_PROTOCOLS = supportedProtocols()
 
 /**
  * 插件配置也作为 `llm-deepseek` settings 分节的结构，所有字段在 yml 中均可省略。
@@ -78,6 +82,8 @@ export interface Config {
   apiKeyEnv?: string
   /** Endpoint base; falls back to $DEEPSEEK_BASE_URL from a trusted environment layer, then the public API. */
   baseURL?: string
+  /** 渠道的默认请求协议；省略时使用 OpenAI Chat Completions。 */
+  api?: ConfiguredProtocol
   /** Deployment thinking policy; `disabled` limits every conversation request to `off`. */
   thinking?: 'enabled' | 'disabled'
   /** 默认思考档位；省略时使用所选模型支持的最高档位；`off` 关闭思考。 */
@@ -108,6 +114,7 @@ export interface Config {
 
 const catalogModel: z<DeepSeekCatalogModel> = z.object({
   id: z.string().required(),
+  api: z.union(REQUEST_PROTOCOLS),
   name: z.string(),
   description: z.string(),
   contextWindow: z.number().step(1).min(1),
@@ -121,6 +128,7 @@ export const Config: z<Config> = z.object({
   channelName: z.string().min(1).max(64).pattern(/\S/u).default(DEFAULT_CHANNEL_NAME),
   apiKeyEnv: z.string().role('credential-ref').default(DEFAULT_API_KEY_ENV),
   baseURL: z.string(),
+  api: z.union(REQUEST_PROTOCOLS),
   thinking: z.union(['enabled', 'disabled']),
   reasoningEffort: z.union(['off', 'low', 'high', 'max']),
   maxTokens: z.number().step(1).min(1).max(Number.MAX_SAFE_INTEGER).default(DEFAULT_MAX_TOKENS),
@@ -147,7 +155,15 @@ const BASE_URL_ENV = 'DEEPSEEK_BASE_URL'
  */
 export type ResolvedDeepSeekOptions = DeepSeekConnectionOptions
 
-/** Resolve, validate, and detach the advisory model catalog. */
+/** 程序化装配也要拒绝未知协议，不能悄悄发成 Chat。 */
+function resolveApi(api: ConfiguredProtocol, field: string): ConfiguredProtocol {
+  if (!REQUEST_PROTOCOLS.includes(api)) {
+    throw new Error(`llm-deepseek: ${field} must be one of ${REQUEST_PROTOCOLS.join(', ')}`)
+  }
+  return api
+}
+
+/** 校验并分离模型目录，只保留模型显式声明的协议覆盖。 */
 function resolveModels(models: readonly DeepSeekCatalogModel[] | undefined): DeepSeekCatalogModel[] {
   const seen = new Set<string>()
   return (models ?? DEFAULT_MODELS).map((model) => {
@@ -192,6 +208,7 @@ function resolveModels(models: readonly DeepSeekCatalogModel[] | undefined): Dee
     seen.add(model.id)
     return {
       id: model.id,
+      ...model.api === undefined ? {} : { api: resolveApi(model.api, `model "${model.id}" api`) },
       ...model.name === undefined ? {} : { name: model.name },
       ...model.description === undefined ? {} : { description: model.description },
       ...model.contextWindow === undefined ? {} : { contextWindow: model.contextWindow },
@@ -280,6 +297,7 @@ export function resolveAdapterOptions(config: Config, environment?: LaunchEnviro
     )
   }
   return {
+    api: config.api === undefined ? DEFAULT_API : resolveApi(config.api, 'api'),
     outbound: resolveOutboundConfig(config.outbound),
     apiKeyEnv: credentialRef(config.apiKeyEnv ?? DEFAULT_API_KEY_ENV),
     baseURL: config.baseURL
@@ -371,41 +389,21 @@ export function apply(ctx: Context, config: Config): void {
     resolveAttachments: () => ctx.get('attachments'),
     resolveOutbound,
   })
-  let registeredName = current().channelName ?? DEFAULT_CHANNEL_NAME
-  const directory = ctx.llm.registerConfigurableProviders([
-    { provider: PROVIDER, displayName: registeredName, settingsNs: NS, settingsPath: [] },
-  ])
-  const ensureDirectory = (): void => {
-    const displayName = current().channelName ?? DEFAULT_CHANNEL_NAME
-    if (displayName === registeredName) return
-    // 名称只更新配置目录；原子替换保留同一条路由及插件卸载时的清理责任。
-    directory.replace([{ provider: PROVIDER, displayName, settingsNs: NS, settingsPath: [] }])
-    registeredName = displayName
-  }
-  ctx.llm.registerModelDiscovery(NS, (request: LlmModelDiscoveryRequest) =>
-    discoverModels(request, options(), resolveApiKey, resolveOutbound))
-  // Route effects bind to this apply fiber via the stable `ctx` reference,
-  // even when a swap runs inside the scoped settings callback below.
-  const registration = ctx.llm.registerAdapter([PROVIDER], adapter)
-  let registeredPolicy = options().retryPolicy
-  let registeredProviderName = registeredName
-  const ensureRegistrationFacts = (): void => {
-    const policy = options().retryPolicy
-    const providerName = current().channelName ?? DEFAULT_CHANNEL_NAME
-    if (deepEqualJson(policy, registeredPolicy) && providerName === registeredProviderName) return
-    // 注册表会捕获渠道名称与重试策略，名称变化须原地替换并通知选择器重读目录。
-    registration.replace([PROVIDER])
-    registeredPolicy = policy
-    registeredProviderName = providerName
-  }
+  const refreshChannels = registerChannels(ctx, adapter, () => ({
+    entries: [{ provider: PROVIDER, displayName: adapter.providerInfo(PROVIDER).name, settingsNs: NS, settingsPath: [] }],
+    routes: [PROVIDER],
+  }))
+  ctx.llm.registerModelDiscovery(NS, async (request) => {
+    if (request.provider !== undefined && request.provider !== PROVIDER) {
+      throw new LlmError(`Model discovery cannot query provider "${request.provider}"`, 'INVALID_DISCOVERY')
+    }
+    return discoverModels(request, options(), resolveApiKey, resolveOutbound)
+  })
 
   installSettingsSection(ctx, NS, Config, config, {
     setSource: (source) => {
       current = source
     },
-    onChange: () => {
-      ensureDirectory()
-      ensureRegistrationFacts()
-    },
+    onChange: refreshChannels,
   })
 }
