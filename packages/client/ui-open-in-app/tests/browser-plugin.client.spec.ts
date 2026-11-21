@@ -196,7 +196,7 @@ describe('open-in-app browser half', () => {
     expect(openWorkbench).toHaveBeenCalledTimes(3)
     expect(openWorkbench).toHaveBeenNthCalledWith(3, 'workspace-browser-plugin', SESSION)
     expect(toggleWorkbenchFullscreen).toHaveBeenCalledWith('workspace-browser-plugin')
-    expect(toggleWorkbenchBottom).toHaveBeenCalledWith('workspace-browser-plugin')
+    expect(toggleWorkbenchBottom).toHaveBeenCalledWith('workspace-browser-plugin', SESSION)
 
     const bottom = ctx.slots.entries('workbench.bottom')[0]
     const terminalFace = (bottom?.inject as unknown as () => {
@@ -290,7 +290,7 @@ describe('open-in-app browser half', () => {
     face.toggleBottom()
     // 页头注入动作绑定到其工作区和会话，不在点击时读取可能改变的全局选择。
     expect(toggleWorkbench).toHaveBeenCalledExactlyOnceWith('workspace-browser-plugin', SESSION)
-    expect(toggleWorkbenchBottom).toHaveBeenCalledExactlyOnceWith('workspace-browser-plugin')
+    expect(toggleWorkbenchBottom).toHaveBeenCalledExactlyOnceWith('workspace-browser-plugin', SESSION)
   })
 
   it('后台会话打开标签时保留其身份，不把同工作区空白会话当作目标', async () => {

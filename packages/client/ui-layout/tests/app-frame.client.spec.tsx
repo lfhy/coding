@@ -1212,6 +1212,29 @@ describe('AppFrame — fixed workbench', () => {
     expect(rows(frame)).toBe(0)
   })
 
+  it('terminal toggle still opens the bottom row when the session hides the shared right workbench', () => {
+    const { frame, instance, rerenderFrame, ownerFor } = mountFrame({
+      workspaceKeyOf: () => 'shared-workspace',
+    })
+    act(() => { instance.actions.openWorkbench('shared-workspace') })
+    expect(frame.hasAttribute('data-workbench-shown')).toBe(true)
+
+    // 新对话让下一个会话屏蔽共享右栏偏好；首条消息结束后它依然看不到右栏。
+    act(() => { instance.actions.beginNewConversation() })
+    selectedSession.current = 's-next' as SessionId
+    act(() => { rerenderFrame() })
+    expect(frame.hasAttribute('data-workbench-shown')).toBe(false)
+
+    act(() => { instance.actions.toggleWorkbenchBottom('shared-workspace', 's-next' as SessionId) })
+    expect(rows(frame)).toBe(260)
+    expect(frame.hasAttribute('data-bottom-open')).toBe(true)
+    expect(frame.hasAttribute('data-workbench-shown')).toBe(false)
+    expect(ownerFor('workbench.bottom')).toEqual({ sessionId: 's-next', shown: true })
+
+    act(() => { instance.actions.toggleWorkbenchBottom('shared-workspace', 's-next' as SessionId) })
+    expect(rows(frame)).toBe(0)
+  })
+
   it('Hero terminal occupies only the bottom row and keeps conversation available on narrow screens', () => {
     frameWidth = 768
     selectedSessionBlank.current = true

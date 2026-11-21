@@ -311,6 +311,23 @@ describe('createLayoutStore', () => {
     expect(store.getSnapshot().workbench[SESSION]).toMatchObject({ open: true, bottomOpen: false })
   })
 
+  it('opens the bottom row standalone when the shared right workbench is invisible for the session', () => {
+    const { store, actions } = createLayoutStore().create()
+    actions.openWorkbench('shared')
+    // 新对话把下一个会话标记为屏蔽共享右栏偏好：它看不到右栏，底栏不能跟着一起被藏起来。
+    actions.beginNewConversation()
+    actions.selectConversation(NEXT_SESSION)
+
+    actions.toggleWorkbenchBottom('shared', NEXT_SESSION)
+    expect(store.getSnapshot().workbench.shared).toMatchObject({
+      open: true, bottomOpen: true, bottomStandalone: true,
+    })
+    actions.toggleWorkbenchBottom('shared', NEXT_SESSION)
+    expect(store.getSnapshot().workbench.shared).toMatchObject({
+      open: true, bottomOpen: false, bottomStandalone: false,
+    })
+  })
+
   it('hides the bottom panel idempotently without changing the right workbench or details', () => {
     const { store, actions } = createLayoutStore().create()
     actions.closeWorkbenchBottom(SESSION)

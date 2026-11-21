@@ -13,7 +13,7 @@ export interface WorkbenchPanelTogglesInjected {
   hooks: { workbenchLayout: ObservableSnapshot<WorkbenchLayoutSnapshot> }
   /** 切换当前 Session 的右侧工作台；保留内部文件侧栏偏好。 */
   toggleWorkbench: () => void
-  /** 切换当前 Session 的终端底栏，不改变右侧工作台的显隐。 */
+  /** 切换当前 Session 的终端底栏；该 Session 看不到右栏时底栏独占底部，不改变右侧工作台的显隐。 */
   toggleBottom: () => void
 }
 

@@ -195,7 +195,7 @@ export function apply(ctx: ClientContext): void {
           closeWorkbench: (sessionId) => { ctx.layout.closeWorkbench(workspaceKey(sessionId), sessionId) },
           openWorkbench: (sessionId) => { ctx.layout.openWorkbench(workspaceKey(sessionId), sessionId) },
           toggleWorkbenchFullscreen: (sessionId) => { ctx.layout.toggleWorkbenchFullscreen(workspaceKey(sessionId)) },
-          toggleBottom: (sessionId) => { ctx.layout.toggleWorkbenchBottom(workspaceKey(sessionId)) },
+          toggleBottom: (sessionId) => { ctx.layout.toggleWorkbenchBottom(workspaceKey(sessionId), sessionId) },
           openSidebarTab: (sessionId, kind) => { sidebarRight.openTabForSession(sessionId, kind) },
           openCreatedSidebarTab: (sessionId, kind, address, launcherId, params) => {
             sidebarRight.openResourceForSession(sessionId, address, {
@@ -219,7 +219,7 @@ export function apply(ctx: ClientContext): void {
     inject: (sessionId: SessionId): WorkbenchPanelTogglesInjected => ({
       hooks: { workbenchLayout: ctx.layout.workbench(workspaceKey(sessionId)) },
       toggleWorkbench: () => { ctx.layout.toggleWorkbench(workspaceKey(sessionId), sessionId) },
-      toggleBottom: () => { ctx.layout.toggleWorkbenchBottom(workspaceKey(sessionId)) },
+      toggleBottom: () => { ctx.layout.toggleWorkbenchBottom(workspaceKey(sessionId), sessionId) },
     }),
   }, WorkbenchPanelToggles))
 

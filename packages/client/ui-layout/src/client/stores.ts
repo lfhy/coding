@@ -87,6 +87,28 @@ function workbench(draft: LayoutState, key: string): WorkbenchState {
   }
 }
 
+/**
+ * 判断某个会话实际能否看到右侧工作台，口径与 AppFrame 的可见性投影一致（详情栏另行判断）。
+ * 工作台偏好按工作区共享，但空白会话的临时右栏与首条消息后的屏蔽是按会话记录的：
+ * 底栏是否必须独立显示只能按会话的实际可见性决定，否则会得到“右栏偏好已打开、
+ * 本会话却看不到”的底栏请求，点了开关也画不出底栏。
+ * @param draft - 当前布局草稿。
+ * @param key - 工作区布局键。
+ * @param sessionId - 发起动作的会话；省略时只看共享偏好。
+ * @returns 该会话是否能看见右栏。
+ */
+function rightVisible(draft: LayoutState, key: string, sessionId?: SessionId): boolean {
+  const state = draft.workbench[key]
+  if (state === undefined) return false
+  if (sessionId === undefined) return state.open
+  if (draft.activeBlankSession?.key === key && draft.activeBlankSession.sessionId === sessionId) {
+    const blank = draft.blankWorkbench[sessionId]
+    return blank === true
+      || blank === undefined && draft.suppressedWorkbench[sessionId] === false && state.open
+  }
+  return state.open && draft.suppressedWorkbench[sessionId] !== true
+}
+
 /** store action 的声明镜像；`defineStore` 会校验实现没有漂移。 */
 type LayoutActions = {
   setSidebar: (draft: LayoutState, px: number) => void
@@ -101,7 +123,7 @@ type LayoutActions = {
   closeWorkbench: (draft: LayoutState, key: string, sessionId?: SessionId) => void
   toggleWorkbench: (draft: LayoutState, key: string, sessionId?: SessionId) => void
   toggleWorkbenchFullscreen: (draft: LayoutState, key: string) => void
-  toggleWorkbenchBottom: (draft: LayoutState, key: string) => void
+  toggleWorkbenchBottom: (draft: LayoutState, key: string, sessionId?: SessionId) => void
   closeWorkbenchBottom: (draft: LayoutState, key: string) => void
   toggleHeroPanel: (draft: LayoutState, key: string, panel: 'bottom' | 'files', sessionId?: SessionId) => void
   beginNewConversation: (draft: LayoutState) => void
@@ -222,17 +244,18 @@ export function createLayoutStore(): EngineStoreHandle<LayoutState, LayoutAction
         const state = d.workbench[key]
         if (state?.open) state.fullscreen = !state.fullscreen
       },
-      // 底栏入口只改变底栏；显示时关闭暂时遮挡它的详情栏。
-      toggleWorkbenchBottom: (d, key: string) => {
+      // 底栏入口只改变底栏；显示时关闭暂时遮挡它的详情栏。右栏对本会话不可见时底栏独立显示。
+      toggleWorkbenchBottom: (d, key: string, sessionId?: SessionId) => {
         const state = workbench(d, key)
-        if (d.details === 0 && state.bottomOpen && (state.open || state.bottomStandalone)) {
+        const right = rightVisible(d, key, sessionId)
+        if (d.details === 0 && state.bottomOpen && (right || state.bottomStandalone)) {
           state.bottomOpen = false
           state.bottomStandalone = false
           return
         }
         d.details = 0
         state.bottomOpen = true
-        state.bottomStandalone = !state.open
+        state.bottomStandalone = !right
       },
       closeWorkbenchBottom: (d, key: string) => {
         const state = d.workbench[key]

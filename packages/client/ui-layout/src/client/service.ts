@@ -60,8 +60,13 @@ export interface ILayout {
   toggleWorkbench(key: string, sessionId?: SessionId): void
   /** 切换指定工作区的工作台最大化偏好。 */
   toggleWorkbenchFullscreen(key: string): void
-  /** 切换指定工作区的终端底栏；右侧工作台关闭时仅显示底栏。 */
-  toggleWorkbenchBottom(key: string): void
+  /**
+   * 切换指定工作区的终端底栏；右栏对该会话不可见时只显示底栏。
+   * @param key - 工作区布局键。
+   * @param sessionId - 可选的发起会话；传入后按该会话实际可见的右栏决定底栏是否独立显示。
+   * @returns 无返回值。
+   */
+  toggleWorkbenchBottom(key: string, sessionId?: SessionId): void
   /** 隐藏指定工作区的终端底栏；已隐藏时不改变工作台或详情栏。 */
   closeWorkbenchBottom(key: string): void
   /**
@@ -232,9 +237,9 @@ export class LayoutController implements ILayout {
     this.#require().toggleWorkbenchFullscreen(key)
   }
 
-  /** 切换指定工作区的终端底栏；右侧工作台关闭时仅显示底栏。 */
-  toggleWorkbenchBottom(key: string): void {
-    this.#require().toggleWorkbenchBottom(key)
+  /** 切换指定工作区的终端底栏；右栏对该会话不可见时只显示底栏。 */
+  toggleWorkbenchBottom(key: string, sessionId?: SessionId): void {
+    this.#require().toggleWorkbenchBottom(key, sessionId)
   }
 
   /** 隐藏指定工作区的终端底栏。 */
