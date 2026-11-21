@@ -2,17 +2,17 @@
 
 import type { SkillRegistration } from 'coding-skill'
 
-/** Namespaced entry avoids collisions with filesystem Skills in Agent presets. */
-export const COMPUTER_USE_SKILL_NAME = 'dsh-computer-use'
-/** Existing sessions and slash-command workflows continue to recognize this entry. */
-export const LEGACY_COMPUTER_USE_SKILL_NAME = 'computer-use'
+/** 技能在目录里的正式名字，与工具前缀一致。 */
+export const COMPUTER_USE_SKILL_NAME = 'computer-use'
+/** 旧名兼容：既有会话与斜杠命令仍按这个名字识别，正文与正式技能一致。 */
+export const LEGACY_COMPUTER_USE_SKILL_NAME = 'dsh-computer-use'
 export const COMPUTER_USE_SKILL_NAMES: ReadonlySet<string> = new Set([
   COMPUTER_USE_SKILL_NAME,
   LEGACY_COMPUTER_USE_SKILL_NAME,
 ])
 
 /** Complete model-visible operating and confirmation workflow. */
-export const COMPUTER_USE_SKILL_CONTENT = `# DSH Computer Use
+export const COMPUTER_USE_SKILL_CONTENT = `# Computer Use
 
 Use this capability only for a local macOS application UI that has no narrower,
 more reliable interface. Prefer, in order: a purpose-built connector or app
@@ -86,11 +86,32 @@ app; ask the user or choose a different target.
 
 When the error says approval prompts are disabled (approval/policy: never, for
 example under the danger-full-access permission preset), no user rejection
-happened and DSH answered without a prompt. Do not retry the same tool. Add the
+happened and the host answered without a prompt. Do not retry the same tool. Add the
 app's exact bundleId to the computer-use grants in Settings, enable
 allowAllApps in Computer Use Settings to grant read and control to every
 running app, or ask the user to switch the permission preset to one with
 approval ask.
+
+## Scripting several steps in one call
+
+Code Mode (\`run_code\`) binds every tool this Agent can see, so Computer Use
+can be driven by one program instead of one call per action:
+
+\`\`\`ts
+const apps = await tools.computer_list_apps({})
+const notes = apps.find(app => app.bundleId === 'com.apple.Notes')
+const first = await tools.computer_observe({ app: { bundleId: notes.bundleId } })
+await tools.computer_click({ observationId: first.observationId, elementIndex: 12 })
+const after = await tools.computer_click({ observationId: first.observationId, elementIndex: 7 })
+return after.treeText
+\`\`\`
+
+Rules that still hold inside a program: every action needs a live
+observationId, each successful action returns the next observation, and a
+confirmation token is requested and used for exactly one high-impact action.
+Do not keep calling after an action fails; read the error and re-observe.
+Prefer one program for "type a note and save it" over many separate calls when
+the steps do not depend on what you observe in between.
 
 ## Sensitive actions
 
@@ -128,9 +149,9 @@ separate UI permissions and never widen the Agent's filesystem access.
 /** Deployment-level Skill registration. */
 export const COMPUTER_USE_SKILL: SkillRegistration = {
   name: COMPUTER_USE_SKILL_NAME,
-  description: 'Accessibility-first macOS application observation and control with fresh observation IDs, app leases, screenshot fallback, and just-in-time confirmation.',
+  description: 'Observe and operate a local macOS app: bounded accessibility snapshots, fresh observation IDs, element- or coordinate-based actions, screenshot artifacts, and just-in-time confirmation for high-impact steps.',
   whenToUse: 'Use when a task requires reading or operating a local macOS app UI and no purpose-built connector, API, CLI, or browser automation capability can complete it.',
-  source: 'runtime',
+  source: 'bundled',
   content: COMPUTER_USE_SKILL_CONTENT,
 }
 

@@ -33,9 +33,11 @@ const WIRED = ['standard', 'codex', 'longrun', 'reverse', 'webclone', 'chat'] as
 const UNWIRED = ['minimal', 'notes', 'ppt', 'image', 'cordis'] as const
 /** 真实组合里可以挂载的模式：逆向分析模式要启动外部 MCP 进程，只做组装文本断言。 */
 const MOUNTED = ['standard', 'codex', 'longrun', 'webclone', 'chat'] as const
+/** 挂了 Code Mode 的模式；其余模式只提供原生调用。 */
+const CODE_MODES = ['standard', 'codex', 'webclone', 'chat'] as const
 
 const TOOL_NAME = 'computer_use_activate'
-const SKILL_NAME = 'dsh-computer-use'
+const SKILL_NAME = 'computer-use'
 const EXECUTION_TOOLS = [
   'computer_list_apps', 'computer_observe', 'computer_click', 'computer_set_value', 'computer_type_text',
   'computer_press_key', 'computer_scroll', 'computer_drag', 'computer_perform_action', 'computer_wait',
@@ -191,6 +193,15 @@ describe.runIf(process.platform === 'darwin')('Computer Use in the shipped Web p
       expect(second.isError).toBe(true)
       expect(JSON.stringify(second.content)).toContain('unknown tool')
       expect(JSON.stringify(second.content)).toContain(TOOL_NAME)
+
+      if (CODE_MODES.includes(preset as typeof CODE_MODES[number])) {
+        // Code Mode 与 codex 的脚本入口等价：加载技能后同一段程序可以驱动多个动作。
+        expect(toolNames(subject)).toContain('run_code')
+        expect(toolNames(subject)).toContain('computer_list_apps')
+      } else {
+        // 长线模式为了请求前缀稳定性不挂 Code Mode，只保留原生调用。
+        expect(toolNames(subject)).not.toContain('run_code')
+      }
 
       // 暴露按 agent 生效：同一预设里没加载技能的会话仍然只有引导工具。
       const sibling = await agent(preset)

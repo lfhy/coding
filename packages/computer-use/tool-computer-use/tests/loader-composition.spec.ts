@@ -230,7 +230,7 @@ describe('Computer Use through a real Loader composition', () => {
 
     const result = await execute(context, subject, 'computer_use_activate')
     expect(result.isError).toBe(true)
-    expect(text(result)).toContain('load the dsh-computer-use Skill first')
+    expect(text(result)).toContain('load the computer-use Skill first')
     expect(fixture.calls).toEqual([])
   })
 

@@ -239,11 +239,12 @@ describe('browser tools and skill in the shipped Web preset composition', () => 
       // 技能摘要的 order 决定目录位置：project-init 排在其它随包技能之前。
       const names = (await entries(native.agent)).map(skill => skill.name)
       expect(names.indexOf('project-init')).toBeLessThan(names.indexOf('browser-use'))
-      // Codex 同样提供浏览器技能与原生浏览器工具，但不通过 run_code 调用。
+      // Codex 同样提供浏览器技能与原生浏览器工具；它的 Code Mode 入口与 Codex 的
+      // 脚本形态一致，因此 `run_code` 也一并存在。
       const codexSkills = (await entries(codex.agent)).map(skill => skill.name)
       expect(codexSkills).toEqual(expect.arrayContaining(['browser-use', 'frontend-development']))
       expect(ctx.tools.schemas(codex.agent).map(tool => tool.name)).toContain('browser_navigate')
-      expect(ctx.tools.schemas(codex.agent).map(tool => tool.name)).not.toContain('run_code')
+      expect(ctx.tools.schemas(codex.agent).map(tool => tool.name)).toContain('run_code')
       expect((await entries(minimal.agent)).map(skill => skill.name)).not.toContain('frontend-development')
       expect((await ctx.skills.list()).map(skill => skill.name)).not.toContain('frontend-development')
       expect(ctx.tools.schemas(minimal.agent).map(tool => tool.name).filter(name => name.startsWith('browser_'))).toEqual([])

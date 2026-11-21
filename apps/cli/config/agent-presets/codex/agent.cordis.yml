@@ -457,3 +457,15 @@
         provider: spawn
         toolName: spawn_agent
         backgroundMode: continuable
+
+# ── 工具呈现 ────────────────────────────────────────────────────────────────
+
+# Codex 风格的工具名与提示词保持不变，另外提供 Code Mode 的 `run_code`：与
+# codex 把电脑操作放进一条 `cua_repl` 命令的用法一致，模型可以写一段程序把
+# 观察、点击、输入与确认串起来，而不是每次动作占用一次工具调用。
+# 代价是每个会话的请求前缀包含 SDK 段与 `run_code` schema，并要求宿主装配
+# `ctx.codeRuntime`；未装配代码运行时的组合需要关闭这一行。
+- id: tool-presentation
+  name: 'coding-agent-tool-presentation'
+  config:
+    mode: both

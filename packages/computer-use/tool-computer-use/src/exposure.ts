@@ -178,7 +178,7 @@ export class ComputerUseExposure {
 
   /** Install lifecycle listeners and adopt existing Agents. */
   install(): () => void {
-    if (this.installed) throw new Error('dsh-computer-use: progressive exposure is already installed')
+    if (this.installed) throw new Error('computer-use: progressive exposure is already installed')
     this.installed = true
     const effects = [
       this.ctx.on('agent/created', ({ agent }) => { this.attach(agent) }),
@@ -225,7 +225,7 @@ export class ComputerUseExposure {
   private activate(agent: Agent): ComputerUseActivationResult {
     this.attach(agent)
     const state = this.states.get(agent)
-    if (state === undefined) throw new Error(`dsh-computer-use: Agent ${String(agent.id)} has no exposure state`)
+    if (state === undefined) throw new Error(`computer-use: Agent ${String(agent.id)} has no exposure state`)
     if (state.active) return { activated: false, tools: [...state.toolNames] }
     const definitions = this.createTools()
     const toolDisposers: Array<() => void> = []

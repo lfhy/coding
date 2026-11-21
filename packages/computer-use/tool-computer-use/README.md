@@ -5,7 +5,7 @@ Computer Use 的模型可见消费方：登记一份技能、一个全局引导�
 
 ## 渐进式暴露
 
-- 挂载时先读宿主的开关：关闭时不注册任何东西，打开时全局只注册 `computer_use_activate`，并把 `dsh-computer-use` 技能（兼容别名 `computer-use`）登记进技能目录。
+- 挂载时先读宿主的开关：关闭时不注册任何东西，打开时全局只注册 `computer_use_activate`，并把 `computer-use` 技能（旧名 `dsh-computer-use` 作为兼容别名）登记进技能目录。
 - 技能被加载后，本插件为该 agent 注册执行工具，并用工具遮蔽隐藏引导工具；其他 agent 仍然只看得到引导工具。
 - “已加载技能”是一条持久事实，来自会话日志：技能工具写入的 `skill-invocation` 用户消息，或 Code Mode 里 `tool/code-dispatch`（旧名 `tool/code-dispatch`／`tool/ptc-dispatch`）返回同一份技能正文的那次派发。没有这两类证据时，引导工具拒绝执行并提示先加载技能。
 - 插件只负责暴露与转发；是否允许某次本机输入由服务层的租约、审批与一次性确认令牌决定。
@@ -31,7 +31,15 @@ Computer Use 的模型可见消费方：登记一份技能、一个全局引导�
 
 ## 技能
 
-`dsh-computer-use` 技能说明观察协议、可访问性优先的动作顺序、坐标语义、视觉证据的转交方式与敏感动作的确认要求；它按需加载，`LEGACY` 别名 `computer-use` 供既有会话引用。技能本体不授予任何权限。
+`computer-use` 技能说明观察协议、可访问性优先的动作顺序、坐标语义、视觉证据的转交方式与敏感动作的确认要求；它按需加载，旧名 `dsh-computer-use` 作为兼容别名供既有会话引用。技能本体不授予任何权限。
+
+## 脚本形态
+
+Code Mode 的 `run_code` 绑定该 agent 可见的全部工具，因此加载技能后模型可以在一个程序里串起
+`computer_list_apps`、`computer_observe`、`computer_click` 等调用，与 Codex 把电脑操作放进
+一条脚本命令的用法一致；带 Code Mode 的预设（标准、Codex、网页复刻、对话）都提供这条路径，
+长线任务模式为保持请求前缀稳定仍只提供原生调用。每一步仍然需要一份未过期的观察，高影响动作
+仍然要单独取一次性确认令牌。
 
 ## Model Experience
 
@@ -39,7 +47,7 @@ Computer Use 的模型可见消费方：登记一份技能、一个全局引导�
 
 #### What the model sees
 
-任何挂载了本插件的 agent 初始都只看到 `computer_use_activate`：它说明必须在加载 `dsh-computer-use` 技能之后调用，并在成功后从该 agent 的工具列表中消失。技能目录里同时可见 `dsh-computer-use`（含描述与适用条件），正文只在加载后进入上下文。
+任何挂载了本插件的 agent 初始都只看到 `computer_use_activate`：它说明必须在加载 `computer-use` 技能之后调用，并在成功后从该 agent 的工具列表中消失。技能目录里同时可见 `computer-use`（含描述与适用条件），正文只在加载后进入上下文。
 
 #### Token effect
 
