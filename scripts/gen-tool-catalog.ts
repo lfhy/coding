@@ -67,6 +67,7 @@ import TerminalSessionService from 'coding-terminal'
 import * as ToolPty from 'coding-tool-terminal'
 import * as ToolGoal from 'coding-tool-goal'
 import * as ToolImageGen from 'coding-tool-image-gen'
+import * as ToolNotesTabs from 'coding-tool-notes-tabs'
 import * as ToolPpt from 'coding-tool-ppt'
 import * as ToolSchedule from 'coding-schedule'
 import Lsp from 'coding-lsp'
@@ -575,6 +576,23 @@ const TOOL_PACKAGES: ToolPackage[] = [
       + 'gallery attachment reads only this session\'s image IDs through ctx.imageGeneration and copies media without editing a page.',
   },
   {
+    pkg: 'coding-tool-notes-tabs',
+    dir: 'tool-notes-tabs',
+    source: 'packages/notes/tool-notes-tabs/src/index.ts',
+    requires: ['ctx.tools', 'ctx.webServer', 'ctx.connection', 'ctx.sessions', 'ctx.agents', 'ctx.fileLibrary'],
+    writes: ['tool/call', 'verified notes-tab snapshot and local HTTP publish route', 'tool/result'],
+    async mount(ctx) {
+      await ctx.plugin(AgentRegistry)
+      await ctx.plugin(SessionStore)
+      ctx.provide('fileLibrary', { notesRootPath: () => dshHomePath('notes') } as never)
+      ctx.provide('connection', { requestRejection: () => undefined } as never)
+      ctx.provide('webServer', { host: '127.0.0.1', port: 0, register: () => () => {} } as never)
+      await ctx.plugin(ToolNotesTabs)
+    },
+    note:
+      'The notes preset publishes only relative paths; the Host verifies each regular file under the notes root and returns unavailable when no window is published, the window expires, or multiple windows remain. The local publish route still requires the Host same-origin check and a live notes Agent/session pair.',
+  },
+  {
     pkg: 'coding-schedule',
     dir: 'schedule',
     source: 'packages/schedule/schedule/src/tools.ts',
@@ -952,11 +970,15 @@ function toolSource(entry: ToolPackage, toolName: string): string {
   return source
 }
 
-/** Render one tool's entry: name, description, JSON-Schema parameters, source. */
+/** Render one tool's entry: name, description, JSON-Schema parameters, native input format, and source. */
 function renderTool(schema: ToolSchema, source: string): string[] {
   const out = [`### \`${schema.name}\``, '']
   if (schema.description) out.push(schema.description, '')
   out.push('```json', JSON.stringify(schema.parameters, null, 2), '```', '')
+  if (schema.inputFormat !== undefined) {
+    out.push('Native input format:', '', '```lark', schema.inputFormat.definition, '```', '')
+    if (schema.inputFormat.description !== undefined) out.push(`Native input description: ${schema.inputFormat.description}`, '')
+  }
   out.push(`Source: [\`${source}\`](../${source})`, '')
   return out
 }
@@ -977,7 +999,7 @@ export function render(catalog: ToolCatalog): string {
     '',
     '# Tool Schema Catalog',
     '',
-    'Every model-facing tool a shipped plugin contributes to `ctx.tools`: the `name`, `description`, and JSON-Schema `parameters` the model receives via the system-prompt assembly. It complements the [subsystem pages](subsystems/core.md) (the types plus each page\'s generated Cordis API region) — this page is the *tools* the agent is offered.',
+    'Every model-facing tool a shipped plugin contributes to `ctx.tools`: the `name`, `description`, JSON-Schema `parameters`, and optional native input format the model receives via the system-prompt assembly. It complements the [subsystem pages](subsystems/core.md) (the types plus each page\'s generated Cordis API region) — this page is the *tools* the agent is offered.',
     '',
     'This file is GENERATED and verified fresh by `pnpm run verify-tool-catalog` — do not edit it by hand. Unlike the cordis catalog (a pure source-AST pass), this generator BOOTS each tool plugin on a real context and reads `ctx.tools.schemas()`, because a tool schema is not statically knowable (runtime-spread enums, concatenated descriptions, config-driven names, raw-JSON-Schema MCP tools). A completeness guard globs `packages/*/tool-*` and fails if any package is missing from the generator\'s boot manifest, so a new tool cannot be silently undocumented. See the tool-schema-catalog design record.',
     '',

@@ -156,6 +156,7 @@ const packageFileExtras: Readonly<Record<string, readonly string[]>> = {
   // 浏览器 bundle 的懒加载 CJS chunk 也必须随 npm 包交付；上游许可说明不能仅依赖仓库文档。
   'coding-genui': ['lib/*.cjs', 'lib/assets/*.js', 'SKILL.md', 'NOTICE.md'],
   'coding-attachment': ['lib/image-processing.js'],
+  'coding-tool-apply-patch': ['NOTICE.md', 'LICENSE.Codex'],
   // 灵感页缩略图由图像服务从包内静态目录下发，不进入 client bundle。
   'coding-image-gen': ['assets/inspiration/**/*.webp'],
   'coding-llm-vision-fallback': ['lib/content-*.js'],
@@ -175,8 +176,8 @@ const packageFileExtras: Readonly<Record<string, readonly string[]>> = {
   'coding-skill-note-export': ['assets'],
   // 前端技能随包分发 StyleKit 风格目录快照，上游 MIT 来源说明也要一起交付。
   'coding-skill-frontend-development': ['assets', 'NOTICE.md'],
-  // Agent 浏览器的内嵌 CLI、观察 worker 与两级 MIT 来源声明必须与 Host 同包交付。
-  'coding-browser-ego-host': ['runtime/', 'bin/', 'third-party/host/', 'third-party/upstream/lib/', 'third-party/upstream/src/', 'LICENSE', 'THIRD_PARTY_NOTICES.upstream.md', 'NOTICE.md'],
+  // Agent 浏览器的内嵌 CLI、观察 worker、上游运行时元数据与两级 MIT 来源声明必须与 Host 同包交付。
+  'coding-browser-ego-host': ['runtime/', 'bin/', 'third-party/host/', 'third-party/upstream/package.json', 'third-party/upstream/lib/', 'third-party/upstream/src/', 'LICENSE', 'THIRD_PARTY_NOTICES.upstream.md', 'NOTICE.md'],
   'coding-subprocess-local': ['scripts/ensure-spawn-helper.mjs'],
   // Computer Use runs a locally built Swift helper, so the package ships the helper
   // sources plus the build script the provider invokes when the pinned binary is absent.

@@ -35,6 +35,7 @@
     "runtime/",
     "bin/",
     "third-party/host/",
+    "third-party/upstream/package.json",
     "third-party/upstream/lib/",
     "third-party/upstream/src/",
     "LICENSE",

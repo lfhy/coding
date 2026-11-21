@@ -551,20 +551,26 @@ interface FinishReasonMap {
 
 `FinishReason = FinishReasonMap[keyof FinishReasonMap]`。`TokenUsage`（逐调用计量，含不相交的缓存字段）详见[下文](#tokenusage)。
 
-`GenerateOptions.tools` 携带 `ToolSchema`——工具的 JSON Schema 描述，发送给模型。它声明在 dsh-llm（而非 dsh-tools）中，正是因为它是循环每一步组装请求的一部分：
+`GenerateOptions.tools` 携带 `ToolSchema`——工具的 JSON Schema 参数与可选原生输入语法，发送给模型。它声明在 dsh-llm（而非 dsh-tools）中，正是因为它是循环每一步组装请求的一部分：
 
 ```ts type-equiv
 /**
- * JSON-schema description of a tool, as sent to the model.
- * Declared here (not in dsh-tools) because it is part of {@link GenerateOptions};
- * dsh-tools' ToolDefinition and dsh-system-prompt's PromptAssembly both import
- * it from this package.
+ * 模型请求中的工具定义：JSON 参数用于执行校验和回退，可选格式声明原生文本输入。
+ * 本类型属于 {@link GenerateOptions}，由工具注册与提示词组装共同消费。
  */
 interface ToolSchema {
   name: string
   description: string
   /** JSON Schema object for the arguments. */
   parameters: Record<string, unknown>
+  /** 原生工具可选的 Lark 输入语法；`parameters` 仍是执行和不支持语法的适配器使用的 JSON 参数。 */
+  inputFormat?: {
+    type: 'grammar'
+    syntax: 'lark'
+    definition: string
+    /** 仅原生语法路径的调用说明，不替换普通函数工具的 `description`。 */
+    description?: string
+  }
 }
 ```
 

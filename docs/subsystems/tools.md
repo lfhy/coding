@@ -1,12 +1,12 @@
 # 工具
 
-[dsh-tools](../../packages/core/tools) 的工具流水线。[core.md](core.md) 介绍了核心包共用、用于编写流水线的类型 `ToolDefinition`；面向模型的 [`ToolSchema`](llm-streaming.md#the-model-request-and-result) 协议类型与模型请求一起声明。本页记录 `ToolDefinition` 的每个字段、用于构建它的类型化 schema DSL、带守卫的执行类型和 UI 展示类型。
+[dsh-tools](../../packages/core/tools) 的工具流水线。[core.md](core.md) 介绍了核心包共用、用于编写流水线的类型 `ToolDefinition`；面向模型的 [`ToolSchema`](llm-streaming.md#the-model-request-and-result) 协议类型与模型请求一起声明，包含 JSON 参数与可选的原生 Lark 输入语法。本页记录 `ToolDefinition` 的每个字段、用于构建它的类型化 schema DSL、带守卫的执行类型和 UI 展示类型。
 
 源码：[`packages/core/tools/src/index.ts`](../../packages/core/tools/src/index.ts) · [`packages/core/tools/src/schema.ts`](../../packages/core/tools/src/schema.ts) · [`packages/core/tools/src/presentation.ts`](../../packages/core/tools/src/presentation.ts)
 
 ## `ToolDefinition` — 一个已注册的工具
 
-由一个 `ToolSchema`（面向模型的字段）、必需的规范输出声明、`execute` 函数、仅供宿主使用的调度器元数据、可选的最终内容回调和可选 UI 展示函数组成。注册表持有这些定义，循环通过它们分派调用。注册表的 `schemas()` 通过显式允许列表构建面向模型的 `ToolSchema[]`；`output`/`execute`/`finalizeContent`/`timeoutMs`/`isConcurrencySafe`/`presentCall`/`presentResult` 绝不能泄漏到模型请求中。
+由一个 `ToolSchema`（面向模型的字段）、必需的规范输出声明、`execute` 函数、仅供宿主使用的调度器元数据、可选的最终内容回调和可选 UI 展示函数组成。注册表持有这些定义，循环通过它们分派调用。注册表的 `schemas()` 通过显式允许列表构建面向模型的 `ToolSchema[]`；`output`/`execute`/`finalizeContent`/`timeoutMs`/`isConcurrencySafe`/`presentCall`/`presentResult` 绝不能泄漏到模型请求中，`inputFormat` 仅作为原生调用的可选语法元数据投影。
 
 ```ts type-equiv
 /** Tool-owned canonical output contract used after the body returns a JSON value. */
@@ -21,7 +21,7 @@ interface ToolOutputDefinition {
 ```
 
 ```ts type-equiv
-/** A registered tool: its schema plus the execution function. */
+/** 注册后的工具：面向模型的 schema 与执行函数。 */
 interface ToolDefinition extends ToolSchema {
   /** Mandatory canonical output declaration. */
   readonly output: ToolOutputDefinition
@@ -49,11 +49,10 @@ interface ToolDefinition extends ToolSchema {
    */
   finalizeContent?(exec: Readonly<ToolExecution>, result: Readonly<ToolExecutionResult>): ContentBlock[] | undefined
   /**
-   * Cooperative tool-call timeout budget in milliseconds. Omit for no deadline.
-   * Enforced by `coding-tool-call-timeout-policy` (a `tools/execute` wrapper); it
-   * is NEVER sent to the model — `schemas()` whitelists only name/description/
-   * parameters. Declaring it asserts this tool forwards `exec.signal` to a
-   * cooperative implementation that can reach quiescence when the signal aborts.
+   * 协作式工具调用的超时预算，单位为毫秒；省略表示没有截止时间。
+   * 由 `coding-tool-call-timeout-policy`（`tools/execute` 包装器）执行；它不会发送给模型，
+   * `schemas()` 只投影 name、description、parameters 与可选的 inputFormat。声明该字段表示工具
+   * 会把 `exec.signal` 转发给可在取消后达到静止状态的协作式实现。
    */
   timeoutMs?: number
   /**
@@ -569,7 +568,7 @@ async execute(exec: ToolExecutionInput): Promise<ToolExecutionResult>
 
 Types: [ScopeKey](scope.md)
 
-Source: [`packages/core/tools/src/index.ts:790`](../../packages/core/tools/src/index.ts)
+Source: [`packages/core/tools/src/index.ts:789`](../../packages/core/tools/src/index.ts)
 
 <a id="tools-events"></a>
 

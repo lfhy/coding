@@ -572,7 +572,7 @@ Source: [`packages/plan/plan-mode/src/index.ts:50`](../packages/plan/plan-mode/s
 'ppt/project-opened': { sessionId: string; dir: string }
 ```
 
-Source: [`packages/ppt/ppt-workbench/src/index.ts:86`](../packages/ppt/ppt-workbench/src/index.ts)
+Source: [`packages/ppt/ppt-workbench/src/index.ts:97`](../packages/ppt/ppt-workbench/src/index.ts)
 
 ### `request/*`
 

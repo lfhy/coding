@@ -1,0 +1,6 @@
+{
+  "name": "dsh-ego-browser",
+  "version": "0.9.7",
+  "private": true,
+  "type": "module"
+}

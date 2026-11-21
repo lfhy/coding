@@ -220,7 +220,7 @@ export interface ToolOutputDefinition {
   presentationMeta?(args: unknown, value: JsonValue): JsonValue
 }
 
-/** A registered tool: its schema plus the execution function. */
+/** 注册后的工具：面向模型的 schema 与执行函数。 */
 export interface ToolDefinition extends ToolSchema {
   /** Mandatory canonical output declaration. */
   readonly output: ToolOutputDefinition
@@ -250,11 +250,10 @@ export interface ToolDefinition extends ToolSchema {
    */
   finalizeContent?(exec: Readonly<ToolExecution>, result: Readonly<ToolExecutionResult>): ContentBlock[] | undefined
   /**
-   * Cooperative tool-call timeout budget in milliseconds. Omit for no deadline.
-   * Enforced by `coding-tool-call-timeout-policy` (a `tools/execute` wrapper); it
-   * is NEVER sent to the model — `schemas()` whitelists only name/description/
-   * parameters. Declaring it asserts this tool forwards `exec.signal` to a
-   * cooperative implementation that can reach quiescence when the signal aborts.
+   * 协作式工具调用的超时预算，单位为毫秒；省略表示没有截止时间。
+   * 由 `coding-tool-call-timeout-policy`（`tools/execute` 包装器）执行；它不会发送给模型，
+   * `schemas()` 只投影 name、description、parameters 与可选的 inputFormat。声明该字段表示工具
+   * 会把 `exec.signal` 转发给可在取消后达到静止状态的协作式实现。
    */
   timeoutMs?: number
   /**

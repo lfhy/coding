@@ -306,6 +306,9 @@ flowchart TD
   subgraph group_net["packages/net"]
     pkg_proxy_pool["proxy-pool"]
   end
+  subgraph group_notes["packages/notes"]
+    pkg_tool_notes_tabs["tool-notes-tabs"]
+  end
   subgraph group_ppt["packages/ppt"]
     pkg_ppt_model["ppt-model"]
     pkg_ppt_workbench["ppt-workbench"]
@@ -1469,6 +1472,13 @@ flowchart TD
   pkg_image_gen --> pkg_session
   pkg_image_gen --> pkg_session_persistence
   pkg_image_gen --> pkg_settings
+  pkg_tool_notes_tabs --> pkg_agent
+  pkg_tool_notes_tabs --> pkg_client_connection
+  pkg_tool_notes_tabs --> pkg_file_library
+  pkg_tool_notes_tabs --> pkg_host_webserver
+  pkg_tool_notes_tabs --> pkg_invariants
+  pkg_tool_notes_tabs --> pkg_session
+  pkg_tool_notes_tabs --> pkg_tools
   pkg_ppt_workbench --> pkg_atomic_write
   pkg_ppt_workbench --> pkg_brand
   pkg_ppt_workbench --> pkg_client_connection
@@ -1786,6 +1796,7 @@ flowchart TD
   pkg_client_ui_ppt_workbench --> pkg_client_runtime
   pkg_client_ui_ppt_workbench --> pkg_client_ui_conversation
   pkg_client_ui_ppt_workbench --> pkg_client_ui_layout
+  pkg_client_ui_ppt_workbench --> pkg_client_ui_notes
   pkg_client_ui_ppt_workbench --> pkg_client_ui_open_in_app
   pkg_client_ui_ppt_workbench --> pkg_client_ui_settings
   pkg_client_ui_ppt_workbench --> pkg_invariants
@@ -2073,6 +2084,7 @@ flowchart TD
 | [`tool-browser-ego`](../packages/browser/tool-browser-ego) | `browser` | [`attachment`](../packages/attachment/attachment), [`browser-ego-host`](../packages/browser/browser-ego-host), [`invariants`](../packages/runtime-diagnostics/invariants), [`llm`](../packages/llm/llm), [`sandbox-policy`](../packages/sandbox/sandbox-policy), [`session`](../packages/core/session), [`subprocess`](../packages/subprocess/subprocess), [`tools`](../packages/core/tools), [`user-approval`](../packages/interaction/user-approval) |
 | [`host-open-in-app`](../packages/host/open-in-app) | `host` | [`agent`](../packages/core/agent), [`file-library`](../packages/attachment/file-library), [`fs`](../packages/fs/fs), [`host-webserver`](../packages/host/webserver), [`invariants`](../packages/runtime-diagnostics/invariants), [`session`](../packages/core/session) |
 | [`image-gen`](../packages/image/image-gen) | `image` | [`attachment`](../packages/attachment/attachment), [`client-connection`](../packages/client/connection), [`credentials`](../packages/credentials/credentials), [`file-library`](../packages/attachment/file-library), [`host-webserver`](../packages/host/webserver), [`invariants`](../packages/runtime-diagnostics/invariants), [`session`](../packages/core/session), [`session-persistence`](../packages/session/session-persistence), [`settings`](../packages/settings/settings) |
+| [`tool-notes-tabs`](../packages/notes/tool-notes-tabs) | `notes` | [`agent`](../packages/core/agent), [`client-connection`](../packages/client/connection), [`file-library`](../packages/attachment/file-library), [`host-webserver`](../packages/host/webserver), [`invariants`](../packages/runtime-diagnostics/invariants), [`session`](../packages/core/session), [`tools`](../packages/core/tools) |
 | [`ppt-workbench`](../packages/ppt/ppt-workbench) | `ppt` | [`atomic-write`](../packages/util/atomic-write), [`brand`](../packages/util/brand), [`client-connection`](../packages/client/connection), [`file-library`](../packages/attachment/file-library), [`home-paths`](../packages/util/home-paths), [`host-webserver`](../packages/host/webserver), [`invariants`](../packages/runtime-diagnostics/invariants), [`ppt-model`](../packages/ppt/model), [`session`](../packages/core/session), [`subprocess`](../packages/subprocess/subprocess) |
 | [`client-runtime`](../packages/client/runtime) | `client` | [`agent`](../packages/core/agent), [`api-remotes`](../packages/api/remotes), [`attachment`](../packages/attachment/attachment), [`client-connection`](../packages/client/connection), [`commands`](../packages/interaction/commands), [`host-apiproxy`](../packages/host/apiproxy), [`invariants`](../packages/runtime-diagnostics/invariants), [`llm`](../packages/llm/llm), [`llm-retry`](../packages/llm/llm-retry), [`session`](../packages/core/session), [`session-projection`](../packages/session/session-projection), [`session-title`](../packages/session/session-title), [`tools`](../packages/core/tools), [`typert-protocol`](../packages/typert/protocol), [`typert-registry`](../packages/typert/registry) |
 | [`tool-image-gen`](../packages/image/tool-image-gen) | `image` | [`image-gen`](../packages/image/image-gen), [`invariants`](../packages/runtime-diagnostics/invariants), [`llm`](../packages/llm/llm), [`tools`](../packages/core/tools) |
@@ -2117,7 +2129,7 @@ flowchart TD
 | [`client-ui-image-gen`](../packages/client/ui-image-gen) | `client` | [`api-remotes`](../packages/api/remotes), [`client-locale`](../packages/client/locale), [`client-runtime`](../packages/client/runtime), [`client-ui-conversation`](../packages/client/ui-conversation), [`client-ui-layout`](../packages/client/ui-layout), [`client-ui-settings`](../packages/client/ui-settings), [`client-ui-tool`](../packages/client/ui-tool), [`invariants`](../packages/runtime-diagnostics/invariants), [`session`](../packages/core/session), [`tools`](../packages/core/tools) |
 | [`client-ui-model-selection`](../packages/client/ui-model-selection) | `client` | [`api-remotes`](../packages/api/remotes), [`client-connection`](../packages/client/connection), [`client-locale`](../packages/client/locale), [`client-runtime`](../packages/client/runtime), [`client-ui-commands`](../packages/client/ui-commands), [`client-ui-conversation`](../packages/client/ui-conversation), [`client-ui-input-trigger`](../packages/client/ui-input-trigger), [`invariants`](../packages/runtime-diagnostics/invariants) |
 | [`client-ui-permission-presets`](../packages/client/ui-permission-presets) | `client` | [`api-remotes`](../packages/api/remotes), [`client-connection`](../packages/client/connection), [`client-locale`](../packages/client/locale), [`client-runtime`](../packages/client/runtime), [`client-ui-commands`](../packages/client/ui-commands), [`client-ui-input-trigger`](../packages/client/ui-input-trigger), [`client-ui-settings`](../packages/client/ui-settings), [`invariants`](../packages/runtime-diagnostics/invariants), [`permission-presets`](../packages/interaction/permission-presets) |
-| [`client-ui-ppt-workbench`](../packages/client/ui-ppt-workbench) | `client` | [`api-remotes`](../packages/api/remotes), [`brand`](../packages/util/brand), [`client-connection`](../packages/client/connection), [`client-locale`](../packages/client/locale), [`client-runtime`](../packages/client/runtime), [`client-ui-conversation`](../packages/client/ui-conversation), [`client-ui-layout`](../packages/client/ui-layout), [`client-ui-open-in-app`](../packages/client/ui-open-in-app), [`client-ui-settings`](../packages/client/ui-settings), [`invariants`](../packages/runtime-diagnostics/invariants), [`ppt-model`](../packages/ppt/model), [`session`](../packages/core/session) |
+| [`client-ui-ppt-workbench`](../packages/client/ui-ppt-workbench) | `client` | [`api-remotes`](../packages/api/remotes), [`brand`](../packages/util/brand), [`client-connection`](../packages/client/connection), [`client-locale`](../packages/client/locale), [`client-runtime`](../packages/client/runtime), [`client-ui-conversation`](../packages/client/ui-conversation), [`client-ui-layout`](../packages/client/ui-layout), [`client-ui-notes`](../packages/client/ui-notes), [`client-ui-open-in-app`](../packages/client/ui-open-in-app), [`client-ui-settings`](../packages/client/ui-settings), [`invariants`](../packages/runtime-diagnostics/invariants), [`ppt-model`](../packages/ppt/model), [`session`](../packages/core/session) |
 | [`client-ui-skill`](../packages/client/ui-skill) | `client` | [`api-remotes`](../packages/api/remotes), [`client-connection`](../packages/client/connection), [`client-locale`](../packages/client/locale), [`client-runtime`](../packages/client/runtime), [`client-ui-input-trigger`](../packages/client/ui-input-trigger), [`client-ui-tool`](../packages/client/ui-tool), [`invariants`](../packages/runtime-diagnostics/invariants), [`tools`](../packages/core/tools) |
 | [`client-ui-workspace`](../packages/client/ui-workspace) | `client` | [`client-connection`](../packages/client/connection), [`client-locale`](../packages/client/locale), [`client-runtime`](../packages/client/runtime), [`client-ui-conversation`](../packages/client/ui-conversation), [`client-ui-layout`](../packages/client/ui-layout), [`client-ui-sidebar`](../packages/client/ui-sidebar), [`invariants`](../packages/runtime-diagnostics/invariants) |
 | [`client-ui-cordis`](../packages/extensions/ui-cordis) | `extensions` | [`api-remotes`](../packages/api/remotes), [`client-connection`](../packages/client/connection), [`client-locale`](../packages/client/locale), [`client-runtime`](../packages/client/runtime), [`client-ui-input-trigger`](../packages/client/ui-input-trigger), [`client-ui-sidebar`](../packages/client/ui-sidebar), [`client-ui-tool`](../packages/client/ui-tool), [`cordis-client-runner`](../packages/extensions/cordis-client-runner), [`invariants`](../packages/runtime-diagnostics/invariants), [`tools`](../packages/core/tools) |

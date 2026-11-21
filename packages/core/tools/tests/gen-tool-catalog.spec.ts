@@ -45,7 +45,7 @@ describe('gen-tool-catalog collectToolCatalog', () => {
       'edit', 'edit_image', 'exit_plan_mode', 'followup_task', 'followup_task', 'generate_image', 'generate_images',
       'get_goal', 'glob', 'grep', 'interrupt_agent',
       'interrupt_agent', 'job_kill', 'job_list', 'job_output', 'list_agents', 'list_agents', 'lsp',
-      'memory_compact', 'memory_delete', 'memory_list', 'memory_read', 'memory_save', 'memory_update', 'ppt_attach_gallery_image',
+      'memory_compact', 'memory_delete', 'memory_list', 'memory_read', 'memory_save', 'memory_update', 'notes_tabs', 'ppt_attach_gallery_image',
       'ppt_check', 'ppt_create',
       'ppt_create_from_template', 'ppt_delete_template', 'ppt_edit', 'ppt_export', 'ppt_import',
       'ppt_import_evidence', 'ppt_import_template', 'ppt_open', 'ppt_prepare_template',

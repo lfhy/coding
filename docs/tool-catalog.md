@@ -3,7 +3,7 @@
 
 # Tool Schema Catalog
 
-Every model-facing tool a shipped plugin contributes to `ctx.tools`: the `name`, `description`, and JSON-Schema `parameters` the model receives via the system-prompt assembly. It complements the [subsystem pages](subsystems/core.md) (the types plus each page's generated Cordis API region) — this page is the *tools* the agent is offered.
+Every model-facing tool a shipped plugin contributes to `ctx.tools`: the `name`, `description`, JSON-Schema `parameters`, and optional native input format the model receives via the system-prompt assembly. It complements the [subsystem pages](subsystems/core.md) (the types plus each page's generated Cordis API region) — this page is the *tools* the agent is offered.
 
 This file is GENERATED and verified fresh by `pnpm run verify-tool-catalog` — do not edit it by hand. Unlike the cordis catalog (a pure source-AST pass), this generator BOOTS each tool plugin on a real context and reads `ctx.tools.schemas()`, because a tool schema is not statically knowable (runtime-spread enums, concatenated descriptions, config-driven names, raw-JSON-Schema MCP tools). A completeness guard globs `packages/*/tool-*` and fails if any package is missing from the generator's boot manifest, so a new tool cannot be silently undocumented. See the tool-schema-catalog design record.
 
@@ -35,6 +35,7 @@ This table connects model-visible tool names to the plugin package and service s
 | `coding-tool-goal` | `create_goal`, `get_goal`, `update_goal` | `ctx.tools`, `ctx.agents`, `ctx.goals`, `ctx.systemPrompt`, `a calling Agent in an authorized open turn` | `tool/call`, `goal/change for mutations`, `tool/result` | - | create, edit, pause, and resume require direct-human root authority; complete and blocked also accept the exact current goal round. The default blocked lower bound is three admitted rounds. |
 | `coding-tool-image-gen` | `canvas_state`, `edit_image`, `generate_image`, `generate_images` | `ctx.tools`, `ctx.imageGeneration`, `a calling Agent session` | `tool/call`, `image-gen/created`, `durable image attachment`, `tool/result` | - | The catalog simulates an available image service to collect these schemas. The Codex preset selects variant=codex and exposes only image_gen; other non-minimal presets expose generate_image, generate_images, canvas_state, and edit_image. Unavailable deployments register none of these tools, and execution still rechecks service availability. |
 | `coding-tool-ppt` | `ppt_attach_gallery_image`, `ppt_check`, `ppt_create`, `ppt_create_from_template`, `ppt_delete_template`, `ppt_edit`, `ppt_export`, `ppt_import`, `ppt_import_evidence`, `ppt_import_template`, `ppt_open`, `ppt_prepare_template`, `ppt_read`, `ppt_redo`, `ppt_rename_template`, `ppt_render`, `ppt_save_template`, `ppt_templates`, `ppt_undo` | `ctx.tools`, `ctx.llm and ctx.attachments (AI review)`, `ctx.imageGeneration and ctx.pptProjects (gallery attachment at execution time)`, `a calling Agent session` | `tool/call`, `project deck, history or copied media`, `rendered PNG or exported .pptx/PDF on request`, `tool/result` | - | The PPT preset installs this package's tools only in its Agent scope; other presets do not receive their schemas. The catalog mounts the LLM and attachment services to harvest the schema without executing project operations, model review, rendering, or attachment I/O. At execution time the Host supplies ctx.pptProjects; gallery attachment reads only this session's image IDs through ctx.imageGeneration and copies media without editing a page. |
+| `coding-tool-notes-tabs` | `notes_tabs` | `ctx.tools`, `ctx.webServer`, `ctx.connection`, `ctx.sessions`, `ctx.agents`, `ctx.fileLibrary` | `tool/call`, `verified notes-tab snapshot and local HTTP publish route`, `tool/result` | - | The notes preset publishes only relative paths; the Host verifies each regular file under the notes root and returns unavailable when no window is published, the window expires, or multiple windows remain. The local publish route still requires the Host same-origin check and a live notes Agent/session pair. |
 | `coding-schedule` | `schedule_create`, `schedule_delete`, `schedule_list` | `ctx.tools`, `ctx.sessions`, `Session persistence`, `a future live root Agent` | `tool/call`, `schedule/change create or delete`, `tool/result` | - | Registered only inside live root Agent scopes created after the opt-in Schedule plugin loads. Version 1 accepts after_seconds, explicit absolute at, and bounded fixed-rate every_seconds, and discloses session-local delivery; management reads and mutations require the shared Session persistence barrier. |
 | `coding-tool-context-compact` | `context_compact` | `ctx.tools`, `ctx.compaction` | `tool/call`, `compaction/* transaction events for the replaced range`, `tool/result` | - | The tool only names what the remaining work must keep; range selection, the open-turn transaction, and the summary stay with the mounted backend. `compactContext` compacts by span, so unrelated nodes appended while the summary runs survive the replacement. |
 | `coding-tool-lsp` | `lsp` | `ctx.tools`, `ctx.lsp`, `ctx.systemPrompt` | `tool/call`, `tool/result` | - | The lsp tool keeps provider selection and language-server subprocesses behind ctx.lsp, so its model-visible schema stays stable across providers. Requires a registered provider (e.g. `coding-lsp-stdio`) at runtime; without one, a query returns the structured `LSP_UNAVAILABLE` error rather than changing the schema. |
@@ -3259,6 +3260,31 @@ Apply a Codex-style patch to workspace files. The input must be a string contain
 }
 ```
 
+Native input format:
+
+```lark
+start: begin_patch hunk+ end_patch
+begin_patch: "*** Begin Patch" LF
+end_patch: "*** End Patch" LF?
+
+hunk: add_hunk | update_hunk
+add_hunk: "*** Add File: " filename LF add_line+
+update_hunk: "*** Update File: " filename LF change+
+
+filename: /(.+)/
+add_line: "+" /(.*)/ LF -> line
+
+change: change_context change_line+ eof_line?
+change_context: ("@@" | "@@ " /(.+)/) LF
+change_line: ("+" | "-" | " ") /(.*)/ LF
+eof_line: "*** End of File" LF
+
+%import common.LF
+
+```
+
+Native input description: The `apply_patch` tool can be used to edit files. This is a FREEFORM tool, so do not wrap the patch in JSON.
+
 Source: [`packages/fs/tool-apply-patch/src/index.ts`](../packages/fs/tool-apply-patch/src/index.ts)
 
 Codex-style patch envelope over the filesystem seam. Add File and Update File are supported; Delete File and Move to are explicitly rejected because the filesystem service has no delete or rename primitive.
@@ -3900,7 +3926,7 @@ Array of edit operations, applied atomically in order. Each item is an object wi
 - {"op":"add_page","at":<index>,"name":<string>,"background":"#rrggbb"|null,"template":"title"|"section"|"bullets"|"two-column"|"data"|"chart"|"quote","title":<string>,"bullets":[<string>]} — insert a page; with "template" it comes pre-filled with that layout (bullets ≤ 6);
 - {"op":"remove_page","page":<pageId>} — delete a page (never the last one);
 - {"op":"move_page","page":<pageId>,"to":<index>} — reorder;
-- {"op":"update_page","page":<pageId>,"name":<string>,"background":"#rrggbb"|null,"transition":"none"|"fade"|"push"};
+- {"op":"update_page","page":<pageId>,"name":<string>,"background":"#rrggbb"|null,"transition":"none"|"fade"|"push","notes":<string>} — an empty notes string clears the saved speaker notes;
 - {"op":"add_element","page":<pageId>,"element":{...}} — element kinds: text {id?,kind:"text",x,y,w,h,text:{content,size,color,bold,align:"left"|"center"|"right",valign:"top"|"middle"|"bottom"}}, rect|ellipse {id?,kind,x,y,w,h,fill}, line {id?,kind:"line",x,y,w,h,color,width}, image {id?,kind:"image",x,y,w,h,source:"media/<file>",fit:"cover"|"contain"}, table {id?,kind:"table",x,y,w,h,rows,columns,cells:[[{content}]],header?,headerFill?,borderColor?,text?:{size,color,bold,align}}, chart {id?,kind:"chart",x,y,w,h,chart:"bar"|"line"|"pie",categories:[<string>],series:[{name,values:[<number>],color,axis?:"primary"|"secondary",as?:"bar"|"line"}],stacked?,showValues?,textColor?} — axis 与 as 用于次坐标轴与组合图;
 - {"op":"update_element","page":<pageId>,"element":<elementId>,"frame":{x?,y?,w?,h?},"text":{...},"fill":..,"color":..,"width":..,"source":"media/<file>","fit":..,"cells":[[{content}]]};
 - {"op":"replace_image","page":<pageId>,"element":<imageOrRectId>,"source":"media/<file>","fit":"cover"|"contain","label":<overlaidTextId>?} — preserve size and position; label must be the adjacent, overlapping text;
@@ -4331,6 +4357,30 @@ Step the presentation back through its edit history. Each edit call is one step 
 Source: [`packages/ppt/tool-ppt/src/index.ts`](../packages/ppt/tool-ppt/src/index.ts)
 
 The PPT preset installs this package's tools only in its Agent scope; other presets do not receive their schemas. The catalog mounts the LLM and attachment services to harvest the schema without executing project operations, model review, rendering, or attachment I/O. At execution time the Host supplies ctx.pptProjects; gallery attachment reads only this session's image IDs through ctx.imageGeneration and copies media without editing a page.
+
+<a id="coding-tool-notes-tabs"></a>
+
+## `coding-tool-notes-tabs`
+
+### `notes_tabs`
+
+Read the current notes page's open file tabs, active file, and verified full paths. Returns unavailable when the page has not published, no window remains, or multiple windows are open. Do not infer a path when unavailable.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "summary": {
+      "type": "string",
+      "description": "Optional short, user-friendly summary of what this call is doing now. Omit when the action is self-explanatory. Do not include secrets, raw JSON, or internal identifiers."
+    }
+  }
+}
+```
+
+Source: [`packages/notes/tool-notes-tabs/src/index.ts`](../packages/notes/tool-notes-tabs/src/index.ts)
+
+The notes preset publishes only relative paths; the Host verifies each regular file under the notes root and returns unavailable when no window is published, the window expires, or multiple windows remain. The local publish route still requires the Host same-origin check and a live notes Agent/session pair.
 
 <a id="coding-schedule"></a>
 

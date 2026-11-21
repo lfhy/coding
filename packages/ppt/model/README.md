@@ -12,7 +12,7 @@ PPT 工程的数据模型与校验：演示文稿（`PptDeck`）、页面（`Ppt
 - **颜色**：一律 `#rrggbb`。页面 `background` 为 `null` 时取主题底色，换主题即可整体换色。
 - **字体**：新建文本与空 `font` 都用 `DEFAULT_FONT_FAMILY`（鸿蒙黑体 `HarmonyOS Sans SC`）；`font: ''` 表示跟随默认，显式族名以元素为准。`fontStack(font)` 给出预览端的 CSS 字体栈：默认字体优先，缺字时回落 `SimHei` / `Heiti SC` / `PingFang SC` / `Microsoft YaHei` 与 `sans-serif`。
 - **元素**：`text`（字号、颜色、加粗、对齐、垂直对齐、字体族）、`rect` / `ellipse`（填充色）、`line`（颜色与线宽）、`image`（工程内 `media/<file>` 与 `cover`／`contain`）、`table`（行 × 列、列宽权重、表头配色与共享排版）、`chart`（柱状/折线/饼，分类 + 系列 + 是否显示数值）。每个元素可选 `animation`（入场动画），数组顺序即绘制顺序。
-- **页面**：名称、底色（`null` 用主题色）与转场（`none` / `fade` / `push`）。
+- **页面**：名称、底色（`null` 用主题色）与转场（`none` / `fade` / `push`）；可选演讲词最多 10,000 字符，保存在工程 JSON，标准 `.pptx` 导出暂不写入备注页。
 - **规模上限**：一页最多 200 个元素，一份文稿最多 200 页，单段文字最多 5000 字符。超限直接拒绝，不静默裁剪。
 - **失败**：`parseDeck`、`parseElement`、`parsePage` 在结构不合法时抛 `PptModelError`，消息指名到字段（例如 `pages[2].elements[0].text.size 必须在 6 到 400 之间`）。
 
@@ -30,7 +30,7 @@ PPT 工程的数据模型与校验：演示文稿（`PptDeck`）、页面（`Ppt
 
 ## 已知限制与暂缓工作
 
-- 不支持图表、SmartArt 与动画：它们无法用当前元素集合表达，导入时会被列为 `dropped`。
+- 从外部 `.pptx` 导入时，复杂图表、SmartArt 与动画无法保留，会列入 `dropped`；工程本身仍支持当前模型声明的图表与元素动画。
 - 图片只按 `media/<file>` 引用，模型里不存字节；读取与嵌入由宿主与导出负责。
-- 主题只有四套内置配色，不支持用户自定义主题文件。
+- 主题只有五套内置配色，不支持用户自定义主题文件。
 - 校验只覆盖结构与数值范围，不做版式层面的检查（文字是否会溢出文本框、元素是否互相遮挡），这类判断留给调用方。

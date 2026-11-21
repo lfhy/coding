@@ -4781,7 +4781,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'PptPage',
-    declaration: 'export interface PptPage {\n    readonly id: string;\n    readonly name: string;\n    readonly background: string | null;\n    readonly transition: SlideTransition;\n    readonly elements: readonly PptElement[];\n}',
+    declaration: 'export interface PptPage {\n    readonly id: string;\n    readonly name: string;\n    readonly background: string | null;\n    readonly transition: SlideTransition;\n    readonly notes?: string;\n    readonly elements: readonly PptElement[];\n}',
   },
   {
     name: 'PptPageEvidenceChunk',

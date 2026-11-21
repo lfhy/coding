@@ -1691,7 +1691,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/ppt/ppt-workbench/src/index.ts:51`](../packages/ppt/ppt-workbench/src/index.ts)
+Source: [`packages/ppt/ppt-workbench/src/index.ts:59`](../packages/ppt/ppt-workbench/src/index.ts)
 
 <a id="coding-progress-reminder"></a>
 
@@ -3256,7 +3256,7 @@ export interface Config {
 export type ToolPresentationMode = 'native' | 'code' | 'both'
 ```
 
-Source: [`packages/core/tools/src/index.ts:657`](../packages/core/tools/src/index.ts)
+Source: [`packages/core/tools/src/index.ts:656`](../packages/core/tools/src/index.ts)
 
 <a id="coding-typert-loader"></a>
 
@@ -3775,6 +3775,7 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 - `coding-tool-context-compact` — requires `tools` · `compaction` ([`packages/compaction/tool-context-compact/src/index.ts`](../packages/compaction/tool-context-compact/src/index.ts))
 - `coding-tool-cordis` — requires `tools` · `systemPrompt` · `dynamicCordisRunner` · `cordisInspect` ([`packages/extensions/tool-cordis/src/index.ts`](../packages/extensions/tool-cordis/src/index.ts))
 - `coding-tool-memory` — requires `tools` · `memory` ([`packages/memory/tool-memory/src/index.ts`](../packages/memory/tool-memory/src/index.ts))
+- `coding-tool-notes-tabs` — requires `tools` · `webServer` · `connection` · `sessions` · `agents` · `fileLibrary` ([`packages/notes/tool-notes-tabs/src/index.ts`](../packages/notes/tool-notes-tabs/src/index.ts))
 - `coding-tool-ppt` — requires `tools` · `llm` · `attachments` ([`packages/ppt/tool-ppt/src/index.ts`](../packages/ppt/tool-ppt/src/index.ts))
 - `coding-tool-status` — requires `tools` ([`packages/session/tool-status/src/index.ts`](../packages/session/tool-status/src/index.ts))
 - `coding-user-questions` ([`packages/interaction/user-questions/src/index.ts`](../packages/interaction/user-questions/src/index.ts))

@@ -18,10 +18,10 @@
     "./package.json": "./package.json"
   },
   "files": [
-    "NOTICE.md",
-    "LICENSE.Codex",
     "lib/index.js",
     "lib/invariant.js",
+    "NOTICE.md",
+    "LICENSE.Codex",
     "lib/types/**/*.d.ts"
   ],
   "license": "MIT",

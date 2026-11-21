@@ -98,7 +98,6 @@ function mount(state: PptPanelState, shown = true, locale: typeof en = en, path?
     reorderElement: vi.fn(async () => {}),
     insertImage: vi.fn(async () => {}),
     checkDeck: vi.fn(async () => {}),
-    preview: vi.fn(async () => {}),
     mediaUrl: vi.fn(() => '/media/example.png'),
     t: (key: keyof typeof en, params?: Record<string, unknown>) =>
       locale[key].replace(/\{(\w+)\}/gu, (match, name: string) => (name in (params ?? {}) ? String(params?.[name]) : match)),
@@ -210,7 +209,6 @@ describe('PPT 工作台面板', () => {
     expect(panel.props.updatePage).toHaveBeenCalledWith({ notes: '这一页先介绍背景。' })
 
     fireEvent.click(screen.getByRole('button', { name: '预览' }))
-    expect(panel.props.preview).not.toHaveBeenCalled()
     expect(screen.queryByRole('complementary', { name: 'PPT 工作台' })).toBeNull()
     expect(screen.getByRole('region', { name: '预览' })).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: '下一页' }))

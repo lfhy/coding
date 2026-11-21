@@ -11512,6 +11512,9 @@ importers:
       coding-tool-memory:
         specifier: workspace:^
         version: link:../../packages/memory/tool-memory
+      coding-tool-notes-tabs:
+        specifier: workspace:^
+        version: link:../../packages/notes/tool-notes-tabs
       coding-tool-ppt:
         specifier: workspace:^
         version: link:../../packages/ppt/tool-ppt
@@ -11578,6 +11581,9 @@ importers:
       coding-workflow-worker-thread:
         specifier: workspace:^
         version: link:../../packages/workflow/workflow-worker-thread
+      coding-workspace:
+        specifier: workspace:^
+        version: link:../../packages/workspace/workspace
 
   vendor/cordis:
     dependencies:

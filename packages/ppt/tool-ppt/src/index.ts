@@ -389,7 +389,7 @@ const OPS_HELP = 'Array of edit operations, applied atomically in order. Each it
   + ' — insert a page; with "template" it comes pre-filled with that layout (bullets ≤ 6);'
   + '\n- {"op":"remove_page","page":<pageId>} — delete a page (never the last one);'
   + '\n- {"op":"move_page","page":<pageId>,"to":<index>} — reorder;'
-  + '\n- {"op":"update_page","page":<pageId>,"name":<string>,"background":"#rrggbb"|null,"transition":"none"|"fade"|"push"};'
+  + '\n- {"op":"update_page","page":<pageId>,"name":<string>,"background":"#rrggbb"|null,"transition":"none"|"fade"|"push","notes":<string>} — an empty notes string clears the saved speaker notes;'
   + '\n- {"op":"add_element","page":<pageId>,"element":{...}} — element kinds:'
   + ' text {id?,kind:"text",x,y,w,h,text:{content,size,color,bold,align:"left"|"center"|"right",valign:"top"|"middle"|"bottom"}},'
   + ' rect|ellipse {id?,kind,x,y,w,h,fill}, line {id?,kind:"line",x,y,w,h,color,width},'

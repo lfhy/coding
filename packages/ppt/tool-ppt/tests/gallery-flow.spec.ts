@@ -129,6 +129,7 @@ describe('图库图片接入演示稿', () => {
     const initial = await host.pptProjects.read(session.id)
     const schema = host.tools.schemas().find(tool => tool.name === 'ppt_edit')
     expect(schema?.parameters.properties).toMatchObject({ ops: { oneOf: [{ type: 'array' }, { type: 'string' }] } })
+    expect(schema?.description).toContain('"notes":<string>')
     const ops = [{ op: 'add_page', title: '新增页面' }]
     const edited = await execute(host, session, 'ppt_edit', { ops: JSON.stringify(ops), base_revision: initial.revision })
     expect(edited.isError, JSON.stringify(edited)).toBe(false)
