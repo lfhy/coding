@@ -10,6 +10,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from 'coding-client-connection'
 import { DEFAULT_FONT_FAMILY, PptModelError } from 'coding-ppt-model'
+import { PPT_IMPORT_MAX_BYTES } from './import.ts'
 import { BUILTIN_TEMPLATE_PREVIEW } from './builtin-templates.ts'
 import { createDefaultDeck } from './default-template.ts'
 import { PptStoreError, type PptSnapshot } from './store.ts'
@@ -93,6 +94,20 @@ async function readJson(req: IncomingMessage): Promise<Record<string, unknown>> 
     throw new PptStoreError('bad-request', '请求体必须是 JSON 对象')
   }
   return value as Record<string, unknown>
+}
+
+/** 读取原始字节请求体；超过上层预算时按无效载荷拒绝，避免把畸形上传读进内存。 */
+async function readBytes(req: IncomingMessage, limit: number): Promise<Uint8Array> {
+  const chunks: Buffer[] = []
+  let size = 0
+  for await (const chunk of req) {
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk))
+    size += buffer.length
+    if (size > limit) throw new PptStoreError('bad-request', 'PPTX 文件超出 Host 可读取的上限')
+    chunks.push(buffer)
+  }
+  if (size === 0) throw new PptStoreError('bad-request', 'PPTX 文件不能为空')
+  return new Uint8Array(Buffer.concat(chunks, size))
 }
 
 function sessionIdOf(source: Record<string, unknown>): string {
@@ -243,21 +258,35 @@ export function installRoutes(ctx: Context, service: PptProjects): void {
     return { ok: true, dir: created.dir }
   })
 
-  route('notes/import', ['POST'], async (body) => {
-    const sessionId = sessionIdOf(body)
-    const name = optionalString(body.name, 'name')
-    const base64 = optionalString(body.base64, 'base64')
-    if (name === undefined || base64 === undefined) {
-      throw new PptStoreError('bad-request', 'name 与 base64 必须提供')
-    }
-    const directory = optionalString(body.directory, 'directory')
-    const imported = await service.importNoteDeck(sessionId, {
-      name,
-      data: new Uint8Array(Buffer.from(base64, 'base64')),
-      ...directory === undefined ? {} : { directory },
-    })
-    return { ok: true, dir: imported.dir }
-  })
+  // 幻灯片导入按原始字节上传：整稿常有几十 MiB，base64 JSON 会放大请求体并撞上 JSON 长度上限。
+  ctx.effect(() => ctx.webServer.register({
+    kind: 'exact',
+    path: `${PREFIX}notes/import`,
+    handler: async (req, res) => {
+      if (!trusted(ctx, req, res)) return
+      if ((req.method ?? 'GET') !== 'POST') {
+        sendJson(res, 405, { ok: false, error: { code: 'method', message: '只接受 POST' } })
+        return
+      }
+      try {
+        const url = new URL(req.url ?? '/', `http://127.0.0.1:${ctx.webServer.port}`)
+        const sessionId = sessionIdOf({ sessionId: url.searchParams.get('sessionId') ?? undefined })
+        const name = optionalString(url.searchParams.get('name') ?? undefined, 'name')
+        if (name === undefined) throw new PptStoreError('bad-request', 'name 必须提供')
+        const directory = optionalString(url.searchParams.get('directory') ?? undefined, 'directory')
+        const data = await readBytes(req, PPT_IMPORT_MAX_BYTES)
+        const imported = await service.importNoteDeck(sessionId, {
+          name,
+          data,
+          ...directory === undefined ? {} : { directory },
+        })
+        sendJson(res, 200, { ok: true, dir: imported.dir })
+      } catch (reason) {
+        const reply = fail(reason)
+        sendJson(res, reply.status, reply.body)
+      }
+    },
+  }), `pptWorkbench: POST ${PREFIX}notes/import`)
 
   route('create', ['POST'], async (body) => {
     const sessionId = sessionIdOf(body)

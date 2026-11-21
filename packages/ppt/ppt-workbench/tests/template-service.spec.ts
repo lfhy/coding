@@ -185,9 +185,6 @@ describe('PPT 模板服务', () => {
       .rejects.toMatchObject({ code: 'forbidden' })
     await expect(projects.importTemplateFromFile(SESSION, 'input.pptm'))
       .rejects.toMatchObject({ code: 'bad-request' })
-    await writeFile(join(root, 'oversized.pptx'), new Uint8Array(8 * 1024 * 1024 + 1))
-    await expect(projects.importTemplateFromFile(SESSION, 'oversized.pptx'))
-      .rejects.toMatchObject({ code: 'bad-request' })
     expect((await projects.listTemplates()).map(template => template.id)).toEqual([imported.id])
 
     await writeFile(join(root, REMOTE_WORKSPACE_MARKER), JSON.stringify({
@@ -208,8 +205,6 @@ describe('PPT 模板服务', () => {
     await expect(projects.importTemplate('macro.pptx', zip([
       { path: 'ppt/vbaProject.bin', data: new Uint8Array() },
     ]))).rejects.toThrow(/宏/u)
-    await expect(projects.importTemplate('huge.pptx', new Uint8Array(8 * 1024 * 1024 + 1)))
-      .rejects.toMatchObject({ code: 'bad-request' })
     const template = await projects.importTemplate('safe.pptx', bytes)
     await expect(projects.createFromTemplate(SESSION, template.id, { dir: '../outside' }))
       .rejects.toMatchObject({ code: 'forbidden' })

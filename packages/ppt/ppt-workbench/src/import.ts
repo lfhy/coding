@@ -64,12 +64,37 @@ export class PptImportError extends PptModelError {
   }
 }
 
-/** 导入文件的压缩体上限；服务层可复用此准入预算。 */
-export const PPT_IMPORT_MAX_BYTES = 8 * 1024 * 1024
-const MAX_UNPACKED = 64 * 1024 * 1024
-const MAX_XML = 4 * 1024 * 1024
-const MAX_MEDIA = 8 * 1024 * 1024
-const MAX_ENTRIES = 1000
+/**
+ * 解包预算：文件读取上限、全部条目解压总量、单个 XML／媒体条目上限与条目数。
+ *
+ * 这里不放按产品设定的「演示文稿大小限制」——常规整稿常有几十 MiB。真正需要守住的是
+ * 压缩炸弹：畸形文件可以在几百字节里声明几十 GiB 的解压量，因此预算按解压后的内容计算，
+ * 并允许嵌入方收紧。`limits` 同时用于测试以小样本验证每个边界。
+ */
+export interface PptImportLimits {
+  /** 压缩体读取上限。 */
+  readonly bytes: number
+  /** 全部条目解压后的总字节。 */
+  readonly unpacked: number
+  /** 单个 XML 或关系文件的解压上限。 */
+  readonly xml: number
+  /** 单个媒体条目的解压上限。 */
+  readonly media: number
+  /** ZIP 中央目录条目数上限。 */
+  readonly entries: number
+}
+
+/** 常规导入预算：512 MiB 压缩体、256 MiB 解压总量，足以容纳带大量配图的整稿。 */
+export const PPT_IMPORT_LIMITS: PptImportLimits = {
+  bytes: 512 * 1024 * 1024,
+  unpacked: 256 * 1024 * 1024,
+  xml: 4 * 1024 * 1024,
+  media: 64 * 1024 * 1024,
+  entries: 4000,
+}
+
+/** 压缩体读取上限；服务层读文件与收上传时复用这一个数值。 */
+export const PPT_IMPORT_MAX_BYTES = PPT_IMPORT_LIMITS.bytes
 const IMAGE_REL = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/image'
 const SLIDE_REL = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide'
 
@@ -86,7 +111,7 @@ function validPath(path: string): boolean {
 interface ZipMember { readonly crc: number; readonly method: number; readonly size: number }
 
 /** 先核对中央目录和本地头，避免流解包器忽略伪造条目或静默接纳坏 ZIP。 */
-function zipDirectory(bytes: Uint8Array): Map<string, ZipMember> {
+function zipDirectory(bytes: Uint8Array, limits: PptImportLimits): Map<string, ZipMember> {
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
   let end = -1
   for (let pos = bytes.length - 22; pos >= Math.max(0, bytes.length - 65557); pos -= 1) {
@@ -98,7 +123,7 @@ function zipDirectory(bytes: Uint8Array): Map<string, ZipMember> {
   if (end < 0 || view.getUint16(end + 4, true) !== 0 || view.getUint16(end + 6, true) !== 0
     || view.getUint16(end + 8, true) !== view.getUint16(end + 10, true)) bad('ZIP 目录损坏或包含多磁盘分卷')
   const count = view.getUint16(end + 10, true)
-  if (count > MAX_ENTRIES) bad(`.pptx 条目不能超过 ${MAX_ENTRIES} 个`)
+  if (count > limits.entries) bad(`.pptx 条目不能超过 ${limits.entries} 个`)
   const size = view.getUint32(end + 12, true)
   let pos = view.getUint32(end + 16, true)
   if (pos + size !== end) bad('ZIP 中央目录损坏')
@@ -135,10 +160,10 @@ function zipDirectory(bytes: Uint8Array): Map<string, ZipMember> {
   return files
 }
 
-function unpack(bytes: Uint8Array): Record<string, Uint8Array> {
-  if (bytes.length > PPT_IMPORT_MAX_BYTES) bad('PPTX 文件不能超过 8 MiB')
+function unpack(bytes: Uint8Array, limits: PptImportLimits): Record<string, Uint8Array> {
+  if (bytes.length > limits.bytes) bad('PPTX 文件超出 Host 可读取的上限')
   if (bytes.length < 22) bad('这个文件不是可读取的 .pptx（ZIP 容器损坏）')
-  const directory = zipDirectory(bytes)
+  const directory = zipDirectory(bytes, limits)
   const files: Record<string, Uint8Array> = Object.create(null) as Record<string, Uint8Array>
   const seen = new Set<string>()
   let total = 0
@@ -148,7 +173,7 @@ function unpack(bytes: Uint8Array): Record<string, Uint8Array> {
     if (member === undefined || seen.has(file.name) || file.compression !== member.method) bad('ZIP 条目与目录不一致')
     seen.add(file.name)
     const isXml = file.name.endsWith('.xml') || file.name.endsWith('.rels')
-    const limit = isXml ? MAX_XML : MAX_MEDIA
+    const limit = isXml ? limits.xml : limits.media
     let length = 0
     const chunks: Uint8Array[] = []
     file.ondata = (error, chunk, final) => {
@@ -156,7 +181,7 @@ function unpack(bytes: Uint8Array): Record<string, Uint8Array> {
       if (error) { failure = new PptImportError('ZIP 条目解压失败'); return }
       length += chunk.length
       total += chunk.length
-      if (length > limit || total > MAX_UNPACKED) {
+      if (length > limit || total > limits.unpacked) {
         failure = new PptImportError('PPTX 解压内容超出安全预算')
         return
       }
@@ -413,7 +438,7 @@ function lineWidth(block: string): number {
   return Math.max(1, px(attr(line, 'w') ?? '12700'))
 }
 
-function readSource(bytes: Uint8Array): {
+function readSource(bytes: Uint8Array, limits: PptImportLimits): {
   files: Record<string, Uint8Array>
   slideBlocks: Map<string, string[]>
   decode: (path: string) => string
@@ -421,7 +446,7 @@ function readSource(bytes: Uint8Array): {
   slidePaths: string[]
   tempPng: boolean
 } {
-  const files = unpack(bytes)
+  const files = unpack(bytes, limits)
   const slideBlocks = new Map<string, string[]>()
   const decode = (path: string): string => {
     const entry = files[path]
@@ -480,8 +505,13 @@ function readSource(bytes: Uint8Array): {
  * @returns 导入结果。
  * @throws PptImportError - 不是合法的 .pptx、或没有任何可解析的幻灯片时。
  */
-export function importPptx(bytes: Uint8Array, options: { title: string; design?: boolean }): PptImportResult {
-  const { files, slideBlocks, decode, presentation, slidePaths, tempPng } = readSource(bytes)
+export function importPptx(bytes: Uint8Array, options: {
+  title: string
+  design?: boolean
+  /** 收紧解包预算；省略时用 {@link PPT_IMPORT_LIMITS}。 */
+  limits?: PptImportLimits
+}): PptImportResult {
+  const { files, slideBlocks, decode, presentation, slidePaths, tempPng } = readSource(bytes, options.limits ?? PPT_IMPORT_LIMITS)
 
   const dropped = new Set<string>()
   dropped.add('复杂母版与版式')
@@ -577,7 +607,7 @@ export function importPptx(bytes: Uint8Array, options: { title: string; design?:
 
 /** 原件回写不能默默丢掉模型无法表达的对象；普通导入仍可报告损失并另存副本。 */
 export function assertSourceEditable(bytes: Uint8Array, imported: PptImportResult): void {
-  const { files, slidePaths, decode } = readSource(bytes)
+  const { files, slidePaths, decode } = readSource(bytes, PPT_IMPORT_LIMITS)
   if (imported.report.pages.some(page => page.losses.length > 0)
     || imported.dropped.some(item => item !== '复杂母版与版式' && item !== '动画与高级转场')) {
     throw new PptImportError('原稿包含无法保留的内容，不能原位编辑；请先保存副本')
@@ -671,7 +701,7 @@ function designEvidence(
  */
 export function extractPptxPageEvidence(bytes: Uint8Array, sourceIndex: number): string {
   if (!Number.isSafeInteger(sourceIndex) || sourceIndex < 1) bad('PPTX 证据页码不合法')
-  const { files, decode, slidePaths } = readSource(bytes)
+  const { files, decode, slidePaths } = readSource(bytes, PPT_IMPORT_LIMITS)
   const path = slidePaths[sourceIndex - 1]
   if (path === undefined) bad('PPTX 证据页码超出源文件范围')
   const relations = relationships(decode(path.replace('slides/', 'slides/_rels/') + '.rels'), path)

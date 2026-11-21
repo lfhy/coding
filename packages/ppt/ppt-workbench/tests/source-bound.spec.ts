@@ -121,16 +121,15 @@ describe('源 PPTX 原位编辑', () => {
     expect((await readdir(opened.dir)).some(file => file.startsWith('.source-transaction'))).toBe(false)
   })
 
-  it('拒绝目录外、绝对路径、符号链接、超限文件与远程工作区，失败不换焦点', async () => {
+  it('拒绝目录外、绝对路径、符号链接与远程工作区，失败不换焦点', async () => {
     const source = join(root, 'talk.pptx')
     await writeFile(source, buildPptx(deck))
     await symlink(source, join(root, 'link.pptx'))
     await mkdir(join(root, 'nested'))
     await symlink(root, join(root, 'nested', 'linked'))
-    await writeFile(join(root, 'large.pptx'), new Uint8Array(8 * 1024 * 1024 + 1))
     for (const [path, code] of ([
       ['../escape.pptx', 'bad-request'], [source, 'bad-request'], ['link.pptx', 'forbidden'],
-      ['nested/linked/talk.pptx', 'forbidden'], ['large.pptx', 'bad-request'],
+      ['nested/linked/talk.pptx', 'forbidden'],
     ] as const)) await expect(service.openSource(SESSION, path)).rejects.toMatchObject({ code })
     expect(service.activeDir(SESSION)).toBeUndefined()
     await writeFile(join(root, REMOTE_WORKSPACE_MARKER), JSON.stringify({

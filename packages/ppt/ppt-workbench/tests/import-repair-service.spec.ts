@@ -81,8 +81,6 @@ describe('PPT 导入修复的宿主服务', () => {
     }
     await expect(projects.import(SESSION, `${libraryRoot}/uploads/../uploads/${uploadId}-brand.pptx`, {}))
       .rejects.toMatchObject({ code: 'forbidden' })
-    await writeFile(source, new Uint8Array(8 * 1024 * 1024 + 1))
-    await expect(projects.importTemplateFromFile(SESSION, source)).rejects.toMatchObject({ code: 'bad-request' })
     await rm(source)
     await symlink(unregistered, source)
     await expect(projects.import(SESSION, source, {})).rejects.toMatchObject({ code: 'forbidden' })
@@ -200,9 +198,6 @@ describe('PPT 导入修复的宿主服务', () => {
       await expect(projects.importEvidence(SESSION, source, { sourceIndex: 1, sourceSha256 }))
         .rejects.toMatchObject({ code: 'bad-request' })
     }
-    await writeFile(join(root, 'large.pptx'), new Uint8Array(8 * 1024 * 1024 + 1))
-    await expect(projects.importEvidence(SESSION, 'large.pptx', { sourceIndex: 1, sourceSha256 }))
-      .rejects.toMatchObject({ code: 'bad-request' })
     await mkdir(join(root, 'nested'))
     await symlink(join(root, 'source.pptx'), join(root, 'nested', 'source.pptx'))
     await expect(projects.importEvidence(SESSION, 'nested/source.pptx', { sourceIndex: 1, sourceSha256 }))

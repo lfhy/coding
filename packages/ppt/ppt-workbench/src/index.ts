@@ -353,7 +353,7 @@ export default class PptProjects extends Service {
    * 导入只保留模型能表达的页面结构；复杂图表、SmartArt 与动画随报告丢弃，
    * 不做原位写回绑定，因此源文件可以在导入后删除。
    * @param sessionId - 会话身份。
-   * @param options - 幻灯片名称、父目录与不超过 8 MiB 的原始字节。
+   * @param options - 幻灯片名称、父目录与不超过 Host 读取上限的原始字节。
    * @returns 笔记根目录相对的工程目录。
    * @throws PptStoreError 不是笔记会话、字节超出上限或 PPTX 不可解析时。
    */
@@ -367,7 +367,7 @@ export default class PptProjects extends Service {
       throw new PptStoreError('bad-request', 'PPTX 文件不能为空')
     }
     if (data.byteLength > PPT_IMPORT_MAX_BYTES) {
-      throw new PptStoreError('bad-request', 'PPTX 文件不能超过 8 MiB')
+      throw new PptStoreError('bad-request', 'PPTX 文件超出 Host 可读取的上限')
     }
     return this.writeNoteDeck(sessionId, options, (title) => {
       const imported = importPptx(data, { title })
@@ -684,7 +684,7 @@ export default class PptProjects extends Service {
 
   /** 将无宏 PPTX 的可编辑几何和设计提取为无源正文的用户模板；丢失的复杂结构在返回值中列出。
    * @param fileName - 安全的单层 .pptx 文件名。
-   * @param bytes - 压缩源文件字节，上限 8 MiB；不会保存源文件本身。
+   * @param bytes - 压缩源文件字节，上限按解包预算计算；不会保存源文件本身。
    * @param options - 模板名称；缺省取去掉扩展名的文件名。
    * @returns 持久化的模板详情。
    * @throws PptStoreError 文件名、大小、内容或仓库不合法时。
@@ -696,7 +696,7 @@ export default class PptProjects extends Service {
       throw new PptStoreError('bad-request', '模板来源必须是安全的 .pptx 文件名')
     }
     if (!(bytes instanceof Uint8Array) || bytes.byteLength === 0 || bytes.byteLength > PPT_IMPORT_MAX_BYTES) {
-      throw new PptStoreError('bad-request', 'PPTX 文件大小必须在 1 字节到 8 MiB 之间')
+      throw new PptStoreError('bad-request', 'PPTX 文件不能为空，且不得超过 Host 读取上限')
     }
     const title = basename(fileName).replace(/\.pptx$/iu, '').slice(0, 160)
     if (title.trim() === '') throw new PptStoreError('bad-request', '模板来源文件名不能只包含扩展名')

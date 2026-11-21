@@ -139,25 +139,11 @@ export async function notesCreate(name: string, directory = '', content?: string
   return { path: body.path }
 }
 
-/** 幻灯片导入的原始字节上限；与 PPT 宿主的导入预算一致。 */
-const MAX_SLIDE_BYTES = 8 * 1024 * 1024
-
 /** 幻灯片工程目录名的大小写后缀；与文件库的 `NOTE_DECK_SUFFIX` 一致。 */
 const NOTE_DECK_SUFFIX = '.codingppt'
 
-/** 把字节编码成 base64；分块拼接，避免大文件一次展开超过调用栈。 */
-function toBase64(bytes: Uint8Array): string {
-  let binary = ''
-  const chunk = 0x8000
-  for (let offset = 0; offset < bytes.length; offset += chunk) {
-    binary += String.fromCharCode(...bytes.subarray(offset, offset + chunk))
-  }
-  return btoa(binary)
-}
-
-/** 幻灯片新建与导入共用的请求与响应校验；响应必须是笔记根目录内的 `.codingppt` 路径。 */
-async function slideRequest(endpoint: string, sessionId: string, name: string, directory: string,
-  label: string, extra: Record<string, string>): Promise<{ path: string }> {
+/** 幻灯片请求共用的会话、名称与目标目录校验。 */
+function assertSlideRequest(sessionId: string, name: string, directory: string): void {
   if (typeof sessionId !== 'string' || sessionId.length === 0 || sessionId.length > 128
     || /[\u0000-\u001f\u007f]/u.test(sessionId)) {
     throw new Error('Invalid notes session')
@@ -166,13 +152,10 @@ async function slideRequest(endpoint: string, sessionId: string, name: string, d
     throw new Error('Invalid note name')
   }
   if (directory !== '') assertNotePath(directory)
-  const response = await fetch(endpoint, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ sessionId, name, ...(directory === '' ? {} : { directory }), ...extra }),
-  })
-  if (!response.ok) throw new Error(`${label} HTTP ${response.status}`)
-  const body = (await response.json()) as unknown
+}
+
+/** 校验幻灯片响应：必须是笔记根目录内的 `.codingppt` 路径。 */
+function parseSlideDir(body: unknown): { path: string } {
   if (!isObject(body) || body.ok !== true || !nonemptyString(body.dir)) throw new Error('Invalid note slide payload')
   assertNotePath(body.dir)
   if (!body.dir.toLowerCase().endsWith(NOTE_DECK_SUFFIX)) throw new Error('Invalid note slide payload')
@@ -191,14 +174,21 @@ async function slideRequest(endpoint: string, sessionId: string, name: string, d
  * @returns 新建幻灯片工程目录的相对路径。
  */
 export async function notesCreateSlide(sessionId: string, name: string, directory = ''): Promise<{ path: string }> {
-  return await slideRequest('/api/ppt/notes/create', sessionId, name, directory, 'notes slide create', {})
+  assertSlideRequest(sessionId, name, directory)
+  const response = await fetch('/api/ppt/notes/create', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ sessionId, name, ...(directory === '' ? {} : { directory }) }),
+  })
+  if (!response.ok) throw new Error(`notes slide create HTTP ${response.status}`)
+  return parseSlideDir(await response.json())
 }
 
 /**
  * 把本机 `.pptx` 导入成笔记目录里的幻灯片工程目录。
  *
- * 文件字节随请求提交，最多 8 MiB；Host 只保留模型能表达的页面结构，
- * 导入完成后源文件与本笔记无关，不需要留在笔记目录里。
+ * 文件按原始字节上传，不经过 base64 或 JSON：整稿常有几十 MiB，编码会放大请求体并撞上
+ * JSON 长度上限。Host 只保留模型能表达的页面结构，导入完成后源文件与本笔记无关。
  *
  * @param sessionId - 当前笔记会话；其工作目录必须已指向笔记根目录。
  * @param name - 新建幻灯片的名称；调用方通常取所选文件名。
@@ -207,10 +197,17 @@ export async function notesCreateSlide(sessionId: string, name: string, director
  * @returns 新建幻灯片工程目录的相对路径。
  */
 export async function notesImportSlide(sessionId: string, name: string, directory: string, file: File): Promise<{ path: string }> {
+  assertSlideRequest(sessionId, name, directory)
   if (file.size === 0) throw new Error('Empty slide file')
-  if (file.size > MAX_SLIDE_BYTES) throw new Error('Slides too large')
-  const base64 = toBase64(new Uint8Array(await file.arrayBuffer()))
-  return await slideRequest('/api/ppt/notes/import', sessionId, name, directory, 'notes slide import', { base64 })
+  const query = new URLSearchParams({ sessionId, name })
+  if (directory !== '') query.set('directory', directory)
+  const response = await fetch(`/api/ppt/notes/import?${query.toString()}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/octet-stream' },
+    body: file,
+  })
+  if (!response.ok) throw new Error(`notes slide import HTTP ${response.status}`)
+  return parseSlideDir(await response.json())
 }
 
 /** 在笔记目录下新建子目录，返回相对笔记根目录的路径。 */

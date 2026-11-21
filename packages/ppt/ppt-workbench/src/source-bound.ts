@@ -285,7 +285,7 @@ export async function assertSourceVersion(root: string, binding: PptSourceBindin
 /** 在真实源文件旁独占创建临时原件，失败时不更改工程或原件。 */
 async function replaceSource(root: string, binding: PptSourceBinding, bytes: Uint8Array): Promise<PptSourceBinding> {
   if (bytes.byteLength === 0 || bytes.byteLength > PPT_IMPORT_MAX_BYTES) {
-    throw new PptStoreError('bad-request', '编辑后的 PPTX 超过 8 MiB，未保存到原文件')
+    throw new PptStoreError('bad-request', '编辑后的 PPTX 超过可写入上限，未保存到原文件')
   }
   const path = binding.path
   const temp = join(dirname(path), `.${basename(path)}.${randomBytes(8).toString('hex')}.tmp`)
@@ -334,7 +334,7 @@ export function linkedCommit(root: string, dir: string): PptCommit {
       const media = new Map(images.map(image => [image.part, image.bytes]))
       const bytes = buildPptx(next.deck, { media: source => media.get(source) })
       if (bytes.byteLength > PPT_IMPORT_MAX_BYTES) {
-        throw new PptStoreError('bad-request', '编辑后的 PPTX 超过 8 MiB，未保存到原文件')
+        throw new PptStoreError('bad-request', '编辑后的 PPTX 超过可写入上限，未保存到原文件')
       }
       const txn: SourceTransaction = {
         version: 1, before: binding, baseRevision: current.revision,

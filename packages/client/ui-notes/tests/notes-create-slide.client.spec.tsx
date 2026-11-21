@@ -66,14 +66,14 @@ describe('NotesPage 新建幻灯片', () => {
     vi.useFakeTimers()
     const store = createNotesUiStore().create('s-notes')
     let tree: { name: string; kind: 'deck'; path: string; mtimeMs: number }[] = []
-    const bodies: unknown[] = []
+    const uploads: unknown[] = []
     const fetchMock = vi.fn(async (input: string | URL, init?: RequestInit) => {
       const url = new URL(String(input), 'http://localhost')
       if (url.pathname === '/api/notes/tree') return Response.json({ children: tree })
       if (url.pathname === '/api/notes/tabs') return Response.json({ ok: true })
       if (url.pathname === '/api/ppt/notes/import') {
-        if (typeof init?.body !== 'string') throw new Error('预期导入请求包含 JSON 正文')
-        bodies.push(JSON.parse(init.body))
+        // 幻灯片按原始字节上传；名称走 query，不经过 JSON 或 base64。
+        uploads.push({ query: url.search, body: init?.body })
         tree = [{ name: '外部稿.codingppt', kind: 'deck', path: '外部稿.codingppt', mtimeMs: 2_000 }]
         return Response.json({ ok: true, dir: '外部稿.codingppt' })
       }
@@ -105,7 +105,7 @@ describe('NotesPage 新建幻灯片', () => {
     const file = new File([new Uint8Array([0x50, 0x4b])], '外部稿.pptx')
     await act(async () => { fireEvent.change(input, { target: { files: [file] } }) })
 
-    expect(bodies).toEqual([{ sessionId: 's-notes', name: '外部稿', base64: 'UEs=' }])
+    expect(uploads).toEqual([{ query: '?sessionId=s-notes&name=%E5%A4%96%E9%83%A8%E7%A8%BF', body: file }])
     expect(store.getSnapshot().activePath).toBe('外部稿.codingppt')
     expect(screen.getByText('演示文稿 外部稿.codingppt')).toBeTruthy()
     expect(screen.getByRole('alert').textContent).toBe('幻灯片已导入')
@@ -144,7 +144,7 @@ describe('NotesPage 新建幻灯片', () => {
       fireEvent.change(input, { target: { files: [new File([new Uint8Array([1])], '坏稿.pptx')] } })
     })
     expect(store.getSnapshot().activePath ?? null).toBeNull()
-    expect(screen.getByRole('alert').textContent).toBe('无法导入该文件。请确认是 Markdown（不超过 1 MiB）或 .pptx（不超过 8 MiB）。')
+    expect(screen.getByRole('alert').textContent).toBe('无法导入该文件。请确认是有效的 Markdown（不超过 1 MiB）或 .pptx。')
   })
 
   it('导入 Markdown 时把原文一起写入笔记目录并打开新笔记', async () => {
@@ -231,7 +231,7 @@ describe('NotesPage 新建幻灯片', () => {
     await act(async () => {
       fireEvent.change(input, { target: { files: [new File(['data'], '表格.csv')] } })
     })
-    expect(screen.getByRole('alert').textContent).toBe('无法导入该文件。请确认是 Markdown（不超过 1 MiB）或 .pptx（不超过 8 MiB）。')
+    expect(screen.getByRole('alert').textContent).toBe('无法导入该文件。请确认是有效的 Markdown（不超过 1 MiB）或 .pptx。')
     await act(async () => {
       fireEvent.change(input, { target: { files: [new File([new Uint8Array(1024 * 1024 + 1)], '大稿.md')] } })
     })

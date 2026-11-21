@@ -101,24 +101,33 @@ describe('notes wire', () => {
     await expect(notesCreateSlide('s-notes', '演示', '../项目')).rejects.toThrow('Invalid note path')
   })
 
-  it('导入幻灯片提交 pptx 字节并校验返回的工程目录', async () => {
+  it('导入幻灯片按原始字节上传，不放大成 JSON', async () => {
     const bytes = new Uint8Array([0x50, 0x4b, 0x03, 0x04])
     const file = new File([bytes], '外部稿.pptx', { type: 'application/vnd.openxmlformats-officedocument.presentationml.presentation' })
     stubFetch((url, init) => {
-      expect(url).toBe('/api/ppt/notes/import')
+      expect(url).toBe('/api/ppt/notes/import?sessionId=s-notes&name=%E5%A4%96%E9%83%A8%E7%A8%BF')
       expect(init?.method).toBe('POST')
-      expect(requestJson(init)).toEqual({ sessionId: 's-notes', name: '外部稿', base64: 'UEsDBA==' })
+      expect(init?.headers).toMatchObject({ 'content-type': 'application/octet-stream' })
+      expect(init?.body).toBe(file)
       return Response.json({ ok: true, dir: '外部稿.codingppt' })
     })
     await expect(notesImportSlide('s-notes', '外部稿', '', file)).resolves.toEqual({ path: '外部稿.codingppt' })
 
+    stubFetch((url) => {
+      expect(url).toBe('/api/ppt/notes/import?sessionId=s-notes&name=%E9%A1%B9%E7%9B%AE%2F%E6%BC%94%E7%A4%BA&directory=%E9%A1%B9%E7%9B%AE')
+      return Response.json({ ok: true, dir: '项目/演示.codingppt' })
+    })
+    await expect(notesImportSlide('s-notes', '项目/演示', '项目', file)).resolves.toEqual({ path: '项目/演示.codingppt' })
+
     await expect(notesImportSlide('s-notes', '空稿', '', new File([], '空稿.pptx')))
       .rejects.toThrow('Empty slide file')
     stubFetch(() => new Response('too large', { status: 400 }))
-    const large = new File([new Uint8Array(8 * 1024 * 1024 + 1)], '大稿.pptx')
-    await expect(notesImportSlide('s-notes', '大稿', '', large)).rejects.toThrow('Slides too large')
-    stubFetch(() => Response.json({ ok: true, dir: '大稿.pptx' }))
+    const large = new File([new Uint8Array(1024 * 1024)], '大稿.pptx')
+    await expect(notesImportSlide('s-notes', '大稿', '', large)).rejects.toThrow('notes slide import HTTP 400')
+    stubFetch(() => Response.json({ ok: true, dir: '大稿.pptx' }, { status: 200 }))
     await expect(notesImportSlide('s-notes', '大稿', '', file)).rejects.toThrow('Invalid note slide payload')
+    await expect(notesImportSlide('', '大稿', '', file)).rejects.toThrow('Invalid notes session')
+    await expect(notesImportSlide('s-notes', '大稿', '../越界', file)).rejects.toThrow('Invalid note path')
   })
 
   it('创建目录并校验返回路径', async () => {

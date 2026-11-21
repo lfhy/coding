@@ -107,15 +107,22 @@ describe('PPT 状态路由的真实 HTTP 组合', () => {
       format: 1, title: '外部稿', size: '16:9', theme: 'ink',
       pages: [{ id: 'slide', name: '标题页', background: null, transition: 'none', elements: [] }],
     })
-    const post = (body: Record<string, unknown>) => fetch(`${base}/api/ppt/notes/import`, {
-      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
-    })
-    const imported = await post({ sessionId: SESSION, name: '外部稿', base64: Buffer.from(bytes).toString('base64') })
+    // 原始字节上传：名称与目标目录在 query，正文就是 .pptx 本身。
+    const upload = (query: Record<string, string>, body: Uint8Array, init?: RequestInit) =>
+      fetch(`${base}/api/ppt/notes/import?${new URLSearchParams(query).toString()}`, {
+        method: 'POST', headers: { 'content-type': 'application/octet-stream', origin: base }, body: new Uint8Array(body), ...init,
+      })
+    const imported = await upload({ sessionId: SESSION, name: '外部稿' }, bytes)
     expect(imported.status).toBe(200)
     expect(await imported.json()).toEqual({ ok: true, dir: '外部稿.codingppt' })
     expect(await readdir(join(root!, '外部稿.codingppt'))).toContain('deck.json')
-    const missing = await post({ sessionId: SESSION, name: '缺字节' })
-    expect(missing.status).toBe(400)
+    const empty = await upload({ sessionId: SESSION, name: '缺字节' }, new Uint8Array())
+    expect(empty.status).toBe(400)
+    const missingName = await upload({ sessionId: SESSION }, bytes)
+    expect(missingName.status).toBe(400)
+    const crossOrigin = await upload({ sessionId: SESSION, name: '跨源' }, bytes,
+      { headers: { 'content-type': 'application/octet-stream', origin: 'https://example.com' } })
+    expect(crossOrigin.status).toBe(403)
   })
 
   it('来源打开路由复用面板编辑，并在源文件外部变化时轮询返回冲突', async () => {

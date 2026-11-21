@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { PptModelError, type PptDeck } from 'coding-ppt-model'
-import { importPptx, PptImportError, PPT_IMPORT_MAX_BYTES } from '../src/import.ts'
+import { importPptx, PptImportError, PPT_IMPORT_LIMITS, type PptImportLimits } from '../src/import.ts'
 import { buildPptx } from '../src/export/pptx.ts'
 import { zip, type ZipEntry } from '../src/export/zip.ts'
 
@@ -19,7 +19,10 @@ const base = (): ZipEntry[] => [
   entry('ppt/slides/slide1.xml', slide()),
   entry('ppt/slides/slide2.xml', slide()),
 ]
-const read = (entries: readonly ZipEntry[]) => importPptx(zip(entries), { title: '导入' })
+const read = (entries: readonly ZipEntry[], limits?: PptImportLimits) =>
+  importPptx(zip(entries), { title: '导入', ...limits === undefined ? {} : { limits } })
+/** 收紧后的预算：用几十字节的样本就能覆盖每个边界，不必构造巨型压缩包。 */
+const tightLimits: PptImportLimits = { bytes: 64 * 1024, unpacked: 64 * 1024, xml: 8 * 1024, media: 8 * 1024, entries: 30 }
 const flagsOnFirstMember = (bytes: Uint8Array, flags: number, method = 8): Uint8Array => {
   const result = bytes.slice()
   const view = new DataView(result.buffer)
@@ -96,14 +99,22 @@ describe('PPTX 导入准入', () => {
     expect(multiResult.dropped).toContain('自定义路径')
   })
 
-  it('限制输入、实际 XML 解压量、总解压量和条目数', () => {
-    expect(() => importPptx(new Uint8Array(PPT_IMPORT_MAX_BYTES + 1), { title: 'x' })).toThrow('8 MiB')
-    expect(() => read([...base(), entry('ppt/theme/huge.xml', ' '.repeat(4 * 1024 * 1024 + 1))])).toThrow('安全预算')
-    const chunks = Array.from({ length: 17 }, (_, i) => entry(`ppt/extra${i}.xml`, ' '.repeat(4 * 1024 * 1024)))
-    expect(() => read([...base(), ...chunks])).toThrow('安全预算')
-    expect(() => read([...base(), { path: 'ppt/media/huge.png', data: new Uint8Array(8 * 1024 * 1024 + 1) }])).toThrow('安全预算')
-    const many = Array.from({ length: 1001 }, (_, i) => entry(`ppt/other/${i}.bin`, ''))
-    expect(() => read(many)).toThrow('1000')
+  it('默认预算按解压内容算，不按演示文稿大小设产品限制', () => {
+    expect(PPT_IMPORT_LIMITS.bytes).toBe(512 * 1024 * 1024)
+    expect(PPT_IMPORT_LIMITS.unpacked).toBe(256 * 1024 * 1024)
+    expect(() => importPptx(new Uint8Array(tightLimits.bytes + 1), { title: 'x', limits: tightLimits }))
+      .toThrow('可读取的上限')
+  })
+
+  it('按 XML、媒体、解压总量与条目数四个预算分别拦截', () => {
+    expect(() => read([...base(), entry('ppt/theme/huge.xml', ' '.repeat(tightLimits.xml + 1))], tightLimits))
+      .toThrow('安全预算')
+    expect(() => read([...base(), { path: 'ppt/media/huge.png', data: new Uint8Array(tightLimits.media + 1) }], tightLimits))
+      .toThrow('安全预算')
+    const chunks = Array.from({ length: 10 }, (_, i) => entry(`ppt/extra${i}.xml`, ' '.repeat(7 * 1024)))
+    expect(() => read([...base(), ...chunks], tightLimits)).toThrow('安全预算')
+    const many = Array.from({ length: tightLimits.entries + 1 }, (_, i) => entry(`ppt/other/${i}.bin`, ''))
+    expect(() => read(many, tightLimits)).toThrow(`${tightLimits.entries}`)
   })
 
   it('拒绝非法路径、重复文件、非标准压缩和破损内容', () => {
