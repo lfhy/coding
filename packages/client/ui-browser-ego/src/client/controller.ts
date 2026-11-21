@@ -75,7 +75,9 @@ export class BrowserEgoController {
   constructor(private readonly sessionId: string,
     private readonly fetcher: Fetcher = (input, init) => fetch(input, init),
     private readonly connect: StreamFactory = url => new EventSource(url),
-    private readonly connectActivity: StreamFactory = url => new EventSource(url)) {
+    private readonly connectActivity: StreamFactory = url => new EventSource(url),
+    /** 桌面壳直接显示页面时为 true：不再订阅帧流，也不打取帧请求。 */
+    private readonly native = false) {
     if (!validId(sessionId)) throw new Error('invalid session id')
   }
 
@@ -289,6 +291,7 @@ export class BrowserEgoController {
 
   /** 刷新被选页面的一帧；相同目标只保留一条请求，避免目录刷新饿死慢取帧。 */
   private refreshSelectedFrame(): void {
+    if (this.native) return
     const view = this.view.getSnapshot()
     if (!this.shown || view.relayOff || view.selectedId === null || this.frameRequest !== null) return
     if (this.frameTimer !== null) clearTimeout(this.frameTimer)
@@ -321,6 +324,7 @@ export class BrowserEgoController {
 
   /** 活动页无有效帧时重试；后台可见页不在实时流中，按秒取帧，隐藏和切页立即取消。 */
   private scheduleFrameRefresh(): void {
+    if (this.native) return
     const view = this.view.getSnapshot()
     const page = view.pages.find(item => item.targetId === view.selectedId)
     if (!this.shown || view.relayOff || !page || page.active && view.frame !== null
@@ -381,6 +385,8 @@ export class BrowserEgoController {
    * @returns Host 是否接受并完成了这次视口调整。
    */
   async resize(targetId: string, width: number, height: number): Promise<boolean> {
+    // 原生呈现下页面视口就是视图尺寸，不需要再要求 Host 调整采集视口。
+    if (this.native) return false
     if (!this.shown || !validId(targetId) || !Number.isSafeInteger(width) || !Number.isSafeInteger(height)
       || width < 320 || width > 3840 || height < 200 || height > 2160) return false
     const view = this.view.getSnapshot()
@@ -501,7 +507,10 @@ export class BrowserEgoController {
     }
     if (selectedId !== previous.selectedId || relayOff || changed) this.cancelFrameRefresh()
     this.view.set({ ...previous, phase: 'ready', pages, selectedId,
-      frame: !relayOff && !changed && previous.frame?.targetId === selectedId ? previous.frame : null, relayOff })
+      frame: !this.native && !relayOff && !changed && previous.frame?.targetId === selectedId
+        ? previous.frame : null,
+      relayOff })
+    if (this.native) return
     if (selectedId !== null && !relayOff && (changed || selectedId !== previous.selectedId
       || this.view.getSnapshot().frame === null)) this.refreshSelectedFrame()
     else this.scheduleFrameRefresh()
@@ -519,6 +528,8 @@ export class BrowserEgoController {
     })
     stream.addEventListener('frame', (event: MessageEvent) => {
       if (!this.shown || epoch !== this.epoch || typeof event.data !== 'string') return
+      // 桌面壳直接显示页面时帧事件没有意义，也不该覆盖页面目录。
+      if (this.native) return
       let frame: EgoFrame | null
       try { frame = parseFrame(JSON.parse(event.data) as unknown) }
       catch { return }

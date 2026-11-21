@@ -11,6 +11,9 @@ import { fileURLToPath } from 'node:url'
 import { app, BrowserWindow, dialog } from 'electron'
 import { defaultCodingHome } from 'coding-home-paths'
 import { prepareDevelopmentDirectories } from './directories.ts'
+import { createEgoCdpBroker, type EgoCdpBroker } from './ego-cdp-broker.ts'
+import { createEgoPageHost, type EgoPageHostHandle } from './ego-page-host.ts'
+import { installEgoPresentationIpc } from './ego-presentation-ipc.ts'
 import { launchHelper, type HelperClient } from './helper-client.ts'
 import { createNativeChrome, type NativeChrome } from './native-chrome.ts'
 import { installRemoteIpc } from './remote-ipc.ts'
@@ -27,6 +30,10 @@ let helper: HelperClient | undefined
 let helperClosing: Promise<void> | undefined
 let disposeRemoteIpc: (() => void) | undefined
 let disposeActivation: (() => void) | undefined
+/** 桌面 Agent 页面、虚拟 CDP 端点与它们在当前窗口里的呈现授权。 */
+let egoPages: EgoPageHostHandle | undefined
+let egoBroker: EgoCdpBroker | undefined
+let disposeEgoPresentation: (() => void) | undefined
 let disposeHelperClosed: (() => void) | undefined
 let launching: Promise<void> | undefined
 let startupAbort: AbortController | undefined
@@ -60,6 +67,42 @@ async function stopHelper(): Promise<void> {
   }
 }
 
+/**
+ * 让 Agent 浏览器改用 Electron 承载的页面。
+ *
+ * ego 运行时见到 `EGO_LINUX_CDP_URL` 就不再启动本机浏览器，而是把全部命令发到
+ * 这个端点，因此页面是应用窗口里的真实网页，工作台不必再看帧流。端点必须在
+ * Host 启动前就位；页面宿主按需读取窗口，窗口等 Host 就绪后才建立。
+ * 端点在启动时建立失败则不设置变量，Host 退回自带浏览器。
+ */
+async function ensureEgoPages(): Promise<void> {
+  if (egoBroker !== undefined) return
+  const pages = createEgoPageHost({
+    window: () => (mainWindow !== undefined && !mainWindow.isDestroyed() ? mainWindow : undefined),
+  })
+  try {
+    const broker = await createEgoCdpBroker(pages)
+    egoPages = pages
+    egoBroker = broker
+    process.env.EGO_LINUX_CDP_URL = broker.url
+  } catch (error) {
+    pages.dispose()
+    throw error
+  }
+}
+
+/** 关闭端点并撤下环境变量，后续 Host 启动会退回自带浏览器。 */
+async function stopEgoPages(): Promise<void> {
+  const broker = egoBroker
+  egoBroker = undefined
+  delete process.env.EGO_LINUX_CDP_URL
+  disposeEgoPresentation?.()
+  disposeEgoPresentation = undefined
+  egoPages?.dispose()
+  egoPages = undefined
+  await broker?.close()
+}
+
 function scheduleHelperStop(): void {
   if (helperClosing !== undefined) return
   helperClosing = stopHelper().catch(() => undefined).finally(() => { helperClosing = undefined })
@@ -88,6 +131,8 @@ function openWindow(): Promise<void> {
         workspace: runtimeConfig.cwd,
       })
     }
+    // Host 必须带着端点地址启动；端点建立失败时不设置变量，Host 退回自带浏览器。
+    await ensureEgoPages().catch(() => undefined)
     const next = await launchHelper({ ...runtimeConfig.helper, signal: controller.signal })
     helper = next
     if (controller.signal.aborted) {
@@ -100,6 +145,10 @@ function openWindow(): Promise<void> {
       iconPath: runtimeConfig.iconPath,
     })
     mainWindow = window
+    const pages = egoPages
+    if (pages !== undefined) {
+      disposeEgoPresentation = installEgoPresentationIpc({ window, origin: next.origin, pages })
+    }
     disposeRemoteIpc = installRemoteIpc({ window, origin: next.origin, helper: next })
     nativeChrome = createNativeChrome({ window, origin: next.origin, iconPath: runtimeConfig.iconPath })
     disposeActivation = next.onActivate(() => { nativeChrome?.showWindow() })
@@ -123,6 +172,10 @@ function openWindow(): Promise<void> {
       nativeChrome?.dispose()
       nativeChrome = undefined
       mainWindow = undefined
+      // 原生视图随窗口销毁；页面本身仍由页面宿主持有，重新开窗再呈现。
+      disposeEgoPresentation?.()
+      disposeEgoPresentation = undefined
+      egoPages?.conceal()
       if (!quitting) scheduleHelperStop()
     })
   })().finally(() => {
@@ -174,6 +227,7 @@ async function start(): Promise<void> {
       await launching?.catch(() => undefined)
       await helperClosing?.catch(() => undefined)
       await stopHelper()
+      await stopEgoPages()
       quitCompleted = true
       app.quit()
     })().catch(() => {

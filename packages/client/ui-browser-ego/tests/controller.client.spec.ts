@@ -639,3 +639,30 @@ describe('会话画面与人工输入', () => {
     expect(controller.view.getSnapshot().actions).toEqual([])
   })
 })
+
+describe('桌面端直接显示页面', () => {
+  it('不请求帧、不订阅画面事件，也不调整采集视口', async () => {
+    const fetcher = vi.fn(async (url: string) => overview(url)
+      ?? Response.json({ ok: true, spaces: [first, second] }))
+    const streams: FakeStream[] = []
+    const controller = new BrowserEgoController('session-one', fetcher,
+      (url) => { const stream = new FakeStream(url); streams.push(stream); return stream as unknown as EventSource },
+      url => new FakeStream(url) as unknown as EventSource, true)
+    controller.show(true)
+    await vi.waitFor(() => { expect(controller.view.getSnapshot().phase).toBe('ready') })
+    // 目录与活动仍来自同源 HTTP/SSE，但没有取帧与视口上报。
+    expect(fetcher.mock.calls.map(call => call[0])).toEqual([
+      '/api/ego/spaces?sessionId=session-one', '/api/ego/status?sessionId=session-one',
+      '/api/ego/history?sessionId=session-one', '/api/ego/video/status',
+    ])
+    expect(streams[0]?.url).toBe('/api/ego/stream?sessionId=session-one')
+    streams[0]?.emit('frame', { targetId: 'first', data: 'YWJj', vw: 400, vh: 300, ts: 1 })
+    expect(controller.view.getSnapshot().frame).toBeNull()
+    await expect(controller.resize('first', 800, 600)).resolves.toBe(false)
+    expect(fetcher).toHaveBeenCalledTimes(4)
+    streams[0]?.emit('spaces', [first, { ...second, active: true }])
+    expect(controller.view.getSnapshot().pages).toHaveLength(2)
+    expect(controller.view.getSnapshot().frame).toBeNull()
+    controller.show(false)
+  })
+})

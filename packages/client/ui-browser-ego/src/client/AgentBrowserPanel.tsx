@@ -9,6 +9,7 @@ import type { InjectFace, PropsLocale, PropsRuntime, HostObservable } from 'codi
 import type {} from 'coding-client-ui-open-in-app/client'
 import type { BrowserEgoController, BrowserEgoView } from './controller.ts'
 import { pointOnFrame } from './geometry.ts'
+import { concealEgoSurface, type EgoNativeSurface } from './native.ts'
 import { NS } from './locales.ts'
 import type { EgoBrowserCapture } from './settings.ts'
 import { createMsePlayer } from './video.ts'
@@ -30,6 +31,8 @@ export interface AgentBrowserInjected {
   hover: BrowserEgoController['hover']
   /** 把面板内容区尺寸同步给 Host，由采集会话按页面实际视口绘制。 */
   resize: BrowserEgoController['resize']
+  /** 桌面端把页面放进应用窗口的能力；Web 与 CLI 为 null，仍按帧流渲染。 */
+  surface: EgoNativeSurface | null | undefined
 }
 
 export type AgentBrowserProps = PropsRuntime<'sidebar.right.pane.tab'> & PropsLocale<typeof NS>
@@ -72,7 +75,7 @@ function addressFromDraft(draft: string): string | null {
  */
 export function AgentBrowserPanel({
   sessionId, useTabInfo, useBrowserEgo, useBrowserEgoSettings,
-  show, refresh, navigate, raiseWindow, send, hover, resize, t,
+  show, refresh, navigate, raiseWindow, send, hover, resize, surface = null, t,
 }: AgentBrowserProps) {
   const { shown, tab } = useTabInfo()
   const targetId = tab.params !== null && typeof tab.params === 'object' && !Array.isArray(tab.params)
@@ -172,6 +175,42 @@ export function AgentBrowserPanel({
       resolution?.removeEventListener('change', onResolution)
     }
   }, [shown, selected?.targetId, pageUrl, selected?.viewportW, selected?.viewportH, resize])
+  // 桌面端由桌面壳把真实页面放到内容区上；这里只上报矩形与显隐，不传页面内容。
+  useEffect(() => {
+    const node = stage.current
+    const targetId = selected?.targetId ?? null
+    if (surface === null) return
+    if (!shown || node === null || targetId === null) {
+      concealEgoSurface(surface, targetId)
+      return
+    }
+    let timer: ReturnType<typeof setTimeout> | null = null
+    let last = ''
+    const report = (visible: boolean): void => {
+      const rect = node.getBoundingClientRect()
+      const bounds = { x: Math.round(rect.left), y: Math.round(rect.top),
+        width: Math.round(rect.width), height: Math.round(rect.height) }
+      if (visible && (bounds.width < 320 || bounds.height < 200)) return
+      const key = `${targetId}|${visible}|${bounds.x},${bounds.y},${bounds.width},${bounds.height}`
+      if (key === last) return
+      last = key
+      void surface.present({ targetId, visible, bounds }).catch(() => undefined)
+    }
+    const schedule = (): void => {
+      if (timer !== null) clearTimeout(timer)
+      timer = setTimeout(() => { timer = null; report(true) }, 120)
+    }
+    report(true)
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(schedule)
+    observer?.observe(node)
+    globalThis.addEventListener('resize', schedule)
+    return () => {
+      if (timer !== null) clearTimeout(timer)
+      observer?.disconnect()
+      globalThis.removeEventListener('resize', schedule)
+      concealEgoSurface(surface, targetId)
+    }
+  }, [surface, shown, selected?.targetId])
   const videoTarget = selected?.targetId ?? null
   // 只有用户选择视频后端、Host 报告 fMP4 就绪且上一次播放没有失败时才用 MSE。
   const videoMode = shown && settings.backend === 'ffmpeg' && videoMime !== null && !videoFailed
@@ -321,14 +360,16 @@ export function AgentBrowserPanel({
           aria-label={t('openAddress')} disabled={view.phase !== 'ready' || view.pending}>
           <IconChevronRightOutline14 size={14} /></button></Tooltip>
       </form>
-      <Tooltip label={t('openWindow')} side="bottom"><button type="button" className={css.iconButton}
+      {surface === null && <Tooltip label={t('openWindow')} side="bottom"><button type="button" className={css.iconButton}
         aria-label={t('openWindow')} onClick={() => { void openWindow() }}>
-        <Icon name="open-window" size={16} /></button></Tooltip>
+        <Icon name="open-window" size={16} /></button></Tooltip>}
     </div>
     {addressError && <p className={css.addressError} role="alert">{t('invalidAddress')}</p>}
     <div className={css.stage} ref={stage}>
-      {shown && hovered?.href && <p className={css.hoverAddress} role="status">{hovered.href}</p>}
-      {shown && hovered?.title && <p className={css.hoverTitle} role="status">{hovered.title}</p>}
+      {surface === null && shown && hovered?.href
+        && <p className={css.hoverAddress} role="status">{hovered.href}</p>}
+      {surface === null && shown && hovered?.title
+        && <p className={css.hoverTitle} role="status">{hovered.title}</p>}
       {view.phase === 'loading' && <p role="status" className={css.center}>{t('loading')}</p>}
       {view.phase === 'error' && <div className={css.center} role="alert">
         <span>{t('unavailable')}</span>
@@ -340,7 +381,7 @@ export function AgentBrowserPanel({
       </p>}
       {view.phase === 'ready' && view.pages.length > 0 && selected === undefined
         && <p className={css.center}>{t('pageUnavailable')}</p>}
-      {view.phase === 'ready' && selected !== undefined && (view.relayOff
+      {surface === null && view.phase === 'ready' && selected !== undefined && (view.relayOff
         ? <p className={css.center}>{t('relayOff')}</p>
         : videoMode
           ? <button type="button" className={css.frameAction} disabled={view.pending}

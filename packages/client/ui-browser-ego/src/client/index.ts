@@ -14,6 +14,7 @@ import { BrowserEgoController } from './controller.ts'
 import { watchActivity, WATCH_ID, WATCH_KIND } from './activity.ts'
 import { validId, type EgoPage } from './wire.ts'
 import { AgentBrowserPanel, type AgentBrowserInjected } from './AgentBrowserPanel.tsx'
+import { nativeEgoSurface } from './native.ts'
 import { EgoBrowserCard } from './settings-card.tsx'
 import { EgoBrowserCardController } from './settings-card-controller.ts'
 import { EGO_SETTINGS_NS, captureOf, type EgoBrowserCapture, type EgoBrowserSettings } from './settings.ts'
@@ -48,11 +49,13 @@ function linkAddress(value: string): boolean {
 export function apply(ctx: ClientContext): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-browser-ego: dictionaries')
   const t = ctx.locale.bind(NS)
+  // 桌面壳提供原生呈现时，面板不再订阅帧流；入口在挂载时读取一次即可。
+  const surface = nativeEgoSurface()
   const controllers = new Map<string, BrowserEgoController>()
   const controllerFor = (sessionId: string): BrowserEgoController => {
     let controller = controllers.get(sessionId)
     if (controller === undefined) {
-      controller = new BrowserEgoController(sessionId)
+      controller = new BrowserEgoController(sessionId, undefined, undefined, undefined, surface !== null)
       controllers.set(sessionId, controller)
     }
     return controller
@@ -159,6 +162,7 @@ export function apply(ctx: ClientContext): void {
           send: (targetId, input) => controller.send(targetId, input),
           hover: (targetId, x, y) => controller.hover(targetId, x, y),
           resize: (targetId, width, height) => controller.resize(targetId, width, height),
+          surface,
         }
       },
     }, AgentBrowserPanel)

@@ -8,6 +8,7 @@ vi.mock('electron', () => electron)
 
 type Bridge = {
   remoteSSH: Record<string, (...args: unknown[]) => unknown>
+  egoBrowser: Record<string, (...args: unknown[]) => unknown>
 }
 
 async function preload(): Promise<Bridge> {
@@ -22,7 +23,7 @@ describe('Remote-SSH sandbox preload', () => {
 
   it('仅向页面暴露不可变的 Remote-SSH 入口', async () => {
     const bridge = await preload()
-    expect(Object.keys(bridge)).toEqual(['remoteSSH'])
+    expect(Object.keys(bridge)).toEqual(['remoteSSH', 'egoBrowser'])
     expect(Object.keys(bridge.remoteSSH)).toEqual([
       'connect', 'cancelConnect', 'listDirectories', 'selectDirectory', 'close', 'rejectHostKey',
       'profiles', 'forgetProfile', 'reconnectWorkspace', 'subscribeProgress',
@@ -36,6 +37,8 @@ describe('Remote-SSH sandbox preload', () => {
     await bridge.remoteSSH.selectDirectory!('connection-1', '/srv')
     await bridge.remoteSSH.close!('connection-1')
     await bridge.remoteSSH.rejectHostKey!('confirmation-1')
+    expect(Object.isFrozen(bridge.egoBrowser)).toBe(true)
+    await bridge.egoBrowser.present!({ targetId: 'tab-1', visible: true, bounds: { x: 0, y: 0, width: 100, height: 100 } })
     expect(electron.ipcRenderer.invoke.mock.calls).toEqual([
       ['coding:remote-ssh', 'connect', input],
       ['coding:remote-ssh', 'cancelConnect', { attemptId: 'attempt-1' }],
@@ -43,6 +46,7 @@ describe('Remote-SSH sandbox preload', () => {
       ['coding:remote-ssh', 'selectDirectory', { connectionId: 'connection-1', path: '/srv' }],
       ['coding:remote-ssh', 'close', { connectionId: 'connection-1' }],
       ['coding:remote-ssh', 'rejectHostKey', { confirmationId: 'confirmation-1' }],
+      ['coding:ego-present', { targetId: 'tab-1', visible: true, bounds: { x: 0, y: 0, width: 100, height: 100 } }],
     ])
     expect(bridge.remoteSSH.invoke).toBeUndefined()
     expect(bridge.remoteSSH.ipcRenderer).toBeUndefined()

@@ -32,6 +32,17 @@ const mocks = vi.hoisted(() => {
     createHostWindow: vi.fn(() => window),
     installRemoteIpc: vi.fn(() => vi.fn()),
     createNativeChrome: vi.fn(() => chrome),
+    createEgoPageHost: vi.fn(() => ({
+      present: vi.fn(), conceal: vi.fn(), dispose: vi.fn(),
+      list: () => [], find: () => undefined, defaultContext: () => 'desktop-default',
+      createContext: () => 'context-1', disposeContext: vi.fn(),
+      createPage: vi.fn(async () => ({ targetId: 'target-1' })),
+      getCookies: vi.fn(async () => []), setCookies: vi.fn(async () => {}),
+    })),
+    createEgoCdpBroker: vi.fn(async () => ({
+      url: 'ws://127.0.0.1:9/token', close: vi.fn(async () => {}),
+    })),
+    installEgoPresentationIpc: vi.fn(() => vi.fn()),
   }
 })
 
@@ -43,6 +54,11 @@ vi.mock('../src/helper-client.ts', () => ({ launchHelper: mocks.launchHelper }))
 vi.mock('../src/window.ts', () => ({ createHostWindow: mocks.createHostWindow }))
 vi.mock('../src/remote-ipc.ts', () => ({ installRemoteIpc: mocks.installRemoteIpc }))
 vi.mock('../src/native-chrome.ts', () => ({ createNativeChrome: mocks.createNativeChrome }))
+vi.mock('../src/ego-page-host.ts', () => ({ createEgoPageHost: mocks.createEgoPageHost }))
+vi.mock('../src/ego-cdp-broker.ts', () => ({ createEgoCdpBroker: mocks.createEgoCdpBroker }))
+vi.mock('../src/ego-presentation-ipc.ts', () => ({
+  installEgoPresentationIpc: mocks.installEgoPresentationIpc,
+}))
 
 function requestQuit(): ReturnType<typeof vi.fn> {
   const preventDefault = vi.fn()
