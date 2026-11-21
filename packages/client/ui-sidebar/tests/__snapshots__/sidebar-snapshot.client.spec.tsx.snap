@@ -10,12 +10,6 @@ exports[`sidebar shell snapshots > keeps the optional top entry seat on the welc
     style="width: 300px;"
   >
     <div
-      aria-hidden="true"
-      class="windowDragInset"
-      data-window-drag-inset="true"
-      data-window-drag-region="true"
-    />
-    <div
       class="logoRow"
       data-window-drag-region="true"
     >
@@ -80,12 +74,6 @@ exports[`sidebar shell snapshots > renders the collapsed rail after the crossfad
     class="root fading quietBars"
     style="width: 300px;"
   >
-    <div
-      aria-hidden="true"
-      class="windowDragInset"
-      data-window-drag-inset="true"
-      data-window-drag-region="true"
-    />
     <div
       class="logoRow"
       data-window-drag-region="true"
@@ -152,12 +140,6 @@ exports[`sidebar shell snapshots > renders the expanded column (New chat row, em
     style="width: 300px;"
   >
     <div
-      aria-hidden="true"
-      class="windowDragInset"
-      data-window-drag-inset="true"
-      data-window-drag-region="true"
-    />
-    <div
       class="logoRow"
       data-window-drag-region="true"
     >
@@ -222,12 +204,6 @@ exports[`sidebar shell snapshots > renders the expanded column in the default lo
     class="root quietBars"
     style="width: 300px;"
   >
-    <div
-      aria-hidden="true"
-      class="windowDragInset"
-      data-window-drag-inset="true"
-      data-window-drag-region="true"
-    />
     <div
       class="logoRow"
       data-window-drag-region="true"

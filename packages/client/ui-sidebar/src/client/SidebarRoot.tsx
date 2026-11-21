@@ -1,8 +1,8 @@
 /**
- * 侧边栏壳负责折叠动画、顶部入口区（新对话、可选入口）、交通灯避让和滚动条可见性。宽侧栏的
+ * 侧边栏壳负责折叠动画、顶部入口区（新对话、可选入口）和滚动条可见性。宽侧栏的
  * 收起按钮由浏览区域的标题行渲染（壳层通过 owner share 交出动作）；收起的 56px rail 里
  * 新对话、可选入口与展开按钮依次排列。折叠动画冻结宽内容，等淡出后再切换到 rail；浏览
- * 区域与页脚仍由各自 slot 占用者绘制。
+ * 区域与页脚仍由各自 slot 占用者绘制。交通灯由外层导航列卡片避让，本列不保留原生安全区。
  */
 import { useEffect, useRef, useState } from 'react'
 import clsx from 'clsx'
@@ -108,8 +108,6 @@ export function SidebarRoot({
       }}
       onPointerLeave={() => { armLinger() }}
     >
-      <div className={css.windowDragInset} data-window-drag-inset data-window-drag-region aria-hidden="true" />
-
       <div className={css.logoRow} data-window-drag-region>
         {/* rail 中没有文字位置，退化为纯图标控件。 */}
         <Tooltip label={t('session.new.label')} delayMs={500} disabled={wide}>

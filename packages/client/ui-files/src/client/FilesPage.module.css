@@ -33,7 +33,7 @@
   justify-content: space-between;
   gap: 16px;
   flex: none;
-  padding: calc(20px + var(--app-safe-area-inset-top, 0px)) 24px 16px;
+  padding: 20px 24px 16px;
   border-bottom: 1px solid var(--dsw-alias-border-l2);
   background: var(--dsw-alias-bg-layer-1);
 }

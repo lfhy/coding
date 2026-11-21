@@ -9,8 +9,9 @@
   display: flex;
   flex-direction: column;
   height: 100%;
-  /* 桌面无边框壳把交通灯高度注入 --app-safe-area-inset-top；浏览器中该变量缺省为 0。 */
-  padding: calc(6px + var(--app-safe-area-inset-top, 0px)) var(--dsh-sidebar-inline-padding) 0;
+  /* 交通灯落在外层导航列卡片里，本列一直在它右侧，因此不再叠加 --app-safe-area-inset-top：
+     顶部只留 6px 的行距，内容从窗口顶端开始。 */
+  padding: 6px var(--dsh-sidebar-inline-padding) 0;
   box-sizing: border-box;
   background: var(--dsw-specific-sidebar-fill);
   color: var(--dsw-alias-label-primary);
@@ -20,23 +21,10 @@
   --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
 }
 
-/* macOS 交通灯右侧的顶部留白可拖动；收起 rail 中没有足够的安全宽度。 */
-.windowDragInset {
-  position: absolute;
-  top: 0;
-  right: 0;
-  left: 90px;
-  height: var(--app-safe-area-inset-top, 0px);
-  -webkit-app-region: no-drag;
-}
-
-.collapsed .windowDragInset {
-  display: none;
-}
-
-/* 收起 rail 使用 36×36 控件盒，居中于 56px 宽度；额外避开 macOS 交通灯。 */
+/* 收起 rail 使用 36×36 控件盒，居中于 56px 宽度；顶部留白比展开态多，让第一个图标
+   不贴着工作区圆角。 */
 .root.collapsed {
-  padding: calc(28px + var(--app-safe-area-inset-top, 0px)) 10px 0;
+  padding: 28px 10px 0;
 }
 
 /* 栏内滚动条是指针可供性：指针不在栏内时壳层加上这个类（停留时长由 SidebarRoot.tsx

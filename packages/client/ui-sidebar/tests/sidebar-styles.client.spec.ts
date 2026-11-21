@@ -27,26 +27,22 @@ function declarations(selector: string): Map<string, string> | undefined {
 }
 
 describe('SidebarRoot.module.css', () => {
-  it('drags safe titlebar gaps but keeps traffic lights and row controls clear', () => {
-    expect(root).toContain('<div className={css.windowDragInset} data-window-drag-inset data-window-drag-region aria-hidden="true" />')
+  it('keeps the top row draggable without masking the traffic-light-free column', () => {
+    // 交通灯在外层导航列卡片里，本列不再自己铺一层安全区拖拽垫片。
+    expect(root).not.toContain('data-window-drag-inset')
+    expect(css).not.toContain('.windowDragInset')
     expect(root).toContain('<div className={css.logoRow} data-window-drag-region>')
-    expect(declarations('.windowDragInset')?.get('left')).toBe('90px')
-    expect(declarations('.windowDragInset')?.get('height')).toBe('var(--app-safe-area-inset-top, 0px)')
-    expect(declarations('.windowDragInset')?.get('-webkit-app-region')).toBe('no-drag')
-    expect(declarations('.collapsed .windowDragInset')?.get('display')).toBe('none')
     expect(declarations('.logoRow')?.get('-webkit-app-region')).toBe('no-drag')
     expect(css).toMatch(/\.logoRow :is\(button, a, input, select, textarea, \[role='button'\]\)\s*\{\s*-webkit-app-region: no-drag;/)
   })
 
-  it('keeps the safe area and footer edge geometry structural', () => {
+  it('keeps the top inset and footer edge geometry structural', () => {
     const root = declarations('.root')
     expect(root?.get('--dsh-sidebar-inline-padding')).toBe('12px')
-    expect(root?.get('padding')).toBe(
-      'calc(6px + var(--app-safe-area-inset-top, 0px)) var(--dsh-sidebar-inline-padding) 0',
-    )
-    expect(declarations('.root.collapsed')?.get('padding')).toBe(
-      'calc(28px + var(--app-safe-area-inset-top, 0px)) 10px 0',
-    )
+    // 顶部只留行距：原生安全区由外层导航列避让，内层侧栏不再重复预留。
+    expect(root?.get('padding')).toBe('6px var(--dsh-sidebar-inline-padding) 0')
+    expect(declarations('.root')?.get('padding')).not.toContain('--app-safe-area-inset-top')
+    expect(declarations('.root.collapsed')?.get('padding')).toBe('28px 10px 0')
     expect(declarations('.regionArea')?.get('margin-left')).toBe('-4px')
     expect(declarations('.regionArea')?.get('padding-left')).toBe('4px')
     expect(declarations('.regionArea')?.get('margin-right')).toBe(

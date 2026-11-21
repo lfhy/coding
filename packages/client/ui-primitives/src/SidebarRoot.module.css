@@ -1,6 +1,6 @@
 /* 主内容页共享侧栏。宽度与对话侧栏的实际列宽同步，收起后 56px 图标轨；
    标题行 36px、普通行 34px、图标控件 36×36。
-   顶部内边距叠加 --app-safe-area-inset-top，避免 macOS 交通灯压住内容。 */
+   页内左侧栏一直排在外层导航列右侧，交通灯落在那张卡片里，因此顶部只留常规内边距。 */
 
 .shell {
   display: flex;
@@ -10,7 +10,7 @@
   min-width: 0;
   min-height: 0;
   box-sizing: border-box;
-  padding: calc(10px + var(--app-safe-area-inset-top, 0px)) 12px 10px;
+  padding: 10px 12px 10px;
   overflow: hidden;
   border-right: 1px solid var(--dsw-alias-border-l2);
   background: var(--dsw-specific-sidebar-fill);
@@ -25,7 +25,7 @@
 
 /* 收起的图标轨：56px，控件贴左 10px，纵向居中排布。 */
 .shell.collapsed {
-  padding: calc(10px + var(--app-safe-area-inset-top, 0px)) 0 10px;
+  padding: 10px 0 10px;
 }
 
 /* 折叠第一阶段：冻结宽度的内容在 150ms 内淡出。 */
