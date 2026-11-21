@@ -44,8 +44,8 @@ const WORKBENCH_DEFAULT_SHARE = 2 / 3
 export const PAGE_ASSISTANT_MIN = 400
 /** 独立页助手的拖拽上限。 */
 export const PAGE_ASSISTANT_MAX = 760
-/** 独立页助手的初始宽度；比原固定 376px 宽，让模型名不再被截断。 */
-export const PAGE_ASSISTANT_DEFAULT = 480
+/** 独立页助手的初始宽度；默认使用可拖拽下限。 */
+export const PAGE_ASSISTANT_DEFAULT = PAGE_ASSISTANT_MIN
 /** 助手并排时独立页正文保留的最小宽度，取笔记页并排视图的断点。 */
 export const PAGE_BODY_MIN = 640
 /** 工作台底栏拖拽下限。 */

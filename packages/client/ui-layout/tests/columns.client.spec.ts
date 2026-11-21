@@ -158,8 +158,8 @@ describe('computeWorkbenchColumns', () => {
 
 describe('computePageAssistant', () => {
   it('docks at the preferred width while the page keeps its body minimum', () => {
-    // 1920 - 280 侧栏 = 1640；正文下限 640 之后还够放默认的 480。
-    expect(computePageAssistant(1640, PAGE_ASSISTANT_DEFAULT)).toEqual({ width: 480, docked: true })
+    // 1920 - 280 侧栏 = 1640；正文下限 640 之后还够放最小默认宽度 400。
+    expect(computePageAssistant(1640, PAGE_ASSISTANT_DEFAULT)).toEqual({ width: PAGE_ASSISTANT_MIN, docked: true })
   })
 
   it('shrinks the assistant to the remaining budget instead of overflowing', () => {
@@ -169,8 +169,8 @@ describe('computePageAssistant', () => {
   })
 
   it('falls back to the drawer when the body minimum would be starved', () => {
-    // 640 + 400 = 1040 是并排的最窄视口；再窄就保持偏好宽度改用抽屉。
-    expect(computePageAssistant(1039, PAGE_ASSISTANT_DEFAULT)).toEqual({ width: 480, docked: false })
+    // 640 + 400 = 1040 是并排的最窄视口；再窄就保持最小默认宽度改用抽屉。
+    expect(computePageAssistant(1039, PAGE_ASSISTANT_DEFAULT)).toEqual({ width: PAGE_ASSISTANT_MIN, docked: false })
     expect(computePageAssistant(1040, PAGE_ASSISTANT_DEFAULT)).toEqual({ width: PAGE_ASSISTANT_MIN, docked: true })
     expect(computePageAssistant(1200, PAGE_ASSISTANT_DEFAULT)).toEqual({ width: PAGE_ASSISTANT_DEFAULT, docked: true })
   })

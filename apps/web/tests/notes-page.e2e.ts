@@ -47,9 +47,9 @@ describe('Web 笔记工作区', () => {
     expect(await editor.isVisible()).toBe(true)
     expect(await page.locator('[data-conversation-scroll]:visible').count()).toBe(1)
 
-    // 助手默认比旧固定宽度宽，输入栏的模型与发送按钮排在同一行。
+    // 助手默认使用当前最小宽度，同时保持输入栏控件在同一行。
     const track = page.locator('[data-page-assistant-track]')
-    expect(await track.evaluate(element => Math.round(element.getBoundingClientRect().width))).toBe(480)
+    expect(await track.evaluate(element => Math.round(element.getBoundingClientRect().width))).toBe(400)
     const centers = await track.locator('[class*="_select"], [class*="_composerAction"]').evaluateAll(buttons =>
       buttons.map(button => button.getBoundingClientRect().top + button.getBoundingClientRect().height / 2))
     expect(centers.length).toBeGreaterThan(1)
