@@ -57,10 +57,13 @@ function cookieSameSite(value: string): { sameSite?: 'no_restriction' | 'lax' | 
 
 /**
  * 创建页面宿主。
- * @param options.window 承载页面的应用窗口；窗口销毁后宿主不再接受呈现请求。
+ *
+ * 窗口按需读取：端点必须在 Host 启动前就位，而窗口是 Host 就绪之后才建立的，
+ * 因此这里不接受固定实例。窗口销毁或重建期间，宿主暂停建页与呈现。
+ * @param options.window 返回当前应用窗口的取值函数。
  * @returns 页面、上下文与呈现的完整句柄；调用方在退出时 `dispose()`。
  */
-export function createEgoPageHost(options: { window: BrowserWindow }): EgoPageHostHandle {
+export function createEgoPageHost(options: { window: () => BrowserWindow | undefined }): EgoPageHostHandle {
   const { window } = options
   const pages = new Map<string, Entry>()
   /** 上下文 id → Electron session 的分区名。 */
@@ -94,7 +97,8 @@ export function createEgoPageHost(options: { window: BrowserWindow }): EgoPageHo
   }
 
   function ownerWindow(): BrowserWindow | undefined {
-    return window.isDestroyed() ? undefined : window
+    const current = window()
+    return current === undefined || current.isDestroyed() ? undefined : current
   }
 
   function park(entry: Entry): void {

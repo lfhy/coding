@@ -122,7 +122,7 @@ describe('桌面 Agent 页面宿主', () => {
   })
 
   it('为每个页面建立视图、后台承载与调试会话，并把命令与事件接到页面本身', async () => {
-    const host = createEgoPageHost({ window: appWindow() })
+    const host = createEgoPageHost({ window: () => appWindow() })
     const page = await host.createPage(host.defaultContext(), 'https://example.test/page')
     expect(electron.views).toHaveLength(1)
     const session = electron.partitions.get('persist:ego-default')
@@ -147,7 +147,7 @@ describe('桌面 Agent 页面宿主', () => {
   })
 
   it('关闭页面后目录与视图同步清理，重复关闭安全', async () => {
-    const host = createEgoPageHost({ window: appWindow() })
+    const host = createEgoPageHost({ window: () => appWindow() })
     const page = await host.createPage(host.defaultContext(), 'about:blank')
     const wc = contentsOf(electron.views[0]?.view)
     const target = host.find(page.targetId)
@@ -161,7 +161,7 @@ describe('桌面 Agent 页面宿主', () => {
 
   it('呈现只在矩形落在窗口内时把视图移进窗口，撤回时回到后台承载', async () => {
     const window = appWindow()
-    const host = createEgoPageHost({ window })
+    const host = createEgoPageHost({ window: () => window })
     const page = await host.createPage(host.defaultContext(), 'about:blank')
     const stage = electron.windows.at(-1) as { contentView: { children: unknown[] } }
     const view = stage.contentView.children[0]
@@ -185,7 +185,7 @@ describe('桌面 Agent 页面宿主', () => {
   })
 
   it('按上下文关闭页面，默认上下文不可释放，Cookie 落在分区 session 上', async () => {
-    const host = createEgoPageHost({ window: appWindow() })
+    const host = createEgoPageHost({ window: () => appWindow() })
     const context = host.createContext()
     expect(context).not.toBe(host.defaultContext())
     const page = await host.createPage(context, 'about:blank')
@@ -213,7 +213,7 @@ describe('桌面 Agent 页面宿主', () => {
   })
 
   it('页面自发的本地文件导航被拒绝，普通网页导航放行', async () => {
-    const host = createEgoPageHost({ window: appWindow() })
+    const host = createEgoPageHost({ window: () => appWindow() })
     await host.createPage(host.defaultContext(), 'about:blank')
     const wc = contentsOf(electron.views[0]?.view)
     const preventDefault = vi.fn()
@@ -229,7 +229,7 @@ describe('桌面 Agent 页面宿主', () => {
   })
 
   it('卸载后不再建页，重复卸载安全', async () => {
-    const host = createEgoPageHost({ window: appWindow() })
+    const host = createEgoPageHost({ window: () => appWindow() })
     await host.createPage(host.defaultContext(), 'about:blank')
     host.dispose()
     expect(() => { host.dispose() }).not.toThrow()
