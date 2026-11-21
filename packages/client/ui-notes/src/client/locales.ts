@@ -7,10 +7,10 @@ export type NotesLocaleKey =
   | 'view' | 'edit' | 'split' | 'preview' | 'format' | 'inlineCode' | 'list'
   | 'heading' | 'bold' | 'italic' | 'bullets' | 'quote' | 'link'
   | 'welcomeMorning' | 'welcomeAfternoon' | 'welcomeEvening' | 'welcomeDescription'
-  | 'loading' | 'newNote' | 'newFolder' | 'newPresentation' | 'importFile' | 'noteName' | 'folderName' | 'presentationName' | 'create' | 'creating' | 'cancel' | 'close' | 'placeholder'
+  | 'loading' | 'newNote' | 'newFolder' | 'newPresentation' | 'importFile' | 'importText' | 'importSlides' | 'noteName' | 'folderName' | 'presentationName' | 'create' | 'creating' | 'cancel' | 'close' | 'placeholder'
   | 'newNoteIn' | 'newFolderIn' | 'newSubfolder' | 'newSubfolderIn' | 'saveLocation' | 'noteCreated' | 'folderCreated' | 'presentationCreated' | 'noteImported' | 'presentationImported' | 'createdRefreshError'
   | 'saved' | 'saving' | 'unsaved' | 'conflict' | 'reload' | 'reloadConfirm' | 'draftKept' | 'discardDraft' | 'retry'
-  | 'loadError' | 'saveError' | 'createError' | 'createFolderError' | 'createPresentationError' | 'importFileError' | 'treeError'
+  | 'loadError' | 'saveError' | 'createError' | 'createFolderError' | 'createPresentationError' | 'importTextError' | 'importSlideError' | 'treeError'
   | 'rename' | 'renaming' | 'renameNote' | 'renameFolder' | 'renamePresentation' | 'delete' | 'deleteConfirm' | 'deleteFolderConfirm' | 'deletePresentationConfirm'
   | 'renameEntry' | 'deleteEntry' | 'deleting' | 'deleted' | 'renameError' | 'deleteError'
   | 'copy' | 'copied'
@@ -27,7 +27,7 @@ export const zh: Record<NotesLocaleKey, string> = {
   welcomeMorning: '早上好呀，新的一天开始啦', welcomeAfternoon: '下午好呀，欢迎回来', welcomeEvening: '晚上好呀，欢迎回来',
   welcomeDescription: '在这里记录你的想法、灵感与工作内容',
   loading: '正在读取笔记…',
-  newNote: '新建笔记', newFolder: '新建目录', newPresentation: '新建幻灯片', importFile: '导入文件', noteName: '笔记名称', folderName: '目录名称', presentationName: '幻灯片名称', create: '创建', creating: '正在创建…', cancel: '取消', close: '关闭',
+  newNote: '新建笔记', newFolder: '新建目录', newPresentation: '新建幻灯片', importFile: '导入', importText: '文本', importSlides: '幻灯片', noteName: '笔记名称', folderName: '目录名称', presentationName: '幻灯片名称', create: '创建', creating: '正在创建…', cancel: '取消', close: '关闭',
   newNoteIn: '在「{name}」中新建笔记', newFolderIn: '在「{name}」中新建目录',
   newSubfolder: '新建子目录', newSubfolderIn: '在「{name}」中新建子目录',
   saveLocation: '保存到', noteCreated: '笔记已创建', folderCreated: '目录已创建', presentationCreated: '幻灯片已创建', presentationImported: '幻灯片已导入', noteImported: '笔记已导入',
@@ -40,7 +40,8 @@ export const zh: Record<NotesLocaleKey, string> = {
   loadError: '无法读取笔记', saveError: '保存失败',
   createError: '无法创建笔记。请检查名称和保存位置后重试。',
   createFolderError: '无法创建目录。请检查名称和保存位置后重试。', createPresentationError: '无法创建幻灯片。请检查名称和保存位置后重试。',
-  importFileError: '无法导入该文件。请确认是有效的 Markdown（不超过 1 MiB）或 .pptx。', treeError: '无法读取笔记目录',
+  importTextError: '无法导入该文本。请确认是 UTF-8 编码的 Markdown 或 TXT，且不超过 1 MiB。',
+  importSlideError: '无法导入该幻灯片。请确认文件是有效的 .pptx。', treeError: '无法读取笔记目录',
   rename: '重命名', renaming: '正在重命名…', renameNote: '重命名笔记', renameFolder: '重命名目录', renamePresentation: '重命名幻灯片', delete: '删除',
   renameEntry: '重命名「{name}」', deleteEntry: '删除「{name}」', deleting: '正在删除…', deleted: '已删除',
   deleteConfirm: '删除笔记「{name}」？此操作不可撤销。',
@@ -63,7 +64,7 @@ export const en: Record<NotesLocaleKey, string> = {
   welcomeMorning: 'Good morning! A new day begins', welcomeAfternoon: 'Good afternoon! Welcome back', welcomeEvening: 'Good evening! Welcome back',
   welcomeDescription: 'A place for your thoughts, ideas, and work',
   loading: 'Loading notes…',
-  newNote: 'New note', newFolder: 'New folder', newPresentation: 'New presentation', importFile: 'Import file', noteName: 'Note name', folderName: 'Folder name', presentationName: 'Presentation name', create: 'Create', creating: 'Creating…', cancel: 'Cancel', close: 'Close',
+  newNote: 'New note', newFolder: 'New folder', newPresentation: 'New presentation', importFile: 'Import', importText: 'Text', importSlides: 'Presentation', noteName: 'Note name', folderName: 'Folder name', presentationName: 'Presentation name', create: 'Create', creating: 'Creating…', cancel: 'Cancel', close: 'Close',
   newNoteIn: 'New note in “{name}”', newFolderIn: 'New folder in “{name}”',
   newSubfolder: 'New subfolder', newSubfolderIn: 'New subfolder in “{name}”',
   saveLocation: 'Save to', noteCreated: 'Note created', folderCreated: 'Folder created', presentationCreated: 'Presentation created', presentationImported: 'Presentation imported', noteImported: 'Note imported',
@@ -76,7 +77,8 @@ export const en: Record<NotesLocaleKey, string> = {
   loadError: 'Could not load the note', saveError: 'Save failed',
   createError: 'Could not create the note. Check the name and location, then try again.',
   createFolderError: 'Could not create the folder. Check the name and location, then try again.', createPresentationError: 'Could not create the presentation. Check the name and location, then try again.',
-  importFileError: 'Could not import that file. Use valid Markdown under 1 MiB or a .pptx.', treeError: 'Could not load the note tree',
+  importTextError: 'Could not import that text. Use UTF-8 Markdown or TXT under 1 MiB.',
+  importSlideError: 'Could not import that presentation. Make sure the file is a valid .pptx.', treeError: 'Could not load the note tree',
   rename: 'Rename', renaming: 'Renaming…', renameNote: 'Rename note', renameFolder: 'Rename folder', renamePresentation: 'Rename presentation', delete: 'Delete',
   renameEntry: 'Rename “{name}”', deleteEntry: 'Delete “{name}”', deleting: 'Deleting…', deleted: 'Deleted',
   deleteConfirm: 'Delete the note “{name}”? This cannot be undone.',

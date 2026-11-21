@@ -31,14 +31,32 @@ export type NotesPageProps = PropsRuntime<'shell.page'> & PropsLocale<typeof NS>
 /** AI 助手改动检测的目录轮询间隔。 */
 const TREE_POLL_MS = 4000
 
-/** 导入入口接受的扩展名；Markdown 写在笔记目录，`.pptx` 走幻灯片工程目录。 */
-const IMPORT_ACCEPT = '.md,.markdown,.pptx'
+/**
+ * 「导入 → 文本」接受的扩展名：Markdown 与纯文本都存成 Markdown 笔记。
+ * 新增导入类型时另开一类菜单项与文件选择器，不改动这里的判断。
+ */
+const TEXT_IMPORT_ACCEPT = '.md,.markdown,.txt'
+const TEXT_IMPORT_EXTENSIONS: ReadonlySet<string> = new Set(['md', 'markdown', 'txt'])
 
-/** 导入 Markdown 的字节上限；与文件库的单篇笔记上限一致。 */
+/** 「导入 → 幻灯片」只接受 PPTX；工程目录由 PPT 宿主落盘。 */
+const SLIDE_IMPORT_ACCEPT = '.pptx'
+const SLIDE_IMPORT_EXTENSION = 'pptx'
+
+/** 导入文本的字节上限；与文件库的单篇笔记上限一致。 */
 const NOTE_IMPORT_MAX_BYTES = 1024 * 1024
 
-/** 按 UTF-8 严格解码导入的 Markdown；非法编码直接失败，不写半份乱码。 */
-async function decodeMarkdown(file: File): Promise<string> {
+/** 取小写扩展名（不含点）；没有扩展名时返回空字符串。 */
+function extensionOf(name: string): string {
+  return /\.([^.\\/]+)$/u.exec(name)?.[1]?.toLowerCase() ?? ''
+}
+
+/** 去掉最后一段扩展名，作为新条目的名称。 */
+function stripExtension(name: string): string {
+  return name.replace(/\.[^.]+$/u, '').trim()
+}
+
+/** 按 UTF-8 严格解码导入的文本；非法编码直接失败，不写半份乱码。 */
+async function decodeText(file: File): Promise<string> {
   return new TextDecoder('utf-8', { fatal: true }).decode(new Uint8Array(await file.arrayBuffer()))
 }
 type DirectoryState = 'loading' | 'ready' | 'failed'
@@ -62,8 +80,9 @@ export function NotesPage({
   const titleRef = useRef<HTMLHeadingElement | null>(null)
   const searchTrigger = useRef<HTMLButtonElement>(null)
   const createTrigger = useRef<HTMLButtonElement>(null)
-  /** 导入幻灯片用的本机文件选择器；菜单项只负责唤起它。 */
-  const importInput = useRef<HTMLInputElement>(null)
+  /** 导入文本与幻灯片各用一个本机文件选择器，接受扩展名互不影响。 */
+  const textInput = useRef<HTMLInputElement>(null)
+  const slidesInput = useRef<HTMLInputElement>(null)
   const dialogTrigger = useRef<HTMLButtonElement | null>(null)
   const creatingRequest = useRef<AbortController | null>(null)
   const treeRevision = useRef(0)
@@ -474,30 +493,19 @@ export function NotesPage({
   }
 
   /**
-   * 把本机选择的文件导入笔记目录：Markdown 写成带原文的笔记，`.pptx` 写成幻灯片工程目录。
-   * 名称取所选文件名；失败只提示，不留半成品，也不改动其他标签。
-   * @param file - 文件选择器给出的文件；取消选择时为 undefined。
+   * 执行一次导入：取回新条目路径后刷新目录并打开它。
+   * 失败只提示一类文案；创建期间的并发请求被忽略，避免同一次点击落两份。
+   * @param task - 返回新条目相对路径的导入动作。
+   * @param done - 成功后的提示文案键。
+   * @param failed - 失败时的提示文案键。
    */
-  const importFile = async (file: File | undefined) => {
-    if (file === undefined || creatingRequest.current !== null) return
-    const extension = /\.([^.\\/]+)$/u.exec(file.name)?.[1]?.toLowerCase() ?? ''
-    const markdown = extension === 'md' || extension === 'markdown'
-    if (!markdown && extension !== 'pptx') {
-      notify('importFileError')
-      return
-    }
+  const runImport = async (task: () => Promise<string>, done: NotesLocaleKey, failed: NotesLocaleKey) => {
+    if (creatingRequest.current !== null) return
     const request = new AbortController()
     creatingRequest.current = request
     setCreating(true)
     try {
-      const name = file.name.replace(/\.[^.]+$/u, '').trim() || (markdown ? t('newNote') : t('newPresentation'))
-      let path: string
-      if (markdown) {
-        if (file.size > NOTE_IMPORT_MAX_BYTES) throw new Error('note too large')
-        path = (await notesCreate(name, '', await decodeMarkdown(file))).path
-      } else {
-        path = (await notesImportSlide(sessionId, name, '', file)).path
-      }
+      const path = await task()
       request.signal.throwIfAborted()
       treeRevision.current += 1
       const fresh = notesTree(request.signal).then((entries) => {
@@ -506,13 +514,48 @@ export function NotesPage({
       }, () => false)
       const [updated] = await Promise.all([fresh, selectTab(path)])
       request.signal.throwIfAborted()
-      notify(updated ? markdown ? 'noteImported' : 'presentationImported' : 'createdRefreshError')
+      notify(updated ? done : 'createdRefreshError')
     } catch {
-      if (!request.signal.aborted) notify('importFileError')
+      if (!request.signal.aborted) notify(failed)
     } finally {
       creatingRequest.current = null
       if (!request.signal.aborted) setCreating(false)
     }
+  }
+
+  /**
+   * 「导入 → 文本」：Markdown 与 TXT 都以 UTF-8 解码后写成带原文的笔记。
+   * 名称取所选文件名；不支持的扩展名只提示，不发请求。
+   * @param file - 文件选择器给出的文件；取消选择时为 undefined。
+   */
+  const importText = (file: File | undefined) => {
+    if (file === undefined) return
+    if (!TEXT_IMPORT_EXTENSIONS.has(extensionOf(file.name))) {
+      notify('importTextError')
+      return
+    }
+    void runImport(async () => {
+      if (file.size > NOTE_IMPORT_MAX_BYTES) throw new Error('note too large')
+      const name = stripExtension(file.name) || t('newNote')
+      return (await notesCreate(name, '', await decodeText(file))).path
+    }, 'noteImported', 'importTextError')
+  }
+
+  /**
+   * 「导入 → 幻灯片」：把 `.pptx` 解析成笔记目录里的幻灯片工程目录。
+   * 名称取所选文件名；非 `.pptx` 只提示，不发请求。
+   * @param file - 文件选择器给出的文件；取消选择时为 undefined。
+   */
+  const importSlides = (file: File | undefined) => {
+    if (file === undefined) return
+    if (extensionOf(file.name) !== SLIDE_IMPORT_EXTENSION) {
+      notify('importSlideError')
+      return
+    }
+    void runImport(async () => {
+      const name = stripExtension(file.name) || t('newPresentation')
+      return (await notesImportSlide(sessionId, name, '', file)).path
+    }, 'presentationImported', 'importSlideError')
   }
 
   const createDestinationDirectory = async (name: string, parent: string): Promise<string | undefined> => {
@@ -558,7 +601,15 @@ export function NotesPage({
     ...noteCreateEntries,
     { type: 'separator', id: 'new-presentation-separator' },
     { id: 'presentation', label: t('newPresentation'), icon: <Icon name="file-slides" size={16} /> },
-    { id: 'import-file', label: t('importFile'), icon: <Icon name="file" size={16} /> },
+    {
+      id: 'import',
+      label: t('importFile'),
+      icon: <Icon name="file" size={16} />,
+      submenu: [
+        { id: 'import-text', label: t('importText'), icon: <Icon name="notes" size={16} /> },
+        { id: 'import-slides', label: t('importSlides'), icon: <Icon name="file-slides" size={16} /> },
+      ],
+    },
   ]
 
   const selectedLabel = activePath === null ? t('title') : labelOfPath(activePath)
@@ -611,7 +662,8 @@ export function NotesPage({
               disabled={creating} onClick={() => { setContextMenu(null); setCreateMenuOpen(open => !open) }} />}
             items={launcherEntries}
             onSelect={(id) => {
-              if (id === 'import-file') importInput.current?.click()
+              if (id === 'import-text') textInput.current?.click()
+              if (id === 'import-slides') slidesInput.current?.click()
               if (id === 'create' || id === 'folder' || id === 'presentation') openCreateDialog(id, '', createTrigger.current)
             }}
             onClose={() => { setCreateMenuOpen(false); createTrigger.current?.focus({ preventScroll: true }) }}
@@ -692,12 +744,18 @@ export function NotesPage({
         </>}>
       </Modal>
       {toast !== null && <Toast key={toast.id} text={t(toast.key)} onDone={() => { setToast(null) }} />}
-      {/* 导入入口接受 Markdown 与 .pptx；文件选择器留在页面 DOM 里，菜单项负责唤起它。 */}
-      <input ref={importInput} type="file" accept={IMPORT_ACCEPT} hidden aria-hidden="true" tabIndex={-1}
+      {/* 导入子菜单各带一个文件选择器，留在页面 DOM 里由对应菜单项唤起。 */}
+      <input ref={textInput} type="file" accept={TEXT_IMPORT_ACCEPT} hidden aria-hidden="true" tabIndex={-1}
         onChange={(event) => {
           const file = event.target.files?.[0]
           event.target.value = ''
-          void importFile(file)
+          importText(file)
+        }} />
+      <input ref={slidesInput} type="file" accept={SLIDE_IMPORT_ACCEPT} hidden aria-hidden="true" tabIndex={-1}
+        onChange={(event) => {
+          const file = event.target.files?.[0]
+          event.target.value = ''
+          importSlides(file)
         }} />
     </main>
   )

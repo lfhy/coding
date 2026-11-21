@@ -62,7 +62,7 @@ describe('NotesPage 新建幻灯片', () => {
     expect(document.activeElement).toBe(trigger)
   })
 
-  it('从页头菜单导入本机 pptx，成功后打开同名工程目录', async () => {
+  it('导入子菜单选「幻灯片」后上传 .pptx，成功后打开同名工程目录', async () => {
     vi.useFakeTimers()
     const store = createNotesUiStore().create('s-notes')
     let tree: { name: string; kind: 'deck'; path: string; mtimeMs: number }[] = []
@@ -98,10 +98,13 @@ describe('NotesPage 新建幻灯片', () => {
 
     const directory = screen.getByRole('complementary', { name: '笔记目录' })
     fireEvent.click(within(directory).getByRole('button', { name: '新建笔记' }))
-    fireEvent.click(within(screen.getByRole('menu')).getByRole('menuitem', { name: '导入文件' }))
+    const launcher = screen.getByRole('menu')
+    expect(within(launcher).queryByRole('menuitem', { name: '文本' })).toBeNull()
+    fireEvent.click(within(launcher).getByRole('menuitem', { name: '导入' }))
+    fireEvent.click(within(launcher).getByRole('menuitem', { name: '幻灯片' }))
 
-    const input = container.querySelector<HTMLInputElement>('input[type="file"]')
-    if (input === null) throw new Error('缺少导入文件选择器')
+    const input = container.querySelector<HTMLInputElement>('input[accept=".pptx"]')
+    if (input === null) throw new Error('缺少幻灯片导入选择器')
     const file = new File([new Uint8Array([0x50, 0x4b])], '外部稿.pptx')
     await act(async () => { fireEvent.change(input, { target: { files: [file] } }) })
 
@@ -111,7 +114,7 @@ describe('NotesPage 新建幻灯片', () => {
     expect(screen.getByRole('alert').textContent).toBe('幻灯片已导入')
   })
 
-  it('导入失败时保留欢迎页并提示原因', async () => {
+  it('幻灯片导入失败时保留欢迎页并提示', async () => {
     vi.useFakeTimers()
     const store = createNotesUiStore().create('s-notes')
     const fetchMock = vi.fn(async (input: string | URL) => {
@@ -138,16 +141,16 @@ describe('NotesPage 新建幻灯片', () => {
     const { container } = render(<NotesPage {...props} />)
     await act(async () => {})
 
-    const input = container.querySelector<HTMLInputElement>('input[type="file"]')
-    if (input === null) throw new Error('缺少导入文件选择器')
+    const input = container.querySelector<HTMLInputElement>('input[accept=".pptx"]')
+    if (input === null) throw new Error('缺少幻灯片导入选择器')
     await act(async () => {
       fireEvent.change(input, { target: { files: [new File([new Uint8Array([1])], '坏稿.pptx')] } })
     })
     expect(store.getSnapshot().activePath ?? null).toBeNull()
-    expect(screen.getByRole('alert').textContent).toBe('无法导入该文件。请确认是有效的 Markdown（不超过 1 MiB）或 .pptx。')
+    expect(screen.getByRole('alert').textContent).toBe('无法导入该幻灯片。请确认文件是有效的 .pptx。')
   })
 
-  it('导入 Markdown 时把原文一起写入笔记目录并打开新笔记', async () => {
+  it('导入子菜单选「文本」时 Markdown 与 TXT 都写成带原文的笔记', async () => {
     vi.useFakeTimers()
     const store = createNotesUiStore().create('s-notes')
     let tree: { name: string; kind: 'file'; path: string; mtimeMs: number }[] = []
@@ -158,9 +161,11 @@ describe('NotesPage 新建幻灯片', () => {
       if (url.pathname === '/api/notes/tabs') return Response.json({ ok: true })
       if (url.pathname === '/api/notes/create') {
         if (typeof init?.body !== 'string') throw new Error('预期新建请求包含 JSON 正文')
-        bodies.push(JSON.parse(init.body))
-        tree = [{ name: '会议记录.md', kind: 'file', path: '会议记录.md', mtimeMs: 2_000 }]
-        return Response.json({ path: '会议记录.md' })
+        const body = JSON.parse(init.body) as { name: string; content: string }
+        bodies.push(body)
+        const path = `${body.name}.md`
+        tree = [{ name: path, kind: 'file', path, mtimeMs: 2_000 }]
+        return Response.json({ path })
       }
       if (url.pathname === '/api/notes/read') {
         return Response.json({ path: '会议记录.md', content: '# 会议记录', mtimeMs: 2_000 })
@@ -186,19 +191,27 @@ describe('NotesPage 新建幻灯片', () => {
 
     const directory = screen.getByRole('complementary', { name: '笔记目录' })
     fireEvent.click(within(directory).getByRole('button', { name: '新建笔记' }))
-    fireEvent.click(within(screen.getByRole('menu')).getByRole('menuitem', { name: '导入文件' }))
-    const input = container.querySelector<HTMLInputElement>('input[type="file"]')
-    if (input === null) throw new Error('缺少导入文件选择器')
-    expect(input.accept).toBe('.md,.markdown,.pptx')
-    const file = new File(['# 会议记录'], '会议记录.md', { type: 'text/markdown' })
-    await act(async () => { fireEvent.change(input, { target: { files: [file] } }) })
-
-    expect(bodies).toEqual([{ name: '会议记录', content: '# 会议记录' }])
+    const launcher = screen.getByRole('menu')
+    fireEvent.click(within(launcher).getByRole('menuitem', { name: '导入' }))
+    fireEvent.click(within(launcher).getByRole('menuitem', { name: '文本' }))
+    const input = container.querySelector<HTMLInputElement>('input[accept=".md,.markdown,.txt"]')
+    if (input === null) throw new Error('缺少文本导入选择器')
+    await act(async () => {
+      fireEvent.change(input, { target: { files: [new File(['# 会议记录'], '会议记录.md', { type: 'text/markdown' })] } })
+    })
     expect(store.getSnapshot().activePath).toBe('会议记录.md')
     expect(screen.getByRole('alert').textContent).toBe('笔记已导入')
+
+    await act(async () => {
+      fireEvent.change(input, { target: { files: [new File(['纯文本内容'], '随手记.txt', { type: 'text/plain' })] } })
+    })
+    expect(bodies).toEqual([
+      { name: '会议记录', content: '# 会议记录' },
+      { name: '随手记', content: '纯文本内容' },
+    ])
   })
 
-  it('拒绝不支持的扩展名与超限的 Markdown，不发出导入请求', async () => {
+  it('文本导入拒绝不支持的扩展名与超限文件，不发请求', async () => {
     vi.useFakeTimers()
     const store = createNotesUiStore().create('s-notes')
     const requests: string[] = []
@@ -226,12 +239,12 @@ describe('NotesPage 新建幻灯片', () => {
     const { container } = render(<NotesPage {...props} />)
     await act(async () => {})
 
-    const input = container.querySelector<HTMLInputElement>('input[type="file"]')
-    if (input === null) throw new Error('缺少导入文件选择器')
+    const input = container.querySelector<HTMLInputElement>('input[accept=".md,.markdown,.txt"]')
+    if (input === null) throw new Error('缺少文本导入选择器')
     await act(async () => {
       fireEvent.change(input, { target: { files: [new File(['data'], '表格.csv')] } })
     })
-    expect(screen.getByRole('alert').textContent).toBe('无法导入该文件。请确认是有效的 Markdown（不超过 1 MiB）或 .pptx。')
+    expect(screen.getByRole('alert').textContent).toBe('无法导入该文本。请确认是 UTF-8 编码的 Markdown 或 TXT，且不超过 1 MiB。')
     await act(async () => {
       fireEvent.change(input, { target: { files: [new File([new Uint8Array(1024 * 1024 + 1)], '大稿.md')] } })
     })
