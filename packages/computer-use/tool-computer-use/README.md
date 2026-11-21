@@ -1,11 +1,11 @@
 # `coding-tool-computer-use`
 
 Computer Use 的模型可见消费方：登记一份技能、一个全局引导工具，并在 agent 加载该技能之后，把执行工具只暴露给这个 agent。
-本包由标准、Codex、长线任务、逆向分析、网页复刻与对话六个模式预设装配，两种调用形态提供同一套工具名；其他模式不装载它。提供方、helper 进程与租约属于宿主层的 [`coding-computer-use`](../computer-use/README.md)。
+本包由标准、Codex、长线任务、逆向分析、网页复刻与对话六个模式预设装配，两种调用形态提供同一套工具名；其他模式不装载它。设置里的「电脑操作」开关关闭时，本包不注册任何工具或技能，重新打开后按会话日志恢复。提供方、helper 进程与租约属于宿主层的 [`coding-computer-use`](../computer-use/README.md)。
 
 ## 渐进式暴露
 
-- 挂载时全局只注册 `computer_use_activate`，并把 `dsh-computer-use` 技能（兼容别名 `computer-use`）登记进技能目录。
+- 挂载时先读宿主的开关：关闭时不注册任何东西，打开时全局只注册 `computer_use_activate`，并把 `dsh-computer-use` 技能（兼容别名 `computer-use`）登记进技能目录。
 - 技能被加载后，本插件为该 agent 注册执行工具，并用工具遮蔽隐藏引导工具；其他 agent 仍然只看得到引导工具。
 - “已加载技能”是一条持久事实，来自会话日志：技能工具写入的 `skill-invocation` 用户消息，或 Code Mode 里 `tool/code-dispatch`（旧名 `tool/code-dispatch`／`tool/ptc-dispatch`）返回同一份技能正文的那次派发。没有这两类证据时，引导工具拒绝执行并提示先加载技能。
 - 插件只负责暴露与转发；是否允许某次本机输入由服务层的租约、审批与一次性确认令牌决定。

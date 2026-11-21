@@ -6,7 +6,8 @@
 
 ## 服务：`ComputerUseService`（ctx 键：`computerUse`）
 
-- `status()`：当前平台、提供方名、代次、helper 路径与最近一次健康结果，不触发探测。
+- `availability()`／`watchAvailability(listener)`：开关状态与变化通知；设置提交或提供方代次替换后通知一次。
+- `status()`：当前开关、平台、提供方名、代次、helper 路径与最近一次健康结果，不触发探测。
 - `health(signal)`：重新执行不修改权限与界面的健康检查，失败时抛出并把原因记入状态。
 - `openPermissionSettings(kind, signal)`：响应用户的显式设置操作打开 macOS 隐私面板；插件不自行授予权限。
 - `listApps(context)`：列出有界的运行中用户应用，不读取界面内容，因此不需要读取租约。
@@ -22,6 +23,7 @@
 
 | 字段 | 默认值 | 含义 |
 | --- | --- | --- |
+| `enabled` | `true` | 是否向模型提供这套能力；关闭后工具与技能都不注册，直接调用也以 `COMPUTER_DISABLED` 拒绝 |
 | `observationTtlMs` | `0` | 观察可复用的生命周期；`0` 表示不过期，上限 24 小时 |
 | `confirmationTtlMs` | `300000` | 一次性确认令牌的生命周期 |
 | `actionTimeoutMs` | `15000` | 单次原生动作的硬超时，1000 至 120000 毫秒 |

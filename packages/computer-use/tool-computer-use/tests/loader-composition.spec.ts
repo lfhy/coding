@@ -116,7 +116,15 @@ class FixtureComputerUse extends ComputerUseService {
   }
 }
 
-async function boot(): Promise<Context> {
+/** 可在测试里切换开关的服务替身：直接走生产的重配置路径。 */
+class ToggleFixtureComputerUse extends FixtureComputerUse {
+  /** 按设置开关重配一次提供方，模拟设置提交后的宿主通知。 */
+  async setEnabled(enabled: boolean): Promise<void> {
+    await this.reconfigure(new FixtureBackend(), resolveConfig({ enabled }))
+  }
+}
+
+async function boot(service: unknown = FixtureComputerUse): Promise<Context> {
   root = await mkdtemp(join(tmpdir(), 'dsh-computer-use-loader-'))
   const configPath = join(root, 'cordis.yml')
   await writeFile(configPath, [
@@ -146,7 +154,7 @@ async function boot(): Promise<Context> {
     ['coding-skill', SkillRegistry],
     ['coding-tool-skill', ToolSkill],
     ['coding-user-approval', ApprovalService],
-    ['coding-computer-use', FixtureComputerUse],
+    ['coding-computer-use', service],
     ['coding-tool-computer-use', ToolComputerUse],
   ])
   ctx.loader.internal = {
@@ -241,6 +249,36 @@ describe('Computer Use through a real Loader composition', () => {
     expect(toolNames(context, loaded.agent)).not.toContain('computer_use_activate')
     loaded.dispose()
     viewer.dispose()
+  })
+
+  it('withdraws every model-visible registration while the capability is switched off', async () => {
+    fixture = new FixtureBackend()
+    const context = await boot(ToggleFixtureComputerUse)
+    expect(toolNames(context)).toEqual(['computer_use_activate', 'skill', 'skill_read'])
+
+    await (context.computerUse as ToggleFixtureComputerUse).setEnabled(false)
+    expect(toolNames(context)).toEqual(['skill', 'skill_read'])
+    expect((await context.skills.list({ scope: undefined })).map(skill => skill.name)).toEqual([])
+    expect(context.computerUse.status().enabled).toBe(false)
+
+    // 关闭期间连执行工具都不再注册，重新打开后引导工具与技能一起回来。
+    await (context.computerUse as ToggleFixtureComputerUse).setEnabled(true)
+    expect(toolNames(context)).toEqual(['computer_use_activate', 'skill', 'skill_read'])
+    expect((await context.skills.list({ scope: undefined })).map(skill => skill.name).sort())
+      .toEqual(['computer-use', 'dsh-computer-use'])
+  })
+
+  it('refuses direct provider calls while the capability is switched off', async () => {
+    fixture = new FixtureBackend()
+    const context = await boot(ToggleFixtureComputerUse)
+    await (context.computerUse as ToggleFixtureComputerUse).setEnabled(false)
+    const { agent: subject, dispose } = await agent(context, 'cu-loader-disabled', false)
+    const call = { agent: subject as never, workspace: root as string, signal: new AbortController().signal }
+    await expect(context.computerUse.listApps(call)).rejects.toMatchObject({ code: 'COMPUTER_DISABLED' })
+    await expect(context.computerUse.observe({ app: { bundleId: 'com.example.fixture' } }, call))
+      .rejects.toMatchObject({ code: 'COMPUTER_DISABLED' })
+    expect(fixture.calls).toEqual([])
+    dispose()
   })
 
   it('runs a lease-free read tool through the provider and returns it to the model', async () => {

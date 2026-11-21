@@ -1,6 +1,7 @@
 /** Stable Computer Use failure codes returned across provider and Tool boundaries. */
 export type ComputerUseErrorCode =
   | 'COMPUTER_UNSUPPORTED_PLATFORM'
+  | 'COMPUTER_DISABLED'
   | 'COMPUTER_PERMISSION_REQUIRED'
   | 'COMPUTER_APP_NOT_FOUND'
   | 'COMPUTER_STALE_OBSERVATION'

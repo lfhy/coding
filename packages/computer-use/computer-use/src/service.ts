@@ -194,7 +194,8 @@ export class ComputerUseService extends Service {
   private readonly leases: ComputerLeaseManager
   private readonly confirmations: ComputerConfirmationManager
   private readonly lifecycle = new AbortController()
-  private healthState: Omit<ComputerUseStatus, 'platform' | 'provider' | 'generation' | 'helperPath'> = {
+  private readonly availabilityListeners = new Set<() => void>()
+  private healthState: Omit<ComputerUseStatus, 'enabled' | 'platform' | 'provider' | 'generation' | 'helperPath'> = {
     ready: false,
     accessibility: 'unavailable',
     screenRecording: 'unavailable',
@@ -226,33 +227,65 @@ export class ComputerUseService extends Service {
     }, 'dsh-computer-use: service lifecycle')
   }
 
-  /** Verify the active backend before consumers become injectable. */
+  /**
+   * 只准备租约存储：提供方探测留给第一次真实调用或显式的 {@link health}。
+   *
+   * 启动时不接触本机界面——托管 helper 的源码构建、辅助功能授权与外部驱动进程
+   * 都可能阻塞或弹系统提示，不能算进宿主启动。因此这里的健康状态在首次调用前
+   * 保持"未探测"，而不是假装就绪。
+   */
   protected async initialize(): Promise<void> {
-    try {
-      await this.leases.initialize()
-      this.applyHealth(await this.backend.health(this.lifecycle.signal))
-    } catch (error) {
-      const failure = computerUseError(error, 'Computer Use provider initialization failed')
-      this.healthState = {
-        ready: false,
-        accessibility: 'unavailable',
-        screenRecording: 'unavailable',
-        lastError: failure.message,
-      }
-      throw failure
-    }
+    await this.leases.initialize()
   }
 
   /** Replace the backend/config generation after a validated live Settings update. */
   protected async reconfigure(backend: ComputerUseBackend, config: ResolvedComputerUseConfig): Promise<void> {
-    const health = await backend.health(this.lifecycle.signal)
     const previous = this.backend
     this.backend = backend
     this.config = config
     this.generation += 1
     this.clearState()
-    this.applyHealth(health)
+    // 换提供方同样不做探测：新后端是否可用由它自己的调用结果说明。
+    this.healthState = { ready: false, accessibility: 'unavailable', screenRecording: 'unavailable' }
     await previous.dispose()
+    this.notifyAvailability()
+  }
+
+  /**
+   * 当前是否向模型提供这套能力。
+   * 关闭后宿主仍持有提供方与 helper 进程，只是模型看不到任何相关工具与技能。
+   * @returns 设置里的开关状态。
+   */
+  availability(): boolean {
+    return this.config.enabled
+  }
+
+  /**
+   * 订阅开关状态的变化：设置提交与提供方代次替换后都会通知。
+   * 注册不主动通知，调用方应先订阅再做首次读取。
+   * @param listener - 需要重新判定暴露面时调用的同步回调。
+   * @returns 撤销该回调的函数。
+   */
+  watchAvailability(listener: () => void): () => void {
+    this.availabilityListeners.add(listener)
+    return () => { this.availabilityListeners.delete(listener) }
+  }
+
+  /** 通知全部监听器；单个监听器抛错不影响设置提交或其它监听器。 */
+  private notifyAvailability(): void {
+    for (const listener of [...this.availabilityListeners]) {
+      try { listener() } catch (error) { this.ctx.logger.warn('dsh-computer-use: availability listener failed', error) }
+    }
+  }
+
+  /**
+   * 关闭时的统一入口守卫：即使工具层已经隐藏，直接调用也会失败关闭。
+   * @throws {ComputerUseError} 开关关闭时以 `COMPUTER_DISABLED` 拒绝。
+   */
+  private requireEnabled(): void {
+    if (!this.config.enabled) {
+      throw new ComputerUseError('COMPUTER_DISABLED', 'computer use is disabled in settings; enable it before observing or acting on local apps')
+    }
   }
 
   /**
@@ -261,6 +294,7 @@ export class ComputerUseService extends Service {
    */
   status(): ComputerUseStatus {
     return {
+      enabled: this.config.enabled,
       platform: process.platform,
       provider: this.backend.name,
       generation: this.generation,
@@ -300,6 +334,7 @@ export class ComputerUseService extends Service {
    * @returns 按后端顺序返回的应用摘要，含 bundle id、pid、前台状态与权限状态。
    */
   async listApps(context: ComputerUseContext): Promise<ComputerAppSummary[]> {
+    this.requireEnabled()
     return await this.backend.listApps(AbortSignal.any([context.signal, this.lifecycle.signal]))
   }
 
@@ -310,6 +345,7 @@ export class ComputerUseService extends Service {
    * @returns 新的观察，包含观察 id、有界树文本、元素表与可选截图产物。
    */
   async observe(request: ComputerObserveRequest, context: ComputerUseContext): Promise<ComputerObservation> {
+    this.requireEnabled()
     const signal = AbortSignal.any([context.signal, this.lifecycle.signal])
     const app = await this.backend.resolveApp(request.app, signal)
     await this.leases.ensure(context.agent, app, 'read', 'computer_observe', context.callId, signal)
@@ -323,6 +359,7 @@ export class ComputerUseService extends Service {
    * @returns 绑定该应用、观察、目标与动作的令牌及其过期时间。
    */
   async confirm(request: ComputerConfirmRequest, context: ComputerUseContext): Promise<ComputerConfirmation> {
+    this.requireEnabled()
     const stored = this.requireObservation(request.action.observationId, context.agent)
     return await this.confirmations.confirm(
       context.agent,
@@ -340,6 +377,7 @@ export class ComputerUseService extends Service {
    * @returns 动作通道、激活与指针路由事实、结构变化摘要与新观察。
    */
   async act(action: ComputerActionRequest, context: ComputerUseContext): Promise<ComputerActionResult> {
+    this.requireEnabled()
     const signal = AbortSignal.any([context.signal, this.lifecycle.signal])
     const stored = this.requireObservation(action.observationId, context.agent)
     if (action.kind === 'wait') return await this.wait(stored, action, context, signal)

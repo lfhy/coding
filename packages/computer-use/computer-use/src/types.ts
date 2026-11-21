@@ -302,6 +302,8 @@ export interface ComputerUseContext {
 
 /** Provider and permission diagnostics exposed to Settings. */
 export interface ComputerUseStatus {
+  /** 设置里的开关状态；关闭时服务仍可用，但不向模型暴露工具。 */
+  enabled: boolean
   platform: NodeJS.Platform
   provider: 'macos-ax' | 'cua-driver' | 'unsupported'
   generation: number

@@ -658,6 +658,7 @@
 - `ui-agent-preset` → `coding-client-ui-agent-preset`
 - `ui-settings-plugins` → `coding-client-ui-settings-plugins`
 - `ui-settings-search` → `coding-client-ui-settings-search`
+- `ui-settings-computer-use` → `coding-client-ui-settings-computer-use`
 - `ui-plan` → `coding-client-ui-plan`
 - `ui-user-questions` → `coding-client-ui-user-questions`
 - `ui-trajectory` → `coding-client-ui-trajectory`
