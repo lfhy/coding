@@ -1695,7 +1695,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/ppt/ppt-workbench/src/index.ts:59`](../packages/ppt/ppt-workbench/src/index.ts)
+Source: [`packages/ppt/ppt-workbench/src/index.ts:68`](../packages/ppt/ppt-workbench/src/index.ts)
 
 <a id="coding-progress-reminder"></a>
 
