@@ -57,7 +57,7 @@ describe('webclone preset discovery', () => {
     const presets = await discoverPresets([{ path: PRESET_ROOT, trust: 'system' }])
 
     expect(presets.map(preset => preset.id).sort())
-      .toEqual(['codex', 'cordis', 'image', 'longrun', 'minimal', 'notes', 'ppt', 'reverse', 'standard', 'webclone'])
+      .toEqual(['chat', 'codex', 'cordis', 'image', 'longrun', 'minimal', 'notes', 'ppt', 'reverse', 'standard', 'webclone'])
     const webclone = presets.find(preset => preset.id === 'webclone')
     // `broken` 是发现过程给出的原因；能挂载的预设没有这个字段。
     expect(webclone).toMatchObject({ id: 'webclone', trust: 'system' })

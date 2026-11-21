@@ -52,7 +52,8 @@ async function fixture() {
   ctx.provide('sessions', { get: (id: string) => [first, second].includes(SessionId(id)) ? { id } : undefined } as never)
   const spawnEnvironments: NodeJS.ProcessEnv[] = []
   ctx.provide('subprocess', { spawn: (spec: SubprocessSpawnSpec) => {
-    spawnEnvironments.push(spec.env)
+    // 未提供环境时 Host 会自带一份；这里只记录显式传入的环境用于断言。
+    if (spec.env !== undefined) spawnEnvironments.push(spec.env)
     let stdout = ''
     const script = typeof spec.stdio.stdin === 'string' ? '' : spec.stdio.stdin.data
     const done = (async () => {

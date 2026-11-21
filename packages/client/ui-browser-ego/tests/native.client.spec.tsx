@@ -2,6 +2,7 @@
 import { cleanup, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AgentBrowserPanel, type AgentBrowserProps } from '../src/client/AgentBrowserPanel.tsx'
+import type { WorkbenchExternalTab } from 'coding-client-ui-open-in-app/src/client/store.ts'
 import type { BrowserEgoView } from '../src/client/controller.ts'
 import type { EgoNativeSurface } from '../src/client/native.ts'
 import { concealEgoSurface, nativeEgoSurface } from '../src/client/native.ts'
@@ -10,6 +11,9 @@ import { en } from '../src/client/locales.ts'
 const page = { targetId: 'first', title: 'Example', url: 'https://example.com/', active: true,
   viewportW: 400, viewportH: 300, humanCheck: false }
 const frame = { targetId: 'first', src: 'data:image/jpeg;base64,YWJj', width: 400, height: 300, ts: 1 }
+// 面板只读标签 id 与其 targetId 参数，其余字段按工作台标签的完整形状补全。
+const TAB: WorkbenchExternalTab = { type: 'external', id: 'browser-first', definitionId: 'agent-browser',
+  kind: 'browser', name: 'Agent 浏览器', address: 'sidebar://browser', revision: 1, params: { targetId: 'first' } }
 const ready: BrowserEgoView = { phase: 'ready', pages: [page], selectedId: page.targetId,
   frame, relayOff: false, pending: false, closing: null,
   status: { running: true, browserConnected: true }, video: { available: false, mime: null }, actions: [] }
@@ -22,7 +26,7 @@ function mount(view: BrowserEgoView, { shown = true, surface }: {
 }) {
   const show = vi.fn()
   const props = { sessionId: 'session-one',
-    useTabInfo: () => ({ shown, tab: { id: 'browser-first', params: { targetId: 'first' } } }),
+    useTabInfo: () => ({ shown, tab: TAB }),
     useBrowserEgo: (choose: (snapshot: BrowserEgoView) => unknown) => choose(view),
     useBrowserEgoSettings: (choose: (snapshot: unknown) => unknown) => choose({ backend: 'auto' }),
     show, send: vi.fn(async () => true), hover: vi.fn(async () => null),
@@ -56,8 +60,9 @@ describe('桌面端原生呈现', () => {
     const view = mount(ready, { surface: { present } })
     expect(present).toHaveBeenCalled()
     rect.mockRestore()
-    view.rerender(<AgentBrowserPanel {...view.props} useTabInfo={() => ({ shown: false,
-      tab: { id: 'browser-first', params: { targetId: 'first' } } })} />)
+    view.rerender(<AgentBrowserPanel {...view.props} useTabInfo={() => ({ shown: false, tab: TAB,
+      tabDomId: 'tab-browser-first', panelDomId: 'panel-browser-first',
+      selectTab: () => {}, closeTab: () => {} })} />)
     expect(present).toHaveBeenCalledWith({
       targetId: 'first', visible: false, bounds: { x: 0, y: 0, width: 0, height: 0 },
     })
