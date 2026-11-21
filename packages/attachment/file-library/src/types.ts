@@ -7,7 +7,11 @@ export type ManagedFileKind = 'upload' | 'generated-image' | 'export' | 'note'
 /** 笔记目录树的节点；`path` 是相对笔记根目录的斜杠路径，浏览器端不会拿到绝对路径。 */
 export interface NotesTreeNode {
   name: string
-  kind: 'dir' | 'file'
+  /**
+   * `deck` 是以 `.codingppt` 结尾的幻灯片工程目录：它是一行幻灯片条目而不是可展开目录，
+   * 因此不携带 `children`。目录内的工程文件由 PPT 工作台读写，不进入笔记树。
+   */
+  kind: 'dir' | 'file' | 'deck'
   path: string
   /** 文件修改时间戳（毫秒）；目录取其最后一次写入时间，供编辑端检测外部改动。 */
   mtimeMs: number

@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { Button, Icon, IconCloseOutline16 } from 'coding-client-ui-primitives'
 import type { NotesLocaleKey } from './locales.ts'
+import { isDeckPath } from './notes-tree.ts'
 import css from './NotesTabs.module.css'
 
 interface NotesTabsProps {
@@ -55,7 +56,7 @@ export function NotesTabs({ paths, activePath, panelId, idPrefix, labelOfPath, o
         return <div key={path} className={css.tab} data-active={selected} role="presentation">
           <Button className={css.select} role="tab" id={`${idPrefix}-${index}`} aria-controls={panelId}
             aria-selected={selected} tabIndex={selected || activePath == null && index === 0 ? 0 : -1} title={name}
-            icon={<Icon name={/\.pptx$/iu.test(path) ? 'files' : 'notes'} size={14} />} onClick={() => { onSelect(path) }}>
+            icon={<Icon name={isDeckPath(path) ? 'file-slides' : 'notes'} size={14} />} onClick={() => { onSelect(path) }}>
             <span className={css.name}>{name}</span>
           </Button>
           <Button className={css.close} icon={<IconCloseOutline16 size={12} />}

@@ -1,4 +1,5 @@
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import type { IncomingMessage, ServerResponse } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -15,6 +16,8 @@ const SESSION = 'notes-tabs-test-session'
 let ctx: Context | undefined
 let root: string | undefined
 let notesRoot: string | undefined
+/** 发布路由由 WebServer 注入；测试直接调用同一个 handler，不监听真实端口。 */
+let route: ((req: IncomingMessage, res: ServerResponse) => Promise<void>) | undefined
 
 interface StubAgent {
   readonly agent: Agent
@@ -50,9 +53,33 @@ async function boot(): Promise<{ base: string; agent: Agent; session: Session }>
   ctx.agents.register(live.agent)
   ctx.provide('fileLibrary', { notesRootPath: () => notesRoot } as never)
   ctx.provide('connection', { requestRejection: () => undefined } as never)
-  ctx.provide('webServer', { port: 0, host: '127.0.0.1', register: () => () => {} } as never)
+  route = undefined
+  ctx.provide('webServer', {
+    port: 0, host: '127.0.0.1',
+    register: (entry: { handler: typeof route }) => { route = entry.handler; return () => {} },
+  } as never)
   await ctx.plugin(notesTabs)
   return { base: '', agent: live.agent, session: liveSession }
+}
+
+/** 以一次同源 POST 调用发布路由，返回状态码与解析后的响应体。 */
+async function publish(body: unknown): Promise<{ status: number; body: unknown }> {
+  if (route === undefined) throw new Error('发布路由未注册')
+  const payload = Buffer.from(JSON.stringify(body))
+  let status = 0
+  let text = ''
+  const req = {
+    method: 'POST', url: '/api/notes/tabs',
+    headers: { host: '127.0.0.1:0', 'content-type': 'application/json' },
+    socket: { remoteAddress: '127.0.0.1' },
+    async *[Symbol.asyncIterator]() { yield payload },
+  } as unknown as IncomingMessage
+  const res = {
+    writeHead(code: number) { status = code },
+    end(chunk?: string) { if (typeof chunk === 'string') text = chunk },
+  } as unknown as ServerResponse
+  await route(req, res)
+  return { status, body: text === '' ? undefined : JSON.parse(text) }
 }
 
 afterEach(async () => {
@@ -80,6 +107,29 @@ describe('notes tabs protocol', () => {
     await ctx?.fiber.dispose()
     expect(ctx?.get('tools')).toBeUndefined()
     expect(agent.id).toBe(SESSION)
+  })
+
+  it('publishes a .codingppt tab as the active ppt tab and rejects mismatched kinds', async () => {
+    const { agent } = await boot()
+    await writeFile(join(notesRoot!, 'hello.md'), '# Hello')
+    await mkdir(join(notesRoot!, '演示.codingppt'))
+    await mkdir(join(notesRoot!, 'data'), { recursive: true })
+    const body = { sessionId: SESSION, windowId: 'window', version: 1,
+      openTabs: ['hello.md', '演示.codingppt'], activeTabPath: '演示.codingppt', activeKind: 'ppt' }
+    await expect(publish(body)).resolves.toMatchObject({ status: 200, body: { ok: true } })
+    const result = await ctx!.tools.execute({
+      name: 'notes_tabs', callId: 'notes-tabs-deck' as never, arguments: {},
+      signal: new AbortController().signal, agent,
+    })
+    expect(result.isError).toBe(false)
+    if (result.isError) return
+    expect(result.value).toMatchObject({ status: 'ready', activeKind: 'ppt',
+      activeTabPath: '演示.codingppt', openTabs: [{ path: 'hello.md' }, { path: '演示.codingppt' }] })
+
+    // 普通目录不能被声明成幻灯片，Markdown 也不能声明成 ppt。
+    await expect(publish({ ...body, openTabs: ['data'], activeTabPath: 'data' })).resolves.toMatchObject({ status: 400 })
+    await expect(publish({ ...body, openTabs: ['hello.md'], activeTabPath: 'hello.md' }))
+      .resolves.toMatchObject({ status: 400 })
   })
 
   it('rejects a fake session and does not derive a path from the filesystem', async () => {

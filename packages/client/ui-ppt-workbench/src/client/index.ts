@@ -111,6 +111,7 @@ export function apply(ctx: ClientContext): void {
       show: (visible, source) => { controller.show(visible, source) },
       refresh: () => { void controller.refresh() },
       open: dir => controller.open(dir),
+      openDeck: dir => controller.openDeck(dir),
       openSource: path => controller.openSource(path),
       create: title => controller.create(title),
       undo: () => controller.undo(),

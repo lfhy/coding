@@ -10,7 +10,7 @@
 {"sessionId":"当前笔记会话标识","windowId":"该窗口存活期唯一标识","version":1,"openTabs":["第一篇.md","分类/第二篇.markdown"],"activeTabPath":"分类/第二篇.markdown","activeKind":"note"}
 ```
 
-`openTabs` 是有序完整快照，最多 64 项；支持 Markdown、`.markdown` 和 `.pptx`，`activeTabPath` 必须为其中一项，空标签状态传 `null`。活动类型 `ppt` 仅可对应 `.pptx`，`note` 仅可对应 Markdown。发布者须为当前笔记会话页面，每次内容变化及心跳发送严格递增的安全整数 `version`；同一窗口会话重挂载时使用新 `windowId`，版本可从 1 开始。单次 JSON 请求体不超过 64 KiB，拒绝未知字段、重复标签和路径越界。`200` 响应为 `{ "ok": true, "sessionId": "...", "windowId": "...", "version": 1 }`；`400` 为 `{ "ok": false, "error": "invalid" }`；`409` 为 `{ "ok": false, "error": "stale" }` 或 `{ "ok": false, "error": "session-mismatch" }`。不可信来源返回 `403`，非 POST 返回 `405`，非 JSON 返回 `415`。发布失败不修改旧快照。
+`openTabs` 是有序完整快照，最多 64 项；支持 Markdown、`.markdown` 和 `.codingppt` 幻灯片工程目录，`activeTabPath` 必须为其中一项，空标签状态传 `null`。活动类型 `ppt` 仅可对应 `.codingppt` 目录，`note` 仅可对应 Markdown。发布者须为当前笔记会话页面，每次内容变化及心跳发送严格递增的安全整数 `version`；同一窗口会话重挂载时使用新 `windowId`，版本可从 1 开始。单次 JSON 请求体不超过 64 KiB，拒绝未知字段、重复标签和路径越界。`200` 响应为 `{ "ok": true, "sessionId": "...", "windowId": "...", "version": 1 }`；`400` 为 `{ "ok": false, "error": "invalid" }`；`409` 为 `{ "ok": false, "error": "stale" }` 或 `{ "ok": false, "error": "session-mismatch" }`。不可信来源返回 `403`，非 POST 返回 `405`，非 JSON 返回 `415`。发布失败不修改旧快照。
 
 Host 仅保留内存数据：重启或预设卸载后需要再次发布，关闭页面不发送虚构空标签；页面可每 10 秒重发递增版本作为心跳，30 秒未发布的窗口从工具查询中排除。多个窗口在同一会话内保持活跃时工具拒绝选择，避免把另一个窗口的活动标签当成当前内容；客户端应关闭多余窗口或自行使旧窗口超时。笔记文件消失或路径核验失败时工具不返回该快照。此路由不是强认证发布通道：同机上能够向本机 API 发请求的进程可冒用已知会话标识；不能以此作为互不信任本地进程之间的权限边界。
 
@@ -32,4 +32,4 @@ Host 仅保留内存数据：重启或预设卸载后需要再次发布，关闭
 
 ## Known Limitations and Deferred Work
 
-端点局限在 Host 回环同源和 live 会话校验，不验证浏览器窗口与会话之间的不可伪造凭据；在同机不可信进程可访问 HTTP 的部署中，不能把发布状态视作具有密码学来源证明。窗口关闭依靠心跳超时而非立即撤销；超时前模型看到的状态可能仍是上次发布值。PPTX 标签的路径校验以笔记根目录真实文件为依据，不推断工作台工程状态。
+端点局限在 Host 回环同源和 live 会话校验，不验证浏览器窗口与会话之间的不可伪造凭据；在同机不可信进程可访问 HTTP 的部署中，不能把发布状态视作具有密码学来源证明。窗口关闭依靠心跳超时而非立即撤销；超时前模型看到的状态可能仍是上次发布值。幻灯片标签的路径校验以笔记根目录里真实的 `.codingppt` 工程目录为依据，不推断工作台工程状态。

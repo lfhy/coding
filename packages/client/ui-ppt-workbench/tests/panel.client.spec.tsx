@@ -74,6 +74,7 @@ function mount(state: PptPanelState, shown = true, locale: typeof en = en, path?
     show: vi.fn(),
     refresh: vi.fn(),
     open: vi.fn(async () => {}),
+    openDeck: vi.fn(async () => {}),
     openSource: vi.fn(async () => {}),
     create: vi.fn(async () => {}),
     undo: vi.fn(async () => {}),
@@ -511,24 +512,31 @@ describe('PPT 工作台面板', () => {
     expect(panel.props.show).not.toHaveBeenCalled()
   })
 
-  it('笔记正文以 owner 路径打开原件，路径变化时只切源、不重复显隐计数', () => {
-    const panel = mount(ready, true, zh, 'slides/first.pptx')
+  it('笔记正文按 owner 的工程目录打开幻灯片，路径变化时只切工程、不重复显隐计数', () => {
+    const panel = mount(ready, true, zh, 'slides/first.codingppt')
     expect(panel.props.show).toHaveBeenCalledOnce()
     expect(panel.props.show).toHaveBeenCalledWith(true, true)
-    expect(panel.props.openSource).toHaveBeenCalledWith('slides/first.pptx')
-    panel.rerender(<PptWorkbench {...{ ...panel.props, path: 'slides/second.pptx' }} />)
+    expect(panel.props.openDeck).toHaveBeenCalledWith('slides/first.codingppt')
+    expect(panel.props.openSource).not.toHaveBeenCalled()
+    panel.rerender(<PptWorkbench {...{ ...panel.props, path: 'slides/second.codingppt' }} />)
     expect(panel.props.show).toHaveBeenCalledOnce()
-    expect(panel.props.openSource).toHaveBeenCalledWith('slides/second.pptx')
+    expect(panel.props.openDeck).toHaveBeenCalledWith('slides/second.codingppt')
     panel.unmount()
     expect(panel.props.show).toHaveBeenLastCalledWith(false, true)
   })
 
-  it('笔记原件失败不显示宿主诊断，重试仍打开当前路径', () => {
+  it('非工程目录的 owner 路径仍按工作区源文件打开', () => {
+    const panel = mount(ready, true, zh, 'slides/source.pptx')
+    expect(panel.props.openSource).toHaveBeenCalledWith('slides/source.pptx')
+    expect(panel.props.openDeck).not.toHaveBeenCalled()
+  })
+
+  it('笔记幻灯片打开失败不显示宿主诊断，重试仍打开当前工程目录', () => {
     const panel = mount({ ...ready, phase: 'error', project: null, sourceError: true,
-      notice: { tone: 'error', reason: '/private/bad/path' } }, true, zh, 'slides/missing.pptx')
+      notice: { tone: 'error', reason: '/private/bad/path' } }, true, zh, 'slides/missing.codingppt')
     expect(screen.getByRole('alert').textContent).toContain('原文件可能已移动')
     expect(panel.container.textContent).not.toContain('/private/bad/path')
     fireEvent.click(screen.getByRole('button', { name: '重试' }))
-    expect(panel.props.openSource).toHaveBeenCalledWith('slides/missing.pptx')
+    expect(panel.props.openDeck).toHaveBeenCalledWith('slides/missing.codingppt')
   })
 })

@@ -106,16 +106,28 @@ async open(sessionId: string, dir: string): Promise<PptSnapshot>
 async openSource(sessionId: string, relativePath: string): Promise<PptSnapshot>
 
 /**
- * 在笔记目录创建一个可由工作台打开的初始 PPTX 源文件。
+ * 在笔记目录创建一份默认整稿的幻灯片工程目录（`{name}.codingppt`）。
  *
- * 只有工作目录正好是文件库笔记根目录的本机会话可以调用；工程绑定与会话焦点
- * 仍由随后唯一一次 `openSource` 完成，避免一次创建产生两份工程或重复打开事件。
+ * 目录由文件库独占创建，工程内容由本服务写入并成为会话当前工程；写入失败会删掉
+ * 本次创建的目录，不留半成品。返回后客户端只需按 `dir` 打开或刷新目录树。
  * @param sessionId - 会话身份。
- * @param options - 文件名与笔记根目录下的父目录。
- * @returns 文件库返回的笔记根目录相对来源路径。
+ * @param options - 幻灯片名称与笔记根目录下的父目录。
+ * @returns 笔记根目录相对的工程目录。
  * @throws PptStoreError 会话不是本机笔记会话、文件库不可用或输入不安全时。
  */
-async createNoteSource(sessionId: string, options: { name: string directory?: string }): Promise<{ source: string }>
+createNoteDeck(sessionId: string, options: { name: string; directory?: string }): Promise<{ dir: string }>
+
+/**
+ * 把一份 `.pptx` 字节导入成笔记目录里的幻灯片工程目录。
+ *
+ * 导入只保留模型能表达的页面结构；复杂图表、SmartArt 与动画随报告丢弃，
+ * 不做原位写回绑定，因此源文件可以在导入后删除。
+ * @param sessionId - 会话身份。
+ * @param options - 幻灯片名称、父目录与不超过 8 MiB 的原始字节。
+ * @returns 笔记根目录相对的工程目录。
+ * @throws PptStoreError 不是笔记会话、字节超出上限或 PPTX 不可解析时。
+ */
+async importNoteDeck(sessionId: string, options: { name: string directory?: string data: Uint8Array }): Promise<{ dir: string }>
 
 /**
  * 读取工程。
@@ -308,5 +320,5 @@ async createFromTemplate(sessionId: string, id: string, options: { title?: strin
 async export(sessionId: string, dir?: string, options: { skipCheck?: boolean } = {}): Promise<PptExportResult>
 ```
 
-Source: [`packages/ppt/ppt-workbench/src/index.ts:106`](../../packages/ppt/ppt-workbench/src/index.ts)
+Source: [`packages/ppt/ppt-workbench/src/index.ts:115`](../../packages/ppt/ppt-workbench/src/index.ts)
 <!-- END GENERATED cordis-surface -->

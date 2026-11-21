@@ -6,8 +6,8 @@
 
 新增或移除一种笔记文件类型时，按下面顺序改完再声明支持。只改菜单或页面里的扩展名判断，会出现“菜单能新建但打不开”“打开后保存到错误文件”或“助手读不到当前文件”。
 
-1. **Host 准入**：[文件库](../../attachment/file-library/src/index.ts)持有扩展名真源。把扩展名加入 `NOTE_TREE_FILE_EXTENSIONS`（目录树、改名、删除可见）并补 media type；只有可编辑纯文本才加入 `NOTE_EXTENSIONS` 和 `readNote`／`saveNote`，二进制类型单独提供 `createNoteXxx` seam，复用 `safeNoteDirectory`、`O_EXCL`、私有权限、字节上限和父目录同步。`noteRecords` 决定该类型是否进入文件管理列表，需要列出时同步 `file-category.ts`。
-2. **新建链路**：新类型的合法内容由所属 Host 服务生成，再经文件库落盘。幻灯片参考 `wire.ts` 的 `notesCreateSlide` → `/api/ppt/notes/create` → `PptProjects.createNoteSource` → `fileLibrary.createNotePptx`。不让 Client 写空文件、不把工程目录当成品，也不绕过文件库直接写笔记根目录。
+1. **Host 准入**：[文件库](../../attachment/file-library/src/index.ts)持有扩展名与后缀真源。文件型条目把扩展名加入 `NOTE_EXTENSIONS`（目录树、改名、删除可见，同时决定 `readNote`／`saveNote` 能否读写）；目录型条目按 `NOTE_DECK_SUFFIX` 这类后缀识别，在 `notesTree` 里映射成自己的节点种类。可写内容另提供 `createNoteXxx` seam，复用 `safeNoteDirectory`、`O_EXCL`、私有权限、字节上限和父目录同步。`noteRecords` 决定该类型是否进入文件管理列表，需要列出时同步 `file-category.ts`。
+2. **新建链路**：新类型的合法内容由所属 Host 服务生成，再经文件库落盘。幻灯片是目录型条目：`wire.ts` 的 `notesCreateSlide`／`notesImportSlide` → `/api/ppt/notes/create`／`/api/ppt/notes/import` → `PptProjects.createNoteDeck`／`importNoteDeck` → `fileLibrary.createNoteDeck` 建出 `{名称}.codingppt` 空目录，工程内容再由 PPT 宿主写进该目录。不让 Client 写空文件、不绕过文件库直接写笔记根目录，也不要恢复单文件 `.pptx` 源稿与 `ppt/` 会话工程目录。
 3. **打开分支**：`notes-tree.ts` 的 `labelOf`、`filePaths`、`noteFiles`（助手写入检测）逐处判断；`NotesPage.tsx` 的恢复、切换、删除后选中、重命名保留扩展名和内容选择，`notes-ui-store.ts` 的打开动作，`NotesTabs.tsx` 的标签图标，`usePublishNotesTabs.ts` 的 `activeKind` 同步更新。Markdown 草稿、自动保存和导出只服务文本类型。
 4. **内容区 slot**：在 `src/client/index.ts` 声明 `notes.document.<kind>` 子 slot，由拥有该编辑器的包注册（幻灯片是 `ui-ppt-workbench`）；`NotesPage` 只选择 slot 并维护可见路径，不内联第二套编辑器。
 5. **新建入口与文案**：页头加号菜单、`NoteNameDialog` 的名称与扩展名处理、`locales.ts` 的中英文一起改；目录右键菜单只提供目录上的动作。菜单项使用 `ui-icons` 的语义图标（幻灯片用 `file-slides`），不内联 SVG。

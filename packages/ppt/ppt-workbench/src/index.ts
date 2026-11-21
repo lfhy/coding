@@ -30,7 +30,7 @@ import {
 } from './import.ts'
 import { renderPages, type PageCapture, type RenderedPage } from './render.ts'
 import { assertSourceVersion, linkedCommit, readSourceVersion, sourcePath, withSourceRead } from './source-bound.ts'
-import { parseDeck, PptModelError, type SlideSizeId, type ThemeId } from 'coding-ppt-model'
+import { parseDeck, PptModelError, type PptDeck, type SlideSizeId, type ThemeId } from 'coding-ppt-model'
 import { installRoutes } from './routes.ts'
 import { publishProject, readWorkspaceFile, readWorkspaceMedia } from './template-project.ts'
 import { PptTemplateStore, type PptTemplateDetail, type PptTemplateSummary } from './template-store.ts'
@@ -48,11 +48,20 @@ export { PptStoreError } from './store.ts'
 export type { PptTemplateDetail, PptTemplateId, PptTemplateSummary } from './template-store.ts'
 export type { PptImportReport, PptPageEvidenceChunk } from './import.ts'
 
-/** 从用户输入提取文稿标题；文件名净化和扩展名规则仍由文件库唯一拥有。 */
-function noteSourceTitle(name: string): string {
-  const leaf = basename(name.replaceAll('\\', '/')).replace(/\.pptx$/iu, '')
+/** 从用户输入提取文稿标题；`.codingppt` 后缀由本函数剥离，名称净化与落盘仍归文件库。 */
+function deckTitle(name: string): string {
+  const leaf = basename(name.replaceAll('\\', '/')).replace(/\.codingppt$/iu, '')
     .replace(/[\u0000-\u001f\u007f]/gu, ' ').trim().slice(0, 160)
   return leaf === '' ? '演示文稿' : leaf
+}
+
+/** 把文件库的名称、路径诊断转成本服务与路由认识的错误码，已带错误码的失败原样传播。 */
+function deckFailure(reason: unknown): unknown {
+  if (reason instanceof PptStoreError || reason instanceof PptModelError) return reason
+  if (reason instanceof TypeError) {
+    return new PptStoreError(/已存在|重复/u.test(reason.message) ? 'conflict' : 'bad-request', reason.message)
+  }
+  return new PptStoreError('conflict', '笔记幻灯片写入失败')
 }
 
 /** 本机模板仓库路径；远程 marker 工作区不通过此设置转为本机工程。 */
@@ -287,29 +296,27 @@ export default class PptProjects extends Service {
   }
 
   /**
-   * 在笔记目录创建一个可由工作台打开的初始 PPTX 源文件。
+   * 校验当前是本机笔记会话，并返回会话工作区与文件库的幻灯片目录 seam。
    *
-   * 只有工作目录正好是文件库笔记根目录的本机会话可以调用；工程绑定与会话焦点
-   * 仍由随后唯一一次 `openSource` 完成，避免一次创建产生两份工程或重复打开事件。
+   * 只有工作目录正好是文件库笔记根目录的本机会话可以创建笔记幻灯片；远程工作区、
+   * 非笔记会话或缺少文件库时直接拒绝，不把工程写到别处。
    * @param sessionId - 会话身份。
-   * @param options - 文件名与笔记根目录下的父目录。
-   * @returns 文件库返回的笔记根目录相对来源路径。
-   * @throws PptStoreError 会话不是本机笔记会话、文件库不可用或输入不安全时。
+   * @returns 工作区绝对路径、目录创建与清理句柄。
+   * @throws PptStoreError 会话不是本机笔记会话或文件库不可用时。
    */
-  async createNoteSource(sessionId: string, options: {
-    name: string
-    directory?: string
-  }): Promise<{ source: string }> {
+  private async noteDeckSeam(sessionId: string): Promise<{
+    root: string
+    create: (name: string, directory: string) => Promise<{ path: string; remove?: () => Promise<void> }>
+    remove?: (path: string) => Promise<void>
+  }> {
     const root = await this.localRoot(sessionId)
     const library = this.ctx.get('fileLibrary') as {
       notesRootPath?: () => string
-      createNotePptx?: (name: string, directory: string, data: Uint8Array) => Promise<{
-        path: string
-        remove?: () => Promise<void>
-      }>
+      createNoteDeck?: (name: string, directory: string) => Promise<{ path: string; remove?: () => Promise<void> }>
       deleteNote?: (path: string) => Promise<void>
     } | undefined
-    if (library?.notesRootPath === undefined || library.createNotePptx === undefined) {
+    const create = library?.createNoteDeck
+    if (library?.notesRootPath === undefined || create === undefined) {
       throw new PptStoreError('forbidden', '创建笔记幻灯片需要可用的文件库')
     }
     let notesRoot: string
@@ -319,36 +326,75 @@ export default class PptProjects extends Service {
     if (resolve(root) !== resolve(notesRoot)) {
       throw new PptStoreError('forbidden', '只有笔记会话可以创建笔记幻灯片')
     }
-    if (typeof options.name !== 'string') throw new PptStoreError('bad-request', 'name 必须提供')
-    const title = noteSourceTitle(options.name)
-    const deck = parseDeck(createDefaultDeck(title))
-    const bytes = buildPptx(deck)
-    if (bytes.byteLength === 0 || bytes.byteLength > PPT_IMPORT_MAX_BYTES) {
-      throw new PptStoreError('bad-request', '初始 PPTX 超过 8 MiB')
+    const remove = library.deleteNote
+    return { root, create, ...remove === undefined ? {} : { remove } }
+  }
+
+  /**
+   * 在笔记目录创建一份默认整稿的幻灯片工程目录（`{name}.codingppt`）。
+   *
+   * 目录由文件库独占创建，工程内容由本服务写入并成为会话当前工程；写入失败会删掉
+   * 本次创建的目录，不留半成品。返回后客户端只需按 `dir` 打开或刷新目录树。
+   * @param sessionId - 会话身份。
+   * @param options - 幻灯片名称与笔记根目录下的父目录。
+   * @returns 笔记根目录相对的工程目录。
+   * @throws PptStoreError 会话不是本机笔记会话、文件库不可用或输入不安全时。
+   */
+  createNoteDeck(sessionId: string, options: { name: string; directory?: string }): Promise<{ dir: string }> {
+    return this.writeNoteDeck(sessionId, options, title => ({
+      deck: parseDeck(createDefaultDeck(title)),
+      media: [],
+    }))
+  }
+
+  /**
+   * 把一份 `.pptx` 字节导入成笔记目录里的幻灯片工程目录。
+   *
+   * 导入只保留模型能表达的页面结构；复杂图表、SmartArt 与动画随报告丢弃，
+   * 不做原位写回绑定，因此源文件可以在导入后删除。
+   * @param sessionId - 会话身份。
+   * @param options - 幻灯片名称、父目录与不超过 8 MiB 的原始字节。
+   * @returns 笔记根目录相对的工程目录。
+   * @throws PptStoreError 不是笔记会话、字节超出上限或 PPTX 不可解析时。
+   */
+  async importNoteDeck(sessionId: string, options: {
+    name: string
+    directory?: string
+    data: Uint8Array
+  }): Promise<{ dir: string }> {
+    const { data } = options
+    if (!(data instanceof Uint8Array) || data.byteLength < 1) {
+      throw new PptStoreError('bad-request', 'PPTX 文件不能为空')
     }
+    if (data.byteLength > PPT_IMPORT_MAX_BYTES) {
+      throw new PptStoreError('bad-request', 'PPTX 文件不能超过 8 MiB')
+    }
+    return this.writeNoteDeck(sessionId, options, (title) => {
+      const imported = importPptx(data, { title })
+      return { deck: imported.deck, media: imported.media }
+    })
+  }
+
+  /** 创建笔记幻灯片目录并写入工程；失败时只清理本次创建的目录。 */
+  private async writeNoteDeck(sessionId: string, options: {
+    name: string
+    directory?: string
+    data?: Uint8Array
+  }, build: (title: string) => { deck: PptDeck; media: readonly { part: string; bytes: Uint8Array }[] }): Promise<{ dir: string }> {
+    const seam = await this.noteDeckSeam(sessionId)
     const directory = options.directory ?? ''
     if (typeof directory !== 'string') throw new PptStoreError('bad-request', 'directory 必须是字符串')
-    let source: string | undefined
-    let removeCreated: (() => Promise<void>) | undefined
+    const created = await seam.create(options.name, directory).catch((reason: unknown) => { throw deckFailure(reason) })
     try {
-      const created = await library.createNotePptx(options.name, directory, bytes)
-      source = created.path
-      removeCreated = created.remove
-      if (typeof source !== 'string' || source.length === 0) {
-        throw new PptStoreError('bad-request', '文件库返回的来源路径无效')
-      }
-      // 复用原位编辑同一版本读取准入，确保返回路径确实指向刚写入的普通 PPTX。
-      await readSourceVersion(root, source)
-      return { source }
+      const absolute = resolveProjectDir(seam.root, created.path)
+      const { deck, media } = build(deckTitle(options.name))
+      await publishProject(seam.root, absolute, deck, media, undefined, { existingDirectory: true })
+      this.focus(sessionId, absolute)
+      return { dir: this.relativeDir(sessionId, absolute) }
     } catch (reason) {
-      if (removeCreated !== undefined) await removeCreated().catch(() => undefined)
-      else if (source !== undefined && library.deleteNote !== undefined) await library.deleteNote(source).catch(() => undefined)
-      if (reason instanceof PptStoreError) throw reason
-      if (reason instanceof TypeError) {
-        const code = /已存在|重复/u.test(reason.message) ? 'conflict' : 'bad-request'
-        throw new PptStoreError(code, reason.message)
-      }
-      throw new PptStoreError('conflict', '笔记幻灯片创建失败')
+      if (created.remove !== undefined) await created.remove().catch(() => undefined)
+      else if (seam.remove !== undefined) await seam.remove(created.path).catch(() => undefined)
+      throw deckFailure(reason)
     }
   }
 

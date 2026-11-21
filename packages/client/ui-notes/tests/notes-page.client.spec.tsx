@@ -17,7 +17,7 @@ const exportMocks = vi.hoisted(() => ({
 vi.mock('../src/client/export/index.ts', () => exportMocks)
 
 interface ServerNote { content: string; mtimeMs: number }
-interface TreeNode { name: string; kind: 'dir' | 'file'; path: string; mtimeMs: number; children?: TreeNode[] }
+interface TreeNode { name: string; kind: 'dir' | 'file' | 'deck'; path: string; mtimeMs: number; children?: TreeNode[] }
 
 function requestJson(init?: RequestInit): unknown {
   if (typeof init?.body !== 'string') throw new Error('预期请求包含 JSON 正文')
@@ -27,12 +27,11 @@ function requestJson(init?: RequestInit): unknown {
 function makeServer(withPpt = false) {
   const state = {
     tree: [
-      ...(withPpt ? [{ name: 'deck.pptx', kind: 'file' as const, path: 'deck.pptx', mtimeMs: 700 }] : []),
+      ...(withPpt ? [{ name: 'deck.codingppt', kind: 'deck' as const, path: 'deck.codingppt', mtimeMs: 700 }] : []),
       { name: 'a.md', kind: 'file', path: 'a.md', mtimeMs: 1000 },
       { name: 'd', kind: 'dir', path: 'd', mtimeMs: 900, children: [{ name: 'b.md', kind: 'file', path: 'd/b.md', mtimeMs: 800 }] },
     ] as TreeNode[],
     files: new Map<string, ServerNote>([
-      ...(withPpt ? [['deck.pptx', { content: '', mtimeMs: 700 }] as const] : []),
       ['a.md', { content: 'hello a', mtimeMs: 1000 }],
       ['d/b.md', { content: 'hello b', mtimeMs: 800 }],
     ]),
@@ -213,22 +212,22 @@ describe('NotesPage', () => {
     expect(screen.getByRole('button', { name: '并排' }).getAttribute('aria-pressed')).toBe('true')
   })
 
-  it('打开 PPTX 后与 Markdown 共用标签，并在中央内容区切换和关闭', async () => {
+  it('打开幻灯片后与 Markdown 共用标签，并在中央内容区切换和关闭', async () => {
     makeServer(true)
     await mount(undefined, { openNote: null })
     await act(async () => { fireEvent.click(treeRow('deck')) })
     const tabs = screen.getByRole('tablist', { name: '打开的笔记' })
     expect(within(tabs).getByRole('tab', { name: 'deck' }).getAttribute('aria-selected')).toBe('true')
-    expect(screen.getByText('演示文稿 deck.pptx')).toBeTruthy()
-    expect(uiStore.instance.getSnapshot().activePath).toBe('deck.pptx')
+    expect(screen.getByText('演示文稿 deck.codingppt')).toBeTruthy()
+    expect(uiStore.instance.getSnapshot().activePath).toBe('deck.codingppt')
 
     await act(async () => { fireEvent.click(treeRow('a')) })
     expect(screen.getByRole<HTMLTextAreaElement>('textbox', { name: '原始文本' }).value).toBe('hello a')
-    expect(screen.queryByText('演示文稿 deck.pptx')).toBeNull()
+    expect(screen.queryByText('演示文稿 deck.codingppt')).toBeNull()
     expect(within(tabs).getByRole('tab', { name: 'a' }).getAttribute('aria-selected')).toBe('true')
 
     await act(async () => { fireEvent.click(within(tabs).getByRole('tab', { name: 'deck' })) })
-    expect(screen.getByText('演示文稿 deck.pptx')).toBeTruthy()
+    expect(screen.getByText('演示文稿 deck.codingppt')).toBeTruthy()
     expect(within(tabs).getByRole('tab', { name: 'deck' }).getAttribute('aria-selected')).toBe('true')
     await act(async () => { fireEvent.click(within(tabs).getByRole('button', { name: '关闭「deck」' })) })
     expect(within(tabs).queryByRole('tab', { name: 'deck' })).toBeNull()

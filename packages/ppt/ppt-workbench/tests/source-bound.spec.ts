@@ -33,15 +33,19 @@ beforeEach(async () => {
   ctx.sessions.create(SessionId(SESSION), { meta: { cwd: root } })
   ctx.provide('fileLibrary', {
     notesRootPath: () => root,
-    createNotePptx: async (name: string, directory: string, bytes: Uint8Array) => {
-      const fileName = name.toLowerCase().endsWith('.pptx') ? name : `${name}.pptx`
+    createNoteDeck: async (name: string, directory: string) => {
+      const stem = name.toLowerCase().endsWith('.codingppt') ? name.slice(0, -'.codingppt'.length) : name
+      const fileName = `${stem}.codingppt`
       const notesRoot = resolve(root)
       const target = resolve(notesRoot, directory, fileName)
       if (target !== notesRoot && !target.startsWith(`${notesRoot}/`)) throw new TypeError('笔记路径无效')
       await mkdir(dirname(target), { recursive: true })
-      try { await writeFile(target, bytes, { flag: 'wx' }) }
-      catch (error) { if ((error as NodeJS.ErrnoException).code === 'EEXIST') throw new TypeError('笔记已存在'); throw error }
-      return { path: directory === '' ? fileName : `${directory}/${fileName}` }
+      try { await mkdir(target, { mode: 0o700 }) }
+      catch (error) { if ((error as NodeJS.ErrnoException).code === 'EEXIST') throw new TypeError('幻灯片已存在'); throw error }
+      return {
+        path: directory === '' ? fileName : `${directory}/${fileName}`,
+        remove: async () => { await rm(target, { recursive: true, force: true }) },
+      }
     },
     deleteNote: async (path: string) => { await rm(resolve(root, path), { force: true }) },
   } as never)
@@ -150,26 +154,42 @@ describe('源 PPTX 原位编辑', () => {
   })
 })
 
-describe('笔记 PPTX 源文件', () => {
-  it('生成可解析的初始稿，不创建工程焦点', async () => {
-    const created = await service.createNoteSource(SESSION, { name: '会议汇报' })
-    expect(created).toEqual({ source: '会议汇报.pptx' })
-    const imported = importPptx(await readFile(join(root, created.source)), { title: '回读' })
-    expect(imported.deck.pages.length).toBeGreaterThan(0)
-    expect(service.activeDir(SESSION)).toBeUndefined()
-    expect(await readdir(root)).toContain('会议汇报.pptx')
+describe('笔记幻灯片工程目录', () => {
+  it('在笔记目录生成可解析的整稿工程并设为当前工程', async () => {
+    const created = await service.createNoteDeck(SESSION, { name: '会议汇报' })
+    expect(created).toEqual({ dir: '会议汇报.codingppt' })
+    const snapshot = await service.read(SESSION, created.dir)
+    expect(snapshot.deck.pages.length).toBeGreaterThan(0)
+    expect(snapshot.deck.title).toBe('会议汇报')
+    expect(service.activeDir(SESSION)).toBe('会议汇报.codingppt')
+    expect(await readdir(join(root, '会议汇报.codingppt'))).toContain('deck.json')
+    // 工程直接落在笔记目录，不再生成单文件幻灯片或额外的 ppt/ 工作区目录。
+    expect(await readdir(root)).toEqual(['会议汇报.codingppt'])
   })
 
-  it('限制笔记会话、重复名和越界目录，失败不留下源文件', async () => {
-    await service.createNoteSource(SESSION, { name: '重复稿' })
-    await expect(service.createNoteSource(SESSION, { name: '重复稿' })).rejects.toMatchObject({ code: 'conflict' })
-    expect(await readdir(root)).toEqual(['重复稿.pptx'])
+  it('导入 pptx 生成同名工程目录，媒体随页面引用一起落盘', async () => {
+    const bytes = buildPptx(deck)
+    const imported = await service.importNoteDeck(SESSION, { name: '外部稿', data: new Uint8Array(bytes) })
+    expect(imported).toEqual({ dir: '外部稿.codingppt' })
+    const snapshot = await service.read(SESSION, imported.dir)
+    expect(snapshot.deck.pages).toHaveLength(1)
+    expect(snapshot.deck.pages[0]?.elements).toHaveLength(1)
+    await expect(service.importNoteDeck(SESSION, { name: '外部稿', data: new Uint8Array(bytes) }))
+      .rejects.toMatchObject({ code: 'conflict' })
+    await expect(service.importNoteDeck(SESSION, { name: '空稿', data: new Uint8Array() }))
+      .rejects.toMatchObject({ code: 'bad-request' })
+  })
+
+  it('限制笔记会话、重复名和越界目录，失败不留下半成品目录', async () => {
+    await service.createNoteDeck(SESSION, { name: '重复稿' })
+    await expect(service.createNoteDeck(SESSION, { name: '重复稿' })).rejects.toMatchObject({ code: 'conflict' })
+    expect(await readdir(root)).toEqual(['重复稿.codingppt'])
 
     const other = 'other-session'
     ctx.sessions.create(SessionId(other), { meta: { cwd: join(root, 'other') } })
-    await expect(service.createNoteSource(other, { name: '越界' })).rejects.toMatchObject({ code: 'forbidden' })
-    await expect(service.createNoteSource(SESSION, { name: '越界', directory: '../outside' }))
+    await expect(service.createNoteDeck(other, { name: '越界' })).rejects.toMatchObject({ code: 'forbidden' })
+    await expect(service.createNoteDeck(SESSION, { name: '越界', directory: '../outside' }))
       .rejects.toMatchObject({ code: 'bad-request' })
-    expect(await readdir(root)).toEqual(['重复稿.pptx'])
+    expect(await readdir(root)).toEqual(['重复稿.codingppt'])
   })
 })

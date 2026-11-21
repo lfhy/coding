@@ -33,36 +33,46 @@ async function harness(home?: string) {
 }
 
 describe('无目录笔记域', () => {
-  it('扫描目录树：真实 PPTX 与 Markdown 并列，其他扩展名和符号链接不入树', async () => {
+  it('扫描目录树：幻灯片工程目录占一行，其余扩展名与符号链接都不入树', async () => {
     const { library } = await harness()
     await library.notesTree()
     const notesDir = library.notesRootPath()
     await mkdir(join(notesDir, 'ideas', 'deep'), { recursive: true, mode: 0o700 })
+    const deck = join(notesDir, '演示.codingppt')
+    await mkdir(deck, { mode: 0o700 })
+    await writeFile(join(deck, 'deck.json'), '{}')
+    await mkdir(join(notesDir, 'ideas', 'PLAN.CODINGPPT'), { mode: 0o700 })
     await writeFile(join(notesDir, 'top.md'), '顶层笔记')
     await writeFile(join(notesDir, 'slides.pptx'), pptxBytes)
     await writeFile(join(notesDir, 'ideas', 'one.md'), '一级笔记')
-    await writeFile(join(notesDir, 'ideas', 'PLAN.PPTX'), pptxBytes)
     await writeFile(join(notesDir, 'ideas', 'deep', 'two.markdown'), '二级笔记')
     await writeFile(join(notesDir, 'ideas', 'deep', 'three.pptx'), pptxBytes)
     await writeFile(join(notesDir, 'ideas', 'data.txt'), '不是笔记')
     await symlink(join(notesDir, 'top.md'), join(notesDir, 'link.md'))
-    await symlink(join(notesDir, 'slides.pptx'), join(notesDir, 'link.pptx'))
+    await symlink(deck, join(notesDir, 'link.codingppt'), process.platform === 'win32' ? 'junction' : 'dir')
     const tree = await library.notesTree()
-    expect(tree.map(node => `${node.kind}:${node.path}`)).toEqual([
+    expect(tree.map(node => `${node.kind}:${node.path}`).sort()).toEqual([
+      'deck:演示.codingppt',
       'dir:ideas',
-      'file:slides.pptx',
       'file:top.md',
     ])
     const ideas = tree.find(node => node.kind === 'dir')
-    expect(ideas?.children?.map(node => node.path)).toEqual(['ideas/deep', 'ideas/one.md', 'ideas/PLAN.PPTX'])
+    expect(ideas?.children?.map(node => `${node.kind}:${node.path}`).sort()).toEqual([
+      'deck:ideas/PLAN.CODINGPPT',
+      'dir:ideas/deep',
+      'file:ideas/one.md',
+    ])
     const deep = ideas?.children?.find(node => node.path === 'ideas/deep')
-    expect(deep?.children?.map(node => node.path)).toEqual(['ideas/deep/three.pptx', 'ideas/deep/two.markdown'])
-    expect(tree.find(node => node.path === 'slides.pptx')).toMatchObject({ name: 'slides.pptx', kind: 'file', path: 'slides.pptx' })
-    expect(tree.find(node => node.path === 'slides.pptx')?.mtimeMs).toBe((await lstat(join(notesDir, 'slides.pptx'))).mtimeMs)
-    expect(await readFile(join(notesDir, 'slides.pptx'))).toEqual(pptxBytes)
+    expect(deep?.children?.map(node => node.path)).toEqual(['ideas/deep/two.markdown'])
+    const entry = tree.find(node => node.path === '演示.codingppt')
+    expect(entry).toMatchObject({ name: '演示.codingppt', kind: 'deck', path: '演示.codingppt' })
+    // 工程目录内部的文件不进入树，幻灯片因此只占一个条目。
+    expect(entry?.children).toBeUndefined()
+    expect(entry?.mtimeMs).toBe((await lstat(deck)).mtimeMs)
+    expect(tree.some(node => node.path.endsWith('deck.json'))).toBe(false)
   })
 
-  it('混合目录与 PPTX 仍受原有深度和全部条目预算限制', async () => {
+  it('混合目录与幻灯片工程仍受原有深度和全部条目预算限制', async () => {
     const { library } = await harness()
     await library.notesTree()
     const notesDir = library.notesRootPath()
@@ -79,13 +89,13 @@ describe('无目录笔记域', () => {
     const { library: budgetLibrary } = await harness()
     await budgetLibrary.notesTree()
     const budgetDir = budgetLibrary.notesRootPath()
-    await writeFile(join(budgetDir, 'slides.pptx'), pptxBytes)
+    await mkdir(join(budgetDir, 'slides.codingppt'), { mode: 0o700 })
     // 不展示的 .txt 也占用预算：只增加第 4097 个条目才必须拒绝整棵树。
     for (let start = 0; start < 4095; start += 128) {
       await Promise.all(Array.from({ length: Math.min(128, 4095 - start) }, (_, index) =>
         writeFile(join(budgetDir, `hidden-${start + index}.txt`), '')))
     }
-    await expect(budgetLibrary.notesTree()).resolves.toMatchObject([{ kind: 'file', path: 'slides.pptx' }])
+    await expect(budgetLibrary.notesTree()).resolves.toMatchObject([{ kind: 'deck', path: 'slides.codingppt' }])
     await writeFile(join(budgetDir, 'extra.txt'), '')
     await expect(budgetLibrary.notesTree()).rejects.toThrow(/笔记条目过多/)
   })
@@ -164,45 +174,45 @@ describe('无目录笔记域', () => {
     await expect(library.deleteNote('published.md')).rejects.toThrow(NoteNotFoundError)
   })
 
-  it('PPTX 只能在原父目录保留扩展名改名，同名目标和跨类型后缀均拒绝', async () => {
+  it('幻灯片工程目录改名保留后缀，同名目标与非单段名称都拒绝', async () => {
     const { library } = await harness()
     await library.notesTree()
     const notesDir = library.notesRootPath()
     await mkdir(join(notesDir, 'projects'), { mode: 0o700 })
-    await writeFile(join(notesDir, 'projects', 'source.PPTX'), pptxBytes)
-    await writeFile(join(notesDir, 'projects', 'existing.PPTX'), Buffer.from('邻近文件'))
+    await mkdir(join(notesDir, 'projects', 'source.codingppt'), { mode: 0o700 })
+    await writeFile(join(notesDir, 'projects', 'source.codingppt', 'deck.json'), '{"pages":[]}')
+    await mkdir(join(notesDir, 'projects', 'existing.codingppt'), { mode: 0o700 })
 
-    for (const name of ['converted.md', 'converted.txt', 'converted.pptx.md', '../escape.PPTX']) {
-      await expect(library.renameNote('projects/source.PPTX', name), name).rejects.toThrow(TypeError)
-    }
-    await expect(library.renameNote('projects/source.PPTX', 'existing.PPTX')).rejects.toThrow(NoteConflictError)
-    await expect(library.renameNote('projects/source.PPTX', 'project/from.pptx')).rejects.toThrow(TypeError)
-    await expect(readFile(join(notesDir, 'projects', 'existing.PPTX'))).resolves.toEqual(Buffer.from('邻近文件'))
-    expect(await library.renameNote('projects/source.PPTX', 'review')).toEqual({ path: 'projects/review.PPTX' })
-    expect(await library.renameNote('projects/review.PPTX', 'final.pptx')).toEqual({ path: 'projects/final.PPTX' })
-    await expect(library.renameNote('projects/final.PPTX', 'final.PPTX')).resolves.toEqual({ path: 'projects/final.PPTX' })
-    await expect(readFile(join(notesDir, 'projects', 'final.PPTX'))).resolves.toEqual(pptxBytes)
-    await expect(lstat(join(notesDir, 'projects', 'source.PPTX'))).rejects.toMatchObject({ code: 'ENOENT' })
+    await expect(library.renameNote('projects/source.codingppt', 'existing')).rejects.toThrow(NoteConflictError)
+    await expect(library.renameNote('projects/source.codingppt', 'project/from')).rejects.toThrow(TypeError)
+    expect(await library.renameNote('projects/source.codingppt', 'review')).toEqual({ path: 'projects/review.codingppt' })
+    expect(await library.renameNote('projects/review.codingppt', 'final')).toEqual({ path: 'projects/final.codingppt' })
+    await expect(library.renameNote('projects/final.codingppt', 'final')).resolves.toEqual({ path: 'projects/final.codingppt' })
+    await expect(readFile(join(notesDir, 'projects', 'final.codingppt', 'deck.json'), 'utf8')).resolves.toBe('{"pages":[]}')
+    await expect(lstat(join(notesDir, 'projects', 'source.codingppt'))).rejects.toMatchObject({ code: 'ENOENT' })
     const tree = await library.notesTree()
-    expect(tree).toHaveLength(1)
     expect(tree[0]).toMatchObject({ kind: 'dir', path: 'projects' })
-    expect(tree[0]?.children?.map(node => node.path)).toEqual(['projects/existing.PPTX', 'projects/final.PPTX'])
-    await library.deleteNote('projects/final.PPTX')
-    await expect(lstat(join(notesDir, 'projects', 'final.PPTX'))).rejects.toMatchObject({ code: 'ENOENT' })
-    await expect(readFile(join(notesDir, 'projects', 'existing.PPTX'))).resolves.toEqual(Buffer.from('邻近文件'))
+    expect(tree[0]?.children?.map(node => `${node.kind}:${node.path}`).sort()).toEqual([
+      'deck:projects/existing.codingppt',
+      'deck:projects/final.codingppt',
+    ])
+    await library.deleteNote('projects/final.codingppt')
+    await expect(lstat(join(notesDir, 'projects', 'final.codingppt'))).rejects.toMatchObject({ code: 'ENOENT' })
+    await expect(lstat(join(notesDir, 'projects', 'existing.codingppt'))).resolves.toBeDefined()
   })
 
-  it('同一队列先改名再删除 PPTX，后续操作观察到已发布路径', async () => {
+  it('同一队列先改名再删除幻灯片目录，后续操作观察到已发布路径', async () => {
     const { library } = await harness()
     await library.notesTree()
     const notesDir = library.notesRootPath()
-    await writeFile(join(notesDir, 'source.pptx'), pptxBytes)
-    const renamed = library.renameNote('source.pptx', 'renamed')
-    const removed = library.deleteNote('renamed.pptx')
-    await expect(renamed).resolves.toEqual({ path: 'renamed.pptx' })
+    await mkdir(join(notesDir, 'source.codingppt'), { mode: 0o700 })
+    await writeFile(join(notesDir, 'source.codingppt', 'deck.json'), '{}')
+    const renamed = library.renameNote('source.codingppt', 'renamed')
+    const removed = library.deleteNote('renamed.codingppt')
+    await expect(renamed).resolves.toEqual({ path: 'renamed.codingppt' })
     await expect(removed).resolves.toBeUndefined()
     await expect(readdir(notesDir)).resolves.toEqual([])
-    await expect(library.deleteNote('renamed.pptx')).rejects.toThrow(NoteNotFoundError)
+    await expect(library.deleteNote('renamed.codingppt')).rejects.toThrow(NoteNotFoundError)
   })
 
   it('递归删除多层笔记、其他文件和隐藏条目，保留相邻目录', async () => {
@@ -259,24 +269,24 @@ describe('无目录笔记域', () => {
     await expect(readFile(outsideNote, 'utf8')).resolves.toBe('外部笔记')
   })
 
-  it('PPTX 拒绝外部父链、条目链接和越界路径；父目录递归删除也不跟随链接', async () => {
+  it('幻灯片目录拒绝外部父链、条目链接和越界路径；父目录递归删除也不跟随链接', async () => {
     const { library } = await harness()
     await library.notesTree()
     const notesDir = library.notesRootPath()
-    const outside = join(notesDir, '..', 'pptx-outside')
-    await mkdir(outside)
-    await writeFile(join(outside, 'keep.pptx'), pptxBytes)
+    const outside = join(notesDir, '..', 'deck-outside')
+    await mkdir(join(outside, 'keep.codingppt'), { recursive: true })
+    await writeFile(join(outside, 'keep.codingppt', 'deck.json'), '{}')
     await mkdir(join(notesDir, 'folder'))
-    const linkedFile = join(notesDir, 'folder', 'linked.pptx')
+    const linkedDeck = join(notesDir, 'folder', 'linked.codingppt')
     const linkedFolder = join(notesDir, 'folder', 'linked-folder')
-    await symlink(join(outside, 'keep.pptx'), linkedFile)
+    await symlink(join(outside, 'keep.codingppt'), linkedDeck, process.platform === 'win32' ? 'junction' : 'dir')
     await symlink(outside, linkedFolder, process.platform === 'win32' ? 'junction' : 'dir')
-    for (const path of ['folder/linked.pptx', 'folder/linked-folder/keep.pptx', '../pptx-outside/keep.pptx']) {
-      await expect(library.renameNote(path, 'changed.pptx'), path).rejects.toThrow(TypeError)
+    for (const path of ['folder/linked.codingppt', 'folder/linked-folder/keep.codingppt', '../deck-outside/keep.codingppt']) {
+      await expect(library.renameNote(path, 'changed'), path).rejects.toThrow(TypeError)
       await expect(library.deleteNote(path), path).rejects.toThrow(TypeError)
     }
     await library.deleteNote('folder')
-    await expect(readFile(join(outside, 'keep.pptx'))).resolves.toEqual(pptxBytes)
+    await expect(readFile(join(outside, 'keep.codingppt', 'deck.json'), 'utf8')).resolves.toBe('{}')
   })
 
   it('带修改时间的迟到保存不会在改名或删除后复活旧路径', async () => {
@@ -318,37 +328,34 @@ describe('无目录笔记域', () => {
     await expect(library.readNote('源稿.pptx.md')).resolves.toMatchObject({ content: '' })
   })
 
-  it('Host-only PPTX seam 安全落盘并拒绝错误名称、大小、重复和链接路径', async () => {
+  it('Host-only 幻灯片目录 seam 独占创建并拒绝错误名称、重复与链接路径', async () => {
     const { library } = await harness()
     await library.notesTree()
     const notesDir = library.notesRootPath()
-    const created = await library.createNotePptx('演示稿', undefined, pptxBytes)
-    expect(created).toMatchObject({ path: '演示稿.pptx' })
-    expect(await readFile(join(notesDir, '演示稿.pptx'))).toEqual(pptxBytes)
-    expect((await lstat(join(notesDir, '演示稿.pptx'))).mode & 0o777).toBe(0o600)
-    await expect(library.createNotePptx('演示稿', '', pptxBytes)).rejects.toThrow(/笔记已存在/)
-    await expect(library.createNotePptx('错误.md', '', pptxBytes)).rejects.toThrow(/\.pptx 扩展名/)
-    await expect(library.createNotePptx('空稿', '', new Uint8Array())).rejects.toThrow(/不能为空/)
-    await expect(library.createNotePptx('大稿', '', new Uint8Array(8 * 1024 * 1024 + 1))).rejects.toThrow(/8 MiB/)
+    const created = await library.createNoteDeck('演示稿')
+    expect(created).toMatchObject({ path: '演示稿.codingppt' })
+    const info = await lstat(join(notesDir, '演示稿.codingppt'))
+    expect(info.isDirectory()).toBe(true)
+    if (process.platform !== 'win32') expect(info.mode & 0o777).toBe(0o700)
+    await expect(library.createNoteDeck('演示稿', '')).rejects.toThrow(/幻灯片已存在/)
+    await expect(library.createNoteDeck('演示稿.codingppt')).rejects.toThrow(/幻灯片已存在/)
+    await expect(library.createNoteDeck('   ')).rejects.toThrow(/文件名无效/)
 
     await library.createNoteDirectory('project')
-    await expect(library.createNotePptx('nested.PPTX', 'project', pptxBytes)).resolves.toMatchObject({ path: 'project/nested.PPTX' })
-    await expect(library.createNotePptx('越界', '../', pptxBytes)).rejects.toThrow(TypeError)
+    await expect(library.createNoteDeck('nested', 'project')).resolves.toMatchObject({ path: 'project/nested.codingppt' })
+    await expect(library.createNoteDeck('越界', '../')).rejects.toThrow(TypeError)
 
-    const outside = join(notesDir, '..', 'pptx-seam-outside')
+    const outside = join(notesDir, '..', 'deck-seam-outside')
     await mkdir(outside)
     const linkedDirectory = join(notesDir, 'linked')
     await symlink(outside, linkedDirectory, process.platform === 'win32' ? 'junction' : 'dir')
-    await expect(library.createNotePptx('escape', 'linked', pptxBytes)).rejects.toThrow(TypeError)
-    await expect(lstat(join(outside, 'escape.pptx'))).rejects.toMatchObject({ code: 'ENOENT' })
+    await expect(library.createNoteDeck('escape', 'linked')).rejects.toThrow(TypeError)
+    await expect(lstat(join(outside, 'escape.codingppt'))).rejects.toMatchObject({ code: 'ENOENT' })
 
-    const linkedFile = join(notesDir, 'linked-file.pptx')
-    await symlink(join(outside, 'keep.pptx'), linkedFile)
-    await writeFile(join(outside, 'keep.pptx'), pptxBytes)
-    await expect(library.createNotePptx('linked-file.pptx', '', pptxBytes)).rejects.toThrow(TypeError)
-    await expect(readFile(join(outside, 'keep.pptx'))).resolves.toEqual(pptxBytes)
+    // 清理句柄删除的是本次创建的目录本身，包含随后写入的工程文件。
+    await writeFile(join(notesDir, '演示稿.codingppt', 'deck.json'), '{}')
     await created.remove()
-    await expect(lstat(join(notesDir, '演示稿.pptx'))).rejects.toMatchObject({ code: 'ENOENT' })
+    await expect(lstat(join(notesDir, '演示稿.codingppt'))).rejects.toMatchObject({ code: 'ENOENT' })
   })
 
   it('在指定目录新建笔记和子目录，并拒绝目录逃逸与同名覆盖', async () => {
@@ -371,9 +378,14 @@ describe('无目录笔记域', () => {
     await mkdir(join(notesDir, 'archive'), { recursive: true, mode: 0o700 })
     await writeFile(join(notesDir, 'root.md'), '无目录笔记')
     await writeFile(join(notesDir, 'archive', 'old.md'), '有目录笔记')
+    await mkdir(join(notesDir, 'archive', 'other.codingppt'), { recursive: true, mode: 0o700 })
     await writeFile(join(notesDir, 'root.pptx'), pptxBytes)
-    await writeFile(join(notesDir, 'archive', 'other.pptx'), pptxBytes)
-    expect((await library.notesTree()).some(node => node.path === 'root.pptx')).toBe(true)
+    // 幻灯片工程目录只作为一行 deck 出现，单文件幻灯片根本不入树；两者都不进入文件管理的笔记列表。
+    const archive = (await library.notesTree()).find(node => node.path === 'archive')
+    expect(archive?.children?.map(node => `${node.kind}:${node.path}`).sort()).toEqual([
+      'deck:archive/other.codingppt',
+      'file:archive/old.md',
+    ])
     expect((await library.noteRecords()).map(row => row.name)).toEqual(['root.md'])
     const unscoped = await library.listWithNotes(0, 50, { unscoped: true })
     expect(unscoped.items).toMatchObject([{ kind: 'note', name: 'root.md', relativePath: 'notes/root.md', mediaType: 'text/markdown' }])

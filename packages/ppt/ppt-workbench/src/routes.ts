@@ -236,11 +236,27 @@ export function installRoutes(ctx: Context, service: PptProjects): void {
     const name = optionalString(body.name, 'name')
     if (name === undefined) throw new PptStoreError('bad-request', 'name 必须提供')
     const directory = optionalString(body.directory, 'directory')
-    const created = await service.createNoteSource(sessionId, {
+    const created = await service.createNoteDeck(sessionId, {
       name,
       ...directory === undefined ? {} : { directory },
     })
-    return { ok: true, source: created.source }
+    return { ok: true, dir: created.dir }
+  })
+
+  route('notes/import', ['POST'], async (body) => {
+    const sessionId = sessionIdOf(body)
+    const name = optionalString(body.name, 'name')
+    const base64 = optionalString(body.base64, 'base64')
+    if (name === undefined || base64 === undefined) {
+      throw new PptStoreError('bad-request', 'name 与 base64 必须提供')
+    }
+    const directory = optionalString(body.directory, 'directory')
+    const imported = await service.importNoteDeck(sessionId, {
+      name,
+      data: new Uint8Array(Buffer.from(base64, 'base64')),
+      ...directory === undefined ? {} : { directory },
+    })
+    return { ok: true, dir: imported.dir }
   })
 
   route('create', ['POST'], async (body) => {

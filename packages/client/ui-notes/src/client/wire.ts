@@ -1,9 +1,10 @@
 /** 笔记域的浏览器侧 wire 类型；响应只含相对笔记根目录的路径，绝对路径不进浏览器。 */
 
-/** 笔记目录树节点；`path` 相对笔记根目录，`children` 仅目录携带。 */
+/** 笔记目录树节点；`path` 相对笔记根目录，`children` 仅普通目录携带。 */
 export interface NotesTreeEntry {
   name: string
-  kind: 'dir' | 'file'
+  /** `deck` 是 `.codingppt` 幻灯片工程目录：一行幻灯片条目，不可展开。 */
+  kind: 'dir' | 'file' | 'deck'
   path: string
   mtimeMs: number
   children?: NotesTreeEntry[]
@@ -37,7 +38,7 @@ export function assertNotePath(path: string): void {
 
 /** 在网络边界校验目录树节点，防止 Host 或中间层注入越界路径。 */
 function parseTreeEntry(value: unknown): NotesTreeEntry {
-  if (!isObject(value) || (value.kind !== 'dir' && value.kind !== 'file')
+  if (!isObject(value) || (value.kind !== 'dir' && value.kind !== 'file' && value.kind !== 'deck')
     || !nonemptyString(value.name) || !nonemptyString(value.path)
     || typeof value.mtimeMs !== 'number' || !Number.isFinite(value.mtimeMs)
     || (value.children !== undefined && !Array.isArray(value.children))) {
@@ -133,19 +134,25 @@ export async function notesCreate(name: string, directory = ''): Promise<{ path:
   return { path: body.path }
 }
 
-/**
- * 在笔记目录新建一份可编辑的幻灯片文件。
- *
- * PPT 宿主负责生成合法的 `.pptx`、落盘并建立原位编辑绑定；本函数只提交名称与目标目录，
- * 再把响应收敛成相对笔记根目录的路径。Host 拒绝同名或非法名称时按状态码失败，
- * 因此调用方不会看到半成品路径。
- *
- * @param sessionId - 当前笔记会话；其工作目录必须已指向笔记根目录。
- * @param name - 用户输入的演示文稿名称，Host 会净化并补 `.pptx` 扩展名。
- * @param directory - 相对笔记根目录的父目录，空字符串表示根目录。
- * @returns 新建幻灯片的相对路径。
- */
-export async function notesCreateSlide(sessionId: string, name: string, directory = ''): Promise<{ path: string }> {
+/** 幻灯片导入的原始字节上限；与 PPT 宿主的导入预算一致。 */
+const MAX_SLIDE_BYTES = 8 * 1024 * 1024
+
+/** 幻灯片工程目录名的大小写后缀；与文件库的 `NOTE_DECK_SUFFIX` 一致。 */
+const NOTE_DECK_SUFFIX = '.codingppt'
+
+/** 把字节编码成 base64；分块拼接，避免大文件一次展开超过调用栈。 */
+function toBase64(bytes: Uint8Array): string {
+  let binary = ''
+  const chunk = 0x8000
+  for (let offset = 0; offset < bytes.length; offset += chunk) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + chunk))
+  }
+  return btoa(binary)
+}
+
+/** 幻灯片新建与导入共用的请求与响应校验；响应必须是笔记根目录内的 `.codingppt` 路径。 */
+async function slideRequest(endpoint: string, sessionId: string, name: string, directory: string,
+  label: string, extra: Record<string, string>): Promise<{ path: string }> {
   if (typeof sessionId !== 'string' || sessionId.length === 0 || sessionId.length > 128
     || /[\u0000-\u001f\u007f]/u.test(sessionId)) {
     throw new Error('Invalid notes session')
@@ -154,19 +161,51 @@ export async function notesCreateSlide(sessionId: string, name: string, director
     throw new Error('Invalid note name')
   }
   if (directory !== '') assertNotePath(directory)
-  const response = await fetch('/api/ppt/notes/create', {
+  const response = await fetch(endpoint, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ sessionId, name, ...(directory === '' ? {} : { directory }) }),
+    body: JSON.stringify({ sessionId, name, ...(directory === '' ? {} : { directory }), ...extra }),
   })
-  if (!response.ok) throw new Error(`notes slide create HTTP ${response.status}`)
+  if (!response.ok) throw new Error(`${label} HTTP ${response.status}`)
   const body = (await response.json()) as unknown
-  if (!isObject(body) || body.ok !== true || !nonemptyString(body.source)) {
-    throw new Error('Invalid note slide payload')
-  }
-  assertNotePath(body.source)
-  if (!/\.pptx$/iu.test(body.source)) throw new Error('Invalid note slide payload')
-  return { path: body.source }
+  if (!isObject(body) || body.ok !== true || !nonemptyString(body.dir)) throw new Error('Invalid note slide payload')
+  assertNotePath(body.dir)
+  if (!body.dir.toLowerCase().endsWith(NOTE_DECK_SUFFIX)) throw new Error('Invalid note slide payload')
+  return { path: body.dir }
+}
+
+/**
+ * 在笔记目录新建一份幻灯片工程目录（`{name}.codingppt`）。
+ *
+ * PPT 宿主生成默认整稿并直接写入该目录，这个目录就是该幻灯片的工作目录；
+ * 本函数只提交名称与目标目录，再把响应收敛成相对笔记根目录的路径。
+ *
+ * @param sessionId - 当前笔记会话；其工作目录必须已指向笔记根目录。
+ * @param name - 用户输入的演示文稿名称，Host 会净化并补 `.codingppt` 后缀。
+ * @param directory - 相对笔记根目录的父目录，空字符串表示根目录。
+ * @returns 新建幻灯片工程目录的相对路径。
+ */
+export async function notesCreateSlide(sessionId: string, name: string, directory = ''): Promise<{ path: string }> {
+  return await slideRequest('/api/ppt/notes/create', sessionId, name, directory, 'notes slide create', {})
+}
+
+/**
+ * 把本机 `.pptx` 导入成笔记目录里的幻灯片工程目录。
+ *
+ * 文件字节随请求提交，最多 8 MiB；Host 只保留模型能表达的页面结构，
+ * 导入完成后源文件与本笔记无关，不需要留在笔记目录里。
+ *
+ * @param sessionId - 当前笔记会话；其工作目录必须已指向笔记根目录。
+ * @param name - 新建幻灯片的名称；调用方通常取所选文件名。
+ * @param directory - 相对笔记根目录的父目录，空字符串表示根目录。
+ * @param file - 用户在文件选择器里选中的 `.pptx`。
+ * @returns 新建幻灯片工程目录的相对路径。
+ */
+export async function notesImportSlide(sessionId: string, name: string, directory: string, file: File): Promise<{ path: string }> {
+  if (file.size === 0) throw new Error('Empty slide file')
+  if (file.size > MAX_SLIDE_BYTES) throw new Error('Slides too large')
+  const base64 = toBase64(new Uint8Array(await file.arrayBuffer()))
+  return await slideRequest('/api/ppt/notes/import', sessionId, name, directory, 'notes slide import', { base64 })
 }
 
 /** 在笔记目录下新建子目录，返回相对笔记根目录的路径。 */

@@ -1,7 +1,7 @@
 /** 全局受管理文件：私有磁盘对象、持久领域元数据和只读列表。@module coding-file-library */
 import { createHash, randomUUID } from 'node:crypto'
 import { constants } from 'node:fs'
-import { lstat, mkdir, open, readdir, readFile, rename, chmod, realpath, rm, unlink } from 'node:fs/promises'
+import { lstat, mkdir, open, readdir, readFile, rename, chmod, realpath, rm, rmdir, unlink } from 'node:fs/promises'
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import type { Stats } from 'node:fs'
 import { Readable } from 'node:stream'
@@ -37,14 +37,14 @@ const EXTENSION = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp
 /** 笔记接受的 Markdown 扩展名；其他扩展名一律不是笔记。 */
 const NOTE_EXTENSIONS = new Set(['.md', '.markdown'])
 
-/** 目录树及单文件改名、删除允许的扩展名；不扩大 Markdown 读写与文件管理记录范围。 */
-const NOTE_TREE_FILE_EXTENSIONS: ReadonlySet<string> = new Set([...NOTE_EXTENSIONS, '.pptx'])
+/**
+ * 幻灯片工程目录的后缀；带此后缀的真实目录在笔记树里是一行幻灯片，
+ * 目录内的工程文件由 PPT 服务读写，不进入笔记树。
+ */
+export const NOTE_DECK_SUFFIX = '.codingppt'
 
 /** 单篇笔记的原始字节上限；原文区把全文载入内存，超限的条目拒绝读写。 */
 const NOTE_MAX_BYTES = 1024 * 1024
-
-/** Host 侧暂存 PPTX 源文件的原始字节上限；PPT 服务负责后续格式与内容解析。 */
-const NOTE_PPTX_MAX_BYTES = 8 * 1024 * 1024
 
 /** 笔记目录树的最大深度；超出说明目录结构异常，整棵树拒绝而不是静默截断。 */
 const NOTE_MAX_DEPTH = 8
@@ -93,6 +93,35 @@ function safeName(name: string): string {
   result = result.replace(/[ .]+$/u, '') + extension
   if (!result || result === extension) throw new TypeError('文件名无效')
   return result
+}
+
+/** 判断目录名是否表示一份幻灯片工程：只认 `.codingppt` 后缀，且后缀前必须有名称。 */
+export function isDeckDirectoryName(name: string): boolean {
+  return name.length > NOTE_DECK_SUFFIX.length && name.toLowerCase().endsWith(NOTE_DECK_SUFFIX)
+}
+
+/** 统计目录树的节点总数（含目录与文件），用于新建前的节点预算检查。 */
+function countTreeNodes(entries: readonly NotesTreeNode[]): number {
+  return entries.reduce((count, entry) => count + 1 + (entry.children === undefined ? 0 : countTreeNodes(entry.children)), 0)
+}
+
+/**
+ * 把用户输入的名称规范成幻灯片工程目录名。
+ * 缺少后缀时补 `.codingppt`；已带后缀时保留用户写的大小写，只净化名称部分。
+ * @throws TypeError 名称为空、只有后缀或含不安全字符时。
+ */
+function deckDirectoryName(name: string): string {
+  const leaf = safeName(name)
+  const stem = isDeckDirectoryName(leaf) ? leaf.slice(0, -NOTE_DECK_SUFFIX.length) : leaf
+  // 后缀同样计入 120 字节的安全名预算，避免目录名超出与文件一致的名称上限。
+  let limited = ''
+  for (const character of stem) {
+    if (Buffer.byteLength(limited + character + NOTE_DECK_SUFFIX, 'utf8') > 120) break
+    limited += character
+  }
+  limited = limited.replace(/[ .]+$/u, '')
+  if (limited === '' || limited === '.' || limited === '..') throw new TypeError('幻灯片名称无效')
+  return `${limited}${NOTE_DECK_SUFFIX}`
 }
 
 function identity(value: string, field: string): string {
@@ -539,7 +568,8 @@ export class FileLibrary extends Service {
   }
 
   /**
-   * 扫描笔记根目录返回目录树：全部目录、Markdown 与真实普通 `.pptx` 文件，符号链接条目不进入树。
+   * 扫描笔记根目录返回目录树：Markdown 文件、幻灯片工程目录与普通目录，符号链接条目不进入树。
+   * 幻灯片工程目录只出现为一行 `deck` 条目，其内部的工程文件不参与扫描与节点预算。
    * 深度与节点总数超限视为结构异常，整棵树拒绝。
    * @returns 根级条目数组；子节点按名称排序。
    */
@@ -556,9 +586,12 @@ export class FileLibrary extends Service {
         if (entry.isSymbolicLink()) continue
         const full = join(dirPath, entry.name)
         const rel = `${prefix}${entry.name}`
-        if (entry.isDirectory()) {
+        if (entry.isDirectory() && isDeckDirectoryName(entry.name)) {
+          const info = await lstat(full)
+          if (info.isDirectory() && !info.isSymbolicLink()) nodes.push({ name: entry.name, kind: 'deck', path: rel, mtimeMs: info.mtimeMs })
+        } else if (entry.isDirectory()) {
           nodes.push({ name: entry.name, kind: 'dir', path: rel, mtimeMs: (await lstat(full)).mtimeMs, children: await scan(full, `${rel}/`, depth + 1) })
-        } else if (entry.isFile() && NOTE_TREE_FILE_EXTENSIONS.has(extname(entry.name).toLowerCase())) {
+        } else if (entry.isFile() && NOTE_EXTENSIONS.has(extname(entry.name).toLowerCase())) {
           const info = await lstat(full)
           if (info.isFile() && !info.isSymbolicLink()) nodes.push({ name: entry.name, kind: 'file', path: rel, mtimeMs: info.mtimeMs })
         }
@@ -670,68 +703,45 @@ export class FileLibrary extends Service {
   }
 
   /**
-   * 在笔记树中独占落盘已由 PPT 服务准入的源文件；这是只供 Host 调用的 PPT 服务 seam。
-   * 名称缺少扩展名时补 `.pptx`，显式扩展名必须是 `.pptx`；文件与父目录同步后才返回。
-   * @param name - 按文件库规则净化的安全文件名。
+   * 在笔记树中独占创建一份幻灯片工程目录（`{name}.codingppt`）；这是只供 Host 调用的 PPT 服务 seam。
+   * 目录由本方法以 `0o700` 独占创建并同步父目录，工程内容由调用方在自己的目录句柄里写入。
+   * @param name - 用户提交的名称；缺省补 `.codingppt` 后缀。
    * @param directory - 相对笔记根目录的真实私有父目录，空字符串表示根目录。
-   * @param data - 非空且不超过 8 MiB 的 PPTX 字节。
-   * @returns 相对笔记根目录的路径，以及只删除本次独占文件的清理句柄。
-   * @throws TypeError 名称、父目录或数据不安全，目标已存在，或数据大小不在允许范围内。
+   * @returns 相对笔记根目录的目录路径，以及只在仍拥有本次创建的目录时递归清理的句柄。
+   * @throws TypeError 名称或父目录不安全，或同名条目已存在时。
    */
-  async createNotePptx(name: string, directory: string = '', data: Uint8Array): Promise<{ path: string; remove: () => Promise<void> }> {
+  async createNoteDeck(name: string, directory: string = ''): Promise<{ path: string; remove: () => Promise<void> }> {
     return this.scheduleNotesWrite(async () => {
-      const leaf = safeName(name)
-      const extension = extname(leaf)
-      if (extension !== '' && (!NOTE_TREE_FILE_EXTENSIONS.has(extension.toLowerCase()) || extension.toLowerCase() !== '.pptx')) {
-        throw new TypeError('PPTX 文件必须使用 .pptx 扩展名')
-      }
-      if (!(data instanceof Uint8Array) || data.byteLength < 1) throw new TypeError('PPTX 数据不能为空')
-      if (data.byteLength > NOTE_PPTX_MAX_BYTES) throw new TypeError('PPTX 文件不能超过 8 MiB')
-      const fileName = extension === '' ? `${leaf}.pptx` : leaf
+      const leaf = deckDirectoryName(name)
       const parent = await this.safeNoteDirectory(directory)
-      const target = join(parent.target, fileName)
-      const flags = constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW
-      let handle
-      try {
-        handle = await open(target, flags, 0o600)
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code === 'EEXIST') throw new TypeError('笔记已存在')
-        if ((error as NodeJS.ErrnoException).code === 'ELOOP') throw new TypeError('笔记条目不是安全文件')
+      const parentSegments = parent.rel === '' ? [] : parent.rel.split('/')
+      if (parentSegments.length + 1 > NOTE_MAX_DEPTH) throw new TypeError('笔记目录层级过深')
+      if (countTreeNodes(await this.notesTree()) >= NOTE_MAX_NODES) throw new TypeError('笔记条目过多')
+      const target = join(parent.target, leaf)
+      try { await mkdir(target, { mode: 0o700 }) }
+      catch (error) {
+        if ((error as NodeJS.ErrnoException).code === 'EEXIST') throw new TypeError('幻灯片已存在')
         throw error
       }
-      let writeFailed = false
-      let writeFailure: unknown
-      try {
-        await handle.writeFile(Buffer.from(data))
-        await handle.sync()
-      } catch (error) {
-        writeFailed = true
-        writeFailure = error
-      } finally {
-        await handle.close()
-      }
-      if (writeFailed) {
-        try { await unlink(target) } catch { /* 只清理本次独占创建的失败条目。 */ }
-        throw writeFailure
-      }
+      const owned = await lstat(target)
       try {
         await syncDirectory(parent.target)
         const notesDir = await this.directory('notes')
         if (parent.target !== notesDir) await syncDirectory(notesDir)
       } catch (error) {
-        try { await unlink(target) } catch { /* 原错误是同步失败；只回滚本次创建的条目。 */ }
+        try { await rmdir(target) } catch { /* 原错误是同步失败；只回滚本次仍为空的目录。 */ }
         throw error
       }
-      const owned = await lstat(target)
       return {
-        path: parent.rel === '' ? fileName : `${parent.rel}/${fileName}`,
+        path: parent.rel === '' ? leaf : `${parent.rel}/${leaf}`,
+        // 只在目录仍是本次创建的那一个时递归清理，避免误删后来被替换或被填满的目录。
         remove: async () => {
           try {
             const current = await lstat(target)
-            if (!current.isFile() || current.isSymbolicLink() || current.dev !== owned.dev || current.ino !== owned.ino) return
-            await unlink(target)
+            if (!current.isDirectory() || current.isSymbolicLink() || current.dev !== owned.dev || current.ino !== owned.ino) return
+            await rm(target, { recursive: true })
             await syncDirectory(parent.target)
-          } catch { /* 清理只在仍拥有原文件时尝试，不能覆盖原始创建错误。 */ }
+          } catch { /* 清理不能覆盖原始创建错误。 */ }
         },
       }
     })
@@ -753,11 +763,7 @@ export class FileLibrary extends Service {
     const parentDirectory = await this.safeNoteDirectory(parent)
     const parentSegments = parentDirectory.rel === '' ? [] : parentDirectory.rel.split('/')
     if (parentSegments.length + 1 > NOTE_MAX_DEPTH) throw new TypeError('笔记目录层级过深')
-    const currentTree = await this.notesTree()
-    const countNodes = (entries: readonly NotesTreeNode[]): number => entries.reduce((count, entry) => (
-      count + 1 + (entry.children === undefined ? 0 : countNodes(entry.children))
-    ), 0)
-    if (countNodes(currentTree) >= NOTE_MAX_NODES) throw new TypeError('笔记条目过多')
+    if (countTreeNodes(await this.notesTree()) >= NOTE_MAX_NODES) throw new TypeError('笔记条目过多')
     const target = join(parentDirectory.target, leaf)
     try { await mkdir(target, { mode: 0o700 }) }
     catch (error) {
@@ -769,9 +775,9 @@ export class FileLibrary extends Service {
   }
 
   /**
-   * 在原文件或目录的同一父目录内安全改名；文件保留原扩展名，不覆盖已有条目。
-   * @param relativePath - 要改名的 Markdown、PPTX 或目录路径。
-   * @param name - 新的单段名称；文件可省略扩展名，但不能指定其他扩展名。
+   * 在原文件或目录的同一父目录内安全改名；Markdown 与幻灯片工程目录保留自己的后缀，不覆盖已有条目。
+   * @param relativePath - 要改名的 Markdown 文件、幻灯片工程目录或普通目录路径。
+   * @param name - 新的单段名称；Markdown 与幻灯片工程目录可省略后缀，但不能指定其他扩展名。
    * @returns 改名后的相对路径。
    */
   async renameNote(relativePath: string, name: string): Promise<{ path: string }> {
@@ -794,13 +800,16 @@ export class FileLibrary extends Service {
       })
       if (current.isSymbolicLink() || !current.isFile() && !current.isDirectory()) throw new TypeError('笔记条目无效')
       const sourceExtension = current.isFile() ? extname(target) : ''
-      if (current.isFile() && !NOTE_TREE_FILE_EXTENSIONS.has(sourceExtension.toLowerCase())) throw new TypeError('笔记扩展名无效')
+      if (current.isFile() && !NOTE_EXTENSIONS.has(sourceExtension.toLowerCase())) throw new TypeError('笔记扩展名无效')
       const leaf = safeName(name)
       const requestedExtension = current.isFile() ? extname(leaf) : ''
       if (current.isFile() && requestedExtension !== '' && requestedExtension.toLowerCase() !== sourceExtension.toLowerCase()) {
         throw new TypeError('文件扩展名不可更改')
       }
-      const fileName = current.isFile() ? `${requestedExtension === '' ? leaf : leaf.slice(0, -requestedExtension.length)}${sourceExtension}` : leaf
+      const fileName = current.isFile()
+        ? `${requestedExtension === '' ? leaf : leaf.slice(0, -requestedExtension.length)}${sourceExtension}`
+        // 幻灯片工程目录与文件一样保留自己的后缀，用户只改名称部分。
+        : isDeckDirectoryName(basename(target)) ? deckDirectoryName(leaf) : leaf
       const targetPath = join(parent, fileName)
       if (targetPath === target) return { path: rel }
       try { await lstat(targetPath); throw new NoteConflictError('笔记已存在') }
@@ -816,7 +825,7 @@ export class FileLibrary extends Service {
   }
 
   /**
-   * 删除单个 Markdown、PPTX 文件或整个目录；拒绝将符号链接作为目标，目录中的链接只移除链接本身。
+   * 删除单个 Markdown 文件或整个目录（含幻灯片工程目录）；拒绝将符号链接作为目标，目录中的链接只移除链接本身。
    * @param relativePath - 要删除的文件或目录路径。
    * @returns 删除完成后兑现；目标不存在或路径越界时拒绝。
    */
@@ -842,7 +851,7 @@ export class FileLibrary extends Service {
         if (!(await realpath(entry)).startsWith(realNotes + sep)) throw new TypeError('笔记路径无效')
         await rm(entry, { recursive: true })
       } else {
-        if (!NOTE_TREE_FILE_EXTENSIONS.has(extname(entry).toLowerCase())) throw new TypeError('笔记扩展名无效')
+        if (!NOTE_EXTENSIONS.has(extname(entry).toLowerCase())) throw new TypeError('笔记扩展名无效')
         await unlink(entry)
       }
       await syncDirectory(realParent)

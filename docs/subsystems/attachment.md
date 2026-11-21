@@ -245,7 +245,8 @@ async read(id: string): Promise<{ record: ManagedFileRecord; data: Uint8Array } 
 notesRootPath(): string
 
 /**
- * 扫描笔记根目录返回目录树：全部目录、Markdown 与真实普通 `.pptx` 文件，符号链接条目不进入树。
+ * 扫描笔记根目录返回目录树：Markdown 文件、幻灯片工程目录与普通目录，符号链接条目不进入树。
+ * 幻灯片工程目录只出现为一行 `deck` 条目，其内部的工程文件不参与扫描与节点预算。
  * 深度与节点总数超限视为结构异常，整棵树拒绝。
  * @returns 根级条目数组；子节点按名称排序。
  */
@@ -277,15 +278,14 @@ async saveNote(relativePath: string, content: string, baseMtimeMs?: number): Pro
 async createNote(name: string, directory: string = ''): Promise<{ path: string }>
 
 /**
- * 在笔记树中独占落盘已由 PPT 服务准入的源文件；这是只供 Host 调用的 PPT 服务 seam。
- * 名称缺少扩展名时补 `.pptx`，显式扩展名必须是 `.pptx`；文件与父目录同步后才返回。
- * @param name - 按文件库规则净化的安全文件名。
+ * 在笔记树中独占创建一份幻灯片工程目录（`{name}.codingppt`）；这是只供 Host 调用的 PPT 服务 seam。
+ * 目录由本方法以 `0o700` 独占创建并同步父目录，工程内容由调用方在自己的目录句柄里写入。
+ * @param name - 用户提交的名称；缺省补 `.codingppt` 后缀。
  * @param directory - 相对笔记根目录的真实私有父目录，空字符串表示根目录。
- * @param data - 非空且不超过 8 MiB 的 PPTX 字节。
- * @returns 相对笔记根目录的路径，以及只删除本次独占文件的清理句柄。
- * @throws TypeError 名称、父目录或数据不安全，目标已存在，或数据大小不在允许范围内。
+ * @returns 相对笔记根目录的目录路径，以及只在仍拥有本次创建的目录时递归清理的句柄。
+ * @throws TypeError 名称或父目录不安全，或同名条目已存在时。
  */
-async createNotePptx(name: string, directory: string = '', data: Uint8Array): Promise<{ path: string; remove: () => Promise<void> }>
+async createNoteDeck(name: string, directory: string = ''): Promise<{ path: string; remove: () => Promise<void> }>
 
 /**
  * 在指定笔记目录创建子目录；只接受单个目录名，拒绝覆盖现有条目。
@@ -296,15 +296,15 @@ async createNotePptx(name: string, directory: string = '', data: Uint8Array): Pr
 async createNoteDirectory(name: string, parent: string = ''): Promise<{ path: string }>
 
 /**
- * 在原文件或目录的同一父目录内安全改名；文件保留原扩展名，不覆盖已有条目。
- * @param relativePath - 要改名的 Markdown、PPTX 或目录路径。
- * @param name - 新的单段名称；文件可省略扩展名，但不能指定其他扩展名。
+ * 在原文件或目录的同一父目录内安全改名；Markdown 与幻灯片工程目录保留自己的后缀，不覆盖已有条目。
+ * @param relativePath - 要改名的 Markdown 文件、幻灯片工程目录或普通目录路径。
+ * @param name - 新的单段名称；Markdown 与幻灯片工程目录可省略后缀，但不能指定其他扩展名。
  * @returns 改名后的相对路径。
  */
 async renameNote(relativePath: string, name: string): Promise<{ path: string }>
 
 /**
- * 删除单个 Markdown、PPTX 文件或整个目录；拒绝将符号链接作为目标，目录中的链接只移除链接本身。
+ * 删除单个 Markdown 文件或整个目录（含幻灯片工程目录）；拒绝将符号链接作为目标，目录中的链接只移除链接本身。
  * @param relativePath - 要删除的文件或目录路径。
  * @returns 删除完成后兑现；目标不存在或路径越界时拒绝。
  */
@@ -332,7 +332,7 @@ async getUpload(path: string): Promise<ManagedFileRecord | undefined>
 async isManagedUploadPath(path: string): Promise<boolean>
 ```
 
-Source: [`packages/attachment/file-library/src/index.ts:127`](../../packages/attachment/file-library/src/index.ts)
+Source: [`packages/attachment/file-library/src/index.ts:156`](../../packages/attachment/file-library/src/index.ts)
 
 <a id="ctximagegeneration--imagegeneration"></a>
 

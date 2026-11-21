@@ -210,11 +210,24 @@ export class PptPanelController {
   }
 
   /**
-   * 打开笔记页选中的工作区相对 PPTX 原件；同一来源在多个入口间只打开一次。
-   * 切换来源后丢弃旧请求结果，失败时保留重试机会，不回显上一个文件。
+   * 打开并跟随笔记页选中的幻灯片工程目录（`.codingppt`）；同一目录在多个入口间只打开一次。
+   * 切换目录后丢弃旧请求结果，失败时保留重试机会，不回显上一份工程。
+   * @param dir - 相对会话 cwd 的工程目录。
+   */
+  openDeck(dir: string): Promise<void> {
+    return this.follow(dir, 'open', 'dir')
+  }
+
+  /**
+   * 打开并跟随工作区里的 `.pptx` 源文件（原位写回绑定）；行为与 {@link openDeck} 一致。
    * @param path - 相对会话 cwd 的 .pptx 路径。
    */
   openSource(path: string): Promise<void> {
+    return this.follow(path, 'source/open', 'source')
+  }
+
+  /** 笔记页来源共用的打开与跟随逻辑；不同来源只差提交的端点与字段名。 */
+  private follow(path: string, endpoint: string, field: string): Promise<void> {
     if (this.disposed) return Promise.resolve()
     if (this.sourcePath === path && this.sourceOpenPath === path && this.sourceOpening !== null) return this.sourceOpening
     const current = this.view.getSnapshot()
@@ -242,7 +255,7 @@ export class PptPanelController {
     const task = this.inflight.then(async () => {
       if (this.disposed || generation !== this.sourceGeneration) return
       try {
-        const payload = await this.post('source/open', { source: path })
+        const payload = await this.post(endpoint, { [field]: path })
         if (generation !== this.sourceGeneration) return
         const snapshot = parseSnapshot((payload as { project?: unknown } | null)?.project)
         if (snapshot === null) throw new Error('project payload is malformed')

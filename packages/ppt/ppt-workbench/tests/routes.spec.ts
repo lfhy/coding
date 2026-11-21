@@ -1,5 +1,5 @@
 import { Context } from '@deepseek-ai/cordis'
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -20,15 +20,19 @@ let root: string | undefined
 function noteLibrary(notesRoot: string): object {
   return {
     notesRootPath: () => notesRoot,
-    createNotePptx: async (name: string, directory: string, bytes: Uint8Array) => {
-      const fileName = name.toLowerCase().endsWith('.pptx') ? name : `${name}.pptx`
+    createNoteDeck: async (name: string, directory: string) => {
+      const stem = name.toLowerCase().endsWith('.codingppt') ? name.slice(0, -'.codingppt'.length) : name
+      const fileName = `${stem}.codingppt`
       const rootPath = resolve(notesRoot)
       const target = resolve(rootPath, directory, fileName)
       if (target !== rootPath && !target.startsWith(`${rootPath}/`)) throw new TypeError('笔记路径无效')
       await mkdir(dirname(target), { recursive: true })
-      try { await writeFile(target, bytes, { flag: 'wx' }) }
-      catch (error) { if ((error as NodeJS.ErrnoException).code === 'EEXIST') throw new TypeError('笔记已存在'); throw error }
-      return { path: directory === '' ? fileName : `${directory}/${fileName}` }
+      try { await mkdir(target, { mode: 0o700 }) }
+      catch (error) { if ((error as NodeJS.ErrnoException).code === 'EEXIST') throw new TypeError('幻灯片已存在'); throw error }
+      return {
+        path: directory === '' ? fileName : `${directory}/${fileName}`,
+        remove: async () => { await rm(target, { recursive: true, force: true }) },
+      }
     },
     deleteNote: async (path: string) => { await rm(resolve(notesRoot, path), { force: true }) },
   }
@@ -80,14 +84,14 @@ async function state(base: string, sessionId = SESSION, init?: RequestInit): Pro
 }
 
 describe('PPT 状态路由的真实 HTTP 组合', () => {
-  it('笔记源创建校验载荷并返回相对 source', async () => {
+  it('笔记幻灯片创建校验载荷并返回相对工程目录', async () => {
     const { base } = await boot()
     const post = (body: Record<string, unknown>) => fetch(`${base}/api/ppt/notes/create`, {
       method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
     })
     const created = await post({ sessionId: SESSION, name: '笔记演示' })
     expect(created.status).toBe(200)
-    expect(await created.json()).toEqual({ ok: true, source: '笔记演示.pptx' })
+    expect(await created.json()).toEqual({ ok: true, dir: '笔记演示.codingppt' })
     const duplicate = await post({ sessionId: SESSION, name: '笔记演示' })
     expect(duplicate.status).toBe(409)
     expect(await duplicate.json()).toMatchObject({ ok: false, error: { code: 'conflict' } })
@@ -95,6 +99,23 @@ describe('PPT 状态路由的真实 HTTP 组合', () => {
     expect(missing.status).toBe(400)
     const escaped = await post({ sessionId: SESSION, name: '越界', directory: '../outside' })
     expect(escaped.status).toBe(400)
+  })
+
+  it('笔记幻灯片导入把 pptx 字节转成工程目录', async () => {
+    const { base } = await boot()
+    const bytes = buildPptx({
+      format: 1, title: '外部稿', size: '16:9', theme: 'ink',
+      pages: [{ id: 'slide', name: '标题页', background: null, transition: 'none', elements: [] }],
+    })
+    const post = (body: Record<string, unknown>) => fetch(`${base}/api/ppt/notes/import`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+    })
+    const imported = await post({ sessionId: SESSION, name: '外部稿', base64: Buffer.from(bytes).toString('base64') })
+    expect(imported.status).toBe(200)
+    expect(await imported.json()).toEqual({ ok: true, dir: '外部稿.codingppt' })
+    expect(await readdir(join(root!, '外部稿.codingppt'))).toContain('deck.json')
+    const missing = await post({ sessionId: SESSION, name: '缺字节' })
+    expect(missing.status).toBe(400)
   })
 
   it('来源打开路由复用面板编辑，并在源文件外部变化时轮询返回冲突', async () => {

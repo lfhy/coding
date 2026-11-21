@@ -1,8 +1,16 @@
 import type { NotesTreeEntry } from './wire.ts'
 
-/** 去掉 Markdown 扩展名的文件名，供目录与标签显示。 */
+/** 幻灯片工程目录的后缀；与文件库的 `NOTE_DECK_SUFFIX` 一致，客户端只用它判断路径形态。 */
+export const NOTE_DECK_SUFFIX = '.codingppt'
+
+/** 判断目录树里的路径是否是幻灯片工程目录（`.codingppt`），而不是 Markdown 或普通目录。 */
+export function isDeckPath(path: string): boolean {
+  return path.toLowerCase().endsWith(NOTE_DECK_SUFFIX)
+}
+
+/** 去掉 Markdown 或幻灯片工程后缀的文件名，供目录与标签显示。 */
 export function labelOf(name: string): string {
-  return name.replace(/\.(md|markdown|pptx)$/iu, '')
+  return name.replace(/\.(md|markdown|codingppt)$/iu, '')
 }
 
 /** 在目录树中查找指定相对路径的条目。 */
@@ -54,17 +62,18 @@ export interface NoteFile {
   parents: readonly string[]
 }
 
-/** 按目录树显示顺序收集可打开的 Markdown 和 PPTX 路径。 */
+/** 按目录树显示顺序收集可打开的 Markdown 与幻灯片工程路径。 */
 export function filePaths(entries: readonly NotesTreeEntry[]): string[] {
-  return entries.flatMap(entry => entry.kind === 'file' ? [entry.path]
-    : entry.children === undefined ? [] : filePaths(entry.children))
+  return entries.flatMap(entry => entry.kind === 'dir'
+    ? entry.children === undefined ? [] : filePaths(entry.children)
+    : [entry.path])
 }
 
-/** 按目录树显示顺序扁平化所有 Markdown 文件，供助手写入检测使用。 */
+/** 按目录树显示顺序扁平化所有 Markdown 文件，供助手写入检测使用；幻灯片工程不参与。 */
 export function noteFiles(entries: readonly NotesTreeEntry[], parents: readonly string[] = []): NoteFile[] {
   const notes: NoteFile[] = []
   for (const entry of entries) {
-    if (entry.kind === 'file' && !/\.pptx$/iu.test(entry.path)) {
+    if (entry.kind === 'file') {
       notes.push({ path: entry.path, mtimeMs: entry.mtimeMs, parents })
     } else if (entry.children !== undefined) {
       notes.push(...noteFiles(entry.children, [...parents, entry.path]))

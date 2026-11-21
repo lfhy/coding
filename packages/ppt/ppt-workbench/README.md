@@ -25,7 +25,7 @@ PPT 创作模式的宿主能力：工程存储（`ppt/<工程目录>/deck.json`�
 ## 行为
 
 - **来源直开与原位写回**：`POST /api/ppt/source/open` 接受 `{ sessionId, source }`，其中 `source` 必须是当前会话工作区内的相对 `.pptx` 路径；成功返回 `{ ok: true, project }`，并在工程写入 `source.json`。原件导入只允许模型可完整表达的内容，复杂图表、SmartArt、OLE、动画、复杂表格或设计设置会拒绝原位编辑，不生成半成品；需要保留原件时请使用普通 `import` 另存工程。来源绑定保存 SHA-256、设备号、inode、大小和修改时间，服务重挂时从 `source.json` 恢复；原件被移动、替换或外部修改时，读取、编辑、撤销和重做均返回 409，不会覆盖外部版本。原位保存使用源文件旁临时文件和 rename，并保留 `.source-transaction.json` 直到工程版本发布完成；中断后下次读取会完成可确认的发布或报告冲突。`source/open` 不接受旧的 `relativePath` 字段。
-- **笔记源文件创建**：`POST /api/ppt/notes/create` 接受 `{ sessionId, name, directory? }`，只允许本机会话的 `cwd` 与文件库笔记根目录解析后一致；远程 marker、非笔记工作区、缺少文件库或越界父目录均拒绝。服务生成不超过 8 MiB 的合法初始 `.pptx`，由文件库以安全文件名独占写入并返回笔记根目录相对 `source`；创建失败会清理本次新文件且不返回绝对路径。客户端随后通过一次 `source/open` 建立工程绑定和会话焦点。
+- **笔记幻灯片工程目录**：`POST /api/ppt/notes/create` 接受 `{ sessionId, name, directory? }`，只允许本机会话的 `cwd` 与文件库笔记根目录解析后一致；远程 marker、非笔记工作区、缺少文件库或越界父目录均拒绝。服务先由文件库独占创建 `{名称}.codingppt` 空目录，再把默认整稿发布进该目录，成功返回笔记根目录相对 `{ dir }` 并设为会话当前工程；写入失败会删掉本次创建的目录，不留半成品或绝对路径。`POST /api/ppt/notes/import` 接受 `{ sessionId, name, directory?, base64 }`，把不超过 8 MiB 的 `.pptx` 字节解析成同一形态的工程目录，导入损失按普通导入规则报告，源文件不留在笔记目录。两条路由都不再生成单文件 `.pptx` 源稿，因此没有 `source.json` 原件绑定。
 - **串行写入**：同一工程目录的写操作在进程内排队（`withLock`），两次编辑不会交错；跨进程的并发由版本号兜底。
 - **工作区边界**：工程目录必须落在会话工作区内，越界路径直接拒绝（`forbidden`）。
 - **图片媒体**：`upload` 供工作台上传与模型的 `ppt_attach_gallery_image` 共用，要求工程已存在，仅接受 1 字节至 8 MiB 的 PNG／JPEG／GIF／WebP，并检查格式和内容；SVG 因同源脚本风险明确拒绝。写入前检查工程与 `media/` 目录的工作区边界和符号链接，路径不安全时拒绝。它在工程 `media/` 写入一份新文件并返回 `media/<file>`，不修改 `deck.json` 或修订号；图库身份只由[模型工具](../tool-ppt/README.md#行为)在本次会话内校验，本服务不从图库取图。后续 `ppt_edit` 需引用返回的 source 才加入页面；复制与编辑不原子，冲突可能留下未引用媒体，不覆盖原有工程改动。
@@ -61,7 +61,8 @@ PPT 创作模式的宿主能力：工程存储（`ppt/<工程目录>/deck.json`�
 | --- | --- |
 | `GET /api/ppt/state?sessionId=` | 工程列表、当前工程、待处理的打开请求 |
 | `POST /api/ppt/open` | 打开既有工程并设为当前 |
-| `POST /api/ppt/notes/create` | 在本机笔记目录创建初始 `.pptx` 源文件，返回 `{ ok: true, source }`；随后由客户端调用 `source/open` |
+| `POST /api/ppt/notes/create` | 在本机笔记目录创建 `{名称}.codingppt` 工程目录并写入默认整稿，返回 `{ ok: true, dir }` 并设为当前工程 |
+| `POST /api/ppt/notes/import` | 把 `base64` 的 `.pptx` 字节导入成笔记目录里的 `{名称}.codingppt` 工程目录，返回 `{ ok: true, dir }` |
 | `POST /api/ppt/create` | 新建工程（省略尺寸和主题为默认整稿，显式指定其一为单页） |
 | `POST /api/ppt/edit` | 应用一次 ops（可带 `baseRevision`） |
 | `POST /api/ppt/undo` / `redo` | 撤销 / 重做 |
@@ -104,3 +105,4 @@ PPT 创作模式的宿主能力：工程存储（`ppt/<工程目录>/deck.json`�
 - 图片按原字节嵌入，不压缩也不裁剪；大图会直接撑大 .pptx。
 - 版本历史是整份工程的快照，不是增量补丁；工程很大时磁盘占用随版本数线性增长（上限 60 个版本）。
 - 多进程同时改同一工程只靠 `baseRevision` 拒绝，不做文件锁。
+- 笔记页改按 `.codingppt` 工程目录打开幻灯片后，工作台 UI 暂时没有「打开工作区 `.pptx` 源文件并原位写回」的入口；`source/open` 与原件绑定目前只由服务接口和测试覆盖。

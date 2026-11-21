@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import type { NotesTreeEntry } from '../src/client/wire.ts'
-import { addTreeDirectory, filePaths, latestWritten, removeTreeEntry } from '../src/client/notes-tree.ts'
+import { addTreeDirectory, filePaths, isDeckPath, labelOf, latestWritten, noteFiles, removeTreeEntry } from '../src/client/notes-tree.ts'
 
 const leaf = (name: string, path: string, mtimeMs = 1): NotesTreeEntry => ({ name, path, kind: 'file', mtimeMs })
+const deck = (name: string, path: string, mtimeMs = 3): NotesTreeEntry => ({ name, path, kind: 'deck', mtimeMs })
 const folder = (name: string, path: string, children?: NotesTreeEntry[]): NotesTreeEntry => ({
   name, path, kind: 'dir', mtimeMs: 1, ...(children === undefined ? {} : { children }),
 })
@@ -43,6 +44,21 @@ describe('notes tree helpers', () => {
     expect(filePaths([
       folder('Empty', 'Empty'), folder('Archive', 'Archive', [leaf('a.md', 'Archive/a.md')]), leaf('root.md', 'root.md'),
     ])).toEqual(['Archive/a.md', 'root.md'])
+  })
+
+  it('把幻灯片工程目录当可打开条目，但不参与助手写入检测', () => {
+    const entries = [
+      deck('演示.codingppt', '演示.codingppt'),
+      folder('Archive', 'Archive', [leaf('a.md', 'Archive/a.md')]),
+      leaf('root.md', 'root.md'),
+    ]
+    expect(filePaths(entries)).toEqual(['演示.codingppt', 'Archive/a.md', 'root.md'])
+    expect(noteFiles(entries).map(note => note.path)).toEqual(['Archive/a.md', 'root.md'])
+    expect(labelOf('演示.codingppt')).toBe('演示')
+    expect(labelOf('root.markdown')).toBe('root')
+    expect(isDeckPath('演示.codingppt')).toBe(true)
+    expect(isDeckPath('演示.CODINGPPT')).toBe(true)
+    expect(isDeckPath('演示.pptx')).toBe(false)
   })
 
   it('只选择变化的最新笔记，时间相等保留先遇到的笔记', () => {

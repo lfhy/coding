@@ -8,7 +8,7 @@ import type { NS } from './locales.ts'
 import type { NotesTreeEntry } from './wire.ts'
 import css from './NotesPage.module.css'
 
-type NameDialogKind = 'create' | 'folder' | 'presentation' | 'renameNote' | 'renameFolder'
+type NameDialogKind = 'create' | 'folder' | 'presentation' | 'renameNote' | 'renameFolder' | 'renamePresentation'
 
 interface Destination {
   tree: readonly NotesTreeEntry[]
@@ -87,7 +87,7 @@ export function NoteNameDialog({ t, kind, name, busy, error, destination, onName
     setLocationsOpen(false)
     locationTrigger.current?.focus({ preventScroll: true })
   }
-  const renaming = kind === 'renameNote' || kind === 'renameFolder'
+  const renaming = kind === 'renameNote' || kind === 'renameFolder' || kind === 'renamePresentation'
   const root = t('allNotes')
   const location = destination === undefined || destination.path === '' ? root : folderLabel(destination.path)
   const returnFromSubfolder = () => {
@@ -129,7 +129,7 @@ export function NoteNameDialog({ t, kind, name, busy, error, destination, onName
       </>}>
       <form id={formId} className={css.form} onSubmit={subfolder === null ? onSubmit : (event) => { void createSubfolder(event) }}>
         <label htmlFor={nameId}>{t(subfolder !== null || kind === 'folder' || kind === 'renameFolder' ? 'folderName'
-          : kind === 'presentation' ? 'presentationName' : 'noteName')}</label>
+          : kind === 'presentation' || kind === 'renamePresentation' ? 'presentationName' : 'noteName')}</label>
         <Input key={subfolder === null ? 'entry' : 'subfolder'} id={nameId} value={fieldName} autoFocus readOnly={busy}
           onChange={(event) => {
             if (subfolder === null) onNameChange(event.target.value)

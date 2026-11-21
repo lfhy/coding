@@ -107,16 +107,18 @@ export async function readWorkspaceMedia(root: string, dir: string, deck: PptDec
 
 /** 新工程先写入同父临时目录，独占预留空目标后原子发布；失败只清理本次创建的内容。
  * @param root - 工作区目录。
- * @param target - 目标工程目录；必须尚不存在。
+ * @param target - 目标工程目录；必须尚不存在，`existingDirectory` 时必须是调用方刚建好的空目录。
  * @param deck - 新工程的初始演示文稿。
  * @param media - deck 引用的全部图片原字节。
+ * @param source - 来源直开工程的原件绑定；新建工程省略。
+ * @param options - `existingDirectory` 表示目标空目录已由调用方独占创建，本函数只替换它而不新建。
  * @returns 修订号为 1 的工程快照。
  * @throws PptStoreError 目录已存在、路径不安全、媒体缺失或发布失败时。
  */
 export async function publishProject(root: string, target: string, deck: PptDeck, media: readonly {
   part: string
   bytes: Uint8Array
-}[], source?: PptSourceBinding): Promise<PptSnapshot> {
+}[], source?: PptSourceBinding, options?: { readonly existingDirectory?: boolean }): Promise<PptSnapshot> {
   const path = await localPath(root, target, true)
   const parent = dirname(path)
   if (path === resolve(root) || basename(path) === '.') {
@@ -144,9 +146,19 @@ export async function publishProject(root: string, target: string, deck: PptDeck
     if (files.size > 0) await mkdir(join(temp, 'media'))
     for (const [part, bytes] of files) await writeFile(join(temp, part), bytes, { flag: 'wx' })
     if (source !== undefined) await writeFile(join(temp, 'source.json'), `${JSON.stringify(source, null, 2)}\n`, { flag: 'wx', mode: 0o600 })
-    try { await mkdir(path) } catch (error) { failure(error, path) }
-    reserved = true
-    reservation = await stat(path)
+    if (options?.existingDirectory === true) {
+      // 目标空目录由调用方独占创建；先确认仍是空目录再让 rename 替换它，
+      // 使 Windows 上也不会因为目标已存在而发布失败。
+      const existing = await lstat(path).catch((error: unknown) => failure(error, path))
+      if (!existing.isDirectory() || existing.isSymbolicLink()) {
+        throw new PptStoreError('conflict', `目标目录不是可用的空目录：${path}`)
+      }
+      try { await rmdir(path) } catch (error) { failure(error, path) }
+    } else {
+      try { await mkdir(path) } catch (error) { failure(error, path) }
+      reserved = true
+      reservation = await stat(path)
+    }
     await rename(temp, path)
     reserved = false
     return { ...snapshot, dir: path }

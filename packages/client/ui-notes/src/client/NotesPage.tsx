@@ -13,11 +13,14 @@ import { NoteDeleteDialog } from './NoteDeleteDialog.tsx'
 import { NoteNameDialog } from './NoteNameDialog.tsx'
 import { NotesDocument } from './NotesDocument.tsx'
 import { NotesTabs } from './NotesTabs.tsx'
-import { addTreeDirectory, filePaths, findEntry, labelOf, latestWritten, noteFiles, removeTreeEntry } from './notes-tree.ts'
+import { addTreeDirectory, filePaths, findEntry, isDeckPath, labelOf, latestWritten, noteFiles, removeTreeEntry } from './notes-tree.ts'
 import type { createNotesUiStore } from './notes-ui-store.ts'
 import { useNoteDraft } from './useNoteDraft.ts'
 import { usePublishNotesTabs } from './usePublishNotesTabs.ts'
-import { notesCreate, notesCreateDirectory, notesCreateSlide, notesDelete, notesRename, notesTree, type NotesTreeEntry } from './wire.ts'
+import {
+  notesCreate, notesCreateDirectory, notesCreateSlide, notesDelete, notesImportSlide, notesRename, notesTree,
+  type NotesTreeEntry,
+} from './wire.ts'
 import { exportImage, exportMarkdown, exportPdf, exportWord, type NoteExportFormat } from './export/index.ts'
 import css from './NotesPage.module.css'
 
@@ -48,6 +51,8 @@ export function NotesPage({
   const titleRef = useRef<HTMLHeadingElement | null>(null)
   const searchTrigger = useRef<HTMLButtonElement>(null)
   const createTrigger = useRef<HTMLButtonElement>(null)
+  /** 导入幻灯片用的本机文件选择器；菜单项只负责唤起它。 */
+  const importInput = useRef<HTMLInputElement>(null)
   const dialogTrigger = useRef<HTMLButtonElement | null>(null)
   const creatingRequest = useRef<AbortController | null>(null)
   const treeRevision = useRef(0)
@@ -60,12 +65,12 @@ export function NotesPage({
   const storedTabs = useStore(state => state.tabs)
   const openTabs = storedTabs ?? (rememberedPath === null ? [] : [rememberedPath])
   const activePath = useStore(state => state.activePath ?? state.path)
-  const pptPath = activePath !== null && /\.pptx$/iu.test(activePath) ? activePath : null
+  const pptPath = activePath !== null && isDeckPath(activePath) ? activePath : null
   const rememberedExpanded = useStore(state => state.expanded)
   const restored = useRef({ path: rememberedPath, activePath, expanded: rememberedExpanded })
   /** 待恢复的 Markdown 路径；第一次目录就绪时打开它，之后保持 null。 */
   const restorePending = useRef(restored.current.activePath !== null
-    && /\.pptx$/iu.test(restored.current.activePath) ? null : restored.current.path)
+    && isDeckPath(restored.current.activePath) ? null : restored.current.path)
   const [tree, setTree] = useState<NotesTreeEntry[]>([])
   const [treeState, setTreeState] = useState<DirectoryState>('loading')
   const [treeReady, setTreeReady] = useState(false)
@@ -159,7 +164,7 @@ export function NotesPage({
           actions.restoreTabs(filePaths(fresh))
         }
         setTreeReady(true)
-        if (path !== undefined && !/\.pptx$/iu.test(path)) {
+        if (path !== undefined && !isDeckPath(path)) {
           await refresh(findEntry(fresh, path)?.mtimeMs, signal)
         } else if (creatingRequest.current === null && pending !== null) {
           // 切回页面时恢复上次打开的笔记；它已被删除则停在欢迎页。
@@ -169,7 +174,7 @@ export function NotesPage({
             actions.rememberNote(null)
           }
         } else if (creatingRequest.current === null && written !== undefined && restored.current.activePath === null) {
-          // 欢迎页只在助手刚写入 Markdown 后自动打开它；不盖掉已恢复的 PPTX 标签。
+          // 欢迎页只在助手刚写入 Markdown 后自动打开它；不盖掉已恢复的幻灯片标签。
           setExpanded(new Set(written.parents))
           if (await select(written.path)) actions.openNote(written.path)
         }
@@ -194,7 +199,7 @@ export function NotesPage({
   }, [actions, getPath, notify, refresh, select])
 
   const selectTab = useCallback(async (path: string) => {
-    if (/\.pptx$/iu.test(path)) {
+    if (isDeckPath(path)) {
       if (await flush()) {
         actions.openPpt(path)
       }
@@ -214,16 +219,16 @@ export function NotesPage({
     }
     const index = openTabs.indexOf(path)
     const next = openTabs[index + 1] ?? openTabs[index - 1]
-    if (/\.pptx$/iu.test(path)) {
-      if (next !== undefined && !/\.pptx$/iu.test(next)) {
+    if (isDeckPath(path)) {
+      if (next !== undefined && !isDeckPath(next)) {
         if (!await select(next)) return
       } else if (next === undefined) {
         if (!await clear()) return
       }
-    } else if (next === undefined || /\.pptx$/iu.test(next)) {
+    } else if (next === undefined || isDeckPath(next)) {
       if (!await clear()) return
     } else if (!await select(next)) return
-    if (next !== undefined && !/\.pptx$/iu.test(next)) actions.openNote(next)
+    if (next !== undefined && !isDeckPath(next)) actions.openNote(next)
     actions.closeTab(path)
     if (next === undefined) titleRef.current?.focus({ preventScroll: true })
   }, [actions, activePath, clear, getPath, openTabs, removePath, select])
@@ -265,7 +270,7 @@ export function NotesPage({
     setContextMenu(null)
     setActionTarget(target)
     dialogTrigger.current = trigger
-    if (kind === 'rename') setDraftName(target.kind === 'file' ? labelOf(target.name) : target.name)
+    if (kind === 'rename') setDraftName(target.kind === 'dir' ? target.name : labelOf(target.name))
     else setDeleteFailed(false)
     setDialog(kind)
   }, [])
@@ -284,6 +289,7 @@ export function NotesPage({
     const flatten = (entries: readonly NotesTreeEntry[], out: SidebarRootItem[], depth: number): void => {
       for (const entry of entries) {
         const folder = entry.kind === 'dir'
+        const deck = entry.kind === 'deck'
         if (folder && needle !== '') {
           if (entry.children !== undefined) flatten(entry.children, out, 0)
           continue
@@ -292,7 +298,7 @@ export function NotesPage({
         if (needle !== '' && !label.toLocaleLowerCase(locale).includes(needle)) continue
         const open = folder && expanded.has(entry.path)
         out.push({
-          id: entry.path, label, icon: folder || /\.pptx$/iu.test(entry.path) ? 'files' : 'notes', depth,
+          id: entry.path, label, icon: deck ? 'file-slides' : folder ? 'files' : 'notes', depth,
           ...(folder ? { folder, open } : { iconTone: 'blue', active: activePath === entry.path }),
           meta: date.format(entry.mtimeMs),
           actions: <>
@@ -359,7 +365,7 @@ export function NotesPage({
     creatingRequest.current = request
     setCreating(true)
     try {
-      const extension = target.kind === 'file' && /\.(md|markdown|pptx)$/iu.test(target.name)
+      const extension = target.kind === 'file' && /\.(md|markdown)$/iu.test(target.name)
         ? target.name.slice(target.name.lastIndexOf('.')) : ''
       const { path } = await notesRename(target.path, target.kind === 'file' ? `${name}${extension || '.md'}` : name)
       const fresh = await refreshTree()
@@ -400,7 +406,7 @@ export function NotesPage({
       const remaining = openTabs.filter(path => !deleted(path))
       removePath(target.path)
       actions.removeTabs(target.path)
-      if (activeRemoved && remaining[0] !== undefined && !/\.pptx$/iu.test(remaining[0])) {
+      if (activeRemoved && remaining[0] !== undefined && !isDeckPath(remaining[0])) {
         if (await select(remaining[0])) actions.openNote(remaining[0])
       }
       setExpanded(previous => new Set([...previous].filter(path => !deleted(path))))
@@ -456,6 +462,36 @@ export function NotesPage({
     }
   }
 
+  /**
+   * 把本机选择的 `.pptx` 导入成笔记目录里的幻灯片工程。
+   * 名称取所选文件名；失败只提示，不留半成品目录，也不改动画廊里的其他标签。
+   * @param file - 文件选择器给出的文件；取消选择时为 undefined。
+   */
+  const importPresentation = async (file: File | undefined) => {
+    if (file === undefined || creatingRequest.current !== null) return
+    const request = new AbortController()
+    creatingRequest.current = request
+    setCreating(true)
+    try {
+      const name = file.name.replace(/\.pptx$/iu, '').trim() || t('newPresentation')
+      const { path } = await notesImportSlide(sessionId, name, '', file)
+      request.signal.throwIfAborted()
+      treeRevision.current += 1
+      const fresh = notesTree(request.signal).then((entries) => {
+        if (!request.signal.aborted) setTree(entries)
+        return true
+      }, () => false)
+      const [updated] = await Promise.all([fresh, selectTab(path)])
+      request.signal.throwIfAborted()
+      notify(updated ? 'presentationImported' : 'createdRefreshError')
+    } catch {
+      if (!request.signal.aborted) notify('importPresentationError')
+    } finally {
+      creatingRequest.current = null
+      if (!request.signal.aborted) setCreating(false)
+    }
+  }
+
   const createDestinationDirectory = async (name: string, parent: string): Promise<string | undefined> => {
     if (creatingRequest.current !== null) return undefined
     const request = new AbortController()
@@ -499,6 +535,7 @@ export function NotesPage({
     ...noteCreateEntries,
     { type: 'separator', id: 'new-presentation-separator' },
     { id: 'presentation', label: t('newPresentation'), icon: <Icon name="file-slides" size={16} /> },
+    { id: 'import-presentation', label: t('importPresentation'), icon: <Icon name="file-slides" size={16} /> },
   ]
 
   const selectedLabel = activePath === null ? t('title') : labelOfPath(activePath)
@@ -551,6 +588,7 @@ export function NotesPage({
               disabled={creating} onClick={() => { setContextMenu(null); setCreateMenuOpen(open => !open) }} />}
             items={launcherEntries}
             onSelect={(id) => {
+              if (id === 'import-presentation') importInput.current?.click()
               if (id === 'create' || id === 'folder' || id === 'presentation') openCreateDialog(id, '', createTrigger.current)
             }}
             onClose={() => { setCreateMenuOpen(false); createTrigger.current?.focus({ preventScroll: true }) }}
@@ -603,7 +641,9 @@ export function NotesPage({
           onRetry={() => { void save() }} onChange={edit} onBlur={() => { void save() }} t={t} />
       </div>
       {(dialog === 'create' || dialog === 'folder' || dialog === 'presentation' || dialog === 'rename') && <NoteNameDialog t={t}
-        kind={dialog === 'rename' ? actionTarget?.kind === 'dir' ? 'renameFolder' : 'renameNote' : dialog}
+        kind={dialog === 'rename'
+          ? actionTarget?.kind === 'dir' ? 'renameFolder' : actionTarget?.kind === 'deck' ? 'renamePresentation' : 'renameNote'
+          : dialog}
         name={draftName} busy={creating} onClose={closeDialog} onNameChange={setDraftName}
         error={createFailed && dialog !== 'rename' ? t(dialog === 'folder' ? 'createFolderError' : dialog === 'presentation' ? 'createPresentationError' : 'createError') : undefined}
         destination={dialog === 'rename' ? undefined : {
@@ -612,7 +652,10 @@ export function NotesPage({
         onSubmit={(event) => { void (dialog === 'rename' ? renameTarget(event) : createEntry(event)) }} />}
       {dialog === 'delete' && actionTarget !== null && <NoteDeleteDialog t={t}
         description={actionTarget.kind === 'dir'
-          ? t('deleteFolderConfirm', { name: actionTarget.name }) : t('deleteConfirm', { name: labelOf(actionTarget.name) })}
+          ? t('deleteFolderConfirm', { name: actionTarget.name })
+          : actionTarget.kind === 'deck'
+            ? t('deletePresentationConfirm', { name: labelOf(actionTarget.name) })
+            : t('deleteConfirm', { name: labelOf(actionTarget.name) })}
         deleting={creating} failed={deleteFailed} onClose={closeDialog} onConfirm={() => { void deleteTarget() }} />}
       <Modal open={dialog === 'reload'} onClose={closeDialog} title={t('reload')} closeLabel={t('close')}
         description={t('reloadConfirm')} trapFocus footer={<>
@@ -626,6 +669,13 @@ export function NotesPage({
         </>}>
       </Modal>
       {toast !== null && <Toast key={toast.id} text={t(toast.key)} onDone={() => { setToast(null) }} />}
+      {/* 导入入口只认 .pptx；文件选择器留在页面 DOM 里，菜单项负责唤起它。 */}
+      <input ref={importInput} type="file" accept=".pptx" hidden aria-hidden="true" tabIndex={-1}
+        onChange={(event) => {
+          const file = event.target.files?.[0]
+          event.target.value = ''
+          void importPresentation(file)
+        }} />
     </main>
   )
 }

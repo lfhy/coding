@@ -10,7 +10,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { SessionId } from 'coding-session/types'
 import type { Agent } from 'coding-agent'
 import type {} from 'coding-client-connection'
-import type {} from 'coding-file-library'
+import { isDeckDirectoryName } from 'coding-file-library'
 import type {} from 'coding-host-webserver'
 import { defineTool } from 'coding-tools'
 import type { NotesTabsPublishRequest, NotesTabsPublishResponse } from './protocol.ts'
@@ -58,12 +58,20 @@ function validId(value: unknown): value is string {
     && !/[\u0000-\u001f\u007f]/u.test(value)
 }
 
-/** 拒绝绝对路径、越级路径、控制字符与非规范分隔符，避免客户端输入伪造根目录文件。 */
+/** 取斜杠路径的最后一段，供目录名判断使用。 */
+function leafOf(path: string): string {
+  return path.slice(path.lastIndexOf('/') + 1)
+}
+
+/**
+ * 拒绝绝对路径、越级路径、控制字符与非规范分隔符，避免客户端输入伪造根目录文件。
+ * 标签只接受 Markdown 文件或 `.codingppt` 幻灯片工程目录。
+ */
 function validPath(value: unknown): value is string {
   return typeof value === 'string' && value.length > 0 && value.length <= 4096
     && !isAbsolute(value) && !/^[A-Za-z]:/u.test(value) && !/[\\\u0000-\u001f\u007f]/u.test(value)
     && value.split('/').every(segment => segment !== '' && segment !== '.' && segment !== '..')
-    && ['.md', '.markdown', '.pptx'].includes(extname(value).toLowerCase())
+    && (['.md', '.markdown'].includes(extname(value).toLowerCase()) || isDeckDirectoryName(leafOf(value)))
 }
 
 /** 网络 body 必须是一份完整且一致的标签集；null 表示确实没有活动文件。 */
@@ -79,7 +87,7 @@ function parsePublish(value: unknown): NotesTabsPublishRequest | undefined {
     || (body.activeTabPath !== null && !body.openTabs.includes(body.activeTabPath))
     || (body.activeKind !== 'note' && body.activeKind !== 'ppt')
     || body.activeTabPath !== null
-      && (body.activeKind === 'ppt') !== body.activeTabPath.toLowerCase().endsWith('.pptx')) return undefined
+      && (body.activeKind === 'ppt') !== isDeckDirectoryName(leafOf(body.activeTabPath))) return undefined
   return body as unknown as NotesTabsPublishRequest
 }
 
@@ -95,7 +103,7 @@ async function readBody(req: IncomingMessage): Promise<unknown> {
   return JSON.parse(Buffer.concat(chunks, size).toString('utf8')) as unknown
 }
 
-/** 复用文件库当前根目录，逐段拒绝符号链接；发布时只相信这次核验的文件。 */
+/** 复用文件库当前根目录，逐段拒绝符号链接；发布时只相信这次核验的条目。 */
 async function verifyTabs(root: string, paths: readonly string[]): Promise<VerifiedTab[]> {
   const realRoot = await realpath(root)
   const tabs: VerifiedTab[] = []
@@ -104,7 +112,11 @@ async function verifyTabs(root: string, paths: readonly string[]): Promise<Verif
     const realParent = await realpath(resolve(absolutePath, '..'))
     if (realParent !== realRoot && !realParent.startsWith(realRoot + sep)) throw new TypeError('path outside notes')
     const stat = await lstat(absolutePath)
-    if (!stat.isFile() || stat.isSymbolicLink()) throw new TypeError('not a regular note file')
+    // 幻灯片标签是 `.codingppt` 工程目录，Markdown 标签必须是普通文件。
+    if (stat.isSymbolicLink()) throw new TypeError('not a regular note entry')
+    if (isDeckDirectoryName(leafOf(path)) ? !stat.isDirectory() : !stat.isFile()) {
+      throw new TypeError('not a regular note entry')
+    }
     tabs.push({ path, absolutePath })
   }
   return tabs

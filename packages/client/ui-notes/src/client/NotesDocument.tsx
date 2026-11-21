@@ -14,7 +14,7 @@ interface NotesDocumentProps {
   panelId: string
   tabId: string | undefined
   content: string | undefined
-  /** 非 Markdown 标签的内容由已声明的子 slot 提供。 */
+  /** 幻灯片标签的内容由已声明的子 slot 提供。 */
   pptContent?: ReactNode
   saveLabel: NotesLocaleKey | undefined
   treeState: 'loading' | 'ready' | 'failed'
@@ -46,7 +46,7 @@ export function NotesDocument({ title, titleId, titleRef, panelId, tabId, conten
     aria-labelledby={tabId}>
     <header className={css.documentHeader}>
       <div className={css.heading}>
-        <span className={css.documentIcon} aria-hidden="true"><Icon name={pptContent === undefined ? 'notes' : 'files'} size={18} /></span>
+        <span className={css.documentIcon} aria-hidden="true"><Icon name={pptContent === undefined ? 'notes' : 'file-slides'} size={18} /></span>
         <h1 ref={titleRef} id={titleId} className={css.title} title={title} tabIndex={-1}>{title}</h1>
         {saveLabel !== undefined && <span className={css.saveState} data-state={saveLabel} role="status">
           {saveLabel === 'saved' && <IconCheckOutline14 />}{t(saveLabel)}

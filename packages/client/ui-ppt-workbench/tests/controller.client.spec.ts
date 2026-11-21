@@ -79,13 +79,15 @@ function sourceFetcher() {
   const fetcher = vi.fn(async (path: string, init?: RequestInit): Promise<Response> => {
     const body: unknown = typeof init?.body === 'string' ? JSON.parse(init.body) : null
     requests.push({ path, body })
-    if (path === '/api/ppt/source/open') {
+    if (path === '/api/ppt/source/open' || path === '/api/ppt/open') {
       if (fail) return Response.json({ ok: false, error: { message: '原稿不存在 /private/path' } }, { status: 404 })
       if (holdNext) {
         holdNext = false
         return new Promise((resolve) => { release = resolve })
       }
-      active = { ...project, dir: `${ROOT}/ppt/source`, revision: 2 }
+      active = path === '/api/ppt/open'
+        ? { ...project, dir: `${ROOT}/deck`, revision: 2 }
+        : { ...project, dir: `${ROOT}/ppt/source`, revision: 2 }
       return Response.json({ ok: true, project: active })
     }
     if (path.startsWith('/api/ppt/state?')) return Response.json({ ok: true, state: {
@@ -212,6 +214,36 @@ describe('PPT 面板轮询', () => {
     await panel.refresh()
     expect(panel.view.getSnapshot().project?.revision).toBe(3)
     panel.show(false, true)
+    panel.dispose()
+  })
+
+  it('笔记页按工程目录打开幻灯片，并继续采纳该工程的新修订', async () => {
+    const service = sourceFetcher()
+    const panel = new PptPanelController(SESSION, service.fetcher)
+    panel.show(true, true)
+    await panel.openDeck('幻灯片.codingppt')
+    expect(service.requests.find(item => item.path === '/api/ppt/open')?.body)
+      .toEqual({ sessionId: SESSION, dir: '幻灯片.codingppt' })
+    expect(panel.view.getSnapshot()).toMatchObject({ phase: 'ready', sourceError: false,
+      project: { dir: `${ROOT}/deck`, revision: 2 } })
+    await panel.openDeck('幻灯片.codingppt')
+    expect(service.requests.filter(item => item.path === '/api/ppt/open')).toHaveLength(1)
+    service.setActive({ ...project, dir: `${ROOT}/deck`, revision: 3 })
+    await panel.refresh()
+    expect(panel.view.getSnapshot().project?.revision).toBe(3)
+    panel.show(false, true)
+    panel.dispose()
+  })
+
+  it('工程目录打开失败清掉旧工程与敏感错误，允许同目录重试', async () => {
+    const service = sourceFetcher()
+    const panel = new PptPanelController(SESSION, service.fetcher)
+    await panel.refresh()
+    service.setFail(true)
+    await panel.openDeck('缺失.codingppt')
+    expect(panel.view.getSnapshot()).toMatchObject({ phase: 'error', sourceError: true, project: null, notice: null })
+    await panel.openDeck('缺失.codingppt')
+    expect(service.requests.filter(item => item.path === '/api/ppt/open')).toHaveLength(2)
     panel.dispose()
   })
 

@@ -39,6 +39,8 @@ export interface PptWorkbenchInjected {
   show: (visible: boolean, source?: boolean) => void
   refresh: () => void
   open: (dir: string) => Promise<void>
+  /** 打开并跟随笔记页选中的幻灯片工程目录（`.codingppt`）。 */
+  openDeck: (dir: string) => Promise<void>
   openSource: (path: string) => Promise<void>
   create: (title: string) => Promise<void>
   undo: () => Promise<void>
@@ -73,6 +75,9 @@ export type PptWorkbenchProps =
 
 const ADD_KINDS: readonly PptElementKind[] = ['text', 'rect', 'ellipse', 'line', 'chart']
 
+/** 笔记页传入的幻灯片工程目录后缀；与服务端文件库的约定一致，组件只据此选择打开方式。 */
+const DECK_SUFFIX = '.codingppt'
+
 /** 各元素种类在工具条上的文案键。 */
 const LABEL_OF: Readonly<Record<string, (t: PptWorkbenchProps['t']) => string>> = {
   text: t => t('addText'),
@@ -89,13 +94,15 @@ const LABEL_OF: Readonly<Record<string, (t: PptWorkbenchProps['t']) => string>> 
  */
 export function PptWorkbench(props: PptWorkbenchProps) {
   const {
-    shown, t, usePpt, show, refresh, open, openSource, undo, redo, exportDeck,
+    shown, t, usePpt, show, refresh, open, openDeck, openSource, undo, redo, exportDeck,
     selectPage, selectElement, setEditing, addPage, removePage, movePage,
     addElement, removeElement, updateElement, editCell, updatePage, updateDeck,
     duplicateElement, copyElement, cutElement, pasteElement, reorderElement, insertImage, mediaUrl,
     useTemplateCatalog, catalogActions,
   } = props
   const sourcePath = 'path' in props ? props.path : undefined
+  /** 笔记页选中的是幻灯片工程目录；其余路径仍按工作区 `.pptx` 源文件打开。 */
+  const deckEntry = sourcePath !== undefined && sourcePath.toLowerCase().endsWith(DECK_SUFFIX)
   const state = usePpt(snapshot => snapshot)
   const [menu, setMenu] = useState<'new' | 'insert' | 'page' | 'more' | null>(null)
   const [showThumbs, setShowThumbs] = useState(true)
@@ -119,8 +126,9 @@ export function PptWorkbench(props: PptWorkbenchProps) {
 
   useEffect(() => {
     if (!shown || sourcePath === undefined) return
-    void openSource(sourcePath)
-  }, [shown, sourcePath, openSource])
+    if (deckEntry) void openDeck(sourcePath)
+    else void openSource(sourcePath)
+  }, [deckEntry, shown, sourcePath, openDeck, openSource])
 
   useEffect(() => {
     setMenu(null)
@@ -339,7 +347,9 @@ export function PptWorkbench(props: PptWorkbenchProps) {
             ? <p className={css.errorReason} role="alert">{t('sourceErrorHint')}</p>
             : state.notice?.tone === 'error' ? <p className={css.errorReason} role="alert">{state.notice.reason}</p> : null}
           <button type="button" className={css.primary}
-            onClick={sourcePath === undefined ? refresh : () => { void openSource(sourcePath) }}>{t('errorRetry')}</button>
+            onClick={sourcePath === undefined
+              ? refresh
+              : deckEntry ? () => { void openDeck(sourcePath) } : () => { void openSource(sourcePath) }}>{t('errorRetry')}</button>
         </div>
       ) : state.phase === 'loading' ? (
         <div className={css.blank}><p className={css.blankTitle}>{t('loading')}</p></div>
