@@ -38,7 +38,7 @@ helper 的启动取消、协议失败和 fallback 关闭都保留 12 秒清理�
 
 登录态由 Electron 的持久分区保存：桌面端共用一个 `persist:ego-default` 分区，登录一次之后跨任务空间、跨重启都保留，不需要导入旧 ego Profile 的 Cookie。任务空间仍各自持有页面，只是不再开独立 cookie jar；Web/CLI 保持按空间隔离。
 
-下载走运行时原本的通道：端点把 `Browser.setDownloadBehavior`（以及旧版 `Page.setDownloadBehavior` 回退）记到页面宿主，页面发起的下载直接保存到运行时的临时目录，不弹系统保存框；开始与进度被翻译成 `Page.downloadWillBegin`、`Page.downloadProgress`，因此 `ego_download`／`page.waitForEvent('download')` 照常拿到文件路径。没有运行时指定目录时（页面自己触发的下载）落到系统下载目录，重名文件加 `(1)` 之类的后缀；只有运行时明确要求 `deny` 时才阻止下载。
+下载走运行时原本的通道：端点把 `Browser.setDownloadBehavior`（以及旧版 `Page.setDownloadBehavior` 回退）记到页面宿主，页面发起的下载直接保存到运行时的临时目录，不弹系统保存框；开始与进度被翻译成 `Page.downloadWillBegin`、`Page.downloadProgress`，因此 `ego_download`／`page.waitForEvent('download')` 照常拿到文件路径。没有运行时指定目录时（页面自己触发的下载）落到系统下载目录，重名文件加 `(1)` 之类的后缀；只有运行时明确要求 `deny` 时才阻止下载。面板右上角有下载入口：进行中的数量显示在角标上，展开后按新到旧列出文件名、进度与状态，可取消进行中的下载、把已完成的文件另存到别处（系统保存对话框）、打开文件或显示所在文件夹；这些动作同样由主进程执行并在每次调用复核来源。
 
 Web 与 CLI 不受影响：没有这个端点时运行时照旧启动本机 Edge、Chrome 或 Chromium，面板按会话订阅画面。桌面端当前不使用镜像帧流，因此采集与视频相关设置只在 Web/CLI 生效。
 

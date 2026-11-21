@@ -231,6 +231,7 @@ describe('桌面 Agent 页面宿主', () => {
     const item = {
       getFilename: () => '报告.zip',
       setSavePath: vi.fn(),
+      getSavePath: () => '/tmp/coding-ego-host-test/downloads/报告.zip',
       getURL: () => 'https://example.test/报告.zip',
       getReceivedBytes: () => 1,
       getTotalBytes: () => 2,
@@ -242,11 +243,14 @@ describe('桌面 Agent 页面宿主', () => {
     expect(prevented.preventDefault).not.toHaveBeenCalled()
     // 运行时没有指定目录：落到系统下载目录，文件名保持原样。
     expect(item.setSavePath).toHaveBeenCalledWith('/tmp/coding-ego-host-test/downloads/报告.zip')
-    expect(events[0]).toMatchObject({ kind: 'begin', filename: '报告.zip', url: 'https://example.test/报告.zip' })
+    expect(events[0]).toMatchObject({ kind: 'begin',
+      record: { filename: '报告.zip', url: 'https://example.test/报告.zip', state: 'progressing' } })
     const updated = item.on.mock.calls.find(call => call[0] === 'updated')?.[1] as
       (event: unknown, state: string) => void
     updated({}, 'interrupted')
-    expect(events.at(-1)).toMatchObject({ kind: 'progress', state: 'canceled', receivedBytes: 1, totalBytes: 2 })
+    expect(events.at(-1)).toMatchObject({ kind: 'progress',
+      record: { state: 'canceled', receivedBytes: 1, totalBytes: 2 } })
+    expect(host.downloads()[0]).toMatchObject({ filename: '报告.zip', state: 'canceled' })
     host.setDownloadBehavior(host.defaultContext(), { behavior: 'allow', downloadPath: '/tmp/coding-ego-runtime' })
     item.setSavePath.mockClear()
     handler!(prevented, item)

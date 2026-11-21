@@ -14,6 +14,7 @@ import { BrowserEgoController } from './controller.ts'
 import { watchActivity, WATCH_ID, WATCH_KIND } from './activity.ts'
 import { validId, type EgoPage } from './wire.ts'
 import { AgentBrowserPanel, type AgentBrowserInjected } from './AgentBrowserPanel.tsx'
+import { downloadsForSurface } from './downloads.ts'
 import { nativeEgoSurface } from './native.ts'
 import { EgoBrowserCard } from './settings-card.tsx'
 import { EgoBrowserCardController } from './settings-card-controller.ts'
@@ -51,6 +52,8 @@ export function apply(ctx: ClientContext): void {
   const t = ctx.locale.bind(NS)
   // 桌面壳提供原生呈现时，面板不再订阅帧流；入口在挂载时读取一次即可。
   const surface = nativeEgoSurface()
+  // 下载列表只在桌面壳提供原生呈现时存在；Web/CLI 不显示入口。
+  const downloads = downloadsForSurface(surface)
   const controllers = new Map<string, BrowserEgoController>()
   const controllerFor = (sessionId: string): BrowserEgoController => {
     let controller = controllers.get(sessionId)
@@ -163,6 +166,7 @@ export function apply(ctx: ClientContext): void {
           hover: (targetId, x, y) => controller.hover(targetId, x, y),
           resize: (targetId, width, height) => controller.resize(targetId, width, height),
           surface,
+          downloads,
         }
       },
     }, AgentBrowserPanel)

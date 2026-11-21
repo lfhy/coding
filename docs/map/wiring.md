@@ -44,6 +44,7 @@
 - `progress-reminder` → `coding-progress-reminder`
 - `tool-web` → `coding-tool-web`
 - `tool-browser` → `coding-tool-browser-ego`
+- `tool-computer-use` → `coding-tool-computer-use`
 - `tool-image-gen` → `coding-tool-image-gen`
 - `tool-presentation` → `coding-agent-tool-presentation`
 
@@ -64,6 +65,7 @@
 - `tool-skill` → `coding-tool-skill`
 - `tool-web` → `coding-tool-web`
 - `tool-browser` → `coding-tool-browser-ego`
+- `tool-computer-use` → `coding-tool-computer-use`
 - `compaction` → `cordis:group`
 - `compaction-basic` → `coding-compaction-basic`
 - `command-compact` → `coding-command-compact`
@@ -175,6 +177,7 @@
 - `progress-reminder` → `coding-progress-reminder`
 - `tool-web` → `coding-tool-web`
 - `tool-browser` → `coding-tool-browser-ego`
+- `tool-computer-use` → `coding-tool-computer-use`
 - `tool-image-gen` → `coding-tool-image-gen`
 
 ## `apps/cli/config/agent-presets/minimal/agent.cordis.yml`
@@ -296,6 +299,7 @@
 - `progress-reminder` → `coding-progress-reminder`
 - `tool-web` → `coding-tool-web`
 - `tool-browser` → `coding-tool-browser-ego`
+- `tool-computer-use` → `coding-tool-computer-use`
 - `tool-image-gen` → `coding-tool-image-gen`
 - `mcp-rea` → `coding-mcp-client`
 - `mcp-rea-windows` → `coding-mcp-client`
@@ -339,6 +343,7 @@
 - `progress-reminder` → `coding-progress-reminder`
 - `tool-web` → `coding-tool-web`
 - `tool-browser` → `coding-tool-browser-ego`
+- `tool-computer-use` → `coding-tool-computer-use`
 - `tool-image-gen` → `coding-tool-image-gen`
 - `tool-presentation` → `coding-agent-tool-presentation`
 
@@ -381,6 +386,7 @@
 - `progress-reminder` → `coding-progress-reminder`
 - `tool-web` → `coding-tool-web`
 - `tool-browser` → `coding-tool-browser-ego`
+- `tool-computer-use` → `coding-tool-computer-use`
 - `tool-image-gen` → `coding-tool-image-gen`
 - `tool-presentation` → `coding-agent-tool-presentation`
 
@@ -568,6 +574,7 @@
 - `web-search-tavily` → `coding-web-search-tavily`
 - `browser-ego-host` → `coding-browser-ego-host`
 - `tool-web` → `coding-tool-web`
+- `computer-use` → `coding-computer-use`
 - `tools` → `coding-tools`
 - `system-prompt` → `coding-system-prompt`
 - `agent-loop` → `coding-agent-loop`

@@ -41,6 +41,12 @@ preload 暴露 `codingDesktop.egoBrowser.present` 时（桌面壳），画面改
 
 上报走同源 IPC `coding:ego-present`，主进程只接受 Host 主 frame、回环 origin 与窗口内整数矩形，越界或畸形载荷一律拒绝；隐藏面板、切换标签或卸载时上报 `visible: false` 撤回呈现，页面本身仍由 Host 继续使用。`nativeEgoSurface()` 在没有桌面壳时返回 null，面板退回帧流路径，因此同一份组件在 Web、CLI 与桌面端共用。
 
+## 下载列表
+
+桌面端面板右上角有下载入口，角标显示进行中的数量。展开的浮层按新到旧列出最近的下载：进行中的一项显示进度条，完成的显示状态与操作（另存为、显示所在文件夹），取消后的一项只保留记录与另存为。另存为走系统保存对话框，取消对话框不产生任何提示；其它失败只显示固定文案。列表由主进程推送，最多保留最近 50 条，Web 与 CLI 没有这个入口。
+
+preload 只暴露 `codingDesktop.egoBrowser.downloads`（`list`／`cancel`／`save`／`reveal`／`open`／`subscribe`），所有返回都按外部输入重新校验，畸形条目直接丢弃。
+
 ## 设置卡
 
 设置卡把 Host 的 `ego-browser` 命名空间当作插件页的一项：本包以 `settings.plugin.item`、key `ego-browser` 注册，设置页在服务该命名空间时派发这张卡。Client 通过 `ctx.settingsScope.bind({ namespace: 'ego-browser' })` 推导有效值，字段只在用户点击保存时按改动逐项写入 `settingsScope.set`／`settingsScope.unset`；Host 是校验与归一化的唯一权威，保存后从设置节读回，未被接受的值保留草稿供修正。命名空间未服务时不渲染卡片；设置文档只读时显示一行说明并禁用全部控件与保存。

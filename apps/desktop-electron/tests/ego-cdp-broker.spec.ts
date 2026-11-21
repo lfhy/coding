@@ -259,10 +259,11 @@ describe('桌面下载', () => {
     expect(host.downloads.at(-1)).toEqual({
       contextId: 'desktop-default', settings: { behavior: 'deny', downloadPath: '/tmp/denied' },
     })
-    host.emitDownload({ kind: 'begin', contextId: 'desktop-default', guid: 'guid-1',
-      url: 'https://example.test/file.zip', filename: 'file.zip' })
-    host.emitDownload({ kind: 'progress', contextId: 'desktop-default', guid: 'guid-1',
-      receivedBytes: 4, totalBytes: 8, state: 'completed' })
+    const record = { id: 'guid-1', contextId: 'desktop-default', filename: 'file.zip',
+      path: '/tmp/file.zip', url: 'https://example.test/file.zip', state: 'progressing' as const,
+      receivedBytes: 0, totalBytes: 8, startedAt: 1 }
+    host.emitDownload({ kind: 'begin', record })
+    host.emitDownload({ kind: 'progress', record: { ...record, state: 'completed', receivedBytes: 4 } })
     await new Promise((resolve) => { setTimeout(resolve, 30) })
     const events = client.messages.filter(message => message.method === 'Page.downloadWillBegin'
       || message.method === 'Page.downloadProgress')
@@ -280,8 +281,9 @@ describe('桌面下载', () => {
     const created = await client.call('Target.createTarget', { url: 'about:blank' })
     await client.call('Target.attachToTarget',
       { targetId: (created.result as { targetId: string }).targetId, flatten: true })
-    host.emitDownload({ kind: 'begin', contextId: 'other-context', guid: 'guid-2',
-      url: 'https://example.test/other', filename: 'other.bin' })
+    host.emitDownload({ kind: 'begin', record: { id: 'guid-2', contextId: 'other-context',
+      filename: 'other.bin', path: '/tmp/other.bin', url: 'https://example.test/other',
+      state: 'progressing', receivedBytes: 0, totalBytes: 1, startedAt: 1 } })
     await new Promise((resolve) => { setTimeout(resolve, 30) })
     expect(client.messages.some(message => message.method === 'Page.downloadWillBegin')).toBe(false)
   })

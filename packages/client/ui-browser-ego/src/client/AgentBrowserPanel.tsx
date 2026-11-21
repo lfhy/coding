@@ -1,14 +1,15 @@
 /** 工作台会话面板只呈现经验证的页面与画面；人工输入由 Host 再次授权。 */
 import { useEffect, useRef, useState, type ClipboardEvent, type CompositionEvent, type FormEvent, type KeyboardEvent, type MouseEvent, type WheelEvent } from 'react'
 import {
-  Icon, IconChevronLeftOutline14, IconChevronRightOutline14,
-  IconRefreshOutline16, IconWarningOutline16,
+  Icon, IconChevronLeftOutline14, IconChevronRightOutline14, IconCloseOutline16,
+  IconDownloadOutline16, IconFolderOpenOutline16, IconRefreshOutline16, IconWarningOutline16,
 } from 'coding-client-ui-icons'
-import { Button, Input, Toast, Tooltip } from 'coding-client-ui-primitives'
+import { Button, Input, Toast, Tooltip, useDismissOnOutsidePointer } from 'coding-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime, HostObservable } from 'coding-client-ui-slots'
 import type {} from 'coding-client-ui-open-in-app/client'
 import type { BrowserEgoController, BrowserEgoView } from './controller.ts'
 import { pointOnFrame } from './geometry.ts'
+import { mergeDownload, type EgoDownloadItem, type EgoDownloadsBridge } from './downloads.ts'
 import { concealEgoSurface, type EgoNativeSurface } from './native.ts'
 import { NS } from './locales.ts'
 import type { EgoBrowserCapture } from './settings.ts'
@@ -33,12 +34,14 @@ export interface AgentBrowserInjected {
   resize: BrowserEgoController['resize']
   /** 桌面端把页面放进应用窗口的能力；Web 与 CLI 为 null，仍按帧流渲染。 */
   surface: EgoNativeSurface | null | undefined
+  /** 桌面端的下载列表；没有时面板不显示下载入口。 */
+  downloads: EgoDownloadsBridge | null | undefined
 }
 
 export type AgentBrowserProps = PropsRuntime<'sidebar.right.pane.tab'> & PropsLocale<typeof NS>
   & InjectFace<AgentBrowserInjected>
 
-type Notice = { id: number; key: 'inputFailed' | 'navigateFailed' | 'raiseFailed' }
+type Notice = { id: number; key: 'inputFailed' | 'navigateFailed' | 'raiseFailed' | 'downloadFailed' }
 
 /** 页面给出的指针反馈；三项都来自 Host 的受限投影。 */
 type HoverState = { cursor: string; title: string | null; href: string | null }
@@ -75,7 +78,7 @@ function addressFromDraft(draft: string): string | null {
  */
 export function AgentBrowserPanel({
   sessionId, useTabInfo, useBrowserEgo, useBrowserEgoSettings,
-  show, refresh, navigate, raiseWindow, send, hover, resize, surface = null, t,
+  show, refresh, navigate, raiseWindow, send, hover, resize, surface = null, downloads = null, t,
 }: AgentBrowserProps) {
   const { shown, tab } = useTabInfo()
   const targetId = tab.params !== null && typeof tab.params === 'object' && !Array.isArray(tab.params)
@@ -98,6 +101,22 @@ export function AgentBrowserPanel({
   const image = useRef<HTMLImageElement>(null)
   const video = useRef<HTMLVideoElement>(null)
   const stage = useRef<HTMLDivElement>(null)
+  const downloadsRoot = useRef<HTMLDivElement>(null)
+  const [downloadItems, setDownloadItems] = useState<readonly EgoDownloadItem[]>([])
+  const [downloadsOpen, setDownloadsOpen] = useState(false)
+  const [downloadBusy, setDownloadBusy] = useState<string | null>(null)
+  useDismissOnOutsidePointer(downloadsRoot, downloadsOpen, setDownloadsOpen)
+  useEffect(() => {
+    if (downloads === null) return
+    let active = true
+    void downloads.list()
+      .then((list) => { if (active) setDownloadItems(list) })
+      .catch(() => undefined)
+    const stop = downloads.subscribe((item) => {
+      if (active) setDownloadItems(previous => mergeDownload(previous, item))
+    })
+    return () => { active = false; stop() }
+  }, [downloads])
 
   useEffect(() => { show(shown, viewId) }, [shown, viewId, show])
   useEffect(() => () => { show(false, viewId) }, [show, viewId])
@@ -217,6 +236,18 @@ export function AgentBrowserPanel({
     && view.phase === 'ready' && !view.relayOff && videoTarget !== null && selected?.active === true
   const notify = (key: Notice['key']) => {
     setNotice(previous => ({ id: (previous?.id ?? 0) + 1, key }))
+  }
+  const activeDownloads = downloadItems.filter(item => item.state === 'progressing').length
+  /** 下载列表上的四个动作都由桌面壳执行；失败只用固定文案提示。 */
+  async function downloadAction(action: 'cancel' | 'reveal' | 'save', id: string): Promise<void> {
+    if (downloads === null || downloadBusy !== null) return
+    setDownloadBusy(id)
+    try {
+      if (action === 'cancel') { await downloads.cancel(id); return }
+      if (action === 'reveal') { await downloads.reveal(id); return }
+      const result = await downloads.save(id)
+      if (!result.ok && !result.canceled) notify('downloadFailed')
+    } catch { notify('downloadFailed') } finally { setDownloadBusy(null) }
   }
   // 只有这个按钮会让浏览器出现在前台；其余动作都留在面板里。
   async function openWindow(): Promise<void> {
@@ -363,6 +394,48 @@ export function AgentBrowserPanel({
       {surface === null && <Tooltip label={t('openWindow')} side="bottom"><button type="button" className={css.iconButton}
         aria-label={t('openWindow')} onClick={() => { void openWindow() }}>
         <Icon name="open-window" size={16} /></button></Tooltip>}
+      {downloads !== null && <div className={css.downloadsAnchor} ref={downloadsRoot}>
+        <Tooltip label={t('downloads')} side="bottom"><button type="button" className={css.iconButton}
+          aria-label={t('downloads')} aria-expanded={downloadsOpen}
+          onClick={() => { setDownloadsOpen(open => !open) }}>
+          <IconDownloadOutline16 size={16} />
+          {activeDownloads > 0 && <span className={css.downloadBadge}>{activeDownloads}</span>}
+        </button></Tooltip>
+        {downloadsOpen && <div className={css.downloads} role="dialog" aria-label={t('downloads')}>
+          {downloadItems.length === 0
+            ? <p className={css.downloadsEmpty}>{t('downloadsEmpty')}</p>
+            : <ul className={css.downloadList}>{downloadItems.map((item) => {
+              const ratio = item.totalBytes > 0
+                ? Math.min(100, Math.round(item.receivedBytes / item.totalBytes * 100)) : 0
+              return <li key={item.id} className={css.downloadRow}
+                data-progressing={item.state === 'progressing'}>
+                <span className={css.downloadName} title={item.filename}>{item.filename}</span>
+                <span className={css.downloadState}>
+                  {item.state === 'completed' ? t('downloadCompleted')
+                    : item.state === 'canceled' ? t('downloadCanceled') : t('downloadProgress')}
+                </span>
+                {item.state === 'progressing' && <span className={css.downloadBar} role="progressbar"
+                  aria-valuenow={ratio} aria-valuemin={0} aria-valuemax={100}>
+                  <span style={{ width: `${ratio}%` }} /></span>}
+                <span className={css.downloadActions}>
+                  {item.state === 'progressing'
+                    ? <Tooltip label={t('downloadCancel')} side="bottom"><button type="button"
+                      aria-label={t('downloadCancel')} disabled={downloadBusy === item.id}
+                      onClick={() => { void downloadAction('cancel', item.id) }}>
+                      <IconCloseOutline16 size={14} /></button></Tooltip>
+                    : <Tooltip label={t('downloadReveal')} side="bottom"><button type="button"
+                      aria-label={t('downloadReveal')} disabled={downloadBusy === item.id}
+                      onClick={() => { void downloadAction('reveal', item.id) }}>
+                      <IconFolderOpenOutline16 size={14} /></button></Tooltip>}
+                  {item.state !== 'progressing' && <Tooltip label={t('downloadSave')} side="bottom">
+                    <button type="button" aria-label={t('downloadSave')} disabled={downloadBusy === item.id}
+                      onClick={() => { void downloadAction('save', item.id) }}>
+                      <IconDownloadOutline16 size={14} /></button></Tooltip>}
+                </span>
+              </li>
+            })}</ul>}
+        </div>}
+      </div>}
     </div>
     {addressError && <p className={css.addressError} role="alert">{t('invalidAddress')}</p>}
     <div className={css.stage} ref={stage}>

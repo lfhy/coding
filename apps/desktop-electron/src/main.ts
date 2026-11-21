@@ -13,6 +13,7 @@ import { defaultCodingHome } from 'coding-home-paths'
 import { prepareDevelopmentDirectories } from './directories.ts'
 import { createEgoCdpBroker, type EgoCdpBroker } from './ego-cdp-broker.ts'
 import { createEgoPageHost, type EgoPageHostHandle } from './ego-page-host.ts'
+import { installEgoDownloadsIpc } from './ego-downloads-ipc.ts'
 import { installEgoPresentationIpc } from './ego-presentation-ipc.ts'
 import { launchHelper, type HelperClient } from './helper-client.ts'
 import { createNativeChrome, type NativeChrome } from './native-chrome.ts'
@@ -34,6 +35,7 @@ let disposeActivation: (() => void) | undefined
 let egoPages: EgoPageHostHandle | undefined
 let egoBroker: EgoCdpBroker | undefined
 let disposeEgoPresentation: (() => void) | undefined
+let disposeEgoDownloads: (() => void) | undefined
 let disposeHelperClosed: (() => void) | undefined
 let launching: Promise<void> | undefined
 let startupAbort: AbortController | undefined
@@ -98,6 +100,8 @@ async function stopEgoPages(): Promise<void> {
   delete process.env.EGO_LINUX_CDP_URL
   disposeEgoPresentation?.()
   disposeEgoPresentation = undefined
+  disposeEgoDownloads?.()
+  disposeEgoDownloads = undefined
   egoPages?.dispose()
   egoPages = undefined
   await broker?.close()
@@ -148,6 +152,7 @@ function openWindow(): Promise<void> {
     const pages = egoPages
     if (pages !== undefined) {
       disposeEgoPresentation = installEgoPresentationIpc({ window, origin: next.origin, pages })
+      disposeEgoDownloads = installEgoDownloadsIpc({ window, origin: next.origin, pages })
     }
     disposeRemoteIpc = installRemoteIpc({ window, origin: next.origin, helper: next })
     nativeChrome = createNativeChrome({ window, origin: next.origin, iconPath: runtimeConfig.iconPath })
@@ -175,6 +180,8 @@ function openWindow(): Promise<void> {
       // 窗口关闭会连带停止 Host，页面与原生视图都随之失效；重新开窗后由 Host 重建。
       disposeEgoPresentation?.()
       disposeEgoPresentation = undefined
+      disposeEgoDownloads?.()
+      disposeEgoDownloads = undefined
       egoPages?.closeAll()
       if (!quitting) scheduleHelperStop()
     })

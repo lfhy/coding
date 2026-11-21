@@ -6,9 +6,10 @@
  * 点击与截图；呈现时把同一个视图移进应用窗口，不再经过截图或视频流。
  */
 import { randomUUID } from 'node:crypto'
+import { copyFile } from 'node:fs/promises'
 import { existsSync, mkdirSync } from 'node:fs'
 import { basename, extname, join } from 'node:path'
-import { app, session, WebContentsView, type BrowserWindow, type Session } from 'electron'
+import { app, session, WebContentsView, type BrowserWindow, type DownloadItem, type Session } from 'electron'
 import { createBackgroundStage } from './browser-guest-stage.ts'
 import type { EgoHostedPage, EgoPageHost } from './ego-cdp-broker.ts'
 
@@ -34,17 +35,25 @@ export interface EgoDownloadSettings {
   downloadPath?: string
 }
 
+/** 一次下载的可见状态；工作台的下载列表与 CDP 事件都用它。 */
+export interface EgoDownloadRecord {
+  id: string
+  contextId: string
+  filename: string
+  /** 实际落盘路径；完成后可直接复制到用户选择的位置。 */
+  path: string
+  url: string
+  state: 'progressing' | 'completed' | 'canceled'
+  receivedBytes: number
+  totalBytes: number
+  startedAt: number
+}
+
 /** 下载事件：开始与进度都由页面宿主发出，broker 再翻译成 CDP 事件。 */
-export type EgoDownloadEvent =
-  | { kind: 'begin'; contextId: string; guid: string; url: string; filename: string }
-  | {
-    kind: 'progress'
-    contextId: string
-    guid: string
-    receivedBytes: number
-    totalBytes: number
-    state: 'inProgress' | 'completed' | 'canceled'
-  }
+export interface EgoDownloadEvent {
+  kind: 'begin' | 'progress'
+  record: EgoDownloadRecord
+}
 
 /** 运行时没有指定目录时，页面自己触发的下载落到系统下载目录。 */
 const DEFAULT_DOWNLOAD_SUBDIR = ''
@@ -57,6 +66,12 @@ export interface EgoPageHostHandle extends EgoPageHost {
   setDownloadBehavior(contextId: string | undefined, settings: EgoDownloadSettings): void
   /** 订阅下载开始与进度；返回取消订阅函数。 */
   onDownload(listener: (event: EgoDownloadEvent) => void): () => void
+  /** 最近下载的新到旧列表，供工作台展示。 */
+  downloads(): readonly EgoDownloadRecord[]
+  /** 取消进行中的下载；下载已经结束时返回 false。 */
+  cancelDownload(id: string): boolean
+  /** 把已完成的下载复制到目标路径，返回实际写入的路径。 */
+  saveDownload(id: string, target: string): Promise<string>
   /** 关闭全部页面但保留端点；Host 重启后页面由它自己重建。 */
   closeAll(): void
   /** 撤下当前呈现的页面。 */
@@ -104,6 +119,9 @@ export function createEgoPageHost(options: { window: () => BrowserWindow | undef
   /** 每个上下文的下载决定；未登记的上下文按允许落到应用临时目录处理。 */
   const downloads = new Map<string, EgoDownloadSettings>()
   const downloadListeners = new Set<(event: EgoDownloadEvent) => void>()
+  /** 最近的下载记录（新到旧）与仍可取消的下载句柄。 */
+  const downloadRecords = new Map<string, EgoDownloadRecord>()
+  const downloadItems = new Map<string, DownloadItem>()
   let presented: { targetId: string; bounds: EgoPresentation['bounds'] } | undefined
   let disposed = false
 
@@ -162,23 +180,45 @@ export function createEgoPageHost(options: { window: () => BrowserWindow | undef
         const target = explicit !== undefined && explicit.length > 0
           ? join(directory, filename) : uniqueDownloadPath(directory, filename)
         item.setSavePath(target)
-        const notify = (payload: EgoDownloadEvent): void => {
-          for (const listener of [...downloadListeners]) listener(payload)
-        }
         // 事件里的文件名必须是真实落盘名：运行时按它拼 download.path()。
-        notify({ kind: 'begin', contextId, guid, url: item.getURL(), filename: basename(target) })
+        const record: EgoDownloadRecord = {
+          id: guid, contextId, filename: basename(target), path: target, url: item.getURL(),
+          state: 'progressing', receivedBytes: item.getReceivedBytes(), totalBytes: item.getTotalBytes(),
+          startedAt: Date.now(),
+        }
+        downloadRecords.set(guid, record)
+        downloadItems.set(guid, item)
+        trimDownloads()
+        const notify = (kind: EgoDownloadEvent['kind']): void => {
+          for (const listener of [...downloadListeners]) listener({ kind, record })
+        }
+        notify('begin')
+        const update = (state: EgoDownloadRecord['state']): void => {
+          record.state = state
+          record.receivedBytes = item.getReceivedBytes()
+          record.totalBytes = item.getTotalBytes()
+          if (state !== 'progressing') {
+            const saved = item.getSavePath()
+            if (saved.length > 0) record.path = saved
+            downloadItems.delete(guid)
+          }
+          notify('progress')
+        }
         // `updated` 只会带 progressing／interrupted，两者分别映射为下载中与已中断。
-        item.on('updated', (_event, state) => {
-          notify({ kind: 'progress', contextId, guid, receivedBytes: item.getReceivedBytes(),
-            totalBytes: item.getTotalBytes(), state: state === 'interrupted' ? 'canceled' : 'inProgress' })
-        })
-        item.once('done', (_event, state) => {
-          notify({ kind: 'progress', contextId, guid, receivedBytes: item.getReceivedBytes(),
-            totalBytes: item.getTotalBytes(), state: state === 'completed' ? 'completed' : 'canceled' })
-        })
+        item.on('updated', (_event, state) => { update(state === 'interrupted' ? 'canceled' : 'progressing') })
+        item.once('done', (_event, state) => { update(state === 'completed' ? 'completed' : 'canceled') })
       })
     }
     return current
+  }
+
+  /** 下载列表只保留最近 50 条，避免一次会话把内存撑大。 */
+  function trimDownloads(): void {
+    while (downloadRecords.size > 50) {
+      const oldest = downloadRecords.keys().next().value
+      if (oldest === undefined) return
+      downloadRecords.delete(oldest)
+    }
   }
 
   function ownerWindow(): BrowserWindow | undefined {
@@ -363,6 +403,22 @@ export function createEgoPageHost(options: { window: () => BrowserWindow | undef
     onDownload(listener) {
       downloadListeners.add(listener)
       return () => { downloadListeners.delete(listener) }
+    },
+
+    downloads: () => [...downloadRecords.values()].reverse(),
+
+    cancelDownload(id) {
+      const item = downloadItems.get(id)
+      if (item === undefined) return false
+      try { item.cancel(); return true } catch { return false }
+    },
+
+    async saveDownload(id, target) {
+      const record = downloadRecords.get(id)
+      if (record === undefined) throw new Error('download not found')
+      if (record.state !== 'completed') throw new Error('download is not finished')
+      await copyFile(record.path, target)
+      return target
     },
 
     closeAll() {

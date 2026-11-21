@@ -38,11 +38,14 @@ const mocks = vi.hoisted(() => {
       createContext: () => 'context-1', disposeContext: vi.fn(),
       createPage: vi.fn(async () => ({ targetId: 'target-1' })),
       getCookies: vi.fn(async () => []), setCookies: vi.fn(async () => {}),
+      downloads: () => [], cancelDownload: vi.fn(() => false),
+      saveDownload: vi.fn(async () => '/tmp/target'), onDownload: vi.fn(() => vi.fn()),
     })),
     createEgoCdpBroker: vi.fn(async () => ({
       url: 'ws://127.0.0.1:9/token', close: vi.fn(async () => {}),
     })),
     installEgoPresentationIpc: vi.fn(() => vi.fn()),
+    installEgoDownloadsIpc: vi.fn(() => vi.fn()),
   }
 })
 
@@ -58,6 +61,10 @@ vi.mock('../src/ego-page-host.ts', () => ({ createEgoPageHost: mocks.createEgoPa
 vi.mock('../src/ego-cdp-broker.ts', () => ({ createEgoCdpBroker: mocks.createEgoCdpBroker }))
 vi.mock('../src/ego-presentation-ipc.ts', () => ({
   installEgoPresentationIpc: mocks.installEgoPresentationIpc,
+}))
+vi.mock('../src/ego-downloads-ipc.ts', () => ({
+  installEgoDownloadsIpc: mocks.installEgoDownloadsIpc,
+  EGO_DOWNLOADS_EVENT: 'coding:ego-downloads-event',
 }))
 
 function requestQuit(): ReturnType<typeof vi.fn> {

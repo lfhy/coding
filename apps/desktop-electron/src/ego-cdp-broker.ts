@@ -330,15 +330,17 @@ function createConnection(host: EgoPageHost, send: (text: string) => void, close
   /** 把宿主下载事件翻译成页面事件；只发给在该上下文里有页面的连接。 */
   const notify = (event: EgoDownloadEvent): void => {
     if (disposed) return
-    if (![...sessions.values()].some(entry => entry.page.contextId === event.contextId)) return
+    const record = event.record
+    if (![...sessions.values()].some(entry => entry.page.contextId === record.contextId)) return
     if (event.kind === 'begin') {
       send(JSON.stringify({ method: 'Page.downloadWillBegin', params: {
-        frameId: event.guid, guid: event.guid, url: event.url, suggestedFilename: event.filename,
+        frameId: record.id, guid: record.id, url: record.url, suggestedFilename: record.filename,
       } }))
       return
     }
     send(JSON.stringify({ method: 'Page.downloadProgress', params: {
-      guid: event.guid, totalBytes: event.totalBytes, receivedBytes: event.receivedBytes, state: event.state,
+      guid: record.id, totalBytes: record.totalBytes, receivedBytes: record.receivedBytes,
+      state: record.state === 'progressing' ? 'inProgress' : record.state,
     } }))
   }
 
