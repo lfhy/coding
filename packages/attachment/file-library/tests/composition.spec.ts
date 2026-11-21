@@ -72,6 +72,23 @@ describe('文件库真实装配', () => {
     expect((await fetch(url, { headers: { 'sec-fetch-site': 'cross-site' } })).status).toBe(403)
   })
 
+  it('同源新建笔记可携带导入原文，非法载荷不落盘', async () => {
+    const { ctx, origin } = await boot()
+    const url = `${origin}/api/notes/create`
+    const post = (body: unknown) => fetch(url, {
+      method: 'POST', headers: { 'content-type': 'application/json', origin }, body: JSON.stringify(body),
+    })
+    const created = await post({ name: '会议记录', content: '# 会议记录' })
+    expect(created.status).toBe(201)
+    expect(await created.json()).toEqual({ path: '会议记录.md' })
+    await expect(readFile(join(ctx.fileLibrary.notesRootPath(), '会议记录.md'), 'utf8')).resolves.toBe('# 会议记录')
+    expect((await post({ name: '空稿' })).status).toBe(201)
+    await expect(readFile(join(ctx.fileLibrary.notesRootPath(), '空稿.md'), 'utf8')).resolves.toBe('')
+    expect((await post({ name: '坏载荷', content: 7 })).status).toBe(400)
+    expect((await post({ name: '重复稿' })).status).toBe(201)
+    expect((await post({ name: '重复稿' })).status).toBe(400)
+  })
+
   it('同源 DELETE 删除非空目录，拒绝跨源、错误方法和无效载荷', async () => {
     const { ctx, origin } = await boot()
     const folder = '项目资料'

@@ -98,7 +98,7 @@ describe('NotesPage 新建幻灯片', () => {
 
     const directory = screen.getByRole('complementary', { name: '笔记目录' })
     fireEvent.click(within(directory).getByRole('button', { name: '新建笔记' }))
-    fireEvent.click(within(screen.getByRole('menu')).getByRole('menuitem', { name: '导入幻灯片' }))
+    fireEvent.click(within(screen.getByRole('menu')).getByRole('menuitem', { name: '导入文件' }))
 
     const input = container.querySelector<HTMLInputElement>('input[type="file"]')
     if (input === null) throw new Error('缺少导入文件选择器')
@@ -144,6 +144,97 @@ describe('NotesPage 新建幻灯片', () => {
       fireEvent.change(input, { target: { files: [new File([new Uint8Array([1])], '坏稿.pptx')] } })
     })
     expect(store.getSnapshot().activePath ?? null).toBeNull()
-    expect(screen.getByRole('alert').textContent).toBe('无法导入幻灯片。请确认文件是 .pptx 且不超过 8 MiB。')
+    expect(screen.getByRole('alert').textContent).toBe('无法导入该文件。请确认是 Markdown（不超过 1 MiB）或 .pptx（不超过 8 MiB）。')
+  })
+
+  it('导入 Markdown 时把原文一起写入笔记目录并打开新笔记', async () => {
+    vi.useFakeTimers()
+    const store = createNotesUiStore().create('s-notes')
+    let tree: { name: string; kind: 'file'; path: string; mtimeMs: number }[] = []
+    const bodies: unknown[] = []
+    const fetchMock = vi.fn(async (input: string | URL, init?: RequestInit) => {
+      const url = new URL(String(input), 'http://localhost')
+      if (url.pathname === '/api/notes/tree') return Response.json({ children: tree })
+      if (url.pathname === '/api/notes/tabs') return Response.json({ ok: true })
+      if (url.pathname === '/api/notes/create') {
+        if (typeof init?.body !== 'string') throw new Error('预期新建请求包含 JSON 正文')
+        bodies.push(JSON.parse(init.body))
+        tree = [{ name: '会议记录.md', kind: 'file', path: '会议记录.md', mtimeMs: 2_000 }]
+        return Response.json({ path: '会议记录.md' })
+      }
+      if (url.pathname === '/api/notes/read') {
+        return Response.json({ path: '会议记录.md', content: '# 会议记录', mtimeMs: 2_000 })
+      }
+      throw new Error(`unexpected request: ${url.pathname}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const props = {
+      closePage: vi.fn(),
+      t: (key: keyof typeof zh, params?: { name: string }) => params === undefined ? zh[key] : zh[key].replace('{name}', params.name),
+      sidebarCollapsed: false,
+      sidebarWidth: 280,
+      assistantOpen: false,
+      assistantPanelId: 'note-assistant',
+      toggleAssistant: vi.fn(),
+      sessionId: 's-notes',
+      renderSlot: () => <div>演示文稿</div>,
+      useStore: bindSnapshotSelector(store),
+      actions: store.actions,
+    } as unknown as NotesPageProps
+    const { container } = render(<NotesPage {...props} />)
+    await act(async () => {})
+
+    const directory = screen.getByRole('complementary', { name: '笔记目录' })
+    fireEvent.click(within(directory).getByRole('button', { name: '新建笔记' }))
+    fireEvent.click(within(screen.getByRole('menu')).getByRole('menuitem', { name: '导入文件' }))
+    const input = container.querySelector<HTMLInputElement>('input[type="file"]')
+    if (input === null) throw new Error('缺少导入文件选择器')
+    expect(input.accept).toBe('.md,.markdown,.pptx')
+    const file = new File(['# 会议记录'], '会议记录.md', { type: 'text/markdown' })
+    await act(async () => { fireEvent.change(input, { target: { files: [file] } }) })
+
+    expect(bodies).toEqual([{ name: '会议记录', content: '# 会议记录' }])
+    expect(store.getSnapshot().activePath).toBe('会议记录.md')
+    expect(screen.getByRole('alert').textContent).toBe('笔记已导入')
+  })
+
+  it('拒绝不支持的扩展名与超限的 Markdown，不发出导入请求', async () => {
+    vi.useFakeTimers()
+    const store = createNotesUiStore().create('s-notes')
+    const requests: string[] = []
+    const fetchMock = vi.fn(async (input: string | URL) => {
+      const url = new URL(String(input), 'http://localhost')
+      requests.push(url.pathname)
+      if (url.pathname === '/api/notes/tree') return Response.json({ children: [] })
+      if (url.pathname === '/api/notes/tabs') return Response.json({ ok: true })
+      throw new Error(`unexpected request: ${url.pathname}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const props = {
+      closePage: vi.fn(),
+      t: (key: keyof typeof zh, params?: { name: string }) => params === undefined ? zh[key] : zh[key].replace('{name}', params.name),
+      sidebarCollapsed: false,
+      sidebarWidth: 280,
+      assistantOpen: false,
+      assistantPanelId: 'note-assistant',
+      toggleAssistant: vi.fn(),
+      sessionId: 's-notes',
+      renderSlot: () => <div>演示文稿</div>,
+      useStore: bindSnapshotSelector(store),
+      actions: store.actions,
+    } as unknown as NotesPageProps
+    const { container } = render(<NotesPage {...props} />)
+    await act(async () => {})
+
+    const input = container.querySelector<HTMLInputElement>('input[type="file"]')
+    if (input === null) throw new Error('缺少导入文件选择器')
+    await act(async () => {
+      fireEvent.change(input, { target: { files: [new File(['data'], '表格.csv')] } })
+    })
+    expect(screen.getByRole('alert').textContent).toBe('无法导入该文件。请确认是 Markdown（不超过 1 MiB）或 .pptx（不超过 8 MiB）。')
+    await act(async () => {
+      fireEvent.change(input, { target: { files: [new File([new Uint8Array(1024 * 1024 + 1)], '大稿.md')] } })
+    })
+    expect(requests.filter(path => path === '/api/notes/create')).toHaveLength(0)
   })
 })

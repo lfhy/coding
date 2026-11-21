@@ -60,6 +60,11 @@ describe('notes wire', () => {
       return Response.json({ path: '项目/想法.md' })
     })
     expect(await notesCreate('想法', '项目')).toEqual({ path: '项目/想法.md' })
+    stubFetch((_, init) => {
+      expect(requestJson(init)).toEqual({ name: '会议记录', content: '# 会议记录' })
+      return Response.json({ path: '会议记录.md' })
+    })
+    expect(await notesCreate('会议记录', '', '# 会议记录')).toEqual({ path: '会议记录.md' })
     stubFetch(() => new Response('exists', { status: 409 }))
     await expect(notesCreate('a.md')).rejects.toThrow('notes create HTTP 409')
     stubFetch(() => Response.json({ path: 'ok.md' }))

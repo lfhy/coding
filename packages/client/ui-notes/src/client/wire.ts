@@ -116,16 +116,21 @@ export async function notesSave(path: string, content: string, baseMtimeMs?: num
 }
 
 /**
- * 在当前笔记目录创建一篇空笔记。
+ * 在当前笔记目录创建一篇笔记。
  * @param name - 笔记名称；Host 会净化并补 Markdown 扩展名。
  * @param directory - 相对笔记根目录的父目录，空字符串表示根目录。
+ * @param content - 导入时的初始原文；省略时创建空笔记。
  * @returns 新建笔记的相对路径。
  */
-export async function notesCreate(name: string, directory = ''): Promise<{ path: string }> {
+export async function notesCreate(name: string, directory = '', content?: string): Promise<{ path: string }> {
   const response = await fetch('/api/notes/create', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ name, ...(directory === '' ? {} : { directory }) }),
+    body: JSON.stringify({
+      name,
+      ...(directory === '' ? {} : { directory }),
+      ...(content === undefined ? {} : { content }),
+    }),
   })
   if (!response.ok) throw new Error(`notes create HTTP ${response.status}`)
   const body = (await response.json()) as unknown

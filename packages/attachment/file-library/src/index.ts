@@ -682,14 +682,21 @@ export class FileLibrary extends Service {
   }
 
   /**
-   * 在指定笔记目录创建空笔记；名称按文件库规则净化，缺省扩展名补 `.md`，同名已存在时拒绝。
+   * 在指定笔记目录创建笔记；名称按文件库规则净化，缺省扩展名补 `.md`，同名已存在时拒绝。
+   * 传入 `content` 时把导入的原文与文件一并落盘，避免「先建空文件再写入」留下半个结果。
    * @param name - 用户提交的文件名。
    * @param directory - 相对笔记根目录的父目录，空字符串表示根目录。
+   * @param content - 初始原文；省略时创建空笔记。
    * @returns 相对笔记根目录的路径。
+   * @throws TypeError 名称、父目录或内容不安全，或同名条目已存在时。
    */
-  async createNote(name: string, directory: string = ''): Promise<{ path: string }> {
+  async createNote(name: string, directory: string = '', content?: string): Promise<{ path: string }> {
     const leaf = safeName(name)
     const fileName = NOTE_EXTENSIONS.has(extname(leaf).toLowerCase()) ? leaf : `${leaf}.md`
+    if (content !== undefined && typeof content !== 'string') throw new TypeError('笔记内容无效')
+    if (content !== undefined && Buffer.byteLength(content, 'utf8') > NOTE_MAX_BYTES) {
+      throw new TypeError('笔记超过大小上限')
+    }
     const parent = await this.safeNoteDirectory(directory)
     const target = join(parent.target, fileName)
     const flags = constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW
@@ -697,7 +704,21 @@ export class FileLibrary extends Service {
       if ((error as NodeJS.ErrnoException).code === 'EEXIST') throw new TypeError('笔记已存在')
       throw error
     })
-    await handle.close()
+    let writeFailure: unknown
+    try {
+      if (content !== undefined && content !== '') {
+        await handle.writeFile(Buffer.from(content, 'utf8'))
+        await handle.sync()
+      }
+    } catch (error) {
+      writeFailure = error
+    } finally {
+      await handle.close()
+    }
+    if (writeFailure !== undefined) {
+      try { await unlink(target) } catch { /* 只清理本次独占创建且写入失败的条目。 */ }
+      throw writeFailure instanceof Error ? writeFailure : new Error('笔记写入失败')
+    }
     await syncDirectory(parent.target)
     return { path: parent.rel === '' ? fileName : `${parent.rel}/${fileName}` }
   }

@@ -882,10 +882,11 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: '规范化路径与写入后的修改时间。',
       },
       {
-        signature: 'async createNote(name: string, directory: string = \'\'): Promise<{ path: string }>',
-        description: '在指定笔记目录创建空笔记；名称按文件库规则净化，缺省扩展名补 `.md`，同名已存在时拒绝。',
-        parameters: [{ name: 'name', description: '用户提交的文件名。' }, { name: 'directory', description: '相对笔记根目录的父目录，空字符串表示根目录。' }],
+        signature: 'async createNote(name: string, directory: string = \'\', content?: string): Promise<{ path: string }>',
+        description: '在指定笔记目录创建笔记；名称按文件库规则净化，缺省扩展名补 `.md`，同名已存在时拒绝。 传入 `content` 时把导入的原文与文件一并落盘，避免「先建空文件再写入」留下半个结果。',
+        parameters: [{ name: 'name', description: '用户提交的文件名。' }, { name: 'directory', description: '相对笔记根目录的父目录，空字符串表示根目录。' }, { name: 'content', description: '初始原文；省略时创建空笔记。' }],
         returns: '相对笔记根目录的路径。',
+        throws: ['TypeError 名称、父目录或内容不安全，或同名条目已存在时。'],
       },
       {
         signature: 'async createNoteDeck(name: string, directory: string = \'\'): Promise<{ path: string; remove: () => Promise<void> }>',

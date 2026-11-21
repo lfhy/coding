@@ -30,6 +30,17 @@ export type NotesPageProps = PropsRuntime<'shell.page'> & PropsLocale<typeof NS>
 
 /** AI 助手改动检测的目录轮询间隔。 */
 const TREE_POLL_MS = 4000
+
+/** 导入入口接受的扩展名；Markdown 写在笔记目录，`.pptx` 走幻灯片工程目录。 */
+const IMPORT_ACCEPT = '.md,.markdown,.pptx'
+
+/** 导入 Markdown 的字节上限；与文件库的单篇笔记上限一致。 */
+const NOTE_IMPORT_MAX_BYTES = 1024 * 1024
+
+/** 按 UTF-8 严格解码导入的 Markdown；非法编码直接失败，不写半份乱码。 */
+async function decodeMarkdown(file: File): Promise<string> {
+  return new TextDecoder('utf-8', { fatal: true }).decode(new Uint8Array(await file.arrayBuffer()))
+}
 type DirectoryState = 'loading' | 'ready' | 'failed'
 type NoteActionTarget = Pick<NotesTreeEntry, 'kind' | 'name' | 'path'>
 type NoteContextMenu = { target: NoteActionTarget; x: number; y: number; trigger: HTMLButtonElement }
@@ -463,18 +474,30 @@ export function NotesPage({
   }
 
   /**
-   * 把本机选择的 `.pptx` 导入成笔记目录里的幻灯片工程。
-   * 名称取所选文件名；失败只提示，不留半成品目录，也不改动画廊里的其他标签。
+   * 把本机选择的文件导入笔记目录：Markdown 写成带原文的笔记，`.pptx` 写成幻灯片工程目录。
+   * 名称取所选文件名；失败只提示，不留半成品，也不改动其他标签。
    * @param file - 文件选择器给出的文件；取消选择时为 undefined。
    */
-  const importPresentation = async (file: File | undefined) => {
+  const importFile = async (file: File | undefined) => {
     if (file === undefined || creatingRequest.current !== null) return
+    const extension = /\.([^.\\/]+)$/u.exec(file.name)?.[1]?.toLowerCase() ?? ''
+    const markdown = extension === 'md' || extension === 'markdown'
+    if (!markdown && extension !== 'pptx') {
+      notify('importFileError')
+      return
+    }
     const request = new AbortController()
     creatingRequest.current = request
     setCreating(true)
     try {
-      const name = file.name.replace(/\.pptx$/iu, '').trim() || t('newPresentation')
-      const { path } = await notesImportSlide(sessionId, name, '', file)
+      const name = file.name.replace(/\.[^.]+$/u, '').trim() || (markdown ? t('newNote') : t('newPresentation'))
+      let path: string
+      if (markdown) {
+        if (file.size > NOTE_IMPORT_MAX_BYTES) throw new Error('note too large')
+        path = (await notesCreate(name, '', await decodeMarkdown(file))).path
+      } else {
+        path = (await notesImportSlide(sessionId, name, '', file)).path
+      }
       request.signal.throwIfAborted()
       treeRevision.current += 1
       const fresh = notesTree(request.signal).then((entries) => {
@@ -483,9 +506,9 @@ export function NotesPage({
       }, () => false)
       const [updated] = await Promise.all([fresh, selectTab(path)])
       request.signal.throwIfAborted()
-      notify(updated ? 'presentationImported' : 'createdRefreshError')
+      notify(updated ? markdown ? 'noteImported' : 'presentationImported' : 'createdRefreshError')
     } catch {
-      if (!request.signal.aborted) notify('importPresentationError')
+      if (!request.signal.aborted) notify('importFileError')
     } finally {
       creatingRequest.current = null
       if (!request.signal.aborted) setCreating(false)
@@ -535,7 +558,7 @@ export function NotesPage({
     ...noteCreateEntries,
     { type: 'separator', id: 'new-presentation-separator' },
     { id: 'presentation', label: t('newPresentation'), icon: <Icon name="file-slides" size={16} /> },
-    { id: 'import-presentation', label: t('importPresentation'), icon: <Icon name="file-slides" size={16} /> },
+    { id: 'import-file', label: t('importFile'), icon: <Icon name="file" size={16} /> },
   ]
 
   const selectedLabel = activePath === null ? t('title') : labelOfPath(activePath)
@@ -588,7 +611,7 @@ export function NotesPage({
               disabled={creating} onClick={() => { setContextMenu(null); setCreateMenuOpen(open => !open) }} />}
             items={launcherEntries}
             onSelect={(id) => {
-              if (id === 'import-presentation') importInput.current?.click()
+              if (id === 'import-file') importInput.current?.click()
               if (id === 'create' || id === 'folder' || id === 'presentation') openCreateDialog(id, '', createTrigger.current)
             }}
             onClose={() => { setCreateMenuOpen(false); createTrigger.current?.focus({ preventScroll: true }) }}
@@ -669,12 +692,12 @@ export function NotesPage({
         </>}>
       </Modal>
       {toast !== null && <Toast key={toast.id} text={t(toast.key)} onDone={() => { setToast(null) }} />}
-      {/* 导入入口只认 .pptx；文件选择器留在页面 DOM 里，菜单项负责唤起它。 */}
-      <input ref={importInput} type="file" accept=".pptx" hidden aria-hidden="true" tabIndex={-1}
+      {/* 导入入口接受 Markdown 与 .pptx；文件选择器留在页面 DOM 里，菜单项负责唤起它。 */}
+      <input ref={importInput} type="file" accept={IMPORT_ACCEPT} hidden aria-hidden="true" tabIndex={-1}
         onChange={(event) => {
           const file = event.target.files?.[0]
           event.target.value = ''
-          void importPresentation(file)
+          void importFile(file)
         }} />
     </main>
   )

@@ -270,12 +270,15 @@ async readNote(relativePath: string): Promise<{ path: string; content: string; m
 async saveNote(relativePath: string, content: string, baseMtimeMs?: number): Promise<{ path: string; mtimeMs: number }>
 
 /**
- * 在指定笔记目录创建空笔记；名称按文件库规则净化，缺省扩展名补 `.md`，同名已存在时拒绝。
+ * 在指定笔记目录创建笔记；名称按文件库规则净化，缺省扩展名补 `.md`，同名已存在时拒绝。
+ * 传入 `content` 时把导入的原文与文件一并落盘，避免「先建空文件再写入」留下半个结果。
  * @param name - 用户提交的文件名。
  * @param directory - 相对笔记根目录的父目录，空字符串表示根目录。
+ * @param content - 初始原文；省略时创建空笔记。
  * @returns 相对笔记根目录的路径。
+ * @throws TypeError 名称、父目录或内容不安全，或同名条目已存在时。
  */
-async createNote(name: string, directory: string = ''): Promise<{ path: string }>
+async createNote(name: string, directory: string = '', content?: string): Promise<{ path: string }>
 
 /**
  * 在笔记树中独占创建一份幻灯片工程目录（`{name}.codingppt`）；这是只供 Host 调用的 PPT 服务 seam。

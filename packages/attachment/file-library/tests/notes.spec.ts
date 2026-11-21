@@ -328,6 +328,22 @@ describe('无目录笔记域', () => {
     await expect(library.readNote('源稿.pptx.md')).resolves.toMatchObject({ content: '' })
   })
 
+  it('新建笔记可带初始原文，超限与非法内容不落盘', async () => {
+    const { library } = await harness()
+    const notesDir = library.notesRootPath()
+    expect((await library.createNote('会议记录', '', '# 会议记录')).path).toBe('会议记录.md')
+    await expect(readFile(join(notesDir, '会议记录.md'), 'utf8')).resolves.toBe('# 会议记录')
+    expect((await lstat(join(notesDir, '会议记录.md'))).mode & 0o777).toBe(0o600)
+    expect((await library.createNote('空稿.md', '', '')).path).toBe('空稿.md')
+    await expect(readFile(join(notesDir, '空稿.md'), 'utf8')).resolves.toBe('')
+    // 导入超过单篇笔记上限的原文直接拒绝，不留下空文件。
+    await expect(library.createNote('大稿', '', 'x'.repeat(1024 * 1024 + 1))).rejects.toThrow(/大小上限/)
+    await expect(lstat(join(notesDir, '大稿.md'))).rejects.toMatchObject({ code: 'ENOENT' })
+    await expect(library.createNote('重复稿', '', '第一版')).resolves.toMatchObject({ path: '重复稿.md' })
+    await expect(library.createNote('重复稿', '', '第二版')).rejects.toThrow(/笔记已存在/)
+    await expect(readFile(join(notesDir, '重复稿.md'), 'utf8')).resolves.toBe('第一版')
+  })
+
   it('Host-only 幻灯片目录 seam 独占创建并拒绝错误名称、重复与链接路径', async () => {
     const { library } = await harness()
     await library.notesTree()
