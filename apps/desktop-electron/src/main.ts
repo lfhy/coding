@@ -172,10 +172,10 @@ function openWindow(): Promise<void> {
       nativeChrome?.dispose()
       nativeChrome = undefined
       mainWindow = undefined
-      // 原生视图随窗口销毁；页面本身仍由页面宿主持有，重新开窗再呈现。
+      // 窗口关闭会连带停止 Host，页面与原生视图都随之失效；重新开窗后由 Host 重建。
       disposeEgoPresentation?.()
       disposeEgoPresentation = undefined
-      egoPages?.conceal()
+      egoPages?.closeAll()
       if (!quitting) scheduleHelperStop()
     })
   })().finally(() => {

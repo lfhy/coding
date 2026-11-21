@@ -228,6 +228,21 @@ describe('桌面 Agent 页面宿主', () => {
     host.dispose()
   })
 
+  it('关闭全部页面后端点仍可用，Host 重建页面时再按新上下文建页', async () => {
+    const host = createEgoPageHost({ window: () => appWindow() })
+    const context = host.createContext()
+    await host.createPage(context, 'about:blank')
+    await host.createPage(host.defaultContext(), 'about:blank')
+    expect(host.list()).toHaveLength(2)
+    host.closeAll()
+    expect(host.list()).toEqual([])
+    const rebuilt = host.createContext()
+    expect(rebuilt).not.toBe(context)
+    await expect(host.createPage(rebuilt, 'about:blank')).resolves.toBeDefined()
+    expect(host.list()).toHaveLength(1)
+    host.dispose()
+  })
+
   it('卸载后不再建页，重复卸载安全', async () => {
     const host = createEgoPageHost({ window: () => appWindow() })
     await host.createPage(host.defaultContext(), 'about:blank')

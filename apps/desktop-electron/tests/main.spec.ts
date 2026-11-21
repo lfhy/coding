@@ -33,7 +33,7 @@ const mocks = vi.hoisted(() => {
     installRemoteIpc: vi.fn(() => vi.fn()),
     createNativeChrome: vi.fn(() => chrome),
     createEgoPageHost: vi.fn(() => ({
-      present: vi.fn(), conceal: vi.fn(), dispose: vi.fn(),
+      present: vi.fn(), conceal: vi.fn(), closeAll: vi.fn(), dispose: vi.fn(),
       list: () => [], find: () => undefined, defaultContext: () => 'desktop-default',
       createContext: () => 'context-1', disposeContext: vi.fn(),
       createPage: vi.fn(async () => ({ targetId: 'target-1' })),

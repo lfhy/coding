@@ -30,6 +30,8 @@ export interface EgoPresentation {
 export interface EgoPageHostHandle extends EgoPageHost {
   /** 把页面移进应用窗口并给出矩形；`visible: false` 时退回后台承载。 */
   present(presentation: EgoPresentation): void
+  /** 关闭全部页面但保留端点；Host 重启后页面由它自己重建。 */
+  closeAll(): void
   /** 撤下当前呈现的页面。 */
   conceal(): void
   /** 关闭所有页面与后台承载窗口。 */
@@ -269,6 +271,13 @@ export function createEgoPageHost(options: { window: () => BrowserWindow | undef
       if (!owner.contentView.children.includes(entry.view)) owner.contentView.addChildView(entry.view)
       entry.view.setBounds({ x, y, width, height })
       presented = { targetId: entry.targetId, bounds: { x, y, width, height } }
+    },
+
+    closeAll() {
+      for (const entry of [...pages.values()]) closeEntry(entry)
+      for (const contextId of [...partitions.keys()]) {
+        if (contextId !== DEFAULT_CONTEXT) partitions.delete(contextId)
+      }
     },
 
     conceal() {
