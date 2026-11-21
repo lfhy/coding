@@ -16,6 +16,14 @@ import { randomBytes, timingSafeEqual } from 'node:crypto'
 import { createServer } from 'node:http'
 import type { Socket } from 'node:net'
 import WebSocket, { WebSocketServer } from 'ws'
+import type { EgoDownloadEvent, EgoDownloadSettings } from './ego-page-host.ts'
+
+/** 单条 CDP 连接的对外能力：处理消息、断开，以及转发下载事件。 */
+interface Connection {
+  handle(text: string): void
+  dispose(): void
+  notify(event: EgoDownloadEvent): void
+}
 
 /** 页面宿主：由 Electron 侧实现，负责真正创建与关闭网页。 */
 export interface EgoHostedPage {
@@ -52,6 +60,10 @@ export interface EgoPageHost {
   getCookies(contextId: string | undefined): Promise<Record<string, unknown>[]>
   /** 把 CDP 形状的 Cookie 写入上下文；无效项跳过而不整体失败。 */
   setCookies(contextId: string, cookies: Record<string, unknown>[]): Promise<void>
+  /** 记录某个上下文的下载决定；ego 用它把下载落到它自己的临时目录。 */
+  setDownloadBehavior(contextId: string | undefined, settings: EgoDownloadSettings): void
+  /** 订阅下载开始与进度，broker 负责翻译成 CDP 事件。 */
+  onDownload(listener: (event: EgoDownloadEvent) => void): () => void
 }
 
 /** 运行中的端点；`url` 才是交给 ego 的 `EGO_LINUX_CDP_URL`。 */
@@ -111,6 +123,17 @@ function pageUrl(value: unknown): string {
     throw new CdpError(INVALID_PARAMS, 'unsupported target url')
   }
   return value
+}
+
+/** 下载决定只接受 CDP 定义的三个取值。 */
+function downloadBehavior(value: unknown): 'allow' | 'deny' | 'default' {
+  if (value === 'deny' || value === 'default') return value
+  return 'allow'
+}
+
+/** 下载目录只接受本机绝对路径语义的字符串，长度有界。 */
+function downloadPath(value: unknown): string | undefined {
+  return typeof value === 'string' && value.length > 0 && value.length <= 4096 ? value : undefined
 }
 
 function requiredString(params: Record<string, unknown>, key: string): string {
@@ -234,6 +257,14 @@ function createConnection(host: EgoPageHost, send: (text: string) => void, close
       case 'Target.setAutoAttach':
         // 页面目录按需读取；不实现自动发现事件。
         return {}
+      case 'Browser.setDownloadBehavior': {
+        const behavior = downloadBehavior(params.behavior)
+        const path = downloadPath(params.downloadPath)
+        host.setDownloadBehavior(
+          typeof params.browserContextId === 'string' ? params.browserContextId : undefined,
+          { behavior, ...path === undefined ? {} : { downloadPath: path } })
+        return {}
+      }
       case 'Browser.getVersion':
         return { protocolVersion: '1.3', product: 'Coding/Electron', revision: '', userAgent: '',
           jsVersion: process.versions.v8 }
@@ -261,6 +292,13 @@ function createConnection(host: EgoPageHost, send: (text: string) => void, close
   async function sessionMethod(command: Command): Promise<unknown> {
     const entry = command.sessionId === undefined ? undefined : sessions.get(command.sessionId)
     if (!entry) throw new CdpError(INVALID_PARAMS, 'unknown session id')
+    // 旧版回退路径：页面级下载设置没有 browserContextId，用该页面的上下文代替。
+    if (command.method === 'Page.setDownloadBehavior') {
+      const behavior = downloadBehavior(command.params.behavior)
+      const path = downloadPath(command.params.downloadPath)
+      host.setDownloadBehavior(entry.page.contextId, { behavior, ...path === undefined ? {} : { downloadPath: path } })
+      return {}
+    }
     return withTimeout(entry.page.send(command.method, command.params))
   }
 
@@ -289,7 +327,22 @@ function createConnection(host: EgoPageHost, send: (text: string) => void, close
     }
   }
 
-  return { handle, dispose }
+  /** 把宿主下载事件翻译成页面事件；只发给在该上下文里有页面的连接。 */
+  const notify = (event: EgoDownloadEvent): void => {
+    if (disposed) return
+    if (![...sessions.values()].some(entry => entry.page.contextId === event.contextId)) return
+    if (event.kind === 'begin') {
+      send(JSON.stringify({ method: 'Page.downloadWillBegin', params: {
+        frameId: event.guid, guid: event.guid, url: event.url, suggestedFilename: event.filename,
+      } }))
+      return
+    }
+    send(JSON.stringify({ method: 'Page.downloadProgress', params: {
+      guid: event.guid, totalBytes: event.totalBytes, receivedBytes: event.receivedBytes, state: event.state,
+    } }))
+  }
+
+  return { handle, dispose, notify }
 }
 
 async function withTimeout<T>(work: Promise<T>): Promise<T> {
@@ -312,11 +365,16 @@ async function withTimeout<T>(work: Promise<T>): Promise<T> {
 export async function createEgoCdpBroker(host: EgoPageHost): Promise<EgoCdpBroker> {
   const token = randomBytes(32).toString('hex')
   const secret = Buffer.from(`/${token}`, 'ascii')
-  const connections = new Set<{ handle(text: string): void; dispose(): void }>()
+  const connections = new Set<Connection>()
   const server = createServer((_request, response) => { response.writeHead(404); response.end() })
   const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_PAYLOAD_BYTES,
     perMessageDeflate: false, clientTracking: false })
   let closing = false
+
+  // 下载由页面触发，可能不属于某一条连接；宿主事件统一广播给相关连接。
+  const unsubscribeDownloads = host.onDownload((event) => {
+    for (const session of [...connections]) session.notify(event)
+  })
 
   const reject = (connection: Socket): void => {
     connection.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\nContent-Length: 0\r\n\r\n')
@@ -357,6 +415,7 @@ export async function createEgoCdpBroker(host: EgoPageHost): Promise<EgoCdpBroke
     async close() {
       if (closing) return
       closing = true
+      unsubscribeDownloads()
       for (const session of [...connections]) session.dispose()
       await new Promise<void>((resolve) => { server.close(() => { resolve() }) })
       wss.close()

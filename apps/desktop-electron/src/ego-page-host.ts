@@ -6,7 +6,9 @@
  * 点击与截图；呈现时把同一个视图移进应用窗口，不再经过截图或视频流。
  */
 import { randomUUID } from 'node:crypto'
-import { session, WebContentsView, type BrowserWindow, type Session } from 'electron'
+import { mkdirSync } from 'node:fs'
+import { join } from 'node:path'
+import { app, session, WebContentsView, type BrowserWindow, type Session } from 'electron'
 import { createBackgroundStage } from './browser-guest-stage.ts'
 import type { EgoHostedPage, EgoPageHost } from './ego-cdp-broker.ts'
 
@@ -26,10 +28,34 @@ export interface EgoPresentation {
   visible: boolean
 }
 
+/** 下载决定：ego 用 `Browser.setDownloadBehavior` 表达；缺省由应用临时目录接住。 */
+export interface EgoDownloadSettings {
+  behavior: 'allow' | 'deny' | 'default'
+  downloadPath?: string
+}
+
+/** 下载事件：开始与进度都由页面宿主发出，broker 再翻译成 CDP 事件。 */
+export type EgoDownloadEvent =
+  | { kind: 'begin'; contextId: string; guid: string; url: string; filename: string }
+  | {
+    kind: 'progress'
+    contextId: string
+    guid: string
+    receivedBytes: number
+    totalBytes: number
+    state: 'inProgress' | 'completed' | 'canceled'
+  }
+
+const DEFAULT_DOWNLOAD_DIR = 'coding-ego-downloads'
+
 /** 页面宿主对外能力：broker 面向的接口加呈现控制。 */
 export interface EgoPageHostHandle extends EgoPageHost {
   /** 把页面移进应用窗口并给出矩形；`visible: false` 时退回后台承载。 */
   present(presentation: EgoPresentation): void
+  /** 记录某个上下文（缺省为默认上下文）的下载决定，供后续下载使用。 */
+  setDownloadBehavior(contextId: string | undefined, settings: EgoDownloadSettings): void
+  /** 订阅下载开始与进度；返回取消订阅函数。 */
+  onDownload(listener: (event: EgoDownloadEvent) => void): () => void
   /** 关闭全部页面但保留端点；Host 重启后页面由它自己重建。 */
   closeAll(): void
   /** 撤下当前呈现的页面。 */
@@ -74,6 +100,10 @@ export function createEgoPageHost(options: { window: () => BrowserWindow | undef
   const stage = createBackgroundStage()
   /** 每个页面只有一个对外对象：broker 用它做身份比较，不能每次读取都新建。 */
   const handles = new WeakMap<Entry, EgoHostedPage>()
+  /** 每个上下文的下载决定；未登记的上下文按允许落到应用临时目录处理。 */
+  const downloads = new Map<string, EgoDownloadSettings>()
+  const downloadListeners = new Set<(event: EgoDownloadEvent) => void>()
+  let downloadRoot: string | undefined
   let presented: { targetId: string; bounds: EgoPresentation['bounds'] } | undefined
   let disposed = false
 
@@ -85,7 +115,21 @@ export function createEgoPageHost(options: { window: () => BrowserWindow | undef
     return partition
   }
 
-  /** 每个分区只配置一次权限与下载策略。 */
+  /** 下载落点：ego 给的目录优先，否则用应用临时目录，绝不让系统弹保存框。 */
+  function downloadDirectory(contextId: string): string {
+    const settings = downloads.get(contextId)
+    if (settings?.downloadPath !== undefined && settings.downloadPath.length > 0) return settings.downloadPath
+    downloadRoot ??= join(app.getPath('temp'), DEFAULT_DOWNLOAD_DIR)
+    return downloadRoot
+  }
+
+  /**
+   * 每个分区只配置一次权限与下载处理。
+   *
+   * 下载默认允许并直接落到下载目录：ego 的 `ego_download` 用
+   * `Browser.setDownloadBehavior` 指定目录后等待 `Page.downloadWillBegin`，
+   * 因此这里既不能弹保存框，也不能静默丢弃；拒绝只发生在 ego 明确要求时。
+   */
   function sessionFor(contextId: string): Session {
     const partition = partitionFor(contextId)
     const current = session.fromPartition(partition)
@@ -93,7 +137,27 @@ export function createEgoPageHost(options: { window: () => BrowserWindow | undef
       configured.add(partition)
       current.setPermissionRequestHandler((_contents, permission, callback) => { callback(GRANTED_PERMISSIONS.has(permission)) })
       current.setPermissionCheckHandler((_contents, permission) => GRANTED_PERMISSIONS.has(permission))
-      current.on('will-download', (event) => { event.preventDefault() })
+      current.on('will-download', (event, item) => {
+        if (downloads.get(contextId)?.behavior === 'deny') { event.preventDefault(); return }
+        const guid = randomUUID()
+        const filename = item.getFilename()
+        const directory = downloadDirectory(contextId)
+        try { mkdirSync(directory, { recursive: true }) } catch { /* 目录不可用时仍让 Chromium 自己决定落点。 */ }
+        item.setSavePath(join(directory, filename))
+        const notify = (payload: EgoDownloadEvent): void => {
+          for (const listener of [...downloadListeners]) listener(payload)
+        }
+        notify({ kind: 'begin', contextId, guid, url: item.getURL(), filename })
+        // `updated` 只会带 progressing／interrupted，两者分别映射为下载中与已中断。
+        item.on('updated', (_event, state) => {
+          notify({ kind: 'progress', contextId, guid, receivedBytes: item.getReceivedBytes(),
+            totalBytes: item.getTotalBytes(), state: state === 'interrupted' ? 'canceled' : 'inProgress' })
+        })
+        item.once('done', (_event, state) => {
+          notify({ kind: 'progress', contextId, guid, receivedBytes: item.getReceivedBytes(),
+            totalBytes: item.getTotalBytes(), state: state === 'completed' ? 'completed' : 'canceled' })
+        })
+      })
     }
     return current
   }
@@ -271,6 +335,15 @@ export function createEgoPageHost(options: { window: () => BrowserWindow | undef
       if (!owner.contentView.children.includes(entry.view)) owner.contentView.addChildView(entry.view)
       entry.view.setBounds({ x, y, width, height })
       presented = { targetId: entry.targetId, bounds: { x, y, width, height } }
+    },
+
+    setDownloadBehavior(contextId, settings) {
+      downloads.set(contextId ?? DEFAULT_CONTEXT, settings)
+    },
+
+    onDownload(listener) {
+      downloadListeners.add(listener)
+      return () => { downloadListeners.delete(listener) }
     },
 
     closeAll() {

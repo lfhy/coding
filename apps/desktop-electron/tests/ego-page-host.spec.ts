@@ -72,16 +72,22 @@ const electron = vi.hoisted(() => {
     electron: {
       WebContentsView,
       BaseWindow,
+      app: { getPath: vi.fn(() => '/tmp/coding-ego-host-test') },
       session: {
         fromPartition: vi.fn((partition: string) => {
           const existing = partitions.get(partition)
           if (existing) return existing
           const cookies = { get: vi.fn(async () => []), set: vi.fn(async () => undefined) }
+          const handlers = new Map<string, ((...args: unknown[]) => void)[]>()
           const created_ = {
-            cookies,
+            cookies, handlers,
             setPermissionRequestHandler: vi.fn(),
             setPermissionCheckHandler: vi.fn(),
-            on: vi.fn(),
+            on: vi.fn((event: string, handler: (...args: unknown[]) => void) => {
+              const list = handlers.get(event) ?? []
+              list.push(handler)
+              handlers.set(event, list)
+            }),
           }
           partitions.set(partition, created_)
           return created_
@@ -94,6 +100,7 @@ const electron = vi.hoisted(() => {
 vi.mock('electron', () => electron.electron)
 
 const { createEgoPageHost } = await import('../src/ego-page-host.ts')
+type EgoDownloadEvent = import('../src/ego-page-host.ts').EgoDownloadEvent
 
 function appWindow() {
   return {
@@ -209,6 +216,39 @@ describe('桌面 Agent 页面宿主', () => {
       domain: '.example.test', secure: true, httpOnly: true, expirationDate: 1700000000, sameSite: 'no_restriction' })
     expect(set.set.mock.calls[1]?.[0]).toMatchObject({ url: 'http://example.test/', name: 'nopath', path: '/' })
     expect(page.targetId).toEqual(expect.any(String))
+    host.dispose()
+  })
+
+  it('默认允许下载并直接落到应用临时目录，明确拒绝时阻止下载', async () => {
+    const host = createEgoPageHost({ window: () => appWindow() })
+    const events: EgoDownloadEvent[] = []
+    host.onDownload((event) => { events.push(event) })
+    await host.createPage(host.defaultContext(), 'about:blank')
+    const session = electron.partitions.get('persist:ego-default') as unknown as
+      { handlers: Map<string, ((...args: unknown[]) => void)[]> }
+    const handler = session.handlers.get('will-download')?.[0]
+    expect(handler).toBeDefined()
+    const item = {
+      getFilename: () => '报告.zip',
+      setSavePath: vi.fn(),
+      getURL: () => 'https://example.test/报告.zip',
+      getReceivedBytes: () => 1,
+      getTotalBytes: () => 2,
+      on: vi.fn(),
+      once: vi.fn(),
+    }
+    const prevented = { preventDefault: vi.fn() }
+    handler!(prevented, item)
+    expect(prevented.preventDefault).not.toHaveBeenCalled()
+    expect(item.setSavePath).toHaveBeenCalledWith('/tmp/coding-ego-host-test/coding-ego-downloads/报告.zip')
+    expect(events[0]).toMatchObject({ kind: 'begin', filename: '报告.zip', url: 'https://example.test/报告.zip' })
+    const updated = item.on.mock.calls.find(call => call[0] === 'updated')?.[1] as
+      (event: unknown, state: string) => void
+    updated({}, 'interrupted')
+    expect(events.at(-1)).toMatchObject({ kind: 'progress', state: 'canceled', receivedBytes: 1, totalBytes: 2 })
+    host.setDownloadBehavior(host.defaultContext(), { behavior: 'deny' })
+    handler!(prevented, item)
+    expect(prevented.preventDefault).toHaveBeenCalledTimes(1)
     host.dispose()
   })
 

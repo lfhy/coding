@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import WebSocket from 'ws'
 import { createEgoCdpBroker, type EgoCdpBroker, type EgoHostedPage, type EgoPageHost } from '../src/ego-cdp-broker.ts'
+import type { EgoDownloadEvent } from '../src/ego-page-host.ts'
 
 /** 记录页面事件与命令的假页面；身份必须是稳定对象，broker 用它比较会话归属。 */
 function fakePage(contextId: string, index: number, onClose: (targetId: string) => void) {
@@ -27,6 +28,8 @@ interface FakePage extends EgoHostedPage {
 
 interface FakeHost extends EgoPageHost {
   pages: Map<string, FakePage>
+  downloads: { contextId: string | undefined; settings: { behavior: string; downloadPath?: string } }[]
+  emitDownload(event: EgoDownloadEvent): void
   cookies: Map<string, Record<string, unknown>[]>
   createPage: (contextId: string, url: string) => Promise<EgoHostedPage>
 }
@@ -35,9 +38,20 @@ function createFakeHost(limit = Number.POSITIVE_INFINITY): FakeHost {
   const pages = new Map<string, FakePage>()
   const contexts = new Set<string>(['desktop-default'])
   const cookies = new Map<string, Record<string, unknown>[]>()
+  const downloads: FakeHost['downloads'] = []
+  const downloadListeners = new Set<(event: EgoDownloadEvent) => void>()
   let counter = 0
   const host: FakeHost = {
-    pages, cookies,
+    pages, cookies, downloads,
+    emitDownload(event: EgoDownloadEvent) { for (const listener of [...downloadListeners]) listener(event) },
+    onDownload(listener) {
+      downloadListeners.add(listener)
+      return () => { downloadListeners.delete(listener) }
+    },
+    setDownloadBehavior(contextId, settings) {
+      downloads.push({ contextId, settings: { behavior: settings.behavior,
+        ...settings.downloadPath === undefined ? {} : { downloadPath: settings.downloadPath } } })
+    },
     list: () => [...pages.values()],
     find: (targetId: string) => pages.get(targetId),
     defaultContext: () => 'desktop-default',
@@ -226,5 +240,49 @@ describe('桌面 Agent 页面的虚拟 CDP 端点', () => {
       socket.on('open', () => { resolve('open') })
       socket.on('error', reject)
     })).rejects.toThrow(/403/u)
+  })
+})
+
+describe('桌面下载', () => {
+  it('浏览器级与页面级下载设置都落到页面宿主，并把下载翻译成页面事件', async () => {
+    const host = createFakeHost()
+    const { client } = await start(host)
+    await client.call('Browser.setDownloadBehavior', { behavior: 'allow', downloadPath: '/tmp/downloads', eventsEnabled: true })
+    expect(host.downloads.at(-1)).toEqual({
+      contextId: undefined, settings: { behavior: 'allow', downloadPath: '/tmp/downloads' },
+    })
+    const created = await client.call('Target.createTarget', { url: 'about:blank' })
+    const attached = await client.call('Target.attachToTarget',
+      { targetId: (created.result as { targetId: string }).targetId, flatten: true })
+    const sessionId = (attached.result as { sessionId: string }).sessionId
+    await client.call('Page.setDownloadBehavior', { behavior: 'deny', downloadPath: '/tmp/denied' }, sessionId)
+    expect(host.downloads.at(-1)).toEqual({
+      contextId: 'desktop-default', settings: { behavior: 'deny', downloadPath: '/tmp/denied' },
+    })
+    host.emitDownload({ kind: 'begin', contextId: 'desktop-default', guid: 'guid-1',
+      url: 'https://example.test/file.zip', filename: 'file.zip' })
+    host.emitDownload({ kind: 'progress', contextId: 'desktop-default', guid: 'guid-1',
+      receivedBytes: 4, totalBytes: 8, state: 'completed' })
+    await new Promise((resolve) => { setTimeout(resolve, 30) })
+    const events = client.messages.filter(message => message.method === 'Page.downloadWillBegin'
+      || message.method === 'Page.downloadProgress')
+    expect(events).toEqual([
+      { method: 'Page.downloadWillBegin', params: { frameId: 'guid-1', guid: 'guid-1',
+        url: 'https://example.test/file.zip', suggestedFilename: 'file.zip' } },
+      { method: 'Page.downloadProgress', params: { guid: 'guid-1', totalBytes: 8, receivedBytes: 4,
+        state: 'completed' } },
+    ])
+  })
+
+  it('其它上下文的下载不会发给本连接', async () => {
+    const host = createFakeHost()
+    const { client } = await start(host)
+    const created = await client.call('Target.createTarget', { url: 'about:blank' })
+    await client.call('Target.attachToTarget',
+      { targetId: (created.result as { targetId: string }).targetId, flatten: true })
+    host.emitDownload({ kind: 'begin', contextId: 'other-context', guid: 'guid-2',
+      url: 'https://example.test/other', filename: 'other.bin' })
+    await new Promise((resolve) => { setTimeout(resolve, 30) })
+    expect(client.messages.some(message => message.method === 'Page.downloadWillBegin')).toBe(false)
   })
 })
