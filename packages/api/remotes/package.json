@@ -58,10 +58,12 @@
     "coding-typert-protocol": "workspace:^"
   },
   "peerDependencies": {
+    "@deepseek-ai/cordis": "workspace:^",
     "coding-agent": "workspace:^",
     "coding-agent-presets": "workspace:^",
     "coding-api-gateway": "workspace:^",
     "coding-commands": "workspace:^",
+    "coding-computer-use": "workspace:^",
     "coding-cordis-host-runner": "workspace:^",
     "coding-credentials": "workspace:^",
     "coding-file-reference": "workspace:^",
@@ -74,14 +76,15 @@
     "coding-session-persistence": "workspace:^",
     "coding-session-reference": "workspace:^",
     "coding-settings": "workspace:^",
-    "coding-typert-registry": "workspace:^",
-    "@deepseek-ai/cordis": "workspace:^"
+    "coding-typert-registry": "workspace:^"
   },
   "devDependencies": {
+    "@deepseek-ai/cordis": "workspace:^",
     "coding-agent": "workspace:^",
     "coding-agent-presets": "workspace:^",
     "coding-api-gateway": "workspace:^",
     "coding-commands": "workspace:^",
+    "coding-computer-use": "workspace:^",
     "coding-cordis-host-runner": "workspace:^",
     "coding-credentials": "workspace:^",
     "coding-file-reference": "workspace:^",
@@ -94,7 +97,6 @@
     "coding-session-persistence": "workspace:^",
     "coding-session-reference": "workspace:^",
     "coding-settings": "workspace:^",
-    "coding-typert-registry": "workspace:^",
-    "@deepseek-ai/cordis": "workspace:^"
+    "coding-typert-registry": "workspace:^"
   }
 }

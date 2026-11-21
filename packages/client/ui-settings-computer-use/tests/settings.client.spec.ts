@@ -3,8 +3,24 @@ import { stubSettingsScope } from 'coding-client-test-runtime'
 import {
   ComputerUseSettingsController, DEFAULT_SETTINGS, collectChanges, decodeComputerUseSettings, decodeGrant,
   numberText, numberValue, numericTextOf, validArtifactRoot, validBundleId, validGrants, validNumeric,
-  type ComputerUseSettings,
+  type ComputerUseAccess, type ComputerUseRemote, type ComputerUseSettings,
 } from '../src/client/settings.ts'
+
+/** 远端替身：默认返回一份已授权的结论。 */
+function remoteStub(overrides: Partial<ComputerUseRemote> = {}): ComputerUseRemote & { calls: string[] } {
+  const calls: string[] = []
+  const access: ComputerUseAccess = {
+    enabled: true, platform: 'darwin', provider: 'macos-ax', ready: true, helperVersion: '1.2.3',
+    accessibility: 'granted', screenRecording: 'denied',
+  }
+  return {
+    calls,
+    status: async () => { calls.push('status'); return { ok: true as const, value: access } },
+    check: async () => { calls.push('check'); return { ok: true as const, value: access } },
+    openPermissionSettings: async (kind) => { calls.push(`open:${kind}`); return { ok: true as const, value: undefined } },
+    ...overrides,
+  }
+}
 
 const stored: ComputerUseSettings = {
   ...DEFAULT_SETTINGS,
@@ -127,7 +143,7 @@ describe('电脑操作设置分节', () => {
 describe('电脑操作设置控制器', () => {
   it('读取期发布快照，保存按字段串行写入', async () => {
     const scope = stubSettingsScope<ComputerUseSettings>()
-    const controller = new ComputerUseSettingsController(scope.scope)
+    const controller = new ComputerUseSettingsController(scope.scope, remoteStub())
     expect(controller.view.getSnapshot().section.status).toBe('loading')
     scope.publish({ status: 'ready', writable: true, value: stored, base: stored, user: {}, revision: 1 })
     expect(controller.view.getSnapshot().section.value).toEqual(stored)
@@ -138,6 +154,7 @@ describe('电脑操作设置控制器', () => {
     expect(await controller.save({ enabled: undefined } as unknown as Partial<ComputerUseSettings>)).toBe(true)
     expect(scope.set).toHaveBeenCalledTimes(2)
     const options = controller.inject()
+    expect(Object.keys(options.hooks).sort()).toEqual(['computerUseAccess', 'computerUseSettings'])
     expect(options.hooks.computerUseSettings.getSnapshot().section.value).toEqual(stored)
     expect(controller.view.getSnapshot()).toMatchObject({ saving: false, failed: false })
     controller.dispose()
@@ -146,7 +163,7 @@ describe('电脑操作设置控制器', () => {
 
   it('不可写或写入失败时保留草稿并标记失败', async () => {
     const scope = stubSettingsScope<ComputerUseSettings>()
-    const controller = new ComputerUseSettingsController(scope.scope)
+    const controller = new ComputerUseSettingsController(scope.scope, remoteStub())
     expect(await controller.save({ enabled: false })).toBe(false)
     scope.publish({ status: 'ready', writable: false, value: stored, base: stored, user: {}, revision: 1 })
     expect(await controller.save({ enabled: false })).toBe(false)
@@ -164,13 +181,141 @@ describe('电脑操作设置控制器', () => {
 
   it('并发保存以最新一次为准，被超越的一次不发布结果', async () => {
     const scope = stubSettingsScope<ComputerUseSettings>()
-    const controller = new ComputerUseSettingsController(scope.scope)
+    const controller = new ComputerUseSettingsController(scope.scope, remoteStub())
     scope.publish({ status: 'ready', writable: true, value: stored, base: stored, user: {}, revision: 1 })
     const first = controller.save({ enabled: false })
     const second = controller.save({ grants: [] })
     expect(await first).toBe(false)
     expect(await second).toBe(true)
     expect(scope.set.mock.calls).toEqual([['enabled', false], ['grants', []]])
+    controller.dispose()
+  })
+
+  it('读取授权结论、执行显式检查并转发打开面板', async () => {
+    const scope = stubSettingsScope<ComputerUseSettings>()
+    scope.publish({ status: 'ready', writable: true, value: stored, base: stored, user: {}, revision: 1 })
+    const remote = remoteStub()
+    const controller = new ComputerUseSettingsController(scope.scope, remote)
+    // 首次读取是构造函数发起的异步请求。
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(controller.access.getSnapshot()).toMatchObject({
+      status: 'ready',
+      value: { accessibility: 'granted', screenRecording: 'denied', helperVersion: '1.2.3' },
+    })
+    await controller.check()
+    expect(remote.calls).toEqual(['status', 'check'])
+    expect(controller.access.getSnapshot()).toMatchObject({ checking: false, status: 'ready' })
+    expect(await controller.openPermissionSettings('screen-recording')).toBe(true)
+    expect(remote.calls.at(-1)).toBe('open:screen-recording')
+    controller.dispose()
+  })
+
+  it('卸载后刷新不再发布，并发检查以最后一次为准', async () => {
+    const scope = stubSettingsScope<ComputerUseSettings>()
+    scope.publish({ status: 'ready', writable: true, value: stored, base: stored, user: {}, revision: 1 })
+    let release: (() => void) | undefined
+    const remote = remoteStub({
+      status: async () => {
+        await new Promise<void>((resolve) => { release = resolve })
+        return { ok: false as const, error: {} }
+      },
+    })
+    const controller = new ComputerUseSettingsController(scope.scope, remote)
+    controller.dispose()
+    release?.()
+    await Promise.resolve()
+    await Promise.resolve()
+    // 卸载后仍是首次读取状态，迟到的结果被丢弃。
+    expect(controller.access.getSnapshot().status).toBe('loading')
+
+    const scope2 = stubSettingsScope<ComputerUseSettings>()
+    scope2.publish({ status: 'ready', writable: true, value: stored, base: stored, user: {}, revision: 1 })
+    const slow = remoteStub()
+    const controller2 = new ComputerUseSettingsController(scope2.scope, slow)
+    await Promise.resolve()
+    await Promise.resolve()
+    const first = controller2.check()
+    const second = controller2.check()
+    await Promise.all([first, second])
+    expect(slow.calls.filter(call => call === 'check')).toHaveLength(2)
+    expect(controller2.access.getSnapshot()).toMatchObject({ checking: false, status: 'ready' })
+    controller2.dispose()
+  })
+
+  it('检查途中卸载时不再发布忙状态', async () => {
+    const scope = stubSettingsScope<ComputerUseSettings>()
+    scope.publish({ status: 'ready', writable: true, value: stored, base: stored, user: {}, revision: 1 })
+    let release: (() => void) | undefined
+    const remote = remoteStub({
+      check: async () => {
+        await new Promise<void>((resolve) => { release = resolve })
+        return { ok: true as const, value: {
+          enabled: true, platform: 'darwin', provider: 'macos-ax' as const, ready: true,
+          accessibility: 'granted' as const, screenRecording: 'granted' as const,
+        } }
+      },
+    })
+    const controller = new ComputerUseSettingsController(scope.scope, remote)
+    await Promise.resolve()
+    await Promise.resolve()
+    const pending = controller.check()
+    controller.dispose()
+    release?.()
+    await pending
+    // 卸载后停在检查中，不再把结果或结束状态写回视图。
+    expect(controller.access.getSnapshot()).toMatchObject({ checking: true, status: 'ready' })
+  })
+
+  it('把注入面的检查与打开面板转发给远端', async () => {
+    const scope = stubSettingsScope<ComputerUseSettings>()
+    scope.publish({ status: 'ready', writable: true, value: stored, base: stored, user: {}, revision: 1 })
+    const remote = remoteStub()
+    const controller = new ComputerUseSettingsController(scope.scope, remote)
+    const face = controller.inject()
+    await face.check()
+    expect(remote.calls).toContain('check')
+    expect(await face.openPermissionSettings('accessibility')).toBe(true)
+    expect(remote.calls.at(-1)).toBe('open:accessibility')
+    controller.dispose()
+  })
+
+  it('检查返回失败时把状态标成错误', async () => {
+    const scope = stubSettingsScope<ComputerUseSettings>()
+    scope.publish({ status: 'ready', writable: true, value: stored, base: stored, user: {}, revision: 1 })
+    const remote = remoteStub({ check: async () => ({ ok: false as const, error: {} }) })
+    const controller = new ComputerUseSettingsController(scope.scope, remote)
+    await Promise.resolve()
+    await Promise.resolve()
+    await controller.check()
+    expect(controller.access.getSnapshot()).toMatchObject({ status: 'error', checking: false })
+    controller.dispose()
+  })
+
+  it('读取失败标成错误，检查失败保留原因并恢复按钮状态', async () => {
+    const scope = stubSettingsScope<ComputerUseSettings>()
+    scope.publish({ status: 'ready', writable: true, value: stored, base: stored, user: {}, revision: 1 })
+    const remote = remoteStub({
+      status: async () => ({ ok: false as const, error: {} }),
+      check: async () => ({
+        ok: true as const,
+        value: { enabled: true, platform: 'darwin', provider: 'macos-ax' as const, ready: false,
+          accessibility: 'denied' as const, screenRecording: 'unavailable' as const,
+          lastError: 'external driver is not installed' },
+      }),
+      openPermissionSettings: async () => ({ ok: false as const, error: {} }),
+    })
+    const controller = new ComputerUseSettingsController(scope.scope, remote)
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(controller.access.getSnapshot().status).toBe('error')
+    await controller.check()
+    expect(controller.access.getSnapshot()).toMatchObject({
+      status: 'ready',
+      checking: false,
+      value: { ready: false, accessibility: 'denied', lastError: 'external driver is not installed' },
+    })
+    expect(await controller.openPermissionSettings('accessibility')).toBe(false)
     controller.dispose()
   })
 })

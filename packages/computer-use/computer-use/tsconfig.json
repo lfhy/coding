@@ -16,6 +16,7 @@
     { "path": "../../subprocess/subprocess" },
     { "path": "../../interaction/user-approval" },
     { "path": "../../runtime-diagnostics/invariants" },
-    { "path": "../../core/tools" }
+    { "path": "../../core/tools" },
+    { "path": "../../typert/protocol" }
   ]
 }

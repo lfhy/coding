@@ -7,6 +7,9 @@
 ## 服务：`ComputerUseService`（ctx 键：`computerUse`）
 
 - `availability()`／`watchAvailability(listener)`：开关状态与变化通知；设置提交或提供方代次替换后通知一次。
+- `remoteStatus()`：设置页读取的授权结论（开关、平台、后端、就绪、本机组件版本、两项权限与最近错误），不含本机路径，不触发探测。
+- `remoteCheck()`：设置页的显式检查，启动本机组件做一次健康检查；失败原因写回结论而不是抛给界面。
+- `remoteOpenPermissionSettings(kind)`：打开 macOS 隐私面板，插件不授予权限。
 - `status()`：当前开关、平台、提供方名、代次、helper 路径与最近一次健康结果，不触发探测。
 - `health(signal)`：重新执行不修改权限与界面的健康检查，失败时抛出并把原因记入状态。
 - 挂载与切换提供方都不做探测：托管 helper 的源码构建、辅助功能授权提示与外部驱动进程都不进入宿主启动，第一次真实调用或显式 `health()` 才会接触本机界面。

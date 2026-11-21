@@ -2,10 +2,18 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ComputerUseSection, type ComputerUseSectionProps } from '../src/client/ComputerUseSection.tsx'
-import { DEFAULT_SETTINGS, type ComputerUseSettings, type ComputerUseSettingsView } from '../src/client/settings.ts'
+import {
+  DEFAULT_SETTINGS, type ComputerUseAccess, type ComputerUseAccessView, type ComputerUseSettings,
+  type ComputerUseSettingsView,
+} from '../src/client/settings.ts'
 import { zh } from '../src/client/locales.ts'
 
-const t = (key: keyof typeof zh) => zh[key]
+const t = (key: keyof typeof zh, params?: Record<string, unknown>) =>
+  (zh[key] as string).replace(/\{(\w+)\}/gu, (match, name: string) =>
+    (params !== undefined && name in params ? String(params[name]) : match))
+
+/** 按应用授权列表：与页面顶部的权限结论列表区分开。 */
+const grantRows = () => within(screen.getByRole('list', { name: '按应用授权' })).getAllByRole('listitem')
 afterEach(() => { cleanup() })
 
 const stored: ComputerUseSettings = {
@@ -19,14 +27,29 @@ const stored: ComputerUseSettings = {
  * @param save - 保存动作替身。
  * @returns 渲染结果。
  */
-function renderSection(view: ComputerUseSettingsView, save = vi.fn(async () => true)) {
+function renderSection(
+  view: ComputerUseSettingsView,
+  save = vi.fn(async () => true),
+  access: ComputerUseAccessView = { status: 'ready', checking: false, value: grantedAccess },
+) {
+  const check = vi.fn(async () => {})
+  const openPermissionSettings = vi.fn(async () => true)
   const props = {
     close: () => {},
     t,
     save,
+    check,
+    openPermissionSettings,
     useComputerUseSettings: (pick: (value: ComputerUseSettingsView) => unknown) => pick(view),
+    useComputerUseAccess: (pick: (value: ComputerUseAccessView) => unknown) => pick(access),
   } as unknown as ComputerUseSectionProps
-  return { save, ...render(<ComputerUseSection {...props} />) }
+  return { save, check, openPermissionSettings, ...render(<ComputerUseSection {...props} />) }
+}
+
+/** 一份已授权的结论：辅助功能给了、屏幕录制没给。 */
+const grantedAccess: ComputerUseAccess = {
+  enabled: true, platform: 'darwin', provider: 'macos-ax', ready: true, helperVersion: '1.2.3',
+  accessibility: 'granted', screenRecording: 'denied',
 }
 
 /** 一份可用的已保存分节。 */
@@ -94,7 +117,7 @@ describe('电脑操作设置分区', () => {
 
   it('控制包含读取，读取在已控制时不可单独关闭', () => {
     const { save } = renderSection(ready({ ...stored, grants: [{ bundleId: 'com.apple.Notes', read: false, control: false }] }))
-    const row = screen.getByRole('listitem')
+    const row = grantRows()[0] as HTMLElement
     fireEvent.click(within(row).getByLabelText('控制'))
     expect(within(row).getByLabelText('读取')).toHaveProperty('checked', true)
     expect(within(row).getByLabelText('读取').hasAttribute('disabled')).toBe(true)
@@ -160,7 +183,7 @@ describe('电脑操作设置分区', () => {
       { bundleId: 'com.apple.Notes', read: true, control: false },
       { bundleId: 'com.apple.Safari', read: true, control: false },
     ] }))
-    const rows = screen.getAllByRole('listitem')
+    const rows = grantRows()
     fireEvent.click(within(rows[1] as HTMLElement).getByLabelText('读取'))
     fireEvent.click(screen.getByRole('button', { name: '保存' }))
     expect(save).toHaveBeenCalledWith({ grants: [
@@ -179,7 +202,7 @@ describe('电脑操作设置分区', () => {
     fireEvent.click(screen.getByLabelText('关闭坐标输入'))
     fireEvent.click(screen.getByLabelText('显示操作光标'))
     fireEvent.click(screen.getByLabelText('显示操作光标'))
-    const row = screen.getByRole('listitem')
+    const row = grantRows()[0] as HTMLElement
     fireEvent.click(within(row).getByLabelText('读取'))
     expect(within(row).getByLabelText('读取')).toHaveProperty('checked', false)
     fireEvent.click(screen.getByRole('button', { name: '保存' }))
@@ -232,5 +255,51 @@ describe('电脑操作设置分区', () => {
     renderSection({ ...ready(), section: { ...ready().section, writable: false } })
     expect(screen.getByText('本部署的设置为只读。')).toBeTruthy()
     expect(screen.getByLabelText('允许 Agent 操作本机应用').hasAttribute('disabled')).toBe(true)
+  })
+
+  it('列出辅助功能、屏幕录制与本机组件状态，并转发两个面板入口', () => {
+    const { check, openPermissionSettings } = renderSection(ready())
+    expect(screen.getByText('已授权')).toBeTruthy()
+    expect(screen.getByText('未授权')).toBeTruthy()
+    expect(screen.getByText('就绪（1.2.3）')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: '重新检查' }))
+    expect(check).toHaveBeenCalledTimes(1)
+    fireEvent.click(screen.getByRole('button', { name: '打开辅助功能设置' }))
+    fireEvent.click(screen.getByRole('button', { name: '打开屏幕录制设置' }))
+    expect(openPermissionSettings.mock.calls).toEqual([['accessibility'], ['screen-recording']])
+  })
+
+  it('检查中禁用入口，读取失败与最近错误各自成段', () => {
+    const { helperVersion: _dropped, ...grantedWithoutVersion } = grantedAccess
+    renderSection(ready(), undefined, { status: 'ready', checking: true, value: {
+      ...grantedWithoutVersion, ready: false, accessibility: 'not-determined',
+      screenRecording: 'unavailable', lastError: '本机组件尚未构建',
+    } })
+    expect(screen.getByRole('button', { name: '检查中…' })).toHaveProperty('disabled', true)
+    expect(screen.getByText('未决定')).toBeTruthy()
+    expect(screen.getByText('无法读取')).toBeTruthy()
+    expect(screen.getByText('未就绪，第一次调用时才启动')).toBeTruthy()
+    expect(screen.getByText(/本机组件尚未构建/)).toBeTruthy()
+    cleanup()
+    renderSection(ready(), undefined, { status: 'loading', checking: false })
+    expect(screen.getByText('正在读取状态…')).toBeTruthy()
+    cleanup()
+    renderSection(ready(), undefined, { status: 'error', checking: false })
+    expect(screen.getByText('无法读取状态，请重试。')).toBeTruthy()
+  })
+
+  it('组件就绪但没有版本号时给出占位而不是空白', () => {
+    const { helperVersion: _unused, ...withoutVersion } = grantedAccess
+    renderSection(ready(), undefined, { status: 'ready', checking: false, value: withoutVersion })
+    expect(screen.getByText('就绪（—）')).toBeTruthy()
+  })
+
+  it('打不开系统设置时提示手动前往', async () => {
+    const { openPermissionSettings } = renderSection(ready(), undefined, {
+      status: 'ready', checking: false, value: grantedAccess,
+    })
+    openPermissionSettings.mockResolvedValueOnce(false)
+    fireEvent.click(screen.getByRole('button', { name: '打开辅助功能设置' }))
+    await waitFor(() => { expect(screen.getByText(/请手动前往系统设置/)).toBeTruthy() })
   })
 })

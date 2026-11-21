@@ -335,6 +335,7 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   ComputerTargetHandle: 'computer-use.md',
   ComputerTargetResolutionMode: 'computer-use.md',
   ComputerTargetResolutionResult: 'computer-use.md',
+  ComputerUseAccessStatus: 'computer-use.md',
   ComputerUseContext: 'computer-use.md',
   ComputerUseStatus: 'computer-use.md',
   MemoryConfig: 'memory.md',

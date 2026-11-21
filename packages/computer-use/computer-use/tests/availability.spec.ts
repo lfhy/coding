@@ -153,4 +153,25 @@ describe('电脑控制启用开关', () => {
     expect(notified).toBe(1)
     await ctx.fiber.dispose()
   })
+
+  it('远端面只暴露授权结论，并允许用户显式检查与打开面板', async () => {
+    backend = new FixtureBackend()
+    const ctx = new Context()
+    const fiber = ctx.plugin(FixtureService, { enabled: true })
+    await fiber.await()
+    const service = ctx.computerUse
+    // 状态读取不探测：未探测前权限一律是 unavailable，且不含本机路径。
+    expect(service.remoteStatus()).toEqual({
+      enabled: true, platform: process.platform, provider: 'macos-ax', ready: false,
+      accessibility: 'unavailable', screenRecording: 'unavailable',
+    })
+    const checked = await service.remoteCheck()
+    expect(checked).toMatchObject({ ready: true, accessibility: 'granted', screenRecording: 'granted' })
+    expect(checked).not.toHaveProperty('helperPath')
+    expect(await service.listApps(call({}))).toEqual([])
+    expect(backend.calls).toEqual(['list-apps'])
+    // 替身不实现打开面板，失败原样返回而不是静默成功。
+    await expect(service.remoteOpenPermissionSettings('accessibility')).rejects.toThrow()
+    await ctx.fiber.dispose()
+  })
 })

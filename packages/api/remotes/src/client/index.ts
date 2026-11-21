@@ -2,6 +2,7 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import commandsRemote from 'coding-commands/remote'
+import computerUseRemote from 'coding-computer-use/remote'
 import goalsRemote from 'coding-goal/remote'
 import dynamicRemote from 'coding-cordis-host-runner/remote'
 import fileReferencesRemote from 'coding-file-reference/remote'
@@ -13,6 +14,7 @@ import type { TypertClientRemote } from 'coding-typert-protocol'
 export type { TypertClientRemote as ClientRemote } from 'coding-typert-protocol'
 export type { PluginInventorySnapshot } from 'coding-host-plugin-inventory/types'
 export type {} from 'coding-commands/remote'
+export type {} from 'coding-computer-use/remote'
 export type {} from 'coding-file-reference/remote'
 export type {} from 'coding-goal/remote'
 export type {} from 'coding-host-plugin-inventory/remote'
@@ -118,7 +120,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   const disposers: Array<() => Promise<void>> = []
   try {
     for (const contribution of [
-      commandsRemote, goalsRemote, dynamicRemote, fileReferencesRemote,
+      commandsRemote, computerUseRemote, goalsRemote, dynamicRemote, fileReferencesRemote,
       pluginInventoryRemote, messageFeedbackRemote, sessionReferencesRemote,
     ]) {
       disposers.push(await ctx.remote.$mount(contribution))

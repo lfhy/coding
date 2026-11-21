@@ -31,9 +31,6 @@ export interface ComputerRect {
   height: number
 }
 
-/** macOS permission state reported without attempting to grant it. */
-export type ComputerPermissionState = 'granted' | 'denied' | 'not-determined' | 'unavailable'
-
 /** Stable identity of one running user-facing application. */
 export interface ComputerAppIdentity {
   bundleId: string
@@ -316,7 +313,10 @@ export interface ComputerUseStatus {
   lastError?: string
 }
 
+export type { ComputerBackendName, ComputerPermissionState, ComputerUseAccessStatus } from './access.ts'
+
 // Type-only circular reference for the link above; the emitted declaration
 // retains the Service name without importing runtime code into this module.
+import type { ComputerPermissionState } from './access.ts'
 import type { ComputerUseService } from './service.ts'
 void (0 as unknown as ComputerUseService | undefined)

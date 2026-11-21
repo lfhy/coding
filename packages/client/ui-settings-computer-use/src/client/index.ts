@@ -1,5 +1,7 @@
 /** 电脑操作设置分区：把 `computer-use` 命名空间接到设置导航，写入仍是唯一保存入口。 */
 import type { ClientContext } from 'coding-client-runtime/client'
+// 仅类型导入：引入生成的电脑控制 Remote API 与 ctx.remote 的名字合并。
+import type {} from 'coding-api-remotes/client'
 import type {} from 'coding-client-locale/client'
 import type {} from 'coding-client-ui-settings/client'
 import { ComputerUseSection } from './ComputerUseSection.tsx'
@@ -10,7 +12,7 @@ import { en, zh, type ComputerUseSettingsKey } from './locales.ts'
 const NS = 'settings.computer-use'
 
 export type { ComputerUseSettingsFace, ComputerUseSettingsView } from './settings.ts'
-export const inject = ['slots', 'locale', 'settingsScope']
+export const inject = ['slots', 'locale', 'settingsScope', 'remote', 'remote.computerUse']
 
 declare module 'coding-client-ui-slots' {
   interface LocaleNamespaceMap {
@@ -22,14 +24,16 @@ declare module 'coding-client-ui-slots' {
 /**
  * 贡献电脑操作设置分区。
  *
- * 分区只读写 Host 的 `computer-use` 命名空间：开关关闭后由工具消费方撤销模型可见的
- * 工具与技能，因此这里不做任何本地能力判定。
+ * 分区只读写 Host 的 `computer-use` 命名空间，并通过 `remote.computerUse` 读取授权结论、
+ * 触发显式检查与打开 macOS 隐私面板：开关关闭后由工具消费方撤销模型可见的工具与技能，
+ * 因此这里不做任何本地能力判定。
  * @param ctx - 浏览器插件 Context。
  */
 export function apply(ctx: ClientContext): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-settings-computer-use: dictionaries')
   const controller = new ComputerUseSettingsController(
     ctx.settingsScope.bind({ namespace: SETTINGS_NAMESPACE, decode: decodeComputerUseSettings }),
+    ctx.remote.computerUse,
   )
   ctx.effect(() => () => { controller.dispose() }, 'ui-settings-computer-use: controller')
   const t = ctx.locale.bind(NS)

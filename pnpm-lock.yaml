@@ -973,6 +973,9 @@ importers:
       coding-commands:
         specifier: workspace:^
         version: link:../../interaction/commands
+      coding-computer-use:
+        specifier: workspace:^
+        version: link:../../computer-use/computer-use
       coding-cordis-host-runner:
         specifier: workspace:^
         version: link:../../extensions/cordis-host-runner
@@ -3521,6 +3524,9 @@ importers:
       '@types/react':
         specifier: ~18.3.1
         version: 18.3.31
+      coding-api-remotes:
+        specifier: workspace:^
+        version: link:../../api/remotes
       coding-client-locale:
         specifier: workspace:^
         version: link:../locale
@@ -4568,6 +4574,9 @@ importers:
       coding-tools:
         specifier: workspace:^
         version: link:../../core/tools
+      coding-typert-protocol:
+        specifier: workspace:^
+        version: link:../../typert/protocol
       coding-user-approval:
         specifier: workspace:^
         version: link:../../interaction/user-approval

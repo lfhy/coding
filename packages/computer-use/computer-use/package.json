@@ -22,6 +22,18 @@
       "types": "./lib/types/invariant.d.ts",
       "default": "./lib/invariant.js"
     },
+    "./client": {
+      "types": "./lib/types/client.d.ts",
+      "default": "./lib/types/client.js"
+    },
+    "./typert": {
+      "types": "./lib/typert.host.d.ts",
+      "default": "./lib/typert.host.js"
+    },
+    "./remote": {
+      "types": "./lib/typert.remote-client.d.ts",
+      "default": "./lib/typert.remote-client.js"
+    },
     "./package.json": "./package.json"
   },
   "files": [
@@ -29,7 +41,11 @@
     "lib/invariant.js",
     "native",
     "scripts",
-    "lib/types/**/*.d.ts"
+    "lib/types/**/*.d.ts",
+    "lib/typert.host.js",
+    "lib/typert.host.d.ts",
+    "lib/typert.remote-client.js",
+    "lib/typert.remote-client.d.ts"
   ],
   "license": "MIT",
   "scripts": {
@@ -46,6 +62,7 @@
     "coding-storage-domain": "workspace:^",
     "coding-subprocess": "workspace:^",
     "coding-tools": "workspace:^",
+    "coding-typert-protocol": "workspace:^",
     "coding-user-approval": "workspace:^"
   },
   "devDependencies": {
@@ -63,6 +80,7 @@
     "coding-subprocess": "workspace:^",
     "coding-subprocess-local": "workspace:^",
     "coding-tools": "workspace:^",
+    "coding-typert-protocol": "workspace:^",
     "coding-user-approval": "workspace:^"
   },
   "dependencies": {

@@ -2,8 +2,9 @@
 
 import { randomUUID } from 'node:crypto'
 import { setTimeout as delay } from 'node:timers/promises'
-import { Context, Service } from '@deepseek-ai/cordis'
+import { Context } from '@deepseek-ai/cordis'
 import type { Agent } from 'coding-agent'
+import { Remote, TypertRemoteService } from 'coding-typert-protocol'
 import type { BackendActionResult, BackendCursorAction, BackendHealth, BackendObservation, ComputerUseBackend, CursorVisibility } from './backend.ts'
 import { allocateScreenshotPath, describeScreenshot } from './artifacts.ts'
 import type { ResolvedComputerUseConfig } from './config.ts'
@@ -21,6 +22,7 @@ import {
   ComputerTargetHandle,
   type ComputerActionRequest,
   type ComputerActionResult,
+  type ComputerUseAccessStatus,
   type ComputerAppIdentity,
   type ComputerAppSummary,
   type ComputerConfirmRequest,
@@ -63,6 +65,20 @@ function publicElements(observation: BackendObservation): {
     return { ...element, targetHandle }
   })
   return { elements, targets }
+}
+
+/** 把内部状态收敛成设置页可见的授权结论。 */
+function accessStatus(status: ComputerUseStatus): ComputerUseAccessStatus {
+  return {
+    enabled: status.enabled,
+    platform: status.platform,
+    provider: status.provider,
+    ready: status.ready,
+    ...status.helperVersion === undefined ? {} : { helperVersion: status.helperVersion },
+    accessibility: status.accessibility,
+    screenRecording: status.screenRecording,
+    ...status.lastError === undefined ? {} : { lastError: status.lastError },
+  }
 }
 
 function matchesWait(observation: BackendObservation, action: Extract<ComputerActionRequest, { kind: 'wait' }>): boolean {
@@ -185,7 +201,7 @@ function cursorAction(
 }
 
 /** Complete Service Definition plus provider-independent implementation. */
-export class ComputerUseService extends Service {
+export class ComputerUseService extends TypertRemoteService {
   private backend: ComputerUseBackend
   private config: ResolvedComputerUseConfig
   private generation = 1
@@ -317,6 +333,39 @@ export class ComputerUseService extends Service {
       throw failure
     }
     return this.status()
+  }
+
+  /**
+   * 设置页读取的授权结论；不触发探测，也不暴露本机路径。
+   * @returns 当前开关、提供方与最近一次已知的权限状态。
+   */
+  @Remote('status')
+  remoteStatus(): ComputerUseAccessStatus {
+    return accessStatus(this.status())
+  }
+
+  /**
+   * 设置页的显式检查：启动本机提供方做一次健康检查，失败原因写回状态而不是抛给界面。
+   * @returns 检查后的授权结论。
+   */
+  @Remote('check')
+  async remoteCheck(): Promise<ComputerUseAccessStatus> {
+    const signal = new AbortController().signal
+    try {
+      await this.health(signal)
+    } catch {
+      // 失败原因已由 health() 记入状态；界面读 lastError 而不是原始错误。
+    }
+    return accessStatus(this.status())
+  }
+
+  /**
+   * 打开 macOS 隐私面板；插件不授予权限，只把用户带到正确的设置页。
+   * @param kind - 要打开的面板：辅助功能或屏幕录制。
+   */
+  @Remote('openPermissionSettings')
+  async remoteOpenPermissionSettings(kind: 'accessibility' | 'screen-recording'): Promise<void> {
+    await this.openPermissionSettings(kind, new AbortController().signal)
   }
 
   /**

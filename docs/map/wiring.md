@@ -76,6 +76,7 @@
 - `tool-subagent-list-agents` → `coding-tool-subagent-control/list-agents`
 - `tool-subagent-wait-agent` → `coding-tool-subagent-control/wait-agent`
 - `tool-subagent` → `coding-tool-subagent`
+- `tool-presentation` → `coding-agent-tool-presentation`
 
 ## `apps/cli/config/agent-presets/cordis/agent.cordis.yml`
 

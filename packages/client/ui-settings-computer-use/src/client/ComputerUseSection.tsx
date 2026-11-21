@@ -1,11 +1,11 @@
 /** 电脑操作设置分区：开关、后端、应用授权与交互策略；草稿只属于本组件，保存时才写回。 */
 import { useEffect, useRef, useState } from 'react'
-import { Button, Input } from 'coding-client-ui-primitives'
+import { Button, Input, Pill, StateDot } from 'coding-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime } from 'coding-client-ui-slots'
 import {
   DEFAULT_SETTINGS, collectChanges, numberValue, numericTextOf, validArtifactRoot, validBundleId, validGrants,
-  type ComputerUseGrant, type ComputerUseSettings, type ComputerUseSettingsFace, type NumericField,
-  type NumericText,
+  type ComputerPermissionState, type ComputerUseGrant, type ComputerUseSettings, type ComputerUseSettingsFace,
+  type NumericField, type NumericText,
 } from './settings.ts'
 import type { ComputerUseSettingsKey } from './locales.ts'
 import css from './ComputerUseSection.module.css'
@@ -21,13 +21,26 @@ const NUMERIC_FIELDS: readonly { field: NumericField; key: ComputerUseSettingsKe
   { field: 'actionTimeoutMs', key: 'actionTimeout', hint: 'actionTimeoutHint' },
 ]
 
+/** 权限取值到界面文案与状态点的映射。 */
+const PERMISSION_VIEW: Record<ComputerPermissionState, { label: ComputerUseSettingsKey; state: 'done' | 'warning' | 'error' }> = {
+  granted: { label: 'permGranted', state: 'done' },
+  denied: { label: 'permDenied', state: 'error' },
+  'not-determined': { label: 'permNotDetermined', state: 'warning' },
+  unavailable: { label: 'permUnavailable', state: 'warning' },
+}
+
 /**
  * 呈现电脑操作的开关、后端与授权；`dsh-computer-use` 技能与执行工具随后由宿主决定。
  * @param props - 命名空间快照与保存操作。
  * @returns 设置分区内容。
  */
-export function ComputerUseSection({ useComputerUseSettings, save, t }: ComputerUseSectionProps) {
+export function ComputerUseSection({
+  useComputerUseSettings, useComputerUseAccess, save, check, openPermissionSettings, t,
+}: ComputerUseSectionProps) {
   const { section, saving, failed } = useComputerUseSettings(snapshot => snapshot)
+  const access = useComputerUseAccess(snapshot => snapshot)
+  const accessValue = access.value
+  const [openFailed, setOpenFailed] = useState(false)
   const [draft, setDraft] = useState<ComputerUseSettings | undefined>(undefined)
   const [numberText, setNumberText] = useState<NumericText | undefined>(undefined)
   const [newGrant, setNewGrant] = useState('')
@@ -127,6 +140,53 @@ export function ComputerUseSection({ useComputerUseSettings, save, t }: Computer
         </label>
         <p className={css.switchHint}>{t('enableHint')}</p>
 
+        <h3 className={css.groupTitle}>{t('accessTitle')}</h3>
+        <p className={css.groupHint}>{t('accessHint')}</p>
+        {access.status === 'loading' && <p className={css.hint} role="status">{t('accessLoading')}</p>}
+        {access.status === 'error' && <p className={css.error} role="alert">{t('accessFailed')}</p>}
+        {accessValue !== undefined && <>
+          <ul className={css.permList}>
+            {(['accessibility', 'screenRecording'] as const).map((key) => {
+              const permission = PERMISSION_VIEW[accessValue[key]]
+              return (
+                <li key={key} className={css.permRow}>
+                  <span className={css.permName}>{t(key === 'accessibility' ? 'permAccessibility' : 'permScreenRecording')}</span>
+                  <span className={css.permState}>
+                    <StateDot state={permission.state} />
+                    <span>{t(permission.label)}</span>
+                  </span>
+                </li>
+              )
+            })}
+            <li className={css.permRow}>
+              <span className={css.permName}>{t('permComponent')}</span>
+              <span className={css.permState}>
+                {accessValue.ready
+                  ? <Pill>{t('permComponentReady', { version: accessValue.helperVersion ?? '—' })}</Pill>
+                  : <span>{t('permComponentNotReady')}</span>}
+              </span>
+            </li>
+          </ul>
+          {accessValue.lastError !== undefined && <p className={css.error}>
+            {t('permLastError')}：{accessValue.lastError}
+          </p>}
+        </>}
+        <div className={css.accessActions}>
+          <Button size="sm" variant="outline" disabled={access.checking}
+            onClick={() => { void check() }}>
+            {t(access.checking ? 'accessChecking' : 'accessCheck')}
+          </Button>
+          <Button size="sm" variant="ghost" disabled={access.checking}
+            onClick={() => { void openPermissionSettings('accessibility').then((ok) => { setOpenFailed(!ok) }) }}>
+            {t('accessOpenAccessibility')}
+          </Button>
+          <Button size="sm" variant="ghost" disabled={access.checking}
+            onClick={() => { void openPermissionSettings('screen-recording').then((ok) => { setOpenFailed(!ok) }) }}>
+            {t('accessOpenScreen')}
+          </Button>
+        </div>
+        {openFailed && <p className={css.error} role="alert">{t('accessOpenFailed')}</p>}
+
         <h3 className={css.groupTitle}>{t('runtimeTitle')}</h3>
         <p className={css.groupHint}>{t('runtimeHint')}</p>
         <div className={css.choices} role="radiogroup" aria-label={t('runtimeTitle')}>
@@ -167,7 +227,7 @@ export function ComputerUseSection({ useComputerUseSettings, save, t }: Computer
         <h4 className={css.subTitle}>{t('grantsTitle')}</h4>
         {model.grants.length === 0
           ? <p className={css.hint}>{t('grantsEmpty')}</p>
-          : <ul className={css.grantList}>{model.grants.map(grantRow)}</ul>}
+          : <ul className={css.grantList} aria-label={t('grantsTitle')}>{model.grants.map(grantRow)}</ul>}
         <div className={css.addRow}>
           <Input id="computer-use-grant" type="text" value={newGrant} disabled={blocked}
             placeholder={t('grantPlaceholder')} aria-label={t('grantBundleId')}

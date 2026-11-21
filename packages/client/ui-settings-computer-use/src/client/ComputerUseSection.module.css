@@ -85,3 +85,17 @@
   .grantRow { grid-template-columns: minmax(0, 1fr) auto auto; }
   .grantRow > :last-child { grid-column: 1 / -1; justify-self: end; }
 }
+
+/* 授权与运行状态：固定行高的结论列表，状态点与文字同一行居中。 */
+.permList { display: flex; flex-direction: column; gap: 2px; margin: 8px 0 0; padding: 0; list-style: none; }
+.permRow {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  min-height: 32px;
+  font: var(--dsw-font-xs-13);
+}
+.permName { color: var(--dsw-alias-label-secondary); }
+.permState { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
+.accessActions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }

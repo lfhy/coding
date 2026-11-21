@@ -408,6 +408,21 @@ Complete Service Definition plus provider-independent implementation.
 
 ```ts cordis-catalog
 /**
+ * 当前是否向模型提供这套能力。
+ * 关闭后宿主仍持有提供方与 helper 进程，只是模型看不到任何相关工具与技能。
+ * @returns 设置里的开关状态。
+ */
+availability(): boolean
+
+/**
+ * 订阅开关状态的变化：设置提交与提供方代次替换后都会通知。
+ * 注册不主动通知，调用方应先订阅再做首次读取。
+ * @param listener - 需要重新判定暴露面时调用的同步回调。
+ * @returns 撤销该回调的函数。
+ */
+watchAvailability(listener: () => void): () => void
+
+/**
  * 读取当前提供方与权限诊断，不触发任何探测。
  * @returns 平台、后端名、代次、helper 路径与最近一次健康结果。
  */
@@ -419,6 +434,24 @@ status(): ComputerUseStatus
  * @returns 检查后的最新状态；后端失败时抛出并把原因记入状态。
  */
 async health(signal: AbortSignal): Promise<ComputerUseStatus>
+
+/**
+ * 设置页读取的授权结论；不触发探测，也不暴露本机路径。
+ * @returns 当前开关、提供方与最近一次已知的权限状态。
+ */
+@Remote('status') remoteStatus(): ComputerUseAccessStatus
+
+/**
+ * 设置页的显式检查：启动本机提供方做一次健康检查，失败原因写回状态而不是抛给界面。
+ * @returns 检查后的授权结论。
+ */
+@Remote('check') async remoteCheck(): Promise<ComputerUseAccessStatus>
+
+/**
+ * 打开 macOS 隐私面板；插件不授予权限，只把用户带到正确的设置页。
+ * @param kind - 要打开的面板：辅助功能或屏幕录制。
+ */
+@Remote('openPermissionSettings') async remoteOpenPermissionSettings(kind: 'accessibility' | 'screen-recording'): Promise<void>
 
 /**
  * 响应用户的显式设置操作，打开对应的 macOS 隐私面板；插件不自行授予权限。
@@ -467,5 +500,5 @@ releaseAgent(agent: Agent): void
 
 Types: [Agent](core.md)
 
-Source: [`packages/computer-use/computer-use/src/service.ts:188`](../../packages/computer-use/computer-use/src/service.ts)
+Source: [`packages/computer-use/computer-use/src/service.ts:204`](../../packages/computer-use/computer-use/src/service.ts)
 <!-- END GENERATED cordis-surface -->

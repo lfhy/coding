@@ -649,6 +649,18 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     description: 'Complete Service Definition plus provider-independent implementation.',
     methods: [
       {
+        signature: 'availability(): boolean',
+        description: '当前是否向模型提供这套能力。 关闭后宿主仍持有提供方与 helper 进程，只是模型看不到任何相关工具与技能。',
+        parameters: [],
+        returns: '设置里的开关状态。',
+      },
+      {
+        signature: 'watchAvailability(listener: () => void): () => void',
+        description: '订阅开关状态的变化：设置提交与提供方代次替换后都会通知。 注册不主动通知，调用方应先订阅再做首次读取。',
+        parameters: [{ name: 'listener', description: '需要重新判定暴露面时调用的同步回调。' }],
+        returns: '撤销该回调的函数。',
+      },
+      {
         signature: 'status(): ComputerUseStatus',
         description: '读取当前提供方与权限诊断，不触发任何探测。',
         parameters: [],
@@ -659,6 +671,23 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: '重新执行不修改任何权限与 UI 的提供方健康检查。',
         parameters: [{ name: 'signal', description: '调用方取消信号；与服务生命周期信号合并后传给后端。' }],
         returns: '检查后的最新状态；后端失败时抛出并把原因记入状态。',
+      },
+      {
+        signature: '@Remote(\'status\') remoteStatus(): ComputerUseAccessStatus',
+        description: '设置页读取的授权结论；不触发探测，也不暴露本机路径。',
+        parameters: [],
+        returns: '当前开关、提供方与最近一次已知的权限状态。',
+      },
+      {
+        signature: '@Remote(\'check\') async remoteCheck(): Promise<ComputerUseAccessStatus>',
+        description: '设置页的显式检查：启动本机提供方做一次健康检查，失败原因写回状态而不是抛给界面。',
+        parameters: [],
+        returns: '检查后的授权结论。',
+      },
+      {
+        signature: '@Remote(\'openPermissionSettings\') async remoteOpenPermissionSettings(kind: \'accessibility\' | \'screen-recording\'): Promise<void>',
+        description: '打开 macOS 隐私面板；插件不授予权限，只把用户带到正确的设置页。',
+        parameters: [{ name: 'kind', description: '要打开的面板：辅助功能或屏幕录制。' }],
       },
       {
         signature: 'async openPermissionSettings(kind: \'accessibility\' | \'screen-recording\', signal: AbortSignal): Promise<void>',
@@ -3872,6 +3901,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface ComputerArtifact {\n    path: string;\n    filename: string;\n    mimeType: \'image/png\';\n    kind: \'image\';\n    description: string;\n    sourceTool: \'computer_observe\' | \'computer_action\';\n    previewIntent: \'image\';\n    bytes: number;\n    width: number;\n    height: number;\n}',
   },
   {
+    name: 'ComputerBackendName',
+    declaration: 'export type ComputerBackendName = \'macos-ax\' | \'cua-driver\' | \'unsupported\';',
+  },
+  {
     name: 'ComputerClickAction',
     declaration: 'export interface ComputerClickAction extends ComputerActionBase, ComputerElementTarget {\n    kind: \'click\';\n    x?: number;\n    y?: number;\n    coordinateSpace?: ComputerCoordinateSpace;\n    button?: ComputerMouseButton;\n    clickCount?: number;\n    allowCoordinateFallback?: boolean;\n}',
   },
@@ -3928,10 +3961,6 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface ComputerPerformAction extends ComputerActionBase, ComputerElementTarget {\n    kind: \'perform-action\';\n    action: string;\n}',
   },
   {
-    name: 'ComputerPermissionState',
-    declaration: 'export type ComputerPermissionState = \'granted\' | \'denied\' | \'not-determined\' | \'unavailable\';',
-  },
-  {
     name: 'ComputerPressKeyAction',
     declaration: 'export interface ComputerPressKeyAction extends ComputerActionBase {\n    kind: \'press-key\';\n    key: string;\n    modifiers?: ComputerKeyModifier[];\n}',
   },
@@ -3968,12 +3997,16 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface ComputerTypeTextAction extends ComputerActionBase {\n    kind: \'type-text\';\n    text: string;\n}',
   },
   {
+    name: 'ComputerUseAccessStatus',
+    declaration: 'export interface ComputerUseAccessStatus {\n    enabled: boolean;\n    platform: string;\n    provider: ComputerBackendName;\n    ready: boolean;\n    helperVersion?: string;\n    accessibility: ComputerPermissionState;\n    screenRecording: ComputerPermissionState;\n    lastError?: string;\n}',
+  },
+  {
     name: 'ComputerUseContext',
     declaration: 'export interface ComputerUseContext {\n    agent: Agent;\n    workspace: string;\n    callId?: CallId;\n    signal: AbortSignal;\n}',
   },
   {
     name: 'ComputerUseStatus',
-    declaration: 'export interface ComputerUseStatus {\n    platform: NodeJS.Platform;\n    provider: \'macos-ax\' | \'cua-driver\' | \'unsupported\';\n    generation: number;\n    ready: boolean;\n    helperPath: string;\n    helperVersion?: string;\n    helperSha256?: string;\n    accessibility: ComputerPermissionState;\n    screenRecording: ComputerPermissionState;\n    lastError?: string;\n}',
+    declaration: 'export interface ComputerUseStatus {\n    enabled: boolean;\n    platform: NodeJS.Platform;\n    provider: \'macos-ax\' | \'cua-driver\' | \'unsupported\';\n    generation: number;\n    ready: boolean;\n    helperPath: string;\n    helperVersion?: string;\n    helperSha256?: string;\n    accessibility: ComputerPermissionState;\n    screenRecording: ComputerPermissionState;\n    lastError?: string;\n}',
   },
   {
     name: 'ComputerWaitAction',

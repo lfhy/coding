@@ -227,32 +227,99 @@ export interface ComputerUseSettingsView {
   failed: boolean
 }
 
-/** 渲染器把此裸 observable 绑定为组件的 `useComputerUseSettings`。 */
+/** 渲染器把这两个裸 observable 绑定为 `useComputerUseSettings` 与 `useComputerUseAccess`。 */
 export interface ComputerUseSettingsFace {
-  hooks: { computerUseSettings: SnapshotStore<ComputerUseSettingsView> }
+  hooks: {
+    computerUseSettings: SnapshotStore<ComputerUseSettingsView>
+    computerUseAccess: SnapshotStore<ComputerUseAccessView>
+  }
   /** 写入一份草稿；返回是否全部字段都已落盘。 */
   save: (changes: Partial<ComputerUseSettings>) => Promise<boolean>
+  /** 让 Host 重新做一次健康检查，结果回到 `computerUseAccess`。 */
+  check: () => Promise<void>
+  /** 打开 macOS 隐私面板；失败时把原因留在返回文本里。 */
+  openPermissionSettings: (kind: 'accessibility' | 'screen-recording') => Promise<boolean>
 }
 
 /** 一份设置作用域的生命周期所有者；设置页与将来的入口共用同一份镜像。 */
 export class ComputerUseSettingsController {
   /** 设置页读取的快照源；渲染器把它绑定为 `useComputerUseSettings`。 */
   readonly view: SnapshotStore<ComputerUseSettingsView>
+  /** 授权与运行结论的快照源，绑定为 `useComputerUseAccess`。 */
+  readonly access: SnapshotStore<ComputerUseAccessView>
   private readonly unsubscribe: () => void
   private disposed = false
   private generation = 0
+  private accessGeneration = 0
 
-  /** @param scope - `computer-use` 命名空间的镜像与串行写入通道。 */
-  constructor(private readonly scope: SettingsScope<ComputerUseSettings>) {
+  /**
+   * @param scope - `computer-use` 命名空间的镜像与串行写入通道。
+   * @param remote - 电脑控制服务的远端面：状态读取、显式检查与打开隐私面板。
+   */
+  constructor(
+    private readonly scope: SettingsScope<ComputerUseSettings>,
+    private readonly remote: ComputerUseRemote,
+  ) {
     this.view = createSnapshotStore<ComputerUseSettingsView>({
       section: scope.getSnapshot(),
       saving: false,
       failed: false,
     })
+    this.access = createSnapshotStore<ComputerUseAccessView>({ status: 'loading', checking: false })
     this.unsubscribe = scope.subscribe(() => {
       const section = scope.getSnapshot()
       this.view.update((draft) => { draft.section = section })
     })
+    void this.refreshAccess()
+  }
+
+  /**
+   * 读取一次授权结论；失败标成 error 而不是保留旧值。
+   * 开关或后端刚改过时调用它，让状态带与权限行立刻反映新配置。
+   * @returns 读取完成后的结算。
+   */
+  async refreshAccess(): Promise<void> {
+    const generation = ++this.accessGeneration
+    const result = await this.remote.status()
+    if (this.disposed || generation !== this.accessGeneration) return
+    this.access.update((draft) => {
+      if (result.ok) {
+        draft.status = 'ready'
+        draft.value = result.value
+      } else {
+        draft.status = 'error'
+        delete draft.value
+      }
+    })
+  }
+
+  /**
+   * 让 Host 做一次显式健康检查：会启动本机组件，可能需要几秒。
+   * @returns 检查完成后的结算；失败原因由 Host 写进结论的 `lastError`。
+   */
+  async check(): Promise<void> {
+    const generation = ++this.accessGeneration
+    this.access.update((draft) => { draft.checking = true })
+    try {
+      const result = await this.remote.check()
+      if (this.disposed || generation !== this.accessGeneration) return
+      this.access.update((draft) => {
+        draft.status = result.ok ? 'ready' : 'error'
+        if (result.ok) draft.value = result.value
+      })
+    } finally {
+      if (!this.disposed) this.access.update((draft) => { draft.checking = false })
+    }
+  }
+
+  /**
+   * 打开 macOS 隐私面板；插件不授予权限。
+   * @param kind - 辅助功能或屏幕录制。
+   * @returns 远端接受了这次请求时为 true。
+   */
+  async openPermissionSettings(kind: 'accessibility' | 'screen-recording'): Promise<boolean> {
+    const result = await this.remote.openPermissionSettings(kind)
+    return result.ok
   }
 
   /** 卸载后停止派生，并抛弃晚到的写入结果。 */
@@ -268,8 +335,10 @@ export class ComputerUseSettingsController {
    */
   inject(): ComputerUseSettingsFace {
     return {
-      hooks: { computerUseSettings: this.view },
+      hooks: { computerUseSettings: this.view, computerUseAccess: this.access },
       save: changes => this.save(changes),
+      check: () => this.check(),
+      openPermissionSettings: kind => this.openPermissionSettings(kind),
     }
   }
 
@@ -381,4 +450,35 @@ export function collectChanges(
   if (actionTimeoutMs !== saved.actionTimeoutMs) changes.actionTimeoutMs = actionTimeoutMs
   if (next.artifactRoot.trim() !== saved.artifactRoot.trim()) changes.artifactRoot = next.artifactRoot.trim()
   return changes
+}
+
+/** 一项系统权限的观察结果，与 Host 的 `ComputerPermissionState` 同形。 */
+export type ComputerPermissionState = 'granted' | 'denied' | 'not-determined' | 'unavailable'
+
+/** 设置页展示的授权与运行结论；来自 Host 的电脑控制服务。 */
+export interface ComputerUseAccess {
+  enabled: boolean
+  platform: string
+  provider: 'macos-ax' | 'cua-driver' | 'unsupported'
+  ready: boolean
+  helperVersion?: string
+  accessibility: ComputerPermissionState
+  screenRecording: ComputerPermissionState
+  lastError?: string
+}
+
+/** 授权阅读的三个状态：首次读取、已取得结论、读取失败。 */
+export interface ComputerUseAccessView {
+  status: 'loading' | 'ready' | 'error'
+  value?: ComputerUseAccess
+  /** 正在执行的显式检查；与首次读取分开，以便按钮显示自己的忙状态。 */
+  checking: boolean
+}
+
+/** 远端面的最小形状：由 api-remotes 组合挂载的 `computerUse` 命名空间提供。 */
+export interface ComputerUseRemote {
+  status: () => Promise<{ ok: true; value: ComputerUseAccess } | { ok: false; error: unknown }>
+  check: () => Promise<{ ok: true; value: ComputerUseAccess } | { ok: false; error: unknown }>
+  openPermissionSettings: (kind: 'accessibility' | 'screen-recording') =>
+  Promise<{ ok: true; value: void } | { ok: false; error: unknown }>
 }
