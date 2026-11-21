@@ -314,6 +314,13 @@
 - id: tool-browser
   name: 'coding-tool-browser-ego'
 
+# 电脑控制是本机界面操作：提供方、helper 进程与租约都在宿主组合，这里只装配模型可见的
+# 技能、引导工具与按 agent 暴露的执行工具。宿主行只在 macOS 挂载，因此本行同样门控；
+# 其他平台上缺少 `computerUse` 注入会让整份预设挂载失败。
+- id: tool-computer-use
+  name: 'coding-tool-computer-use'
+  disabled: !!js process.platform !== 'darwin'
+
 # 复刻时常用图片补齐缺失素材或做占位对比；工具注册在会话预设层。
 - id: tool-image-gen
   name: 'coding-tool-image-gen'

@@ -194,6 +194,8 @@ flowchart LR
   cfg --> plugin_dsh_base_browser_ego_host
   plugin_dsh_base_tool_web["tool-web<br/>coding-tool-web"]
   cfg --> plugin_dsh_base_tool_web
+  plugin_dsh_base_computer_use["computer-use<br/>coding-computer-use"]
+  cfg --> plugin_dsh_base_computer_use
   plugin_dsh_base_tools["tools<br/>coding-tools"]
   cfg --> plugin_dsh_base_tools
   plugin_dsh_base_system_prompt["system-prompt<br/>coding-system-prompt"]
@@ -301,6 +303,7 @@ flowchart LR
 | `web-search-tavily` | `coding-web-search-tavily` |
 | `browser-ego-host` | `coding-browser-ego-host` |
 | `tool-web` | `coding-tool-web` |
+| `computer-use` | `coding-computer-use` |
 | `tools` | `coding-tools` |
 | `system-prompt` | `coding-system-prompt` |
 | `agent-loop` | `coding-agent-loop` |

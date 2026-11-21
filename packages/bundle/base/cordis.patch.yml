@@ -505,6 +505,19 @@
         fetch: false
         searchTimeoutMs: 60000
 
+    # 电脑控制归宿主所有：一个进程只有一份提供方，helper 进程、观察缓存、应用租约与
+    # 确认令牌在全部会话之间共享。模型可见的技能与工具由各 Agent 预设装配
+    # `coding-tool-computer-use`，宿主行本身不注册任何工具。
+    # 只在本地 macOS 宿主装载，其他平台保持与没有这一行时完全一致；托管 helper 缺失时
+    # 允许按仓库内的 Swift 源码在本地重建（本仓库不提交编译产物），因此首次使用要求本机
+    # 具备命令行工具，重建失败只让这一项能力报错，不影响其它工具。
+    - id: computer-use
+      name: 'coding-computer-use'
+      disabled: !!js process.platform !== 'darwin'
+      config:
+        helper:
+          allowSourceBuild: true
+
     # ── rows every mode mounts, whose values each overlay may state ──────────────
 
     # The tool registry. Presentation mode is a deployment choice; omitting it here
