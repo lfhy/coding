@@ -1127,6 +1127,25 @@ private func handle(
         }
     case "resolve-app":
         return try appJSON(resolveApp(try dictionary(request["selector"], "selector")))
+    case "request-permission":
+        // 申请系统权限：这里只触发 macOS 自己的授权对话框并把运行本 helper 的程序
+        // 登记进隐私列表，是否勾选由用户在系统设置里决定，本命令从不代替用户授权。
+        let requestKind = try string(request["kind"], "kind")
+        switch requestKind {
+        case "accessibility":
+            // kAXTrustedCheckOptionPrompt 会弹出“辅助功能”授权提示并登记本程序。
+            let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
+            _ = AXIsProcessTrustedWithOptions(options)
+        case "screen-recording":
+            // 首次调用会弹出屏幕录制授权对话框；已决定过则不重复弹出。
+            _ = CGRequestScreenCaptureAccess()
+        default:
+            throw fail("COMPUTER_PROVIDER_FAILURE", "unknown permission request")
+        }
+        return [
+            "accessibility": permissionAccessibility(),
+            "screenRecording": permissionScreenRecording(),
+        ]
     case "open-settings":
         let kind = try string(request["kind"], "kind")
         let target: String

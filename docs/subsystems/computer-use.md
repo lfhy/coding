@@ -454,6 +454,23 @@ async health(signal: AbortSignal): Promise<ComputerUseStatus>
 @Remote('openPermissionSettings') async remoteOpenPermissionSettings(kind: 'accessibility' | 'screen-recording'): Promise<void>
 
 /**
+ * 申请一项系统权限：触发 macOS 自己的授权对话框并把本机程序登记进隐私列表。
+ *
+ * 与 {@link openPermissionSettings} 的区别是这个命令会让系统主动询问一次；是否勾选
+ * 仍由用户在系统设置里决定，返回后状态未必立刻改变。
+ * @param kind - 要申请的权限：辅助功能或屏幕录制。
+ * @param signal - 调用方取消信号。
+ */
+async requestPermission(kind: 'accessibility' | 'screen-recording', signal: AbortSignal): Promise<void>
+
+/**
+ * 设置页的权限申请：申请后立刻重读健康结果，让界面反映系统当前状态。
+ * @param kind - 要申请的权限。
+ * @returns 申请后的授权结论；申请失败时把原因写回状态而不是抛给界面。
+ */
+@Remote('requestPermission') async remoteRequestPermission(kind: 'accessibility' | 'screen-recording'): Promise<ComputerUseAccessStatus>
+
+/**
  * 响应用户的显式设置操作，打开对应的 macOS 隐私面板；插件不自行授予权限。
  * @param kind - 要打开的面板：辅助功能或屏幕录制。
  * @param signal - 调用方取消信号。

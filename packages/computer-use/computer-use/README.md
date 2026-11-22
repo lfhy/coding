@@ -63,6 +63,11 @@
 持久化决定写在本包拥有的 `computer_use_state` 存储域中，并按会话 header 的创建时间与 cwd 绑定生命周期；存储域缺席时只有静态授权可用，需要持久化的交互决定会明确失败而不是静默缩短授权。
 高影响动作必须在执行前取得一次性令牌，令牌绑定应用、观察、目标与动作；审批提示被禁用时不提供确认，动作被拒绝而不是绕过。
 
+## macOS 系统权限
+
+观察与投递输入需要辅助功能权限，截图另外需要屏幕录制权限。设置页的「授权与运行状态」读取宿主给出的结论，并提供两条动作：`requestPermission`（`AXIsProcessTrustedWithOptions` 与 `CGRequestScreenCaptureAccess`，让 macOS 登记本机 helper 并可能弹出系统询问，随后自动打开对应的隐私面板）与 `openPermissionSettings`（只打开面板）。插件从不授予权限，勾选由用户在系统设置里完成；状态要等用户回来后重新检查或等到下一次调用才更新。
+helper 以 ad-hoc 签名构建，重新构建后内容变化会让 macOS 把它当作新的可执行文件；需要重新授权时，用同一个「申请权限」入口再走一遍。
+
 ## 原生 helper 与完整性
 
 helper 是一个只接受固定 argv 与 JSON 行协议的 Swift 可执行文件，源码位于 [`native/macos/`](native/macos)，构建脚本为 [`scripts/build-native.mjs`](scripts/build-native.mjs)。

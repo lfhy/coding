@@ -95,6 +95,12 @@ class FixtureBackend implements ComputerUseBackend {
   openSettings(): Promise<void> {
     return Promise.reject(new Error('fixture backend does not open settings panes'))
   }
+
+  requestPermission(kind: 'accessibility' | 'screen-recording'): Promise<void> {
+    this.calls.push(`request-permission:${kind}`)
+    return Promise.resolve()
+  }
+
 }
 
 let fixture: FixtureBackend

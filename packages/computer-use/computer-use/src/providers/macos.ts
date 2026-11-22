@@ -254,6 +254,10 @@ export class MacOSBackend implements ComputerUseBackend {
   async openSettings(kind: 'accessibility' | 'screen-recording', signal: AbortSignal): Promise<void> {
     await this.client.invoke<null>({ command: 'open-settings', kind }, signal)
   }
+
+  async requestPermission(kind: 'accessibility' | 'screen-recording', signal: AbortSignal): Promise<void> {
+    await this.client.invoke<Record<string, string>>({ command: 'request-permission', kind }, signal)
+  }
 }
 
 /** Cordis Service provider loaded by the Bundle before the model-facing consumer. */

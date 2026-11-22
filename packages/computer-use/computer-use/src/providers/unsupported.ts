@@ -77,5 +77,9 @@ export class UnsupportedPlatformBackend implements ComputerUseBackend {
     return Promise.reject(unsupported(this.platform))
   }
 
+  requestPermission(_kind: 'accessibility' | 'screen-recording'): Promise<void> {
+    return Promise.reject(unsupported(this.platform))
+  }
+
   async dispose(): Promise<void> {}
 }

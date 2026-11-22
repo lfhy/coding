@@ -90,7 +90,7 @@
 .permList { display: flex; flex-direction: column; gap: 2px; margin: 8px 0 0; padding: 0; list-style: none; }
 .permRow {
   display: grid;
-  grid-template-columns: 120px minmax(0, 1fr);
+  grid-template-columns: 120px minmax(0, 1fr) auto;
   align-items: center;
   gap: 12px;
   min-height: 32px;

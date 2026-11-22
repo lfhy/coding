@@ -34,16 +34,18 @@ function renderSection(
 ) {
   const check = vi.fn(async () => {})
   const openPermissionSettings = vi.fn(async () => true)
+  const requestPermission = vi.fn(async () => true)
   const props = {
     close: () => {},
     t,
     save,
     check,
     openPermissionSettings,
+    requestPermission,
     useComputerUseSettings: (pick: (value: ComputerUseSettingsView) => unknown) => pick(view),
     useComputerUseAccess: (pick: (value: ComputerUseAccessView) => unknown) => pick(access),
   } as unknown as ComputerUseSectionProps
-  return { save, check, openPermissionSettings, ...render(<ComputerUseSection {...props} />) }
+  return { save, check, openPermissionSettings, requestPermission, ...render(<ComputerUseSection {...props} />) }
 }
 
 /** 一份已授权的结论：辅助功能给了、屏幕录制没给。 */
@@ -269,6 +271,25 @@ describe('电脑操作设置分区', () => {
     expect(openPermissionSettings.mock.calls).toEqual([['accessibility'], ['screen-recording']])
   })
 
+  it('未授权的权限行给出申请入口，已授权的不出现按钮', () => {
+    const { requestPermission } = renderSection(ready())
+    const rows = within(screen.getByRole('list', { name: '授权与运行状态' })).getAllByRole('listitem')
+    // 辅助功能已授权：没有申请按钮；屏幕录制未授权：有。
+    expect(within(rows[0] as HTMLElement).queryByRole('button', { name: '申请权限' })).toBeNull()
+    const request = within(rows[1] as HTMLElement).getByRole('button', { name: '申请权限' })
+    fireEvent.click(request)
+    expect(requestPermission).toHaveBeenCalledWith('screen-recording')
+    expect(screen.getByText(/打开对应的系统设置页/)).toBeTruthy()
+  })
+
+  it('申请失败时提示改用打开设置', async () => {
+    const { requestPermission } = renderSection(ready())
+    requestPermission.mockResolvedValueOnce(false)
+    const rows = within(screen.getByRole('list', { name: '授权与运行状态' })).getAllByRole('listitem')
+    fireEvent.click(within(rows[1] as HTMLElement).getByRole('button', { name: '申请权限' }))
+    await waitFor(() => { expect(screen.getByText(/请改用「打开设置」手动授权/)).toBeTruthy() })
+  })
+
   it('检查中禁用入口，读取失败与最近错误各自成段', () => {
     const { helperVersion: _dropped, ...grantedWithoutVersion } = grantedAccess
     renderSection(ready(), undefined, { status: 'ready', checking: true, value: {
@@ -300,6 +321,7 @@ describe('电脑操作设置分区', () => {
     })
     openPermissionSettings.mockResolvedValueOnce(false)
     fireEvent.click(screen.getByRole('button', { name: '打开辅助功能设置' }))
-    await waitFor(() => { expect(screen.getByText(/请手动前往系统设置/)).toBeTruthy() })
+    // 打开设置失败与申请失败共用同一行提示：都要求用户手动前往系统设置。
+    await waitFor(() => { expect(screen.getByRole('alert').textContent).toContain('手动授权') })
   })
 })

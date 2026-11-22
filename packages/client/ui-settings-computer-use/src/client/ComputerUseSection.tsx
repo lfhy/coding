@@ -35,7 +35,7 @@ const PERMISSION_VIEW: Record<ComputerPermissionState, { label: ComputerUseSetti
  * @returns 设置分区内容。
  */
 export function ComputerUseSection({
-  useComputerUseSettings, useComputerUseAccess, save, check, openPermissionSettings, t,
+  useComputerUseSettings, useComputerUseAccess, save, check, openPermissionSettings, requestPermission, t,
 }: ComputerUseSectionProps) {
   const { section, saving, failed } = useComputerUseSettings(snapshot => snapshot)
   const access = useComputerUseAccess(snapshot => snapshot)
@@ -145,9 +145,10 @@ export function ComputerUseSection({
         {access.status === 'loading' && <p className={css.hint} role="status">{t('accessLoading')}</p>}
         {access.status === 'error' && <p className={css.error} role="alert">{t('accessFailed')}</p>}
         {accessValue !== undefined && <>
-          <ul className={css.permList}>
+          <ul className={css.permList} aria-label={t('accessTitle')}>
             {(['accessibility', 'screenRecording'] as const).map((key) => {
               const permission = PERMISSION_VIEW[accessValue[key]]
+              const kind = key === 'accessibility' ? 'accessibility' as const : 'screen-recording' as const
               return (
                 <li key={key} className={css.permRow}>
                   <span className={css.permName}>{t(key === 'accessibility' ? 'permAccessibility' : 'permScreenRecording')}</span>
@@ -155,6 +156,12 @@ export function ComputerUseSection({
                     <StateDot state={permission.state} />
                     <span>{t(permission.label)}</span>
                   </span>
+                  {accessValue[key] === 'granted'
+                    ? null
+                    : <Button size="sm" variant="outline" disabled={access.checking}
+                      onClick={() => {
+                        void requestPermission(kind).then((ok) => { setOpenFailed(!ok) })
+                      }}>{t('accessRequest')}</Button>}
                 </li>
               )
             })}
@@ -170,6 +177,7 @@ export function ComputerUseSection({
           {accessValue.lastError !== undefined && <p className={css.error}>
             {t('permLastError')}：{accessValue.lastError}
           </p>}
+          <p className={css.fieldHint}>{t('accessRequestHint')}</p>
         </>}
         <div className={css.accessActions}>
           <Button size="sm" variant="outline" disabled={access.checking}
@@ -185,7 +193,7 @@ export function ComputerUseSection({
             {t('accessOpenScreen')}
           </Button>
         </div>
-        {openFailed && <p className={css.error} role="alert">{t('accessOpenFailed')}</p>}
+        {openFailed && <p className={css.error} role="alert">{t('accessRequestFailed')}</p>}
 
         <h3 className={css.groupTitle}>{t('runtimeTitle')}</h3>
         <p className={css.groupHint}>{t('runtimeHint')}</p>

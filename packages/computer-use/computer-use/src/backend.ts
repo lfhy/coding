@@ -136,4 +136,9 @@ export interface ComputerUseBackend {
   dispose(): Promise<void>
   health(signal: AbortSignal): Promise<BackendHealth>
   openSettings(kind: 'accessibility' | 'screen-recording', signal: AbortSignal): Promise<void>
+  /**
+   * 触发 macOS 自己的授权对话框并把本机程序登记进隐私列表；是否勾选由用户决定。
+   * 返回后状态未必立即改变，调用方应重新读取健康结果。
+   */
+  requestPermission(kind: 'accessibility' | 'screen-recording', signal: AbortSignal): Promise<void>
 }

@@ -239,6 +239,8 @@ export interface ComputerUseSettingsFace {
   check: () => Promise<void>
   /** 打开 macOS 隐私面板；失败时把原因留在返回文本里。 */
   openPermissionSettings: (kind: 'accessibility' | 'screen-recording') => Promise<boolean>
+  /** 触发 macOS 的授权对话框，并把系统当前的权限结论带回界面。 */
+  requestPermission: (kind: 'accessibility' | 'screen-recording') => Promise<boolean>
 }
 
 /** 一份设置作用域的生命周期所有者；设置页与将来的入口共用同一份镜像。 */
@@ -322,6 +324,29 @@ export class ComputerUseSettingsController {
     return result.ok
   }
 
+  /**
+   * 触发 macOS 的授权对话框；是否勾选仍由用户在系统设置里决定。
+   * 返回后把系统给出的结论写回快照，用户勾选后再点「重新检查」即可看到生效。
+   * @param kind - 辅助功能或屏幕录制。
+   * @returns 申请成功并拿到结论时为 true。
+   */
+  async requestPermission(kind: 'accessibility' | 'screen-recording'): Promise<boolean> {
+    const generation = ++this.accessGeneration
+    this.access.update((draft) => { draft.checking = true })
+    try {
+      const result = await this.remote.requestPermission(kind)
+      if (this.disposed || generation !== this.accessGeneration) return false
+      if (!result.ok) return false
+      this.access.update((draft) => {
+        draft.status = 'ready'
+        draft.value = result.value
+      })
+      return true
+    } finally {
+      if (!this.disposed) this.access.update((draft) => { draft.checking = false })
+    }
+  }
+
   /** 卸载后停止派生，并抛弃晚到的写入结果。 */
   dispose(): void {
     this.disposed = true
@@ -339,6 +364,7 @@ export class ComputerUseSettingsController {
       save: changes => this.save(changes),
       check: () => this.check(),
       openPermissionSettings: kind => this.openPermissionSettings(kind),
+      requestPermission: kind => this.requestPermission(kind),
     }
   }
 
@@ -481,4 +507,6 @@ export interface ComputerUseRemote {
   check: () => Promise<{ ok: true; value: ComputerUseAccess } | { ok: false; error: unknown }>
   openPermissionSettings: (kind: 'accessibility' | 'screen-recording') =>
   Promise<{ ok: true; value: void } | { ok: false; error: unknown }>
+  requestPermission: (kind: 'accessibility' | 'screen-recording') =>
+  Promise<{ ok: true; value: ComputerUseAccess } | { ok: false; error: unknown }>
 }

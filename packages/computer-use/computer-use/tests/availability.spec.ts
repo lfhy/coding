@@ -60,6 +60,12 @@ class FixtureBackend implements ComputerUseBackend {
   }
 
   openSettings(): Promise<void> { return Promise.reject(new Error('fixture backend does not open settings panes')) }
+
+  requestPermission(kind: 'accessibility' | 'screen-recording'): Promise<void> {
+    this.calls.push(`request-permission:${kind}`)
+    return Promise.resolve()
+  }
+
 }
 
 /** 可在测试里切换开关的服务：走生产的重配置路径并保留提供方替身。 */
@@ -172,6 +178,10 @@ describe('电脑控制启用开关', () => {
     expect(backend.calls).toEqual(['list-apps'])
     // 替身不实现打开面板，失败原样返回而不是静默成功。
     await expect(service.remoteOpenPermissionSettings('accessibility')).rejects.toThrow()
+    // 申请权限走提供方并重新读一次健康结果；替身不实现时把原因写回状态。
+    expect(await service.remoteRequestPermission('accessibility'))
+      .toMatchObject({ ready: true, accessibility: 'granted' })
+    expect(backend.calls).toContain('request-permission:accessibility')
     await ctx.fiber.dispose()
   })
 })

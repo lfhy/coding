@@ -525,6 +525,13 @@ export class CuaDriverBackend implements ComputerUseBackend {
     ))
   }
 
+  requestPermission(): Promise<void> {
+    return Promise.reject(new ComputerUseError(
+      'COMPUTER_ACTION_BLOCKED',
+      'the cua-driver backend cannot request macOS permissions; run `cua-driver doctor` and follow its remediation',
+    ))
+  }
+
   dispose(): Promise<void> {
     this.hashes.clear()
     return Promise.resolve()
