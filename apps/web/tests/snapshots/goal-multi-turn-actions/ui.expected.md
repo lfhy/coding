@@ -43,10 +43,12 @@
   - img
   - img
   - text: "Tool call get_goal · {}"
-- 'button "Think There''s a `packages` directory. Let me look inside to see what packages are available."':
+- button "Think There's a packages directory. Let me look inside to see what packages are available.":
   - img
   - img
-  - text: "Think There's a `packages` directory. Let me look inside to see what packages are available."
+  - text: Think There's a
+  - code: packages
+  - text: directory. Let me look inside to see what packages are available.
 - button "Bash List packages directory contents":
   - img
   - img
@@ -58,18 +60,22 @@
 - button "Failed Bash Randomly pick one package directory":
   - img
   - text: Failed Bash Randomly pick one package directory
-- 'button "Think shuf is not available on macOS. I''ll use a different approach for random selection. Let me use $RANDOM in bash or use `sort -R` or Python."':
+- button "Think shuf is not available on macOS. I'll use a different approach for random selection. Let me use $RANDOM in bash or use sort -R or Python.":
   - img
   - img
-  - text: "Think shuf is not available on macOS. I'll use a different approach for random selection. Let me use $RANDOM in bash or use `sort -R` or Python."
+  - text: Think shuf is not available on macOS. I'll use a different approach for random selection. Let me use $RANDOM in bash or use
+  - code: sort -R
+  - text: or Python.
 - button "Bash Randomly select one package with Python":
   - img
   - img
   - text: Bash Randomly select one package with Python
-- 'button "Think The random pick for turn 1 is `packages/context/session-reference`. Now I''ll output its file structure. Let me get the file tree."':
+- button "Think The random pick for turn 1 is packages/context/session-reference. Now I'll output its file structure. Let me get the file tree.":
   - img
   - img
-  - text: "Think The random pick for turn 1 is `packages/context/session-reference`. Now I'll output its file structure. Let me get the file tree."
+  - text: Think The random pick for turn 1 is
+  - code: packages/context/session-reference
+  - text: . Now I'll output its file structure. Let me get the file tree.
 - button "Bash List all files in session-reference package":
   - img
   - img
@@ -101,18 +107,22 @@
   - img
   - img
   - text: Context injection goal
-- 'button "Think This is turn 2 of 2. I need to randomly pick another package and output its file structure. In the first turn I picked `packages/context/session-reference`. Let me pick a different one randomly this time."':
+- button "Think This is turn 2 of 2. I need to randomly pick another package and output its file structure. In the first turn I picked packages/context/session-reference. Let me pick a different one randomly this time.":
   - img
   - img
-  - text: "Think This is turn 2 of 2. I need to randomly pick another package and output its file structure. In the first turn I picked `packages/context/session-reference`. Let me pick a different one randomly this time."
+  - text: Think This is turn 2 of 2. I need to randomly pick another package and output its file structure. In the first turn I picked
+  - code: packages/context/session-reference
+  - text: . Let me pick a different one randomly this time.
 - button "Bash Randomly select another package with Python":
   - img
   - img
   - text: Bash Randomly select another package with Python
-- 'button "Think The random pick returned the same package as turn 1. Since turn 1 already covered `session-reference`, it would be better to pick a different one for variety. Let me re-roll, excluding the already-covered package."':
+- button "Think The random pick returned the same package as turn 1. Since turn 1 already covered session-reference, it would be better to pick a different one for variety. Let me re-roll, excluding the already-covered package.":
   - img
   - img
-  - text: "Think The random pick returned the same package as turn 1. Since turn 1 already covered `session-reference`, it would be better to pick a different one for variety. Let me re-roll, excluding the already-covered package."
+  - text: Think The random pick returned the same package as turn 1. Since turn 1 already covered
+  - code: session-reference
+  - text: ", it would be better to pick a different one for variety. Let me re-roll, excluding the already-covered package."
 - button "Bash Re-roll excluding the package from turn 1":
   - img
   - img
@@ -121,10 +131,12 @@
   - img
   - img
   - text: Bash List all files in token-meter package
-- 'button "Think This is turn 2 of 2. I''ve output the file structure for `packages/llm/token-meter`. Both turns are done. I should output the content, stop, and then mark the goal as complete since both turns are finished."':
+- button "Think This is turn 2 of 2. I've output the file structure for packages/llm/token-meter. Both turns are done. I should output the content, stop, and then mark the goal as complete since both turns are finished.":
   - img
   - img
-  - text: "Think This is turn 2 of 2. I've output the file structure for `packages/llm/token-meter`. Both turns are done. I should output the content, stop, and then mark the goal as complete since both turns are finished."
+  - text: Think This is turn 2 of 2. I've output the file structure for
+  - code: packages/llm/token-meter
+  - text: . Both turns are done. I should output the content, stop, and then mark the goal as complete since both turns are finished.
 - paragraph:
   - strong: Turn 2 / 2
   - text: — 随机选中的包：

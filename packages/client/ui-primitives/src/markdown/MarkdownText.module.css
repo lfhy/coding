@@ -9,7 +9,8 @@
   color: var(--dsw-alias-label-primary);
 }
 
-.markdown strong {
+.markdown strong,
+.inline strong {
   font-weight: 600;
 }
 
@@ -199,12 +200,20 @@
   display: inline-flex;
   align-items: center;
   box-sizing: border-box;
+}
+
+.markdown :not(pre) > code,
+.inline code {
   font: var(--dsw-font-markdown-code);
   font-family: var(--ds-font-family-code);
   font-size: 0.875em !important;
   background-color: var(--dsw-alias-markdown-inline-code);
   border-radius: 6px;
   padding: 0 5px;
+}
+
+.inline code {
+  line-height: inherit;
 }
 
 .markdown :where(h1, h2, h3, h4, h5, h6) code {

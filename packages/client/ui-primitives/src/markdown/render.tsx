@@ -130,6 +130,8 @@ export interface MarkdownRenderContext {
   readonly fileMentions: MarkdownFileMentions | undefined
   /** HTTP(S) 链接的稳定点击分派器，可供流式缓存的元素读取最新回调。 */
   readonly openUrl?: MarkdownOpenUrl
+  /** 折叠行内的预览只呈现文字，不创建嵌套触发器或加载外部资源。 */
+  readonly inlinePreview?: boolean
   /** Inside an anchor's children: interactive mentions must not nest there. */
   readonly inLink?: boolean
   /** Reference targets visible to this pass. */
@@ -233,8 +235,9 @@ function renderNode(node: Md.RootContent, key: Key, context: MarkdownRenderConte
     case 'delete':
       return <del key={key}>{renderChildren(node.children, context)}</del>
     case 'inlineCode': {
-      // Parity with mdast-util-to-hast: inline code renders line endings as spaces.
+      // 与 mdast-util-to-hast 一致，行内代码中的换行替换为空格。
       const value = node.value.replace(/\r?\n|\r/g, ' ')
+      if (context.inlinePreview === true) return <code key={key}>{value}</code>
       // 完整的绝对 HTTP(S) URL 保留代码样式并获得安全外链；命令、部分 URL 和其他协议仍不可交互。
       // 这里使用作者原文而非解析出的目的地址，端口、路径与查询参数无需 normalizeUri。
       const href = inlineCodeHttpUrl(value)
@@ -281,7 +284,7 @@ function renderNode(node: Md.RootContent, key: Key, context: MarkdownRenderConte
     case 'linkReference':
       return renderLinkReference(node, key, context)
     case 'image':
-      return renderImage(node.url, node.alt ?? '', key)
+      return renderImage(node.url, node.alt ?? '', key, context)
     case 'imageReference':
       return renderImageReference(node, key, context)
     case 'footnoteReference':
@@ -436,6 +439,7 @@ function renderTableRow(
 
 /** 仅为白名单链接创建锚点；HTTP(S) 保留安全外链属性并可由持有方拦截点击。 */
 function renderSafeLink(href: string, children: ReactNode[], key: Key, context: MarkdownRenderContext): ReactNode {
+  if (context.inlinePreview === true) return <Fragment key={key}>{children}</Fragment>
   const safeHref = sanitizeUrl(href)
   if (safeHref === '') return <Fragment key={key}>{children}</Fragment>
   const external = ['http:', 'https:'].includes(new URL(safeHref).protocol)
@@ -471,7 +475,8 @@ function inlineCodeHttpUrl(value: string): string | undefined {
   }
 }
 
-function renderImage(url: string, alt: string, key: Key): ReactNode {
+function renderImage(url: string, alt: string, key: Key, context: MarkdownRenderContext): ReactNode {
+  if (context.inlinePreview === true) return alt
   const imageSrc = remoteImageUrl(sanitizeUrl(normalizeUri(url)))
   if (imageSrc === undefined) {
     return <span key={key} className={css.imageAlt}>{alt}</span>
@@ -519,7 +524,7 @@ function renderImageReference(
 ): ReactNode {
   const definition = context.targets.definitions.get(node.identifier.toUpperCase())
   if (definition === undefined) return `![${node.alt ?? ''}${referenceSuffix(node)}`
-  return renderImage(definition.url, node.alt ?? '', key)
+  return renderImage(definition.url, node.alt ?? '', key, context)
 }
 
 function renderFootnoteReference(

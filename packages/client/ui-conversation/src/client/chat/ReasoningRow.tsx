@@ -1,4 +1,4 @@
-/** Assistant reasoning disclosure, independent of Tool-call presentation. */
+/** 会话中的独立思考折叠行，不依赖工具调用的呈现。 */
 import { useEffect, useRef, useState } from 'react'
 import { DisclosureRow, IconThinkOutline14, MarkdownText } from 'coding-client-ui-primitives'
 import type { ChatViewSlotProps } from '../contract/slots.ts'
@@ -56,7 +56,9 @@ export function ReasoningRow({ text, running, t }: { text: string; running: bool
         collapsedContent={(
           <>
             <span className={css.separator} aria-hidden />
-            <span ref={summaryRef} className={css.summary} data-follow-end={running || undefined}>{summary}</span>
+            <span ref={summaryRef} className={css.summary} data-follow-end={running || undefined}>
+              <MarkdownText text={summary} inline />
+            </span>
           </>
         )}
       >

@@ -25,10 +25,12 @@
   - img
   - img
   - text: Context injection skill-catalog
-- 'button "Think The user wants me to write a single `run_code` program that:"':
+- button "Think The user wants me to write a single run_code program that:":
   - img
   - img
-  - text: "Think The user wants me to write a single `run_code` program that:"
+  - text: Think The user wants me to write a single
+  - code: run_code
+  - text: "program that:"
 - button "Code Run bash echo and catch missing file read":
   - img
   - img

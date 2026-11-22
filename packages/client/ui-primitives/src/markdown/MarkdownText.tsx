@@ -26,6 +26,27 @@ import css from './MarkdownText.module.css'
 
 export type { MarkdownCodeLabels, MarkdownFileMentions } from './render.tsx'
 
+function renderInlinePreview(text: string): ReactNode {
+  // 固定前缀使整行按段落解析，保留行首的列表、标题和围栏符号，同时仍能格式化后面的文字。
+  const prefix = 'x '
+  const [paragraph] = parseGfm(prefix + text.replace(/\r\n?|\n/g, ' ')).children
+  const head = paragraph?.type === 'paragraph' ? paragraph.children[0] : undefined
+  /* v8 ignore if -- 加了前缀的单行只能解析成以普通文本开头的段落。 */
+  if (paragraph?.type !== 'paragraph' || head?.type !== 'text') return text
+  return [
+    head.value.slice(prefix.length),
+    ...renderBlocks(paragraph.children.slice(1).map((node, key) => ({ node, key })), {
+      inlinePreview: true,
+      streaming: false,
+      codeLabels: undefined,
+      fileMentions: undefined,
+      targets: createReferenceTargets(),
+      footnoteOrder: [],
+      footnoteCounts: new Map(),
+    }),
+  ]
+}
+
 /** 完整解析已定稿文本，解析引用并附加脚注。 */
 function renderSettled(
   text: string,
@@ -153,9 +174,12 @@ class StreamingRenderer {
  * `fileMentions` 只在定稿时解析真实文件，因为流式冻结元素不能固化可能过期的文件入口。
  * `onOpenUrl` 仅拦截 HTTP(S) 链接未经修饰的主键激活（含 Enter），冻结链接在激活时读取最新回调。
  * `small` 切换到 14px/24px 弱化刻度（字号、颜色、间距随 small 档样式表整体缩小），供 Think 展开正文等次级 Markdown 面使用。
- * @returns GFM 与 KaTeX 文档；原始 HTML、相对链接和危险协议不可交互，绝对 HTTP(S) 图片可显示。
+ * `inline` 只读取 `text`，用行内 GFM 渲染非交互摘要；不加载图片、不生成链接，也不解析公式。
+ * @returns 行内摘要或 GFM 与 KaTeX 文档；两者均不会执行原始 HTML。
  */
-export const MarkdownText = memo(function MarkdownText({ text, streaming = false, codeLabels, fileMentions, onOpenUrl, small = false }: {
+export const MarkdownText = memo(function MarkdownText({
+  text, streaming = false, codeLabels, fileMentions, onOpenUrl, small = false, inline = false,
+}: {
   text: string
   streaming?: boolean
   codeLabels?: MarkdownCodeLabels | undefined
@@ -163,6 +187,8 @@ export const MarkdownText = memo(function MarkdownText({ text, streaming = false
   onOpenUrl?: ((href: string) => void) | undefined
   /** 14px/24px 弱化刻度；默认 false 保持 16px/28px 正文刻度。 */
   small?: boolean
+  /** 单行、无交互的 GFM 摘要，继承外层字号和行高。 */
+  inline?: boolean
 }) {
   const streamRef = useRef<StreamingRenderer | null>(null)
   const streamLabelsRef = useRef<MarkdownCodeLabels | undefined>(codeLabels)
@@ -176,6 +202,7 @@ export const MarkdownText = memo(function MarkdownText({ text, streaming = false
     callback(href)
   }, [])
   const children = useMemo(() => {
+    if (inline) return renderInlinePreview(text)
     if (!streaming) {
       streamRef.current = null
       return renderSettled(text, codeLabels, fileMentions, openUrl)
@@ -185,6 +212,8 @@ export const MarkdownText = memo(function MarkdownText({ text, streaming = false
       streamLabelsRef.current = codeLabels
     }
     return streamRef.current.render(text)
-  }, [text, streaming, codeLabels, fileMentions, openUrl])
-  return <div className={clsx(css.markdown, small && css.small)}>{children}</div>
+  }, [text, streaming, codeLabels, fileMentions, openUrl, inline])
+  return inline
+    ? <span className={css.inline}>{children}</span>
+    : <div className={clsx(css.markdown, small && css.small)}>{children}</div>
 })

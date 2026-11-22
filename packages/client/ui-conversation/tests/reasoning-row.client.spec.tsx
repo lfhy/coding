@@ -44,13 +44,13 @@ describe('ReasoningRow', () => {
     const view = render(
       <AssistantMarkdown
         t={t}
-        blocks={[{ kind: 'reasoning', text: 'Inspect the session\nNewest reasoning tokens' }]}
+        blocks={[{ kind: 'reasoning', text: '**Inspect the session**\n**Newest reasoning tokens' }]}
         streaming
         renderMessageImages={renderMessageImages}
       />,
     )
     expect(view.getByText('运行中')).toBeTruthy()
-    const summary = view.getByText('Newest reasoning tokens')
+    const summary = view.getByText('**Newest reasoning tokens').closest<HTMLElement>('[data-follow-end]')!
     Object.defineProperties(summary, {
       scrollWidth: { configurable: true, value: 300 },
       clientWidth: { configurable: true, value: 100 },
@@ -59,11 +59,12 @@ describe('ReasoningRow', () => {
     view.rerender(
       <AssistantMarkdown
         t={t}
-        blocks={[{ kind: 'reasoning', text: 'Inspect the session\nNewest reasoning tokens keep arriving' }]}
+        blocks={[{ kind: 'reasoning', text: '**Inspect the session**\n**Newest reasoning tokens** keep arriving' }]}
         streaming
         renderMessageImages={renderMessageImages}
       />,
     )
+    expect(summary.querySelector('strong')?.textContent).toBe('Newest reasoning tokens')
     expect(summary.scrollLeft).toBe(0)
     flushAnimationFrames(2)
     expect(summary.scrollLeft).toBe(0)
@@ -74,16 +75,43 @@ describe('ReasoningRow', () => {
     view.rerender(
       <AssistantMarkdown
         t={t}
-        blocks={[{ kind: 'reasoning', text: 'Inspect the session\nNewest reasoning tokens keep arriving\n' }]}
+        blocks={[{ kind: 'reasoning', text: '**Inspect the session**\n**Newest reasoning tokens** keep arriving\n' }]}
         streaming={false}
         renderMessageImages={renderMessageImages}
       />,
     )
     flushAnimationFrames(3)
-    expect(view.getByText('Inspect the session')).toBeTruthy()
+    expect(summary.querySelector('strong')?.textContent).toBe('Inspect the session')
     expect(view.queryByText('运行中')).toBeNull()
     expect(summary.scrollLeft).toBe(0)
     expect(summary.hasAttribute('data-follow-end')).toBe(false)
+  })
+
+  it('renders inline Markdown in the collapsed summary without nested controls or images', () => {
+    const view = render(
+      <AssistantMarkdown
+        t={t}
+        blocks={[{
+          kind: 'reasoning',
+          text: '- **我先梳理项目现状** *重点* `session.ts` [参考](https://example.com) ![图示](https://example.com/preview.png) `https://example.com`\n下一行',
+        }]}
+        streaming={false}
+        renderMessageImages={renderMessageImages}
+      />,
+    )
+    const row = view.getByRole('button', { expanded: false })
+
+    expect(row.querySelector('strong')?.textContent).toBe('我先梳理项目现状')
+    expect(row.querySelector('em')?.textContent).toBe('重点')
+    expect(Array.from(row.querySelectorAll('code'), element => element.textContent)).toEqual(['session.ts', 'https://example.com'])
+    expect(row.textContent).toContain('- 我先梳理项目现状')
+    expect(row.textContent).toContain('参考 图示')
+    expect(row.querySelector('a, img, ul, p, button')).toBeNull()
+    expect(view.queryByText('下一行')).toBeNull()
+
+    fireEvent.click(view.getByText('我先梳理项目现状'))
+    expect(row.getAttribute('aria-expanded')).toBe('true')
+    expect(view.getByText('下一行')).toBeTruthy()
   })
 
   it('expands from either Think or the reasoning summary', () => {
