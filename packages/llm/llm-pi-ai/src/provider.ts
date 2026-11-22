@@ -64,7 +64,8 @@ export function configuredProtocolStreams(api: ConfiguredProtocol): ProviderStre
   return PROTOCOLS[api]()
 }
 
-function isConfiguredProtocol(api: string): api is ConfiguredProtocol {
+/** @param api - 模型的协议标识。 @returns 是否有独立构造的 HTTP 协议实现。 */
+export function isConfiguredProtocol(api: string): api is ConfiguredProtocol {
   return Object.hasOwn(PROTOCOLS, api)
 }
 
@@ -110,6 +111,8 @@ export interface ProviderSpec {
    * request, never at construction.
    */
   namesCredential: boolean
+  /** 代理渠道只使用经过验证的 HTTP 协议实现与不会联网的认证解析。 */
+  requireFetchTransport?: boolean
 }
 
 /**
@@ -135,7 +138,9 @@ export interface ProviderSpec {
  * @returns the auth to construct this route's provider with.
  */
 function routeAuth(spec: ProviderSpec, catalog: Provider | undefined): Provider['auth'] {
-  if (catalog === undefined) return { apiKey: harnessApiKeyAuth(spec.displayName) }
+  if (catalog === undefined || spec.requireFetchTransport === true) {
+    return { apiKey: harnessApiKeyAuth(spec.displayName) }
+  }
   if (catalog.auth.apiKey !== undefined || !spec.namesCredential) return catalog.auth
   return { ...catalog.auth, apiKey: harnessApiKeyAuth(spec.displayName) }
 }
@@ -179,7 +184,7 @@ export function buildProvider(spec: ProviderSpec): Provider {
     )
   }
 
-  const nativeApis = catalog === undefined || spec.api !== undefined
+  const nativeApis = catalog === undefined || spec.api !== undefined || spec.requireFetchTransport === true
     ? new Set<string>()
     : new Set(catalog.getModels().map(model => model.api))
   const delegated = spec.models.filter(model => !nativeApis.has(model.api))
@@ -194,6 +199,12 @@ export function buildProvider(spec: ProviderSpec): Provider {
   const streams: Record<string, ProviderStreams> = {}
   for (const model of delegated) {
     if (!isConfiguredProtocol(model.api)) {
+      if (spec.requireFetchTransport === true) {
+        throw new Error(
+          `llm-pi-ai: provider "${spec.provider}" model "${model.id}" uses api "${model.api}",`
+          + ` which cannot use outbound proxies; use direct outbound or ${supportedProtocols().join(', ')}`,
+        )
+      }
       throw new Error(
         `llm-pi-ai: provider "${spec.provider}" model "${model.id}" names api "${model.api}",`
         + ` which this build cannot serve; supported protocols are ${supportedProtocols().join(', ')}`,
@@ -210,7 +221,7 @@ export function buildProvider(spec: ProviderSpec): Provider {
     models: delegated,
     api: streams,
   })
-  if (catalog === undefined || spec.api !== undefined) return custom
+  if (catalog === undefined || spec.api !== undefined || spec.requireFetchTransport === true) return custom
 
   // 目录提供方可能包含无法仅凭密钥重建的原生协议；只替换其目录没有的协议。
   const native = reuseCatalogProvider(catalog, spec)

@@ -8,7 +8,7 @@ patch 在自身上按平台门控两个 shell 栈：`bash-sandbox`/`tool-bash` �
 
 本层向全部模式共享 [`set_status`](../../session/tool-status/README.md) 进度工具及 `turnStatus` 投影；它们按会话和当前轮次隔离，不由预设重复挂载。
 
-默认对话走内置 Free；新模型渠道由 `llm-pi-ai.providers` 管理。`llm-deepseek` 仅为已有设置或凭据保留原路由。
+默认对话走内置 Free；自定义渠道由 `llm-pi-ai.providers` 管理。通用适配器先注册设置分节，`llm-deepseek` 随后自动迁移旧渠道并交给通用适配器接管。
 
 本层的 `web` 行默认选择无密钥的 DuckDuckGo 搜索；`web-search-tavily` 与 `web-search-deepseek` 同时挂载，分别在 `web.searchProvider` 明确选 `tavily` 或 `deepseek-official` 时运行。两者分别使用 `TAVILY_API_KEY` 和 `DEEPSEEK_SEARCH_API_KEY` 凭据引用，与模型凭据分离。各提供方的 HTTP(S) 前向代理配置独立；提供方或认证失败不会自动切换后端，可在搜索设置中改选。
 

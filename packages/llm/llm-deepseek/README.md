@@ -4,7 +4,7 @@
 
 包根入口导出 Cordis 插件约定与 `DeepSeekAdapter`；协议序列化、SSE 解析与分片转换 helper 不属于该根约定。
 
-发行组合设 `legacyOnly: true`：只有已有 `llm-deepseek` 用户设置或 `DEEPSEEK_API_KEY` 凭据时才注册旧渠道。新接入使用自定义渠道；部署仍可显式挂载此适配器。
+发行组合设 `legacyOnly: true`：发现旧设置或凭据后，自定义渠道和完成标记一起持久化，成功后由 `llm-pi-ai` 接管 `deepseek-official`。迁移只复制凭据引用；保留旧设置供回退，不覆盖已存在的同 ID 自定义渠道。验证或写入失败、或目标设置只读时继续使用旧适配器。部署仍可显式挂载此适配器。
 
 ## 配置
 

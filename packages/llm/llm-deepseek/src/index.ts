@@ -17,7 +17,7 @@ import { assertUsableApiKey, LlmError, MODEL_USER_AGENT_PATTERN, resolveRetryPol
 import type { ModelModality, RetryPolicyConfig } from 'coding-llm'
 import { credentialRef } from 'coding-credentials'
 import { launchEnvironmentOf, type LaunchEnvironmentSnapshot } from 'coding-launch-environment'
-import { installSettingsSection, settingsNamespace } from 'coding-settings'
+import { installSettingsSection, SettingsConflictError, settingsNamespace } from 'coding-settings'
 import { MAX_TIMER_DELAY_MS } from 'coding-timeout'
 import { getOrCreateAnonymousUserId, type AnonymousUserId } from 'coding-anonymous-user-id'
 import { registerChannels, supportedProtocols } from 'coding-llm-pi-ai'
@@ -31,6 +31,7 @@ import {
 } from './adapter.ts'
 import type { DeepSeekCatalogModel, DeepSeekConnectionOptions } from './adapter.ts'
 import { discoverModels } from './discovery.ts'
+import { CUSTOM_CHANNELS, customOwnsLegacyRoute, migratedProfile } from './migrate-channel.ts'
 import { OutboundConfigSchema, resolveOutboundURL, toProxyMode } from 'coding-proxy-pool'
 import type { OutboundConfig } from 'coding-proxy-pool'
 import type { DeepSeekOutbound, DeepSeekOutboundConfig } from './outbound.ts'
@@ -393,17 +394,61 @@ export function apply(ctx: Context, config: Config): void {
     resolveOutbound,
   })
   let hasStoredCredential = false
+  const hasLegacySource = (): boolean => {
+    if (hasStoredCredential || launchEnvironmentOf(ctx).get(options().apiKeyEnv)?.value) return true
+    return ctx.get('settings')?.describe().some(entry =>
+      entry.ns === NS && entry.user != null && Object.keys(entry.user).length > 0) ?? false
+  }
   const refreshChannels = registerChannels(ctx, adapter, () => {
-    const hasLegacySettings = () => ctx.get('settings')?.describe().some(entry =>
-      entry.ns === NS && entry.user != null && Object.keys(entry.user).length > 0)
-    const ambient = launchEnvironmentOf(ctx).get(options().apiKeyEnv)?.value
-    const enabled = config.legacyOnly !== true || hasStoredCredential || !!ambient || hasLegacySettings()
+    const enabled = config.legacyOnly !== true
+      || (!customOwnsLegacyRoute(ctx.get('settings')?.get(CUSTOM_CHANNELS)) && hasLegacySource())
     return enabled ? {
       entries: [{ provider: PROVIDER, displayName: adapter.providerInfo(PROVIDER).name, settingsNs: NS, settingsPath: [] }],
       routes: [PROVIDER],
     } : { entries: [], routes: [] }
   })
+  let migrating: Promise<void> | undefined
+  let active = true
+  const migrate = (): void => {
+    if (!active || config.legacyOnly !== true || migrating !== undefined || !hasLegacySource()) return
+    const settings = ctx.get('settings')
+    if (settings?.writable !== true) return
+    const target = settings.describe().find(entry => entry.ns === CUSTOM_CHANNELS)
+    if (target === undefined || (target.value as { migratedDeepSeek?: boolean }).migratedDeepSeek === true) return
+    let conflict = false
+    migrating = Promise.resolve().then(async () => {
+      if (!active) return
+      const ops = [{ op: 'set' as const, path: ['migratedDeepSeek'], value: true }]
+      if (customOwnsLegacyRoute(target.value)) {
+        await settings.mutate(CUSTOM_CHANNELS, ops, target.revision)
+        return
+      }
+      const connection = resolveAdapterOptions(current(), launchEnvironmentOf(ctx))
+      const profile = migratedProfile(connection, adapter.providerInfo(PROVIDER).name)
+      await settings.mutate(CUSTOM_CHANNELS, [
+        ...ops,
+        { op: 'set', path: ['providers', PROVIDER], value: profile },
+      ], target.revision)
+    }).catch((error: unknown) => {
+      conflict = error instanceof SettingsConflictError
+      if (!conflict) ctx.logger.warn('llm-deepseek: channel migration did not commit; keeping the existing route', error)
+    }).finally(() => {
+      migrating = undefined
+      if (conflict) migrate()
+    })
+  }
   if (config.legacyOnly === true) {
+    ctx.effect(() => () => {
+      active = false
+      return migrating
+    })
+    // 提交事件在通用渠道的异步设置观察器之前发出；同一个路由只交给一个适配器。
+    ctx.on('settings/updated', (ns) => {
+      if (ns === CUSTOM_CHANNELS) {
+        refreshChannels()
+        migrate()
+      }
+    })
     ctx.inject(['credentials'], (cctx) => {
       let revision = 0
       const refreshCredential = async (): Promise<void> => {
@@ -412,9 +457,14 @@ export function apply(ctx: Context, config: Config): void {
         if (request !== revision) return
         hasStoredCredential = info.configured
         refreshChannels()
+        migrate()
       }
       cctx.on('credentials/updated', (ref) => {
-        if (ref === DEFAULT_API_KEY_ENV) return refreshCredential()
+        if (ref === DEFAULT_API_KEY_ENV) {
+          void refreshCredential().catch((error: unknown) => {
+            ctx.logger.warn('llm-deepseek: failed to check the legacy credential', error)
+          })
+        }
       })
       cctx.effect(() => () => { revision++ })
       return refreshCredential()
@@ -431,6 +481,9 @@ export function apply(ctx: Context, config: Config): void {
     setSource: (source) => {
       current = source
     },
-    onChange: refreshChannels,
+    onChange: () => {
+      refreshChannels()
+      migrate()
+    },
   })
 }

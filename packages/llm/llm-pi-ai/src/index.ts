@@ -66,6 +66,7 @@ import { catalogModels, catalogProvider, catalogProviderIds, catalogProviderTake
 import { assertServiceable, Config, resolveProfiles } from './config.ts'
 import type { ResolvedPiAiProviderProfile } from './config.ts'
 import { discoverModels } from './discovery.ts'
+import { outboundFetch } from './outbound.ts'
 
 export { PiAiAdapter } from './adapter.ts'
 export type { PiAiAdapterOptions } from './adapter.ts'
@@ -190,6 +191,7 @@ export function apply(ctx: Context, config: Config): void {
     profiles,
     resolveApiKey,
     resolveAttachments: () => ctx.get('attachments'),
+    resolveProxyPool: () => ctx.get('proxyPool'),
     onReplayDegrade: ({ provider, model, reason }) => {
       ctx.logger.warn(
         `llm-pi-ai: unusable replay state on assistant history for route "${provider}/${model}";`
@@ -212,17 +214,18 @@ export function apply(ctx: Context, config: Config): void {
     return {
       baseURL,
       ...api === undefined ? {} : { api },
+      userAgent: resolveUserAgent(profile?.userAgent),
+      requestFetch: () => profile === undefined ? undefined : outboundFetch(
+        provider,
+        profile.outbound,
+        profile.outbound.mode === 'pool' ? ctx.get('proxyPool') : undefined,
+      ),
       hasStoredKey: profile?.apiKeyEnv !== undefined,
       apiKey: () => profile === undefined ? Promise.resolve(undefined) : resolveApiKey(provider, profile),
     }
   }
   // 新建路由尚未注册，因此查询面向整个 namespace；草稿密钥不进入设置存储。
-  ctx.llm.registerModelDiscovery(NS, (request) => {
-    // 发现请求的 User-Agent 与该路由的对话请求同源：已存 profile 的渠道值优先，
-    // 草稿还没有已存 profile 时回落产品默认值。
-    const stored = request.provider === undefined ? undefined : profiles().get(request.provider)
-    return discoverModels(request, () => storedRoute(request.provider), resolveUserAgent(stored?.userAgent))
-  })
+  ctx.llm.registerModelDiscovery(NS, request => discoverModels(request, () => storedRoute(request.provider)))
   installSettingsSection(ctx, NS, Config, config, {
     // 无法服务的配置在写入时拒绝，不撤掉已可用的路由。
     validate: assertServiceable,

@@ -8,7 +8,7 @@
 
 ## 配置
 
-按提供方配置凭据、模型 catalog 与部署特定传输设置，并以提供方路由本身为键。每个 profile 都可以设置 `retryPolicy`；省略时使用 normal 模式并重试五次。`apiKeyEnv` 是按请求解析的凭据*引用*，因此机密不进入该文件。省略它会让该路由处于未认证状态；对已安装 catalog 路由而言，这意味着交给 pi-ai 的提供方原生环境发现。已配置却解析不出任何值的引用则相反，会让请求以 `MISSING_CREDENTIAL` 失败，因为放行下去就会用环境里恰好持有的某个无关密钥完成认证。一条凭据服务该路由下的全部模型。
+按提供方配置凭据、模型 catalog 与部署特定传输设置，并以提供方路由本身为键。每个 profile 都可以设置 `retryPolicy`；省略时使用 normal 模式并重试五次。`apiKeyEnv` 是按请求解析的凭据*引用*，因此机密不进入该文件。一条凭据服务该路由下的全部模型。省略它时，直连的 catalog 路由保留 pi-ai 的提供方原生认证；使用代理时，请用 `apiKeyEnv` 指定所需凭据，渠道不会调用原生认证实现。已配置却解析不出值的引用会以 `MISSING_CREDENTIAL` 失败，不用环境中恰好存在的其他密钥替代。
 
 ```yaml
 - id: llm
@@ -76,6 +76,12 @@
 
 字典形状使重复路由无法表示，发布前的数组形状（每个 profile 携带 `provider` 字段）会加载失败并给出迁移指引。`providers` 也可以为空或整体省略：适配器将以**休眠**姿态挂载——零路由、模型选择器不多一条——一旦 `llm-pi-ai:` settings 分节提供了 profile 就即时注册路由，分节清空时随之撤销。无论是否休眠，插件都会在可配置提供方目录（`ctx.llm.listConfigurableProviders()`，settings 路径 `providers.<provider>`）中声明每个已安装 catalog 提供方，并与当前 profile 声明的每条路由取并集，因此配置界面既能在任何路由存在之前就提供完整 catalog，也能寻址一条手工声明的路由。每个条目都带上 `declared`：pi-ai 在这个键下是否什么都没有。它跟随已安装 catalog 而非设置文档，因为收窄一个内置提供方的模型同样会存下 profile，而那条路由仍然是 pi-ai 认识的——只有适配器分得清两者，所以由目录直接给出答案，而不是留给界面去猜。哪些适配器存在归组合面；哪些提供方在运行可以完全交给用户的设置文档。向 `ctx.llm` 注册具有原子性：如果与另一适配器已拥有的任何提供方路由冲突，插件会加载失败，不注册剩余路由。模型 id 不是生命周期配置；路由未配置的模型会在发起任何提供方请求前以 `LlmError('UNKNOWN_MODEL')` 失败。
 
+### 渠道出站
+
+`providers.<渠道>.outbound` 使用 [代理池的出站配置](../../net/proxy-pool/README.md)：`{ mode: direct }`（默认）直连；`{ mode: custom, customUrl: http://proxy.example:8080 }` 通过该渠道的 HTTP(S) 代理；`{ mode: pool }` 每次请求读取内置代理池的有效规则。池的规则明确为直连时才直连；池未装配或代理连接失败时不改走直连。配置变更只影响之后发起的对话和模型发现。
+
+代理渠道限 `openai-completions`、`openai-responses` 与 `anthropic-messages`，`transport` 须省略或设为 `sse`；WebSocket、自动选择传输及其他协议在配置校验时拒绝。代理渠道使用已验证的协议实现，不运行提供方原生 OAuth、凭据刷新等认证路径。上述三种协议的对话请求（含直连）均拒绝 HTTP 重定向，以免把渠道标头发往其他端点。模型发现沿用已保存路由的出站选择；没有已保存路由的草稿直连。
+
 ## Catalog 解析
 
 profile 的 `models` 列表是*替换*该路由已安装 catalog，而不是扩充它；省略它（或留空）则原样服务该 catalog。每个条目都会从同 `id` 的已安装模型继承自身未设置的字段，因此把 catalog 路由收窄到两个模型、更正某个容量，或加入一个比已安装 catalog 更新的模型，都是一行编辑——但一旦声明了 `models` 列表，该路由要继续服务的每个模型就都必须出现在其中，条目哪怕只写一个 `id` 也足够。可配置的条目字段是 `id`、`name`、`api`、`contextWindow`、`maxTokens`、`input`、`reasoningEfforts` 与 `compat`。定价沿用已安装条目或使用默认值；`input` 决定图片准入与视觉理解降级，解析顺序见下文。
@@ -87,6 +93,8 @@ profile 的 `models` 列表是*替换*该路由已安装 catalog，而不是扩�
 ### 按模型的推理（reasoning）档位
 
 `reasoningEfforts` 声明模型可选的思考级别：每个键是选择器提供的一个档位，其值是分派在协议中发送的拼写，因此 `high: high` 原样透传规范名称，而 `max: ultra` 则为使用自有词汇的网关改名。键取自 pi-ai 的档位集合（`off`、`minimal`、`low`、`medium`、`high`、`xhigh`、`max`）；未声明的档位不会被提供。省略该字段会保留已安装 catalog 条目的能力（手工声明的模型没有这份能力，也不推理）；`false` 声明一个不具备推理能力的模型，profile 正是以此从其网关无法服务的 catalog 模型上剥除推理；空声明会被拒绝，而不是在这两种含义之间去猜。
+
+`defaultReasoningEffort` 指定模型首选档位，模型不提供该档位时回到渠道或模型默认。`completionsThinkingFormat` 只调整 Chat Completions 的请求编码，不影响可选档位，也不会阻止切换到 Responses 或 Messages。旧 DeepSeek 渠道迁入时会保留各模型的档位和默认值；迁移完成标记 `migratedDeepSeek` 与渠道一同写入，不应随渠道删除。
 
 该声明会转换为 pi-ai 的 `Model.reasoning` + `thinkingLevelMap`，其中每个档位都被显式决定——未声明的档位一律固定为不支持，而不是留给 pi-ai 自己的默认规则：那套规则并不对称（键缺席对五个基础档位意味着「支持」，对 `xhigh`/`max` 却意味着「不支持」），也本不该要求 profile 作者了解。`off` 是唯一的三态键：不写它，选择器不提供 Off，显式请求 Off 会被拒绝——不点名任何档位的请求仍会在不带该参数的情况下发出，提供方随后做什么是它自己的默认行为；声明而不给值（`off:`），则会提供 Off，选中它时什么也不发送——对 `deepseek` 方言则是一个显式的 `thinking: {type: "disabled"}`——这同时覆盖完全不点名任何档位的请求；声明并给值（`off: none`），该值就会作为档位参数在协议中发送。没有任何写法能把 catalog 映射中的键恢复为「未设置」：这份声明就是对外提供的全部，因此把你要保留的 catalog 档位重述出来。
 
@@ -123,7 +131,7 @@ pi-ai 依据提供方 id 与 baseURL 决定每个请求的形状：系统提示�
 
 **没有**这份元数据的模型——条目未声明 `reasoningEfforts` 的手工声明模型，以及 pi-ai 标记为不具备推理能力的 catalog 模型——完全不公开 `reasoning`。pi-ai 会把这类模型报告为只支持 `off` 一档，但 `off` 会被翻译成*省略* reasoning 选项，而那与「不点名任何档位」产出的请求逐字节相同：选它关不掉任何东西，于是自身默认就在思考的提供方，会在界面显示 `off` 被选中的同时继续思考。把该能力报告为不可用，界面就只剩提供方默认这一项，不会再出现自相矛盾的控件。配置 profile 的 `reasoning` 值（包括 `off`）存在时是部署默认值；省略时，具备推理元数据的模型默认选择自身提供的最高档位（包括 `xhigh` 或 `max`），非推理模型仍保留提供方默认值。每次请求的 `GenerateOptions.reasoningEffort` 优先；未出现在确切模型能力中的档位会让**请求**在网络 I/O 前以 `UNSUPPORTED_REASONING_EFFORT` 失败，而不会被自动调整。**描述**一个模型则从不这样失败：同一提供方下各模型接受的档位并不一致，因此 `resolveModel` 对该模型拿不下的 profile 档位报告为「没有默认值」，而不是抛错。在那里抛错会让整个提供方从任何基于它构建的模型目录中消失——一个配错的 profile 字段连支持该档位的模型也一并藏起来——所以坏配置暴露在被执行处，而不是被描述处。pi-ai 的通用流选项通过省略 `reasoning` 表示 `off`。
 
-受支持的 profile 字段是 `apiKeyEnv`、`displayName`、`api`、`baseURL`、`models`、`modelOverrides`、`compat`、`defaultContextWindow`、`defaultMaxTokens`、`defaultInput`、`userAgent`、`headers`、`reasoning`、`thinkingBudgets`、`cacheRetention`、`transport`、`timeoutMs`、`websocketConnectTimeoutMs`、`streamIdleTimeoutMs`、`maxRequestImageBytes` 和 `retryPolicy`。`userAgent` 是本路由模型请求的 User-Agent，取值 1–256 个可打印 ASCII 字符且首尾不留空白，省略时使用产品默认值。每条 profile 解析后的重试策略会随该提供方路由一同捕获；省略时使用共享的有界 normal 默认值并重试五次。流空闲间隔必须是正的有限 Node 定时器延迟，默认为五分钟，且只覆盖未完成提供方读取，不包括消费方思考时间。`maxRequestImageBytes` 约束单个请求的 base64 编码图片载荷（默认 20MiB，正整数）：历史中的每张图片都会重新编码进每个请求，累积载荷超过上限时，从最老的图片开始替换为固定文本占位，直到请求装得下，使图片较多的会话保持可用，而不是被网关请求体上限永久拒绝。默认值为系统提示词、历史、工具与 JSON 保留请求容量；网关更严格的部署按路由调低该值。若已配置标头中有同名项，则以 Harness 应用归因为准。
+受支持的 profile 字段是 `apiKeyEnv`、`displayName`、`api`、`baseURL`、`models`、`modelOverrides`、`compat`、`completionsThinkingFormat`、`defaultContextWindow`、`defaultMaxTokens`、`defaultInput`、`userAgent`、`outbound`、`headers`、`reasoning`、`thinkingBudgets`、`cacheRetention`、`transport`、`timeoutMs`、`websocketConnectTimeoutMs`、`streamIdleTimeoutMs`、`maxRequestImageBytes` 和 `retryPolicy`。`userAgent` 是本路由模型请求的 User-Agent，取值 1–256 个可打印 ASCII 字符且首尾不留空白，省略时使用产品默认值。每条 profile 解析后的重试策略会随该提供方路由一同捕获；省略时使用共享的有界 normal 默认值并重试五次。流空闲间隔必须是正的有限 Node 定时器延迟，默认为五分钟，且只覆盖未完成提供方读取，不包括消费方思考时间。`maxRequestImageBytes` 约束单个请求的 base64 编码图片载荷（默认 20MiB，正整数）：历史中的每张图片都会重新编码进每个请求，累积载荷超过上限时，从最老的图片开始替换为固定文本占位，直到请求装得下，使图片较多的会话保持可用，而不是被网关请求体上限永久拒绝。默认值为系统提示词、历史、工具与 JSON 保留请求容量；网关更严格的部署按路由调低该值。若已配置标头中有同名项，则以 Harness 应用归因为准。
 
 适配器强制 pi-ai SDK `maxRetries` 为零，因此一次 `stream()` 调用只会发起一次提供方请求。已移除 profile 字段 `maxRetries` 和 `maxRetryDelayMs` 会使加载失败，而不是静默倍增或隐藏单独组合的 agent（智能体）级重试预算。空闲超时会 abort SDK 的稳定请求信号，并以 `TIMEOUT` 呈现；较早的调用方 abort 仍为 `ABORTED`。
 

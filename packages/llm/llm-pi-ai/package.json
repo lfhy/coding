@@ -37,13 +37,15 @@
     "coding-launch-environment": "workspace:^",
     "coding-invariants": "workspace:^",
     "coding-llm": "workspace:^",
+    "coding-proxy-pool": "workspace:^",
     "coding-settings": "workspace:^",
     "coding-timeout": "workspace:^",
     "@deepseek-ai/cordis": "workspace:^"
   },
   "dependencies": {
     "@earendil-works/pi-ai": "^0.82.1",
-    "@deepseek-ai/schemastery": "workspace:^"
+    "@deepseek-ai/schemastery": "workspace:^",
+    "undici": "^8.10.2"
   },
   "devDependencies": {
     "coding-attachment": "workspace:^",
@@ -51,6 +53,7 @@
     "coding-launch-environment": "workspace:^",
     "coding-invariants": "workspace:^",
     "coding-llm": "workspace:^",
+    "coding-proxy-pool": "workspace:^",
     "coding-session": "workspace:^",
     "coding-settings": "workspace:^",
     "coding-timeout": "workspace:^",

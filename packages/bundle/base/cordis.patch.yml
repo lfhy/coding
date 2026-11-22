@@ -545,7 +545,7 @@
     - id: fs-workspace
       name: 'coding-fs-workspace'
 
-    # 仅兼容已有 DeepSeek 渠道，新的 DeepSeek 接入与其他渠道一起由 llm-pi-ai 管理。
+    # 旧 DeepSeek 渠道自动迁入上方已装配的 llm-pi-ai；失败时保留旧路由。
     - id: llm-deepseek
       name: 'coding-llm-deepseek'
       config:

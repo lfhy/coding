@@ -8,7 +8,7 @@
  * behavior — the documented optional-inject fallback.
  */
 
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -74,6 +74,7 @@ async function loadComposition(
     withGeneric?: boolean
     legacyOnly?: boolean
     withoutLegacyKey?: boolean
+    settingsDocument?: string
   },
 ): Promise<{ ctx: Context; settingsPath: string; credentialsPath: string }> {
   // A reused root is the restart case: the same harness home, its documents
@@ -84,7 +85,7 @@ async function loadComposition(
   const settingsPath = join(root, 'settings.yaml')
   const credentialsPath = join(root, '.credentials.yaml')
   if (options.withDynamic && fresh) {
-    await writeFile(settingsPath, '# personal settings\n')
+    await writeFile(settingsPath, options.settingsDocument ?? '# personal settings\n')
     await writeFile(credentialsPath, [
       ...options.withoutLegacyKey === true ? [] : ['DEEPSEEK_API_KEY: boot-key'],
       ...options.withGeneric === true ? ['GATEWAY_API_KEY: gateway-key'] : [],
@@ -110,12 +111,12 @@ async function loadComposition(
         '    debounceMs: 10',
       ]
       : [],
+    ...options.withGeneric === true ? ['- id: llm-pi-ai', "  name: 'coding-llm-pi-ai'"] : [],
     '- id: llm-deepseek',
     "  name: 'coding-llm-deepseek'",
     '  config:',
     `    baseURL: ${JSON.stringify(options.baseURL)}`,
     ...options.legacyOnly === true ? ['    legacyOnly: true'] : [],
-    ...options.withGeneric === true ? ['- id: llm-pi-ai', "  name: 'coding-llm-pi-ai'"] : [],
     '',
   ].join('\n'))
 
@@ -147,29 +148,104 @@ async function loadComposition(
 }
 
 describe('llm-deepseek real dynamic composition', () => {
-  it('loads legacy and newly declared channels together without changing the legacy route', async () => {
+  it('migrates the legacy route once without resetting its model, credential, or reasoning preferences', async () => {
     vi.stubEnv('DEEPSEEK_API_KEY', '')
-    const legacy = await mockServer([{ kind: 'sse', events: textEvents }])
-    const gateway = await mockServer([{ kind: 'sse', events: textEvents }])
-    const { ctx } = await loadComposition({ withDynamic: true, withGeneric: true, legacyOnly: true, baseURL: legacy.url })
-    const settings = ctx.get('settings')!
-    const legacyBefore = settings.get(NS)
-    await settings.update(settingsNamespace('llm-pi-ai'), {
-      providers: { gateway: {
-        displayName: 'Gateway', baseURL: gateway.url, apiKeyEnv: 'GATEWAY_API_KEY', models: [{ id: 'model' }],
-      } },
+    const server = await mockServer([textEvents, responsesEvents].map(events => ({ kind: 'sse', events })))
+    const options = { withDynamic: true, withGeneric: true, legacyOnly: true, baseURL: server.url }
+    const { ctx, settingsPath } = await loadComposition({
+      ...options,
+      settingsDocument: [
+        'llm-deepseek:', '  channelName: 自用网关', '  reasoningEffort: low', '  userAgent: legacy-gateway/1.0',
+        '  models:', '    - id: existing-model', '      maxTokens: 64', '      reasoningEfforts: [off, low, high]',
+        '    - id: disabled-model', '      reasoningEfforts: [off]',
+        'llm-pi-ai:', '  providers:', '    unrelated:',
+        `      baseURL: ${JSON.stringify(server.url)}`, '      models: [{ id: unrelated-model }]', '',
+      ].join('\n'),
     })
+    const settings = ctx.get('settings')!
+    const target = settingsNamespace('llm-pi-ai')
+    const route = 'deepseek-official'
+    const entry = () => ctx.llm.listConfigurableProviders().find(item => item.provider === route)
+    await vi.waitFor(() => {
+      expect(entry()).toMatchObject({ displayName: '自用网关', settingsNs: target, settingsPath: ['providers', route], declared: true })
+    })
+    expect(settings.get(target)).toMatchObject({ migratedDeepSeek: true, providers: {
+      unrelated: { models: [{ id: 'unrelated-model' }] },
+      [route]: { apiKeyEnv: 'DEEPSEEK_API_KEY', models: [
+        { id: 'existing-model', reasoningEfforts: { off: null, low: 'low', high: 'high' }, defaultReasoningEffort: 'low' },
+        { id: 'disabled-model', reasoningEfforts: false },
+      ] },
+    } })
+    await expect(ctx.llm.resolveModelInfo(route, 'existing-model')).resolves.toMatchObject({
+      reasoning: { defaultEffort: 'low' }, defaultMaxTokens: 64,
+    })
+    const generate = (context: Context) => assemble(context, {
+      provider: route, model: 'existing-model', messages: [], reasoningEffort: ReasoningEffortId('high'),
+    })
+    expect((await generate(ctx)).finish.kind).toBe('stop')
+    expect(server.requests[0]).toMatchObject({ thinking: { type: 'enabled' }, reasoning_effort: 'high' })
+    expect(server.headers[0]).toMatchObject({ authorization: 'Bearer boot-key', 'user-agent': 'legacy-gateway/1.0' })
 
-    for (const [provider, model] of [['deepseek-official', 'deepseek-v4-flash'], ['gateway', 'model']] as const) {
-      const result = await assemble(ctx, { provider, model, messages: [] })
-      expect(result.finish).toEqual({ kind: 'stop' })
-      expect(result.message.content).toContainEqual({ type: 'text', text: 'hello' })
-    }
-    expect(legacy.paths).toEqual(['/chat/completions'])
-    expect(gateway.paths).toEqual(['/chat/completions'])
-    expect(legacy.headers[0]?.authorization).toBe('Bearer boot-key')
-    expect(gateway.headers[0]?.authorization).toBe('Bearer gateway-key')
-    expect(settings.get(NS)).toEqual(legacyBefore)
+    await settings.mutate(target, [{ op: 'set', path: ['providers', route, 'api'], value: 'openai-responses' }])
+    const home = root!
+    await ctx.fiber.dispose()
+    const { ctx: restarted } = await loadComposition({ ...options, reuseRoot: home })
+    expect((await generate(restarted)).finish.kind).toBe('stop')
+    expect(server.requests[1]).toMatchObject({ reasoning: { effort: 'high' } })
+    expect(server.paths).toEqual(['/chat/completions', '/responses'])
+    const persisted = await readFile(settingsPath, 'utf8')
+    expect(persisted).not.toContain('boot-key')
+    await restarted.get('settings')!.mutate(target, [{ op: 'unset', path: ['providers', route] }])
+    await restarted.fiber.dispose()
+    const { ctx: afterDeletion } = await loadComposition({ ...options, reuseRoot: home })
+    expect(afterDeletion.llm.listConfigurableProviders().some(item => item.provider === route)).toBe(false)
+  })
+
+  it('keeps an existing custom route with the same id and does not import the legacy channel over it', async () => {
+    vi.stubEnv('DEEPSEEK_API_KEY', '')
+    const route = 'deepseek-official'
+    const { ctx } = await loadComposition({
+      withDynamic: true, withGeneric: true, legacyOnly: true, baseURL: 'http://localhost:1',
+      settingsDocument: [
+        'llm-deepseek: { channelName: 原渠道 }', 'llm-pi-ai:', '  providers:', `    ${route}:`,
+        '      displayName: 已配置渠道', '      baseURL: http://localhost:2', '      models: [{ id: custom-model }]', '',
+      ].join('\n'),
+    })
+    const target = settingsNamespace('llm-pi-ai')
+    await vi.waitFor(() => {
+      expect(ctx.get('settings')!.get(target)).toMatchObject({ migratedDeepSeek: true, providers: {
+        [route]: { displayName: '已配置渠道', baseURL: 'http://localhost:2', models: [{ id: 'custom-model' }] },
+      } })
+    })
+    expect(ctx.llm.listConfigurableProviders().filter(item => item.provider === route)).toMatchObject([
+      { settingsNs: target, settingsPath: ['providers', route] },
+    ])
+  })
+
+  it('migrates the old default channel when only its credential is configured', async () => {
+    vi.stubEnv('DEEPSEEK_API_KEY', '')
+    const { ctx } = await loadComposition({
+      withDynamic: true, withGeneric: true, legacyOnly: true, baseURL: 'http://localhost:1',
+    })
+    const target = settingsNamespace('llm-pi-ai')
+    await vi.waitFor(() => {
+      expect(ctx.get('settings')!.get(target)).toMatchObject({ migratedDeepSeek: true, providers: {
+        'deepseek-official': { apiKeyEnv: 'DEEPSEEK_API_KEY', models: [{ id: 'deepseek-v4-flash' }, { id: 'deepseek-v4-pro' }] },
+      } })
+    })
+  })
+
+  it('keeps serving the old route when its settings cannot be represented by the custom adapter', async () => {
+    vi.stubEnv('DEEPSEEK_API_KEY', '')
+    const server = await mockServer([{ kind: 'sse', events: textEvents }])
+    const { ctx, settingsPath } = await loadComposition({
+      withDynamic: true, withGeneric: true, legacyOnly: true, baseURL: server.url,
+      settingsDocument: 'llm-deepseek: {models: []}\n',
+    })
+    expect((await assemble(ctx, { model: 'unlisted-legacy-model', messages: [] })).finish.kind).toBe('stop')
+    expect(await readFile(settingsPath, 'utf8')).toBe('llm-deepseek: {models: []}\n')
+    expect(ctx.llm.listConfigurableProviders().find(item => item.provider === 'deepseek-official'))
+      .toMatchObject({ settingsNs: NS })
   })
 
   it('configures DeepSeek as a custom channel and reuses its thinking effort after switching to Responses', async () => {
@@ -196,9 +272,6 @@ describe('llm-deepseek real dynamic composition', () => {
     expect(server.requests[0]).toMatchObject({ reasoning_effort: 'high' })
     expect(server.requests[1]).toMatchObject({ reasoning: { effort: 'high' } })
 
-    await settings.update(NS, { channelName: '已有网关' })
-    expect(ctx.llm.listConfigurableProviders().find(entry => entry.provider === 'deepseek-official'))
-      .toMatchObject({ displayName: '已有网关', settingsNs: NS })
   })
 
   it('uses the channel protocol unless a model overrides it, and returns to Chat after clearing', async () => {
@@ -236,7 +309,7 @@ describe('llm-deepseek real dynamic composition', () => {
     expect(server.requests[0]).toMatchObject({ reasoning_effort: 'high' })
     expect(responses).toMatchObject({ reasoning: { effort: 'high' } })
     expect(messages).toMatchObject({
-      model: 'special-model', max_tokens: 64 + 16_384, thinking: { type: 'enabled', budget_tokens: expect.any(Number) },
+      model: 'special-model', max_tokens: 64 + 16_384, thinking: { type: 'enabled', budget_tokens: 15_424 },
     })
     expect(Array.isArray(messages['messages'])).toBe(true)
     expect(server.headers[1]).toMatchObject({ authorization: 'Bearer boot-key', 'user-agent': 'test-channel/1.0' })

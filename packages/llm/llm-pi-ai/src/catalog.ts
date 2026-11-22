@@ -589,6 +589,8 @@ export interface PiAiModelProfile {
    * declares the offered levels and their wire spellings.
    */
   reasoningEfforts?: false | PiAiReasoningEfforts
+  /** 模型默认思考档位；能力声明移除该档位后改为使用渠道或模型默认。 */
+  defaultReasoningEffort?: ModelThinkingLevel
   /** pi-ai wire-compatibility switches for this model, winning over the route's per field; one its protocol does not declare is refused. */
   compat?: PiAiCompatProfile
 }
@@ -624,6 +626,8 @@ export interface RouteCatalogRequest {
   defaultContextWindow: number
   /** Output capability for a model neither the entry nor the catalog sizes. */
   defaultMaxTokens: number
+  /** Chat 专用思考方言；模型使用其他协议时不参与编码。 */
+  completionsThinkingFormat?: PiAiThinkingFormat
   /** Modalities for a model neither the entry nor the catalog declares. */
   defaultInput: Model<Api>['input']
 }
@@ -800,6 +804,8 @@ export interface RouteCatalog {
    * picked, so only an explicit configuration lands here.
    */
   configuredMaxTokens: ReadonlyMap<string, number>
+  /** 该模型的首选档位，运行时按实际能力校验。 */
+  configuredModelReasoning: ReadonlyMap<string, ModelThinkingLevel>
 }
 
 /**
@@ -861,6 +867,7 @@ export function resolveRouteModels(request: RouteCatalogRequest): RouteCatalog {
   }
   const seen = new Set<string>()
   const configuredMaxTokens = new Map<string, number>()
+  const configuredModelReasoning = new Map<string, ModelThinkingLevel>()
   const models = entries.map((entry) => {
     if (entry.id.length === 0) invalid(provider, 'has a model with an empty id')
     if (seen.has(entry.id)) invalid(provider, `lists model "${entry.id}" more than once`)
@@ -893,6 +900,17 @@ export function resolveRouteModels(request: RouteCatalogRequest): RouteCatalog {
     // Only a value the profile named is a deployment choice; the catalog's is
     // the model's capability and stays out of request defaults.
     if (entry.maxTokens !== undefined) configuredMaxTokens.set(entry.id, entry.maxTokens)
+    if (entry.defaultReasoningEffort !== undefined) configuredModelReasoning.set(entry.id, entry.defaultReasoningEffort)
+    // 协议专用缺省不能拦住用户切换到不读取它的其他协议。
+    const thinkingCompat: PiAiCompatProfile | undefined = api === 'openai-completions' && request.completionsThinkingFormat !== undefined
+      ? {
+        ...request.completionsThinkingFormat === 'deepseek' ? {
+          supportsStore: false, supportsDeveloperRole: false, maxTokensField: 'max_tokens',
+          requiresReasoningContentOnAssistantMessages: true,
+        } : {},
+        supportsReasoningEffort: true, thinkingFormat: request.completionsThinkingFormat, ...request.compat,
+      }
+      : request.compat
     return {
       // The installed entry lays the floor, and the fields below override it.
       // Enumerating instead would silently drop every `Model` field this
@@ -910,7 +928,7 @@ export function resolveRouteModels(request: RouteCatalogRequest): RouteCatalog {
       contextWindow,
       maxTokens,
       ...resolveModelReasoning(provider, entry, base),
-      ...resolveModelCompat(provider, entry, request.compat, base, api),
+      ...resolveModelCompat(provider, entry, thinkingCompat, base, api),
     }
   })
   // Per field, not per block: a route may default a switch its completions
@@ -923,5 +941,5 @@ export function resolveRouteModels(request: RouteCatalogRequest): RouteCatalog {
     invalid(provider, `sets compat "${field}", but no model on the route speaks a protocol that takes it;`
       + ` it exists on ${takers.join(', ')}`)
   }
-  return { models, configuredMaxTokens }
+  return { models, configuredMaxTokens, configuredModelReasoning }
 }

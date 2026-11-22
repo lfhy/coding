@@ -24,6 +24,9 @@
       "path": "../../llm/llm"
     },
     {
+      "path": "../../net/proxy-pool"
+    },
+    {
       "path": "../../attachment/attachment"
     },
     {

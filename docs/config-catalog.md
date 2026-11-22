@@ -1100,7 +1100,7 @@ export interface DeepSeekCatalogModel {
 
 Depends on: [`ConfiguredProtocol`](../packages/llm/llm-pi-ai/src/index.ts) · [`ModelModality`](subsystems/llm-streaming.md) · [`OutboundConfig`](../packages/net/proxy-pool/src/index.ts) · [`RetryPolicyConfig`](../packages/llm/llm/src/index.ts)
 
-Source: [`packages/llm/llm-deepseek/src/index.ts:78`](../packages/llm/llm-deepseek/src/index.ts)
+Source: [`packages/llm/llm-deepseek/src/index.ts:79`](../packages/llm/llm-deepseek/src/index.ts)
 
 <a id="coding-llm-pi-ai"></a>
 
@@ -1117,6 +1117,8 @@ export interface Config {
    * and registers them the moment a settings section supplies profiles.
    */
   providers?: Record<string, PiAiProviderProfile>
+  /** 与迁移后的自定义渠道同时写入；删除该渠道后仍保留，防止旧设置重新导入。 */
+  migratedDeepSeek?: boolean
 }
 
 /** Configuration for one pi-ai provider route; the `providers` dict key IS the route. */
@@ -1156,6 +1158,8 @@ export interface PiAiProviderProfile {
    * refused rather than left looking applied.
    */
   compat?: PiAiCompatProfile
+  /** Chat Completions 使用的思考参数格式，切到其他请求协议时忽略。 */
+  completionsThinkingFormat?: PiAiThinkingFormat
   /**
    * Context capacity for a model this route lists that neither the entry nor
    * the installed catalog sizes (default 262,144). A guess by construction, so
@@ -1185,6 +1189,8 @@ export interface PiAiProviderProfile {
    * 基线的 `user-agent`，不改变 {@link headers} 的语义。
    */
   userAgent?: string
+  /** 对话与模型发现的出站方式；默认直连。 */
+  outbound?: OutboundConfig
   /** Provider request headers; Harness attribution wins reserved names. */
   headers?: Record<string, string>
   /** Provider-neutral pi-ai reasoning level. */
@@ -1249,6 +1255,8 @@ export interface PiAiModelProfile {
    * declares the offered levels and their wire spellings.
    */
   reasoningEfforts?: false | PiAiReasoningEfforts
+  /** 模型默认思考档位；能力声明移除该档位后改为使用渠道或模型默认。 */
+  defaultReasoningEffort?: ModelThinkingLevel
   /** pi-ai wire-compatibility switches for this model, winning over the route's per field; one its protocol does not declare is refused. */
   compat?: PiAiCompatProfile
 }
@@ -1341,6 +1349,9 @@ export interface PiAiCompatProfile {
   supportsStrictTools?: boolean
 }
 
+/** One reasoning-dispatch wire format a profile may name. */
+export type PiAiThinkingFormat = NonNullable<OpenAICompletionsCompat['thinkingFormat']>
+
 /** One request modality a pi-ai model may accept. */
 export type PiAiModality = Model<Api>['input'][number]
 
@@ -1353,14 +1364,11 @@ export type PiAiModality = Model<Api>['input'][number]
  * from the dict is not offered.
  */
 export type PiAiReasoningEfforts = Partial<Record<ModelThinkingLevel, string | null>>
-
-/** One reasoning-dispatch wire format a profile may name. */
-export type PiAiThinkingFormat = NonNullable<OpenAICompletionsCompat['thinkingFormat']>
 ```
 
-Depends on: `Api` (`@earendil-works/pi-ai`) · `CacheRetention` (`@earendil-works/pi-ai`) · `Model` (`@earendil-works/pi-ai`) · `ModelThinkingLevel` (`@earendil-works/pi-ai`) · `OpenAICompletionsCompat` (`@earendil-works/pi-ai`) · [`RetryPolicyConfig`](../packages/llm/llm/src/index.ts) · `ThinkingBudgets` (`@earendil-works/pi-ai`) · `Transport` (`@earendil-works/pi-ai`)
+Depends on: `Api` (`@earendil-works/pi-ai`) · `CacheRetention` (`@earendil-works/pi-ai`) · `Model` (`@earendil-works/pi-ai`) · `ModelThinkingLevel` (`@earendil-works/pi-ai`) · `OpenAICompletionsCompat` (`@earendil-works/pi-ai`) · [`OutboundConfig`](../packages/net/proxy-pool/src/index.ts) · [`RetryPolicyConfig`](../packages/llm/llm/src/index.ts) · `ThinkingBudgets` (`@earendil-works/pi-ai`) · `Transport` (`@earendil-works/pi-ai`)
 
-Source: [`packages/llm/llm-pi-ai/src/config.ts:214`](../packages/llm/llm-pi-ai/src/config.ts)
+Source: [`packages/llm/llm-pi-ai/src/config.ts:226`](../packages/llm/llm-pi-ai/src/config.ts)
 
 <a id="coding-llm-replay"></a>
 

@@ -57,6 +57,11 @@ export async function* streamPiAiRequest(options: GenerateOptions, request: PiAi
     : await toPiContext(options, attachments, request.onReplayDegrade, request.maxRequestImageBytes, nativeGrammarTools)
   const events = request.stream(model, context, {
     ...request.streamOptions,
+    // DeepSeek Chat 在关闭能力时仍需要显式关闭；SDK 不会为非推理模型写这个字段。
+    ...model.api === 'openai-completions' && !model.reasoning && model.compat !== undefined
+      && 'thinkingFormat' in model.compat && model.compat.thinkingFormat === 'deepseek'
+      ? { onPayload: (payload: unknown) => ({ ...payload as object, thinking: { type: 'disabled' } }) }
+      : {},
     ...options.temperature === undefined ? {} : { temperature: options.temperature },
     ...options.maxTokens === undefined ? {} : { maxTokens: options.maxTokens },
     ...options.sessionId === undefined ? {} : { sessionId: String(options.sessionId) },

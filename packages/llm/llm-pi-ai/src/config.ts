@@ -21,6 +21,8 @@ import type { CredentialRef } from 'coding-credentials'
 import { MAX_TIMER_DELAY_MS } from 'coding-timeout'
 import { MODEL_USER_AGENT_PATTERN, resolveRetryPolicy, RetryPolicySchema } from 'coding-llm'
 import type { ResolvedRetryPolicy, RetryPolicyConfig } from 'coding-llm'
+import { OutboundConfigSchema } from 'coding-proxy-pool'
+import type { OutboundConfig } from 'coding-proxy-pool'
 import {
   CACHE_CONTROL_FORMATS,
   CHAT_TEMPLATE_VARS,
@@ -37,7 +39,9 @@ import type {
   PiAiModelOverride,
   PiAiModelProfile,
   PiAiReasoningEfforts,
+  PiAiThinkingFormat,
 } from './catalog.ts'
+import { resolveOutboundConfig } from './outbound.ts'
 import { buildProvider, supportedProtocols } from './provider.ts'
 
 // 程序化装配允许输入任意字符串，由解析器给出指向渠道或模型的具体错误。
@@ -124,6 +128,8 @@ export interface PiAiProviderProfile {
    * refused rather than left looking applied.
    */
   compat?: PiAiCompatProfile
+  /** Chat Completions 使用的思考参数格式，切到其他请求协议时忽略。 */
+  completionsThinkingFormat?: PiAiThinkingFormat
   /**
    * Context capacity for a model this route lists that neither the entry nor
    * the installed catalog sizes (default 262,144). A guess by construction, so
@@ -153,6 +159,8 @@ export interface PiAiProviderProfile {
    * 基线的 `user-agent`，不改变 {@link headers} 的语义。
    */
   userAgent?: string
+  /** 对话与模型发现的出站方式；默认直连。 */
+  outbound?: OutboundConfig
   /** Provider request headers; Harness attribution wins reserved names. */
   headers?: Record<string, string>
   /** Provider-neutral pi-ai reasoning level. */
@@ -182,13 +190,15 @@ export interface PiAiProviderProfile {
 
 /** Validated profile with its route stamped and every adapter-owned default resolved. */
 export interface ResolvedPiAiProviderProfile
-  extends Omit<PiAiProviderProfile, 'apiKeyEnv' | 'retryPolicy' | 'models' | 'displayName'> {
+  extends Omit<PiAiProviderProfile, 'apiKeyEnv' | 'retryPolicy' | 'models' | 'displayName' | 'outbound'> {
   /** Harness route key and the `Models` collection key (the configuration dict key). */
   provider: string
   /** Resolved display name for selectors and configuration surfaces. */
   displayName: string
   /** Validated credential reference, when one is configured. */
   apiKeyEnv?: CredentialRef
+  /** 与模型和凭据引用同代解析的出站方式。 */
+  outbound: Readonly<OutboundConfig>
   /** Positive finite provider-idle interval after defaulting. */
   streamIdleTimeoutMs: number
   /** Positive request-level base64 image payload bound after defaulting. */
@@ -208,6 +218,8 @@ export interface ResolvedPiAiProviderProfile
    * own, so a catalog capability must not appear here.
    */
   configuredMaxTokens: ReadonlyMap<string, number>
+  /** 模型级首选档位；能力优先于配置的首选项。 */
+  configuredModelReasoning: ReadonlyMap<string, ModelThinkingLevel>
 }
 
 /** Plugin configuration: the provider routes this instance owns. */
@@ -218,6 +230,8 @@ export interface Config {
    * and registers them the moment a settings section supplies profiles.
    */
   providers?: Record<string, PiAiProviderProfile>
+  /** 与迁移后的自定义渠道同时写入；删除该渠道后仍保留，防止旧设置重新导入。 */
+  migratedDeepSeek?: boolean
 }
 
 const thinkingBudgets = z.object({
@@ -296,6 +310,7 @@ const modelFields = {
   // `{}`, and absent must stay distinguishable — it means "inherit the
   // installed catalog's capability", while `false` disables reasoning.
   reasoningEfforts: z.union([z.const(false), reasoningEfforts]),
+  defaultReasoningEffort: z.union(THINKING_LEVELS),
   compat: compatProfile,
 }
 
@@ -315,10 +330,12 @@ const profile = z.object({
   models: z.array(modelProfile),
   modelOverrides: z.dict(modelOverride),
   compat: compatProfile,
+  completionsThinkingFormat: z.union(SUPPORTED_THINKING_FORMATS),
   defaultContextWindow: z.number().step(1).min(1).default(DEFAULT_CONTEXT_WINDOW),
   defaultMaxTokens: z.number().step(1).min(1).default(DEFAULT_MAX_TOKENS),
   defaultInput: z.array(z.union(MODALITIES)).default([...DEFAULT_INPUT]),
   userAgent: z.string().min(1).max(256).pattern(MODEL_USER_AGENT_PATTERN),
+  outbound: OutboundConfigSchema,
   headers: z.dict(z.string()),
   reasoning: z.union(THINKING_LEVELS),
   thinkingBudgets,
@@ -334,6 +351,7 @@ const profile = z.object({
 /** Runtime schema for {@link Config}. */
 export const Config: z<Config> = z.object({
   providers: z.dict(profile).default({}),
+  migratedDeepSeek: z.boolean(),
 })
 
 /**
@@ -440,15 +458,18 @@ export function resolveProfiles(
       ...source.models === undefined ? {} : { models: source.models },
       ...source.modelOverrides === undefined ? {} : { modelOverrides: source.modelOverrides },
       ...source.compat === undefined ? {} : { compat: source.compat },
+      ...source.completionsThinkingFormat === undefined ? {} : { completionsThinkingFormat: source.completionsThinkingFormat },
       defaultInput,
       defaultContextWindow: source.defaultContextWindow ?? DEFAULT_CONTEXT_WINDOW,
       defaultMaxTokens: source.defaultMaxTokens ?? DEFAULT_MAX_TOKENS,
     })
     const { apiKeyEnv, retryPolicy, models: _models, displayName: _displayName, ...rest } = source
+    const outbound = resolveOutboundConfig(provider, source.outbound, source.transport)
     resolved.set(provider, {
       ...rest,
       provider,
       displayName,
+      outbound,
       ...apiKeyEnv === undefined ? {} : { apiKeyEnv: credentialRef(apiKeyEnv) },
       streamIdleTimeoutMs,
       maxRequestImageBytes,
@@ -456,6 +477,7 @@ export function resolveProfiles(
       ...rest.headers === undefined ? {} : { headers: { ...rest.headers } },
       ...rest.thinkingBudgets === undefined ? {} : { thinkingBudgets: { ...rest.thinkingBudgets } },
       configuredMaxTokens: catalog.configuredMaxTokens,
+      configuredModelReasoning: catalog.configuredModelReasoning,
       piProvider: buildProvider({
         provider,
         displayName,
@@ -463,6 +485,7 @@ export function resolveProfiles(
         ...source.baseURL === undefined ? {} : { baseURL: source.baseURL },
         models: catalog.models,
         namesCredential: apiKeyEnv !== undefined,
+        requireFetchTransport: outbound.mode !== 'direct',
       }),
     })
   }

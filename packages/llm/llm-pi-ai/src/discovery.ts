@@ -323,8 +323,6 @@ async function storedProbeKey(
  * 与「连接直接失败」，后者用 `errorChain` 带上 `cause` 链里的底层原因。
  * @param request - 草稿端点、协议、一次性凭据及取消信号。
  * @param storedRoute - 已保存的端点及其凭据解析器，仅在草稿端点与之相同时读取凭据。
- * @param requestUserAgent - 本次请求的 User-Agent；调用方的渠道级配置解析在这里，
- *   缺省用产品默认值。
  * @returns 端点返回顺序的候选模型。
  * @throws LlmError 协议不支持、端点无效或失败、响应无效、超时及调用方取消时抛出。
  */
@@ -335,8 +333,9 @@ export async function discoverModels(
     api?: string
     hasStoredKey: boolean
     apiKey: () => Promise<string | undefined>
+    userAgent?: string
+    requestFetch?: () => typeof fetch | undefined
   } | undefined,
-  requestUserAgent: string = userAgent(),
 ): Promise<readonly LlmDiscoveredModel[]> {
   const saved = storedRoute?.()
   const baseURL = request.baseURL ?? saved?.baseURL ?? (
@@ -361,7 +360,7 @@ export async function discoverModels(
   if (request.apiKey === undefined && saved?.hasStoredKey && listingUrl(saved.baseURL) !== url) {
     throw new LlmError(`${url} differs from the saved endpoint; enter an API key for this probe`, 'DISCOVERY_FAILED')
   }
-  return queryModelListing(url, request, requestUserAgent, saved?.apiKey)
+  return queryModelListing(url, request, saved?.userAgent ?? userAgent(), saved?.apiKey, saved?.requestFetch?.())
 }
 
 /**

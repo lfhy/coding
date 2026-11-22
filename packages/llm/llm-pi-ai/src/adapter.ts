@@ -47,8 +47,11 @@ import type {
   StreamChunk,
 } from 'coding-llm'
 import type { AttachmentStore } from 'coding-attachment'
+import type { ProxyPoolService } from 'coding-proxy-pool'
 import { streamChannelRequest } from './channel-stream.ts'
 import type { ResolvedPiAiProviderProfile } from './config.ts'
+import { outboundFetch, streamFetch } from './outbound.ts'
+import { isConfiguredProtocol } from './provider.ts'
 import { streamPiAiRequest } from './stream-request.ts'
 
 /** One resolution's frozen view: the profiles and the collection built from them. */
@@ -74,6 +77,8 @@ export interface PiAiAdapterOptions {
   resolveApiKey: (provider: string, profile: ResolvedPiAiProviderProfile) => Promise<string | undefined>
   /** Resolve the optional durable attachment service at request time. */
   resolveAttachments?: () => AttachmentStore | undefined
+  /** 为选用内置代理池的请求读取当前池服务。 */
+  resolveProxyPool?: () => Pick<ProxyPoolService, 'proxyURL'> | undefined
   /**
    * Observe one assistant history message degrading to provider-neutral
    * conversion because its stored replay state is unusable by this build.
@@ -267,7 +272,8 @@ export class PiAiAdapter extends LlmAdapter {
       const snapshot = this.current()
       const profile = this.profileOf(snapshot, provider)
       const resolvedModel = this.modelOf(snapshot, provider, model)
-      const defaultLevel = describableReasoningLevel(resolvedModel, profile.reasoning)
+      const configuredLevel = describableReasoningLevel(resolvedModel, profile.configuredModelReasoning.get(model)) ?? profile.reasoning
+      const defaultLevel = describableReasoningLevel(resolvedModel, configuredLevel)
       // Only a cap the deployment configured is a request default; the
       // catalog's `maxTokens` sizes the model and stops there.
       const configuredMaxTokens = profile.configuredMaxTokens.get(model)
@@ -278,7 +284,7 @@ export class PiAiAdapter extends LlmAdapter {
         inputModalities: [...resolvedModel.input],
         context: { contextWindow: resolvedModel.contextWindow },
         ...configuredMaxTokens === undefined ? {} : { defaultMaxTokens: configuredMaxTokens },
-        ...reasoningInfo(resolvedModel, defaultLevel, profile.reasoning),
+        ...reasoningInfo(resolvedModel, defaultLevel, configuredLevel),
       }
     })
   }
@@ -297,10 +303,18 @@ export class PiAiAdapter extends LlmAdapter {
     // 归因基线也来自同一份快照：渠道配置了 User-Agent 就用它，否则用产品默认值。
     const requestUserAgent = resolveUserAgent(profile.userAgent)
     const model = this.modelOf(snapshot, options.provider, options.model)
-    const reasoning = resolveReasoningLevel(
+    // 标题请求沿用 DeepSeek 的可见输出预算，不占用对话的思考档位。
+    const reasoning = options.purpose === 'session-title' && profile.completionsThinkingFormat === 'deepseek' ? 'off' : resolveReasoningLevel(
       model,
-      options.reasoningEffort ?? profile.reasoning ?? (model.reasoning ? getSupportedThinkingLevels(model).at(-1) : undefined),
+      options.reasoningEffort ?? describableReasoningLevel(model, profile.configuredModelReasoning.get(options.model))
+        ?? profile.reasoning ?? (model.reasoning ? getSupportedThinkingLevels(model).at(-1) : undefined),
     )
+    const proxyFetch = outboundFetch(
+      options.provider,
+      profile.outbound,
+      profile.outbound.mode === 'pool' ? this.config.resolveProxyPool?.() : undefined,
+    )
+    const requestFetch = isConfiguredProtocol(model.api) ? streamFetch(proxyFetch) : undefined
     const apiKey = await this.config.resolveApiKey(options.provider, profile)
 
     yield* streamChannelRequest({
@@ -314,6 +328,8 @@ export class PiAiAdapter extends LlmAdapter {
         onReplayDegrade: reason => this.config.onReplayDegrade?.({ provider: options.provider, model: options.model, reason }),
         streamOptions: {
           ...profileOptions(profile, reasoning, apiKey),
+          ...requestFetch === undefined ? {} : { fetch: requestFetch },
+          ...proxyFetch === undefined ? {} : { transport: 'sse' as const },
           signal,
           headers: requestHeaders(profile.headers, requestUserAgent),
         },

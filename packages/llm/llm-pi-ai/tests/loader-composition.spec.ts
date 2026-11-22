@@ -18,10 +18,11 @@ import Loader from '@deepseek-ai/cordis-plugin-loader'
 import Include from '@deepseek-ai/cordis-plugin-include'
 import LlmRuntime, { createMessage, createUserMessage } from 'coding-llm'
 import LocalCredentialProvider from 'coding-credentials-local'
+import ProxyPoolService from 'coding-proxy-pool'
 import FileSettingsProvider from 'coding-settings-file'
 import * as LlmPiAi from 'coding-llm-pi-ai'
 import { assemble } from './assemble.ts'
-import { closeMockServers, mockServer, textEvents } from './mock-server.ts'
+import { closeMockServers, mockProxy, mockServer, textEvents } from './mock-server.ts'
 
 /** One text block, then a tool call truncated by the output-token ceiling. */
 const truncatedToolCallEvents = [
@@ -45,7 +46,7 @@ afterEach(async () => {
 })
 
 /** Boot the dormant composition: a bare `llm-pi-ai` row with no config at all. */
-async function loadComposition(): Promise<{ ctx: Context; settingsPath: string }> {
+async function loadComposition(proxyPool = false): Promise<{ ctx: Context; settingsPath: string }> {
   root = await mkdtemp(join(tmpdir(), 'dsh-pi-composition-'))
   const settingsPath = join(root, 'settings.yaml')
   await writeFile(settingsPath, '# personal settings\n')
@@ -65,6 +66,7 @@ async function loadComposition(): Promise<{ ctx: Context; settingsPath: string }
     '  config:',
     `    path: ${JSON.stringify(join(root, '.credentials.yaml'))}`,
     '    debounceMs: 10',
+    ...(proxyPool ? ['- id: proxy-pool', "  name: 'coding-proxy-pool'"] : []),
     '- id: llm-pi-ai',
     "  name: 'coding-llm-pi-ai'",
     '',
@@ -79,6 +81,7 @@ async function loadComposition(): Promise<{ ctx: Context; settingsPath: string }
     ['test-llm-service', LlmRuntime],
     ['coding-settings-file', FileSettingsProvider],
     ['coding-credentials-local', LocalCredentialProvider],
+    ['coding-proxy-pool', ProxyPoolService],
     ['coding-llm-pi-ai', LlmPiAi],
   ])
   ctx.loader.internal = {
@@ -121,6 +124,83 @@ describe('llm-pi-ai real dormant composition', () => {
     const result = await assemble(ctx, { provider: 'deepseek', model: 'deepseek-v4-flash', messages: [] })
     expect(result.message.content).toEqual([{ type: 'text', text: 'hello' }])
     expect(server.headers[0]?.authorization).toBe('Bearer key-from-store')
+  })
+
+  it('uses a saved route’s custom proxy for both Chat Completions and model discovery', async () => {
+    const server = await mockServer([{ events: textEvents }, { body: '{"data":[{"id":"listed"}]}' }])
+    const direct = await mockServer([{ events: textEvents }])
+    const proxy = await mockProxy('models.invalid:80', server.url)
+    try {
+      const { ctx, settingsPath } = await loadComposition()
+      await writeFile(settingsPath, [
+        'llm-pi-ai:',
+        '  providers:',
+        '    deepseek:',
+        '      apiKeyEnv: PI_COMPOSITION_KEY',
+        '      baseURL: http://models.invalid',
+        '      outbound:',
+        '        mode: custom',
+        `        customUrl: ${proxy.url}`,
+        '    direct-gateway:',
+        '      apiKeyEnv: PI_COMPOSITION_KEY',
+        `      baseURL: ${direct.url}`,
+        '      models: [{ id: direct-model }]',
+        '',
+      ].join('\n'))
+      await vi.waitFor(() => {
+        expect(ctx.llm.listProviders().map(provider => provider.id)).toEqual(['deepseek', 'direct-gateway'])
+      })
+      const replies = await Promise.all([
+        assemble(ctx, { provider: 'deepseek', model: 'deepseek-v4-flash', messages: [] }),
+        assemble(ctx, { provider: 'direct-gateway', model: 'direct-model', messages: [] }),
+      ])
+      expect(replies.map(reply => reply.finish)).toEqual([{ kind: 'stop' }, { kind: 'stop' }])
+      expect(replies.map(reply => reply.message.content)).toEqual([
+        [{ type: 'text', text: 'hello' }], [{ type: 'text', text: 'hello' }],
+      ])
+      await expect(ctx.llm.discoverModels('llm-pi-ai', { provider: 'deepseek' })).resolves.toEqual([{ id: 'listed' }])
+      expect(server.paths).toEqual(['/chat/completions', '/models'])
+      expect(server.headers.map(header => header.authorization)).toEqual(['Bearer key-from-store', 'Bearer key-from-store'])
+      expect(direct.paths).toEqual(['/chat/completions'])
+      expect(proxy.targets).not.toHaveLength(0)
+      expect(new Set(proxy.targets)).toEqual(new Set(['models.invalid:80']))
+    } finally {
+      await proxy.close()
+    }
+  })
+
+  it('uses the pool’s effective rules on the next request without changing the channel', async () => {
+    const upstream = await mockServer([{ events: textEvents }, { events: textEvents }])
+    const proxy = await mockProxy(new URL(upstream.url).host, upstream.url)
+    try {
+      const { ctx, settingsPath } = await loadComposition(true)
+      const channel = [
+        'llm-pi-ai:',
+        '  providers:',
+        '    deepseek:',
+        '      apiKeyEnv: PI_COMPOSITION_KEY',
+        `      baseURL: ${upstream.url}`,
+        '      outbound: { mode: pool }',
+        '',
+      ].join('\n')
+      await writeFile(settingsPath, channel)
+      await vi.waitFor(() => {
+        expect(ctx.llm.listProviders().map(provider => provider.id)).toEqual(['deepseek'])
+        expect(ctx.get('proxyPool')?.outbound.mode).toBe('direct')
+      })
+      const request = { provider: 'deepseek', model: 'deepseek-v4-flash', messages: [] }
+      expect((await assemble(ctx, request)).finish).toEqual({ kind: 'stop' })
+      expect(proxy.targets).toEqual([])
+
+      await writeFile(settingsPath, `${channel}proxy-pool:\n  mode: custom\n  customUrl: ${proxy.url}\n`)
+      await vi.waitFor(() => {
+        expect(ctx.get('proxyPool')?.outbound.mode).toBe('custom')
+      })
+      expect((await assemble(ctx, request)).finish).toEqual({ kind: 'stop' })
+      expect(proxy.targets).toEqual([new URL(upstream.url).host])
+    } finally {
+      await proxy.close()
+    }
   })
 
   it('continues natively after max-token assembly drops a tool call, with pruned replay metadata', async () => {
