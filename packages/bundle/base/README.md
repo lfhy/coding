@@ -8,6 +8,8 @@ patch 在自身上按平台门控两个 shell 栈：`bash-sandbox`/`tool-bash` �
 
 本层向全部模式共享 [`set_status`](../../session/tool-status/README.md) 进度工具及 `turnStatus` 投影；它们按会话和当前轮次隔离，不由预设重复挂载。
 
+默认对话走内置 Free；新模型渠道由 `llm-pi-ai.providers` 管理。`llm-deepseek` 仅为已有设置或凭据保留原路由。
+
 本层的 `web` 行默认选择无密钥的 DuckDuckGo 搜索；`web-search-tavily` 与 `web-search-deepseek` 同时挂载，分别在 `web.searchProvider` 明确选 `tavily` 或 `deepseek-official` 时运行。两者分别使用 `TAVILY_API_KEY` 和 `DEEPSEEK_SEARCH_API_KEY` 凭据引用，与模型凭据分离。各提供方的 HTTP(S) 前向代理配置独立；提供方或认证失败不会自动切换后端，可在搜索设置中改选。
 
 本层挂载 [ego-lite 浏览器宿主](../../browser/browser-ego-host/src/index.ts)，使用本机安装的 Edge、Chrome 或 Chromium；浏览器文件不随组合包交付，缺失浏览器时网页操作不可用。Agent 预设通过[浏览器工具消费方](../../browser/tool-browser-ego/src/index.ts)登记带 `browser_*` 前缀的受控工具及按需加载的 [`browser-use` 技能](../../skill/skill-browser-use/README.md)，不在默认组合里启动旧 Playwright 或 Electron guest 浏览器提供方。宿主交付上游全部 35 个工具，包括标签打开/切换/关闭、上传下载、网络响应等待、对话框、脚本、登录态导入与空间管理；高风险调用仍按会话审批。浏览器工具仅支持本地会话，通常逐次审批，完全访问且关闭审批提示时可直接执行，截图写文件在只读会话中禁止。实时观察路由仅在同时装配 Web Host 传输时提供，headless 无工作台画面。
@@ -16,7 +18,7 @@ patch 在自身上按平台门控两个 shell 栈：`bash-sandbox`/`tool-bash` �
 
 ## 模型体验
 
-通过插入的行间接产生影响：该组合包选定了随发行版交付的无 persona 提示词基座、工具集合与 DeepSeek 适配器，供各模式组合包进一步特化；它自身不贡献任何模型可见文本。
+通过插入的行间接产生影响：该组合包选定了随发行版交付的无 persona 提示词基座、工具集合与模型渠道适配器，供各模式组合包进一步特化；它自身不贡献任何模型可见文本。
 
 #### KV Cache 影响
 

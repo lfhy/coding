@@ -545,9 +545,8 @@
     - id: fs-workspace
       name: 'coding-fs-workspace'
 
-    # The native DeepSeek adapter. No key or endpoint is inlined: both resolve per
-    # request from the `llm-deepseek:` settings section over this entry, with the
-    # key coming from the credential store below. Thinking defaults are a deployment
-    # choice.
+    # 仅兼容已有 DeepSeek 渠道，新的 DeepSeek 接入与其他渠道一起由 llm-pi-ai 管理。
     - id: llm-deepseek
       name: 'coding-llm-deepseek'
+      config:
+        legacyOnly: true

@@ -32,7 +32,7 @@ export function registerChannels(ctx: Context, adapter: LlmAdapter, read: () => 
   }
 
   const initial = read()
-  const directory = ctx.llm.registerConfigurableProviders(initial.entries)
+  let directory = initial.entries.length === 0 ? undefined : ctx.llm.registerConfigurableProviders(initial.entries)
   let entries = initial.entries
   updateRoutes(initial.routes)
   return () => {
@@ -40,7 +40,8 @@ export function registerChannels(ctx: Context, adapter: LlmAdapter, read: () => 
     // 路由变更事件发出时，设置界面应已能读到同一代目录名称。
     if (!deepEqualJson(entries, next.entries)) {
       try {
-        directory.replace(next.entries)
+        if (directory === undefined) directory = ctx.llm.registerConfigurableProviders(next.entries)
+        else directory.replace(next.entries)
         entries = next.entries
       } catch (error) {
         ctx.logger.error('llm: keeping the previous configurable-channel directory after a refused update', error)

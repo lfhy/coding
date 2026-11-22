@@ -76,6 +76,8 @@ const REQUEST_PROTOCOLS = supportedProtocols()
  * 则采用所选模型支持的最高档位。渠道目录使用有效设置中的名称，不改变提供方路由。
  */
 export interface Config {
+  /** 发行组合使用：只为已有设置或凭据保留旧渠道；新渠道由通用适配器创建。 */
+  legacyOnly?: boolean
   /** 单一渠道的显示名称，默认 `DeepSeek`，最多 64 个字符；不用于路由、凭据引用或模型请求。 */
   channelName?: string
   /** Credential reference (environment-variable name) resolved per request; defaults to `DEEPSEEK_API_KEY`. */
@@ -125,6 +127,7 @@ const catalogModel: z<DeepSeekCatalogModel> = z.object({
 })
 
 export const Config: z<Config> = z.object({
+  legacyOnly: z.boolean(),
   channelName: z.string().min(1).max(64).pattern(/\S/u).default(DEFAULT_CHANNEL_NAME),
   apiKeyEnv: z.string().role('credential-ref').default(DEFAULT_API_KEY_ENV),
   baseURL: z.string(),
@@ -389,10 +392,34 @@ export function apply(ctx: Context, config: Config): void {
     resolveAttachments: () => ctx.get('attachments'),
     resolveOutbound,
   })
-  const refreshChannels = registerChannels(ctx, adapter, () => ({
-    entries: [{ provider: PROVIDER, displayName: adapter.providerInfo(PROVIDER).name, settingsNs: NS, settingsPath: [] }],
-    routes: [PROVIDER],
-  }))
+  let hasStoredCredential = false
+  const refreshChannels = registerChannels(ctx, adapter, () => {
+    const hasLegacySettings = () => ctx.get('settings')?.describe().some(entry =>
+      entry.ns === NS && entry.user != null && Object.keys(entry.user).length > 0)
+    const ambient = launchEnvironmentOf(ctx).get(options().apiKeyEnv)?.value
+    const enabled = config.legacyOnly !== true || hasStoredCredential || !!ambient || hasLegacySettings()
+    return enabled ? {
+      entries: [{ provider: PROVIDER, displayName: adapter.providerInfo(PROVIDER).name, settingsNs: NS, settingsPath: [] }],
+      routes: [PROVIDER],
+    } : { entries: [], routes: [] }
+  })
+  if (config.legacyOnly === true) {
+    ctx.inject(['credentials'], (cctx) => {
+      let revision = 0
+      const refreshCredential = async (): Promise<void> => {
+        const request = ++revision
+        const info = await cctx.credentials.describe(credentialRef(DEFAULT_API_KEY_ENV))
+        if (request !== revision) return
+        hasStoredCredential = info.configured
+        refreshChannels()
+      }
+      cctx.on('credentials/updated', (ref) => {
+        if (ref === DEFAULT_API_KEY_ENV) return refreshCredential()
+      })
+      cctx.effect(() => () => { revision++ })
+      return refreshCredential()
+    })
+  }
   ctx.llm.registerModelDiscovery(NS, async (request) => {
     if (request.provider !== undefined && request.provider !== PROVIDER) {
       throw new LlmError(`Model discovery cannot query provider "${request.provider}"`, 'INVALID_DISCOVERY')

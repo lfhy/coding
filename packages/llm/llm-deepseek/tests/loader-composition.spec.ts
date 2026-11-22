@@ -67,7 +67,14 @@ afterEach(async () => {
 })
 
 async function loadComposition(
-  options: { withDynamic: boolean; baseURL: string; reuseRoot?: string; withGeneric?: boolean },
+  options: {
+    withDynamic: boolean
+    baseURL: string
+    reuseRoot?: string
+    withGeneric?: boolean
+    legacyOnly?: boolean
+    withoutLegacyKey?: boolean
+  },
 ): Promise<{ ctx: Context; settingsPath: string; credentialsPath: string }> {
   // A reused root is the restart case: the same harness home, its documents
   // exactly as the previous process left them.
@@ -79,7 +86,7 @@ async function loadComposition(
   if (options.withDynamic && fresh) {
     await writeFile(settingsPath, '# personal settings\n')
     await writeFile(credentialsPath, [
-      'DEEPSEEK_API_KEY: boot-key',
+      ...options.withoutLegacyKey === true ? [] : ['DEEPSEEK_API_KEY: boot-key'],
       ...options.withGeneric === true ? ['GATEWAY_API_KEY: gateway-key'] : [],
       '',
     ].join('\n'), { mode: 0o600 })
@@ -107,6 +114,7 @@ async function loadComposition(
     "  name: 'coding-llm-deepseek'",
     '  config:',
     `    baseURL: ${JSON.stringify(options.baseURL)}`,
+    ...options.legacyOnly === true ? ['    legacyOnly: true'] : [],
     ...options.withGeneric === true ? ['- id: llm-pi-ai', "  name: 'coding-llm-pi-ai'"] : [],
     '',
   ].join('\n'))
@@ -143,7 +151,7 @@ describe('llm-deepseek real dynamic composition', () => {
     vi.stubEnv('DEEPSEEK_API_KEY', '')
     const legacy = await mockServer([{ kind: 'sse', events: textEvents }])
     const gateway = await mockServer([{ kind: 'sse', events: textEvents }])
-    const { ctx } = await loadComposition({ withDynamic: true, withGeneric: true, baseURL: legacy.url })
+    const { ctx } = await loadComposition({ withDynamic: true, withGeneric: true, legacyOnly: true, baseURL: legacy.url })
     const settings = ctx.get('settings')!
     const legacyBefore = settings.get(NS)
     await settings.update(settingsNamespace('llm-pi-ai'), {
@@ -162,6 +170,35 @@ describe('llm-deepseek real dynamic composition', () => {
     expect(legacy.headers[0]?.authorization).toBe('Bearer boot-key')
     expect(gateway.headers[0]?.authorization).toBe('Bearer gateway-key')
     expect(settings.get(NS)).toEqual(legacyBefore)
+  })
+
+  it('configures DeepSeek as a custom channel and reuses its thinking effort after switching to Responses', async () => {
+    vi.stubEnv('DEEPSEEK_API_KEY', '')
+    const server = await mockServer([textEvents, responsesEvents].map(events => ({ kind: 'sse', events })))
+    const { ctx } = await loadComposition({
+      withDynamic: true, withGeneric: true, legacyOnly: true, withoutLegacyKey: true, baseURL: server.url,
+    })
+    expect(ctx.llm.listConfigurableProviders().some(entry => entry.provider === 'deepseek-official')).toBe(false)
+    const settings = ctx.get('settings')!
+    const ns = settingsNamespace('llm-pi-ai')
+    const profile = {
+      displayName: 'DeepSeek Gateway', baseURL: server.url, apiKeyEnv: 'GATEWAY_API_KEY',
+      models: [{ id: 'gateway-model', reasoningEfforts: { off: null, high: 'high' } }],
+    }
+    for (const api of ['openai-completions', 'openai-responses'] as const) {
+      await settings.update(ns, { providers: { gateway: { ...profile, api } } })
+      const result = await assemble(ctx, {
+        provider: 'gateway', model: 'gateway-model', messages: [], reasoningEffort: ReasoningEffortId('high'),
+      })
+      expect(result.finish).toEqual({ kind: 'stop' })
+    }
+    expect(server.paths).toEqual(['/chat/completions', '/responses'])
+    expect(server.requests[0]).toMatchObject({ reasoning_effort: 'high' })
+    expect(server.requests[1]).toMatchObject({ reasoning: { effort: 'high' } })
+
+    await settings.update(NS, { channelName: '已有网关' })
+    expect(ctx.llm.listConfigurableProviders().find(entry => entry.provider === 'deepseek-official'))
+      .toMatchObject({ displayName: '已有网关', settingsNs: NS })
   })
 
   it('uses the channel protocol unless a model overrides it, and returns to Chat after clearing', async () => {

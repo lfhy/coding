@@ -1039,6 +1039,8 @@ Requires: `llm`
  * 则采用所选模型支持的最高档位。渠道目录使用有效设置中的名称，不改变提供方路由。
  */
 export interface Config {
+  /** 发行组合使用：只为已有设置或凭据保留旧渠道；新渠道由通用适配器创建。 */
+  legacyOnly?: boolean
   /** 单一渠道的显示名称，默认 `DeepSeek`，最多 64 个字符；不用于路由、凭据引用或模型请求。 */
   channelName?: string
   /** Credential reference (environment-variable name) resolved per request; defaults to `DEEPSEEK_API_KEY`. */
