@@ -255,6 +255,7 @@ describe('Web 笔记工作区', () => {
 
   it('加号菜单按类型分组，在宽窄窗口均可完整展开', async () => {
     const menuPage = await newEnglishPage(browser)
+    const structuredTypes = ['Presentation', 'Mind map', 'Word document', 'Excel workbook']
     try {
       for (const width of [1024, 375]) {
         await menuPage.setViewportSize({ width, height: 800 })
@@ -272,11 +273,11 @@ describe('Web 笔记工作区', () => {
         await importEntry.hover()
         const importMenu = menuPage.getByRole('menu', { name: 'Import', exact: true })
         await importMenu.waitFor()
-        expect(await importMenu.getByRole('menuitem').allTextContents()).toEqual(['Text', 'Presentation', 'Mind map'])
+        expect(await importMenu.getByRole('menuitem').allTextContents()).toEqual(['Text', ...structuredTypes])
         await createEntry.hover()
         const types = menuPage.getByRole('menu', { name: 'New', exact: true })
         await types.waitFor()
-        expect(await types.getByRole('menuitem').allTextContents()).toEqual(['Folder', 'Note', 'Presentation', 'Mind map'])
+        expect(await types.getByRole('menuitem').allTextContents()).toEqual(['Folder', 'Note', ...structuredTypes])
 
         // 实际命中浮层边缘也能发现祖先滚动区裁剪，而不只是检查坐标。
         const position = await types.evaluate((menu) => {

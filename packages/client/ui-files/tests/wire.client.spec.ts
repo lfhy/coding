@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { listManagedFiles, parseManagedFilesPage } from '../src/client/wire.ts'
+import { categoryOf, listManagedFiles, parseManagedFilesPage } from '../src/client/wire.ts'
 
 const record = {
   id: 'upload-1', kind: 'upload', name: 'notes.txt', relativePath: 'upload/notes.txt',
@@ -33,6 +33,12 @@ describe('managed files wire', () => {
     const page = parseManagedFilesPage({ items: [record, noteRecord], total: 2 })
     expect(page.items.map(item => item.kind)).toEqual(['upload', 'note'])
     expect(page.items[1]?.relativePath).toBe('notes/想法.md')
+  })
+
+  it('把 Excel 原件和导出成品归入文档', () => {
+    expect(categoryOf({ name: 'budget.xlsx', mediaType: 'application/octet-stream' })).toBe('document')
+    expect(categoryOf({ name: 'budget', mediaType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }))
+      .toBe('document')
   })
 
   it('拒绝非成功 HTTP 状态与格式错误的响应', async () => {

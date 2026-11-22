@@ -7,7 +7,7 @@ export interface NotesTabsPublishRequest {
   readonly version: number
   readonly openTabs: readonly string[]
   readonly activeTabPath: string | null
-  readonly activeKind: 'note' | 'ppt' | 'mindmap'
+  readonly activeKind: 'note' | 'ppt' | 'mindmap' | 'word' | 'excel'
 }
 
 /** Host 接受完整快照后的回执；失败响应的 `error` 是稳定代码。 */

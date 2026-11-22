@@ -22,6 +22,8 @@ declare module 'coding-client-ui-slots' {
     'notes.document.ppt': { kind: 'single'; scope: 'session'; owner: { shown: boolean; path: string } }
     /** 当前思维导图的内容区由编辑器提供，路径相对笔记根目录。 */
     'notes.document.mindmap': { kind: 'single'; scope: 'session'; owner: { shown: boolean; path: string } }
+    /** Word 和 Excel 的编辑与导出由办公编辑器提供，路径相对笔记根目录。 */
+    'notes.document.office': { kind: 'single'; scope: 'session'; owner: { shown: boolean; path: string; kind: 'word' | 'excel' } }
   }
 }
 
@@ -54,6 +56,7 @@ export function apply(ctx: ClientContext): void {
     children: {
       'notes.document.ppt': { kind: 'single', scope: 'session' },
       'notes.document.mindmap': { kind: 'single', scope: 'session' },
+      'notes.document.office': { kind: 'single', scope: 'session' },
     },
   }, NotesPage))
 }

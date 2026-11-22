@@ -1,8 +1,31 @@
-/** 笔记与文件库共用的安全文件名和磁盘同步工具。 */
+/** 笔记与文件库共用的真实目录、安全文件名和磁盘同步工具。 */
 import { randomUUID } from 'node:crypto'
 import { constants } from 'node:fs'
-import { link, lstat, open, rename, unlink } from 'node:fs/promises'
+import { link, lstat, mkdir, open, rename, unlink } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
+
+/**
+ * 创建真实私有目录；修复权限时也只操作核对过身份的目录句柄。
+ * @param path - 文件库或笔记目录路径。
+ * @param repairPermissions - 允许收紧当前用户已有的目录；默认拒绝过宽权限。
+ * @returns 可使用真实目录后兑现；属主、权限或条目身份不符时拒绝。
+ */
+export async function privateDirectory(path: string, repairPermissions = false): Promise<void> {
+  try { await mkdir(path, { mode: 0o700 }) }
+  catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error }
+  const info = await lstat(path)
+  const uid = process.getuid?.()
+  const invalid = () => new Error(`文件库目录不是仅限当前用户访问的真实目录: ${path}`)
+  if (!info.isDirectory() || info.isSymbolicLink() || uid !== undefined && info.uid !== uid) throw invalid()
+  if (process.platform !== 'win32' && (info.mode & 0o077) !== 0) {
+    if (!repairPermissions) throw invalid()
+    const handle = await open(path, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW)
+    try {
+      if (!sameEntry(info, await handle.stat())) throw invalid()
+      await handle.chmod(0o700)
+    } finally { await handle.close() }
+  }
+}
 
 /**
  * 净化单个文件名，保留可识别后缀，并按 UTF-8 字节限制长度。

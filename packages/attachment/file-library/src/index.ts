@@ -1,7 +1,7 @@
 /** 全局受管理文件：私有磁盘对象、持久领域元数据和只读列表。@module coding-file-library */
 import { createHash, randomUUID } from 'node:crypto'
 import { constants } from 'node:fs'
-import { lstat, mkdir, open, readdir, readFile, chmod, unlink } from 'node:fs/promises'
+import { lstat, mkdir, open, readdir, readFile, unlink } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, join, resolve, sep } from 'node:path'
 import { Readable } from 'node:stream'
 import { Context, Service } from '@deepseek-ai/cordis'
@@ -10,19 +10,25 @@ import { resolveDshHome } from 'coding-home-paths'
 import type { Domain } from 'coding-storage-domain'
 import type {} from 'coding-workspace'
 import { FileId } from './brand.ts'
-import { managedFileCategory } from './file-category.ts'
+import { managedFileCategory, managedUploadMediaType } from './file-category.ts'
 import { fileDomainSpec } from './spec.ts'
 import { installFileRoutes } from './routes.ts'
-import { safeName, syncDirectory } from './private-files.ts'
+import { privateDirectory, safeName, syncDirectory } from './private-files.ts'
 import { isMarkdownNoteName, NoteStore } from './notes.ts'
-import type { ManagedFileCategory, ManagedFileKind, ManagedFilePage, ManagedFileRecord, MindMapSnapshot, NotesTreeNode } from './types.ts'
+import type {
+  ManagedFileCategory, ManagedFileKind, ManagedFilePage, ManagedFileRecord, MindMapSnapshot, NotesTreeNode,
+  OfficeExport, OfficeKind, OfficeSnapshot,
+} from './types.ts'
 
 export { FileId } from './brand.ts'
 export { isDeckDirectoryName, NOTE_DECK_SUFFIX, NoteConflictError, NoteNotFoundError, StaleNoteError } from './note-path.ts'
 export { NOTE_MINDMAP_SUFFIX } from './mindmap.ts'
+export { NOTE_EXCEL_SUFFIX, NOTE_WORD_SUFFIX } from './office-notes.ts'
 export type {
+  ExcelCell, ExcelMerge, ExcelSheet, ExcelStyle,
   ManagedFileCategory, ManagedFileKind, ManagedFileRecord, ManagedFilePage,
   MindMapDocument, MindMapEdit, MindMapNode, MindMapSnapshot, NotesTreeNode,
+  OfficeDocument, OfficeEdit, OfficeExport, OfficeKind, OfficeSnapshot, WordParagraph, WordParagraphAlign, WordParagraphStyle, WordRun,
 } from './types.ts'
 
 declare module '@deepseek-ai/cordis' {
@@ -42,33 +48,12 @@ const EXTENSION = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp
 
 /** 生成图片副本接受的媒体类型；与附件服务的图片准入格式一致。 */
 export type GeneratedImageMediaType = keyof typeof EXTENSION
-const UPLOAD_MEDIA: Record<string, string> = {
-  png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp',
-  pdf: 'application/pdf', txt: 'text/plain', md: 'text/markdown', csv: 'text/csv',
-  pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-}
 
 function identity(value: string, field: string): string {
   if (typeof value !== 'string' || value.length === 0 || value.length > 256 || /[\u0000-\u001f\u007f]/u.test(value)) {
     throw new TypeError(`${field}无效`)
   }
   return value
-}
-
-async function privateDirectory(path: string, repairPermissions = false): Promise<void> {
-  // 已存在的条目也按 lstat 检查，不跟随被替换进目录树的符号链接。
-  try { await mkdir(path, { mode: 0o700 }) }
-  catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error }
-  const info = await lstat(path)
-  const currentUid = process.getuid?.()
-  if (!info.isDirectory() || info.isSymbolicLink() || currentUid !== undefined && info.uid !== currentUid) {
-    throw new Error(`文件库目录不是仅限当前用户访问的真实目录: ${path}`)
-  }
-  if (process.platform !== 'win32' && (info.mode & 0o077) !== 0) {
-    if (!repairPermissions) throw new Error(`文件库目录不是仅限当前用户访问的真实目录: ${path}`)
-    await chmod(path, 0o700)
-  }
 }
 
 /** 受管理文件与记录分属两个介质；提交失败只回滚当前操作仍拥有的磁盘条目。 */
@@ -139,11 +124,10 @@ export class FileLibrary extends Service {
     const name = safeName(input.name)
     const sessionId = identity(input.sessionId, '会话标识')
     await input.verify()
-    const extension = name.split('.').at(-1)?.toLowerCase() ?? ''
     return this.save('upload', name, `uploads/${randomUUID()}-${name}`, input.stream,
       { sessionId, workspaceId: input.workspaceId === undefined
         ? this.workspaceIdForSession(sessionId) : identity(input.workspaceId, '工作区标识') }, input.verify,
-      UPLOAD_MEDIA[extension] ?? 'application/octet-stream', MAX_MANAGED_FILE_BYTES)
+      managedUploadMediaType(name), MAX_MANAGED_FILE_BYTES)
   }
 
   /**
@@ -442,6 +426,60 @@ export class FileLibrary extends Service {
   async editNoteMindmap(path: string, revision: string, edits: unknown): Promise<MindMapSnapshot> {
     return this.notes.mindmaps.edit(path, revision, edits)
   }
+
+  /** 独占创建完整的空白原生笔记。
+   * @param kind - 文档类型。
+   * @param name - 笔记名称。
+   * @param directory - 可选的真实相对父目录。
+   * @returns 新笔记的相对路径。
+   */
+  async createNoteOffice(kind: OfficeKind, name: string, directory?: string): Promise<{ path: string }> {
+    return this.notes.office.create(kind, name, directory)
+  }
+
+  /** 转换完整的普通 Office 文件后，独占创建与源文件独立的新笔记。
+   * @param kind - 文档类型，必须与 ZIP 主部件相符。
+   * @param name - 目标笔记名称或带对应来源后缀的文件名。
+   * @param bytes - 来源文件字节。
+   * @param directory - 可选的真实相对父目录。
+   * @returns 新笔记的相对路径。
+   */
+  async importNoteOffice(kind: OfficeKind, name: string, bytes: Uint8Array, directory?: string): Promise<{ path: string }> {
+    return this.notes.office.import(kind, name, bytes, directory)
+  }
+
+  /** 读取对应磁盘字节的快照。
+   * @param path - 笔记根目录下的相对路径。
+   * @returns 规范路径、版本和结构化文档。
+   */
+  async readNoteOffice(path: string): Promise<OfficeSnapshot> { return this.notes.office.read(path) }
+
+  /** 仅在版本相同且输入有效时，原子替换整篇文档。
+   * @param path - 笔记的相对路径。
+   * @param revision - 读取所得的版本；失配时抛出 `NoteConflictError`。
+   * @param document - 待验证的完整原生文档。
+   * @returns 提交后的快照。
+   */
+  async saveNoteOffice(path: string, revision: string, document: unknown): Promise<OfficeSnapshot> {
+    return this.notes.office.save(path, revision, document)
+  }
+
+  /** 在同一笔记写入队列内核对版本并提交整批编辑；任一步失败均不写入。
+   * @param path - 笔记的相对路径。
+   * @param revision - 读取所得的版本；失配时抛出 `NoteConflictError`。
+   * @param edits - 待验证的非空有界编辑批次。
+   * @returns 提交后的快照。
+   */
+  async editNoteOffice(path: string, revision: string, edits: unknown): Promise<OfficeSnapshot> {
+    return this.notes.office.edit(path, revision, edits)
+  }
+
+  /** 从一次读取的快照离线生成 Office 文件，不改写磁盘。
+   * @param path - 笔记的相对路径。
+   * @param revision - 可选的读取版本；失配时抛出 `NoteConflictError`。
+   * @returns 下载名称、媒体类型、文件字节。
+   */
+  async exportNoteOffice(path: string, revision?: string): Promise<OfficeExport> { return this.notes.office.export(path, revision) }
 
   /** 读取 Markdown 原文与保存所需的时间基准。
    * @param relativePath - 相对笔记根目录的 Markdown 路径。

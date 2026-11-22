@@ -9,7 +9,7 @@ import type { NoteCreateKind } from './NotesDirectory.tsx'
 import type { NotesTreeEntry } from './wire.ts'
 import css from './NotesPage.module.css'
 
-type NameDialogKind = NoteCreateKind | 'renameNote' | 'renameFolder' | 'renamePresentation' | 'renameMindmap'
+type NameDialogKind = NoteCreateKind | 'renameNote' | 'renameFolder' | 'renamePresentation' | 'renameMindmap' | 'renameWord' | 'renameExcel'
 
 interface Destination {
   tree: readonly NotesTreeEntry[]
@@ -165,10 +165,12 @@ export function NoteNameDialog({ t, kind, name, busy, error, destination, onName
 
 const titleKeys = {
   create: 'newNote', folder: 'newFolder', presentation: 'newPresentation', mindmap: 'newMindmap',
+  word: 'newWord', excel: 'newExcel', renameWord: 'renameWord', renameExcel: 'renameExcel',
   renameNote: 'renameNote', renameFolder: 'renameFolder', renamePresentation: 'renamePresentation', renameMindmap: 'renameMindmap',
 } as const
 
 const nameKeys = {
   create: 'noteName', folder: 'folderName', presentation: 'presentationName', mindmap: 'mindmapName',
+  word: 'wordName', excel: 'excelName', renameWord: 'wordName', renameExcel: 'excelName',
   renameNote: 'noteName', renameFolder: 'folderName', renamePresentation: 'presentationName', renameMindmap: 'mindmapName',
 } as const

@@ -1,0 +1,85 @@
+/* 正文填满笔记页留下的区域；两个工具栏都不进入画布滚动。 */
+.editor {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-bg-layer-1);
+}
+
+.toolbar,
+.formatting {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  padding: 4px 12px;
+  border-bottom: 1px solid var(--dsw-alias-border-l1);
+}
+
+.toolbar {
+  justify-content: space-between;
+  min-height: 36px;
+}
+
+.actions,
+.saveState {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.saveState {
+  color: var(--dsw-alias-label-secondary);
+  min-width: 0;
+  font: var(--dsw-font-xxs-12);
+}
+
+.formatting {
+  gap: 2px;
+}
+
+.canvas {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--dsw-alias-bg-base);
+}
+
+.engine {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+.empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 16px;
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-xs-13);
+  text-align: center;
+}
+
+.error {
+  margin: 0;
+  color: var(--dsw-alias-state-error-primary);
+  font: var(--dsw-font-xs-13);
+}
+
+.colorForm {
+  display: grid;
+  gap: 8px;
+  font: var(--dsw-font-xs-13);
+}

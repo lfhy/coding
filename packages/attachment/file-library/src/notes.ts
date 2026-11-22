@@ -5,8 +5,9 @@ import { basename, dirname, extname, join, relative, sep } from 'node:path'
 import { isMindmapName } from './mindmap.ts'
 import { MindmapNotes } from './mindmap-notes.ts'
 import {
-  isDeckDirectoryName, NOTE_DECK_SUFFIX, NOTE_MAX_DEPTH, NoteConflictError, NoteNotFoundError, noteTarget, StaleNoteError,
+  isDeckDirectoryName, NOTE_DECK_SUFFIX, NOTE_MAX_DEPTH, NoteConflictError, NoteNotFoundError, noteTarget, StaleNoteError, strictNoteParent,
 } from './note-path.ts'
+import { officeKindOfName, OfficeNotes } from './office-notes.ts'
 import { safeName, syncDirectory, writeNoteBytes } from './private-files.ts'
 import type { NotesTreeNode } from './types.ts'
 
@@ -55,9 +56,11 @@ export function isMarkdownNoteName(name: string): boolean {
 /** 文件库内部的笔记存储；根目录在每次操作时由文件库校验。 */
 export class NoteStore {
   readonly mindmaps: MindmapNotes
+  readonly office: OfficeNotes
 
   constructor(private readonly root: string, private readonly openRoot: () => Promise<string>) {
     this.mindmaps = new MindmapNotes(root, openRoot, action => this.scheduleNotesWrite(action))
+    this.office = new OfficeNotes(root, openRoot, action => this.scheduleNotesWrite(action))
   }
 
   /** 笔记写操作串行队列，避免改名/删除后的迟到保存重建旧路径。 */
@@ -135,7 +138,7 @@ export class NoteStore {
   }
 
   /**
-   * 扫描真实目录、Markdown、思维导图和幻灯片工程，不跟随符号链接。
+   * 扫描真实目录、笔记文件和幻灯片工程，不跟随符号链接。
    * 幻灯片工程目录只出现为一行 `deck` 条目，其内部的工程文件不参与扫描与节点预算。
    * 深度与节点总数超限视为结构异常，整棵树拒绝。
    * @returns 根级条目数组；子节点按名称排序。
@@ -162,7 +165,8 @@ export class NoteStore {
             nodes.push({ name: entry.name, kind: 'dir', path: rel, mtimeMs: info.mtimeMs, children: await scan(full, `${rel}/`, depth + 1) })
           }
         } else if (entry.isFile()) {
-          const kind = isMindmapName(entry.name) ? 'mindmap' : isMarkdownNoteName(entry.name) ? 'file' : undefined
+          const kind = officeKindOfName(entry.name)
+            ?? (isMindmapName(entry.name) ? 'mindmap' : isMarkdownNoteName(entry.name) ? 'file' : undefined)
           if (kind === undefined) continue
           const info = await lstat(full)
           if (info.isFile() && !info.isSymbolicLink()) nodes.push({ name: entry.name, kind, path: rel, mtimeMs: info.mtimeMs })
@@ -361,26 +365,31 @@ export class NoteStore {
    */
   async renameNote(relativePath: string, name: string): Promise<{ path: string }> {
     return this.scheduleNotesWrite(async () => {
-      const { rel, target } = noteTarget(this.root, relativePath)
+      const { rel, segments, target } = noteTarget(this.root, relativePath)
       if (typeof name !== 'string' || name.length === 0 || name.length > 1024
         || name.includes('\0') || /[\\/]/u.test(name) || name === '.' || name === '..'
         || /^[a-zA-Z]:/u.test(name)) throw new TypeError('名称无效')
       const notesDir = await this.openRoot()
       const realNotes = await realpath(notesDir)
       const parent = dirname(target)
-      const realParent = await realpath(parent).catch((error: unknown) => {
-        if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw new NoteNotFoundError()
-        throw error
-      })
+      const officeKind = officeKindOfName(basename(target))
+      const realParent = officeKind !== undefined
+        ? (await strictNoteParent(notesDir, segments.slice(0, -1))).target
+        : await realpath(parent).catch((error: unknown) => {
+          if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw new NoteNotFoundError()
+          throw error
+        })
       if (realParent !== realNotes && !realParent.startsWith(realNotes + sep)) throw new TypeError('笔记路径无效')
-      const current = await lstat(target).catch((error: unknown) => {
+      const entry = join(realParent, basename(target))
+      const current = await lstat(entry).catch((error: unknown) => {
         if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw new NoteNotFoundError()
         throw error
       })
       if (current.isSymbolicLink() || !current.isFile() && !current.isDirectory()) throw new TypeError('笔记条目无效')
       const mindmap = current.isFile() && isMindmapName(basename(target))
+      const office = current.isFile() && officeKind !== undefined
       const sourceExtension = current.isFile() ? extname(target) : ''
-      if (current.isFile() && !mindmap && !isMarkdownNoteName(target)) throw new TypeError('笔记扩展名无效')
+      if (current.isFile() && !office && !mindmap && !isMarkdownNoteName(target)) throw new TypeError('笔记扩展名无效')
       const leaf = safeName(name)
       const requestedExtension = current.isFile() ? extname(leaf) : ''
       if (current.isFile() && requestedExtension !== '' && requestedExtension.toLowerCase() !== sourceExtension.toLowerCase()) {
@@ -390,9 +399,10 @@ export class NoteStore {
         ? `${requestedExtension === '' ? leaf : leaf.slice(0, -requestedExtension.length)}${sourceExtension}`
         // 幻灯片工程目录与文件一样保留自己的后缀，用户只改名称部分。
         : isDeckDirectoryName(basename(target)) ? deckDirectoryName(leaf) : leaf
-      const source = mindmap ? await this.mindmaps.confirmEntry(rel, current) : target
+      const source = office ? await this.office.confirmEntry(rel, current)
+        : mindmap ? await this.mindmaps.confirmEntry(rel, current) : target
       const writeParent = dirname(source)
-      const targetPath = join(writeParent, mindmap ? safeName(fileName) : fileName)
+      const targetPath = join(writeParent, office || mindmap ? safeName(fileName) : fileName)
       if (targetPath === source) return { path: rel }
       try { await lstat(targetPath); throw new NoteConflictError('笔记已存在') }
       catch (error) {
@@ -413,14 +423,17 @@ export class NoteStore {
    */
   async deleteNote(relativePath: string): Promise<void> {
     return this.scheduleNotesWrite(async () => {
-      const { rel, target } = noteTarget(this.root, relativePath)
+      const { rel, segments, target } = noteTarget(this.root, relativePath)
       const notesDir = await this.openRoot()
       const realNotes = await realpath(notesDir)
       const parent = dirname(target)
-      const realParent = await realpath(parent).catch((error: unknown) => {
-        if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw new NoteNotFoundError()
-        throw error
-      })
+      const officeKind = officeKindOfName(basename(target))
+      const realParent = officeKind !== undefined
+        ? (await strictNoteParent(notesDir, segments.slice(0, -1))).target
+        : await realpath(parent).catch((error: unknown) => {
+          if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw new NoteNotFoundError()
+          throw error
+        })
       if (realParent !== realNotes && !realParent.startsWith(realNotes + sep)) throw new TypeError('笔记路径无效')
       const entry = join(realParent, basename(target))
       const current = await lstat(entry).catch((error: unknown) => {
@@ -433,7 +446,8 @@ export class NoteStore {
         if (!(await realpath(entry)).startsWith(realNotes + sep)) throw new TypeError('笔记路径无效')
         await rm(entry, { recursive: true })
       } else {
-        if (isMindmapName(basename(entry))) await unlink(await this.mindmaps.confirmEntry(rel, current))
+        if (officeKind !== undefined) await unlink(await this.office.confirmEntry(rel, current))
+        else if (isMindmapName(basename(entry))) await unlink(await this.mindmaps.confirmEntry(rel, current))
         else if (!isMarkdownNoteName(entry)) throw new TypeError('笔记扩展名无效')
         else await unlink(entry)
       }

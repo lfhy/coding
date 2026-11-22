@@ -51,6 +51,9 @@ External packages that a workspace package resolves at runtime. The tier covers 
 | [`@standard-schema/spec`](https://github.com/standard-schema/standard-schema) | MIT |
 | [`@tanstack/react-virtual`](https://github.com/TanStack/virtual) | MIT |
 | [`@types/mdast`](https://github.com/DefinitelyTyped/DefinitelyTyped) | MIT |
+| [`@univerjs/preset-docs-core`](https://github.com/dream-num/univer) | Apache-2.0 |
+| [`@univerjs/preset-sheets-core`](https://github.com/dream-num/univer) | Apache-2.0 |
+| [`@univerjs/presets`](https://github.com/dream-num/univer) | Apache-2.0 |
 | [`@vscode/ripgrep`](https://github.com/microsoft/vscode-ripgrep) | MIT |
 | [`@xterm/addon-fit`](https://github.com/xtermjs/xterm.js/tree/master/addons/addon-fit) | MIT |
 | [`@xterm/headless`](https://github.com/xtermjs/xterm.js) | MIT |
@@ -92,6 +95,8 @@ External packages that a workspace package resolves at runtime. The tier covers 
 | [`playwright`](https://github.com/microsoft/playwright) | Apache-2.0 |
 | [`react`](https://github.com/facebook/react) | MIT |
 | [`react-dom`](https://github.com/facebook/react) | MIT |
+| [`rxjs`](https://github.com/reactivex/rxjs) | Apache-2.0 |
+| [`saxes`](https://github.com/lddubeau/saxes) | ISC |
 | [`sharp`](https://github.com/lovell/sharp) | Apache-2.0 |
 | [`shiki`](https://github.com/shikijs/shiki) | MIT |
 | [`subset-font`](https://github.com/papandreou/subset-font) | BSD-3-Clause |

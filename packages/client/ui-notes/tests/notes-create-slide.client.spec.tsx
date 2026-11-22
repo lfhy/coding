@@ -23,8 +23,8 @@ async function mountNotes() {
     assistantPanelId: 'note-assistant',
     toggleAssistant: vi.fn(),
     sessionId: 's-notes',
-    renderSlot: (key: string, owner: { path: string }) =>
-      <div>{key === 'notes.document.mindmap' ? '思维导图' : '演示文稿'} {owner.path}</div>,
+    renderSlot: (key: string, owner: { path: string; kind?: string }) =>
+      <div>{key === 'notes.document.office' ? owner.kind : key === 'notes.document.mindmap' ? '思维导图' : '演示文稿'} {owner.path}</div>,
     useStore: bindSnapshotSelector(store),
     actions: store.actions,
   } as unknown as NotesPageProps
@@ -41,8 +41,8 @@ function openLauncher() {
   return { trigger, menu: screen.getByRole('menu') }
 }
 
-/** 通过指定分组选择同名类型，区分新建和导入的「幻灯片」。 */
-function chooseLauncherType(group: '新建' | '导入', name: '幻灯片' | '文本') {
+/** 通过指定分组选择类型，区分新建和导入里的同名项。 */
+function chooseLauncherType(group: '新建' | '导入', name: string) {
   const { trigger, menu } = openLauncher()
   fireEvent.click(within(menu).getByRole('menuitem', { name: group }), { detail: 1 })
   const submenu = screen.getByRole('menu', { name: group })
@@ -66,7 +66,7 @@ describe('NotesPage 加号菜单', () => {
 
     fireEvent.mouseEnter(importEntry)
     const importMenu = within(screen.getByRole('menu', { name: '导入' }))
-    expect(importMenu.getAllByRole('menuitem')).toEqual(['文本', '幻灯片', '思维导图'].map(name =>
+    expect(importMenu.getAllByRole('menuitem')).toEqual(['文本', '幻灯片', '思维导图', 'Word 文档', 'Excel 表格'].map(name =>
       importMenu.getByRole('menuitem', { name })))
 
     fireEvent.mouseEnter(create)
@@ -81,6 +81,8 @@ describe('NotesPage 加号菜单', () => {
       types.getByRole('menuitem', { name: '笔记' }),
       types.getByRole('menuitem', { name: '幻灯片' }),
       types.getByRole('menuitem', { name: '思维导图' }),
+      types.getByRole('menuitem', { name: 'Word 文档' }),
+      types.getByRole('menuitem', { name: 'Excel 表格' }),
     ])
     fireEvent.click(folder, { detail: 1 })
     const dialog = screen.getByRole('dialog', { name: '新建目录' })
@@ -337,7 +339,7 @@ it('轮询发现助手新建导图就打开标签，并在同窗重挂载后继�
       children: created ? [{ name: path, path, kind: 'mindmap', mtimeMs: 2_000 }] : [],
     })
     if (url.pathname === '/api/notes/tabs' && typeof init?.body === 'string') {
-      published.push(JSON.parse(init.body))
+      published.push(JSON.parse(init.body) as (typeof published)[number])
       return Response.json({ ok: true })
     }
     throw new Error(`unexpected request: ${url.pathname}`)
@@ -355,5 +357,58 @@ it('轮询发现助手新建导图就打开标签，并在同窗重挂载后继�
   unmount()
   await mountNotes()
   expect(published.at(-1)).toMatchObject({ windowId: previous.windowId, version: previous.version + 1 })
+  expect(fetchMock.mock.calls.every(([url]) => !String(url).startsWith('/api/notes/read'))).toBe(true)
+})
+
+it.each([
+  ['word', 'Word 文档', '文档名称', '.docx', '.codingword'],
+  ['excel', 'Excel 表格', '表格名称', '.xlsx', '.codingexcel'],
+] as const)('新建和导入 %s 后挂载其编辑器并发布正确的活动标签', async (kind, label, field, extension, suffix) => {
+  const children: { name: string; path: string; kind: typeof kind; mtimeMs: number }[] = []
+  const newPath = `新文件${suffix}`
+  const importedPath = `原稿${suffix}`
+  const add = (path: string) => {
+    children.push({ path, name: path, kind, mtimeMs: 2_000 })
+    return Response.json({ path }, { status: 201 })
+  }
+  const fetchMock = vi.fn(async (input: string | URL, init?: RequestInit) => {
+    const url = new URL(String(input), 'http://localhost')
+    switch (url.pathname) {
+      case '/api/notes/tree': return Response.json({ children })
+      case '/api/notes/tabs': return Response.json({ ok: true })
+      case '/api/notes/office/create': return add(newPath)
+      case '/api/notes/office/import': return add(importedPath)
+      default: throw new Error(`unexpected request: ${url.pathname}/${init?.method}`)
+    }
+  })
+  vi.stubGlobal('fetch', fetchMock)
+  const { container, store } = await mountNotes()
+  chooseLauncherType('新建', label)
+  const dialog = within(screen.getByRole('dialog', { name: `新建 ${label}` }))
+  fireEvent.change(dialog.getByLabelText(field), { target: { value: '新文件' } })
+  await act(async () => { fireEvent.click(dialog.getByRole('button', { name: '创建' })) })
+  expect(screen.getByText(`${kind} ${newPath}`)).toBeTruthy()
+  expect(store.getSnapshot()).toMatchObject({ activePath: newPath, path: null })
+  const create = fetchMock.mock.calls.find(([url]) => url === '/api/notes/office/create')?.[1]
+  if (typeof create?.body !== 'string') throw new Error('新建办公笔记未包含 JSON 请求体')
+  expect(JSON.parse(create.body)).toEqual({ kind, name: '新文件' })
+
+  chooseLauncherType('导入', label)
+  const input = container.querySelector<HTMLInputElement>(`input[accept="${extension}"]`)
+  if (input === null) throw new Error('缺少对应格式的文件选择器')
+  await act(async () => { fireEvent.change(input, { target: { files: [new File(['wrong'], '原稿.txt')] } }) })
+  expect(store.getSnapshot().activePath).toBe(newPath)
+  expect(fetchMock.mock.calls.some(([url]) => String(url).startsWith('/api/notes/office/import'))).toBe(false)
+  const file = new File([new Uint8Array([0x50, 0x4b])], `原稿${extension.toUpperCase()}`)
+  await act(async () => { fireEvent.change(input, { target: { files: [file] } }) })
+  const [url, init] = fetchMock.mock.calls.find(([url]) => String(url).startsWith('/api/notes/office/import'))!
+  expect(Object.fromEntries(new URL(String(url), 'http://localhost').searchParams)).toEqual({ kind, name: file.name })
+  expect(init?.body).toBe(file)
+  expect(screen.getByText(`${kind} ${importedPath}`)).toBeTruthy()
+  expect(screen.queryByRole('button', { name: '导出' })).toBeNull()
+  const published = fetchMock.mock.calls.filter(([url]) => url === '/api/notes/tabs').at(-1)?.[1]?.body
+  if (typeof published !== 'string') throw new Error('未发布活动办公笔记标签')
+  expect(JSON.parse(published))
+    .toMatchObject({ activeTabPath: importedPath, activeKind: kind, openTabs: [newPath, importedPath] })
   expect(fetchMock.mock.calls.every(([url]) => !String(url).startsWith('/api/notes/read'))).toBe(true)
 })

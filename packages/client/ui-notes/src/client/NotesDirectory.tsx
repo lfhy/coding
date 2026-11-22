@@ -8,16 +8,24 @@ import {
 import { Icon } from 'coding-client-ui-icons'
 import type { PropsLocale } from 'coding-client-ui-slots'
 import type { NS } from './locales.ts'
-import { NOTE_ICONS, labelOf, noteKindOf } from './notes-tree.ts'
+import type { NoteImportKind, NoteImportPicker } from './notes-import.ts'
+import { NOTE_ICONS, isOfficeKind, labelOf, noteKindOf, type OfficeKind } from './notes-tree.ts'
 import type { NotesTreeEntry } from './wire.ts'
 import css from './NotesPage.module.css'
 
 /** 弹窗辨别条目类型及定位目录所需的信息。 */
 export type NoteActionTarget = Pick<NotesTreeEntry, 'kind' | 'name' | 'path'>
 /** 新建子菜单与创建弹窗共用的操作类型。 */
-export type NoteCreateKind = 'create' | 'folder' | 'presentation' | 'mindmap'
+export type NoteCreateKind = 'create' | 'folder' | 'presentation' | 'mindmap' | OfficeKind
 type NoteContextMenu = { target: NoteActionTarget; x: number; y: number; trigger: HTMLButtonElement }
-type ImportPicker = { accept: string; onFile: (file: File | undefined) => void }
+
+const importTypes = [
+  ['text', 'importText', 'notes'],
+  ['slides', 'entryPresentation', 'file-slides'],
+  ['mindmap', 'entryMindmap', 'file-mindmap'],
+  ['word', 'entryWord', 'file-word'],
+  ['excel', 'entryExcel', 'file-excel'],
+] as const
 
 type NotesDirectoryProps = PropsLocale<typeof NS> & {
   tree: readonly NotesTreeEntry[]
@@ -33,9 +41,7 @@ type NotesDirectoryProps = PropsLocale<typeof NS> & {
   onSelectPath: (path: string) => void
   onCreate: (kind: NoteCreateKind, path: string, trigger: HTMLButtonElement | null) => void
   onEdit: (kind: 'rename' | 'delete', target: NoteActionTarget, trigger: HTMLButtonElement) => void
-  textImport: ImportPicker
-  slidesImport: ImportPicker
-  mindmapImport: ImportPicker
+  imports: Record<NoteImportKind, NoteImportPicker>
 }
 
 /**
@@ -45,13 +51,11 @@ type NotesDirectoryProps = PropsLocale<typeof NS> & {
  */
 export function NotesDirectory({
   t, tree, expanded, activePath, collapsed, width, creating, query, onQueryChange, launcherRef,
-  onToggleDir, onSelectPath, onCreate, onEdit, textImport, slidesImport, mindmapImport,
+  onToggleDir, onSelectPath, onCreate, onEdit, imports,
 }: NotesDirectoryProps) {
   const searchId = useId()
   const searchTrigger = useRef<HTMLButtonElement>(null)
-  const textInput = useRef<HTMLInputElement>(null)
-  const slidesInput = useRef<HTMLInputElement>(null)
-  const mindmapInput = useRef<HTMLInputElement>(null)
+  const importInputs = useRef<Partial<Record<NoteImportKind, HTMLInputElement | null>>>({})
   const [searchOpen, setSearchOpen] = useState(false)
   const [launcherOpen, setLauncherOpen] = useState(false)
   const [contextMenu, setContextMenu] = useState<NoteContextMenu | null>(null)
@@ -141,17 +145,17 @@ export function NotesDirectory({
         { id: 'create', label: t('entryNote'), icon: <Icon name="notes" size={16} /> },
         { id: 'presentation', label: t('entryPresentation'), icon: <Icon name="file-slides" size={16} /> },
         { id: 'mindmap', label: t('entryMindmap'), icon: <Icon name="file-mindmap" size={16} /> },
+        { id: 'word', label: t('entryWord'), icon: <Icon name="file-word" size={16} /> },
+        { id: 'excel', label: t('entryExcel'), icon: <Icon name="file-excel" size={16} /> },
       ],
     },
     {
       id: 'import',
       label: t('importFile'),
       icon: <Icon name="file" size={16} />,
-      submenu: [
-        { id: 'import-text', label: t('importText'), icon: <Icon name="notes" size={16} /> },
-        { id: 'import-slides', label: t('entryPresentation'), icon: <Icon name="file-slides" size={16} /> },
-        { id: 'import-mindmap', label: t('entryMindmap'), icon: <Icon name="file-mindmap" size={16} /> },
-      ],
+      submenu: importTypes.map(([kind, label, icon]) => ({
+        id: `import-${kind}`, label: t(label), icon: <Icon name={icon} size={16} />,
+      })),
     },
   ]
   const noteCreateEntries: readonly MenuEntry[] = [
@@ -175,13 +179,12 @@ export function NotesDirectory({
               disabled={creating} onClick={() => { setContextMenu(null); setLauncherOpen(open => !open) }} />}
             items={launcherEntries}
             onSelect={(id) => {
-              const picker = id === 'import-text' ? textInput : id === 'import-slides' ? slidesInput
-                : id === 'import-mindmap' ? mindmapInput : undefined
-              if (picker !== undefined) {
+              const importKind = importTypes.find(([kind]) => id === `import-${kind}`)?.[0]
+              if (importKind !== undefined) {
                 setLauncherOpen(false)
                 launcherRef.current?.focus({ preventScroll: true })
-                picker.current?.click()
-              } else if (id === 'create' || id === 'folder' || id === 'presentation' || id === 'mindmap') {
+                importInputs.current[importKind]?.click()
+              } else if (id === 'create' || id === 'folder' || id === 'presentation' || id === 'mindmap' || isOfficeKind(id)) {
                 createIn(id, '', launcherRef.current)
               }
             }}
@@ -212,24 +215,15 @@ export function NotesDirectory({
         </div>}
         items={collapsed ? [] : treeItems} />
       {/* 每种导入格式各有一个选择器，浏览器按该类型筛选本机文件。 */}
-      <input ref={textInput} type="file" accept={textImport.accept} hidden aria-hidden="true" tabIndex={-1}
-        onChange={(event) => {
-          const file = event.target.files?.[0]
-          event.target.value = ''
-          textImport.onFile(file)
-        }} />
-      <input ref={slidesInput} type="file" accept={slidesImport.accept} hidden aria-hidden="true" tabIndex={-1}
-        onChange={(event) => {
-          const file = event.target.files?.[0]
-          event.target.value = ''
-          slidesImport.onFile(file)
-        }} />
-      <input ref={mindmapInput} type="file" accept={mindmapImport.accept} hidden aria-hidden="true" tabIndex={-1}
-        onChange={(event) => {
-          const file = event.target.files?.[0]
-          event.target.value = ''
-          mindmapImport.onFile(file)
-        }} />
+      {importTypes.map(([kind]) => (
+        <input key={kind} ref={(node) => { importInputs.current[kind] = node }}
+          type="file" accept={imports[kind].accept} hidden aria-hidden="true" tabIndex={-1}
+          onChange={(event) => {
+            const file = event.target.files?.[0]
+            event.target.value = ''
+            imports[kind].onFile(file)
+          }} />
+      ))}
     </>
   )
 }

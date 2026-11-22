@@ -5,22 +5,36 @@ export const NOTE_DECK_SUFFIX = '.codingppt'
 /** 思维导图文件后缀，与文件库的同名常量一致。 */
 export const NOTE_MINDMAP_SUFFIX = '.codingmindmap'
 
+/** 办公文件的笔记类型；磁盘后缀与文件库一致。 */
+export type OfficeKind = 'word' | 'excel'
+export const OFFICE_SUFFIXES = { word: '.codingword', excel: '.codingexcel' } as const
+
+/** 办公结构化文档使用独立的编辑与导出入口。 */
+export function isOfficeKind(kind: unknown): kind is OfficeKind {
+  return kind === 'word' || kind === 'excel'
+}
+
 /** 判断目录树里的路径是否是幻灯片工程目录（`.codingppt`），而不是 Markdown 或普通目录。 */
 export function isDeckPath(path: string): boolean {
   return path.toLowerCase().endsWith(NOTE_DECK_SUFFIX)
 }
 
 /** 按已核验的文档路径分流；目录树中的普通目录不可传入。 */
-export function noteKindOf(path: string): 'note' | 'ppt' | 'mindmap' {
-  return isDeckPath(path) ? 'ppt' : path.toLowerCase().endsWith(NOTE_MINDMAP_SUFFIX) ? 'mindmap' : 'note'
+export function noteKindOf(path: string): 'note' | 'ppt' | 'mindmap' | OfficeKind {
+  const filename = path.toLowerCase()
+  if (filename.endsWith(OFFICE_SUFFIXES.word)) return 'word'
+  if (filename.endsWith(OFFICE_SUFFIXES.excel)) return 'excel'
+  return isDeckPath(path) ? 'ppt' : filename.endsWith(NOTE_MINDMAP_SUFFIX) ? 'mindmap' : 'note'
 }
 
 /** 文档类型在目录、标签和文档标题共享同一图标。 */
-export const NOTE_ICONS = { note: 'notes', ppt: 'file-slides', mindmap: 'file-mindmap' } as const
+export const NOTE_ICONS = {
+  note: 'notes', ppt: 'file-slides', mindmap: 'file-mindmap', word: 'file-word', excel: 'file-excel',
+} as const
 
 /** 去掉笔记类型的后缀，供目录与标签显示。 */
 export function labelOf(name: string): string {
-  return name.replace(/\.(md|markdown|codingppt|codingmindmap)$/iu, '')
+  return name.replace(/\.(md|markdown|codingppt|codingmindmap|codingword|codingexcel)$/iu, '')
 }
 
 /** 在目录树中查找指定相对路径的条目。 */
@@ -79,11 +93,11 @@ export function filePaths(entries: readonly NotesTreeEntry[]): string[] {
     : [entry.path])
 }
 
-/** 供助手写入检测使用；只追踪 Markdown 和可由笔记助手创建的导图。 */
+/** 供助手写入检测使用；收集 Markdown 及有笔记助手写入入口的结构化文档。 */
 export function noteFiles(entries: readonly NotesTreeEntry[], parents: readonly string[] = []): NoteFile[] {
   const notes: NoteFile[] = []
   for (const entry of entries) {
-    if (entry.kind === 'file' || entry.kind === 'mindmap') {
+    if (entry.kind === 'file' || entry.kind === 'mindmap' || isOfficeKind(entry.kind)) {
       notes.push({ path: entry.path, mtimeMs: entry.mtimeMs, parents })
     } else if (entry.children !== undefined) {
       notes.push(...noteFiles(entry.children, [...parents, entry.path]))
@@ -101,9 +115,9 @@ export function noteFiles(entries: readonly NotesTreeEntry[], parents: readonly 
 export function latestWritten(notes: readonly NoteFile[], seen: ReadonlyMap<string, number>): NoteFile | undefined {
   let latest: NoteFile | undefined
   for (const note of notes) {
-    // 导图编辑由自身编辑器刷新，只有新建才参与自动打开。
+    // 结构化编辑器自行刷新正文，只有新文件参与欢迎页的自动打开。
     const previous = seen.get(note.path)
-    if (previous === note.mtimeMs || previous !== undefined && noteKindOf(note.path) === 'mindmap') continue
+    if (previous === note.mtimeMs || previous !== undefined && noteKindOf(note.path) !== 'note') continue
     if (latest === undefined || note.mtimeMs > latest.mtimeMs) latest = note
   }
   return latest

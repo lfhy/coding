@@ -1,11 +1,11 @@
 /** 笔记域的浏览器侧 wire 类型；响应只含相对笔记根目录的路径，绝对路径不进浏览器。 */
-import { NOTE_DECK_SUFFIX, NOTE_MINDMAP_SUFFIX } from './notes-tree.ts'
+import { isOfficeKind, NOTE_DECK_SUFFIX, NOTE_MINDMAP_SUFFIX, OFFICE_SUFFIXES, type OfficeKind } from './notes-tree.ts'
 
 /** 笔记目录树节点；`path` 相对笔记根目录，`children` 仅普通目录携带。 */
 export interface NotesTreeEntry {
   name: string
-  /** `deck` 为不可展开的幻灯片工程，`mindmap` 为结构化导图文件。 */
-  kind: 'dir' | 'file' | 'deck' | 'mindmap'
+  /** `deck` 为不可展开的幻灯片工程；其余非目录条目是文档文件。 */
+  kind: 'dir' | 'file' | 'deck' | 'mindmap' | OfficeKind
   path: string
   mtimeMs: number
   children?: NotesTreeEntry[]
@@ -39,7 +39,8 @@ export function assertNotePath(path: string): void {
 
 /** 在网络边界校验目录树节点，防止 Host 或中间层注入越界路径。 */
 function parseTreeEntry(value: unknown): NotesTreeEntry {
-  if (!isObject(value) || (value.kind !== 'dir' && value.kind !== 'file' && value.kind !== 'deck' && value.kind !== 'mindmap')
+  if (!isObject(value) || (value.kind !== 'dir' && value.kind !== 'file' && value.kind !== 'deck'
+    && value.kind !== 'mindmap' && !isOfficeKind(value.kind))
     || !nonemptyString(value.name) || !nonemptyString(value.path)
     || typeof value.mtimeMs !== 'number' || !Number.isFinite(value.mtimeMs)
     || (value.children !== undefined && !Array.isArray(value.children))) {
@@ -140,12 +141,12 @@ export async function notesCreate(name: string, directory = '', content?: string
   return { path: body.path }
 }
 
-/** 核验思维导图写入回执，拒绝不是导图的路径。 */
-async function parseMindmapWrite(response: Response): Promise<{ path: string }> {
-  if (!response.ok) throw new Error(`notes mind map HTTP ${response.status}`)
+/** 核验结构化文档写入回执，确保新标签的路径和请求类型一致。 */
+async function parseDocumentWrite(response: Response, suffix: string): Promise<{ path: string }> {
+  if (!response.ok) throw new Error(`notes document HTTP ${response.status}`)
   const body: unknown = await response.json()
-  if (!isObject(body) || !nonemptyString(body.path) || !body.path.toLowerCase().endsWith(NOTE_MINDMAP_SUFFIX)) {
-    throw new Error('Invalid note mind map payload')
+  if (!isObject(body) || !nonemptyString(body.path) || !body.path.toLowerCase().endsWith(suffix)) {
+    throw new Error('Invalid note document payload')
   }
   assertNotePath(body.path)
   return { path: body.path }
@@ -159,10 +160,10 @@ async function parseMindmapWrite(response: Response): Promise<{ path: string }> 
  */
 export async function notesCreateMindmap(name: string, directory: string): Promise<{ path: string }> {
   if (directory !== '') assertNotePath(directory)
-  return parseMindmapWrite(await fetch('/api/notes/mindmap/create', {
+  return parseDocumentWrite(await fetch('/api/notes/mindmap/create', {
     method: 'POST', headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ name, ...(directory === '' ? {} : { directory }) }),
-  }))
+  }), NOTE_MINDMAP_SUFFIX)
 }
 
 /**
@@ -171,9 +172,37 @@ export async function notesCreateMindmap(name: string, directory: string): Promi
  * @returns 导入后新导图的相对路径。
  */
 export async function notesImportMindmap(file: File): Promise<{ path: string }> {
-  return parseMindmapWrite(await fetch(`/api/notes/mindmap/import?${new URLSearchParams({ name: file.name })}`, {
+  return parseDocumentWrite(await fetch(`/api/notes/mindmap/import?${new URLSearchParams({ name: file.name })}`, {
     method: 'POST', headers: { 'content-type': 'application/octet-stream' }, body: file,
-  }))
+  }), NOTE_MINDMAP_SUFFIX)
+}
+
+/**
+ * 让文件库生成空白办公文档，浏览器不预先创建空文件。
+ * @param kind - Word 或 Excel。
+ * @param name - 用户输入的名称。
+ * @param directory - 相对笔记根目录；空字符串表示根目录。
+ * @returns 新文档经核验的相对路径。
+ */
+export async function notesCreateOffice(kind: OfficeKind, name: string, directory: string): Promise<{ path: string }> {
+  if (directory !== '') assertNotePath(directory)
+  return parseDocumentWrite(await fetch('/api/notes/office/create', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ kind, name, ...(directory === '' ? {} : { directory }) }),
+  }), OFFICE_SUFFIXES[kind])
+}
+
+/**
+ * 上传所选 Office 文件的原始字节；只在解析成功后生成可编辑副本。
+ * @param kind - 导入菜单选中的类型。
+ * @param file - 对应的 Word 或 Excel 本机文件。
+ * @returns 导入后的相对笔记路径。
+ */
+export async function notesImportOffice(kind: OfficeKind, file: File): Promise<{ path: string }> {
+  const query = new URLSearchParams({ kind, name: file.name })
+  return parseDocumentWrite(await fetch(`/api/notes/office/import?${query}`, {
+    method: 'POST', headers: { 'content-type': 'application/octet-stream' }, body: file,
+  }), OFFICE_SUFFIXES[kind])
 }
 
 /** 幻灯片请求共用的会话、名称与目标目录校验。 */

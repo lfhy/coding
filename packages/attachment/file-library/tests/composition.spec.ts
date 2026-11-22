@@ -12,7 +12,8 @@ import * as StorageDomain from 'coding-storage-domain'
 import * as Sqlite from 'coding-storage-sqlite'
 import WebServer from 'coding-host-webserver'
 import * as Connection from 'coding-client-connection'
-import FileLibrary, { type MindMapSnapshot, type NotesTreeNode } from '../src/index.ts'
+import FileLibrary from '../src/index.ts'
+import type { ManagedFilePage, MindMapSnapshot, NotesTreeNode, OfficeDocument, OfficeSnapshot } from '../src/index.ts'
 import { xmindArchive } from './xmind-fixture.ts'
 
 const contexts: Context[] = []
@@ -186,6 +187,139 @@ describe('文件库真实装配', () => {
     expect((await send('mindmap/edit', edit)).status).toBe(404)
     await expect(readdir(root)).resolves.toEqual(['子目录'])
     await expect(readdir(join(root, '子目录'))).resolves.toEqual(['示例.codingmindmap'])
+  })
+
+  it.each([
+    ['word', 'docx', 'wordprocessingml.document'],
+    ['excel', 'xlsx', 'spreadsheetml.sheet'],
+  ] as const)('真实 Host 提供 %s 的新建、保存、导出及再导入', async (kind, suffix, media) => {
+    const { ctx, origin } = await boot()
+    const folder = '项目资料'
+    await ctx.fileLibrary.createNoteDirectory(folder)
+    const notes = `${origin}/api/notes`
+    const office = `${notes}/office`
+    const post = (url: string, body: unknown, requestOrigin = origin) => fetch(url, {
+      method: 'POST', headers: { origin: requestOrigin, 'content-type': 'application/json' }, body: JSON.stringify(body),
+    })
+    const path = `${folder}/周报.coding${kind}`
+    const create = { kind, name: '周报', directory: folder }
+    const crossOrigin = await post(`${office}/create`, create, origin.replace('http:', 'https:'))
+    expect(crossOrigin.status).toBe(403)
+    expect(crossOrigin.headers.get('cache-control')).toBe('private, no-store')
+    expect((await post(`${office}/create`, { ...create, sessionId: '额外字段' })).status).toBe(400)
+    const created = await post(`${office}/create`, create)
+    expect(created.status).toBe(201)
+    expect(await created.json()).toEqual({ path })
+    expect((await post(`${office}/create`, create)).status).toBe(409)
+
+    const query = new URLSearchParams({ path })
+    const endpoint = `${office}/read?${query}`
+    const initial = await fetch(endpoint)
+    expect(initial.status).toBe(200)
+    expect(initial.headers.get('x-content-type-options')).toBe('nosniff')
+    const snapshot = await initial.json() as OfficeSnapshot
+    const document: OfficeDocument = snapshot.document.kind === 'word'
+      ? { version: 1, kind: 'word', paragraphs: [{ style: 'title', align: 'center', runs: [{ text: '季度报告', bold: true }] }] }
+      : { version: 1, kind: 'excel', sheets: [{ id: 'stats', name: '统计', cells: [
+        { row: 0, column: 0, value: '销售额' }, { row: 2, column: 1, value: 12, formula: '=SUM(7,5)' },
+      ], merges: [{ startRow: 0, startColumn: 0, endRow: 0, endColumn: 1 }] }] }
+    expect(snapshot).toMatchObject({ path, document: { kind, version: 1 } })
+    expect((await fetch(`${endpoint}&${query}`)).status).toBe(400)
+    expect((await fetch(endpoint, { headers: { 'sec-fetch-site': 'cross-site' } })).status).toBe(403)
+    expect((await fetch(`${notes}/read?${query}`)).status).toBe(400)
+    const write = { path, revision: snapshot.revision, document }
+    const saved = await post(`${office}/save`, write)
+    expect(saved.status).toBe(200)
+    expect(saved.headers.get('cache-control')).toBe('private, no-store')
+    const next = await saved.json() as OfficeSnapshot
+    expect(next.document).toEqual(document)
+    expect((await post(`${office}/save`, write)).status).toBe(409)
+    expect((await post(`${office}/edit`, { ...write, edits: [] })).status).toBe(404)
+    const wrongMethod = await fetch(`${office}/save`)
+    expect(wrongMethod.status).toBe(405)
+    expect(wrongMethod.headers.get('allow')).toBe('POST')
+
+    const exportUrl = `${office}/export?${query}`
+    expect((await fetch(`${exportUrl}&revision=${snapshot.revision}`)).status).toBe(409)
+    const download = await fetch(`${exportUrl}&revision=${next.revision}`)
+    expect(download.status).toBe(200)
+    expect(download.headers.get('content-type')).toBe(`application/vnd.openxmlformats-officedocument.${media}`)
+    expect(download.headers.get('content-disposition')).toMatch(/^attachment;/u)
+    expect(download.headers.get('content-disposition')).toContain(`filename*=UTF-8''${encodeURIComponent('周报')}.${suffix}`)
+    expect(download.headers.get('x-content-type-options')).toBe('nosniff')
+    const bytes = new Uint8Array(await download.arrayBuffer())
+    expect([...bytes.subarray(0, 4)]).toEqual([0x50, 0x4b, 0x03, 0x04])
+
+    const params = new URLSearchParams({ kind, name: `副本.${suffix}`, directory: folder })
+    const upload = `${office}/import?${params}`
+    const uploadRequest = { method: 'POST', headers: { origin, 'content-type': 'application/octet-stream' }, body: bytes }
+    expect((await fetch(`${upload}&kind=${kind}`, uploadRequest)).status).toBe(400)
+    expect((await fetch(upload, { ...uploadRequest, headers: { ...uploadRequest.headers, 'content-type': 'application/json' } })).status).toBe(400)
+    const copied = await fetch(upload, uploadRequest)
+    expect(copied.status).toBe(201)
+    const copyPath = `${folder}/副本.coding${kind}`
+    expect(await copied.json()).toEqual({ path: copyPath })
+    const readBack = await ctx.fileLibrary.readNoteOffice(copyPath)
+    if (document.kind === 'word') expect(readBack.document).toEqual(document)
+    else expect(readBack.document).toMatchObject({
+      kind, version: 1, sheets: document.sheets.map(({ name, cells, merges }) => ({ name, cells, merges })),
+    })
+    const tree = await (await fetch(`${notes}/tree`)).json() as { children: NotesTreeNode[] }
+    expect(tree.children[0]?.children?.map(node => ({ kind: node.kind, path: node.path }))).toEqual(expect.arrayContaining([
+      { kind, path }, { kind, path: copyPath },
+    ]))
+    expect(await ctx.fileLibrary.noteRecords()).toEqual([])
+    expect((await fetch(`${office}/read?path=missing.coding${kind}`)).status).toBe(404)
+    expect((await fetch(`${office}/export?path=missing.coding${kind}`)).status).toBe(404)
+    expect((await post(`${office}/save`, { ...write, path: `missing.coding${kind}` })).status).toBe(404)
+    expect((await readdir(join(ctx.fileLibrary.notesRootPath(), folder))).sort()).toEqual([path, copyPath].map(value => value.split('/').at(-1)).sort())
+  })
+
+  it('文件列表按 XLSX 文件名或媒体类型将入库导出分为文档', async () => {
+    const { ctx, origin } = await boot()
+    const { path } = await ctx.fileLibrary.createNoteOffice('excel', '表格')
+    expect(await ctx.fileLibrary.noteRecords()).toEqual([])
+    const { bytes, mediaType } = await ctx.fileLibrary.exportNoteOffice(path)
+    await ctx.fileLibrary.saveExport({ sessionId: '一', name: '统计.xlsx', mediaType: 'application/octet-stream', data: bytes })
+    await ctx.fileLibrary.saveExport({ sessionId: '一', name: '统计 无后缀', mediaType, data: bytes })
+    const upload = await ctx.fileLibrary.saveUpload({
+      name: '原稿.xlsx', sessionId: '一', stream: (async function* () { yield bytes })(), verify: async () => {},
+    })
+    expect(upload.record.mediaType).toBe(mediaType)
+    const response = await fetch(`${origin}/api/files/list?category=document&kind=export`)
+    expect(response.status).toBe(200)
+    const page = await response.json() as ManagedFilePage
+    expect(page.total).toBe(2)
+    expect(page.items.map(item => item.name).sort()).toEqual(['统计 无后缀', '统计.xlsx'])
+  })
+
+  it('Office 请求拒绝畸形 ZIP 与分块超限，内部错误不暴露本机路径', async () => {
+    const { ctx, origin } = await boot()
+    const upload = `${origin}/api/notes/office/import?kind=word&name=bad.docx`
+    const headers = { origin, 'content-type': 'application/octet-stream' }
+    await ctx.fileLibrary.notesTree()
+    expect((await fetch(upload, { method: 'POST', headers, body: new Uint8Array([0x50, 0x4b]) })).status).toBe(400)
+    const chunk = new Uint8Array(1024 * 1024)
+    let chunks = 0
+    const request: RequestInit & { duplex: 'half' } = {
+      method: 'POST', headers, duplex: 'half',
+      body: new ReadableStream<Uint8Array>({
+        pull(controller) {
+          if (chunks++ === 17) controller.close()
+          else controller.enqueue(chunk)
+        },
+      }),
+    }
+    const response = await fetch(upload, request)
+    expect(response.status).toBe(400)
+    expect(await response.json()).toEqual({ error: 'Office 上传超过 16 MiB' })
+    const root = ctx.fileLibrary.notesRootPath()
+    await expect(readdir(root)).resolves.toEqual([])
+    await rm(root, { recursive: true })
+    await writeFile(root, '不是笔记目录')
+    const unavailable = await fetch(`${origin}/api/notes/office/read?path=missing.codingword`)
+    expect(unavailable.status).toBe(500)
+    expect(await unavailable.json()).toEqual({ error: '办公笔记暂不可用，请稍后重试' })
   })
 
   it.each([['codingmindmap', 1], ['xmind', 16]] as const)('分块导入 %s 不依赖 Content-Length，限制为 %i MiB', async (ext, maxMiB) => {

@@ -13,6 +13,8 @@ import SemiRecent from '@douyinfe/semi-icons/lib/es/icons/IconClockStroked'
 import SemiFile from '@douyinfe/semi-icons/lib/es/icons/IconFile'
 import SemiGallery from '@douyinfe/semi-icons/lib/es/icons/IconGallery'
 import SemiBranch from '@douyinfe/semi-icons/lib/es/icons/IconBranch'
+import SemiWord from '@douyinfe/semi-icons/lib/es/icons/IconWord'
+import SemiExcel from '@douyinfe/semi-icons/lib/es/icons/IconExcel'
 import SemiFolderOpen from '@douyinfe/semi-icons/lib/es/icons/IconFolderOpenStroked'
 import SemiInbox from '@douyinfe/semi-icons/lib/es/icons/IconInbox'
 import SemiTextStroked from '@douyinfe/semi-icons/lib/es/icons/IconTextStroked'
@@ -29,6 +31,7 @@ import type { IconProps } from './props.ts'
 export type IconName = 'sidebar' | 'files-panel' | 'bottom-panel' | 'terminal-menu'
   | 'model-vision' | 'model-reasoning' | 'open-window' | 'favorite' | 'ppt-workbench' | 'undo' | 'redo'
   | 'drag-handle' | 'home' | 'conversation' | 'recent' | 'file' | 'file-slides' | 'file-mindmap' | 'files' | 'file-other'
+  | 'file-word' | 'file-excel'
   | 'notes'
   | 'format-bold' | 'format-italic' | 'format-heading' | 'format-list' | 'format-quote'
 
@@ -94,6 +97,10 @@ export function Icon({ name, size = 16, className }: SemanticIconProps) {
   }
   if (name === 'file-mindmap') {
     return <SemiBranch size="inherit" style={{ fontSize: size }} className={className} aria-hidden="true" />
+  }
+  if (name === 'file-word' || name === 'file-excel') {
+    const Glyph = name === 'file-word' ? SemiWord : SemiExcel
+    return <Glyph size="inherit" style={{ fontSize: size }} className={className} aria-hidden="true" />
   }
   if (name === 'files') {
     return <SemiFolderOpen size="inherit" style={{ fontSize: size }} className={className} aria-hidden="true" />

@@ -235,6 +235,9 @@
     - id: ui-mindmap
       name: 'coding-client-ui-mindmap'
 
+    - id: ui-office
+      name: 'coding-client-ui-office'
+
     - id: ui-settings-models
       name: 'coding-client-ui-settings-models'
     - id: ui-settings-proxy-pool

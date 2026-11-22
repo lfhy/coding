@@ -578,9 +578,13 @@ const TOOL_PACKAGES: ToolPackage[] = [
   {
     pkg: 'coding-tool-notes-tabs',
     dir: 'tool-notes-tabs',
-    source: 'packages/notes/tool-notes-tabs/src/index.ts',
+    source: {
+      notes_tabs: 'packages/notes/tool-notes-tabs/src/index.ts',
+      notes_mindmap: 'packages/notes/tool-notes-tabs/src/mindmap-tool.ts',
+      notes_office: 'packages/notes/tool-notes-tabs/src/office-tool.ts',
+    },
     requires: ['ctx.tools', 'ctx.webServer', 'ctx.connection', 'ctx.sessions', 'ctx.agents', 'ctx.fileLibrary', 'ctx.sandboxPolicy'],
-    writes: ['tool/call', 'verified notes-tab snapshot and local HTTP publish route', 'versioned mind-map files', 'tool/result'],
+    writes: ['tool/call', 'verified notes-tab snapshot and local HTTP publish route', 'versioned mind-map and Office notes', 'managed Office exports', 'tool/result'],
     async mount(ctx) {
       await ctx.plugin(AgentRegistry)
       await ctx.plugin(SessionStore)
@@ -591,7 +595,7 @@ const TOOL_PACKAGES: ToolPackage[] = [
       await ctx.plugin(ToolNotesTabs)
     },
     note:
-      'Only the notes preset registers these tools. The same-origin route verifies relative paths and the live notes Agent/session pair. Reading the active mind map requires an unambiguous published tab; writing requires a writable notes session and file-library validation, with an explicit path and revision for edits.',
+      'Only the notes preset registers these tools. The same-origin route verifies relative paths and the live notes Agent/session pair. Reading an active mind map or Office note requires an unambiguous published tab. Edits and Office exports require an explicit path and revision in a writable notes session.',
   },
   {
     pkg: 'coding-schedule',

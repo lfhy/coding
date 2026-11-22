@@ -246,6 +246,8 @@
       "coding-client-ui-notes/client": ["./packages/client/ui-notes/src/client"],
       "coding-client-ui-mindmap": ["./packages/client/ui-mindmap/src"],
       "coding-client-ui-mindmap/client": ["./packages/client/ui-mindmap/src/client"],
+      "coding-client-ui-office": ["./packages/client/ui-office/src"],
+      "coding-client-ui-office/client": ["./packages/client/ui-office/src/client"],
       "coding-client-ui-ppt-workbench": ["./packages/client/ui-ppt-workbench/src"],
       "coding-client-ui-ppt-workbench/client": ["./packages/client/ui-ppt-workbench/src/client"],
       "coding-client-ui-image-gen": ["./packages/client/ui-image-gen/src"],

@@ -12,15 +12,15 @@
 
 ## 笔记存储
 
-笔记域使用同一根目录下的 `notes/`，不占用 `files` 领域表。`notesTree()` 按名称排序返回普通目录、真实 Markdown 文件、思维导图文件与 `.codingppt` 幻灯片工程目录。`kind: 'mindmap'` 和 `kind: 'deck'` 都不携带 `children`；同名后缀的普通目录不是思维导图，符号链接不入树，幻灯片工程内部条目不扫描且不计入预算。其余条目（含不展示的文件与链接）共用 4096 个条目预算，目录超过 8 层或超出预算时整棵树按 `TypeError` 拒绝。
+笔记域使用同一根目录下的 `notes/`，不占用 `files` 领域表。`notesTree()` 按名称排序返回普通目录、真实 Markdown、思维导图和办公笔记文件，以及 `.codingppt` 幻灯片工程目录。`kind: 'mindmap'`、`'word'`、`'excel'` 和 `'deck'` 均不携带 `children`；只有真实文件按思维导图或办公后缀分类，符号链接不入树。幻灯片工程内部不扫描且不计入预算。其余条目（含不展示的文件与链接）共用 4096 个条目预算，目录超过 8 层或超出预算时整棵树按 `TypeError` 拒绝。
 
 `readNote(path)`、`saveNote(path, content, baseMtimeMs?)` 与 `createNote(name, directory?, content?)` 只处理 Markdown，原文最多 1 MiB。保存经临时文件原子替换；无修改时间基准时可创建中间目录并收紧为 `0700`，有基准时不覆盖外部修改或重建已删除文件。新建名称按上传规则净化，缺省补 `.md`（例如 `draft.pptx` 变为 `draft.pptx.md`）；同名或原文超限时拒绝，不留下空文件。`createNoteDirectory(name, parent?)` 独占创建真实私有子目录。
 
 `createNoteDeck(name, directory?)` 只供 Host 的 PPT 服务使用：以 `0700` 独占创建 `.codingppt` 工程目录，同步父目录后返回相对路径与只在仍拥有本次目录时递归清理的句柄。文件库不写工程内容。同名、符号链接、越界路径或层级／条目超限按 `TypeError` 拒绝。
 
-`renameNote(path, name)` 在同一父目录内改名且拒绝覆盖。Markdown 与思维导图保留原扩展名及大小写；名称可省略原扩展名，但不能转换格式。`.codingppt` 工程目录同样保留后缀。`deleteNote(path)` 单独删除一个 Markdown 或思维导图文件，或递归删除一个真实目录（包括幻灯片工程目录）。路径只接受笔记根目录内的相对路径，父链经 `realpath` 核对；条目符号链接不得改名或删除，递归删除不跟随目录内的链接。
+`renameNote(path, name)` 在同一父目录内改名且拒绝覆盖。Markdown、思维导图及办公笔记保留原扩展名及大小写；名称可省略原扩展名，但不能转换格式。`.codingppt` 工程目录同样保留后缀。`deleteNote(path)` 单独删除一个笔记文件，或递归删除一个真实目录（包括幻灯片工程目录）。路径只接受笔记根目录内的相对路径，父链经 `realpath` 核对；条目符号链接不得改名或删除，递归删除不跟随目录内的链接。
 
-`noteRecords()` 只登记笔记根目录直属的 Markdown 文件，思维导图与幻灯片工程不进入全局文件管理索引。同一路径已由领域表登记时不重复；实时记录的 `FileId` 由相对路径的 SHA-1 推导成版本 5 UUID，`read(id)` 对这类 ID 直接服务磁盘文件。`listWithNotes(offset, limit, filter)` 将这些笔记并入未分组或 `kind: 'note'` 视图。`notesRootPath()` 返回笔记根目录的绝对路径，仅供 Host 侧会话工作目录使用。
+`noteRecords()` 只登记笔记根目录直属的 Markdown 文件。同一路径已由领域表登记时不重复；实时记录的 `FileId` 由相对路径的 SHA-1 推导成版本 5 UUID，`read(id)` 对这类 ID 直接服务磁盘文件。`listWithNotes(offset, limit, filter)` 将这些笔记并入未分组或 `kind: 'note'` 视图。另经 `saveExport` 登记的 XLSX 文件按 SpreadsheetML 媒体类型或 `.xlsx` 后缀归入文档。`notesRootPath()` 返回笔记根目录的绝对路径，仅供 Host 侧会话工作目录使用。
 
 ### 思维导图笔记
 
@@ -31,6 +31,16 @@
 `readNoteMindmap(path)` 返回 `{path,revision,document}`，`revision` 是原始字节的 SHA-256 摘要，调用方按不透明字符串原样回传。`editNoteMindmap(path, revision, edits)` 与笔记改名和删除使用同一写入队列，在队列内核对基准、按顺序验证和应用整批，再以一次原子替换发布。每批需要 1–32 个 `add`、`rename`、`move` 或 `delete` 操作；拒绝不明字段、未知主题、循环或删除／移动中心主题。`move.index` 按移除原节点后的目标子主题数组计数，从零开始；不传则追加。任一无效操作使整批不落盘。旧版本或重名抛出 `NoteConflictError`，文件或父目录已消失抛出 `NoteNotFoundError`，非法路径、文件结构或操作抛出 `TypeError`。
 
 目录和 Markdown 由 [`src/notes.ts`](src/notes.ts) 持有写入队列；思维导图在 [`src/mindmap-notes.ts`](src/mindmap-notes.ts) 检查文件身份及提交，在 [`src/mindmap.ts`](src/mindmap.ts) 校验主题与编辑，在 [`src/xmind.ts`](src/xmind.ts) 限定解包。
+
+### Word 与 Excel 笔记
+
+包入口导出 `NOTE_WORD_SUFFIX`（`.codingword`）、`NOTE_EXCEL_SUFFIX`（`.codingexcel`）以及 [`OfficeKind`、`OfficeDocument`、`OfficeEdit`、`OfficeSnapshot` 和字段类型](src/types.ts)。`createNoteOffice(kind, name, directory?)` 写入空白普通段落或名为 `Sheet1` 的空表。`importNoteOffice(kind, name, bytes, directory?)` 校验 `.docx`／`.xlsx` 的内容与类型，移除名称中的对应源后缀后保存新副本，不存放或改写来源 ZIP。`name` 也可直接给目标名称。两者先写入并同步 `0600` 的临时文件，再独占发布，成功返回 `{path}`；非法导入和同名冲突不会留下半成品。父目录必须已存在，逐段拒绝符号链接、越界路径及幻灯片工程目录。
+
+`readNoteOffice(path)`、`saveNoteOffice(path, revision, document)` 和 `editNoteOffice(path, revision, edits)` 返回 `{path, revision, document}`。版本取自实际磁盘字节的 SHA-256，消费方应按不透明字符串原样回传。保存完整文档和模型整批编辑与改名、删除共用同一写入队列，先核对版本，全部校验成功后才原子替换。每批 1–32 项；`set_cells` 一次最多 256 格，覆盖整格，`value: null` 且无公式或样式时移除该格。Word 段落索引和 Excel 行列坐标从零开始，工作表 ID 在本原生笔记的读写及改名中不变。版本失配或笔记同名抛出 `NoteConflictError`，已消失抛出 `NoteNotFoundError`，路径、类型或内容不合规抛出 `TypeError`。
+
+`exportNoteOffice(path, revision?)` 从一次读取的快照另生成 `.docx`／`.xlsx`，返回 `{name, mediaType, bytes}`，不写磁盘、不登记文件；传入版本时必须匹配该快照。导入、导出均在 Host 离线完成。不读取 XML 外部资源，不接受外部关系（包括外部超链接）、宏、嵌入的活动对象或联网字段。Excel 公式不由 Host 执行，仅接受受支持的本地函数及工作簿内引用，拒绝外链、DDE、未知函数和外部连接。
+
+原生 JSON 最多 8 MiB；来源 ZIP 最多 16 MiB、2048 个成员，实际解压累计最多 64 MiB、单成员最多 32 MiB，并核对声明长度及 CRC。Word 最多 10,000 段、50,000 个文字片段、累计 100,000 个换行或制表符，字号 1–400 pt。Excel 最多 32 张表、50,000 个显式单元格和 2048 个不重叠合并区域；每张表行列分别限 100,000 和 1024。单个文字片段或单格文本最多 32,767 个 UTF-16 码元，公式（含 `=`）最多 8192、工作表名最多 31、表 ID 最多 128、数字格式最多 255。磁盘与版本逻辑见 [`src/office-notes.ts`](src/office-notes.ts)，输入预检和转换见 [`src/office/package.ts`](src/office/package.ts)。
 
 ## HTTP 接口
 
@@ -45,6 +55,14 @@
 - `GET /api/notes/mindmap/read?path=<相对路径>`：成功返回 200 `MindMapSnapshot`。
 - `POST /api/notes/mindmap/edit`：JSON `{path,revision,edits}`，成功返回 200 `MindMapSnapshot`。
 
+Office 路由位于 `/api/notes/office/`，与其他笔记路由共用回环同源检查，不接收会话参数。成功和错误响应均标记 `private, no-store`。非法请求返回 400，跨源返回 403，缺失返回 404，方法不符返回 405，版本冲突或重名返回 409；其他失败返回不包含本机路径的 500。
+
+- `POST /api/notes/office/create`：JSON `{kind,name,directory?}`，成功返回 201 `{path}`。
+- `POST /api/notes/office/import?kind=<word|excel>&name=<文件名>&directory=<可选>`：接收 `application/octet-stream` 原始字节，成功返回 201 `{path}`。
+- `GET /api/notes/office/read?path=<相对路径>`：成功返回 200 `OfficeSnapshot`。
+- `POST /api/notes/office/save`：JSON `{path,revision,document}`，成功返回 200 `OfficeSnapshot`。
+- `GET /api/notes/office/export?path=<相对路径>&revision=<可选>`：成功返回 200 Office ZIP 附件，带对应媒体类型与 UTF-8 文件名。结构化编辑仅通过 Host 服务调用，无 HTTP 编辑路由。
+
 ## Model Experience
 
 该包不注册模型工具、不注入提示词，也不追加会话事件。文件元数据仅通过显式消费方显示，因而本包没有直接 token 或 KV cache 影响。
@@ -52,6 +70,7 @@
 ## Known Limitations and Deferred Work
 
 - 文件管理页只提供图片预览，不提供任意文件下载、写入或删除；进入未分组列表的 Markdown 笔记没有预览，点行不触发打开。
-- 思维导图编辑队列协调同一 Host 内的请求；对外部写入会核对磁盘版本，但不是跨进程锁。
+- 结构化笔记的编辑队列协调同一 Host 内的请求；对外部写入核对文件身份与磁盘版本，但不是跨进程锁。
+- Word 保留常见段落、标题、对齐和行内格式；表格按行转换，单元格以制表符分隔。不保留图片、页眉页脚及分页布局，导出字号舍入到半磅。Excel 保留工作表、基本值与样式、本地公式及缓存、合并区域；主题样式、图表、数组公式区域、模拟运算表和日期系统不做无损转换。工作表改名、删除不会自动重写公式。
 - 元数据和磁盘内容不能跨介质原子提交；上传文件的孤儿清理、配额和删除策略尚未定义。
 - `isManagedUploadPath` 校验登记路径当前仍是普通文件，但不校验内容摘要；同一用户在库目录内替换原件后，PPT 导入和浏览器上传会读取替换后的内容。

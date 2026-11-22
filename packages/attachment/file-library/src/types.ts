@@ -10,9 +10,9 @@ export interface NotesTreeNode {
   /**
    * `deck` 是以 `.codingppt` 结尾的幻灯片工程目录：它是一行幻灯片条目而不是可展开目录，
    * 因此不携带 `children`。目录内的工程文件由 PPT 工作台读写，不进入笔记树。
-   * `mindmap` 是独立的结构化笔记文件，不能通过 Markdown 读写入口处理。
+   * `mindmap`、`word` 和 `excel` 是独立的结构化笔记文件，不能通过 Markdown 读写入口处理。
    */
-  kind: 'dir' | 'file' | 'deck' | 'mindmap'
+  kind: 'dir' | 'file' | 'deck' | 'mindmap' | OfficeKind
   path: string
   /** 文件修改时间戳（毫秒）；目录取其最后一次写入时间，供编辑端检测外部改动。 */
   mtimeMs: number
@@ -44,6 +44,98 @@ export interface MindMapSnapshot {
   path: string
   revision: string
   document: MindMapDocument
+}
+
+/** 具有独立原生后缀的 Office 笔记类型。 */
+export type OfficeKind = 'word' | 'excel'
+
+/** Word 段落样式；标题与正文样式独立于行内文字属性。 */
+export type WordParagraphStyle = 'normal' | 'title' | 'heading1' | 'heading2' | 'heading3'
+
+/** Word 段落的水平对齐方式。 */
+export type WordParagraphAlign = 'left' | 'center' | 'right' | 'justify'
+
+/** 单个 Word 文字片段；颜色是 `#RRGGBB`，字号单位是 pt。 */
+export interface WordRun {
+  text: string
+  bold?: boolean
+  italic?: boolean
+  underline?: boolean
+  strike?: boolean
+  color?: string
+  fontSize?: number
+}
+
+/** 一个 Word 段落；空段可以没有文字片段。 */
+export interface WordParagraph {
+  style: WordParagraphStyle
+  align?: WordParagraphAlign
+  runs: WordRun[]
+}
+
+/** 受支持的 Excel 单元格样式；颜色和填充是 `#RRGGBB`。 */
+export interface ExcelStyle {
+  bold?: boolean
+  italic?: boolean
+  underline?: boolean
+  strike?: boolean
+  color?: string
+  background?: string
+  numberFormat?: string
+}
+
+/** 零基单元格；公式带 `=`，有公式时 `value` 表示可选缓存结果，无结果为 `null`。 */
+export interface ExcelCell {
+  row: number
+  column: number
+  value: string | number | boolean | null
+  formula?: string
+  style?: ExcelStyle
+}
+
+/** 包含起止点的零基合并区域。 */
+export interface ExcelMerge {
+  startRow: number
+  startColumn: number
+  endRow: number
+  endColumn: number
+}
+
+/** 工作表；重命名不会改变当前笔记中持久化的表 ID。 */
+export interface ExcelSheet {
+  id: string
+  name: string
+  cells: ExcelCell[]
+  merges?: ExcelMerge[]
+}
+
+/** Office 笔记原生文档；版本及类型由 Host 在存取边界校验。 */
+export type OfficeDocument =
+  | { version: 1; kind: 'word'; paragraphs: WordParagraph[] }
+  | { version: 1; kind: 'excel'; sheets: ExcelSheet[] }
+
+/** 一项原子批次中的编辑；段落索引从零开始，单元格操作完整替换指定坐标。 */
+export type OfficeEdit =
+  | { op: 'replace_paragraph'; index: number; paragraph: WordParagraph }
+  | { op: 'insert_paragraph'; index: number; paragraph: WordParagraph }
+  | { op: 'delete_paragraph'; index: number }
+  | { op: 'set_cells'; sheetId: string; cells: ExcelCell[] }
+  | { op: 'add_sheet'; name: string }
+  | { op: 'rename_sheet'; sheetId: string; name: string }
+  | { op: 'delete_sheet'; sheetId: string }
+
+/** 一个实际读取或发布的磁盘版本；路径相对于笔记根目录。 */
+export interface OfficeSnapshot {
+  path: string
+  revision: string
+  document: OfficeDocument
+}
+
+/** 从单个快照生成的可下载 Office 文件，不携带本机路径。 */
+export interface OfficeExport {
+  name: string
+  mediaType: string
+  bytes: Uint8Array
 }
 
 export type ManagedFileCategory = 'image' | 'presentation' | 'document' | 'other'

@@ -123,6 +123,7 @@ const ACTION_TITLES: Readonly<Record<string, string>> = {
   image_gen: '生成或编辑图片',
   lsp: '查询代码定义与引用',
   notes_mindmap: '操作思维导图',
+  notes_office: '操作办公笔记',
   ppt_attach_gallery_image: '添加图库图片',
   ppt_check: '检查演示文稿',
   ppt_create: '创建演示文稿',
@@ -172,7 +173,7 @@ const DOMAIN_TITLES: Readonly<Record<string, string>> = {
  * @returns 可供对话及轨迹使用的标题；未知工具返回 undefined。
  */
 export function toolActionTitle(name: string, argsRaw?: string): string | undefined {
-  if ((name === 'write_stdin' || name === 'notes_mindmap') && argsRaw !== undefined) {
+  if ((name === 'write_stdin' || name === 'notes_mindmap' || name === 'notes_office') && argsRaw !== undefined) {
     try {
       const args: unknown = JSON.parse(argsRaw)
       if (typeof args === 'object' && args !== null && !Array.isArray(args)) {
@@ -183,6 +184,15 @@ export function toolActionTitle(name: string, argsRaw?: string): string | undefi
             case 'create': return '新建思维导图'
             case 'edit': return '编辑思维导图'
             default: return ACTION_TITLES.notes_mindmap
+          }
+        }
+        if (name === 'notes_office') {
+          switch (record.action) {
+            case 'read': return '读取办公笔记'
+            case 'create': return '新建办公笔记'
+            case 'edit': return '编辑办公笔记'
+            case 'export': return '导出办公笔记'
+            default: return ACTION_TITLES.notes_office
           }
         }
         if (typeof record.chars === 'string' && record.chars !== '') {

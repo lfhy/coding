@@ -934,6 +934,42 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: '提交后的快照；文件或父目录已消失时抛出 `NoteNotFoundError`。',
       },
       {
+        signature: 'async createNoteOffice(kind: OfficeKind, name: string, directory?: string): Promise<{ path: string }>',
+        description: '独占创建完整的空白原生笔记。',
+        parameters: [{ name: 'kind', description: '文档类型。' }, { name: 'name', description: '笔记名称。' }, { name: 'directory', description: '可选的真实相对父目录。' }],
+        returns: '新笔记的相对路径。',
+      },
+      {
+        signature: 'async importNoteOffice(kind: OfficeKind, name: string, bytes: Uint8Array, directory?: string): Promise<{ path: string }>',
+        description: '转换完整的普通 Office 文件后，独占创建与源文件独立的新笔记。',
+        parameters: [{ name: 'kind', description: '文档类型，必须与 ZIP 主部件相符。' }, { name: 'name', description: '目标笔记名称或带对应来源后缀的文件名。' }, { name: 'bytes', description: '来源文件字节。' }, { name: 'directory', description: '可选的真实相对父目录。' }],
+        returns: '新笔记的相对路径。',
+      },
+      {
+        signature: 'async readNoteOffice(path: string): Promise<OfficeSnapshot>',
+        description: '读取对应磁盘字节的快照。',
+        parameters: [{ name: 'path', description: '笔记根目录下的相对路径。' }],
+        returns: '规范路径、版本和结构化文档。',
+      },
+      {
+        signature: 'async saveNoteOffice(path: string, revision: string, document: unknown): Promise<OfficeSnapshot>',
+        description: '仅在版本相同且输入有效时，原子替换整篇文档。',
+        parameters: [{ name: 'path', description: '笔记的相对路径。' }, { name: 'revision', description: '读取所得的版本；失配时抛出 `NoteConflictError`。' }, { name: 'document', description: '待验证的完整原生文档。' }],
+        returns: '提交后的快照。',
+      },
+      {
+        signature: 'async editNoteOffice(path: string, revision: string, edits: unknown): Promise<OfficeSnapshot>',
+        description: '在同一笔记写入队列内核对版本并提交整批编辑；任一步失败均不写入。',
+        parameters: [{ name: 'path', description: '笔记的相对路径。' }, { name: 'revision', description: '读取所得的版本；失配时抛出 `NoteConflictError`。' }, { name: 'edits', description: '待验证的非空有界编辑批次。' }],
+        returns: '提交后的快照。',
+      },
+      {
+        signature: 'async exportNoteOffice(path: string, revision?: string): Promise<OfficeExport>',
+        description: '从一次读取的快照离线生成 Office 文件，不改写磁盘。',
+        parameters: [{ name: 'path', description: '笔记的相对路径。' }, { name: 'revision', description: '可选的读取版本；失配时抛出 `NoteConflictError`。' }],
+        returns: '下载名称、媒体类型、文件字节。',
+      },
+      {
         signature: 'async readNote(relativePath: string): Promise<{ path: string; content: string; mtimeMs: number }>',
         description: '读取 Markdown 原文与保存所需的时间基准。',
         parameters: [{ name: 'relativePath', description: '相对笔记根目录的 Markdown 路径。' }],
@@ -4795,11 +4831,15 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'NotesTreeNode',
-    declaration: 'export interface NotesTreeNode {\n    name: string;\n    kind: \'dir\' | \'file\' | \'deck\' | \'mindmap\';\n    path: string;\n    mtimeMs: number;\n    children?: NotesTreeNode[] | undefined;\n}',
+    declaration: 'export interface NotesTreeNode {\n    name: string;\n    kind: \'dir\' | \'file\' | \'deck\' | \'mindmap\' | OfficeKind;\n    path: string;\n    mtimeMs: number;\n    children?: NotesTreeNode[] | undefined;\n}',
   },
   {
     name: 'ObjectJsonSchema',
     declaration: 'export type ObjectJsonSchema = JsonSchemaNode & {\n    type: \'object\';\n};',
+  },
+  {
+    name: 'OfficeExport',
+    declaration: 'export interface OfficeExport {\n    name: string;\n    mediaType: string;\n    bytes: Uint8Array;\n}',
   },
   {
     name: 'OneShotSubagentDescriptorData',

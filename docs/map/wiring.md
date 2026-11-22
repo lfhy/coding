@@ -631,6 +631,7 @@
 - `ui-files` → `coding-client-ui-files`
 - `ui-notes` → `coding-client-ui-notes`
 - `ui-mindmap` → `coding-client-ui-mindmap`
+- `ui-office` → `coding-client-ui-office`
 - `ui-settings-models` → `coding-client-ui-settings-models`
 - `ui-settings-proxy-pool` → `coding-client-ui-settings-proxy-pool`
 - `ui-settings-plugin-inventory` → `coding-client-ui-settings-plugin-inventory`

@@ -6,6 +6,9 @@ import type {} from 'coding-host-webserver'
 import type { FileLibrary } from './index.ts'
 import { mindmapImportByteLimit } from './mindmap-notes.ts'
 import { NoteConflictError, NoteNotFoundError } from './note-path.ts'
+import { OFFICE_NATIVE_MAX_BYTES, officeKind } from './office/document.ts'
+import { OFFICE_UPLOAD_MAX_BYTES } from './office/zip.ts'
+import type { OfficeExport } from './types.ts'
 
 function trusted(ctx: Context, req: IncomingMessage, res: ServerResponse): boolean {
   const rejected = ctx.connection.requestRejection(req)
@@ -269,20 +272,21 @@ export function installFileRoutes(ctx: Context, service: FileLibrary): void {
       },
     }), 'file-library: GET /api/notes/cwd')
     installMindmapRoutes(webCtx, service)
+    installOfficeRoutes(webCtx, service)
   })
 }
 
-function query(req: IncomingMessage, allowed: readonly string[]): URLSearchParams {
+function query(req: IncomingMessage, allowed: readonly string[], subject = '思维导图'): URLSearchParams {
   const params = new URL(req.url ?? '/', 'http://127.0.0.1').searchParams
   for (const key of params.keys()) {
-    if (!allowed.includes(key) || params.getAll(key).length !== 1) throw new TypeError('思维导图请求参数无效')
+    if (!allowed.includes(key) || params.getAll(key).length !== 1) throw new TypeError(`${subject}请求参数无效`)
   }
   return params
 }
 
-function requestType(req: IncomingMessage, expected: string): void {
+function requestType(req: IncomingMessage, expected: string, subject = '思维导图'): void {
   if (req.headers['content-type']?.split(';', 1)[0]?.trim().toLowerCase() !== expected) {
-    throw new TypeError('思维导图请求的内容格式无效')
+    throw new TypeError(`${subject}请求的内容格式无效`)
   }
 }
 
@@ -342,6 +346,81 @@ function installMindmapRoutes(ctx: Context, service: FileLibrary): void {
   })
 }
 
+function officeAttachment(res: ServerResponse, { name, mediaType, bytes }: OfficeExport): void {
+  // ASCII 回退给旧客户端；UTF-8 参数才是实际下载名，不能把磁盘路径放入响应。
+  const fallback = name.replace(/[^a-zA-Z0-9 ._-]/gu, '_')
+  const encoded = encodeURIComponent(name.toWellFormed()).replace(/[!'()*]/gu, char => `%${char.charCodeAt(0).toString(16)}`)
+  res.writeHead(200, {
+    'content-type': mediaType, 'content-length': bytes.byteLength, 'x-content-type-options': 'nosniff',
+    'content-disposition': `attachment; filename="${fallback}"; filename*=UTF-8''${encoded}`,
+  })
+  res.end(bytes)
+}
+
+function installOfficeRoutes(ctx: Context, service: FileLibrary): void {
+  const subject = '办公笔记'
+  const readParams = (req: IncomingMessage, allowed: readonly string[]): URLSearchParams => query(req, allowed, subject)
+  async function payload(req: IncomingMessage, fields: readonly string[], limit: number): Promise<Record<string, unknown>> {
+    readParams(req, [])
+    requestType(req, 'application/json', subject)
+    const body = await readJsonBody(req, limit)
+    if (Object.keys(body).some(key => !fields.includes(key))) throw new TypeError('办公笔记载荷无效')
+    return body
+  }
+
+  function route(
+    name: string, method: 'GET' | 'POST', respond: (req: IncomingMessage, res: ServerResponse) => Promise<void>,
+  ): void {
+    const path = `/api/notes/office/${name}`
+    ctx.effect(() => ctx.webServer.register({
+      kind: 'exact', path,
+      handler: async (req, res) => {
+        res.setHeader('cache-control', 'private, no-store')
+        if (!trusted(ctx, req, res)) return
+        if (req.method !== method) { res.writeHead(405, { allow: method }); res.end(); return }
+        try {
+          await respond(req, res)
+        } catch (error) {
+          if (error instanceof NoteConflictError) { json(res, 409, { error: error.message }); return }
+          if (error instanceof NoteNotFoundError) { json(res, 404, { error: error.message }); return }
+          if (error instanceof TypeError) { json(res, 400, { error: error.message }); return }
+          ctx.logger.warn('办公笔记请求失败')
+          json(res, 500, { error: '办公笔记暂不可用，请稍后重试' })
+        }
+      },
+    }), `file-library: ${method} ${path}`)
+  }
+
+  const metadataBytes = 32 * 1024
+  route('create', 'POST', async (req, res) => {
+    const { kind, name, directory } = await payload(req, ['kind', 'name', 'directory'], metadataBytes)
+    if (typeof name !== 'string' || directory !== undefined && typeof directory !== 'string') throw new TypeError('新建办公笔记载荷无效')
+    json(res, 201, await service.createNoteOffice(officeKind(kind), name, directory))
+  })
+  route('import', 'POST', async (req, res) => {
+    const params = readParams(req, ['kind', 'name', 'directory'])
+    const kind = officeKind(params.get('kind'))
+    const name = params.get('name')
+    if (!name) throw new TypeError('Office 文件名无效')
+    requestType(req, 'application/octet-stream', subject)
+    const bytes = await readBody(req, OFFICE_UPLOAD_MAX_BYTES, '导入载荷无效', 'Office 上传超过 16 MiB')
+    json(res, 201, await service.importNoteOffice(kind, name, bytes, params.get('directory') ?? undefined))
+  })
+  route('read', 'GET', async (req, res) => {
+    const params = readParams(req, ['path'])
+    json(res, 200, await service.readNoteOffice(params.get('path') ?? ''))
+  })
+  route('save', 'POST', async (req, res) => {
+    const { path, revision, document } = await payload(req, ['path', 'revision', 'document'], OFFICE_NATIVE_MAX_BYTES + metadataBytes)
+    if (typeof path !== 'string' || typeof revision !== 'string') throw new TypeError('保存办公笔记载荷无效')
+    json(res, 200, await service.saveNoteOffice(path, revision, document))
+  })
+  route('export', 'GET', async (req, res) => {
+    const params = readParams(req, ['path', 'revision'])
+    officeAttachment(res, await service.exportNoteOffice(params.get('path') ?? '', params.get('revision') ?? undefined))
+  })
+}
+
 /** 不以 Content-Length 取代流限额；分块请求也在收齐之前受同一预算约束。 */
 async function readBody(req: IncomingMessage, max: number, invalid: string, oversized: string): Promise<Buffer> {
   if (Number(req.headers['content-length']) > max) {
@@ -360,8 +439,8 @@ async function readBody(req: IncomingMessage, max: number, invalid: string, over
 }
 
 /** 读取限长的 JSON 请求体；超限或非法 JSON 按无效载荷拒绝。 */
-async function readJsonBody(req: IncomingMessage): Promise<Record<string, unknown>> {
-  const bytes = await readBody(req, 2 * 1024 * 1024, '保存载荷无效', '保存载荷过大')
+async function readJsonBody(req: IncomingMessage, max = 2 * 1024 * 1024): Promise<Record<string, unknown>> {
+  const bytes = await readBody(req, max, '保存载荷无效', '保存载荷过大')
   try {
     const parsed: unknown = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes))
     if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) throw new TypeError('保存载荷无效')

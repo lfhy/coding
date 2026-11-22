@@ -94,6 +94,7 @@
     { "path": "./packages/client/ui-files" },
     { "path": "./packages/client/ui-notes" },
     { "path": "./packages/client/ui-mindmap" },
+    { "path": "./packages/client/ui-office" },
     { "path": "./packages/client/ui-browser" },
     { "path": "./packages/client/ui-browser-ego" },
     { "path": "./packages/client/ui-permission-presets" },

@@ -8,7 +8,7 @@ import AgentRegistry, { Inbox } from 'coding-agent'
 import type { Agent, AgentStatus } from 'coding-agent'
 import SessionStore, { SessionId, Session } from 'coding-session'
 import ToolRuntime from 'coding-tools'
-import { StaleNoteError, type MindMapSnapshot } from 'coding-file-library'
+import { StaleNoteError, type FileLibrary, type MindMapSnapshot, type OfficeSnapshot } from 'coding-file-library'
 import SystemPrompt from 'coding-system-prompt'
 import TypertRegistry from 'coding-typert-registry'
 import * as notesTabs from '../src/index.ts'
@@ -57,8 +57,16 @@ async function boot(mode: 'workspace-write' | 'read-only' = 'workspace-write') {
   const readMindmap = vi.fn<(path: string) => Promise<MindMapSnapshot>>()
   const createMindmap = vi.fn<(name: string, directory?: string) => Promise<{ path: string }>>()
   const editMindmap = vi.fn<(path: string, revision: string, edits: unknown) => Promise<MindMapSnapshot>>()
+  const office = {
+    readNoteOffice: vi.fn<FileLibrary['readNoteOffice']>(),
+    createNoteOffice: vi.fn<FileLibrary['createNoteOffice']>(),
+    editNoteOffice: vi.fn<FileLibrary['editNoteOffice']>(),
+    exportNoteOffice: vi.fn<FileLibrary['exportNoteOffice']>(),
+    saveExport: vi.fn<FileLibrary['saveExport']>(),
+  }
   ctx.provide('fileLibrary', {
     notesRootPath: () => notesRoot, readNoteMindmap: readMindmap, createNoteMindmap: createMindmap, editNoteMindmap: editMindmap,
+    ...office,
   } as never)
   ctx.provide('sandboxPolicy', { resolve: () => ({ mode }) } as never)
   ctx.provide('connection', { requestRejection: () => undefined } as never)
@@ -71,7 +79,7 @@ async function boot(mode: 'workspace-write' | 'read-only' = 'workspace-write') {
     },
   } as never)
   const plugin = await ctx.plugin(notesTabs)
-  return { agent: live.agent, plugin, readMindmap, createMindmap, editMindmap }
+  return { agent: live.agent, plugin, readMindmap, createMindmap, editMindmap, office }
 }
 
 /** 以一次同源 POST 调用发布路由，返回状态码与解析后的响应体。 */
@@ -103,13 +111,14 @@ afterEach(async () => {
 })
 
 describe('notes tabs protocol', () => {
-  it('以 Loader 支持的函数插件注册笔记标签和导图工具', async () => {
+  it('以 Loader 支持的函数插件注册笔记标签、导图和办公工具', async () => {
     const { agent } = await boot()
     expect('default' in notesTabs).toBe(false)
     expect(notesTabs.name).toBe('tool-notes-tabs')
     expect(notesTabs.inject).toEqual(['tools', 'webServer', 'connection', 'sessions', 'agents', 'fileLibrary', 'sandboxPolicy'])
     expect(ctx?.tools.get('notes_tabs')?.name).toBe('notes_tabs')
     expect(ctx?.tools.get('notes_mindmap')?.name).toBe('notes_mindmap')
+    expect(ctx?.tools.get('notes_office')?.name).toBe('notes_office')
     expect(ctx?.tools.get('notes_tabs')?.parameters).toEqual({ type: 'object', properties: {} })
     expect(agent.id).toBe(SESSION)
   })
@@ -119,6 +128,7 @@ describe('notes tabs protocol', () => {
     expect(ctx?.tools.get('notes_mindmap')).toBeDefined()
     await plugin.dispose()
     expect(ctx?.tools.get('notes_mindmap')).toBeUndefined()
+    expect(ctx?.tools.get('notes_office')).toBeUndefined()
     expect(ctx?.tools.get('notes_tabs')).toBeUndefined()
     expect(route).toBeUndefined()
   })
@@ -209,8 +219,9 @@ describe('笔记助手思维导图', () => {
     expect(first.isError).toBe(false)
     if (first.isError) return
     expect(Buffer.byteLength(JSON.stringify(first.value))).toBeLessThanOrEqual(8192)
-    expect(first.value).toMatchObject({ path, revision: 'rev1', totalTopics: 31, nextOffset: expect.any(Number) })
+    expect(first.value).toMatchObject({ path, revision: 'rev1', totalTopics: 31 })
     const offset = (first.value as { nextOffset: number }).nextOffset
+    expect(offset).toBeGreaterThan(0)
     expect((await callMindmap(agent, { action: 'read', offset })).isError).toBe(true)
     const second = await callMindmap(agent, { action: 'read', path, revision: 'rev1', offset })
     expect(second.isError).toBe(false)
@@ -246,5 +257,130 @@ describe('笔记助手思维导图', () => {
     await expect(callMindmap(agent, { action: 'edit', path, revision: 'rev1', edits }))
       .resolves.toMatchObject({ isError: false, value: { path, revision: 'rev2' } })
     expect(editMindmap).toHaveBeenLastCalledWith(path, 'rev1', edits)
+  })
+})
+
+/** 经执行器验证模型的结构化参数、只读边界与结果。 */
+function callOffice(agent: Agent | undefined, args: object) {
+  return ctx!.tools.execute({
+    name: 'notes_office', callId: 'office-call' as never, arguments: args,
+    signal: new AbortController().signal, ...(agent === undefined ? {} : { agent }),
+  })
+}
+
+describe('笔记助手 Word 和 Excel', () => {
+  const wordPath = '会议纪要.codingword'
+  const word: OfficeSnapshot = {
+    path: wordPath, revision: 'word-1',
+    document: { kind: 'word', version: 1, paragraphs: [{ style: 'heading1', runs: [{ text: '结果', bold: true }] }] },
+  }
+  const sheetId = 'first'
+  const excelPath = '预算.codingexcel'
+  const excel: OfficeSnapshot = {
+    path: excelPath, revision: 'excel-1',
+    document: { kind: 'excel', version: 1, sheets: [{ id: sheetId, name: '预算表',
+      cells: [{ row: 0, column: 0, value: null, formula: '=SUM(B2:B5)' }, { row: 1, column: 0, value: 20 }],
+    }] },
+  }
+  it.each([word, excel])('只从唯一真实活动窗口选择 $path', async (snapshot) => {
+    const { agent, office } = await boot()
+    office.readNoteOffice.mockResolvedValue(snapshot)
+    const { path, document } = snapshot
+    await writeFile(join(notesRoot!, path), '{}')
+    const body = { sessionId: SESSION, windowId: 'window', version: 1,
+      activeTabPath: path, activeKind: document.kind, openTabs: [path] }
+    await expect(publish({ ...body, activeKind: 'mindmap' })).resolves.toMatchObject({ status: 400 })
+    expect((await callOffice(agent, { action: 'read' })).isError).toBe(true)
+    expect(office.readNoteOffice).not.toHaveBeenCalled()
+    await expect(publish(body)).resolves.toMatchObject({ status: 200 })
+    await expect(callOffice(agent, { action: 'read' })).resolves.toMatchObject({
+      isError: false, value: { path, revision: snapshot.revision, kind: document.kind, offset: 0, nextOffset: null },
+    })
+    await expect(publish({ ...body, windowId: 'other' })).resolves.toMatchObject({ status: 200 })
+    expect((await callOffice(agent, { action: 'read' })).isError).toBe(true)
+    expect(office.readNoteOffice).toHaveBeenCalledExactlyOnceWith(path)
+  })
+
+  it('报告超长项的截断且不跳过正文，续读需要上一页的路径和版本', async () => {
+    const { agent, office } = await boot()
+    const paragraphs = [
+      { style: 'normal' as const, runs: [{ text: '🙂'.repeat(8_000) }] },
+      ...Array.from({ length: 30 }, () => ({ style: 'title' as const, runs: [{ text: '列席代表' }] })),
+    ]
+    office.readNoteOffice.mockResolvedValue({ ...word, document: { kind: 'word', version: 1, paragraphs } })
+    const first = await callOffice(agent, { action: 'read', path: wordPath })
+    if (first.isError) throw new Error(JSON.stringify(first.content))
+    expect(first.value).toMatchObject({ total: 31, nextOffset: 24, paragraphs: [
+      { index: 0, truncated: true, preview: '🙂'.repeat(128) },
+      ...Array.from({ length: 23 }, (_, index) => ({ index: index + 1, style: 'title' })),
+    ] })
+    expect(Buffer.byteLength(JSON.stringify(first.value))).toBeLessThanOrEqual(8 * 1024)
+    for (const revision of [undefined, 'old']) {
+      const args = { action: 'read', path: wordPath, offset: 24, ...(revision === undefined ? {} : { revision }) }
+      expect((await callOffice(agent, args)).isError).toBe(true)
+    }
+    await expect(callOffice(agent, { action: 'read', path: wordPath, revision: 'word-1', offset: 24 }))
+      .resolves.toMatchObject({ isError: false, value: { nextOffset: null,
+        paragraphs: Array.from({ length: 7 }, (_, index) => ({ index: index + 24 })),
+      } })
+  })
+
+  it('分页读取工作表元数据及单元格，保留公式和类型', async () => {
+    const { agent, office } = await boot()
+    office.readNoteOffice.mockResolvedValue(excel)
+    await expect(callOffice(agent, { action: 'read', path: excelPath })).resolves.toMatchObject({
+      isError: false, value: { sheets: [{ id: sheetId, name: '预算表', cellCount: 2, mergeCount: 0 }] },
+    })
+    const readSheet = { action: 'read', path: excelPath, sheetId }
+    expect((await callOffice(agent, readSheet)).isError).toBe(true)
+    await expect(callOffice(agent, { ...readSheet, revision: 'excel-1',
+      range: { startRow: 0, endRow: 0, startColumn: 0, endColumn: 0 },
+    })).resolves.toMatchObject({ isError: false, value: {
+      sheetId, total: 1, cells: [{ row: 0, column: 0, value: null, formula: '=SUM(B2:B5)' }],
+    } })
+  })
+
+  it('不接受无 Agent、非笔记会话或只读会话写入', async () => {
+    const { agent, office } = await boot('read-only')
+    office.readNoteOffice.mockResolvedValue(excel)
+    const read = { action: 'read', path: excelPath }
+    for (const caller of [undefined, { ...agent }]) expect((await callOffice(caller, read)).isError).toBe(true)
+    expect((await callOffice(agent, read)).isError).toBe(false)
+    const target = { path: excelPath, revision: 'excel-1' }
+    for (const args of [{ action: 'create', name: '预算', kind: 'excel' }, { action: 'export', ...target },
+      { action: 'edit', ...target, edits: [{ op: 'add_sheet', name: 'Actual' }] }]) {
+      expect((await callOffice(agent, args)).isError).toBe(true)
+    }
+    expect(office.createNoteOffice).not.toHaveBeenCalled()
+    expect(office.editNoteOffice).not.toHaveBeenCalled()
+    expect(office.exportNoteOffice).not.toHaveBeenCalled()
+    expect(office.saveExport).not.toHaveBeenCalled()
+    agent.session.append('agent-preset/selected', { agentPreset: 'standard' })
+    expect((await callOffice(agent, read)).isError).toBe(true)
+  })
+
+  it('只按明确版本写入或保存成品，不重试冲突文件', async () => {
+    const { agent, office } = await boot()
+    office.createNoteOffice.mockResolvedValue({ path: wordPath })
+    await expect(callOffice(agent, { action: 'create', kind: 'word', name: '会议纪要' }))
+      .resolves.toMatchObject({ isError: false, value: { path: wordPath } })
+    const edits = [{ op: 'set_cells', sheetId, cells: [{ row: 0, column: 0, value: null }] }]
+    expect((await callOffice(agent, { action: 'edit', revision: 'excel-1', edits })).isError).toBe(true)
+    expect(office.editNoteOffice).not.toHaveBeenCalled()
+    office.editNoteOffice.mockRejectedValueOnce(new StaleNoteError())
+      .mockResolvedValueOnce({ ...excel, revision: 'excel-2' })
+    expect((await callOffice(agent, { action: 'edit', path: excelPath, revision: 'stale', edits })).isError).toBe(true)
+    expect(office.editNoteOffice).toHaveBeenCalledExactlyOnceWith(excelPath, 'stale', edits)
+    await expect(callOffice(agent, { action: 'edit', path: excelPath, revision: 'excel-1', edits }))
+      .resolves.toMatchObject({ isError: false, value: { path: excelPath, kind: 'excel', revision: 'excel-2' } })
+    const name = '预算.xlsx'
+    const mediaType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    const bytes = new Uint8Array([80, 75])
+    office.exportNoteOffice.mockResolvedValue({ name, mediaType, bytes })
+    office.saveExport.mockResolvedValue({ record: { id: 'export-id', name }, path: '/private/export' } as never)
+    await expect(callOffice(agent, { action: 'export', path: excelPath, revision: 'excel-2' }))
+      .resolves.toMatchObject({ isError: false, value: { fileId: 'export-id', name } })
+    expect(office.exportNoteOffice).toHaveBeenCalledExactlyOnceWith(excelPath, 'excel-2')
+    expect(office.saveExport).toHaveBeenCalledExactlyOnceWith({ name, mediaType, data: bytes, sessionId: SESSION })
   })
 })

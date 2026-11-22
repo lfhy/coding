@@ -45,6 +45,7 @@
     "tests/window-shell.e2e.ts",
     "tests/notes-page.e2e.ts",
     "tests/notes-mindmap.e2e.ts",
+    "tests/notes-office.e2e.ts",
     "tests/workspace-view-tabs.e2e.ts",
     "tests/new-conversation-workbench.e2e.ts",
     "tests/new-conversation-mode.e2e.ts",

@@ -157,6 +157,16 @@ export interface MindMapSnapshot {
 }
 ```
 
+### Word 与 Excel 文档快照
+
+文件库在笔记根目录下将 Word、Excel 分别存为 `.codingword`、`.codingexcel`；不走 Markdown 的读写接口。[文档类型](../../packages/attachment/file-library/src/types.ts)的格式版本为 `1`，`OfficeKind` 以 `word` 和 `excel` 区分段落文档与工作簿。`readNoteOffice` 返回 `OfficeSnapshot`，其中 `path` 相对笔记根目录，`revision` 对应实际磁盘字节。[文件库实现](../../packages/attachment/file-library/src/office-notes.ts)只接受根目录内的真实文件与父目录。
+
+`createNoteOffice` 创建空白文档，`importNoteOffice` 本地转换 `.docx`／`.xlsx`；两者独占写入新笔记，不改动原件，不覆盖同名文件。`saveNoteOffice` 替换整份文档，`editNoteOffice` 提交整批编辑；二者按读回的版本写入，与改名、删除共用队列，版本失配或内容未通过校验时不写入。
+
+[同源路由](../../packages/attachment/file-library/src/routes.ts)位于 `/api/notes/office/`：`create`、`import`、`save` 使用 `POST`，`read`、`export` 使用 `GET`。`import` 接收 Office 原始字节；`save` 接收 `path`、`revision` 和完整的 `document`；`export` 调用 `exportNoteOffice` 从单次读取的快照返回 `OfficeExport` 的下载文件名、MIME 类型和字节，不改写或登记文件。导出指定 `revision` 时也须匹配；HTTP 版本冲突返回 `409`。笔记助手复用服务执行结构化编辑和版本化导出，入库规则见[办公笔记操作](../../packages/notes/tool-notes-tabs/README.md#办公笔记操作)。
+
+Office 导入上限为 16 MiB，另有 ZIP 解包预算和 8 MiB 的原生笔记上限；包含宏、外部关系或嵌入活动对象的包会被拒绝。Excel 公式须通过[允许名单及语法校验](../../packages/attachment/file-library/src/office/formula.ts)，Host 不执行公式。可保留的内容见[用户指南](../user/guide/index.md#笔记)。
+
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
 <a id="cordis-surface"></a>
@@ -315,6 +325,52 @@ async readNoteMindmap(path: string): Promise<MindMapSnapshot>
  */
 async editNoteMindmap(path: string, revision: string, edits: unknown): Promise<MindMapSnapshot>
 
+/** 独占创建完整的空白原生笔记。
+ * @param kind - 文档类型。
+ * @param name - 笔记名称。
+ * @param directory - 可选的真实相对父目录。
+ * @returns 新笔记的相对路径。
+ */
+async createNoteOffice(kind: OfficeKind, name: string, directory?: string): Promise<{ path: string }>
+
+/** 转换完整的普通 Office 文件后，独占创建与源文件独立的新笔记。
+ * @param kind - 文档类型，必须与 ZIP 主部件相符。
+ * @param name - 目标笔记名称或带对应来源后缀的文件名。
+ * @param bytes - 来源文件字节。
+ * @param directory - 可选的真实相对父目录。
+ * @returns 新笔记的相对路径。
+ */
+async importNoteOffice(kind: OfficeKind, name: string, bytes: Uint8Array, directory?: string): Promise<{ path: string }>
+
+/** 读取对应磁盘字节的快照。
+ * @param path - 笔记根目录下的相对路径。
+ * @returns 规范路径、版本和结构化文档。
+ */
+async readNoteOffice(path: string): Promise<OfficeSnapshot>
+
+/** 仅在版本相同且输入有效时，原子替换整篇文档。
+ * @param path - 笔记的相对路径。
+ * @param revision - 读取所得的版本；失配时抛出 `NoteConflictError`。
+ * @param document - 待验证的完整原生文档。
+ * @returns 提交后的快照。
+ */
+async saveNoteOffice(path: string, revision: string, document: unknown): Promise<OfficeSnapshot>
+
+/** 在同一笔记写入队列内核对版本并提交整批编辑；任一步失败均不写入。
+ * @param path - 笔记的相对路径。
+ * @param revision - 读取所得的版本；失配时抛出 `NoteConflictError`。
+ * @param edits - 待验证的非空有界编辑批次。
+ * @returns 提交后的快照。
+ */
+async editNoteOffice(path: string, revision: string, edits: unknown): Promise<OfficeSnapshot>
+
+/** 从一次读取的快照离线生成 Office 文件，不改写磁盘。
+ * @param path - 笔记的相对路径。
+ * @param revision - 可选的读取版本；失配时抛出 `NoteConflictError`。
+ * @returns 下载名称、媒体类型、文件字节。
+ */
+async exportNoteOffice(path: string, revision?: string): Promise<OfficeExport>
+
 /** 读取 Markdown 原文与保存所需的时间基准。
  * @param relativePath - 相对笔记根目录的 Markdown 路径。
  * @returns 规范路径、原文和毫秒修改时间。
@@ -386,7 +442,7 @@ async getUpload(path: string): Promise<ManagedFileRecord | undefined>
 async isManagedUploadPath(path: string): Promise<boolean>
 ```
 
-Source: [`packages/attachment/file-library/src/index.ts:75`](../../packages/attachment/file-library/src/index.ts)
+Source: [`packages/attachment/file-library/src/index.ts:60`](../../packages/attachment/file-library/src/index.ts)
 
 <a id="ctximagegeneration--imagegeneration"></a>
 

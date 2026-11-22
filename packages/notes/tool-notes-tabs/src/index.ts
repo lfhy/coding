@@ -11,11 +11,12 @@ import type { SessionId } from 'coding-session/types'
 import type { Agent } from 'coding-agent'
 import { resolveSessionPreset } from 'coding-agent-presets'
 import type {} from 'coding-client-connection'
-import { isDeckDirectoryName, NOTE_MINDMAP_SUFFIX } from 'coding-file-library'
+import { isDeckDirectoryName, NOTE_EXCEL_SUFFIX, NOTE_MINDMAP_SUFFIX, NOTE_WORD_SUFFIX } from 'coding-file-library'
 import type {} from 'coding-host-webserver'
 import type {} from 'coding-sandbox-policy'
 import { defineTool } from 'coding-tools'
 import { registerNotesMindmap } from './mindmap-tool.ts'
+import { registerNotesOffice } from './office-tool.ts'
 import type { NotesTabsPublishRequest, NotesTabsPublishResponse } from './protocol.ts'
 
 export type { NotesTabsPublishRequest, NotesTabsPublishResponse } from './protocol.ts'
@@ -73,6 +74,8 @@ function kindOf(path: string): NoteKind | undefined {
   if (isDeckDirectoryName(leafOf(path))) return 'ppt'
   switch (extname(path).toLowerCase()) {
     case NOTE_MINDMAP_SUFFIX: return 'mindmap'
+    case NOTE_WORD_SUFFIX: return 'word'
+    case NOTE_EXCEL_SUFFIX: return 'excel'
     case '.md':
     case '.markdown': return 'note'
     default: return undefined
@@ -251,5 +254,11 @@ export function apply(ctx: Context): void {
   registerNotesMindmap(ctx, authorized, async (agent, signal) => {
     const tabs = await readTabs(agent, signal)
     return tabs.status === 'ready' && tabs.activeKind === 'mindmap' ? tabs.activeTabPath ?? undefined : undefined
+  })
+  registerNotesOffice(ctx, authorized, async (agent, signal) => {
+    const tabs = await readTabs(agent, signal)
+    return tabs.status === 'ready' && (tabs.activeKind === 'word' || tabs.activeKind === 'excel')
+      ? tabs.activeTabPath ?? undefined
+      : undefined
   })
 }

@@ -10,6 +10,10 @@ export type NotesLocaleKey =
   | 'newEntry' | 'entryFolder' | 'entryNote' | 'entryPresentation'
   | 'entryMindmap' | 'newMindmap' | 'mindmapName' | 'mindmapCreated' | 'mindmapImported'
   | 'createMindmapError' | 'importMindmapError' | 'renameMindmap' | 'deleteMindmapConfirm'
+  | 'entryWord' | 'newWord' | 'wordName' | 'wordCreated' | 'wordImported'
+  | 'createWordError' | 'importWordError' | 'renameWord' | 'deleteWordConfirm'
+  | 'entryExcel' | 'newExcel' | 'excelName' | 'excelCreated' | 'excelImported'
+  | 'createExcelError' | 'importExcelError' | 'renameExcel' | 'deleteExcelConfirm'
   | 'loading' | 'newNote' | 'newFolder' | 'newPresentation' | 'importFile' | 'importText' | 'noteName' | 'folderName' | 'presentationName' | 'create' | 'creating' | 'cancel' | 'close' | 'placeholder'
   | 'newNoteIn' | 'newFolderIn' | 'newSubfolder' | 'newSubfolderIn' | 'saveLocation' | 'noteCreated' | 'folderCreated' | 'presentationCreated' | 'noteImported' | 'presentationImported' | 'createdRefreshError'
   | 'saved' | 'saving' | 'unsaved' | 'conflict' | 'reload' | 'reloadConfirm' | 'draftKept' | 'discardDraft' | 'retry'
@@ -36,6 +40,16 @@ export const zh: Record<NotesLocaleKey, string> = {
   createMindmapError: '无法创建思维导图。请检查名称和保存位置后重试。',
   importMindmapError: '无法导入思维导图。请确认文件是有效的 XMind 或 Coding 思维导图。',
   renameMindmap: '重命名思维导图', deleteMindmapConfirm: '删除思维导图「{name}」？此操作不可撤销。',
+  entryWord: 'Word 文档', newWord: '新建 Word 文档', wordName: '文档名称',
+  wordCreated: 'Word 文档已创建', wordImported: 'Word 文档已导入',
+  createWordError: '无法创建 Word 文档。请检查名称和保存位置后重试。',
+  importWordError: '无法导入 Word 文档。请使用不超过 16 MiB、无外部链接的 .docx 文件，并检查是否已有同名笔记。',
+  renameWord: '重命名 Word 文档', deleteWordConfirm: '删除 Word 文档「{name}」？此操作不可撤销。',
+  entryExcel: 'Excel 表格', newExcel: '新建 Excel 表格', excelName: '表格名称',
+  excelCreated: 'Excel 表格已创建', excelImported: 'Excel 表格已导入',
+  createExcelError: '无法创建 Excel 表格。请检查名称和保存位置后重试。',
+  importExcelError: '无法导入 Excel 表格。请使用不超过 16 MiB、无外部连接的 .xlsx 文件，并检查是否已有同名笔记。',
+  renameExcel: '重命名 Excel 表格', deleteExcelConfirm: '删除 Excel 表格「{name}」？此操作不可撤销。',
   newNote: '新建笔记', newFolder: '新建目录', newPresentation: '新建幻灯片', importFile: '导入', importText: '文本', noteName: '笔记名称', folderName: '目录名称', presentationName: '幻灯片名称', create: '创建', creating: '正在创建…', cancel: '取消', close: '关闭',
   newNoteIn: '在「{name}」中新建笔记', newFolderIn: '在「{name}」中新建目录',
   newSubfolder: '新建子目录', newSubfolderIn: '在「{name}」中新建子目录',
@@ -79,6 +93,16 @@ export const en: Record<NotesLocaleKey, string> = {
   createMindmapError: 'Could not create the mind map. Check the name and location, then try again.',
   importMindmapError: 'Could not import the mind map. Use a valid XMind or Coding mind map file.',
   renameMindmap: 'Rename mind map', deleteMindmapConfirm: 'Delete the mind map “{name}”? This cannot be undone.',
+  entryWord: 'Word document', newWord: 'New Word document', wordName: 'Document name',
+  wordCreated: 'Word document created', wordImported: 'Word document imported',
+  createWordError: 'Could not create the Word document. Check the name and location, then try again.',
+  importWordError: 'Could not import the Word document. Use a .docx file up to 16 MiB without external links, and check for a note with the same name.',
+  renameWord: 'Rename Word document', deleteWordConfirm: 'Delete the Word document “{name}”? This cannot be undone.',
+  entryExcel: 'Excel workbook', newExcel: 'New Excel workbook', excelName: 'Workbook name',
+  excelCreated: 'Excel workbook created', excelImported: 'Excel workbook imported',
+  createExcelError: 'Could not create the Excel workbook. Check the name and location, then try again.',
+  importExcelError: 'Could not import the Excel workbook. Use an .xlsx file up to 16 MiB without external connections, and check for a note with the same name.',
+  renameExcel: 'Rename Excel workbook', deleteExcelConfirm: 'Delete the Excel workbook “{name}”? This cannot be undone.',
   newNote: 'New note', newFolder: 'New folder', newPresentation: 'New presentation', importFile: 'Import', importText: 'Text', noteName: 'Note name', folderName: 'Folder name', presentationName: 'Presentation name', create: 'Create', creating: 'Creating…', cancel: 'Cancel', close: 'Close',
   newNoteIn: 'New note in “{name}”', newFolderIn: 'New folder in “{name}”',
   newSubfolder: 'New subfolder', newSubfolderIn: 'New subfolder in “{name}”',

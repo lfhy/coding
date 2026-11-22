@@ -35,7 +35,7 @@ This table connects model-visible tool names to the plugin package and service s
 | `coding-tool-goal` | `create_goal`, `get_goal`, `update_goal` | `ctx.tools`, `ctx.agents`, `ctx.goals`, `ctx.systemPrompt`, `a calling Agent in an authorized open turn` | `tool/call`, `goal/change for mutations`, `tool/result` | - | create, edit, pause, and resume require direct-human root authority; complete and blocked also accept the exact current goal round. The default blocked lower bound is three admitted rounds. |
 | `coding-tool-image-gen` | `canvas_state`, `edit_image`, `generate_image`, `generate_images` | `ctx.tools`, `ctx.imageGeneration`, `a calling Agent session` | `tool/call`, `image-gen/created`, `durable image attachment`, `tool/result` | - | The catalog simulates an available image service to collect these schemas. The Codex preset selects variant=codex and exposes only image_gen; other non-minimal presets expose generate_image, generate_images, canvas_state, and edit_image. Unavailable deployments register none of these tools, and execution still rechecks service availability. |
 | `coding-tool-ppt` | `ppt_attach_gallery_image`, `ppt_check`, `ppt_create`, `ppt_create_from_template`, `ppt_delete_template`, `ppt_edit`, `ppt_export`, `ppt_import`, `ppt_import_evidence`, `ppt_import_template`, `ppt_open`, `ppt_prepare_template`, `ppt_read`, `ppt_redo`, `ppt_rename_template`, `ppt_render`, `ppt_save_template`, `ppt_templates`, `ppt_undo` | `ctx.tools`, `ctx.llm and ctx.attachments (AI review)`, `ctx.imageGeneration and ctx.pptProjects (gallery attachment at execution time)`, `a calling Agent session` | `tool/call`, `project deck, history or copied media`, `rendered PNG or exported .pptx/PDF on request`, `tool/result` | - | The PPT preset installs this package's tools only in its Agent scope; other presets do not receive their schemas. The catalog mounts the LLM and attachment services to harvest the schema without executing project operations, model review, rendering, or attachment I/O. At execution time the Host supplies ctx.pptProjects; gallery attachment reads only this session's image IDs through ctx.imageGeneration and copies media without editing a page. |
-| `coding-tool-notes-tabs` | `notes_mindmap`, `notes_tabs` | `ctx.tools`, `ctx.webServer`, `ctx.connection`, `ctx.sessions`, `ctx.agents`, `ctx.fileLibrary`, `ctx.sandboxPolicy` | `tool/call`, `verified notes-tab snapshot and local HTTP publish route`, `versioned mind-map files`, `tool/result` | - | Only the notes preset registers these tools. The same-origin route verifies relative paths and the live notes Agent/session pair. Reading the active mind map requires an unambiguous published tab; writing requires a writable notes session and file-library validation, with an explicit path and revision for edits. |
+| `coding-tool-notes-tabs` | `notes_mindmap`, `notes_office`, `notes_tabs` | `ctx.tools`, `ctx.webServer`, `ctx.connection`, `ctx.sessions`, `ctx.agents`, `ctx.fileLibrary`, `ctx.sandboxPolicy` | `tool/call`, `verified notes-tab snapshot and local HTTP publish route`, `versioned mind-map and Office notes`, `managed Office exports`, `tool/result` | - | Only the notes preset registers these tools. The same-origin route verifies relative paths and the live notes Agent/session pair. Reading an active mind map or Office note requires an unambiguous published tab. Edits and Office exports require an explicit path and revision in a writable notes session. |
 | `coding-schedule` | `schedule_create`, `schedule_delete`, `schedule_list` | `ctx.tools`, `ctx.sessions`, `Session persistence`, `a future live root Agent` | `tool/call`, `schedule/change create or delete`, `tool/result` | - | Registered only inside live root Agent scopes created after the opt-in Schedule plugin loads. Version 1 accepts after_seconds, explicit absolute at, and bounded fixed-rate every_seconds, and discloses session-local delivery; management reads and mutations require the shared Session persistence barrier. |
 | `coding-tool-context-compact` | `context_compact` | `ctx.tools`, `ctx.compaction` | `tool/call`, `compaction/* transaction events for the replaced range`, `tool/result` | - | The tool only names what the remaining work must keep; range selection, the open-turn transaction, and the summary stay with the mounted backend. `compactContext` compacts by span, so unrelated nodes appended while the summary runs survive the replacement. |
 | `coding-tool-lsp` | `lsp` | `ctx.tools`, `ctx.lsp`, `ctx.systemPrompt` | `tool/call`, `tool/result` | - | The lsp tool keeps provider selection and language-server subprocesses behind ctx.lsp, so its model-visible schema stays stable across providers. Requires a registered provider (e.g. `coding-lsp-stdio`) at runtime; without one, a query returns the structured `LSP_UNAVAILABLE` error rather than changing the schema. |
@@ -4504,7 +4504,348 @@ The PPT preset installs this package's tools only in its Agent scope; other pres
 }
 ```
 
-Source: [`packages/notes/tool-notes-tabs/src/index.ts`](../packages/notes/tool-notes-tabs/src/index.ts)
+Source: [`packages/notes/tool-notes-tabs/src/mindmap-tool.ts`](../packages/notes/tool-notes-tabs/src/mindmap-tool.ts)
+
+### `notes_office`
+
+读取、创建、编辑或导出笔记目录中的 Word 文档和 Excel 工作簿。首次读取可省略路径使用当前文档；Excel 先读取工作表列表，再指定 sheetId 读取单元格。编辑或导出须使用读取返回的路径和版本；如有冲突，重新读取并核对目标。请保留用户未要求改动的内容和样式，不要用截断预览替代原内容。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "action": {
+      "type": "string",
+      "enum": [
+        "read",
+        "create",
+        "edit",
+        "export"
+      ]
+    },
+    "kind": {
+      "type": "string",
+      "description": "创建时必填，选择 Word 文档或 Excel 工作簿。",
+      "enum": [
+        "word",
+        "excel"
+      ]
+    },
+    "path": {
+      "type": "string",
+      "description": "Office 笔记相对于笔记根目录的路径；续读、编辑、导出必填。"
+    },
+    "name": {
+      "type": "string",
+      "description": "创建时必填，填写新文档名称。"
+    },
+    "directory": {
+      "type": "string",
+      "description": "创建时可选的相对目录，省略则保存在笔记根目录。"
+    },
+    "revision": {
+      "type": "string",
+      "description": "使用读取返回的版本；读下一页、读指定工作表、编辑及导出时必填。"
+    },
+    "offset": {
+      "type": "integer",
+      "description": "读取时使用上一页的 nextOffset 和相同的查询条件；null 表示读完，不再调用。"
+    },
+    "sheetId": {
+      "type": "string",
+      "description": "读取指定工作表时使用上一次读取返回的表 ID。"
+    },
+    "range": {
+      "type": "object",
+      "description": "可选；仅在读取指定工作表时使用，含起止坐标。行和列都从 0 开始。",
+      "additionalProperties": false,
+      "properties": {
+        "startRow": {
+          "type": "integer"
+        },
+        "startColumn": {
+          "type": "integer"
+        },
+        "endRow": {
+          "type": "integer"
+        },
+        "endColumn": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "startRow",
+        "startColumn",
+        "endRow",
+        "endColumn"
+      ]
+    },
+    "edits": {
+      "type": "array",
+      "description": "编辑时必填，按序执行 1 至 32 项操作。段落索引和单元格行列从 0 开始，写入时完整替换指定段落或单元格。",
+      "items": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "op": {
+                "type": "string",
+                "enum": [
+                  "replace_paragraph",
+                  "insert_paragraph"
+                ]
+              },
+              "index": {
+                "type": "integer"
+              },
+              "paragraph": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "style": {
+                    "type": "string",
+                    "enum": [
+                      "normal",
+                      "title",
+                      "heading1",
+                      "heading2",
+                      "heading3"
+                    ]
+                  },
+                  "align": {
+                    "type": "string",
+                    "enum": [
+                      "left",
+                      "center",
+                      "right",
+                      "justify"
+                    ]
+                  },
+                  "runs": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "text": {
+                          "type": "string"
+                        },
+                        "bold": {
+                          "type": "boolean"
+                        },
+                        "italic": {
+                          "type": "boolean"
+                        },
+                        "underline": {
+                          "type": "boolean"
+                        },
+                        "strike": {
+                          "type": "boolean"
+                        },
+                        "color": {
+                          "type": "string",
+                          "description": "#RRGGBB 颜色。"
+                        },
+                        "fontSize": {
+                          "type": "number",
+                          "description": "字号，单位为 pt。"
+                        }
+                      },
+                      "required": [
+                        "text"
+                      ]
+                    }
+                  }
+                },
+                "required": [
+                  "style",
+                  "runs"
+                ]
+              }
+            },
+            "required": [
+              "op",
+              "index",
+              "paragraph"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "op": {
+                "type": "string",
+                "const": "delete_paragraph"
+              },
+              "index": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "op",
+              "index"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "op": {
+                "type": "string",
+                "const": "set_cells"
+              },
+              "sheetId": {
+                "type": "string"
+              },
+              "cells": {
+                "type": "array",
+                "description": "一次设置 1 至 256 个单元格。",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "row": {
+                      "type": "integer"
+                    },
+                    "column": {
+                      "type": "integer"
+                    },
+                    "value": {
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "boolean"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "单元格值；有公式时是缓存结果，无缓存可用 null。不带公式和样式的 null 会清空单元格。"
+                    },
+                    "formula": {
+                      "type": "string",
+                      "description": "以 = 开头的工作簿公式，不支持外部连接。"
+                    },
+                    "style": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "bold": {
+                          "type": "boolean"
+                        },
+                        "italic": {
+                          "type": "boolean"
+                        },
+                        "underline": {
+                          "type": "boolean"
+                        },
+                        "strike": {
+                          "type": "boolean"
+                        },
+                        "color": {
+                          "type": "string",
+                          "description": "#RRGGBB 颜色。"
+                        },
+                        "background": {
+                          "type": "string",
+                          "description": "#RRGGBB 颜色。"
+                        },
+                        "numberFormat": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  },
+                  "required": [
+                    "row",
+                    "column",
+                    "value"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "op",
+              "sheetId",
+              "cells"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "op": {
+                "type": "string",
+                "const": "add_sheet"
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "op",
+              "name"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "op": {
+                "type": "string",
+                "const": "rename_sheet"
+              },
+              "sheetId": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "op",
+              "sheetId",
+              "name"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "op": {
+                "type": "string",
+                "const": "delete_sheet"
+              },
+              "sheetId": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "op",
+              "sheetId"
+            ]
+          }
+        ]
+      }
+    },
+    "summary": {
+      "type": "string",
+      "description": "Optional short, user-friendly summary of what this call is doing now. Omit when the action is self-explanatory. Do not include secrets, raw JSON, or internal identifiers."
+    }
+  },
+  "required": [
+    "action"
+  ]
+}
+```
+
+Source: [`packages/notes/tool-notes-tabs/src/office-tool.ts`](../packages/notes/tool-notes-tabs/src/office-tool.ts)
 
 ### `notes_tabs`
 
@@ -4524,7 +4865,7 @@ Read the current notes page's open file tabs, active file, and verified full pat
 
 Source: [`packages/notes/tool-notes-tabs/src/index.ts`](../packages/notes/tool-notes-tabs/src/index.ts)
 
-Only the notes preset registers these tools. The same-origin route verifies relative paths and the live notes Agent/session pair. Reading the active mind map requires an unambiguous published tab; writing requires a writable notes session and file-library validation, with an explicit path and revision for edits.
+Only the notes preset registers these tools. The same-origin route verifies relative paths and the live notes Agent/session pair. Reading an active mind map or Office note requires an unambiguous published tab. Edits and Office exports require an explicit path and revision in a writable notes session.
 
 <a id="coding-schedule"></a>
 

@@ -26,7 +26,8 @@ export type ManagedFileCategory = 'image' | 'presentation' | 'document' | 'other
 export function categoryOf(file: Pick<ManagedFileRecord, 'name' | 'mediaType'>): ManagedFileCategory {
   if (file.mediaType.startsWith('image/')) return 'image'
   if (file.mediaType.includes('presentation') || /\.(?:pptx?|key)$/iu.test(file.name)) return 'presentation'
-  if (file.mediaType.includes('pdf') || file.mediaType.includes('word') || /\.(?:docx?|pdf|txt|md|csv)$/iu.test(file.name)) return 'document'
+  if (file.mediaType.includes('pdf') || file.mediaType.includes('word') || file.mediaType.includes('spreadsheetml')
+    || /\.(?:docx?|xlsx|pdf|txt|md|csv)$/iu.test(file.name)) return 'document'
   return 'other'
 }
 

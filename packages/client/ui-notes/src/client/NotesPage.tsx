@@ -9,12 +9,14 @@ import { NotesDirectory, type NoteActionTarget, type NoteCreateKind } from './No
 import { NotesDocument } from './NotesDocument.tsx'
 import { NotesTabs } from './NotesTabs.tsx'
 import { noteImportPickers } from './notes-import.ts'
-import { NOTE_MINDMAP_SUFFIX, addTreeDirectory, filePaths, findEntry, labelOf, latestWritten, noteFiles, noteKindOf, removeTreeEntry } from './notes-tree.ts'
+import {
+  NOTE_MINDMAP_SUFFIX, addTreeDirectory, filePaths, findEntry, isOfficeKind, labelOf, latestWritten, noteFiles, noteKindOf, removeTreeEntry,
+} from './notes-tree.ts'
 import type { createNotesUiStore } from './notes-ui-store.ts'
 import { useNoteDraft } from './useNoteDraft.ts'
 import { usePublishNotesTabs } from './usePublishNotesTabs.ts'
 import {
-  notesCreate, notesCreateDirectory, notesCreateMindmap, notesCreateSlide, notesDelete, notesRename, notesTree,
+  notesCreate, notesCreateDirectory, notesCreateMindmap, notesCreateOffice, notesCreateSlide, notesDelete, notesRename, notesTree,
   type NotesTreeEntry,
 } from './wire.ts'
 import { exportImage, exportMarkdown, exportPdf, exportWord, type NoteExportFormat } from './export/index.ts'
@@ -22,7 +24,7 @@ import css from './NotesPage.module.css'
 
 export type NotesPageProps = PropsRuntime<'shell.page'> & PropsLocale<typeof NS>
   & PropsStore<ReturnType<typeof createNotesUiStore>>
-  & PropsRenderSlots<'notes.document.ppt' | 'notes.document.mindmap'>
+  & PropsRenderSlots<'notes.document.ppt' | 'notes.document.mindmap' | 'notes.document.office'>
 
 /** AI 助手改动检测的目录轮询间隔。 */
 const TREE_POLL_MS = 4000
@@ -32,10 +34,19 @@ type DialogKind = NoteCreateKind | 'reload' | 'rename' | 'delete'
 
 const createErrors = {
   create: 'createError', folder: 'createFolderError', presentation: 'createPresentationError', mindmap: 'createMindmapError',
+  word: 'createWordError', excel: 'createExcelError',
 } as const
-const renameTitles = { dir: 'renameFolder', deck: 'renamePresentation', file: 'renameNote', mindmap: 'renameMindmap' } as const
+const createNotices = {
+  create: 'noteCreated', folder: 'folderCreated', presentation: 'presentationCreated', mindmap: 'mindmapCreated',
+  word: 'wordCreated', excel: 'excelCreated',
+} as const
+const renameTitles = {
+  dir: 'renameFolder', deck: 'renamePresentation', file: 'renameNote', mindmap: 'renameMindmap',
+  word: 'renameWord', excel: 'renameExcel',
+} as const
 const deleteDescriptions = {
   dir: 'deleteFolderConfirm', deck: 'deletePresentationConfirm', file: 'deleteConfirm', mindmap: 'deleteMindmapConfirm',
+  word: 'deleteWordConfirm', excel: 'deleteExcelConfirm',
 } as const
 
 /**
@@ -117,6 +128,8 @@ export function NotesPage({
     const lifetime = new AbortController()
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented || document.querySelector('[role="dialog"], [role="menu"], [role="listbox"]')) return
+      // 办公画布中的 Escape 和保存键留给编辑器，不用笔记页的关闭和 Markdown 保存处理。
+      if (event.target instanceof Element && event.target.closest('[data-note-office-editor]') !== null) return
       if ((event.key === 's' || event.key === 'S') && (event.metaKey || event.ctrlKey)) {
         event.preventDefault()
         void save()
@@ -332,20 +345,20 @@ export function NotesPage({
   const createEntry = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const name = draftName.trim()
-    if (name === '' || creatingRequest.current !== null) return
+    if (name === '' || creatingRequest.current !== null || dialog === null
+      || dialog === 'reload' || dialog === 'rename' || dialog === 'delete') return
     const request = new AbortController()
     creatingRequest.current = request
     setCreating(true)
     setCreateFailed(false)
     const folder = dialog === 'folder'
-    const presentation = dialog === 'presentation'
-    const mindmap = dialog === 'mindmap'
     try {
       const { path } = folder
         ? await notesCreateDirectory(name, creationDirectory)
-        : presentation
+        : dialog === 'presentation'
           ? await notesCreateSlide(sessionId, name, creationDirectory)
-          : mindmap ? await notesCreateMindmap(name, creationDirectory) : await notesCreate(name, creationDirectory)
+          : dialog === 'mindmap' ? await notesCreateMindmap(name, creationDirectory)
+            : isOfficeKind(dialog) ? await notesCreateOffice(dialog, name, creationDirectory) : await notesCreate(name, creationDirectory)
       request.signal.throwIfAborted()
       treeRevision.current += 1
       setExpanded((previous) => {
@@ -362,8 +375,7 @@ export function NotesPage({
       const [updated] = await Promise.all([fresh, folder ? undefined : selectTab(path)])
       request.signal.throwIfAborted()
       setDialog(null)
-      notify(updated ? folder ? 'folderCreated' : presentation ? 'presentationCreated'
-        : mindmap ? 'mindmapCreated' : 'noteCreated' : 'createdRefreshError')
+      notify(updated ? createNotices[dialog] : 'createdRefreshError')
     } catch {
       if (!request.signal.aborted) setCreateFailed(true)
     } finally {
@@ -473,9 +485,9 @@ export function NotesPage({
     <main className={css.page} aria-labelledby={titleId}>
       <NotesDirectory t={t} tree={tree} expanded={expanded} activePath={activePath}
         collapsed={sidebarCollapsed} width={sidebarWidth} creating={creating} launcherRef={createTrigger}
-        query={query} onQueryChange={setQuery} onToggleDir={toggleDir} onSelectPath={selectTab}
+        query={query} onQueryChange={setQuery} onToggleDir={toggleDir} onSelectPath={(path) => { void selectTab(path) }}
         onCreate={openCreateDialog} onEdit={openTargetDialog}
-        {...noteImportPickers(sessionId, t, runImport, notify)} />
+        imports={noteImportPickers(sessionId, t, runImport, notify)} />
       <div className={css.document}>
         <NotesTabs paths={openTabs} activePath={activePath} panelId={panelId}
           idPrefix={tabId} labelOfPath={labelOfPath} onSelect={(path) => { void selectTab(path) }}
@@ -485,8 +497,9 @@ export function NotesPage({
           kind={kind}
           content={draft?.path === activePath ? draft.content : undefined}
           saveLabel={draft?.path === activePath ? saveLabel : undefined}
-          structuredContent={activePath === null || kind === 'note' || !treeReady
-            ? undefined : renderSlot(kind === 'ppt' ? 'notes.document.ppt' : 'notes.document.mindmap', { shown: true, path: activePath })}
+          structuredContent={activePath === null || kind === 'note' || !treeReady ? undefined
+            : isOfficeKind(kind) ? renderSlot('notes.document.office', { kind, shown: true, path: activePath })
+              : renderSlot(kind === 'ppt' ? 'notes.document.ppt' : 'notes.document.mindmap', { shown: true, path: activePath })}
           treeState={treeState}
           exporting={exporting} exportMenuOpen={exportMenuOpen} exportEntries={exportEntries}
           assistantOpen={assistantOpen} assistantPanelId={assistantPanelId}

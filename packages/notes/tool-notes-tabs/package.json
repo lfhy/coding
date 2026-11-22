@@ -1,6 +1,6 @@
 {
   "name": "coding-tool-notes-tabs",
-  "description": "笔记会话标签发布路由与思维导图助手工具",
+  "description": "笔记会话标签发布路由与思维导图、Word 和 Excel 助手工具",
   "version": "0.1.0-rc.8",
   "publishConfig": { "access": "public" },
   "repository": {
