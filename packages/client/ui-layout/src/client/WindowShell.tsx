@@ -1,10 +1,12 @@
 /** 窗口级外壳包裹原布局；导航动作复用布局 store，不重建会话或工作台。 */
+import { useState } from 'react'
 import {
   Button,
   Icon,
   IconChevronLeftOutline14,
   IconChevronRightOutline14,
   IconDarkOutline16,
+  IconFollowsystemOutline16,
   IconLightOutline16,
   Tooltip,
 } from 'coding-client-ui-primitives'
@@ -12,6 +14,8 @@ import type { PropsRenderSlots } from 'coding-client-ui-slots'
 import { AppFrame } from './AppFrame.tsx'
 import type { AppFrameProps } from './AppFrame.tsx'
 import css from './WindowShell.module.css'
+
+const THEME_ICONS = { light: IconLightOutline16, dark: IconDarkOutline16, system: IconFollowsystemOutline16 }
 
 /** 外壳与内层共用根注册，只在外层增加底部设置的渲染权限。 */
 export type WindowShellProps = Omit<AppFrameProps, 'renderSlot' | '__renders'>
@@ -28,8 +32,14 @@ export function WindowShell(props: WindowShellProps) {
   const conversationVisible = props.useStore(state => state.page === null)
   const returnToDifferentSession = props.useStore(state => state.page?.returnSessionId !== undefined)
   const sidebarCollapsed = props.useStore(state => state.narrow ? !state.narrowExpanded : state.sidebar === 0)
+  const preference = props.useTheme(state => state.preference)
   const themeScheme = props.useTheme(state => state.active.colorScheme)
-  const themeLabel = props.t(themeScheme === 'dark' ? 'shell.theme.light' : 'shell.theme.dark')
+  // 只记本轮第二个手动档位；系统配色中途改变也不会跳过它。
+  const [followSystemAfter, setFollowSystemAfter] = useState<'light' | 'dark'>()
+  if (followSystemAfter !== undefined && followSystemAfter !== preference) setFollowSystemAfter(undefined)
+  const nextTheme = preference === followSystemAfter ? 'system' : themeScheme === 'dark' ? 'light' : 'dark'
+  const themeLabel = props.t(`shell.theme.${nextTheme}`)
+  const ThemeIcon = THEME_ICONS[nextTheme]
   const toggleLabel = props.t(sidebarCollapsed ? 'shell.sidebar.expand' : 'shell.sidebar.collapse')
 
   return (
@@ -75,9 +85,12 @@ export function WindowShell(props: WindowShellProps) {
             <Tooltip label={themeLabel} delayMs={500}>
               <span className={css.themeToggleAnchor}>
                 <Button className={css.themeToggleButton} aria-label={themeLabel}
-                  aria-pressed={themeScheme === 'dark'}
-                  onClick={() => { props.setTheme(themeScheme === 'dark' ? 'light' : 'dark') }}>
-                  {themeScheme === 'dark' ? <IconLightOutline16 size={18} /> : <IconDarkOutline16 size={18} />}
+                  onClick={() => {
+                    const manual = preference === 'light' || preference === 'dark'
+                    setFollowSystemAfter(manual && nextTheme !== 'system' ? nextTheme : undefined)
+                    props.setTheme(nextTheme)
+                  }}>
+                  <ThemeIcon size={18} />
                 </Button>
               </span>
             </Tooltip>

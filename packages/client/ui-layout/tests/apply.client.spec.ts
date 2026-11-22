@@ -88,6 +88,8 @@ describe('ui-layout client apply', () => {
     expect(injected.hooks.theme.getSnapshot().active.colorScheme).toBe('light')
     injected.setTheme('dark')
     expect(injected.hooks.theme.getSnapshot().active.colorScheme).toBe('dark')
+    injected.setTheme('system')
+    expect(injected.hooks.theme.getSnapshot()).toMatchObject({ preference: 'system', active: { colorScheme: 'light' } })
     const layout = ctx.get('layout') as LayoutController
     layout.toggleSidebar()
     layout.openWorkbench('layout-session')

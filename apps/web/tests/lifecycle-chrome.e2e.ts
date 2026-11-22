@@ -1,15 +1,5 @@
-// Web e2e scenarios: lifecycle & chrome — the workspace-aware first-send
-// flow over the real wire, reload recovery, and the dark-mode token cascade.
-// One tiny recorded turn (text-only) drives the whole spec: the empty-state
-// hero materializes a real Workspace + Session on first send (the jsdom
-// workspace-flow suite pins the object-layer state machine over the fixture
-// client; THIS spec pins the same flow through HTTP RPC + SSE + the host
-// gateway), reload replays everything from the log (zero further model
-// calls), and the theme scenario proves the shipped dark palette actually
-// cascades: attribute -> alias token flip -> painted surface change. No
-// theme/layout golden: aria snapshots are color-blind (lane scope: the
-// browser-e2e-lane design record); the hero's waiting state gets the one golden
-// here.
+// 真实 Host 与客户端组装：首发消息创建工作区和会话，刷新仅从日志恢复；
+// 主题用例另行验证窄导航操作、持久化偏好和应用实际绘制的配色。
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
@@ -29,6 +19,7 @@ const HERO_EXPECTED = join(SNAPSHOT_DIR, 'hero.expected.md')
 const COMMAND_MENU_EXPECTED = join(SNAPSHOT_DIR, 'command-menu.expected.md')
 const FUZZY_COMMAND_MENU_EXPECTED = join(SNAPSHOT_DIR, 'command-menu-fuzzy.expected.md')
 const PLAN_ACTIVE_EXPECTED = join(SNAPSHOT_DIR, 'plan-active.expected.md')
+const THEME_SWITCH_EXPECTED = join(SNAPSHOT_DIR, 'theme-switch.expected.md')
 // Post-reload golden: the same settled conversation rebuilt purely from
 // persistence + history — byte-equal rendering is exactly the recovery claim.
 const RELOADED_EXPECTED = join(SNAPSHOT_DIR, 'reloaded.expected.md')
@@ -241,42 +232,71 @@ describe('web e2e: lifecycle & chrome (workspace flow / reload / dark mode)', ()
     expect(tripwire.pageErrors).toEqual([])
   }, 90_000)
 
-  it.skipIf(MODE === 'record')('cascades the dark theme from the body attribute to painted surfaces', async () => {
-    onTestFailed(() => saveFailureShot(page, 'web-e2e-lifecycle-dark'))
-    // This scenario pins the ThemeRuntime's DOM contract directly (the
-    // body[data-ds-dark-theme] attribute -> stylesheet cascade); the REAL
-    // user gesture above it (Settings -> Appearance cubes) is owned by
-    // settings-chrome.e2e.ts. Driving the attribute here keeps the cascade
-    // pinned independently of the settings surface's own lifecycle.
-    const sample = async (): Promise<{ token: string; sidebarBg: string; bodyBg: string }> =>
-      await page.evaluate(() => {
-        const sidebar = document.querySelector('[class*="sidebar"], [class*="rail"]') ?? document.body
-        return {
-          token: getComputedStyle(document.body).getPropertyValue('--dsw-alias-bg-base').trim(),
-          sidebarBg: getComputedStyle(sidebar).backgroundColor,
-          bodyBg: getComputedStyle(document.body).backgroundColor,
-        }
-      })
-    const light = await sample()
-    await page.evaluate(() => { document.body.setAttribute('data-ds-dark-theme', '') })
-    const dark = await sample()
-    // The alias token itself must flip — the cascade's root fact.
-    expect(dark.token).not.toBe(light.token)
-    // And a real painted surface must consume it (not just variables in a
-    // void): at least one of the sampled backgrounds repaints.
-    expect(dark.sidebarBg !== light.sidebarBg || dark.bodyBg !== light.bodyBg).toBe(true)
-    // Removing the attribute restores the light values exactly (the palettes
-    // live in one stylesheet; activation is attribute-only by design).
-    await page.evaluate(() => { document.body.removeAttribute('data-ds-dark-theme') })
-    const restored = await sample()
-    expect(restored).toEqual(light)
-    expect(tripwire.pageErrors).toEqual([])
-  }, 60_000)
-
   it.skipIf(MODE === 'record')('keeps the fixture inventory closed', async () => {
     expect(tripwire.warnings).toEqual([])
     await assertFixtureInventory(SNAPSHOT_DIR, [
       'session.jsonl', 'command-menu.expected.md', 'command-menu-fuzzy.expected.md', 'hero.expected.md', 'plan-active.expected.md', 'reloaded.expected.md',
+      'theme-switch.expected.md',
     ])
   })
 })
+
+it.skipIf(MODE === 'record')('cycles the rail theme and resumes following system appearance', async ({ onTestFinished }) => {
+  // 主题操作不走模型；独立启动使定向回放无需消耗会话录制。
+  const scaffold = await launchWebScaffold()
+  const browserReady = chromium.launch()
+  onTestFinished(async () => {
+    try {
+      const browser = await browserReady.catch(() => undefined)
+      await browser?.close()
+    } finally {
+      await scaffold.close()
+    }
+  })
+  const page = await newEnglishPage(await browserReady)
+  const tripwire = watchConsole(page)
+  onTestFailed(() => saveFailureShot(page, 'web-e2e-lifecycle-theme'))
+  await page.emulateMedia({ colorScheme: 'light' })
+  await page.goto(scaffold.baseUrl, { waitUntil: 'load' })
+
+  const nav = page.getByRole('navigation', { name: 'Main navigation' })
+  const switchDark = nav.getByRole('button', { name: 'Switch to dark theme' })
+  const switchLight = nav.getByRole('button', { name: 'Switch to light theme' })
+  const followSystem = nav.getByRole('button', { name: 'Follow system appearance' })
+  const sample = async () => await nav.evaluate((rail) => {
+    const body = getComputedStyle(document.body)
+    return {
+      scheme: document.documentElement.style.colorScheme,
+      token: body.getPropertyValue('--dsw-alias-bg-base').trim(),
+      sidebarBg: getComputedStyle(rail).backgroundColor,
+      bodyBg: body.backgroundColor,
+    }
+  })
+  await switchDark.waitFor()
+  const actions = [await switchDark.ariaSnapshot()]
+  const light = await sample()
+  expect(light.scheme).toBe('light')
+  await switchDark.click()
+  await switchLight.waitFor()
+  actions.push(await switchLight.ariaSnapshot())
+  const dark = await sample()
+  expect(dark.scheme).toBe('dark')
+  expect(dark.token).not.toBe(light.token)
+  expect(dark.sidebarBg !== light.sidebarBg || dark.bodyBg !== light.bodyBg).toBe(true)
+
+  await switchLight.press('Space')
+  await followSystem.waitFor()
+  actions.push(await followSystem.ariaSnapshot())
+  expect(await sample()).toEqual(light)
+  await expect.poll(() => readFile(join(scaffold.harnessHome, 'settings.yaml'), 'utf8'))
+    .toMatch(/ui-theme:\n\s+preference: light/)
+  await page.emulateMedia({ colorScheme: 'dark' })
+  expect(await sample()).toEqual(light)
+  await followSystem.press('Enter')
+  await switchLight.waitFor()
+  expect(await sample()).toEqual(dark)
+  await expect.poll(() => readFile(join(scaffold.harnessHome, 'settings.yaml'), 'utf8'))
+    .toMatch(/ui-theme:\n\s+preference: system/)
+  await compareOrRefreshGolden(THEME_SWITCH_EXPECTED, actions.join('\n'), MODE)
+  expect(tripwire.pageErrors).toEqual([])
+}, 120_000)

@@ -27,15 +27,22 @@ afterEach(() => {
   vi.clearAllMocks()
 })
 
-function mountShell(current: SessionId | null = 'shell-session' as SessionId) {
+type ColorScheme = ThemeSnapshot['active']['colorScheme']
+
+function mountShell(current: SessionId | null = 'shell-session' as SessionId, systemScheme: ColorScheme = 'light') {
   const instance = createLayoutStore().create()
   let theme: ThemeSnapshot = {
-    preference: 'light',
-    active: { id: 'light', colorScheme: 'light', tokens: {} },
+    preference: 'system',
+    active: { id: systemScheme, colorScheme: systemScheme, tokens: {} },
     themes: [],
     revision: 1,
   }
   const themeListeners = new Set<() => void>()
+  const publishTheme = (preference: string, colorScheme: ColorScheme) => {
+    const id = preference === 'system' ? colorScheme : preference
+    theme = { ...theme, preference, active: { ...theme.active, id, colorScheme }, revision: theme.revision + 1 }
+    for (const listener of themeListeners) listener()
+  }
   const props = {
     actions: instance.actions,
     useStore: selector => selector(useSyncExternalStore(
@@ -45,10 +52,7 @@ function mountShell(current: SessionId | null = 'shell-session' as SessionId) {
     useTheme: selector => selector(useSyncExternalStore(
       (listener) => { themeListeners.add(listener); return () => { themeListeners.delete(listener) } }, () => theme,
     )),
-    setTheme: (id: 'light' | 'dark') => {
-      theme = { ...theme, preference: id, active: { ...theme.active, id, colorScheme: id }, revision: theme.revision + 1 }
-      for (const listener of themeListeners) listener()
-    },
+    setTheme: (id: Parameters<WindowShellProps['setTheme']>[0]) => { publishTheme(id, id === 'system' ? systemScheme : id) },
     t: key => (zh as Record<string, string>)[key] ?? key,
     renderSlot: (key, owner) => {
       if (key === 'shell.settings') return <button type="button" aria-label="设置" data-compact={'wide' in owner && !owner.wide} />
@@ -56,7 +60,16 @@ function mountShell(current: SessionId | null = 'shell-session' as SessionId) {
       return null
     },
   } as WindowShellProps
-  return { instance, ...render(<WindowShell {...props} />) }
+  return {
+    instance,
+    getTheme: () => theme,
+    publishTheme,
+    setSystemScheme: (scheme: ColorScheme) => {
+      systemScheme = scheme
+      if (theme.preference === 'system') publishTheme('system', scheme)
+    },
+    ...render(<WindowShell {...props} />),
+  }
 }
 
 describe('窗口外壳', () => {
@@ -91,12 +104,50 @@ describe('窗口外壳', () => {
     expect(lifecycle.unmount).not.toHaveBeenCalled()
   })
 
-  it('在外层导航底部切换亮暗主题并同步图标与文案', () => {
-    const view = mountShell()
-    const toggle = view.getByRole('button', { name: '切换深色主题' })
-    expect(toggle.getAttribute('aria-pressed')).toBe('false')
+  it.each([
+    { scheme: 'light', opposite: 'dark', firstLabel: '切换深色主题', secondLabel: '切换浅色主题' },
+    { scheme: 'dark', opposite: 'light', firstLabel: '切换浅色主题', secondLabel: '切换深色主题' },
+  ] as const)('从跟随系统（$scheme）先切相反色，再切回同色的固定主题，最后回到跟随系统', ({
+    scheme, opposite, firstLabel, secondLabel,
+  }) => {
+    const view = mountShell(undefined, scheme)
+    const nextButton = (name: string) => view.getByRole('button', { name })
+    const toggle = nextButton(firstLabel)
+    const icons = [toggle.querySelector('svg')?.innerHTML]
     fireEvent.click(toggle)
-    expect(view.getByRole('button', { name: '切换浅色主题' }).getAttribute('aria-pressed')).toBe('true')
+    expect(view.getTheme().preference).toBe(opposite)
+    icons.push(nextButton(secondLabel).querySelector('svg')?.innerHTML)
+    fireEvent.click(nextButton(secondLabel))
+    expect(view.getTheme().preference).toBe(scheme)
+    icons.push(nextButton('跟随系统配色').querySelector('svg')?.innerHTML)
+    expect(icons.every(Boolean)).toBe(true)
+    expect(new Set(icons).size).toBe(3)
+    fireEvent.click(nextButton('跟随系统配色'))
+    expect(view.getTheme()).toMatchObject({ preference: 'system', active: { colorScheme: scheme } })
+    expect(nextButton(firstLabel)).toBe(toggle)
+  })
+
+  it('系统换色不会跳过第二个固定档位，回到跟随后立即应用新的系统配色', () => {
+    const view = mountShell()
+    fireEvent.click(view.getByRole('button', { name: '切换深色主题' }))
+    act(() => { view.setSystemScheme('dark') })
+    fireEvent.click(view.getByRole('button', { name: '切换浅色主题' }))
+    expect(view.getTheme()).toMatchObject({ preference: 'light', active: { colorScheme: 'light' } })
+    fireEvent.click(view.getByRole('button', { name: '跟随系统配色' }))
+    expect(view.getTheme()).toMatchObject({ preference: 'system', active: { colorScheme: 'dark' } })
+    act(() => { view.setSystemScheme('light') })
+    expect(view.getByRole('button', { name: '切换深色主题' })).toBeTruthy()
+  })
+
+  it('设置改选主题后丢弃旧的循环位置，自定义主题仍先切成相反色', () => {
+    const view = mountShell()
+    fireEvent.click(view.getByRole('button', { name: '切换深色主题' }))
+    fireEvent.click(view.getByRole('button', { name: '切换浅色主题' }))
+    expect(view.getByRole('button', { name: '跟随系统配色' })).toBeTruthy()
+    act(() => { view.publishTheme('custom', 'dark') })
+    fireEvent.click(view.getByRole('button', { name: '切换浅色主题' }))
+    expect(view.getTheme().preference).toBe('light')
+    expect(view.getByRole('button', { name: '切换深色主题' })).toBeTruthy()
   })
 
   it('内层窄屏展开时，外层导航入口不随内层侧栏变化', () => {

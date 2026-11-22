@@ -1,0 +1,6 @@
+- button "Switch to dark theme":
+  - img
+- button "Switch to light theme":
+  - img
+- button "Follow system appearance":
+  - img

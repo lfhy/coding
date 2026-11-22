@@ -56,8 +56,8 @@ export interface AppFrameInjected {
     /** 独立页助手是否存在「新对话」入口；为真时手势交给 startPageConversation。 */
     pageConversation: HostObservable<boolean>
   }
-  /** 切换到指定的主题偏好。 */
-  setTheme: (id: 'light' | 'dark') => void
+  /** 切换到外层主题按钮指定的内置偏好。 */
+  setTheme: (id: 'light' | 'dark' | 'system') => void
   /** 发起独立页助手的「新对话」；页面插件未登记入口时无动作。 */
   startPageConversation: () => void
 }
