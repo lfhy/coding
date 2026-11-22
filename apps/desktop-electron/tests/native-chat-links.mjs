@@ -187,7 +187,8 @@ async function main() {
     server = createServer((request, response) => {
       if (request.url === '/page') loadedPage = true
       response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
-      response.end('<!doctype html><html><head><title>Sidebar destination</title></head><body>Ready</body></html>')
+      response.end('<!doctype html><html><head><title>Sidebar destination</title></head>' +
+        '<body style="background:rgb(0, 126, 230)"><h1>Ready</h1></body></html>')
     })
     await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve) })
     const address = server.address()
@@ -276,6 +277,20 @@ async function main() {
     assert.equal(await page.locator('[role="tab"][aria-selected="true"]')
       .evaluateAll((tabs, id) => tabs.some(tab => tab.id === id), tabId), true)
     assert.equal(loadedPage, true, 'backing browser must load the requested document')
+    // 外部浏览器也能加载网页；必须核对应用窗口内的原生视图真的绘制了测试页。
+    await until(() => app.evaluate(async ({ BrowserWindow }, { hostURL, link }) => {
+      const owner = BrowserWindow.getAllWindows().find(window => window.webContents.getURL() === hostURL)
+      const view = owner?.contentView.children.find(child => child.webContents?.getURL() === link)
+      if (!view || !view.getVisible() || view.getBounds().width < 1 || view.getBounds().height < 1) return false
+      const image = await view.webContents.capturePage()
+      const { width, height } = image.getSize(1)
+      if (width < 1 || height < 1) return false
+      const offset = (Math.floor(height / 2) * width + Math.floor(width / 2)) * 4
+      const pixel = image.getBitmap({ scaleFactor: 1 }).subarray(offset, offset + 3)
+      // 原生位图可能按 RGBA 或 BGRA 排列；中心背景色与任一顺序吻合即可。
+      const [low, middle, high] = [...pixel].sort((a, b) => a - b)
+      return low <= 5 && Math.abs(middle - 126) <= 5 && Math.abs(high - 230) <= 5
+    }, { hostURL: `${origin}/`, link }), 'fixture painted inside the desktop workbench', 12_000)
     assert.deepEqual(responses.filter(item => item.pathname === '/api/ego/pages').map(item => item.status), [200])
     assert.deepEqual(responses.filter(item => item.pathname === '/api/ego/navigation').map(item => item.status), [200])
     assert.equal(popup.length, 0, 'link must not open an independent Electron window')

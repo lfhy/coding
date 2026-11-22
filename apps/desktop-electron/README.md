@@ -16,7 +16,9 @@ make dev
 
 开发 Host 使用 `~/.dsh-electron-dev`，默认工作目录为其中的 `workspace/`，Electron `userData` 位于 `electron-user-data/`；开发实例拒绝与安装版主目录（`~/.coding`）重叠。开发 Host 从仓库源码启动，需要 PATH 中的 Node，且不自动使用安装版设置与凭据。手动真实 API 测试须显式设置环境变量或只在隔离的 `workspace/.env` 中配置；Host 不读取仓库根目录 `.env`，不要将密钥写进仓库。
 
-`pnpm run test:electron:chat-links` 验收已构建的开发态壳；先按 `make dev` 所需命令构建 Host、Web、Go helper 与 Electron 壳。`pnpm run test:electron:chat-links:packaged` 验收已有的 `dist/Coding.app`：在 macOS 图形会话中把签名包复制到短临时路径，以独立 HOME、浏览器状态和单实例锁启动，不安装或操作正在运行的应用。两种模式都恢复一次 Assistant 链接消息，点击后检查本机测试页面被 Agent 浏览器加载、右侧标签可见且已选中，并核对建页和导航请求；需要本机 Edge、Chrome 或 Chromium，不调用模型或读取用户会话。退出不确定时保留隔离目录供检查；这两项测试不验收既有用户配置和会话。旧 guest 的 `--browser-only` 验证结果不代表当前浏览器能力。
+`pnpm run test:electron:chat-links` 验收已构建的开发态壳；先按 `make dev` 所需命令构建 Host、Web、Go helper 与 Electron 壳。`pnpm run test:electron:chat-links:packaged` 验收已有的 `dist/Coding.app`：在 macOS 图形会话中把签名包复制到短临时路径，以独立 HOME、浏览器状态和单实例锁启动，不安装或操作正在运行的应用。
+
+两种模式都恢复一次 Assistant 链接消息，核对建页和导航请求，并验证右侧工作台的原生视图确实绘制了测试网页；外部浏览器加载网页或右侧仅显示地址都不算通过。测试不调用模型、不读取用户会话，也不验收既有用户配置。退出不确定时保留隔离目录供检查。
 
 ## Host、Remote-SSH 与窗口
 
@@ -32,7 +34,7 @@ macOS 菜单和托盘提供窗口操作，红色关闭按钮只隐藏窗口，�
 
 helper 的启动取消、协议失败和 fallback 关闭都保留 12 秒清理宽限，之后才强停本次 helper，并最多再等待 1 秒回收。Host 替换由[共享启动器](../internal/hostlaunch/README.md)串行退休旧 owner：收到退出请求不等于退出完成，发现记录消失也不代表共享 Home 已释放；旧 owner 未退出时新 Host 不启动。
 
-桌面上的 Agent 页面由主进程的页面宿主承载：每个页面是一个 `WebContentsView`，按任务空间使用独立 session 分区。主进程在启动 Host 之前建立虚拟 CDP 端点（`ego-cdp-broker.ts`）并把地址写进 Host 的环境变量 `EGO_LINUX_CDP_URL`，[ego 运行时](../../packages/browser/browser-ego-host/README.md) 因此不再启动本机浏览器，而是把 `Target.*` 之外的命令转发到页面自己的调试会话；`Target.createTarget`、`Target.createBrowserContext` 与它们的释放由页面宿主实现，目标 id 由端点铸造，所以只有页面宿主登记的页面可见。模型工具仍是[浏览器工具](../../packages/browser/tool-browser-ego/)登记的 `browser_*` 全套，审批与结果不变，页面里的虚拟光标、动作标签与快照都来自运行时原本的实现。
+桌面上的 Agent 页面由主进程的页面宿主承载，每个页面对应一个 `WebContentsView`。主进程先建立虚拟 CDP 端点（`ego-cdp-broker.ts`），再将地址作为 `EGO_LINUX_CDP_URL` 传入本次 Go helper 的显式启动环境，Host 从 helper 继承该环境。[ego 运行时](../../packages/browser/browser-ego-host/README.md) 因此不再启动本机浏览器，而是把 `Target.*` 之外的命令转发到页面自己的调试会话；`Target.createTarget`、`Target.createBrowserContext` 与它们的释放由页面宿主实现，目标 id 由端点铸造，所以只有页面宿主登记的页面可见。模型工具仍是[浏览器工具](../../packages/browser/tool-browser-ego/)登记的 `browser_*` 全套，审批与结果不变，页面里的虚拟光标、动作标签与快照都来自运行时原本的实现。
 
 [Agent 浏览器面板](../../packages/client/ui-browser-ego/README.md)在桌面端不再显示帧流：面板把内容区矩形经 preload 的 `egoBrowser.present` 交给主进程（`coding:ego-present`，只接受 Host 主 frame、回环 origin 与窗口内整数矩形），由主进程把同一个视图移进窗口，鼠标、键盘、滚动与人机验证都在真实页面上进行；隐藏面板、切换标签或换页时撤回呈现，页面本身继续由 Host 使用。preload 除该呈现方法与受限 Remote-SSH 外不暴露其它能力，页面内容、输入与命令都走 Host 侧通道。
 

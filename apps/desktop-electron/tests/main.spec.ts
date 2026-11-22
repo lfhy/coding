@@ -16,8 +16,9 @@ const mocks = vi.hoisted(() => {
     on: vi.fn((name: string, listener: (...args: unknown[]) => void) => { windowListeners.set(name, listener) }),
   }
   const chrome = { showWindow: vi.fn(), closeWindow: vi.fn(), dispose: vi.fn() }
+  const helperEnv = { PATH: '/test/bin', EGO_LINUX_CDP_URL: 'ws://127.0.0.1:8/stale' }
   return {
-    listeners, windowListeners, helper, window, chrome,
+    listeners, windowListeners, helper, window, chrome, helperEnv,
     app: {
       isPackaged: false,
       setName: vi.fn(), setPath: vi.fn(), requestSingleInstanceLock: vi.fn(() => true),
@@ -27,7 +28,7 @@ const mocks = vi.hoisted(() => {
     },
     showErrorBox: vi.fn(),
     prepareDevelopmentDirectories: vi.fn(async () => undefined),
-    resolveRuntimeConfig: vi.fn(async () => ({ home: '/test/home', userData: '/test/user-data', cwd: '/test/workspace', helper: { env: {} } })),
+    resolveRuntimeConfig: vi.fn(async () => ({ home: '/test/home', userData: '/test/user-data', cwd: '/test/workspace', helper: { env: helperEnv } })),
     launchHelper: vi.fn(async (_options: { signal: AbortSignal; env: Record<string, string | undefined> }) => helper),
     createHostWindow: vi.fn(() => window),
     installRemoteIpc: vi.fn(() => vi.fn()),
@@ -77,7 +78,7 @@ function flush(): Promise<void> {
   return new Promise((resolve) => { setImmediate(resolve) })
 }
 
-describe('Electron 主进程退出', () => {
+describe('Electron 主进程', () => {
   beforeEach(async () => {
     vi.resetModules()
     vi.clearAllMocks()
@@ -90,6 +91,13 @@ describe('Electron 主进程退出', () => {
     await import('../src/main.ts')
     await flush()
     expect(mocks.createNativeChrome).toHaveBeenCalledOnce()
+  })
+
+  it('启动 helper 时传入当前桌面浏览器端点，保留其他启动环境', () => {
+    expect(mocks.launchHelper.mock.calls[0]?.[0].env).toEqual({
+      PATH: '/test/bin', EGO_LINUX_CDP_URL: 'ws://127.0.0.1:9/token',
+    })
+    expect(mocks.helperEnv.EGO_LINUX_CDP_URL).toBe('ws://127.0.0.1:8/stale')
   })
 
   it('重复退出请求必须等待同一次 helper shutdown 与进程关闭', async () => {
@@ -205,7 +213,7 @@ describe('Electron 主进程退出', () => {
     closed.resolve(undefined)
     await flush()
     expect(mocks.launchHelper).toHaveBeenCalledTimes(2)
-    expect(mocks.launchHelper.mock.calls[1]?.[0].env).toEqual({})
+    expect(mocks.launchHelper.mock.calls[1]?.[0].env).toEqual(mocks.launchHelper.mock.calls[0]?.[0].env)
     expect(mocks.createHostWindow).toHaveBeenCalledTimes(2)
     expect(nextHelper.close).not.toHaveBeenCalled()
     expect(mocks.app.quit).not.toHaveBeenCalled()

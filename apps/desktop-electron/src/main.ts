@@ -1,6 +1,6 @@
 /**
  * Electron 桌面入口：Go helper 独占受管 Host 和 Remote-SSH，主进程拥有
- * 窗口、托盘及逐调用授权的最小 preload IPC；浏览器由 Host 独立管理。
+ * 窗口、托盘和 Agent 页面的原生呈现，并为 Host 提供浏览器端点。
  * @module coding-desktop-electron/main
  */
 
@@ -75,7 +75,7 @@ async function stopHelper(): Promise<void> {
  * ego 运行时见到 `EGO_LINUX_CDP_URL` 就不再启动本机浏览器，而是把全部命令发到
  * 这个端点，因此页面是应用窗口里的真实网页，工作台不必再看帧流。端点必须在
  * Host 启动前就位；页面宿主按需读取窗口，窗口等 Host 就绪后才建立。
- * 端点在启动时建立失败则不设置变量，Host 退回自带浏览器。
+ * 端点在启动时建立失败则不向 helper 传递，Host 退回自带浏览器。
  */
 async function ensureEgoPages(): Promise<void> {
   if (egoBroker !== undefined) return
@@ -86,18 +86,16 @@ async function ensureEgoPages(): Promise<void> {
     const broker = await createEgoCdpBroker(pages)
     egoPages = pages
     egoBroker = broker
-    process.env.EGO_LINUX_CDP_URL = broker.url
   } catch (error) {
     pages.dispose()
     throw error
   }
 }
 
-/** 关闭端点并撤下环境变量，后续 Host 启动会退回自带浏览器。 */
+/** 关闭端点并撤销当前窗口的呈现授权。 */
 async function stopEgoPages(): Promise<void> {
   const broker = egoBroker
   egoBroker = undefined
-  delete process.env.EGO_LINUX_CDP_URL
   disposeEgoPresentation?.()
   disposeEgoPresentation = undefined
   disposeEgoDownloads?.()
@@ -135,9 +133,13 @@ function openWindow(): Promise<void> {
         workspace: runtimeConfig.cwd,
       })
     }
-    // Host 必须带着端点地址启动；端点建立失败时不设置变量，Host 退回自带浏览器。
     await ensureEgoPages().catch(() => undefined)
-    const next = await launchHelper({ ...runtimeConfig.helper, signal: controller.signal })
+    // helper 使用解析配置时保存的环境，不读取主进程随后设置的变量。
+    const next = await launchHelper({
+      ...runtimeConfig.helper,
+      env: { ...runtimeConfig.helper.env, EGO_LINUX_CDP_URL: egoBroker?.url },
+      signal: controller.signal,
+    })
     helper = next
     if (controller.signal.aborted) {
       // ready 已交付的 helper 持有本次 Host；退出必须先发送显式 shutdown。
