@@ -1,4 +1,6 @@
 /** 验证实际 Host 与客户端组合中的笔记存取、布局切换和助手草稿。 */
+import { readFile } from 'node:fs/promises'
+import { join } from 'node:path'
 import type { Browser, Page } from 'playwright'
 import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
@@ -336,6 +338,27 @@ describe('Web 笔记工作区', () => {
     await noteDialog.waitFor({ state: 'hidden' })
     expect((await scaffold.ctx.fileLibrary.readNote('Picker root/Picker child/Picker draft.md')).content).toBe('')
     expect(await page.evaluate(() => document.documentElement.scrollWidth === innerWidth)).toBe(true)
+    expect(consoleLog.pageErrors).toEqual([])
+  })
+
+  it('从全部笔记新建幻灯片，写出工程并打开工作台', async () => {
+    onTestFailed(() => saveFailureShot(page, 'notes-create-presentation'))
+    await page.setViewportSize({ width: 1680, height: 1000 })
+    await page.reload({ waitUntil: 'load' })
+    await page.getByRole('button', { name: 'Notes', exact: true }).click()
+    const directory = page.getByRole('complementary', { name: 'Note directory' })
+    await directory.getByRole('button', { name: 'New note', exact: true }).click()
+    await page.getByRole('menuitem', { name: 'New presentation', exact: true }).click()
+    const dialog = page.getByRole('dialog', { name: 'New presentation', exact: true })
+    await dialog.getByRole('button', { name: 'Save to All notes', exact: true }).waitFor()
+    await dialog.getByLabel('Presentation name').fill('测试')
+    await dialog.getByRole('button', { name: 'Create', exact: true }).click()
+    await dialog.waitFor({ state: 'hidden', timeout: 15_000 })
+    await directory.getByTitle('测试', { exact: true }).waitFor()
+    await page.getByRole('tab', { name: '测试', selected: true }).waitFor()
+    await page.getByRole('button', { name: 'Add page', exact: true }).waitFor({ timeout: 15_000 })
+    const deckPath = join(scaffold.ctx.fileLibrary.notesRootPath(), '测试.codingppt', 'deck.json')
+    expect(JSON.parse(await readFile(deckPath, 'utf8'))).toMatchObject({ revision: 1, deck: { title: '测试' } })
     expect(consoleLog.pageErrors).toEqual([])
   })
 })

@@ -301,22 +301,16 @@ export default class PptProjects extends Service {
    * 只有工作目录正好是文件库笔记根目录的本机会话可以创建笔记幻灯片；远程工作区、
    * 非笔记会话或缺少文件库时直接拒绝，不把工程写到别处。
    * @param sessionId - 会话身份。
-   * @returns 工作区绝对路径、目录创建与清理句柄。
+   * @returns 工作区绝对路径与负责创建幻灯片目录的文件库。
    * @throws PptStoreError 会话不是本机笔记会话或文件库不可用时。
    */
   private async noteDeckSeam(sessionId: string): Promise<{
     root: string
-    create: (name: string, directory: string) => Promise<{ path: string; remove?: () => Promise<void> }>
-    remove?: (path: string) => Promise<void>
+    library: Pick<Context['fileLibrary'], 'createNoteDeck'>
   }> {
     const root = await this.localRoot(sessionId)
-    const library = this.ctx.get('fileLibrary') as {
-      notesRootPath?: () => string
-      createNoteDeck?: (name: string, directory: string) => Promise<{ path: string; remove?: () => Promise<void> }>
-      deleteNote?: (path: string) => Promise<void>
-    } | undefined
-    const create = library?.createNoteDeck
-    if (library?.notesRootPath === undefined || create === undefined) {
+    const library = this.ctx.get('fileLibrary') as Context['fileLibrary'] | undefined
+    if (library === undefined) {
       throw new PptStoreError('forbidden', '创建笔记幻灯片需要可用的文件库')
     }
     let notesRoot: string
@@ -326,8 +320,7 @@ export default class PptProjects extends Service {
     if (resolve(root) !== resolve(notesRoot)) {
       throw new PptStoreError('forbidden', '只有笔记会话可以创建笔记幻灯片')
     }
-    const remove = library.deleteNote
-    return { root, create, ...remove === undefined ? {} : { remove } }
+    return { root, library }
   }
 
   /**
@@ -384,7 +377,8 @@ export default class PptProjects extends Service {
     const seam = await this.noteDeckSeam(sessionId)
     const directory = options.directory ?? ''
     if (typeof directory !== 'string') throw new PptStoreError('bad-request', 'directory 必须是字符串')
-    const created = await seam.create(options.name, directory).catch((reason: unknown) => { throw deckFailure(reason) })
+    const created = await seam.library.createNoteDeck(options.name, directory)
+      .catch((reason: unknown) => { throw deckFailure(reason) })
     try {
       const absolute = resolveProjectDir(seam.root, created.path)
       const { deck, media } = build(deckTitle(options.name))
@@ -392,8 +386,7 @@ export default class PptProjects extends Service {
       this.focus(sessionId, absolute)
       return { dir: this.relativeDir(sessionId, absolute) }
     } catch (reason) {
-      if (created.remove !== undefined) await created.remove().catch(() => undefined)
-      else if (seam.remove !== undefined) await seam.remove(created.path).catch(() => undefined)
+      await created.remove().catch(() => undefined)
       throw deckFailure(reason)
     }
   }
