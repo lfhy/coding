@@ -47,6 +47,7 @@ function fakeWindow() {
     maximize: vi.fn(),
     setBounds: vi.fn(),
     getBounds: vi.fn(() => ({ x: 320, y: 140, width: 1280, height: 860 })),
+    getNormalBounds: vi.fn(() => ({ x: 320, y: 140, width: 1280, height: 860 })),
     on: vi.fn((name: string, listener: (...args: unknown[]) => void) => {
       windowListeners.set(name, listener)
     }),
@@ -84,6 +85,60 @@ describe('Host 窗口初始边界', () => {
     expect(fillBounds(screen, menuOnly, 'darwin')).toBeNull()
     expect(fillBounds(screen, rightDock, 'win32')).toBeNull()
     expect(fillBounds(screen, rightDock, 'linux')).toBeNull()
+  })
+})
+
+describe('Host 窗口缩放铺满', () => {
+  const full = { x: 0, y: 0, width: 1920, height: 1080 }
+  const sideDock = { x: 0, y: 30, width: 1873, height: 1050 }
+  const original = { x: 320, y: 140, width: 1280, height: 860 }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin')
+  })
+  afterEach(() => {
+    vi.restoreAllMocks()
+    electronMock.screen.getDisplayMatching.mockReturnValue({ bounds: full, workArea: { ...sideDock, width: 1920 } })
+  })
+
+  it('双击标题栏缩放后补到整屏，再次缩放退回原窗口', () => {
+    electronMock.screen.getDisplayMatching.mockReturnValue({ bounds: full, workArea: sideDock })
+    const fixture = fakeWindow()
+    createHostWindow(origin)
+    fixture.window.setBounds.mockClear()
+
+    // 系统先把窗口缩放到可用区域，最大化事件里再补足 Dock 让出的宽度。
+    fixture.windowListeners.get('maximize')!()
+    expect(fixture.window.setBounds).toHaveBeenLastCalledWith({ x: 0, y: 30, width: 1920, height: 1050 })
+
+    // 补宽清掉了系统的缩放标志，第二次缩放由这里还原到进入最大化前的窗口。
+    fixture.windowListeners.get('maximize')!()
+    expect(fixture.window.setBounds).toHaveBeenLastCalledWith(original)
+  })
+
+  it('Dock 不在侧边时保留系统自己的缩放与还原', () => {
+    electronMock.screen.getDisplayMatching.mockReturnValue({ bounds: full, workArea: { x: 0, y: 30, width: 1920, height: 1050 } })
+    const fixture = fakeWindow()
+    createHostWindow(origin)
+    fixture.window.setBounds.mockClear()
+
+    fixture.windowListeners.get('maximize')!()
+    expect(fixture.window.setBounds).not.toHaveBeenCalled()
+  })
+
+  it('手动拖动改变窗口大小后，下一次缩放重新按最大化处理', () => {
+    electronMock.screen.getDisplayMatching.mockReturnValue({ bounds: full, workArea: sideDock })
+    const fixture = fakeWindow()
+    createHostWindow(origin)
+    fixture.window.setBounds.mockClear()
+
+    fixture.windowListeners.get('maximize')!()
+    fixture.windowListeners.get('will-resize')!({}, original)
+    fixture.window.setBounds.mockClear()
+
+    fixture.windowListeners.get('maximize')!()
+    expect(fixture.window.setBounds).toHaveBeenLastCalledWith({ x: 0, y: 30, width: 1920, height: 1050 })
   })
 })
 

@@ -29,6 +29,39 @@ export function fillBounds(bounds: DisplayRect, workArea: DisplayRect, platform:
   return { x: bounds.x, y: workArea.y, width: bounds.width, height: workArea.height }
 }
 
+/**
+ * 让系统缩放（双击标题栏、窗口 → 缩放）在侧边 Dock 场景下也铺满整屏。
+ *
+ * macOS 的缩放目标是「可用区域」，侧边 Dock 会让出约 47px；而在缩放状态下调用 `setBounds`
+ * 会清掉系统的缩放标志，所以第二次缩放必须由这里还原到进入最大化前的窗口——否则双击会一直
+ * 把窗口重新拉宽，用户再也回不到原来的尺寸。手动拖动改变窗口大小后，下一次缩放重新按最大化处理。
+ * @param window 已创建的 Host 窗口。
+ */
+function installFullWidthZoom(window: BrowserWindow): void {
+  let restoreBounds: DisplayRect | undefined
+  window.on('maximize', () => {
+    const display = screen.getDisplayMatching(window.getBounds())
+    const target = fillBounds(display.bounds, display.workArea, process.platform)
+    // Dock 不在侧边：系统缩放本身已经铺满，保留系统自己的缩放与还原语义。
+    if (target === null) {
+      restoreBounds = undefined
+      return
+    }
+    const restore = restoreBounds
+    if (restore !== undefined) {
+      restoreBounds = undefined
+      window.setBounds(restore)
+      return
+    }
+    // 此刻系统已经缩放完，normal bounds 仍是进入最大化前的窗口。
+    restoreBounds = window.getNormalBounds()
+    window.setBounds(target)
+  })
+  const forget = (): void => { restoreBounds = undefined }
+  window.on('will-resize', forget)
+  window.on('unmaximize', forget)
+}
+
 function validHostOrigin(origin: string): boolean {
   const match = /^http:\/\/127\.0\.0\.1:([1-9]\d{0,4})$/.exec(origin)
   if (!match || Number(match[1]) > 65535) return false
@@ -91,6 +124,7 @@ export function createHostWindow(origin: string, options: { devTools?: boolean; 
     },
   })
   // 侧边 Dock 会让 macOS 的可用区域窄一条，直接取整屏宽度铺满；其余情况仍用系统最大化。
+  installFullWidthZoom(window)
   const display = screen.getDisplayMatching(window.getBounds())
   const target = fillBounds(display.bounds, display.workArea, process.platform)
   if (target === null) window.maximize()
