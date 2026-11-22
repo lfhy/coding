@@ -690,6 +690,17 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [{ name: 'kind', description: '要打开的面板：辅助功能或屏幕录制。' }],
       },
       {
+        signature: 'async requestPermission(kind: \'accessibility\' | \'screen-recording\', signal: AbortSignal): Promise<void>',
+        description: '申请一项系统权限：触发 macOS 自己的授权对话框并把本机程序登记进隐私列表。\n\n与 openPermissionSettings 的区别是这个命令会让系统主动询问一次；是否勾选 仍由用户在系统设置里决定，返回后状态未必立刻改变。',
+        parameters: [{ name: 'kind', description: '要申请的权限：辅助功能或屏幕录制。' }, { name: 'signal', description: '调用方取消信号。' }],
+      },
+      {
+        signature: '@Remote(\'requestPermission\') async remoteRequestPermission(kind: \'accessibility\' | \'screen-recording\'): Promise<ComputerUseAccessStatus>',
+        description: '设置页的权限申请：申请后立刻重读健康结果，让界面反映系统当前状态。',
+        parameters: [{ name: 'kind', description: '要申请的权限。' }],
+        returns: '申请后的授权结论；申请失败时把原因写回状态而不是抛给界面。',
+      },
+      {
         signature: 'async openPermissionSettings(kind: \'accessibility\' | \'screen-recording\', signal: AbortSignal): Promise<void>',
         description: '响应用户的显式设置操作，打开对应的 macOS 隐私面板；插件不自行授予权限。',
         parameters: [{ name: 'kind', description: '要打开的面板：辅助功能或屏幕录制。' }, { name: 'signal', description: '调用方取消信号。' }],
