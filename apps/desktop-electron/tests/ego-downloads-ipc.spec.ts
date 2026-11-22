@@ -21,7 +21,7 @@ const download: EgoDownloadRecord = {
 function fixture() {
   const frame = { url: `${origin}/` }
   const contents = Object.assign(new EventEmitter(), {
-    mainFrame: frame, isDestroyed: () => false, send: vi.fn(),
+    mainFrame: frame, isDestroyed: (): boolean => false, send: vi.fn(),
   })
   const window = Object.assign(new EventEmitter(), {
     webContents: contents, isDestroyed: () => false,
