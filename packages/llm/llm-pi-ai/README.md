@@ -193,6 +193,8 @@ pi-ai 会安装多个提供方 SDK，并延迟加载 catalog 模型所选的 SDK
 
 #### KV Cache 影响
 
+`openai-responses` 默认从会话 ID 派生请求体的 `prompt_cache_key`；后续轮次和恢复同一会话复用同一个键。没有会话 ID 或渠道设为 `cacheRetention: none` 时不发送该字段。缓存键用于上游路由，不替代相同的输入前缀；缓存命中以响应的 `usage.input_tokens_details.cached_tokens` 为准。
+
 转换保留逻辑请求顺序，不添加文本；复用取决于所选提供方的序列化与回放状态。更改适配器实例、提供方、模型或任何上游请求 token，都可能使复用从首个出现差异的 token 起失效。跨过图片上限会改写较早的一条消息（新被 offload 的图片变为占位文本），复用在该消息处截止，直到被 offload 的前缀稳定。
 
 ### 提供方响应

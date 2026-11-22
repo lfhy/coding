@@ -12,7 +12,7 @@ afterEach(async () => {
   await closeMockServers()
 })
 
-function responseEvents(summary: string, encryptedContent: string, responseId: string): {
+function responseEvents(summary: string, encryptedContent: string, responseId: string, cachedTokens = 0): {
   events: string[]
   reasoningItem: Record<string, unknown>
 } {
@@ -46,7 +46,7 @@ function responseEvents(summary: string, encryptedContent: string, responseId: s
           id: responseId,
           status: 'completed',
           output: [reasoningItem, messageItem],
-          usage: { input_tokens: 10, output_tokens: 8, total_tokens: 18 },
+          usage: { input_tokens: 10, input_tokens_details: { cached_tokens: cachedTokens }, output_tokens: 8, total_tokens: 18 },
         },
       },
     ].map(event => JSON.stringify(event)).concat('[DONE]'),
@@ -60,7 +60,7 @@ describe('Responses 加密推理回放', () => {
   ])('%s：密文只作为同模型下一轮的回放元数据', async (_scenario, summary) => {
     const ciphertext = 'opaque-encrypted-reasoning-for-next-turn'
     const first = responseEvents(summary, ciphertext, 'resp_first')
-    const second = responseEvents('', 'opaque-second-turn', 'resp_second')
+    const second = responseEvents('', 'opaque-second-turn', 'resp_second', 7)
     const server = await mockServer([{ events: first.events }, { events: second.events }])
     vi.stubEnv('RESPONSES_TEST_KEY', 'test-key')
     const ctx = new Context()
@@ -88,7 +88,8 @@ describe('Responses 加密推理回放', () => {
     })
     const chunks: StreamChunk[] = []
     const assembler = new BlockAssembler()
-    for await (const chunk of ctx.llm.stream({ provider: 'responses-test', model: 'reasoning-model', messages: [prompt] })) {
+    const sessionId = SessionId(`responses-reasoning-${summary === '' ? 'opaque' : 'summary'}`)
+    for await (const chunk of ctx.llm.stream({ provider: 'responses-test', model: 'reasoning-model', messages: [prompt], sessionId })) {
       chunks.push(chunk)
       assembler.push(chunk)
     }
@@ -105,11 +106,11 @@ describe('Responses 加密推理回放', () => {
     expect(firstRequest).toMatchObject({
       model: 'reasoning-model',
       store: false,
+      prompt_cache_key: sessionId,
       include: ['reasoning.encrypted_content'],
       reasoning: { effort: 'high', summary: 'auto' },
     })
 
-    const sessionId = SessionId(`responses-reasoning-${summary === '' ? 'opaque' : 'summary'}`)
     const session = Session.create(sessionId)
     session.append('user/message', prompt, { surfaceOp: 'append' })
     session.append('assistant/message', {
@@ -129,17 +130,21 @@ describe('Responses 加密推理回放', () => {
     expect(restored.deriveMessages().map(message => message.content)).toEqual(session.deriveMessages().map(message => message.content))
     expect(restored.deriveMessages()[1]?.content[0]).toEqual({ type: 'reasoning', text: summary })
 
-    for await (const _chunk of ctx.llm.stream({
+    const secondTurn = new BlockAssembler()
+    for await (const chunk of ctx.llm.stream({
       provider: 'responses-test',
       model: 'reasoning-model',
+      sessionId: restored.id,
       messages: [
         ...restored.deriveMessages(),
         createUserMessage({ content: [{ type: 'text', text: 'Follow up' }], source: { kind: 'user' } }),
       ],
     })) {
-      // 消费完整响应，确保第二个请求已结束。
+      secondTurn.push(chunk)
     }
+    expect(secondTurn.usage).toEqual({ inputTokens: 3, cacheReadTokens: 7, outputTokens: 8 })
     const secondRequest = server.requests[1] as { input: unknown[] }
+    expect(secondRequest).toHaveProperty('prompt_cache_key', sessionId)
     expect(secondRequest.input).toContainEqual(first.reasoningItem)
     expect(server.paths).toEqual(['/v1/responses', '/v1/responses'])
   })

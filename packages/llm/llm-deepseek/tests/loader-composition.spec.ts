@@ -17,6 +17,7 @@ import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import Include from '@deepseek-ai/cordis-plugin-include'
 import LlmRuntime, { ReasoningEffortId } from 'coding-llm'
+import { SessionId } from 'coding-session'
 import { credentialRef } from 'coding-credentials'
 import LocalCredentialProvider from 'coding-credentials-local'
 import { settingsNamespace } from 'coding-settings'
@@ -150,7 +151,7 @@ async function loadComposition(
 describe('llm-deepseek real dynamic composition', () => {
   it('migrates the legacy route once without resetting its model, credential, or reasoning preferences', async () => {
     vi.stubEnv('DEEPSEEK_API_KEY', '')
-    const server = await mockServer([textEvents, responsesEvents].map(events => ({ kind: 'sse', events })))
+    const server = await mockServer([textEvents, responsesEvents, responsesEvents].map(events => ({ kind: 'sse', events })))
     const options = { withDynamic: true, withGeneric: true, legacyOnly: true, baseURL: server.url }
     const { ctx, settingsPath } = await loadComposition({
       ...options,
@@ -179,20 +180,24 @@ describe('llm-deepseek real dynamic composition', () => {
     await expect(ctx.llm.resolveModelInfo(route, 'existing-model')).resolves.toMatchObject({
       reasoning: { defaultEffort: 'low' }, defaultMaxTokens: 64,
     })
+    const sessionId = SessionId('session-before-migration')
     const generate = (context: Context) => assemble(context, {
-      provider: route, model: 'existing-model', messages: [], reasoningEffort: ReasoningEffortId('high'),
+      provider: route, model: 'existing-model', messages: [], reasoningEffort: ReasoningEffortId('high'), sessionId,
     })
     expect((await generate(ctx)).finish.kind).toBe('stop')
     expect(server.requests[0]).toMatchObject({ thinking: { type: 'enabled' }, reasoning_effort: 'high' })
     expect(server.headers[0]).toMatchObject({ authorization: 'Bearer boot-key', 'user-agent': 'legacy-gateway/1.0' })
 
     await settings.mutate(target, [{ op: 'set', path: ['providers', route, 'api'], value: 'openai-responses' }])
+    expect((await generate(ctx)).finish.kind).toBe('stop')
     const home = root!
     await ctx.fiber.dispose()
     const { ctx: restarted } = await loadComposition({ ...options, reuseRoot: home })
     expect((await generate(restarted)).finish.kind).toBe('stop')
-    expect(server.requests[1]).toMatchObject({ reasoning: { effort: 'high' } })
-    expect(server.paths).toEqual(['/chat/completions', '/responses'])
+    for (const request of server.requests.slice(1)) {
+      expect(request).toMatchObject({ reasoning: { effort: 'high' }, prompt_cache_key: sessionId })
+    }
+    expect(server.paths).toEqual(['/chat/completions', '/responses', '/responses'])
     const persisted = await readFile(settingsPath, 'utf8')
     expect(persisted).not.toContain('boot-key')
     await restarted.get('settings')!.mutate(target, [{ op: 'unset', path: ['providers', route] }])
