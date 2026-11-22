@@ -3,12 +3,12 @@
  * 只记活动路径、打开的标签与展开目录，正文一律从文件库重新读取。
  */
 import { defineStore, type EngineStoreHandle } from 'coding-client-runtime/client'
-import { isDeckPath } from './notes-tree.ts'
+import { noteKindOf } from './notes-tree.ts'
 
 interface NotesUiState {
-  /** 当前 Markdown 草稿的相对路径；切到幻灯片时仍保留以供恢复。 */
+  /** 最近打开的 Markdown 相对路径；切到结构化文档时仍保留。 */
   path: string | null
-  /** 所有打开条目的路径，幻灯片工程目录与 Markdown 共用同一顺序。 */
+  /** 不同文档类型共用的标签顺序。 */
   tabs?: string[]
   /** 当前选中路径；只有打开的标签才会成为活动文档。 */
   activePath?: string | null
@@ -17,12 +17,10 @@ interface NotesUiState {
 }
 
 type NotesUiActions = {
-  /** 最近一次 Markdown 草稿的路径；切换到幻灯片不影响它。 */
-  rememberNote: (draft: NotesUiState, path: string | null) => void
   /** 用户明确打开 Markdown 标签后才选中它。 */
   openNote: (draft: NotesUiState, path: string) => void
-  /** 用户明确打开幻灯片标签后才选中它；只有 `.codingppt` 目录能被这样打开。 */
-  openPpt: (draft: NotesUiState, path: string) => void
+  /** 选中结构化文档，不把它记成 Markdown 草稿。 */
+  openStructured: (draft: NotesUiState, path: string) => void
   activateTab: (draft: NotesUiState, path: string) => void
   closeTab: (draft: NotesUiState, path: string) => void
   moveTabs: (draft: NotesUiState, from: string, to: string) => void
@@ -41,21 +39,14 @@ export function createNotesUiStore(): EngineStoreHandle<NotesUiState, NotesUiAct
     init: (): NotesUiState => ({ path: null, tabs: [], expanded: [] }),
     persist: 'dsh.notes.view',
     actions: {
-      rememberNote: (draft, path) => {
-        draft.path = path
-        if (path !== null) {
-          draft.tabs ??= []
-          if (!draft.tabs.includes(path)) draft.tabs.push(path)
-        }
-      },
       openNote: (draft, path) => {
         draft.path = path
         draft.tabs ??= []
         if (!draft.tabs.includes(path)) draft.tabs.push(path)
         draft.activePath = path
       },
-      openPpt: (draft, path) => {
-        if (!isDeckPath(path)) return
+      openStructured: (draft, path) => {
+        if (noteKindOf(path) === 'note') return
         draft.tabs ??= []
         if (!draft.tabs.includes(path)) draft.tabs.push(path)
         draft.activePath = path

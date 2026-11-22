@@ -31,8 +31,8 @@
   overflow: hidden;
 }
 
-/* 演示文稿占据活动内容层，工作台画布与缩略图在容器内部滚动。 */
-.pptContent {
+/* 结构化编辑器占据活动内容层，只允许其内部画布滚动。 */
+.structuredContent {
   display: flex;
   flex: 1;
   min-width: 0;

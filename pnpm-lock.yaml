@@ -1770,6 +1770,9 @@ importers:
       coding-client-ui-message-feedback:
         specifier: workspace:^
         version: link:../../client/ui-message-feedback
+      coding-client-ui-mindmap:
+        specifier: workspace:^
+        version: link:../../client/ui-mindmap
       coding-client-ui-model-selection:
         specifier: workspace:^
         version: link:../../client/ui-model-selection
@@ -2978,6 +2981,52 @@ importers:
       coding-typert-protocol:
         specifier: workspace:^
         version: link:../../typert/protocol
+      react:
+        specifier: ^18.2.0
+        version: 18.3.1
+      react-dom:
+        specifier: ^18.2.0
+        version: 18.3.1(react@18.3.1)
+
+  packages/client/ui-mindmap:
+    dependencies:
+      clsx:
+        specifier: ^2.1.1
+        version: 2.1.1
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@testing-library/react':
+        specifier: ^16.1.0
+        version: 16.3.2(@testing-library/dom@10.4.2)(@types/react-dom@18.3.7(@types/react@18.3.31))(@types/react@18.3.31)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      '@types/react':
+        specifier: ~18.3.1
+        version: 18.3.31
+      '@types/react-dom':
+        specifier: ~18.3.0
+        version: 18.3.7(@types/react@18.3.31)
+      coding-brand:
+        specifier: workspace:^
+        version: link:../../util/brand
+      coding-client-locale:
+        specifier: workspace:^
+        version: link:../locale
+      coding-client-runtime:
+        specifier: workspace:^
+        version: link:../runtime
+      coding-client-ui-notes:
+        specifier: workspace:^
+        version: link:../ui-notes
+      coding-client-ui-primitives:
+        specifier: workspace:^
+        version: link:../ui-primitives
+      coding-client-ui-slots:
+        specifier: workspace:^
+        version: link:../ui-slots
+      coding-invariants:
+        specifier: workspace:^
+        version: link:../../runtime-diagnostics/invariants
       react:
         specifier: ^18.2.0
         version: 18.3.1
@@ -7598,6 +7647,9 @@ importers:
       coding-agent:
         specifier: workspace:^
         version: link:../../core/agent
+      coding-agent-presets:
+        specifier: workspace:^
+        version: link:../../preset/agent-presets
       coding-client-connection:
         specifier: workspace:^
         version: link:../../client/connection
@@ -7610,6 +7662,9 @@ importers:
       coding-invariants:
         specifier: workspace:^
         version: link:../../runtime-diagnostics/invariants
+      coding-sandbox-policy:
+        specifier: workspace:^
+        version: link:../../sandbox/sandbox-policy
       coding-session:
         specifier: workspace:^
         version: link:../../core/session

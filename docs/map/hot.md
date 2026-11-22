@@ -76,6 +76,8 @@
 
 ## 笔记目录
 
+- **思维导图**：[笔记页](../../packages/client/ui-notes/README.md)管理 `.codingmindmap` 的新建、导入和标签，通过 `notes.document.mindmap` 挂载 [ui-mindmap](../../packages/client/ui-mindmap/README.md)。浏览器调用文件库的 `/api/notes/mindmap/{create,import,read,edit}`；[文件库](../../packages/attachment/file-library/src/mindmap-notes.ts)持有格式校验与导入，将结构化写入与笔记改名、删除串行化，HTTP 版本冲突返回 `409`，不覆盖现有内容。[笔记预设工具](../../packages/notes/tool-notes-tabs/README.md)通过同一服务读写，只有经校验的唯一活动标签可供无路径读取。[Web 导图用例](../../apps/web/tests/notes-mindmap.e2e.ts)覆盖两种导入、标签恢复和助手修改后画布更新；文件与权限边界由文件库及工具测试覆盖。
+
 - **标签与正文**：`NotesPage.tsx` 协调目录、`NotesTabs.tsx` 顶栏和 `NotesDocument.tsx` 内容容器；`useNoteDraft.ts` 只持有活动 Markdown 草稿，切换或关闭前保存，冲突时保留原文。`notes-ui-store.ts` 按会话记住标签顺序、活动路径和展开目录，首次目录加载过滤消失的路径，文件或目录重命名、删除同步标签。Markdown 正文从文件库读取，幻灯片（`.codingppt` 工程目录）通过 `notes.document.ppt` 子 slot 复用工作台。新建与导入幻灯片分别由 `/api/ppt/notes/create`、`/api/ppt/notes/import` 在 notes 根目录建出工程目录并写入内容，客户端随后按目录 `open` 跟随该工程；目录本身由文件库准入，工程文件由 PPT 宿主持有，Markdown 草稿不经 PPT 路由。助手标签工具只读取经过同源会话发布的实时标签事实，不能从目录树推断已打开文件；同时只在 notes 预设添加 PPT 工具。验收要覆盖新建文件、原文件外部改动与导入损失、助手路径完整性和刷新恢复。
 - **连带与验收**：修改标签状态、草稿切换或正文布局时同步 [ui-notes 说明](../../packages/client/ui-notes/README.md)、[用户指南](../user/guide/index.md#笔记)及组件测试，核对切换／关闭、冲突、目录改名／删除、跨页恢复和窄屏焦点；服务端文件边界与助手接线由各自所有者维护。
 - **目录界面**：[`NotesDirectory`](../../packages/client/ui-notes/src/client/NotesDirectory.tsx)负责目录树、搜索、标题加号、行尾操作和右键菜单。标题加号用共享 [`Menu`](../../packages/client/ui-primitives/README.md) 分列「新建」「导入」，行尾操作用 `SidebarRootItem.actions`。目录组件只派发界面动作，创建、导入、改名和删除由 `NotesPage` 协调。

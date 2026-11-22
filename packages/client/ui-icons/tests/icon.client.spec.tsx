@@ -17,7 +17,7 @@ describe('语义图标适配', () => {
       expect(icon.querySelector('svg')).not.toBeNull()
     },
   )
-  it.each(['conversation', 'recent'] as const)('%s 使用线性语义图形并继承主题颜色', (name) => {
+  it.each(['conversation', 'recent', 'file-mindmap'] as const)('%s 使用语义图形并继承主题颜色', (name) => {
     const view = render(<Icon name={name} size={14} className="view-icon" />)
     const icon = view.container.querySelector<HTMLElement>('.view-icon')!
     expect(icon.style.fontSize).toBe('14px')

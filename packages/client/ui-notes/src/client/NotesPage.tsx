@@ -8,12 +8,13 @@ import { NoteNameDialog } from './NoteNameDialog.tsx'
 import { NotesDirectory, type NoteActionTarget, type NoteCreateKind } from './NotesDirectory.tsx'
 import { NotesDocument } from './NotesDocument.tsx'
 import { NotesTabs } from './NotesTabs.tsx'
-import { addTreeDirectory, filePaths, findEntry, isDeckPath, labelOf, latestWritten, noteFiles, removeTreeEntry } from './notes-tree.ts'
+import { noteImportPickers } from './notes-import.ts'
+import { NOTE_MINDMAP_SUFFIX, addTreeDirectory, filePaths, findEntry, labelOf, latestWritten, noteFiles, noteKindOf, removeTreeEntry } from './notes-tree.ts'
 import type { createNotesUiStore } from './notes-ui-store.ts'
 import { useNoteDraft } from './useNoteDraft.ts'
 import { usePublishNotesTabs } from './usePublishNotesTabs.ts'
 import {
-  notesCreate, notesCreateDirectory, notesCreateSlide, notesDelete, notesImportSlide, notesRename, notesTree,
+  notesCreate, notesCreateDirectory, notesCreateMindmap, notesCreateSlide, notesDelete, notesRename, notesTree,
   type NotesTreeEntry,
 } from './wire.ts'
 import { exportImage, exportMarkdown, exportPdf, exportWord, type NoteExportFormat } from './export/index.ts'
@@ -21,44 +22,24 @@ import css from './NotesPage.module.css'
 
 export type NotesPageProps = PropsRuntime<'shell.page'> & PropsLocale<typeof NS>
   & PropsStore<ReturnType<typeof createNotesUiStore>>
-  & PropsRenderSlots<'notes.document.ppt'>
+  & PropsRenderSlots<'notes.document.ppt' | 'notes.document.mindmap'>
 
 /** AI 助手改动检测的目录轮询间隔。 */
 const TREE_POLL_MS = 4000
 
-/**
- * 「导入 → 文本」接受的扩展名：Markdown 与纯文本都存成 Markdown 笔记。
- * 新增导入类型时另开一类菜单项与文件选择器，不改动这里的判断。
- */
-const TEXT_IMPORT_ACCEPT = '.md,.markdown,.txt'
-const TEXT_IMPORT_EXTENSIONS: ReadonlySet<string> = new Set(['md', 'markdown', 'txt'])
-
-/** 「导入 → 幻灯片」只接受 PPTX；工程目录由 PPT 宿主落盘。 */
-const SLIDE_IMPORT_ACCEPT = '.pptx'
-const SLIDE_IMPORT_EXTENSION = 'pptx'
-
-/** 导入文本的字节上限；与文件库的单篇笔记上限一致。 */
-const NOTE_IMPORT_MAX_BYTES = 1024 * 1024
-
-/** 取小写扩展名（不含点）；没有扩展名时返回空字符串。 */
-function extensionOf(name: string): string {
-  return /\.([^.\\/]+)$/u.exec(name)?.[1]?.toLowerCase() ?? ''
-}
-
-/** 去掉最后一段扩展名，作为新条目的名称。 */
-function stripExtension(name: string): string {
-  return name.replace(/\.[^.]+$/u, '').trim()
-}
-
-/** 按 UTF-8 严格解码导入的文本；非法编码直接失败，不写半份乱码。 */
-async function decodeText(file: File): Promise<string> {
-  return new TextDecoder('utf-8', { fatal: true }).decode(new Uint8Array(await file.arrayBuffer()))
-}
 type DirectoryState = 'loading' | 'ready' | 'failed'
 type DialogKind = NoteCreateKind | 'reload' | 'rename' | 'delete'
 
+const createErrors = {
+  create: 'createError', folder: 'createFolderError', presentation: 'createPresentationError', mindmap: 'createMindmapError',
+} as const
+const renameTitles = { dir: 'renameFolder', deck: 'renamePresentation', file: 'renameNote', mindmap: 'renameMindmap' } as const
+const deleteDescriptions = {
+  dir: 'deleteFolderConfirm', deck: 'deletePresentationConfirm', file: 'deleteConfirm', mindmap: 'deleteMindmapConfirm',
+} as const
+
 /**
- * 独立笔记页：目录和编辑器由本页持有，助手显隐由同会话的根布局持有。
+ * 独立笔记页：持有目录、标签和 Markdown 草稿；结构化文档和助手由各自插槽提供。
  * @param props - 根布局提供的实际侧栏和助手状态、动作、上次浏览位置，以及本地化文案。
  * @returns 笔记目录与正文编辑区。
  */
@@ -78,21 +59,19 @@ export function NotesPage({
   const seenNotes = useRef(new Map<string, number>())
   /** 首次轮询只建立修改时间基线：没有记住的笔记时，进入页面不自动打开。 */
   const notesSynced = useRef(false)
-  // 上次的浏览位置只在挂载时读取；之后由本页写回，不再反向驱动渲染。
+  // 兼容只记 Markdown 路径的旧记录；显式没有活动标签时不再回退到旧草稿。
   const rememberedPath = useStore(state => state.path)
   const storedTabs = useStore(state => state.tabs)
   const openTabs = storedTabs ?? (rememberedPath === null ? [] : [rememberedPath])
-  const activePath = useStore(state => state.activePath ?? state.path)
-  const pptPath = activePath !== null && isDeckPath(activePath) ? activePath : null
+  const activePath = useStore(state => state.activePath === undefined ? state.path : state.activePath)
+  const kind = activePath === null ? 'note' : noteKindOf(activePath)
+  const tabs = useRef({ openTabs, activePath })
+  tabs.current = { openTabs, activePath }
   const rememberedExpanded = useStore(state => state.expanded)
-  const restored = useRef({ path: rememberedPath, activePath, expanded: rememberedExpanded })
-  /** 待恢复的 Markdown 路径；第一次目录就绪时打开它，之后保持 null。 */
-  const restorePending = useRef(restored.current.activePath !== null
-    && isDeckPath(restored.current.activePath) ? null : restored.current.path)
   const [tree, setTree] = useState<NotesTreeEntry[]>([])
   const [treeState, setTreeState] = useState<DirectoryState>('loading')
   const [treeReady, setTreeReady] = useState(false)
-  const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set(restored.current.expanded))
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set(rememberedExpanded))
   const [creationDirectory, setCreationDirectory] = useState('')
   const [createFailed, setCreateFailed] = useState(false)
   const [query, setQuery] = useState('')
@@ -114,13 +93,13 @@ export function NotesPage({
   const { draft, saveLabel, select, clear, edit, save, reload, refresh, getPath, flush, renamePath, removePath } = useNoteDraft(notify)
   usePublishNotesTabs(sessionId, openTabs, activePath ?? null, treeReady)
 
-  // 当前正文路径写入会话级浏览位置：切走页面或关掉窗口后再回来仍打开同一篇。
-  // 恢复尚未完成时保留记住的路径，避免挂载瞬间被清空。
-  const draftPath = draft?.path
-  useEffect(() => {
-    if (draftPath === undefined && restorePending.current !== null) return
-    if (draftPath !== undefined && draftPath !== rememberedPath) actions.rememberNote(draftPath)
-  }, [actions, draftPath, rememberedPath])
+  const selectTab = useCallback(async (path: string) => {
+    if (noteKindOf(path) === 'note') {
+      if (await select(path)) actions.openNote(path)
+    } else if (await clear()) {
+      actions.openStructured(path)
+    }
+  }, [actions, clear, select])
 
   useEffect(() => { actions.rememberExpanded([...expanded]) }, [actions, expanded])
 
@@ -169,29 +148,25 @@ export function NotesPage({
         if (revision !== treeRevision.current) return
         setTree(fresh)
         const notes = noteFiles(fresh)
-        const written = notesSynced.current ? latestWritten(notes, seenNotes.current) : undefined
+        const initial = !notesSynced.current
+        const written = initial ? undefined : latestWritten(notes, seenNotes.current)
         seenNotes.current = new Map(notes.map(note => [note.path, note.mtimeMs]))
         notesSynced.current = true
-        const path = getPath()
-        const pending = restorePending.current
-        restorePending.current = null
-        if (status === 'loading') {
-          actions.restoreTabs(filePaths(fresh))
-        }
+        const { activePath: active, openTabs: opened } = tabs.current
+        const paths = initial ? filePaths(fresh) : undefined
+        if (paths !== undefined) actions.restoreTabs(paths)
         setTreeReady(true)
-        if (path !== undefined && !isDeckPath(path)) {
+        const path = getPath()
+        if (path !== undefined) {
           await refresh(findEntry(fresh, path)?.mtimeMs, signal)
-        } else if (creatingRequest.current === null && pending !== null) {
-          // 切回页面时恢复上次打开的笔记；它已被删除则停在欢迎页。
-          if (findEntry(fresh, pending)?.kind === 'file') {
-            if (await select(pending)) actions.openNote(pending)
-          } else {
-            actions.rememberNote(null)
-          }
-        } else if (creatingRequest.current === null && written !== undefined && restored.current.activePath === null) {
-          // 欢迎页只在助手刚写入 Markdown 后自动打开它；不盖掉已恢复的幻灯片标签。
+        } else if (paths !== undefined && creatingRequest.current === null && active !== null) {
+          // 结构化文档由活动标签直接恢复；只有 Markdown 需要先读正文。
+          const pending = paths.includes(active) ? active : opened.find(item => paths.includes(item))
+          if (pending !== undefined && noteKindOf(pending) === 'note') await selectTab(pending)
+        } else if (creatingRequest.current === null && written !== undefined && active === null) {
+          // 只在欢迎页自动打开助手新写入的文件，不打断用户正在看的文档。
           setExpanded(new Set(written.parents))
-          if (await select(written.path)) actions.openNote(written.path)
+          await selectTab(written.path)
         }
         status = 'ready'
         if (!signal.aborted) setTreeState('ready')
@@ -211,17 +186,7 @@ export function NotesPage({
       window.clearTimeout(timer)
       creatingRequest.current?.abort()
     }
-  }, [actions, getPath, notify, refresh, select])
-
-  const selectTab = useCallback(async (path: string) => {
-    if (isDeckPath(path)) {
-      if (await flush()) {
-        actions.openPpt(path)
-      }
-    } else if (await select(path)) {
-      actions.openNote(path)
-    }
-  }, [actions, flush, select])
+  }, [actions, getPath, notify, refresh, selectTab])
 
   const closeTab = useCallback(async (path: string) => {
     if (activePath !== path) {
@@ -234,16 +199,12 @@ export function NotesPage({
     }
     const index = openTabs.indexOf(path)
     const next = openTabs[index + 1] ?? openTabs[index - 1]
-    if (isDeckPath(path)) {
-      if (next !== undefined && !isDeckPath(next)) {
-        if (!await select(next)) return
-      } else if (next === undefined) {
-        if (!await clear()) return
-      }
-    } else if (next === undefined || isDeckPath(next)) {
+    if (next === undefined || noteKindOf(next) !== 'note') {
       if (!await clear()) return
-    } else if (!await select(next)) return
-    if (next !== undefined && !isDeckPath(next)) actions.openNote(next)
+    } else {
+      if (!await select(next)) return
+      actions.openNote(next)
+    }
     actions.closeTab(path)
     if (next === undefined) titleRef.current?.focus({ preventScroll: true })
   }, [actions, activePath, clear, getPath, openTabs, removePath, select])
@@ -311,7 +272,10 @@ export function NotesPage({
     try {
       const extension = target.kind === 'file' && /\.(md|markdown)$/iu.test(target.name)
         ? target.name.slice(target.name.lastIndexOf('.')) : ''
-      const { path } = await notesRename(target.path, target.kind === 'file' ? `${name}${extension || '.md'}` : name)
+      const finalName = target.kind === 'file' ? `${name}${extension || '.md'}`
+        : target.kind === 'mindmap' && !name.toLowerCase().endsWith(NOTE_MINDMAP_SUFFIX) ? `${name}${NOTE_MINDMAP_SUFFIX}` : name
+      const { path } = await notesRename(target.path, finalName)
+      treeRevision.current += 1
       const fresh = await refreshTree()
       request.signal.throwIfAborted()
       if (findEntry(fresh, path) === undefined) throw new Error('笔记目录刷新失败')
@@ -350,7 +314,7 @@ export function NotesPage({
       const remaining = openTabs.filter(path => !deleted(path))
       removePath(target.path)
       actions.removeTabs(target.path)
-      if (activeRemoved && remaining[0] !== undefined && !isDeckPath(remaining[0])) {
+      if (activeRemoved && remaining[0] !== undefined && noteKindOf(remaining[0]) === 'note') {
         if (await select(remaining[0])) actions.openNote(remaining[0])
       }
       setExpanded(previous => new Set([...previous].filter(path => !deleted(path))))
@@ -375,12 +339,13 @@ export function NotesPage({
     setCreateFailed(false)
     const folder = dialog === 'folder'
     const presentation = dialog === 'presentation'
+    const mindmap = dialog === 'mindmap'
     try {
       const { path } = folder
         ? await notesCreateDirectory(name, creationDirectory)
         : presentation
           ? await notesCreateSlide(sessionId, name, creationDirectory)
-          : await notesCreate(name, creationDirectory)
+          : mindmap ? await notesCreateMindmap(name, creationDirectory) : await notesCreate(name, creationDirectory)
       request.signal.throwIfAborted()
       treeRevision.current += 1
       setExpanded((previous) => {
@@ -397,7 +362,8 @@ export function NotesPage({
       const [updated] = await Promise.all([fresh, folder ? undefined : selectTab(path)])
       request.signal.throwIfAborted()
       setDialog(null)
-      notify(updated ? folder ? 'folderCreated' : presentation ? 'presentationCreated' : 'noteCreated' : 'createdRefreshError')
+      notify(updated ? folder ? 'folderCreated' : presentation ? 'presentationCreated'
+        : mindmap ? 'mindmapCreated' : 'noteCreated' : 'createdRefreshError')
     } catch {
       if (!request.signal.aborted) setCreateFailed(true)
     } finally {
@@ -435,41 +401,6 @@ export function NotesPage({
       creatingRequest.current = null
       if (!request.signal.aborted) setCreating(false)
     }
-  }
-
-  /**
-   * 「导入 → 文本」：Markdown 与 TXT 都以 UTF-8 解码后写成带原文的笔记。
-   * 名称取所选文件名；不支持的扩展名只提示，不发请求。
-   * @param file - 文件选择器给出的文件；取消选择时为 undefined。
-   */
-  const importText = (file: File | undefined) => {
-    if (file === undefined) return
-    if (!TEXT_IMPORT_EXTENSIONS.has(extensionOf(file.name))) {
-      notify('importTextError')
-      return
-    }
-    void runImport(async () => {
-      if (file.size > NOTE_IMPORT_MAX_BYTES) throw new Error('note too large')
-      const name = stripExtension(file.name) || t('newNote')
-      return (await notesCreate(name, '', await decodeText(file))).path
-    }, 'noteImported', 'importTextError')
-  }
-
-  /**
-   * 「导入 → 幻灯片」：把 `.pptx` 解析成笔记目录里的幻灯片工程目录。
-   * 名称取所选文件名；非 `.pptx` 只提示，不发请求。
-   * @param file - 文件选择器给出的文件；取消选择时为 undefined。
-   */
-  const importSlides = (file: File | undefined) => {
-    if (file === undefined) return
-    if (extensionOf(file.name) !== SLIDE_IMPORT_EXTENSION) {
-      notify('importSlideError')
-      return
-    }
-    void runImport(async () => {
-      const name = stripExtension(file.name) || t('newPresentation')
-      return (await notesImportSlide(sessionId, name, '', file)).path
-    }, 'presentationImported', 'importSlideError')
   }
 
   const createDestinationDirectory = async (name: string, parent: string): Promise<string | undefined> => {
@@ -544,16 +475,18 @@ export function NotesPage({
         collapsed={sidebarCollapsed} width={sidebarWidth} creating={creating} launcherRef={createTrigger}
         query={query} onQueryChange={setQuery} onToggleDir={toggleDir} onSelectPath={selectTab}
         onCreate={openCreateDialog} onEdit={openTargetDialog}
-        textImport={{ accept: TEXT_IMPORT_ACCEPT, onFile: importText }}
-        slidesImport={{ accept: SLIDE_IMPORT_ACCEPT, onFile: importSlides }} />
+        {...noteImportPickers(sessionId, t, runImport, notify)} />
       <div className={css.document}>
         <NotesTabs paths={openTabs} activePath={activePath} panelId={panelId}
           idPrefix={tabId} labelOfPath={labelOfPath} onSelect={(path) => { void selectTab(path) }}
           onClose={(path) => { void closeTab(path) }} t={t} />
         <NotesDocument title={selectedLabel} titleId={titleId} titleRef={titleRef} panelId={panelId}
           tabId={activePath === null ? undefined : `${tabId}-${openTabs.indexOf(activePath)}`}
-          content={pptPath === null ? draft?.content : undefined} saveLabel={pptPath === null ? saveLabel : undefined}
-          pptContent={pptPath === null ? undefined : renderSlot('notes.document.ppt', { shown: true, path: pptPath })}
+          kind={kind}
+          content={draft?.path === activePath ? draft.content : undefined}
+          saveLabel={draft?.path === activePath ? saveLabel : undefined}
+          structuredContent={activePath === null || kind === 'note' || !treeReady
+            ? undefined : renderSlot(kind === 'ppt' ? 'notes.document.ppt' : 'notes.document.mindmap', { shown: true, path: activePath })}
           treeState={treeState}
           exporting={exporting} exportMenuOpen={exportMenuOpen} exportEntries={exportEntries}
           assistantOpen={assistantOpen} assistantPanelId={assistantPanelId}
@@ -562,22 +495,18 @@ export function NotesPage({
           onReload={(trigger) => { dialogTrigger.current = trigger; setDialog('reload') }}
           onRetry={() => { void save() }} onChange={edit} onBlur={() => { void save() }} t={t} />
       </div>
-      {(dialog === 'create' || dialog === 'folder' || dialog === 'presentation' || dialog === 'rename') && <NoteNameDialog t={t}
-        kind={dialog === 'rename'
-          ? actionTarget?.kind === 'dir' ? 'renameFolder' : actionTarget?.kind === 'deck' ? 'renamePresentation' : 'renameNote'
-          : dialog}
+      {dialog !== null && dialog !== 'reload' && dialog !== 'delete' && <NoteNameDialog t={t}
+        kind={dialog === 'rename' ? renameTitles[actionTarget?.kind ?? 'file'] : dialog}
         name={draftName} busy={creating} onClose={closeDialog} onNameChange={setDraftName}
-        error={createFailed && dialog !== 'rename' ? t(dialog === 'folder' ? 'createFolderError' : dialog === 'presentation' ? 'createPresentationError' : 'createError') : undefined}
+        error={createFailed && dialog !== 'rename' ? t(createErrors[dialog]) : undefined}
         destination={dialog === 'rename' ? undefined : {
           tree, path: creationDirectory, onChange: setCreationDirectory, onCreateDirectory: createDestinationDirectory,
         }}
         onSubmit={(event) => { void (dialog === 'rename' ? renameTarget(event) : createEntry(event)) }} />}
       {dialog === 'delete' && actionTarget !== null && <NoteDeleteDialog t={t}
-        description={actionTarget.kind === 'dir'
-          ? t('deleteFolderConfirm', { name: actionTarget.name })
-          : actionTarget.kind === 'deck'
-            ? t('deletePresentationConfirm', { name: labelOf(actionTarget.name) })
-            : t('deleteConfirm', { name: labelOf(actionTarget.name) })}
+        description={t(deleteDescriptions[actionTarget.kind], {
+          name: actionTarget.kind === 'dir' ? actionTarget.name : labelOf(actionTarget.name),
+        })}
         deleting={creating} failed={deleteFailed} onClose={closeDialog} onConfirm={() => { void deleteTarget() }} />}
       <Modal open={dialog === 'reload'} onClose={closeDialog} title={t('reload')} closeLabel={t('close')}
         description={t('reloadConfirm')} trapFocus footer={<>

@@ -122,6 +122,7 @@ const ACTION_TITLES: Readonly<Record<string, string>> = {
   generate_images: '批量生成图片',
   image_gen: '生成或编辑图片',
   lsp: '查询代码定义与引用',
+  notes_mindmap: '操作思维导图',
   ppt_attach_gallery_image: '添加图库图片',
   ppt_check: '检查演示文稿',
   ppt_create: '创建演示文稿',
@@ -167,15 +168,23 @@ const DOMAIN_TITLES: Readonly<Record<string, string>> = {
 /**
  * 为已知调用提供动作标题，未知同领域动作仅显示所属类别。
  * @param name - 会话记录中的工具名。
- * @param argsRaw - 可选的完整调用参数；用于区分后台读取、等待与输入。
+ * @param argsRaw - 可选的完整调用参数，用于区分同一工具的不同动作。
  * @returns 可供对话及轨迹使用的标题；未知工具返回 undefined。
  */
 export function toolActionTitle(name: string, argsRaw?: string): string | undefined {
-  if (name === 'write_stdin' && argsRaw !== undefined) {
+  if ((name === 'write_stdin' || name === 'notes_mindmap') && argsRaw !== undefined) {
     try {
       const args: unknown = JSON.parse(argsRaw)
       if (typeof args === 'object' && args !== null && !Array.isArray(args)) {
         const record = args as Record<string, unknown>
+        if (name === 'notes_mindmap') {
+          switch (record.action) {
+            case 'read': return '读取思维导图'
+            case 'create': return '新建思维导图'
+            case 'edit': return '编辑思维导图'
+            default: return ACTION_TITLES.notes_mindmap
+          }
+        }
         if (typeof record.chars === 'string' && record.chars !== '') {
           return record.chars.includes('\u0003') || record.chars.includes('\\u0003')
             ? '停止后台任务' : '向后台任务输入'

@@ -134,7 +134,7 @@ workspace 共 282 个包，按 group 分节。每行给出包目录、职责（R
 - `packages/core/scope` — 带作用域的注册原语 入口 `src/index.ts`（tests 3）
 - `packages/core/session` — 事件溯源的会话日志和内存存储 入口 `src/index.ts`（tests 13）
 - `packages/core/system-prompt` — 系统提示词组装注册表 入口 `src/index.ts`（tests 4）
-- `packages/core/tools` — 工具注册表与执行流水线 入口 `src/index.ts`（tests 12）
+- `packages/core/tools` — 工具注册表与执行流水线 入口 `src/index.ts`（tests 13）
 
 ## packages/credentials
 

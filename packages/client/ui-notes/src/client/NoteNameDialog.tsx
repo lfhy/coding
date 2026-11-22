@@ -5,10 +5,11 @@ import {
 } from 'coding-client-ui-primitives'
 import type { PropsLocale } from 'coding-client-ui-slots'
 import type { NS } from './locales.ts'
+import type { NoteCreateKind } from './NotesDirectory.tsx'
 import type { NotesTreeEntry } from './wire.ts'
 import css from './NotesPage.module.css'
 
-type NameDialogKind = 'create' | 'folder' | 'presentation' | 'renameNote' | 'renameFolder' | 'renamePresentation'
+type NameDialogKind = NoteCreateKind | 'renameNote' | 'renameFolder' | 'renamePresentation' | 'renameMindmap'
 
 interface Destination {
   tree: readonly NotesTreeEntry[]
@@ -87,7 +88,7 @@ export function NoteNameDialog({ t, kind, name, busy, error, destination, onName
     setLocationsOpen(false)
     locationTrigger.current?.focus({ preventScroll: true })
   }
-  const renaming = kind === 'renameNote' || kind === 'renameFolder' || kind === 'renamePresentation'
+  const renaming = kind.startsWith('rename')
   const root = t('allNotes')
   const location = destination === undefined || destination.path === '' ? root : folderLabel(destination.path)
   const returnFromSubfolder = () => {
@@ -117,8 +118,7 @@ export function NoteNameDialog({ t, kind, name, busy, error, destination, onName
   const formError = subfolder === null ? error : subfolder.failed ? t('createFolderError') : undefined
   return (
     <Modal open onClose={close} trapFocus
-      title={t(subfolder !== null ? 'newSubfolder'
-        : kind === 'create' ? 'newNote' : kind === 'folder' ? 'newFolder' : kind === 'presentation' ? 'newPresentation' : kind)}
+      title={t(subfolder !== null ? 'newSubfolder' : titleKeys[kind])}
       {...(subfolder === null ? {} : { description: t('newFolderIn', { name: subfolder.parent === '' ? root : folderLabel(subfolder.parent) }) })}
       closeLabel={t('close')}
       footer={<>
@@ -128,8 +128,7 @@ export function NoteNameDialog({ t, kind, name, busy, error, destination, onName
         </Button>
       </>}>
       <form id={formId} className={css.form} onSubmit={subfolder === null ? onSubmit : (event) => { void createSubfolder(event) }}>
-        <label htmlFor={nameId}>{t(subfolder !== null || kind === 'folder' || kind === 'renameFolder' ? 'folderName'
-          : kind === 'presentation' || kind === 'renamePresentation' ? 'presentationName' : 'noteName')}</label>
+        <label htmlFor={nameId}>{t(subfolder === null ? nameKeys[kind] : 'folderName')}</label>
         <Input key={subfolder === null ? 'entry' : 'subfolder'} id={nameId} value={fieldName} autoFocus readOnly={busy}
           onChange={(event) => {
             if (subfolder === null) onNameChange(event.target.value)
@@ -163,3 +162,13 @@ export function NoteNameDialog({ t, kind, name, busy, error, destination, onName
     </Modal>
   )
 }
+
+const titleKeys = {
+  create: 'newNote', folder: 'newFolder', presentation: 'newPresentation', mindmap: 'newMindmap',
+  renameNote: 'renameNote', renameFolder: 'renameFolder', renamePresentation: 'renamePresentation', renameMindmap: 'renameMindmap',
+} as const
+
+const nameKeys = {
+  create: 'noteName', folder: 'folderName', presentation: 'presentationName', mindmap: 'mindmapName',
+  renameNote: 'noteName', renameFolder: 'folderName', renamePresentation: 'presentationName', renameMindmap: 'mindmapName',
+} as const

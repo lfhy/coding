@@ -579,18 +579,19 @@ const TOOL_PACKAGES: ToolPackage[] = [
     pkg: 'coding-tool-notes-tabs',
     dir: 'tool-notes-tabs',
     source: 'packages/notes/tool-notes-tabs/src/index.ts',
-    requires: ['ctx.tools', 'ctx.webServer', 'ctx.connection', 'ctx.sessions', 'ctx.agents', 'ctx.fileLibrary'],
-    writes: ['tool/call', 'verified notes-tab snapshot and local HTTP publish route', 'tool/result'],
+    requires: ['ctx.tools', 'ctx.webServer', 'ctx.connection', 'ctx.sessions', 'ctx.agents', 'ctx.fileLibrary', 'ctx.sandboxPolicy'],
+    writes: ['tool/call', 'verified notes-tab snapshot and local HTTP publish route', 'versioned mind-map files', 'tool/result'],
     async mount(ctx) {
       await ctx.plugin(AgentRegistry)
       await ctx.plugin(SessionStore)
       ctx.provide('fileLibrary', { notesRootPath: () => dshHomePath('notes') } as never)
+      ctx.provide('sandboxPolicy', { resolve: () => ({ mode: 'read-only' }) } as never)
       ctx.provide('connection', { requestRejection: () => undefined } as never)
       ctx.provide('webServer', { host: '127.0.0.1', port: 0, register: () => () => {} } as never)
       await ctx.plugin(ToolNotesTabs)
     },
     note:
-      'The notes preset publishes only relative paths; the Host verifies each regular file under the notes root and returns unavailable when no window is published, the window expires, or multiple windows remain. The local publish route still requires the Host same-origin check and a live notes Agent/session pair.',
+      'Only the notes preset registers these tools. The same-origin route verifies relative paths and the live notes Agent/session pair. Reading the active mind map requires an unambiguous published tab; writing requires a writable notes session and file-library validation, with an explicit path and revision for edits.',
   },
   {
     pkg: 'coding-schedule',

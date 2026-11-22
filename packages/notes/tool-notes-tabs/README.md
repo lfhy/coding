@@ -1,18 +1,30 @@
 # coding-tool-notes-tabs
 
-笔记专用模式的临时标签发布路由与模型工具。只在 `notes` agent preset 中挂载插件；同一插件生命周期持有 HTTP 路由、内存快照和 `notes_tabs` 工具，不在其他模式注册。浏览器发来的相对路径不会直接作为文件绝对路径：Host 按当前文件库根目录逐项核验真实文件，返回工具时再次核验。只有笔记会话的 live Agent、对应的 Session，以及该会话工作目录恰好为笔记根目录时才接受发布。此端点仅在 Host 监听 `127.0.0.1`、请求来自本机且通过 connection 同源检查时可用；同源检查不构成独立身份认证，不能把此端点作为任意外部客户端的安全授权接口。
+本包只在 `notes` 笔记预设挂载，持有临时标签快照、发布路由和 `notes_tabs`、`notes_mindmap` 两个模型工具。发布要求同一仍存活的 Agent 与 Session、笔记预设，以及会话工作目录恰为文件库笔记根目录。Host 按该根目录逐项核验浏览器发来的相对路径，供工具使用前再次核验。发布端点仅在 Host 监听 `127.0.0.1`、请求来自本机且通过 connection 同源检查时可用；该检查不是独立的身份认证。
 
 ## 发布协议
 
 客户端使用 `POST /api/notes/tabs`，`Content-Type: application/json`，请求体类型从 `coding-tool-notes-tabs/protocol` 导入 `NotesTabsPublishRequest`；浏览器仅发送以下字段，不能提交绝对路径：
 
 ```json
-{"sessionId":"当前笔记会话标识","windowId":"该窗口存活期唯一标识","version":1,"openTabs":["第一篇.md","分类/第二篇.markdown"],"activeTabPath":"分类/第二篇.markdown","activeKind":"note"}
+{"sessionId":"当前笔记会话标识","windowId":"该窗口存活期唯一标识","version":1,"openTabs":["第一篇.md","分类/计划.codingmindmap"],"activeTabPath":"分类/计划.codingmindmap","activeKind":"mindmap"}
 ```
 
-`openTabs` 是有序完整快照，最多 64 项；支持 Markdown、`.markdown` 和 `.codingppt` 幻灯片工程目录，`activeTabPath` 必须为其中一项，空标签状态传 `null`。活动类型 `ppt` 仅可对应 `.codingppt` 目录，`note` 仅可对应 Markdown。发布者须为当前笔记会话页面，每次内容变化及心跳发送严格递增的安全整数 `version`；同一窗口会话重挂载时使用新 `windowId`，版本可从 1 开始。单次 JSON 请求体不超过 64 KiB，拒绝未知字段、重复标签和路径越界。`200` 响应为 `{ "ok": true, "sessionId": "...", "windowId": "...", "version": 1 }`；`400` 为 `{ "ok": false, "error": "invalid" }`；`409` 为 `{ "ok": false, "error": "stale" }` 或 `{ "ok": false, "error": "session-mismatch" }`。不可信来源返回 `403`，非 POST 返回 `405`，非 JSON 返回 `415`。发布失败不修改旧快照。
+`openTabs` 是有序完整快照，最多 64 项。活动类型 `note` 仅对应真实 `.md`／`.markdown` 文件，`ppt` 仅对应真实 `.codingppt` 工程目录，`mindmap` 仅对应真实 `.codingmindmap` 文件；`activeTabPath` 必须是已打开的一项，无活动标签时传 `null`，此时 `activeKind` 为 `note`。路径不得越界、经过符号链接或进入幻灯片工程目录。
 
-Host 仅保留内存数据：重启或预设卸载后需要再次发布，关闭页面不发送虚构空标签；页面可每 10 秒重发递增版本作为心跳，30 秒未发布的窗口从工具查询中排除。多个窗口在同一会话内保持活跃时工具拒绝选择，避免把另一个窗口的活动标签当成当前内容；客户端应关闭多余窗口或自行使旧窗口超时。笔记文件消失或路径核验失败时工具不返回该快照。此路由不是强认证发布通道：同机上能够向本机 API 发请求的进程可冒用已知会话标识；不能以此作为互不信任本地进程之间的权限边界。
+客户端在目录初次核对后发布；标签改变时更新，每 10 秒重发快照作为心跳。`version` 是严格递增的安全整数，同一窗口的笔记页重挂载时沿用 `windowId`，版本继续递增。单次 JSON 请求体不超过 64 KiB，拒绝未知字段和重复标签。`200` 响应为 `{ "ok": true, "sessionId": "...", "windowId": "...", "version": 1 }`；`400` 为 `{ "ok": false, "error": "invalid" }`；`409` 为 `{ "ok": false, "error": "stale" }` 或 `{ "ok": false, "error": "session-mismatch" }`。不可信来源返回 `403`，非 POST 返回 `405`，非 JSON 返回 `415`。发布失败不修改旧快照。
+
+快照只保存在 Host 内存中；重启或预设卸载后需要再次发布。页面卸载时不额外发送空快照；超过 30 秒没有成功发布的窗口从查询中排除。同一笔记会话有多个未超时的本机窗口时，工具拒绝选择来源；路径复核失败的快照也不返回。
+
+## 思维导图操作
+
+`notes_mindmap` 只在对应笔记根目录的笔记会话中操作原生导图，数据由[文件库](../../attachment/file-library/src/mindmap-notes.ts)读写。路径相对于笔记根目录；只读会话不可执行 `create` 或 `edit`。
+
+对话和执行轨迹按动作显示「读取思维导图」「新建思维导图」或「编辑思维导图」；运行参数保留在展开的调用详情中。
+
+- **`read`**：首读可提供 `path`，或省略它以使用经 Host 核验、唯一有效窗口中的真实活动导图；没有活动导图、标签失效或窗口有歧义时不猜测路径。结果包含 `path`、`revision`、`totalTopics`、按树顺序排列的 `topics`（`id`、`text`、`parentId`，中心主题的 `parentId` 为 `null`）和 `nextOffset`。每页至多 24 个主题，完整 JSON 不超过 8 KiB；翻页时将 `nextOffset` 传作 `offset`，并原样带回上一页的 `path` 和 `revision`，`nextOffset: null` 表示读完。若版本已变，重新从第一页读取。
+- **`create`**：提供 `name` 和可选的相对 `directory`，省略目录时保存在笔记根目录；文件名称也用作初始中心主题。成功只返回 `path`，同名不覆盖。
+- **`edit`**：使用读取返回的 `path`、`revision` 和主题标识，明确提供包含 1 至 32 项操作的 `edits`。`add` 在 `parentId` 下追加带 `text` 的子主题，标识由系统分配；`rename` 修改指定 `id` 的文字；`move` 把指定 `id` 的分支移至 `parentId`，可传从旧位置移除后计算的零基 `index`，默认追加；`delete` 删除指定 `id` 的分支及后代。中心主题不能移动或删除，分支不能移进自身或后代。整批通过校验才提交；版本冲突或操作无效不会写入，冲突后须重新读取并核对目标。成功返回新版本的第一页。
 
 ## Model Experience
 
@@ -20,15 +32,29 @@ Host 仅保留内存数据：重启或预设卸载后需要再次发布，关闭
 
 #### What the model sees
 
-仅笔记专用预设出现的无参工具。成功返回 `status: "ready"`、会话和窗口标识、发布版本、按标签顺序排列的 `{path, absolutePath}`，以及 `activeTabPath`、`activeKind`。未发布、所有窗口超时、多个窗口活跃或会话归属不符时返回 `status: "unavailable"` 与具体 `reason`（`not-published`、`window-closed`、`ambiguous-window` 或 `session-mismatch`），不伪造文件路径。完整工具 schema 以生成的[工具目录](../../../docs/tool-catalog.md)为准。
+仅笔记专用预设出现的无参工具。成功返回 `status: "ready"`、会话和窗口标识、发布版本、按标签顺序排列的 `{path, absolutePath}`，以及 `activeTabPath`、`activeKind`。未发布、所有窗口超时、多个窗口活跃或会话归属不符时返回 `status: "unavailable"` 与具体 `reason`（`not-published`、`window-closed`、`ambiguous-window` 或 `session-mismatch`），不伪造文件路径。工具声明见生成的[工具目录](../../../docs/tool-catalog.md#coding-tool-notes-tabs)。
 
 #### Token effect
 
-工具声明只在笔记预设中占用固定请求 token；调用结果作为已记录的工具输出追加，标签数至多 64，路径各至多 4096 字符，运行时不注入页面状态或历史快照。
+工具声明只在笔记预设中占用固定请求 token；调用结果作为已记录的工具输出追加，标签数至多 64，每条相对路径至多 4096 字符，运行时不注入页面状态或历史快照。
 
 #### KV Cache effect
 
 未调用时不改变既有上下文前缀；工具结果会增长对话后缀，下一轮调用的结果随已发布状态改变，不保证结果段可复用。
+
+### `notes_mindmap` 工具
+
+#### What the model sees
+
+[工具定义](src/mindmap-tool.ts)的描述是「读取、创建或编辑笔记目录中的思维导图。读取可省略路径以使用当前导图；编辑必须使用读取返回的 path、revision 和主题 id。一批编辑全部成功才写入；版本变化时重新读取并核对目标，不要覆盖他人的修改。」参数和结果见[思维导图操作](#思维导图操作)。
+
+#### Token effect
+
+工具声明只在笔记预设中占用固定请求 token；调用结果作为已记录的工具输出追加，按上述分页预算返回结构化主题，不把整张导图自动注入模型请求。
+
+#### KV Cache effect
+
+工具不重写已有上下文前缀或发起独立模型请求；调用结果只追加到对话后缀，再次读取的页内容随磁盘版本变化。
 
 ## Known Limitations and Deferred Work
 

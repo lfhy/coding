@@ -20,6 +20,8 @@ declare module 'coding-client-ui-slots' {
   interface SlotMap {
     /** 当前 PPTX 的内容区由演示文稿工作台提供，路径相对当前会话目录。 */
     'notes.document.ppt': { kind: 'single'; scope: 'session'; owner: { shown: boolean; path: string } }
+    /** 当前思维导图的内容区由编辑器提供，路径相对笔记根目录。 */
+    'notes.document.mindmap': { kind: 'single'; scope: 'session'; owner: { shown: boolean; path: string } }
   }
 }
 
@@ -49,6 +51,9 @@ export function apply(ctx: ClientContext): void {
   }, NotesNavigationEntry))
   ctx.slots.inject('shell.page', () => ctx.slots.register({
     name: 'shell.page', key: PAGE, locale: NS, store: createNotesUiStore,
-    children: { 'notes.document.ppt': { kind: 'single', scope: 'session' } },
+    children: {
+      'notes.document.ppt': { kind: 'single', scope: 'session' },
+      'notes.document.mindmap': { kind: 'single', scope: 'session' },
+    },
   }, NotesPage))
 }

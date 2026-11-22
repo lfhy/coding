@@ -23,13 +23,14 @@ async function mountNotes() {
     assistantPanelId: 'note-assistant',
     toggleAssistant: vi.fn(),
     sessionId: 's-notes',
-    renderSlot: (_key: string, owner: { path: string }) => <div>演示文稿 {owner.path}</div>,
+    renderSlot: (key: string, owner: { path: string }) =>
+      <div>{key === 'notes.document.mindmap' ? '思维导图' : '演示文稿'} {owner.path}</div>,
     useStore: bindSnapshotSelector(store),
     actions: store.actions,
   } as unknown as NotesPageProps
-  const { container } = render(<NotesPage {...props} />)
+  const { container, unmount } = render(<NotesPage {...props} />)
   await act(async () => {})
-  return { closePage, container, store }
+  return { closePage, container, store, unmount }
 }
 
 /** 打开页头加号，调用者可继续操作一级菜单项。 */
@@ -65,7 +66,7 @@ describe('NotesPage 加号菜单', () => {
 
     fireEvent.mouseEnter(importEntry)
     const importMenu = within(screen.getByRole('menu', { name: '导入' }))
-    expect(importMenu.getAllByRole('menuitem')).toEqual(['文本', '幻灯片'].map(name =>
+    expect(importMenu.getAllByRole('menuitem')).toEqual(['文本', '幻灯片', '思维导图'].map(name =>
       importMenu.getByRole('menuitem', { name })))
 
     fireEvent.mouseEnter(create)
@@ -79,6 +80,7 @@ describe('NotesPage 加号菜单', () => {
       folder,
       types.getByRole('menuitem', { name: '笔记' }),
       types.getByRole('menuitem', { name: '幻灯片' }),
+      types.getByRole('menuitem', { name: '思维导图' }),
     ])
     fireEvent.click(folder, { detail: 1 })
     const dialog = screen.getByRole('dialog', { name: '新建目录' })
@@ -176,7 +178,9 @@ describe('NotesPage 幻灯片和文本导入', () => {
     })
     vi.stubGlobal('fetch', fetchMock)
     const { container, store } = await mountNotes()
-    chooseLauncherType('导入', '幻灯片')
+    const trigger = chooseLauncherType('导入', '幻灯片')
+    expect(screen.queryByRole('menu')).toBeNull()
+    expect(document.activeElement).toBe(trigger)
 
     const input = container.querySelector<HTMLInputElement>('input[accept=".pptx"]')
     if (input === null) throw new Error('缺少幻灯片导入选择器')
@@ -321,4 +325,35 @@ describe('NotesPage 幻灯片和文本导入', () => {
     })
     expect(requests.filter(path => path === '/api/notes/create')).toHaveLength(0)
   })
+})
+
+it('轮询发现助手新建导图就打开标签，并在同窗重挂载后继续递增发布版本', async () => {
+  const path = '旅行安排.codingmindmap'
+  const published: { activeTabPath: string | null; activeKind: string; version: number; windowId: string }[] = []
+  let created = false
+  const fetchMock = vi.fn(async (input: string | URL, init?: RequestInit) => {
+    const url = new URL(String(input), 'http://localhost')
+    if (url.pathname === '/api/notes/tree') return Response.json({
+      children: created ? [{ name: path, path, kind: 'mindmap', mtimeMs: 2_000 }] : [],
+    })
+    if (url.pathname === '/api/notes/tabs' && typeof init?.body === 'string') {
+      published.push(JSON.parse(init.body))
+      return Response.json({ ok: true })
+    }
+    throw new Error(`unexpected request: ${url.pathname}`)
+  })
+  vi.stubGlobal('fetch', fetchMock)
+  const { store, unmount } = await mountNotes()
+  created = true
+  await act(async () => { await vi.advanceTimersByTimeAsync(4_001) })
+  expect(screen.getByText(`思维导图 ${path}`)).toBeTruthy()
+  expect(store.getSnapshot()).toMatchObject({ activePath: path, path: null })
+  expect(screen.queryByRole('button', { name: '导出' })).toBeNull()
+  expect(published.at(-1)).toMatchObject({ activeTabPath: path, activeKind: 'mindmap' })
+  const previous = published.at(-1)!
+
+  unmount()
+  await mountNotes()
+  expect(published.at(-1)).toMatchObject({ windowId: previous.windowId, version: previous.version + 1 })
+  expect(fetchMock.mock.calls.every(([url]) => !String(url).startsWith('/api/notes/read'))).toBe(true)
 })

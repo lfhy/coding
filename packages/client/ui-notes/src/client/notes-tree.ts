@@ -2,15 +2,25 @@ import type { NotesTreeEntry } from './wire.ts'
 
 /** 幻灯片工程目录的后缀；与文件库的 `NOTE_DECK_SUFFIX` 一致，客户端只用它判断路径形态。 */
 export const NOTE_DECK_SUFFIX = '.codingppt'
+/** 思维导图文件后缀，与文件库的同名常量一致。 */
+export const NOTE_MINDMAP_SUFFIX = '.codingmindmap'
 
 /** 判断目录树里的路径是否是幻灯片工程目录（`.codingppt`），而不是 Markdown 或普通目录。 */
 export function isDeckPath(path: string): boolean {
   return path.toLowerCase().endsWith(NOTE_DECK_SUFFIX)
 }
 
-/** 去掉 Markdown 或幻灯片工程后缀的文件名，供目录与标签显示。 */
+/** 按已核验的文档路径分流；目录树中的普通目录不可传入。 */
+export function noteKindOf(path: string): 'note' | 'ppt' | 'mindmap' {
+  return isDeckPath(path) ? 'ppt' : path.toLowerCase().endsWith(NOTE_MINDMAP_SUFFIX) ? 'mindmap' : 'note'
+}
+
+/** 文档类型在目录、标签和文档标题共享同一图标。 */
+export const NOTE_ICONS = { note: 'notes', ppt: 'file-slides', mindmap: 'file-mindmap' } as const
+
+/** 去掉笔记类型的后缀，供目录与标签显示。 */
 export function labelOf(name: string): string {
-  return name.replace(/\.(md|markdown|codingppt)$/iu, '')
+  return name.replace(/\.(md|markdown|codingppt|codingmindmap)$/iu, '')
 }
 
 /** 在目录树中查找指定相对路径的条目。 */
@@ -62,18 +72,18 @@ export interface NoteFile {
   parents: readonly string[]
 }
 
-/** 按目录树显示顺序收集可打开的 Markdown 与幻灯片工程路径。 */
+/** 按目录树显示顺序收集非普通目录的文档路径。 */
 export function filePaths(entries: readonly NotesTreeEntry[]): string[] {
   return entries.flatMap(entry => entry.kind === 'dir'
     ? entry.children === undefined ? [] : filePaths(entry.children)
     : [entry.path])
 }
 
-/** 按目录树显示顺序扁平化所有 Markdown 文件，供助手写入检测使用；幻灯片工程不参与。 */
+/** 供助手写入检测使用；只追踪 Markdown 和可由笔记助手创建的导图。 */
 export function noteFiles(entries: readonly NotesTreeEntry[], parents: readonly string[] = []): NoteFile[] {
   const notes: NoteFile[] = []
   for (const entry of entries) {
-    if (entry.kind === 'file') {
+    if (entry.kind === 'file' || entry.kind === 'mindmap') {
       notes.push({ path: entry.path, mtimeMs: entry.mtimeMs, parents })
     } else if (entry.children !== undefined) {
       notes.push(...noteFiles(entry.children, [...parents, entry.path]))
@@ -91,7 +101,9 @@ export function noteFiles(entries: readonly NotesTreeEntry[], parents: readonly 
 export function latestWritten(notes: readonly NoteFile[], seen: ReadonlyMap<string, number>): NoteFile | undefined {
   let latest: NoteFile | undefined
   for (const note of notes) {
-    if (seen.get(note.path) === note.mtimeMs) continue
+    // 导图编辑由自身编辑器刷新，只有新建才参与自动打开。
+    const previous = seen.get(note.path)
+    if (previous === note.mtimeMs || previous !== undefined && noteKindOf(note.path) === 'mindmap') continue
     if (latest === undefined || note.mtimeMs > latest.mtimeMs) latest = note
   }
   return latest

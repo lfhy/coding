@@ -1,0 +1,208 @@
+/* 工具栏固定在笔记正文内，只让图面滚动。 */
+.editor {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.toolbar {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 16px;
+  border-block-end: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-layer-1);
+}
+
+.toolbar .iconButton,
+.toolbar .refreshButton {
+  flex: none;
+  width: 28px;
+  padding: 0;
+  border-radius: 8px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.toolbar .refreshButton { margin-inline-start: auto; }
+
+.syncHint,
+.empty {
+  margin: 0;
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-xs-13);
+}
+
+.syncHint { padding: 6px 16px; }
+
+.empty {
+  display: grid;
+  flex: 1;
+  place-items: center;
+  padding: 24px;
+  text-align: center;
+}
+
+.viewport {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  background: var(--dsw-alias-bg-base);
+}
+
+.graph {
+  --branch-half: 20px;
+  --branch-line: var(--dsw-alias-border-l2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  min-width: 100%;
+  min-height: 100%;
+  width: max-content;
+  margin: 0;
+  padding: 28px;
+  list-style: none;
+}
+
+.branch {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.branches {
+  position: relative;
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  margin: 0;
+  padding-block: 0;
+  padding-inline: calc(2 * var(--branch-half)) 0;
+  list-style: none;
+}
+
+.branches > .branch { padding-block: 5px; }
+
+/* 交点在父子节点各自的垂直中点，不依赖每棵分支的高度。 */
+.branches::before,
+.branches > .branch::before,
+.branches > .branch::after {
+  position: absolute;
+  pointer-events: none;
+  content: '';
+}
+
+.branches::before,
+.branches > .branch::before {
+  inset-block-start: 50%;
+  inline-size: var(--branch-half);
+  border-block-start: 1px solid var(--branch-line);
+}
+
+.branches::before { inset-inline-start: 0; }
+.branches > .branch::before,
+.branches > .branch::after { inset-inline-start: calc(-1 * var(--branch-half)); }
+
+.branches > .branch::after {
+  inset-block: 0;
+  border-inline-start: 1px solid var(--branch-line);
+}
+
+.branches > .branch:first-child::after { inset-block-start: 50%; }
+.branches > .branch:last-child::after { inset-block-end: 50%; }
+.branches > .branch:only-child::after { display: none; }
+
+.graph .node {
+  flex: none;
+  justify-content: flex-start;
+  gap: 8px;
+  min-inline-size: 84px;
+  max-inline-size: 220px;
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-1);
+  font: var(--dsw-font-xs-13);
+  text-align: start;
+}
+
+.graph .node:hover { background: var(--dsw-alias-interactive-bg-hover); }
+
+.graph .rootNode {
+  min-inline-size: 112px;
+  max-inline-size: 244px;
+  font: var(--dsw-font-base-strong-16);
+}
+
+.graph .node[aria-pressed='true'] {
+  border-color: var(--dsw-alias-state-business-primary);
+  background: var(--dsw-alias-state-business-tertiary);
+}
+
+.graph .node:focus-visible {
+  outline: 2px solid var(--dsw-alias-state-business-primary);
+  outline-offset: 2px;
+}
+
+.nodeText,
+.optionText {
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.dialog { max-block-size: calc(100dvh - 48px); }
+
+.dialogContent {
+  min-block-size: 0;
+  overflow-y: auto;
+  overflow-wrap: anywhere;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.label { font: var(--dsw-font-xs-strong-13); }
+
+.notice {
+  margin: 0;
+  color: var(--dsw-alias-state-error-primary);
+  font: var(--dsw-font-xs-13);
+}
+
+.destinationMenu { display: block; }
+
+.form .destinationTrigger {
+  justify-content: space-between;
+  inline-size: 100%;
+  border-radius: 8px;
+  text-align: start;
+}
+
+.recoverButton { align-self: flex-start; }
+
+.deleteConfirm,
+.deleteConfirm:hover:not(:disabled) {
+  background: var(--dsw-alias-state-error-primary);
+  color: var(--dsw-alias-label-primary-foreground);
+}
+
+.deleteConfirm:hover:not(:disabled) { filter: brightness(1.08); }

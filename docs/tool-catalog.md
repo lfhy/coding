@@ -35,7 +35,7 @@ This table connects model-visible tool names to the plugin package and service s
 | `coding-tool-goal` | `create_goal`, `get_goal`, `update_goal` | `ctx.tools`, `ctx.agents`, `ctx.goals`, `ctx.systemPrompt`, `a calling Agent in an authorized open turn` | `tool/call`, `goal/change for mutations`, `tool/result` | - | create, edit, pause, and resume require direct-human root authority; complete and blocked also accept the exact current goal round. The default blocked lower bound is three admitted rounds. |
 | `coding-tool-image-gen` | `canvas_state`, `edit_image`, `generate_image`, `generate_images` | `ctx.tools`, `ctx.imageGeneration`, `a calling Agent session` | `tool/call`, `image-gen/created`, `durable image attachment`, `tool/result` | - | The catalog simulates an available image service to collect these schemas. The Codex preset selects variant=codex and exposes only image_gen; other non-minimal presets expose generate_image, generate_images, canvas_state, and edit_image. Unavailable deployments register none of these tools, and execution still rechecks service availability. |
 | `coding-tool-ppt` | `ppt_attach_gallery_image`, `ppt_check`, `ppt_create`, `ppt_create_from_template`, `ppt_delete_template`, `ppt_edit`, `ppt_export`, `ppt_import`, `ppt_import_evidence`, `ppt_import_template`, `ppt_open`, `ppt_prepare_template`, `ppt_read`, `ppt_redo`, `ppt_rename_template`, `ppt_render`, `ppt_save_template`, `ppt_templates`, `ppt_undo` | `ctx.tools`, `ctx.llm and ctx.attachments (AI review)`, `ctx.imageGeneration and ctx.pptProjects (gallery attachment at execution time)`, `a calling Agent session` | `tool/call`, `project deck, history or copied media`, `rendered PNG or exported .pptx/PDF on request`, `tool/result` | - | The PPT preset installs this package's tools only in its Agent scope; other presets do not receive their schemas. The catalog mounts the LLM and attachment services to harvest the schema without executing project operations, model review, rendering, or attachment I/O. At execution time the Host supplies ctx.pptProjects; gallery attachment reads only this session's image IDs through ctx.imageGeneration and copies media without editing a page. |
-| `coding-tool-notes-tabs` | `notes_tabs` | `ctx.tools`, `ctx.webServer`, `ctx.connection`, `ctx.sessions`, `ctx.agents`, `ctx.fileLibrary` | `tool/call`, `verified notes-tab snapshot and local HTTP publish route`, `tool/result` | - | The notes preset publishes only relative paths; the Host verifies each regular file under the notes root and returns unavailable when no window is published, the window expires, or multiple windows remain. The local publish route still requires the Host same-origin check and a live notes Agent/session pair. |
+| `coding-tool-notes-tabs` | `notes_mindmap`, `notes_tabs` | `ctx.tools`, `ctx.webServer`, `ctx.connection`, `ctx.sessions`, `ctx.agents`, `ctx.fileLibrary`, `ctx.sandboxPolicy` | `tool/call`, `verified notes-tab snapshot and local HTTP publish route`, `versioned mind-map files`, `tool/result` | - | Only the notes preset registers these tools. The same-origin route verifies relative paths and the live notes Agent/session pair. Reading the active mind map requires an unambiguous published tab; writing requires a writable notes session and file-library validation, with an explicit path and revision for edits. |
 | `coding-schedule` | `schedule_create`, `schedule_delete`, `schedule_list` | `ctx.tools`, `ctx.sessions`, `Session persistence`, `a future live root Agent` | `tool/call`, `schedule/change create or delete`, `tool/result` | - | Registered only inside live root Agent scopes created after the opt-in Schedule plugin loads. Version 1 accepts after_seconds, explicit absolute at, and bounded fixed-rate every_seconds, and discloses session-local delivery; management reads and mutations require the shared Session persistence barrier. |
 | `coding-tool-context-compact` | `context_compact` | `ctx.tools`, `ctx.compaction` | `tool/call`, `compaction/* transaction events for the replaced range`, `tool/result` | - | The tool only names what the remaining work must keep; range selection, the open-turn transaction, and the summary stay with the mounted backend. `compactContext` compacts by span, so unrelated nodes appended while the summary runs survive the replacement. |
 | `coding-tool-lsp` | `lsp` | `ctx.tools`, `ctx.lsp`, `ctx.systemPrompt` | `tool/call`, `tool/result` | - | The lsp tool keeps provider selection and language-server subprocesses behind ctx.lsp, so its model-visible schema stays stable across providers. Requires a registered provider (e.g. `coding-lsp-stdio`) at runtime; without one, a query returns the structured `LSP_UNAVAILABLE` error rather than changing the schema. |
@@ -4362,6 +4362,150 @@ The PPT preset installs this package's tools only in its Agent scope; other pres
 
 ## `coding-tool-notes-tabs`
 
+### `notes_mindmap`
+
+读取、创建或编辑笔记目录中的思维导图。读取可省略路径以使用当前导图；编辑必须使用读取返回的 path、revision 和主题 id。一批编辑全部成功才写入；版本变化时重新读取并核对目标，不要覆盖他人的修改。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "action": {
+      "type": "string",
+      "description": "读取、创建或编辑思维导图。",
+      "enum": [
+        "read",
+        "create",
+        "edit"
+      ]
+    },
+    "path": {
+      "type": "string",
+      "description": "导图相对于笔记根目录的路径。读取当前导图时可省略；翻页和编辑必填。"
+    },
+    "name": {
+      "type": "string",
+      "description": "创建时必填，作为新导图的名称及中心主题。"
+    },
+    "directory": {
+      "type": "string",
+      "description": "创建时可选的相对目录，省略时保存在笔记根目录。"
+    },
+    "revision": {
+      "type": "string",
+      "description": "翻页和编辑必填，使用读取结果里的 revision；不能自行生成。"
+    },
+    "offset": {
+      "type": "integer",
+      "description": "读取时使用上一页的 nextOffset；省略从中心主题开始，null 表示没有下一页。"
+    },
+    "edits": {
+      "type": "array",
+      "description": "编辑时必填，按序执行的 1 至 32 项修改。新主题的 id 由系统分配，随后读取才能使用。",
+      "items": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "op": {
+                "type": "string",
+                "const": "add"
+              },
+              "parentId": {
+                "type": "string"
+              },
+              "text": {
+                "type": "string",
+                "description": "主题文字，最多 256 个字符。"
+              }
+            },
+            "required": [
+              "op",
+              "parentId",
+              "text"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "op": {
+                "type": "string",
+                "const": "rename"
+              },
+              "id": {
+                "type": "string"
+              },
+              "text": {
+                "type": "string",
+                "description": "主题文字，最多 256 个字符。"
+              }
+            },
+            "required": [
+              "op",
+              "id",
+              "text"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "op": {
+                "type": "string",
+                "const": "move"
+              },
+              "id": {
+                "type": "string"
+              },
+              "parentId": {
+                "type": "string"
+              },
+              "index": {
+                "type": "integer",
+                "description": "从旧位置移除后，在新父主题下从 0 开始的插入位置；省略则追加。"
+              }
+            },
+            "required": [
+              "op",
+              "id",
+              "parentId"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "op": {
+                "type": "string",
+                "const": "delete"
+              },
+              "id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "op",
+              "id"
+            ]
+          }
+        ]
+      }
+    },
+    "summary": {
+      "type": "string",
+      "description": "Optional short, user-friendly summary of what this call is doing now. Omit when the action is self-explanatory. Do not include secrets, raw JSON, or internal identifiers."
+    }
+  },
+  "required": [
+    "action"
+  ]
+}
+```
+
+Source: [`packages/notes/tool-notes-tabs/src/index.ts`](../packages/notes/tool-notes-tabs/src/index.ts)
+
 ### `notes_tabs`
 
 Read the current notes page's open file tabs, active file, and verified full paths. Returns unavailable when the page has not published, no window remains, or multiple windows are open. Do not infer a path when unavailable.
@@ -4380,7 +4524,7 @@ Read the current notes page's open file tabs, active file, and verified full pat
 
 Source: [`packages/notes/tool-notes-tabs/src/index.ts`](../packages/notes/tool-notes-tabs/src/index.ts)
 
-The notes preset publishes only relative paths; the Host verifies each regular file under the notes root and returns unavailable when no window is published, the window expires, or multiple windows remain. The local publish route still requires the Host same-origin check and a live notes Agent/session pair.
+Only the notes preset registers these tools. The same-origin route verifies relative paths and the live notes Agent/session pair. Reading the active mind map requires an unambiguous published tab; writing requires a writable notes session and file-library validation, with an explicit path and revision for edits.
 
 <a id="coding-schedule"></a>
 

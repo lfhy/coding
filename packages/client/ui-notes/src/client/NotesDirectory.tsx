@@ -8,14 +8,14 @@ import {
 import { Icon } from 'coding-client-ui-icons'
 import type { PropsLocale } from 'coding-client-ui-slots'
 import type { NS } from './locales.ts'
-import { labelOf } from './notes-tree.ts'
+import { NOTE_ICONS, labelOf, noteKindOf } from './notes-tree.ts'
 import type { NotesTreeEntry } from './wire.ts'
 import css from './NotesPage.module.css'
 
 /** 弹窗辨别条目类型及定位目录所需的信息。 */
 export type NoteActionTarget = Pick<NotesTreeEntry, 'kind' | 'name' | 'path'>
 /** 新建子菜单与创建弹窗共用的操作类型。 */
-export type NoteCreateKind = 'create' | 'folder' | 'presentation'
+export type NoteCreateKind = 'create' | 'folder' | 'presentation' | 'mindmap'
 type NoteContextMenu = { target: NoteActionTarget; x: number; y: number; trigger: HTMLButtonElement }
 type ImportPicker = { accept: string; onFile: (file: File | undefined) => void }
 
@@ -35,6 +35,7 @@ type NotesDirectoryProps = PropsLocale<typeof NS> & {
   onEdit: (kind: 'rename' | 'delete', target: NoteActionTarget, trigger: HTMLButtonElement) => void
   textImport: ImportPicker
   slidesImport: ImportPicker
+  mindmapImport: ImportPicker
 }
 
 /**
@@ -44,12 +45,13 @@ type NotesDirectoryProps = PropsLocale<typeof NS> & {
  */
 export function NotesDirectory({
   t, tree, expanded, activePath, collapsed, width, creating, query, onQueryChange, launcherRef,
-  onToggleDir, onSelectPath, onCreate, onEdit, textImport, slidesImport,
+  onToggleDir, onSelectPath, onCreate, onEdit, textImport, slidesImport, mindmapImport,
 }: NotesDirectoryProps) {
   const searchId = useId()
   const searchTrigger = useRef<HTMLButtonElement>(null)
   const textInput = useRef<HTMLInputElement>(null)
   const slidesInput = useRef<HTMLInputElement>(null)
+  const mindmapInput = useRef<HTMLInputElement>(null)
   const [searchOpen, setSearchOpen] = useState(false)
   const [launcherOpen, setLauncherOpen] = useState(false)
   const [contextMenu, setContextMenu] = useState<NoteContextMenu | null>(null)
@@ -88,7 +90,6 @@ export function NotesDirectory({
     const flatten = (entries: readonly NotesTreeEntry[], out: SidebarRootItem[], depth: number): void => {
       for (const entry of entries) {
         const folder = entry.kind === 'dir'
-        const deck = entry.kind === 'deck'
         if (folder && needle !== '') {
           if (entry.children !== undefined) flatten(entry.children, out, 0)
           continue
@@ -97,7 +98,7 @@ export function NotesDirectory({
         if (needle !== '' && !label.toLocaleLowerCase(locale).includes(needle)) continue
         const open = folder && expanded.has(entry.path)
         out.push({
-          id: entry.path, label, icon: deck ? 'file-slides' : folder ? 'files' : 'notes', depth,
+          id: entry.path, label, icon: folder ? 'files' : NOTE_ICONS[noteKindOf(entry.path)], depth,
           ...(folder ? { folder, open } : { iconTone: 'blue', active: activePath === entry.path }),
           meta: date.format(entry.mtimeMs),
           actions: <>
@@ -139,6 +140,7 @@ export function NotesDirectory({
         { id: 'folder', label: t('entryFolder'), icon: <Icon name="files" size={16} /> },
         { id: 'create', label: t('entryNote'), icon: <Icon name="notes" size={16} /> },
         { id: 'presentation', label: t('entryPresentation'), icon: <Icon name="file-slides" size={16} /> },
+        { id: 'mindmap', label: t('entryMindmap'), icon: <Icon name="file-mindmap" size={16} /> },
       ],
     },
     {
@@ -148,6 +150,7 @@ export function NotesDirectory({
       submenu: [
         { id: 'import-text', label: t('importText'), icon: <Icon name="notes" size={16} /> },
         { id: 'import-slides', label: t('entryPresentation'), icon: <Icon name="file-slides" size={16} /> },
+        { id: 'import-mindmap', label: t('entryMindmap'), icon: <Icon name="file-mindmap" size={16} /> },
       ],
     },
   ]
@@ -172,9 +175,15 @@ export function NotesDirectory({
               disabled={creating} onClick={() => { setContextMenu(null); setLauncherOpen(open => !open) }} />}
             items={launcherEntries}
             onSelect={(id) => {
-              if (id === 'import-text') textInput.current?.click()
-              if (id === 'import-slides') slidesInput.current?.click()
-              if (id === 'create' || id === 'folder' || id === 'presentation') createIn(id, '', launcherRef.current)
+              const picker = id === 'import-text' ? textInput : id === 'import-slides' ? slidesInput
+                : id === 'import-mindmap' ? mindmapInput : undefined
+              if (picker !== undefined) {
+                setLauncherOpen(false)
+                launcherRef.current?.focus({ preventScroll: true })
+                picker.current?.click()
+              } else if (id === 'create' || id === 'folder' || id === 'presentation' || id === 'mindmap') {
+                createIn(id, '', launcherRef.current)
+              }
             }}
             onClose={() => { setLauncherOpen(false); launcherRef.current?.focus({ preventScroll: true }) }} />
           {contextMenu !== null && (
@@ -214,6 +223,12 @@ export function NotesDirectory({
           const file = event.target.files?.[0]
           event.target.value = ''
           slidesImport.onFile(file)
+        }} />
+      <input ref={mindmapInput} type="file" accept={mindmapImport.accept} hidden aria-hidden="true" tabIndex={-1}
+        onChange={(event) => {
+          const file = event.target.files?.[0]
+          event.target.value = ''
+          mindmapImport.onFile(file)
         }} />
     </>
   )

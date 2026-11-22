@@ -71,6 +71,7 @@
     "coding-client-ui-jobs": "workspace:^",
     "coding-client-ui-layout": "workspace:^",
     "coding-client-ui-message-feedback": "workspace:^",
+    "coding-client-ui-mindmap": "workspace:^",
     "coding-client-ui-model-selection": "workspace:^",
     "coding-client-ui-notes": "workspace:^",
     "coding-client-ui-open-in-app": "workspace:^",

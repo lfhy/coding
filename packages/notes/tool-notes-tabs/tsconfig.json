@@ -5,11 +5,13 @@
   "references": [
     { "path": "../../../vendor/cordis" },
     { "path": "../../core/agent" },
+    { "path": "../../preset/agent-presets" },
     { "path": "../../core/session" },
     { "path": "../../core/tools" },
     { "path": "../../client/connection/tsconfig.host.json" },
     { "path": "../../host/webserver" },
     { "path": "../../attachment/file-library" },
+    { "path": "../../sandbox/sandbox-policy" },
     { "path": "../../runtime-diagnostics/invariants" }
   ]
 }

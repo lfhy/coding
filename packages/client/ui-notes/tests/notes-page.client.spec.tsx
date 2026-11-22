@@ -197,9 +197,7 @@ describe('NotesPage', () => {
   beforeEach(() => {
     vi.useFakeTimers()
     // 浏览位置在用例之间必须归零，否则上一个用例打开的笔记会成为本用例的恢复目标。
-    uiStore.actions.rememberNote(null)
-    uiStore.actions.rememberExpanded([])
-    uiStore.actions.restoreTabs([])
+    uiStore.instance.store.set({ path: null, tabs: [], expanded: [] })
   })
   afterEach(() => { cleanup(); vi.useRealTimers(); vi.unstubAllGlobals(); vi.restoreAllMocks(); vi.clearAllMocks() })
 
@@ -876,8 +874,7 @@ describe('NotesPage', () => {
 
   it('记住的笔记已被删除时回到欢迎页并清掉旧路径', async () => {
     const state = makeServer()
-    uiStore.actions.rememberNote('gone.md')
-    uiStore.actions.rememberExpanded([])
+    uiStore.instance.store.set({ path: 'gone.md', expanded: [] })
     await mount(undefined, { openNote: null })
     expect(screen.queryByRole('textbox', { name: '原始文本' })).toBeNull()
     expect(screen.getByRole('heading', { level: 2, name: /好呀/u })).toBeTruthy()
@@ -887,9 +884,7 @@ describe('NotesPage', () => {
 
   it('恢复时过滤已删除的非活动标签，并接纳只有路径的旧浏览记录', async () => {
     makeServer()
-    uiStore.actions.rememberNote('a.md')
-    uiStore.actions.rememberNote('gone.md')
-    uiStore.actions.rememberNote('a.md')
+    uiStore.instance.store.set({ path: 'a.md', tabs: ['a.md', 'gone.md'], expanded: [] })
     await mount(undefined, { openNote: null })
     expect(uiStore.instance.getSnapshot().tabs).toEqual(['a.md'])
     expect(screen.getByRole('tab', { name: 'a' }).getAttribute('aria-selected')).toBe('true')

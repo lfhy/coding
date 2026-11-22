@@ -4,21 +4,24 @@
  * @module coding-tool-notes-tabs
  */
 import { lstat, realpath } from 'node:fs/promises'
-import { extname, isAbsolute, join, resolve, sep } from 'node:path'
+import { extname, isAbsolute, join, resolve } from 'node:path'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Context } from '@deepseek-ai/cordis'
 import type { SessionId } from 'coding-session/types'
 import type { Agent } from 'coding-agent'
+import { resolveSessionPreset } from 'coding-agent-presets'
 import type {} from 'coding-client-connection'
-import { isDeckDirectoryName } from 'coding-file-library'
+import { isDeckDirectoryName, NOTE_MINDMAP_SUFFIX } from 'coding-file-library'
 import type {} from 'coding-host-webserver'
+import type {} from 'coding-sandbox-policy'
 import { defineTool } from 'coding-tools'
+import { registerNotesMindmap } from './mindmap-tool.ts'
 import type { NotesTabsPublishRequest, NotesTabsPublishResponse } from './protocol.ts'
 
 export type { NotesTabsPublishRequest, NotesTabsPublishResponse } from './protocol.ts'
 
 export const name = 'tool-notes-tabs'
-export const inject = ['tools', 'webServer', 'connection', 'sessions', 'agents', 'fileLibrary']
+export const inject = ['tools', 'webServer', 'connection', 'sessions', 'agents', 'fileLibrary', 'sandboxPolicy']
 
 const ROUTE = '/api/notes/tabs'
 const MAX_BODY_BYTES = 64 * 1024
@@ -30,13 +33,15 @@ type VerifiedTab = {
   readonly absolutePath: string
 }
 
+type NoteKind = NotesTabsPublishRequest['activeKind']
+
 interface Snapshot {
   readonly sessionId: string
   readonly windowId: string
   readonly version: number
   readonly openTabs: readonly VerifiedTab[]
   readonly activeTabPath: string | null
-  readonly activeKind: 'note' | 'ppt'
+  readonly activeKind: NoteKind
   readonly updatedAt: number
 }
 
@@ -47,7 +52,7 @@ type ReadResult = {
   version: number
   openTabs: VerifiedTab[]
   activeTabPath: string | null
-  activeKind: 'note' | 'ppt'
+  activeKind: NoteKind
 } | { status: 'unavailable'; reason: 'not-published' | 'window-closed' | 'ambiguous-window' | 'session-mismatch' }
 
 type PublishResult = { status: 200 | 400 | 409; body: NotesTabsPublishResponse }
@@ -63,15 +68,26 @@ function leafOf(path: string): string {
   return path.slice(path.lastIndexOf('/') + 1)
 }
 
+/** 标签类型同时约束路径后缀与磁盘条目是文件还是目录。 */
+function kindOf(path: string): NoteKind | undefined {
+  if (isDeckDirectoryName(leafOf(path))) return 'ppt'
+  switch (extname(path).toLowerCase()) {
+    case NOTE_MINDMAP_SUFFIX: return 'mindmap'
+    case '.md':
+    case '.markdown': return 'note'
+    default: return undefined
+  }
+}
+
 /**
  * 拒绝绝对路径、越级路径、控制字符与非规范分隔符，避免客户端输入伪造根目录文件。
- * 标签只接受 Markdown 文件或 `.codingppt` 幻灯片工程目录。
+ * 标签只接受文件库支持的文档。
  */
 function validPath(value: unknown): value is string {
   return typeof value === 'string' && value.length > 0 && value.length <= 4096
     && !isAbsolute(value) && !/^[A-Za-z]:/u.test(value) && !/[\\\u0000-\u001f\u007f]/u.test(value)
     && value.split('/').every(segment => segment !== '' && segment !== '.' && segment !== '..')
-    && (['.md', '.markdown'].includes(extname(value).toLowerCase()) || isDeckDirectoryName(leafOf(value)))
+    && kindOf(value) !== undefined
 }
 
 /** 网络 body 必须是一份完整且一致的标签集；null 表示确实没有活动文件。 */
@@ -85,9 +101,7 @@ function parsePublish(value: unknown): NotesTabsPublishRequest | undefined {
     || !body.openTabs.every(validPath) || new Set(body.openTabs).size !== body.openTabs.length
     || (body.activeTabPath !== null && !validPath(body.activeTabPath))
     || (body.activeTabPath !== null && !body.openTabs.includes(body.activeTabPath))
-    || (body.activeKind !== 'note' && body.activeKind !== 'ppt')
-    || body.activeTabPath !== null
-      && (body.activeKind === 'ppt') !== isDeckDirectoryName(leafOf(body.activeTabPath))) return undefined
+    || body.activeKind !== (body.activeTabPath === null ? 'note' : kindOf(body.activeTabPath))) return undefined
   return body as unknown as NotesTabsPublishRequest
 }
 
@@ -108,13 +122,15 @@ async function verifyTabs(root: string, paths: readonly string[]): Promise<Verif
   const realRoot = await realpath(root)
   const tabs: VerifiedTab[] = []
   for (const path of paths) {
-    const absolutePath = join(root, ...path.split('/'))
+    const segments = path.split('/')
+    const absolutePath = join(root, ...segments)
     const realParent = await realpath(resolve(absolutePath, '..'))
-    if (realParent !== realRoot && !realParent.startsWith(realRoot + sep)) throw new TypeError('path outside notes')
+    const parents = segments.slice(0, -1)
+    if (realParent !== join(realRoot, ...parents) || parents.some(isDeckDirectoryName)) throw new TypeError('path outside notes')
     const stat = await lstat(absolutePath)
-    // 幻灯片标签是 `.codingppt` 工程目录，Markdown 标签必须是普通文件。
+    // 只有幻灯片是工程目录；其余文档必须是普通文件。
     if (stat.isSymbolicLink()) throw new TypeError('not a regular note entry')
-    if (isDeckDirectoryName(leafOf(path)) ? !stat.isDirectory() : !stat.isFile()) {
+    if (kindOf(path) === 'ppt' ? !stat.isDirectory() : !stat.isFile()) {
       throw new TypeError('not a regular note entry')
     }
     tabs.push({ path, absolutePath })
@@ -126,7 +142,7 @@ async function verifyTabs(root: string, paths: readonly string[]): Promise<Verif
 function ownsNotes(ctx: Context, sessionId: string): Agent | undefined {
   const agent = ctx.agents.get(sessionId as SessionId)
   if (agent === undefined || agent.session !== ctx.sessions.get(sessionId as SessionId)
-    || agent.session.header.agentPreset !== 'notes'
+    || resolveSessionPreset(agent.session) !== 'notes'
     || agent.session.header.cwd !== ctx.fileLibrary.notesRootPath()) return undefined
   return agent
 }
@@ -148,7 +164,7 @@ function send(res: ServerResponse, status: number, body: NotesTabsPublishRespons
   res.end(JSON.stringify(body))
 }
 
-/** 注册一次 HTTP 发布与一次模型读取；卸载、关闭会话和窗口失联后均不复用旧快照。 */
+/** 注册标签发布及笔记助手工具；卸载、关闭会话和窗口失联后均不复用旧快照。 */
 export function apply(ctx: Context): void {
   const bySession = new Map<string, Map<string, Snapshot>>()
   const invalid: PublishResult = { status: 400, body: { ok: false, error: 'invalid' } }
@@ -192,6 +208,33 @@ export function apply(ctx: Context): void {
   }), 'tool-notes-tabs: POST /api/notes/tabs')
   ctx.on('agent/disposed', ({ agent }) => { bySession.delete(agent.id) })
   ctx.effect(() => () => { bySession.clear() }, 'tool-notes-tabs: release published snapshots')
+  const authorized = (agent: Agent | undefined): agent is Agent =>
+    agent !== undefined && ownsNotes(ctx, agent.session.id) === agent
+  const readTabs = async (agent: Agent | undefined, signal: AbortSignal): Promise<ReadResult> => {
+    if (!authorized(agent)) return { status: 'unavailable', reason: 'session-mismatch' }
+    signal.throwIfAborted()
+    const windows = bySession.get(agent.session.id)
+    if (windows === undefined) return { status: 'unavailable', reason: 'not-published' }
+    const currentWindows = () => [...(bySession.get(agent.session.id)?.values() ?? [])]
+      .filter(snapshot => Date.now() - snapshot.updatedAt <= WINDOW_TTL_MS)
+    const live = currentWindows()
+    if (live.length > 1) return { status: 'unavailable', reason: 'ambiguous-window' }
+    const snapshot = live[0]
+    if (snapshot === undefined) return { status: 'unavailable', reason: 'window-closed' }
+    try {
+      const openTabs = await verifyTabs(ctx.fileLibrary.notesRootPath(), snapshot.openTabs.map(tab => tab.path))
+      if (!authorized(agent)) return { status: 'unavailable', reason: 'session-mismatch' }
+      const current = currentWindows()
+      if (current.length > 1) return { status: 'unavailable', reason: 'ambiguous-window' }
+      if (current[0] !== snapshot) return { status: 'unavailable', reason: 'window-closed' }
+      signal.throwIfAborted()
+      return { status: 'ready', sessionId: snapshot.sessionId, windowId: snapshot.windowId,
+        version: snapshot.version, openTabs, activeTabPath: snapshot.activeTabPath, activeKind: snapshot.activeKind }
+    } catch {
+      signal.throwIfAborted()
+      return { status: 'unavailable', reason: 'window-closed' }
+    }
+  }
   ctx.tools.register(defineTool({
     name: 'notes_tabs',
     description: 'Read the current notes page\'s open file tabs, active file, and verified full paths. '
@@ -202,34 +245,11 @@ export function apply(ctx: Context): void {
       schema: { type: 'object', additionalProperties: true },
       render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }],
     },
-    async execute(_args, exec): Promise<ReadResult> {
-      if (exec.agent === undefined || ownsNotes(ctx, exec.agent.session.id) !== exec.agent) {
-        return { status: 'unavailable', reason: 'session-mismatch' }
-      }
-      exec.signal.throwIfAborted()
-      const windows = bySession.get(exec.agent.session.id)
-      if (windows === undefined) return { status: 'unavailable', reason: 'not-published' }
-      const live = [...windows.values()].filter(snapshot => Date.now() - snapshot.updatedAt <= WINDOW_TTL_MS)
-      if (live.length === 0) return { status: 'unavailable', reason: 'window-closed' }
-      if (live.length > 1) return { status: 'unavailable', reason: 'ambiguous-window' }
-      const snapshot = live[0]
-      if (snapshot === undefined) return { status: 'unavailable', reason: 'window-closed' }
-      try {
-        const openTabs = await verifyTabs(ctx.fileLibrary.notesRootPath(), snapshot.openTabs.map(tab => tab.path))
-        exec.signal.throwIfAborted()
-        if (ownsNotes(ctx, exec.agent.session.id) !== exec.agent) {
-          return { status: 'unavailable', reason: 'session-mismatch' }
-        }
-        if (bySession.get(exec.agent.session.id)?.get(snapshot.windowId) !== snapshot
-          || Date.now() - snapshot.updatedAt > WINDOW_TTL_MS) {
-          return { status: 'unavailable', reason: 'window-closed' }
-        }
-        return { status: 'ready', sessionId: snapshot.sessionId, windowId: snapshot.windowId,
-          version: snapshot.version, openTabs, activeTabPath: snapshot.activeTabPath, activeKind: snapshot.activeKind }
-      } catch {
-        return { status: 'unavailable', reason: 'window-closed' }
-      }
-    },
+    execute: (_args, exec) => readTabs(exec.agent, exec.signal),
     presentCall: () => ({ card: 'generic', title: '读取笔记标签', kind: 'read' }),
   }))
+  registerNotesMindmap(ctx, authorized, async (agent, signal) => {
+    const tabs = await readTabs(agent, signal)
+    return tabs.status === 'ready' && tabs.activeKind === 'mindmap' ? tabs.activeTabPath ?? undefined : undefined
+  })
 }

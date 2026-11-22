@@ -8,6 +8,8 @@ export type NotesLocaleKey =
   | 'heading' | 'bold' | 'italic' | 'bullets' | 'quote' | 'link'
   | 'welcomeMorning' | 'welcomeAfternoon' | 'welcomeEvening' | 'welcomeDescription'
   | 'newEntry' | 'entryFolder' | 'entryNote' | 'entryPresentation'
+  | 'entryMindmap' | 'newMindmap' | 'mindmapName' | 'mindmapCreated' | 'mindmapImported'
+  | 'createMindmapError' | 'importMindmapError' | 'renameMindmap' | 'deleteMindmapConfirm'
   | 'loading' | 'newNote' | 'newFolder' | 'newPresentation' | 'importFile' | 'importText' | 'noteName' | 'folderName' | 'presentationName' | 'create' | 'creating' | 'cancel' | 'close' | 'placeholder'
   | 'newNoteIn' | 'newFolderIn' | 'newSubfolder' | 'newSubfolderIn' | 'saveLocation' | 'noteCreated' | 'folderCreated' | 'presentationCreated' | 'noteImported' | 'presentationImported' | 'createdRefreshError'
   | 'saved' | 'saving' | 'unsaved' | 'conflict' | 'reload' | 'reloadConfirm' | 'draftKept' | 'discardDraft' | 'retry'
@@ -29,6 +31,11 @@ export const zh: Record<NotesLocaleKey, string> = {
   welcomeDescription: '在这里记录你的想法、灵感与工作内容',
   loading: '正在读取笔记…',
   newEntry: '新建', entryFolder: '目录', entryNote: '笔记', entryPresentation: '幻灯片',
+  entryMindmap: '思维导图', newMindmap: '新建思维导图', mindmapName: '思维导图名称',
+  mindmapCreated: '思维导图已创建', mindmapImported: '思维导图已导入',
+  createMindmapError: '无法创建思维导图。请检查名称和保存位置后重试。',
+  importMindmapError: '无法导入思维导图。请确认文件是有效的 XMind 或 Coding 思维导图。',
+  renameMindmap: '重命名思维导图', deleteMindmapConfirm: '删除思维导图「{name}」？此操作不可撤销。',
   newNote: '新建笔记', newFolder: '新建目录', newPresentation: '新建幻灯片', importFile: '导入', importText: '文本', noteName: '笔记名称', folderName: '目录名称', presentationName: '幻灯片名称', create: '创建', creating: '正在创建…', cancel: '取消', close: '关闭',
   newNoteIn: '在「{name}」中新建笔记', newFolderIn: '在「{name}」中新建目录',
   newSubfolder: '新建子目录', newSubfolderIn: '在「{name}」中新建子目录',
@@ -67,6 +74,11 @@ export const en: Record<NotesLocaleKey, string> = {
   welcomeDescription: 'A place for your thoughts, ideas, and work',
   loading: 'Loading notes…',
   newEntry: 'New', entryFolder: 'Folder', entryNote: 'Note', entryPresentation: 'Presentation',
+  entryMindmap: 'Mind map', newMindmap: 'New mind map', mindmapName: 'Mind map name',
+  mindmapCreated: 'Mind map created', mindmapImported: 'Mind map imported',
+  createMindmapError: 'Could not create the mind map. Check the name and location, then try again.',
+  importMindmapError: 'Could not import the mind map. Use a valid XMind or Coding mind map file.',
+  renameMindmap: 'Rename mind map', deleteMindmapConfirm: 'Delete the mind map “{name}”? This cannot be undone.',
   newNote: 'New note', newFolder: 'New folder', newPresentation: 'New presentation', importFile: 'Import', importText: 'Text', noteName: 'Note name', folderName: 'Folder name', presentationName: 'Presentation name', create: 'Create', creating: 'Creating…', cancel: 'Cancel', close: 'Close',
   newNoteIn: 'New note in “{name}”', newFolderIn: 'New folder in “{name}”',
   newSubfolder: 'New subfolder', newSubfolderIn: 'New subfolder in “{name}”',

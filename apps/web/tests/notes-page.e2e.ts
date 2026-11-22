@@ -272,11 +272,11 @@ describe('Web 笔记工作区', () => {
         await importEntry.hover()
         const importMenu = menuPage.getByRole('menu', { name: 'Import', exact: true })
         await importMenu.waitFor()
-        expect(await importMenu.getByRole('menuitem').allTextContents()).toEqual(['Text', 'Presentation'])
+        expect(await importMenu.getByRole('menuitem').allTextContents()).toEqual(['Text', 'Presentation', 'Mind map'])
         await createEntry.hover()
         const types = menuPage.getByRole('menu', { name: 'New', exact: true })
         await types.waitFor()
-        expect(await types.getByRole('menuitem').allTextContents()).toEqual(['Folder', 'Note', 'Presentation'])
+        expect(await types.getByRole('menuitem').allTextContents()).toEqual(['Folder', 'Note', 'Presentation', 'Mind map'])
 
         // 实际命中浮层边缘也能发现祖先滚动区裁剪，而不只是检查坐标。
         const position = await types.evaluate((menu) => {

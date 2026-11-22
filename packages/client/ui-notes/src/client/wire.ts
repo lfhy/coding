@@ -1,10 +1,11 @@
 /** 笔记域的浏览器侧 wire 类型；响应只含相对笔记根目录的路径，绝对路径不进浏览器。 */
+import { NOTE_DECK_SUFFIX, NOTE_MINDMAP_SUFFIX } from './notes-tree.ts'
 
 /** 笔记目录树节点；`path` 相对笔记根目录，`children` 仅普通目录携带。 */
 export interface NotesTreeEntry {
   name: string
-  /** `deck` 是 `.codingppt` 幻灯片工程目录：一行幻灯片条目，不可展开。 */
-  kind: 'dir' | 'file' | 'deck'
+  /** `deck` 为不可展开的幻灯片工程，`mindmap` 为结构化导图文件。 */
+  kind: 'dir' | 'file' | 'deck' | 'mindmap'
   path: string
   mtimeMs: number
   children?: NotesTreeEntry[]
@@ -38,7 +39,7 @@ export function assertNotePath(path: string): void {
 
 /** 在网络边界校验目录树节点，防止 Host 或中间层注入越界路径。 */
 function parseTreeEntry(value: unknown): NotesTreeEntry {
-  if (!isObject(value) || (value.kind !== 'dir' && value.kind !== 'file' && value.kind !== 'deck')
+  if (!isObject(value) || (value.kind !== 'dir' && value.kind !== 'file' && value.kind !== 'deck' && value.kind !== 'mindmap')
     || !nonemptyString(value.name) || !nonemptyString(value.path)
     || typeof value.mtimeMs !== 'number' || !Number.isFinite(value.mtimeMs)
     || (value.children !== undefined && !Array.isArray(value.children))) {
@@ -139,8 +140,41 @@ export async function notesCreate(name: string, directory = '', content?: string
   return { path: body.path }
 }
 
-/** 幻灯片工程目录名的大小写后缀；与文件库的 `NOTE_DECK_SUFFIX` 一致。 */
-const NOTE_DECK_SUFFIX = '.codingppt'
+/** 核验思维导图写入回执，拒绝不是导图的路径。 */
+async function parseMindmapWrite(response: Response): Promise<{ path: string }> {
+  if (!response.ok) throw new Error(`notes mind map HTTP ${response.status}`)
+  const body: unknown = await response.json()
+  if (!isObject(body) || !nonemptyString(body.path) || !body.path.toLowerCase().endsWith(NOTE_MINDMAP_SUFFIX)) {
+    throw new Error('Invalid note mind map payload')
+  }
+  assertNotePath(body.path)
+  return { path: body.path }
+}
+
+/**
+ * 由文件库在笔记目录生成并保存只有中心主题的导图。
+ * @param name - 导图名称。
+ * @param directory - 相对笔记根目录；空字符串表示根目录。
+ * @returns 新建导图的相对路径。
+ */
+export async function notesCreateMindmap(name: string, directory: string): Promise<{ path: string }> {
+  if (directory !== '') assertNotePath(directory)
+  return parseMindmapWrite(await fetch('/api/notes/mindmap/create', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ name, ...(directory === '' ? {} : { directory }) }),
+  }))
+}
+
+/**
+ * 上传所选文件的原始字节，保留原扩展名供文件库判断格式。
+ * @param file - 原生导图或 XMind 文件。
+ * @returns 导入后新导图的相对路径。
+ */
+export async function notesImportMindmap(file: File): Promise<{ path: string }> {
+  return parseMindmapWrite(await fetch(`/api/notes/mindmap/import?${new URLSearchParams({ name: file.name })}`, {
+    method: 'POST', headers: { 'content-type': 'application/octet-stream' }, body: file,
+  }))
+}
 
 /** 幻灯片请求共用的会话、名称与目标目录校验。 */
 function assertSlideRequest(sessionId: string, name: string, directory: string): void {

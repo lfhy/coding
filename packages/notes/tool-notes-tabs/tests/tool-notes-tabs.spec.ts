@@ -1,13 +1,14 @@
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import AgentRegistry, { Inbox } from 'coding-agent'
 import type { Agent, AgentStatus } from 'coding-agent'
 import SessionStore, { SessionId, Session } from 'coding-session'
 import ToolRuntime from 'coding-tools'
+import { StaleNoteError, type MindMapSnapshot } from 'coding-file-library'
 import SystemPrompt from 'coding-system-prompt'
 import TypertRegistry from 'coding-typert-registry'
 import * as notesTabs from '../src/index.ts'
@@ -36,7 +37,7 @@ function stubAgent(session: Session): StubAgent {
   return { agent, session }
 }
 
-async function boot(): Promise<{ base: string; agent: Agent; session: Session }> {
+async function boot(mode: 'workspace-write' | 'read-only' = 'workspace-write') {
   ctx = new Context()
   root = await mkdtemp(join(tmpdir(), 'coding-notes-tabs-'))
   notesRoot = join(root, 'notes')
@@ -47,19 +48,30 @@ async function boot(): Promise<{ base: string; agent: Agent; session: Session }>
   await ctx.plugin(ToolRuntime)
   await ctx.plugin(SessionStore)
   const sessionStore = ctx.sessions
-  sessionStore.create(SessionId(SESSION), { meta: { cwd: notesRoot, agentPreset: 'notes' } })
+  sessionStore.create(SessionId(SESSION), { meta: { cwd: notesRoot, agentPreset: 'standard' } })
   const liveSession = sessionStore.get(SessionId(SESSION))!
+  // 笔记页先创建空白会话，再切换预设；创建头不能代表正在使用的工具集。
+  liveSession.append('agent-preset/selected', { agentPreset: 'notes' })
   const live = stubAgent(liveSession)
   ctx.agents.register(live.agent)
-  ctx.provide('fileLibrary', { notesRootPath: () => notesRoot } as never)
+  const readMindmap = vi.fn<(path: string) => Promise<MindMapSnapshot>>()
+  const createMindmap = vi.fn<(name: string, directory?: string) => Promise<{ path: string }>>()
+  const editMindmap = vi.fn<(path: string, revision: string, edits: unknown) => Promise<MindMapSnapshot>>()
+  ctx.provide('fileLibrary', {
+    notesRootPath: () => notesRoot, readNoteMindmap: readMindmap, createNoteMindmap: createMindmap, editNoteMindmap: editMindmap,
+  } as never)
+  ctx.provide('sandboxPolicy', { resolve: () => ({ mode }) } as never)
   ctx.provide('connection', { requestRejection: () => undefined } as never)
   route = undefined
   ctx.provide('webServer', {
     port: 0, host: '127.0.0.1',
-    register: (entry: { handler: typeof route }) => { route = entry.handler; return () => {} },
+    register: (entry: { handler: typeof route }) => {
+      route = entry.handler
+      return () => { route = undefined }
+    },
   } as never)
-  await ctx.plugin(notesTabs)
-  return { base: '', agent: live.agent, session: liveSession }
+  const plugin = await ctx.plugin(notesTabs)
+  return { agent: live.agent, plugin, readMindmap, createMindmap, editMindmap }
 }
 
 /** 以一次同源 POST 调用发布路由，返回状态码与解析后的响应体。 */
@@ -91,22 +103,24 @@ afterEach(async () => {
 })
 
 describe('notes tabs protocol', () => {
-  it('uses the Loader-safe function-plugin export and registers one model tool', async () => {
+  it('以 Loader 支持的函数插件注册笔记标签和导图工具', async () => {
     const { agent } = await boot()
     expect('default' in notesTabs).toBe(false)
     expect(notesTabs.name).toBe('tool-notes-tabs')
-    expect(notesTabs.inject).toEqual(['tools', 'webServer', 'connection', 'sessions', 'agents', 'fileLibrary'])
+    expect(notesTabs.inject).toEqual(['tools', 'webServer', 'connection', 'sessions', 'agents', 'fileLibrary', 'sandboxPolicy'])
     expect(ctx?.tools.get('notes_tabs')?.name).toBe('notes_tabs')
+    expect(ctx?.tools.get('notes_mindmap')?.name).toBe('notes_mindmap')
     expect(ctx?.tools.get('notes_tabs')?.parameters).toEqual({ type: 'object', properties: {} })
     expect(agent.id).toBe(SESSION)
   })
 
-  it('disposes the tool and route registration from the plugin fiber', async () => {
-    const { agent } = await boot()
-    expect(ctx?.tools.get('notes_tabs')).toBeDefined()
-    await ctx?.fiber.dispose()
-    expect(ctx?.get('tools')).toBeUndefined()
-    expect(agent.id).toBe(SESSION)
+  it('卸载插件时同时移除模型工具与发布路由', async () => {
+    const { plugin } = await boot()
+    expect(ctx?.tools.get('notes_mindmap')).toBeDefined()
+    await plugin.dispose()
+    expect(ctx?.tools.get('notes_mindmap')).toBeUndefined()
+    expect(ctx?.tools.get('notes_tabs')).toBeUndefined()
+    expect(route).toBeUndefined()
   })
 
   it('publishes a .codingppt tab as the active ppt tab and rejects mismatched kinds', async () => {
@@ -142,5 +156,95 @@ describe('notes tabs protocol', () => {
     expect(result.isError).toBe(false)
     if (result.isError) return
     expect(result.value).toEqual({ status: 'unavailable', reason: 'not-published' })
+  })
+})
+
+/** 经真实工具执行器验证参数、权限、输出转换和同窗选择。 */
+function callMindmap(agent: Agent | undefined, args: object) {
+  return ctx!.tools.execute({
+    name: 'notes_mindmap', callId: 'mindmap-call' as never, arguments: args,
+    signal: new AbortController().signal, ...(agent === undefined ? {} : { agent }),
+  })
+}
+
+describe('笔记助手思维导图', () => {
+  const path = '路线.codingmindmap'
+  const snapshot: MindMapSnapshot = {
+    path, revision: 'rev1',
+    document: { version: 1, root: {
+      id: 'root', text: '出行', children: [{ id: 'child', text: '交通', children: [] }],
+    } },
+  }
+
+  it('只从唯一窗口读取合法活动导图，拒绝伪装类型、目录与别名', async () => {
+    const { agent, readMindmap } = await boot()
+    readMindmap.mockResolvedValue(snapshot)
+    await writeFile(join(notesRoot!, path), '{}')
+    await mkdir(join(notesRoot!, 'false.codingmindmap'))
+    await symlink(notesRoot!, join(notesRoot!, 'alias'), process.platform === 'win32' ? 'junction' : 'dir')
+    const body = { sessionId: SESSION, windowId: 'window', version: 1, openTabs: [path], activeTabPath: path, activeKind: 'mindmap' }
+    for (const invalid of [
+      { ...body, activeKind: 'note' },
+      ...['false.codingmindmap', `alias/${path}`].map(fake => ({ ...body, openTabs: [fake], activeTabPath: fake })),
+    ]) await expect(publish(invalid)).resolves.toMatchObject({ status: 400 })
+    expect((await callMindmap(agent, { action: 'read' })).isError).toBe(true)
+    expect(readMindmap).not.toHaveBeenCalled()
+    await expect(publish(body)).resolves.toMatchObject({ status: 200 })
+    await expect(callMindmap(agent, { action: 'read' })).resolves.toMatchObject({
+      isError: false, value: { path, revision: 'rev1', topics: [
+        { id: 'root', text: '出行', parentId: null }, { id: 'child', text: '交通', parentId: 'root' },
+      ], totalTopics: 2, nextOffset: null },
+    })
+    await expect(publish({ ...body, windowId: 'another' })).resolves.toMatchObject({ status: 200 })
+    expect((await callMindmap(agent, { action: 'read' })).isError).toBe(true)
+    expect(readMindmap).toHaveBeenCalledTimes(1)
+    expect((await callMindmap(agent, { action: 'read', path })).isError).toBe(false)
+  })
+
+  it('分页约束完整结果字节数，续读必须核对文件和版本', async () => {
+    const { agent, readMindmap } = await boot()
+    const children = Array.from({ length: 30 }, (_, index) => ({ id: `item-${index}`, text: '🙂'.repeat(256), children: [] }))
+    readMindmap.mockResolvedValue({ ...snapshot, document: { version: 1, root: { ...snapshot.document.root, children } } })
+    const first = await callMindmap(agent, { action: 'read', path })
+    expect(first.isError).toBe(false)
+    if (first.isError) return
+    expect(Buffer.byteLength(JSON.stringify(first.value))).toBeLessThanOrEqual(8192)
+    expect(first.value).toMatchObject({ path, revision: 'rev1', totalTopics: 31, nextOffset: expect.any(Number) })
+    const offset = (first.value as { nextOffset: number }).nextOffset
+    expect((await callMindmap(agent, { action: 'read', offset })).isError).toBe(true)
+    const second = await callMindmap(agent, { action: 'read', path, revision: 'rev1', offset })
+    expect(second.isError).toBe(false)
+    if (second.isError) return
+    const { topics } = second.value as { topics: { id: string }[] }
+    expect(topics[0]?.id).toBe(`item-${offset - 1}`)
+    expect(Buffer.byteLength(JSON.stringify(second.value))).toBeLessThanOrEqual(8192)
+    expect((await callMindmap(agent, { action: 'read', path, revision: 'old', offset })).isError).toBe(true)
+  })
+
+  it('拒绝无真实会话或只读助手的写入，允许只读助手查看', async () => {
+    const { agent, readMindmap, createMindmap, editMindmap } = await boot('read-only')
+    readMindmap.mockResolvedValue(snapshot)
+    expect((await callMindmap(undefined, { action: 'read', path })).isError).toBe(true)
+    expect((await callMindmap({ ...agent }, { action: 'read', path })).isError).toBe(true)
+    expect((await callMindmap(agent, { action: 'create', name: '禁止' })).isError).toBe(true)
+    expect((await callMindmap(agent, { action: 'edit', path, revision: 'rev1', edits: [{ op: 'delete', id: 'child' }] })).isError).toBe(true)
+    expect(createMindmap).not.toHaveBeenCalled()
+    expect(editMindmap).not.toHaveBeenCalled()
+    expect((await callMindmap(agent, { action: 'read', path })).isError).toBe(false)
+  })
+
+  it('用显式目标与读取版本调用文件库；冲突不重试或覆盖', async () => {
+    const { agent, createMindmap, editMindmap } = await boot()
+    createMindmap.mockResolvedValue({ path })
+    expect(await callMindmap(agent, { action: 'create', name: '路线' })).toMatchObject({ isError: false, value: { path } })
+    const edits = [{ op: 'rename', id: 'child', text: '住宿' }]
+    expect((await callMindmap(agent, { action: 'edit', revision: 'rev1', edits })).isError).toBe(true)
+    expect(editMindmap).not.toHaveBeenCalled()
+    editMindmap.mockRejectedValueOnce(new StaleNoteError()).mockResolvedValueOnce({ ...snapshot, revision: 'rev2' })
+    expect((await callMindmap(agent, { action: 'edit', path, revision: 'old', edits })).isError).toBe(true)
+    expect(editMindmap).toHaveBeenCalledExactlyOnceWith(path, 'old', edits)
+    await expect(callMindmap(agent, { action: 'edit', path, revision: 'rev1', edits }))
+      .resolves.toMatchObject({ isError: false, value: { path, revision: 'rev2' } })
+    expect(editMindmap).toHaveBeenLastCalledWith(path, 'rev1', edits)
   })
 })
