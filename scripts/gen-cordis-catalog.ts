@@ -312,6 +312,7 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   ManagedFileCategory: 'attachment.md',
   ManagedFileKind: 'attachment.md',
   NotesTreeNode: 'attachment.md',
+  MindMapSnapshot: 'attachment.md',
   ComputerActionEffect: 'computer-use.md',
   ComputerActionResult: 'computer-use.md',
   ComputerActionRequest: 'computer-use.md',

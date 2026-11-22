@@ -10,19 +10,40 @@
 
 每条记录的 `FileId` 是 UUID 格式的跨包品牌 ID；构造和领域载入均校验 UUID，JSON 仍序列化为普通字符串。`list(offset = 0, limit = 50, filter?)` 同步返回 `{items,total,nextOffset?}`，支持按 `sessionId`、`workspaceId` 或 `unscoped` 过滤；按创建时间倒序、同一时间按 ID 倒序；页长最多 100，非法偏移或页长抛出 `TypeError`。列表是持久元数据索引，不逐项扫描或核对磁盘，因此文件被外部移走后记录仍会显示；分页采用当前内存快照，跨页新增数据可能改变偏移。
 
-笔记域使用同一根目录下的 `notes/`，不占用 `files` 领域表：`notesTree()` 按名称排序返回目录、Markdown（`.md`/`.markdown`）和幻灯片工程目录组成的树，符号链接条目不入树。名字以 `.codingppt` 结尾的真实目录是幻灯片工程目录，在树里是一行 `kind: 'deck'` 条目、不携带 `children`，目录内的工程文件既不显示也不计入预算；其余条目（包括不展示的格式与链接）共用 4096 个节点预算，深度超过 8 层或预算超出时整棵树按 `TypeError` 拒绝。`readNote(path)` 只读取 Markdown 原文和毫秒修改时间；`saveNote(path, content, baseMtimeMs?)` 只写 Markdown，经临时文件原子写入，没有修改时间基准时按需创建中间目录并逐段收紧为 `0700`，带 `baseMtimeMs` 时目标文件和父目录必须仍存在，外部修改或删除均拒绝覆盖；`createNote(name, directory?, content?)` 创建 Markdown 笔记：名称按上传规则净化，缺省补 `.md` 扩展名（例如 `draft.pptx` 将创建 `draft.pptx.md`），同名拒绝；省略 `content` 时是空笔记，传入时把导入原文与文件一起落盘，超过 1 MiB 直接拒绝且不留空文件；`createNoteDirectory(name, parent?)` 在指定笔记目录下创建真实的私有子目录，同名拒绝。`createNoteDeck(name, directory?)` 是 PPT 服务调用的 Host-only seam：名称缺省补 `.codingppt` 后缀，在笔记根的真实私有父链中以 `0700` 独占创建工程目录，同步父目录后返回相对路径和只在目录仍是本次创建时递归清理的句柄；同名、符号链接、越界路径或层级／节点超限均抛出 `TypeError`。该方法不依赖 PPT 包，也不写工程内容——`deck.json`、`media/` 等由 PPT 宿主随后写进这个目录。Markdown 的读取与保存仍只由 `readNote`/`saveNote` 提供。`renameNote(path, name)` 在同一父目录内改名且拒绝覆盖：Markdown 文件的名称省略扩展名时保留来源扩展名与大小写，显式指定其他扩展名时拒绝；`.codingppt` 工程目录同样保留后缀（用户只改名称部分），普通目录按单段名称改名。所有路径只接受笔记根目录内的相对路径，父链经 `realpath` 比对防止符号链接逃出；单篇 Markdown 笔记最多 1 MiB。
+## 笔记存储
 
-`deleteNote(path)` 对 Markdown 文件只删除该文件；删除真实目录（包括 `.codingppt` 幻灯片工程目录）时始终递归删除其中的文件和子目录。所有删除仍限于笔记根目录内，且不跟随条目符号链接。
+笔记域使用同一根目录下的 `notes/`，不占用 `files` 领域表。`notesTree()` 按名称排序返回普通目录、真实 Markdown 文件、思维导图文件与 `.codingppt` 幻灯片工程目录。`kind: 'mindmap'` 和 `kind: 'deck'` 都不携带 `children`；同名后缀的普通目录不是思维导图，符号链接不入树，幻灯片工程内部条目不扫描且不计入预算。其余条目（含不展示的文件与链接）共用 4096 个条目预算，目录超过 8 层或超出预算时整棵树按 `TypeError` 拒绝。
 
-`noteRecords()` 只登记笔记根目录直属的 Markdown 文件（子目录 Markdown 与任意 PPTX 都不出现），同一相对路径已由领域表登记时不重复；这些实时记录的 `FileId` 由相对路径的 SHA-1 推导成版本 5 形态的 UUID，同一路径跨重启保持同一 ID，`read(id)` 对这类 ID 直接服务磁盘文件。`listWithNotes(offset, limit, filter)` 把过滤后的领域记录与实时笔记按同一规则合并分页，笔记只出现在 `unscoped` 视图或 `kind: 'note'` 过滤下。`notesRootPath()` 返回笔记根目录的绝对路径，仅供 Host 侧会话工作目录使用，不进入浏览器响应。
+`readNote(path)`、`saveNote(path, content, baseMtimeMs?)` 与 `createNote(name, directory?, content?)` 只处理 Markdown，原文最多 1 MiB。保存经临时文件原子替换；无修改时间基准时可创建中间目录并收紧为 `0700`，有基准时不覆盖外部修改或重建已删除文件。新建名称按上传规则净化，缺省补 `.md`（例如 `draft.pptx` 变为 `draft.pptx.md`）；同名或原文超限时拒绝，不留下空文件。`createNoteDirectory(name, parent?)` 独占创建真实私有子目录。
+
+`createNoteDeck(name, directory?)` 只供 Host 的 PPT 服务使用：以 `0700` 独占创建 `.codingppt` 工程目录，同步父目录后返回相对路径与只在仍拥有本次目录时递归清理的句柄。文件库不写工程内容。同名、符号链接、越界路径或层级／条目超限按 `TypeError` 拒绝。
+
+`renameNote(path, name)` 在同一父目录内改名且拒绝覆盖。Markdown 与思维导图保留原扩展名及大小写；名称可省略原扩展名，但不能转换格式。`.codingppt` 工程目录同样保留后缀。`deleteNote(path)` 单独删除一个 Markdown 或思维导图文件，或递归删除一个真实目录（包括幻灯片工程目录）。路径只接受笔记根目录内的相对路径，父链经 `realpath` 核对；条目符号链接不得改名或删除，递归删除不跟随目录内的链接。
+
+`noteRecords()` 只登记笔记根目录直属的 Markdown 文件，思维导图与幻灯片工程不进入全局文件管理索引。同一路径已由领域表登记时不重复；实时记录的 `FileId` 由相对路径的 SHA-1 推导成版本 5 UUID，`read(id)` 对这类 ID 直接服务磁盘文件。`listWithNotes(offset, limit, filter)` 将这些笔记并入未分组或 `kind: 'note'` 视图。`notesRootPath()` 返回笔记根目录的绝对路径，仅供 Host 侧会话工作目录使用。
+
+### 思维导图笔记
+
+包入口导出 `NOTE_MINDMAP_SUFFIX`（`.codingmindmap`）以及 `MindMapDocument`、`MindMapNode`、`MindMapEdit`、`MindMapSnapshot`。`createNoteMindmap(name, directory?)` 用净化后的文件名（不含后缀）作为中心主题；`importNoteMindmap(name, data, directory?)` 按来源文件名接受 `.codingmindmap` 原生 JSON 或 `.xmind`。两者都将完整文档以 `0600` 暂存并同步，再独占发布并同步父目录，返回 `{path}`。目录参数必须为真实相对目录，不接受符号链接（即使指向笔记根目录内）、幻灯片工程目录或越界路径。不会覆盖同名条目，不会为无效导入留下笔记文件。
+
+原生文档的 `version` 为 `1`，仅包含 `root` 主题树；主题仅含 `id`、`text`、`children`。主题 ID 在文档内唯一，原生导入、移动、改名与重新读取不改变已有主题 ID。原生文件及输入最多 1 MiB，根主题计入最多 400 个主题及 20 层深度，文字最多 256 个 Unicode 码点且不超过 1024 个 UTF-8 字节。XMind 原始文件最多 16 MiB，ZIP 最多 4096 个成员，仅解包根级 `content.json`，实际解压输出最多 2 MiB，并校验长度与 CRC。仅转换首张图的主题文字与层次（含直属和自由主题），不保留格式、链接、附件或其他图页；不读写 ZIP 中的其他成员或路径，不支持只有 `content.xml` 的旧版 XMind。
+
+`readNoteMindmap(path)` 返回 `{path,revision,document}`，`revision` 是原始字节的 SHA-256 摘要，调用方按不透明字符串原样回传。`editNoteMindmap(path, revision, edits)` 与笔记改名和删除使用同一写入队列，在队列内核对基准、按顺序验证和应用整批，再以一次原子替换发布。每批需要 1–32 个 `add`、`rename`、`move` 或 `delete` 操作；拒绝不明字段、未知主题、循环或删除／移动中心主题。`move.index` 按移除原节点后的目标子主题数组计数，从零开始；不传则追加。任一无效操作使整批不落盘。旧版本或重名抛出 `NoteConflictError`，文件或父目录已消失抛出 `NoteNotFoundError`，非法路径、文件结构或操作抛出 `TypeError`。
+
+目录和 Markdown 由 [`src/notes.ts`](src/notes.ts) 持有写入队列；思维导图在 [`src/mindmap-notes.ts`](src/mindmap-notes.ts) 检查文件身份及提交，在 [`src/mindmap.ts`](src/mindmap.ts) 校验主题与编辑，在 [`src/xmind.ts`](src/xmind.ts) 限定解包。
 
 ## HTTP 接口
 
 只有连接服务的 `requestRejection` 允许、Host 绑定回环、请求来自回环且 Host/Origin 严格同源时，`GET /api/files/list?offset=<n>&limit=<n>` 返回同一分页对象；可选 `sessionId=<id>`、`scope=unscoped`、`category=<image|presentation|document|other>`、`kind=<upload|generated-image|export|note>` 过滤文件。`scope=unscoped` 与 `kind=note` 的列表并入无目录笔记。`GET /api/files/preview?id=<fileId>` 只为已登记的图片返回本地文件字节，供文件管理页预览；文件 ID、媒体类型和同源信任均在 Host 校验，浏览器不接触绝对路径。多余、重复、负数或非整数参数返回 400；只允许 GET。列表响应不含绝对路径，预览带 `private, no-store` 和 `nosniff`。
 
-笔记路由在同一同源信任下：`GET /api/notes/tree` 返回含 Markdown、普通目录和幻灯片工程目录的树；`GET /api/notes/read?path=<相对路径>` 只读取 Markdown，返回 `{path,content,mtimeMs}`；`POST /api/notes/save` 只保存 Markdown，接受 `{path,content,baseMtimeMs?}` 返回 `{path,mtimeMs}`，外部修改或目标已删除返回 409/404；`POST /api/notes/create` 只创建 Markdown，接受 `{name,directory?,content?}` 返回 `{path}`，带 `content` 时一次写入导入原文；`POST /api/notes/create-directory` 接受 `{name,parent?}` 返回 `{path}`；`POST /api/notes/rename` 接受 `{path,name}` 返回改名后的 `{path}`，幻灯片工程目录与 Markdown 都能改名但不可改变后缀；`GET /api/notes/cwd` 返回 `{path}` 笔记根目录绝对路径，供会话工作目录使用。请求体为限长 JSON；路径逃逸、非法扩展名与超限内容返回 400 与具体原因。
+笔记路由沿用上述同源信任。`GET /api/notes/tree` 返回 `{children}`；`GET /api/notes/read?path=<相对路径>` 只读取 Markdown，返回 `{path,content,mtimeMs}`；`POST /api/notes/save` 只保存 Markdown，接受 `{path,content,baseMtimeMs?}` 返回 `{path,mtimeMs}`，外部修改或目标已删除返回 409/404；`POST /api/notes/create` 只创建 Markdown，接受 `{name,directory?,content?}` 返回 `{path}`；`POST /api/notes/create-directory` 接受 `{name,parent?}` 返回 `{path}`；`POST /api/notes/rename` 接受 `{path,name}` 返回改名后的 `{path}`；`GET /api/notes/cwd` 返回 `{path}` 笔记根目录绝对路径，供会话工作目录使用。`DELETE /api/notes/delete` 接受 `{path}`，成功返回 204。请求体为限长 JSON；路径逃逸、非法扩展名与超限内容返回 400。
 
-`DELETE /api/notes/delete` 接受 `{path}`，由 `deleteNote(path)` 执行，成功返回 204；Markdown 文件单删，真实目录（含幻灯片工程目录）始终递归删除其中的文件和子目录。删除仍限于笔记根目录内，不跟随条目符号链接。
+思维导图路由不接收会话参数，返回 `Cache-Control: private, no-store`，JSON 响应同时设置 `nosniff`。未通过同源检查返回 403；错误方法返回 405；非法或超限输入返回 400，缺失返回 404，版本冲突或重名返回 409，其他服务错误返回 503。
+
+- `POST /api/notes/mindmap/create`：JSON `{name,directory?}`，成功返回 201 `{path}`。
+- `POST /api/notes/mindmap/import?name=<原文件名>&directory=<可选>`：`application/octet-stream` 请求体，按实际接收字节限制大小，成功返回 201 `{path}`。
+- `GET /api/notes/mindmap/read?path=<相对路径>`：成功返回 200 `MindMapSnapshot`。
+- `POST /api/notes/mindmap/edit`：JSON `{path,revision,edits}`，成功返回 200 `MindMapSnapshot`。
 
 ## Model Experience
 
@@ -30,7 +51,7 @@
 
 ## Known Limitations and Deferred Work
 
-- 文件管理页只提供图片预览，不提供任意文件下载、写入或删除；无目录 Markdown 笔记进入未分组列表但没有预览，点行不触发打开。笔记树中的幻灯片工程目录不进入文件管理笔记列表。
-- 文件管理的笔记列表只登记笔记根目录直属 Markdown 文件；子目录 Markdown 与幻灯片工程目录只存在于树，不进入文件管理列表。
+- 文件管理页只提供图片预览，不提供任意文件下载、写入或删除；进入未分组列表的 Markdown 笔记没有预览，点行不触发打开。
+- 思维导图编辑队列协调同一 Host 内的请求；对外部写入会核对磁盘版本，但不是跨进程锁。
 - 元数据和磁盘内容不能跨介质原子提交；上传文件的孤儿清理、配额和删除策略尚未定义。
 - `isManagedUploadPath` 校验登记路径当前仍是普通文件，但不校验内容摘要；同一用户在库目录内替换原件后，PPT 导入和浏览器上传会读取替换后的内容。

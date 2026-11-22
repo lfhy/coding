@@ -3,7 +3,7 @@
 
 # 包清单
 
-workspace 共 281 个包，按 group 分节。每行给出包目录、职责（README 首段）、源码入口与 `tests/` 下的 spec 文件数；标 `client` 的包导出 `./client` 浏览器半，标 `bundle` 的包是 profile/bundle 装配层。
+workspace 共 282 个包，按 group 分节。每行给出包目录、职责（README 首段）、源码入口与 `tests/` 下的 spec 文件数；标 `client` 的包导出 `./client` 浏览器半，标 `bundle` 的包是 profile/bundle 装配层。
 
 模型可见工具的名称与 schema 见 [tool-catalog.md](../tool-catalog.md)，插件可配置项见 [config-catalog.md](../config-catalog.md)，依赖边见 [module-graph.md](../module-graph.md)。
 
@@ -20,7 +20,7 @@ workspace 共 281 个包，按 group 分节。每行给出包目录、职责（R
 
 - `packages/attachment/attachment` — 持久附件服务边界 入口 `src/index.ts`（tests 3）
 - `packages/attachment/attachment-local` — 这是 `coding-attachment` 的私有本地实现 入口 `src/index.ts`（tests 3）
-- `packages/attachment/file-library` — 全局受管理文件服务 `ctx.fileLibrary` 入口 `src/index.ts`（tests 3）
+- `packages/attachment/file-library` — 全局受管理文件服务 `ctx.fileLibrary` 入口 `src/index.ts`（tests 4）
 
 ## packages/boot
 
@@ -67,6 +67,7 @@ workspace 共 281 个包，按 group 分节。每行给出包目录、职责（R
 - `packages/client/ui-jobs` — Web 后台任务特性的归属方：向 `conversation.overview.jobs` 贡献一个会话作用域列表… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 2）
 - `packages/client/ui-layout` — 本包拥有浏览器根布局、瞬时面板几何和 `ctx.layout` [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 9）
 - `packages/client/ui-message-feedback` — 单条消息反馈插件的浏览器侧：一对 Like/Dislike 按钮加一个可选备注… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 4）
+- `packages/client/ui-mindmap` — 本包没有配置项 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 4）
 - `packages/client/ui-model-selection` — 模型选择插件（浏览器侧）：**两个入口共用一份会话级目录**，由 `ModelDirectoryResolver`… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 3）
 - `packages/client/ui-notes` — 笔记界面：外侧窄导航的「笔记」入口、独立主内容页，以及完全复用对话的 AI 助手栏 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 10）
 - `packages/client/ui-open-in-app` — 右侧工作台的标签、功能菜单与显隐按 Session 管理；文件管理器、文件预览、Git 历史、终端和外部插件内容共用顶栏 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 17）
@@ -277,7 +278,7 @@ workspace 共 281 个包，按 group 分节。每行给出包目录、职责（R
 
 ## packages/notes
 
-- `packages/notes/tool-notes-tabs` — 笔记专用模式的临时标签发布路由与模型工具 入口 `src/index.ts`（tests 1）
+- `packages/notes/tool-notes-tabs` — 本包只在 `notes` 笔记预设挂载，持有临时标签快照、发布路由和 `notes_tabs`、`notes_mindmap` 两个模型工具 入口 `src/index.ts`（tests 1）
 
 ## packages/plan
 

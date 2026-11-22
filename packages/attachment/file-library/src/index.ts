@@ -1,9 +1,8 @@
 /** 全局受管理文件：私有磁盘对象、持久领域元数据和只读列表。@module coding-file-library */
 import { createHash, randomUUID } from 'node:crypto'
 import { constants } from 'node:fs'
-import { lstat, mkdir, open, readdir, readFile, rename, chmod, realpath, rm, rmdir, unlink } from 'node:fs/promises'
-import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path'
-import type { Stats } from 'node:fs'
+import { lstat, mkdir, open, readdir, readFile, chmod, unlink } from 'node:fs/promises'
+import { basename, dirname, isAbsolute, join, resolve, sep } from 'node:path'
 import { Readable } from 'node:stream'
 import { Context, Service } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
@@ -14,10 +13,17 @@ import { FileId } from './brand.ts'
 import { managedFileCategory } from './file-category.ts'
 import { fileDomainSpec } from './spec.ts'
 import { installFileRoutes } from './routes.ts'
-import type { ManagedFileCategory, ManagedFileKind, ManagedFilePage, ManagedFileRecord, NotesTreeNode } from './types.ts'
+import { safeName, syncDirectory } from './private-files.ts'
+import { isMarkdownNoteName, NoteStore } from './notes.ts'
+import type { ManagedFileCategory, ManagedFileKind, ManagedFilePage, ManagedFileRecord, MindMapSnapshot, NotesTreeNode } from './types.ts'
 
 export { FileId } from './brand.ts'
-export type { ManagedFileCategory, ManagedFileKind, ManagedFileRecord, ManagedFilePage, NotesTreeNode } from './types.ts'
+export { isDeckDirectoryName, NOTE_DECK_SUFFIX, NoteConflictError, NoteNotFoundError, StaleNoteError } from './note-path.ts'
+export { NOTE_MINDMAP_SUFFIX } from './mindmap.ts'
+export type {
+  ManagedFileCategory, ManagedFileKind, ManagedFileRecord, ManagedFilePage,
+  MindMapDocument, MindMapEdit, MindMapNode, MindMapSnapshot, NotesTreeNode,
+} from './types.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context { fileLibrary: FileLibrary }
@@ -34,37 +40,6 @@ export interface Config {
 
 const EXTENSION = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp', 'image/gif': 'gif' } as const
 
-/** 笔记接受的 Markdown 扩展名；其他扩展名一律不是笔记。 */
-const NOTE_EXTENSIONS = new Set(['.md', '.markdown'])
-
-/**
- * 幻灯片工程目录的后缀；带此后缀的真实目录在笔记树里是一行幻灯片，
- * 目录内的工程文件由 PPT 服务读写，不进入笔记树。
- */
-export const NOTE_DECK_SUFFIX = '.codingppt'
-
-/** 单篇笔记的原始字节上限；原文区把全文载入内存，超限的条目拒绝读写。 */
-const NOTE_MAX_BYTES = 1024 * 1024
-
-/** 笔记目录树的最大深度；超出说明目录结构异常，整棵树拒绝而不是静默截断。 */
-const NOTE_MAX_DEPTH = 8
-
-/** 单棵笔记树的节点总数上限；目录与文件条目共用这一个预算。 */
-const NOTE_MAX_NODES = 4096
-
-/** 笔记或目录已不存在，调用方可以刷新目录。 */
-export class NoteNotFoundError extends Error {
-  constructor() { super('笔记不存在') }
-}
-
-/** 笔记操作与当前磁盘状态冲突；调用方应刷新目录后重试。 */
-export class NoteConflictError extends Error {}
-
-/** 保存时检测到笔记在读后被外部修改；编辑端应重新加载而不是被覆盖。 */
-export class StaleNoteError extends NoteConflictError {
-  constructor() { super('笔记已被外部修改') }
-}
-
 /** 生成图片副本接受的媒体类型；与附件服务的图片准入格式一致。 */
 export type GeneratedImageMediaType = keyof typeof EXTENSION
 const UPLOAD_MEDIA: Record<string, string> = {
@@ -72,56 +47,6 @@ const UPLOAD_MEDIA: Record<string, string> = {
   pdf: 'application/pdf', txt: 'text/plain', md: 'text/markdown', csv: 'text/csv',
   pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
   docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-}
-
-function safeName(name: string): string {
-  if (typeof name !== 'string' || name.length === 0 || name.length > 1024 || name.includes('\0')) {
-    throw new TypeError('文件名无效')
-  }
-  const leaf = name.split(/[/\\]/u).at(-1)?.replace(/[\u0000-\u001f\u007f]/gu, '').trim()
-  const safe = leaf?.replace(/[^\p{L}\p{N} ._-]/gu, '_').replace(/^\.+/u, '').trim()
-  if (!safe) throw new TypeError('文件名无效')
-  const dot = safe.lastIndexOf('.')
-  const extension = dot > 0 && Buffer.byteLength(safe.slice(dot), 'utf8') <= 32 ? safe.slice(dot) : ''
-  const stem = extension ? safe.slice(0, -extension.length) : safe
-  const reserved = /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/iu.test(safe) ? '_' : ''
-  let result = reserved
-  for (const character of stem) {
-    if (Buffer.byteLength(result + character + extension, 'utf8') > 120) break
-    result += character
-  }
-  result = result.replace(/[ .]+$/u, '') + extension
-  if (!result || result === extension) throw new TypeError('文件名无效')
-  return result
-}
-
-/** 判断目录名是否表示一份幻灯片工程：只认 `.codingppt` 后缀，且后缀前必须有名称。 */
-export function isDeckDirectoryName(name: string): boolean {
-  return name.length > NOTE_DECK_SUFFIX.length && name.toLowerCase().endsWith(NOTE_DECK_SUFFIX)
-}
-
-/** 统计目录树的节点总数（含目录与文件），用于新建前的节点预算检查。 */
-function countTreeNodes(entries: readonly NotesTreeNode[]): number {
-  return entries.reduce((count, entry) => count + 1 + (entry.children === undefined ? 0 : countTreeNodes(entry.children)), 0)
-}
-
-/**
- * 把用户输入的名称规范成幻灯片工程目录名。
- * 缺少后缀时补 `.codingppt`；已带后缀时保留用户写的大小写，只净化名称部分。
- * @throws TypeError 名称为空、只有后缀或含不安全字符时。
- */
-function deckDirectoryName(name: string): string {
-  const leaf = safeName(name)
-  const stem = isDeckDirectoryName(leaf) ? leaf.slice(0, -NOTE_DECK_SUFFIX.length) : leaf
-  // 后缀同样计入 120 字节的安全名预算，避免目录名超出与文件一致的名称上限。
-  let limited = ''
-  for (const character of stem) {
-    if (Buffer.byteLength(limited + character + NOTE_DECK_SUFFIX, 'utf8') > 120) break
-    limited += character
-  }
-  limited = limited.replace(/[ .]+$/u, '')
-  if (limited === '' || limited === '.' || limited === '..') throw new TypeError('幻灯片名称无效')
-  return `${limited}${NOTE_DECK_SUFFIX}`
 }
 
 function identity(value: string, field: string): string {
@@ -146,12 +71,6 @@ async function privateDirectory(path: string, repairPermissions = false): Promis
   }
 }
 
-async function syncDirectory(path: string): Promise<void> {
-  if (process.platform === 'win32') return
-  const handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW)
-  try { await handle.sync() } finally { await handle.close() }
-}
-
 /** 受管理文件与记录分属两个介质；提交失败只回滚当前操作仍拥有的磁盘条目。 */
 export class FileLibrary extends Service {
   static inject = ['storageDomain']
@@ -162,13 +81,7 @@ export class FileLibrary extends Service {
   private domain!: Domain<typeof fileDomainSpec>
   private rootIdentity!: { dev: number; ino: number }
 
-  /** 笔记写操作串行队列，避免改名/删除后的迟到保存重建旧路径。 */
-  private notesWriteQueue: Promise<void> = Promise.resolve()
-  private scheduleNotesWrite<T>(fn: () => Promise<T>): Promise<T> {
-    const next = this.notesWriteQueue.then(fn, fn)
-    this.notesWriteQueue = next.then(() => undefined, () => undefined)
-    return next
-  }
+  private readonly notes: NoteStore
 
   /** 从宿主工作区注册表解析会话归属；未装载注册表或未分组会话返回 undefined。 */
   private workspaceIdForSession(sessionId: string): string | undefined {
@@ -185,6 +98,7 @@ export class FileLibrary extends Service {
     }
     super(ctx, 'fileLibrary')
     this.root = resolve(root)
+    this.notes = new NoteStore(this.notesRootPath(), () => this.directory('notes'))
     installFileRoutes(ctx, this)
   }
 
@@ -483,401 +397,112 @@ export class FileLibrary extends Service {
     return FileId(`${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`)
   }
 
-  /**
-   * 校验客户端提交的相对路径落在笔记根目录内；拒绝空段、`.`、`..` 与绝对路径。
-   * @param relativePath - 斜杠分隔的相对路径。
-   * @returns 规范化相对路径（斜杠分隔）与笔记根目录绝对路径。
+  /** 扫描笔记根目录；节点或深度超出预算时拒绝整棵树。
+   * @returns 按名称排序的相对路径条目。
    */
-  private noteTarget(relativePath: string): { rel: string; target: string } {
-    if (typeof relativePath !== 'string' || relativePath.length === 0 || relativePath.length > 4096
-      || relativePath.includes('\0') || /[\u0001-\u001f\u007f]/u.test(relativePath)
-      || /^[a-zA-Z]:/u.test(relativePath)) {
-      throw new TypeError('笔记路径无效')
-    }
-    const segments = relativePath.split(/[\\/]/u)
-    if (segments[0] === '' || segments.some(segment => segment === '' || segment === '.' || segment === '..')) {
-      throw new TypeError('笔记路径无效')
-    }
-    return { rel: segments.join('/'), target: join(this.root, 'notes', ...segments) }
-  }
+  async notesTree(): Promise<NotesTreeNode[]> { return this.notes.notesTree() }
 
   /**
-   * 确认真实笔记文件：父链 realpath 不逃出笔记根目录（拦符号链接子目录），
-   * 条目本身是真实文件且扩展名为 Markdown。
-   * @param relativePath - 相对笔记根目录的路径。
-   * @returns 绝对路径与规范化相对路径。
+   * 独占新建原生思维导图；中心主题取自最终文件名（去掉后缀）。
+   * @param name - 期望的文件名。
+   * @param directory - 可选的真实相对父目录。
+   * @returns 相对笔记根目录的新文件路径。
    */
-  private async safeNoteFile(relativePath: string): Promise<{ target: string; rel: string }> {
-    const { rel, target } = this.noteTarget(relativePath)
-    const notesDir = await this.directory('notes')
-    const realNotes = await realpath(notesDir)
-    let realParent: string
-    try { realParent = await realpath(dirname(target)) }
-    catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
-      throw new TypeError('笔记不存在')
-    }
-    if (realParent !== realNotes && !realParent.startsWith(realNotes + sep)) throw new TypeError('笔记路径无效')
-    let info
-    try { info = await lstat(target) }
-    catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
-      throw new TypeError('笔记不存在')
-    }
-    if (!info.isFile() || info.isSymbolicLink()) throw new TypeError('笔记不是真实文件')
-    if (!NOTE_EXTENSIONS.has(extname(target).toLowerCase())) throw new TypeError('笔记扩展名无效')
-    return { target, rel }
-  }
-
-  /** 校验笔记父目录属于笔记根目录，并返回其真实目录。 */
-  private async safeNoteDirectory(relativePath: string): Promise<{ target: string; rel: string }> {
-    if (relativePath === '') {
-      const target = await this.directory('notes')
-      return { target, rel: '' }
-    }
-    const { rel, target } = this.noteTarget(relativePath)
-    const notesDir = await this.directory('notes')
-    const realNotes = await realpath(notesDir)
-    let info
-    try { info = await lstat(target) }
-    catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw new TypeError('笔记目录不存在')
-      throw error
-    }
-    if (!info.isDirectory() || info.isSymbolicLink()) throw new TypeError('笔记目录无效')
-    const realTarget = await realpath(target)
-    if (realTarget !== realNotes && !realTarget.startsWith(realNotes + sep)) throw new TypeError('笔记目录无效')
-    await this.ensurePrivateDirs(notesDir, target)
-    return { target, rel }
-  }
-
-  /** 把中间目录逐段修成私有目录：真实目录、属主为本用户、0o700；会话工具按默认权限建的目录在此收紧。 */
-  private async ensurePrivateDirs(notesDir: string, dir: string): Promise<void> {
-    let cursor = notesDir
-    for (const segment of relative(notesDir, dir).split(sep)) {
-      cursor = join(cursor, segment)
-      const info = await lstat(cursor)
-      if (!info.isDirectory() || info.isSymbolicLink()) throw new TypeError('笔记目录无效')
-      const uid = process.getuid?.()
-      if (uid !== undefined && info.uid !== uid) throw new TypeError('笔记目录属主不符')
-      if (process.platform !== 'win32') {
-        await chmod(cursor, 0o700)
-        await syncDirectory(cursor)
-      }
-    }
+  async createNoteMindmap(name: string, directory?: string): Promise<{ path: string }> {
+    return this.notes.mindmaps.create(name, directory)
   }
 
   /**
-   * 扫描笔记根目录返回目录树：Markdown 文件、幻灯片工程目录与普通目录，符号链接条目不进入树。
-   * 幻灯片工程目录只出现为一行 `deck` 条目，其内部的工程文件不参与扫描与节点预算。
-   * 深度与节点总数超限视为结构异常，整棵树拒绝。
-   * @returns 根级条目数组；子节点按名称排序。
+   * 完全校验后独占创建原生笔记；XMind 仅转换首张图的主题树，不保留格式或附件。
+   * @param name - 带原生或 `.xmind` 后缀的来源文件名。
+   * @param data - 来源文件的字节。
+   * @param directory - 可选的真实相对父目录。
+   * @returns 相对笔记根目录的新文件路径。
    */
-  async notesTree(): Promise<NotesTreeNode[]> {
-    const notesDir = await this.directory('notes')
-    let count = 0
-    const scan = async (dirPath: string, prefix: string, depth: number): Promise<NotesTreeNode[]> => {
-      if (depth > NOTE_MAX_DEPTH) throw new TypeError('笔记目录层级过深')
-      const entries = (await readdir(dirPath, { withFileTypes: true })).sort((a, b) => a.name.localeCompare(b.name))
-      const nodes: NotesTreeNode[] = []
-      for (const entry of entries) {
-        count += 1
-        if (count > NOTE_MAX_NODES) throw new TypeError('笔记条目过多')
-        if (entry.isSymbolicLink()) continue
-        const full = join(dirPath, entry.name)
-        const rel = `${prefix}${entry.name}`
-        if (entry.isDirectory() && isDeckDirectoryName(entry.name)) {
-          const info = await lstat(full)
-          if (info.isDirectory() && !info.isSymbolicLink()) nodes.push({ name: entry.name, kind: 'deck', path: rel, mtimeMs: info.mtimeMs })
-        } else if (entry.isDirectory()) {
-          nodes.push({ name: entry.name, kind: 'dir', path: rel, mtimeMs: (await lstat(full)).mtimeMs, children: await scan(full, `${rel}/`, depth + 1) })
-        } else if (entry.isFile() && NOTE_EXTENSIONS.has(extname(entry.name).toLowerCase())) {
-          const info = await lstat(full)
-          if (info.isFile() && !info.isSymbolicLink()) nodes.push({ name: entry.name, kind: 'file', path: rel, mtimeMs: info.mtimeMs })
-        }
-      }
-      return nodes
-    }
-    return await scan(notesDir, '', 0)
+  async importNoteMindmap(name: string, data: Uint8Array, directory?: string): Promise<{ path: string }> {
+    return this.notes.mindmaps.import(name, data, directory)
   }
 
   /**
-   * 读取笔记原文与其修改时间；保存冲突检测的基准时间由此取得。
-   * @param relativePath - 相对笔记根目录的路径。
-   * @returns 规范化路径、全文与毫秒修改时间。
+   * 读取结构和实际磁盘字节对应的版本；无效、超限或已删除的笔记不可读取。
+   * @param path - 相对笔记根目录的真实思维导图文件路径。
+   * @returns 规范路径、内容版本和结构化文档。
+   */
+  async readNoteMindmap(path: string): Promise<MindMapSnapshot> {
+    return this.notes.mindmaps.read(path)
+  }
+
+  /**
+   * 串行校验基准版本并原子提交整批变更；任何无效编辑都不会落盘。
+   * @param path - 相对笔记根目录的真实思维导图文件路径。
+   * @param revision - 读取时取得的不透明版本；过期时抛出 `NoteConflictError`。
+   * @param edits - 非空且不超过 32 项的编辑操作。
+   * @returns 提交后的快照；文件或父目录已消失时抛出 `NoteNotFoundError`。
+   */
+  async editNoteMindmap(path: string, revision: string, edits: unknown): Promise<MindMapSnapshot> {
+    return this.notes.mindmaps.edit(path, revision, edits)
+  }
+
+  /** 读取 Markdown 原文与保存所需的时间基准。
+   * @param relativePath - 相对笔记根目录的 Markdown 路径。
+   * @returns 规范路径、原文和毫秒修改时间。
    */
   async readNote(relativePath: string): Promise<{ path: string; content: string; mtimeMs: number }> {
-    const { target, rel } = await this.safeNoteFile(relativePath)
-    const info = await lstat(target)
-    if (info.size > NOTE_MAX_BYTES) throw new TypeError('笔记超过大小上限')
-    return { path: rel, content: await readFile(target, 'utf8'), mtimeMs: info.mtimeMs }
+    return this.notes.readNote(relativePath)
   }
 
-  /**
-   * 写入笔记；没有修改时间基准时按需创建中间目录，写入经临时文件原子改名并同步目录。
-   * 传入 `baseMtimeMs` 时目标文件与父目录必须仍存在，外部修改或删除都拒绝覆盖。
-   * @param relativePath - 相对笔记根目录的路径，必须使用 Markdown 扩展名。
+  /** 原子保存 Markdown；带时间基准时拒绝覆盖变更或恢复已删除的文件。
+   * @param relativePath - 相对笔记根目录的 Markdown 路径。
    * @param content - 笔记全文。
    * @param baseMtimeMs - 读取时的修改时间（可选）。
-   * @returns 规范化路径与写入后的修改时间。
+   * @returns 规范路径和写入后的毫秒修改时间。
    */
   async saveNote(relativePath: string, content: string, baseMtimeMs?: number): Promise<{ path: string; mtimeMs: number }> {
-    return this.scheduleNotesWrite(async () => {
-      const { rel, target } = this.noteTarget(relativePath)
-      if (!NOTE_EXTENSIONS.has(extname(target).toLowerCase())) throw new TypeError('笔记必须使用 Markdown 扩展名')
-      if (Buffer.byteLength(content, 'utf8') > NOTE_MAX_BYTES) throw new TypeError('笔记超过大小上限')
-      const notesDir = await this.directory('notes')
-      const realNotes = await realpath(notesDir)
-      const dir = dirname(target)
-      // 只有没有版本基准的首次写入才允许创建父目录；带基准的迟到保存不得复活旧路径。
-      if (baseMtimeMs === undefined && dir !== notesDir) {
-        const exists = await lstat(dir).then(() => true).catch((error: unknown) => {
-          if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false
-          throw error
-        })
-        if (!exists) {
-          await mkdir(dir, { recursive: true, mode: 0o700 })
-          await this.ensurePrivateDirs(notesDir, dir)
-        }
-      }
-      let realParent: string
-      try { realParent = await realpath(dir) }
-      catch (error) {
-        if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw new NoteNotFoundError()
-        throw error
-      }
-      if (realParent !== realNotes && !realParent.startsWith(realNotes + sep)) throw new TypeError('笔记路径无效')
-      let existing: Stats | undefined
-      try { existing = await lstat(target) }
-      catch (error) {
-        if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-          if (baseMtimeMs !== undefined) throw new NoteNotFoundError()
-          existing = undefined
-        } else {
-          throw error
-        }
-      }
-      if (existing !== undefined) {
-        if (!existing.isFile() || existing.isSymbolicLink()) throw new TypeError('笔记不是真实文件')
-        if (baseMtimeMs !== undefined && Math.floor(existing.mtimeMs) !== Math.floor(baseMtimeMs)) throw new StaleNoteError()
-      }
-      const tmp = `${target}.${randomUUID()}.tmp`
-      const handle = await open(tmp, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600)
-      try {
-        await handle.writeFile(Buffer.from(content, 'utf8'))
-        await handle.sync()
-      } finally {
-        await handle.close()
-      }
-      try {
-        await rename(tmp, target)
-        await syncDirectory(dir)
-        if (dir !== notesDir) await syncDirectory(notesDir)
-      } catch (error) {
-        try { await unlink(tmp) } catch { /* 原错误是改名失败；只回滚本次仍拥有的临时文件。 */ }
-        throw error
-      }
-      return { path: rel, mtimeMs: (await lstat(target)).mtimeMs }
-    })
+    return this.notes.saveNote(relativePath, content, baseMtimeMs)
   }
 
-  /**
-   * 在指定笔记目录创建笔记；名称按文件库规则净化，缺省扩展名补 `.md`，同名已存在时拒绝。
-   * 传入 `content` 时把导入的原文与文件一并落盘，避免「先建空文件再写入」留下半个结果。
-   * @param name - 用户提交的文件名。
-   * @param directory - 相对笔记根目录的父目录，空字符串表示根目录。
-   * @param content - 初始原文；省略时创建空笔记。
+  /** 独占创建 Markdown，可与初始原文一起落盘。
+   * @param name - 文件名；省略后缀时补 `.md`。
+   * @param directory - 可选的相对父目录。
+   * @param content - 可选的初始原文。
    * @returns 相对笔记根目录的路径。
-   * @throws TypeError 名称、父目录或内容不安全，或同名条目已存在时。
    */
-  async createNote(name: string, directory: string = '', content?: string): Promise<{ path: string }> {
-    const leaf = safeName(name)
-    const fileName = NOTE_EXTENSIONS.has(extname(leaf).toLowerCase()) ? leaf : `${leaf}.md`
-    if (content !== undefined && typeof content !== 'string') throw new TypeError('笔记内容无效')
-    if (content !== undefined && Buffer.byteLength(content, 'utf8') > NOTE_MAX_BYTES) {
-      throw new TypeError('笔记超过大小上限')
-    }
-    const parent = await this.safeNoteDirectory(directory)
-    const target = join(parent.target, fileName)
-    const flags = constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW
-    const handle = await open(target, flags, 0o600).catch((error: unknown) => {
-      if ((error as NodeJS.ErrnoException).code === 'EEXIST') throw new TypeError('笔记已存在')
-      throw error
-    })
-    let writeFailure: unknown
-    try {
-      if (content !== undefined && content !== '') {
-        await handle.writeFile(Buffer.from(content, 'utf8'))
-        await handle.sync()
-      }
-    } catch (error) {
-      writeFailure = error
-    } finally {
-      await handle.close()
-    }
-    if (writeFailure !== undefined) {
-      try { await unlink(target) } catch { /* 只清理本次独占创建且写入失败的条目。 */ }
-      throw writeFailure instanceof Error ? writeFailure : new Error('笔记写入失败')
-    }
-    await syncDirectory(parent.target)
-    return { path: parent.rel === '' ? fileName : `${parent.rel}/${fileName}` }
+  async createNote(name: string, directory?: string, content?: string): Promise<{ path: string }> {
+    return this.notes.createNote(name, directory, content)
   }
 
-  /**
-   * 在笔记树中独占创建一份幻灯片工程目录（`{name}.codingppt`）；这是只供 Host 调用的 PPT 服务 seam。
-   * 目录由本方法以 `0o700` 独占创建并同步父目录，工程内容由调用方在自己的目录句柄里写入。
-   * @param name - 用户提交的名称；缺省补 `.codingppt` 后缀。
-   * @param directory - 相对笔记根目录的真实私有父目录，空字符串表示根目录。
-   * @returns 相对笔记根目录的目录路径，以及只在仍拥有本次创建的目录时递归清理的句柄。
-   * @throws TypeError 名称或父目录不安全，或同名条目已存在时。
+  /** 仅供 Host 独占创建幻灯片目录；不会写入工程内容。
+   * @param name - 工程名称；缺少 `.codingppt` 时自动补齐。
+   * @param directory - 可选的真实相对父目录。
+   * @returns 工程的相对路径和只清理本次创建条目的句柄。
    */
-  async createNoteDeck(name: string, directory: string = ''): Promise<{ path: string; remove: () => Promise<void> }> {
-    return this.scheduleNotesWrite(async () => {
-      const leaf = deckDirectoryName(name)
-      const parent = await this.safeNoteDirectory(directory)
-      const parentSegments = parent.rel === '' ? [] : parent.rel.split('/')
-      if (parentSegments.length + 1 > NOTE_MAX_DEPTH) throw new TypeError('笔记目录层级过深')
-      if (countTreeNodes(await this.notesTree()) >= NOTE_MAX_NODES) throw new TypeError('笔记条目过多')
-      const target = join(parent.target, leaf)
-      try { await mkdir(target, { mode: 0o700 }) }
-      catch (error) {
-        if ((error as NodeJS.ErrnoException).code === 'EEXIST') throw new TypeError('幻灯片已存在')
-        throw error
-      }
-      const owned = await lstat(target)
-      try {
-        await syncDirectory(parent.target)
-        const notesDir = await this.directory('notes')
-        if (parent.target !== notesDir) await syncDirectory(notesDir)
-      } catch (error) {
-        try { await rmdir(target) } catch { /* 原错误是同步失败；只回滚本次仍为空的目录。 */ }
-        throw error
-      }
-      return {
-        path: parent.rel === '' ? leaf : `${parent.rel}/${leaf}`,
-        // 只在目录仍是本次创建的那一个时递归清理，避免误删后来被替换或被填满的目录。
-        remove: async () => {
-          try {
-            const current = await lstat(target)
-            if (!current.isDirectory() || current.isSymbolicLink() || current.dev !== owned.dev || current.ino !== owned.ino) return
-            await rm(target, { recursive: true })
-            await syncDirectory(parent.target)
-          } catch { /* 清理不能覆盖原始创建错误。 */ }
-        },
-      }
-    })
+  async createNoteDeck(name: string, directory?: string): Promise<{ path: string; remove: () => Promise<void> }> {
+    return this.notes.createNoteDeck(name, directory)
   }
 
-  /**
-   * 在指定笔记目录创建子目录；只接受单个目录名，拒绝覆盖现有条目。
-   * @param name - 用户提交的目录名。
-   * @param parent - 相对笔记根目录的父目录，空字符串表示根目录。
+  /** 独占创建笔记子目录。
+   * @param name - 单段目录名。
+   * @param parent - 可选的相对父目录。
    * @returns 相对笔记根目录的新目录路径。
    */
-  async createNoteDirectory(name: string, parent: string = ''): Promise<{ path: string }> {
-    if (typeof name !== 'string' || name.length === 0 || name.length > 1024 || name.includes('\0')
-      || /[\u0001-\u001f\u007f]/u.test(name) || /[\\/]/u.test(name) || name === '.' || name === '..'
-      || /^[a-zA-Z]:/u.test(name)) {
-      throw new TypeError('目录名无效')
-    }
-    const leaf = safeName(name)
-    const parentDirectory = await this.safeNoteDirectory(parent)
-    const parentSegments = parentDirectory.rel === '' ? [] : parentDirectory.rel.split('/')
-    if (parentSegments.length + 1 > NOTE_MAX_DEPTH) throw new TypeError('笔记目录层级过深')
-    if (countTreeNodes(await this.notesTree()) >= NOTE_MAX_NODES) throw new TypeError('笔记条目过多')
-    const target = join(parentDirectory.target, leaf)
-    try { await mkdir(target, { mode: 0o700 }) }
-    catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'EEXIST') throw new TypeError('笔记目录已存在')
-      throw error
-    }
-    await syncDirectory(parentDirectory.target)
-    return { path: parentDirectory.rel === '' ? leaf : `${parentDirectory.rel}/${leaf}` }
+  async createNoteDirectory(name: string, parent?: string): Promise<{ path: string }> {
+    return this.notes.createNoteDirectory(name, parent)
   }
 
-  /**
-   * 在原文件或目录的同一父目录内安全改名；Markdown 与幻灯片工程目录保留自己的后缀，不覆盖已有条目。
-   * @param relativePath - 要改名的 Markdown 文件、幻灯片工程目录或普通目录路径。
-   * @param name - 新的单段名称；Markdown 与幻灯片工程目录可省略后缀，但不能指定其他扩展名。
+  /** 在同一父目录内改名，拒绝覆盖并保留文件与幻灯片工程的格式。
+   * @param relativePath - 文件或目录的相对路径。
+   * @param name - 新的单段名称。
    * @returns 改名后的相对路径。
    */
   async renameNote(relativePath: string, name: string): Promise<{ path: string }> {
-    return this.scheduleNotesWrite(async () => {
-      const { rel, target } = this.noteTarget(relativePath)
-      if (typeof name !== 'string' || name.length === 0 || name.length > 1024
-        || name.includes('\0') || /[\\/]/u.test(name) || name === '.' || name === '..'
-        || /^[a-zA-Z]:/u.test(name)) throw new TypeError('名称无效')
-      const notesDir = await this.directory('notes')
-      const realNotes = await realpath(notesDir)
-      const parent = dirname(target)
-      const realParent = await realpath(parent).catch((error: unknown) => {
-        if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw new NoteNotFoundError()
-        throw error
-      })
-      if (realParent !== realNotes && !realParent.startsWith(realNotes + sep)) throw new TypeError('笔记路径无效')
-      const current = await lstat(target).catch((error: unknown) => {
-        if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw new NoteNotFoundError()
-        throw error
-      })
-      if (current.isSymbolicLink() || !current.isFile() && !current.isDirectory()) throw new TypeError('笔记条目无效')
-      const sourceExtension = current.isFile() ? extname(target) : ''
-      if (current.isFile() && !NOTE_EXTENSIONS.has(sourceExtension.toLowerCase())) throw new TypeError('笔记扩展名无效')
-      const leaf = safeName(name)
-      const requestedExtension = current.isFile() ? extname(leaf) : ''
-      if (current.isFile() && requestedExtension !== '' && requestedExtension.toLowerCase() !== sourceExtension.toLowerCase()) {
-        throw new TypeError('文件扩展名不可更改')
-      }
-      const fileName = current.isFile()
-        ? `${requestedExtension === '' ? leaf : leaf.slice(0, -requestedExtension.length)}${sourceExtension}`
-        // 幻灯片工程目录与文件一样保留自己的后缀，用户只改名称部分。
-        : isDeckDirectoryName(basename(target)) ? deckDirectoryName(leaf) : leaf
-      const targetPath = join(parent, fileName)
-      if (targetPath === target) return { path: rel }
-      try { await lstat(targetPath); throw new NoteConflictError('笔记已存在') }
-      catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
-          throw error
-        }
-      }
-      await rename(target, targetPath)
-      await syncDirectory(parent)
-      return { path: relative(notesDir, targetPath).split(sep).join('/') }
-    })
+    return this.notes.renameNote(relativePath, name)
   }
 
-  /**
-   * 删除单个 Markdown 文件或整个目录（含幻灯片工程目录）；拒绝将符号链接作为目标，目录中的链接只移除链接本身。
+  /** 删除单个笔记文件或递归删除真实目录，不跟随符号链接。
    * @param relativePath - 要删除的文件或目录路径。
-   * @returns 删除完成后兑现；目标不存在或路径越界时拒绝。
+   * @returns 删除完成。
    */
-  async deleteNote(relativePath: string): Promise<void> {
-    return this.scheduleNotesWrite(async () => {
-      const { target } = this.noteTarget(relativePath)
-      const notesDir = await this.directory('notes')
-      const realNotes = await realpath(notesDir)
-      const parent = dirname(target)
-      const realParent = await realpath(parent).catch((error: unknown) => {
-        if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw new NoteNotFoundError()
-        throw error
-      })
-      if (realParent !== realNotes && !realParent.startsWith(realNotes + sep)) throw new TypeError('笔记路径无效')
-      const entry = join(realParent, basename(target))
-      const current = await lstat(entry).catch((error: unknown) => {
-        if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw new NoteNotFoundError()
-        throw error
-      })
-      if (current.isSymbolicLink() || !current.isFile() && !current.isDirectory()) throw new TypeError('笔记条目无效')
-      if (current.isDirectory()) {
-        // 递归前确认实际目录是根目录的真子路径，不能通过文件系统别名选中根目录本身。
-        if (!(await realpath(entry)).startsWith(realNotes + sep)) throw new TypeError('笔记路径无效')
-        await rm(entry, { recursive: true })
-      } else {
-        if (!NOTE_EXTENSIONS.has(extname(entry).toLowerCase())) throw new TypeError('笔记扩展名无效')
-        await unlink(entry)
-      }
-      await syncDirectory(realParent)
-    })
-  }
+  async deleteNote(relativePath: string): Promise<void> { return this.notes.deleteNote(relativePath) }
 
   /**
    * 无目录笔记的实时记录：笔记根目录直属的 Markdown 文件（不含子目录条目），
@@ -892,7 +517,7 @@ export class FileLibrary extends Service {
     const records: ManagedFileRecord[] = []
     for (const entry of entries) {
       if (!entry.isFile() || entry.isSymbolicLink()) continue
-      if (!NOTE_EXTENSIONS.has(extname(entry.name).toLowerCase())) continue
+      if (!isMarkdownNoteName(entry.name)) continue
       const relativePath = `notes/${entry.name}`
       if (stored.has(relativePath)) continue
       const info = await lstat(join(notesDir, entry.name))

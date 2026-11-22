@@ -3,7 +3,9 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from 'coding-client-connection'
 import type {} from 'coding-host-webserver'
-import { NoteConflictError, NoteNotFoundError, type FileLibrary } from './index.ts'
+import type { FileLibrary } from './index.ts'
+import { mindmapImportByteLimit } from './mindmap-notes.ts'
+import { NoteConflictError, NoteNotFoundError } from './note-path.ts'
 
 function trusted(ctx: Context, req: IncomingMessage, res: ServerResponse): boolean {
   const rejected = ctx.connection.requestRejection(req)
@@ -250,6 +252,7 @@ export function installFileRoutes(ctx: Context, service: FileLibrary): void {
           await service.deleteNote(body.path)
           res.writeHead(204, { 'cache-control': 'private, no-store' }); res.end()
         } catch (error) {
+          if (error instanceof NoteConflictError) { json(res, 409, { error: error.message }); return }
           if (error instanceof NoteNotFoundError) { json(res, 404, { error: error.message }); return }
           if (error instanceof TypeError) { json(res, 400, { error: error.message }); return }
           webCtx.logger.warn('file-library notes delete request failed', error)
@@ -265,25 +268,105 @@ export function installFileRoutes(ctx: Context, service: FileLibrary): void {
         json(res, 200, { path: service.notesRootPath() })
       },
     }), 'file-library: GET /api/notes/cwd')
+    installMindmapRoutes(webCtx, service)
   })
+}
+
+function query(req: IncomingMessage, allowed: readonly string[]): URLSearchParams {
+  const params = new URL(req.url ?? '/', 'http://127.0.0.1').searchParams
+  for (const key of params.keys()) {
+    if (!allowed.includes(key) || params.getAll(key).length !== 1) throw new TypeError('思维导图请求参数无效')
+  }
+  return params
+}
+
+function requestType(req: IncomingMessage, expected: string): void {
+  if (req.headers['content-type']?.split(';', 1)[0]?.trim().toLowerCase() !== expected) {
+    throw new TypeError('思维导图请求的内容格式无效')
+  }
+}
+
+function installMindmapRoutes(ctx: Context, service: FileLibrary): void {
+  function route(
+    name: string, method: 'GET' | 'POST', status: number, respond: (req: IncomingMessage) => Promise<unknown>,
+  ): void {
+    const path = `/api/notes/mindmap/${name}`
+    ctx.effect(() => ctx.webServer.register({
+      kind: 'exact', path,
+      handler: async (req, res) => {
+        res.setHeader('cache-control', 'private, no-store')
+        if (!trusted(ctx, req, res)) return
+        if (req.method !== method) { res.writeHead(405, { allow: method }); res.end(); return }
+        try {
+          json(res, status, await respond(req))
+        } catch (error) {
+          if (error instanceof NoteConflictError) { json(res, 409, { error: error.message }); return }
+          if (error instanceof NoteNotFoundError) { json(res, 404, { error: error.message }); return }
+          if (error instanceof TypeError) { json(res, 400, { error: error.message }); return }
+          ctx.logger.warn('file-library notes mindmap request failed', error)
+          json(res, 503, { error: '思维导图暂不可用' })
+        }
+      },
+    }), `file-library: ${method} ${path}`)
+  }
+
+  route('create', 'POST', 201, async (req) => {
+    query(req, [])
+    requestType(req, 'application/json')
+    const body = await readJsonBody(req)
+    if (Object.keys(body).some(key => key !== 'name' && key !== 'directory')
+      || typeof body.name !== 'string' || body.directory !== undefined && typeof body.directory !== 'string') {
+      throw new TypeError('新建思维导图的载荷无效')
+    }
+    return service.createNoteMindmap(body.name, body.directory)
+  })
+  route('import', 'POST', 201, async (req) => {
+    const params = query(req, ['name', 'directory'])
+    const name = params.get('name')
+    if (!name) throw new TypeError('思维导图文件名无效')
+    requestType(req, 'application/octet-stream')
+    const limit = mindmapImportByteLimit(name)
+    const bytes = await readBody(req, limit, '导入载荷无效', `思维导图上传超过 ${limit / (1024 * 1024)} MiB`)
+    return service.importNoteMindmap(name, bytes, params.get('directory') ?? undefined)
+  })
+  route('read', 'GET', 200, async req => service.readNoteMindmap(query(req, ['path']).get('path') ?? ''))
+  route('edit', 'POST', 200, async (req) => {
+    query(req, [])
+    requestType(req, 'application/json')
+    const body = await readJsonBody(req)
+    if (Object.keys(body).some(key => key !== 'path' && key !== 'revision' && key !== 'edits')
+      || typeof body.path !== 'string' || typeof body.revision !== 'string') {
+      throw new TypeError('编辑思维导图的载荷无效')
+    }
+    return service.editNoteMindmap(body.path, body.revision, body.edits)
+  })
+}
+
+/** 不以 Content-Length 取代流限额；分块请求也在收齐之前受同一预算约束。 */
+async function readBody(req: IncomingMessage, max: number, invalid: string, oversized: string): Promise<Buffer> {
+  if (Number(req.headers['content-length']) > max) {
+    req.resume()
+    throw new TypeError(oversized)
+  }
+  const chunks: Uint8Array[] = []
+  let total = 0
+  for await (const chunk of req.iterator({ destroyOnReturn: false }) as AsyncIterable<unknown>) {
+    if (!(chunk instanceof Uint8Array)) { req.resume(); throw new TypeError(invalid) }
+    total += chunk.byteLength
+    if (total > max) { req.resume(); throw new TypeError(oversized) }
+    chunks.push(chunk)
+  }
+  return Buffer.concat(chunks, total)
 }
 
 /** 读取限长的 JSON 请求体；超限或非法 JSON 按无效载荷拒绝。 */
 async function readJsonBody(req: IncomingMessage): Promise<Record<string, unknown>> {
-  const chunks: Uint8Array[] = []
-  let total = 0
-  for await (const chunk of req) {
-    if (!(chunk instanceof Uint8Array)) throw new TypeError('保存载荷无效')
-    total += chunk.byteLength
-    if (total > 2 * 1024 * 1024) throw new TypeError('保存载荷过大')
-    chunks.push(chunk)
-  }
+  const bytes = await readBody(req, 2 * 1024 * 1024, '保存载荷无效', '保存载荷过大')
   try {
-    const parsed: unknown = JSON.parse(Buffer.concat(chunks.map(chunk => Buffer.from(chunk))).toString('utf8'))
+    const parsed: unknown = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes))
     if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) throw new TypeError('保存载荷无效')
     return parsed as Record<string, unknown>
-  } catch (error) {
-    if (error instanceof TypeError) throw error
+  } catch {
     throw new TypeError('保存载荷无效')
   }
 }

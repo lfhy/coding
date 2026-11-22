@@ -124,6 +124,39 @@ interface ManagedFilePage {
 
 `saveUpload` 在读流前和提交记录前调用消费方的会话校验；`saveGeneratedImage` 只接受附件服务已准入的 PNG/JPEG/WebP/GIF 字节，由 `ctx.imageGeneration` 在生成图片入库前复制；`getUpload` 对真实、已登记的上传文件返回安全保存名等记录，`isManagedUploadPath` 复用同一检查。浏览器读取面只有回环同源的 `GET /api/files/list` 分页路由，响应不含绝对路径或文件内容，[ui-files](../../packages/client/ui-files/README.md) 的设置分区是它的消费方。删除、重命名与配额策略未定义，见[包 README](../../packages/attachment/file-library/README.md)。
 
+### 思维导图文档与快照
+
+文件库的结构化导图读写与 Markdown 入口隔离。`readNoteMindmap` 返回文档与对应版本；`editNoteMindmap` 使用该版本提交整批编辑，版本变化或任一操作不合法时不会写入。路径和导入限额见[文件库的思维导图说明](../../packages/attachment/file-library/README.md)。
+
+```ts type-equiv
+/** 主题节点；同一文档内 `id` 唯一，编辑主题内容或位置不改变该 ID。 */
+export interface MindMapNode {
+  id: string
+  text: string
+  children: MindMapNode[]
+}
+
+/** 原生思维导图的文件结构；版本由 Host 校验。 */
+export interface MindMapDocument {
+  version: 1
+  root: MindMapNode
+}
+
+/** 一项结构化编辑；移动位置为移除原节点后目标子节点数组的零基插入位置。 */
+export type MindMapEdit =
+  | { op: 'add'; parentId: string; text: string }
+  | { op: 'rename'; id: string; text: string }
+  | { op: 'move'; id: string; parentId: string; index?: number }
+  | { op: 'delete'; id: string }
+
+/** 可编辑的磁盘快照；`path` 为笔记根目录的相对路径，`revision` 随内容字节变化。 */
+export interface MindMapSnapshot {
+  path: string
+  revision: string
+  document: MindMapDocument
+}
+```
+
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
 <a id="cordis-surface"></a>
@@ -244,72 +277,90 @@ async read(id: string): Promise<{ record: ManagedFileRecord; data: Uint8Array } 
  */
 notesRootPath(): string
 
-/**
- * 扫描笔记根目录返回目录树：Markdown 文件、幻灯片工程目录与普通目录，符号链接条目不进入树。
- * 幻灯片工程目录只出现为一行 `deck` 条目，其内部的工程文件不参与扫描与节点预算。
- * 深度与节点总数超限视为结构异常，整棵树拒绝。
- * @returns 根级条目数组；子节点按名称排序。
+/** 扫描笔记根目录；节点或深度超出预算时拒绝整棵树。
+ * @returns 按名称排序的相对路径条目。
  */
 async notesTree(): Promise<NotesTreeNode[]>
 
 /**
- * 读取笔记原文与其修改时间；保存冲突检测的基准时间由此取得。
- * @param relativePath - 相对笔记根目录的路径。
- * @returns 规范化路径、全文与毫秒修改时间。
+ * 独占新建原生思维导图；中心主题取自最终文件名（去掉后缀）。
+ * @param name - 期望的文件名。
+ * @param directory - 可选的真实相对父目录。
+ * @returns 相对笔记根目录的新文件路径。
+ */
+async createNoteMindmap(name: string, directory?: string): Promise<{ path: string }>
+
+/**
+ * 完全校验后独占创建原生笔记；XMind 仅转换首张图的主题树，不保留格式或附件。
+ * @param name - 带原生或 `.xmind` 后缀的来源文件名。
+ * @param data - 来源文件的字节。
+ * @param directory - 可选的真实相对父目录。
+ * @returns 相对笔记根目录的新文件路径。
+ */
+async importNoteMindmap(name: string, data: Uint8Array, directory?: string): Promise<{ path: string }>
+
+/**
+ * 读取结构和实际磁盘字节对应的版本；无效、超限或已删除的笔记不可读取。
+ * @param path - 相对笔记根目录的真实思维导图文件路径。
+ * @returns 规范路径、内容版本和结构化文档。
+ */
+async readNoteMindmap(path: string): Promise<MindMapSnapshot>
+
+/**
+ * 串行校验基准版本并原子提交整批变更；任何无效编辑都不会落盘。
+ * @param path - 相对笔记根目录的真实思维导图文件路径。
+ * @param revision - 读取时取得的不透明版本；过期时抛出 `NoteConflictError`。
+ * @param edits - 非空且不超过 32 项的编辑操作。
+ * @returns 提交后的快照；文件或父目录已消失时抛出 `NoteNotFoundError`。
+ */
+async editNoteMindmap(path: string, revision: string, edits: unknown): Promise<MindMapSnapshot>
+
+/** 读取 Markdown 原文与保存所需的时间基准。
+ * @param relativePath - 相对笔记根目录的 Markdown 路径。
+ * @returns 规范路径、原文和毫秒修改时间。
  */
 async readNote(relativePath: string): Promise<{ path: string; content: string; mtimeMs: number }>
 
-/**
- * 写入笔记；没有修改时间基准时按需创建中间目录，写入经临时文件原子改名并同步目录。
- * 传入 `baseMtimeMs` 时目标文件与父目录必须仍存在，外部修改或删除都拒绝覆盖。
- * @param relativePath - 相对笔记根目录的路径，必须使用 Markdown 扩展名。
+/** 原子保存 Markdown；带时间基准时拒绝覆盖变更或恢复已删除的文件。
+ * @param relativePath - 相对笔记根目录的 Markdown 路径。
  * @param content - 笔记全文。
  * @param baseMtimeMs - 读取时的修改时间（可选）。
- * @returns 规范化路径与写入后的修改时间。
+ * @returns 规范路径和写入后的毫秒修改时间。
  */
 async saveNote(relativePath: string, content: string, baseMtimeMs?: number): Promise<{ path: string; mtimeMs: number }>
 
-/**
- * 在指定笔记目录创建笔记；名称按文件库规则净化，缺省扩展名补 `.md`，同名已存在时拒绝。
- * 传入 `content` 时把导入的原文与文件一并落盘，避免「先建空文件再写入」留下半个结果。
- * @param name - 用户提交的文件名。
- * @param directory - 相对笔记根目录的父目录，空字符串表示根目录。
- * @param content - 初始原文；省略时创建空笔记。
+/** 独占创建 Markdown，可与初始原文一起落盘。
+ * @param name - 文件名；省略后缀时补 `.md`。
+ * @param directory - 可选的相对父目录。
+ * @param content - 可选的初始原文。
  * @returns 相对笔记根目录的路径。
- * @throws TypeError 名称、父目录或内容不安全，或同名条目已存在时。
  */
-async createNote(name: string, directory: string = '', content?: string): Promise<{ path: string }>
+async createNote(name: string, directory?: string, content?: string): Promise<{ path: string }>
 
-/**
- * 在笔记树中独占创建一份幻灯片工程目录（`{name}.codingppt`）；这是只供 Host 调用的 PPT 服务 seam。
- * 目录由本方法以 `0o700` 独占创建并同步父目录，工程内容由调用方在自己的目录句柄里写入。
- * @param name - 用户提交的名称；缺省补 `.codingppt` 后缀。
- * @param directory - 相对笔记根目录的真实私有父目录，空字符串表示根目录。
- * @returns 相对笔记根目录的目录路径，以及只在仍拥有本次创建的目录时递归清理的句柄。
- * @throws TypeError 名称或父目录不安全，或同名条目已存在时。
+/** 仅供 Host 独占创建幻灯片目录；不会写入工程内容。
+ * @param name - 工程名称；缺少 `.codingppt` 时自动补齐。
+ * @param directory - 可选的真实相对父目录。
+ * @returns 工程的相对路径和只清理本次创建条目的句柄。
  */
-async createNoteDeck(name: string, directory: string = ''): Promise<{ path: string; remove: () => Promise<void> }>
+async createNoteDeck(name: string, directory?: string): Promise<{ path: string; remove: () => Promise<void> }>
 
-/**
- * 在指定笔记目录创建子目录；只接受单个目录名，拒绝覆盖现有条目。
- * @param name - 用户提交的目录名。
- * @param parent - 相对笔记根目录的父目录，空字符串表示根目录。
+/** 独占创建笔记子目录。
+ * @param name - 单段目录名。
+ * @param parent - 可选的相对父目录。
  * @returns 相对笔记根目录的新目录路径。
  */
-async createNoteDirectory(name: string, parent: string = ''): Promise<{ path: string }>
+async createNoteDirectory(name: string, parent?: string): Promise<{ path: string }>
 
-/**
- * 在原文件或目录的同一父目录内安全改名；Markdown 与幻灯片工程目录保留自己的后缀，不覆盖已有条目。
- * @param relativePath - 要改名的 Markdown 文件、幻灯片工程目录或普通目录路径。
- * @param name - 新的单段名称；Markdown 与幻灯片工程目录可省略后缀，但不能指定其他扩展名。
+/** 在同一父目录内改名，拒绝覆盖并保留文件与幻灯片工程的格式。
+ * @param relativePath - 文件或目录的相对路径。
+ * @param name - 新的单段名称。
  * @returns 改名后的相对路径。
  */
 async renameNote(relativePath: string, name: string): Promise<{ path: string }>
 
-/**
- * 删除单个 Markdown 文件或整个目录（含幻灯片工程目录）；拒绝将符号链接作为目标，目录中的链接只移除链接本身。
+/** 删除单个笔记文件或递归删除真实目录，不跟随符号链接。
  * @param relativePath - 要删除的文件或目录路径。
- * @returns 删除完成后兑现；目标不存在或路径越界时拒绝。
+ * @returns 删除完成。
  */
 async deleteNote(relativePath: string): Promise<void>
 
@@ -335,7 +386,7 @@ async getUpload(path: string): Promise<ManagedFileRecord | undefined>
 async isManagedUploadPath(path: string): Promise<boolean>
 ```
 
-Source: [`packages/attachment/file-library/src/index.ts:156`](../../packages/attachment/file-library/src/index.ts)
+Source: [`packages/attachment/file-library/src/index.ts:75`](../../packages/attachment/file-library/src/index.ts)
 
 <a id="ctximagegeneration--imagegeneration"></a>
 

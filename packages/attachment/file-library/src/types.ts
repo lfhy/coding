@@ -10,13 +10,42 @@ export interface NotesTreeNode {
   /**
    * `deck` 是以 `.codingppt` 结尾的幻灯片工程目录：它是一行幻灯片条目而不是可展开目录，
    * 因此不携带 `children`。目录内的工程文件由 PPT 工作台读写，不进入笔记树。
+   * `mindmap` 是独立的结构化笔记文件，不能通过 Markdown 读写入口处理。
    */
-  kind: 'dir' | 'file' | 'deck'
+  kind: 'dir' | 'file' | 'deck' | 'mindmap'
   path: string
   /** 文件修改时间戳（毫秒）；目录取其最后一次写入时间，供编辑端检测外部改动。 */
   mtimeMs: number
   children?: NotesTreeNode[] | undefined
 }
+
+/** 主题节点；同一文档内 `id` 唯一，编辑主题内容或位置不改变该 ID。 */
+export interface MindMapNode {
+  id: string
+  text: string
+  children: MindMapNode[]
+}
+
+/** 原生思维导图的文件结构；版本由 Host 校验。 */
+export interface MindMapDocument {
+  version: 1
+  root: MindMapNode
+}
+
+/** 一项结构化编辑；移动位置为移除原节点后目标子节点数组的零基插入位置。 */
+export type MindMapEdit =
+  | { op: 'add'; parentId: string; text: string }
+  | { op: 'rename'; id: string; text: string }
+  | { op: 'move'; id: string; parentId: string; index?: number }
+  | { op: 'delete'; id: string }
+
+/** 可编辑的磁盘快照；`path` 为笔记根目录的相对路径，`revision` 随内容字节变化。 */
+export interface MindMapSnapshot {
+  path: string
+  revision: string
+  document: MindMapDocument
+}
+
 export type ManagedFileCategory = 'image' | 'presentation' | 'document' | 'other'
 
 /** 上传原件、生成图片与会话导出的受管理文件元数据。 */
