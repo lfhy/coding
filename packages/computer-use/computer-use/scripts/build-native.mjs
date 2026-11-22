@@ -13,7 +13,14 @@ const BUILD = join(NATIVE, 'build')
 const HELPER_SOURCE = join(NATIVE, 'Sources', 'Helper')
 const FIXTURE_SOURCE = join(NATIVE, 'Sources', 'Fixture', 'main.swift')
 const MONITOR_SOURCE = join(NATIVE, 'Sources', 'Monitor', 'main.swift')
-const HELPER_OUTPUT = join(NATIVE, 'bin', 'dsh-computer-use-helper')
+// helper 以 .app bundle 交付：macOS 的 TCC 按 bundle 身份登记权限，只有 bundle 内的
+// 可执行文件才会在「隐私与安全性」里显示成一个可勾选的条目，而不是一个路径没有名字的
+// 裸二进制。bundle id 与名称是这两个键，改动会让用户已授予的权限失效。
+const HELPER_BUNDLE_ID = 'dev.coding.computer-use'
+const HELPER_BUNDLE_NAME = 'Coding 电脑操作'
+const HELPER_APP = join(NATIVE, 'bin', 'Coding Computer Use.app')
+const HELPER_OUTPUT = join(HELPER_APP, 'Contents', 'MacOS', 'dsh-computer-use-helper')
+const HELPER_BUNDLE_PATH = 'bin/Coding Computer Use.app/Contents/MacOS/dsh-computer-use-helper'
 const FIXTURE_APP = join(NATIVE, 'fixture', 'DSHComputerUseFixture.app')
 const MONITOR_OUTPUT = join(NATIVE, 'fixture', 'dsh-computer-use-input-monitor')
 const packageManifest = JSON.parse(await readFile(join(ROOT, 'package.json'), 'utf8'))
@@ -63,13 +70,38 @@ async function hashDirectory(directory) {
   return hash.digest('hex')
 }
 
+/** bundle 的 Info.plist：TCC 用它作为授权身份，因此包含稳定的 bundle id 与显示名。 */
+function helperPlist() {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>CFBundleDevelopmentRegion</key><string>zh_CN</string>
+<key>CFBundleExecutable</key><string>dsh-computer-use-helper</string>
+<key>CFBundleIdentifier</key><string>${HELPER_BUNDLE_ID}</string>
+<key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
+<key>CFBundleName</key><string>${HELPER_BUNDLE_NAME}</string>
+<key>CFBundleDisplayName</key><string>${HELPER_BUNDLE_NAME}</string>
+<key>CFBundlePackageType</key><string>APPL</string>
+<key>CFBundleShortVersionString</key><string>${packageVersion}</string>
+<key>CFBundleVersion</key><string>1</string>
+<key>LSMinimumSystemVersion</key><string>14.0</string>
+<key>LSUIElement</key><true/>
+<key>NSHighResolutionCapable</key><true/>
+</dict></plist>
+`
+}
+
 async function buildHelper() {
   const mainSource = await readFile(join(HELPER_SOURCE, 'main.swift'), 'utf8')
   if (!mainSource.includes(`private let helperVersion = "${packageVersion}"`)) {
     throw new Error(`native helper version must match package.json version ${packageVersion}`)
   }
   await mkdir(BUILD, { recursive: true })
+  await rm(HELPER_APP, { recursive: true, force: true })
   await mkdir(dirname(HELPER_OUTPUT), { recursive: true })
+  await mkdir(join(HELPER_APP, 'Contents', 'Resources'), { recursive: true })
+  await writeFile(join(HELPER_APP, 'Contents', 'Info.plist'), helperPlist())
+  await writeFile(join(HELPER_APP, 'Contents', 'PkgInfo'), 'APPL????')
   const sources = (await readdir(HELPER_SOURCE)).filter(name => name.endsWith('.swift')).sort().map(name => join(HELPER_SOURCE, name))
   const outputs = []
   for (const architecture of ['arm64', 'x86_64']) {
@@ -90,7 +122,9 @@ async function buildHelper() {
   }
   await run('xcrun', ['lipo', '-create', ...outputs, '-output', HELPER_OUTPUT])
   await chmod(HELPER_OUTPUT, 0o755)
+  // 先签二进制再签整个 bundle：--deep 会让 TCC 看到 bundle 身份而不是裸可执行文件。
   await run('codesign', ['--force', '--sign', '-', '--timestamp=none', HELPER_OUTPUT])
+  await run('codesign', ['--force', '--deep', '--sign', '-', '--timestamp=none', HELPER_APP])
   const architectures = (await run('xcrun', ['lipo', '-archs', HELPER_OUTPUT])).split(/\s+/u).filter(Boolean).sort()
   if (architectures.join(',') !== 'arm64,x86_64') throw new Error(`helper is not universal: ${architectures.join(', ')}`)
   const manifest = {
@@ -98,14 +132,15 @@ async function buildHelper() {
     helperVersion: packageVersion,
     sourceSha256: await hashDirectory(HELPER_SOURCE),
     binary: {
-      path: 'bin/dsh-computer-use-helper',
+      path: HELPER_BUNDLE_PATH,
+      bundleId: HELPER_BUNDLE_ID,
       sha256: await hashFile(HELPER_OUTPUT),
       architectures,
       minimumMacOS: '14.0',
     },
   }
   await writeFile(join(NATIVE, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`)
-  return { path: HELPER_OUTPUT, ...manifest.binary }
+  return { path: HELPER_OUTPUT, bundleId: HELPER_BUNDLE_ID, bundle: HELPER_APP, ...manifest.binary }
 }
 
 async function buildFixture() {

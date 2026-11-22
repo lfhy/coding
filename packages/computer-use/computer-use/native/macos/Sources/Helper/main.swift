@@ -1136,6 +1136,13 @@ private func handle(
             // kAXTrustedCheckOptionPrompt 会弹出“辅助功能”授权提示并登记本程序。
             let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
             _ = AXIsProcessTrustedWithOptions(options)
+            // 提示只在首次询问时出现；再真实读一次其它进程的可访问性属性，让系统在
+            // 已拒绝过的情况下也把本应用列进「隐私与安全性」并给出可勾选的条目。
+            if let front = NSWorkspace.shared.frontmostApplication, front.processIdentifier != getpid() {
+                let target = AXUIElementCreateApplication(front.processIdentifier)
+                var probe: CFTypeRef?
+                _ = AXUIElementCopyAttributeValue(target, kAXTitleAttribute as CFString, &probe)
+            }
         case "screen-recording":
             // 首次调用会弹出屏幕录制授权对话框；已决定过则不重复弹出。
             _ = CGRequestScreenCaptureAccess()

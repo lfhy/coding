@@ -10,7 +10,8 @@ import { fileURLToPath } from 'node:url'
 const execFileAsync = promisify(execFile)
 const root = dirname(fileURLToPath(new URL('../package.json', import.meta.url)))
 const nativeRoot = join(root, 'native', 'macos')
-const helperPath = join(nativeRoot, 'bin', 'dsh-computer-use-helper')
+const helperBundle = join(nativeRoot, 'bin', 'Coding Computer Use.app')
+const helperPath = join(helperBundle, 'Contents', 'MacOS', 'dsh-computer-use-helper')
 const manifest = JSON.parse(await readFile(join(nativeRoot, 'manifest.json'), 'utf8'))
 
 function assert(condition, message) {
@@ -41,7 +42,11 @@ async function helperSource() {
 }
 
 assert(manifest.schemaVersion === 1, 'unsupported manifest schema')
-assert(manifest.binary?.path === 'bin/dsh-computer-use-helper', 'unexpected helper path')
+assert(
+  manifest.binary?.path === 'bin/Coding Computer Use.app/Contents/MacOS/dsh-computer-use-helper',
+  'unexpected helper path',
+)
+assert(manifest.binary?.bundleId === 'dev.coding.computer-use', 'unexpected helper bundle id')
 assert(manifest.binary?.minimumMacOS === '14.0', 'unexpected minimum macOS version')
 assert(manifest.sourceSha256 === await sourceSha256(), 'Swift source digest does not match manifest')
 assert(manifest.binary.sha256 === await sha256(helperPath), 'helper SHA-256 does not match manifest')

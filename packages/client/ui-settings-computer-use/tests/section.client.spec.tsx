@@ -279,7 +279,7 @@ describe('电脑操作设置分区', () => {
     const request = within(rows[1] as HTMLElement).getByRole('button', { name: '申请权限' })
     fireEvent.click(request)
     expect(requestPermission).toHaveBeenCalledWith('screen-recording')
-    expect(screen.getByText(/打开对应的系统设置页/)).toBeTruthy()
+    expect(screen.getByText(/勾选「Coding 电脑操作」/)).toBeTruthy()
   })
 
   it('申请失败时提示改用打开设置', async () => {

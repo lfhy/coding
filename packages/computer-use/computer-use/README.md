@@ -65,7 +65,10 @@
 
 ## macOS 系统权限
 
-观察与投递输入需要辅助功能权限，截图另外需要屏幕录制权限。设置页的「授权与运行状态」读取宿主给出的结论，并提供两条动作：`requestPermission`（`AXIsProcessTrustedWithOptions` 与 `CGRequestScreenCaptureAccess`，让 macOS 登记本机 helper 并可能弹出系统询问，随后自动打开对应的隐私面板）与 `openPermissionSettings`（只打开面板）。插件从不授予权限，勾选由用户在系统设置里完成；状态要等用户回来后重新检查或等到下一次调用才更新。
+helper 以 `Coding Computer Use.app` 交付，可执行文件位于 `bin/Coding Computer Use.app/Contents/MacOS/dsh-computer-use-helper`，`Info.plist` 固定 `CFBundleIdentifier` 为 `dev.coding.computer-use`、显示名为「Coding 电脑操作」。系统按 bundle 身份登记隐私权限，所以「隐私与安全性」里出现的是这个应用，而不是一个没有名字的裸二进制；改动这两个键会让已授予的权限失效。
+
+
+观察与投递输入需要辅助功能权限，截图另外需要屏幕录制权限。设置页的「授权与运行状态」读取宿主给出的结论，并提供两条动作：`requestPermission` 与 `openPermissionSettings`（只打开面板）。`requestPermission` 依次做四件事：把 bundle 注册进 LaunchServices（让系统用应用名字显示它）、在未授予时用 `tccutil reset` 清掉本应用在该权限上的旧决定（否则 macOS 不再弹窗也不给勾选项）、通过 helper 调 `AXIsProcessTrustedWithOptions`／`CGRequestScreenCaptureAccess` 触发系统询问并真实读一次前台应用的可访问性属性、最后打开对应的隐私面板。插件从不授予权限，勾选由用户在系统设置里完成；状态要等用户回来后重新检查或等到下一次调用才更新。
 helper 以 ad-hoc 签名构建，重新构建后内容变化会让 macOS 把它当作新的可执行文件；需要重新授权时，用同一个「申请权限」入口再走一遍。
 
 ## 原生 helper 与完整性

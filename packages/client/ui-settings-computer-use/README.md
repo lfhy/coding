@@ -21,7 +21,7 @@
 
 字段的形状与上下界在这里做一次提交前的收窄（屏幕上的错误提示来自这一步），最终校验仍由 Host 的 `computer-use` 设置分节拥有；客户端不复制宿主的授权判定，也不决定某次本机输入是否放行。
 
-授权结论与授权入口走 `remote.computerUse`（由 api-remotes 组合挂载的四个端点：`status`、`check`、`requestPermission`、`openPermissionSettings`）。未授权的那一行给出「申请权限」：它让 macOS 登记本机组件、打开对应的隐私面板，并在用户勾选后由「重新检查」带回新结论。`status` 只读已知状态、不触发探测；`check` 才会启动本机组件；`openPermissionSettings` 只打开系统设置，插件从不授予权限。分区在 `inject` 里声明 `remote.computerUse`，Host 没有挂载该远端面时整块分区不出现，而不是显示一份假的“已授权”。
+授权结论与授权入口走 `remote.computerUse`（由 api-remotes 组合挂载的四个端点：`status`、`check`、`requestPermission`、`openPermissionSettings`）。未授权的那一行给出「申请权限」：它让 macOS 以应用身份登记本机组件（面板里显示为「Coding 电脑操作」）、打开对应的隐私面板，并在用户勾选后由「重新检查」带回新结论。`status` 只读已知状态、不触发探测；`check` 才会启动本机组件；`openPermissionSettings` 只打开系统设置，插件从不授予权限。分区在 `inject` 里声明 `remote.computerUse`，Host 没有挂载该远端面时整块分区不出现，而不是显示一份假的“已授权”。
 
 ## 模型体验
 

@@ -1,5 +1,6 @@
 /** macOS Accessibility/CoreGraphics/ScreenCaptureKit provider for `ctx.computerUse`. */
 
+import { dirname } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { Service, type Context } from '@deepseek-ai/cordis'
 import type {} from 'coding-agent'
@@ -55,12 +56,27 @@ function createBackend(ctx: Context, config: ResolvedComputerUseConfig): Compute
     : new UnsupportedPlatformBackend(process.platform)
 }
 
+/** 系统自带的 LaunchServices 注册工具。 */
+const LSREGISTER = '/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister'
+
+/**
+ * 从 helper 可执行文件路径还原它所在的 .app bundle。
+ * @param helperPath - bundle 内或包外的 helper 路径。
+ * @returns 位于 `*.app/Contents/MacOS/` 内时返回 bundle 路径，否则 undefined。
+ */
+function bundlePathOf(helperPath: string): string | undefined {
+  const parts = helperPath.split('/')
+  const index = parts.lastIndexOf('Contents')
+  if (index < 1 || parts[index + 1] !== 'MacOS') return undefined
+  return parts.slice(0, index).join('/')
+}
+
 /** Fixed-command native backend. */
 export class MacOSBackend implements ComputerUseBackend {
   readonly name = 'macos-ax' as const
   readonly client: NativeHelperClient
 
-  constructor(ctx: Context, private readonly config: ResolvedComputerUseConfig) {
+  constructor(private readonly ctx: Context, private readonly config: ResolvedComputerUseConfig) {
     this.client = new NativeHelperClient(ctx, config)
   }
 
@@ -256,7 +272,74 @@ export class MacOSBackend implements ComputerUseBackend {
   }
 
   async requestPermission(kind: 'accessibility' | 'screen-recording', signal: AbortSignal): Promise<void> {
+    // 已经授予时什么都不做：reset 会把用户的允许一起清掉。
+    const current = await this.health(signal).catch(() => undefined)
+    const granted = kind === 'accessibility' ? current?.accessibility : current?.screenRecording
+    if (granted === 'granted') return
+    // 先让 LaunchServices 认识这个 bundle：「隐私与安全性」按系统登记的应用身份显示条目，
+    // 没注册过的路径只会以一个没有名字的可执行文件出现。
+    await this.registerBundle(signal)
+    // 曾被我或用户拒绝过的记录会让 macOS 不再弹窗、也不在面板里给出勾选项，因此先按
+    // 本机组件自己的 bundle id 清掉旧决定，再申请：这样系统会重新询问并把条目列出来。
+    // 只清我们自己这一条，不影响其它应用；清除失败不阻止后续申请。
+    await this.clearStaleDecision(kind, signal)
     await this.client.invoke<Record<string, string>>({ command: 'request-permission', kind }, signal)
+  }
+
+  /**
+   * 把本机组件注册进 LaunchServices，让系统用它自己的名字显示这个应用。
+   * @param signal - 调用方取消信号。
+   */
+  private async registerBundle(signal: AbortSignal): Promise<void> {
+    const bundle = bundlePathOf(this.client.helperPath)
+    if (bundle === undefined) return
+    try {
+      const handle = this.ctx.subprocess.spawn({
+        argv: [LSREGISTER, '-f', bundle],
+        cwd: dirname(bundle),
+        stdio: {
+          stdin: { data: '' },
+          stdout: { maxBytes: 64 * 1024 },
+          stderr: { maxBytes: 64 * 1024 },
+        },
+        graceMs: 1000,
+        signal: AbortSignal.any([signal, AbortSignal.timeout(this.config.actionTimeoutMs)]),
+        env: { LANG: process.env.LANG ?? 'en_US.UTF-8' },
+      })
+      await handle.done
+    } catch (error) {
+      this.ctx.logger.warn('computer-use: could not register the helper bundle: %s', error)
+    }
+    signal.throwIfAborted()
+  }
+
+  /**
+   * 清除本机组件在该权限上的旧决定。
+   * @param kind - 辅助功能或屏幕录制。
+   * @param signal - 调用方取消信号。
+   */
+  private async clearStaleDecision(kind: 'accessibility' | 'screen-recording', signal: AbortSignal): Promise<void> {
+    const bundleId = this.client.managedBundleId()
+    if (bundleId === undefined) return
+    const service = kind === 'accessibility' ? 'Accessibility' : 'ScreenCapture'
+    try {
+      const handle = this.ctx.subprocess.spawn({
+        argv: ['/usr/bin/tccutil', 'reset', service, bundleId],
+        cwd: dirname(this.client.helperPath),
+        stdio: {
+          stdin: { data: '' },
+          stdout: { maxBytes: 64 * 1024 },
+          stderr: { maxBytes: 64 * 1024 },
+        },
+        graceMs: 1000,
+        signal: AbortSignal.any([signal, AbortSignal.timeout(this.config.actionTimeoutMs)]),
+        env: { LANG: process.env.LANG ?? 'en_US.UTF-8' },
+      })
+      await handle.done
+    } catch (error) {
+      this.ctx.logger.warn('computer-use: could not clear the previous %s decision: %s', service, error)
+    }
+    signal.throwIfAborted()
   }
 }
 

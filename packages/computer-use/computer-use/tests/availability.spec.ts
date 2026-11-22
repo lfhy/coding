@@ -178,7 +178,7 @@ describe('电脑控制启用开关', () => {
     expect(backend.calls).toEqual(['list-apps'])
     // 替身不实现打开面板，失败原样返回而不是静默成功。
     await expect(service.remoteOpenPermissionSettings('accessibility')).rejects.toThrow()
-    // 申请权限走提供方并重新读一次健康结果；替身不实现时把原因写回状态。
+    // 申请权限走提供方并重新读一次健康结果；替身记录这次申请。
     expect(await service.remoteRequestPermission('accessibility'))
       .toMatchObject({ ready: true, accessibility: 'granted' })
     expect(backend.calls).toContain('request-permission:accessibility')

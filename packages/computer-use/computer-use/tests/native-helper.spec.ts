@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { createHash } from 'node:crypto'
 import { chmod, mkdir, mkdtemp, realpath, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import { resolveConfig } from '../src/config.ts'
 import { ComputerUseError } from '../src/errors.ts'
@@ -17,14 +17,17 @@ afterEach(async () => {
   root = undefined
 })
 
+/** 托管 helper 在包内的相对路径：TCC 需要 .app bundle 身份，因此二进制位于 bundle 内。 */
+const MANAGED_PATH = join('bin', 'Coding Computer Use.app', 'Contents', 'MacOS', 'dsh-computer-use-helper')
+
 async function managedRoot(): Promise<string> {
   root = await mkdtemp(join(tmpdir(), 'dsh-computer-use-helper-'))
-  await mkdir(join(root, 'bin'), { recursive: true })
+  await mkdir(dirname(join(root, MANAGED_PATH)), { recursive: true })
   return root
 }
 
 async function writeHelper(directory: string, content: string): Promise<string> {
-  const path = join(directory, 'bin', 'dsh-computer-use-helper')
+  const path = join(directory, MANAGED_PATH)
   await writeFile(path, content)
   await chmod(path, 0o644)
   return path
@@ -35,7 +38,13 @@ async function writeManifest(directory: string, sha256: string, version = '0.1.0
     schemaVersion: 1,
     helperVersion: version,
     sourceSha256: 'unused-by-the-provider',
-    binary: { path: 'bin/dsh-computer-use-helper', sha256, architectures: ['arm64'], minimumMacOS: '14.0' },
+    binary: {
+      path: 'bin/Coding Computer Use.app/Contents/MacOS/dsh-computer-use-helper',
+      bundleId: 'dev.coding.computer-use',
+      sha256,
+      architectures: ['arm64'],
+      minimumMacOS: '14.0',
+    },
   }, null, 2)}\n`)
 }
 

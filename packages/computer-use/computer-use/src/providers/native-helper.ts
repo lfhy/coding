@@ -23,6 +23,8 @@ interface NativeManifest {
   sourceSha256: string
   binary: {
     path: string
+    /** bundle id：TCC 用它作为授权身份，申请权限前要按它清除旧的拒绝记录。 */
+    bundleId: string
     sha256: string
     architectures: string[]
     minimumMacOS: string
@@ -217,6 +219,8 @@ export interface PreparedNativeHelper {
 
 /** Invokes only the packaged JSON protocol through `ctx.subprocess`; no source or shell reaches the helper. */
 export class NativeHelperClient {
+  /** 托管 bundle 的 id；TCC 按它识别本机组件，权限申请前用它清除旧记录。 */
+  private bundleId: string | undefined
   private prepared?: PreparedNativeHelper
   private cursor: CursorProcess | undefined
   private cursorStart: { promise: Promise<CursorProcess> } | undefined
@@ -238,9 +242,19 @@ export class NativeHelperClient {
     return this.disposed
   }
 
+  /**
+   * 托管 bundle 的 id；外部 helper 与尚未校验时缺省。
+   * @returns 上一次校验读到的 bundle id。
+   */
+  managedBundleId(): string | undefined {
+    return this.bundleId
+  }
+
   /** Absolute executable path selected by explicit override or the packaged managed binary. */
   get helperPath(): string {
-    return this.prepared?.path ?? this.config.helper.path ?? resolve(this.managedRoot, 'bin', 'dsh-computer-use-helper')
+    return this.prepared?.path
+      ?? this.config.helper.path
+      ?? resolve(this.managedRoot, 'bin', 'Coding Computer Use.app', 'Contents', 'MacOS', 'dsh-computer-use-helper')
   }
 
   /** Verify platform, file type, packaged hash, and executable mode before use. */
@@ -270,9 +284,12 @@ export class NativeHelperClient {
     if (managed) {
       const manifestPath = resolve(this.managedRoot, 'manifest.json')
       const manifest = JSON.parse(await readFile(manifestPath, 'utf8')) as NativeManifest
-      if (manifest.schemaVersion !== 1 || manifest.binary.path !== 'bin/dsh-computer-use-helper') {
+      if (manifest.schemaVersion !== 1
+        || manifest.binary.path !== 'bin/Coding Computer Use.app/Contents/MacOS/dsh-computer-use-helper'
+        || typeof manifest.binary.bundleId !== 'string' || manifest.binary.bundleId.length === 0) {
         throw new ComputerUseError('COMPUTER_PROVIDER_FAILURE', 'native helper manifest is malformed')
       }
+      this.bundleId = manifest.binary.bundleId
       if (manifest.binary.sha256 !== digest) {
         throw new ComputerUseError('COMPUTER_PROVIDER_FAILURE', 'native helper hash does not match native/macos/manifest.json')
       }

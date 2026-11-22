@@ -11,7 +11,10 @@ import { resolveConfig } from '../src/config.ts'
 import type { ComputerPermissionState } from '../src/types.ts'
 import { NativeHelperClient } from '../src/providers/native-helper.ts'
 
-const helperPath = new URL('../native/macos/bin/dsh-computer-use-helper', import.meta.url)
+const helperPath = new URL(
+  '../native/macos/bin/Coding Computer Use.app/Contents/MacOS/dsh-computer-use-helper',
+  import.meta.url,
+)
 const manifestPath = new URL('../native/macos/manifest.json', import.meta.url)
 const packageVersion = (JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { version: string }).version
 const PERMISSION_STATES: readonly ComputerPermissionState[] = ['granted', 'denied', 'not-determined', 'unavailable']
@@ -26,7 +29,7 @@ describe.skipIf(!available)('managed helper transport', () => {
 
     const prepared = await client.prepare(signal)
     expect(prepared.version).toBe(packageVersion)
-    expect(prepared.path.endsWith('bin/dsh-computer-use-helper')).toBe(true)
+    expect(prepared.path.endsWith('Coding Computer Use.app/Contents/MacOS/dsh-computer-use-helper')).toBe(true)
 
     const health = await client.invoke<{
       helperVersion: string
