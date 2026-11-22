@@ -173,7 +173,6 @@
   display: flex;
   flex: none;
   align-items: center;
-  gap: 8px;
   min-height: 42px;
   margin: 0 16px 12px;
   padding: 6px 10px;
@@ -181,12 +180,6 @@
   border-radius: 16px;
   background: var(--dsw-alias-bg-layer-2);
   box-shadow: var(--dsw-shadow-lv1);
-}
-
-.speakerNotesLabel {
-  flex: none;
-  color: var(--dsw-alias-label-secondary);
-  font: var(--dsw-font-xs-strong-13);
 }
 
 .speakerNotesInput {

@@ -476,7 +476,6 @@ function SpeakerNotesCapsule({ page, busy, t, onSave }: SpeakerNotesProps) {
   }
   return (
     <div className={css.speakerNotes} onClick={(event) => { event.stopPropagation() }}>
-      <span className={css.speakerNotesLabel}>{t('speakerNotes')}</span>
       <textarea
         className={css.speakerNotesInput}
         aria-label={t('speakerNotes')}
