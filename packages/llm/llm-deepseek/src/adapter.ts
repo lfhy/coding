@@ -138,15 +138,8 @@ const OFF_ONLY_REASONING_EFFORTS = [
 ] as const
 
 function modelReasoningEfforts(model: DeepSeekCatalogModel | undefined, connection: DeepSeekConnectionOptions) {
-  // 通用网关不因路由叫 DeepSeek 就支持推理；须由模型或渠道显式声明。
-  const defaults = connection.defaults
-  const enabled = defaults.thinking !== 'disabled' && (
-    (model?.api ?? connection.api) === 'openai-completions'
-    || model?.reasoningEfforts !== undefined
-    || defaults.thinking === 'enabled'
-    || (defaults.reasoningEffort !== undefined && defaults.reasoningEffort !== 'off')
-  )
-  const available = enabled ? REASONING_EFFORTS : OFF_ONLY_REASONING_EFFORTS
+  // 档位属于模型；切换请求格式只改变上游编码，不改变可选档位。
+  const available = connection.defaults.thinking === 'disabled' ? OFF_ONLY_REASONING_EFFORTS : REASONING_EFFORTS
   return model?.reasoningEfforts === undefined
     ? available
     : available.filter(effort => model.reasoningEfforts?.some(id => id === effort.id))

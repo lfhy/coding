@@ -16,7 +16,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import Include from '@deepseek-ai/cordis-plugin-include'
-import LlmRuntime from 'coding-llm'
+import LlmRuntime, { ReasoningEffortId } from 'coding-llm'
 import { credentialRef } from 'coding-credentials'
 import LocalCredentialProvider from 'coding-credentials-local'
 import { settingsNamespace } from 'coding-settings'
@@ -171,7 +171,7 @@ describe('llm-deepseek real dynamic composition', () => {
     const initial = await loadComposition({ withDynamic: true, baseURL: server.url })
     let ctx = initial.ctx
     const generate = (model: string) => assemble(ctx, {
-      model, messages: [], system: 'Use plain text.', maxTokens: 64,
+      model, messages: [], system: 'Use plain text.', maxTokens: 64, reasoningEffort: ReasoningEffortId('high'),
     })
     const expectText = async (model: string, text: string): Promise<void> => {
       const result = await generate(model)
@@ -196,8 +196,11 @@ describe('llm-deepseek real dynamic composition', () => {
     const messages = server.requests[2] as Record<string, unknown>
     expect(responses).toMatchObject({ model: 'inherited-model', max_output_tokens: 64 })
     expect(Array.isArray(responses['input'])).toBe(true)
-    expect(responses).not.toHaveProperty('reasoning')
-    expect(messages).toMatchObject({ model: 'special-model', max_tokens: 64 })
+    expect(server.requests[0]).toMatchObject({ reasoning_effort: 'high' })
+    expect(responses).toMatchObject({ reasoning: { effort: 'high' } })
+    expect(messages).toMatchObject({
+      model: 'special-model', max_tokens: 64 + 16_384, thinking: { type: 'enabled', budget_tokens: expect.any(Number) },
+    })
     expect(Array.isArray(messages['messages'])).toBe(true)
     expect(server.headers[1]).toMatchObject({ authorization: 'Bearer boot-key', 'user-agent': 'test-channel/1.0' })
     expect(server.headers[2]).toMatchObject({ 'x-api-key': 'boot-key', 'user-agent': 'test-channel/1.0' })

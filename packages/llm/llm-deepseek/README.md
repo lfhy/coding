@@ -54,7 +54,7 @@
 
 `maxTokens` 是适配器为对话请求配置的输出上限，默认值为 256,000。Catalog 配置项可以自带 `maxTokens`，它对该模型胜出；未设置上限的模型或未列出的模型沿用渠道值。确切模型解析会将胜出值公开为 `defaultMaxTokens`；`LlmRuntime` 在写入 `request/header` 前将该值填入 `GenerateOptions.maxTokens`，以便从持久记录重建请求。显式的请求值或 `AgentOptions.maxTokens` 优先。原生 Chat 将上限编码为 `max_tokens`；其他格式按各自协议编码。适配器不会根据 `contextWindow` 自动调低该预算；部署必须配置与上游相容的 `maxTokens`。
 
-原生 Chat 在部署允许思考时默认公布 `off`、`low`、`high`、`max`。Responses 和 Messages 默认仅公布 `off`，不发送推理参数；模型显式声明 `reasoningEfforts`，或渠道显式启用 `thinking`／指定非 `off` 的默认档位时，才可开放其他档位。`reasoningEfforts` 限定模型可用的档位，未列出的模型沿用渠道策略；不支持的请求档位在联网前以 `UNSUPPORTED_REASONING_EFFORT` 拒绝。`reasoningEffort` 指定部署默认档位；省略时取模型可用的最高档，已配置的值不在模型列表中时取第一档。`agent/request` 可覆盖每步请求值，最终值记录于 `request/header`。
+部署允许思考时默认公布 `off`、`low`、`high`、`max`。`reasoningEfforts` 限定模型可用的档位；切换上游请求格式只改变编码，不改变模型档位或默认值。`reasoningEffort` 指定部署默认档位；省略时取模型可用的最高档，已配置的值不在模型列表中时取第一档。`agent/request` 可覆盖每步请求值，最终值记录于 `request/header`。
 
 `thinking: disabled` 是部署锁定：它只公布 `off`，并以 `off` 为默认值。省略 `reasoningEffort` 或将其配置为 `off` 均有效；配置 `low`、`high` 或 `max` 会使插件加载失败，直接按请求启用思考也会在网络 I/O 前失败。携带 `GenerateOptions.purpose: 'session-title'` 的请求也会强制禁用思考并省略已解析的推理强度，将有界输出保留给可见标题文本，不改变会话或压缩（compaction）默认值。
 
