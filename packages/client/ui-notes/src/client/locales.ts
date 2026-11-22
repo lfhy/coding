@@ -7,7 +7,8 @@ export type NotesLocaleKey =
   | 'view' | 'edit' | 'split' | 'preview' | 'format' | 'inlineCode' | 'list'
   | 'heading' | 'bold' | 'italic' | 'bullets' | 'quote' | 'link'
   | 'welcomeMorning' | 'welcomeAfternoon' | 'welcomeEvening' | 'welcomeDescription'
-  | 'loading' | 'newNote' | 'newFolder' | 'newPresentation' | 'importFile' | 'importText' | 'importSlides' | 'noteName' | 'folderName' | 'presentationName' | 'create' | 'creating' | 'cancel' | 'close' | 'placeholder'
+  | 'newEntry' | 'entryFolder' | 'entryNote' | 'entryPresentation'
+  | 'loading' | 'newNote' | 'newFolder' | 'newPresentation' | 'importFile' | 'importText' | 'noteName' | 'folderName' | 'presentationName' | 'create' | 'creating' | 'cancel' | 'close' | 'placeholder'
   | 'newNoteIn' | 'newFolderIn' | 'newSubfolder' | 'newSubfolderIn' | 'saveLocation' | 'noteCreated' | 'folderCreated' | 'presentationCreated' | 'noteImported' | 'presentationImported' | 'createdRefreshError'
   | 'saved' | 'saving' | 'unsaved' | 'conflict' | 'reload' | 'reloadConfirm' | 'draftKept' | 'discardDraft' | 'retry'
   | 'loadError' | 'saveError' | 'createError' | 'createFolderError' | 'createPresentationError' | 'importTextError' | 'importSlideError' | 'treeError'
@@ -27,7 +28,8 @@ export const zh: Record<NotesLocaleKey, string> = {
   welcomeMorning: '早上好呀，新的一天开始啦', welcomeAfternoon: '下午好呀，欢迎回来', welcomeEvening: '晚上好呀，欢迎回来',
   welcomeDescription: '在这里记录你的想法、灵感与工作内容',
   loading: '正在读取笔记…',
-  newNote: '新建笔记', newFolder: '新建目录', newPresentation: '新建幻灯片', importFile: '导入', importText: '文本', importSlides: '幻灯片', noteName: '笔记名称', folderName: '目录名称', presentationName: '幻灯片名称', create: '创建', creating: '正在创建…', cancel: '取消', close: '关闭',
+  newEntry: '新建', entryFolder: '目录', entryNote: '笔记', entryPresentation: '幻灯片',
+  newNote: '新建笔记', newFolder: '新建目录', newPresentation: '新建幻灯片', importFile: '导入', importText: '文本', noteName: '笔记名称', folderName: '目录名称', presentationName: '幻灯片名称', create: '创建', creating: '正在创建…', cancel: '取消', close: '关闭',
   newNoteIn: '在「{name}」中新建笔记', newFolderIn: '在「{name}」中新建目录',
   newSubfolder: '新建子目录', newSubfolderIn: '在「{name}」中新建子目录',
   saveLocation: '保存到', noteCreated: '笔记已创建', folderCreated: '目录已创建', presentationCreated: '幻灯片已创建', presentationImported: '幻灯片已导入', noteImported: '笔记已导入',
@@ -64,7 +66,8 @@ export const en: Record<NotesLocaleKey, string> = {
   welcomeMorning: 'Good morning! A new day begins', welcomeAfternoon: 'Good afternoon! Welcome back', welcomeEvening: 'Good evening! Welcome back',
   welcomeDescription: 'A place for your thoughts, ideas, and work',
   loading: 'Loading notes…',
-  newNote: 'New note', newFolder: 'New folder', newPresentation: 'New presentation', importFile: 'Import', importText: 'Text', importSlides: 'Presentation', noteName: 'Note name', folderName: 'Folder name', presentationName: 'Presentation name', create: 'Create', creating: 'Creating…', cancel: 'Cancel', close: 'Close',
+  newEntry: 'New', entryFolder: 'Folder', entryNote: 'Note', entryPresentation: 'Presentation',
+  newNote: 'New note', newFolder: 'New folder', newPresentation: 'New presentation', importFile: 'Import', importText: 'Text', noteName: 'Note name', folderName: 'Folder name', presentationName: 'Presentation name', create: 'Create', creating: 'Creating…', cancel: 'Cancel', close: 'Close',
   newNoteIn: 'New note in “{name}”', newFolderIn: 'New folder in “{name}”',
   newSubfolder: 'New subfolder', newSubfolderIn: 'New subfolder in “{name}”',
   saveLocation: 'Save to', noteCreated: 'Note created', folderCreated: 'Folder created', presentationCreated: 'Presentation created', presentationImported: 'Presentation imported', noteImported: 'Note imported',

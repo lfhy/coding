@@ -26,13 +26,15 @@
   --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
 }
 
-/* Primary card is 218 wide in the design across both hosts. */
+/* 标准菜单卡片宽度；有侧菜单时允许在窄窗口收窄。 */
 .list {
+  --menu-min-width: 218px;
+  --menu-inset: 5px;
   position: absolute;
   top: calc(100% + 4px);
   left: 0;
   z-index: 100;
-  min-width: 218px;
+  min-width: var(--menu-min-width);
   max-width: 360px;
 }
 
@@ -45,6 +47,12 @@
   top: auto;
   left: auto;
   z-index: 1100;
+}
+
+.portal.hasSubmenu {
+  --menu-room: calc(100vw - 24px - var(--menu-submenu-width) - var(--menu-submenu-gap));
+  min-width: min(var(--menu-min-width), var(--menu-room));
+  max-width: min(360px, var(--menu-room));
 }
 
 /* Open above the anchor (empty-state workspace chip: figma 122:9481). */
@@ -80,7 +88,8 @@
   border-bottom: 1px solid var(--dsw-alias-border-l2);
 }
 
-.scrollable .viewport {
+.scrollable > .viewport,
+.submenu > .viewport {
   overflow-y: auto;
 }
 
@@ -131,7 +140,8 @@
   color: var(--dsw-alias-label-primary);
 }
 
-.itemAction:focus-visible {
+.itemAction:focus-visible,
+.item:focus-visible {
   outline: 2px solid var(--dsw-alias-state-business-primary);
   outline-offset: -2px;
 }
@@ -166,7 +176,8 @@
   text-align: left;
 }
 
-.item:hover:not(:disabled) {
+.item:hover:not(:disabled),
+.item[aria-expanded="true"]:not(:disabled) {
   background: var(--dsw-alias-interactive-bg-hover);
 }
 
@@ -179,9 +190,13 @@
   padding-block: 4px;
 }
 
+.list.compactList {
+  --menu-min-width: 164px;
+  --menu-inset: 3px;
+}
+
 .list.compactList,
 .submenu.compactList {
-  min-width: 164px;
   padding: 2px;
   border-radius: 7px;
 }
@@ -238,6 +253,15 @@
   color: var(--dsw-alias-label-primary);
 }
 
+.submenuArrow {
+  flex: none;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.submenuArrowLeft {
+  transform: scaleX(-1);
+}
+
 /* Selected cell keeps the plain fill (marker is the trailing check); the
  * class remains as a hook for owner-side emphasis. */
 .selected {
@@ -249,7 +273,7 @@
 }
 
 .list.matchAnchorWidth {
-  min-width: 0;
+  --menu-min-width: 0px;
   max-width: calc(100vw - 24px);
 }
 
@@ -281,19 +305,19 @@
   background: var(--dsw-alias-border-l1);
 }
 
-/* Nested card to the right of the parent row (figma 419:16920).
- * Bottom-aligned with the parent menu card (grows upward): itemWrap sits in
- * .list's 4px pad, so bottom: -4px matches the list's outer bottom edge.
- * Horizontal: list pad (4px) + 6px card gap = 10px past itemWrap — plain
- * `100% + 6px` collapses to ~2px between outer card edges.
- * ::before bridges the full gap so the pointer can cross without mouseLeave. */
+/* 子菜单贴着父项展开；透明区域横跨两张卡片之间的间隙，避免指针经过时关闭。 */
 .submenu {
   position: absolute;
-  top: auto;
-  bottom: -4px;
-  left: calc(100% + 10px);
+  top: 0;
+  left: calc(100% + var(--menu-inset) + var(--menu-submenu-gap));
   z-index: 101;
-  min-width: 163px;
+  width: var(--menu-submenu-width);
+  max-height: calc(100vh - 24px);
+}
+
+.submenuLeft {
+  left: auto;
+  right: calc(100% + var(--menu-inset) + var(--menu-submenu-gap));
 }
 
 .submenu::before {
@@ -301,6 +325,11 @@
   position: absolute;
   top: 0;
   bottom: 0;
-  left: -10px;
-  width: 10px;
+  right: 100%;
+  width: calc(var(--menu-inset) + var(--menu-submenu-gap));
+}
+
+.submenuLeft::before {
+  right: auto;
+  left: 100%;
 }

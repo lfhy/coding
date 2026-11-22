@@ -1,18 +1,9 @@
-// Menu: minimal controlled dropdown (group-by pickers, project selectors).
-// Default: pure CSS positioning relative to the anchor wrapper — no popper.
-// Opt-in `portal` renders the list into document.body, fixed-positioned from
-// the anchor rect, for anchors inside overflow-clipping containers (sidebar).
-// The owner controls `open`; outside-click closing uses one document listener
-// active only while open. Submenus open on hover/focus inside the same root.
-// Entries also cover non-interactive `label` headings and `danger` rows.
-// Lists keep 12px clearance to the viewport's top/bottom edges and scroll
-// internally past that; submenu-bearing menus are exempt (see .scrollable).
-
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+/** 受控下拉菜单。`portal` 模式固定于视口，适用于侧栏等会裁剪浮层的容器。 */
+import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import type { CSSProperties, ReactNode, RefObject } from 'react'
 import { createPortal } from 'react-dom'
 import clsx from 'clsx'
-import { IconCheckOutline16 } from 'coding-client-ui-icons'
+import { IconCheckOutline16, IconChevronRightOutline14 } from 'coding-client-ui-icons'
 import { usePointerGrace } from './pointer-grace.ts'
 import css from './Menu.module.css'
 
@@ -25,7 +16,7 @@ export interface MenuItem {
   icon?: ReactNode
   /** 危险操作使用错误色文字和图标，并在悬停时显示危险底色。 */
   danger?: boolean
-  /** 鼠标悬停或聚焦时向右展开的子菜单。 */
+  /** 悬停或激活父项时展开的侧菜单。 */
   submenu?: readonly MenuItem[]
   /** 独立于行选择的行尾图标按钮；禁用行也会禁用该动作。 */
   action?: { id: string; label: string; icon: ReactNode; disabled?: boolean }
@@ -55,8 +46,18 @@ function isLabel(entry: MenuEntry): entry is MenuLabel {
   return 'type' in entry && entry.type === 'label'
 }
 
-/** Unplaced portal list: hidden but laid out at a fixed origin so offsetWidth/offsetHeight are real. */
+/** 尚未定位时隐藏菜单，但保留布局以便测量。 */
 const MEASURE_STYLE: CSSProperties = { visibility: 'hidden', left: 0, top: 0 }
+const VIEWPORT_MARGIN = 12
+const SUBMENU_GAP = 6
+const SUBMENU_WIDTH = 164
+
+type MenuPosition = { style: CSSProperties; submenuLeft: boolean }
+
+function focusableItems(menu: HTMLElement | null): HTMLButtonElement[] {
+  return [...(menu?.querySelectorAll<HTMLButtonElement>('button[role^="menuitem"]:not(:disabled)') ?? [])]
+    .filter(item => item.closest('[role="menu"]') === menu)
+}
 
 /**
  * 渲染相对锚点定位的下拉菜单。
@@ -79,7 +80,7 @@ const MEASURE_STYLE: CSSProperties = { visibility: 'hidden', left: 0, top: 0 }
  * 适用于祖先 overflow 会裁剪原位列表的场景，默认保留纯 CSS 原位定位。
  * @param props.portalContainer - portal 菜单的目标节点；模态框内使用其对话框节点，使选项仍在无障碍子树中。
  * @param props.matchAnchorWidth - portal 菜单与锚点等宽，且不超出视口边距。
- * @param props.keyboardNavigation - 打开时聚焦已选或首个选项，并支持方向键、Home 和 End。
+ * @param props.keyboardNavigation - 打开时聚焦已选或首个选项。方向键在当前层导航，右键进入子菜单，左键或 Escape 返回父项。
  * @param props.closeOnPointerLeave - 指针离开触发元素与列表后是否在宽限期关闭；
  * 默认直到外部点击、Escape 或选择才关闭，宽限期允许跨越 4px 间隙后返回。
  * @param props.dense - 在不改变标准字体或卡片宽度的情况下缩小行距。
@@ -119,22 +120,20 @@ export function Menu({ open, anchor, header, items, selectedId, selectedIds, mul
   maxHeight?: number
   className?: string
 }) {
+  const menuId = useId()
   const rootRef = useRef<HTMLSpanElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
+  const submenuRef = useRef<HTMLDivElement>(null)
   const [openSubmenuId, setOpenSubmenuId] = useState<string | null>(null)
-  const [fixedPos, setFixedPos] = useState<CSSProperties | null>(null)
+  const [fixedPos, setFixedPos] = useState<MenuPosition | null>(null)
   const focusedOpenRef = useRef(false)
+  const enterSubmenuRef = useRef(false)
   const { arm: armClose, cancel: cancelClose } = usePointerGrace(onClose)
   const selectionKey = selectedIds?.join('\u0000') ?? selectedId ?? ''
+  const hasSubmenu = [...items, ...(footer ?? [])].some(entry =>
+    !isSeparator(entry) && !isLabel(entry) && (entry.submenu?.length ?? 0) > 0)
 
-  const focusableItems = (): HTMLButtonElement[] =>
-    [...(listRef.current?.querySelectorAll<HTMLButtonElement>('button[role^="menuitem"]:not(:disabled)') ?? [])]
-
-  // Portal mode: fixed-position the list from the anchor rect before paint;
-  // track the anchor while open (capture-phase scroll catches nested panes).
-  // getAnchorRect trumps measuring the wrapper span: a child layout effect
-  // runs before the parent's, so a wrapper the host positions in its own
-  // effect measures stale here — the host callback owns the truth instead.
+  // 父组件可能在自身布局效果中才移动锚点；此时以 getAnchorRect 为准，不测量旧位置。
   useLayoutEffect(() => {
     if (!open || !portal) { setFixedPos(null); return }
     const place = () => {
@@ -142,15 +141,18 @@ export function Menu({ open, anchor, header, items, selectedId, selectedIds, mul
       if (getAnchorRect !== undefined) {
         r = getAnchorRect()
       } else {
-        /* v8 ignore next 2 -- the ref is attached before the layout effect runs and the listeners die with it. */
+        /* v8 ignore next 2 -- 布局效果执行前已绑定 ref，卸载时同步移除监听器。 */
         r = rootRef.current?.getBoundingClientRect() ?? null
       }
       if (r === null) return
-      const MARGIN = 12
+      const margin = VIEWPORT_MARGIN
       const vw = window.innerWidth
       const vh = window.innerHeight
       const listEl = listRef.current
-      const lw = matchAnchorWidth ? Math.min(r.width, vw - MARGIN * 2) : listEl?.offsetWidth ?? 0
+      const space = vw - margin * 2
+      const submenuWidth = Math.min(SUBMENU_WIDTH, Math.floor((space - SUBMENU_GAP) / 2))
+      const reserve = hasSubmenu ? submenuWidth + SUBMENU_GAP : 0
+      const lw = matchAnchorWidth ? Math.min(r.width, space - reserve) : listEl?.offsetWidth ?? 0
       const lh = listEl?.offsetHeight ?? 0
 
       let x: number
@@ -166,14 +168,23 @@ export function Menu({ open, anchor, header, items, selectedId, selectedIds, mul
         y = side === 'bottom' ? r.bottom + 4 : r.top - lh - 4
       }
 
-      if (lw > 0) x = Math.min(Math.max(x, MARGIN), vw - lw - MARGIN)
-      if (lh > 0) y = Math.min(Math.max(y, MARGIN), vh - lh - MARGIN)
+      let submenuLeft = false
+      if (lw > 0) {
+        const rightLimit = vw - lw - margin
+        x = Math.min(Math.max(x, margin), rightLimit)
+        if (hasSubmenu) {
+          // 一级菜单打开时就为侧卡片留空间，切换新建／导入时锚点不会跳动。
+          const withRightRoom = Math.min(x, rightLimit - reserve)
+          const withLeftRoom = Math.max(x, margin + reserve)
+          submenuLeft = withLeftRoom - x < x - withRightRoom
+          x = submenuLeft ? withLeftRoom : withRightRoom
+        }
+      }
+      if (lh > 0) y = Math.min(Math.max(y, margin), vh - lh - margin)
 
-      setFixedPos({ left: x, top: y, ...matchAnchorWidth ? { width: lw } : {} })
+      setFixedPos({ style: { left: x, top: y, ...matchAnchorWidth ? { width: lw } : {} }, submenuLeft })
     }
-    // First run measures the hidden pre-render (same commit as `open`), so
-    // end/top alignment and clamping use real dimensions before anything
-    // paints — no visible jump from a zero-size first guess.
+    // 在首次绘制前测量隐藏的菜单，避免用户看到其从测量原点跳至锚点。
     place()
     window.addEventListener('scroll', place, true)
     window.addEventListener('resize', place)
@@ -185,13 +196,29 @@ export function Menu({ open, anchor, header, items, selectedId, selectedIds, mul
       window.removeEventListener('scroll', place, true)
       window.removeEventListener('resize', place)
     }
-  }, [open, portal, align, side, matchAnchorWidth, getAnchorRect, selectionKey])
+  }, [open, portal, align, side, matchAnchorWidth, getAnchorRect, selectionKey, hasSubmenu])
+
+  useLayoutEffect(() => {
+    const submenu = submenuRef.current
+    const row = submenu?.parentElement
+    if (submenu === null || row == null) return
+    if (portal && fixedPos !== null) {
+      const rowTop = row.getBoundingClientRect().top
+      const bottomLimit = window.innerHeight - VIEWPORT_MARGIN - submenu.offsetHeight
+      const top = Math.max(VIEWPORT_MARGIN, Math.min(rowTop, bottomLimit))
+      submenu.style.top = `${top - rowTop}px`
+    }
+    if (enterSubmenuRef.current) {
+      enterSubmenuRef.current = false
+      focusableItems(submenu)[0]?.focus({ preventScroll: true })
+    }
+  }, [openSubmenuId, portal, fixedPos])
 
   useEffect(() => {
     if (!open) { focusedOpenRef.current = false; return }
     // portal 列表首帧先隐藏供测量，待定位后才可取得浏览器焦点。
     if (!keyboardNavigation || focusedOpenRef.current || (portal && fixedPos === null)) return
-    const items = focusableItems()
+    const items = focusableItems(listRef.current)
     const checked = items.find(item => item.getAttribute('aria-checked') === 'true')
     const target = checked ?? items[0]
     target?.focus({ preventScroll: true })
@@ -201,6 +228,7 @@ export function Menu({ open, anchor, header, items, selectedId, selectedIds, mul
   useEffect(() => {
     if (!open) {
       setOpenSubmenuId(null)
+      enterSubmenuRef.current = false
       return
     }
     const onPointerDown = (e: PointerEvent) => {
@@ -231,9 +259,14 @@ export function Menu({ open, anchor, header, items, selectedId, selectedIds, mul
     if (!open) cancelClose()
   }, [open, cancelClose])
 
-  // The submenu card is absolutely positioned outside the list box; the
-  // scroll clip would crop it, so only submenu-free menus get the height cap.
-  const scrollable = !items.some(entry => !isSeparator(entry) && !isLabel(entry) && entry.submenu !== undefined && entry.submenu.length > 0)
+  const activateSubmenu = (id: string, enter: boolean) => {
+    if (enter && openSubmenuId === id) {
+      focusableItems(submenuRef.current)[0]?.focus({ preventScroll: true })
+    } else {
+      enterSubmenuRef.current = enter
+      setOpenSubmenuId(id)
+    }
+  }
 
   const renderAction = (entry: MenuItem, topLevel: boolean) => {
     const action = entry.action
@@ -276,17 +309,22 @@ export function Menu({ open, anchor, header, items, selectedId, selectedIds, mul
     if (isLabel(entry)) {
       return <div key={entry.id} className={css.label} role="presentation">{entry.text}</div>
     }
-    const hasSub = entry.submenu !== undefined && entry.submenu.length > 0
+    const hasSub = (entry.submenu?.length ?? 0) > 0
     const subOpen = hasSub && openSubmenuId === entry.id
     const selected = entry.id === selectedId || selectedIds?.includes(entry.id) === true
+    const labelId = hasSub ? `${menuId}-${entry.id}` : undefined
     return (
       <div
         key={entry.id}
         className={clsx(css.itemWrap, entry.action !== undefined && css.itemWrapWithAction)}
-        onMouseEnter={() => { setOpenSubmenuId(hasSub ? entry.id : null) }}
-        onMouseLeave={() => { setOpenSubmenuId(null) }}
+        onMouseEnter={() => { setOpenSubmenuId(hasSub && !entry.disabled ? entry.id : null) }}
+        onMouseLeave={() => {
+          if (keyboardNavigation && submenuRef.current?.contains(document.activeElement)) return
+          setOpenSubmenuId(null)
+        }}
       >
         <button
+          id={labelId}
           type="button"
           role={multiSelect ? 'menuitemcheckbox' : 'menuitem'}
           className={clsx(css.item, selected && css.selected, selected && highlightSelected && css.selectedHighlight,
@@ -295,10 +333,17 @@ export function Menu({ open, anchor, header, items, selectedId, selectedIds, mul
           aria-haspopup={hasSub ? 'menu' : undefined}
           aria-expanded={hasSub ? subOpen : undefined}
           aria-checked={multiSelect ? selected : undefined}
-          onFocus={() => { setOpenSubmenuId(hasSub ? entry.id : null) }}
-          onClick={() => {
+          onFocus={() => {
+            setOpenSubmenuId(current => hasSub && (!keyboardNavigation || current === entry.id) ? entry.id : null)
+          }}
+          onKeyDown={hasSub && keyboardNavigation ? (event) => {
+            if (event.key !== 'ArrowRight') return
+            event.preventDefault()
+            activateSubmenu(entry.id, true)
+          } : undefined}
+          onClick={(event) => {
             if (hasSub) {
-              setOpenSubmenuId(entry.id)
+              activateSubmenu(entry.id, keyboardNavigation && event.detail === 0)
               return
             }
             onSelect(entry.id)
@@ -308,51 +353,63 @@ export function Menu({ open, anchor, header, items, selectedId, selectedIds, mul
           <span className={css.itemLabel}>{entry.label}</span>
           {/* 选中标记留在主按钮行尾，不代替底色。 */}
           {selected && <IconCheckOutline16 className={css.check} />}
+          {hasSub && <IconChevronRightOutline14 className={clsx(css.submenuArrow, fixedPos?.submenuLeft && css.submenuArrowLeft)} />}
         </button>
         {renderAction(entry, true)}
         {subOpen && entry.submenu !== undefined && (
-          <div className={clsx(css.submenu, compact && css.compactList)} role="menu">
-            {entry.submenu.map(sub => (
-              sub.action === undefined ? (
-                renderSubmenuPrimary(sub)
-              ) : (
-                <div key={sub.id} className={clsx(css.itemWrap, css.itemWrapWithAction)}>
-                  {renderSubmenuPrimary(sub)}
-                  {renderAction(sub, false)}
-                </div>
-              )
-            ))}
+          <div ref={submenuRef} className={clsx(css.submenu, compact && css.compactList,
+            fixedPos?.submenuLeft && css.submenuLeft)} role="menu" aria-labelledby={labelId}>
+            <div className={css.viewport} role="presentation">
+              {entry.submenu.map(sub => (
+                sub.action === undefined ? (
+                  renderSubmenuPrimary(sub)
+                ) : (
+                  <div key={sub.id} className={clsx(css.itemWrap, css.itemWrapWithAction)}>
+                    {renderSubmenuPrimary(sub)}
+                    {renderAction(sub, false)}
+                  </div>
+                )
+              ))}
+            </div>
           </div>
         )}
       </div>
     )
   }
 
-  // Portal lists render hidden until placed: the placement effect measures
-  // this pre-render in the same commit, so the first painted frame is
-  // already at the final position (with getAnchorRect returning null the
-  // list simply stays hidden).
   const list = open && (
     <div
       ref={listRef}
-      className={clsx(css.list, dense && css.denseList, compact && css.compactList, scrollable && css.scrollable,
+      className={clsx(css.list, dense && css.denseList, compact && css.compactList, hasSubmenu ? css.hasSubmenu : css.scrollable,
         portal && css.portal, matchAnchorWidth && css.matchAnchorWidth,
         side === 'top' && !portal && css.sideTop, align === 'end' && !portal && css.alignEnd)}
       style={{
-        ...portal ? fixedPos ?? MEASURE_STYLE : {},
+        ...portal ? fixedPos?.style ?? MEASURE_STYLE : {},
+        ...hasSubmenu ? { '--menu-submenu-width': `min(${SUBMENU_WIDTH}px, calc((100vw - ${2 * VIEWPORT_MARGIN + SUBMENU_GAP}px) / 2))`,
+          '--menu-submenu-gap': `${SUBMENU_GAP}px` } as CSSProperties : {},
         // 限高同时收敛到视口内：短视口下卡片仍留出与定位相同的 12px 边距。
         ...maxHeight === undefined ? {} : { maxHeight: `min(${maxHeight}px, calc(100vh - 24px))` },
       }}
       role="menu"
       onKeyDown={keyboardNavigation ? (event) => {
-        const items = focusableItems()
-        const current = items.indexOf(document.activeElement as HTMLButtonElement)
+        const active = document.activeElement
+        const level = active?.closest<HTMLElement>('[role="menu"]') ?? listRef.current
+        const items = focusableItems(level)
+        const current = items.findIndex(item => item === active)
         let next: number
         switch (event.key) {
           case 'ArrowDown': next = (current + 1) % items.length; break
           case 'ArrowUp': next = (current - 1 + items.length) % items.length; break
           case 'Home': next = 0; break
           case 'End': next = items.length - 1; break
+          case 'Escape':
+          case 'ArrowLeft':
+            if (level === null || level !== submenuRef.current) return
+            event.preventDefault()
+            event.stopPropagation()
+            level.parentElement?.querySelector('button')?.focus({ preventScroll: true })
+            setOpenSubmenuId(null)
+            return
           case 'Tab':
             event.preventDefault()
             onClose()

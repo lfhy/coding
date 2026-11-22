@@ -1,16 +1,11 @@
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
-import type { FormEvent, MouseEvent } from 'react'
-import {
-  Button, IconCloseOutline16, IconEditOutline16,
-  IconPlusOutline16, IconProjectAddOutline16, IconSearchOutline16, Input, Menu, Modal, SidebarRoot,
-  Toast, IconTrashOutline16,
-  type MenuEntry, type SidebarRootItem,
-} from 'coding-client-ui-primitives'
-import { Icon } from 'coding-client-ui-icons'
+import { useCallback, useEffect, useId, useRef, useState } from 'react'
+import type { FormEvent } from 'react'
+import { Button, Modal, Toast, type MenuEntry } from 'coding-client-ui-primitives'
 import type { PropsLocale, PropsRenderSlots, PropsRuntime, PropsStore } from 'coding-client-ui-slots'
 import { NS, type NotesLocaleKey } from './locales.ts'
 import { NoteDeleteDialog } from './NoteDeleteDialog.tsx'
 import { NoteNameDialog } from './NoteNameDialog.tsx'
+import { NotesDirectory, type NoteActionTarget, type NoteCreateKind } from './NotesDirectory.tsx'
 import { NotesDocument } from './NotesDocument.tsx'
 import { NotesTabs } from './NotesTabs.tsx'
 import { addTreeDirectory, filePaths, findEntry, isDeckPath, labelOf, latestWritten, noteFiles, removeTreeEntry } from './notes-tree.ts'
@@ -60,9 +55,7 @@ async function decodeText(file: File): Promise<string> {
   return new TextDecoder('utf-8', { fatal: true }).decode(new Uint8Array(await file.arrayBuffer()))
 }
 type DirectoryState = 'loading' | 'ready' | 'failed'
-type NoteActionTarget = Pick<NotesTreeEntry, 'kind' | 'name' | 'path'>
-type NoteContextMenu = { target: NoteActionTarget; x: number; y: number; trigger: HTMLButtonElement }
-type DialogKind = 'create' | 'folder' | 'presentation' | 'reload' | 'rename' | 'delete'
+type DialogKind = NoteCreateKind | 'reload' | 'rename' | 'delete'
 
 /**
  * 独立笔记页：目录和编辑器由本页持有，助手显隐由同会话的根布局持有。
@@ -76,13 +69,8 @@ export function NotesPage({
   const titleId = useId()
   const tabId = useId()
   const panelId = useId()
-  const searchId = useId()
   const titleRef = useRef<HTMLHeadingElement | null>(null)
-  const searchTrigger = useRef<HTMLButtonElement>(null)
   const createTrigger = useRef<HTMLButtonElement>(null)
-  /** 导入文本与幻灯片各用一个本机文件选择器，接受扩展名互不影响。 */
-  const textInput = useRef<HTMLInputElement>(null)
-  const slidesInput = useRef<HTMLInputElement>(null)
   const dialogTrigger = useRef<HTMLButtonElement | null>(null)
   const creatingRequest = useRef<AbortController | null>(null)
   const treeRevision = useRef(0)
@@ -107,15 +95,12 @@ export function NotesPage({
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set(restored.current.expanded))
   const [creationDirectory, setCreationDirectory] = useState('')
   const [createFailed, setCreateFailed] = useState(false)
-  const [searchOpen, setSearchOpen] = useState(false)
   const [query, setQuery] = useState('')
-  const [createMenuOpen, setCreateMenuOpen] = useState(false)
   const [exportMenuOpen, setExportMenuOpen] = useState(false)
   const [exporting, setExporting] = useState(false)
   const [dialog, setDialog] = useState<DialogKind | null>(null)
   const [actionTarget, setActionTarget] = useState<NoteActionTarget | null>(null)
   const [deleteFailed, setDeleteFailed] = useState(false)
-  const [contextMenu, setContextMenu] = useState<NoteContextMenu | null>(null)
   const [draftName, setDraftName] = useState('')
   const [creating, setCreating] = useState(false)
   const [toast, setToast] = useState<{ id: number; key: NotesLocaleKey } | null>(null)
@@ -280,15 +265,7 @@ export function NotesPage({
     return fresh
   }, [])
 
-  const openContextMenu = useCallback((target: NoteActionTarget, event: MouseEvent<HTMLButtonElement>) => {
-    event.preventDefault()
-    setCreateMenuOpen(false)
-    setContextMenu({ target, x: event.clientX, y: event.clientY, trigger: event.currentTarget })
-  }, [])
-
-  const openCreateDialog = useCallback((kind: 'create' | 'folder' | 'presentation', path: string, trigger: HTMLButtonElement | null) => {
-    setCreateMenuOpen(false)
-    setContextMenu(null)
+  const openCreateDialog = useCallback((kind: NoteCreateKind, path: string, trigger: HTMLButtonElement | null) => {
     dialogTrigger.current = trigger
     setCreationDirectory(path)
     setDraftName('')
@@ -297,75 +274,12 @@ export function NotesPage({
   }, [])
 
   const openTargetDialog = useCallback((kind: 'rename' | 'delete', target: NoteActionTarget, trigger: HTMLButtonElement) => {
-    setContextMenu(null)
     setActionTarget(target)
     dialogTrigger.current = trigger
     if (kind === 'rename') setDraftName(target.kind === 'dir' ? target.name : labelOf(target.name))
     else setDeleteFailed(false)
     setDialog(kind)
   }, [])
-
-  useEffect(() => {
-    if (contextMenu === null) return
-    const close = () => { setContextMenu(null) }
-    window.addEventListener('resize', close)
-    return () => { window.removeEventListener('resize', close) }
-  }, [contextMenu])
-
-  const locale = t('dateLocale')
-  const needle = searchOpen && !sidebarCollapsed ? query.trim().toLocaleLowerCase(locale) : ''
-  const treeItems = useMemo(() => {
-    const date = new Intl.DateTimeFormat(locale, { month: 'short', day: 'numeric' })
-    const flatten = (entries: readonly NotesTreeEntry[], out: SidebarRootItem[], depth: number): void => {
-      for (const entry of entries) {
-        const folder = entry.kind === 'dir'
-        const deck = entry.kind === 'deck'
-        if (folder && needle !== '') {
-          if (entry.children !== undefined) flatten(entry.children, out, 0)
-          continue
-        }
-        const label = folder ? entry.name : labelOf(entry.name)
-        if (needle !== '' && !label.toLocaleLowerCase(locale).includes(needle)) continue
-        const open = folder && expanded.has(entry.path)
-        out.push({
-          id: entry.path, label, icon: deck ? 'file-slides' : folder ? 'files' : 'notes', depth,
-          ...(folder ? { folder, open } : { iconTone: 'blue', active: activePath === entry.path }),
-          meta: date.format(entry.mtimeMs),
-          actions: <>
-            {folder && <>
-              <Button size="sm" className={css.rowAction} icon={<IconPlusOutline16 size={14} />}
-                aria-label={t('newNoteIn', { name: label })} title={t('newNote')} aria-haspopup="dialog"
-                onClick={(event) => { openCreateDialog('create', entry.path, event.currentTarget) }} />
-              <Button size="sm" className={css.rowAction} icon={<IconProjectAddOutline16 size={14} />}
-                aria-label={t('newFolderIn', { name: label })} title={t('newFolder')} aria-haspopup="dialog"
-                onClick={(event) => { openCreateDialog('folder', entry.path, event.currentTarget) }} />
-            </>}
-            <Button size="sm" className={css.rowAction} icon={<IconEditOutline16 size={14} />}
-              aria-label={t('renameEntry', { name: label })} title={t('rename')} aria-haspopup="dialog"
-              onClick={(event) => { openTargetDialog('rename', entry, event.currentTarget) }} />
-            <Button size="sm" className={css.rowAction} data-danger icon={<IconTrashOutline16 size={14} />}
-              aria-label={t('deleteEntry', { name: label })} title={t('delete')} aria-haspopup="dialog"
-              onClick={(event) => { openTargetDialog('delete', entry, event.currentTarget) }} />
-          </>,
-          onSelect: () => {
-            if (folder) toggleDir(entry.path)
-            else void selectTab(entry.path)
-          },
-          onContextMenu: (event) => { openContextMenu(entry, event) },
-        })
-        if (open && entry.children !== undefined) flatten(entry.children, out, depth + 1)
-      }
-    }
-    const items: SidebarRootItem[] = []
-    flatten(tree, items, 0)
-    return items
-  }, [tree, expanded, activePath, locale, needle, selectTab, toggleDir, openContextMenu, openCreateDialog, openTargetDialog, t])
-
-  const closeSearch = () => {
-    setSearchOpen(false)
-    setQuery('')
-    searchTrigger.current?.focus({ preventScroll: true })
-  }
 
   useEffect(() => {
     const trigger = dialogTrigger.current
@@ -593,25 +507,6 @@ export function NotesPage({
     }
   }
 
-  const noteCreateEntries: readonly MenuEntry[] = [
-    { id: 'create', label: t('newNote'), icon: <IconPlusOutline16 /> },
-    { id: 'folder', label: t('newFolder'), icon: <IconProjectAddOutline16 /> },
-  ]
-  const launcherEntries: readonly MenuEntry[] = [
-    ...noteCreateEntries,
-    { type: 'separator', id: 'new-presentation-separator' },
-    { id: 'presentation', label: t('newPresentation'), icon: <Icon name="file-slides" size={16} /> },
-    {
-      id: 'import',
-      label: t('importFile'),
-      icon: <Icon name="file" size={16} />,
-      submenu: [
-        { id: 'import-text', label: t('importText'), icon: <Icon name="notes" size={16} /> },
-        { id: 'import-slides', label: t('importSlides'), icon: <Icon name="file-slides" size={16} /> },
-      ],
-    },
-  ]
-
   const selectedLabel = activePath === null ? t('title') : labelOfPath(activePath)
 
   const exportEntries: readonly MenuEntry[] = [
@@ -645,60 +540,12 @@ export function NotesPage({
 
   return (
     <main className={css.page} aria-labelledby={titleId}>
-      <SidebarRoot
-        label={t('space')} title={t('allNotes')}
-        collapsed={sidebarCollapsed} width={sidebarWidth} variant="summary"
-        headerAction={<div className={css.directoryActions}>
-          {!sidebarCollapsed && (
-            <Button ref={searchTrigger} size="sm" className={css.directoryButton} icon={<IconSearchOutline16 />}
-              aria-label={t('search')} title={t('search')} aria-expanded={searchOpen}
-              aria-controls={searchOpen ? searchId : undefined}
-              onClick={() => { if (searchOpen) closeSearch(); else setSearchOpen(true) }} />
-          )}
-          <Menu
-            open={createMenuOpen}
-            anchor={<Button ref={createTrigger} size="sm" className={css.newNote} icon={<IconPlusOutline16 />}
-              aria-label={t('newNote')} title={t('newNote')} aria-haspopup="menu" aria-expanded={createMenuOpen}
-              disabled={creating} onClick={() => { setContextMenu(null); setCreateMenuOpen(open => !open) }} />}
-            items={launcherEntries}
-            onSelect={(id) => {
-              if (id === 'import-text') textInput.current?.click()
-              if (id === 'import-slides') slidesInput.current?.click()
-              if (id === 'create' || id === 'folder' || id === 'presentation') openCreateDialog(id, '', createTrigger.current)
-            }}
-            onClose={() => { setCreateMenuOpen(false); createTrigger.current?.focus({ preventScroll: true }) }}
-            portal keyboardNavigation
-          />
-          {contextMenu !== null && (
-            <Menu
-              open
-              anchor={null}
-              items={[
-                ...(contextMenu.target.kind === 'dir' ? [...noteCreateEntries, { type: 'separator' as const, id: 'edit' }] : []),
-                { id: 'rename', label: t('rename'), icon: <IconEditOutline16 size={16} /> },
-                { id: 'delete', label: t('delete'), danger: true, icon: <IconTrashOutline16 size={16} /> },
-              ]}
-              onSelect={(id) => {
-                const { target, trigger } = contextMenu
-                if (id === 'create' || id === 'folder') openCreateDialog(id, target.path, trigger)
-                if (id === 'rename' || id === 'delete') openTargetDialog(id, target, trigger)
-              }}
-              onClose={() => { setContextMenu(null); contextMenu.trigger.focus({ preventScroll: true }) }}
-              portal
-              keyboardNavigation
-              getAnchorRect={() => new DOMRect(contextMenu.x, contextMenu.y, 1, 1)}
-            />
-          )}
-        </div>}
-        {...(needle !== '' ? { empty: t('noMatches') } : {})}
-        toolbar={searchOpen && <div id={searchId} className={css.searchRow}>
-          <Input className={css.searchField} value={query} autoFocus aria-label={t('search')} placeholder={t('search')}
-            onChange={(event) => { setQuery(event.target.value) }}
-            onKeyDown={(event) => { if (event.key === 'Escape') { event.preventDefault(); closeSearch() } }} />
-          <Button size="sm" className={css.directoryButton} aria-label={t('clearSearch')} title={t('clearSearch')}
-            icon={<IconCloseOutline16 />} onClick={closeSearch} />
-        </div>}
-        items={sidebarCollapsed ? [] : treeItems} />
+      <NotesDirectory t={t} tree={tree} expanded={expanded} activePath={activePath}
+        collapsed={sidebarCollapsed} width={sidebarWidth} creating={creating} launcherRef={createTrigger}
+        query={query} onQueryChange={setQuery} onToggleDir={toggleDir} onSelectPath={selectTab}
+        onCreate={openCreateDialog} onEdit={openTargetDialog}
+        textImport={{ accept: TEXT_IMPORT_ACCEPT, onFile: importText }}
+        slidesImport={{ accept: SLIDE_IMPORT_ACCEPT, onFile: importSlides }} />
       <div className={css.document}>
         <NotesTabs paths={openTabs} activePath={activePath} panelId={panelId}
           idPrefix={tabId} labelOfPath={labelOfPath} onSelect={(path) => { void selectTab(path) }}
@@ -744,19 +591,6 @@ export function NotesPage({
         </>}>
       </Modal>
       {toast !== null && <Toast key={toast.id} text={t(toast.key)} onDone={() => { setToast(null) }} />}
-      {/* 导入子菜单各带一个文件选择器，留在页面 DOM 里由对应菜单项唤起。 */}
-      <input ref={textInput} type="file" accept={TEXT_IMPORT_ACCEPT} hidden aria-hidden="true" tabIndex={-1}
-        onChange={(event) => {
-          const file = event.target.files?.[0]
-          event.target.value = ''
-          importText(file)
-        }} />
-      <input ref={slidesInput} type="file" accept={SLIDE_IMPORT_ACCEPT} hidden aria-hidden="true" tabIndex={-1}
-        onChange={(event) => {
-          const file = event.target.files?.[0]
-          event.target.value = ''
-          importSlides(file)
-        }} />
     </main>
   )
 }

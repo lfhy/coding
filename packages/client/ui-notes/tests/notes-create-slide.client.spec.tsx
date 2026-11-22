@@ -9,10 +9,127 @@ import { createNotesUiStore } from '../src/client/notes-ui-store.ts'
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.useRealTimers() })
 
-describe('NotesPage 新建幻灯片', () => {
+/** 直接挂载笔记页，保留真实的菜单组件和会话内标签状态。 */
+async function mountNotes() {
+  vi.useFakeTimers()
+  const store = createNotesUiStore().create('s-notes')
+  const closePage = vi.fn()
+  const props = {
+    closePage,
+    t: (key: keyof typeof zh, params?: { name: string }) => params === undefined ? zh[key] : zh[key].replace('{name}', params.name),
+    sidebarCollapsed: false,
+    sidebarWidth: 280,
+    assistantOpen: false,
+    assistantPanelId: 'note-assistant',
+    toggleAssistant: vi.fn(),
+    sessionId: 's-notes',
+    renderSlot: (_key: string, owner: { path: string }) => <div>演示文稿 {owner.path}</div>,
+    useStore: bindSnapshotSelector(store),
+    actions: store.actions,
+  } as unknown as NotesPageProps
+  const { container } = render(<NotesPage {...props} />)
+  await act(async () => {})
+  return { closePage, container, store }
+}
+
+/** 打开页头加号，调用者可继续操作一级菜单项。 */
+function openLauncher() {
+  const directory = screen.getByRole('complementary', { name: '笔记目录' })
+  const trigger = within(directory).getByRole('button', { name: '新建' })
+  fireEvent.click(trigger)
+  return { trigger, menu: screen.getByRole('menu') }
+}
+
+/** 通过指定分组选择同名类型，区分新建和导入的「幻灯片」。 */
+function chooseLauncherType(group: '新建' | '导入', name: '幻灯片' | '文本') {
+  const { trigger, menu } = openLauncher()
+  fireEvent.click(within(menu).getByRole('menuitem', { name: group }), { detail: 1 })
+  const submenu = screen.getByRole('menu', { name: group })
+  fireEvent.click(within(submenu).getByRole('menuitem', { name }), { detail: 1 })
+  return trigger
+}
+
+describe('NotesPage 加号菜单', () => {
+  it('只显示新建和导入两组，悬停显示各自有序的子项', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({ children: [] })))
+    await mountNotes()
+    const { trigger, menu } = openLauncher()
+    expect(trigger.getAttribute('aria-label')).toBe('新建')
+    expect(trigger.getAttribute('title')).toBe('新建')
+    const create = within(menu).getByRole('menuitem', { name: '新建' })
+    const importEntry = within(menu).getByRole('menuitem', { name: '导入' })
+    expect(within(menu).getAllByRole('menuitem')).toEqual([create, importEntry])
+    expect(screen.getAllByRole('menu')).toEqual([menu])
+    expect(create.getAttribute('aria-expanded')).toBe('false')
+    expect(importEntry.getAttribute('aria-expanded')).toBe('false')
+
+    fireEvent.mouseEnter(importEntry)
+    const importMenu = within(screen.getByRole('menu', { name: '导入' }))
+    expect(importMenu.getAllByRole('menuitem')).toEqual(['文本', '幻灯片'].map(name =>
+      importMenu.getByRole('menuitem', { name })))
+
+    fireEvent.mouseEnter(create)
+    expect(screen.queryByRole('menu', { name: '导入' })).toBeNull()
+    const submenu = screen.getByRole('menu', { name: '新建' })
+    expect(create.getAttribute('aria-expanded')).toBe('true')
+    expect(submenu.getAttribute('aria-labelledby')).toBe(create.id)
+    const types = within(submenu)
+    const folder = types.getByRole('menuitem', { name: '目录' })
+    expect(types.getAllByRole('menuitem')).toEqual([
+      folder,
+      types.getByRole('menuitem', { name: '笔记' }),
+      types.getByRole('menuitem', { name: '幻灯片' }),
+    ])
+    fireEvent.click(folder, { detail: 1 })
+    const dialog = screen.getByRole('dialog', { name: '新建目录' })
+    expect(within(dialog).getByRole('button', { name: '保存到 全部笔记' })).toBeTruthy()
+    expect(screen.queryByRole('menu')).toBeNull()
+  })
+
+  it('方向键在同一级移动；左键或 Escape 返回，第二次 Escape 关闭菜单', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({ children: [] })))
+    const { closePage } = await mountNotes()
+    const { trigger, menu } = openLauncher()
+    const create = within(menu).getByRole('menuitem', { name: '新建' })
+    const importEntry = within(menu).getByRole('menuitem', { name: '导入' })
+    expect(document.activeElement).toBe(create)
+    fireEvent.keyDown(create, { key: 'ArrowDown' })
+    expect(document.activeElement).toBe(importEntry)
+    fireEvent.keyDown(importEntry, { key: 'ArrowUp' })
+    expect(document.activeElement).toBe(create)
+    expect(screen.getAllByRole('menu')).toEqual([menu])
+
+    fireEvent.keyDown(create, { key: 'ArrowRight' })
+    const submenu = screen.getByRole('menu', { name: '新建' })
+    const folder = within(submenu).getByRole('menuitem', { name: '目录' })
+    const note = within(submenu).getByRole('menuitem', { name: '笔记' })
+    const presentation = within(submenu).getByRole('menuitem', { name: '幻灯片' })
+    expect(document.activeElement).toBe(folder)
+    fireEvent.keyDown(folder, { key: 'ArrowDown' })
+    expect(document.activeElement).toBe(note)
+    fireEvent.keyDown(note, { key: 'ArrowDown' })
+    expect(document.activeElement).toBe(presentation)
+    fireEvent.keyDown(presentation, { key: 'ArrowUp' })
+    expect(document.activeElement).toBe(note)
+    fireEvent.keyDown(note, { key: 'ArrowLeft' })
+    expect(document.activeElement).toBe(create)
+    expect(screen.getAllByRole('menu')).toEqual([menu])
+
+    fireEvent.keyDown(create, { key: 'ArrowRight' })
+    const firstItem = within(screen.getByRole('menu', { name: '新建' })).getByRole('menuitem', { name: '目录' })
+    expect(document.activeElement).toBe(firstItem)
+    fireEvent.keyDown(firstItem, { key: 'Escape' })
+    expect(document.activeElement).toBe(create)
+    expect(screen.getAllByRole('menu')).toEqual([menu])
+    await act(async () => { fireEvent.keyDown(create, { key: 'Escape' }) })
+    expect(screen.queryByRole('menu')).toBeNull()
+    expect(document.activeElement).toBe(trigger)
+    expect(closePage).not.toHaveBeenCalled()
+  })
+})
+
+describe('NotesPage 幻灯片和文本导入', () => {
   it('从页头新建菜单创建幻灯片工程目录，并选中新文件标签', async () => {
-    vi.useFakeTimers()
-    const store = createNotesUiStore().create('s-notes')
     let tree: { name: string; kind: 'deck'; path: string; mtimeMs: number }[] = []
     const fetchMock = vi.fn(async (input: string | URL, init?: RequestInit) => {
       const url = new URL(String(input), 'http://localhost')
@@ -28,28 +145,8 @@ describe('NotesPage 新建幻灯片', () => {
       throw new Error(`unexpected request: ${url.pathname}`)
     })
     vi.stubGlobal('fetch', fetchMock)
-    const props = {
-      closePage: vi.fn(),
-      t: (key: keyof typeof zh, params?: { name: string }) => params === undefined ? zh[key] : zh[key].replace('{name}', params.name),
-      sidebarCollapsed: false,
-      sidebarWidth: 280,
-      assistantOpen: false,
-      assistantPanelId: 'note-assistant',
-      toggleAssistant: vi.fn(),
-      sessionId: 's-notes',
-      renderSlot: (_key: string, owner: { path: string }) => <div>演示文稿 {owner.path}</div>,
-      useStore: bindSnapshotSelector(store),
-      actions: store.actions,
-    } as unknown as NotesPageProps
-    render(<NotesPage {...props} />)
-    await act(async () => {})
-
-    const directory = screen.getByRole('complementary', { name: '笔记目录' })
-    const trigger = within(directory).getByRole('button', { name: '新建笔记' })
-    fireEvent.click(trigger)
-    const menu = screen.getByRole('menu')
-    expect(within(menu).getByRole('menuitem', { name: '新建幻灯片' })).toBeTruthy()
-    fireEvent.click(within(menu).getByRole('menuitem', { name: '新建幻灯片' }))
+    const { store } = await mountNotes()
+    const trigger = chooseLauncherType('新建', '幻灯片')
 
     const dialog = screen.getByRole('dialog', { name: '新建幻灯片' })
     fireEvent.change(within(dialog).getByRole('textbox', { name: '幻灯片名称' }), { target: { value: '季度汇报' } })
@@ -63,8 +160,6 @@ describe('NotesPage 新建幻灯片', () => {
   })
 
   it('导入子菜单选「幻灯片」后上传 .pptx，成功后打开同名工程目录', async () => {
-    vi.useFakeTimers()
-    const store = createNotesUiStore().create('s-notes')
     let tree: { name: string; kind: 'deck'; path: string; mtimeMs: number }[] = []
     const uploads: unknown[] = []
     const fetchMock = vi.fn(async (input: string | URL, init?: RequestInit) => {
@@ -80,28 +175,8 @@ describe('NotesPage 新建幻灯片', () => {
       throw new Error(`unexpected request: ${url.pathname}`)
     })
     vi.stubGlobal('fetch', fetchMock)
-    const props = {
-      closePage: vi.fn(),
-      t: (key: keyof typeof zh, params?: { name: string }) => params === undefined ? zh[key] : zh[key].replace('{name}', params.name),
-      sidebarCollapsed: false,
-      sidebarWidth: 280,
-      assistantOpen: false,
-      assistantPanelId: 'note-assistant',
-      toggleAssistant: vi.fn(),
-      sessionId: 's-notes',
-      renderSlot: (_key: string, owner: { path: string }) => <div>演示文稿 {owner.path}</div>,
-      useStore: bindSnapshotSelector(store),
-      actions: store.actions,
-    } as unknown as NotesPageProps
-    const { container } = render(<NotesPage {...props} />)
-    await act(async () => {})
-
-    const directory = screen.getByRole('complementary', { name: '笔记目录' })
-    fireEvent.click(within(directory).getByRole('button', { name: '新建笔记' }))
-    const launcher = screen.getByRole('menu')
-    expect(within(launcher).queryByRole('menuitem', { name: '文本' })).toBeNull()
-    fireEvent.click(within(launcher).getByRole('menuitem', { name: '导入' }))
-    fireEvent.click(within(launcher).getByRole('menuitem', { name: '幻灯片' }))
+    const { container, store } = await mountNotes()
+    chooseLauncherType('导入', '幻灯片')
 
     const input = container.querySelector<HTMLInputElement>('input[accept=".pptx"]')
     if (input === null) throw new Error('缺少幻灯片导入选择器')
@@ -189,11 +264,7 @@ describe('NotesPage 新建幻灯片', () => {
     const { container } = render(<NotesPage {...props} />)
     await act(async () => {})
 
-    const directory = screen.getByRole('complementary', { name: '笔记目录' })
-    fireEvent.click(within(directory).getByRole('button', { name: '新建笔记' }))
-    const launcher = screen.getByRole('menu')
-    fireEvent.click(within(launcher).getByRole('menuitem', { name: '导入' }))
-    fireEvent.click(within(launcher).getByRole('menuitem', { name: '文本' }))
+    chooseLauncherType('导入', '文本')
     const input = container.querySelector<HTMLInputElement>('input[accept=".md,.markdown,.txt"]')
     if (input === null) throw new Error('缺少文本导入选择器')
     await act(async () => {

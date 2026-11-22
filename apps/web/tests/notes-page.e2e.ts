@@ -1,11 +1,18 @@
 /** 验证实际 Host 与客户端组合中的笔记存取、布局切换和助手草稿。 */
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import type { Browser, Page } from 'playwright'
+import type { Browser, Locator, Page } from 'playwright'
 import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
 import { launchWebScaffold, watchConsole, type WebScaffold } from './scaffold.ts'
 import { newEnglishPage, saveFailureShot } from './support.ts'
+
+/** 打开页头「New」的类型菜单；不匹配目录行或右键里的同类操作。 */
+async function openNewSubmenu(page: Page, directory: Locator) {
+  await directory.getByRole('button', { name: 'New', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'New', exact: true }).click()
+  return page.getByRole('menu', { name: 'New', exact: true })
+}
 
 describe('Web 笔记工作区', () => {
   let scaffold: WebScaffold
@@ -198,6 +205,8 @@ describe('Web 笔记工作区', () => {
     await projects.hover()
     expect(await actionsOpacity(createNote)).toBe('1')
     expect(await actionsOpacity(createFolder)).toBe('1')
+    expect(await createNote.getAttribute('title')).toBe('New note')
+    expect(await createFolder.getAttribute('title')).toBe('New folder')
     await createNote.click()
     await noteDialog.getByRole('button', { name: 'Save to Projects', exact: true }).waitFor()
     expect(await projects.getAttribute('aria-expanded')).toBe('false')
@@ -208,9 +217,9 @@ describe('Web 笔记工作区', () => {
     expect((await scaffold.ctx.fileLibrary.readNote('Projects/Trip plan.md')).content).toBe('')
 
     await page.setViewportSize({ width: 620, height: 800 })
-    const expand = page.getByRole('button', { name: 'Expand sidebar', exact: true })
-    if (await expand.isVisible()) await expand.click()
+    await page.getByRole('button', { name: 'Expand sidebar', exact: true }).click()
     await directory.getByRole('button', { name: 'Archive', exact: true }).click({ button: 'right' })
+    await page.getByRole('menuitem', { name: 'New note', exact: true }).waitFor()
     await page.getByRole('menuitem', { name: 'New folder', exact: true }).click()
     const folderDialog = page.getByRole('dialog', { name: 'New folder' })
     await folderDialog.getByRole('button', { name: 'Save to Projects / Archive', exact: true }).waitFor()
@@ -219,8 +228,8 @@ describe('Web 笔记工作区', () => {
     await directory.getByTitle('Interviews', { exact: true }).waitFor()
     await folderDialog.waitFor({ state: 'hidden' })
 
-    await directory.getByRole('button', { name: 'New note', exact: true }).click()
-    await page.getByRole('menuitem', { name: 'New note', exact: true }).click()
+    const types = await openNewSubmenu(page, directory)
+    await types.getByRole('menuitem', { name: 'Note', exact: true }).click()
     const root = noteDialog.getByRole('button', { name: 'Save to All notes', exact: true })
     await root.click()
     await page.keyboard.press('Escape')
@@ -242,6 +251,50 @@ describe('Web 笔记工作区', () => {
     expect((await scaffold.ctx.fileLibrary.readNote('Projects/Archive/Interviews/Questionnaire.md')).content).toBe('')
     expect(await page.evaluate(() => document.documentElement.scrollWidth === innerWidth)).toBe(true)
     expect(consoleLog.pageErrors).toEqual([])
+  })
+
+  it('加号菜单按类型分组，在宽窄窗口均可完整展开', async () => {
+    const menuPage = await newEnglishPage(browser)
+    try {
+      for (const width of [1024, 375]) {
+        await menuPage.setViewportSize({ width, height: 800 })
+        await menuPage.goto(scaffold.baseUrl, { waitUntil: 'load' })
+        await menuPage.getByRole('button', { name: 'Notes', exact: true }).click()
+        const directory = menuPage.getByRole('complementary', { name: 'Note directory' })
+        const launcher = directory.getByRole('button', { name: 'New', exact: true })
+        await launcher.click()
+        const createEntry = menuPage.getByRole('menuitem', { name: 'New', exact: true })
+        const importEntry = menuPage.getByRole('menuitem', { name: 'Import', exact: true })
+        await createEntry.waitFor()
+        expect(await menuPage.getByRole('menu').count()).toBe(1)
+        expect(await menuPage.getByRole('menuitem').allTextContents()).toEqual(['New', 'Import'])
+
+        await importEntry.hover()
+        const importMenu = menuPage.getByRole('menu', { name: 'Import', exact: true })
+        await importMenu.waitFor()
+        expect(await importMenu.getByRole('menuitem').allTextContents()).toEqual(['Text', 'Presentation'])
+        await createEntry.hover()
+        const types = menuPage.getByRole('menu', { name: 'New', exact: true })
+        await types.waitFor()
+        expect(await types.getByRole('menuitem').allTextContents()).toEqual(['Folder', 'Note', 'Presentation'])
+
+        // 实际命中浮层边缘也能发现祖先滚动区裁剪，而不只是检查坐标。
+        const position = await types.evaluate((menu) => {
+          const { left, top, right, bottom, width, height } = menu.getBoundingClientRect()
+          if (left < 0 || top < 0 || right > innerWidth || bottom > innerHeight) return null
+          const centerX = left + width / 2
+          const centerY = top + height / 2
+          const edges = [[left + 2, centerY], [right - 2, centerY], [centerX, top + 2], [centerX, bottom - 2]] as const
+          return edges.every(([x, y]) => menu.contains(document.elementFromPoint(x, y))) ? left : null
+        })
+        expect(position).not.toBeNull()
+        if (width === 1024) expect(position).toBeGreaterThan(await createEntry.evaluate(item => item.getBoundingClientRect().right))
+        await types.getByRole('menuitem', { name: 'Folder', exact: true }).click()
+        await menuPage.getByRole('dialog', { name: 'New folder', exact: true }).waitFor()
+      }
+    } finally {
+      await menuPage.context().close()
+    }
   })
 
   it('顶栏切换和关闭笔记标签，跨页恢复后窄屏仍由内容区独立滚动', async () => {
@@ -298,8 +351,8 @@ describe('Web 笔记工作区', () => {
     await page.reload({ waitUntil: 'load' })
     await page.getByRole('button', { name: 'Notes', exact: true }).click()
     const directory = page.getByRole('complementary', { name: 'Note directory' })
-    await directory.getByRole('button', { name: 'New note', exact: true }).click()
-    await page.getByRole('menuitem', { name: 'New note', exact: true }).click()
+    const types = await openNewSubmenu(page, directory)
+    await types.getByRole('menuitem', { name: 'Note', exact: true }).click()
 
     const noteDialog = page.getByRole('dialog', { name: 'New note' })
     await noteDialog.getByLabel('Note name').fill('Picker draft')
@@ -347,8 +400,8 @@ describe('Web 笔记工作区', () => {
     await page.reload({ waitUntil: 'load' })
     await page.getByRole('button', { name: 'Notes', exact: true }).click()
     const directory = page.getByRole('complementary', { name: 'Note directory' })
-    await directory.getByRole('button', { name: 'New note', exact: true }).click()
-    await page.getByRole('menuitem', { name: 'New presentation', exact: true }).click()
+    const types = await openNewSubmenu(page, directory)
+    await types.getByRole('menuitem', { name: 'Presentation', exact: true }).click()
     const dialog = page.getByRole('dialog', { name: 'New presentation', exact: true })
     await dialog.getByRole('button', { name: 'Save to All notes', exact: true }).waitFor()
     await dialog.getByLabel('Presentation name').fill('测试')
