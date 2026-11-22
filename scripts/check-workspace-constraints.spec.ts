@@ -107,6 +107,19 @@ describe('笔记标签协议发布清单', () => {
   })
 })
 
+describe('电脑操作客户端发布清单', () => {
+  it('发布 TypeScript 发射的客户端模块与声明', () => {
+    const manifestPath = fileURLToPath(new URL('../packages/computer-use/computer-use/package.json', import.meta.url))
+    const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as WorkspaceManifest['manifest']
+    expect(manifest.exports?.['./client']).toEqual({
+      types: './lib/types/client.d.ts',
+      default: './lib/types/client.js',
+    })
+    expect(manifest.files).toEqual(expectedDshPackageFiles(manifest))
+    expect(manifest.files).toContain('lib/types/**/*.js')
+  })
+})
+
 describe('private Electron workspace constraints', () => {
   const shell: WorkspaceManifest = {
     dir: 'apps/desktop-electron',

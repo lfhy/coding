@@ -41,6 +41,7 @@
     "lib/invariant.js",
     "native",
     "scripts",
+    "lib/types/**/*.js",
     "lib/types/**/*.d.ts",
     "lib/typert.host.js",
     "lib/typert.host.d.ts",
