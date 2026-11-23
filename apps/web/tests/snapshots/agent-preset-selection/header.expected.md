@@ -2,7 +2,7 @@
 - text: Minimal mode
 - button "New session":
   - img
-- button "Collapse session overview" [expanded]:
+- button "Expand session overview":
   - img
 - button "Open workbench":
   - img

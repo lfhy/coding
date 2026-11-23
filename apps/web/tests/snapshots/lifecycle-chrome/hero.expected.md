@@ -1,11 +1,13 @@
 - button "New chat":
   - img
   - text: New chat
-- button "Settings":
-  - img
-  - text: Settings
+- tablist "Browse sessions":
+  - tab "Work" [selected]:
+    - img
+    - text: Work
+  - tab "Conversations"
+  - tab "Recent"
 - text: Workspaces
-- button "Collapse sidebar"
 - button "Search sessions":
   - img
 - textbox "Search sessions..."
@@ -13,28 +15,34 @@
   - img
 - button "Add workspace":
   - img
-- tree "Sessions":
-  - treeitem "workspace" [expanded]:
+- tabpanel "Work":
+  - tree "Sessions":
+    - treeitem "workspace" [expanded]:
+      - img
+      - text: workspace
+- tablist "New conversation mode":
+  - tab "Work" [selected]:
     - img
-    - text: workspace
+    - text: Work
+  - tab "Conversations"
 - button "Show terminal panel"
 - button "Open right sidebar"
-- text: {{greeting}}
-- button "Standard mode":
-  - img
-  - text: Standard mode
-  - img
-- button "Choose workspace":
-  - img
-  - text: workspace
-  - img
-- textbox "Describe what you want to build"
-- button "Commands":
-  - img
-- tooltip "Commands"
-- 'button "Access mode, current: Workspace Write"': Workspace Write
-- button "Select model, current DeepSeek-V4-Flash":
-  - text: DeepSeek-V4-Flash
-  - img
-- button "Send message" [disabled]
+- tabpanel "Work":
+  - text: {{greeting}}
+  - button "Standard mode":
+    - img
+    - text: Standard mode
+    - img
+  - button "Choose workspace":
+    - img
+    - text: workspace
+    - img
+  - textbox "Describe what you want to build"
+  - button "Commands":
+    - img
+  - 'button "Access mode, current: Workspace Write"': Workspace Write
+  - button "Select model, current DeepSeek-V4-Flash":
+    - text: DeepSeek-V4-Flash
+    - img
+  - button "Send message" [disabled]
 - separator

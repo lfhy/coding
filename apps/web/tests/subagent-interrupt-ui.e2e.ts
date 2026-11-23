@@ -24,7 +24,7 @@ import {
   acknowledgeReloadConnectionLoss, assertFixtureInventory, captureStableAria, compareOrRefreshGolden,
   launchWebScaffold, watchConsole, webSnapshotMode, type WebScaffold,
 } from './scaffold.ts'
-import { connectFreshWorkspace, newEnglishPage, saveFailureShot } from './support.ts'
+import { connectFreshWorkspace, newEnglishPage, openSessionOverview, saveFailureShot } from './support.ts'
 
 const BASE_FIXTURE = fileURLToPath(new URL('./snapshots/live-interactions/session.jsonl', import.meta.url))
 
@@ -164,7 +164,7 @@ describe.skipIf(MODE === 'record')('web e2e: composer interrupt for a running co
     const warningStart = tripwire.warnings.length
     await page.reload({ waitUntil: 'load' })
     await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
-    await page.getByRole('region', { name: 'Session overview' }).getByRole('button', { name: /^Subagents / }).waitFor({ timeout: 15_000 })
+    await (await openSessionOverview(page)).getByRole('button', { name: /^Subagents / }).waitFor({ timeout: 15_000 })
     acknowledgeReloadConnectionLoss(tripwire, warningStart)
     expect(scaffold.ctx.agents.get(childId)?.status).toBe('running')
   }, 120_000)
@@ -197,7 +197,7 @@ describe.skipIf(MODE === 'record')('web e2e: composer interrupt for a running co
       await route.fulfill({ response, json: body })
     })
     try {
-      await page.getByRole('region', { name: 'Session overview' }).getByRole('button', { name: /^Subagents / }).click()
+      await (await openSessionOverview(page)).getByRole('button', { name: /^Subagents / }).click()
       await page.getByRole('treeitem', { name: new RegExp(LABEL) }).click()
       const input = page.getByRole('textbox', {
         name: 'Parent session offline; sending is unavailable but you can still stop the run',
@@ -256,7 +256,7 @@ describe.skipIf(MODE === 'record')('web e2e: composer interrupt for a running co
     // 从侧栏回到父会话，重新读取可用的子代理目录。
     await page.getByRole('tree', { name: 'Sessions' })
       .getByRole('treeitem', { name: /Ask a research subagent to/ }).click()
-    await page.getByRole('region', { name: 'Session overview' }).getByRole('button', { name: /^Subagents / }).click()
+    await (await openSessionOverview(page)).getByRole('button', { name: /^Subagents / }).click()
     await page.getByRole('treeitem', { name: new RegExp(LABEL) }).click()
     const input = page.getByRole('textbox', { name: 'Message the agent' })
     await input.waitFor({ timeout: 15_000 })

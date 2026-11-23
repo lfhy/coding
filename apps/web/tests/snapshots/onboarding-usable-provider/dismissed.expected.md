@@ -10,21 +10,25 @@
       - img
       - text: 添加渠道
   - main "DeepSeek":
-    - text: 渠道名称
-    - textbox "渠道名称": DeepSeek
+    - button "删除"
     - text: API 地址
     - textbox "API 地址":
       - /placeholder: https://api.deepseek.com
+      - text: https://api.deepseek.com
     - text: API 密钥
     - textbox "API 密钥":
-      - /placeholder: 输入 API 密钥
+      - /placeholder: 输入 API 密钥，或留空使用环境认证
+    - text: 显示名称
+    - textbox "显示名称":
+      - /placeholder: deepseek-official
+      - text: DeepSeek
     - text: 上游请求格式
     - button "上游请求格式":
-      - text: 自动 (OpenAI Chat Completions)
+      - text: OpenAI Chat Completions
       - img
     - group: 高级设置
     - region "模型目录":
-      - text: 模型目录 正在使用适配器默认模型
+      - text: 模型目录
       - button "获取可用模型":
         - img
         - text: 获取可用模型

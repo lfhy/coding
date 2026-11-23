@@ -15,7 +15,7 @@ import {
   launchWebScaffold, watchConsole,
   webSnapshotMode, type WebScaffold,
 } from './scaffold.ts'
-import { connectFreshWorkspace, newEnglishPage, saveFailureShot } from './support.ts'
+import { connectFreshWorkspace, newEnglishPage, openSessionOverview, saveFailureShot } from './support.ts'
 
 const BASE_FIXTURE = fileURLToPath(new URL('./snapshots/live-interactions/session.jsonl', import.meta.url))
 const AVAILABLE_CHILD_EXPECTED = fileURLToPath(new URL('./snapshots/subagent-conversation/ui.expected.md', import.meta.url))
@@ -50,7 +50,7 @@ function childFixture(source: string, fixtureId: string, withContinuation: boole
 }
 
 async function openSubagents(page: Page): Promise<void> {
-  const button = page.getByRole('region', { name: 'Session overview' })
+  const button = (await openSessionOverview(page))
     .getByRole('button', { name: /^Subagents / })
   await button.waitFor({ timeout: 15_000 })
   if (await button.getAttribute('aria-expanded') !== 'true') await button.click()
@@ -230,10 +230,10 @@ describe('web e2e: persisted subagent conversation and human continuation', () =
     const warningStart = tripwire.warnings.length
     await page.reload({ waitUntil: 'load' })
     await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
+    await openSubagents(page)
     const catalogButton = page.getByRole('region', { name: 'Session overview' })
       .getByRole('button', { name: /^Subagents / })
     await catalogButton.waitFor({ timeout: 15_000 })
-    await openSubagents(page)
     const catalogTree = page.getByRole('tree', { name: 'Subagent sessions' })
     await catalogTree.getByRole('treeitem').nth(1).waitFor({ timeout: 15_000 })
     await catalogTree.press('Escape')
@@ -284,7 +284,7 @@ describe('web e2e: persisted subagent conversation and human continuation', () =
       await page.reload({ waitUntil: 'load' })
       await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
       await expect.poll(() => emptyDelivered, { timeout: 15_000 }).toBe(true)
-      await page.getByRole('region', { name: 'Session overview' }).getByRole('button', { name: /^Subagents / }).waitFor({ timeout: 15_000 })
+      await (await openSessionOverview(page)).getByRole('button', { name: /^Subagents / }).waitFor({ timeout: 15_000 })
       acknowledgeReloadConnectionLoss(tripwire, warningStart)
 
       await openSubagents(page)

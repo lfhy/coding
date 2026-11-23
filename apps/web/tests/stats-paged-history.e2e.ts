@@ -14,7 +14,7 @@ import {
   assertFixtureInventory, captureStableAria, compareOrRefreshGolden,
   launchWebScaffold, seedSession, watchConsole, webSnapshotMode, type WebScaffold,
 } from './scaffold.ts'
-import { newEnglishPage, saveFailureShot } from './support.ts'
+import { newEnglishPage, openSessionOverview, saveFailureShot, sidebarTreeItems } from './support.ts'
 
 const SNAPSHOT_DIR = fileURLToPath(new URL('./snapshots/stats-paged-history', import.meta.url))
 const UI_EXPECTED = fileURLToPath(new URL('./snapshots/stats-paged-history/ui.expected.md', import.meta.url))
@@ -85,10 +85,7 @@ describe('web e2e: whole-session stats survive history paging', () => {
     tripwire = watchConsole(page)
     await page.goto(scaffold.baseUrl, { waitUntil: 'load' })
     await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
-    const groupRow = page.locator('[role="treeitem"]').first()
-    await groupRow.waitFor({ timeout: 15_000 })
-    await groupRow.click()
-    const sessionRow = page.locator('[role="treeitem"]').nth(1)
+    const sessionRow = sidebarTreeItems(page).first()
     await sessionRow.waitFor({ timeout: 10_000 })
     await sessionRow.click()
     await page.getByText(`r${TURNS}`, { exact: true }).waitFor({ timeout: 15_000 })
@@ -106,7 +103,7 @@ describe('web e2e: whole-session stats survive history paging', () => {
     // turns are NOT loaded, yet the overview already reports the whole log —
     // the sessionStats projection, not the window fold.
     expect(await page.getByText('m1', { exact: true }).count()).toBe(0)
-    const card = page.getByRole('region', { name: 'Session overview' })
+    const card = await openSessionOverview(page)
     await expect.poll(() => card.getByText('Turns').locator('..').textContent(), { timeout: 10_000 }).toBe(`Turns${TURNS}`)
     expect(await card.getByText('Steps').locator('..').textContent()).toBe(`Steps${TURNS}`)
     const beforePaging = await card.textContent()
@@ -132,8 +129,11 @@ describe('web e2e: whole-session stats survive history paging', () => {
 
   it('shows whole-session figures inside the conversation and folds when space narrows', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-session-overview'))
+    // 对话列宽于 1388px 时卡片默认展开。测试基线视口下侧栏占去一列，列宽落在
+    // 阈值之下，所以先拉宽视口验证默认展开，再收窄验证默认收起。
+    await page.setViewportSize({ width: 1800, height: 1000 })
     const card = page.getByRole('region', { name: 'Session overview' })
-    await card.waitFor()
+    await card.waitFor({ state: 'visible' })
     expect(await page.getByRole('button', { name: 'Collapse session overview' }).first().getAttribute('aria-expanded')).toBe('true')
     expect(await card.getByText('Turns').locator('..').textContent()).toBe('Turns28')
     expect(await card.getByText('Steps').locator('..').textContent()).toBe('Steps28')
@@ -153,6 +153,7 @@ describe('web e2e: whole-session stats survive history paging', () => {
     await page.getByRole('button', { name: 'Expand session overview' }).click()
     await card.waitFor({ state: 'visible' })
 
+    // 收窄跨过阈值：恢复该宽度下的默认收起状态。
     await page.setViewportSize({ width: 1024, height: 768 })
     const expand = page.getByRole('button', { name: 'Expand session overview' })
     await expand.waitFor({ state: 'visible' })
@@ -170,7 +171,9 @@ describe('web e2e: whole-session stats survive history paging', () => {
     await page.setViewportSize({ width: 375, height: 768 })
     await expand.waitFor({ state: 'visible' })
     await expect.poll(async () => Math.round((await sidebar.boundingBox())?.width ?? 0)).toBe(56)
-    await expect.poll(async () => Math.round((await page.locator('[data-conversation-scroll]').boundingBox())?.width ?? 0)).toBe(319)
+    // 窄屏下窗口外壳两侧留 8px/4px 内边距、44px 导航列与 8px 列间距，侧栏收成 56px 图标轨，
+    // 对话列拿剩余的 255px。
+    await expect.poll(async () => Math.round((await page.locator('[data-conversation-scroll]').boundingBox())?.width ?? 0)).toBe(375 - 8 - 44 - 8 - 4 - 56)
     if (process.env.DSH_VISUAL_CAPTURE === '1') await saveFailureShot(page, 'session-overview-375')
     await expand.click()
     await card.waitFor({ state: 'visible' })

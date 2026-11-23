@@ -31,6 +31,9 @@
     - button "代理池":
       - img
       - text: 代理池
+    - button "Computer control":
+      - img
+      - text: Computer control
     - button "PPT template management":
       - img
       - text: PPT template management
@@ -65,4 +68,7 @@
     - text: Queue
     - img
   - text: Session title Choose which model names new sessions. Inheriting uses the conversation model, a custom model titles sessions on its own, and turning it off keeps only the local fallback title.
+  - status: Applying…
   - status: Title model settings are unavailable in this deployment.
+  - text: Session metadata Rebuild list metadata and projection caches from session logs, skipping loaded sessions. Original logs stay unchanged; corrupted log contents cannot be repaired.
+  - button "Repair session metadata"

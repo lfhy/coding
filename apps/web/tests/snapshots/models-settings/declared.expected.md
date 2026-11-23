@@ -31,6 +31,9 @@
     - button "代理池":
       - img
       - text: 代理池
+    - button "电脑操作":
+      - img
+      - text: 电脑操作
     - button "PPT 模板管理":
       - img
       - text: PPT 模板管理
@@ -43,9 +46,9 @@
     - img
     - textbox "搜索模型平台…"
     - button "Free"
-    - button "DeepSeek 已配置"
     - button "cerebras 已配置"
     - button "minimax-cn 已配置"
+    - button "DeepSeek 已配置"
     - button "Acme Gateway 已配置"
     - button "添加渠道":
       - img

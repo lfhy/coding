@@ -89,6 +89,7 @@ const EXPECTED_TOOLS = [
   'run_code',
   'send_message',
   'skill',
+  'skill_read',
   'subagent',
   'subagent_fork',
   'todo_write',
@@ -107,7 +108,7 @@ const EXPECTED_TOOLS = [
 const RIPGREP_TOOLS = ['glob', 'grep']
 const GLOBAL_TOOLS = [
   'list_subagent_models', 'memory_compact', 'memory_delete', 'memory_list', 'memory_read', 'memory_save', 'memory_update',
-  'render_ui', 'validate_gen_ui',
+  'render_ui', 'set_status', 'validate_gen_ui',
 ]
 
 let scaffold: WebScaffold | undefined
@@ -120,6 +121,10 @@ afterEach(async () => {
 it('assembles the shipped Web catalog, file-reference guidance, retry policy, and confined access default', async () => {
   scaffold = await launchWebScaffold({ deepSeekMissingCredential: true })
   const ctx = scaffold.ctx
+  // 发行组合只为已有设置的旧 DeepSeek 渠道保留原生适配器：没有旧配置时该路由
+  // 不注册，新的 DeepSeek 接入与其他渠道一样由 llm-pi-ai 管理。
+  expect(ctx.llm.listProviders().map(provider => provider.id)).not.toContain('deepseek-official')
+  await ctx.settings.update(settingsNamespace('llm-deepseek'), { channelName: 'E2E DeepSeek' })
   expect(ctx.llm.providerRetryPolicy('deepseek-official')).toMatchInlineSnapshot(`
     {
       "initialDelayMs": 500,
@@ -136,15 +141,24 @@ it('assembles the shipped Web catalog, file-reference guidance, retry policy, an
       ],
     }
   `)
-  await ctx.settings.update(settingsNamespace('llm-deepseek'), {
-    retryPolicy: { mode: 'always', maxRetries: 5 },
-  })
+  // 旧渠道随后自动迁入通用渠道：路由改由 llm-pi-ai 承接，重试策略随档案原样保留。
+  await expect.poll(() => (
+    ctx.settings.get(settingsNamespace('llm-pi-ai')) as { migratedDeepSeek?: boolean } | undefined
+  )?.migratedDeepSeek).toBe(true)
   expect(ctx.llm.providerRetryPolicy('deepseek-official')).toMatchInlineSnapshot(`
     {
       "initialDelayMs": 500,
       "jitterRatio": 0.1,
       "maxDelayMs": 10000,
-      "mode": "always",
+      "maxRetries": 5,
+      "mode": "normal",
+      "retryableCodes": [
+        "EMPTY_RESPONSE",
+        "RATE_LIMIT",
+        "SERVER",
+        "TIMEOUT",
+        "TRANSPORT",
+      ],
     }
   `)
   await ctx.settings.update(settingsNamespace('llm-pi-ai'), {

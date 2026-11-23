@@ -24,7 +24,7 @@ import {
   webSnapshotMode,
   type WebScaffold,
 } from './scaffold.ts'
-import { newEnglishPage, saveFailureShot } from './support.ts'
+import { newEnglishPage, saveFailureShot, sidebarTreeItems } from './support.ts'
 
 const SNAPSHOT_DIR = fileURLToPath(new URL('./snapshots/markdown-images', import.meta.url))
 const UI_EXPECTED = fileURLToPath(new URL('./snapshots/markdown-images/ui.expected.md', import.meta.url))
@@ -165,10 +165,7 @@ describe('web e2e: remote Markdown image rendering', () => {
 
   it.skipIf(MODE === 'record')('loads only the remote image and matches the conversation golden', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-markdown-images'))
-    const groupRow = page.locator('[role="treeitem"]').first()
-    await groupRow.waitFor({ timeout: 15_000 })
-    await groupRow.click()
-    const sessionRow = page.locator('[role="treeitem"]').nth(1)
+    const sessionRow = sidebarTreeItems(page).first()
     await sessionRow.waitFor({ timeout: 10_000 })
     await sessionRow.click()
     await expect.poll(() => page.getByText('REMOTE_IMAGE_DONE', { exact: true }).count(), {

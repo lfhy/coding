@@ -3,7 +3,7 @@
   - text: Standard mode
   - button "New session":
     - img
-  - button "Collapse session overview" [expanded]:
+  - button "Expand session overview":
     - img
   - button "Open workbench":
     - img
@@ -32,7 +32,7 @@
   - img
   - text: Context injection skill-catalog
 - paragraph: partial
-- status: Coding...
+- status: Align the panel widths
 - region "To-dos":
   - button "To-dos 1 completed · 1 in progress"
 - img
@@ -54,19 +54,3 @@
   - text: DeepSeek-V4-Flash
   - img
 - button "Stop generating"
-- region "Session overview":
-  - button "Collapse session overview"
-  - heading "Collaboration" [level=2]
-  - button "Subagents 0":
-    - text: Subagents
-    - strong: "0"
-    - img
-  - button "Background tasks 0":
-    - text: Background tasks
-    - strong: "0"
-    - img
-  - heading "Run statistics" [level=2]
-  - term: Turns
-  - definition: "0"
-  - term: Steps
-  - definition: "0"

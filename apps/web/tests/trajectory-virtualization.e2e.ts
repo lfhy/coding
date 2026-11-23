@@ -20,7 +20,7 @@ import {
   webSnapshotMode,
   type WebScaffold,
 } from './scaffold.ts'
-import { newEnglishPage, saveFailureShot } from './support.ts'
+import { newEnglishPage, saveFailureShot, sidebarTreeItems } from './support.ts'
 
 const MODE = webSnapshotMode()
 const LOAD_MORE_EXPECTED = fileURLToPath(new URL(
@@ -198,9 +198,9 @@ describe('web e2e: Trajectory virtualization over tail-paged history', () => {
     tripwire = watchConsole(page)
     await page.goto(scaffold.baseUrl, { waitUntil: 'load' })
     await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
-    // The compact layout dropped group session counts; the seeded baseline is
-    // the Ungrouped bucket once cold summaries load.
-    await page.getByText('Ungrouped', { exact: true }).waitFor({ timeout: 30_000 })
+    // The seeded row is the baseline once cold summaries load; with no
+    // Workspace the sidebar lists sessions flat.
+    await sidebarTreeItems(page).first().waitFor({ timeout: 30_000 })
   }, 120_000)
 
   afterAll(async () => {

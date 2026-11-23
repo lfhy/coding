@@ -1,7 +1,7 @@
 - banner:
   - button "New session":
     - img
-  - button "Collapse session overview" [expanded]:
+  - button "Expand session overview":
     - img
   - button "Open workbench":
     - img
@@ -18,19 +18,3 @@
 - status:
   - strong: This subagent is read-only for now
   - text: The parent session is offline; reopen it to continue sending messages.
-- region "Session overview":
-  - button "Collapse session overview"
-  - heading "Collaboration" [level=2]
-  - button "Subagents 0":
-    - text: Subagents
-    - strong: "0"
-    - img
-  - button "Background tasks 0":
-    - text: Background tasks
-    - strong: "0"
-    - img
-  - heading "Run statistics" [level=2]
-  - term: Turns
-  - definition: "0"
-  - term: Steps
-  - definition: "0"

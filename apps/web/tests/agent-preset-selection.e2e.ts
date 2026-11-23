@@ -25,7 +25,7 @@ import {
   captureStableAria, compareOrRefreshGolden, launchWebScaffold, seedSession, watchConsole,
   webSnapshotMode, type WebScaffold,
 } from './scaffold.ts'
-import { connectFreshWorkspace, newEnglishPage, saveFailureShot } from './support.ts'
+import { connectFreshWorkspace, newEnglishPage, openSessionOverview, openSidebarConversations, saveFailureShot } from './support.ts'
 
 const SNAPSHOT_DIR = fileURLToPath(new URL('./snapshots/agent-preset-selection', import.meta.url))
 const HERO_EXPECTED = join(SNAPSHOT_DIR, 'hero.expected.md')
@@ -276,11 +276,11 @@ describe('web e2e: agent-preset selection', () => {
 
   it('labels a resumed session with the preset it was created under', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-agent-preset-header'))
-    // 种子会话的 cwd 是脚手架根目录而不是已连接的工作区，因此它列在 Ungrouped
-    // 下，该分组默认折叠。它就是 Ungrouped 下唯一的一行：定位限定在会话树里，
-    // 文件面板自己的 treeitem 才不会冒充这一行。
-    await page.getByRole('treeitem', { name: /^Ungrouped/ }).click()
-    await page.getByRole('tree', { name: 'Sessions' }).getByRole('treeitem').last().click()
+    // 种子会话的 cwd 是脚手架根目录而不是已连接的工作区，工作范围不列它：切到
+    // 「对话」范围，那里只有它这一行；定位限定在侧栏里，文件面板自己的 treeitem
+    // 才不会冒充这一行。
+    const seededRows = await openSidebarConversations(page)
+    await seededRows.last().click()
     await page.getByText('Seeded turn.').waitFor({ timeout: 15_000 })
 
     const snapshot = await captureStableAria(page, '[class*="titleRow"]', scaffold.workspaceCwd)
@@ -293,7 +293,7 @@ describe('web e2e: agent-preset selection', () => {
     // 模式只展示当前会话的组装，不承诺可切换。
     expect(snapshot).not.toContain('button "Minimal mode"')
     expect(snapshot).not.toContain('Subagents')
-    const overview = page.getByRole('region', { name: 'Session overview' })
+    const overview = await openSessionOverview(page)
     const collaboration = overview.getByRole('button', { name: 'Subagents 1' })
     await collaboration.waitFor({ timeout: 15_000 })
     await collaboration.click()

@@ -15,7 +15,7 @@ import {
   webSnapshotMode,
   type WebScaffold,
 } from './scaffold.ts'
-import { newEnglishPage, saveFailureShot } from './support.ts'
+import { newEnglishPage, openSessionOverview, saveFailureShot, sidebarTreeItems } from './support.ts'
 
 const SNAPSHOT_DIR = fileURLToPath(new URL('./snapshots/math-rendering', import.meta.url))
 const UI_EXPECTED = fileURLToPath(new URL('./snapshots/math-rendering/ui.expected.md', import.meta.url))
@@ -108,10 +108,7 @@ describe('web e2e: settled Markdown math rendering', () => {
 
   it.skipIf(MODE === 'record')('renders the settled reply without KaTeX errors', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-math-rendering'))
-    const groupRow = page.locator('[role="treeitem"]').first()
-    await groupRow.waitFor({ timeout: 15_000 })
-    await groupRow.click()
-    const sessionRow = page.locator('[role="treeitem"]').nth(1)
+    const sessionRow = sidebarTreeItems(page).first()
     await sessionRow.waitFor({ timeout: 10_000 })
     await sessionRow.click()
     await expect.poll(() => page.getByText(DONE, { exact: true }).count(), { timeout: 15_000 }).toBe(1)
@@ -119,7 +116,7 @@ describe('web e2e: settled Markdown math rendering', () => {
     await expect.poll(() => page.locator('.katex').count(), { timeout: 10_000 }).toBe(6)
     await expect.poll(() => page.locator('.katex-display').count(), { timeout: 10_000 }).toBe(2)
     expect(await page.locator('.katex-error').count()).toBe(0)
-    const overview = page.getByRole('region', { name: 'Session overview' })
+    const overview = await openSessionOverview(page)
     await expect.poll(() => overview.getByText('Turns').locator('..').textContent(), { timeout: 10_000 }).toBe('Turns1')
     expect(await overview.getByText('Steps').locator('..').textContent()).toBe('Steps1')
 

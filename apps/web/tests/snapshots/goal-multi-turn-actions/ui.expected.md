@@ -3,7 +3,7 @@
   - text: Standard mode
   - button "New session":
     - img
-  - button "Collapse session overview" [expanded]:
+  - button "Expand session overview":
     - img
   - button "Open workbench":
     - img
@@ -39,10 +39,10 @@
   - img
   - img
   - text: Bash Show working directory and its contents
-- 'button "Tool call get_goal · {}"':
+- button "Read goal":
   - img
   - img
-  - text: "Tool call get_goal · {}"
+  - text: Read goal
 - button "Think There's a packages directory. Let me look inside to see what packages are available.":
   - img
   - img
@@ -152,15 +152,15 @@
   - text: ，turn 2：
   - code: token-meter
   - text: ）。这一轮到此结束。
-- 'button "Tool call get_goal · {}"':
+- button "Read goal":
   - img
   - img
-  - text: "Tool call get_goal · {}"
+  - text: Read goal
 - paragraph: 两个 turn 均已完成，目标达成，标记 goal 为完成。
-- button "Tool call update_goal · goal-{{uuid}}":
+- button "Update goal":
   - img
   - img
-  - text: Tool call update_goal · goal-{{uuid}}
+  - text: Update goal
 - 'button "Context injection tool-goal complete: 做两个turn，每个turn输出随机一个包的文件结构。注意你做完一个turn之后，直接输出内容，停止，我们的系统会帮你再开一个turn，你看着做一个类似的"':
   - img
   - img
@@ -232,33 +232,3 @@
   - img
 - button "9% of context used"
 - button "Send message" [disabled]
-- region "Session overview":
-  - button "Collapse session overview"
-  - heading "Collaboration" [level=2]
-  - button "Subagents 0":
-    - text: Subagents
-    - strong: "0"
-    - img
-  - button "Background tasks 0":
-    - text: Background tasks
-    - strong: "0"
-    - img
-  - heading "Run statistics" [level=2]
-  - term: Turns
-  - definition: "2"
-  - term: Steps
-  - definition: "12"
-  - term: LLM time
-  - definition: {{duration}}
-  - term: Tool calls
-  - definition: {{duration}}
-  - term: Average first token
-  - definition: {{duration}}
-  - term: Generation speed
-  - definition: {{throughput}} tok/s
-  - term: Cache hit
-  - definition: 91%
-  - term: Input
-  - definition: 113K tok
-  - term: Output
-  - definition: 2.4K tok

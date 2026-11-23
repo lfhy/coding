@@ -19,7 +19,7 @@ import {
   assertFixtureInventory, captureStableAria, compareOrRefreshGolden, fixtureUserPrompts,
   launchWebScaffold, recordFixture, seedSession, watchConsole, webSnapshotMode, type WebScaffold,
 } from './scaffold.ts'
-import { newEnglishPage, saveFailureShot } from './support.ts'
+import { newEnglishPage, saveFailureShot, sidebarTreeItems } from './support.ts'
 
 const SNAPSHOT_DIR = fileURLToPath(new URL('./snapshots/navigation-panes', import.meta.url))
 const SEED = join(SNAPSHOT_DIR, 'seed.jsonl')
@@ -122,9 +122,9 @@ describe('web e2e: navigation & panes over a rich seeded session', () => {
     await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
     // The frame mounts before the asynchronous session-list baseline lands.
     // Search must target the settled seeded row, not the startup input that
-    // the ready projection replaces (the compact layout dropped group session
-    // counts; the Ungrouped bucket row is the barrier).
-    await page.getByText('Ungrouped', { exact: true }).waitFor({ timeout: 30_000 })
+    // the ready projection replaces (the seeded row is the barrier; with no
+    // Workspace the sidebar lists sessions flat).
+    await sidebarTreeItems(page).first().waitFor({ timeout: 30_000 })
   }, 120_000)
 
   afterEach(async () => {
@@ -180,9 +180,9 @@ describe('web e2e: navigation & panes over a rich seeded session', () => {
   it.skipIf(MODE === 'record')('finds an unopened seeded session by message content and opens it', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-navigation-search'))
     // The API baselines can settle before React commits their projection. The
-    // seeded Ungrouped bucket row is the final user-visible barrier before
-    // editing search (the compact layout dropped group session counts).
-    await page.getByText('Ungrouped', { exact: true }).waitFor({ timeout: 30_000 })
+    // seeded row is the final user-visible barrier before editing search
+    // (with no Workspace the sidebar lists sessions flat).
+    await sidebarTreeItems(page).first().waitFor({ timeout: 30_000 })
     // Search is a collapsed header action; expand it so the input is actionable.
     const searchButton = page.getByRole('button', { name: 'Search sessions' })
     if (await searchButton.getAttribute('aria-expanded') !== 'true') await searchButton.click()
@@ -260,7 +260,8 @@ describe('web e2e: navigation & panes over a rich seeded session', () => {
     expect(await details.getByRole('tabpanel').evaluate(panel => getComputedStyle(panel).overflowX))
       .toBe('hidden')
     await page.evaluate(() => { document.body.setAttribute('data-ds-dark-theme', '') })
-    const darkSummarySurfaces = await details.getByRole('heading', { name: 'Payload' }).evaluate(heading => ({
+    // 详情栏默认停在 Summary 页签；其分节标题就是深色下要与面板同底色的摘要表面。
+    const darkSummarySurfaces = await details.getByRole('heading', { name: 'Result', exact: true }).evaluate(heading => ({
       heading: getComputedStyle(heading).backgroundColor,
       panel: getComputedStyle(heading.closest('[aria-label="Event details"]')!).backgroundColor,
     }))
@@ -284,7 +285,8 @@ describe('web e2e: navigation & panes over a rich seeded session', () => {
     await compareOrRefreshGolden(TRAJECTORY_EXPECTED, snapshot, MODE)
     await details.getByRole('button', { name: 'Close details' }).click()
     await page.getByRole('tab', { name: 'Chat' }).click()
-    await page.getByRole('region', { name: 'Session overview' }).waitFor({ state: 'visible' })
+    // 回到 Chat 后概览开关重新出现；卡片本身按进入前的状态保持收起。
+    await page.getByRole('button', { name: /^(?:Expand|Collapse) session overview$/ }).waitFor({ state: 'visible' })
   }, 60_000)
 
   it.skipIf(MODE === 'record')('exports the Session log through /export without a Header control', async () => {
@@ -314,7 +316,7 @@ describe('web e2e: navigation & panes over a rich seeded session', () => {
       assertBaselineSucceeded(observerSessionResponse, 'observer session.list'),
       assertBaselineSucceeded(observerWorkspaceResponse, 'observer workspace.list'),
     ])
-    await observer.getByText('Ungrouped', { exact: true }).waitFor({ timeout: 30_000 })
+    await sidebarTreeItems(observer).first().waitFor({ timeout: 30_000 })
     await ensureSeedOpen(observer)
 
     try {

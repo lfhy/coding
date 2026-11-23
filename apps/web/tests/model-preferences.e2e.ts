@@ -15,7 +15,6 @@ const DEEPSEEK_MODEL = 'deepseek-v4-flash'
 const CUSTOM_PROVIDER = 'preference-gateway'
 const CUSTOM_MODEL = 'neutral-model'
 const CHAT_FORMAT = 'OpenAI Chat Completions'
-const AUTOMATIC_FORMAT = `自动 (${CHAT_FORMAT})`
 
 describe('web e2e: per-model protocol and default Agent mode', () => {
   let scaffold: WebScaffold
@@ -28,13 +27,17 @@ describe('web e2e: per-model protocol and default Agent mode', () => {
     const contents = await readFile(join(scaffold.harnessHome, 'settings.yaml'), 'utf8')
     return load(contents) as Record<string, unknown>
   }
-  const deepSeekProfile = async () => (await settingsDocument())['llm-deepseek'] as {
-    channelName?: string
-    baseURL?: string
-    outbound?: { mode: string }
-    api?: string
-    models?: { id: string; name?: string; api?: string }[]
-  } | undefined
+  // 已有 DEEPSEEK_API_KEY 的部署会把旧 DeepSeek 渠道迁入通用渠道，之后它的协议、
+  // 名称和模型都保存在 llm-pi-ai 的 deepseek-official 档案里。
+  const deepSeekProfile = async () => ((await settingsDocument())['llm-pi-ai'] as {
+    providers?: Record<string, {
+      displayName?: string
+      apiKeyEnv?: string
+      baseURL?: string
+      api?: string
+      models?: { id: string; name?: string; api?: string }[]
+    }>
+  })?.providers?.[DEEPSEEK_PROVIDER]
   const provider = (name: string): Locator => settings()
     .getByRole('complementary', { name: '提供方' })
     .getByRole('button').filter({ hasText: name }).first()
@@ -232,14 +235,15 @@ describe('web e2e: per-model protocol and default Agent mode', () => {
   it('persists and clears both DeepSeek protocol levels without changing the channel identity', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-deepseek-protocol'))
     const original = {
-      channelName: 'DeepSeek 兼容网关',
+      displayName: 'DeepSeek 兼容网关',
       baseURL: 'http://127.0.0.1:1/v1',
-      outbound: { mode: 'direct' },
       models: [{ id: DEEPSEEK_MODEL, name: 'Flash' }, { id: 'gateway-extra', name: 'Extra' }],
     } as const
     // 先退出上一用例的 DeepSeek 草稿，重新打开时应从刚写入的 profile 取同一版配置。
     await provider('Free').click()
-    await scaffold.ctx.settings.update(settingsNamespace('llm-deepseek'), original)
+    await scaffold.ctx.settings.update(settingsNamespace('llm-pi-ai'), {
+      providers: { [DEEPSEEK_PROVIDER]: original },
+    })
     const credentialsPath = join(scaffold.harnessHome, '.credentials.yaml')
     const savedCredentials = await readFile(credentialsPath)
     const channel = 'DeepSeek 兼容网关'
@@ -253,7 +257,8 @@ describe('web e2e: per-model protocol and default Agent mode', () => {
     const saveModel = (modal: Locator) => modal.getByRole('button', { name: '保存', exact: true }).click()
 
     await protocol.waitFor()
-    expect(await protocol.textContent()).toBe(AUTOMATIC_FORMAT)
+    // 迁入的档案带着明确的 openai-completions，渠道级显示具体格式而不是「自动」。
+    expect(await protocol.textContent()).toBe(CHAT_FORMAT)
     await expectFitsViewport(protocol, 1680)
     await chooseProtocol(protocol, 'OpenAI Responses')
     const model = await modelSettings(DEEPSEEK_MODEL)
@@ -274,9 +279,9 @@ describe('web e2e: per-model protocol and default Agent mode', () => {
     await expectFitsViewport(protocol, 375)
     await page.setViewportSize({ width: 1680, height: 1000 })
 
-    expect(await deepSeekProfile()).toEqual(original)
+    expect(await deepSeekProfile()).toMatchObject(original)
     await apply()
-    await expect.poll(deepSeekProfile).toEqual({
+    await expect.poll(deepSeekProfile).toMatchObject({
       ...original,
       api: 'openai-responses',
       models: [{ ...original.models[0], api: 'anthropic-messages' }, original.models[1]],
@@ -293,12 +298,15 @@ describe('web e2e: per-model protocol and default Agent mode', () => {
     await chooseProtocol(protocolOf(reopened), inherited)
     await saveModel(reopened)
     await apply()
-    await expect.poll(deepSeekProfile).toEqual({ ...original, api: 'openai-responses' })
+    await expect.poll(deepSeekProfile).toMatchObject({ ...original, api: 'openai-responses' })
+    expect((await deepSeekProfile())?.models?.[0]?.api).toBeUndefined()
 
-    await chooseProtocol(protocol, AUTOMATIC_FORMAT)
+    await chooseProtocol(protocol, CHAT_FORMAT)
     await apply()
-    await expect.poll(deepSeekProfile).toEqual(original)
-    expect(await protocol.textContent()).toBe(AUTOMATIC_FORMAT)
+    await expect.poll(deepSeekProfile).toMatchObject(original)
+    expect(await protocol.textContent()).toBe(CHAT_FORMAT)
+    // 改协议只动档案里的格式字段：路由、凭据引用与凭据文件都保持原样。
+    expect((await deepSeekProfile())?.apiKeyEnv).toBe('DEEPSEEK_API_KEY')
     expect((await readFile(credentialsPath)).equals(savedCredentials)).toBe(true)
     expect(scaffold.ctx.llm.listProviders()).toContainEqual({ id: DEEPSEEK_PROVIDER, name: channel })
     expect(tripwire.pageErrors).toEqual([])

@@ -17,7 +17,7 @@ import {
   assertFixtureInventory, captureStableAria, compareOrRefreshGolden,
   launchWebScaffold, seedSession, watchConsole, webSnapshotMode, type WebScaffold,
 } from './scaffold.ts'
-import { newEnglishPage, saveFailureShot } from './support.ts'
+import { newEnglishPage, openSessionOverview, saveFailureShot, sidebarTreeItems } from './support.ts'
 
 const FIXTURE = fileURLToPath(new URL('./snapshots/fresh-round-trip/session.jsonl', import.meta.url))
 const SNAPSHOT_DIR = fileURLToPath(new URL('./snapshots/background-job-list', import.meta.url))
@@ -62,10 +62,7 @@ describe.skipIf(MODE === 'record')('web e2e: background job list', () => {
     await page.goto(scaffold.baseUrl, { waitUntil: 'load' })
     await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
 
-    const groupRow = page.locator('[role="treeitem"]').first()
-    await groupRow.waitFor({ timeout: 15_000 })
-    await groupRow.click()
-    const sessionRow = page.locator('[role="treeitem"]').nth(1)
+    const sessionRow = sidebarTreeItems(page).first()
     await sessionRow.waitFor({ timeout: 10_000 })
     await sessionRow.click()
 
@@ -82,7 +79,7 @@ describe.skipIf(MODE === 'record')('web e2e: background job list', () => {
 
   it('shows a running background job in the overview without a refresh', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-background-job-running'))
-    const overview = page.getByRole('region', { name: 'Session overview' })
+    const overview = await openSessionOverview(page)
     const trigger = overview.getByRole('button', { name: /^Background tasks / })
     await trigger.waitFor({ timeout: 15_000 })
     expect(await trigger.textContent()).toContain('0')
@@ -118,7 +115,7 @@ describe.skipIf(MODE === 'record')('web e2e: background job list', () => {
 
     // The row drops its live count once the task leaves running/stopping,
     // which is also the proof that settlement reached the browser unprompted.
-    const idle = page.getByRole('region', { name: 'Session overview' })
+    const idle = (await openSessionOverview(page))
       .getByRole('button', { name: 'Background tasks 1', exact: true })
     await idle.waitFor({ timeout: 20_000 })
 

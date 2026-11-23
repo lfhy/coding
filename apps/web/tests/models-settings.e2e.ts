@@ -1035,21 +1035,27 @@ describe('web e2e: Models settings page configures a dormant provider', () => {
 
   it('keeps DeepSeek channel names identical through live edits and reopening', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-models-deepseek-name'))
+    // 已有 DEEPSEEK_API_KEY 的部署把旧 DeepSeek 渠道迁入通用渠道：名称只是显示名，
+    // 改名不改变路由与凭据引用，轮换密钥也不改动名称。
     await page.getByRole('button', { name: '设置', exact: true }).click()
     const dialog = settings()
     await dialog.getByRole('navigation').getByRole('button', { name: '模型', exact: true }).click()
     await provider('DeepSeek').click()
+    const nameField = dialog.getByRole('textbox', { name: '显示名称', exact: true })
     const assertName = async (name: string): Promise<void> => {
       await expect.poll(() => providerRail().getByRole('button').filter({ hasText: name }).count(), { timeout: 10_000 }).toBe(1)
       await dialog.getByRole('main', { name, exact: true }).waitFor({ timeout: 10_000 })
-      await expect.poll(() => dialog.getByRole('textbox', { name: '渠道名称', exact: true }).inputValue(), { timeout: 10_000 }).toBe(name)
+      await expect.poll(() => nameField.inputValue(), { timeout: 10_000 }).toBe(name)
     }
+    const migratedProfile = async () => (load(await settingsDocument()) as {
+      'llm-pi-ai'?: { providers?: Record<string, { displayName?: string; apiKeyEnv?: string }> }
+    })['llm-pi-ai']?.providers?.['deepseek-official']
     await assertName('DeepSeek')
     const customName = '个人 DeepSeek 渠道'
-    await dialog.getByRole('textbox', { name: '渠道名称', exact: true }).fill(customName)
+    await nameField.fill(customName)
     await dialog.getByRole('button', { name: '保存', exact: true }).click()
     await assertName(customName)
-    await expect.poll(settingsDocument, { timeout: 10_000 }).toContain(`channelName: ${customName}`)
+    await expect.poll(async () => (await migratedProfile())?.displayName, { timeout: 10_000 }).toBe(customName)
     expect(await providerRail().getByRole('button', { name: /^DeepSeek(?: 已配置)?$/ }).count()).toBe(0)
     await screenshot('models-settings-deepseek-renamed.png', 1920, 1080)
     await page.keyboard.press('Escape')
@@ -1066,9 +1072,9 @@ describe('web e2e: Models settings page configures a dormant provider', () => {
       provider: 'deepseek-official', model: 'deepseek-v4-pro',
     })
     await assertName(customName)
+    expect((await migratedProfile())?.displayName).toBe(customName)
+    expect((await migratedProfile())?.apiKeyEnv).toBe('DEEPSEEK_API_KEY')
     const document = load(await settingsDocument()) as Record<string, Record<string, unknown>>
-    expect(document['llm-deepseek']?.['channelName']).toBe(customName)
-    expect(document['llm-deepseek']?.['apiKeyEnv']).not.toBe(customName)
     expect(document['agent-default-model']).toMatchObject({ provider: 'deepseek-official', model: 'deepseek-v4-pro' })
     const credentials = await readFile(join(scaffold.harnessHome, '.credentials.yaml'), 'utf8')
     expect(credentials).toContain('DEEPSEEK_API_KEY: sk-e2e-deepseek-renamed')

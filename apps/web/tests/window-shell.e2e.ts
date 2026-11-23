@@ -37,7 +37,8 @@ describe('Web 窗口外壳', () => {
     expect(await shell.locator('header').count()).toBe(0)
     expect(await shell.locator(':scope > [data-window-drag-region]').count()).toBe(1)
     expect(await surface.locator('#dsh-layout-floating-conversation').count()).toBe(1)
-    expect(await surface.boundingBox()).toMatchObject({ x: 52, y: 0, width: 1620, height: 992 })
+    // 左列 52px 导航卡与内层表面之间留 8px 窗口底色，两侧各 8px 内边距。
+    expect(await surface.boundingBox()).toMatchObject({ x: 68, y: 0, width: 1604, height: 992 })
     const logo = page.getByTestId('hero-brand-mark').locator('img')
     expect(await logo.evaluate(async (image: HTMLImageElement) => {
       await image.decode()
@@ -50,23 +51,27 @@ describe('Web 窗口外壳', () => {
     expect(await home.locator('img').count()).toBe(0)
     expect(await home.locator('svg').count()).toBe(1)
     const settings = navigation.getByRole('button', { name: 'Settings', exact: true })
-    expect(await settings.boundingBox()).toMatchObject({ x: 8, y: 952, width: 36, height: 36 })
+    expect(await settings.boundingBox()).toMatchObject({ x: 16, y: 951, width: 36, height: 36 })
     expect(await sidebar.getByRole('button', { name: 'Settings', exact: true }).count()).toBe(0)
-    expect(await navigation.getByRole('button').count()).toBe(2)
-    await sidebar.getByRole('button', { name: 'Collapse sidebar', exact: true }).click()
+    // 侧栏开关固定在外层导航底部，排在主题切换与设置之前；页内不再渲染第二枚。
+    const toggle = navigation.getByRole('button', { name: 'Collapse sidebar', exact: true })
+    expect(await toggle.boundingBox()).toMatchObject({ x: 16, y: 863, width: 36, height: 36 })
+    expect(await sidebar.getByRole('button', { name: 'Collapse sidebar', exact: true }).count()).toBe(0)
+    // 键盘聚焦即显示提示，Enter 收起侧栏；鼠标点过的入口不再因聚焦重现提示，
+    // 所以键盘路径先于点击验证。
+    await toggle.focus()
+    await expect.poll(() => page.getByRole('tooltip', { name: 'Collapse sidebar', exact: true }).count()).toBe(1)
+    await toggle.press('Enter')
     await expect.poll(() => frame.getAttribute('data-sidebar-collapsed')).toBe('true')
     await expect.poll(async () => (await sidebar.boundingBox())?.width).toBe(56)
     expect(await settings.isVisible()).toBe(true)
-    await sidebar.getByRole('button', { name: 'Open sidebar', exact: true }).click()
+    await navigation.getByRole('button', { name: 'Expand sidebar', exact: true }).click()
     await expect.poll(() => frame.getAttribute('data-sidebar-collapsed')).toBeNull()
     await expect.poll(async () => (await sidebar.boundingBox())?.width).toBe(280)
 
-    const button = sidebar.getByRole('button', { name: 'Collapse sidebar', exact: true })
-    await button.focus()
-    await expect.poll(() => page.getByRole('tooltip', { name: 'Collapse sidebar', exact: true }).count()).toBe(1)
-    await button.press('Enter')
+    await toggle.click()
     await expect.poll(() => frame.getAttribute('data-sidebar-collapsed')).toBe('true')
-    await sidebar.getByRole('button', { name: 'Open sidebar', exact: true }).click()
+    await navigation.getByRole('button', { name: 'Expand sidebar', exact: true }).click()
 
     await settings.click()
     await page.getByRole('main', { name: 'Settings', exact: true }).waitFor()
@@ -81,9 +86,11 @@ describe('Web 窗口外壳', () => {
 
   it('按内层可用宽度响应，所有屏幕尺寸都只让内容区域滚动', async () => {
     onTestFailed(() => saveFailureShot(page, 'window-shell-responsive'))
-    for (const width of [375, 768, 1024, 1083, 1084, 1440]) {
+    // 自动折叠按内层布局宽度 1024 判定；窗口外壳两侧共占 76px，所以窗口宽度
+    // 减 76 才是内层宽度。
+    for (const width of [375, 768, 1024, 1099, 1100, 1440]) {
       await page.setViewportSize({ width, height: 900 })
-      const expectedNarrow = width < 1084
+      const expectedNarrow = width < 1100
       await expect.poll(() => page.locator('#dsh-layout-sidebar').locator('..')
         .getAttribute('data-sidebar-collapsed')).toBe(expectedNarrow ? 'true' : null)
       const dimensions = await page.evaluate(() => {

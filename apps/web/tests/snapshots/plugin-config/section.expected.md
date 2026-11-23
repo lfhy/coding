@@ -31,6 +31,9 @@
     - button "代理池":
       - img
       - text: 代理池
+    - button "电脑操作":
+      - img
+      - text: 电脑操作
     - button "PPT 模板管理":
       - img
       - text: PPT 模板管理

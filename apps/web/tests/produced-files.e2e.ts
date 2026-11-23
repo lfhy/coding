@@ -12,7 +12,7 @@ import type {} from 'coding-session-title'
 import {
   launchWebScaffold, seedSession, watchConsole, webSnapshotMode, type WebScaffold,
 } from './scaffold.ts'
-import { newEnglishPage, saveFailureShot } from './support.ts'
+import { newEnglishPage, saveFailureShot, sidebarTreeItems } from './support.ts'
 
 const MODE = webSnapshotMode()
 const OVERLAY = fileURLToPath(new URL('./produced-files.overlay.yml', import.meta.url))
@@ -128,10 +128,7 @@ describe('web e2e: a finished turn ends with the files it produced', () => {
 
   it.skipIf(MODE === 'record')('keeps a narrow ten-file summary on one line with +8 and a folder action', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-produced-files'))
-    const groupRow = page.locator('[role="treeitem"]').first()
-    await groupRow.waitFor({ timeout: 15_000 })
-    if (await groupRow.getAttribute('aria-expanded') !== 'true') await groupRow.click()
-    const sessionRow = page.locator('[role="treeitem"]').nth(1)
+    const sessionRow = sidebarTreeItems(page).first()
     await sessionRow.waitFor({ timeout: 10_000 })
     await sessionRow.click()
 

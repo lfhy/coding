@@ -13,10 +13,10 @@
   - img
   - img
   - text: "Think The user wants me to use the workflow tool exactly once with specific parameters. Let me carefully follow the instructions:"
-- button "Tool call workflow ·":
+- button "Run workflow one child for the snapshot":
   - img
   - img
-  - text: Tool call workflow ·
+  - text: Run workflow one child for the snapshot
 - button "snapshot-flow 1 member Completed":
   - img
   - text: snapshot-flow 1 member Completed

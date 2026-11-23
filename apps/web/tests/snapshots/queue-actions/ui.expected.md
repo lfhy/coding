@@ -3,7 +3,7 @@
   - text: Standard mode
   - button "New session":
     - img
-  - button "Collapse session overview" [expanded]:
+  - button "Expand session overview":
     - img
   - button "Open workbench":
     - img
@@ -32,7 +32,6 @@
     - text: Edited queue item
     - button "Edit queued message":
       - img
-    - tooltip "Edit queued message"
     - button "Remove queued message":
       - img
     - button "Steer queued message":
@@ -45,19 +44,3 @@
   - text: DeepSeek-V4-Flash
   - img
 - button "Stop generating"
-- region "Session overview":
-  - button "Collapse session overview"
-  - heading "Collaboration" [level=2]
-  - button "Subagents 0":
-    - text: Subagents
-    - strong: "0"
-    - img
-  - button "Background tasks 0":
-    - text: Background tasks
-    - strong: "0"
-    - img
-  - heading "Run statistics" [level=2]
-  - term: Turns
-  - definition: "0"
-  - term: Steps
-  - definition: "0"

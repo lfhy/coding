@@ -19,15 +19,15 @@
         - 'button "Request #1"'
         - text: ASSISTANT
       - 'cell "The user wants me to follow a specific navigation scenario. Let me: Run bash to print \"NAVIGATION_OK\" Read nav-a.md and nav-b.md in two read calls in ONE message Reply with \"FIRST_DONE\" Let me start with the bash command and the reads."'
-    - 'row "TOOL, bash {\"command\": \"echo NAVIGATION_OK\", \"description\": \"Print NAVIGATION_OK\"}" [selected]':
+    - row "TOOL, Bash Print NAVIGATION_OK" [selected]:
       - cell "TOOL"
-      - 'cell "bash{\"command\": \"echo NAVIGATION_OK\", \"description\": \"Print NAVIGATION_OK\"} → NAVIGATION_OK"'
-    - 'row "TOOL, read {\"file_path\": \"nav-a.md\"}"':
+      - cell "BashPrint NAVIGATION_OK → NAVIGATION_OK"
+    - row "TOOL, Read nav-a.md":
       - cell "TOOL"
-      - 'cell "read{\"file_path\": \"nav-a.md\"} → <path>{{cwd}}/nav-a.md</path> <type>file</type> <content> 1: # alpha nav (End of file - total 1 lines) </content>"'
-    - 'row "TOOL, read {\"file_path\": \"nav-b.md\"}"':
+      - 'cell "Readnav-a.md → <path>{{cwd}}/nav-a.md</path> <type>file</type> <content> 1: # alpha nav (End of file - total 1 lines) </content>"'
+    - row "TOOL, Read nav-b.md":
       - cell "TOOL"
-      - 'cell "read{\"file_path\": \"nav-b.md\"} → <path>{{cwd}}/nav-b.md</path> <type>file</type> <content> 1: # beta nav (End of file - total 1 lines) </content>"'
+      - 'cell "Readnav-b.md → <path>{{cwd}}/nav-b.md</path> <type>file</type> <content> 1: # beta nav (End of file - total 1 lines) </content>"'
     - row "Request 2, ASSISTANT, FIRST_DONE":
       - 'cell "Request #2 ASSISTANT"':
         - 'button "Request #2"'

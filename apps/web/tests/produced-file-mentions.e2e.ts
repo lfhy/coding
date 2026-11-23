@@ -15,7 +15,7 @@ import type {} from 'coding-session-title'
 import {
   launchWebScaffold, seedSession, watchConsole, webSnapshotMode, type WebScaffold,
 } from './scaffold.ts'
-import { newEnglishPage, saveFailureShot } from './support.ts'
+import { newEnglishPage, saveFailureShot, sidebarTreeItems } from './support.ts'
 
 const MODE = webSnapshotMode()
 const SEED_ID = 'produced-file-mentions-web-e2e'
@@ -138,10 +138,7 @@ describe('web e2e: inline-code mentions of produced files', () => {
 
   it.skipIf(MODE === 'record')('links the unique mention and leaves ambiguous and unknown code inert', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-produced-file-mentions'))
-    const groupRow = page.locator('[role="treeitem"]').first()
-    await groupRow.waitFor({ timeout: 15_000 })
-    await groupRow.click()
-    const sessionRow = page.locator('[role="treeitem"]').nth(1)
+    const sessionRow = sidebarTreeItems(page).first()
     await sessionRow.waitFor({ timeout: 10_000 })
     await sessionRow.click()
     await expect.poll(() => page.getByText(DONE, { exact: true }).count(), { timeout: 15_000 }).toBe(1)

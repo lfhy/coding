@@ -6,7 +6,7 @@ import { createChatScrollFixture } from './chat-scroll-fixture.ts'
 import {
   launchWebScaffold, seedSession, watchConsole, webSnapshotMode, type WebScaffold,
 } from './scaffold.ts'
-import { newEnglishPage } from './support.ts'
+import { newEnglishPage, sidebarTreeItems } from './support.ts'
 
 const MODE = webSnapshotMode()
 const SESSION_ID = 'conversation-anchor-rail-e2e'
@@ -59,7 +59,9 @@ function targetTop(page: Page, key: string): Promise<number> {
 }
 
 async function openSeed(page: Page): Promise<void> {
-  await page.getByText('Ungrouped', { exact: true }).waitFor({ timeout: 30_000 })
+  // With no Workspace the sidebar lists sessions flat; the seeded row is the
+  // cold-summary barrier.
+  await sidebarTreeItems(page).first().waitFor({ timeout: 30_000 })
   const searchButton = page.getByRole('button', { name: 'Search sessions' })
   if (await searchButton.getAttribute('aria-expanded') !== 'true') await searchButton.click()
   await page.getByRole('textbox', { name: 'Search sessions...', exact: true })

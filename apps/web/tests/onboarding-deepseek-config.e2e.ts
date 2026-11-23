@@ -34,6 +34,9 @@ describe.skipIf(MODE === 'record')('web e2e: first-run DeepSeek credential setup
     await scaffold.ctx.settings.update(settingsNamespace('agent-default-model'), {
       provider: 'unavailable-e2e', model: 'missing-model',
     })
+    // 发行组合只给已有设置的旧 DeepSeek 渠道保留原生路由（新接入走「添加渠道」）：
+    // 以一项用户层设置模拟带旧设置但尚未保存密钥的部署，首次引导才会列出它。
+    await scaffold.ctx.settings.update(settingsNamespace('llm-deepseek'), { maxRequestImageBytes: 20_971_521 })
     browser = await chromium.launch()
     // 不预设 Host 语言偏好，固定中文浏览器语言以覆盖中文界面。
     page = await browser.newPage({ viewport: { width: 1440, height: 960 }, locale: ZH_BROWSER_LOCALE })
@@ -61,8 +64,9 @@ describe.skipIf(MODE === 'record')('web e2e: first-run DeepSeek credential setup
     await introChannels.getByRole('button', { name: /^DeepSeek/ }).click()
     const keyInput = onboarding.getByLabel('API 密钥', { exact: true })
     await keyInput.waitFor({ timeout: 10_000 })
+    // 迁入的档案带着明确的 openai-completions，渠道级显示具体格式而不是「自动」。
     expect(await onboarding.getByRole('button', { name: '上游请求格式', exact: true }).textContent())
-      .toBe('自动 (OpenAI Chat Completions)')
+      .toBe('OpenAI Chat Completions')
     const initial = await captureStableAria(page, '[role="dialog"][aria-label="配置模型，开始使用"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(MISSING_EXPECTED, initial, MODE)
     if (process.env.DSH_SCREENSHOT_DIR !== undefined) {
@@ -257,11 +261,12 @@ describe.skipIf(MODE === 'record')('web e2e: first-run DeepSeek credential setup
     expect(savedSettings).toContain('name: Private Preview')
     expect(savedSettings).toContain('contextWindow: 131072')
     expect(savedSettings).toContain('maxTokens: 64000')
-    expect(savedSettings).toContain('inputModalities:')
-    expect(savedSettings).toContain('- image')
-    expect(savedSettings).toContain('reasoningEfforts:')
-    expect(savedSettings).toContain('- high')
-    expect(savedSettings).not.toContain('  - max')
+    // 通用渠道档案用 input 列表声明模态，reasoningEfforts 以映射记录可选档位；
+    // 只在 private-preview 这一条模型的块内匹配，不借用相邻模型的字段。
+    const inPrivatePreview = (field: string): RegExp => new RegExp(`- id: private-preview\\n(?:(?!- id:)[\\s\\S])*?${field}`)
+    expect(savedSettings).toMatch(inPrivatePreview('input:\n\\s+- text\\n\\s+- image\\n'))
+    expect(savedSettings).toMatch(inPrivatePreview('reasoningEfforts:\n\\s+off: null\\n\\s+low: low\\n\\s+high: high\\n'))
+    expect(savedSettings).not.toMatch(inPrivatePreview('max: max'))
     expect(savedSettings).not.toMatch(/^\s*- id: deepseek-v4-flash$/m)
 
     await page.keyboard.press('Escape')
@@ -304,6 +309,8 @@ describe.skipIf(MODE === 'record')('web e2e: 375px first-run model setup', () =>
     await scaffold.ctx.settings.update(settingsNamespace('agent-default-model'), {
       provider: 'unavailable-mobile-e2e', model: 'missing-model',
     })
+    // 同上：带旧设置但无密钥的部署才会在首次引导里列出旧 DeepSeek 渠道。
+    await scaffold.ctx.settings.update(settingsNamespace('llm-deepseek'), { maxRequestImageBytes: 20_971_521 })
     browser = await chromium.launch()
     page = await browser.newPage({ viewport: { width: 375, height: 812 }, locale: ZH_BROWSER_LOCALE })
     tripwire = watchConsole(page)

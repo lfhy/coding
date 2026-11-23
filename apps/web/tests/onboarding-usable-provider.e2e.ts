@@ -30,6 +30,9 @@ describe.skipIf(MODE === 'record')('web e2e: another usable provider ends first-
   beforeAll(async () => {
     scaffold = await launchWebScaffold({ deepSeekMissingCredential: true, localePreference: null,
       defaultModel: { provider: 'unavailable-e2e', model: 'missing-model' } })
+    // 发行组合只给已有设置的旧 DeepSeek 渠道保留原生路由（新接入走「添加渠道」）：
+    // 以一项用户层设置模拟带旧设置但尚未保存密钥的部署，首次引导才会列出它。
+    await scaffold.ctx.settings.update(settingsNamespace('llm-deepseek'), { maxRequestImageBytes: 20_971_521 })
     browser = await chromium.launch()
     // 不预设 Host 语言偏好，固定中文浏览器语言以覆盖中文界面。
     page = await browser.newPage({ viewport: { width: 1440, height: 960 }, locale: ZH_BROWSER_LOCALE })

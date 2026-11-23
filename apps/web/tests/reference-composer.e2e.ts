@@ -25,7 +25,7 @@ import {
   webSnapshotMode,
   type WebScaffold,
 } from './scaffold.ts'
-import { connectFreshWorkspace, newEnglishPage, saveFailureShot } from './support.ts'
+import { connectFreshWorkspace, newEnglishPage, openSidebarConversations, saveFailureShot } from './support.ts'
 
 const SNAPSHOT_DIR = fileURLToPath(new URL('./snapshots/reference-composer', import.meta.url))
 const MENU_EXPECTED = join(SNAPSHOT_DIR, 'menu.expected.md')
@@ -170,10 +170,8 @@ describe.skipIf(MODE === 'record')('web e2e: file and session references through
 
   it('renders the durable direct-message then recall order', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-reference-order'))
-    const group = page.getByRole('treeitem', { name: /Ungrouped/ })
-    await group.waitFor({ timeout: 15_000 })
-    if (await group.getAttribute('aria-expanded') !== 'true') await group.click()
-    const target = page.getByRole('treeitem').filter({ hasText: /^dsh-web-e2e-ws-/ }).first()
+    // 两条种子会话都不属于已连接的工作区，只列在侧栏的「对话」范围里。
+    const target = (await openSidebarConversations(page)).filter({ hasText: /^dsh-web-e2e-ws-/ }).first()
     await target.waitFor({ timeout: 15_000 })
     await target.click()
     await page.getByRole('button', { name: /^Session recall\s*Research notes$/ }).waitFor({ timeout: 15_000 })

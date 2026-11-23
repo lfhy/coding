@@ -328,7 +328,9 @@ describe.skipIf(MODE === 'record')('web e2e: declared reasoning efforts reach th
     await expect.poll(async () => (await page.locator('#dsh-layout-sidebar').boundingBox())?.width ?? 375)
       .toBeLessThanOrEqual(56)
     await expect.poll(async () => (await effort.boundingBox())?.x ?? -1).toBeGreaterThanOrEqual(0)
-    await expect.poll(async () => (await effort.boundingBox())?.width ?? 0).toBeGreaterThanOrEqual(240)
+    // 375px 下菜单铺满对话列：窗口外壳两侧共 76px、收起的侧栏图标轨 56px，
+    // 再留 12px 安全边距，面板至少占到剩余的全部宽度。
+    await expect.poll(async () => (await effort.boundingBox())?.width ?? 0).toBeGreaterThanOrEqual(375 - 76 - 56 - 12)
     await expect.poll(async () => {
       const bounds = await effort.boundingBox()
       return bounds === null ? 376 : bounds.x + bounds.width

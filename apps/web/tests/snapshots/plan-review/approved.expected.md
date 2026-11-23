@@ -3,7 +3,7 @@
   - text: Standard mode
   - button "New session":
     - img
-  - button "Collapse session overview" [expanded]:
+  - button "Expand session overview":
     - img
   - button "Open workbench":
     - img
@@ -36,10 +36,10 @@
   - text: Since the user has explicitly asked me not to read or write any files and to go straight to planning, I'll proceed with
   - code: exit_plan_mode
   - text: .
-- 'button "Tool call exit_plan_mode · # Add `--greeting` flag to CLI"':
+- button "提交计划供审阅":
   - img
   - img
-  - text: "Tool call exit_plan_mode · # Add `--greeting` flag to CLI"
+  - text: 提交计划供审阅
 - 'button "Think The plan was approved. The user''s last instruction says: \"Once the plan is approved, reply with the single word DONE and stop.\" So I should just reply with DONE and stop."':
   - img
   - img
@@ -63,33 +63,3 @@
   - img
 - button "4% of context used"
 - button "Send message" [disabled]
-- region "Session overview":
-  - button "Collapse session overview"
-  - heading "Collaboration" [level=2]
-  - button "Subagents 0":
-    - text: Subagents
-    - strong: "0"
-    - img
-  - button "Background tasks 0":
-    - text: Background tasks
-    - strong: "0"
-    - img
-  - heading "Run statistics" [level=2]
-  - term: Turns
-  - definition: "1"
-  - term: Steps
-  - definition: "2"
-  - term: LLM time
-  - definition: {{duration}}
-  - term: Tool calls
-  - definition: {{duration}}
-  - term: Average first token
-  - definition: {{duration}}
-  - term: Generation speed
-  - definition: {{throughput}} tok/s
-  - term: Cache hit
-  - definition: 51%
-  - term: Input
-  - definition: 10.2K tok
-  - term: Output
-  - definition: 346 tok

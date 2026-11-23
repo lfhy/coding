@@ -19,7 +19,7 @@ import {
   webSnapshotMode,
   type WebScaffold,
 } from './scaffold.ts'
-import { conversationContextKey, newEnglishPage, saveFailureShot } from './support.ts'
+import { conversationContextKey, newEnglishPage, saveFailureShot, sidebarTreeItems } from './support.ts'
 
 const MODE = webSnapshotMode()
 const SESSION_ID = 'chat-long-interactions-e2e'
@@ -77,9 +77,9 @@ async function nextPaint(page: Page): Promise<void> {
 }
 
 async function openSeed(page: Page): Promise<void> {
-  // The compact layout dropped group session counts; the seeded baseline is
-  // the Ungrouped bucket once cold summaries load.
-  await page.getByText('Ungrouped', { exact: true }).waitFor({ timeout: 30_000 })
+  // The seeded row is the baseline once cold summaries load; with no
+  // Workspace the sidebar lists sessions flat.
+  await sidebarTreeItems(page).first().waitFor({ timeout: 30_000 })
   // Search collapsed into a header action; expand it before filling.
   const searchButton = page.getByRole('button', { name: 'Search sessions' })
   if (await searchButton.getAttribute('aria-expanded') !== 'true') await searchButton.click()

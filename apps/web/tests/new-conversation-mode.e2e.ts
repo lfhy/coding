@@ -77,7 +77,9 @@ describe('新对话页工作与对话入口', () => {
     expect(outline.color).not.toBe('rgba(0, 0, 0, 0)')
     expect((await topWork.boundingBox())?.height).toBe(36)
     expect((await topWork.boundingBox())?.width ?? 0).toBeGreaterThanOrEqual(96)
-    expect((await sidebar.getByRole('tab', { name: 'Work', exact: true }).boundingBox())?.height).toBe(28)
+    // 一个工作区都没有时侧栏收成「对话／最近」两档，没有空的「工作」范围可选。
+    expect(await sidebar.getByRole('tab', { name: 'Work', exact: true }).count()).toBe(0)
+    expect((await sidebar.getByRole('tab', { name: 'Conversations', exact: true }).boundingBox())?.height).toBe(28)
     expect(await topWork.getAttribute('aria-selected')).toBe('true')
     expect(await input.evaluate((element: HTMLTextAreaElement) => element.disabled || element.readOnly)).toBe(true)
     await sidebar.getByRole('tab', { name: 'Recent', exact: true }).click()
@@ -95,13 +97,14 @@ describe('新对话页工作与对话入口', () => {
     expect(scaffold.ctx.sessions.list()).toHaveLength(1)
     const standaloneId = scaffold.ctx.sessions.list()[0]!.id
     const standalone = scaffold.ctx.agents.get(standaloneId)!
-    expect(scaffold.ctx.agentPresets.composedPreset(standalone.ctx)).toBe('standard')
+    // 对话入口按对话模式预设组装（先联网检索），不是标准模式。
+    expect(scaffold.ctx.agentPresets.composedPreset(standalone.ctx)).toBe('chat')
     expect(await page.getByRole('button', { name: /mode$/ }).count()).toBe(0)
     await compareOrRefreshGolden(join(SNAPSHOT_DIR, 'conversation.expected.md'),
       await captureStableAria(page, '[data-phase="hero"]', scaffold.workspaceCwd), MODE)
     await input.fill('Keep this draft while changing the entry mode.')
 
-    for (const name of ['Work', 'Recent'] as const) {
+    for (const name of ['Conversations', 'Recent'] as const) {
       await sidebar.getByRole('tab', { name, exact: true }).click()
       expect(await topConversation.getAttribute('aria-selected')).toBe('true')
       expect(await input.isEnabled()).toBe(true)
@@ -110,8 +113,11 @@ describe('新对话页工作与对话入口', () => {
 
     await topWork.click()
     await expect.poll(() => input.evaluate((element: HTMLTextAreaElement) => element.disabled || element.readOnly)).toBe(true)
-    expect(await sidebar.getByRole('tab', { name: 'Work', exact: true }).getAttribute('aria-selected')).toBe('true')
+    // 顶部切到工作会把侧栏同步到工作范围；没有工作区时该范围必然为空，侧栏停在对话列表。
+    await expect.poll(() => sidebar.getByRole('tab', { name: 'Conversations', exact: true }).getAttribute('aria-selected')).toBe('true')
     await connectFreshWorkspace(page, scaffold.workspaceCwd)
+    // 出现第一个工作区后工作页签回到侧栏并重新成为默认范围。
+    await expect.poll(() => sidebar.getByRole('tab', { name: 'Work', exact: true }).getAttribute('aria-selected'), { timeout: 10_000 }).toBe('true')
     await expect.poll(() => input.inputValue()).toBe('Keep this draft while changing the entry mode.')
     await topConversation.click()
     await expect.poll(() => input.isEnabled()).toBe(true)

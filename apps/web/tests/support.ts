@@ -3,7 +3,7 @@ import { existsSync, mkdirSync } from 'node:fs'
 import { createServer } from 'node:net'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import type { Browser, Page } from 'playwright'
+import type { Browser, Locator, Page } from 'playwright'
 
 /** The built page under test; `pnpm run test:web` rebuilds it before running. */
 export const DIST_INDEX = fileURLToPath(new URL('../dist/index.html', import.meta.url))
@@ -22,6 +22,60 @@ export const ZH_BROWSER_LOCALE = 'zh-CN'
  */
 export async function newEnglishPage(browser: Browser, height = 1000): Promise<Page> {
   return await browser.newPage({ viewport: { width: 1680, height }, locale: 'en-US' })
+}
+
+/**
+ * 侧栏里的会话行。一个工作区都没有时侧栏默认停在「对话」范围，会话直接平铺成
+ * treeitem；出现工作区后回到带分组的工作范围，此时分组标题行同样是 treeitem，
+ * 未归组的会话在默认折叠的 Ungrouped 分组下。只打开一条种子会话的场景应取
+ * 第一行；需要特定会话时按标题或序号再收窄。
+ * @param page - the page under test.
+ * @returns 侧栏会话列表的 treeitem 定位器。
+ */
+export function sidebarTreeItems(page: Page): Locator {
+  return page.locator('#dsh-layout-sidebar').getByRole('treeitem')
+}
+
+/**
+ * 点选侧栏「浏览会话」范围的页签；没有工作区时没有 Work 页签。仅适用于英文页面。
+ * @param page - the page under test.
+ * @param name - 目标范围页签的 accessible name。
+ * @returns 页签定位器。
+ */
+export function sidebarViewTab(page: Page, name: 'Work' | 'Conversations' | 'Recent'): Locator {
+  return page.locator('#dsh-layout-sidebar')
+    .getByRole('tablist', { name: 'Browse sessions' })
+    .getByRole('tab', { name, exact: true })
+}
+
+/**
+ * 切到侧栏的「对话」范围并返回其平铺会话行。建立了工作区后侧栏回到工作范围，只列
+ * 归属工作区的会话；种子会话等不属于任何工作区的会话只在「对话」里。没有工作区时
+ * 该范围本就是默认，重复点选不改变状态。仅适用于英文页面。
+ * @param page - the page under test.
+ * @returns 「对话」范围内的会话行定位器（至少一行可见后返回）。
+ */
+export async function openSidebarConversations(page: Page): Promise<Locator> {
+  await sidebarViewTab(page, 'Conversations').click()
+  const rows = sidebarTreeItems(page)
+  await rows.first().waitFor({ timeout: 15_000 })
+  return rows
+}
+
+/**
+ * 展开对话页头的会话概览卡并返回该区域。概览在对话列窄于 1388px 时默认收起（测试
+ * 基线 1680px 视口正落在这一档），且切换会话或重新加载后回到默认；要读取协作行、
+ * 后台任务或运行统计的场景先经页头开关展开，已展开时不做任何事。
+ * @param page - the page under test.
+ * @returns 「Session overview」区域的定位器。
+ */
+export async function openSessionOverview(page: Page): Promise<Locator> {
+  const region = page.getByRole('region', { name: 'Session overview' })
+  if (!(await region.isVisible())) {
+    await page.getByRole('button', { name: 'Expand session overview' }).first().click()
+    await region.waitFor({ state: 'visible' })
+  }
+  return region
 }
 
 /** Fail loud on a stale checkout instead of testing yesterday's bundle. */
