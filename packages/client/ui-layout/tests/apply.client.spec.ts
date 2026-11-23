@@ -4,7 +4,7 @@
 import { Context } from '@deepseek-ai/cordis'
 import { stubSettingsScope } from 'coding-client-test-runtime'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { SlotRegistry } from 'coding-client-runtime/client'
+import { createSnapshotStore, SlotRegistry, type SessionId, type SessionListState } from 'coding-client-runtime/client'
 import { LocaleRuntime } from 'coding-client-locale/client'
 import { apply as themeApply, inject as themeInject, ThemeRuntime } from 'coding-client-ui-theme/client'
 import { apply, inject, LayoutController } from 'coding-client-ui-layout/client'
@@ -12,6 +12,8 @@ import type { AppFrameInjected } from 'coding-client-ui-layout/src/client/AppFra
 import type { PanelActions } from 'coding-client-ui-layout/src/client/service.ts'
 import { apply as nodeApply } from 'coding-client-ui-layout'
 import * as invariant from 'coding-client-ui-layout/invariant'
+
+const SESSION = 'layout-session' as SessionId
 
 beforeEach(() => {
   document.head.querySelectorAll('meta[name="theme-color"]').forEach((node) => { node.remove() })
@@ -22,6 +24,9 @@ async function bench() {
   const slotsFiber = ctx.plugin(SlotRegistry)
   // 主题设置需要连接与设置 scope；这里提供内存态浏览器依赖。
   ctx.provide('locale', new LocaleRuntime(ctx))
+  ctx.provide('sessions', { list: createSnapshotStore({
+    current: SESSION, byId: { [SESSION]: { id: SESSION, blank: false } },
+  } as SessionListState) } as never)
   ctx.provide('connection', { api: { settings: {} }, isLoopback: false } as never)
   // Appearance 设置行通过这两个依赖绑定持久 scope。
   ctx.provide('remote', { $on: () => () => {} } as never)
@@ -33,7 +38,7 @@ async function bench() {
 
 describe('ui-layout client apply', () => {
   it('declares its service dependencies', () => {
-    expect(inject).toEqual(['slots', 'theme', 'locale'])
+    expect(inject).toEqual(['slots', 'theme', 'locale', 'sessions'])
   })
 
   it('provides ctx.layout and declares legacy plus workbench child slots', async () => {
@@ -64,10 +69,7 @@ describe('ui-layout client apply', () => {
       toggleWorkbenchFullscreen: vi.fn(), toggleWorkbenchBottom: vi.fn(), closeWorkbenchBottom: vi.fn(),
       togglePage: vi.fn(),
       toggleHeroPanel: vi.fn(),
-      beginNewConversation: vi.fn(),
-      selectConversation: vi.fn(),
-      setActiveBlankSession: vi.fn(),
-      clearBlankWorkbench: vi.fn(), retainBlankSessions: vi.fn(),
+      resetBlankWorkbench: vi.fn(),
       retainWorkbenchSessions: vi.fn(),
       openPage: vi.fn(), closePage: vi.fn(), discardPage: vi.fn(), setPageAssistant: vi.fn(),
       setPageAssistantWidth: vi.fn(),
@@ -92,10 +94,10 @@ describe('ui-layout client apply', () => {
     expect(injected.hooks.theme.getSnapshot()).toMatchObject({ preference: 'system', active: { colorScheme: 'light' } })
     const layout = ctx.get('layout') as LayoutController
     layout.toggleSidebar()
-    layout.openWorkbench('layout-session')
-    layout.showConversation('layout-session' as never)
+    layout.openWorkbench(SESSION)
+    layout.showConversation(SESSION)
     expect(actions.toggleSidebar).toHaveBeenCalledOnce()
-    expect(actions.openWorkbench).toHaveBeenCalledOnce()
+    expect(actions.openWorkbench).toHaveBeenCalledExactlyOnceWith(SESSION, true)
     expect(actions.requestShowConversation).toHaveBeenCalledOnce()
   })
 

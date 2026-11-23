@@ -3,7 +3,7 @@
  * 工作台底栏横跨两个主内容列。所有 slot 始终在固定树位置渲染，视觉关闭只
  * 改变网格尺寸、可见性和 inert 状态，不销毁占用者。
  */
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { CSSProperties, ReactNode } from 'react'
 import type { HostObservable, InjectFace, PropsLocale, PropsRenderSlots, PropsRuntime, PropsStore } from 'coding-client-ui-slots'
 import type { ThemeSnapshot } from 'coding-client-ui-theme/client'
@@ -38,17 +38,17 @@ import { CONVERSATION_COLUMN_ID, ConversationColumn } from './ConversationColumn
 import { DragHandle } from './DragHandle.tsx'
 import css from './AppFrame.module.css'
 
-/** AppFrame 向布局服务回报工作区级工作台投影的注入面。 */
+/** AppFrame 向布局服务回报当前会话工作台投影的注入面。 */
 export interface AppFrameInjected {
   /** 归还页面打开前的会话；会话列表已失效时由调用方直接丢弃请求。 */
   restoreConversation: (sessionId: SessionId) => void
   /** 发布布局当前页面供侧栏入口回显。 */
   publishPage: (page: PageRoute | null) => void
-  /** 发布当前工作区的工作台状态。 */
-  publishWorkbench: (key: string, state: WorkbenchLayoutSnapshot) => void
-  /** 清理已离开会话列表的工作区工作台投影。 */
-  retainWorkbenchViews: (keys: readonly string[]) => void
-  /** 解析会话所属的工作区键；工作台偏好按它保存。 */
+  /** 发布当前会话的工作台状态。 */
+  publishWorkbench: (sessionId: SessionId | undefined, state: WorkbenchLayoutSnapshot) => void
+  /** 清理已离开会话列表的工作台状态源。 */
+  retainWorkbenchViews: (sessionIds: readonly SessionId[]) => void
+  /** 解析会话所属的工作区键，供尺寸与底栏使用。 */
   workspaceKeyOf: (sessionId: SessionId) => string
   /** 当前主题快照，供外层导航根据生效明暗更新图标。 */
   hooks: {
@@ -141,13 +141,10 @@ function WorkbenchBottom({ children, hidden }: SurfaceProps) {
   )
 }
 
-/** 单个 Session 的默认工作台状态；`width` 为 0 时由求解器按 1:2 分配主内容。 */
+/** 工作区没有尺寸偏好时，`width` 为 0 由求解器按 1:2 分配主内容。 */
 const WORKBENCH_FALLBACK = {
-  open: false,
-  fullscreen: false,
   width: WORKBENCH_DEFAULT,
   bottomOpen: false,
-  bottomStandalone: false,
   bottomHeight: WORKBENCH_BOTTOM_DEFAULT,
 }
 
@@ -199,14 +196,8 @@ export function AppFrame({
     if (page !== null && !pageVisible) actions.discardPage()
   }, [actions, page, pageVisible])
   const activeKey = activeSession === undefined ? undefined : workspaceKeyOf(activeSession)
-  useLayoutEffect(() => {
-    actions.selectConversation(activeSession)
-    actions.setActiveBlankSession(activeBlank ? activeSession : undefined, activeKey)
-  }, [actions, activeBlank, activeKey, activeSession])
-  const panels = useMemo(() => {
-    const current = activeKey === undefined ? undefined : rootPanels.workbench[activeKey]
-    return current ?? WORKBENCH_FALLBACK
-  }, [activeKey, rootPanels.workbench])
+  const panels = (activeKey === undefined ? undefined : rootPanels.workbench[activeKey]) ?? WORKBENCH_FALLBACK
+  const right = activeSession === undefined ? undefined : rootPanels.rightWorkbench[activeSession]
   const frameRef = useRef<HTMLDivElement | null>(null)
   const [viewport, setViewport] = useState(() => ({ width: window.innerWidth, height: window.innerHeight }))
 
@@ -219,14 +210,12 @@ export function AppFrame({
 
   // 工作台布局与 Session 生命周期绑定；离开会话列表时同步释放瞬时状态与页头投影。
   useEffect(() => {
-    actions.retainWorkbenchSessions(liveSessionIds.map(workspaceKeyOf))
-    actions.retainBlankSessions(liveSessionIds)
-    retainWorkbenchViews(liveSessionIds.map(workspaceKeyOf))
-  }, [actions, liveSessionIds, retainWorkbenchViews, workspaceKeyOf])
-
-  useLayoutEffect(() => {
-    if (activeSession !== undefined && !activeBlank) actions.clearBlankWorkbench(activeSession)
-  }, [actions, activeBlank, activeSession])
+    // 由路由直达的子会话可能不在列表中，但在它仍被选中时需要保留布局。
+    const retained = activeSession !== undefined && !liveSessionIds.includes(activeSession)
+      ? [...liveSessionIds, activeSession] : liveSessionIds
+    actions.retainWorkbenchSessions(retained.map(workspaceKeyOf), retained)
+    retainWorkbenchViews(retained)
+  }, [actions, activeSession, liveSessionIds, retainWorkbenchViews, workspaceKeyOf])
 
   useLayoutEffect(() => {
     const element = frameRef.current
@@ -257,13 +246,9 @@ export function AppFrame({
   const narrow = viewport.width < SIDEBAR_AUTO_COLLAPSE
   useEffect(() => { actions.setNarrow(narrow) }, [actions, narrow])
 
-  const workbenchShown = activeSession !== undefined && rootPanels.details === 0
-    && (activeBlank
-      ? rootPanels.blankWorkbench[activeSession] === true
-        || rootPanels.blankWorkbench[activeSession] === undefined
-          && rootPanels.suppressedWorkbench[activeSession] === false && panels.open
-      : panels.open && rootPanels.suppressedWorkbench[activeSession] !== true)
-  const workbenchFullscreen = workbenchShown && (panels.fullscreen || narrow)
+  const workbenchShown = right !== undefined && rootPanels.details === 0
+  const workbenchMaximized = workbenchShown && right.fullscreen
+  const workbenchFullscreen = workbenchShown && (workbenchMaximized || narrow)
   const welcomeActionsVisible = welcomeSession && !workbenchFullscreen
   // 导航栏只服从自身开关和响应式断点；工作台不隐式抢占会话导航。
   const sidebarCollapsed = narrow ? !rootPanels.narrowExpanded : rootPanels.sidebar === 0
@@ -306,8 +291,7 @@ export function AppFrame({
   const detailsWidth = workbenchShown ? 0 : detailsColumns.details
   const workbenchWidth = workbenchShown ? workbenchColumns.workbench : 0
   const rightWidth = detailsWidth + workbenchWidth
-  const bottomRequested = activeSession !== undefined && (rootPanels.details === 0 || activeBlank)
-    && panels.bottomOpen && (workbenchShown || panels.bottomStandalone || activeBlank)
+  const bottomRequested = activeSession !== undefined && (rootPanels.details === 0 || activeBlank) && panels.bottomOpen
   const bottomHeight = computeWorkbenchBottom(
     viewport.height,
     panels.bottomHeight,
@@ -355,22 +339,13 @@ export function AppFrame({
     if (workbenchFullscreen) setFloatingSession(activeSession)
   }, [actions, activeSession, conversationRequest, liveSessionIds, pageVisible, workbenchFullscreen])
 
-  const publishedWorkbenchKey = useRef<string | undefined>(activeKey)
-  useEffect(() => {
-    if (publishedWorkbenchKey.current !== undefined && publishedWorkbenchKey.current !== activeKey) {
-      publishWorkbench(publishedWorkbenchKey.current, { open: false, fullscreen: false, bottomOpen: false })
-    }
-    if (activeKey === undefined) {
-      publishedWorkbenchKey.current = undefined
-      return
-    }
-    publishedWorkbenchKey.current = activeKey
-    publishWorkbench(activeKey, {
+  useLayoutEffect(() => {
+    publishWorkbench(activeSession, {
       open: workbenchShown,
-      fullscreen: workbenchShown && panels.fullscreen,
+      fullscreen: workbenchMaximized,
       bottomOpen: bottomRequested,
     })
-  }, [activeKey, bottomRequested, panels.fullscreen, publishWorkbench, workbenchShown])
+  }, [activeSession, bottomRequested, publishWorkbench, workbenchMaximized, workbenchShown])
 
   const geometry = useRef({ sidebarWidth, detailsWidth, workbenchWidth, bottomHeight, assistantWidth })
   geometry.current = { sidebarWidth, detailsWidth, workbenchWidth, bottomHeight, assistantWidth }

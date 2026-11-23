@@ -25,10 +25,7 @@ const initialState = {
   narrow: false,
   narrowExpanded: false,
   workbench: {},
-  blankWorkbench: {},
-  suppressedWorkbench: {},
-  pendingNewConversation: false,
-  activeBlankSession: null,
+  rightWorkbench: {},
   page: null,
   pageAssistant: null,
   pageAssistantWidth: PAGE_ASSISTANT_DEFAULT,
@@ -40,79 +37,39 @@ const initialState = {
 beforeEach(() => { localStorage.clear() })
 
 describe('createLayoutStore', () => {
-  it('keeps a blank Hero override separate until the user explicitly toggles the right panel', () => {
+  it('lets a blank open files without resetting the other session’s right panel', () => {
     const { store, actions } = createLayoutStore().create()
-    actions.openWorkbench('shared')
-    actions.toggleWorkbenchFullscreen('shared')
-    const previous = store.getSnapshot().workbench.shared
-    expect(store.getSnapshot().blankWorkbench).toEqual({})
-    actions.toggleHeroPanel('shared', 'files', SESSION)
-    expect(store.getSnapshot().blankWorkbench[SESSION]).toBe(true)
-    expect(store.getSnapshot().blankWorkbench[NEXT_SESSION]).toBeUndefined()
-    expect(previous).toMatchObject({ open: true, fullscreen: true })
-    actions.toggleHeroPanel('shared', 'files', SESSION)
-    expect(store.getSnapshot().blankWorkbench[SESSION]).toBe(false)
-    actions.beginNewConversation()
-    expect(store.getSnapshot().blankWorkbench).toEqual({})
+    actions.openWorkbench(SESSION, true)
+    actions.toggleWorkbenchFullscreen(SESSION)
+    actions.toggleHeroPanel('shared', 'files', NEXT_SESSION)
+    expect(store.getSnapshot().rightWorkbench).toEqual({
+      [SESSION]: { fullscreen: true }, [NEXT_SESSION]: { fullscreen: false },
+    })
+    actions.toggleHeroPanel('shared', 'files', NEXT_SESSION)
+    expect(store.getSnapshot().rightWorkbench).toEqual({ [SESSION]: { fullscreen: true } })
   })
 
-  it('updates the shared workspace but not another active blank override for targeted opens', () => {
+  it('a background open preserves frontmost details and existing fullscreen preferences', () => {
     const { store, actions } = createLayoutStore().create()
-    actions.setActiveBlankSession(NEXT_SESSION, 'shared')
-    actions.openWorkbench('shared', SESSION)
-    expect(store.getSnapshot().workbench.shared?.open).toBe(true)
-    expect(store.getSnapshot().blankWorkbench[NEXT_SESSION]).toBeUndefined()
-    actions.openWorkbench('shared', NEXT_SESSION)
-    expect(store.getSnapshot().blankWorkbench[NEXT_SESSION]).toBe(true)
-    actions.toggleWorkbenchFullscreen('shared')
-    actions.openWorkbench('shared', SESSION)
-    expect(store.getSnapshot().workbench.shared?.fullscreen).toBe(true)
-    actions.openWorkbench('shared', NEXT_SESSION)
-    expect(store.getSnapshot().workbench.shared?.fullscreen).toBe(false)
-    actions.closeWorkbench('shared')
-    expect(store.getSnapshot().blankWorkbench[NEXT_SESSION]).toBe(false)
-    actions.openWorkbench('shared')
-    expect(store.getSnapshot().blankWorkbench[NEXT_SESSION]).toBe(true)
+    actions.openWorkbench(SESSION, true)
+    actions.toggleWorkbenchFullscreen(SESSION)
+    actions.openDetails()
+    actions.openWorkbench(SESSION, false)
+    actions.openWorkbench(NEXT_SESSION, false)
+    expect(store.getSnapshot()).toMatchObject({
+      details: DETAILS_DEFAULT,
+      rightWorkbench: { [SESSION]: { fullscreen: true }, [NEXT_SESSION]: { fullscreen: false } },
+    })
   })
 
-  it('isolates the next selected session without overriding an explicit early open', () => {
+  it('resets blank right panels without changing the shared bottom or other sessions', () => {
     const { store, actions } = createLayoutStore().create()
-    actions.openWorkbench('shared', SESSION)
-    actions.beginNewConversation()
-    actions.selectConversation(NEXT_SESSION)
-    expect(store.getSnapshot().suppressedWorkbench[NEXT_SESSION]).toBe(true)
-    expect(store.getSnapshot().pendingNewConversation).toBe(false)
-    actions.beginNewConversation()
-    actions.openWorkbench('shared', NEXT_SESSION)
-    actions.selectConversation(NEXT_SESSION)
-    expect(store.getSnapshot().suppressedWorkbench[NEXT_SESSION]).toBe(false)
-    expect(store.getSnapshot().suppressedWorkbench[SESSION]).toBe(false)
-  })
-
-  it('does not let an old session toggle change the current blank override', () => {
-    const { store, actions } = createLayoutStore().create()
-    actions.setActiveBlankSession(NEXT_SESSION, 'shared')
-    actions.toggleWorkbench('shared', SESSION)
-    expect(store.getSnapshot().blankWorkbench[NEXT_SESSION]).toBeUndefined()
-    actions.toggleWorkbench('shared', SESSION)
-    expect(store.getSnapshot().blankWorkbench[NEXT_SESSION]).toBeUndefined()
-  })
-
-  it('preserves an independent terminal when starting a blank conversation and reopening its Hero', () => {
-    const { store, actions } = createLayoutStore().create()
-    actions.openWorkbench('shared')
+    actions.openWorkbench(SESSION, true)
+    actions.openWorkbench(NEXT_SESSION, false)
     actions.toggleWorkbenchBottom('shared')
-    const priorBottom = store.getSnapshot().workbench.shared?.bottomOpen
-    actions.beginNewConversation()
-    expect(store.getSnapshot().workbench.shared?.bottomOpen).toBe(priorBottom)
-    actions.toggleHeroPanel('shared', 'files', SESSION)
-    expect(store.getSnapshot().blankWorkbench[SESSION]).toBe(true)
-    actions.toggleHeroPanel('shared', 'bottom', SESSION)
-    expect(store.getSnapshot().blankWorkbench[SESSION]).toBe(false)
-    actions.requestShowConversation(SESSION)
-    expect(store.getSnapshot().blankWorkbench[SESSION]).toBe(false)
-    actions.retainBlankSessions([NEXT_SESSION])
-    expect(store.getSnapshot().blankWorkbench[SESSION]).toBeUndefined()
+    actions.resetBlankWorkbench([NEXT_SESSION])
+    expect(store.getSnapshot().workbench.shared?.bottomOpen).toBe(true)
+    expect(store.getSnapshot().rightWorkbench).toEqual({ [SESSION]: { fullscreen: false } })
   })
   it('keeps only the newest conversation request and does not acknowledge its successor', () => {
     const { store, actions } = createLayoutStore().create()
@@ -132,12 +89,12 @@ describe('createLayoutStore', () => {
   })
   it('keeps an independent page transient and returns without changing panel preferences', () => {
     const { store, actions } = createLayoutStore().create()
-    actions.openWorkbench(SESSION)
+    actions.openWorkbench(SESSION, true)
     actions.openPage('image-gallery', SESSION)
     expect(store.getSnapshot()).toMatchObject({ page: { kind: 'image-gallery', sessionId: SESSION },
-      workbench: { [SESSION]: { open: true } } })
+      rightWorkbench: { [SESSION]: { fullscreen: false } } })
     actions.closePage()
-    expect(store.getSnapshot()).toMatchObject({ page: null, workbench: { [SESSION]: { open: true } } })
+    expect(store.getSnapshot()).toMatchObject({ page: null, rightWorkbench: { [SESSION]: { fullscreen: false } } })
   })
 
   it('tracks the page AI assistant and resets it when the page closes or is replaced', () => {
@@ -197,7 +154,7 @@ describe('createLayoutStore', () => {
     const a = createLayoutStore().create()
     const b = createLayoutStore().create()
     a.actions.setSidebar(400)
-    a.actions.openWorkbench(SESSION)
+    a.actions.openWorkbench(SESSION, true)
     expect(b.store.getSnapshot()).toEqual(initialState)
   })
 
@@ -258,33 +215,31 @@ describe('createLayoutStore', () => {
     actions.openDetails()
     actions.setNarrow(true)
     actions.toggleSidebar()
-    actions.openWorkbench(SESSION)
+    actions.openWorkbench(SESSION, true)
     expect(store.getSnapshot()).toMatchObject({
       details: 0,
       narrow: true,
       narrowExpanded: true,
-      workbench: { [SESSION]: { open: true, fullscreen: false } },
+      rightWorkbench: { [SESSION]: { fullscreen: false } },
     })
   })
 
   it('workbench presentation toggles only while open and close preserves the visible bottom and size preferences', () => {
     const { store, actions } = createLayoutStore().create()
     actions.toggleWorkbenchFullscreen(SESSION)
-    expect(store.getSnapshot().workbench).toEqual({})
+    expect(store.getSnapshot().rightWorkbench).toEqual({})
 
-    actions.openWorkbench(SESSION)
+    actions.openWorkbench(SESSION, true)
     actions.setWorkbench(SESSION, 500)
     actions.setWorkbenchBottom(SESSION, 320)
     actions.toggleWorkbenchFullscreen(SESSION)
     actions.toggleWorkbenchBottom(SESSION)
-    expect(store.getSnapshot().workbench[SESSION]).toMatchObject({ fullscreen: true, bottomOpen: true })
+    expect(store.getSnapshot().rightWorkbench[SESSION]).toEqual({ fullscreen: true })
     actions.closeWorkbench(SESSION)
+    expect(store.getSnapshot().rightWorkbench[SESSION]).toBeUndefined()
     expect(store.getSnapshot().workbench[SESSION]).toMatchObject({
-      open: false,
-      fullscreen: false,
       width: 500,
       bottomOpen: true,
-      bottomStandalone: true,
       bottomHeight: 320,
     })
   })
@@ -296,36 +251,18 @@ describe('createLayoutStore', () => {
     actions.toggleWorkbenchBottom(SESSION)
     expect(store.getSnapshot()).toMatchObject({
       details: 0,
-      workbench: { [SESSION]: { open: false, fullscreen: false, bottomOpen: true, bottomStandalone: true } },
+      workbench: { [SESSION]: { bottomOpen: true } },
     })
+    expect(store.getSnapshot().rightWorkbench[SESSION]).toBeUndefined()
     actions.toggleWorkbenchBottom(SESSION)
-    expect(store.getSnapshot().workbench[SESSION]).toMatchObject({ open: false, bottomOpen: false, bottomStandalone: false })
+    expect(store.getSnapshot().workbench[SESSION]?.bottomOpen).toBe(false)
 
     actions.toggleWorkbenchBottom(SESSION)
-    expect(store.getSnapshot().workbench[SESSION]).toMatchObject({
-      open: false, bottomOpen: true, bottomStandalone: true,
-    })
-    actions.openWorkbench(SESSION)
-    expect(store.getSnapshot().workbench[SESSION]).toMatchObject({ open: true, bottomOpen: true, bottomStandalone: false })
+    actions.openWorkbench(SESSION, true)
+    expect(store.getSnapshot().workbench[SESSION]?.bottomOpen).toBe(true)
     actions.toggleWorkbenchBottom(SESSION)
-    expect(store.getSnapshot().workbench[SESSION]).toMatchObject({ open: true, bottomOpen: false })
-  })
-
-  it('opens the bottom row standalone when the shared right workbench is invisible for the session', () => {
-    const { store, actions } = createLayoutStore().create()
-    actions.openWorkbench('shared')
-    // 新对话把下一个会话标记为屏蔽共享右栏偏好：它看不到右栏，底栏不能跟着一起被藏起来。
-    actions.beginNewConversation()
-    actions.selectConversation(NEXT_SESSION)
-
-    actions.toggleWorkbenchBottom('shared', NEXT_SESSION)
-    expect(store.getSnapshot().workbench.shared).toMatchObject({
-      open: true, bottomOpen: true, bottomStandalone: true,
-    })
-    actions.toggleWorkbenchBottom('shared', NEXT_SESSION)
-    expect(store.getSnapshot().workbench.shared).toMatchObject({
-      open: true, bottomOpen: false, bottomStandalone: false,
-    })
+    expect(store.getSnapshot().workbench[SESSION]?.bottomOpen).toBe(false)
+    expect(store.getSnapshot().rightWorkbench[SESSION]).toEqual({ fullscreen: false })
   })
 
   it('hides the bottom panel idempotently without changing the right workbench or details', () => {
@@ -333,112 +270,103 @@ describe('createLayoutStore', () => {
     actions.closeWorkbenchBottom(SESSION)
     expect(store.getSnapshot().workbench[SESSION]).toBeUndefined()
 
-    actions.openWorkbench(SESSION)
+    actions.openWorkbench(SESSION, true)
     actions.toggleWorkbenchBottom(SESSION)
     actions.closeWorkbenchBottom(SESSION)
-    expect(store.getSnapshot().workbench[SESSION]).toMatchObject({
-      open: true, bottomOpen: false, bottomStandalone: false,
-    })
+    expect(store.getSnapshot().workbench[SESSION]?.bottomOpen).toBe(false)
     actions.openDetails()
     actions.closeWorkbenchBottom(SESSION)
     expect(store.getSnapshot().details).not.toBe(0)
-    expect(store.getSnapshot().workbench[SESSION]).toMatchObject({
-      open: true, bottomOpen: false, bottomStandalone: false,
-    })
+    expect(store.getSnapshot().rightWorkbench[SESSION]).toEqual({ fullscreen: false })
 
     actions.closeWorkbench(SESSION)
     actions.toggleWorkbenchBottom(SESSION)
     actions.closeWorkbenchBottom(SESSION)
-    expect(store.getSnapshot().workbench[SESSION]).toMatchObject({
-      open: false, bottomOpen: false, bottomStandalone: false,
-    })
+    expect(store.getSnapshot().workbench[SESSION]?.bottomOpen).toBe(false)
   })
 
   it('Hero buttons alternate exclusive panel visibility without changing the navigation', () => {
     const { store, actions } = createLayoutStore().create()
-    actions.toggleHeroPanel(SESSION, 'bottom')
-    expect(store.getSnapshot().workbench[SESSION]).toMatchObject({ open: false, bottomOpen: true, bottomStandalone: true })
+    actions.toggleHeroPanel(SESSION, 'bottom', SESSION)
+    expect(store.getSnapshot().workbench[SESSION]?.bottomOpen).toBe(true)
+    expect(store.getSnapshot().rightWorkbench[SESSION]).toBeUndefined()
     expect(store.getSnapshot().sidebar).toBe(SIDEBAR_DEFAULT)
-    actions.toggleHeroPanel(SESSION, 'files')
-    expect(store.getSnapshot().workbench[SESSION]).toMatchObject({
-      open: true, bottomOpen: false, bottomStandalone: false,
-    })
-    actions.toggleHeroPanel(SESSION, 'bottom')
-    expect(store.getSnapshot().workbench[SESSION]).toMatchObject({ open: false, bottomOpen: true, bottomStandalone: true })
-    actions.toggleHeroPanel(SESSION, 'bottom')
-    expect(store.getSnapshot().workbench[SESSION]).toMatchObject({ open: false, bottomOpen: false, bottomStandalone: false })
-    actions.toggleHeroPanel(SESSION, 'files')
-    actions.toggleHeroPanel(SESSION, 'files')
-    expect(store.getSnapshot().workbench[SESSION]).toMatchObject({ open: false, bottomOpen: false })
+    actions.toggleHeroPanel(SESSION, 'files', SESSION)
+    expect(store.getSnapshot().workbench[SESSION]?.bottomOpen).toBe(false)
+    expect(store.getSnapshot().rightWorkbench[SESSION]).toEqual({ fullscreen: false })
+    actions.toggleHeroPanel(SESSION, 'bottom', SESSION)
+    expect(store.getSnapshot().workbench[SESSION]?.bottomOpen).toBe(true)
+    expect(store.getSnapshot().rightWorkbench[SESSION]).toBeUndefined()
+    actions.toggleHeroPanel(SESSION, 'bottom', SESSION)
+    expect(store.getSnapshot().workbench[SESSION]?.bottomOpen).toBe(false)
   })
 
   it('toggles the entire right workbench from Hero', () => {
     const { store, actions } = createLayoutStore().create()
-    actions.toggleHeroPanel(SESSION, 'files')
-    expect(store.getSnapshot().workbench[SESSION]).toMatchObject({ open: true })
+    actions.toggleHeroPanel(SESSION, 'files', SESSION)
+    expect(store.getSnapshot().rightWorkbench[SESSION]).toEqual({ fullscreen: false })
 
-    actions.toggleHeroPanel(SESSION, 'files')
-    expect(store.getSnapshot().workbench[SESSION]).toMatchObject({ open: false })
-    actions.toggleHeroPanel(SESSION, 'files')
-    expect(store.getSnapshot().workbench[SESSION]).toMatchObject({ open: true })
+    actions.toggleHeroPanel(SESSION, 'files', SESSION)
+    expect(store.getSnapshot().rightWorkbench[SESSION]).toBeUndefined()
+    actions.toggleHeroPanel(SESSION, 'files', SESSION)
+    expect(store.getSnapshot().rightWorkbench[SESSION]).toEqual({ fullscreen: false })
   })
 
   it('closing the right workbench retains the bottom row when it was visible', () => {
     const { store, actions } = createLayoutStore().create()
-    actions.openWorkbench(SESSION)
+    actions.openWorkbench(SESSION, true)
     actions.toggleWorkbenchBottom(SESSION)
     actions.closeWorkbench(SESSION)
-    expect(store.getSnapshot().workbench[SESSION]).toMatchObject({ open: false, bottomOpen: true, bottomStandalone: true })
-    actions.openWorkbench(SESSION)
-    expect(store.getSnapshot().workbench[SESSION]).toMatchObject({ open: true, bottomOpen: true, bottomStandalone: false })
+    expect(store.getSnapshot().workbench[SESSION]?.bottomOpen).toBe(true)
+    actions.openWorkbench(SESSION, true)
     actions.toggleWorkbench(SESSION)
-    expect(store.getSnapshot().workbench[SESSION]).toMatchObject({ open: false, bottomOpen: true, bottomStandalone: true })
+    expect(store.getSnapshot().workbench[SESSION]?.bottomOpen).toBe(true)
     actions.toggleWorkbenchBottom(SESSION)
-    expect(store.getSnapshot().workbench[SESSION]).toMatchObject({ open: false, bottomOpen: false, bottomStandalone: false })
+    expect(store.getSnapshot().workbench[SESSION]?.bottomOpen).toBe(false)
   })
 
   it('closing a right-only workbench leaves the bottom hidden', () => {
     const { store, actions } = createLayoutStore().create()
-    actions.openWorkbench(SESSION)
+    actions.openWorkbench(SESSION, true)
     actions.closeWorkbench(SESSION)
-    expect(store.getSnapshot().workbench[SESSION]).toMatchObject({ open: false, bottomOpen: false, bottomStandalone: false })
+    expect(store.getSnapshot().rightWorkbench[SESSION]).toBeUndefined()
+    expect(store.getSnapshot().workbench[SESSION]).toBeUndefined()
   })
 
   it('closing Hero files leaves an already visible bottom panel visible', () => {
     const { store, actions } = createLayoutStore().create()
-    actions.openWorkbench(SESSION)
+    actions.openWorkbench(SESSION, true)
     actions.toggleWorkbenchBottom(SESSION)
-    actions.toggleHeroPanel(SESSION, 'files')
-    expect(store.getSnapshot().workbench[SESSION]).toMatchObject({ open: false, bottomOpen: true, bottomStandalone: true })
+    actions.toggleHeroPanel(SESSION, 'files', SESSION)
+    expect(store.getSnapshot().workbench[SESSION]?.bottomOpen).toBe(true)
+    expect(store.getSnapshot().rightWorkbench[SESSION]).toBeUndefined()
     actions.openDetails()
-    actions.toggleHeroPanel(SESSION, 'bottom')
+    actions.toggleHeroPanel(SESSION, 'bottom', SESSION)
     expect(store.getSnapshot()).toMatchObject({
-      details: 0, workbench: { [SESSION]: { open: false, bottomOpen: true, bottomStandalone: true } },
+      details: 0, workbench: { [SESSION]: { bottomOpen: true } },
     })
   })
 
   it('the resident terminal control closes a Hero-only bottom panel after the first message', () => {
     const { store, actions } = createLayoutStore().create()
-    actions.toggleHeroPanel(SESSION, 'bottom')
+    actions.toggleHeroPanel(SESSION, 'bottom', SESSION)
     actions.toggleWorkbenchBottom(SESSION)
-    expect(store.getSnapshot().workbench[SESSION]).toMatchObject({
-      open: false, bottomOpen: false, bottomStandalone: false,
-    })
+    expect(store.getSnapshot().workbench[SESSION]?.bottomOpen).toBe(false)
   })
 
   it('toggleWorkbench covers open and close while retaining bottom preference', () => {
     const { store, actions } = createLayoutStore().create()
     actions.openDetails()
     actions.toggleWorkbench(SESSION)
-    expect(store.getSnapshot()).toMatchObject({ details: 0, workbench: { [SESSION]: { open: true } } })
+    expect(store.getSnapshot()).toMatchObject({ details: 0, rightWorkbench: { [SESSION]: { fullscreen: false } } })
     actions.toggleWorkbenchFullscreen(SESSION)
     actions.toggleWorkbench(SESSION)
-    expect(store.getSnapshot().workbench[SESSION]).toMatchObject({ open: false, fullscreen: false })
+    expect(store.getSnapshot().rightWorkbench[SESSION]).toBeUndefined()
   })
 
   it('restores a workbench obscured by details before toggling it closed', () => {
     const { store, actions } = createLayoutStore().create()
-    actions.openWorkbench(SESSION)
+    actions.openWorkbench(SESSION, true)
     actions.setWorkbench(SESSION, 500)
     actions.toggleWorkbenchFullscreen(SESSION)
     actions.openDetails()
@@ -446,24 +374,24 @@ describe('createLayoutStore', () => {
     actions.toggleWorkbench(SESSION)
     expect(store.getSnapshot()).toMatchObject({
       details: 0,
-      workbench: { [SESSION]: { open: true, fullscreen: true, width: 500 } },
+      rightWorkbench: { [SESSION]: { fullscreen: true } },
     })
     actions.toggleWorkbench(SESSION)
-    expect(store.getSnapshot().workbench[SESSION]).toMatchObject({
-      open: false, fullscreen: false, width: 500,
-    })
+    expect(store.getSnapshot().rightWorkbench[SESSION]).toBeUndefined()
+    expect(store.getSnapshot().workbench[SESSION]?.width).toBe(500)
   })
 
   it('opening details preserves each session workbench state for later restoration', () => {
     const { store, actions } = createLayoutStore().create()
     actions.openDetails()
     expect(store.getSnapshot().details).toBe(DETAILS_DEFAULT)
-    actions.openWorkbench(SESSION)
-    actions.openWorkbench(NEXT_SESSION)
+    actions.openWorkbench(SESSION, true)
+    actions.openWorkbench(NEXT_SESSION, false)
     actions.toggleWorkbenchFullscreen(SESSION)
     actions.openDetails()
-    expect(store.getSnapshot().workbench[SESSION]).toMatchObject({ open: true, fullscreen: true })
-    expect(store.getSnapshot().workbench[NEXT_SESSION]).toMatchObject({ open: true })
+    expect(store.getSnapshot().rightWorkbench).toEqual({
+      [SESSION]: { fullscreen: true }, [NEXT_SESSION]: { fullscreen: false },
+    })
     actions.setDetails(500)
     actions.openDetails()
     expect(store.getSnapshot().details).toBe(500)
@@ -473,17 +401,20 @@ describe('createLayoutStore', () => {
 
   it('releases workbench state for sessions that left the live list', () => {
     const { store, actions } = createLayoutStore().create()
-    actions.openWorkbench(SESSION)
-    actions.openWorkbench(NEXT_SESSION)
-    actions.retainWorkbenchSessions([SESSION])
-    expect(store.getSnapshot().workbench).not.toHaveProperty(NEXT_SESSION)
-    expect(store.getSnapshot().workbench[SESSION]).toMatchObject({ open: true })
+    actions.setWorkbench('shared', 500)
+    actions.setWorkbench('removed-workspace', 700)
+    actions.openWorkbench(SESSION, true)
+    actions.openWorkbench(NEXT_SESSION, false)
+    actions.retainWorkbenchSessions(['shared'], [SESSION])
+    expect(store.getSnapshot().workbench).not.toHaveProperty('removed-workspace')
+    expect(store.getSnapshot().workbench.shared?.width).toBe(500)
+    expect(store.getSnapshot().rightWorkbench).toEqual({ [SESSION]: { fullscreen: false } })
   })
 
   it('does not persist layout geometry', () => {
     const first = createLayoutStore().create()
     first.actions.setSidebar(400)
-    first.actions.openWorkbench(SESSION)
+    first.actions.openWorkbench(SESSION, true)
     first.actions.setWorkbench(SESSION, 500)
     first.actions.toggleWorkbenchBottom(SESSION)
     first.actions.setWorkbenchBottom(SESSION, 320)

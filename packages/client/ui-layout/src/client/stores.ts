@@ -1,5 +1,5 @@
 /**
- * root entry 的瞬时布局 store。它持有导航与详情栏的全局偏好，以及按工作区键保存的工作台开关和尺寸偏好；响应式让步只影响 AppFrame 的实际几何，不改写这些偏好。模块只导出工厂，避免热重载之间共享实例。
+ * root entry 的瞬时布局 store。右侧工作台的开合与最大化属于会话；工作台尺寸和终端底栏属于工作区。响应式让步只影响 AppFrame 的实际几何，不改写这些偏好。
  */
 import { defineStore, type EngineStoreHandle } from 'coding-client-runtime/client'
 import type { SessionId } from 'coding-session/types'
@@ -22,15 +22,11 @@ import {
   WORKBENCH_MIN,
 } from './columns.ts'
 
-/** 单个工作区的工作台瞬时状态。 */
-export type WorkbenchState = {
-  open: boolean
-  fullscreen: boolean
+/** 同一工作区内共享的工作台尺寸与底栏偏好。 */
+type WorkbenchState = {
   /** 工作台宽度偏好；0 表示尚未手动调整，由求解器按对话 1、右侧 2 分配主内容。 */
   width: number
   bottomOpen: boolean
-  /** 右侧工作台关闭时仍单独显示底栏。 */
-  bottomStandalone: boolean
   bottomHeight: number
 }
 
@@ -55,16 +51,10 @@ type LayoutState = {
   details: number
   narrow: boolean
   narrowExpanded: boolean
-  /** 工作台偏好按工作区键保存；会话 id 仍是合法的字符串键，单会话部署行为不变。 */
+  /** 工作台尺寸与底栏状态按工作区键保存。 */
   workbench: Record<string, WorkbenchState | undefined>
-  /** 空白阶段的右栏临时显隐；首条消息后转为该会话的显式打开或抑制状态。 */
-  blankWorkbench: Record<SessionId, boolean | undefined>
-  /** 空白会话开始后仍屏蔽旧右栏；显式打开为 false，尚未见过的会话不设值。 */
-  suppressedWorkbench: Record<SessionId, boolean | undefined>
-  /** 新建意图待选中的会话；首次选中时即使空白阶段已经结束也要隔离旧偏好。 */
-  pendingNewConversation: boolean
-  /** 通用工作台动作当前所属的空白会话，供没有 session 参数的顶栏动作使用。 */
-  activeBlankSession: { sessionId: SessionId; key: string } | null
+  /** 只记录已打开右栏的会话；没有记录时默认收起。 */
+  rightWorkbench: Record<SessionId, { fullscreen: boolean } | undefined>
   /** 主内容区的临时页面；只属于打开它的会话，可选记录打开前的对话。 */
   page: PageRoute | null
   /** 当前页面的助手偏好；null 表示页面未启用助手。 */
@@ -78,35 +68,10 @@ type LayoutState = {
 
 function workbench(draft: LayoutState, key: string): WorkbenchState {
   return draft.workbench[key] ??= {
-    open: false,
-    fullscreen: false,
     width: WORKBENCH_DEFAULT,
     bottomOpen: false,
-    bottomStandalone: false,
     bottomHeight: WORKBENCH_BOTTOM_DEFAULT,
   }
-}
-
-/**
- * 判断某个会话实际能否看到右侧工作台，口径与 AppFrame 的可见性投影一致（详情栏另行判断）。
- * 工作台偏好按工作区共享，但空白会话的临时右栏与首条消息后的屏蔽是按会话记录的：
- * 底栏是否必须独立显示只能按会话的实际可见性决定，否则会得到“右栏偏好已打开、
- * 本会话却看不到”的底栏请求，点了开关也画不出底栏。
- * @param draft - 当前布局草稿。
- * @param key - 工作区布局键。
- * @param sessionId - 发起动作的会话；省略时只看共享偏好。
- * @returns 该会话是否能看见右栏。
- */
-function rightVisible(draft: LayoutState, key: string, sessionId?: SessionId): boolean {
-  const state = draft.workbench[key]
-  if (state === undefined) return false
-  if (sessionId === undefined) return state.open
-  if (draft.activeBlankSession?.key === key && draft.activeBlankSession.sessionId === sessionId) {
-    const blank = draft.blankWorkbench[sessionId]
-    return blank === true
-      || blank === undefined && draft.suppressedWorkbench[sessionId] === false && state.open
-  }
-  return state.open && draft.suppressedWorkbench[sessionId] !== true
 }
 
 /** store action 的声明镜像；`defineStore` 会校验实现没有漂移。 */
@@ -119,19 +84,15 @@ type LayoutActions = {
   setNarrow: (draft: LayoutState, narrow: boolean) => void
   openDetails: (draft: LayoutState) => void
   closeDetails: (draft: LayoutState) => void
-  openWorkbench: (draft: LayoutState, key: string, sessionId?: SessionId) => void
-  closeWorkbench: (draft: LayoutState, key: string, sessionId?: SessionId) => void
-  toggleWorkbench: (draft: LayoutState, key: string, sessionId?: SessionId) => void
-  toggleWorkbenchFullscreen: (draft: LayoutState, key: string) => void
-  toggleWorkbenchBottom: (draft: LayoutState, key: string, sessionId?: SessionId) => void
+  openWorkbench: (draft: LayoutState, sessionId: SessionId, foreground: boolean) => void
+  closeWorkbench: (draft: LayoutState, sessionId: SessionId) => void
+  toggleWorkbench: (draft: LayoutState, sessionId: SessionId) => void
+  toggleWorkbenchFullscreen: (draft: LayoutState, sessionId: SessionId) => void
+  toggleWorkbenchBottom: (draft: LayoutState, key: string) => void
   closeWorkbenchBottom: (draft: LayoutState, key: string) => void
-  toggleHeroPanel: (draft: LayoutState, key: string, panel: 'bottom' | 'files', sessionId?: SessionId) => void
-  beginNewConversation: (draft: LayoutState) => void
-  setActiveBlankSession: (draft: LayoutState, sessionId: SessionId | undefined, key?: string) => void
-  selectConversation: (draft: LayoutState, sessionId: SessionId | undefined) => void
-  clearBlankWorkbench: (draft: LayoutState, sessionId: SessionId) => void
-  retainBlankSessions: (draft: LayoutState, sessionIds: readonly SessionId[]) => void
-  retainWorkbenchSessions: (draft: LayoutState, keys: readonly string[]) => void
+  toggleHeroPanel: (draft: LayoutState, key: string, panel: 'bottom' | 'files', sessionId: SessionId) => void
+  resetBlankWorkbench: (draft: LayoutState, sessionIds: readonly SessionId[]) => void
+  retainWorkbenchSessions: (draft: LayoutState, keys: readonly string[], sessionIds: readonly SessionId[]) => void
   openPage: (draft: LayoutState, kind: string, sessionId: SessionId, returnSessionId?: SessionId) => void
   closePage: (draft: LayoutState) => void
   discardPage: (draft: LayoutState) => void
@@ -145,7 +106,7 @@ type LayoutActions = {
 }
 
 /**
- * 创建布局 store。工作台状态按工作区键保存；工作台打开会关闭详情栏，而详情栏仅暂时覆盖当前工作台，保留其工作区偏好。关闭右侧工作台时已显示的底栏保持可见，尺寸偏好也保留。
+ * 创建布局 store；详情栏只覆盖当前右栏，不改写其会话状态。关闭右栏保留共享底栏与尺寸。
  * @returns 包含定义、身份和实例工厂的 store handle。
  */
 export function createLayoutStore(): EngineStoreHandle<LayoutState, LayoutActions> {
@@ -157,10 +118,7 @@ export function createLayoutStore(): EngineStoreHandle<LayoutState, LayoutAction
       narrow: false,
       narrowExpanded: false,
       workbench: {},
-      blankWorkbench: {},
-      suppressedWorkbench: {},
-      pendingNewConversation: false,
-      activeBlankSession: null,
+      rightWorkbench: {},
       page: null,
       pageAssistant: null,
       pageAssistantWidth: PAGE_ASSISTANT_DEFAULT,
@@ -193,163 +151,66 @@ export function createLayoutStore(): EngineStoreHandle<LayoutState, LayoutAction
         if (d.details === 0) d.details = DETAILS_DEFAULT
       },
       closeDetails: (d) => { d.details = 0 },
-      openWorkbench: (d, key: string, sessionId?: SessionId) => {
-        d.details = 0
-        const state = workbench(d, key)
-        state.open = true
-        state.bottomStandalone = false
-        if (sessionId !== undefined) d.suppressedWorkbench[sessionId] = false
-        const backgroundForBlank = d.activeBlankSession?.key === key
-          && sessionId !== undefined && sessionId !== d.activeBlankSession.sessionId
-        if (!backgroundForBlank) state.fullscreen = false
-        if (d.activeBlankSession?.key === key
-          && (sessionId === undefined || sessionId === d.activeBlankSession.sessionId)) {
-          d.blankWorkbench[d.activeBlankSession.sessionId] = true
+      openWorkbench: (d, sessionId, foreground) => {
+        const right = d.rightWorkbench[sessionId] ??= { fullscreen: false }
+        if (foreground) {
+          d.details = 0
+          right.fullscreen = false
         }
       },
-      closeWorkbench: (d, key: string, sessionId?: SessionId) => {
-        const state = workbench(d, key)
-        state.bottomStandalone = state.bottomOpen && (state.open || state.bottomStandalone)
-        state.open = false
-        state.fullscreen = false
-        if (sessionId !== undefined) d.suppressedWorkbench[sessionId] = true
-        if (d.activeBlankSession?.key === key) d.blankWorkbench[d.activeBlankSession.sessionId] = false
-      },
-      toggleWorkbench: (d, key: string, sessionId?: SessionId) => {
-        const state = workbench(d, key)
-        const activeBlank = d.activeBlankSession?.key === key
-          && (sessionId === undefined || sessionId === d.activeBlankSession.sessionId)
-          ? d.activeBlankSession.sessionId : undefined
-        const rightVisible = activeBlank !== undefined ? d.blankWorkbench[activeBlank] === true
-          : state.open && (sessionId === undefined || d.suppressedWorkbench[sessionId] !== true)
-        if (rightVisible && d.details === 0) {
-          state.bottomStandalone = state.bottomOpen
-          state.open = false
-          state.fullscreen = false
-          if (activeBlank !== undefined) d.blankWorkbench[activeBlank] = false
-          if (sessionId !== undefined) d.suppressedWorkbench[sessionId] = true
+      closeWorkbench: (d, sessionId) => { Reflect.deleteProperty(d.rightWorkbench, sessionId) },
+      toggleWorkbench: (d, sessionId) => {
+        if (d.rightWorkbench[sessionId] !== undefined && d.details === 0) {
+          Reflect.deleteProperty(d.rightWorkbench, sessionId)
         } else {
           d.details = 0
-          state.bottomStandalone = false
           // 详情栏只遮挡工作台，恢复时保留原有的最大化偏好。
-          if (!state.open || sessionId !== undefined && d.suppressedWorkbench[sessionId] === true) {
-            state.open = true
-            state.fullscreen = false
-          }
-          if (activeBlank !== undefined) d.blankWorkbench[activeBlank] = true
-          if (sessionId !== undefined) d.suppressedWorkbench[sessionId] = false
+          d.rightWorkbench[sessionId] ??= { fullscreen: false }
         }
       },
-      toggleWorkbenchFullscreen: (d, key: string) => {
-        const state = d.workbench[key]
-        if (state?.open) state.fullscreen = !state.fullscreen
+      toggleWorkbenchFullscreen: (d, sessionId) => {
+        const right = d.rightWorkbench[sessionId]
+        if (right !== undefined) right.fullscreen = !right.fullscreen
       },
-      // 底栏入口只改变底栏；显示时关闭暂时遮挡它的详情栏。右栏对本会话不可见时底栏独立显示。
-      toggleWorkbenchBottom: (d, key: string, sessionId?: SessionId) => {
+      toggleWorkbenchBottom: (d, key) => {
         const state = workbench(d, key)
-        const right = rightVisible(d, key, sessionId)
-        if (d.details === 0 && state.bottomOpen && (right || state.bottomStandalone)) {
+        if (d.details === 0 && state.bottomOpen) {
           state.bottomOpen = false
-          state.bottomStandalone = false
           return
         }
         d.details = 0
         state.bottomOpen = true
-        state.bottomStandalone = !right
       },
-      closeWorkbenchBottom: (d, key: string) => {
+      closeWorkbenchBottom: (d, key) => {
         const state = d.workbench[key]
-        if (state === undefined) return
-        state.bottomOpen = false
-        state.bottomStandalone = false
+        if (state !== undefined) state.bottomOpen = false
       },
-      toggleHeroPanel: (d, key: string, panel: 'bottom' | 'files', sessionId?: SessionId) => {
+      toggleHeroPanel: (d, key, panel, sessionId) => {
         const state = workbench(d, key)
-        const rightVisible = sessionId === undefined ? state.open : d.blankWorkbench[sessionId] === true
         if (panel === 'bottom') {
-          if (d.details === 0 && state.bottomOpen && (state.bottomStandalone || state.open || sessionId !== undefined)) {
+          if (d.details === 0 && state.bottomOpen) {
             state.bottomOpen = false
-            state.bottomStandalone = false
           } else {
             d.details = 0
-            state.open = false
-            state.fullscreen = false
+            Reflect.deleteProperty(d.rightWorkbench, sessionId)
             state.bottomOpen = true
-            state.bottomStandalone = true
           }
-          if (sessionId !== undefined) {
-            d.blankWorkbench[sessionId] = false
-            d.suppressedWorkbench[sessionId] = true
-          }
-        } else if (d.details === 0 && rightVisible) {
-          state.open = false
-          state.bottomStandalone = state.bottomOpen
-          state.fullscreen = false
-          if (sessionId !== undefined) {
-            d.blankWorkbench[sessionId] = false
-            d.suppressedWorkbench[sessionId] = true
-          }
+        } else if (d.details === 0 && d.rightWorkbench[sessionId] !== undefined) {
+          Reflect.deleteProperty(d.rightWorkbench, sessionId)
         } else {
           d.details = 0
-          state.open = true
-          state.fullscreen = false
+          d.rightWorkbench[sessionId] = { fullscreen: false }
           state.bottomOpen = false
-          state.bottomStandalone = false
-          if (sessionId !== undefined) {
-            d.blankWorkbench[sessionId] = true
-            d.suppressedWorkbench[sessionId] = false
-          }
         }
       },
-      beginNewConversation: (d) => {
-        for (const id of Object.keys(d.blankWorkbench)) d.suppressedWorkbench[id as SessionId] = true
-        d.blankWorkbench = {}
-        if (d.activeBlankSession !== null) d.suppressedWorkbench[d.activeBlankSession.sessionId] = true
-        d.pendingNewConversation = true
+      resetBlankWorkbench: (d, sessionIds) => {
+        for (const id of sessionIds) Reflect.deleteProperty(d.rightWorkbench, id)
       },
-      selectConversation: (d, sessionId: SessionId | undefined) => {
-        if (!d.pendingNewConversation || sessionId === undefined) return
-        if (d.suppressedWorkbench[sessionId] === undefined) d.suppressedWorkbench[sessionId] = true
-        d.pendingNewConversation = false
-      },
-      setActiveBlankSession: (d, sessionId: SessionId | undefined, key?: string) => {
-        if (sessionId !== undefined && key !== undefined && d.activeBlankSession?.sessionId !== sessionId
-          && d.blankWorkbench[sessionId] === undefined && d.suppressedWorkbench[sessionId] === undefined) {
-          d.suppressedWorkbench[sessionId] = true
-        }
-        d.activeBlankSession = sessionId === undefined || key === undefined ? null : { sessionId, key }
-      },
-      clearBlankWorkbench: (d, sessionId: SessionId) => {
-        const visible = d.blankWorkbench[sessionId]
-        if (visible === undefined) return
-        if (visible) d.suppressedWorkbench[sessionId] = false
-        else d.suppressedWorkbench[sessionId] = true
-        d.blankWorkbench = Object.fromEntries(
-          Object.entries(d.blankWorkbench).filter(([id]) => id !== sessionId),
-        )
-      },
-      retainBlankSessions: (d, sessionIds: readonly SessionId[]) => {
-        const retained = new Set(sessionIds)
-        if (Object.keys(d.blankWorkbench).some(id => !retained.has(id as SessionId))) {
-          d.blankWorkbench = Object.fromEntries(
-            Object.entries(d.blankWorkbench).filter(([id]) => retained.has(id as SessionId)),
-          )
-        }
-        if (Object.keys(d.suppressedWorkbench).some(id => !retained.has(id as SessionId))) {
-          d.suppressedWorkbench = Object.fromEntries(
-            Object.entries(d.suppressedWorkbench).filter(([id]) => retained.has(id as SessionId)),
-          )
-        }
-        if (d.activeBlankSession !== null && !retained.has(d.activeBlankSession.sessionId)) d.activeBlankSession = null
-      },
-      retainWorkbenchSessions: (d, keys: readonly string[]) => {
-        const retained = new Set(keys)
-        if (Object.keys(d.workbench).every(key => retained.has(key))) return
-        const next: Record<string, WorkbenchState | undefined> = {}
-        for (const [key, state] of Object.entries(d.workbench)) {
-          if (retained.has(key)) next[key] = state
-        }
-        d.workbench = next
+      retainWorkbenchSessions: (d, keys, sessionIds) => {
+        const retainedKeys = new Set(keys)
+        const retainedIds = new Set<string>(sessionIds)
+        for (const key of Object.keys(d.workbench)) if (!retainedKeys.has(key)) Reflect.deleteProperty(d.workbench, key)
+        for (const id of Object.keys(d.rightWorkbench)) if (!retainedIds.has(id)) Reflect.deleteProperty(d.rightWorkbench, id)
       },
       openPage: (d, kind: string, sessionId: SessionId, returnSessionId?: SessionId) => {
         d.page = returnSessionId === undefined || returnSessionId === sessionId

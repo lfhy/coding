@@ -19,14 +19,14 @@ kind: "package-reference"
 | `sidebar` | `root` | `collapsed`、实际 `width`、欢迎页操作行是否可见 |
 | `conversation` | `session-maybe` | `sidebarCollapsed`；在页面助手中附加 `inPageAssistant` |
 | `details` | `session` | 空 owner share |
-| `workbench` | `root` | `shown`、`fullscreen`、`bottomOpen`；当前工作区由占用者通过 `useSessions` 读取 |
+| `workbench` | `root` | `shown`、`fullscreen`、`bottomOpen`；当前会话由占用者通过 `useSessions` 读取 |
 | `workbench.bottom` | `root` | 当前 Session id 与底栏可见性；占用者按工作区保留终端标签 |
 | `shell.navigation.entry` | `root` | 空 owner share 的有序 list，排在主页图标之后、底部主题切换和设置之前；注册者自带 36×36 图标按钮，[ui-image-gen](../ui-image-gen/README.md) 用它承载画图入口 |
 | `shell.settings` | `root` | `wide: boolean`，外层固定传 `false`；[ui-settings-general](../ui-settings-general/README.md) 提供设置图标入口与设置页 |
 | `shell.overlay` | `root` | 无 owner 数据的有序 list |
 | `shell.page` | `session` | 按 `entryKey` 选择主内容页；owner 提供关闭动作、实际侧栏状态，以及助手的 `assistantOpen`、`assistantPanelId` 和 `toggleAssistant()` |
 
-`ctx.layout` 提供全局的 `toggleSidebar()`、`openDetails()`、`closeDetails()`，以及接收工作区键的 `openWorkbench()`、`closeWorkbench()`、`toggleWorkbench()`、`toggleWorkbenchFullscreen()`、`toggleWorkbenchBottom()`、`closeWorkbenchBottom()` 和欢迎页专用的 `toggleHeroPanel()`。`beginNewConversation()` 同步清除空白会话的手动右栏选择并更新新对话意图版本；等待创建会话的欢迎页面板操作须核对该版本，不能在新对话操作后抢占选择。`workbench(workspaceKey)` 返回供会话页头、欢迎页与工作台顶栏面板开关订阅的显隐投影。打开工作台会关闭详情栏；打开详情栏会暂时覆盖工作台，关闭详情栏后恢复该工作区的状态。
+`ctx.layout` 提供全局的 `toggleSidebar()`、`openDetails()`、`closeDetails()`。`openWorkbench()`、`closeWorkbench()`、`toggleWorkbench()`、`toggleWorkbenchFullscreen()` 和 `workbench()` 接收会话 id；`workbench(sessionId)` 返回供页头与欢迎页订阅的显隐投影，仅发布当前会话的可见状态。终端底栏动作接收工作区键；欢迎页的 `toggleHeroPanel(workspaceKey, panel, sessionId)` 同时定位两者。`beginNewConversation()` 重置可复用空白会话的右栏并更新新对话意图版本；等待创建会话的欢迎页操作须核对该版本，不能抢占后续选择。
 
 `openPage(kind, sessionId, returnSessionId?)` 和 `togglePage(kind, sessionId, returnSessionId?)` 在主内容区打开会话所属页面。页面间切换须沿用已有 `returnSessionId`；未提供时返回当前页会话。若用户已切换会话或原对话已不存在，过期页面不会抢回选择。
 
@@ -34,13 +34,13 @@ kind: "package-reference"
 
 `attachPageConversation(start)` 由页面插件登记助手头部的「新对话」入口：登记后助手页头才渲染该按钮，返回的注销函数收回入口；同一时刻只有一个登记方生效，旧实例的注销不会撤销后来的登记。`startPageConversation()` 转交一次点击，未登记或上一次尚未完成时忽略重复点击，失败不改变当前页面与会话，用户可再次点击重试。
 
-`openWorkbench(workspaceKey, sessionId?)` 的可选会话 id 标识动作目标：目标明确是同工作区的其他会话时，只更新供目标恢复的共享打开状态，不展开当前空白会话的右栏，也不清除它手动选择的最大化状态；省略 id 或指向当前空白会话时可直接展开其右栏。已知目标会话的调用方应传入 id。
+`openWorkbench(sessionId)` 始终作用于发起动作的会话。打开当前会话的右栏会关闭详情栏；后台完成的资源打开只记录目标会话的右栏状态，不改变当前选择或当前详情栏。详情栏临时遮挡右栏时，关闭详情栏或点击当前页头的右栏开关可恢复右栏。
 
-会话页头的底栏开关在右侧工作台关闭时只显示底栏，该会话看不到右栏（新对话后屏蔽共享偏好，或空白会话没有手动打开）时同样独立显示；两个面板都显示时，关闭底栏不影响右列。页头的右侧边栏开关切换整个工作台；详情栏暂时遮挡工作台时，点击页头开关会恢复右栏。工作台的初始视图仍是功能菜单。关闭右侧工作台会保留已显示的底栏，并使其独立占据底部；宽度与底栏偏好不受影响。欢迎页的右侧边栏开关也按整个工作台显隐切换；打开目标面板时隐藏另一面板，底栏独占不占用右列。
+会话页头可单独切换底栏或右侧工作台；关闭一个不影响另一个。欢迎页打开一块面板时隐藏另一块，底栏单独显示时不占用右列。
 
-工作台与底栏尺寸和底栏显隐按工作区保存：布局用 `workspaceKeyOf(sessionId)` 解析会话所属工作区；已有对话可沿用工作区右栏偏好。没有 workspaces 服务的部署退回会话 id。空白会话默认隐藏右栏，且从空白阶段进入对话后，不会仅因同工作区旧会话曾打开右栏而露出没有标签的工作台；该会话明确点击右栏入口或由功能打开资源后才显示。显式打开的空白会话发送首条消息后继续显示，重新发起新对话则撤回该选择；工作区原有的打开、最大化和宽度偏好不因此被清除，已显示的底栏保持独立可用。
+右栏默认收起；仅当该会话打开工作台或资源时展开。切换会话恢复各自的开合和最大化，空白会话发送首条消息时保留自己的右栏。工作台与底栏尺寸、底栏显隐仍按 `workspaceKeyOf(sessionId)` 所指的工作区共享；没有工作区服务时使用会话 id。
 
-布局把欢迎页操作行是否可见交给侧边栏：无会话或空白会话且对话区未被全屏工作台遮住时可见，全屏工作台接管对话区时不可见。会话页头和欢迎页的面板开关分别由 `conversation.session.header.utilities` 与 `conversation.hero.actions` 的占用者提供；全屏工作台使对话区进入 `inert` 时仍可从工作台顶栏切换终端底栏。工作台状态动作、投影和尺寸偏好统一使用工作区键，工作区内切换会话不会使页头按钮与布局状态失去同步。
+布局把欢迎页操作行是否可见交给侧边栏：无会话或空白会话且对话区未被全屏工作台遮住时可见，全屏工作台接管对话区时不可见。会话页头和欢迎页的面板开关分别由 `conversation.session.header.utilities` 与 `conversation.hero.actions` 的占用者提供；全屏工作台使对话区进入 `inert` 时仍可从工作台顶栏切换终端底栏。
 
 `shell.page` 打开时覆盖整行：对话侧栏保留原网格列宽和挂载位置，但退出交互与可访问树；独立页通过 owner share 接收与对话侧栏相同的折叠状态、实际宽度及切换动作，并使用 `ui-primitives` 的 `SidebarRoot` 呈现自己的分类或最近内容。宽屏展开宽度跟随根布局的当前宽度，窄屏默认 56px；页面切换不重置状态，手动重新展开恢复上次拖拽宽度（初始为 280px）。原对话、详情和工作台子树继续挂载但不接收指针；关闭页面后侧栏按当前状态直接恢复，不会因切页播放从零宽展开的动画，拖拽手柄在页面打开期间隐藏。页面只保存临时会话 id、类型及可选的原对话 id，不把业务数据放进布局 store；关闭后先前面板、运行状态和草稿保持原状。
 
@@ -62,7 +62,7 @@ kind: "package-reference"
 
 桌面壳注入窗口拖拽样式时，尺寸分隔条仍保持 `no-drag`，指针拖拽只调整面板尺寸；浏览器未注入时没有窗口拖拽区域。
 
-详情栏沿用既有让步链：先缩到下限，再在对话区空间不足时自动隐藏。切换到另一个非空 Session 会关闭详情栏；没有经历空白阶段的旧会话继续沿用工作区右栏状态，新对话首次显示右栏仍需该会话的明确操作。最大化、宽度、底栏开关和底栏高度沿用工作区偏好。布局只负责 1024px 的主内容接管；工作台占用者在 768px 参考宽度收窄文件树，容器宽度不超过 640px 时让文件预览独占内容区。
+详情栏先缩到下限，再在对话区空间不足时自动隐藏。切换到另一个非空会话会关闭详情栏。布局只负责 1024px 的主内容接管；工作台占用者在 768px 参考宽度收窄文件树，容器宽度不超过 640px 时让文件预览独占内容区。
 
 ## 主题切换
 

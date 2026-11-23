@@ -18,7 +18,7 @@ make dev
 
 `pnpm run test:electron:chat-links` 验收已构建的开发态壳；先按 `make dev` 所需命令构建 Host、Web、Go helper 与 Electron 壳。`pnpm run test:electron:chat-links:packaged` 验收已有的 `dist/Coding.app`：在 macOS 图形会话中把签名包复制到短临时路径，以独立 HOME、浏览器状态和单实例锁启动，不安装或操作正在运行的应用。
 
-两种模式都点击预置会话中的 Assistant 链接，验证原生视图绘制网页、空闲时不取帧，并验证截图不改变视口。本地模型替身触发真实的截图工具；测试不读用户会话、设置或凭据。退出不确定时保留隔离目录供检查。
+两种模式都点击预置会话中的 Assistant 链接，验证原生视图绘制网页、空闲时不取帧、截图期间不重排，以及切换会话时只显示各自的右栏。本地模型替身触发真实的截图工具；测试不读用户会话、设置或凭据。退出不确定时保留隔离目录供检查。
 
 ## Host、Remote-SSH 与窗口
 

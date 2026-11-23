@@ -34,8 +34,12 @@ import type {
 } from 'coding-client-runtime/client'
 import type { ThemeSnapshot } from 'coding-client-ui-theme/client'
 
+const FIRST_SESSION = 's-test' as SessionId
+const SECOND_SESSION = 's-next' as SessionId
+const THIRD_SESSION = 's-third' as SessionId
+
 // SessionProvider 与 useSessions stub 共用的会话选择状态。
-const selectedSession = { current: 's-test' as SessionId | undefined }
+const selectedSession = { current: FIRST_SESSION as SessionId | undefined }
 const selectedSessionBlank = { current: false }
 const baselinesReady = { current: true }
 const layoutLabels: Record<string, string> = {
@@ -127,9 +131,6 @@ function mountFrame(options: {
   window.innerHeight = frameHeight
   const rawInstance = createLayoutStore().create()
   const instance = rawInstance
-  const layout = new LayoutController()
-  layout.attachPanels(instance.actions)
-  const publishWorkbench = vi.fn()
   const publishPage = vi.fn()
   const restoreConversation = vi.fn((sessionId: SessionId) => { selectedSession.current = sessionId })
   const retainWorkbenchViews = vi.fn()
@@ -162,27 +163,28 @@ function mountFrame(options: {
     }
     return <div data-testid="other-content" />
   }) as AppFrameProps['renderSlot']
-  const useSessions = ((sel: (s: SessionListState) => unknown) => {
+  const blanks = new Map<SessionId, boolean>()
+  const sessionSnapshot = (): SessionListState => {
     const current = selectedSession.current
-    const ids = current === undefined
-      ? []
-      : Array.from(new Set(['s-test' as SessionId, 's-next' as SessionId, current]))
-    const sessionState = {
+    if (current !== undefined) blanks.set(current, selectedSessionBlank.current)
+    const ids = Array.from(new Set([FIRST_SESSION, SECOND_SESSION, THIRD_SESSION, ...(current === undefined ? [] : [current])]))
+    return {
       ids,
-      byId: current === undefined
-        ? {}
-        : Object.fromEntries(ids.map(sessionId => [sessionId, {
-          id: sessionId,
-          displayTitle: 'Test',
-          running: false,
-          blank: sessionId === current ? selectedSessionBlank.current : false,
-          updatedAt: 1,
-        }])),
+      byId: Object.fromEntries(ids.map(sessionId => [sessionId, {
+        id: sessionId,
+        displayTitle: 'Test',
+        running: false,
+        blank: blanks.get(sessionId) ?? false,
+        updatedAt: 1,
+      }])),
       current,
       phase: 'ready',
     } as SessionListState
-    return sel(sessionState)
-  }) as never
+  }
+  const useSessions: AppFrameProps['useSessions'] = sel => sel(sessionSnapshot())
+  const layout = new LayoutController(sessionSnapshot)
+  layout.attachPanels(instance.actions)
+  const publishWorkbench = vi.fn((...args: Parameters<LayoutController['publishWorkbench']>) => { layout.publishWorkbench(...args) })
   const workspaceState: WorkspaceListState = {
     items: [], archivedSessionIds: [], state: 'idle', phase: 'ready', error: null,
     baselinesReady: baselinesReady.current, recentWorkspaceId: undefined,
@@ -272,8 +274,8 @@ function floatingHandle(frame: HTMLElement): HTMLButtonElement {
 
 function openFloating(b: ReturnType<typeof mountFrame>, bottom = false, workspaceKey = 's-test'): HTMLElement {
   act(() => {
-    b.instance.actions.openWorkbench(workspaceKey)
-    b.instance.actions.toggleWorkbenchFullscreen(workspaceKey)
+    b.layout.openWorkbench(FIRST_SESSION)
+    b.layout.toggleWorkbenchFullscreen(FIRST_SESSION)
     if (bottom) b.instance.actions.toggleWorkbenchBottom(workspaceKey)
   })
   fireEvent.click(floatingLauncher(b.frame)!)
@@ -370,8 +372,8 @@ describe('AppFrame', () => {
     frameWidth = width
     const b = mountFrame({ workspaceKeyOf: () => 'shared' })
     act(() => {
-      b.instance.actions.openWorkbench('shared')
-      b.instance.actions.toggleWorkbenchFullscreen('shared')
+      b.instance.actions.openWorkbench(FIRST_SESSION, true)
+      b.instance.actions.toggleWorkbenchFullscreen(FIRST_SESSION)
       b.instance.actions.setWorkbench('shared', 700)
       b.instance.actions.toggleWorkbenchBottom('shared')
     })
@@ -385,7 +387,7 @@ describe('AppFrame', () => {
     expect(b.frame.hasAttribute('data-workbench-shown')).toBe(false)
     expect(b.frame.hasAttribute('data-workbench-fullscreen')).toBe(false)
     expect(b.ownerFor('sidebar')).toMatchObject({ welcomeActionsVisible: true })
-    expect(b.publishWorkbench).toHaveBeenLastCalledWith('shared', { open: false, fullscreen: false, bottomOpen: true })
+    expect(b.publishWorkbench).toHaveBeenLastCalledWith(SECOND_SESSION, { open: false, fullscreen: false, bottomOpen: true })
     expect(b.instance.store.getSnapshot().workbench.shared).toEqual(previous)
 
     selectedSession.current = 's-test' as SessionId
@@ -398,18 +400,18 @@ describe('AppFrame', () => {
 
   it('keeps two blank Hero overrides distinct and resets a reused blank on New Session intent', () => {
     const b = mountFrame({ workspaceKeyOf: () => 'shared' })
-    act(() => { b.instance.actions.openWorkbench('shared') })
+    act(() => { b.instance.actions.openWorkbench(FIRST_SESSION, true) })
     selectedSession.current = 's-next' as SessionId
     selectedSessionBlank.current = true
     act(() => { b.rerenderFrame() })
     expect(b.frame.hasAttribute('data-workbench-shown')).toBe(false)
     act(() => { b.layout.toggleHeroPanel('shared', 'files', 's-next' as SessionId) })
     expect(b.frame.hasAttribute('data-workbench-shown')).toBe(true)
-    expect(b.publishWorkbench).toHaveBeenLastCalledWith('shared', { open: true, fullscreen: false, bottomOpen: false })
+    expect(b.publishWorkbench).toHaveBeenLastCalledWith(SECOND_SESSION, { open: true, fullscreen: false, bottomOpen: false })
     selectedSession.current = 's-third' as SessionId
     act(() => { b.rerenderFrame() })
     expect(b.frame.hasAttribute('data-workbench-shown')).toBe(false)
-    expect(b.publishWorkbench).toHaveBeenLastCalledWith('shared', { open: false, fullscreen: false, bottomOpen: false })
+    expect(b.publishWorkbench).toHaveBeenLastCalledWith(THIRD_SESSION, { open: false, fullscreen: false, bottomOpen: false })
     act(() => { b.layout.toggleHeroPanel('shared', 'files', 's-third' as SessionId) })
     expect(b.frame.hasAttribute('data-workbench-shown')).toBe(true)
     act(() => { b.layout.toggleHeroPanel('shared', 'files', 's-third' as SessionId) })
@@ -419,11 +421,12 @@ describe('AppFrame', () => {
     expect(b.frame.hasAttribute('data-workbench-shown')).toBe(true)
     act(() => { b.layout.beginNewConversation() })
     expect(b.frame.hasAttribute('data-workbench-shown')).toBe(false)
-    expect(b.instance.store.getSnapshot().workbench.shared?.open).toBe(false)
+    expect(b.instance.store.getSnapshot().rightWorkbench[FIRST_SESSION]).toEqual({ fullscreen: false })
   })
 
   it('resets a reused blank even when another started conversation is selected', () => {
     const b = mountFrame({ workspaceKeyOf: () => 'shared' })
+    act(() => { b.layout.openWorkbench(FIRST_SESSION) })
     selectedSession.current = 's-next' as SessionId
     selectedSessionBlank.current = true
     act(() => { b.rerenderFrame() })
@@ -446,7 +449,7 @@ describe('AppFrame', () => {
 
   it('does not reveal an inherited panel if the blank phase ends before layout observes it', () => {
     const b = mountFrame({ workspaceKeyOf: () => 'shared' })
-    act(() => { b.layout.openWorkbench('shared', 's-test' as SessionId) })
+    act(() => { b.layout.openWorkbench(FIRST_SESSION) })
     act(() => { b.layout.beginNewConversation() })
     selectedSession.current = 's-next' as SessionId
     selectedSessionBlank.current = false
@@ -459,7 +462,7 @@ describe('AppFrame', () => {
     act(() => { b.layout.beginNewConversation() })
     selectedSession.current = 's-next' as SessionId
     selectedSessionBlank.current = true
-    act(() => { b.layout.openWorkbench('shared', 's-next' as SessionId) })
+    act(() => { b.layout.openWorkbench(SECOND_SESSION) })
     act(() => { b.rerenderFrame() })
     expect(b.frame.hasAttribute('data-workbench-shown')).toBe(true)
     selectedSessionBlank.current = false
@@ -469,7 +472,7 @@ describe('AppFrame', () => {
 
   it('does not expose an old conversation workbench after the first message in a new conversation', () => {
     const b = mountFrame({ workspaceKeyOf: () => 'shared' })
-    act(() => { b.layout.openWorkbench('shared', 's-test' as SessionId) })
+    act(() => { b.layout.openWorkbench(FIRST_SESSION) })
     act(() => { b.layout.beginNewConversation() })
     selectedSession.current = 's-next' as SessionId
     selectedSessionBlank.current = true
@@ -479,17 +482,15 @@ describe('AppFrame', () => {
     selectedSessionBlank.current = false
     act(() => { b.rerenderFrame() })
     expect(b.frame.hasAttribute('data-workbench-shown')).toBe(false)
-    expect(b.publishWorkbench).toHaveBeenLastCalledWith('shared', {
+    expect(b.publishWorkbench).toHaveBeenLastCalledWith(SECOND_SESSION, {
       open: false, fullscreen: false, bottomOpen: false,
     })
-    act(() => { b.layout.toggleWorkbench('shared', 's-next' as SessionId) })
+    act(() => { b.layout.toggleWorkbench(SECOND_SESSION) })
     expect(b.frame.hasAttribute('data-workbench-shown')).toBe(true)
-    act(() => { b.layout.toggleWorkbench('shared', 's-next' as SessionId) })
+    act(() => { b.layout.toggleWorkbench(SECOND_SESSION) })
     expect(b.frame.hasAttribute('data-workbench-shown')).toBe(false)
     selectedSession.current = 's-test' as SessionId
     act(() => { b.rerenderFrame() })
-    expect(b.frame.hasAttribute('data-workbench-shown')).toBe(false)
-    act(() => { b.layout.openWorkbench('shared', 's-test' as SessionId) })
     expect(b.frame.hasAttribute('data-workbench-shown')).toBe(true)
     selectedSession.current = 's-next' as SessionId
     act(() => { b.rerenderFrame() })
@@ -498,18 +499,17 @@ describe('AppFrame', () => {
 
   it('shows a workbench opened by the model after the first blank message is accepted', () => {
     const b = mountFrame({ workspaceKeyOf: () => 'shared' })
-    act(() => { b.instance.actions.openWorkbench('shared') })
+    act(() => { b.instance.actions.openWorkbench(FIRST_SESSION, true) })
     selectedSession.current = 's-next' as SessionId
     selectedSessionBlank.current = true
     act(() => { b.rerenderFrame() })
     expect(b.frame.hasAttribute('data-workbench-shown')).toBe(false)
-    act(() => { b.instance.actions.openWorkbench('shared') })
+    act(() => { b.layout.openWorkbench(SECOND_SESSION) })
     expect(b.frame.hasAttribute('data-workbench-shown')).toBe(true)
     selectedSessionBlank.current = false
     act(() => { b.rerenderFrame() })
     expect(b.frame.hasAttribute('data-workbench-shown')).toBe(true)
-    expect(b.publishWorkbench).toHaveBeenLastCalledWith('shared', { open: true, fullscreen: false, bottomOpen: false })
-    expect(b.instance.store.getSnapshot().blankWorkbench['s-next' as SessionId]).toBeUndefined()
+    expect(b.publishWorkbench).toHaveBeenLastCalledWith(SECOND_SESSION, { open: true, fullscreen: false, bottomOpen: false })
   })
 
   it('lets a blank Hero workbench close from the top bar and reopen without a stale override', () => {
@@ -517,31 +517,33 @@ describe('AppFrame', () => {
     const b = mountFrame()
     act(() => { b.layout.toggleHeroPanel('s-test', 'files', 's-test' as SessionId) })
     expect(b.frame.hasAttribute('data-workbench-shown')).toBe(true)
-    act(() => { b.layout.closeWorkbench('s-test') })
+    act(() => { b.layout.closeWorkbench(FIRST_SESSION) })
     expect(b.frame.hasAttribute('data-workbench-shown')).toBe(false)
     expect(b.publishWorkbench).toHaveBeenLastCalledWith('s-test', { open: false, fullscreen: false, bottomOpen: false })
     act(() => { b.layout.toggleHeroPanel('s-test', 'files', 's-test' as SessionId) })
     expect(b.frame.hasAttribute('data-workbench-shown')).toBe(true)
   })
 
-  it('ignores a late background session workbench open when another blank shares its workspace', () => {
-    const oldSession = 's-test' as SessionId
-    const blankSession = 's-next' as SessionId
+  it('restores a delayed workbench open to its own session without closing the current details', async () => {
     const b = mountFrame({ workspaceKeyOf: () => 'shared' })
-    selectedSession.current = blankSession
-    selectedSessionBlank.current = true
-    act(() => { b.rerenderFrame() })
-    act(() => { b.layout.openWorkbench('shared', oldSession) })
-    expect(b.instance.store.getSnapshot().workbench.shared?.open).toBe(true)
-    expect(b.instance.store.getSnapshot().blankWorkbench[blankSession]).toBeUndefined()
-    expect(b.frame.hasAttribute('data-workbench-shown')).toBe(false)
-    expect(b.publishWorkbench).toHaveBeenLastCalledWith('shared', { open: false, fullscreen: false, bottomOpen: false })
+    const resource = Promise.withResolvers<undefined>()
+    const opened = resource.promise.then(() => { b.layout.openWorkbench(FIRST_SESSION) })
 
-    act(() => { b.layout.openWorkbench('shared', blankSession) })
-    expect(b.frame.hasAttribute('data-workbench-shown')).toBe(true)
-    act(() => { b.layout.closeWorkbench('shared') })
+    selectedSession.current = SECOND_SESSION
+    act(() => { b.rerenderFrame() })
+    act(() => { b.layout.openDetails() })
+    const detailsTracks = tracks(b.frame)
+    expect(detailsTracks[1]).toBeGreaterThan(0)
+
+    await act(async () => { resource.resolve(undefined); await opened })
+    expect(tracks(b.frame)).toEqual(detailsTracks)
     expect(b.frame.hasAttribute('data-workbench-shown')).toBe(false)
-    act(() => { b.layout.toggleHeroPanel('shared', 'files', blankSession) })
+    expect(b.layout.workbench(SECOND_SESSION).getSnapshot().open).toBe(false)
+    act(() => { b.layout.closeDetails() })
+    expect(tracks(b.frame)[1]).toBe(0)
+
+    selectedSession.current = FIRST_SESSION
+    act(() => { b.rerenderFrame() })
     expect(b.frame.hasAttribute('data-workbench-shown')).toBe(true)
   })
 
@@ -553,25 +555,20 @@ describe('AppFrame', () => {
     const center = b.getByTestId('center-content')
     act(() => {
       b.layout.toggleHeroPanel('shared', 'files', blankSession)
-      b.layout.toggleWorkbenchFullscreen('shared')
+      b.layout.toggleWorkbenchFullscreen(blankSession)
       b.layout.showConversation(blankSession)
     })
     const dialog = floatingDialog(b.frame)
     expect(dialog?.contains(center)).toBe(true)
     expect(b.frame.hasAttribute('data-workbench-fullscreen')).toBe(true)
-    act(() => { b.layout.openWorkbench('shared', backgroundSession) })
+    act(() => { b.layout.openWorkbench(backgroundSession) })
     expect(b.frame.hasAttribute('data-workbench-fullscreen')).toBe(true)
     expect(floatingDialog(b.frame)).toBe(dialog)
-    expect(b.instance.store.getSnapshot().workbench.shared?.fullscreen).toBe(true)
-    expect(b.instance.store.getSnapshot().blankWorkbench[blankSession]).toBe(true)
+    expect(b.instance.store.getSnapshot().rightWorkbench[blankSession]?.fullscreen).toBe(true)
 
-    act(() => { b.layout.openWorkbench('shared', blankSession) })
+    act(() => { b.layout.openWorkbench(blankSession) })
     expect(b.frame.hasAttribute('data-workbench-fullscreen')).toBe(false)
     expect(floatingDialog(b.frame)).toBeNull()
-    act(() => { b.layout.toggleWorkbenchFullscreen('shared') })
-    expect(b.frame.hasAttribute('data-workbench-fullscreen')).toBe(true)
-    act(() => { b.layout.openWorkbench('shared') })
-    expect(b.frame.hasAttribute('data-workbench-fullscreen')).toBe(false)
   })
 
   it('keeps a blank manually maximized workbench visible while showConversation opens its original floating tree', () => {
@@ -580,18 +577,17 @@ describe('AppFrame', () => {
     const center = b.getByTestId('center-content')
     act(() => {
       b.layout.toggleHeroPanel('s-test', 'files', 's-test' as SessionId)
-      b.layout.toggleWorkbenchFullscreen('s-test')
+      b.layout.toggleWorkbenchFullscreen(FIRST_SESSION)
     })
     expect(b.frame.hasAttribute('data-workbench-fullscreen')).toBe(true)
     act(() => { b.layout.showConversation('s-test' as SessionId) })
     expect(floatingDialog(b.frame)?.contains(center)).toBe(true)
-    expect(b.instance.store.getSnapshot().blankWorkbench['s-test' as SessionId]).toBe(true)
     expect(b.frame.hasAttribute('data-workbench-fullscreen')).toBe(true)
   })
 
   it('keeps the independent bottom open with no selected session or in a new workspace blank', () => {
     const b = mountFrame({ workspaceKeyOf: id => id === 's-next' ? 'new-workspace' : 'old-workspace' })
-    act(() => { b.instance.actions.openWorkbench('old-workspace') })
+    act(() => { b.instance.actions.openWorkbench(FIRST_SESSION, true) })
     selectedSession.current = undefined
     act(() => { b.rerenderFrame() })
     expect(b.frame.hasAttribute('data-workbench-shown')).toBe(false)
@@ -602,7 +598,7 @@ describe('AppFrame', () => {
     act(() => { b.layout.toggleHeroPanel('new-workspace', 'bottom', 's-next' as SessionId) })
     expect(rows(b.frame)).toBe(260)
     expect(b.frame.hasAttribute('data-workbench-shown')).toBe(false)
-    expect(b.instance.store.getSnapshot().workbench['new-workspace']?.open).toBe(false)
+    expect(b.instance.store.getSnapshot().rightWorkbench[SECOND_SESSION]).toBeUndefined()
   })
 
   it('hides a stale details pane on a blank without mutating its old-session width', () => {
@@ -622,8 +618,8 @@ describe('AppFrame', () => {
     const draft = b.getByRole('textbox', { name: '测试会话草稿' }) as HTMLTextAreaElement
     fireEvent.change(draft, { target: { value: '保留草稿' } })
     act(() => {
-      b.instance.actions.openWorkbench('s-test')
-      if (width > 1024) b.instance.actions.toggleWorkbenchFullscreen('s-test')
+      b.instance.actions.openWorkbench(FIRST_SESSION, true)
+      if (width > 1024) b.instance.actions.toggleWorkbenchFullscreen(FIRST_SESSION)
     })
     const before = [b.frame.style.gridTemplateColumns, b.frame.style.gridTemplateRows]
     act(() => { b.layout.showConversation('s-test' as SessionId) })
@@ -633,7 +629,7 @@ describe('AppFrame', () => {
     expect(b.frame.querySelectorAll('[data-testid="center-content"]')).toHaveLength(1)
     expect(b.frame.getAttribute('data-floating-dock')).toBe('center')
     expect([b.frame.style.gridTemplateColumns, b.frame.style.gridTemplateRows]).toEqual(before)
-    expect(b.instance.store.getSnapshot().workbench['s-test']).toMatchObject({ open: true, fullscreen: width > 1024 })
+    expect(b.instance.store.getSnapshot().rightWorkbench[FIRST_SESSION]).toEqual({ fullscreen: width > 1024 })
     expect(b.instance.store.getSnapshot().conversationRequest).toBeNull()
 
     fireEvent.keyDown(floatingHandle(b.frame), { key: 'Home' })
@@ -648,8 +644,8 @@ describe('AppFrame', () => {
     const b = mountFrame()
     const center = b.getByTestId('center-content')
     act(() => {
-      b.instance.actions.openWorkbench('s-test')
-      b.instance.actions.toggleWorkbenchFullscreen('s-test')
+      b.instance.actions.openWorkbench(FIRST_SESSION, true)
+      b.instance.actions.toggleWorkbenchFullscreen(FIRST_SESSION)
       b.instance.actions.openPage('image-gallery', 's-test' as SessionId)
     })
     expect(b.getByTestId('gallery-page')).toBeTruthy()
@@ -657,7 +653,7 @@ describe('AppFrame', () => {
     expect(b.queryByTestId('gallery-page')).toBeNull()
     expect(b.getByTestId('center-content')).toBe(center)
     expect(floatingDialog(b.frame)?.contains(center)).toBe(true)
-    expect(b.instance.store.getSnapshot().workbench['s-test']?.fullscreen).toBe(true)
+    expect(b.instance.store.getSnapshot().rightWorkbench[FIRST_SESSION]?.fullscreen).toBe(true)
   })
 
   it('restores the conversation selected before files and gallery without recreating its draft', () => {
@@ -692,19 +688,19 @@ describe('AppFrame', () => {
   it('leaves an ordinary conversation visible without opening a floating window or changing panels', () => {
     const b = mountFrame()
     const center = b.getByTestId('center-content')
-    act(() => { b.instance.actions.openWorkbench('s-test') })
-    const before = b.instance.store.getSnapshot().workbench['s-test']
+    act(() => { b.instance.actions.openWorkbench(FIRST_SESSION, true) })
+    const before = b.instance.store.getSnapshot().rightWorkbench[FIRST_SESSION]
     act(() => { b.layout.showConversation('s-test' as SessionId) })
     expect(floatingDialog(b.frame)).toBeNull()
     expect(conversationColumn(center)?.hasAttribute('inert')).toBe(false)
-    expect(b.instance.store.getSnapshot().workbench['s-test']).toEqual(before)
+    expect(b.instance.store.getSnapshot().rightWorkbench[FIRST_SESSION]).toEqual(before)
   })
 
   it('discards wrong-session and stale requests instead of reopening them after a session change', () => {
     const b = mountFrame({ workspaceKeyOf: () => 'shared-workspace' })
     act(() => {
-      b.instance.actions.openWorkbench('shared-workspace')
-      b.instance.actions.toggleWorkbenchFullscreen('shared-workspace')
+      b.instance.actions.openWorkbench(FIRST_SESSION, true)
+      b.instance.actions.toggleWorkbenchFullscreen(FIRST_SESSION)
       b.layout.showConversation('s-next' as SessionId)
     })
     expect(floatingDialog(b.frame)).toBeNull()
@@ -723,8 +719,8 @@ describe('AppFrame', () => {
   it('does not deliver a queued request after its session is switched away before consumption', () => {
     const b = mountFrame({ workspaceKeyOf: () => 'shared-workspace' })
     act(() => {
-      b.instance.actions.openWorkbench('shared-workspace')
-      b.instance.actions.toggleWorkbenchFullscreen('shared-workspace')
+      b.instance.actions.openWorkbench(FIRST_SESSION, true)
+      b.instance.actions.toggleWorkbenchFullscreen(FIRST_SESSION)
     })
     act(() => {
       b.layout.showConversation('s-test' as SessionId)
@@ -1083,7 +1079,7 @@ describe('AppFrame — fixed workbench', () => {
     const { frame, instance, ownerFor, getByTestId, publishWorkbench } = mountFrame()
     act(() => {
       instance.actions.openDetails()
-      instance.actions.openWorkbench('s-test')
+      instance.actions.openWorkbench(FIRST_SESSION, true)
     })
 
     expect(tracks(frame)).toEqual([280, 1093])
@@ -1099,28 +1095,45 @@ describe('AppFrame — fixed workbench', () => {
 
   it('closes the right workbench when the header toggle is clicked again', () => {
     const { frame, instance } = mountFrame({ workspaceKeyOf: () => 'shared-workspace' })
-    act(() => { instance.actions.openWorkbench('shared-workspace') })
+    act(() => { instance.actions.openWorkbench(FIRST_SESSION, true) })
     expect(frame.hasAttribute('data-workbench-shown')).toBe(true)
-    act(() => { instance.actions.toggleWorkbench('shared-workspace') })
+    act(() => { instance.actions.toggleWorkbench(FIRST_SESSION) })
     expect(frame.hasAttribute('data-workbench-shown')).toBe(false)
   })
-  it('uses one workbench projection for sessions in the same workspace', () => {
-    const { frame, instance, rerenderFrame, publishWorkbench } = mountFrame({
-      workspaceKeyOf: () => 'shared-workspace',
+  it('isolates nonblank sessions in the same workspace and restores each right panel', () => {
+    const { frame, instance, rerenderFrame, layout } = mountFrame({ workspaceKeyOf: () => 'shared-workspace' })
+    const first = layout.workbench(FIRST_SESSION)
+    const second = layout.workbench(SECOND_SESSION)
+    act(() => {
+      layout.openWorkbench(FIRST_SESSION)
+      layout.toggleWorkbenchFullscreen(FIRST_SESSION)
+      instance.actions.setWorkbench('shared-workspace', 700)
     })
-    act(() => { instance.actions.openWorkbench('shared-workspace') })
-    expect(publishWorkbench).toHaveBeenLastCalledWith('shared-workspace', expect.objectContaining({ open: true }))
+    expect(first.getSnapshot()).toMatchObject({ open: true, fullscreen: true })
+    expect(second.getSnapshot().open).toBe(false)
 
-    selectedSession.current = 's-next' as SessionId
+    selectedSession.current = SECOND_SESSION
     act(() => { rerenderFrame() })
-    expect(tracks(frame)).toEqual([280, 1093])
-    expect(publishWorkbench).toHaveBeenLastCalledWith('shared-workspace', expect.objectContaining({ open: true }))
+    expect(tracks(frame)).toEqual([280, 0])
+    expect(first.getSnapshot().open).toBe(false)
+    expect(second.getSnapshot().open).toBe(false)
+    act(() => { layout.openWorkbench(SECOND_SESSION) })
+    expect(tracks(frame)).toEqual([280, 700])
+    expect(second.getSnapshot()).toMatchObject({ open: true, fullscreen: false })
+
+    selectedSession.current = FIRST_SESSION
+    act(() => { rerenderFrame() })
+    expect(first.getSnapshot()).toMatchObject({ open: true, fullscreen: true })
+    selectedSession.current = SECOND_SESSION
+    act(() => { rerenderFrame() })
+    expect(tracks(frame)).toEqual([280, 700])
+    expect(second.getSnapshot()).toMatchObject({ open: true, fullscreen: false })
   })
 
   it('splits the default workbench beside the conversation at 1:2', () => {
     frameWidth = 1280
     const { frame, instance } = mountFrame()
-    act(() => { instance.actions.openWorkbench('s-test') })
+    act(() => { instance.actions.openWorkbench(FIRST_SESSION, true) })
     // 导航栏之外 1000px：对话 333px、工作台 667px。
     expect(tracks(frame)).toEqual([280, 667])
   })
@@ -1128,13 +1141,13 @@ describe('AppFrame — fixed workbench', () => {
   it('keeps the workbench usable at a 1110px viewport while the sidebar stays expanded', () => {
     frameWidth = 1110
     const { frame, instance } = mountFrame()
-    act(() => { instance.actions.openWorkbench('s-test') })
+    act(() => { instance.actions.openWorkbench(FIRST_SESSION, true) })
     expect(tracks(frame)).toEqual([280, 510])
   })
 
-  it('responds to the external workbench controls through per-workspace layout state', () => {
+  it('responds to the external workbench controls for the session and its shared bottom', () => {
     const { frame, instance, ownerFor, getByTestId } = mountFrame()
-    act(() => { instance.actions.openWorkbench('s-test') })
+    act(() => { instance.actions.openWorkbench(FIRST_SESSION, true) })
 
     act(() => { instance.actions.toggleWorkbenchBottom('s-test') })
     expect(rows(frame)).toBe(260)
@@ -1142,13 +1155,13 @@ describe('AppFrame — fixed workbench', () => {
     expect(ownerFor('workbench.bottom')).toEqual({ sessionId: 's-test', shown: true })
     expect(getByTestId('bottom-content').parentElement?.hasAttribute('inert')).toBe(false)
 
-    act(() => { instance.actions.toggleWorkbenchFullscreen('s-test') })
+    act(() => { instance.actions.toggleWorkbenchFullscreen(FIRST_SESSION) })
     expect(tracks(frame)).toEqual([280, 1640])
     expect(frame.hasAttribute('data-workbench-fullscreen')).toBe(true)
     expect(conversationColumn(getByTestId('center-content'))?.hasAttribute('inert')).toBe(true)
     expect(frame.querySelector('[data-side="workbench"]')).toBeNull()
 
-    act(() => { instance.actions.closeWorkbench('s-test') })
+    act(() => { instance.actions.closeWorkbench(FIRST_SESSION) })
     expect(tracks(frame)).toEqual([280, 0])
     expect(rows(frame)).toBe(260)
     expect(getByTestId('workbench-content').parentElement?.hasAttribute('inert')).toBe(true)
@@ -1179,7 +1192,7 @@ describe('AppFrame — fixed workbench', () => {
   it('opens the right workbench from the Hero files entry and publishes its visibility', () => {
     const { frame, instance, ownerFor, publishWorkbench } = mountFrame()
 
-    act(() => { instance.actions.toggleHeroPanel('s-test', 'files') })
+    act(() => { instance.actions.toggleHeroPanel('s-test', 'files', FIRST_SESSION) })
     expect(tracks(frame)).toEqual([280, 1093])
     expect(instance.getSnapshot().details).toBe(0)
     expect(ownerFor('workbench')).toEqual({ shown: true, fullscreen: false, bottomOpen: false })
@@ -1187,7 +1200,7 @@ describe('AppFrame — fixed workbench', () => {
       open: true, fullscreen: false, bottomOpen: false,
     })
 
-    act(() => { instance.actions.toggleHeroPanel('s-test', 'files') })
+    act(() => { instance.actions.toggleHeroPanel('s-test', 'files', FIRST_SESSION) })
     expect(ownerFor('workbench')).toEqual({ shown: false, fullscreen: false, bottomOpen: false })
     expect(publishWorkbench).toHaveBeenLastCalledWith('s-test', {
       open: false, fullscreen: false, bottomOpen: false,
@@ -1212,26 +1225,24 @@ describe('AppFrame — fixed workbench', () => {
     expect(rows(frame)).toBe(0)
   })
 
-  it('terminal toggle still opens the bottom row when the session hides the shared right workbench', () => {
+  it('terminal toggle still opens the bottom row when only another session opened its right panel', () => {
     const { frame, instance, rerenderFrame, ownerFor } = mountFrame({
       workspaceKeyOf: () => 'shared-workspace',
     })
-    act(() => { instance.actions.openWorkbench('shared-workspace') })
+    act(() => { instance.actions.openWorkbench(FIRST_SESSION, true) })
     expect(frame.hasAttribute('data-workbench-shown')).toBe(true)
 
-    // 新对话让下一个会话屏蔽共享右栏偏好；首条消息结束后它依然看不到右栏。
-    act(() => { instance.actions.beginNewConversation() })
     selectedSession.current = 's-next' as SessionId
     act(() => { rerenderFrame() })
     expect(frame.hasAttribute('data-workbench-shown')).toBe(false)
 
-    act(() => { instance.actions.toggleWorkbenchBottom('shared-workspace', 's-next' as SessionId) })
+    act(() => { instance.actions.toggleWorkbenchBottom('shared-workspace') })
     expect(rows(frame)).toBe(260)
     expect(frame.hasAttribute('data-bottom-open')).toBe(true)
     expect(frame.hasAttribute('data-workbench-shown')).toBe(false)
     expect(ownerFor('workbench.bottom')).toEqual({ sessionId: 's-next', shown: true })
 
-    act(() => { instance.actions.toggleWorkbenchBottom('shared-workspace', 's-next' as SessionId) })
+    act(() => { instance.actions.toggleWorkbenchBottom('shared-workspace') })
     expect(rows(frame)).toBe(0)
   })
 
@@ -1255,11 +1266,11 @@ describe('AppFrame — fixed workbench', () => {
   it('closing a combined workbench leaves the bottom row visible', () => {
     const { frame, instance, ownerFor, publishWorkbench } = mountFrame()
     act(() => {
-      instance.actions.openWorkbench('s-test')
+      instance.actions.openWorkbench(FIRST_SESSION, true)
       instance.actions.toggleWorkbenchBottom('s-test')
     })
     expect(rows(frame)).toBe(260)
-    act(() => { instance.actions.closeWorkbench('s-test') })
+    act(() => { instance.actions.closeWorkbench(FIRST_SESSION) })
     expect(tracks(frame)).toEqual([280, 0])
     expect(rows(frame)).toBe(260)
     expect(ownerFor('workbench.bottom')).toEqual({ sessionId: 's-test', shown: true })
@@ -1271,7 +1282,7 @@ describe('AppFrame — fixed workbench', () => {
   it('narrow view collapses navigation and gives the main content to workbench', () => {
     frameWidth = 980
     const { frame, instance, ownerFor, getByTestId } = mountFrame()
-    act(() => { instance.actions.openWorkbench('s-test') })
+    act(() => { instance.actions.openWorkbench(FIRST_SESSION, true) })
     expect(tracks(frame)).toEqual([SIDEBAR_COLLAPSED, 980 - SIDEBAR_COLLAPSED])
     expect(frame.hasAttribute('data-sidebar-collapsed')).toBe(true)
     expect(frame.hasAttribute('data-workbench-fullscreen')).toBe(true)
@@ -1283,7 +1294,7 @@ describe('AppFrame — fixed workbench', () => {
 
   it('drags workbench width and bottom height from their rendered bases', () => {
     const { frame, instance } = mountFrame()
-    act(() => { instance.actions.openWorkbench('s-test') })
+    act(() => { instance.actions.openWorkbench(FIRST_SESSION, true) })
     drag(handleFor(frame, 'workbench'), 1500, 1440)
     expect(instance.getSnapshot().workbench['s-test' as SessionId]?.width).toBe(1153)
     expect(tracks(frame)).toEqual([280, 1153])
@@ -1299,7 +1310,7 @@ describe('AppFrame — fixed workbench', () => {
     const { frame, instance } = mountFrame()
     act(() => {
       instance.actions.setWorkbench('s-test', 500)
-      instance.actions.openWorkbench('s-test')
+      instance.actions.openWorkbench(FIRST_SESSION, true)
     })
     expect(tracks(frame)).toEqual([280, 450])
     drag(handleFor(frame, 'workbench'), 610, 620)
@@ -1310,7 +1321,7 @@ describe('AppFrame — fixed workbench', () => {
     frameHeight = 300
     const { frame, instance } = mountFrame()
     act(() => {
-      instance.actions.openWorkbench('s-test')
+      instance.actions.openWorkbench(FIRST_SESSION, true)
       instance.actions.toggleWorkbenchBottom('s-test')
     })
     expect(rows(frame)).toBe(60)
@@ -1321,7 +1332,7 @@ describe('AppFrame — fixed workbench', () => {
 
   it('restores each session workbench independently after switching sessions', () => {
     const { frame, instance, rerenderFrame } = mountFrame({ workspaceKeyOf: id => id })
-    act(() => { instance.actions.openWorkbench('s-test') })
+    act(() => { instance.actions.openWorkbench(FIRST_SESSION, true) })
     selectedSession.current = 's-next' as SessionId
     act(() => { rerenderFrame() })
     expect(tracks(frame)).toEqual([280, 0])
@@ -1459,8 +1470,8 @@ describe('AppFrame — maximized workbench conversation', () => {
       expect(handle.hasPointerCapture(51)).toBe(true)
       act(() => {
         if (context === 'page') b.instance.actions.openPage('image-gallery', 's-test' as SessionId)
-        else if (context === 'fullscreen') b.instance.actions.toggleWorkbenchFullscreen('s-test')
-        else b.instance.actions.closeWorkbench('s-test')
+        else if (context === 'fullscreen') b.instance.actions.toggleWorkbenchFullscreen(FIRST_SESSION)
+        else b.instance.actions.closeWorkbench(FIRST_SESSION)
       })
       expect(floatingDialog(b.frame)).toBeNull()
       expect(handle.hasPointerCapture(51)).toBe(false)
@@ -1569,9 +1580,9 @@ describe('AppFrame — maximized workbench conversation', () => {
   it('shows a collapsed launcher only when the workbench actually takes over the conversation', () => {
     const b = mountFrame()
     expect(launcherVisible(b.frame)).toBe(false)
-    act(() => { b.instance.actions.openWorkbench('s-test') })
+    act(() => { b.instance.actions.openWorkbench(FIRST_SESSION, true) })
     expect(launcherVisible(b.frame)).toBe(false)
-    act(() => { b.instance.actions.toggleWorkbenchFullscreen('s-test') })
+    act(() => { b.instance.actions.toggleWorkbenchFullscreen(FIRST_SESSION) })
     const launcher = floatingLauncher(b.frame)
     expect(launcherVisible(b.frame)).toBe(true)
     expect(launcher?.getAttribute('aria-expanded')).toBe('false')
@@ -1590,8 +1601,8 @@ describe('AppFrame — maximized workbench conversation', () => {
     const textarea = b.getByRole('textbox', { name: '测试会话草稿' }) as HTMLTextAreaElement
     fireEvent.change(textarea, { target: { value: '未发送的草稿' } })
     act(() => {
-      b.instance.actions.openWorkbench('s-test')
-      b.instance.actions.toggleWorkbenchFullscreen('s-test')
+      b.instance.actions.openWorkbench(FIRST_SESSION, true)
+      b.instance.actions.toggleWorkbenchFullscreen(FIRST_SESSION)
     })
     const grid = b.frame.style.gridTemplateColumns
     const gridRows = b.frame.style.gridTemplateRows
@@ -1620,18 +1631,18 @@ describe('AppFrame — maximized workbench conversation', () => {
     expect(center.closest('[inert]')).not.toBeNull()
     expect(floatingLauncher(b.frame)?.getAttribute('aria-expanded')).toBe('false')
 
-    act(() => { b.instance.actions.toggleWorkbenchFullscreen('s-test') })
+    act(() => { b.instance.actions.toggleWorkbenchFullscreen(FIRST_SESSION) })
     expect(launcherVisible(b.frame)).toBe(false)
     expect(b.getByTestId('center-content')).toBe(center)
     expect(textarea.value).toBe('未发送的草稿')
     expect(center.closest('[inert]')).toBeNull()
 
-    act(() => { b.instance.actions.toggleWorkbenchFullscreen('s-test') })
+    act(() => { b.instance.actions.toggleWorkbenchFullscreen(FIRST_SESSION) })
     fireEvent.click(floatingLauncher(b.frame)!)
     expect(floatingDialog(b.frame)).not.toBeNull()
-    act(() => { b.instance.actions.toggleWorkbenchFullscreen('s-test') })
+    act(() => { b.instance.actions.toggleWorkbenchFullscreen(FIRST_SESSION) })
     expect(floatingDialog(b.frame)).toBeNull()
-    act(() => { b.instance.actions.toggleWorkbenchFullscreen('s-test') })
+    act(() => { b.instance.actions.toggleWorkbenchFullscreen(FIRST_SESSION) })
     expect(launcherVisible(b.frame)).toBe(true)
     expect(floatingLauncher(b.frame)?.getAttribute('aria-expanded')).toBe('false')
   })
@@ -1640,7 +1651,7 @@ describe('AppFrame — maximized workbench conversation', () => {
     frameWidth = 768
     const b = mountFrame()
     act(() => {
-      b.instance.actions.openWorkbench('s-test')
+      b.instance.actions.openWorkbench(FIRST_SESSION, true)
       b.instance.actions.toggleWorkbenchBottom('s-test')
     })
     expect(b.frame.hasAttribute('data-workbench-fullscreen')).toBe(true)
@@ -1660,8 +1671,10 @@ describe('AppFrame — maximized workbench conversation', () => {
   it('resets the window when the selected session, page, or workbench context changes', () => {
     const b = mountFrame({ workspaceKeyOf: () => 'shared-workspace' })
     act(() => {
-      b.instance.actions.openWorkbench('shared-workspace')
-      b.instance.actions.toggleWorkbenchFullscreen('shared-workspace')
+      b.instance.actions.openWorkbench(FIRST_SESSION, true)
+      b.instance.actions.toggleWorkbenchFullscreen(FIRST_SESSION)
+      b.instance.actions.openWorkbench(SECOND_SESSION, false)
+      b.instance.actions.toggleWorkbenchFullscreen(SECOND_SESSION)
     })
     fireEvent.click(floatingLauncher(b.frame)!)
     expect(floatingDialog(b.frame)).not.toBeNull()
@@ -1679,7 +1692,7 @@ describe('AppFrame — maximized workbench conversation', () => {
     act(() => { b.instance.actions.closePage() })
     expect(floatingLauncher(b.frame)?.getAttribute('aria-expanded')).toBe('false')
     fireEvent.click(floatingLauncher(b.frame)!)
-    act(() => { b.instance.actions.closeWorkbench('shared-workspace') })
+    act(() => { b.instance.actions.closeWorkbench(SECOND_SESSION) })
     expect(floatingDialog(b.frame)).toBeNull()
     expect(launcherVisible(b.frame)).toBe(false)
   })
@@ -1687,8 +1700,8 @@ describe('AppFrame — maximized workbench conversation', () => {
   it('lets an expanded trigger dismiss its controlled portal region before minimizing', () => {
     const b = mountFrame({ controlledRegion: true })
     act(() => {
-      b.instance.actions.openWorkbench('s-test')
-      b.instance.actions.toggleWorkbenchFullscreen('s-test')
+      b.instance.actions.openWorkbench(FIRST_SESSION, true)
+      b.instance.actions.toggleWorkbenchFullscreen(FIRST_SESSION)
     })
     const launcher = floatingLauncher(b.frame)!
     fireEvent.click(launcher)
@@ -1712,8 +1725,8 @@ describe('AppFrame — maximized workbench conversation', () => {
   it('honors a nested Escape dismissal before minimizing; an unclaimed Escape returns focus to the launcher', async () => {
     const b = mountFrame()
     act(() => {
-      b.instance.actions.openWorkbench('s-test')
-      b.instance.actions.toggleWorkbenchFullscreen('s-test')
+      b.instance.actions.openWorkbench(FIRST_SESSION, true)
+      b.instance.actions.toggleWorkbenchFullscreen(FIRST_SESSION)
     })
     const launcher = floatingLauncher(b.frame)!
     fireEvent.click(launcher)
@@ -1735,8 +1748,8 @@ describe('AppFrame — maximized workbench conversation', () => {
   ])('closes a real $mode Menu on Escape from its $focus before minimizing the conversation', async ({ mode }) => {
     const b = mountFrame({ menuMode: mode })
     act(() => {
-      b.instance.actions.openWorkbench('s-test')
-      b.instance.actions.toggleWorkbenchFullscreen('s-test')
+      b.instance.actions.openWorkbench(FIRST_SESSION, true)
+      b.instance.actions.toggleWorkbenchFullscreen(FIRST_SESSION)
     })
     const launcher = floatingLauncher(b.frame)!
     fireEvent.click(launcher)
@@ -1765,11 +1778,11 @@ describe('AppFrame — narrow-viewport auto-collapse', () => {
     const { frame, instance, ownerFor } = mountFrame()
     expect(ownerFor('sidebar')).toMatchObject({ welcomeActionsVisible: true })
 
-    act(() => { instance.actions.openWorkbench('s-test') })
+    act(() => { instance.actions.openWorkbench(FIRST_SESSION, true) })
     expect(frame.hasAttribute('data-workbench-fullscreen')).toBe(true)
     expect(ownerFor('sidebar')).toMatchObject({ welcomeActionsVisible: false })
 
-    act(() => { instance.actions.closeWorkbench('s-test') })
+    act(() => { instance.actions.closeWorkbench(FIRST_SESSION) })
     expect(ownerFor('sidebar')).toMatchObject({ welcomeActionsVisible: true })
   })
 
@@ -1837,7 +1850,7 @@ describe('AppFrame — guard branches', () => {
     expect(instance.getSnapshot().sidebar).toBe(SIDEBAR_MAX)
 
     act(() => {
-      instance.actions.openWorkbench('s-test')
+      instance.actions.openWorkbench(FIRST_SESSION, true)
       instance.actions.toggleWorkbenchBottom('s-test')
     })
     const workbench = handleFor(frame, 'workbench')

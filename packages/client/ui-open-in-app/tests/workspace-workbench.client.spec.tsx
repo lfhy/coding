@@ -125,7 +125,7 @@ function bench(over: {
     terminalUrl: (id: SessionId) => `ws://test/terminal?sessionId=${id}`,
     t,
   } as unknown as WorkspaceWorkbenchProps
-  return { instance, props, closeWorkbench, openSidebarTab, openCreatedSidebarTab, renderSlot,
+  return { instance, rootInstance, props, closeWorkbench, openSidebarTab, openCreatedSidebarTab, renderSlot,
     toggleWorkbenchFullscreen, toggleBottom, listFiles, readFile, gitHistory }
 }
 
@@ -698,19 +698,28 @@ describe('WorkspaceWorkbench shell', () => {
     expect(b.instance.getSnapshot().tabs).toMatchObject([{ type: 'launcher', fresh: false }])
   })
 
-  it('切换会话不因新会话尚无标签而收起右侧边栏，而是给它补一个新标签页', () => {
+  it('切到收起右栏的会话不补新标签页，显式打开后才补', () => {
     const other = 'other-session' as SessionId
+    const ids = [SESSION, other]
+    let current = SESSION
     const b = bench()
     b.instance.actions.openFileManager()
-    const mounted = render(<WorkspaceWorkbench {...b.props} />)
-    const switched = { ...b.props,
+    const props = { ...b.props,
       useSessions: (selector: (state: { ids: readonly SessionId[]; current: SessionId }) => unknown) =>
-        selector({ ids: [SESSION, other], current: other }) } as WorkspaceWorkbenchProps
-    mounted.rerender(<WorkspaceWorkbench {...switched} />)
+        selector({ ids, current }) } as WorkspaceWorkbenchProps
+    const mounted = render(<WorkspaceWorkbench {...props} />)
+    current = other
+    mounted.rerender(<WorkspaceWorkbench {...props} shown={false} />)
     expect(b.closeWorkbench).not.toHaveBeenCalled()
-    const launchers = screen.getAllByRole('tab', { name: zh['tabs.new'] })
-    expect(launchers).toHaveLength(1)
-    expect(launchers[0]?.getAttribute('aria-selected')).toBe('true')
+    expect(screen.queryByRole('tab', { name: zh['tabs.new'] })).toBeNull()
+    expect(b.rootInstance.store.getSnapshot().sessions[other]?.tabs).toEqual([])
+
+    mounted.rerender(<WorkspaceWorkbench {...props} shown />)
+    expect(screen.getByRole('tab', { name: zh['tabs.new'], selected: true })).toBeDefined()
+    current = SESSION
+    mounted.rerender(<WorkspaceWorkbench {...props} />)
+    expect(b.instance.getSnapshot()).toMatchObject({ activeId: 'file-manager' })
+    expect(screen.queryByRole('tab', { name: zh['tabs.new'] })).toBeNull()
   })
 
   it('窄屏预览独占内容，返回文件管理器仍保留目录筛选与展开', async () => {

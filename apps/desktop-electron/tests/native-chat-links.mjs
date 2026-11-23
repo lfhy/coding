@@ -1,5 +1,5 @@
 /**
- * 隔离验收桌面浏览器的对话链接和截图。模型响应只来自本地测试服务。
+ * 隔离验收桌面浏览器的对话链接、截图和会话切换。模型响应只来自本地测试服务。
  */
 import assert from 'node:assert/strict'
 import { execFile, spawnSync } from 'node:child_process'
@@ -28,6 +28,9 @@ if (process.argv.length > 3 || (process.argv[2] !== undefined && !packaged)) {
 const egoCli = join(root, 'packages/browser/browser-ego-host/runtime/ego-linux/bin/ego-browser.mjs')
 const sessionId = SessionId('native-chat-links-fixture')
 const title = '原生链接验收'
+const otherSessionId = SessionId('native-chat-links-other')
+const otherTitle = '第二个已有会话'
+const otherMessage = '第二个会话的回复'
 const exec = promisify(execFile)
 
 /** 每次等待有独立期限，不把首次浏览器启动误判为立即失败。 */
@@ -50,18 +53,18 @@ async function bounded(promise, label, timeout = 10_000) {
 }
 
 /** 以正式持久化接口预置关闭的会话，Host 首次打开时会真实恢复其消息。 */
-async function seedSession(hostHome, workspace, link) {
-  const session = Session.create(sessionId)
+async function seedSession(hostHome, workspace, { id, name, message }) {
+  const session = Session.create(id)
   session.append('turn/start', { turn: 1 })
   const user = session.append('user/message', createUserMessage({
     content: [{ type: 'text', text: '打开本地测试页面' }], source: { kind: 'user' },
   }), { surfaceOp: 'append' })
-  session.append('session/title', { title, messageSeqs: [user.seq], source: { kind: 'fallback' } })
+  session.append('session/title', { title: name, messageSeqs: [user.seq], source: { kind: 'fallback' } })
   session.append('step/start', { turn: 1, step: 1 })
   session.append('assistant/message', {
     turn: 1, step: 1,
     message: createMessage({ role: 'assistant', source: { kind: 'model', provider: 'fixture', model: 'fixture' },
-      content: [{ type: 'text', text: `[打开测试页面](${link})` }] }),
+      content: [{ type: 'text', text: message }] }),
   }, { surfaceOp: 'append' })
   session.append('step/end', { turn: 1, step: 1 })
   session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
@@ -70,10 +73,10 @@ async function seedSession(hostHome, workspace, link) {
     await seeder.plugin(SessionStore)
     await seeder.plugin(JsonlSessionPersistence, { root: join(hostHome, 'sessions') })
     await seeder.sessionPersistence.create({
-      version: SESSION_FORMAT_VERSION, id: sessionId, createdAt: Date.now() - 60_000,
+      version: SESSION_FORMAT_VERSION, id, createdAt: Date.now() - 60_000,
       cwd: workspace, delegationDepth: 0,
     })
-    await seeder.sessionPersistence.append(sessionId, session.events)
+    await seeder.sessionPersistence.append(id, session.events)
   } finally { await seeder.fiber.dispose() }
 }
 
@@ -166,6 +169,21 @@ async function verifyScreenshots(app, screenshot, id, cwd) {
   assert.deepEqual(after, { size, scroll: 600, resizes: [] }, 'taking a screenshot must not resize or scroll the live page')
 }
 
+async function selectSession(page, name) {
+  // 窄窗口可能收起左栏；重新打开会话列表，但不刷新当前工作台。
+  const expand = page.getByRole('button', { name: /^(展开侧边栏|Expand sidebar)$/u })
+  if (await expand.isVisible()) await expand.click()
+  const recent = page.getByRole('tablist', { name: /浏览会话|Browse sessions/u })
+    .getByRole('tab', { name: /^(最近|Recent)$/u })
+  if (await recent.getAttribute('aria-selected', { timeout: 8000 }) !== 'true') await recent.click()
+  const row = page.getByRole('treeitem').filter({ hasText: name })
+  try { await row.evaluate(element => { element.click() }, undefined, { timeout: 8000 }) }
+  catch {
+    const count = await page.getByRole('treeitem').count()
+    throw new Error(`seeded session row missing from Recent (${name}; visible rows=${count})`)
+  }
+}
+
 function alive(pid) {
   if (!Number.isSafeInteger(pid) || pid < 1) return false
   try { process.kill(pid, 0) } catch (error) { return error.code !== 'ESRCH' }
@@ -246,7 +264,11 @@ async function main() {
     assert.ok(address && typeof address !== 'string')
     link = `http://127.0.0.1:${address.port}/page`
     const cwd = await realpath(workspace)
-    if (!packaged) await seedSession(hostHome, cwd, link)
+    const seed = async () => {
+      await seedSession(hostHome, cwd, { id: sessionId, name: title, message: `[打开测试页面](${link})` })
+      await seedSession(hostHome, cwd, { id: otherSessionId, name: otherTitle, message: otherMessage })
+    }
+    if (!packaged) await seed()
     // 生产包复制到短临时路径：Go 单实例锁的 Unix socket 有系统路径长度上限。
     if (packaged) {
       await cp(packagedSource, join(isolated, 'Coding.app'), {
@@ -285,16 +307,15 @@ async function main() {
     }, 'Host renderer')
     await page.locator('[data-shell-overlay]').waitFor({ state: 'attached', timeout: 30_000 })
     await screenshot.prepare({ server, page })
-    if (packaged) await seedSession(hostHome, cwd, link)
+    if (packaged) await seed()
     const workspaceResult = await rpc(page, 'workspace.create', { path: cwd })
-    await rpc(page, 'session.create', { workspaceId: workspaceResult.workspace.workspaceId, sessionId })
+    for (const selected of [sessionId, otherSessionId]) {
+      await rpc(page, 'session.create', { workspaceId: workspaceResult.workspace.workspaceId, sessionId: selected })
+    }
     // RPC 从测试端写入；重新载入 Client 才能看到 Host 会话台账里的记录。
     await page.reload()
     await page.locator('[data-shell-overlay]').waitFor({ state: 'attached', timeout: 30_000 })
-    await page.getByRole('tablist', { name: /浏览会话|Browse sessions/u })
-      .getByRole('tab', { name: /^(最近|Recent)$/u }).click()
-    // 会话行只用于准备数据：同一帧打开当前行，不等待台账刷新时可能被替换的节点。
-    await page.getByRole('treeitem').filter({ hasText: title }).evaluate(row => { row.click() })
+    await selectSession(page, title)
     const assistantLink = page.getByRole('link', { name: '打开测试页面' })
     await assistantLink.waitFor({ state: 'visible', timeout: 15_000 })
     const popup = []
@@ -369,13 +390,23 @@ async function main() {
     assert.ok(id, 'screenshot must be taken on the foreground native page')
     await verifyScreenshots(app, screenshot, id, cwd)
 
+    await selectSession(page, otherTitle)
+    await page.getByText(otherMessage, { exact: true }).waitFor({ state: 'visible' })
+    const workbench = page.locator('#dsh-layout-workbench')
+    assert.equal(await workbench.getAttribute('aria-hidden'), 'true', 'a second existing Session must not inherit the open panel')
+    await until(async () => await fixtureView(app, `${origin}/`, link) === undefined, 'previous Session native view concealed', 8000)
+    await selectSession(page, title)
+    await until(async () => await addressField.count() === 1 && await addressField.isVisible()
+      && await addressField.inputValue() === link && await fixtureView(app, `${origin}/`, link) === id,
+      'original Session browser tab and native view restored', 8000)
+
     assert.ok(streams.every(frames => frames === 'off'), 'the native workbench must not request a frame stream')
     assert.deepEqual(responses.filter(item => item.pathname === '/api/ego/pages').map(item => item.status), [200])
     assert.deepEqual(responses.filter(item => item.pathname === '/api/ego/navigation').map(item => item.status), [200])
     assert.equal(popup.length, 0, 'link must not open an independent Electron window')
     assert.equal(page.url(), `${origin}/`, 'desktop Host renderer must remain open')
     passed = true
-    console.log('PASS: native Assistant link and viewport/element screenshots')
+    console.log('PASS: native Assistant link, viewport and element screenshots, and Session-specific right sidebar')
   } finally {
     const browserPid = await statePid(join(browserState, 'browser.json')).catch(() => -1)
     const workerPid = await statePid(join(browserState, 'ego-cast.json')).catch(() => -1)

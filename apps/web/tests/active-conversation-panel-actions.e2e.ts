@@ -34,11 +34,11 @@ describe.skipIf(webSnapshotMode() === 'record')('web e2e: active conversation pa
 
   it('keeps the active conversation bottom panel independent from the right workbench', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-active-conversation-panel-actions'))
-    const group = page.getByRole('treeitem', { name: /Ungrouped/ })
-    await group.waitFor({ timeout: 15_000 })
-    if (await group.getAttribute('aria-expanded') !== 'true') await group.click()
+    const sidebar = page.locator('#dsh-layout-sidebar')
+    await sidebar.getByRole('tablist', { name: 'Browse sessions' })
+      .getByRole('tab', { name: 'Recent', exact: true }).click()
     // 冷列表先以工作目录名显示，打开后才从日志投影会话标题。
-    const sessionRow = page.locator('[role="treeitem"]').nth(1)
+    const sessionRow = sidebar.getByRole('treeitem')
     await sessionRow.waitFor({ timeout: 15_000 })
     await sessionRow.click()
 

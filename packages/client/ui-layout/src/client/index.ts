@@ -123,7 +123,7 @@ export interface ShellSettingsOwnerProps {
 export interface ShellNavigationEntryOwnerProps {}
 
 /** Cordis fiber 所需服务。 */
-export const inject = ['slots', 'theme', 'locale']
+export const inject = ['slots', 'theme', 'locale', 'sessions']
 
 /**
  * 注册窗口外壳、`ctx.layout` 和主题呈现器。
@@ -132,7 +132,7 @@ export const inject = ['slots', 'theme', 'locale']
  */
 export function apply(ctx: ClientContext): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-layout: dictionaries')
-  const layout = new LayoutController()
+  const layout = new LayoutController(() => ctx.sessions.list.getSnapshot())
   const theme = ctx.theme
   const themeSource: HostObservable<ThemeSnapshot> = {
     getSnapshot: () => theme.getTheme(),
@@ -157,13 +157,13 @@ export function apply(ctx: ClientContext): void {
       store: createLayoutStore,
       inject: (actions: PanelActions): AppFrameInjected => {
         layout.attachPanels(actions)
-        // 工作台偏好按工作区保存；没有 workspaces 服务的部署退回会话 id。
+        // 工作台尺寸与底栏按工作区保存；没有 workspaces 服务的部署退回会话 id。
         const workspaces = ctx.get('workspaces') as { workspaceKeyOf?: (id: SessionId) => string } | undefined
         return {
           workspaceKeyOf: sessionId => workspaces?.workspaceKeyOf?.(sessionId) ?? sessionId,
           restoreConversation: (sessionId) => { ctx.get('sessions')?.open(sessionId) },
-          publishWorkbench: (key, state) => { layout.publishWorkbench(key, state) },
-          retainWorkbenchViews: (keys) => { layout.retainWorkbenchViews(keys) },
+          publishWorkbench: (sessionId, state) => { layout.publishWorkbench(sessionId, state) },
+          retainWorkbenchViews: (ids) => { layout.retainWorkbenchViews(ids) },
           publishPage: (page) => { layout.publishPage(page) },
           startPageConversation: () => { layout.startPageConversation() },
           hooks: { theme: themeSource, pageConversation: layout.pageConversation },

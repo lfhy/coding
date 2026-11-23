@@ -5,9 +5,19 @@ import { describe, expect, it, vi } from 'vitest'
 import { LayoutController } from 'coding-client-ui-layout/src/client/service.ts'
 import { createLayoutStore } from 'coding-client-ui-layout/src/client/stores.ts'
 import type { PanelActions } from 'coding-client-ui-layout/src/client/service.ts'
+import type { SessionListState } from 'coding-client-runtime/client'
 import type { SessionId } from 'coding-session/types'
 
 const SESSION = 'layout-session' as SessionId
+const NEXT_SESSION = 'another-layout-session' as SessionId
+
+function bench() {
+  const sessions = {
+    current: SESSION,
+    byId: { [SESSION]: { id: SESSION, blank: false }, [NEXT_SESSION]: { id: NEXT_SESSION, blank: true } },
+  } as Pick<SessionListState, 'current' | 'byId'>
+  return { sessions, service: new LayoutController(() => sessions) }
+}
 
 function fakePanels(): PanelActions {
   return {
@@ -26,11 +36,7 @@ function fakePanels(): PanelActions {
     toggleWorkbenchBottom: vi.fn(),
     closeWorkbenchBottom: vi.fn(),
     toggleHeroPanel: vi.fn(),
-    beginNewConversation: vi.fn(),
-    selectConversation: vi.fn(),
-    setActiveBlankSession: vi.fn(),
-    clearBlankWorkbench: vi.fn(),
-    retainBlankSessions: vi.fn(),
+    resetBlankWorkbench: vi.fn(),
     retainWorkbenchSessions: vi.fn(),
     openPage: vi.fn(),
     closePage: vi.fn(),
@@ -47,7 +53,7 @@ function fakePanels(): PanelActions {
 
 describe('LayoutController', () => {
   it('forwards every public panel action to the attached set', () => {
-    const service = new LayoutController()
+    const { service } = bench()
     const panels = fakePanels()
     service.attachPanels(panels)
 
@@ -55,13 +61,13 @@ describe('LayoutController', () => {
     service.openDetails()
     service.closeDetails()
     service.openWorkbench(SESSION)
-    service.openWorkbench(SESSION, SESSION)
-    service.closeWorkbench(SESSION, SESSION)
-    service.toggleWorkbench(SESSION, SESSION)
+    service.openWorkbench(NEXT_SESSION)
+    service.closeWorkbench(SESSION)
+    service.toggleWorkbench(SESSION)
     service.toggleWorkbenchFullscreen(SESSION)
-    service.toggleWorkbenchBottom(SESSION, SESSION)
+    service.toggleWorkbenchBottom(SESSION)
     service.closeWorkbenchBottom(SESSION)
-    service.toggleHeroPanel(SESSION, 'bottom')
+    service.toggleHeroPanel(SESSION, 'bottom', SESSION)
     service.toggleHeroPanel(SESSION, 'files', SESSION)
     expect(service.conversationIntent).toBe(0)
     service.beginNewConversation()
@@ -75,16 +81,16 @@ describe('LayoutController', () => {
     expect(panels.toggleSidebar).toHaveBeenCalledTimes(1)
     expect(panels.openDetails).toHaveBeenCalledTimes(1)
     expect(panels.closeDetails).toHaveBeenCalledTimes(1)
-    expect(panels.openWorkbench).toHaveBeenCalledWith(SESSION, undefined)
-    expect(panels.openWorkbench).toHaveBeenCalledWith(SESSION, SESSION)
-    expect(panels.closeWorkbench).toHaveBeenCalledWith(SESSION, SESSION)
-    expect(panels.toggleWorkbench).toHaveBeenCalledWith(SESSION, SESSION)
+    expect(panels.openWorkbench).toHaveBeenNthCalledWith(1, SESSION, true)
+    expect(panels.openWorkbench).toHaveBeenNthCalledWith(2, NEXT_SESSION, false)
+    expect(panels.closeWorkbench).toHaveBeenCalledWith(SESSION)
+    expect(panels.toggleWorkbench).toHaveBeenCalledWith(SESSION)
     expect(panels.toggleWorkbenchFullscreen).toHaveBeenCalledWith(SESSION)
-    expect(panels.toggleWorkbenchBottom).toHaveBeenCalledWith(SESSION, SESSION)
+    expect(panels.toggleWorkbenchBottom).toHaveBeenCalledWith(SESSION)
     expect(panels.closeWorkbenchBottom).toHaveBeenCalledWith(SESSION)
-    expect(panels.toggleHeroPanel).toHaveBeenCalledWith(SESSION, 'bottom', undefined)
+    expect(panels.toggleHeroPanel).toHaveBeenCalledWith(SESSION, 'bottom', SESSION)
     expect(panels.toggleHeroPanel).toHaveBeenCalledWith(SESSION, 'files', SESSION)
-    expect(panels.beginNewConversation).toHaveBeenCalledOnce()
+    expect(panels.resetBlankWorkbench).toHaveBeenCalledExactlyOnceWith([NEXT_SESSION])
     expect(panels.openPage).toHaveBeenCalledWith('image-gallery', SESSION, 'origin-session')
     expect(panels.closePage).toHaveBeenCalledOnce()
     expect(panels.setPageAssistant).toHaveBeenCalledWith(true)
@@ -97,7 +103,7 @@ describe('LayoutController', () => {
   })
 
   it('fails loud before the root entry wired its actions', () => {
-    const service = new LayoutController()
+    const { service } = bench()
     expect(() => { service.toggleSidebar() }).toThrow(/panel actions not wired/)
     expect(() => { service.openDetails() }).toThrow(/panel actions not wired/)
     expect(() => { service.closeDetails() }).toThrow(/panel actions not wired/)
@@ -105,7 +111,7 @@ describe('LayoutController', () => {
     expect(() => { service.closeWorkbench(SESSION) }).toThrow(/panel actions not wired/)
     expect(() => { service.toggleWorkbench(SESSION) }).toThrow(/panel actions not wired/)
     expect(() => { service.closeWorkbenchBottom(SESSION) }).toThrow(/panel actions not wired/)
-    expect(() => { service.toggleHeroPanel(SESSION, 'files') }).toThrow(/panel actions not wired/)
+    expect(() => { service.toggleHeroPanel(SESSION, 'files', SESSION) }).toThrow(/panel actions not wired/)
     expect(() => { service.beginNewConversation() }).toThrow(/panel actions not wired/)
     expect(() => { service.openPage('image-gallery', SESSION) }).toThrow(/panel actions not wired/)
     expect(() => { service.closePage() }).toThrow(/panel actions not wired/)
@@ -113,7 +119,7 @@ describe('LayoutController', () => {
   })
 
   it('登记并触发页面助手的新对话入口，进行中忽略重复点击', async () => {
-    const service = new LayoutController()
+    const { service } = bench()
     expect(service.pageConversation.getSnapshot()).toBe(false)
     // 未登记入口时点击不改变任何状态。
     service.startPageConversation()
@@ -137,7 +143,7 @@ describe('LayoutController', () => {
   })
 
   it('页面新对话失败时保留现有页面，旧登记方的注销不影响新入口', async () => {
-    const service = new LayoutController()
+    const { service } = bench()
     const failing = vi.fn(async () => { throw new Error('boom') })
     const detach = service.attachPageConversation(failing)
     service.startPageConversation()
@@ -152,12 +158,14 @@ describe('LayoutController', () => {
     expect(service.pageConversation.getSnapshot()).toBe(false)
   })
 
-  it('publishes stable per-workspace workbench snapshots for header controls', () => {
-    const service = new LayoutController()
+  it('publishes a stable snapshot per session and closes the old header projection on selection change', () => {
+    const { service } = bench()
     const source = service.workbench(SESSION)
+    const second = service.workbench(NEXT_SESSION)
+    const closed = source.getSnapshot()
     const listener = vi.fn()
     const unsubscribe = source.subscribe(listener)
-    expect(source.getSnapshot()).toEqual({ open: false, fullscreen: false, bottomOpen: false })
+    expect(closed).toEqual({ open: false, fullscreen: false, bottomOpen: false })
     service.publishWorkbench(SESSION, { open: true, fullscreen: false, bottomOpen: true })
     expect(source.getSnapshot()).toEqual({ open: true, fullscreen: false, bottomOpen: true })
     expect(listener).toHaveBeenCalledOnce()
@@ -166,11 +174,34 @@ describe('LayoutController', () => {
     expect(listener).toHaveBeenCalledTimes(2)
     service.publishWorkbench(SESSION, { open: true, fullscreen: true, bottomOpen: true })
     expect(listener).toHaveBeenCalledTimes(2)
+    expect(second.getSnapshot()).toBe(closed)
+    service.publishWorkbench(NEXT_SESSION, { open: true, fullscreen: false, bottomOpen: true })
+    expect(listener).toHaveBeenCalledTimes(3)
+    expect(source.getSnapshot()).toBe(closed)
+    expect(second.getSnapshot()).toMatchObject({ open: true, fullscreen: false })
+    service.retainWorkbenchViews([NEXT_SESSION])
+    expect(service.workbench(SESSION)).not.toBe(source)
+    expect(service.workbench(NEXT_SESSION)).toBe(second)
+    service.publishWorkbench(undefined, closed)
+    expect(second.getSnapshot()).toBe(closed)
     unsubscribe()
   })
 
+  it('ignores retired-session opens and foreground-only gestures from another session', () => {
+    const { service, sessions } = bench()
+    const panels = fakePanels()
+    service.attachPanels(panels)
+    sessions.current = NEXT_SESSION
+    service.openWorkbench('retired' as SessionId)
+    service.toggleWorkbench(SESSION)
+    service.toggleHeroPanel('shared', 'files', SESSION)
+    expect(panels.openWorkbench).not.toHaveBeenCalled()
+    expect(panels.toggleWorkbench).not.toHaveBeenCalled()
+    expect(panels.toggleHeroPanel).not.toHaveBeenCalled()
+  })
+
   it('updates the published page when only its return conversation changes', () => {
-    const service = new LayoutController()
+    const { service } = bench()
     const listener = vi.fn()
     const unsubscribe = service.page.subscribe(listener)
     service.publishPage({ kind: 'image-gallery', sessionId: SESSION })
@@ -183,7 +214,7 @@ describe('LayoutController', () => {
   })
 
   it('re-attach overwrites the stale action set (entry re-register)', () => {
-    const service = new LayoutController()
+    const { service } = bench()
     const stale = fakePanels()
     const fresh = fakePanels()
     service.attachPanels(stale)
@@ -200,7 +231,7 @@ describe('LayoutController', () => {
   })
 
   it('clears outstanding requests on dispose and does not replay them on re-register', () => {
-    const service = new LayoutController()
+    const { service } = bench()
     const oldRoot = createLayoutStore().create()
     service.attachPanels(oldRoot.actions)
     service.showConversation(SESSION)

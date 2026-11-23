@@ -163,7 +163,7 @@ describe('open-in-app browser half', () => {
     await expect(actionFace.launch('cursor', '/w')).resolves.toBe('launched')
     actionFace.openWorkbench()
     expect(openWorkbench).toHaveBeenCalledOnce()
-    expect(openWorkbench).toHaveBeenCalledExactlyOnceWith('workspace-browser-plugin', SESSION)
+    expect(openWorkbench).toHaveBeenCalledExactlyOnceWith(SESSION)
 
     const workbench = ctx.slots.entries('workbench')[0]
     const workbenchStore = (workbench?.store as ReturnType<typeof createRetainedWorkbenchStore>).create()
@@ -180,7 +180,7 @@ describe('open-in-app browser half', () => {
     expect(workbenchStore.getSnapshot().sessions[SESSION]).toMatchObject({
       view: 'files', tabs: [{ type: 'file', name: 'README.md', segments: ['README.md'] }],
     })
-    expect(openWorkbench).toHaveBeenLastCalledWith('workspace-browser-plugin', SESSION)
+    expect(openWorkbench).toHaveBeenLastCalledWith(SESSION)
     await expect(workbenchFace.readFile(SESSION, ['README.md'])).resolves.toEqual({
       path: '/w/README.md', content: { kind: 'markdown', text: '# Readme' },
     })
@@ -192,11 +192,11 @@ describe('open-in-app browser half', () => {
     workbenchFace.openWorkbench(SESSION)
     workbenchFace.toggleWorkbenchFullscreen(SESSION)
     workbenchFace.toggleBottom(SESSION)
-    expect(closeWorkbench).toHaveBeenCalledWith('workspace-browser-plugin', SESSION)
+    expect(closeWorkbench).toHaveBeenCalledWith(SESSION)
     expect(openWorkbench).toHaveBeenCalledTimes(3)
-    expect(openWorkbench).toHaveBeenNthCalledWith(3, 'workspace-browser-plugin', SESSION)
-    expect(toggleWorkbenchFullscreen).toHaveBeenCalledWith('workspace-browser-plugin')
-    expect(toggleWorkbenchBottom).toHaveBeenCalledWith('workspace-browser-plugin', SESSION)
+    expect(openWorkbench).toHaveBeenNthCalledWith(3, SESSION)
+    expect(toggleWorkbenchFullscreen).toHaveBeenCalledWith(SESSION)
+    expect(toggleWorkbenchBottom).toHaveBeenCalledWith('workspace-browser-plugin')
 
     const bottom = ctx.slots.entries('workbench.bottom')[0]
     const terminalFace = (bottom?.inject as unknown as () => {
@@ -260,7 +260,7 @@ describe('open-in-app browser half', () => {
     expect(store.getSnapshot().sessions[SESSION]).toMatchObject({
       view: 'files', tabs: [{ type: 'file', name: 'types.go', segments: ['service', 'registry', 'types.go'] }],
     })
-    expect(b.openWorkbench).toHaveBeenLastCalledWith('workspace-browser-plugin', SESSION)
+    expect(b.openWorkbench).toHaveBeenLastCalledWith(SESSION)
     // 工作台已挂载时 `.` 打开文件管理器，不再经过定位。
     await opener.open(SESSION, '.')
     // 工作区相对路径在工作台已挂载时不占用 Host 定位。
@@ -288,9 +288,9 @@ describe('open-in-app browser half', () => {
 
     face.toggleWorkbench()
     face.toggleBottom()
-    // 页头注入动作绑定到其工作区和会话，不在点击时读取可能改变的全局选择。
-    expect(toggleWorkbench).toHaveBeenCalledExactlyOnceWith('workspace-browser-plugin', SESSION)
-    expect(toggleWorkbenchBottom).toHaveBeenCalledExactlyOnceWith('workspace-browser-plugin', SESSION)
+    // 右栏入口绑定会话，底栏入口绑定工作区；都不会重定向到当前选择。
+    expect(toggleWorkbench).toHaveBeenCalledExactlyOnceWith(SESSION)
+    expect(toggleWorkbenchBottom).toHaveBeenCalledExactlyOnceWith('workspace-browser-plugin')
   })
 
   it('后台会话打开标签时保留其身份，不把同工作区空白会话当作目标', async () => {
@@ -311,7 +311,7 @@ describe('open-in-app browser half', () => {
     attach(store.actions)
     b.ctx.sidebarRightTabs.register({ id: 'ext.browser', kind: 'browser', title: () => 'Browser' })
     b.ctx.sidebarRight.openTabForSession(background, 'browser')
-    expect(b.openWorkbench).toHaveBeenCalledExactlyOnceWith('workspace-browser-plugin', background)
+    expect(b.openWorkbench).toHaveBeenCalledExactlyOnceWith(background)
     expect(b.sessionList.getSnapshot().current).toBe(SESSION)
     expect(store.getSnapshot().sessions[background]?.tabs).toHaveLength(1)
     await b.fiber.dispose()
