@@ -66,7 +66,11 @@ func (m *serviceManager) Connection(id string) (remoteagent.ConnectionInfo, erro
 	return remoteagent.ConnectionInfo{ID: id, Mode: remoteagent.ModeAgent, TargetHost: "example.com", TargetPort: 22, TargetUser: "coding"}, nil
 }
 func (m *serviceManager) Marker(id, root string) (remoteagent.RemoteWorkspaceMarker, error) {
-	return remoteagent.RemoteWorkspaceMarker{Version: 3, Mode: remoteagent.ModeAgent, RemoteRoot: root, ConnectionID: id}, nil
+	info, err := m.Connection(id)
+	if err != nil {
+		return remoteagent.RemoteWorkspaceMarker{}, err
+	}
+	return remoteagent.RemoteWorkspaceMarker{Version: 3, Mode: info.Mode, RemoteRoot: root, ConnectionID: id}, nil
 }
 func (m *serviceManager) Close(_ context.Context, id string) error {
 	m.mu.Lock()

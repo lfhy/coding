@@ -28,7 +28,13 @@ make dev
 
 主进程用 `process.ppid === 1` 判定本次是否由 launchd 启动（Finder、Dock 或 LaunchServices），并把结论作为 `--gui-launch` 交给 Go helper：这种启动继承的 PATH 只有 `/usr/bin:/bin:/usr/sbin:/sbin`，模型执行的命令找不到 Homebrew、nvm、Go 等用户目录，`hostlaunch` 因此用交互式登录 shell（`$SHELL -ilc`，6 秒上限）展开的 PATH 替换继承值，`SHELL` 缺失、探测失败或超时时回退继承环境。终端启动（含 `make dev`）不传该标记，继承的 PATH 保持原值，调用方仍可用 `Options.Environment` 的 `PATH` 显式覆盖。判据只能在主进程求值：launchd 的子进程是主进程，Go helper 是主进程的子进程，在启动器里观察父进程永远得不出结论。Host 与模型侧 Bash 工具仍以 `bash -c` 运行一次性命令，补全只改变继承的 PATH 值。
 
-远程连接的 sandbox preload 只暴露固定操作；main 每次调用都核验所属窗口、主 frame、Host origin 与输入，同源重载期间暂停授权，失去所属窗口即撤销。基础模式使用 SFTP 文件写入、编辑与搜索，POSIX 远端上一条常驻 Shell 承担目录列举、路径规范化、单路径元数据与文本文件读取（一次脚本完成类型检查、读取前后元数据比对与传输），二进制读取仍走 SFTP、SSH 前后台命令及 PTY、本机隔离 Goja 的 Code Mode 远端工具 binding，不部署远端 agent 或使用 SSH TCP 转发；LSP 不可用。SFTP 写入需要服务端 hardlink／posix-rename 扩展，版本复核非原子 CAS；SSH PTY 不提供前台进程组查询，终止请求也不能证明整棵进程树停稳。Agent 模式需要部署 Go agent 并使用 `direct-tcpip` 转发。SSH 输入由向导按次提交给原生服务，Go bridge token 不交给 renderer；不得在页面存储或日志中持久化凭据。目录解析前失去页面且无法确认 marker 归属时，helper 会保守保留连接直至退出，不凭连接 ID 盲关已有工作区。marker 路由只在 bridge 内存里：helper 重启后路由为空，而磁盘 marker 仍是上一次发布的身份，此时请求按该身份指向的活连接按需采纳回路由；连接本身已经不在（重启后未重连或会话中途掉线）时，bridge 用保存的档案自动重连一次并重新发布 marker，然后在这条新连接上继续这次请求，同一 marker 根同时只跑一轮且成功后 5 秒内不重复触发。已有路由时旧文件一律不采纳，世代不符仍按过期拒绝；自动重连失败保持快速失败，不会静默降级到本机。
+远程连接的 sandbox preload 只暴露固定操作；main 每次调用都核验所属窗口、主 frame、Host origin 与输入，同源重载期间暂停授权，失去所属窗口即撤销。基础模式使用 SFTP 文件写入、编辑与搜索，POSIX 远端上一条常驻 Shell 承担目录列举、路径规范化、单路径元数据与文本文件读取（一次脚本完成类型检查、读取前后元数据比对与传输），二进制读取仍走 SFTP、SSH 前后台命令及 PTY、本机隔离 Goja 的 Code Mode 远端工具 binding，不部署远端 agent 或使用 SSH TCP 转发；LSP 不可用。SFTP 写入需要服务端 hardlink／posix-rename 扩展，版本复核非原子 CAS；SSH PTY 不提供前台进程组查询，终止请求也不能证明整棵进程树停稳。Agent 模式需要部署 Go agent 并使用 `direct-tcpip` 转发。SSH 输入由向导按次提交给原生服务，Go bridge token 不交给 renderer；不得在页面存储或日志中持久化凭据。目录解析前失去页面且无法确认 marker 归属时，helper 会保守保留连接直至退出，不凭连接 ID 盲关已有工作区。
+
+打开已有远程工作区（含在其中新建对话）时，`desktopremote.Service.RemoteSSHReconnectWorkspace` 先核对该工作区已发布的本地 marker 文件、bridge 当前路由与连接管理器中的活连接。核对通过时沿用原 SSH 连接与 marker 世代，不要求保存凭据，不重新握手、不查询远端目录、不发布 marker，也不等待旧对话的在途远端请求结束。工具请求仍由 bridge 单独授权，显式重绑仍发布新世代。
+
+没有可复用路由时，只能通过与该工作区匹配的已保存档案自动恢复：优先尝试用档案对应的可用连接恢复路由，必要时重新建立 SSH 连接。连接已断开且没有可用档案时须通过向导手动重连，不回退到本机。
+
+工具请求的 marker 路由只在 bridge 内存里：helper 重启后路由为空，而磁盘 marker 仍是上一次发布的身份，此时请求按该身份指向的活连接按需采纳回路由；连接本身已经不在（重启后未重连或会话中途掉线）时，bridge 只有在存在匹配的已保存档案时才会自动恢复一次，重新发布 marker 后继续本次请求，同一 marker 根同时只跑一轮且成功后 5 秒内不重复触发。已有路由时旧文件一律不采纳，世代不符仍按过期拒绝；自动重连失败保持快速失败，不会静默降级到本机。
 
 macOS 菜单和托盘提供窗口操作，红色关闭按钮只隐藏窗口，再次激活或从托盘可恢复；菜单退出或 `Cmd+Q` 才退出应用。显式退出时，main 立即隐藏并销毁窗口，向 helper 发送显式 `shutdown {}`；helper 收敛自己持有的远程连接、bridge 与本次启动的 Host，main 有界等待其响应，再关闭 helper 并退出进程。重复退出请求共用一次清理，退出中不重新启动 helper。窗口关闭后复开先等待旧 helper 关闭，才重新发现 Host。helper 异常断管或收到信号后也只尝试停止原本由它启动的 Host；Host 已被替换或身份无法核验时不发送停止信号，更不会扫描共享 Home 误停其他 Host。
 

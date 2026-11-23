@@ -791,6 +791,7 @@ func ensurePrivateMarkerDirectory(directory string) error {
 	return nil
 }
 
+// readRemoteWorkspaceMarker 读取受限的本地 marker；提供 expectedRemoteRoot 时必须精确匹配。
 func readRemoteWorkspaceMarker(markerRoot, expectedRemoteRoot string) (*remoteagent.RemoteWorkspaceMarker, error) {
 	filename := filepath.Join(markerRoot, remoteWorkspaceMarkerName)
 	info, err := os.Lstat(filename)
@@ -823,7 +824,8 @@ func readRemoteWorkspaceMarker(markerRoot, expectedRemoteRoot string) (*remoteag
 	decoder := json.NewDecoder(strings.NewReader(string(data)))
 	decoder.DisallowUnknownFields()
 	if decoder.Decode(&marker) != nil || decoder.Decode(&struct{}{}) != io.EOF || !validRemoteWorkspaceMarker(marker) ||
-		marker.RemoteRoot != expectedRemoteRoot || !validOpaqueID(marker.ConnectionID) {
+		!validCanonicalRemotePath(marker.RemoteRoot) || !validOpaqueID(marker.ConnectionID) ||
+		(expectedRemoteRoot != "" && marker.RemoteRoot != expectedRemoteRoot) {
 		return nil, errors.New("existing remote workspace marker is invalid")
 	}
 	return &marker, nil

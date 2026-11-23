@@ -186,8 +186,7 @@ export class WorkspaceRuntime implements IWorkspaces {
       return reusable
     }
     await this.activateRemoteWorkspace(workspace.path)
-    // 新会话必须落在可用的远端连接上，因此创建之前仍等重连；连接还活着时它在远端
-    // 复用已有连接，只重新发布 marker。
+    // 创建会话前确认远端工作区可用。桌面端会复用当前路由，仅在不可用时尝试恢复。
     const created = this.reusableBlankSession(workspace)
     if (created !== undefined) return created
     // 重连期间到达的第二次点击可能已经先一步创建：回到同一份创建，不再多铸一个空白会话。
@@ -220,11 +219,11 @@ export class WorkspaceRuntime implements IWorkspaces {
   }
 
   /**
-   * 打开远端工作区前让桌面端用已保存的凭据重连并重新发布 marker。
-   * 同一工作区的并发调用共享同一次重连：连续点击「新对话」不该各发起一轮握手。
+   * 打开远端工作区前让桌面端复用已发布的活连接，或用保存的档案重连。
+   * 同一工作区的并发调用共享同一次确认，避免重复发起 SSH 握手。
    * 缺少连接能力时直接失败，避免进入一个所有工具都会报 stale-marker 的会话。
    * @param path - 工作区的本地路径；非远端占位路径直接放行。
-   * @returns 本次重连完成时结算；失败时拒绝并让下一次调用重新尝试。
+   * @returns 确认可用后结算；失败时拒绝并让下一次调用重新尝试。
    */
   private activateRemoteWorkspace(path: string): Promise<void> {
     if (!isRemoteWorkspacePath(path)) return Promise.resolve()

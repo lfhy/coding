@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -159,25 +160,27 @@ func (s *Service) liveProfileConnection(profileID string) (remoteagent.Connectio
 	return remoteagent.ConnectionInfo{}, false
 }
 
-// RemoteSSHReconnectWorkspace 用已保存的凭据重连某个远端工作区，并把 marker
-// 重新发布到新连接上。marker 路径必须与该档案记录的路径一致，否则拒绝，
-// 避免把旧证书用到另一台主机。
+// RemoteSSHReconnectWorkspace 复用工作区已发布的活连接；不可用时只允许用该工作区的保存档案重连。
 func (s *Service) RemoteSSHReconnectWorkspace(markerPath string) (RemoteSSHConnectResult, error) {
-	if s.profiles == nil {
-		return RemoteSSHConnectResult{}, errors.New("SSH profile store is unavailable")
-	}
 	if strings.TrimSpace(markerPath) == "" || len(markerPath) > remoteSSHMaxPathBytes || strings.ContainsRune(markerPath, '\x00') {
 		return RemoteSSHConnectResult{}, errors.New("remote workspace path is invalid")
 	}
 	ctx, cancel := context.WithTimeout(s.bindingContext(), remoteReconnectTimeout)
 	defer cancel()
+	if info, ok := s.liveWorkspaceConnection(ctx, markerPath); ok {
+		return RemoteSSHConnectResult{Kind: "ready", ConnectionID: info.ID, Mode: info.Mode, HomePath: info.RemoteHome}, nil
+	}
+	if err := ctx.Err(); err != nil {
+		return RemoteSSHConnectResult{}, err
+	}
+	if s.profiles == nil {
+		return RemoteSSHConnectResult{}, errors.New("SSH profile store is unavailable")
+	}
 	profile, err := s.profiles.FindByMarker(ctx, markerPath)
 	if err != nil {
 		return RemoteSSHConnectResult{}, err
 	}
-	// 快路径：该档案已经有一条活跃连接时，直接在这条连接上重新发布 marker，不再
-	// 握手。每次打开远端工作区都完整重连会让入口页等待数秒，而 marker 只需要绑定
-	// 到仍然可用的连接；连接已失效时 selectDirectory 会失败，再走下面的完整重连。
+	// marker 不可复用时，先尝试在档案的现有连接上恢复路由，再尝试重新握手。
 	if info, ok := s.liveProfileConnection(profile.ID); ok && info.Mode == remoteagent.ConnectionMode(profile.Mode) {
 		if selection, err := s.selectDirectory(info.ID, profile.RemoteRoot, nil); err == nil && selection.MarkerPath == markerPath {
 			s.remoteMarkerMu.Lock()
@@ -228,4 +231,29 @@ func (s *Service) RemoteSSHReconnectWorkspace(markerPath string) (RemoteSSHConne
 		return remoteSSHFailure(err), nil
 	}
 	return RemoteSSHConnectResult{Kind: "ready", ConnectionID: info.ID, Mode: info.Mode, HomePath: info.RemoteHome}, nil
+}
+
+// liveWorkspaceConnection 在选择事务锁下核对当前路由。仅复用同一世代，避免等待旧对话的远端请求。
+func (s *Service) liveWorkspaceConnection(ctx context.Context, markerPath string) (remoteagent.ConnectionInfo, bool) {
+	s.remoteMarkerMu.Lock()
+	defer s.remoteMarkerMu.Unlock()
+	connectionID, published := s.remoteMarkers[markerPath]
+	if !published {
+		return remoteagent.ConnectionInfo{}, false
+	}
+	if canonical, err := filepath.EvalSymlinks(markerPath); err != nil || canonical != markerPath {
+		return remoteagent.ConnectionInfo{}, false
+	}
+	marker, err := readRemoteWorkspaceMarker(markerPath, "")
+	if err != nil || marker == nil || marker.Version != 3 || marker.ConnectionID != connectionID {
+		return remoteagent.ConnectionInfo{}, false
+	}
+	identity := MarkerIdentity{MarkerRoot: markerPath, RemoteRoot: marker.RemoteRoot, ConnectionID: connectionID, Generation: marker.Generation}
+	var info remoteagent.ConnectionInfo
+	current := s.remoteBridge.CurrentMarker(ctx, identity, func() bool {
+		var lookupErr error
+		info, lookupErr = s.remoteManager.Connection(connectionID)
+		return ctx.Err() == nil && lookupErr == nil && info.ID == connectionID && info.Mode == marker.Mode
+	})
+	return info, current
 }

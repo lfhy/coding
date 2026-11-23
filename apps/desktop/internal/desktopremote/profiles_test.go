@@ -2,10 +2,15 @@ package desktopremote
 
 import (
 	"context"
+	"errors"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/deepseek-ai/coding/apps/desktop/internal/remoteagent"
 	"github.com/deepseek-ai/coding/apps/desktop/internal/sshprofile"
@@ -13,6 +18,11 @@ import (
 
 // profileService 构造带加密档案库的服务，并让每次 Connect 返回递增的连接 id。
 func profileService(t *testing.T) (*Service, *serviceManager, *sshprofile.Store, *int) {
+	t.Helper()
+	return profileServiceWithBridge(t, desktopTestRemoteBridge(t))
+}
+
+func profileServiceWithBridge(t *testing.T, bridge *Bridge) (*Service, *serviceManager, *sshprofile.Store, *int) {
 	t.Helper()
 	home := t.TempDir()
 	store, err := sshprofile.Open(home)
@@ -27,7 +37,7 @@ func profileService(t *testing.T) (*Service, *serviceManager, *sshprofile.Store,
 			TargetHost: "example.com", TargetPort: 22, TargetUser: "coding", RemoteHome: "/home/coding",
 		}, nil
 	}}
-	service, err := NewService(Options{Home: home, Manager: manager, Bridge: &serviceBridge{}, Profiles: store})
+	service, err := NewService(Options{Home: home, Manager: manager, Bridge: bridge, Profiles: store})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -83,11 +93,11 @@ func TestRememberProfileCapturesTargetAfterSelection(t *testing.T) {
 	}
 }
 
-func TestReconnectWorkspaceReusesLiveConnection(t *testing.T) {
+func TestReconnectWorkspaceReusesLiveConnectionWithoutSavedProfile(t *testing.T) {
 	service, manager, _, sequence := profileService(t)
 	result, err := service.RemoteSSHConnect(RemoteSSHConnectInput{
 		AttemptID: "attempt-1", Mode: remoteagent.ModeBasic, Host: "example.com", Port: 22, Username: "coding",
-		Auth: RemoteSSHAuthInput{Kind: "privateKey", Secret: "key-material"}, Remember: true,
+		Auth: RemoteSSHAuthInput{Kind: "privateKey", Secret: "key-material"},
 	})
 	if err != nil || result.Kind != "ready" {
 		t.Fatalf("connect = %#v, %v", result, err)
@@ -104,7 +114,7 @@ func TestReconnectWorkspaceReusesLiveConnection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reconnect: %v", err)
 	}
-	// 活跃连接被复用：不再握手，marker 仍指向同一条连接，且重新发布了 generation。
+	// 已发布的活连接保留原来的 marker 身份。
 	if reconnected.Kind != "ready" || reconnected.ConnectionID != result.ConnectionID {
 		t.Fatalf("reconnect result = %#v, want connection %q", reconnected, result.ConnectionID)
 	}
@@ -115,14 +125,92 @@ func TestReconnectWorkspaceReusesLiveConnection(t *testing.T) {
 	if err != nil || marker == nil {
 		t.Fatalf("read marker = %#v, %v", marker, err)
 	}
-	if marker.ConnectionID != result.ConnectionID {
-		t.Fatalf("marker connection = %q, want %q", marker.ConnectionID, result.ConnectionID)
+	if *marker != *before {
+		t.Fatal("reusing a live connection must not replace the marker")
 	}
 	manager.mu.Lock()
 	closed := append([]string(nil), manager.closed...)
 	manager.mu.Unlock()
 	if len(closed) != 0 {
 		t.Fatalf("reuse must not close connections, closed = %#v", closed)
+	}
+}
+
+func TestReconnectWorkspaceDoesNotWaitForInFlightFileRead(t *testing.T) {
+	const token = "abcdefghijklmnopqrstuvwxyz0123456789abcdef"
+	reading := make(chan struct{})
+	release := make(chan struct{})
+	bridge, err := NewBridge(token, func(context.Context, string, string, string, []byte) (int, []byte, error) {
+		close(reading)
+		<-release
+		return http.StatusOK, []byte(`{"ok":true}`), nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = bridge.Close() })
+	service, manager, _, sequence := profileServiceWithBridge(t, bridge)
+	connected, err := service.RemoteSSHConnect(RemoteSSHConnectInput{
+		AttemptID: "read-test", Mode: remoteagent.ModeBasic, Host: "example.com", Port: 22, Username: "coding",
+		Auth: RemoteSSHAuthInput{Kind: "password", Secret: "test-only"}, Remember: true,
+	})
+	if err != nil || connected.Kind != "ready" {
+		t.Fatalf("connect: %v (%s)", err, connected.Kind)
+	}
+	selected, err := service.RemoteSSHSelectDirectory(connected.ConnectionID, "/srv/project")
+	if err != nil {
+		t.Fatal(err)
+	}
+	marker, err := readRemoteWorkspaceMarker(selected.MarkerPath, selected.RemotePath)
+	if err != nil || marker == nil {
+		t.Fatalf("read marker: %v", err)
+	}
+	resolves := 0
+	manager.resolve = func(string) (remoteagent.ResolveResponse, error) {
+		resolves++
+		return remoteagent.ResolveResponse{Path: "/srv/project", Info: &remoteagent.PathInfo{Path: "/srv/project", Type: "directory"}}, nil
+	}
+	request := httptest.NewRequest(http.MethodPost, "/v1/read_file", strings.NewReader(`{"root":"/srv/project","path":"seed.txt"}`))
+	request.Header.Set("Authorization", "Bearer "+token)
+	request.Header.Set("Content-Type", "application/json")
+	setRemoteBridgeMarkerHeaders(request, remoteBridgeTestMarker{
+		root: selected.MarkerPath, remoteRoot: marker.RemoteRoot, connection: marker.ConnectionID, generation: marker.Generation,
+	}, false)
+	reply := httptest.NewRecorder()
+	readDone := make(chan struct{})
+	go func() { bridge.serveHTTP(reply, request); close(readDone) }()
+	unblock := sync.OnceFunc(func() { close(release); <-readDone })
+	t.Cleanup(unblock)
+	select {
+	case <-reading:
+	case <-time.After(2 * time.Second):
+		t.Fatal("file request did not dispatch")
+	}
+	opened := make(chan error, 1)
+	go func() {
+		result, err := service.RemoteSSHReconnectWorkspace(selected.MarkerPath)
+		if err == nil && (result.Kind != "ready" || result.ConnectionID != connected.ConnectionID) {
+			err = errors.New("did not reuse the existing connection")
+		}
+		opened <- err
+	}()
+	select {
+	case err := <-opened:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(2 * time.Second):
+		unblock()
+		<-opened
+		t.Fatal("opening workspace waited for the previous file request")
+	}
+	after, err := readRemoteWorkspaceMarker(selected.MarkerPath, selected.RemotePath)
+	if err != nil || after == nil || *after != *marker || *sequence != 1 || resolves != 0 {
+		t.Fatalf("opening the same workspace replaced its route or connection: %v", err)
+	}
+	unblock()
+	if reply.Code != http.StatusOK {
+		t.Fatalf("the existing file request was interrupted: HTTP %d", reply.Code)
 	}
 }
 
@@ -169,7 +257,7 @@ func TestReconnectWorkspaceReconnectsWhenLiveConnectionIsGone(t *testing.T) {
 	}
 }
 
-func TestReconnectWorkspaceFallsBackWhenLiveConnectionFailsResolution(t *testing.T) {
+func TestReconnectWorkspaceFallsBackWhenRouteRepairFails(t *testing.T) {
 	service, manager, _, sequence := profileService(t)
 	result, err := service.RemoteSSHConnect(RemoteSSHConnectInput{
 		AttemptID: "attempt-1", Mode: remoteagent.ModeBasic, Host: "example.com", Port: 22, Username: "coding",
@@ -182,7 +270,15 @@ func TestReconnectWorkspaceFallsBackWhenLiveConnectionFailsResolution(t *testing
 	if err != nil {
 		t.Fatalf("select directory: %v", err)
 	}
-	// 快路径的探活就是解析远端根：旧连接解析失败必须退回完整重连，不能让入口页卡住。
+	// 磁盘与当前路由的世代不符，不能把活连接当作可用路由。旧连接无法修复时仍要重连。
+	marker, err := readRemoteWorkspaceMarker(selection.MarkerPath, selection.RemotePath)
+	if err != nil || marker == nil {
+		t.Fatalf("read marker: %v", err)
+	}
+	marker.Generation++
+	if err := writeRemoteWorkspaceMarker(selection.MarkerPath, *marker); err != nil {
+		t.Fatal(err)
+	}
 	manager.resolve = func(connectionID string) (remoteagent.ResolveResponse, error) {
 		if connectionID == result.ConnectionID {
 			return remoteagent.ResolveResponse{}, remoteagent.ErrConnectionNotFound
