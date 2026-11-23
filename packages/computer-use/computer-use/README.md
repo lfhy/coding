@@ -78,6 +78,18 @@ helper 是一个只接受固定 argv 与 JSON 行协议的 Swift 可执行文件
 `pnpm --filter coding-computer-use run build:native` 重建 helper 并写入新的 manifest，`run check:native` 复核二进制只做目标进程指针路由、不做系统光标 warp 或全局指针注入。
 helper 只被普通进程启动，模型不能提供 shell 片段、脚本、原生 selector 或任意可访问性常量。
 
+## 验证
+
+普通 `pnpm run test` 保留替身后端、临时 helper 文件、模拟驱动、设置界面和预设装配测试，不启动真实 helper。`helper-transport.spec.ts` 默认跳过，即使本机已有编译产物；只有显式设置 `DSH_COMPUTER_USE_NATIVE_TEST=1` 才执行原生传输检查。
+
+在已构建 helper 的 macOS 主机上，从仓库根运行：
+
+```sh
+DSH_COMPUTER_USE_NATIVE_TEST=1 pnpm exec vitest run packages/computer-use/computer-use/tests/helper-transport.spec.ts
+```
+
+显式启用后，平台不支持、缺少 helper 或 manifest、完整性与协议不匹配都会失败，不转为跳过。该检查只通过真实提供方启动 helper 并读取权限状态，不申请授权、不截图、不投递界面输入；它不替代真实桌面动作或 `cua-driver` 的人工验收。
+
 ## Model Experience
 
 Indirectly, through [`coding-tool-computer-use`](../tool-computer-use/README.md)：本包不注册工具、不贡献提示词段，因此没有直接的模型可见文本。
