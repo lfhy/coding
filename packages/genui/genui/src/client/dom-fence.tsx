@@ -18,6 +18,7 @@ import { GenuiMessageContext, type GenuiMessageSender } from './message-context.
 import { withFileLinkContext, type FileLinkAvailability } from './file-link-context.tsx'
 import { describeFenceFailure, FenceDiagnostic, renderResolvedFenceNode, type GenuiFenceContext } from './fence-render.tsx'
 import { renderSvgFence } from './svg-fence.tsx'
+import { renderMermaidFence } from './mermaid-fence.tsx'
 import { StreamingFence } from './StreamingFence.tsx'
 import { sourceFencesOfAssistant } from './source-fence.ts'
 import { sourceLanguageOf, hostFenceIndexOf, chatSourceOf, createSourceLanguageResolver, sourceSessionOf, fenceIndexOf, anchorSeqOf } from './dom-source.ts'
@@ -61,7 +62,7 @@ interface Mount {
   block: HTMLElement
   lastRaw: string
   lastSettled: boolean
-  language: 'dsh-ui' | 'svg'
+  language: 'dsh-ui' | 'svg' | 'mermaid'
 }
 
 interface DiagnosticMount {
@@ -255,7 +256,7 @@ export function installDomFenceRenderer(
   })
 
   /** 创建一个已解析的 React payload；流式不完整正文使用 StreamingFence。 */
-  const payloadOf = (block: HTMLElement, row: Element, raw: string, settled: boolean, language: 'dsh-ui' | 'svg', preserveSession = false): {
+  const payloadOf = (block: HTMLElement, row: Element, raw: string, settled: boolean, language: 'dsh-ui' | 'svg' | 'mermaid', preserveSession = false): {
     node: ReactNode | null
     context: GenuiFenceContext
     key: Key
@@ -263,7 +264,9 @@ export function installDomFenceRenderer(
     const identity = contextOf(row, block, settled, preserveSession)
     const node = language === 'svg'
       ? renderSvgFence(raw, identity.key)
-      : renderResolvedFenceNode(raw, identity.key, identity.context)
+      : language === 'mermaid'
+        ? renderMermaidFence(raw, identity.key)
+        : renderResolvedFenceNode(raw, identity.key, identity.context)
     if (node !== null || settled || language !== 'dsh-ui') return { node, ...identity }
     return { node: <StreamingFence />, ...identity }
   }
@@ -273,10 +276,11 @@ export function installDomFenceRenderer(
     const state = stateOf(block)
     const language = state.language
     const generic = language === undefined && state.settled && isGenericGenuiFence(block, state.raw)
-    if (language !== 'dsh-ui' && language !== 'svg' && !generic) return
+    // 图形围栏（svg／mermaid）只在定稿后接管：流式正文还不是完整源码。
+    if (language !== 'dsh-ui' && language !== 'svg' && language !== 'mermaid' && !generic) return
     if (!state.settled && language !== 'dsh-ui' && !generic) return
     if (state.raw.trim() === '') return
-    const accepted: 'dsh-ui' | 'svg' = language === 'svg' ? 'svg' : 'dsh-ui'
+    const accepted: 'dsh-ui' | 'svg' | 'mermaid' = language === 'svg' || language === 'mermaid' ? language : 'dsh-ui'
     const row = rowOf(block)
     const rendered = payloadOf(block, row, state.raw, state.settled, accepted)
     if (rendered.node === null) {
@@ -445,7 +449,8 @@ export function installDomFenceRenderer(
 
   const refreshMount = (mount: Mount, state: ReturnType<typeof stateOf>, sourceUnavailable: boolean): void => {
     const block = mount.block
-    if (mount.language === 'svg' && state.language !== 'svg') {
+    // 图形围栏的语言变了（围栏被替换成别的内容）就地放弃接管，交回宿主代码块。
+    if (mount.language !== 'dsh-ui' && state.language !== mount.language) {
       unmountBlock(block)
       return
     }

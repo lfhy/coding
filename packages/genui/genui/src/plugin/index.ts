@@ -18,6 +18,7 @@ import { basename, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createRenderUiTool, createValidateGenUiTool } from './tool.ts'
 import { installFenceFeedback } from './fence-feedback.ts'
+import { assetDirCandidates } from './asset-dirs.ts'
 
 /* ---------------- 懒引擎资产路由 ---------------- */
 
@@ -33,6 +34,9 @@ const ASSET_ROUTE_PATH = '/plugins/coding-genui/assets'
 
 /** 仅接受扁平文件名：无斜杠、无穿越，且必须是 js 资产。 */
 const ASSET_FILE_RE = /^[A-Za-z0-9][A-Za-z0-9._-]*\.js$/
+
+/** 懒引擎资产目录候选：构建产物（`lib/index.js`）与源码运行（`src/plugin`）各一份。 */
+const ASSET_DIRS = assetDirCandidates(import.meta.url)
 
 /** 资产路由处理器本体（经可选 webServer 注入注册）。 */
 async function serveGenuiAsset(req: IncomingMessage, res: ServerResponse): Promise<void> {
@@ -61,20 +65,22 @@ async function serveGenuiAsset(req: IncomingMessage, res: ServerResponse): Promi
     res.end()
     return
   }
-  try {
-    // lib/index.js → ./assets/ = <pkg>/lib/assets/（懒引擎资产的输出目录）。
-    const dir = fileURLToPath(new URL('./assets/', import.meta.url))
-    const body = await readFile(join(dir, file))
-    res.writeHead(200, {
-      'content-type': 'text/javascript; charset=utf-8',
-      'cache-control': 'no-cache',
-    })
-    res.end(body)
-  } catch {
-    // 资产缺失（旧构建）——响亮的 404；浏览器半展示各自的降级提示。
-    res.writeHead(404)
-    res.end()
+  for (const dir of ASSET_DIRS) {
+    try {
+      const body = await readFile(join(dir, file))
+      res.writeHead(200, {
+        'content-type': 'text/javascript; charset=utf-8',
+        'cache-control': 'no-cache',
+      })
+      res.end(body)
+      return
+    } catch {
+      // 换下一个候选目录；全部失败时按资产缺失处理（旧构建或未构建）。
+    }
   }
+  // 资产缺失（旧构建或未构建）——响亮的 404；浏览器半展示各自的降级提示。
+  res.writeHead(404)
+  res.end()
 }
 
 const RENDER_UI_TOOL_GUIDANCE = '- 工具行卡片：render_ui 工具把同一 spec 渲染为工具行卡片；gen-ui 围栏用于回答内联 UI。'

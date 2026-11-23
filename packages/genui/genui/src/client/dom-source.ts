@@ -86,7 +86,7 @@ export function hostFenceIndexOf(row: Element, block: Element): number {
 function codeBlocksOf(row: Element): HTMLElement[] {
   return codeBlockSurfaces(row).filter((candidate) => {
     if (closestCodeBlockSurface(candidate.parentElement) !== null) return false
-    if (candidate.closest(`.${CONTAINER_CLASS}, .${DIAGNOSTIC_CLASS}, [data-genui], [data-genui-svg-fence]`) !== null) return false
+    if (candidate.closest(`.${CONTAINER_CLASS}, .${DIAGNOSTIC_CLASS}, [data-genui], [data-genui-svg-fence], [data-genui-mermaid-fence]`) !== null) return false
     if (candidate.closest(TAG_TEXT_EXCLUDES) !== null) return false
     if (candidate.closest(ASSISTANT_FLOW_ROW) !== row) return false
     return candidate.querySelector('pre') !== null

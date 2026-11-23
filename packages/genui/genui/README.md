@@ -4,6 +4,8 @@
 
 围栏正文开始到达后，在原代码块位置显示居中的“正在生成界面…”与加载动画，不展示语言标签或半截 JSON。每个完整组件对象闭合后立即显示，无需等待整条回复结束。停止或定稿后无法渲染的正文恢复为可复制代码块并显示诊断；减少动态效果偏好会停用动画但保留状态提示。回答内的 GenUI 和 `render_ui` 工具行都不显示下载按钮；`render_ui` 不注入展示用 `summary`，也不读取调用参数中的额外 `summary`；完成时用 `spec.title` 显示卡片标题，运行中、失败、中断和无有效卡片时显示本地化的简短状态，不显示工具内部名称和调用标识。已结算旧日志中的 `display_description` 可用于回放，但不是新调用参数；有有效结果时仍显示完整的交互界面。
 
+同一条 DOM 通道也接管正文里独立的 ` ```svg ` 与 ` ```mermaid ` 围栏（Markdown 文件预览、笔记预览与回答正文一致）：定稿后渲染图形，图表与源码之间用「预览／源码」切换；流式期间仍显示宿主代码块。Mermaid 引擎按需加载，图表超出视口时延迟渲染，加载或渲染失败时降级为源码而不是空白区域。
+
 `steps` 按 `current` 标出已完成步骤（未指定时全部完成），完成标记使用客户端共享的对勾图形，在圆形标记内居中；尚未完成的步骤显示序号。
 
 `topic-guide` 用于在回答末尾展示可继续讨论的话题：每项 `label` 与不超过 2000 字的 `message` 同时可见，最多展示 8 项。点击选项会将完整 `message` 原样作为所属会话的新用户消息发送；设置 `confirmLabel` 时先选后发，不走 `[genui-action]`。仅已定稿、来源仍属于当前会话的回复可发送；成功后在本地记住选择并停用该话题，刷新不自动重发，失败时可重试。本地发送标记不是服务端恰好一次送达凭据；离线导出或无所属会话时不可发送。
@@ -17,7 +19,7 @@
 | `src/plugin/index.ts` | 系统提示词段 `genui:fence`（order 120）、bundled `genui` 技能、webServer 资产路由 `/plugins/coding-genui/assets/*` |
 | `src/plugin/tool.ts` | `render_ui`（工具行卡片，meta 投影携带修复后 spec）与 `validate_gen_ui`（发围栏前预检） |
 | `src/plugin/fence-feedback.ts` | 同回合围栏修正：`agent/turn-stopping` 边界上经 `agent.steer()` 注入 plugin notice，每回合/每指纹至多一次，子代理不触发；`llm/stream` waterfall 把已验证 GenUI 回合的 reasoning-only 停止改写为 `EMPTY_RESPONSE` 交宿主重试 |
-| `src/client/dom-fence.ts` | DOM 渲染通道：观察会话 DOM，识别 `gen-ui` 围栏（`md-code-block` 表面 + label+pre 结构兜底），流式逐组件接管，settle 后按 `data-chat-anchor-key` 稳定身份 |
+| `src/client/dom-fence.ts` | DOM 渲染通道：观察宿主 Markdown 代码表面，识别 `gen-ui` 围栏（`md-code-block` 表面 + label+pre 结构兜底），流式逐组件接管，settle 后按 `data-chat-anchor-key` 稳定身份；同一通道经 `svg-fence.tsx`／`mermaid-fence.tsx` 把已定稿的图形围栏接管为图形 |
 | `src/client/blocks/` | 白名单组件库（30+ 类型：布局、表格、图表、表单、测验、mermaid/diagram/scene3d） |
 | `lib/assets/*.js` | mermaid／three／echarts 懒引擎 IIFE，首次使用时经资产路由注入 |
 
@@ -59,4 +61,5 @@
 ## Known Limitations and Deferred Work
 
 - **对话界面不提供下载**：GenUI 围栏和工具行只渲染交互内容，不显示导出入口；需要保存或独立运行时，由代码调用 artifact 接口。
+- **导出文档不渲染图形围栏**：笔记与 Markdown 导出在同步快照里取正文，不等待 DOM 接管与引擎加载，`svg`／`mermaid` 围栏按源码导出。
 - **文件链接不带行号**：工作台文件标签 API 无行参数，`line` 暂被忽略。

@@ -7,8 +7,8 @@
  *   Desktop 0.11.0 的纯文本 `<dsh-ui>` 标签 span；
  * - 表面合法性闸门：消息级容器、插件自有 DOM、嵌套表面一律拒绝（issue #13/#19）；
  * - 语言读取与归一化：DOM 标签 / ChatSnapshot 源码两条来源统一收敛为内部
- *   `'dsh-ui'`（新围栏语言 `gen-ui` 与历史 `dsh-ui` 等价），`svg` 维持独立；
- *   普通 JSON、无语言围栏不得因内容相似被误接管。
+ *   `'dsh-ui'`（新围栏语言 `gen-ui` 与历史 `dsh-ui` 等价），`svg` 与
+ *   `mermaid` 各自独立；普通 JSON、无语言围栏不得因内容相似被误接管。
  *
  * 安全边界：本模块只读 DOM、不下发渲染；所有判定必须可被全量扫描与
  * mutation 路径共用，避免两条路径结论不一致。
@@ -33,7 +33,7 @@ const CONTAINER_CLASS = 'genui-dom-fence'
 const DIAGNOSTIC_CLASS = 'genui-dom-fence-diagnostic'
 /** 接管永不触达的宿主容器：我们自己的挂载树。所有发现路径共享该闸门，
  * 变更节点不可能进入全量扫描会拒绝的队列。 */
-const SURFACE_EXCLUDES = `.${CONTAINER_CLASS}, .${DIAGNOSTIC_CLASS}, [data-genui-svg-fence]`
+const SURFACE_EXCLUDES = `.${CONTAINER_CLASS}, .${DIAGNOSTIC_CLASS}, [data-genui-svg-fence], [data-genui-mermaid-fence]`
 /** 标签文本 span 的同类排除：宿主把这些行渲染在 transcript 之外（推理、
  * 工具输出、侧栏、插件面板）。 */
 const TAG_TEXT_EXCLUDES = `.${CONTAINER_CLASS}, .${DIAGNOSTIC_CLASS}, [data-chat-group-part="reasoning"], [data-tool], [data-sidebar-chat], [data-sidebar-right-session], [data-sidebar-right-panel], [data-panel-conversation], [data-plugin-panel]`
@@ -77,8 +77,9 @@ export {
  * 校验把关——同一份正文的渲染结果不因宿主语言而不同。
  */
 const KNOWN_LANGUAGE_LABELS = new Set([
-  // 插件自有语言（gen-ui 为新语言，dsh-ui 为历史别名）
-  'dsh-ui', 'gen-ui', 'svg',
+  // 插件自有语言（gen-ui 为新语言，dsh-ui 为历史别名），以及本插件接管的
+  // 图形围栏语言
+  'dsh-ui', 'gen-ui', 'svg', 'mermaid',
   // 数据 / 标记 / 纯文本
   'json', 'json5', 'yaml', 'yml', 'toml', 'ini', 'xml', 'html', 'css', 'scss', 'sass', 'less',
   'markdown', 'md', 'text', 'txt', 'plain', 'plaintext', 'log', 'console', 'diff', 'patch',
@@ -92,21 +93,23 @@ const KNOWN_LANGUAGE_LABELS = new Set([
 
 /**
  * 内部围栏语言：GenUI 统一归一为 `'dsh-ui'`（`gen-ui` 与历史 `dsh-ui`
- * 等价，减少全链路改动面），SVG 维持独立；其余已知语言是「明确的非
- * GenUI」，必须与「来源暂不可用」区分，否则普通 JSON 会被误接管。
+ * 等价，减少全链路改动面），SVG 与 Mermaid 各自独立；其余已知语言是
+ * 「明确的非本插件围栏」，必须与「来源暂不可用」区分，否则普通 JSON 会被
+ * 误接管。
  */
-export type DomFenceLanguage = 'dsh-ui' | 'svg' | 'other'
+export type DomFenceLanguage = 'dsh-ui' | 'svg' | 'mermaid' | 'other'
 
 /**
  * 把任一来源（DOM 标签或 ChatSnapshot 源码）的原始语言归一化为内部值。
  *
  * @param language - 原始语言字符串；null 表示围栏无语言，undefined 表示来源不可用。
- * @returns `'dsh-ui'`（含 gen-ui 别名）、`'svg'`、`'other'`（明确非 GenUI）、null 或 undefined 原样保留语义。
+ * @returns `'dsh-ui'`（含 gen-ui 别名）、`'svg'`、`'mermaid'`、`'other'`（明确非本插件围栏）、null 或 undefined 原样保留语义。
  */
 export function normalizeFenceLanguage(language: string | null | undefined): DomFenceLanguage | null | undefined {
   if (language === null || language === undefined) return language
   if (isGenuiFenceLanguage(language)) return 'dsh-ui'
   if (language === 'svg') return 'svg'
+  if (language === 'mermaid') return 'mermaid'
   return 'other'
 }
 
@@ -137,18 +140,20 @@ export function tagTextBodyOf(block: Element): string | null {
  * 自我指认。持有多个代码块的容器也不得借嵌套块的标签自我指认（#13：
  * 共享 markdown 根曾被误认成围栏并藏起整条消息）。
  */
-function infostringOf(block: Element): 'dsh-ui' | 'svg' | null {
+function infostringOf(block: Element): 'dsh-ui' | 'svg' | 'mermaid' | null {
   const pre = block.querySelector('pre')
   for (const el of block.querySelectorAll('*')) {
     if (el.childElementCount !== 0) continue
     const lang = textOf(el).trim()
-    if (lang !== 'dsh-ui' && lang !== 'gen-ui' && lang !== 'svg') continue
+    if (lang !== 'dsh-ui' && lang !== 'gen-ui' && lang !== 'svg' && lang !== 'mermaid') continue
     if (pre !== null && pre.contains(el)) continue
     // 属于嵌套已知代码表面的标签是该表面的 banner，不是本块的：只接受
     // 最近已知表面就是本块（或未知表面——结构回溯仍支持）的标签。
     const owner = closestCodeBlockSurface(el)
     if (owner !== null && owner !== block) continue
-    return lang === 'svg' ? 'svg' : 'dsh-ui'
+    if (lang === 'svg') return 'svg'
+    if (lang === 'mermaid') return 'mermaid'
+    return 'dsh-ui'
   }
   return null
 }
