@@ -40,8 +40,69 @@
   font: var(--dsw-font-xxs-12);
 }
 
+/* 格式工具栏：分区之间用竖线分隔，窄宽度时整组换行而不是拆散单个分区。 */
 .formatting {
+  flex-wrap: wrap;
+  gap: 2px 0;
+}
+
+.toolGroup {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
   gap: 2px;
+}
+
+.toolSeparator {
+  flex: none;
+  width: 1px;
+  height: 16px;
+  margin: 0 6px;
+  background: var(--dsw-alias-border-l2);
+}
+
+/* 方形图标按钮：与工具栏 28px 行高对齐，去掉共享按钮的横向留白。 */
+.tool {
+  width: 28px;
+  padding: 0;
+  border-radius: 6px;
+}
+
+/* 带下拉箭头的触发按钮：文字与箭头之间留 2px，箭头跟随展开状态上翻。 */
+.picker {
+  gap: 2px;
+  border-radius: 6px;
+}
+
+.pickerArrow {
+  color: var(--dsw-alias-label-tertiary);
+  transition: transform 120ms ease;
+}
+
+.picker[aria-expanded='true'] .pickerArrow {
+  transform: rotate(180deg);
+}
+
+.palette {
+  display: grid;
+  grid-template-columns: repeat(8, 22px);
+  gap: 4px;
+  padding: 4px;
+}
+
+.swatch {
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 4px;
+  background: var(--swatch);
+  cursor: pointer;
+}
+
+.swatch:hover,
+.swatch:focus-visible {
+  outline: 2px solid var(--dsw-alias-state-business-primary);
+  outline-offset: 1px;
 }
 
 .canvas {

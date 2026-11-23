@@ -1,10 +1,47 @@
 /** 仅在可见正文中启动一个本地编辑实例，不把第三方对象交给业务组件。 */
 import { throwError } from 'rxjs'
-import { CommandType, createUniver, LocaleType, NamedStyleType, type ILanguagePack, type IPreset } from '@univerjs/presets'
+import { createUniver, ICommandService, ILogService, IUniverInstanceService, LocaleType, NamedStyleType,
+  setDependencies, ThemeService, Univer, UniverInstanceType, CommandType, type DocumentDataModel, type ILanguagePack,
+  type IPreset } from '@univerjs/presets'
+import {
+  DocLayoutExecutorService, DocLayoutInteractionService, DocPageLayoutService,
+  DocRenderController, DocSelectionManagerService, DocSelectionRenderService, DocSkeletonManagerService,
+  DocViewScaleService, IEditorService, IRenderManagerService, type IRenderContext,
+} from '@univerjs/preset-docs-core'
 import { en as english, zh as chinese } from './locales.ts'
 import type { OfficeDocument, ParagraphAlign, ParagraphStyle } from './office-document.ts'
 import { fromUniverDocument, toUniverDocument } from './word-conversion.ts'
 import { fromUniverWorkbook, toUniverWorkbook } from './excel-conversion.ts'
+
+/** 桌面版按固定 960px 排版；这里改为跟随画布宽度，正文两侧仍保留页面边距。 */
+type LayoutArgs = Parameters<DocRenderController['_scheduleLayout']>
+type LayoutOptions = LayoutArgs[2]
+class NoteDocRenderController extends DocRenderController {
+  declare protected _context: IRenderContext<DocumentDataModel>
+
+  protected override _getHorizontalPageMargin(): number {
+    return DOCUMENT_GUTTER
+  }
+
+  protected override _scheduleLayout(...args: LayoutArgs): void {
+    const [unitId, skeleton, options, refreshMainSelection, preserveInactiveViewportAnchor] = args
+    const parent = this._context.scene.getParent()
+    // 画布尚未挂载时场景父级宽度仍是初始占位值，此时沿用编辑器自身的宽度。
+    const available = parent.width > 1 ? parent.width : this._context.engine.width
+    const bound = Number.isFinite(available) && available > DOCUMENT_GUTTER * 2 + 1
+      ? { ...options, modernPageWidth: available, modernHorizontalMargin: DOCUMENT_GUTTER } satisfies LayoutOptions
+      : options
+    super._scheduleLayout(unitId, skeleton, bound, refreshMainSelection, preserveInactiveViewportAnchor)
+  }
+}
+// 第 0 个参数是渲染单元创建时传入的渲染上下文，其余依赖从第 1 个参数起注入。子类不继承父类构造参数上的
+// 依赖装饰器，仓库又未开启装饰器编译，所以在模块加载时登记一次：setDependencies 是追加语义，重复调用会让
+// 同一构造参数出现两个依赖描述符。
+setDependencies(NoteDocRenderController, [
+  ICommandService, DocSelectionRenderService, DocSkeletonManagerService, IEditorService, IRenderManagerService,
+  IUniverInstanceService, DocPageLayoutService, DocSelectionManagerService, DocViewScaleService, ThemeService,
+  DocLayoutExecutorService, DocLayoutInteractionService, ILogService,
+], 1)
 
 /** 只暴露原生格式能保存的格式化动作。 */
 export type OfficeFormat =
@@ -32,6 +69,8 @@ interface OfficeEngineOptions {
 
 const UNIT_ID = 'office-content'
 const DARK_PREFERENCE = '(prefers-color-scheme: dark)'
+// 页面左侧留给段落柄的宽度：正文从画布左缘缩进这段距离，段落柄停靠在其中。
+const DOCUMENT_GUTTER = 72
 const NAMED: Record<ParagraphStyle, NamedStyleType> = {
   normal: NamedStyleType.NORMAL_TEXT,
   title: NamedStyleType.TITLE,
@@ -56,10 +95,48 @@ function localePack(module: { default: unknown }): ILanguagePack {
   return value as ILanguagePack
 }
 
+/**
+ * 把连续布局的正文宽度绑定到画布，并让文档组件把左侧留白算进外边距。
+ *
+ * 桌面版 Word 画布按 960px 定宽排版，页面左侧的 50px 留白落不到视口里：段落柄按
+ * 「页面左边距」停靠，被画布边界推到正文右缘后裁成一条竖线。这里把文档的渲染控制器
+ * 换成跟随容器宽度的实现（Univer 移动端同款做法）。渲染模块按标识去重、先登记者生效，
+ * 所以必须在 DocsUI 插件登记原控制器之前调用；createUniver 返回时插件只跑到 Starting 阶段。
+ */
+function bindContinuousLayout(univer: Univer): void {
+  const renderManager: IRenderManagerService = univer.__getInjector().get(IRenderManagerService)
+  renderManager.registerRenderModule(UniverInstanceType.UNIVER_DOC, [DocRenderController, { useClass: NoteDocRenderController }])
+}
+
+/**
+ * Univer 工作台首帧会在 body 下新建一个匿名容器，所有浮动弹层（段落柄、斜杠菜单等）都挂进去。
+ * 预设样式用 @scope 限定在本编辑器内，所以要把这个容器标出来；只认「本次运行时新挂上、且含 Univer 组件」的节点，
+ * 不碰页面上其它 body 子节点。
+ */
+const PORTAL_CLASS = 'coding-office-portal'
+
+function markPortalContainer(): () => void {
+  const known = new Set(document.body.children)
+  const marked = new Set<Element>()
+  const mark = () => {
+    for (const node of document.body.children) {
+      if (known.has(node) || marked.has(node) || node.querySelector('[data-u-comp]') === null) continue
+      node.classList.add(PORTAL_CLASS)
+      marked.add(node)
+    }
+  }
+  const observer = new MutationObserver(mark)
+  observer.observe(document.body, { childList: true, subtree: true })
+  return () => {
+    observer.disconnect()
+    for (const node of marked) node.classList.remove(PORTAL_CLASS)
+  }
+}
+
 function setupStyles(container: HTMLElement, css: string): () => void {
   const style = document.createElement('style')
   // 画布根由编辑器独占；样式在文档头中保持有效，选择器只作用于画布及其浮层。
-  style.textContent = `@scope (.coding-office-canvas, [id^="univer-popup-portal-"]) {${css.replaceAll(/url\([^)]*\)/g, 'none')}}`
+  style.textContent = `@scope (.coding-office-canvas, [id^="univer-popup-portal-"], .${PORTAL_CLASS}) {${css.replaceAll(/url\([^)]*\)/g, 'none')}}`
   container.classList.add('coding-office-canvas')
   document.head.append(style)
   return () => { style.remove(); container.classList.remove('coding-office-canvas') }
@@ -98,13 +175,15 @@ function onlyTextClipboard(container: HTMLElement): () => void {
 
 function newRuntime(
   preset: IPreset, zh: ILanguagePack, en: ILanguagePack,
-  http: typeof import('@univerjs/preset-docs-core')['IHTTPImplementation'],
+  http: typeof import('@univerjs/preset-docs-core')['IHTTPImplementation'], gutter: boolean,
 ) {
-  return createUniver({
+  const runtime = createUniver({
     presets: [preset], locale: language(), darkMode: darkMode(),
     locales: { [LocaleType.ZH_CN]: zh, [LocaleType.EN_US]: en },
     override: [[http, { useValue: { send: () => throwError(() => new Error('Offline office editor')) } }]],
   })
+  if (gutter) bindContinuousLayout(runtime.univer)
+  return runtime
 }
 
 function bindRuntime(options: OfficeEngineOptions, presetCss: string, runtime: ReturnType<typeof newRuntime>,
@@ -112,6 +191,7 @@ function bindRuntime(options: OfficeEngineOptions, presetCss: string, runtime: R
   const { container, onChange, document: input } = options
   const { univer, univerAPI } = runtime
   const releaseStyle = setupStyles(container, presetCss)
+  const releasePortal = markPortalContainer()
   const releasePaste = onlyTextClipboard(container)
   const media = document.defaultView?.matchMedia(DARK_PREFERENCE)
   let disposed = false
@@ -146,6 +226,7 @@ function bindRuntime(options: OfficeEngineOptions, presetCss: string, runtime: R
     try {
       univer.dispose()
     } finally {
+      releasePortal()
       releaseStyle()
     }
   }
@@ -187,7 +268,7 @@ export async function createOfficeEngine(options: OfficeEngineOptions): Promise<
     signal.throwIfAborted()
     const runtime = newRuntime(docs.UniverDocsCorePreset({
       ...layout, header: false, footer: false, toc: false, disableAutoFocus: true,
-    }), localePack(zh), localePack(en), docs.IHTTPImplementation)
+    }), localePack(zh), localePack(en), docs.IHTTPImplementation, true)
     const api = runtime.univerAPI
     return bindRuntime(options, css, runtime, () => {
       const model = api.createDocument(toUniverDocument(input, UNIT_ID, ''))
@@ -225,7 +306,7 @@ export async function createOfficeEngine(options: OfficeEngineOptions): Promise<
     // 头部挂载公式栏；disableAutoFocus 会关闭表格键入监听，不只是阻止首屏抢焦点。
     ...layout, header: true, formulaBar: true, sheets: { enableFillHandle: false },
     footer: { sheetBar: true, statisticBar: false, menus: false, zoomSlider: false },
-  }), localePack(zh), localePack(en), sheets.IHTTPImplementation)
+  }), localePack(zh), localePack(en), sheets.IHTTPImplementation, false)
   const api = runtime.univerAPI
   return bindRuntime(options, css, runtime, () => {
     const model = api.createWorkbook(toUniverWorkbook(input, UNIT_ID, ''))
