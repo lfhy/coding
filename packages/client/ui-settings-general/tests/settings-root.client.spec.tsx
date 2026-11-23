@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { Modal } from 'coding-client-ui-primitives'
+import type { SettingsPanelState } from 'coding-client-ui-settings/client'
 import type { SettingsRootComponentProps } from '../src/client/shell-contract.ts'
 import { SettingsRoot } from '../src/client/SettingsRoot.tsx'
 import { TriggerContent } from '../src/client/chrome.tsx'
@@ -56,9 +57,26 @@ function mount({
     ? { phase: 'ready', current: undefined, byId: {} }
     : { phase: 'ready', current: 'active-session', byId: { 'active-session': { blank: false } } })) as never
   const unusedHook = (() => { throw new Error('unused by SettingsRoot') }) as never
+  // 设置页开关与当前分区来自设置底座的状态源：夹具用一份最小快照模拟它。
+  let panel: SettingsPanelState = { open: false, section: undefined }
+  const panelListeners = new Set<() => void>()
+  const setPanel = (next: SettingsPanelState): void => {
+    panel = next
+    for (const listener of [...panelListeners]) listener()
+  }
+  const usePanel = ((select: (state: SettingsPanelState) => unknown) => {
+    const [, force] = useState(0)
+    useEffect(() => {
+      const listener = (): void => { force(n => n + 1) }
+      panelListeners.add(listener)
+      return () => { panelListeners.delete(listener) }
+    }, [])
+    return select(panel)
+  }) as never
   const props: SettingsRootComponentProps = {
     useSessions,
     useWorkspaces: unusedHook,
+    usePanel,
     wide,
     t,
     useOnboardingSteps: select => select(steps),
@@ -71,6 +89,9 @@ function mount({
       }, [])
       return select(current)
     },
+    openPanel: (section) => { setPanel({ open: true, section }) },
+    selectPanelSection: (section) => { setPanel({ open: true, section }) },
+    closePanel: () => { setPanel({ open: false, section: undefined }) },
     renderSlot,
   }
   const view = render(<SettingsRoot {...props} />)

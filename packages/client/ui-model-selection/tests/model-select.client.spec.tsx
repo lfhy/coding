@@ -534,3 +534,34 @@ describe('ModelSelect reasoning effort', () => {
     expect(load).not.toHaveBeenCalled()
   })
 })
+
+describe('ModelSelect 模型设置入口', () => {
+  it('keeps the settings entry at the bottom of the channel column and hands off to the panel', () => {
+    const directory = createSnapshotStore(state())
+    const openModelSettings = vi.fn()
+    render(<ModelSelect
+      locked={false}
+      available
+      directory={directory}
+      load={vi.fn()}
+      select={vi.fn()}
+      openModelSettings={openModelSettings}
+      t={t}
+    />)
+    fireEvent.click(screen.getByRole('button', { name: /选择模型，当前/ }))
+    const menu = openModels()
+    // 渠道列底部保留入口，滚动的只是渠道列表本身。
+    const entry = within(menu).getByRole('button', { name: '模型设置' })
+    fireEvent.click(entry)
+    expect(openModelSettings).toHaveBeenCalledOnce()
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('omits the entry when no settings panel is available', () => {
+    const directory = createSnapshotStore(state())
+    render(<ModelSelect locked={false} available directory={directory} load={vi.fn()} select={vi.fn()} t={t} />)
+    fireEvent.click(screen.getByRole('button', { name: /选择模型，当前/ }))
+    const menu = openModels()
+    expect(within(menu).queryByRole('button', { name: '模型设置' })).toBeNull()
+  })
+})

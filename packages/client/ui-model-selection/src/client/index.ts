@@ -17,6 +17,9 @@ import type { ClientContext } from 'coding-client-runtime/client'
 import type { CommandUiContract, SelectOption } from 'coding-client-ui-commands/client'
 // Type-only: pulls the ui-conversation SlotMap merge (the input.model seat).
 import type {} from 'coding-client-ui-conversation/client'
+// Type-only: pulls the settings base plugin's `ctx.settingsPanel` declaration
+// so the menu can open the models section of the settings panel.
+import type {} from 'coding-client-ui-settings/client'
 // Type-only: pulls the locale plugin's Context merge (ctx.locale).
 import type {} from 'coding-client-locale/client'
 import type { TranslateNS } from 'coding-client-ui-slots'
@@ -155,6 +158,9 @@ export function apply(ctx: ClientContext): void {
   ctx.inject(['slots', 'modelDirectories'], (scope: ClientContext) => {
     const models = scope.modelDirectories
     const sessions = scope.sessions
+    // 设置面板由设置底座的状态源提供；缺省时菜单不显示模型设置入口，
+    // 而不是渲染一个点了没有反应的按钮。
+    const settingsPanel = scope.get('settingsPanel')
     scope.slots.inject('conversation.input.model', () => scope.slots.register({
       name: 'conversation.input.model',
       locale: NS,
@@ -171,6 +177,9 @@ export function apply(ctx: ClientContext): void {
           select: (selection: ModelSelection) => available
             ? directory.select(selection).then(() => true, () => false)
             : Promise.resolve(false),
+          ...(available && settingsPanel !== undefined
+            ? { openModelSettings: () => { settingsPanel.open('models') } }
+            : {}),
         }
       },
     }, ModelSelect))

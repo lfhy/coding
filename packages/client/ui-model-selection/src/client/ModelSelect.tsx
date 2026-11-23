@@ -7,7 +7,8 @@ import clsx from 'clsx'
 import type { ModelSelection } from 'coding-api-remotes/client'
 import {
   IconCheckOutline16, IconChevronDownOutline14, IconChevronLeftOutline14,
-  IconChevronRightOutline14, IconRefreshOutline16, IconSearchOutline16, IconWarningOutline16,
+  IconChevronRightOutline14, IconRefreshOutline16, IconSearchOutline16, IconSettingsOutline16,
+  IconWarningOutline16,
 } from 'coding-client-ui-icons'
 import { Toast } from 'coding-client-ui-primitives'
 import type { PropsLocale } from 'coding-client-ui-slots'
@@ -50,7 +51,7 @@ function measureMenuPlacement(root: HTMLElement, wide: boolean): MenuPlacement {
  * @returns 触发器及打开时的推理强度或模型选择面板。
  */
 export function ModelSelect(
-  { locked, available, directory, load, reconnect, select, t }:
+  { locked, available, directory, load, reconnect, select, openModelSettings, t }:
   ModelSelectInjected & { locked: boolean } & PropsLocale<'model'>,
 ) {
   const state = useSyncExternalStore(
@@ -439,24 +440,39 @@ export function ModelSelect(
           )}
           {pane === 'models' && (
             <div className={css.browser}>
-              <div className={clsx(css.providers, 'scrollable')} role="group" aria-label={t('providers.aria')}>
-                <div className={css.eyebrow}>{t('providers.title')}</div>
-                {state.groups.map((group) => {
-                  const active = providerId === group.id
-                  return (
-                    <button
-                      key={group.id}
-                      type="button"
-                      className={clsx(css.provider, active && css.providerSelected)}
-                      aria-pressed={active}
-                      title={group.name}
-                      onClick={() => { setProviderId(group.id); setQuery('') }}
-                    >
-                      <span className={css.providerCheck}>{state.current?.provider === group.id && <IconCheckOutline16 />}</span>
-                      <span className={css.providerName}>{group.name}</span>
-                    </button>
-                  )
-                })}
+              <div className={css.providers}>
+                <div className={clsx(css.providerList, 'scrollable')} role="group" aria-label={t('providers.aria')}>
+                  <div className={css.eyebrow}>{t('providers.title')}</div>
+                  {state.groups.map((group) => {
+                    const active = providerId === group.id
+                    return (
+                      <button
+                        key={group.id}
+                        type="button"
+                        className={clsx(css.provider, active && css.providerSelected)}
+                        aria-pressed={active}
+                        title={group.name}
+                        onClick={() => { setProviderId(group.id); setQuery('') }}
+                      >
+                        <span className={css.providerCheck}>{state.current?.provider === group.id && <IconCheckOutline16 />}</span>
+                        <span className={css.providerName}>{group.name}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+                {openModelSettings !== undefined && (
+                  <button
+                    type="button"
+                    className={css.settingsEntry}
+                    onClick={() => {
+                      close()
+                      openModelSettings()
+                    }}
+                  >
+                    <IconSettingsOutline16 className={css.settingsEntryIcon} />
+                    <span className={css.settingsEntryLabel}>{t('providers.settings')}</span>
+                  </button>
+                )}
               </div>
               <div className={css.modelsPane}>
                 <div className={css.modelsHeader}>

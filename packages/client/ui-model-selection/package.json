@@ -35,7 +35,8 @@
         "coding-client-locale",
         "coding-client-runtime",
         "coding-client-ui-commands",
-        "coding-api-remotes"
+        "coding-api-remotes",
+        "coding-client-ui-settings"
       ],
       "platform": "web"
     }
@@ -54,7 +55,8 @@
     "coding-client-ui-conversation": "workspace:^",
     "coding-client-ui-input-trigger": "workspace:^",
     "coding-invariants": "workspace:^",
-    "@deepseek-ai/cordis": "workspace:^"
+    "@deepseek-ai/cordis": "workspace:^",
+    "coding-client-ui-settings": "workspace:^"
   },
   "devDependencies": {
     "coding-api-remotes": "workspace:^",
@@ -71,7 +73,8 @@
     "coding-invariants": "workspace:^",
     "@types/react": "~18.3.1",
     "@deepseek-ai/cordis": "workspace:^",
-    "react": "^18.2.0"
+    "react": "^18.2.0",
+    "coding-client-ui-settings": "workspace:^"
   },
   "files": [
     "lib/index.js",

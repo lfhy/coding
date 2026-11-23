@@ -6,8 +6,8 @@
 import type { HostObservable, InjectFace, PropsLocale, PropsRenderSlots, PropsRuntime } from 'coding-client-ui-slots'
 // 仅类型导入：引入布局持有的 shell.settings slot 声明。
 import type {} from 'coding-client-ui-layout/client'
-// 仅类型导入：引入外壳渲染的设置子 slot 声明。
-import type {} from 'coding-client-ui-settings/client'
+// 仅类型导入：引入外壳渲染的设置子 slot 声明，并读取设置底座的页面状态类型。
+import type { SettingsPanelState } from 'coding-client-ui-settings/client'
 
 /** 从 settings.section 注册选项投影的一行导航。 */
 export interface SettingsSectionRow {
@@ -32,12 +32,21 @@ export type SettingsRootInjected = {
     sections: HostObservable<readonly SettingsSectionRow[]>
     /** settings.onboarding 账本投影的引导顺序。 */
     onboardingSteps: HostObservable<readonly SettingsOnboardingStep[]>
+    /** 设置底座的页面状态：开关与当前分区由跨插件请求共同驱动。 */
+    panel: HostObservable<SettingsPanelState>
   }
+  /** 打开设置页并定位到指定分区；引导步骤与其他入口共用这一动作。 */
+  openPanel: (section?: string) => void
+  /** 切换当前分区；不改变设置页开关。 */
+  selectPanelSection: (section: string) => void
+  /** 关闭设置页；返回控件与 Escape 共用这一动作。 */
+  closePanel: () => void
 }
 
 /**
  * 设置外壳完整属性：窗口导航的宽行／图标状态、子 slot、私有注入与本地化能力。
- * 不注册 store；设置页开关、当前分区和已完成引导仍属于组件本地状态。
+ * 不注册 store；设置页开关与当前分区来自设置底座的状态源，只有已完成引导
+ * 属于组件本地状态。
  */
 export type SettingsRootComponentProps =
   PropsRuntime<'shell.settings'>

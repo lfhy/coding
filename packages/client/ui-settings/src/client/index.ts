@@ -13,6 +13,7 @@ import type {} from 'coding-settings/types'
 import { SettingsSchemaService } from './schema.ts'
 import { SettingsScopeBinder } from './settings-scope.ts'
 import { SettingsDescribeMirror } from './settings-mirror.ts'
+import { SettingsPanelController } from './settings-panel.ts'
 
 export type {
   SettingsGeneralItemOwnerProps, SettingsHeaderOwnerProps, SettingsOnboardingOwnerProps,
@@ -22,6 +23,8 @@ export type { SettingsScopeController, SettingsScopeBinder } from './settings-sc
 export type { SettingsSchemaService } from './schema.ts'
 export type { SchemaNode } from './schema.ts'
 export type { SettingsDescribeFace, SettingsDescribeView, SettingsMirrorSnapshot } from './settings-mirror.ts'
+export type { ISettingsPanel, SettingsPanelState } from './settings-panel.ts'
+export { SettingsPanelController } from './settings-panel.ts'
 
 /**
  * Required services: the wire handle for the mirror's reads and the forwarded
@@ -40,6 +43,8 @@ export const inject = ['connection', 'remote']
  */
 export function apply(ctx: ClientContext): void {
   const schema = new SettingsSchemaService(ctx)
+  // 状态源归设置底座：外壳订阅它渲染设置页，其他功能包只发打开请求。
+  new SettingsPanelController(ctx)
   const connection = ctx.get('connection') as ConnectionHandle
   const mirror = new SettingsDescribeMirror(
     connection.api,

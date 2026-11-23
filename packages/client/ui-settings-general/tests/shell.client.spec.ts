@@ -51,7 +51,7 @@ const CHILD_SPECS = {
 
 describe('ui-settings apply', () => {
   it('declares only the slot registry (a pure composition face, no locale)', () => {
-    expect(inject).toEqual(['slots', 'locale', 'connection', 'settingsScope'])
+    expect(inject).toEqual(['slots', 'locale', 'connection', 'settingsScope', 'settingsPanel'])
   })
 
   it('registers the shell and declares every child slot, before or after the declaration', async () => {
@@ -100,6 +100,25 @@ describe('ui-settings apply', () => {
     await Promise.resolve()
     expect(listener).toHaveBeenCalled()
     expect(sections.getSnapshot()).not.toBe(rows)
+    off()
+  })
+
+  it('publishes the shared panel state and forwards open, select, and close requests', async () => {
+    const b = await bench()
+    declare(b.slots)
+    await b.ctx.plugin({ inject: [...inject], apply }).await()
+    const shell = injectedOf(b.slots)
+    expect(shell.hooks.panel.getSnapshot()).toEqual({ open: false, section: undefined })
+    const listener = vi.fn()
+    const off = shell.hooks.panel.subscribe(listener)
+    // 其他功能包经服务请求打开：外壳读到的是同一份快照，不是自己的本地开关。
+    b.ctx.settingsPanel.open('models')
+    expect(shell.hooks.panel.getSnapshot()).toEqual({ open: true, section: 'models' })
+    shell.selectPanelSection('general')
+    expect(shell.hooks.panel.getSnapshot()).toEqual({ open: true, section: 'general' })
+    expect(listener).toHaveBeenCalled()
+    shell.closePanel()
+    expect(shell.hooks.panel.getSnapshot()).toEqual({ open: false, section: undefined })
     off()
   })
 

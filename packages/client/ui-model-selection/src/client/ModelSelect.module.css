@@ -59,6 +59,7 @@
 .back:focus-visible,
 .reset:focus-visible,
 .retry:focus-visible,
+.settingsEntry:focus-visible,
 .singleEffort:focus-visible {
   outline: 2px solid var(--dsw-alias-border-l4);
   outline-offset: -2px;
@@ -403,21 +404,62 @@
   overflow: hidden;
 }
 
-.providers,
 .modelsPane,
-.groups {
+.groups,
+.providerList {
   min-width: 0;
   min-height: 0;
   overflow-y: auto;
 }
 
+/* 渠道列固定一屏高：列表自己滚动，模型设置入口留在列底不随列表滚走。 */
 .providers {
-  padding: 14px 8px;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
   border-right: 1px solid var(--dsw-alias-border-l2);
 }
 
-.providers > .eyebrow {
+.providerList {
+  flex: 1 1 auto;
+  padding: 14px 8px;
+}
+
+.providerList > .eyebrow {
   padding: 0 8px 8px;
+}
+
+.settingsEntry {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+  margin: 0 8px 8px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  text-align: left;
+  font: var(--dsw-font-xs-13);
+  cursor: pointer;
+}
+
+.settingsEntry:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.settingsEntryIcon {
+  flex: 0 0 auto;
+}
+
+.settingsEntryLabel {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .provider,
@@ -573,8 +615,13 @@
     grid-template-columns: minmax(96px, 36%) minmax(0, 1fr);
   }
 
-  .providers {
+  .providerList {
     padding: 10px 4px;
+  }
+
+  .settingsEntry {
+    margin: 0 4px 6px;
+    padding: 6px 6px;
   }
 
   .modelsPane {

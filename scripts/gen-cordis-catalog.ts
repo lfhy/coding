@@ -139,6 +139,7 @@ export const SERVICE_WALK_EXEMPTIONS: Record<string, string> = {
   connection: 'interface-typed (HostConnectionHandle); implementing class HostConnectionService is declared in rpc-host.ts — packages/client/connection/README.md owns the API',
   webClientConnections: 'Host-side WebSocket downlink counter used only by the managed-Host lifecycle — packages/client/connection/README.md owns the internal helper',
   uiRenderer: 'client-side interface-typed browser service — packages/client/ui-renderer/README.md owns the API',
+  settingsPanel: 'client-side settings panel state and cross-plugin open requests — packages/client/ui-settings/README.md owns the API',
   settingsSchema: 'client-side schema introspection service — packages/client/ui-settings/README.md owns the API',
   settingsScope: 'client-side settings-namespace transport service — packages/client/ui-settings/README.md owns the API',
   chatBrowserLinks: '客户端可选的正文链接打开服务；packages/client/ui-conversation/README.md 持有调用契约',

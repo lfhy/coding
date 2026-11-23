@@ -47,7 +47,7 @@ const NS = 'settings'
  * 插件所需服务。布局和设置子 slot 的声明顺序不受服务依赖约束，
  * 注册项通过 slots.inject() 等待所属声明并跟随其生命周期。
  */
-export const inject = ['slots', 'locale', 'connection', 'settingsScope']
+export const inject = ['slots', 'locale', 'connection', 'settingsScope', 'settingsPanel']
 
 /**
  * 注册设置字典、页面和通用分区；特权维护操作仅在回环连接下注册。
@@ -125,7 +125,13 @@ export function apply(ctx: ClientContext): void {
         },
         subscribe: listener => ctx.slots.subscribe('settings.onboarding', listener),
       },
+      // 设置页的开关与当前分区归设置底座的状态源：其他功能包的打开请求
+      // 与外壳渲染读同一份快照，避免两处开关互相覆盖。
+      panel: ctx.settingsPanel.state,
     },
+    openPanel: (section) => { ctx.settingsPanel.open(section) },
+    selectPanelSection: (section) => { ctx.settingsPanel.select(section) },
+    closePanel: () => { ctx.settingsPanel.close() },
   })
   ctx.slots.inject('shell.settings', () => ctx.slots.register({
     name: 'shell.settings',

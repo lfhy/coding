@@ -115,19 +115,13 @@ function SettingsPanel({ rows, renderSlot, activeId, onSelect, onClose, trigger 
  * @returns 设置外壳的元素树。
  */
 export function SettingsRoot(props: SettingsRootComponentProps) {
-  const { wide, useSections, useOnboardingSteps, useSessions, renderSlot, t } = props
-  const [open, setOpen] = useState(false)
+  const {
+    wide, useSections, useOnboardingSteps, usePanel, openPanel, selectPanelSection,
+    closePanel, useSessions, renderSlot, t,
+  } = props
   const triggerRef = useRef<HTMLButtonElement | null>(null)
-  const [activeId, setActiveId] = useState<string | undefined>(undefined)
   const [completedOnboarding, setCompletedOnboarding] = useState<ReadonlySet<string>>(() => new Set())
-  const close = useCallback(() => {
-    setOpen(false)
-    setActiveId(undefined)
-  }, [])
-  const openSection = useCallback((id: string) => {
-    setActiveId(id)
-    setOpen(true)
-  }, [])
+  const panel = usePanel(s => s)
 
   // 分区账本更新导航文案；触发器、标题和返回文案由各自 outlet 的订阅更新。
   const rows = useSections(s => s)
@@ -153,25 +147,25 @@ export function SettingsRoot(props: SettingsRootComponentProps) {
 
   return (
     <>
-      <Tooltip label={t('trigger')} delayMs={500} disabled={wide || open}>
+      <Tooltip label={t('trigger')} delayMs={500} disabled={wide || panel.open}>
         <button
           ref={triggerRef}
           type="button"
           className={clsx(css.trigger, !wide && css.rail)}
           aria-label={t('trigger')}
-          aria-expanded={open}
-          onClick={() => { setOpen(true) }}
+          aria-expanded={panel.open}
+          onClick={() => { openPanel() }}
         >
           {renderSlot('settings.trigger', { wide })}
         </button>
       </Tooltip>
-      {open && createPortal(
+      {panel.open && createPortal(
         <SettingsPanel
           rows={rows}
           renderSlot={renderSlot}
-          activeId={activeId}
-          onSelect={setActiveId}
-          onClose={close}
+          activeId={panel.section}
+          onSelect={selectPanelSection}
+          onClose={closePanel}
           trigger={triggerRef.current}
         />,
         document.body,
@@ -180,7 +174,7 @@ export function SettingsRoot(props: SettingsRootComponentProps) {
       {onboardingStep !== undefined && renderSlot('settings.onboarding', {
         stepId: onboardingStep.id,
         complete: () => { completeOnboardingStep(onboardingStep.id) },
-        openSection,
+        openSection: openPanel,
       }, { only: onboardingStep.id })}
     </>
   )

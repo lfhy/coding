@@ -24,4 +24,6 @@ export interface ModelSelectInjected {
    * @returns whether the host accepted the selection.
    */
   select: (selection: ModelSelection) => Promise<boolean>
+  /** 打开设置中的模型分区；设置外壳不可用时缺省，菜单据此隐藏该入口。 */
+  openModelSettings?: () => void
 }
