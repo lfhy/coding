@@ -241,7 +241,8 @@ async function main() {
     await page.locator('[data-shell-overlay]').waitFor({ state: 'attached', timeout: 30_000 })
     await page.getByRole('tablist', { name: /浏览会话|Browse sessions/u })
       .getByRole('tab', { name: /^(最近|Recent)$/u }).click()
-    await page.getByRole('treeitem').filter({ hasText: title }).click()
+    // 会话行只用于准备数据：同一帧打开当前行，不等待台账刷新时可能被替换的节点。
+    await page.getByRole('treeitem').filter({ hasText: title }).evaluate(row => { row.click() })
     const assistantLink = page.getByRole('link', { name: '打开测试页面' })
     await assistantLink.waitFor({ state: 'visible', timeout: 15_000 })
     const popup = []

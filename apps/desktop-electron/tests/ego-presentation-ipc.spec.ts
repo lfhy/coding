@@ -43,6 +43,22 @@ describe('桌面 Agent 页面呈现 IPC', () => {
     expect(electron.ipcMain.removeHandler).toHaveBeenCalledWith('coding:ego-present')
   })
 
+  it('后台标签的隐藏和旧标签迟到的撤回不影响当前页面', () => {
+    const { handler, event, present, dispose } = fixture()
+    const next = { ...input, targetId: 'target-2' }
+    const hide = { visible: false, bounds: { x: 0, y: 0, width: 0, height: 0 } }
+    handler(event, input)
+    handler(event, { ...hide, targetId: next.targetId })
+    expect(present).toHaveBeenCalledExactlyOnceWith(input)
+
+    handler(event, next)
+    handler(event, { ...hide, targetId: input.targetId })
+    expect(present.mock.calls).toEqual([[input], [next]])
+    handler(event, { ...hide, targetId: next.targetId })
+    expect(present).toHaveBeenLastCalledWith({ ...hide, targetId: next.targetId })
+    dispose()
+  })
+
   it('拒绝越界、越权来源与畸形载荷，且不改动现有呈现', () => {
     const { handler, event, present, window, frame, dispose } = fixture()
     for (const candidate of [

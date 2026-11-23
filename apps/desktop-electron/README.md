@@ -36,7 +36,7 @@ helper 的启动取消、协议失败和 fallback 关闭都保留 12 秒清理�
 
 桌面上的 Agent 页面由主进程的页面宿主承载，每个页面对应一个 `WebContentsView`。主进程先建立虚拟 CDP 端点（`ego-cdp-broker.ts`），再将地址作为 `EGO_LINUX_CDP_URL` 传入本次 Go helper 的显式启动环境，Host 从 helper 继承该环境。[ego 运行时](../../packages/browser/browser-ego-host/README.md) 因此不再启动本机浏览器，而是把 `Target.*` 之外的命令转发到页面自己的调试会话；`Target.createTarget`、`Target.createBrowserContext` 与它们的释放由页面宿主实现，目标 id 由端点铸造，所以只有页面宿主登记的页面可见。模型工具仍是[浏览器工具](../../packages/browser/tool-browser-ego/)登记的 `browser_*` 全套，审批与结果不变，页面里的虚拟光标、动作标签与快照都来自运行时原本的实现。
 
-[Agent 浏览器面板](../../packages/client/ui-browser-ego/README.md)在桌面端不再显示帧流：面板把内容区矩形经 preload 的 `egoBrowser.present` 交给主进程（`coding:ego-present`，只接受 Host 主 frame、回环 origin 与窗口内整数矩形），由主进程把同一个视图移进窗口，鼠标、键盘、滚动与人机验证都在真实页面上进行；隐藏面板、切换标签或换页时撤回呈现，页面本身继续由 Host 使用。preload 除该呈现方法与受限 Remote-SSH 外不暴露其它能力，页面内容、输入与命令都走 Host 侧通道。
+[Agent 浏览器面板](../../packages/client/ui-browser-ego/README.md)在桌面端不再显示帧流：面板经 preload 上报矩形，主进程把同一个视图移进窗口。`egoBrowser.present` 只接受回环 Host 主 frame 和窗口内整数矩形。隐藏或切换标签时，撤回请求只影响对应的页面；后台标签不能撤下正在显示的网页。撤回不会关闭页面，页面内容、输入与命令仍走原来的通道。
 
 登录态由 Electron 的持久分区保存：桌面端共用一个 `persist:ego-default` 分区，登录一次之后跨任务空间、跨重启都保留，不需要导入旧 ego Profile 的 Cookie。任务空间仍各自持有页面，只是不再开独立 cookie jar；Web/CLI 保持按空间隔离。
 

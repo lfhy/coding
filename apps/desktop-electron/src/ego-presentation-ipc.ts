@@ -91,7 +91,11 @@ export function installEgoPresentationIpc(options: {
     if (frameURL(event) === null) throw new Error('Agent browser presentation is unauthorized')
     const value = presentation(input, window)
     if (value === undefined) throw new Error('Invalid Agent browser presentation')
-    if (!value.visible) { conceal(); return }
+    if (!value.visible) {
+      // 后台标签的挂载或清理只能撤回它自己的页面；不能把前台标签停回后台视口。
+      if (present?.targetId === value.targetId) conceal()
+      return
+    }
     pages.present({ targetId: value.targetId, bounds: value.bounds, visible: true })
     present = { targetId: value.targetId }
   }
