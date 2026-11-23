@@ -689,7 +689,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/attachment/file-library/src/index.ts:30`](../packages/attachment/file-library/src/index.ts)
+Source: [`packages/attachment/file-library/src/index.ts:42`](../packages/attachment/file-library/src/index.ts)
 
 <a id="coding-file-reference-local"></a>
 
@@ -3723,8 +3723,10 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 - `coding-client-ui-jobs` ([`packages/client/ui-jobs/src/index.ts`](../packages/client/ui-jobs/src/index.ts))
 - `coding-client-ui-layout` ([`packages/client/ui-layout/src/index.ts`](../packages/client/ui-layout/src/index.ts))
 - `coding-client-ui-message-feedback` ([`packages/client/ui-message-feedback/src/index.ts`](../packages/client/ui-message-feedback/src/index.ts))
+- `coding-client-ui-mindmap` ([`packages/client/ui-mindmap/src/index.ts`](../packages/client/ui-mindmap/src/index.ts))
 - `coding-client-ui-model-selection` ([`packages/client/ui-model-selection/src/index.ts`](../packages/client/ui-model-selection/src/index.ts))
 - `coding-client-ui-notes` ([`packages/client/ui-notes/src/index.ts`](../packages/client/ui-notes/src/index.ts))
+- `coding-client-ui-office` ([`packages/client/ui-office/src/index.ts`](../packages/client/ui-office/src/index.ts))
 - `coding-client-ui-open-in-app` ([`packages/client/ui-open-in-app/src/index.ts`](../packages/client/ui-open-in-app/src/index.ts))
 - `coding-client-ui-permission-presets` ([`packages/client/ui-permission-presets/src/index.ts`](../packages/client/ui-permission-presets/src/index.ts))
 - `coding-client-ui-plan` ([`packages/client/ui-plan/src/index.ts`](../packages/client/ui-plan/src/index.ts))
@@ -3790,7 +3792,7 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 - `coding-tool-context-compact` — requires `tools` · `compaction` ([`packages/compaction/tool-context-compact/src/index.ts`](../packages/compaction/tool-context-compact/src/index.ts))
 - `coding-tool-cordis` — requires `tools` · `systemPrompt` · `dynamicCordisRunner` · `cordisInspect` ([`packages/extensions/tool-cordis/src/index.ts`](../packages/extensions/tool-cordis/src/index.ts))
 - `coding-tool-memory` — requires `tools` · `memory` ([`packages/memory/tool-memory/src/index.ts`](../packages/memory/tool-memory/src/index.ts))
-- `coding-tool-notes-tabs` — requires `tools` · `webServer` · `connection` · `sessions` · `agents` · `fileLibrary` ([`packages/notes/tool-notes-tabs/src/index.ts`](../packages/notes/tool-notes-tabs/src/index.ts))
+- `coding-tool-notes-tabs` — requires `tools` · `webServer` · `connection` · `sessions` · `agents` · `fileLibrary` · `sandboxPolicy` ([`packages/notes/tool-notes-tabs/src/index.ts`](../packages/notes/tool-notes-tabs/src/index.ts))
 - `coding-tool-ppt` — requires `tools` · `llm` · `attachments` ([`packages/ppt/tool-ppt/src/index.ts`](../packages/ppt/tool-ppt/src/index.ts))
 - `coding-tool-status` — requires `tools` ([`packages/session/tool-status/src/index.ts`](../packages/session/tool-status/src/index.ts))
 - `coding-user-questions` ([`packages/interaction/user-questions/src/index.ts`](../packages/interaction/user-questions/src/index.ts))
