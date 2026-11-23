@@ -302,6 +302,87 @@ describe('WorkspaceRuntime', () => {
     expect(api.callsOf('session.create')).toEqual([{ workspaceId: 'remote' }])
   })
 
+  it('starts the remote workspace directly from restored local history and shows cold activation progress', async () => {
+    const ctx = new Context()
+    const api = new FakeApiClient()
+    const sessions = new SessionRuntime(ctx, api, fakeRemote())
+    const workspaces = new WorkspaceRuntime(ctx, api, sessions)
+    const remotePath = '/home/me/.coding/remote-workspaces/509887000862b70a4669/project-0123456789abcdef0123'
+    api.onWorkspaceList = () => Promise.resolve(ok({ items: [
+      workspace('local', [sid('local-history')]),
+      { ...workspace('remote', [sid('archived-blank')]), path: remotePath },
+    ] as never[], archivedSessionIds: ['archived-blank'] as never[] }))
+    api.onList = () => Promise.resolve(ok({ items: [
+      { sessionId: sid('local-history'), updatedAt: 2, running: false, blank: false, cwd: '/w/local' },
+      { sessionId: sid('archived-blank'), updatedAt: 1, running: false, blank: true, cwd: remotePath },
+    ] as never[] }))
+    const firstDial = deferred<undefined>()
+    const secondDial = deferred<undefined>()
+    const activate = vi.fn<() => Promise<void>>()
+      .mockReturnValueOnce(firstDial.promise)
+      .mockReturnValueOnce(secondDial.promise)
+    ctx.reflect.provide('remoteWorkspace', { activate })
+    await Promise.all([workspaces.refresh(), sessions.refresh()])
+    sessions.open(sid('local-history'))
+    const dispose = workspaces.startInitialSelection()
+    try {
+      expect(activate).not.toHaveBeenCalled()
+      workspaces.startSession(wid('remote'))
+      expect(activate).toHaveBeenCalledExactlyOnceWith(remotePath)
+      expect(workspaces.list.getSnapshot().startingSessionWorkspaceId).toBe(wid('remote'))
+      expect(sessions.list.getSnapshot().current).toBe(sid('local-history'))
+      expect(api.callsOf('session.create')).toEqual([])
+
+      firstDial.reject(new Error('远程连接断开'))
+      await vi.waitFor(() => {
+        expect(workspaces.list.getSnapshot().startSessionError).toMatchObject({ workspaceId: wid('remote') })
+      })
+      expect(workspaces.list.getSnapshot().startingSessionWorkspaceId).toBeUndefined()
+      expect(sessions.list.getSnapshot().current).toBe(sid('local-history'))
+      expect(api.callsOf('session.create')).toEqual([])
+
+      api.onCreate = () => Promise.resolve(ok({ sessionId: sid('remote-blank') }))
+      workspaces.startSession(wid('remote'))
+      expect(workspaces.list.getSnapshot().startSessionError).toBeUndefined()
+      expect(workspaces.list.getSnapshot().startingSessionWorkspaceId).toBe(wid('remote'))
+      secondDial.resolve(undefined)
+      await vi.waitFor(() => { expect(sessions.list.getSnapshot().current).toBe(sid('remote-blank')) })
+      expect(api.callsOf('session.create')).toEqual([{ workspaceId: 'remote' }])
+      expect(workspaces.list.getSnapshot().startingSessionWorkspaceId).toBeUndefined()
+    } finally {
+      dispose()
+    }
+  })
+
+  it.each(['success', 'failure'])('leaves subsequent navigation alone after a cold remote start settles with %s', async (result) => {
+    const ctx = new Context()
+    const api = new FakeApiClient()
+    const sessions = new SessionRuntime(ctx, api, fakeRemote())
+    const workspaces = new WorkspaceRuntime(ctx, api, sessions)
+    const path = '/home/me/.coding/remote-workspaces/509887000862b70a4669/project-0123456789abcdef0123'
+    api.onWorkspaceList = () => Promise.resolve(ok({ items: [{ ...workspace('remote'), path }] as never[] }))
+    api.onList = () => Promise.resolve(ok({ items: ['source', 'other', 'remote-blank'].map(sessionId => ({
+      sessionId: sid(sessionId), updatedAt: 1, running: false, blank: false,
+    })) as never[] }))
+    await Promise.all([workspaces.refresh(), sessions.refresh()])
+    const pending = deferred<SessionId>()
+    const connect = vi.spyOn(workspaces, 'connectWorkspace').mockReturnValue(pending.promise)
+    try {
+      sessions.open(sid('source'))
+      workspaces.startSession(wid('remote'))
+      expect(workspaces.list.getSnapshot().startingSessionWorkspaceId).toBe(wid('remote'))
+      sessions.open(sid('other'))
+      expect(workspaces.list.getSnapshot().startingSessionWorkspaceId).toBeUndefined()
+      if (result === 'success') pending.resolve(sid('remote-blank'))
+      else pending.reject(new Error('远程连接断开'))
+      await Promise.resolve()
+      expect(sessions.list.getSnapshot().current).toBe(sid('other'))
+      expect(workspaces.list.getSnapshot().startSessionError).toBeUndefined()
+    } finally {
+      connect.mockRestore()
+    }
+  })
+
   it('names a remote placeholder path by its remote directory instead of the marker hash', () => {
     const marker = '/home/me/.coding/remote-workspaces/509887000862b70a4669/shep-chat-2620b32d2df925e6cbca'
     // 占位目录本身只显示远端目录名；目录内部保留相对路径。

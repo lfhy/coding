@@ -70,6 +70,7 @@ export function WorkspaceBrowser({
   const workspaces = useWorkspaces(state => state.items)
   const workspacePhase = useWorkspaces(state => state.phase)
   const archivedSessionIds = useWorkspaces(state => state.archivedSessionIds)
+  const startingSessionWorkspaceId = useWorkspaces(state => state.startingSessionWorkspaceId)
   const newSessionError = useWorkspaces(state => state.startSessionError)
   // 关闭后的错误保持关闭，直到运行时发布新的 attempt。错误由运行时持有，
   // 因而壳层、分组行和选择器的 New Session 入口共享同一份可重试结果。
@@ -482,6 +483,7 @@ export function WorkspaceBrowser({
                 setSessionOrder={actions.setSessionOrder}
                 archivedSessionIds={archivedSessionIds}
                 startSession={startSession}
+                startingSessionWorkspaceId={startingSessionWorkspaceId}
                 open={openConversation}
                 insertWorkspaceBefore={insertWorkspaceBefore}
                 insertSessionBefore={insertSessionBefore}

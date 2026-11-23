@@ -221,8 +221,7 @@
   flex: none;
 }
 
-/* Trailing action buttons surface on hover only (figma 27:4668 / 27:4656):
-   bare 16px glyphs, gap 12, tertiary grey. */
+/* 行尾操作随悬停或菜单出现；远端会话准备中保留反馈，不随指针移开消失。 */
 .rowActions {
   flex: none;
   display: none;
@@ -233,8 +232,16 @@
 .projectRow:hover .rowActions,
 .sessionRow:hover .rowActions,
 .projectRow.menuOpen .rowActions,
+.projectRow.starting .rowActions,
 .sessionRow.menuOpen .rowActions {
   display: inline-flex;
+}
+
+.startNotice {
+  flex: none;
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-xxs-12);
+  white-space: nowrap;
 }
 
 .sessionRow:hover .time,
@@ -344,6 +351,10 @@
 
 .iconButton:hover {
   color: var(--dsw-alias-label-primary);
+}
+
+.iconButton[aria-disabled='true'] {
+  cursor: default;
 }
 
 /* Chevrons ride the caption grey (#ADB2B8); the folder glyph stays one step

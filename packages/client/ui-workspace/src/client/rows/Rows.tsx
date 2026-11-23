@@ -92,27 +92,27 @@ function rowHalf(e: { clientY: number; currentTarget: HTMLElement }): 'before' |
 }
 
 /**
- * Project (workspace) header row: folder + title;
- * hover reveals the chevron and create button, and dwelling on a real
- * Workspace shows its hover card (the ungrouped bucket has none).
- * `containsCurrent` arrives on the node (derivation fact, no renderer scan).
- * @param props.group - derived group node.
- * @param props.onToggle - expand/collapse the group.
- * @param props.onCreate - start a frontend Session inside this Workspace.
- * @param props.drag - optional workspace-row drag wiring.
- * @param props.home - host account home for POSIX hover-path abbreviation.
- * @param props.t - the browser root's locale seat.
- * @returns the row element.
+ * 工作区分组标题行；悬停显示操作，准备新远程会话时持续显示状态。
+ * @param props.group - 带展开状态和当前会话归属的分组。
+ * @param props.onToggle - 切换分组展开状态。
+ * @param props.onCreate - 在该工作区发起新建会话。
+ * @param props.starting - 该行是否正在等待新远程会话。
+ * @param props.actions - 工作区的重命名与删除动作。
+ * @param props.drag - 可选的工作区排序动作。
+ * @param props.home - 供悬停卡片缩写 POSIX 路径的 Host 主目录。
+ * @param props.t - 侧栏的本地化函数。
+ * @returns 带工作区操作的标题行。
  */
-export function ProjectRowItem({ group, onToggle, onCreate, actions, drag, home, t }: {
+export function ProjectRowItem({ group, onToggle, onCreate, starting, actions, drag, home, t }: {
   group: GroupNode
   onToggle: () => void
   onCreate: () => void
-  /** Real-Workspace actions; absent for the ungrouped bucket (no menu shown). */
+  starting?: boolean | undefined
+  /** 未分组行没有对应工作区，不展示操作菜单。 */
   actions?: { rename: () => void; delete: () => void } | undefined
-  /** Present only for real Workspace rows in the grouped view. */
+  /** 仅工作区分组行可以拖动排序。 */
   drag?: WorkspaceRowDragProps | undefined
-  /** Host account home; POSIX home-rooted hover paths display as `~`. */
+  /** 悬停信息将此目录下的 POSIX 路径简写成 `~`。 */
   home?: string | undefined
   t: RowTranslate
 }) {
@@ -127,7 +127,7 @@ export function ProjectRowItem({ group, onToggle, onCreate, actions, drag, home,
   ]
   const ownRow = (
     <div
-      className={clsx(css.projectRow, menuOpen && css.menuOpen)}
+      className={clsx(css.projectRow, menuOpen && css.menuOpen, starting && css.starting)}
       role="treeitem"
       aria-expanded={row.expanded}
       onClick={onToggle}
@@ -152,6 +152,7 @@ export function ProjectRowItem({ group, onToggle, onCreate, actions, drag, home,
       <span className={css.projectText}>
         <span className={css.title}>{label}</span>
       </span>
+      {starting && <span className={css.startNotice} role="status">{t('status.preparingSession')}</span>}
       <span className={css.rowActions}>
         {actions !== undefined && (
           <Menu
@@ -185,9 +186,10 @@ export function ProjectRowItem({ group, onToggle, onCreate, actions, drag, home,
           type="button"
           className={css.iconButton}
           aria-label={t('actions.newSession.aria', { name: label })}
-          onClick={(e) => { e.stopPropagation(); onCreate() }}
+          aria-disabled={starting || undefined}
+          onClick={(e) => { e.stopPropagation(); if (!starting) onCreate() }}
         >
-          <IconPlusOutline16 />
+          {starting ? <StateDot state="ongoing" /> : <IconPlusOutline16 />}
         </button>
       </span>
     </div>

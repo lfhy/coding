@@ -22,7 +22,7 @@ export interface IWorkspaces {
   connectWorkspace(workspaceId: WorkspaceId): Promise<SessionId>
   /**
    * 新建会话流程：连接显式、当前会话所属或最近使用的工作区并打开结果；
-   * 失败通过 `WorkspaceListState.startSessionError` 投影为可重试的 UI 动作。
+   * 等待远端就绪时投影目标工作区；失败通过 `startSessionError` 提供重试目标。
    * @param workspaceId - 显式目标；省略时先沿用当前会话工作区，再回退到最近工作区。
    */
   startSession(workspaceId?: WorkspaceId): void

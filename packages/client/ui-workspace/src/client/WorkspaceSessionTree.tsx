@@ -42,6 +42,7 @@ type SessionTreeProps = Pick<WorkspaceBrowserProps,
   syncSessionOrderAccount: WorkspaceBrowserProps['actions']['syncSessionOrderAccount']
   setSessionOrder: WorkspaceBrowserProps['actions']['setSessionOrder']
   archivedSessionIds: readonly SessionId[]
+  startingSessionWorkspaceId: WorkspaceId | undefined
   onRenameRequest: (workspaceId: WorkspaceId, currentTitle: string) => void
   onDeleteRequest: (workspaceId: WorkspaceId, currentTitle: string) => void
   onSessionRename: (sessionId: SessionId, currentTitle: string) => void
@@ -55,7 +56,7 @@ type SessionTreeProps = Pick<WorkspaceBrowserProps,
  * @returns 仅列表区域滚动的分组树。
  */
 export function SessionTree({
-  useSessions, startSession, open, forkSession, workspaces, archivedSessionIds, conversationVisible,
+  useSessions, startSession, startingSessionWorkspaceId, open, forkSession, workspaces, archivedSessionIds, conversationVisible,
   onRenameRequest, onDeleteRequest, onSessionRename, onSessionArchive,
   insertWorkspaceBefore, insertSessionBefore, orderBy, groupExpansion, setGroupExpanded,
   sessionOrderByAccount, sessionUpdatedAtByAccount, syncSessionOrderAccount, setSessionOrder, home, t,
@@ -182,6 +183,7 @@ export function SessionTree({
               dropWorkspace(workspaceGroupHalf(event))
             }}>
               <ProjectRowItem group={group} home={home} t={t}
+                starting={workspaceId !== undefined && workspaceId === startingSessionWorkspaceId}
                 onToggle={() => {
                   if (group.expanded) setExpandedSessionGroups(keys => keys.filter(key => key !== group.key))
                   setGroupExpanded(group.key, !group.expanded)

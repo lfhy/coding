@@ -29,10 +29,9 @@ export interface WorkspaceListState {
   baselinesReady: boolean
   /** Most recently active Workspace, derived without changing `items` order. */
   recentWorkspaceId: WorkspaceId | undefined
-  /**
-   * 最近一次显式新建会话失败。该字段可选，便于只构造工作区列表的
-   * 消费方无需建模瞬态动作通道。
-   */
+  /** 显式新建动作正在等待连接或创建的工作区；同一时刻只跟踪最新请求。 */
+  startingSessionWorkspaceId?: WorkspaceId
+  /** 最近一次显式新建会话失败；供界面按目标重试。 */
   startSessionError?: WorkspaceStartSessionError
 }
 
@@ -132,6 +131,8 @@ export class WorkspaceRuntime implements IWorkspaces {
   private initialSelectionStarted = false
   /** 显式新建会话的单调 attempt，旧完成结果不能覆盖新尝试。 */
   private startSessionAttempt = 0
+  /** 远端新建动作用发起时的会话约束导航权；用户离开后只保留后台结果。 */
+  private startingSession: { workspaceId: WorkspaceId; source: SessionId | undefined } | undefined
   /** 最近一次显式新建会话失败，随工作区列表一起投影。 */
   private startSessionError: WorkspaceStartSessionError | undefined
 
@@ -147,7 +148,13 @@ export class WorkspaceRuntime implements IWorkspaces {
       baselinesReady: false, recentWorkspaceId: undefined,
     })
     this.manager.subscribe(() => { this.project() })
-    this.sessions.list.subscribe(() => { this.project() })
+    this.sessions.list.subscribe(() => {
+      if (this.startingSession !== undefined && this.sessions.list.getSnapshot().current !== this.startingSession.source) {
+        this.startingSession = undefined
+        this.startSessionAttempt++
+      }
+      this.project()
+    })
     ctx.reflect.provide('workspaces', this, undefined)
   }
 
@@ -301,27 +308,25 @@ export class WorkspaceRuntime implements IWorkspaces {
   }
 
   /**
-   * The shared New Session action behind the shell entry points (sidebar
-   * button, workspace browser): resolve the target Workspace — explicit wins,
-   * then the current Session's Workspace, then the recent-Workspace
-   * projection — connect its blank session and navigate there; with no
-   * Workspace at all, clear the selection into the New Session view state.
-   * Connect failures are non-fatal (console diagnostics; the current view
-   * stays usable).
-   * @param workspaceId - explicit target Workspace for scoped actions.
+   * 新建入口依次采用明确目标、当前会话归属和最近工作区；无目标时显示空白入口页。
+   * 远端准备期间保留原会话并投影等待状态；切走后，迟到结果不抢回导航。
+   * @param workspaceId - 分组等入口明确指定的工作区。
    */
   startSession(workspaceId?: WorkspaceId): void {
     const attempt = ++this.startSessionAttempt
-    // 立即清除上一次失败，重试发出后不要继续显示过时的弹窗。
-    const hadError = this.startSessionError !== undefined
+    const hadFeedback = this.startSessionError !== undefined || this.startingSession !== undefined
     this.startSessionError = undefined
-    if (hadError) this.project()
     const workspace = this.list.getSnapshot()
     const current = this.sessions.list.getSnapshot().current
     const currentWorkspaceId = current === undefined
       ? undefined
       : workspace.items.find(item => item.sessionIds.includes(current))?.workspaceId
     const target = workspaceId ?? currentWorkspaceId ?? workspace.recentWorkspaceId
+    const path = workspace.items.find(item => item.workspaceId === target)?.path
+    this.startingSession = target !== undefined && path !== undefined && isRemoteWorkspacePath(path)
+      ? { workspaceId: target, source: current }
+      : undefined
+    if (hadFeedback || this.startingSession !== undefined) this.project()
     if (target === undefined) {
       this.sessions.clear()
       return
@@ -330,12 +335,14 @@ export class WorkspaceRuntime implements IWorkspaces {
       (sessionId) => {
         // 较新的点击拥有导航权；重试与原请求并发时，两次完成可能解析到同一空白行。
         if (attempt !== this.startSessionAttempt) return
+        this.startingSession = undefined
         this.sessions.open(sessionId)
         this.startSessionError = undefined
         this.project()
       },
       (reason: unknown) => {
         if (attempt !== this.startSessionAttempt) return
+        this.startingSession = undefined
         const message = startSessionErrorMessage(reason)
         if (isTransportFailure(message)) {
           const connection = this.ctx.get('connection') as { reconnect?: () => void } | undefined
@@ -548,6 +555,7 @@ export class WorkspaceRuntime implements IWorkspaces {
       error: workspace.error,
       baselinesReady,
       recentWorkspaceId: baselinesReady ? recentWorkspace(workspace.items, sessions.byId) : undefined,
+      ...(this.startingSession === undefined ? {} : { startingSessionWorkspaceId: this.startingSession.workspaceId }),
       ...(this.startSessionError === undefined ? {} : { startSessionError: this.startSessionError }),
     })
   }

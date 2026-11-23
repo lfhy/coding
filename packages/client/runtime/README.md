@@ -36,9 +36,11 @@ SlotRegistry 分别为 renderer 提供 `useSessions` 与 `useWorkspaces` 的裸 
 
 ## New Session 与 blank 镜像
 
-`WorkspaceRuntime.connectWorkspace(workspaceId)` 解析 New Session 流程最终落入的会话：先在列表镜像中复用该 workspace 的既有空会话（`blank && cwd == workspace.path && sessionIds.includes(id)`——host 自己的成员规则，绝不只按 cwd，避免劫持 cwd 匹配但未入账的空白会话），未命中则调用 `session.create({workspaceId})`，返回会话 id 由调用方 open。远端工作区的重连不再挡在复用前面：命中空会话时立即返回，连接修复在后台继续（失败只记诊断），未命中时同一路径的并发重连共享一次调用，创建前还会重新检查一次并发创建，避免重连窗口里多铸一个空白会话。共享的 `startSession` 操作优先使用明确指定的 Workspace，其次使用当前 Session 所属 Workspace，再其次使用派生的最近活跃 Workspace；一个 Workspace 都没有时则清空选择，进入空白 New Session 页面。`connectHome()` 从 `host.describe` 读取 Host 用户 HOME 并创建未分组会话，不改变当前选择；`startSessionWithoutWorkspace()` 复用这条路径并打开结果。读取 HOME 失败时不会创建会话。
+`WorkspaceRuntime.connectWorkspace(workspaceId)` 优先复用该工作区未归档的空白会话：会话必须是工作区成员，且 cwd 等于工作区路径；仅 cwd 相同不会被采用。复用远端空白会话时立即返回会话 id，连接准备在后台继续，不撤回已完成的导航；没有可复用空白会话时，须先准备远端连接再请求 `session.create({ workspaceId })`。同一路径的并发准备共享一次调用，准备完成后再次检查可复用空白会话和在途创建。`connectWorkspace` 只返回会话 id，由调用方决定是否打开。
 
-`startSession` 仍是 fire-and-forget 的 UI 动作，但不会再静默吞掉连接或创建失败：失败会以 `WorkspaceListState.startSessionError` 投影为单调递增的 attempt、目标 Workspace 和安全错误文本，新的尝试会先清除旧错误，成功后也会清除该投影。侧栏浏览器据此显示可重试的错误对话框；较旧的并发完成不会覆盖较新的尝试。
+`startSession` 发起新建操作，不返回 Promise。它依次采用明确指定的工作区、当前会话所属工作区和最近活跃的工作区；没有目标时清空选择，进入新会话空白页。为远端工作区准备和创建会话时保留当前选择，并通过 `WorkspaceListState.startingSessionWorkspaceId` 发布目标工作区 id；成功后自动打开结果。失败通过 `WorkspaceListState.startSessionError` 投影尝试编号、目标工作区和可显示的错误，供调用方在同一工作区重试；再次发起或成功打开会清除旧错误。等待远端结果期间，如果用户再次新建或改变当前选择，旧结果不会切换会话。
+
+`connectHome()` 从 `host.describe` 读取 Host 用户 HOME 并创建未分组会话，不改变当前选择；`startSessionWithoutWorkspace()` 复用这条路径并打开结果。读取 HOME 失败时不会创建会话。
 
 `SessionSummary.blank` 镜像 Host 按轮次派生的空白状态，在客户端只降不升：由 `session.list`／`host/session-added` 帧播种，本地首次获 Host 接纳的 `prompt()` 成功响应或 `running: true` 状态帧将其翻为 false，每次列表重拉会重新对齐。发送尝试本身不改变 blank；首发被拒且没有启动轮次时，会话仍可复用。列表界面隐藏 blank 行；store 保留全部行。`SessionRuntime.create` 接受可选的、由调用方预先分配的 SessionId，失败时抛出 `SessionCreateError`（携带 `requestedSessionId`）。
 
