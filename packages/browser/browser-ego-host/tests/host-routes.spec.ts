@@ -135,6 +135,42 @@ describe('会话浏览器 Host 路由', () => {
     expect(spawns).not.toHaveBeenCalled()
   })
 
+  /** 以伪造的 CLI 预置形参执行空会话建页脚本，并按脚本结果登记会话空间。 */
+  async function runCreateScript(
+    origin: string,
+    space: string,
+    address: string,
+    browser: { listTabs: () => Promise<{ targetId: string; url: string }[]>; switchTab: (targetId: string) => Promise<void> },
+    createTab: (url: string) => Promise<{ targetId: string }>,
+    goto: (url: string) => Promise<void> = async () => {},
+  ): Promise<number> {
+    const AsyncFunction = (async () => {}).constructor as
+      new (...args: string[]) => (...args: unknown[]) => Promise<void>
+    spawns.mockImplementation((raw: unknown) => {
+      const spec = raw as { stdio: { stdin: { data: string } } }
+      const run = new AsyncFunction('taskSpaces', 'ego', 'browser', 'page', 'console', spec.stdio.stdin.data)
+      let stdout = ''
+      return {
+        done: run({ useOrCreate: async (name: string) => { expect(name).toBe(space) } },
+          { createTab: async (url: string) => {
+            expect(url).toBe(address)
+            const created = await createTab(url)
+            await writeFile(join(stateDir!, 'task-spaces.json'), JSON.stringify({ spaces: [
+              { name: space, targetIds: [created.targetId] },
+            ] }))
+            return created
+          } }, browser, { goto }, { log: (line: string) => { stdout += `${line}\n` } }).then(() => ({ exitCode: 0 })),
+        collected: { stdout: { readFrom: () => ({ text: stdout }) } },
+      }
+    })
+    await writeFile(join(stateDir!, 'task-spaces.json'), JSON.stringify({ spaces: [] }))
+    const response = await fetch(`${origin}/api/ego/navigation`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ sessionId: session.id, action: 'navigate', url: address }),
+    })
+    return response.status
+  }
+
   it('空会话的 navigate 在派生空间中创建页面，拒绝已占用空间与其他动作', async () => {
     const origin = await boot()
     const action = { sessionId: session.id, action: 'navigate', url: 'https://example.com/' }
@@ -164,31 +200,33 @@ describe('会话浏览器 Host 路由', () => {
     const origin = await boot()
     const space = spaceNameForSession(session.id)
     const address = 'https://example.org/'
-    const AsyncFunction = (async () => {}).constructor as
-      new (...args: string[]) => (...args: unknown[]) => Promise<void>
-    spawns.mockImplementation((raw: unknown) => {
-      const spec = raw as { stdio: { stdin: { data: string } } }
-      const run = new AsyncFunction('taskSpaces', 'ego', 'page', 'console', spec.stdio.stdin.data)
-      let stdout = ''
-      return {
-        done: run({ useOrCreate: async (name: string) => { expect(name).toBe(space) } },
-          { createTab: async (url: string) => {
-            expect(url).toBe(address)
-            await writeFile(join(stateDir!, 'task-spaces.json'), JSON.stringify({ spaces: [
-              { name: space, targetIds: ['created'] },
-            ] }))
-            return { targetId: 'created' }
-          } }, {}, { log: (line: string) => { stdout += `${line}\n` } }).then(() => ({ exitCode: 0 })),
-        collected: { stdout: { readFrom: () => ({ text: stdout }) } },
-      }
-    })
-    const response = await fetch(`${origin}/api/ego/navigation`, {
-      method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ sessionId: session.id, action: 'navigate', url: address }),
-    })
-    expect(response.status).toBe(200)
-    expect(await response.json()).toEqual({ ok: true })
+    // 空间没有空白锚页时才新建页面。
+    const emptySpace = { listTabs: async () => [], switchTab: async () => {} }
+    expect(await runCreateScript(origin, space, address, emptySpace, async () => ({ targetId: 'created' }))).toBe(200)
     expect(spawns).toHaveBeenCalledTimes(1)
+  })
+
+  it('空会话建页复用空间自带的空白锚页，不再多开一张标签', async () => {
+    const origin = await boot()
+    const space = spaceNameForSession(session.id)
+    const address = 'https://example.org/'
+    const switched: string[] = []
+    const navigated: string[] = []
+    let created = 0
+    const status = await runCreateScript(origin, space, address, {
+      listTabs: async () => [{ targetId: 'anchor', url: 'about:blank' }],
+      switchTab: async (targetId: string) => { switched.push(targetId) },
+    }, async () => { created += 1; return { targetId: 'unused' } }, async (url: string) => {
+      navigated.push(url)
+      // 锚页本就登记在会话空间里，导航后归属不变。
+      await writeFile(join(stateDir!, 'task-spaces.json'), JSON.stringify({ spaces: [
+        { name: space, targetIds: ['anchor'] },
+      ] }))
+    })
+    expect(status).toBe(200)
+    expect(switched).toEqual(['anchor'])
+    expect(navigated).toEqual([address])
+    expect(created).toBe(0)
   })
 
   it('新建入口拒绝未知会话及额外字段，保留 Host 的单会话归属', async () => {

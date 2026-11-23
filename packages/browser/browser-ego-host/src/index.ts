@@ -160,6 +160,8 @@ export default class EgoBrowserHost extends Service {
 
   /**
    * 仅为空会话创建自己的任务空间页面；CLI 在该空间创建或使用空白锚页，不选全局标签。
+   * 空间自带的空白锚页就是本会话的首张页面：直接导航它，与 `pages` 入口和模型侧
+   * `ego_navigate` 的复用规则一致，不在标签栏里留下一张多余的「新标签页」。
    * @param sessionId - 已在 sessions 服务中确认存在的会话。
    * @param url - Host 已验证的绝对导航地址。
    * @returns 页面归属写入会话空间并确认仍存在时为 true。
@@ -169,7 +171,12 @@ export default class EgoBrowserHost extends Service {
     const space = spaceNameForSession(sessionId)
     // CLI 的脚本以 page 为预置形参；局部变量不能重名，否则在运行前就解析失败。
     const script = `await taskSpaces.useOrCreate(${JSON.stringify(space)})\n` +
-      `const createdTab = await ego.createTab(${JSON.stringify(url)})\n` +
+      'const __tabs = await browser.listTabs()\n' +
+      // 新建空间的锚页在首次导航前目标 URL 为空串，按空白页一并复用。
+      'const __anchor = __tabs.find(t => t.url === "" || t.url === "about:blank")\n' +
+      'let createdTab\n' +
+      `if (__anchor) { await browser.switchTab(__anchor.targetId); await page.goto(${JSON.stringify(url)}); createdTab = __anchor }\n` +
+      `else createdTab = await ego.createTab(${JSON.stringify(url)})\n` +
       'console.log(\'@@DSH_RESULT@@\' + JSON.stringify({ ok: true, targetId: createdTab.targetId }))\n'
     const env = this.spawnEnv()
     try {
