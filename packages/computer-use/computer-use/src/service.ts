@@ -217,7 +217,7 @@ export class ComputerUseService extends TypertRemoteService {
     screenRecording: 'unavailable',
   }
 
-  /** Persist backend health facts while allowing a disabled provider to stay ready=false with a visible reason. */
+  /** 用同一次检查的事实替换整份状态，避免把旧的权限结论带到失败或不同的后端。 */
   private applyHealth(health: BackendHealth): void {
     this.healthState = {
       ready: health.ready ?? true,
@@ -325,11 +325,15 @@ export class ComputerUseService extends TypertRemoteService {
    * @returns 检查后的最新状态；后端失败时抛出并把原因记入状态。
    */
   async health(signal: AbortSignal): Promise<ComputerUseStatus> {
+    const generation = this.generation
     try {
-      this.applyHealth(await this.backend.health(AbortSignal.any([signal, this.lifecycle.signal])))
+      const health = await this.backend.health(AbortSignal.any([signal, this.lifecycle.signal]))
+      if (generation === this.generation) this.applyHealth(health)
     } catch (error) {
       const failure = computerUseError(error, 'Computer Use health check failed')
-      this.healthState = { ...this.healthState, ready: false, lastError: failure.message }
+      if (generation === this.generation) {
+        this.healthState = { ready: false, accessibility: 'unavailable', screenRecording: 'unavailable', lastError: failure.message }
+      }
       throw failure
     }
     return this.status()
@@ -388,20 +392,27 @@ export class ComputerUseService extends TypertRemoteService {
   @Remote('requestPermission')
   async remoteRequestPermission(kind: 'accessibility' | 'screen-recording'): Promise<ComputerUseAccessStatus> {
     const signal = new AbortController().signal
+    const generation = this.generation
+    let lastError: string | undefined
     try {
       await this.requestPermission(kind, signal)
     } catch (error) {
-      this.healthState = { ...this.healthState, lastError: computerUseError(error, 'permission request failed').message }
-      return accessStatus(this.status())
+      lastError = computerUseError(error, 'permission request failed').message
     }
-    // 系统提示只登记程序、不会带用户去勾选，所以申请后立刻打开对应面板：
-    // 一次点击完成「登记 + 跳转」，用户只需在面板里勾上运行本机组件的那一项。
+    if (generation !== this.generation) return this.remoteStatus()
+    // 即使系统没有显示提示，也允许用户在隐私面板中手动检查授权。
     try {
       await this.openPermissionSettings(kind, signal)
     } catch (error) {
-      this.healthState = { ...this.healthState, lastError: computerUseError(error, 'permission pane could not be opened').message }
+      lastError ??= computerUseError(error, 'permission pane could not be opened').message
     }
-    return await this.remoteCheck()
+    if (generation === this.generation) {
+      await this.remoteCheck()
+      if (generation === this.generation && lastError !== undefined) {
+        this.healthState = { ...this.healthState, lastError }
+      }
+    }
+    return this.remoteStatus()
   }
 
   /**

@@ -2,7 +2,7 @@
 
 电脑控制能力由 [`coding-computer-use`](../../packages/computer-use/computer-use/README.md) 在宿主层提供 `ctx.computerUse`，由该包的 macOS 提供方实现；模型可见的 Skill、引导工具与执行工具由 [`coding-tool-computer-use`](../../packages/computer-use/tool-computer-use/README.md) 在 agent 预设层贡献，标准、Codex、长线任务、逆向分析、网页复刻与对话六个模式各自装配，其他模式不注册任何相关工具或技能。
 一个进程只有一份提供方：它持有 Swift helper 进程、观察缓存、按应用的租约与一次确认令牌，所有会话共享这些对象；会话之间通过 `SessionId`、agent 与 turn 归属区分授权，helper 自身不做会话隔离。
-只有本地 macOS 宿主装载这一能力，其他平台在组合层禁用宿主行与预设行，profile 的其余部分不变；helper 只接受固定 argv 与 JSON 行协议，模型不能提供 shell 片段、脚本或原生 selector。
+只有本地 macOS 宿主装载这一能力。模型工具默认关闭；显式开启只提供技能与工具，不授予应用或系统权限。helper 只接受固定 argv 与 JSON 行协议，模型不能提供 shell 片段、脚本或原生 selector。
 
 ## 观察与目标
 
@@ -13,7 +13,7 @@
 
 ## 权限、审批与确认
 
-读取（观察与截图）与控制（投递 UI 输入）按精确 bundle id 分成两类租约：配置里的静态授权直接生效，没有授权的应用走会话审批，读取批准在整个 Session 有效，控制批准只在当前 turn 有效，拒绝在该 Session 内保持最终结果。
+读取（观察与截图）与控制（投递 UI 输入）按精确 bundle id 分成两类租约。Host 先检查 [`computer-use` 设置中的静态授权](../../packages/computer-use/computer-use/README.md#权限租约与确认)，再检查已有的会话内授权；两者都不匹配时才考虑发起会话审批。读取批准在整个 Session 有效，控制批准只在当前 turn 有效，拒绝在该 Session 内保持最终结果。
 持久化的读取授权与拒绝决定写在本包拥有的 `computer_use_state` 存储域里，并按会话 header 的创建时间与 cwd 绑定生命周期；storage-domain 缺席时只有静态授权可用，需要持久化的交互决定会明确失败而不是静默缩短授权。
 高影响动作（对外发送、敏感数据传输、不可逆删除、账户与安全设置、未经请求的安装、法律条款、财务完成）必须在执行前取一次确认令牌，令牌绑定应用、观察、目标与动作且只能用一次；确认走 DSH 审批通道，审批提示被禁用时不提供确认，动作被拒绝而不是绕过。
 
@@ -21,7 +21,7 @@
 
 非 macOS 宿主不注册任何工具或 Skill，服务仍可注入并把状态报告为不支持。
 托管 helper 必须先通过文件类型、可执行位与 manifest 哈希校验才能使用；本仓库不提交编译产物，缺失时按签名允许的路径用仓库内的 Swift 源码重建并写入新的 manifest。
-helper 缺失、哈希不符、权限未授予、目标进程不接受定向输入、窗口几何在派发前变化等情形都以稳定错误码失败，且不产生任何输入；`danger-full-access` 配 `never` 审批时不弹提示，插件返回可操作的权限错误而不把它记成用户拒绝。
+helper 缺失、哈希不符、权限未授予、目标进程不接受定向输入、窗口几何在派发前变化等情形都以稳定错误码失败，且不产生任何输入。文件沙箱模式不影响应用租约；缺少租约且审批策略为 `never` 时，工具在读取界面或投递输入前返回 `COMPUTER_PERMISSION_REQUIRED`，不把它记成用户拒绝。macOS 权限由提供方单独检查。
 
 ## 行为边界
 

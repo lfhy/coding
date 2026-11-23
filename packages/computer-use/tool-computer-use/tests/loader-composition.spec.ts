@@ -118,7 +118,7 @@ class FixtureComputerUse extends ComputerUseService {
   static inject = ['approval', 'sessions', 'agents']
 
   constructor(context: Context) {
-    super(context, fixture, resolveConfig({}))
+    super(context, fixture, resolveConfig({ enabled: true }))
   }
 }
 

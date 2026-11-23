@@ -27,7 +27,7 @@
 
 | 字段 | 默认值 | 含义 |
 | --- | --- | --- |
-| `enabled` | `true` | 是否向模型提供这套能力；关闭后工具与技能都不注册，直接调用也以 `COMPUTER_DISABLED` 拒绝 |
+| `enabled` | `false` | 是否向模型提供技能与工具；直接调用也受此开关约束，关闭时返回 `COMPUTER_DISABLED`。开关不授予或清除应用和系统权限 |
 | `observationTtlMs` | `0` | 观察可复用的生命周期；`0` 表示不过期，上限 24 小时 |
 | `confirmationTtlMs` | `300000` | 一次性确认令牌的生命周期 |
 | `actionTimeoutMs` | `15000` | 单次原生动作的硬超时，1000 至 120000 毫秒 |
@@ -59,17 +59,17 @@
 
 ## 权限、租约与确认
 
-观察与截图需要读取租约，投递界面输入需要控制租约，两者都按精确 bundle id 区分：静态 `grants` 直接生效，其余走 DSH 审批，读取批准在整个 Session 内有效、控制批准只在当前 turn 内有效，拒绝在该 Session 内保持最终结果。
+观察与截图需要读取租约，投递界面输入需要控制租约，两者都按精确 bundle id 区分：`computer-use` 设置分节的静态 `grants` 或 `allowAllApps` 保存后实时生效，不需要重开会话；其余走 DSH 审批，读取批准在整个 Session 内有效、控制批准只在当前 turn 内有效，拒绝在该 Session 内保持最终结果。
+
+文件沙箱的 `danger-full-access` 不产生电脑操作授权。有效审批策略为 `never` 且没有适用租约时，服务在读取界面或派发输入前报 `COMPUTER_PERMISSION_REQUIRED`，不发起审批、不记录用户拒绝。应用租约既不能授予也不能替代 macOS 系统权限。
 持久化决定写在本包拥有的 `computer_use_state` 存储域中，并按会话 header 的创建时间与 cwd 绑定生命周期；存储域缺席时只有静态授权可用，需要持久化的交互决定会明确失败而不是静默缩短授权。
 高影响动作必须在执行前取得一次性令牌，令牌绑定应用、观察、目标与动作；审批提示被禁用时不提供确认，动作被拒绝而不是绕过。
 
 ## macOS 系统权限
 
-helper 以 `Coding Computer Use.app` 交付，可执行文件位于 `bin/Coding Computer Use.app/Contents/MacOS/dsh-computer-use-helper`，`Info.plist` 固定 `CFBundleIdentifier` 为 `dev.coding.computer-use`、显示名为「Coding 电脑操作」。系统按 bundle 身份登记隐私权限，所以「隐私与安全性」里出现的是这个应用，而不是一个没有名字的裸二进制；改动这两个键会让已授予的权限失效。
+内置 `Coding Computer Use.app` 的 bundle ID 是 `dev.coding.computer-use`，显示名是「Coding 电脑操作」。Host 直接运行 bundle 内的 `dsh-computer-use-helper`；同一个所选可执行文件通过 macOS 的公开 API 申请和检查权限。macOS 决定提示对应的系统设置项目；应用自行登记 bundle 并不能决定系统如何归属该请求。Ad-hoc 签名绑定代码哈希，再构建后 bundle ID 相同也不保证沿用旧授权。
 
-
-观察与投递输入需要辅助功能权限，截图另外需要屏幕录制权限。设置页的「授权与运行状态」读取宿主给出的结论，并提供两条动作：`requestPermission` 与 `openPermissionSettings`（只打开面板）。`requestPermission` 依次做四件事：把 bundle 注册进 LaunchServices（让系统用应用名字显示它）、在未授予时用 `tccutil reset` 清掉本应用在该权限上的旧决定（否则 macOS 不再弹窗也不给勾选项）、通过 helper 调 `AXIsProcessTrustedWithOptions`／`CGRequestScreenCaptureAccess` 触发系统询问并真实读一次前台应用的可访问性属性、最后打开对应的隐私面板。插件从不授予权限，勾选由用户在系统设置里完成；状态要等用户回来后重新检查或等到下一次调用才更新。
-helper 以 ad-hoc 签名构建，重新构建后内容变化会让 macOS 把它当作新的可执行文件；需要重新授权时，用同一个「申请权限」入口再走一遍。
+「申请权限」可登记当前 bundle、触发 macOS 提示并打开隐私面板；「打开设置」只跳转。授权由用户手动完成，Host 不授予、也不重置系统权限。健康检查只报告当前 helper 能否使用辅助功能与屏幕录制；失败时以 `unavailable` 替换旧结论，不把探测失败或当前不可用认定为用户拒绝。
 
 ## 原生 helper 与完整性
 

@@ -145,7 +145,7 @@ class CatalogBrowserUseService extends BrowserUseService {
  */
 class CatalogComputerUseService extends ComputerUseService {
   constructor(ctx: Context) {
-    super(ctx, undefined as never, resolveConfig({}))
+    super(ctx, undefined as never, resolveConfig({ enabled: true }))
   }
 
   override listApps(): Promise<never> {

@@ -5,7 +5,7 @@
  * 上下界只用于在提交前挡住明显不合法的草稿，避免把用户输入原样送上线路。
  */
 import {
-  createSnapshotStore, type SettingsScope, type SettingsScopeSnapshot, type SnapshotStore,
+  createSnapshotStore, shallowEqual, type SettingsScope, type SettingsScopeSnapshot, type SnapshotStore,
 } from 'coding-client-runtime/client'
 
 /** 与宿主提供方共用的设置命名空间。 */
@@ -153,7 +153,7 @@ export function decodeComputerUseSettings(value: unknown): ComputerUseSettings |
 
 /** 设置页默认值：与宿主 schema 一致，只在命名空间尚未返回时用于渲染。 */
 export const DEFAULT_SETTINGS: ComputerUseSettings = {
-  enabled: true,
+  enabled: false,
   provider: 'native',
   helper: {},
   cuaDriver: { session: 'dsh-computer-use' },
@@ -237,7 +237,9 @@ export interface ComputerUseSettingsFace {
   save: (changes: Partial<ComputerUseSettings>) => Promise<boolean>
   /** 让 Host 重新做一次健康检查，结果回到 `computerUseAccess`。 */
   check: () => Promise<void>
-  /** 打开 macOS 隐私面板；失败时把原因留在返回文本里。 */
+  /** 设置页所在窗口重新聚焦时，按已保存的开关或授权入口决定是否复检。 */
+  recheckOnFocus: () => Promise<void>
+  /** 打开 macOS 隐私面板。 */
   openPermissionSettings: (kind: 'accessibility' | 'screen-recording') => Promise<boolean>
   /** 触发 macOS 的授权对话框，并把系统当前的权限结论带回界面。 */
   requestPermission: (kind: 'accessibility' | 'screen-recording') => Promise<boolean>
@@ -253,6 +255,9 @@ export class ComputerUseSettingsController {
   private disposed = false
   private generation = 0
   private accessGeneration = 0
+  private checkInFlight: Promise<void> | undefined
+  private permissionInFlight: Promise<boolean> | undefined
+  private awaitingPermissionReturn = false
 
   /**
    * @param scope - `computer-use` 命名空间的镜像与串行写入通道。
@@ -276,23 +281,15 @@ export class ComputerUseSettingsController {
   }
 
   /**
-   * 读取一次授权结论；失败标成 error 而不是保留旧值。
-   * 开关或后端刚改过时调用它，让状态带与权限行立刻反映新配置。
+   * 读取 Host 最近的授权结论，不启动本机组件。
    * @returns 读取完成后的结算。
    */
-  async refreshAccess(): Promise<void> {
-    const generation = ++this.accessGeneration
-    const result = await this.remote.status()
-    if (this.disposed || generation !== this.accessGeneration) return
-    this.access.update((draft) => {
-      if (result.ok) {
-        draft.status = 'ready'
-        draft.value = result.value
-      } else {
-        draft.status = 'error'
-        delete draft.value
-      }
-    })
+  private async refreshAccess(): Promise<void> {
+    const generation = this.accessGeneration
+    const result = await this.remote.status().catch(() => undefined)
+    if (!this.disposed && generation === this.accessGeneration) {
+      this.publishAccess(result?.ok === true ? result.value : undefined)
+    }
   }
 
   /**
@@ -300,18 +297,30 @@ export class ComputerUseSettingsController {
    * @returns 检查完成后的结算；失败原因由 Host 写进结论的 `lastError`。
    */
   async check(): Promise<void> {
-    const generation = ++this.accessGeneration
-    this.access.update((draft) => { draft.checking = true })
-    try {
-      const result = await this.remote.check()
-      if (this.disposed || generation !== this.accessGeneration) return
-      this.access.update((draft) => {
-        draft.status = result.ok ? 'ready' : 'error'
-        if (result.ok) draft.value = result.value
+    if (this.permissionInFlight !== undefined) await this.permissionInFlight
+    if (this.disposed) return
+    if (this.checkInFlight === undefined) {
+      ++this.accessGeneration
+      this.checkInFlight = this.remote.check().then((result) => {
+        this.publishAccess(result.ok ? result.value : undefined)
+      }, () => {
+        this.publishAccess(undefined)
+      }).finally(() => {
+        this.checkInFlight = undefined
+        this.publishBusy()
       })
-    } finally {
-      if (!this.disposed) this.access.update((draft) => { draft.checking = false })
+      this.publishBusy()
     }
+    await this.checkInFlight
+  }
+
+  /** 窗口返回时合并复检，不打断正在处理的系统授权操作。 */
+  async recheckOnFocus(): Promise<void> {
+    if (this.permissionInFlight !== undefined) await this.permissionInFlight
+    const section = this.scope.getSnapshot()
+    if (this.disposed || section.status !== 'ready' || (!section.value?.enabled && !this.awaitingPermissionReturn)) return
+    this.awaitingPermissionReturn = false
+    await this.check()
   }
 
   /**
@@ -319,32 +328,57 @@ export class ComputerUseSettingsController {
    * @param kind - 辅助功能或屏幕录制。
    * @returns 远端接受了这次请求时为 true。
    */
-  async openPermissionSettings(kind: 'accessibility' | 'screen-recording'): Promise<boolean> {
-    const result = await this.remote.openPermissionSettings(kind)
-    return result.ok
+  openPermissionSettings(kind: 'accessibility' | 'screen-recording'): Promise<boolean> {
+    return this.runPermissionAction(async () => (await this.remote.openPermissionSettings(kind)).ok)
   }
 
   /**
    * 触发 macOS 的授权对话框；是否勾选仍由用户在系统设置里决定。
-   * 返回后把系统给出的结论写回快照，用户勾选后再点「重新检查」即可看到生效。
+   * 返回值只说明是否拿到了系统状态，不代表用户已授权。
    * @param kind - 辅助功能或屏幕录制。
    * @returns 申请成功并拿到结论时为 true。
    */
-  async requestPermission(kind: 'accessibility' | 'screen-recording'): Promise<boolean> {
-    const generation = ++this.accessGeneration
-    this.access.update((draft) => { draft.checking = true })
-    try {
+  requestPermission(kind: 'accessibility' | 'screen-recording'): Promise<boolean> {
+    return this.runPermissionAction(async () => {
+      ++this.accessGeneration
       const result = await this.remote.requestPermission(kind)
-      if (this.disposed || generation !== this.accessGeneration) return false
       if (!result.ok) return false
-      this.access.update((draft) => {
-        draft.status = 'ready'
-        draft.value = result.value
-      })
+      this.publishAccess(result.value)
       return true
-    } finally {
-      if (!this.disposed) this.access.update((draft) => { draft.checking = false })
-    }
+    })
+  }
+
+  /** 系统设置操作与探测顺序结算，不能让聚焦事件废弃一次已成功的申请。 */
+  private runPermissionAction(action: () => Promise<boolean>): Promise<boolean> {
+    if (this.disposed) return Promise.resolve(false)
+    if (this.permissionInFlight !== undefined) return this.permissionInFlight
+    this.permissionInFlight = Promise.resolve(this.checkInFlight).then(() => {
+      return this.disposed ? false : action()
+    }).then((ok) => {
+      if (this.disposed) return false
+      if (ok) this.awaitingPermissionReturn = true
+      return ok
+    }, () => false).finally(() => {
+      this.permissionInFlight = undefined
+      this.publishBusy()
+    })
+    this.publishBusy()
+    return this.permissionInFlight
+  }
+
+  private publishBusy(): void {
+    if (this.disposed) return
+    const checking = this.checkInFlight !== undefined || this.permissionInFlight !== undefined
+    this.access.update((draft) => { draft.checking = checking })
+  }
+
+  private publishAccess(value: ComputerUseAccess | undefined): void {
+    if (this.disposed) return
+    this.access.update((draft) => {
+      draft.status = value === undefined ? 'error' : 'ready'
+      if (value === undefined) delete draft.value
+      else draft.value = value
+    })
   }
 
   /** 卸载后停止派生，并抛弃晚到的写入结果。 */
@@ -363,6 +397,7 @@ export class ComputerUseSettingsController {
       hooks: { computerUseSettings: this.view, computerUseAccess: this.access },
       save: changes => this.save(changes),
       check: () => this.check(),
+      recheckOnFocus: () => this.recheckOnFocus(),
       openPermissionSettings: kind => this.openPermissionSettings(kind),
       requestPermission: kind => this.requestPermission(kind),
     }
@@ -375,24 +410,36 @@ export class ComputerUseSettingsController {
    */
   async save(changes: Partial<ComputerUseSettings>): Promise<boolean> {
     const snapshot = this.scope.getSnapshot()
-    if (snapshot.status !== 'ready' || !snapshot.writable) return false
+    if (snapshot.status !== 'ready' || !snapshot.writable || !this.isCurrentSave(this.generation)) return false
     const generation = ++this.generation
     this.view.update((draft) => { draft.saving = true; draft.failed = false })
     try {
       for (const [field, value] of Object.entries(changes) as [string, unknown][]) {
-        // 调用方可能显式传 undefined 表示「不改这个字段」；跳过而不是写空值。
         if (value === undefined) continue
         await this.scope.set(field, value)
-        if (this.disposed || generation !== this.generation) return false
+        if (!this.isCurrentSave(generation)) return false
+        // 命名空间写入失败时会重读而不是拒绝 Promise；以重读后的用户设置为准。
+        const user = this.scope.getSnapshot().user as Record<string, unknown> | undefined
+        const saved = user?.[field]
+        const accepted = Array.isArray(value)
+          ? Array.isArray(saved) && saved.length === value.length && value.every((item, index) => shallowEqual(item, saved[index]))
+          : shallowEqual(value, saved)
+        if (!accepted) {
+          this.view.update((draft) => { draft.failed = true })
+          return false
+        }
       }
       return true
-    } catch (error) {
-      void error
-      if (!this.disposed) this.view.update((draft) => { draft.failed = true })
+    } catch {
+      if (this.isCurrentSave(generation)) this.view.update((draft) => { draft.failed = true })
       return false
     } finally {
-      if (!this.disposed) this.view.update((draft) => { draft.saving = false })
+      if (this.isCurrentSave(generation)) this.view.update((draft) => { draft.saving = false })
     }
+  }
+
+  private isCurrentSave(generation: number): boolean {
+    return !this.disposed && generation === this.generation
   }
 }
 
@@ -497,7 +544,7 @@ export interface ComputerUseAccess {
 export interface ComputerUseAccessView {
   status: 'loading' | 'ready' | 'error'
   value?: ComputerUseAccess
-  /** 正在执行的显式检查；与首次读取分开，以便按钮显示自己的忙状态。 */
+  /** 正在检查权限、申请权限或打开系统设置。 */
   checking: boolean
 }
 

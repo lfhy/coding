@@ -29,6 +29,16 @@ const stored: ComputerUseSettings = {
   grants: [{ bundleId: 'com.apple.Notes', read: true, control: false }],
 }
 
+/** 让保存测试的替身发布 Host 确认后的用户层；失败测试可保留旧快照。 */
+function writingScope() {
+  const scope = stubSettingsScope<ComputerUseSettings>()
+  scope.set.mockImplementation((field: string, value: unknown) => {
+    const current = scope.scope.getSnapshot()
+    scope.publish({ user: { ...current.user as object, [field]: value }, value: { ...stored, ...current.value, [field]: value } })
+  })
+  return scope
+}
+
 describe('电脑操作设置分节', () => {
   it('收窄 Host 分节并归一化授权', () => {
     expect(decodeComputerUseSettings(stored)).toEqual(stored)
@@ -143,7 +153,7 @@ describe('电脑操作设置分节', () => {
 
 describe('电脑操作设置控制器', () => {
   it('读取期发布快照，保存按字段串行写入', async () => {
-    const scope = stubSettingsScope<ComputerUseSettings>()
+    const scope = writingScope()
     const controller = new ComputerUseSettingsController(scope.scope, remoteStub())
     expect(controller.view.getSnapshot().section.status).toBe('loading')
     scope.publish({ status: 'ready', writable: true, value: stored, base: stored, user: {}, revision: 1 })
@@ -156,7 +166,7 @@ describe('电脑操作设置控制器', () => {
     expect(scope.set).toHaveBeenCalledTimes(2)
     const options = controller.inject()
     expect(Object.keys(options.hooks).sort()).toEqual(['computerUseAccess', 'computerUseSettings'])
-    expect(options.hooks.computerUseSettings.getSnapshot().section.value).toEqual(stored)
+    expect(options.hooks.computerUseSettings.getSnapshot().section.value).toEqual({ ...stored, enabled: false, grants: [] })
     expect(controller.view.getSnapshot()).toMatchObject({ saving: false, failed: false })
     controller.dispose()
     expect(scope.listenerCount()).toBe(0)
@@ -173,15 +183,14 @@ describe('电脑操作设置控制器', () => {
     expect(await controller.save({ enabled: false })).toBe(false)
     expect(controller.view.getSnapshot().failed).toBe(true)
     expect(scope.set).toHaveBeenCalledTimes(1)
-    // 卸载后的失败不再改写视图，保存中也停在上一次状态。
-    scope.set.mockRejectedValueOnce(new Error('late failure'))
     controller.dispose()
     expect(await controller.save({ enabled: false })).toBe(false)
-    expect(controller.view.getSnapshot()).toMatchObject({ saving: true, failed: false })
+    expect(scope.set).toHaveBeenCalledTimes(1)
+    expect(controller.view.getSnapshot()).toMatchObject({ saving: false, failed: true })
   })
 
   it('并发保存以最新一次为准，被超越的一次不发布结果', async () => {
-    const scope = stubSettingsScope<ComputerUseSettings>()
+    const scope = writingScope()
     const controller = new ComputerUseSettingsController(scope.scope, remoteStub())
     scope.publish({ status: 'ready', writable: true, value: stored, base: stored, user: {}, revision: 1 })
     const first = controller.save({ enabled: false })
@@ -189,6 +198,17 @@ describe('电脑操作设置控制器', () => {
     expect(await first).toBe(false)
     expect(await second).toBe(true)
     expect(scope.set.mock.calls).toEqual([['enabled', false], ['grants', []]])
+    controller.dispose()
+  })
+
+  it('Host 恢复到旧文档时，不把未保存的开关当成已生效', async () => {
+    const scope = stubSettingsScope<ComputerUseSettings>()
+    const before = { ...stored, enabled: false }
+    scope.publish({ status: 'ready', writable: true, value: before, user: { grants: stored.grants }, revision: 1 })
+    const controller = new ComputerUseSettingsController(scope.scope, remoteStub())
+    expect(await controller.save({ enabled: true, grants: [] })).toBe(false)
+    expect(scope.set.mock.calls).toEqual([['enabled', true]])
+    expect(controller.view.getSnapshot()).toMatchObject({ failed: true, saving: false, section: { value: before } })
     controller.dispose()
   })
 
@@ -212,7 +232,7 @@ describe('电脑操作设置控制器', () => {
     controller.dispose()
   })
 
-  it('卸载后刷新不再发布，并发检查以最后一次为准', async () => {
+  it('卸载后不发布晚到的状态，并发检查合并为一次', async () => {
     const scope = stubSettingsScope<ComputerUseSettings>()
     scope.publish({ status: 'ready', writable: true, value: stored, base: stored, user: {}, revision: 1 })
     let release: (() => void) | undefined
@@ -239,7 +259,7 @@ describe('电脑操作设置控制器', () => {
     const first = controller2.check()
     const second = controller2.check()
     await Promise.all([first, second])
-    expect(slow.calls.filter(call => call === 'check')).toHaveLength(2)
+    expect(slow.calls.filter(call => call === 'check')).toHaveLength(1)
     expect(controller2.access.getSnapshot()).toMatchObject({ checking: false, status: 'ready' })
     controller2.dispose()
   })
@@ -332,6 +352,7 @@ describe('电脑操作设置控制器', () => {
     await Promise.resolve()
     await Promise.resolve()
     const pending = controller.requestPermission('accessibility')
+    await Promise.resolve()
     controller.dispose()
     release?.()
     expect(await pending).toBe(false)
@@ -349,6 +370,45 @@ describe('电脑操作设置控制器', () => {
     controller2.dispose()
   })
 
+  it('关闭时聚焦不探测；成功打开权限面板或启用后才复检', async () => {
+    const scope = stubSettingsScope<ComputerUseSettings>()
+    const remote = remoteStub()
+    const controller = new ComputerUseSettingsController(scope.scope, remote)
+    await controller.recheckOnFocus()
+    scope.publish({ status: 'ready', value: { ...stored, enabled: false } })
+    await controller.recheckOnFocus()
+    expect(remote.calls).toEqual(['status'])
+    expect(await controller.openPermissionSettings('accessibility')).toBe(true)
+    await controller.recheckOnFocus()
+    await controller.recheckOnFocus()
+    expect(remote.calls).toEqual(['status', 'open:accessibility', 'check'])
+    scope.publish({ value: stored })
+    await controller.recheckOnFocus()
+    expect(remote.calls.at(-1)).toBe('check')
+    expect(remote.calls.filter(call => call === 'check')).toHaveLength(2)
+    controller.dispose()
+  })
+
+  it('申请返回前收到多个聚焦事件，不废弃申请且在结算后只检查一次', async () => {
+    const scope = stubSettingsScope<ComputerUseSettings>()
+    scope.publish({ status: 'ready', value: { ...stored, enabled: false } })
+    const pending = Promise.withResolvers<Awaited<ReturnType<ComputerUseRemote['requestPermission']>>>()
+    const remote = remoteStub({ requestPermission: () => pending.promise })
+    const controller = new ComputerUseSettingsController(scope.scope, remote)
+    const result = await remote.status()
+    const request = controller.requestPermission('screen-recording')
+    const focus1 = controller.recheckOnFocus()
+    const focus2 = controller.recheckOnFocus()
+    expect(controller.access.getSnapshot().checking).toBe(true)
+    expect(remote.calls).not.toContain('check')
+    pending.resolve(result)
+    await expect(request).resolves.toBe(true)
+    await Promise.all([focus1, focus2])
+    expect(remote.calls.filter(call => call === 'check')).toHaveLength(1)
+    expect(controller.access.getSnapshot()).toMatchObject({ checking: false, status: 'ready' })
+    controller.dispose()
+  })
+
   it('检查返回失败时把状态标成错误', async () => {
     const scope = stubSettingsScope<ComputerUseSettings>()
     scope.publish({ status: 'ready', writable: true, value: stored, base: stored, user: {}, revision: 1 })
@@ -358,6 +418,7 @@ describe('电脑操作设置控制器', () => {
     await Promise.resolve()
     await controller.check()
     expect(controller.access.getSnapshot()).toMatchObject({ status: 'error', checking: false })
+    expect(controller.access.getSnapshot().value).toBeUndefined()
     controller.dispose()
   })
 

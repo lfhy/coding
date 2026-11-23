@@ -272,17 +272,11 @@ export class MacOSBackend implements ComputerUseBackend {
   }
 
   async requestPermission(kind: 'accessibility' | 'screen-recording', signal: AbortSignal): Promise<void> {
-    // 已经授予时什么都不做：reset 会把用户的允许一起清掉。
-    const current = await this.health(signal).catch(() => undefined)
-    const granted = kind === 'accessibility' ? current?.accessibility : current?.screenRecording
+    const current = await this.health(signal)
+    const granted = kind === 'accessibility' ? current.accessibility : current.screenRecording
     if (granted === 'granted') return
-    // 先让 LaunchServices 认识这个 bundle：「隐私与安全性」按系统登记的应用身份显示条目，
-    // 没注册过的路径只会以一个没有名字的可执行文件出现。
+    // 探测只说明当前进程能否使用权限，不能用它推断或删除 macOS 中保存的用户决定。
     await this.registerBundle(signal)
-    // 曾被我或用户拒绝过的记录会让 macOS 不再弹窗、也不在面板里给出勾选项，因此先按
-    // 本机组件自己的 bundle id 清掉旧决定，再申请：这样系统会重新询问并把条目列出来。
-    // 只清我们自己这一条，不影响其它应用；清除失败不阻止后续申请。
-    await this.clearStaleDecision(kind, signal)
     await this.client.invoke<Record<string, string>>({ command: 'request-permission', kind }, signal)
   }
 
@@ -293,6 +287,7 @@ export class MacOSBackend implements ComputerUseBackend {
   private async registerBundle(signal: AbortSignal): Promise<void> {
     const bundle = bundlePathOf(this.client.helperPath)
     if (bundle === undefined) return
+    let registered = false
     try {
       const handle = this.ctx.subprocess.spawn({
         argv: [LSREGISTER, '-f', bundle],
@@ -306,40 +301,12 @@ export class MacOSBackend implements ComputerUseBackend {
         signal: AbortSignal.any([signal, AbortSignal.timeout(this.config.actionTimeoutMs)]),
         env: { LANG: process.env.LANG ?? 'en_US.UTF-8' },
       })
-      await handle.done
-    } catch (error) {
-      this.ctx.logger.warn('computer-use: could not register the helper bundle: %s', error)
+      registered = (await handle.done).exitCode === 0
+    } catch {
+      // 即使登记失败，仍可使用 macOS 的公开权限申请接口。
     }
     signal.throwIfAborted()
-  }
-
-  /**
-   * 清除本机组件在该权限上的旧决定。
-   * @param kind - 辅助功能或屏幕录制。
-   * @param signal - 调用方取消信号。
-   */
-  private async clearStaleDecision(kind: 'accessibility' | 'screen-recording', signal: AbortSignal): Promise<void> {
-    const bundleId = this.client.managedBundleId()
-    if (bundleId === undefined) return
-    const service = kind === 'accessibility' ? 'Accessibility' : 'ScreenCapture'
-    try {
-      const handle = this.ctx.subprocess.spawn({
-        argv: ['/usr/bin/tccutil', 'reset', service, bundleId],
-        cwd: dirname(this.client.helperPath),
-        stdio: {
-          stdin: { data: '' },
-          stdout: { maxBytes: 64 * 1024 },
-          stderr: { maxBytes: 64 * 1024 },
-        },
-        graceMs: 1000,
-        signal: AbortSignal.any([signal, AbortSignal.timeout(this.config.actionTimeoutMs)]),
-        env: { LANG: process.env.LANG ?? 'en_US.UTF-8' },
-      })
-      await handle.done
-    } catch (error) {
-      this.ctx.logger.warn('computer-use: could not clear the previous %s decision: %s', service, error)
-    }
-    signal.throwIfAborted()
+    if (!registered) this.ctx.logger.warn('computer-use: could not register the helper bundle with macOS')
   }
 }
 

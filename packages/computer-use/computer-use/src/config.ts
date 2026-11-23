@@ -41,7 +41,7 @@ export interface ComputerUseInteractionConfig {
 /** User-facing configuration; schema defaults are repeated by {@link resolveConfig}. `observationTtlMs: 0` disables observation expiry. */
 export interface ComputerUseConfig {
   /**
-   * 是否向模型提供这套能力；关闭后工具与技能都不注册，已加载技能的会话也失去执行工具。
+   * 默认不向模型提供这套能力；关闭后工具与技能都不注册，已加载技能的会话也失去执行工具。
    * 关闭只影响暴露面，不注销宿主提供方，重新打开即可恢复。
    */
   enabled?: boolean
@@ -110,7 +110,7 @@ export function readComputerUseConfig(config: ComputerUseConfig): ComputerUseCon
 
 /** Configuration schema used by Cordis and the Settings provider. */
 export const Config: Schema<ComputerUseConfig> = z.object({
-  enabled: live(z.boolean().default(true)),
+  enabled: live(z.boolean().default(false)),
   observationTtlMs: live(z.number().default(0)),
   confirmationTtlMs: live(z.number().default(300000)),
   actionTimeoutMs: live(z.number().default(15000)),
@@ -204,7 +204,7 @@ function option<T extends string>(name: string, value: string, allowed: readonly
 
 /** Validate and normalize one raw config object. */
 export function resolveConfig(config: ComputerUseConfig = {}): ResolvedComputerUseConfig {
-  const enabled = config.enabled ?? true
+  const enabled = config.enabled ?? false
   const observationTtl = config.observationTtlMs ?? 0
   const observationTtlMs = observationTtl === 0 ? 0 : integer('observationTtlMs', observationTtl, 1000, 86400000)
   const confirmationTtlMs = integer('confirmationTtlMs', config.confirmationTtlMs ?? 300000, 1000, 900000)

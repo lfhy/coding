@@ -99,8 +99,9 @@ let backend = new FixtureBackend()
 const call = (agent: object) => ({ agent: agent as never, workspace: '/fixture', signal: new AbortController().signal })
 
 describe('电脑控制启用开关', () => {
-  it('默认启用，关闭只改暴露面', () => {
-    expect(resolveConfig({}).enabled).toBe(true)
+  it('默认禁用，只接受显式启用', () => {
+    expect(resolveConfig({}).enabled).toBe(false)
+    expect(resolveConfig({ enabled: true }).enabled).toBe(true)
     expect(resolveConfig({ enabled: false }).enabled).toBe(false)
   })
 
@@ -179,9 +180,37 @@ describe('电脑控制启用开关', () => {
     // 替身不实现打开面板，失败原样返回而不是静默成功。
     await expect(service.remoteOpenPermissionSettings('accessibility')).rejects.toThrow()
     // 申请权限走提供方并重新读一次健康结果；替身记录这次申请。
-    expect(await service.remoteRequestPermission('accessibility'))
-      .toMatchObject({ ready: true, accessibility: 'granted' })
+    const requested = await service.remoteRequestPermission('accessibility')
+    expect(requested).toMatchObject({ ready: true, accessibility: 'granted' })
+    expect(requested.lastError).toContain('does not open settings panes')
     expect(backend.calls).toContain('request-permission:accessibility')
     await ctx.fiber.dispose()
+  })
+
+  it('重新检查同时读取两项系统权限，探测失败不再展示旧结论', async () => {
+    backend = new FixtureBackend()
+    let granted = false
+    let failed = false
+    backend.health = async () => {
+      if (failed) throw new Error('probe failed')
+      const state = granted ? 'granted' : 'denied'
+      return { helperVersion: 'fixture', helperSha256: 'fixture', accessibility: state, screenRecording: state }
+    }
+    const ctx = new Context()
+    await ctx.plugin(FixtureService, { enabled: false }).await()
+    try {
+      const service = ctx.computerUse
+      expect(await service.remoteCheck()).toMatchObject({ enabled: false, accessibility: 'denied', screenRecording: 'denied' })
+      granted = true
+      expect(await service.remoteCheck()).toMatchObject({ enabled: false, accessibility: 'granted', screenRecording: 'granted' })
+      failed = true
+      const unavailable = await service.remoteCheck()
+      expect(unavailable).toMatchObject({
+        ready: false, accessibility: 'unavailable', screenRecording: 'unavailable',
+      })
+      expect(unavailable.lastError).toContain('probe failed')
+    } finally {
+      await ctx.fiber.dispose()
+    }
   })
 })

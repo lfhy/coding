@@ -495,7 +495,7 @@ export class CuaDriverBackend implements ComputerUseBackend {
   }
 
   async health(signal: AbortSignal): Promise<BackendHealth> {
-    const apps = await this.listApps(signal)
+    await this.listApps(signal)
     const review = await this.driverDigest()
     return {
       helperVersion: 'cua-driver',
@@ -504,7 +504,6 @@ export class CuaDriverBackend implements ComputerUseBackend {
       accessibility: 'not-determined',
       screenRecording: 'not-determined',
       ready: true,
-      error: `${String(apps.length)} visible application(s) reported by cua-driver`,
     }
   }
 

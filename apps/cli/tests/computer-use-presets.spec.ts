@@ -14,9 +14,12 @@ import { fileURLToPath } from 'node:url'
 import { Context } from '@deepseek-ai/cordis'
 import { boot, healProfilesModuleFallback, loadOverlayPatches } from 'coding-app-boot'
 import { provideCmdline } from 'coding-cmdline'
+import { RpcId, type RpcRequest, type RpcResponse } from 'coding-host-apiproxy'
 import EgoBrowserHost from '../../../packages/browser/browser-ego-host/src/index.ts'
 import * as BrowserTool from '../../../packages/browser/tool-browser-ego/src/index.ts'
-import { CallId } from 'coding-llm'
+import * as ComputerUse from '../../../packages/computer-use/computer-use/src/index.ts'
+import * as ComputerUseTool from '../../../packages/computer-use/tool-computer-use/src/index.ts'
+import { CallId, createUserMessage } from 'coding-llm'
 import { SessionId } from 'coding-session'
 import type { Agent } from 'coding-agent'
 import { isJsExpr, loadCordisYaml } from '../../../scripts/cordis-yaml.ts'
@@ -38,6 +41,11 @@ const CODE_MODES = ['standard', 'codex', 'webclone', 'chat'] as const
 
 const TOOL_NAME = 'computer_use_activate'
 const SKILL_NAME = 'computer-use'
+const FIXTURE_BUNDLE = 'com.example.ComputerUseFixture'
+const TEST_SETTINGS = {
+  interaction: { cursorVisualization: 'hidden', cursorClickDelayMs: 125 },
+  artifactRoot: '.test-shots',
+}
 const EXECUTION_TOOLS = [
   'computer_list_apps', 'computer_observe', 'computer_click', 'computer_set_value', 'computer_type_text',
   'computer_press_key', 'computer_scroll', 'computer_drag', 'computer_perform_action', 'computer_wait',
@@ -83,9 +91,8 @@ describe('Computer Use rows in the shipped presets', () => {
       { insert?: Entry[] }[]
     const rows = patches.flatMap(patch => patch.insert ?? []).filter(row => row.id === 'computer-use')
     expect(rows).toHaveLength(1)
-    expect(rows[0]).toMatchObject({ id: 'computer-use', name: 'coding-computer-use', config: {
-      helper: { allowSourceBuild: true },
-    } })
+    expect(rows[0]).toMatchObject({ id: 'computer-use', name: 'coding-computer-use' })
+    expect(rows[0]?.config).toEqual({ helper: { allowSourceBuild: true } })
     expect(gateOf(rows[0] as Entry)).toBe("process.platform !== 'darwin'")
     const manifest = JSON.parse(await readFile(join(ROOT, 'apps/cli/package.json'), 'utf8')) as {
       dependencies?: Record<string, string>
@@ -101,13 +108,47 @@ class FixtureBrowser extends EgoBrowserHost {}
 let root: string
 let ctx: Context
 
+/** 固定协议替身，只读取测试状态并记录请求，不启动或访问真实桌面应用。 */
+const HELPER_FIXTURE = `#!/usr/bin/env node
+import { appendFileSync, readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+const root = dirname(process.argv[1])
+const request = JSON.parse(readFileSync(0, 'utf8'))
+appendFileSync(join(root, 'helper-calls'), request.command + '\\n')
+const app = { bundleId: '${FIXTURE_BUNDLE}', name: 'Computer Use Fixture', pid: 32001 }
+const state = JSON.parse(readFileSync(join(root, 'os-state.json'), 'utf8'))
+let value
+switch (request.command) {
+  case 'health':
+    if (state.fail) process.exit(4)
+    value = { helperVersion: 'fixture', ...state }; break
+  case 'request-permission': value = state; break
+  case 'open-settings': value = null; break
+  case 'resolve-app': value = app; break
+  case 'observe':
+    if (state.accessibility !== 'granted') {
+      console.log(JSON.stringify({ ok: false, error: { code: 'COMPUTER_PERMISSION_REQUIRED', message: 'fixture Accessibility is not in effect' } }))
+      process.exit(0)
+    }
+    value = { app, frontmost: true, stateHash: 'fixture', treeText: 'Fixture', truncated: false, elements: [], permissions: state }; break
+  default: process.exit(3)
+}
+console.log(JSON.stringify({ ok: true, value }))
+`
+
 beforeAll(async () => {
   root = await mkdtemp(join(tmpdir(), 'dsh-computer-use-presets-'))
   const profile = join(root, 'profiles', 'test')
   await mkdir(profile, { recursive: true })
   const config = join(profile, 'cordis.yml')
   await writeFile(config, '[]\n')
-  await writeFile(join(root, 'settings.yaml'), '{}\n')
+  const helper = join(root, 'helper.mjs')
+  await writeFile(helper, HELPER_FIXTURE, { mode: 0o700 })
+  await writeFile(join(root, 'helper-calls'), '')
+  await writeFile(join(root, 'os-state.json'), JSON.stringify({ accessibility: 'denied', screenRecording: 'denied' }))
+  await writeFile(join(root, 'settings.yaml'), `${JSON.stringify({
+    'computer-use': { ...TEST_SETTINGS, helper: { path: helper } },
+  })}\n`)
   healProfilesModuleFallback(join(ROOT, 'apps/cli/package.json'), root)
   ctx = await boot('dsh-computer-use-presets', config, [
     ...loadOverlayPatches('dsh-computer-use-presets', join(ROOT, 'packages/bundle/base/cordis.patch.yml')),
@@ -130,12 +171,17 @@ beforeAll(async () => {
     } },
   ], async (bootCtx) => {
     provideCmdline(bootCtx, { args: [], exit: () => {} })
-    // 新消费方尚无 lib 构建时，仅将其 Loader 导入指向源码；预设配置与其余插件仍真实加载。
+    // 本测试覆盖当前源码，避免打包产物比本次检出旧；Loader 仍使用随应用交付的装配与元数据。
     const internal = bootCtx.loader.internal
     if (!internal) throw new Error('Loader module resolver is unavailable')
+    const sources: Record<string, unknown> = {
+      'coding-tool-browser-ego': BrowserTool,
+      'coding-computer-use': ComputerUse,
+      'coding-tool-computer-use': ComputerUseTool,
+    }
     bootCtx.loader.internal = { ...internal,
-      import: (specifier: string, base: string, attributes: ImportAttributes) => specifier === 'coding-tool-browser-ego'
-        ? Promise.resolve(BrowserTool) : internal.import(specifier, base, attributes),
+      import: (specifier: string, base: string, attributes: ImportAttributes) =>
+        Object.hasOwn(sources, specifier) ? Promise.resolve(sources[specifier]) : internal.import(specifier, base, attributes),
     }
     await bootCtx.plugin(FixtureBrowser)
   })
@@ -167,8 +213,103 @@ function call(agent: Agent, name: string, args: unknown = {}) {
   return ctx.tools.execute({ name, arguments: args, agent, signal, callId: CallId(`computer-${name}`) })
 }
 
+function request<T>(payload: T): RpcRequest<T> {
+  return { rpcId: RpcId('computer-use-settings-test'), payload }
+}
+
+function expectOk<T>({ result }: RpcResponse<T>): T {
+  if (!result.ok) throw new Error(result.error.message)
+  return result.value
+}
+
+async function settingsSection() {
+  const section = expectOk(await ctx.apiProxy.settings.describe(request({}))).namespaces.find(view => view.ns === 'computer-use')
+  if (section === undefined) throw new Error('Host has not registered Computer Use settings')
+  return section
+}
+
+async function writeSetting(field: string, value: unknown) {
+  const { revision, ns } = await settingsSection()
+  return expectOk(await ctx.apiProxy.settings.mutate(request({ ns, ops: [{ op: 'set', path: [field], value }], expectedRevision: revision })))
+}
+
 describe.runIf(process.platform === 'darwin')('Computer Use in the shipped Web preset composition', () => {
+  it('applies saved authorization on the same Host without changing OS or sensitive-action rules', async () => {
+    const handle = await agent('standard')
+    const subject = handle.agent
+    const observe = () => call(subject, 'computer_observe', { app: { bundleId: FIXTURE_BUNDLE }, screenshot: 'none' })
+    const helperCalls = async () => (await readFile(join(root, 'helper-calls'), 'utf8')).trim().split('\n').filter(Boolean)
+    try {
+      const service = ctx.computerUse
+      ctx.permissionPresets.set(subject.session, 'danger-full-access')
+      expect((await settingsSection()).value).toMatchObject({ enabled: false, allowAllApps: false, grants: [] })
+      expect(service.remoteStatus()).toMatchObject({ enabled: false, ready: false })
+      expect(toolNames(subject)).not.toContain(TOOL_NAME)
+      expect((await ctx.skills.list({ cwd: root, scope: subject })).map(skill => skill.name)).not.toContain(SKILL_NAME)
+      expect(await helperCalls()).toEqual([])
+
+      // 修改一个字段，不能覆盖后端、交互或其它已有设置；同一会话实时取得工具。
+      expect((await writeSetting('enabled', true)).user).toMatchObject({ ...TEST_SETTINGS, enabled: true, helper: { path: join(root, 'helper.mjs') } })
+      await expect.poll(() => toolNames(subject)).toContain(TOOL_NAME)
+      const loaded = await call(subject, 'skill', { name: SKILL_NAME })
+      expect(loaded.isError).toBe(false)
+      // 直接执行工具不经过 Agent loop 的日志写入；用实际返回的正文模拟持久化的技能加载。
+      const { content } = loaded.value as { content: string }
+      subject.session.append('user/message', createUserMessage({
+        content: [{ type: 'text', text: content }],
+        source: { kind: 'skill-invocation', name: SKILL_NAME, form: 'instructions' },
+      }), { surfaceOp: 'append' })
+
+      const noLease = await observe()
+      expect(noLease.isError).toBe(true)
+      expect(JSON.stringify(noLease.content)).toContain('has no effective Computer Use grant')
+      expect(await helperCalls()).toEqual(['resolve-app'])
+
+      const grants = [{ bundleId: FIXTURE_BUNDLE, read: true, control: true }]
+      const generation = service.status().generation
+      expect((await writeSetting('grants', grants)).user).toMatchObject({ enabled: true, grants, ...TEST_SETTINGS })
+      await expect.poll(() => service.status().generation).toBeGreaterThan(generation)
+      // 应用租约已放行，OS 检查仍由 helper 执行并拒绝。
+      const noOS = await observe()
+      expect(noOS.isError).toBe(true)
+      expect(JSON.stringify(noOS.content)).toContain('fixture Accessibility is not in effect')
+      expect(await helperCalls()).toEqual(['resolve-app', 'resolve-app', 'observe'])
+
+      expect(await service.remoteRequestPermission('screen-recording'))
+        .toMatchObject({ ready: true, accessibility: 'denied', screenRecording: 'denied' })
+      expect((await helperCalls()).slice(3)).toEqual(['health', 'request-permission', 'open-settings', 'health'])
+      // 代替用户在系统设置中的操作；真实 macOS 权限从未参与测试。
+      await writeFile(join(root, 'os-state.json'), JSON.stringify({ accessibility: 'granted', screenRecording: 'granted' }))
+      expect(await service.remoteCheck()).toMatchObject({ ready: true, accessibility: 'granted', screenRecording: 'granted' })
+      const observation = await observe()
+      expect(observation.isError).toBe(false)
+      const { observationId } = observation.value as { observationId: string }
+      const action = { observationId, key: 'return', sensitive: true }
+      const denied = await call(subject, 'computer_press_key', action)
+      expect(denied.isError).toBe(true)
+      expect(JSON.stringify(denied.content)).toContain('COMPUTER_CONFIRMATION_REQUIRED')
+      expect(await helperCalls()).not.toContain('action')
+
+      await writeFile(join(root, 'os-state.json'), '{"fail":true}\n')
+      expect(await service.remoteCheck()).toMatchObject({ ready: false, accessibility: 'unavailable', screenRecording: 'unavailable' })
+
+      expect((await writeSetting('enabled', false)).user).toMatchObject({ enabled: false, grants, ...TEST_SETTINGS })
+      await expect.poll(() => toolNames(subject)).not.toContain('computer_observe')
+      const disabled = await service.observe({ app: { bundleId: FIXTURE_BUNDLE }, screenshot: 'none' }, { agent: subject, workspace: root, signal })
+        .catch((error: unknown) => error)
+      expect(disabled).toMatchObject({ code: 'COMPUTER_DISABLED' })
+      expect((await writeSetting('enabled', true)).user).toMatchObject({ enabled: true, grants, ...TEST_SETTINGS })
+      await expect.poll(() => toolNames(subject)).toContain('computer_observe')
+      expect(loadCordisYaml(await readFile(join(root, 'settings.yaml'), 'utf8')))
+        .toMatchObject({ 'computer-use': { enabled: true, grants, ...TEST_SETTINGS } })
+    } finally {
+      await handle.dispose()
+    }
+  }, 30_000)
+
   it.each(MOUNTED)('keeps only the bootstrap tool until the Skill is loaded in %s', async (preset) => {
+    await writeSetting('enabled', true)
+    await expect.poll(() => ctx.computerUse.availability()).toBe(true)
     const handle = await agent(preset)
     const subject = handle.agent
     try {

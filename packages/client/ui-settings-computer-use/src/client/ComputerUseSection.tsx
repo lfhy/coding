@@ -35,24 +35,40 @@ const PERMISSION_VIEW: Record<ComputerPermissionState, { label: ComputerUseSetti
  * @returns 设置分区内容。
  */
 export function ComputerUseSection({
-  useComputerUseSettings, useComputerUseAccess, save, check, openPermissionSettings, requestPermission, t,
+  useComputerUseSettings, useComputerUseAccess, save, check, recheckOnFocus, openPermissionSettings, requestPermission, t,
 }: ComputerUseSectionProps) {
   const { section, saving, failed } = useComputerUseSettings(snapshot => snapshot)
   const access = useComputerUseAccess(snapshot => snapshot)
   const accessValue = access.value
-  const [openFailed, setOpenFailed] = useState(false)
+  const [permissionFailure, setPermissionFailure] = useState<'accessRequestFailed' | 'accessOpenFailed'>()
   const [draft, setDraft] = useState<ComputerUseSettings | undefined>(undefined)
   const [numberText, setNumberText] = useState<NumericText | undefined>(undefined)
   const [newGrant, setNewGrant] = useState('')
   const mounted = useRef(true)
-  useEffect(() => () => { mounted.current = false }, [])
-
   const saved = section.value ?? DEFAULT_SETTINGS
+  const refreshEnabled = section.status === 'ready' && saved.enabled && !saving
+  useEffect(() => {
+    mounted.current = true
+    return () => { mounted.current = false }
+  }, [])
+  useEffect(() => {
+    if (section.status !== 'ready') return
+    const recheck = (): void => { void recheckOnFocus() }
+    window.addEventListener('focus', recheck)
+    return () => { window.removeEventListener('focus', recheck) }
+  }, [recheckOnFocus, section.status])
+  useEffect(() => {
+    if (refreshEnabled) void check()
+  }, [check, refreshEnabled])
+
   const model = draft ?? saved
   const numbers = numberText ?? numericTextOf(saved)
   const blocked = section.status !== 'ready' || !section.writable || saving
   const driverSelected = model.provider === 'cua-driver'
   const interaction = model.interaction
+  const permissionAction = (result: Promise<boolean>, message: 'accessRequestFailed' | 'accessOpenFailed'): void => {
+    void result.then((ok) => { if (mounted.current) setPermissionFailure(ok ? undefined : message) })
+  }
   const update = (patch: Partial<ComputerUseSettings>): void => {
     setDraft(current => ({ ...(current ?? saved), ...patch }))
   }
@@ -128,9 +144,9 @@ export function ComputerUseSection({
         <div className={css.statusRow}>
           <div className={css.statusText}>
             <span className={css.statusLabel}>{t('statusLabel')}</span>
-            <span className={css.statusHint}>{t(model.enabled ? 'statusOnHint' : 'statusOffHint')}</span>
+            <span className={css.statusHint}>{t(saved.enabled ? 'statusOnHint' : 'statusOffHint')}</span>
           </div>
-          <span className={css.statusValue}>{t(model.enabled ? 'statusOn' : 'statusOff')}</span>
+          <span className={css.statusValue}>{t(saved.enabled ? 'statusOn' : 'statusOff')}</span>
         </div>
 
         <label className={css.switch}>
@@ -159,9 +175,7 @@ export function ComputerUseSection({
                   {accessValue[key] === 'granted'
                     ? null
                     : <Button size="sm" variant="outline" disabled={access.checking}
-                      onClick={() => {
-                        void requestPermission(kind).then((ok) => { setOpenFailed(!ok) })
-                      }}>{t('accessRequest')}</Button>}
+                      onClick={() => { permissionAction(requestPermission(kind), 'accessRequestFailed') }}>{t('accessRequest')}</Button>}
                 </li>
               )
             })}
@@ -174,8 +188,8 @@ export function ComputerUseSection({
               </span>
             </li>
           </ul>
-          {accessValue.lastError !== undefined && <p className={css.error}>
-            {t('permLastError')}：{accessValue.lastError}
+          {accessValue.lastError !== undefined && <p className={css.error} role="alert">
+            {t(accessValue.ready ? 'accessSettingsFailed' : 'accessProbeFailed')}
           </p>}
           <p className={css.fieldHint}>{t('accessRequestHint')}</p>
         </>}
@@ -185,15 +199,15 @@ export function ComputerUseSection({
             {t(access.checking ? 'accessChecking' : 'accessCheck')}
           </Button>
           <Button size="sm" variant="ghost" disabled={access.checking}
-            onClick={() => { void openPermissionSettings('accessibility').then((ok) => { setOpenFailed(!ok) }) }}>
+            onClick={() => { permissionAction(openPermissionSettings('accessibility'), 'accessOpenFailed') }}>
             {t('accessOpenAccessibility')}
           </Button>
           <Button size="sm" variant="ghost" disabled={access.checking}
-            onClick={() => { void openPermissionSettings('screen-recording').then((ok) => { setOpenFailed(!ok) }) }}>
+            onClick={() => { permissionAction(openPermissionSettings('screen-recording'), 'accessOpenFailed') }}>
             {t('accessOpenScreen')}
           </Button>
         </div>
-        {openFailed && <p className={css.error} role="alert">{t('accessRequestFailed')}</p>}
+        {permissionFailure !== undefined && <p className={css.error} role="alert">{t(permissionFailure)}</p>}
 
         <h3 className={css.groupTitle}>{t('runtimeTitle')}</h3>
         <p className={css.groupHint}>{t('runtimeHint')}</p>

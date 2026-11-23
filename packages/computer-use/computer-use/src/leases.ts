@@ -209,7 +209,7 @@ export class ComputerLeaseManager {
     if (approvalPolicy(this.ctx, agent) === 'never') {
       throw new ComputerUseError(
         'COMPUTER_PERMISSION_REQUIRED',
-        `${scope} access for ${app.name} is blocked because approval prompts are disabled in this Session (approval/policy: never, e.g. the danger-full-access preset); add "${app.bundleId}" to the computer-use grants in Settings, or switch the permission preset to one with approval ask`,
+        `${scope} access for ${app.name} (${app.bundleId}) has no effective Computer Use grant and this Session cannot prompt (approval/policy: never). The Full Access session preset does not grant Computer Use access. Ask the user to grant ${scope} access for this app in Settings → Computer Use or choose a session preset that allows approval prompts. Do not retry until authorization changes.`,
       )
     }
 
