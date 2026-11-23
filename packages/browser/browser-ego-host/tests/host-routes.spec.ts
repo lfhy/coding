@@ -22,6 +22,7 @@ let settingsRegister: ReturnType<typeof vi.fn>
 async function boot(rejection?: 403): Promise<string> {
   stateDir = await mkdtemp(join(tmpdir(), 'coding-ego-host-route-'))
   vi.stubEnv('EGO_LINUX_STATE_DIR', stateDir)
+  vi.stubEnv('EGO_LINUX_CDP_URL', undefined)
   session = { id: SessionId('session-abcdefgh-first'), header: { cwd: stateDir } }
   ctx = new Context()
   checks = vi.fn(() => rejection)
@@ -283,6 +284,76 @@ describe('会话浏览器 Host 路由', () => {
     // 冷却窗口内重复轮询不再启动新的恢复进程。
     expect((await fetch(`${origin}/api/ego/spaces?sessionId=${session.id}`)).status).toBe(200)
     expect(restoreScripts()).toBe(1)
+  })
+
+  it('仅目录流不采集画面，默认流仍推送目录与画面', async () => {
+    const origin = await boot()
+    await writeFile(join(stateDir!, 'task-spaces.json'), JSON.stringify({ spaces: [
+      { name: spaceNameForSession(session.id), targetIds: ['owned'] },
+    ] }))
+    let reads = 0
+    let captures = 0
+    const worker = createServer((req, res) => {
+      if (req.url === '/api/health') { res.end(JSON.stringify({ workerOk: true })); return }
+      if (req.url === '/api/spaces') {
+        reads++
+        res.end(JSON.stringify({ spaces: [
+          { targetId: 'owned', url: 'https://example.com/', title: `Page ${reads}`, active: true },
+          { targetId: 'foreign', url: 'about:blank', title: 'Other page', active: false },
+        ] }))
+        return
+      }
+      if (req.url?.startsWith('/api/frame?')) {
+        captures++
+        res.end(JSON.stringify({ targetId: 'owned', data: 'YWJj', vw: 500, vh: 600, ts: Date.now() }))
+        return
+      }
+      res.writeHead(404).end()
+    })
+    await new Promise<void>(resolve => worker.listen(0, '127.0.0.1', resolve))
+    const signal = new AbortController()
+    try {
+      const address = worker.address()
+      if (address === null || typeof address === 'string') throw new Error('worker has no port')
+      await writeFile(join(stateDir!, 'ego-cast.json'), JSON.stringify({ port: address.port, pid: process.pid }))
+      const stream = `${origin}/api/ego/stream?sessionId=${session.id}`
+      for (const query of ['&frames=on', '&other=off']) {
+        expect((await fetch(stream + query)).status).toBe(400)
+      }
+      expect((await fetch(`${stream}&frames=off&frames=off`)).ok).toBe(false)
+      const readStream = async (url: string, marker: string): Promise<string> => {
+        const response = await fetch(url, { signal: AbortSignal.any([signal.signal, AbortSignal.timeout(4000)]) })
+        expect(response.status).toBe(200)
+        const reader = response.body!.getReader()
+        const decoder = new TextDecoder()
+        let text = ''
+        try {
+          while (!text.includes(marker)) {
+            const chunk = await reader.read()
+            if (chunk.done) throw new Error('browser stream ended early')
+            text += decoder.decode(chunk.value, { stream: true })
+          }
+          return text
+        } finally {
+          await reader.cancel()
+        }
+      }
+      const text = await readStream(`${stream}&frames=off`, '"title":"Page 2"')
+      expect(text).toContain('"title":"Page 1"')
+      expect(text).toContain('event: spaces')
+      expect(text).not.toContain('foreign')
+      expect(text).not.toContain('event: frame')
+      expect(captures).toBe(0)
+      const web = await readStream(stream, '"data":"YWJj"')
+      expect(web).toContain('event: spaces')
+      expect(web).toContain('event: frame')
+      expect(web).not.toContain('foreign')
+      expect(captures).toBeGreaterThan(0)
+    } finally {
+      signal.abort()
+      worker.closeAllConnections()
+      await new Promise<void>(resolve => worker.close(() => { resolve() }))
+    }
   })
 
   it('活动流重连时只回放存活会话的最近一次工具调用', async () => {

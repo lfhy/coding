@@ -236,21 +236,22 @@ async function main() {
     if (packaged) await seedSession(hostHome, cwd, link)
     const workspaceResult = await rpc(page, 'workspace.create', { path: cwd })
     await rpc(page, 'session.create', { workspaceId: workspaceResult.workspace.workspaceId, sessionId })
-    // RPC 从测试端写入；重新载入 Client 才能从 Host 的会话台账建立本地搜索索引。
+    // RPC 从测试端写入；重新载入 Client 才能看到 Host 会话台账里的记录。
     await page.reload()
     await page.locator('[data-shell-overlay]').waitFor({ state: 'attached', timeout: 30_000 })
-    const search = page.getByRole('button', { name: /^(搜索会话|Search sessions)$/u })
-    if (await search.getAttribute('aria-expanded') !== 'true') await search.click()
-    await page.getByPlaceholder(/搜索会话|Search sessions/u).fill(title)
-    const result = page.getByRole('tree', { name: /搜索结果|Search results/u }).getByRole('treeitem')
-    await result.first().waitFor({ state: 'visible', timeout: 15_000 })
-    await result.first().click()
-    await page.getByRole('button', { name: /清除搜索|Clear search/u }).click()
+    await page.getByRole('tablist', { name: /浏览会话|Browse sessions/u })
+      .getByRole('tab', { name: /^(最近|Recent)$/u }).click()
+    await page.getByRole('treeitem').filter({ hasText: title }).click()
     const assistantLink = page.getByRole('link', { name: '打开测试页面' })
     await assistantLink.waitFor({ state: 'visible', timeout: 15_000 })
     const popup = []
     const responses = []
+    const streams = []
     page.on('popup', item => popup.push(item))
+    page.on('request', (request) => {
+      const url = new URL(request.url())
+      if (url.pathname === '/api/ego/stream') streams.push(url.searchParams.get('frames'))
+    })
     page.on('response', response => {
       const pathname = new URL(response.url()).pathname
       if (pathname === '/api/ego/pages' || pathname === '/api/ego/navigation') {
@@ -291,6 +292,27 @@ async function main() {
       const [low, middle, high] = [...pixel].sort((a, b) => a - b)
       return low <= 5 && Math.abs(middle - 126) <= 5 && Math.abs(high - 230) <= 5
     }, { hostURL: `${origin}/`, link }), 'fixture painted inside the desktop workbench', 12_000)
+    await until(() => streams.length > 0, 'native page directory subscribed', 8000)
+    // 让空闲页面跨过两次目录刷新；后台截图不应引发页面重排。
+    const viewport = await app.evaluate(async ({ BrowserWindow }, { hostURL, link }) => {
+      const owner = BrowserWindow.getAllWindows().find(window => window.webContents.getURL() === hostURL)
+      const view = owner?.contentView.children.find(child => child.webContents?.getURL() === link)
+      return view?.webContents.executeJavaScript(`new Promise(resolve => {
+        const size = () => [innerWidth, innerHeight]
+        const initial = size()
+        const changes = []
+        const record = () => { changes.push(size()) }
+        addEventListener('resize', record)
+        setTimeout(() => {
+          removeEventListener('resize', record)
+          resolve({ initial, final: size(), changes })
+        }, 2200)
+      })`)
+    }, { hostURL: `${origin}/`, link })
+    assert.ok(viewport?.initial.every(size => size > 0), 'native viewport must have nonzero dimensions')
+    assert.deepEqual(viewport.final, viewport.initial)
+    assert.deepEqual(viewport.changes, [], 'the idle native viewport must not resize')
+    assert.ok(streams.every(frames => frames === 'off'), 'the native workbench must not request a frame stream')
     assert.deepEqual(responses.filter(item => item.pathname === '/api/ego/pages').map(item => item.status), [200])
     assert.deepEqual(responses.filter(item => item.pathname === '/api/ego/navigation').map(item => item.status), [200])
     assert.equal(popup.length, 0, 'link must not open an independent Electron window')

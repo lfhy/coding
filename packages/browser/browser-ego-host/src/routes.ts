@@ -230,7 +230,9 @@ export function installRoutes(ctx: Context): void {
       if (req.method !== 'GET') { send(res, 405, { ok: false }); return }
       const sessionId = getSession(webCtx, req, res)
       if (!sessionId) return
-      if (new URL(req.url ?? '/', 'http://127.0.0.1').searchParams.size !== 1) { send(res, 400, { ok: false }); return }
+      const query = new URL(req.url ?? '/', 'http://127.0.0.1').searchParams
+      const directoryOnly = query.get('frames') === 'off'
+      if (query.size !== (directoryOnly ? 2 : 1)) { send(res, 400, { ok: false }); return }
       res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store', connection: 'keep-alive' })
       res.write(':ok\n\n')
       let lastPages = ''
@@ -308,7 +310,8 @@ export function installRoutes(ctx: Context): void {
 
       const pagesTimer = setInterval(() => { void pollPages() }, 1000)
       void pollPages()
-      void loop()
+      // 原生视图直接绘制页面；重复的 CDP 截图会临时改变页面视口。
+      if (!directoryOnly) void loop()
       res.once('close', () => {
         clearInterval(pagesTimer)
         if (frameTimer !== null) clearTimeout(frameTimer)

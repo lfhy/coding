@@ -18,7 +18,7 @@ make dev
 
 `pnpm run test:electron:chat-links` 验收已构建的开发态壳；先按 `make dev` 所需命令构建 Host、Web、Go helper 与 Electron 壳。`pnpm run test:electron:chat-links:packaged` 验收已有的 `dist/Coding.app`：在 macOS 图形会话中把签名包复制到短临时路径，以独立 HOME、浏览器状态和单实例锁启动，不安装或操作正在运行的应用。
 
-两种模式都恢复一次 Assistant 链接消息，核对建页和导航请求，并验证右侧工作台的原生视图确实绘制了测试网页；外部浏览器加载网页或右侧仅显示地址都不算通过。测试不调用模型、不读取用户会话，也不验收既有用户配置。退出不确定时保留隔离目录供检查。
+两种模式都恢复一次 Assistant 链接消息，核对建页和导航请求，并验证右侧工作台的原生视图已绘制网页、空闲时视口不变且没有订阅帧流。测试不调用模型、不读取用户会话，也不验收既有用户配置。退出不确定时保留隔离目录供检查。
 
 ## Host、Remote-SSH 与窗口
 

@@ -16,6 +16,8 @@
 
 ## 运行位置与交互细节
 
+桌面壳原生呈现网页时，面板使用 `/api/ego/stream?sessionId=<id>&frames=off`；该连接只更新会话页面目录（`spaces`），不会启动后台帧采集。省略 `frames` 时，同一连接同时提供目录和帧流，供 Web 面板显示。原生视图依赖窗口尺寸，由截图临时调整的视口不得用作它的持续画面来源。
+
 - **外部 CDP 端点**：Host 进程环境里已有 `EGO_LINUX_CDP_URL` 时（桌面壳在启动 Host 前注入的虚拟端点），运行时的 `ensureBrowser` 直接连该端点而不启动本机浏览器，页面由桌面壳承载；此时 `/api/ego/stream` 与 `/api/ego/frame` 没有真实画面来源，工作台改走原生呈现，`--open` 也不再换出独立窗口；下载由桌面壳按 `Browser.setDownloadBehavior` 落盘并合成 `Page.downloadWillBegin`／`downloadProgress`，运行时的下载工具照常可用。
 - **默认无窗口**：`headless` 默认开启，浏览器只在工作台面板里出现，不会把独立窗口弹到用户前台。配置为 `false` 才回到可见窗口。启动模式记录在浏览器状态文件里：复用一个旧状态（没有记录）或与当前配置不一致的实例时先关闭再按配置启动，因此切换设置或升级后不会继续沿用旧窗口；`--open` 打开的窗口有自己的意图记录，下一次工具调用不会把它关掉。用户在面板里主动要求换窗口时走 `POST /api/ego/window`（JSON `{sessionId}`，会话有效才执行），Host 用运行时的 `--open` 换成同 Profile 的可见窗口，登录扫码与人机验证都在这个入口完成。
 - **默认窗口与面板视口**：运行时以 `--window-size=2560,1080`、`--force-device-scale-factor=1` 启动，独立的 Agent 页面按宽桌面布局渲染（Xvfb 虚拟屏幕同步为 2560×1080）；工作台展示时，页面在 worker 的持久 CDP 会话里按栏宽高重排，无窗口模式与宽度小于 Chromium 最小窗口宽度时仍可铺满。右栏走单页 `GET /api/frame` 原生视口截图；设置中的 `cdpMaxWidth` 默认 2560，仅限制独立视频采集接口的单帧宽度，不决定右栏截图尺寸。

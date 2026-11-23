@@ -518,7 +518,8 @@ export class BrowserEgoController {
 
   private openStream(epoch: number): void {
     let stream: EventSource
-    try { stream = this.connect(streamUrl(this.sessionId, '/api/ego/stream')) }
+    const url = streamUrl(this.sessionId, '/api/ego/stream')
+    try { stream = this.connect(this.native ? `${url}&frames=off` : url) }
     catch { return }
     this.stream = stream
     stream.addEventListener('spaces', (event: MessageEvent) => {

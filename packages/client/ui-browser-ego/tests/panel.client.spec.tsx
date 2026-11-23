@@ -69,6 +69,21 @@ function submitAddress(value: string): void {
 }
 
 describe('Agent 浏览器工作台页面', () => {
+  it('原生视图只上报呈现矩形，不调整镜像采集视口', () => {
+    const panel = mount(ready, { shown: false })
+    const stage = panel.container.querySelector('[class*="stage"]') as HTMLDivElement
+    Object.defineProperties(stage, { clientWidth: { value: 380 }, clientHeight: { value: 700 } })
+    vi.spyOn(stage, 'getBoundingClientRect').mockReturnValue({ left: 10, top: 20, width: 380, height: 700 } as DOMRect)
+    const present = vi.fn(async () => undefined)
+    panel.rerender(<AgentBrowserPanel {...panel.props} surface={{ present }} useTabInfo={() => ({
+      ...panel.props.useTabInfo(), shown: true,
+    })} />)
+    expect(present).toHaveBeenCalledExactlyOnceWith({ targetId: 'first', visible: true,
+      bounds: { x: 10, y: 20, width: 380, height: 700 } })
+    expect(panel.resize).not.toHaveBeenCalled()
+    expect(screen.queryByAltText('Current page view')).toBeNull()
+  })
+
   it('按实际内容区尺寸同步页面，失败后仅有限重试且隐藏后停止', async () => {
     vi.useFakeTimers()
     const panel = mount(ready)

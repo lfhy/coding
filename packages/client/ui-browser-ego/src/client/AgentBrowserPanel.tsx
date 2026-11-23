@@ -142,11 +142,11 @@ export function AgentBrowserPanel({
     setHovered(null)
   }, [shown, targetId, pageUrl, view.pending])
 
-  // 内容区决定页面视口；不拉伸截图，以免画面与人工输入坐标错位。
+  // 仅镜像面板上报采集视口；原生视图由下方的呈现矩形决定尺寸。
   useEffect(() => {
     const node = stage.current
     const page = selected?.targetId
-    if (!shown || node === null || page === undefined) return
+    if (surface !== null || !shown || node === null || page === undefined) return
     let timer: ReturnType<typeof setTimeout> | null = null
     let retry: ReturnType<typeof setTimeout> | null = null
     let attempts = 0
@@ -193,7 +193,7 @@ export function AgentBrowserPanel({
       observer.disconnect()
       resolution?.removeEventListener('change', onResolution)
     }
-  }, [shown, selected?.targetId, pageUrl, selected?.viewportW, selected?.viewportH, resize])
+  }, [surface, shown, selected?.targetId, pageUrl, selected?.viewportW, selected?.viewportH, resize])
   // 桌面端由桌面壳把真实页面放到内容区上；这里只上报矩形与显隐，不传页面内容。
   useEffect(() => {
     const node = stage.current

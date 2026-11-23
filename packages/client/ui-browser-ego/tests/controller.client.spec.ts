@@ -650,12 +650,12 @@ describe('桌面端直接显示页面', () => {
       url => new FakeStream(url) as unknown as EventSource, true)
     controller.show(true)
     await vi.waitFor(() => { expect(controller.view.getSnapshot().phase).toBe('ready') })
-    // 目录与活动仍来自同源 HTTP/SSE，但没有取帧与视口上报。
+    // 原生视图仍接收目录更新，但不让 Host 启动画面采集。
     expect(fetcher.mock.calls.map(call => call[0])).toEqual([
       '/api/ego/spaces?sessionId=session-one', '/api/ego/status?sessionId=session-one',
       '/api/ego/history?sessionId=session-one', '/api/ego/video/status',
     ])
-    expect(streams[0]?.url).toBe('/api/ego/stream?sessionId=session-one')
+    expect(streams[0]?.url).toBe('/api/ego/stream?sessionId=session-one&frames=off')
     streams[0]?.emit('frame', { targetId: 'first', data: 'YWJj', vw: 400, vh: 300, ts: 1 })
     expect(controller.view.getSnapshot().frame).toBeNull()
     await expect(controller.resize('first', 800, 600)).resolves.toBe(false)
