@@ -59,6 +59,8 @@ export interface GitOverviewInjected {
 
 type GitOverviewProps = GitOverviewInjected & PropsLocale<'conversation'> & {
   sessionId: SessionId
+  /** 打开远端会话不读仓库；用户主动展开 Git 行时才查询。 */
+  deferStatus?: boolean | undefined
   /** 行内分支入口提供锚点时，复用同一操作面板而不绘制概览摘要行。 */
   triggerRef?: RefObject<HTMLButtonElement> | undefined
   controlledOpen?: boolean | undefined
@@ -69,7 +71,7 @@ type GitOverviewProps = GitOverviewInjected & PropsLocale<'conversation'> & {
 
 /** 概览摘要行与 Hero 分支按钮共用 Git 浮层；任一入口只读取其目标会话。 */
 export function GitOverview({
-  sessionId, status, branches, checkout, operate, forgetCredentials, resolveConflict, t,
+  sessionId, status, branches, checkout, operate, forgetCredentials, resolveConflict, t, deferStatus = false,
   triggerRef, controlledOpen, onControlledClose, onBranchChange,
 }: GitOverviewProps) {
   const [git, setGit] = useState<GitStatusView | null>(null)
@@ -110,11 +112,12 @@ export function GitOverview({
     setAuthError(null)
     setPassword('')
     setRemember(false)
+    if (deferStatus) return
     void status(sessionId).then((value) => { if (current) setGit(value) }).catch((reason: unknown) => {
       if (current) setError(reason instanceof Error ? reason.message : String(reason))
     })
     return () => { current = false }
-  }, [sessionId, status])
+  }, [sessionId, status, deferStatus])
 
   const close = useCallback((restoreFocus: boolean) => {
     setOpen(false)
@@ -203,9 +206,9 @@ export function GitOverview({
     }
   }, [isOpen, auth, close, anchor])
 
-  if (git === null) return null
+  if (git === null && !deferStatus) return null
 
-  const changeSummary = <>
+  const changeSummary = git !== null && <>
     {t('overview.git.fileCount', { count: git.files.length })}
     {git.additions > 0 && <> · <span className={css.additions}>+{git.additions}</span></>}
     {git.deletions > 0 && <> <span className={css.deletions}>−{git.deletions}</span></>}
@@ -239,7 +242,7 @@ export function GitOverview({
   }
 
   const switchBranch = async (branch: string) => {
-    if (branch === git.branch) {
+    if (branch === git?.branch) {
       setShowBranches(false)
       return
     }
@@ -304,7 +307,7 @@ export function GitOverview({
       setGit(next)
       onBranchChange?.(next?.branch ?? null)
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason))
+      setError(deferStatus ? t('overview.git.loadFailed') : reason instanceof Error ? reason.message : String(reason))
     } finally {
       setBusy(null)
     }
@@ -370,7 +373,13 @@ export function GitOverview({
       aria-label={triggerRef === undefined ? t('overview.git.title') : undefined}
     >
       {triggerRef === undefined && <button ref={trigger} type="button" className={css.row} aria-expanded={isOpen} aria-controls={popoverId}
-        onClick={() => { if (isOpen) close(false); else setOpen(true) }}>
+        onClick={() => {
+          if (isOpen) close(false)
+          else {
+            setOpen(true)
+            if (git === null && busy === null) void refresh()
+          }
+        }}>
         <span className={css.rowIcon} aria-hidden="true"><IconBranchOutline16 /></span>
         <span className={css.rowLabel}>{t('overview.git.title')}</span>
         <span className={css.rowSummary}>{changeSummary}</span>
@@ -380,53 +389,59 @@ export function GitOverview({
         <div ref={popover} id={popoverId} className={css.popover} role="region" aria-label={t('overview.git.title')}
           style={position ?? { visibility: 'hidden', left: 0, top: 0 }}
           onKeyDown={(event) => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close(true) } }}>
-          <button ref={branchTrigger} type="button" className={css.branchButton} aria-expanded={showBranches}
-            aria-controls={branchListId} disabled={busy !== null} onClick={() => { void toggleBranches() }}>
-            <span className={css.branchLabel}>
-              <span className={css.metricIcon} aria-hidden="true"><IconBranchOutline16 /></span>
-              <span className={css.metricLabel}>{t('overview.git.branches')}</span>
-            </span>
-            <span className={css.branchCurrent} title={git.branch ?? undefined}>{git.branch ?? t('overview.git.detached')}</span>
-            <IconChevronRightOutline14 className={showBranches ? css.chevronOpen : css.chevron} aria-hidden="true" />
-          </button>
-          {showBranches && branchList && <div ref={branchMenu} id={branchListId} className={css.branchList} role="group"
-            aria-label={t('overview.git.branchList')}
-            style={branchPosition ?? { visibility: 'hidden', left: 0, top: 0 }}>
-            {branchList.branches.map(branch => <button key={branch} type="button" className={css.branchOption}
-              aria-current={branch === git.branch ? 'true' : undefined} disabled={busy !== null}
-              onClick={() => { void switchBranch(branch) }}>{branch}</button>)}
-          </div>}
-          <div className={css.metrics}>
-            {git.files.length > 0 && <div className={css.metricRow}>
-              <span className={css.metricHeading}>
-                <span className={css.metricIcon} aria-hidden="true"><IconListPenOutline16 /></span>
-                <span className={css.metricLabel}>{t('overview.git.changesLabel')}</span>
+          {git === null ? (
+            <p role={error === null ? 'status' : 'alert'} className={error === null ? css.status : css.error}>
+              {busy === 'refresh' ? t('overview.git.loading') : error ?? t('overview.git.noRepository')}
+            </p>
+          ) : <>
+            <button ref={branchTrigger} type="button" className={css.branchButton} aria-expanded={showBranches}
+              aria-controls={branchListId} disabled={busy !== null} onClick={() => { void toggleBranches() }}>
+              <span className={css.branchLabel}>
+                <span className={css.metricIcon} aria-hidden="true"><IconBranchOutline16 /></span>
+                <span className={css.metricLabel}>{t('overview.git.branches')}</span>
               </span>
-              <span className={css.metricValue}>{changeSummary}</span>
-            </div>}
-            {(git.ahead > 0 || git.behind > 0) && <div className={css.metricRow}>
-              <span className={css.metricHeading}>
-                <span className={css.metricIcon} aria-hidden="true"><IconRefreshOutline16 /></span>
-                <span className={css.metricLabel}>{t('overview.git.syncLabel')}</span>
-              </span>
-              <span className={css.metricValue}>{t('overview.git.sync', { ahead: git.ahead, behind: git.behind })}</span>
-            </div>}
-          </div>
-          <div className={css.actions}>
-            {actionButton('push', <IconDownloadOutline16 className={css.pushIcon} aria-hidden="true" />,
-              t('overview.git.push'), () => { void run('push') })}
-            {actionButton('pull', <IconDownloadOutline16 aria-hidden="true" />,
-              t('overview.git.pull'), () => { void run('pull') })}
-            {actionButton('refresh', <IconRefreshOutline16 aria-hidden="true" />,
-              t('overview.git.refresh'), () => { void refresh() })}
-          </div>
-          {conflict && <div role="alert" className={css.feedback}>
-            <p>{t('overview.git.conflict')}</p>
-            <button type="button" disabled={busy !== null} onClick={() => { void solve() }}>
-              {busy === 'resolve' ? t('overview.git.solving') : t('overview.git.solve')}
+              <span className={css.branchCurrent} title={git.branch ?? undefined}>{git.branch ?? t('overview.git.detached')}</span>
+              <IconChevronRightOutline14 className={showBranches ? css.chevronOpen : css.chevron} aria-hidden="true" />
             </button>
-          </div>}
-          {error && <p role="alert" className={css.error}>{error}</p>}
+            {showBranches && branchList && <div ref={branchMenu} id={branchListId} className={css.branchList} role="group"
+              aria-label={t('overview.git.branchList')}
+              style={branchPosition ?? { visibility: 'hidden', left: 0, top: 0 }}>
+              {branchList.branches.map(branch => <button key={branch} type="button" className={css.branchOption}
+                aria-current={branch === git.branch ? 'true' : undefined} disabled={busy !== null}
+                onClick={() => { void switchBranch(branch) }}>{branch}</button>)}
+            </div>}
+            <div className={css.metrics}>
+              {git.files.length > 0 && <div className={css.metricRow}>
+                <span className={css.metricHeading}>
+                  <span className={css.metricIcon} aria-hidden="true"><IconListPenOutline16 /></span>
+                  <span className={css.metricLabel}>{t('overview.git.changesLabel')}</span>
+                </span>
+                <span className={css.metricValue}>{changeSummary}</span>
+              </div>}
+              {(git.ahead > 0 || git.behind > 0) && <div className={css.metricRow}>
+                <span className={css.metricHeading}>
+                  <span className={css.metricIcon} aria-hidden="true"><IconRefreshOutline16 /></span>
+                  <span className={css.metricLabel}>{t('overview.git.syncLabel')}</span>
+                </span>
+                <span className={css.metricValue}>{t('overview.git.sync', { ahead: git.ahead, behind: git.behind })}</span>
+              </div>}
+            </div>
+            <div className={css.actions}>
+              {actionButton('push', <IconDownloadOutline16 className={css.pushIcon} aria-hidden="true" />,
+                t('overview.git.push'), () => { void run('push') })}
+              {actionButton('pull', <IconDownloadOutline16 aria-hidden="true" />,
+                t('overview.git.pull'), () => { void run('pull') })}
+              {actionButton('refresh', <IconRefreshOutline16 aria-hidden="true" />,
+                t('overview.git.refresh'), () => { void refresh() })}
+            </div>
+            {conflict && <div role="alert" className={css.feedback}>
+              <p>{t('overview.git.conflict')}</p>
+              <button type="button" disabled={busy !== null} onClick={() => { void solve() }}>
+                {busy === 'resolve' ? t('overview.git.solving') : t('overview.git.solve')}
+              </button>
+            </div>}
+            {error && <p role="alert" className={css.error}>{error}</p>}
+          </>}
         </div>, document.body,
       )}
       {auth === null && toast && <Toast key={toast.seq} text={toast.text} onDone={() => { setToast(null) }} />}

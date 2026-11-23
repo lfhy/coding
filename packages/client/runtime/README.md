@@ -36,9 +36,9 @@ SlotRegistry 分别为 renderer 提供 `useSessions` 与 `useWorkspaces` 的裸 
 
 ## New Session 与 blank 镜像
 
-`WorkspaceRuntime.connectWorkspace(workspaceId)` 优先复用该工作区未归档的空白会话：会话必须是工作区成员，且 cwd 等于工作区路径；仅 cwd 相同不会被采用。复用远端空白会话时立即返回会话 id，连接准备在后台继续，不撤回已完成的导航；没有可复用空白会话时，须先准备远端连接再请求 `session.create({ workspaceId })`。同一路径的并发准备共享一次调用，准备完成后再次检查可复用空白会话和在途创建。`connectWorkspace` 只返回会话 id，由调用方决定是否打开。
+`WorkspaceRuntime.connectWorkspace(workspaceId)` 优先复用该工作区未归档的 Host 空白会话：会话必须是该工作区的成员，且 `cwd` 等于工作区路径。没有可复用会话时，向 Host 提交目标 `workspaceId`；并发请求共享同一工作区的在途创建。客户端用列表中的工作区路径补齐回执摘要，不必等下一帧才识别远端会话。`connectWorkspace` 只返回会话 id，由调用方决定是否打开。复用或创建远端会话、打开已有会话历史都不建立 SSH 连接。
 
-`startSession` 发起新建操作，不返回 Promise。它依次采用明确指定的工作区、当前会话所属工作区和最近活跃的工作区；没有目标时清空选择，进入新会话空白页。为远端工作区准备和创建会话时保留当前选择，并通过 `WorkspaceListState.startingSessionWorkspaceId` 发布目标工作区 id；成功后自动打开结果。失败通过 `WorkspaceListState.startSessionError` 投影尝试编号、目标工作区和可显示的错误，供调用方在同一工作区重试；再次发起或成功打开会清除旧错误。等待远端结果期间，如果用户再次新建或改变当前选择，旧结果不会切换会话。
+`startSession` 发起新建操作，不返回 Promise。它依次采用明确指定的工作区、当前会话所属工作区和最近活跃的工作区；没有目标时清空选择，进入新会话空白页。等待 Host 创建时保留当前选择，成功后自动打开结果；再次新建或改变当前选择后，旧结果不会切换会话。Host 创建失败通过 `WorkspaceListState.startSessionError` 投影尝试编号、目标工作区和可显示的错误，供调用方在同一工作区重试；再次发起或成功打开会清除旧错误。[发送时](#首条消息的发送回执)的远端连接失败不进入这项投影。
 
 `connectHome()` 从 `host.describe` 读取 Host 用户 HOME 并创建未分组会话，不改变当前选择；`startSessionWithoutWorkspace()` 复用这条路径并打开结果。读取 HOME 失败时不会创建会话。
 
@@ -49,6 +49,8 @@ SlotRegistry 分别为 renderer 提供 `useSessions` 与 `useWorkspaces` 的裸 
 ## 首条消息的发送回执
 
 `Session` 持有本地首发回执，不把它写入会话历史或当作 Host 队列项。RPC 成功只表示 Host 接纳，并不证明消息已写入历史。客户端按 `message.source.rpcId` 识别同一次提交；收到对应的 `preparing` 投影、实际排队项或持久 `user/message` 时，由该 Host 状态接替本地回执。
+
+远端会话提交普通消息时，首发回执先在本地发布，不等待 SSH。发送以该会话的工作区 marker 为准，优先使用该 marker 的活连接，否则尝试用匹配的已保存档案恢复；确认连接可用后才向 Host 提交 `prompt`。连接准备失败不提交消息、不改变工作区，也不回退到本机会话；[输入区](../ui-conversation/README.md)保留同一份可编辑草稿及原附件供重试。
 
 ## 待处理队列投影
 

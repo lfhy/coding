@@ -252,7 +252,7 @@ function UserStyleBubble({
   renderMessageImages: ChatNodeOwnerProps['renderMessageImages']
   /** 气泡下方的操作区，接收完整的可复制文本。 */
   actions?: (text: string) => ReactNode
-  pending?: 'sending' | 'preparing' | 'steering'
+  pending?: 'connectingRemote' | 'sending' | 'preparing' | 'steering'
   pendingImageCount?: number
   /** 相邻召回节点关联的会话名。 */
   referenceLabels?: readonly string[]
@@ -283,7 +283,7 @@ function UserStyleBubble({
           </div>
         )}
       </div>
-      {(pending === 'sending' || pending === 'preparing') && (
+      {pending !== undefined && pending !== 'steering' && (
         <span role="status" className={css.referenceSummary}>{t(`message.${pending}`)}</span>
       )}
       {actions?.(text)}

@@ -31,6 +31,7 @@ import type { SessionFace } from '../contract/session.ts'
 import type { AgentContext, ISessions } from '../contract/sessions.ts'
 import { createScope, scopeOf as scopeTagOf } from '../agents/scope.ts'
 import { remoteWorkspaceDisplayPath } from '../workspaces/service.ts'
+import { createRemoteWorkspacePreparation } from '../workspaces/remote.ts'
 import type { ConversationRuntime } from './conversation-assembler.ts'
 import { SessionManager } from './manager.ts'
 import type { SessionRemotes } from './remotes.ts'
@@ -296,6 +297,7 @@ export class SessionRuntime implements ISessions {
       restored.sessionId,
       restored.subagentAddress,
       conversation,
+      createRemoteWorkspacePreparation(rootCtx),
     )
     this.list = createSnapshotStore<SessionListState>({
       ids: [], byId: {}, current: undefined, phase: 'pending',
@@ -470,18 +472,16 @@ export class SessionRuntime implements ISessions {
   }
 
   /**
-   * Create a session on the host. Resolution guarantee: by the time the
-   * promise resolves, the created session is in the list store and
-   * {@link SessionRuntime.binding} resolves it — callers (New Session
-   * draft hand-off) may address the scope synchronously, without waiting a
-   * notifier flush. The synchronous projection below makes this structural
-   * rather than an accident of microtask ordering.
-   * @param opts - target workspace or directory and an optional preallocated id.
-   * @returns the new session id.
-   * @throws {SessionCreateError} with the requested id.
+   * 由 Host 创建空白会话，不切换当前选择。
+   * @param opts - 目标工作区或目录，以及可选的预分配会话 id。
+   * @returns 已进入列表且可由 {@link SessionRuntime.binding} 同步寻址的会话 id。
+   * @throws {SessionCreateError} 创建失败，包含请求的会话 id。
    */
   async create(opts: { workspaceId?: WorkspaceId; cwd?: string; sessionId?: SessionId } = {}): Promise<SessionId> {
-    const result = await this.manager.create(opts)
+    // Host 接收工作区 id；缓存的同一工作区路径只用于在列表帧到达前确定会话目录。
+    const workspacePath = opts.workspaceId === undefined ? undefined : this.rootCtx.get('workspaces')?.list.getSnapshot()
+      .items.find(item => item.workspaceId === opts.workspaceId)?.path
+    const result = await this.manager.create(opts, workspacePath)
     if (!result.ok) throw new SessionCreateError(result.error, opts.sessionId)
     this.projectList()
     return result.value.sessionId

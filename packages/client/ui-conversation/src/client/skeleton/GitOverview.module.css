@@ -293,10 +293,15 @@
 }
 
 .feedback,
+.status,
 .error {
   margin: 12px 0 0;
   overflow-wrap: anywhere;
   font: var(--dsw-font-xxs-12);
+}
+
+.status {
+  color: var(--dsw-alias-label-secondary);
 }
 
 .feedback {

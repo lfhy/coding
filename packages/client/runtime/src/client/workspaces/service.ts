@@ -1,4 +1,4 @@
-/** WorkspaceRuntime projects the Workspace object manager for UI consumers. */
+/** 工作区业务动作及面向界面的列表投影。 */
 
 import type { Context } from '@deepseek-ai/cordis'
 import type {
@@ -29,8 +29,6 @@ export interface WorkspaceListState {
   baselinesReady: boolean
   /** Most recently active Workspace, derived without changing `items` order. */
   recentWorkspaceId: WorkspaceId | undefined
-  /** 显式新建动作正在等待连接或创建的工作区；同一时刻只跟踪最新请求。 */
-  startingSessionWorkspaceId?: WorkspaceId
   /** 最近一次显式新建会话失败；供界面按目标重试。 */
   startSessionError?: WorkspaceStartSessionError
 }
@@ -73,30 +71,8 @@ export class DirectoryBrowseError extends Error {
   }
 }
 
-/** Real Workspace object layer and Host actions. */
-/**
- * 远端工作区在打开前恢复 SSH 连接的能力。由桌面客户端提供；普通 Web 没有
- * 这项能力，因此远端占位路径只有在注册了该服务时才能打开。
- */
-export interface RemoteWorkspaceActivation {
-  /** @param path - 工作区的本地占位路径（marker 目录）。 */
-  activate(path: string): Promise<void>
-}
-
 /** Host 打开失败时的稳定上下文前缀；Host 与 Client 共用同一个，避免重复。 */
 const PATH_OPEN_FAILED = 'path open failed: '
-
-/** 桌面端生成的远端工作区占位路径：remote-workspaces/<20 hex>/<label>-<20 hex>。 */
-const REMOTE_WORKSPACE_PATH = /(?:^|[\\/])remote-workspaces[\\/][a-f0-9]{20}[\\/][A-Za-z0-9_-]+-[a-f0-9]{20}$/u
-
-/**
- * 判断工作区路径是否是桌面端生成的远端占位目录。
- * @param path - 工作区的本地路径。
- * @returns 属于远端工作区占位路径时为 true。
- */
-export function isRemoteWorkspacePath(path: string): boolean {
-  return REMOTE_WORKSPACE_PATH.test(path)
-}
 
 /** 命中远端占位目录本身或其内部路径：捕获远端目录名与相对剩余部分。 */
 const REMOTE_WORKSPACE_SEGMENT = /(?:^|[\\/])remote-workspaces[\\/][a-f0-9]{20}[\\/]([A-Za-z0-9_-]+)-[a-f0-9]{20}((?:[\\/].*)?)$/u
@@ -123,16 +99,14 @@ export class WorkspaceRuntime implements IWorkspaces {
   readonly list: SnapshotStore<WorkspaceListState>
   /** Workspace baseline and frame owner. */
   private readonly manager: WorkspaceManager
-  /** In-flight blank-session creates keyed by workspace (connectWorkspace coalescing). */
+  /** 同一工作区的在途空白会话创建；重复点击使用同一结果。 */
   private readonly connecting = new Map<WorkspaceId, Promise<SessionId>>()
-  /** 进行中的远端重连，按工作区路径去重：连续点击不再各自发起一轮 SSH 握手。 */
-  private readonly activating = new Map<string, Promise<void>>()
   /** Guards the runtime-owned one-shot initial-selection subscription. */
   private initialSelectionStarted = false
   /** 显式新建会话的单调 attempt，旧完成结果不能覆盖新尝试。 */
   private startSessionAttempt = 0
-  /** 远端新建动作用发起时的会话约束导航权；用户离开后只保留后台结果。 */
-  private startingSession: { workspaceId: WorkspaceId; source: SessionId | undefined } | undefined
+  /** 新建期间改变当前选择时，撤回该请求的导航权。 */
+  private startingSession: { source: SessionId | undefined } | undefined
   /** 最近一次显式新建会话失败，随工作区列表一起投影。 */
   private startSessionError: WorkspaceStartSessionError | undefined
 
@@ -151,7 +125,6 @@ export class WorkspaceRuntime implements IWorkspaces {
     this.sessions.list.subscribe(() => {
       if (this.startingSession !== undefined && this.sessions.list.getSnapshot().current !== this.startingSession.source) {
         this.startingSession = undefined
-        this.startSessionAttempt++
       }
       this.project()
     })
@@ -159,46 +132,19 @@ export class WorkspaceRuntime implements IWorkspaces {
   }
 
   /**
-   * Resolve the session a New Session flow lands in once this Workspace is
-   * chosen: reuse the workspace's existing blank session when one is in the
-   * list mirror, else create a fresh one on the host (`session.create` births
-   * the full Session+Agent — the client holds no intermediate state). The
-   * caller owns navigation: take the returned id to `sessions.open`.
-   * Resolution guarantee (both arms): the returned id is already in the list
-   * store and `sessions.binding(id)` resolves synchronously — draft hand-off
-   * may write the new scope's machine before opening.
-   * @param workspaceId - chosen Workspace (must be in the workspace list).
-   * @returns the reused or newly created session id.
+   * 复用或创建指定工作区的空白会话；远端连接不属于这一步。
+   * 调用方负责导航，也可在打开前先把草稿移交给目标会话。
+   * @param workspaceId - 列表里的目标工作区。
+   * @returns 已进入列表、可同步寻址的会话 id。
    */
   async connectWorkspace(workspaceId: WorkspaceId): Promise<SessionId> {
     const workspace = this.list.getSnapshot().items.find(item => item.workspaceId === workspaceId)
     if (workspace === undefined) throw new Error(`workspaces.connectWorkspace: unknown workspace ${workspaceId}`)
-    // Coalesce concurrent connects: a create's summary lands without cwd
-    // until the host frame arrives, so a second call inside that window
-    // would miss the reuse scan and mint another hidden blank session.
     const inflight = this.connecting.get(workspaceId)
     if (inflight !== undefined) return inflight
-    // 复用的空白会话先于远端重连返回：入口页不该为一次并不需要的握手等待。
-    // 远端连接仍要可用，因此重连在后台继续，失败只记录诊断，不撤销已完成的导航。
+    // 空白会话由本地 Host 持有；打开输入页不需要远程连接。
     const reusable = this.reusableBlankSession(workspace)
-    if (reusable !== undefined) {
-      void this.activateRemoteWorkspace(workspace.path).catch((reason: unknown) => {
-        this.startSessionError = {
-          attempt: this.startSessionAttempt,
-          workspaceId,
-          message: startSessionErrorMessage(reason),
-        }
-        this.project()
-      })
-      return reusable
-    }
-    await this.activateRemoteWorkspace(workspace.path)
-    // 创建会话前确认远端工作区可用。桌面端会复用当前路由，仅在不可用时尝试恢复。
-    const created = this.reusableBlankSession(workspace)
-    if (created !== undefined) return created
-    // 重连期间到达的第二次点击可能已经先一步创建：回到同一份创建，不再多铸一个空白会话。
-    const coalesced = this.connecting.get(workspaceId)
-    if (coalesced !== undefined) return coalesced
+    if (reusable !== undefined) return reusable
     const attempt = this.sessions.create({ workspaceId })
       .finally(() => { this.connecting.delete(workspaceId) })
     this.connecting.set(workspaceId, attempt)
@@ -223,27 +169,6 @@ export class WorkspaceRuntime implements IWorkspaces {
         && !archived.includes(summary.id)) return summary.id
     }
     return undefined
-  }
-
-  /**
-   * 打开远端工作区前让桌面端复用已发布的活连接，或用保存的档案重连。
-   * 同一工作区的并发调用共享同一次确认，避免重复发起 SSH 握手。
-   * 缺少连接能力时直接失败，避免进入一个所有工具都会报 stale-marker 的会话。
-   * @param path - 工作区的本地路径；非远端占位路径直接放行。
-   * @returns 确认可用后结算；失败时拒绝并让下一次调用重新尝试。
-   */
-  private activateRemoteWorkspace(path: string): Promise<void> {
-    if (!isRemoteWorkspacePath(path)) return Promise.resolve()
-    const activation = this.ctx.get('remoteWorkspace') as RemoteWorkspaceActivation | undefined
-    if (activation === undefined) {
-      return Promise.reject(new Error('remote workspace activation is unavailable'))
-    }
-    const inflight = this.activating.get(path)
-    if (inflight !== undefined) return inflight
-    const attempt = activation.activate(path)
-      .finally(() => { this.activating.delete(path) })
-    this.activating.set(path, attempt)
-    return attempt
   }
 
   /**
@@ -309,12 +234,12 @@ export class WorkspaceRuntime implements IWorkspaces {
 
   /**
    * 新建入口依次采用明确目标、当前会话归属和最近工作区；无目标时显示空白入口页。
-   * 远端准备期间保留原会话并投影等待状态；切走后，迟到结果不抢回导航。
+   * 连接远端不阻塞打开空白页；创建期间切走后，迟到结果不抢回导航。
    * @param workspaceId - 分组等入口明确指定的工作区。
    */
   startSession(workspaceId?: WorkspaceId): void {
     const attempt = ++this.startSessionAttempt
-    const hadFeedback = this.startSessionError !== undefined || this.startingSession !== undefined
+    const hadError = this.startSessionError !== undefined
     this.startSessionError = undefined
     const workspace = this.list.getSnapshot()
     const current = this.sessions.list.getSnapshot().current
@@ -322,26 +247,23 @@ export class WorkspaceRuntime implements IWorkspaces {
       ? undefined
       : workspace.items.find(item => item.sessionIds.includes(current))?.workspaceId
     const target = workspaceId ?? currentWorkspaceId ?? workspace.recentWorkspaceId
-    const path = workspace.items.find(item => item.workspaceId === target)?.path
-    this.startingSession = target !== undefined && path !== undefined && isRemoteWorkspacePath(path)
-      ? { workspaceId: target, source: current }
-      : undefined
-    if (hadFeedback || this.startingSession !== undefined) this.project()
+    const request = { source: current }
+    this.startingSession = target === undefined ? undefined : request
+    if (hadError) this.project()
     if (target === undefined) {
       this.sessions.clear()
       return
     }
     void this.connectWorkspace(target).then(
       (sessionId) => {
-        // 较新的点击拥有导航权；重试与原请求并发时，两次完成可能解析到同一空白行。
-        if (attempt !== this.startSessionAttempt) return
+        if (this.startingSession !== request) return
         this.startingSession = undefined
         this.sessions.open(sessionId)
         this.startSessionError = undefined
         this.project()
       },
       (reason: unknown) => {
-        if (attempt !== this.startSessionAttempt) return
+        if (this.startingSession !== request) return
         this.startingSession = undefined
         const message = startSessionErrorMessage(reason)
         if (isTransportFailure(message)) {
@@ -555,7 +477,6 @@ export class WorkspaceRuntime implements IWorkspaces {
       error: workspace.error,
       baselinesReady,
       recentWorkspaceId: baselinesReady ? recentWorkspace(workspace.items, sessions.byId) : undefined,
-      ...(this.startingSession === undefined ? {} : { startingSessionWorkspaceId: this.startingSession.workspaceId }),
       ...(this.startSessionError === undefined ? {} : { startSessionError: this.startSessionError }),
     })
   }

@@ -15,14 +15,14 @@ export interface IWorkspaces {
   /** The useWorkspaces standard feed (read face — writes stay inside the domain). */
   readonly list: ObservableSnapshot<WorkspaceListState>
   /**
-   * Connect a Workspace to its reusable or freshly created blank session.
-   * @param workspaceId - target workspace.
-   * @returns the connected session id.
+   * 获取或创建目标工作区的可编辑空白会话，不连接远端。
+   * @param workspaceId - 目标工作区。
+   * @returns 已可打开的会话 id。
    */
   connectWorkspace(workspaceId: WorkspaceId): Promise<SessionId>
   /**
-   * 新建会话流程：连接显式、当前会话所属或最近使用的工作区并打开结果；
-   * 等待远端就绪时投影目标工作区；失败通过 `startSessionError` 提供重试目标。
+   * 在显式、当前会话所属或最近使用的工作区打开空白会话；
+   * 创建失败通过 `startSessionError` 提供重试目标。
    * @param workspaceId - 显式目标；省略时先沿用当前会话工作区，再回退到最近工作区。
    */
   startSession(workspaceId?: WorkspaceId): void

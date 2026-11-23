@@ -13,7 +13,7 @@ const t = makeTranslate(zh)
 
 afterEach(() => { cleanup(); vi.restoreAllMocks() })
 
-function fixture(overrides: Partial<GitOverviewInjected> = {}) {
+function fixture(overrides: Partial<GitOverviewInjected> = {}, deferStatus = false) {
   const actions: GitOverviewInjected = {
     status: vi.fn(async () => git),
     branches: vi.fn(async () => ({ branches: ['main', 'feature/ui'], current: 'main' })),
@@ -24,7 +24,7 @@ function fixture(overrides: Partial<GitOverviewInjected> = {}) {
     resolveConflict: vi.fn(async () => {}),
     ...overrides,
   }
-  const props = { sessionId, ...actions, t } as Parameters<typeof GitOverview>[0]
+  const props = { sessionId, ...actions, deferStatus, t } as Parameters<typeof GitOverview>[0]
   return { actions, view: render(<GitOverview {...props} />) }
 }
 
@@ -39,6 +39,22 @@ async function openGit() {
 }
 
 describe('Git overview', () => {
+  it('远端进入会话时不查 Git，主动展开才读取，失败时可重新打开重试', async () => {
+    const status = vi.fn<GitOverviewInjected['status']>()
+      .mockRejectedValueOnce(new Error('SSH transport details')).mockResolvedValueOnce(git)
+    fixture({ status }, true)
+    expect(status).not.toHaveBeenCalled()
+    const row = screen.getByRole('button', { name: 'Git 变更' })
+    const layer = await openGit()
+    expect(status).toHaveBeenCalledExactlyOnceWith(sessionId)
+    await waitFor(() => { expect(within(layer).getByRole('alert').textContent).toContain('请检查远程连接') })
+    expect(layer.textContent).not.toContain('SSH transport details')
+    fireEvent.click(row)
+    const retry = await openGit()
+    await waitFor(() => { expect(within(retry).getByRole('button', { name: /切换分支/ }).textContent).toContain('main') })
+    expect(status).toHaveBeenCalledTimes(2)
+  })
+
   it('空白工作区行展示 Git 分支，点击复用概览操作面板，第二次点击收起', async () => {
     const actions = fixture().actions
     cleanup()

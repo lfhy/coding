@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
 import { createPortal } from 'react-dom'
-import { summarizeVisibleSubagents, type JobView } from 'coding-client-runtime/client'
+import { isRemoteWorkspacePath, summarizeVisibleSubagents, type JobView } from 'coding-client-runtime/client'
 import { IconAgentPresetOutline16, IconChecklistOutline14, IconChevronRightOutline14, IconCloseOutline16 } from 'coding-client-ui-primitives'
 import type { PropsLocale, PropsRenderSlots, PropsRuntime } from 'coding-client-ui-slots'
 // 投影键由各自能力包声明，卡片只消费现有会话数据。
@@ -106,6 +106,7 @@ export function OverviewCard({
     }
   }, [expanded, overviewExpanded, collapse])
   const summaries = useSessions(state => state.byId)
+  const cwd = summaries[sessionId]?.cwd
   const catalog = useSessions(state => state.subagentsByParent[sessionId])
   const jobs = useSessions(state => state.jobsBySession[sessionId]) ?? NO_JOBS
   const descendants = useMemo(
@@ -200,7 +201,7 @@ export function OverviewCard({
           </div>
         </div>
 
-        {renderSlot('conversation.overview.git', {})}
+        {renderSlot('conversation.overview.git', { deferStatus: cwd !== undefined && isRemoteWorkspacePath(cwd) })}
 
         <div className={css.group}>
           <h2 className={css.groupTitle}>{t('overview.statistics')}</h2>

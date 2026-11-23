@@ -63,13 +63,14 @@ function providePresentation(ctx: Context): PresentationCapture {
 }
 
 /** Boot the plugin over fake slash/connection faces; returns the captured source and its ctx. */
-async function bench(list: ListFn, addressed?: SessionId, invoke?: InvokeFn) {
+async function bench(list: ListFn, addressed?: SessionId, invoke?: InvokeFn, byId: Record<string, { cwd: string }> = {}) {
   const ctx = new Context()
   let captured: InputTriggerSource | undefined
   ctx.provide('inputTriggers', { registerSource: (src: InputTriggerSource) => { captured = src; return () => {} } })
   const defaultInvoke: InvokeFn = () => Promise.resolve({ result: { ok: true as const, value: { accepted: true as const } } })
   ctx.provide('connection', { api: { skills: { list, invoke: invoke ?? defaultInvoke } } })
   ctx.provide('sessions', {
+    list: { getSnapshot: () => ({ byId }) },
     subagentAddress: (id: SessionId) => id === addressed
       ? { parentSessionId: sid('parent'), childSessionId: id, mode: 'continuable' as const }
       : undefined,
@@ -267,6 +268,17 @@ describe('catalog cache', () => {
     expect(payloads).toHaveLength(1)
     await source.candidates(proj('s2'), req(''))
     expect(payloads).toHaveLength(2)
+  })
+
+  it('does not scan remote skills when its conversation scope is opened', async () => {
+    const { list, payloads } = countingList()
+    const { source } = await bench(list, undefined, undefined, {
+      remote: { cwd: '/store/remote-workspaces/0123456789abcdef0123/project-0123456789abcdef0123' },
+    })
+    source.warm!(proj('remote'))
+    expect(payloads).toEqual([])
+    await expect(source.candidates(proj('remote'), req('commit'))).resolves.toHaveLength(1)
+    expect(payloads).toEqual([{ sessionId: 'remote' }])
   })
 
   it('agent-preset/selected clears only the recomposed session', async () => {

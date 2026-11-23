@@ -277,7 +277,7 @@ describe('WorkspaceRuntime', () => {
     await expect(workspaces.connectWorkspace(wid('alpha'))).resolves.toBe('s-fresh-2')
   })
 
-  it('requires and runs remote workspace activation before opening its session', async () => {
+  it('creates an addressable remote blank even without the desktop bridge', async () => {
     const ctx = new Context()
     const api = new FakeApiClient()
     const sessions = new SessionRuntime(ctx, api, fakeRemote())
@@ -290,19 +290,17 @@ describe('WorkspaceRuntime', () => {
     await Promise.all([workspaces.refresh(), sessions.refresh()])
     await Promise.resolve()
 
-    // 没有桌面端激活能力时直接失败，不进入所有工具都会报 stale-marker 的会话。
-    await expect(workspaces.connectWorkspace(wid('remote'))).rejects.toThrow(/activation is unavailable/u)
-    expect(api.callsOf('session.create')).toEqual([])
-
-    const activate = vi.fn(async () => {})
-    ctx.reflect.provide('remoteWorkspace', { activate })
     api.onCreate = () => Promise.resolve(ok({ sessionId: sid('s-remote') }))
     await expect(workspaces.connectWorkspace(wid('remote'))).resolves.toBe('s-remote')
-    expect(activate).toHaveBeenCalledWith(remotePath)
     expect(api.callsOf('session.create')).toEqual([{ workspaceId: 'remote' }])
+    expect(sessions.list.getSnapshot().byId[sid('s-remote')]?.cwd).toBe(remotePath)
+    const session = sessions.binding(sid('s-remote'))?.session
+    await expect(session?.prompt([{ type: 'text', text: 'draft' }], 'queue')).resolves.toMatchObject({ ok: false })
+    expect(session?.getSnapshot().promptError?.remoteWorkspace).toBe(true)
+    expect(api.callsOf('session.prompt')).toEqual([])
   })
 
-  it('starts the remote workspace directly from restored local history and shows cold activation progress', async () => {
+  it('opens a cold remote blank from local history and only connects when that session submits', async () => {
     const ctx = new Context()
     const api = new FakeApiClient()
     const sessions = new SessionRuntime(ctx, api, fakeRemote())
@@ -322,39 +320,89 @@ describe('WorkspaceRuntime', () => {
       .mockReturnValueOnce(firstDial.promise)
       .mockReturnValueOnce(secondDial.promise)
     ctx.reflect.provide('remoteWorkspace', { activate })
+    api.onCreate = () => Promise.resolve(ok({ sessionId: sid('remote-blank') }))
     await Promise.all([workspaces.refresh(), sessions.refresh()])
     sessions.open(sid('local-history'))
     const dispose = workspaces.startInitialSelection()
     try {
       expect(activate).not.toHaveBeenCalled()
       workspaces.startSession(wid('remote'))
-      expect(activate).toHaveBeenCalledExactlyOnceWith(remotePath)
-      expect(workspaces.list.getSnapshot().startingSessionWorkspaceId).toBe(wid('remote'))
-      expect(sessions.list.getSnapshot().current).toBe(sid('local-history'))
-      expect(api.callsOf('session.create')).toEqual([])
-
-      firstDial.reject(new Error('远程连接断开'))
-      await vi.waitFor(() => {
-        expect(workspaces.list.getSnapshot().startSessionError).toMatchObject({ workspaceId: wid('remote') })
-      })
-      expect(workspaces.list.getSnapshot().startingSessionWorkspaceId).toBeUndefined()
-      expect(sessions.list.getSnapshot().current).toBe(sid('local-history'))
-      expect(api.callsOf('session.create')).toEqual([])
-
-      api.onCreate = () => Promise.resolve(ok({ sessionId: sid('remote-blank') }))
-      workspaces.startSession(wid('remote'))
-      expect(workspaces.list.getSnapshot().startSessionError).toBeUndefined()
-      expect(workspaces.list.getSnapshot().startingSessionWorkspaceId).toBe(wid('remote'))
-      secondDial.resolve(undefined)
       await vi.waitFor(() => { expect(sessions.list.getSnapshot().current).toBe(sid('remote-blank')) })
       expect(api.callsOf('session.create')).toEqual([{ workspaceId: 'remote' }])
-      expect(workspaces.list.getSnapshot().startingSessionWorkspaceId).toBeUndefined()
+      expect(activate).not.toHaveBeenCalled()
+      const session = sessions.binding(sid('remote-blank'))?.session
+      expect(session).toBeDefined()
+      const prepare = vi.fn(() => Promise.resolve([{ type: 'text' as const, text: '留在远程' }]))
+      const draft = { text: '留在远程', imageCount: 1, prepare }
+      const first = session?.prompt(draft, 'queue')
+      await vi.waitFor(() => { expect(activate).toHaveBeenCalledExactlyOnceWith(remotePath) })
+      expect(session?.getSnapshot().sendingPrompt).toMatchObject({ connectingRemote: true, imageCount: 1 })
+      expect(session?.getSnapshot().queue).toEqual([])
+      expect(prepare).not.toHaveBeenCalled()
+      expect(api.callsOf('session.prompt')).toEqual([])
+
+      firstDial.reject(new Error('远程连接断开'))
+      await expect(first).resolves.toMatchObject({ ok: false })
+      expect(session?.getSnapshot().sendingPrompt).toBeUndefined()
+      expect(session?.getSnapshot().queue).toEqual([])
+      expect(session?.getSnapshot().promptError).toMatchObject({ op: 'send', remoteWorkspace: true })
+      expect(sessions.list.getSnapshot().byId[sid('remote-blank')]?.blank).toBe(true)
+      expect(workspaces.list.getSnapshot().startSessionError).toBeUndefined()
+      expect(sessions.list.getSnapshot().current).toBe(sid('remote-blank'))
+      expect(prepare).not.toHaveBeenCalled()
+      expect(api.callsOf('session.prompt')).toEqual([])
+
+      const retry = session?.prompt(draft, 'queue')
+      secondDial.resolve(undefined)
+      await expect(retry).resolves.toMatchObject({ ok: true })
+      expect(activate.mock.calls).toHaveLength(2)
+      expect(prepare).toHaveBeenCalledOnce()
+      expect(api.callsOf('session.prompt')).toEqual([expect.objectContaining({ sessionId: sid('remote-blank'), mode: 'queue' })])
+      expect(api.callsOf('session.create')).toEqual([{ workspaceId: 'remote' }])
     } finally {
       dispose()
     }
   })
 
-  it.each(['success', 'failure'])('leaves subsequent navigation alone after a cold remote start settles with %s', async (result) => {
+  it('shares a connecting marker across sends but leaves local and cancelled submissions independent', async () => {
+    const ctx = new Context()
+    const api = new FakeApiClient()
+    const sessions = new SessionRuntime(ctx, api, fakeRemote())
+    const remotePath = '/store/remote-workspaces/0123456789abcdef0123/project-0123456789abcdef0123'
+    const first = sid('remote-first')
+    const second = sid('remote-second')
+    const local = sid('local')
+    api.onList = () => Promise.resolve(ok({ items: [first, second, local].map(sessionId => ({
+      sessionId, updatedAt: 1, running: false, blank: true, cwd: sessionId === local ? '/w/local' : remotePath,
+    })) as never[] }))
+    const gate = deferred<undefined>()
+    const activate = vi.fn(() => gate.promise)
+    ctx.reflect.provide('remoteWorkspace', { activate })
+    await sessions.refresh()
+    sessions.open(first)
+
+    const cancelled = new AbortController()
+    const draft = [{ type: 'text' as const, text: 'hello' }]
+    const send = sessions.binding(first)?.session.prompt(draft, 'queue')
+    const abandon = sessions.binding(second)?.session.prompt(draft, 'queue', cancelled.signal)
+    sessions.open(local)
+    await expect(sessions.binding(local)?.session.prompt(draft, 'queue')).resolves.toMatchObject({ ok: true })
+    cancelled.abort()
+    await expect(abandon).resolves.toMatchObject({ ok: false })
+    expect(sessions.binding(second)?.session.getSnapshot().sendingPrompt).toBeUndefined()
+    expect(sessions.binding(second)?.session.getSnapshot().promptError?.remoteWorkspace).toBeUndefined()
+    expect(activate).toHaveBeenCalledExactlyOnceWith(remotePath)
+    expect(api.callsOf('session.prompt')).toEqual([expect.objectContaining({ sessionId: local })])
+
+    gate.resolve(undefined)
+    await expect(send).resolves.toMatchObject({ ok: true })
+    expect(api.callsOf('session.prompt')).toEqual([
+      expect.objectContaining({ sessionId: local }), expect.objectContaining({ sessionId: first, content: draft }),
+    ])
+    expect(sessions.list.getSnapshot().current).toBe(local)
+  })
+
+  it.each(['success', 'failure'])('does not interrupt later navigation when work session creation settles with %s', async (result) => {
     const ctx = new Context()
     const api = new FakeApiClient()
     const sessions = new SessionRuntime(ctx, api, fakeRemote())
@@ -370,11 +418,9 @@ describe('WorkspaceRuntime', () => {
     try {
       sessions.open(sid('source'))
       workspaces.startSession(wid('remote'))
-      expect(workspaces.list.getSnapshot().startingSessionWorkspaceId).toBe(wid('remote'))
       sessions.open(sid('other'))
-      expect(workspaces.list.getSnapshot().startingSessionWorkspaceId).toBeUndefined()
       if (result === 'success') pending.resolve(sid('remote-blank'))
-      else pending.reject(new Error('远程连接断开'))
+      else pending.reject(new Error('无法创建会话'))
       await Promise.resolve()
       expect(sessions.list.getSnapshot().current).toBe(sid('other'))
       expect(workspaces.list.getSnapshot().startSessionError).toBeUndefined()
@@ -394,7 +440,7 @@ describe('WorkspaceRuntime', () => {
     expect(remoteWorkspaceDisplayPath('relative/path')).toBeUndefined()
   })
 
-  it('opens a reusable blank remote session without waiting for its reconnection', async () => {
+  it('reuses a remote blank without connecting in the background', async () => {
     const ctx = new Context()
     const api = new FakeApiClient()
     const sessions = new SessionRuntime(ctx, api, fakeRemote())
@@ -408,19 +454,15 @@ describe('WorkspaceRuntime', () => {
     }))
     await Promise.all([workspaces.refresh(), sessions.refresh()])
     await Promise.resolve()
-    let release: () => void = () => {}
-    const activate = vi.fn(() => new Promise<void>((resolve) => { release = resolve }))
+    const activate = vi.fn(async () => {})
     ctx.reflect.provide('remoteWorkspace', { activate })
 
-    // 复用已有空白会话：入口页不等重连结算。
     await expect(workspaces.connectWorkspace(wid('remote'))).resolves.toBe('s-blank')
-    expect(activate).toHaveBeenCalledWith(remotePath)
+    expect(activate).not.toHaveBeenCalled()
     expect(api.callsOf('session.create')).toEqual([])
-    release()
-    await Promise.resolve()
   })
 
-  it('coalesces concurrent remote reconnects and never mints a second blank session', async () => {
+  it('coalesces concurrent blank creates for a remote workspace without activating it', async () => {
     const ctx = new Context()
     const api = new FakeApiClient()
     const sessions = new SessionRuntime(ctx, api, fakeRemote())
@@ -432,16 +474,16 @@ describe('WorkspaceRuntime', () => {
     api.onList = () => Promise.resolve(ok({ items: [] }))
     await Promise.all([workspaces.refresh(), sessions.refresh()])
     await Promise.resolve()
-    let release: () => void = () => {}
-    const activate = vi.fn(() => new Promise<void>((resolve) => { release = resolve }))
+    const activate = vi.fn(async () => {})
     ctx.reflect.provide('remoteWorkspace', { activate })
-    api.onCreate = () => Promise.resolve(ok({ sessionId: sid('s-remote') }))
+    const create = deferred<Awaited<ReturnType<typeof api.onCreate>>>()
+    api.onCreate = () => create.promise
 
     const first = workspaces.connectWorkspace(wid('remote'))
     const second = workspaces.connectWorkspace(wid('remote'))
-    release()
+    create.resolve(ok({ sessionId: sid('s-remote') }))
     await expect(Promise.all([first, second])).resolves.toEqual(['s-remote', 's-remote'])
-    expect(activate).toHaveBeenCalledTimes(1)
+    expect(activate).not.toHaveBeenCalled()
     expect(api.callsOf('session.create')).toEqual([{ workspaceId: 'remote' }])
   })
 

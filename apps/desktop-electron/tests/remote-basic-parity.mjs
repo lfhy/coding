@@ -1,12 +1,12 @@
 /**
- * 显式 opt-in 的基础 SSH 原生验收；仅连接本进程启动、禁止端口转发的回环 fixture。
- * 凭据只在内存中传递；失败日志仅包含固定阶段，不输出 SSH 输入或 bridge token。
+ * 显式 opt-in 的基础 SSH 原生验收；SSH 与模型均使用本进程的回环夹具，SSH 禁止端口转发。
+ * 凭据仅用于隔离实例；失败日志不输出 SSH 输入、模型请求或 bridge token。
  */
 
 import assert from 'node:assert/strict'
-import { execFileSync, spawn } from 'node:child_process'
+import { execFileSync } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { mkdir, mkdtemp, readFile, readdir, realpath, rm } from 'node:fs/promises'
 import { join, posix } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -16,10 +16,12 @@ import JsonlSessionPersistence from '../../../packages/session/session-persisten
 import { createMessage, createUserMessage } from '../../../packages/llm/llm/lib/index.js'
 import electronExecutable from 'electron'
 import { _electron } from 'playwright'
+import { fixtureModel, fixtureReply, pasteDraftPng, startModel, startSshFixture } from './remote-basic-fixtures.mjs'
 
 const root = fileURLToPath(new URL('../../..', import.meta.url))
 const entry = join(root, 'apps/desktop-electron/lib/main.js')
 const timeout = 90_000
+const failFirstSend = process.argv.includes('--fail-first-send')
 
 async function bounded(promise, stage, ms = timeout) {
   let timer
@@ -52,62 +54,6 @@ function safeEnvironment(home, temporary) {
     USER: 'coding-e2e',
     LOGNAME: 'coding-e2e',
     ...process.env.DISPLAY === undefined ? {} : { DISPLAY: process.env.DISPLAY },
-  }
-}
-
-async function buildFixture(binary, env) {
-  const moduleCache = process.env.GOMODCACHE ?? join(process.env.GOPATH ?? join(process.env.HOME, 'go'), 'pkg/mod')
-  const child = spawn('go', ['build', '-tags', 'remote_ssh_e2e', '-o', binary, './cmd/ssh-fixture'], {
-    cwd: join(root, 'apps/desktop'),
-    env: { ...env, CGO_ENABLED: '0', GOMODCACHE: moduleCache, GOCACHE: join(env.TMPDIR, 'go-build') },
-    stdio: 'ignore',
-  })
-  const code = await bounded(new Promise((resolve, reject) => {
-    child.once('error', () => reject(new Error('Go fixture build could not start')))
-    child.once('exit', resolve)
-  }), 'Go fixture build', 180_000)
-  assert.equal(code, 0, 'Go SSH fixture build failed')
-}
-
-async function startFixture(binary, env) {
-  const child = spawn(binary, ['--no-forwarding'], {
-    cwd: join(root, 'apps/desktop'), env, stdio: ['pipe', 'pipe', 'ignore'],
-  })
-  try {
-    const ready = await bounded(new Promise((resolve, reject) => {
-      let line = ''
-      child.once('error', () => reject(new Error('SSH fixture could not start')))
-      child.once('exit', () => reject(new Error('SSH fixture exited before ready')))
-      child.stdout.on('data', chunk => {
-        line += chunk.toString('utf8')
-        if (line.length > 4096) { reject(new Error('SSH fixture ready frame is oversized')); return }
-        const end = line.indexOf('\n')
-        if (end < 0) return
-        try { resolve(JSON.parse(line.slice(0, end))) }
-        catch { reject(new Error('SSH fixture ready frame is invalid')) }
-      })
-    }), 'SSH fixture ready')
-    assert.equal(ready.host, '127.0.0.1')
-    assert.ok(Number.isSafeInteger(ready.port) && ready.port > 0 && ready.port <= 65535)
-    assert.ok(typeof ready.username === 'string' && ready.username.length > 0)
-    assert.ok(typeof ready.password === 'string' && ready.password.length > 0)
-    assert.ok(typeof ready.remoteRoot === 'string' && posix.isAbsolute(ready.remoteRoot))
-    ready.remoteRoot = await realpath(ready.remoteRoot)
-    return { child, ready }
-  } catch (error) {
-    await stopChild(child)
-    throw error
-  }
-}
-
-async function stopChild(child) {
-  if (child === undefined || child.exitCode !== null || child.signalCode !== null) return
-  child.stdin?.end()
-  try { await bounded(new Promise(resolve => child.once('exit', resolve)), 'fixture shutdown', 5_000) }
-  catch {
-    child.kill('SIGTERM')
-    try { await bounded(new Promise(resolve => child.once('exit', resolve)), 'fixture termination', 3_000) }
-    catch { child.kill('SIGKILL') }
   }
 }
 
@@ -344,7 +290,7 @@ async function seedLocalHistory(page, hostHome, cwd, remote) {
   await rpc(page, 'session.create', { workspaceId: workspace.workspaceId, sessionId: id })
 }
 
-async function verifyColdStart(page, fixture, hostHome, before, remote, setStage) {
+async function verifyColdStart(page, ssh, model, hostHome, before, accepts, remote, setStage) {
   setStage('cold startup restores local history')
   const localHistory = page.locator('[data-phase="active"]').getByText(localReply, { exact: true })
   await localHistory.waitFor({ state: 'visible', timeout: 10_000 })
@@ -361,50 +307,143 @@ async function verifyColdStart(page, fixture, hostHome, before, remote, setStage
   assert.deepEqual(await unarchivedMembers(page, remote.workspaceId), [], 'no reusable remote session')
   const markerUnchanged = async () => {
     const { marker } = await markerIn(hostHome)
-    assert.equal(marker.generation, before.generation, 'remote was not reconnected before the click')
-    assert.ok(marker.connectionId === before.connectionId, 'saved route identity is still stale')
+    assert.equal(marker.generation, before.generation, 'SSH did not publish a marker yet')
+    assert.ok(marker.connectionId === before.connectionId, 'saved connection identity is unchanged')
   }
   await markerUnchanged()
+  assert.equal(ssh.accepts, accepts, 'no SSH attempts since the cold restart')
   setStage('cold remote row: hover to reveal the create button')
   const row = side.getByRole('treeitem').filter({ has: page.getByText(remote.title, { exact: true }) })
   await row.hover({ position: { x: 24, y: 14 }, timeout: 5_000 })
   const plus = row.getByRole('button', { name: `在“${remote.title}”中新建会话`, exact: true })
-  const pending = row.getByRole('status').filter({ hasText: /^正在准备会话…$/ })
-  const creates = [], histories = new Set()
+  const creates = [], histories = new Set(), prompts = [], responses = [], backgroundRoutes = new Set()
+  const markerFile = join(remote.path, '.coding-remote-workspace.json')
   page.on('request', request => {
     const path = new URL(request.url()).pathname
+    if (/^\/api\/(workspace\.git(Status|Branches|History)|skill\.list)$|^\/open-in-app\/(files|target)$/.test(path)) {
+      backgroundRoutes.add(path)
+    }
     if (request.method() !== 'POST') return
     if (path === '/api/session.create') creates.push(request.postDataJSON()?.payload?.workspaceId)
     if (path === '/api/session.history') histories.add(request.postDataJSON()?.payload?.sessionId)
+    if (path === '/api/session.prompt') {
+      const { rpcId, payload } = request.postDataJSON()
+      const marker = JSON.parse(readFileSync(markerFile, 'utf8'))
+      prompts.push({ rpcId, payload, reconnected: !ssh.paused && marker.generation === before.generation + 1
+        && marker.connectionId !== before.connectionId })
+    }
   })
-  // 仅暂停本测试拥有的回环 SSH 进程；不改认证或产品传输，失败也必须恢复进程。
-  assert.equal(fixture.kill('SIGSTOP'), true)
-  try {
-    setStage('cold remote row: click and preparation')
-    await plus.click({ timeout: 5_000 })
-    await pending.waitFor({ state: 'visible', timeout: 5_000 })
-    const historyBox = await localHistory.boundingBox()
-    assert.ok(historyBox, 'local history remains visible while preparing')
-    await page.mouse.move(historyBox.x + historyBox.width / 2, historyBox.y + historyBox.height / 2)
-    assert.equal(await row.evaluate(el => el.matches(':hover')), false)
-    assert.equal(await localHistory.isVisible(), true, 'local history remains selected after moving the pointer')
-    assert.equal(await pending.isVisible(), true, 'preparation remains visible without hover')
-    assert.equal(await plus.isDisabled(), true)
-    await markerUnchanged()
-    assert.equal(creates.length, 0, 'no create before SSH is ready')
-  } finally { fixture.kill('SIGCONT') }
-  setStage('cold remote row: one remote blank after release')
-  await page.locator('[data-phase="hero"]').getByText(remote.title, { exact: true }).first().waitFor({ state: 'visible', timeout: 10_000 })
-  await pending.waitFor({ state: 'hidden' })
-  const ids = await unarchivedMembers(page, remote.workspaceId)
-  assert.equal(ids.length, 1, 'exactly one active remote session')
+  page.on('response', response => {
+    if (!response.url().endsWith('/api/session.prompt') || response.request().method() !== 'POST') return
+    void response.json().then(({ rpcId, result }) => responses.push({ rpcId,
+      accepted: response.status() === 200 && result?.ok === true && result.value?.accepted === true,
+    }), () => responses.push({ accepted: false }))
+  })
+  function progress() {
+    return `SSH accepts=${ssh.accepts - accepts}; routes=${[...backgroundRoutes].join(',') || 'none'}; creates=${creates.length}; prompts=${prompts.length}; accepted=${responses.filter(response => response.accepted).length}`
+  }
+  function assertAttempts(expected) {
+    if (ssh.accepts !== expected) console.error(`${progress()}; expected SSH accepts=${expected - accepts}`)
+    assert.equal(ssh.accepts, expected, 'unexpected SSH attempt count')
+  }
+  setStage('cold remote row: click plus while SSH is held')
+  assert.equal(ssh.paused, true)
+  await plus.click({ timeout: 5_000 })
+  setStage('cold remote row: welcome opens without SSH')
+  await until(async () => {
+    assertAttempts(accepts)
+    return page.locator('[data-phase="hero"]').getByText(remote.title, { exact: true }).first().isVisible()
+  }, 'remote welcome before SSH', 8_000)
+  setStage('cold remote row: one blank with the correct Host binding')
+  const [sessionId, ...extra] = await unarchivedMembers(page, remote.workspaceId)
+  assert.ok(sessionId && extra.length === 0, 'exactly one unarchived remote session')
   const { items } = await rpc(page, 'session.list', {})
-  assert.ok(items.some(item => item.sessionId === ids[0] && item.blank && item.cwd === remote.path))
-  await until(() => histories.has(ids[0]), 'renderer opened the created session', 5_000)
+  assert.ok(items.some(item => item.sessionId === sessionId && item.blank && item.cwd === remote.path))
+  setStage('cold remote row: renderer loads the new blank history')
+  await until(() => histories.has(sessionId), 'renderer opened the created session', 5_000)
   assert.deepEqual(creates, [remote.workspaceId], 'single create for the selected workspace')
-  const { marker } = await markerIn(hostHome)
-  assert.equal(marker.generation, before.generation + 1)
-  assert.ok(marker.connectionId !== before.connectionId, 'cold connection replaced stale identity')
+
+  setStage('cold remote draft: enter text without any SSH or prompt')
+  const { selected } = await rpc(page, 'session.selectModel', { sessionId, ...fixtureModel })
+  assert.ok(selected.provider === fixtureModel.provider && selected.model === fixtureModel.model, 'only the loopback model can receive the draft')
+  const composer = page.locator('[data-composer-seat]')
+  const input = composer.getByRole('textbox')
+  const send = composer.getByRole('button', { name: '发送消息', exact: true })
+  const connecting = page.getByText('正在连接远程工作区…', { exact: true })
+  const failure = page.getByRole('alert').filter({ hasText: '未能连接远程工作区，消息未发送。请检查远程连接后再试。' })
+  const draft = `回环首发验收 ${randomUUID()}`
+  await input.fill(draft, { timeout: 5_000 })
+  const attachment = failFirstSend ? await pasteDraftPng(input, composer) : undefined
+  assert.equal(await input.inputValue(), draft)
+  await markerUnchanged()
+  assertAttempts(accepts)
+  assert.equal(prompts.length, 0, 'typing did not prompt')
+
+  async function sendWhileHeld(expectedAccepts) {
+    await send.click({ timeout: 5_000 })
+    await until(() => ssh.held.size > 0 || prompts.length > 0, 'send caused SSH handshake', 5_000)
+    await connecting.waitFor({ state: 'visible', timeout: 4_000 })
+    assert.equal(await send.isDisabled(), true, 'composer is locked during reconnect')
+    assertAttempts(expectedAccepts)
+    assert.equal(ssh.held.size, 1)
+    await markerUnchanged()
+    assert.equal(prompts.length, 0, 'no prompt while SSH is held')
+    assert.equal(model.received.has(draft), false)
+  }
+
+  setStage('cold remote send: hold SSH before prompt')
+  await sendWhileHeld(accepts + 1)
+  if (failFirstSend) {
+    setStage('cold remote send: SSH failure restores draft')
+    for (const client of ssh.held.keys()) client.destroy()
+    await failure.waitFor({ state: 'visible', timeout: 6_000 })
+    await connecting.waitFor({ state: 'hidden', timeout: 4_000 })
+    await until(async () => ssh.held.size === 0 && await input.isEditable() && await send.isEnabled()
+      && await input.inputValue() === draft, 'draft editable after SSH failure', 8_000)
+    await attachment.assertRetained()
+    await markerUnchanged()
+    assertAttempts(accepts + 1)
+    assert.equal(prompts.length, 0, 'failed activation did not prompt')
+    // 旧失败提示有自己的淡出计时，重试时只观察这次提交产生的提示。
+    await failure.waitFor({ state: 'hidden', timeout: 8_000 })
+    setStage('cold remote send: retry the same draft through composer')
+    await sendWhileHeld(accepts + 2)
+  }
+  setStage('cold remote send: release the SSH handshake')
+  ssh.release()
+  const expectedAccepts = accepts + (failFirstSend ? 2 : 1)
+  setStage('cold remote send: await Host prompt response')
+  await until(async () => {
+    assertAttempts(expectedAccepts)
+    if (await failure.isVisible()) {
+      setStage(`cold remote send: connection failed after release (${progress()})`)
+      throw new Error('reconnect failed after release')
+    }
+    return responses.length > 0
+  }, 'Host prompt response after release', 12_000)
+  setStage(`cold remote send: verify Host prompt and marker (${progress()})`)
+  assert.equal(prompts.length, 1, 'one composer submission reached Host')
+  const [prompt] = prompts
+  assert.equal(prompt.reconnected, true, 'prompt was sent after publishing the new SSH route')
+  assert.equal(prompt.payload.sessionId, sessionId)
+  assert.deepEqual(prompt.payload.content, [...(attachment ? [attachment.content] : []), { type: 'text', text: draft }])
+  assert.deepEqual(responses, [{ rpcId: prompt.rpcId, accepted: true }])
+  setStage('cold remote send: loopback reply rendered and stored')
+  await connecting.waitFor({ state: 'hidden', timeout: 5_000 })
+  await page.locator('[data-phase="active"]').getByText(fixtureReply, { exact: true }).first().waitFor({ state: 'visible', timeout: 15_000 })
+  assert.equal(model.received.has(draft), true, 'loopback model received the exact draft')
+  const { events } = await rpc(page, 'session.history', { sessionId })
+  const [userMessage, ...duplicates] = events.filter(({ event }) => event.type === 'user/message' && event.data.source?.rpcId === prompt.rpcId)
+  assert.ok(userMessage && duplicates.length === 0, 'Host stored the submitted user message once')
+  if (attachment) {
+    assert.ok(userMessage.event.data.content.some(block => block.type === 'image'
+      && block.attachment.name === attachment.content.name), 'Host stored an image reference')
+    await attachment.preview.waitFor({ state: 'hidden', timeout: 5_000 })
+  }
+  assert.equal(prompts.length, 1)
+  assertAttempts(expectedAccepts)
+  assert.deepEqual(await unarchivedMembers(page, remote.workspaceId), [sessionId], 'send did not replace the remote session')
+  assert.equal(await input.inputValue(), '', 'accepted draft is cleared')
 }
 
 async function main() {
@@ -420,7 +459,7 @@ async function main() {
   const workspace = join(hostHome, 'workspace')
   const binary = join(isolated, 'ssh-fixture')
   let app
-  let fixtureProcess
+  let ssh, model
   let record
   let passed = false
   let stage = 'setup'
@@ -428,7 +467,7 @@ async function main() {
   async function launch(restoreLocalHistory = false) {
     app = await _electron.launch({ executablePath: electronExecutable, cwd: root, timeout,
       args: ['--lang=zh-CN', '--use-mock-keychain', '--disable-background-networking',
-        '--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE localhost, EXCLUDE 127.0.0.1', entry],
+        `--proxy-server=${model.url}`, '--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE localhost, EXCLUDE 127.0.0.1', entry],
       env: { ...env, DSH_HOME: hostHome, DSH_CWD: workspace } })
     if (restoreLocalHistory) {
       // Host 重启会换 HTTP 源；在新文档加载前准备该源的本地选择，不模拟一次点击。
@@ -456,16 +495,17 @@ async function main() {
   }
   try {
     await Promise.all([home, temporary, workspace].map(path => mkdir(path, { recursive: true, mode: 0o700 })))
-    stage = 'build fixture'
-    await buildFixture(binary, env)
-    stage = 'start fixture without forwarding'
-    const { child, ready } = await startFixture(binary, env)
-    fixtureProcess = child
+    stage = 'start loopback-only model'
+    model = await startModel()
+    Object.assign(env, { NODE_USE_ENV_PROXY: '1', HTTP_PROXY: model.url, HTTPS_PROXY: model.url, NO_PROXY: '127.0.0.1,localhost' })
+    stage = 'build and start fixture without forwarding'
+    ssh = await startSshFixture({ root, binary, env })
+    const { ready } = ssh
     stage = 'start Electron and Host'
     let page = await launch()
     stage = 'unknown host confirmation and basic workspace'
     assert.equal(existsSync(join(hostHome, 'remote-ssh/known_hosts')), false)
-    await connectInWizard(page, ready, phase => { stage = `basic workspace: ${phase}` })
+    await connectInWizard(page, ssh.ready, phase => { stage = `basic workspace: ${phase}` })
     const selected = await markerIn(hostHome)
     assert.equal(selected.marker.remoteRoot, ready.remoteRoot)
     assert.equal(selected.marker.generation, 1)
@@ -494,6 +534,7 @@ async function main() {
     assert.deepEqual(await readdir(workspace), [], 'remote operations must not touch local workspace')
     assert.deepEqual((await readdir(ready.remoteRoot)).sort(), ['nested', 'seed.txt'])
     stage = 'prepare local history and archive remote blanks'
+    await model.configure(page, rpc)
     await seedLocalHistory(page, hostHome, workspace, created)
     const { marker: before } = await markerIn(hostHome)
     stage = 'quit first Electron, helper and Host'
@@ -501,19 +542,22 @@ async function main() {
     await closeOwnApp(app)
     app = undefined
     assert.equal(await stopOwnHost(hostHome, record), true, 'old Host must stop safely')
-    await until(() => old.every(pid => !alive(pid)), 'old Electron, helper and Host exited', 10_000)
+    await until(() => old.every(pid => !alive(pid)) && ssh.clients.size === 0, 'old processes and SSH transport closed', 10_000)
+    const accepts = ssh.accepts
+    ssh.paused = true
     stage = 'launch fresh Electron, helper and Host'
     page = await launch(true)
     assert.ok([app.process().pid, ownedHelperPid(app), record.pid].every(pid => !old.includes(pid)))
-    await verifyColdStart(page, fixtureProcess, hostHome, before, created, phase => { stage = phase })
+    await verifyColdStart(page, ssh, model, hostHome, before, accepts, created, phase => { stage = phase })
     stage = 'quit cleanup'
     await closeOwnApp(app)
     app = undefined
-    await stopChild(fixtureProcess)
-    fixtureProcess = undefined
+    await ssh.close()
+    ssh = undefined
     assert.equal(await stopOwnHost(hostHome, record), true, 'test Host must stop safely')
     passed = true
-    console.log('PASS: basic default, unknown host, UI marker/workspace, no agent or forwarding, Host remote files and PTY resize, local isolation, cold remote row preparation and creation, and shutdown')
+    const retry = failFirstSend ? ', preserved text and PNG preview on retry' : ''
+    console.log(`PASS: Basic parity, cold remote blank without SSH, composer reconnect and Host-accepted prompt${retry}, shutdown`)
   } catch (error) {
     const diagnostic = stage === 'basic workspace: unknown host prompt' && error instanceof Error
       && error.message.startsWith('unknown host prompt unavailable (') ? `; ${error.message}` : ''
@@ -521,9 +565,10 @@ async function main() {
     process.exitCode = 1
   } finally {
     await closeOwnApp(app).catch(() => undefined)
-    await stopChild(fixtureProcess).catch(() => undefined)
+    await ssh?.close().catch(() => undefined)
     let safe = false
     try { safe = await stopOwnHost(hostHome, record) } catch { /* 所有权无法证明则保留隔离数据。 */ }
+    await model?.close().catch(() => undefined)
     if (passed && safe) await rm(isolated, { recursive: true, force: true })
     else console.error(`Isolated data retained: ${isolated}`)
   }

@@ -499,6 +499,18 @@ describe('image draft rail', () => {
     expect(other.view.getByRole('alert').textContent).toContain('boom (internal)')
   })
 
+  it('keeps the draft editable and uses product copy for an unsent remote message', () => {
+    const { view, textarea, button } = bench({
+      draft: '可重新发送的内容',
+      promptError: { op: 'send', remoteWorkspace: true, error: { code: 'internal', message: 'transport details', details: {} } },
+    })
+    expect(view.getByRole('alert').textContent).toContain('未能连接远程工作区，消息未发送')
+    expect(view.getByRole('alert').textContent).not.toContain('transport details')
+    expect(textarea.value).toBe('可重新发送的内容')
+    expect(textarea.readOnly).toBe(false)
+    expect(button.disabled).toBe(false)
+  })
+
   it('marks the attachment slot unavailable while the composer is locked', () => {
     const result = bench({ addImages: vi.fn(() => null), inert: true })
     expect(attachmentOwner(result.slotCalls).canAcceptDrop).toBe(false)

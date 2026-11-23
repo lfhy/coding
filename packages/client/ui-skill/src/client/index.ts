@@ -29,7 +29,7 @@
  */
 // Type-only: the carrier types, the forwarded Host-event face and the ctx.remote merge.
 import type { ConnectionHandle, SessionId, SkillEntry } from 'coding-api-remotes/client'
-import type { ClientContext, ISessions } from 'coding-client-runtime/client'
+import { isRemoteWorkspacePath, type ClientContext, type ISessions } from 'coding-client-runtime/client'
 import type { InputTriggerServiceContract, InputTriggerSource } from 'coding-client-ui-input-trigger/client'
 // Type-only: pulls the locale plugin's Context merge (ctx.locale).
 import type {} from 'coding-client-locale/client'
@@ -146,8 +146,9 @@ export function apply(ctx: ClientContext): void {
         }))
     },
     warm(session) {
-      // Fire-and-forget scope-birth prewarm; the shared fetch reports
-      // through candidates.
+      // 远端目录扫描会唤起 SSH；仅打开会话不预取其技能目录。
+      const cwd = sessions.list.getSnapshot().byId[session.sessionId]?.cwd
+      if (cwd !== undefined && isRemoteWorkspacePath(cwd)) return
       fetchCatalog(session.sessionId).catch(() => {})
     },
     lexicon(session) {

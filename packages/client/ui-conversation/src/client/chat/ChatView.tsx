@@ -670,7 +670,7 @@ export function ChatView({
           ))}
           {sendingPrompt !== undefined && <PendingQueueBubble
             content={sendingPrompt.content}
-            phase="sending"
+            phase={sendingPrompt.connectingRemote ? 'connectingRemote' : 'sending'}
             pendingImageCount={sendingPrompt.imageCount}
             renderMessageImages={renderMessageImages}
             t={t}

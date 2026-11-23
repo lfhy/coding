@@ -407,13 +407,13 @@ describe('WorkspaceBrowser', () => {
     expect(startSession).toHaveBeenCalledWith(wid('alpha'))
   })
 
-  it('shows remote session preparation on the clicked row without blocking local actions', () => {
+  it('starts a new session by the remote group id when a local conversation is selected', () => {
     const state = workspaceState([
       workspace('local', ['local-history']),
       { ...workspace('remote', [], 'shep-chat'), path: '/home/me/.coding/remote-workspaces/509887000862b70a4669/shep-chat-2620b32d2df925e6cbca' },
     ])
     const startSession = vi.fn()
-    const b = mount({
+    mount({
       useWorkspaces: hook(state),
       useSessions: hook(sessionState([summary('local-history', 1)], { current: sid('local-history') })),
       startSession,
@@ -421,16 +421,6 @@ describe('WorkspaceBrowser', () => {
     const plus = screen.getByRole('button', { name: '在“shep-chat”中新建会话' })
     fireEvent.click(plus)
     expect(startSession).toHaveBeenCalledExactlyOnceWith(wid('remote'))
-    rerender(b, { useWorkspaces: hook({ ...state, startingSessionWorkspaceId: wid('remote') }) })
-    expect(within(plus.closest('[role="treeitem"]') as HTMLElement).getByRole('status').textContent).toBe('正在准备会话…')
-    expect(plus.getAttribute('aria-disabled')).toBe('true')
-    fireEvent.click(plus)
-    expect(startSession).toHaveBeenCalledTimes(1)
-    fireEvent.click(screen.getByRole('button', { name: '在“local”中新建会话' }))
-    expect(startSession).toHaveBeenLastCalledWith(wid('local'))
-    rerender(b, { useWorkspaces: hook(state) })
-    expect(screen.queryByText('正在准备会话…')).toBeNull()
-    expect(plus.getAttribute('aria-disabled')).toBeNull()
   })
 
   it('shows a retryable New Session failure without losing the selected Workspace', () => {

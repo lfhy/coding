@@ -46,6 +46,8 @@ export interface SessionOptions {
    * (hidden, still reusable by connectWorkspace).
    */
   onEngaged?(session: Session): void
+  /** 只在普通发送时调用；返回适用的远端连接准备，不适用时返回 undefined。 */
+  preparePrompt?(signal?: AbortSignal): Promise<void> | undefined
   /**
    * Manager-owned projection value store to adopt (frames route through the
    * manager and values outlive instantiation); omitted, the Session owns a
@@ -204,8 +206,25 @@ export class Session implements SessionFace {
     if (receipt === undefined) this.notifier.markDirty()
     else this.notifier.notifyNow()
     let result: RpcResult<{ accepted: true }>
+    let connectingRemote = false
     try {
       signal?.throwIfAborted()
+      const preparation = this.address === undefined ? this.options.preparePrompt?.(signal) : undefined
+      if (preparation !== undefined) {
+        connectingRemote = true
+        if (receipt !== undefined) {
+          receipt.preview = { ...receipt.preview, connectingRemote: true }
+          this.notifier.markDirty()
+        }
+        await preparation
+        connectingRemote = false
+        if (receipt !== undefined) {
+          const { content, imageCount } = receipt.preview
+          receipt.preview = { content, imageCount }
+          this.notifier.markDirty()
+        }
+        signal?.throwIfAborted()
+      }
       const content = Array.isArray(input) ? input : await input.prepare()
       signal?.throwIfAborted()
       if (this.address === undefined) {
@@ -252,7 +271,7 @@ export class Session implements SessionFace {
     if (receipt !== undefined && this.sending === receipt
       && (!result.ok || receipt.rpcId === undefined)) this.clearSending()
     if (!result.ok) {
-      this.promptError = { op: 'send', error: result.error }
+      this.promptError = { op: 'send', error: result.error, ...(connectingRemote && !signal?.aborted ? { remoteWorkspace: true } : {}) }
       this.notifier.markDirty()
       return result
     }

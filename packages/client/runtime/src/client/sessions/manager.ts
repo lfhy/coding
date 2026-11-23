@@ -170,6 +170,7 @@ export class SessionManager {
     restoredSelection?: SessionId,
     restoredAddress?: SubagentAddress,
     private readonly conversation?: ConversationRuntime,
+    private readonly prepareWorkspace?: (cwd: string, signal?: AbortSignal) => Promise<void> | undefined,
   ) {
     this.selected = restoredSelection
     if (restoredAddress !== undefined) this.addresses.set(restoredAddress.childSessionId, restoredAddress)
@@ -316,6 +317,11 @@ export class SessionManager {
       // session surfaces (lists filter on blank) before any host frame lands.
       onEngaged: (engaged) => {
         this.recordMutation({ kind: 'engaged', sessionId: engaged.sessionId })
+      },
+      preparePrompt: (signal) => {
+        // 发送到会话自己的目录；即使窗口已经切换，也不借用当前工作区。
+        const cwd = this.summaries.find(summary => summary.sessionId === sessionId)?.cwd
+        return cwd === undefined ? undefined : this.prepareWorkspace?.(cwd, signal)
       },
       projections: this.projectionStore(sessionId),
       ...this.conversation === undefined ? {} : { conversation: this.conversation },
@@ -527,14 +533,14 @@ export class SessionManager {
   }
 
   /**
-   * Contract session.create; on success merge into summaries immediately (no
-   * wait for the next refresh). A created session is blank by definition
-   * (entity birth precedes the first message).
-   * @param opts - target workspace or working directory, plus an optional caller-owned id.
-   * @returns the create result.
+   * 创建空白会话，成功后立即补入摘要，供打开和首发使用。
+   * @param opts - 目标工作区或工作目录，以及可选的预分配会话 id。
+   * @param workspacePath - 列表中目标工作区的目录；不发往 Host，也不覆盖 Host 已发布的目录。
+   * @returns Host 创建结果。
    */
   async create(
     opts: { workspaceId?: WorkspaceId; cwd?: string; sessionId?: SessionId } = {},
+    workspacePath?: string,
   ): Promise<RpcResult<{ sessionId: SessionId }>> {
     try {
       const shared = opts.sessionId === undefined ? {} : { sessionId: opts.sessionId }
@@ -543,9 +549,10 @@ export class SessionManager {
         : { ...(opts.cwd === undefined ? {} : { cwd: opts.cwd }), ...shared }
       const { result } = await this.api.sessions.create(payload)
       if (result.ok) {
+        const cwd = opts.workspaceId === undefined ? opts.cwd : workspacePath
         this.recordMutation({ kind: 'upsert', summary: {
           sessionId: result.value.sessionId, updatedAt: Date.now(), running: false, blank: true,
-          ...(opts.cwd !== undefined ? { cwd: opts.cwd } : {}),
+          ...(cwd === undefined ? {} : { cwd }),
           ...(result.value.agentPreset !== undefined ? { agentPreset: result.value.agentPreset } : {}),
         } })
       } else {

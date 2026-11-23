@@ -144,8 +144,8 @@ declare module 'coding-client-ui-slots' {
     'conversation.details.tool': { kind: 'single'; scope: 'session'; owner: DetailsToolOwnerProps }
     /** 对话页面内的会话概览卡片；默认显隐由根会话列宽决定。 */
     'conversation.overview': { kind: 'single'; scope: 'session'; owner: ConversationOverviewOwnerProps }
-    /** 当前会话的 Git 状态与操作；非仓库时不显示。 */
-    'conversation.overview.git': { kind: 'single'; scope: 'session' }
+    /** 当前会话的 Git 状态与操作；远端只在主动展开此行时查询。 */
+    'conversation.overview.git': { kind: 'single'; scope: 'session'; owner: { deferStatus: boolean } }
     /** 概览协作行展开的子代理目录；子代理插件负责列表与导航。 */
     'conversation.overview.subagents': { kind: 'single'; scope: 'session'; owner: ConversationOverviewDetailOwnerProps }
     /** 概览协作行展开的后台任务列表；后台任务插件负责列表。 */

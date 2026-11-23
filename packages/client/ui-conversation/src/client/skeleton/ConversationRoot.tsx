@@ -3,7 +3,7 @@
 
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import clsx from 'clsx'
-import type { SessionId } from 'coding-client-runtime/client'
+import { isRemoteWorkspacePath, type SessionId } from 'coding-client-runtime/client'
 import { Toast } from 'coding-client-ui-primitives'
 import type { ConversationSlotProps, InputZone } from '../contract/slots.ts'
 import { AssistantWelcome } from './AssistantWelcome.tsx'
@@ -131,7 +131,9 @@ export function ConversationRoot({
             ? undefined
             : workspaceLabel(cwd)))
 
-  const workspaceGitSessionId = pendingWorkspace === undefined && sessionWorkspace !== undefined && sessionId !== undefined
+  // 欢迎页的分支探测会执行远端 Git；未发送时不隐式唤起 SSH。
+  const workspaceGitSessionId = pendingWorkspace === undefined && sessionWorkspace !== undefined
+    && !isRemoteWorkspacePath(sessionWorkspace.path)
     ? sessionId : undefined
   const heroWorkspaceRow = projectHero && (
     <div className={css.heroWorkspaceRow}>

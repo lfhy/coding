@@ -92,22 +92,20 @@ function rowHalf(e: { clientY: number; currentTarget: HTMLElement }): 'before' |
 }
 
 /**
- * 工作区分组标题行；悬停显示操作，准备新远程会话时持续显示状态。
+ * 工作区分组标题行；悬停显示操作。
  * @param props.group - 带展开状态和当前会话归属的分组。
  * @param props.onToggle - 切换分组展开状态。
  * @param props.onCreate - 在该工作区发起新建会话。
- * @param props.starting - 该行是否正在等待新远程会话。
  * @param props.actions - 工作区的重命名与删除动作。
  * @param props.drag - 可选的工作区排序动作。
  * @param props.home - 供悬停卡片缩写 POSIX 路径的 Host 主目录。
  * @param props.t - 侧栏的本地化函数。
  * @returns 带工作区操作的标题行。
  */
-export function ProjectRowItem({ group, onToggle, onCreate, starting, actions, drag, home, t }: {
+export function ProjectRowItem({ group, onToggle, onCreate, actions, drag, home, t }: {
   group: GroupNode
   onToggle: () => void
   onCreate: () => void
-  starting?: boolean | undefined
   /** 未分组行没有对应工作区，不展示操作菜单。 */
   actions?: { rename: () => void; delete: () => void } | undefined
   /** 仅工作区分组行可以拖动排序。 */
@@ -127,7 +125,7 @@ export function ProjectRowItem({ group, onToggle, onCreate, starting, actions, d
   ]
   const ownRow = (
     <div
-      className={clsx(css.projectRow, menuOpen && css.menuOpen, starting && css.starting)}
+      className={clsx(css.projectRow, menuOpen && css.menuOpen)}
       role="treeitem"
       aria-expanded={row.expanded}
       onClick={onToggle}
@@ -152,7 +150,6 @@ export function ProjectRowItem({ group, onToggle, onCreate, starting, actions, d
       <span className={css.projectText}>
         <span className={css.title}>{label}</span>
       </span>
-      {starting && <span className={css.startNotice} role="status">{t('status.preparingSession')}</span>}
       <span className={css.rowActions}>
         {actions !== undefined && (
           <Menu
@@ -186,10 +183,9 @@ export function ProjectRowItem({ group, onToggle, onCreate, starting, actions, d
           type="button"
           className={css.iconButton}
           aria-label={t('actions.newSession.aria', { name: label })}
-          aria-disabled={starting || undefined}
-          onClick={(e) => { e.stopPropagation(); if (!starting) onCreate() }}
+          onClick={(e) => { e.stopPropagation(); onCreate() }}
         >
-          {starting ? <StateDot state="ongoing" /> : <IconPlusOutline16 />}
+          <IconPlusOutline16 />
         </button>
       </span>
     </div>

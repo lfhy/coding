@@ -221,7 +221,7 @@
   flex: none;
 }
 
-/* 行尾操作随悬停或菜单出现；远端会话准备中保留反馈，不随指针移开消失。 */
+/* 行尾操作随悬停或菜单出现。 */
 .rowActions {
   flex: none;
   display: none;
@@ -232,16 +232,8 @@
 .projectRow:hover .rowActions,
 .sessionRow:hover .rowActions,
 .projectRow.menuOpen .rowActions,
-.projectRow.starting .rowActions,
 .sessionRow.menuOpen .rowActions {
   display: inline-flex;
-}
-
-.startNotice {
-  flex: none;
-  color: var(--dsw-alias-label-secondary);
-  font: var(--dsw-font-xxs-12);
-  white-space: nowrap;
 }
 
 .sessionRow:hover .time,

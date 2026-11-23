@@ -4,6 +4,8 @@ skill（技能）调用 source 的浏览器端：把 `/` 触发的 `skill` sourc
 
 pick 会落下字面文本 `/name `，发出的提示词中也是同一段字面文本（slash 流水线 设计记录）——本 source 不实现任何裁决钩子，也没有引用 codec。确定性在宿主侧：pre-step 手势边界（`dsh-tool-skill`）识别用户消息中任意位置、以空白为界、指名用户可调用 skill 的 `/name` token，并为每个入口注入渲染后的 `<skill_content>`，因此菜单 pick、手动键入的 token 与 TUI/ACP（Agent Client Protocol）提示词都以同一种方式加载 skill。与宿主命令同名的名称仍解析为命令：裁决在客户端把该行认领走，它根本不会成为提示词——这是有意的优先级，与同类产品一致。列表 RPC 使用插件注册时捕获的根上下文连接——source 绝不从每次调用的参数上读取服务；草稿 chip 视觉由 `lexicon` 扫描派生。
 
+打开远程会话时不预热技能目录，避免仅打开页面就连接 SSH。主动使用 `/` 查询技能候选时才读取目录。
+
 `skill.list` 失败时 `candidates` 抛出异常，slash 壳层记录日志，并静默丢弃该菜单组——菜单只显示 pending／ready 状态。
 
 `/client` 导出接口只有插件主体（`apply`／`inject`）；source 对象是注册 effect 的内部实现。

@@ -328,6 +328,8 @@ export interface QueuedMessage {
 export interface SendingPrompt {
   readonly content: readonly ContentBlock[]
   readonly imageCount: number
+  /** 消息尚未提交，正在准备该会话的 SSH 连接。 */
+  readonly connectingRemote?: true
 }
 
 /** In-progress assistant output (chunk accumulator product). */
@@ -365,6 +367,8 @@ export type ComposerPhase = 'blank' | 'engaging' | 'active'
 export interface PromptError {
   op: 'send' | 'stop'
   error: RpcError
+  /** 连接准备失败，消息未发往 Host；界面提示用户检查连接后重新发送。 */
+  remoteWorkspace?: true
 }
 
 /**

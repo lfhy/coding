@@ -12,9 +12,11 @@ make dev
 
 该命令经 `pnpm run dev:electron` 构建 Host、Client、Web、远端 agent 资源和 Go helper，再构建并启动 Electron；初次安装 Electron 开发二进制需要下载。单独构建 Go helper 可用 `pnpm run build:electron-helper`，单独构建壳可用 `pnpm run build:electron`，两者都不生成安装包。`pnpm run test:electron:smoke` 需要本机图形会话，不属于默认无凭据测试；浏览器切换至 ego 后原生冒烟尚待更新验收，不沿用旧 guest 测试结论。两种模式的 SSH 路径由下述独立测试覆盖；真实外部模型请求未验收。
 
-`pnpm run test:electron:remote-ssh` 的 Agent 模式已通过单独 opt-in 的 macOS 图形验收：在隔离 HOME 中经真实向导确认未知主机、连接 agent、选择目录和创建工作区，再由 Host 验证远程文件列表与读取、PTY resize、同目录 generation 重绑、旧连接拒绝、取消和退出。`pnpm run test:electron:remote-basic` 使用禁止 TCP 转发的回环 SSH fixture 验证默认基础模式、主机密钥确认、无远端 agent、Host 文件列表与读取、PTY 输入及 resize、本地隔离和退出清理。基础模式验收还会退出桌面后重新启动，从本地历史第一次点远程分组「＋」，验证慢速重连时行内有反馈、连接后同一次点击只打开一个远程会话。
+`pnpm run test:electron:remote-ssh` 的 Agent 模式已通过单独 opt-in 的 macOS 图形验收：在隔离 HOME 中经真实向导确认未知主机、连接 agent、选择目录和创建工作区，再由 Host 验证远程文件列表与读取、PTY resize、同目录 generation 重绑、旧连接拒绝、取消和退出。`pnpm run test:electron:remote-basic` 使用禁止 TCP 转发的回环 SSH fixture 验证默认基础模式、主机密钥确认、无远端 agent、Host 文件列表与读取、PTY 输入及 resize、本地隔离和退出清理。
 
-两项测试只使用 fixture 一次性密码，不依赖用户 SSH agent、`~/.ssh` 或模型 API key；失败时保留并报告本次临时目录，成功且 Host 退出后删除。它们不属于默认测试，也不覆盖真实远端服务器、模型调用、Code Mode 或安装版 SSH。`pnpm run package:electron` 与 `pnpm run build:desktop` 组装同一个生产包；`pnpm run test:electron:packaged` 则另行验收已有包。
+基础模式的冷重启验收从退出应用、断开全部 SSH 连接开始。重启恢复本地历史后，首次点击远程分组「＋」必须新建该工作区的空白会话；启动、打开会话和填写输入框均不发起 SSH。测试暂停握手，确认点击「发送」立即显示回执，但连接就绪前不提交 `prompt`。放行后，Host 应只接纳该会话的一条消息，保存历史并显示回环模型回复。使用已构建产物运行 `node apps/desktop-electron/tests/remote-basic-parity.mjs --fail-first-send` 可验收握手失败、保留文字和图片草稿、在同一会话重试。
+
+两项测试只使用 fixture 一次性密码，不依赖用户 SSH agent、`~/.ssh` 或模型 API key；失败时保留并报告本次临时目录，成功且 Host 退出后删除。它们不属于默认测试，也不覆盖真实远端服务器、外部模型、Code Mode 或安装版 SSH。`pnpm run package:electron` 与 `pnpm run build:desktop` 组装同一个生产包；`pnpm run test:electron:packaged` 则另行验收已有包。
 
 开发 Host 使用 `~/.dsh-electron-dev`，默认工作目录为其中的 `workspace/`，Electron `userData` 位于 `electron-user-data/`；开发实例拒绝与安装版主目录（`~/.coding`）重叠。开发 Host 从仓库源码启动，需要 PATH 中的 Node，且不自动使用安装版设置与凭据。手动真实 API 测试须显式设置环境变量或只在隔离的 `workspace/.env` 中配置；Host 不读取仓库根目录 `.env`，不要将密钥写进仓库。
 
@@ -32,11 +34,11 @@ make dev
 
 远程连接的 sandbox preload 只暴露固定操作；main 每次调用都核验所属窗口、主 frame、Host origin 与输入，同源重载期间暂停授权，失去所属窗口即撤销。基础模式使用 SFTP 文件写入、编辑与搜索，POSIX 远端上一条常驻 Shell 承担目录列举、路径规范化、单路径元数据与文本文件读取（一次脚本完成类型检查、读取前后元数据比对与传输），二进制读取仍走 SFTP、SSH 前后台命令及 PTY、本机隔离 Goja 的 Code Mode 远端工具 binding，不部署远端 agent 或使用 SSH TCP 转发；LSP 不可用。SFTP 写入需要服务端 hardlink／posix-rename 扩展，版本复核非原子 CAS；SSH PTY 不提供前台进程组查询，终止请求也不能证明整棵进程树停稳。Agent 模式需要部署 Go agent 并使用 `direct-tcpip` 转发。SSH 输入由向导按次提交给原生服务，Go bridge token 不交给 renderer；不得在页面存储或日志中持久化凭据。目录解析前失去页面且无法确认 marker 归属时，helper 会保守保留连接直至退出，不凭连接 ID 盲关已有工作区。
 
-打开已有远程工作区（含在其中新建对话）时，`desktopremote.Service.RemoteSSHReconnectWorkspace` 先核对该工作区已发布的本地 marker 文件、bridge 当前路由与连接管理器中的活连接。核对通过时沿用原 SSH 连接与 marker 世代，不要求保存凭据，不重新握手、不查询远端目录、不发布 marker，也不等待旧对话的在途远端请求结束。工具请求仍由 bridge 单独授权，显式重绑仍发布新世代。
+复用或创建已有远程工作区的 Host 空白会话、打开会话历史和填写草稿，都不发起 SSH。发送普通消息时，`desktopremote.Service.RemoteSSHReconnectWorkspace` 按该会话的工作区核对已发布的 marker、bridge 当前路由与活连接。核对通过时沿用原 SSH 连接与 marker 世代，不要求保存凭据，不重新握手、不查询远端目录、不发布 marker，也不等待旧对话的在途远端请求结束。工具请求仍由 bridge 单独授权，显式重绑仍发布新世代。
 
-没有可复用路由时，只能通过与该工作区匹配的已保存档案自动恢复：优先尝试用档案对应的可用连接恢复路由，必要时重新建立 SSH 连接。连接已断开且没有可用档案时须通过向导手动重连，不回退到本机。
+没有可复用路由时，只能通过与该工作区匹配的已保存档案自动恢复：优先用档案对应的可用连接恢复路由，必要时重新建立 SSH 连接。首发回执不等待 SSH，但 `prompt` 要等连接可用才提交；失败保留同一会话的可编辑草稿与原附件，不改工作区，也不回退到本机。没有可用档案或恢复失败时，可提交连接向导直接建立 SSH。
 
-工具请求的 marker 路由只在 bridge 内存里：helper 重启后路由为空，而磁盘 marker 仍是上一次发布的身份，此时请求按该身份指向的活连接按需采纳回路由；连接本身已经不在（重启后未重连或会话中途掉线）时，bridge 只有在存在匹配的已保存档案时才会自动恢复一次，重新发布 marker 后继续本次请求，同一 marker 根同时只跑一轮且成功后 5 秒内不重复触发。已有路由时旧文件一律不采纳，世代不符仍按过期拒绝；自动重连失败保持快速失败，不会静默降级到本机。
+实际远端操作（含手动文件操作和终端）继续按需恢复，不经过消息发送流程。工具请求的 marker 路由只在 bridge 内存里：helper 重启后路由为空，而磁盘 marker 仍是上一次发布的身份，此时请求按该身份指向的活连接按需采纳回路由；连接本身已经不在（重启后未重连或会话中途掉线）时，bridge 只有在存在匹配的已保存档案时才会自动恢复一次，重新发布 marker 后继续本次请求，同一 marker 根同时只跑一轮且成功后 5 秒内不重复触发。已有路由时旧文件一律不采纳，世代不符仍按过期拒绝；自动重连失败保持快速失败，不会静默降级到本机。
 
 macOS 菜单和托盘提供窗口操作，红色关闭按钮只隐藏窗口，再次激活或从托盘可恢复；菜单退出或 `Cmd+Q` 才退出应用。显式退出时，main 立即隐藏并销毁窗口，向 helper 发送显式 `shutdown {}`；helper 收敛自己持有的远程连接、bridge 与本次启动的 Host，main 有界等待其响应，再关闭 helper 并退出进程。重复退出请求共用一次清理，退出中不重新启动 helper。窗口关闭后复开先等待旧 helper 关闭，才重新发现 Host。helper 异常断管或收到信号后也只尝试停止原本由它启动的 Host；Host 已被替换或身份无法核验时不发送停止信号，更不会扫描共享 Home 误停其他 Host。
 
