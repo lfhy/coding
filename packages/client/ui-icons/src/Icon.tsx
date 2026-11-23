@@ -20,6 +20,16 @@ import SemiInbox from '@douyinfe/semi-icons/lib/es/icons/IconInbox'
 import SemiTextStroked from '@douyinfe/semi-icons/lib/es/icons/IconTextStroked'
 import SemiBold from '@douyinfe/semi-icons/lib/es/icons/IconBold'
 import SemiItalic from '@douyinfe/semi-icons/lib/es/icons/IconItalic'
+import SemiUnderline from '@douyinfe/semi-icons/lib/es/icons/IconUnderline'
+import SemiStrikeThrough from '@douyinfe/semi-icons/lib/es/icons/IconStrikeThrough'
+import SemiAlignLeft from '@douyinfe/semi-icons/lib/es/icons/IconAlignLeft'
+import SemiAlignCenter from '@douyinfe/semi-icons/lib/es/icons/IconAlignCenter'
+import SemiAlignRight from '@douyinfe/semi-icons/lib/es/icons/IconAlignRight'
+import SemiAlignJustify from '@douyinfe/semi-icons/lib/es/icons/IconAlignJustify'
+import SemiFont from '@douyinfe/semi-icons/lib/es/icons/IconFont'
+import SemiFontColor from '@douyinfe/semi-icons/lib/es/icons/IconFontColor'
+import SemiFill from '@douyinfe/semi-icons/lib/es/icons/IconFillStroked'
+import SemiGridView from '@douyinfe/semi-icons/lib/es/icons/IconGridView'
 import SemiHeading from '@douyinfe/semi-icons/lib/es/icons/IconH2'
 import SemiList from '@douyinfe/semi-icons/lib/es/icons/IconList'
 import SemiQuote from '@douyinfe/semi-icons/lib/es/icons/IconQuote'
@@ -27,21 +37,34 @@ import { IconTerminalOutline16, IconThinkOutline16 } from './legacy.tsx'
 import { PptMark } from './PptMark.tsx'
 import type { IconProps } from './props.ts'
 
+/** 工具栏格式按钮的语义名称；与 `formatting` 映射的键一一对应。 */
+export type FormatIconName = 'format-bold' | 'format-italic' | 'format-underline' | 'format-strike' | 'format-align-left'
+  | 'format-align-center' | 'format-align-right' | 'format-align-justify' | 'format-font-size' | 'format-text-color'
+  | 'format-fill-color' | 'format-merge' | 'format-heading' | 'format-list' | 'format-quote'
+
 /** 消费方使用的图标含义，不暴露第三方库中的组件名。 */
 export type IconName = 'sidebar' | 'files-panel' | 'bottom-panel' | 'terminal-menu'
   | 'model-vision' | 'model-reasoning' | 'open-window' | 'favorite' | 'ppt-workbench' | 'undo' | 'redo'
   | 'drag-handle' | 'home' | 'conversation' | 'recent' | 'file' | 'file-slides' | 'file-mindmap' | 'files' | 'file-other'
-  | 'file-word' | 'file-excel'
-  | 'notes'
-  | 'format-bold' | 'format-italic' | 'format-heading' | 'format-list' | 'format-quote'
+  | 'file-word' | 'file-excel' | 'notes' | FormatIconName
 
 const formatting = {
   'format-bold': SemiBold,
   'format-italic': SemiItalic,
+  'format-underline': SemiUnderline,
+  'format-strike': SemiStrikeThrough,
+  'format-align-left': SemiAlignLeft,
+  'format-align-center': SemiAlignCenter,
+  'format-align-right': SemiAlignRight,
+  'format-align-justify': SemiAlignJustify,
+  'format-font-size': SemiFont,
+  'format-text-color': SemiFontColor,
+  'format-fill-color': SemiFill,
+  'format-merge': SemiGridView,
   'format-heading': SemiHeading,
   'format-list': SemiList,
   'format-quote': SemiQuote,
-}
+} satisfies Record<FormatIconName, unknown>
 
 /** 产品语义名称加上共享的布局属性。 */
 export interface SemanticIconProps extends IconProps {
@@ -54,9 +77,8 @@ export interface SemanticIconProps extends IconProps {
  * @returns 隐藏于无障碍树的语义图标。
  */
 export function Icon({ name, size = 16, className }: SemanticIconProps) {
-  if (name === 'format-bold' || name === 'format-italic' || name === 'format-heading'
-    || name === 'format-list' || name === 'format-quote') {
-    const Glyph = formatting[name]
+  if (name in formatting) {
+    const Glyph = formatting[name as FormatIconName]
     return <Glyph size="inherit" style={{ fontSize: size }} className={className} aria-hidden="true" />
   }
   if (name === 'conversation') {

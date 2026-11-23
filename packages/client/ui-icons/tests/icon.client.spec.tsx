@@ -8,7 +8,11 @@ import {
 afterEach(cleanup)
 
 describe('语义图标适配', () => {
-  it.each(['format-bold', 'format-italic', 'format-heading', 'format-list', 'format-quote'] as const)(
+  it.each([
+    'format-bold', 'format-italic', 'format-heading', 'format-list', 'format-quote',
+    'format-underline', 'format-strike', 'format-align-left', 'format-align-center', 'format-align-right', 'format-align-justify',
+    'format-font-size', 'format-text-color', 'format-fill-color', 'format-merge',
+  ] as const)(
     '%s 用在具有独立可访问名称的格式按钮内', (name) => {
       const view = render(<Icon name={name} size={14} className="format-icon" />)
       const icon = view.container.querySelector<HTMLElement>('.format-icon')!
