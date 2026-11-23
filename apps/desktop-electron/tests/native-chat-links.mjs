@@ -1,6 +1,5 @@
 /**
- * 显式 opt-in 的原生链接验收：隔离开发 Electron、Host 与浏览器状态，点击真实 Assistant 消息。
- * 不启动模型，不使用现有桌面实例；失败时保留无法确认已停机的测试目录。
+ * 隔离验收桌面浏览器的对话链接和截图。模型响应只来自本地测试服务。
  */
 import assert from 'node:assert/strict'
 import { execFile, spawnSync } from 'node:child_process'
@@ -17,6 +16,7 @@ import JsonlSessionPersistence from '../../../packages/session/session-persisten
 import { createMessage, createUserMessage } from '../../../packages/llm/llm/lib/index.js'
 import electronExecutable from 'electron'
 import { _electron } from 'playwright'
+import { createScreenshotToolFixture } from './screenshot-tool-fixture.mjs'
 
 const root = fileURLToPath(new URL('../../..', import.meta.url))
 const entry = join(root, 'apps/desktop-electron/lib/main.js')
@@ -122,6 +122,50 @@ async function rpc(page, method, payload) {
   return result.body.result.value
 }
 
+async function fixtureView(app, hostURL, link) {
+  return await app.evaluate(({ BrowserWindow }, { hostURL, link }) => {
+    const owner = BrowserWindow.getAllWindows().find(window => window.webContents.getURL() === hostURL)
+    return owner?.contentView.children.find(child => child.webContents?.getURL() === link)?.webContents.id
+  }, { hostURL, link })
+}
+
+async function webPageScript(app, id, source) {
+  return await app.evaluate(({ webContents }, { id, source }) =>
+    webContents.fromId(id).executeJavaScript(source), { id, source })
+}
+
+async function probePng(app, bytes) {
+  return await app.evaluate(({ nativeImage }, png) => {
+    const image = nativeImage.createFromBuffer(Buffer.from(png, 'base64'))
+    const { width, height } = image.getSize(1)
+    const offset = (Math.floor(height / 2) * width + Math.floor(width / 2)) * 4
+    // macOS 位图的 R 与 B 顺序不影响颜色比较。
+    const channel = [...image.getBitmap({ scaleFactor: 1 }).subarray(offset, offset + 3)].sort((a, b) => a - b)
+    return { width, height, channel }
+  }, bytes.toString('base64'))
+}
+
+async function verifyScreenshots(app, screenshot, id, cwd) {
+  const size = await webPageScript(app, id, `(() => {
+    window.fixtureResizes = []
+    const record = () => window.fixtureResizes.push([innerWidth, innerHeight])
+    addEventListener('resize', record)
+    visualViewport.addEventListener('resize', record)
+    return [innerWidth, innerHeight]
+  })()`)
+  const whole = await screenshot.capture({ sessionId, path: 'viewport.png' })
+  assert.equal(await realpath(whole.path), join(cwd, 'viewport.png'))
+  const viewport = await probePng(app, await readFile(whole.path))
+  assert.deepEqual(viewport, { width: size[0], height: size[1], channel: [0, 126, 230] })
+
+  assert.equal(await webPageScript(app, id, 'scrollTo(0, 600); scrollY'), 600)
+  const element = await screenshot.capture({ sessionId, selector: '#capture-marker', path: 'element.png' })
+  assert.equal(await realpath(element.path), join(cwd, 'element.png'))
+  assert.deepEqual(await probePng(app, await readFile(element.path)), { width: 160, height: 96, channel: [20, 95, 230] })
+  const after = await webPageScript(app, id, '({ size: [innerWidth, innerHeight], scroll: scrollY, resizes: window.fixtureResizes })')
+  assert.deepEqual(after, { size, scroll: 600, resizes: [] }, 'taking a screenshot must not resize or scroll the live page')
+}
+
 function alive(pid) {
   if (!Number.isSafeInteger(pid) || pid < 1) return false
   try { process.kill(pid, 0) } catch (error) { return error.code !== 'ESRCH' }
@@ -179,16 +223,23 @@ async function main() {
   const hostHome = join(home, packaged ? '.coding' : '.dsh-electron-dev')
   const workspace = packaged ? home : join(hostHome, 'workspace')
   const browserState = join(isolated, 'browser')
+  const screenshot = createScreenshotToolFixture({ rpc, until })
   let app, record, server, passed = false
   let loadedPage = false
   let link = ''
   try {
     await Promise.all([home, temporary, workspace, browserState].map(path => mkdir(path, { recursive: true, mode: 0o700 })))
     server = createServer((request, response) => {
+      if (request.method === 'POST' && request.url === '/chat/completions') {
+        void screenshot.handleRequest(request, response)
+        return
+      }
       if (request.url === '/page') loadedPage = true
       response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
-      response.end('<!doctype html><html><head><title>Sidebar destination</title></head>' +
-        '<body style="background:rgb(0, 126, 230)"><h1>Ready</h1></body></html>')
+      response.end('<!doctype html><title>Sidebar destination</title>' +
+        '<style>body{margin:0;min-height:5000px;background:rgb(0,126,230)}' +
+        '#capture-marker{position:absolute;left:36px;top:640px;width:160px;height:96px;background:rgb(230,95,20)}</style>' +
+        '<h1>Ready</h1><div id="capture-marker"></div>')
     })
     await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve) })
     const address = server.address()
@@ -233,6 +284,7 @@ async function main() {
       return page !== undefined
     }, 'Host renderer')
     await page.locator('[data-shell-overlay]').waitFor({ state: 'attached', timeout: 30_000 })
+    await screenshot.prepare({ server, page })
     if (packaged) await seedSession(hostHome, cwd, link)
     const workspaceResult = await rpc(page, 'workspace.create', { path: cwd })
     await rpc(page, 'session.create', { workspaceId: workspaceResult.workspace.workspaceId, sessionId })
@@ -313,13 +365,17 @@ async function main() {
     assert.ok(viewport?.initial.every(size => size > 0), 'native viewport must have nonzero dimensions')
     assert.deepEqual(viewport.final, viewport.initial)
     assert.deepEqual(viewport.changes, [], 'the idle native viewport must not resize')
+    const id = await fixtureView(app, `${origin}/`, link)
+    assert.ok(id, 'screenshot must be taken on the foreground native page')
+    await verifyScreenshots(app, screenshot, id, cwd)
+
     assert.ok(streams.every(frames => frames === 'off'), 'the native workbench must not request a frame stream')
     assert.deepEqual(responses.filter(item => item.pathname === '/api/ego/pages').map(item => item.status), [200])
     assert.deepEqual(responses.filter(item => item.pathname === '/api/ego/navigation').map(item => item.status), [200])
     assert.equal(popup.length, 0, 'link must not open an independent Electron window')
     assert.equal(page.url(), `${origin}/`, 'desktop Host renderer must remain open')
     passed = true
-    console.log('PASS: Assistant link opened in the native right-sidebar Agent browser')
+    console.log('PASS: native Assistant link and viewport/element screenshots')
   } finally {
     const browserPid = await statePid(join(browserState, 'browser.json')).catch(() => -1)
     const workerPid = await statePid(join(browserState, 'ego-cast.json')).catch(() => -1)

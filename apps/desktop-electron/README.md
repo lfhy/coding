@@ -18,7 +18,7 @@ make dev
 
 `pnpm run test:electron:chat-links` 验收已构建的开发态壳；先按 `make dev` 所需命令构建 Host、Web、Go helper 与 Electron 壳。`pnpm run test:electron:chat-links:packaged` 验收已有的 `dist/Coding.app`：在 macOS 图形会话中把签名包复制到短临时路径，以独立 HOME、浏览器状态和单实例锁启动，不安装或操作正在运行的应用。
 
-两种模式都恢复一次 Assistant 链接消息，核对建页和导航请求，并验证右侧工作台的原生视图已绘制网页、空闲时视口不变且没有订阅帧流。测试不调用模型、不读取用户会话，也不验收既有用户配置。退出不确定时保留隔离目录供检查。
+两种模式都点击预置会话中的 Assistant 链接，验证原生视图绘制网页、空闲时不取帧，并验证截图不改变视口。本地模型替身触发真实的截图工具；测试不读用户会话、设置或凭据。退出不确定时保留隔离目录供检查。
 
 ## Host、Remote-SSH 与窗口
 
@@ -37,6 +37,8 @@ helper 的启动取消、协议失败和 fallback 关闭都保留 12 秒清理�
 桌面上的 Agent 页面由主进程的页面宿主承载，每个页面对应一个 `WebContentsView`。主进程先建立虚拟 CDP 端点（`ego-cdp-broker.ts`），再将地址作为 `EGO_LINUX_CDP_URL` 传入本次 Go helper 的显式启动环境，Host 从 helper 继承该环境。[ego 运行时](../../packages/browser/browser-ego-host/README.md) 因此不再启动本机浏览器，而是把 `Target.*` 之外的命令转发到页面自己的调试会话；`Target.createTarget`、`Target.createBrowserContext` 与它们的释放由页面宿主实现，目标 id 由端点铸造，所以只有页面宿主登记的页面可见。模型工具仍是[浏览器工具](../../packages/browser/tool-browser-ego/)登记的 `browser_*` 全套，审批与结果不变，页面里的虚拟光标、动作标签与快照都来自运行时原本的实现。
 
 [Agent 浏览器面板](../../packages/client/ui-browser-ego/README.md)在桌面端不再显示帧流：面板经 preload 上报矩形，主进程把同一个视图移进窗口。`egoBrowser.present` 只接受回环 Host 主 frame 和窗口内整数矩形。隐藏或切换标签时，撤回请求只影响对应的页面；后台标签不能撤下正在显示的网页。撤回不会关闭页面，页面内容、输入与命令仍走原来的通道。
+
+`browser_screenshot` 先按页面当前的设备像素采集视口，再裁剪或缩放 PNG，不改变页面的视口或滚动位置。元素截图只包含视口里的部分；截屏前应先把目标滚动到可见区域。脚本显式要求截取视口以外的内容时仍使用浏览器的整页采集能力。
 
 登录态由 Electron 的持久分区保存：桌面端共用一个 `persist:ego-default` 分区，登录一次之后跨任务空间、跨重启都保留，不需要导入旧 ego Profile 的 Cookie。任务空间仍各自持有页面，只是不再开独立 cookie jar；Web/CLI 保持按空间隔离。
 

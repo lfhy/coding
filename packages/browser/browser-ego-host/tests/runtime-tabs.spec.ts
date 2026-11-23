@@ -15,15 +15,44 @@ async function loadRuntime(): Promise<void> {
 let stateDir: string | undefined
 
 afterEach(async () => {
+  vi.unstubAllEnvs()
   if (stateDir) await rm(stateDir, { recursive: true, force: true })
-  delete process.env.EGO_LINUX_STATE_DIR
   stateDir = undefined
+})
+
+describe('桌面任务空间的默认标签', () => {
+  it('按桌面呈现顺序选择空间内的第一个目标，不借用同登录态下的其他页面', async () => {
+    stateDir = await mkdtemp(join(tmpdir(), 'coding-ego-tabs-focus-'))
+    vi.stubEnv('EGO_LINUX_STATE_DIR', stateDir)
+    vi.stubEnv('EGO_LINUX_CDP_URL', 'ws://127.0.0.1:1/test')
+    await writeFile(join(stateDir, 'task-spaces.json'), JSON.stringify({
+      spaces: [
+        { id: 1, name: 'first', targetIds: ['blank', 'link'], browserContextId: null },
+        { id: 2, name: 'second', targetIds: ['other'], browserContextId: null },
+      ],
+      selectedId: 2,
+      nextId: 3,
+    }))
+    vi.resetModules()
+    await loadRuntime()
+    const call = vi.fn(async (method: string) => method === 'Target.getTargets'
+      ? { targetInfos: [
+        { targetId: 'other', type: 'page', url: 'https://other.example/' },
+        { targetId: 'link', type: 'page', url: 'https://first.example/' },
+        { targetId: 'blank', type: 'page', url: 'about:blank' },
+      ] } : {})
+    await createTaskSpacesApi({ call }).useTaskSpace(1)
+    expect(call).toHaveBeenLastCalledWith('Target.activateTarget', { targetId: 'link' })
+    vi.stubEnv('EGO_LINUX_CDP_URL', undefined)
+    await createTaskSpacesApi({ call }).useTaskSpace(1)
+    expect(call).toHaveBeenLastCalledWith('Target.activateTarget', { targetId: 'blank' })
+  })
 })
 
 describe('Linux 运行时的只读标签查询', () => {
   it('空间不存在时不创建锚页、不改变选中空间，也不返回其它空间标签', async () => {
     stateDir = await mkdtemp(join(tmpdir(), 'coding-ego-tabs-'))
-    process.env.EGO_LINUX_STATE_DIR = stateDir
+    vi.stubEnv('EGO_LINUX_STATE_DIR', stateDir)
     await writeFile(join(stateDir, 'task-spaces.json'), JSON.stringify({
       spaces: [{ id: 1, name: 'other', targetIds: ['foreign'], browserContextId: null }],
       selectedId: 1,
@@ -57,7 +86,7 @@ describe('Linux 运行时的只读标签查询', () => {
 
   it('已有空间按自身 context 或 targetIds 查询，并且不选中该空间', async () => {
     stateDir = await mkdtemp(join(tmpdir(), 'coding-ego-tabs-owned-'))
-    process.env.EGO_LINUX_STATE_DIR = stateDir
+    vi.stubEnv('EGO_LINUX_STATE_DIR', stateDir)
     await writeFile(join(stateDir, 'task-spaces.json'), JSON.stringify({
       spaces: [{ id: 1, name: 'owned', targetIds: ['owned'], browserContextId: null }],
       selectedId: null,

@@ -484,7 +484,11 @@ export function createTaskSpacesApi(cdp) {
   /** Bring the space's own tab to the front, so the agent lands back on it. */
   async function focusSpace(space) {
     const live = await livePageTargets();
-    const targetId = space.targetIds.find((id) => live.has(id));
+    // The desktop broker reports its presented page first. Honor that order
+    // only within this space; Electron windows have no DevTools HTTP MRU list.
+    const targetId = process.env.EGO_LINUX_CDP_URL
+      ? [...live.keys()].find((id) => space.targetIds.includes(id))
+      : space.targetIds.find((id) => live.has(id));
     if (targetId) {
       await cdp.call("Target.activateTarget", { targetId }).catch(() => {});
     }

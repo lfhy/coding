@@ -12,6 +12,7 @@ import { basename, extname, join } from 'node:path'
 import { app, session, WebContentsView, type BrowserWindow, type DownloadItem, type Session } from 'electron'
 import { createBackgroundStage } from './browser-guest-stage.ts'
 import type { EgoHostedPage, EgoPageHost } from './ego-cdp-broker.ts'
+import { captureEgoViewport } from './ego-screenshot.ts'
 
 const DEFAULT_CONTEXT = 'desktop-default'
 const DEFAULT_PARTITION = 'persist:ego-default'
@@ -262,6 +263,7 @@ export function createEgoPageHost(options: { window: () => BrowserWindow | undef
         const wc = entry.view.webContents
         if (wc.isDestroyed()) throw new Error('page is closed')
         if (!wc.debugger.isAttached()) wireDebugger(entry)
+        if (method === 'Page.captureScreenshot') return captureEgoViewport(wc.debugger, params)
         return await wc.debugger.sendCommand(method, params) as unknown
       },
       onEvent(listener) {
@@ -294,7 +296,14 @@ export function createEgoPageHost(options: { window: () => BrowserWindow | undef
   }
 
   return {
-    list: () => [...pages.values()].map(pageOf),
+    list() {
+      // 此端点没有 DevTools HTTP 的最近使用顺序。将实际呈现的页放在首位，
+      // 运行时仍先按任务空间过滤，显式选页也仍优先于这份默认顺序。
+      const active = presented && pages.get(presented.targetId)
+      const result = active ? [pageOf(active)] : []
+      for (const entry of pages.values()) { if (entry !== active) result.push(pageOf(entry)) }
+      return result
+    },
     find: (targetId) => { const entry = pages.get(targetId); return entry ? pageOf(entry) : undefined },
     defaultContext: () => DEFAULT_CONTEXT,
 

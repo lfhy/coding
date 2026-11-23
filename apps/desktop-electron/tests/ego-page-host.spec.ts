@@ -6,6 +6,7 @@ const electron = vi.hoisted(() => {
   const views: { view: unknown; webContents: unknown }[] = []
   const partitions = new Map<string, Record<string, unknown>>()
   const windows: unknown[] = []
+  const createFromBuffer = vi.fn()
 
   class FakeWebContents {
     destroyed = false
@@ -18,7 +19,7 @@ const electron = vi.hoisted(() => {
       isAttached: () => this.debugger.attached,
       attach: vi.fn(() => { this.debugger.attached = true }),
       detach: vi.fn(() => { this.debugger.attached = false }),
-      sendCommand: vi.fn(async (method: string) => ({ echoed: method })),
+      sendCommand: vi.fn(async (method: string, _params?: unknown): Promise<unknown> => ({ echoed: method })),
       on: vi.fn((_event: string, listener: (event: unknown, method: string, params: unknown) => void) => {
         this.debuggerMessages.push(listener)
       }),
@@ -68,10 +69,11 @@ const electron = vi.hoisted(() => {
   }
 
   return {
-    views, partitions, windows, FakeWebContents,
+    views, partitions, windows, FakeWebContents, createFromBuffer,
     electron: {
       WebContentsView,
       BaseWindow,
+      nativeImage: { createFromBuffer },
       app: { getPath: vi.fn((name: string) => `/tmp/coding-ego-host-test/${name}`) },
       session: {
         fromPartition: vi.fn((partition: string) => {
@@ -126,6 +128,7 @@ describe('桌面 Agent 页面宿主', () => {
     electron.views.length = 0
     electron.partitions.clear()
     electron.windows.length = 0
+    electron.createFromBuffer.mockReset()
   })
 
   it('为每个页面建立视图、后台承载与调试会话，并把命令与事件接到页面本身', async () => {
@@ -166,6 +169,45 @@ describe('桌面 Agent 页面宿主', () => {
     host.dispose()
   })
 
+  it('原生截图在已滚动的高像素密度页面上先采视口再裁剪，不传入临时截图尺寸', async () => {
+    const host = createEgoPageHost({ window: () => appWindow() })
+    const page = await host.createPage(host.defaultContext(), 'about:blank')
+    const { sendCommand } = contentsOf(electron.views[0]?.view).debugger
+    const raw = { data: Buffer.from('full PNG').toString('base64') }
+    sendCommand.mockImplementation(async (method) => {
+      if (method === 'Page.getLayoutMetrics') {
+        return { cssVisualViewport: { pageX: 10, pageY: 300, clientWidth: 585, clientHeight: 400, scale: 1 } }
+      }
+      if (method === 'Runtime.evaluate') return { result: { value: 2 } }
+      return raw
+    })
+    const toPNG = vi.fn(() => Buffer.from('cropped PNG'))
+    const resize = vi.fn(() => ({ toPNG }))
+    const crop = vi.fn(() => ({ resize }))
+    electron.createFromBuffer.mockReturnValue({ getSize: () => ({ width: 1200, height: 800 }), crop })
+    const params = { format: 'png', captureBeyondViewport: false,
+      clip: { x: 26, y: 338, width: 160, height: 96, scale: 0.5 } }
+    await expect(page.send('Page.captureScreenshot', params)).resolves.toEqual({ data: Buffer.from('cropped PNG').toString('base64') })
+    expect(sendCommand.mock.calls).toEqual([
+      ['Page.getLayoutMetrics'], ['Runtime.evaluate', { expression: 'window.devicePixelRatio', returnByValue: true }],
+      ['Page.captureScreenshot', { format: 'png', captureBeyondViewport: false }],
+    ])
+    expect(crop).toHaveBeenCalledExactlyOnceWith({ x: 32, y: 76, width: 320, height: 192 })
+    expect(resize).toHaveBeenCalledExactlyOnceWith({ width: 160, height: 96 })
+
+    await page.send('Page.captureScreenshot', { ...params, clip: { ...params.clip, x: 580 } })
+    expect(crop).toHaveBeenLastCalledWith({ x: 1140, y: 76, width: 60, height: 192 })
+    expect(resize).toHaveBeenLastCalledWith({ width: 30, height: 96 })
+    await expect(page.send('Page.captureScreenshot', { ...params, clip: { ...params.clip, y: 0 } }))
+      .rejects.toThrow('screenshot clip is outside the viewport')
+
+    // 显式长截图仍保留原生协议，不用视口大小截断。
+    const fullPage = { ...params, captureBeyondViewport: true }
+    await expect(page.send('Page.captureScreenshot', fullPage)).resolves.toEqual(raw)
+    expect(sendCommand).toHaveBeenLastCalledWith('Page.captureScreenshot', fullPage)
+    host.dispose()
+  })
+
   it('呈现只在矩形落在窗口内时把视图移进窗口，撤回时回到后台承载', async () => {
     const window = appWindow()
     const host = createEgoPageHost({ window: () => window })
@@ -188,6 +230,19 @@ describe('桌面 Agent 页面宿主', () => {
     expect(content.children).toEqual([])
     expect(stage.contentView.children).toEqual([view])
     host.conceal()
+    host.dispose()
+  })
+
+  it('将当前呈现的页面列在首位，撤回时不关闭页面', async () => {
+    const window = appWindow()
+    const host = createEgoPageHost({ window: () => window })
+    const blank = await host.createPage(host.defaultContext(), 'about:blank')
+    const selected = await host.createPage(host.defaultContext(), 'https://example.test/page')
+    const bounds = { x: 20, y: 20, width: 600, height: 400 }
+    host.present({ targetId: selected.targetId, bounds, visible: true })
+    expect(host.list()).toEqual([selected, blank])
+    host.conceal()
+    expect(host.list()).toEqual([blank, selected])
     host.dispose()
   })
 
