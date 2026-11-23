@@ -69,8 +69,12 @@ it('新建和导入导图，浏览器与笔记助手共用编辑结果', async (
       await page.getByRole('menu', { name: 'New' }).getByRole('menuitem', { name: 'Mind map' }).click()
       const create = page.getByRole('dialog', { name: 'New mind map' })
       await create.getByLabel('Mind map name').fill('Trip map')
-      const published = page.waitForResponse(response => response.url().endsWith('/api/notes/tabs')
-        && response.request().postDataJSON().activeKind === 'mindmap')
+      // 请求体由 Playwright 解析成 unknown，断言后读取以免对 any 直接取成员。
+      const published = page.waitForResponse((response) => {
+        if (!response.url().endsWith('/api/notes/tabs')) return false
+        const body = response.request().postDataJSON() as { activeKind?: string } | null
+        return body?.activeKind === 'mindmap'
+      })
       await create.getByRole('button', { name: 'Create', exact: true }).click()
       const receipt = await published
       expect(receipt.status()).toBe(200)

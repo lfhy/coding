@@ -309,7 +309,8 @@ export default class PptProjects extends Service {
     library: Pick<Context['fileLibrary'], 'createNoteDeck'>
   }> {
     const root = await this.localRoot(sessionId)
-    const library = this.ctx.get('fileLibrary') as Context['fileLibrary'] | undefined
+    // 文件库可能未装载：`ctx.get` 在服务缺失时返回 undefined。
+    const library = this.ctx.get('fileLibrary')
     if (library === undefined) {
       throw new PptStoreError('forbidden', '创建笔记幻灯片需要可用的文件库')
     }
