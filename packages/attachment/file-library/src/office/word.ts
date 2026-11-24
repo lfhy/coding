@@ -1,10 +1,13 @@
 /** 在已预检的 Word 包与可编辑段落之间转换；不执行域、不访问文件系统或网络。 */
-import { AlignmentType, BuilderElement, Document, HeadingLevel, ImportedXmlComponent, Packer, Paragraph, Tab, TextRun, UnderlineType } from 'docx'
+import {
+  AlignmentType, BuilderElement, Document, HeadingLevel, ImageRun, ImportedXmlComponent, Packer, Paragraph, Tab, Table,
+  TableCell, TableRow, TextRun, UnderlineType,
+} from 'docx'
 import type { OfficeDocument, WordParagraph, WordRun } from '../types.ts'
 import { blankWordParagraph, OfficeBudget, OFFICE_MAX_PARAGRAPHS, OFFICE_MAX_RUNS, OFFICE_MAX_TEXT } from './document.ts'
 import type { OfficePackage } from './package.ts'
 import { WORD_NS, WORD_STRICT_NS, type XmlElement, xmlAttr, xmlChild, xmlChildren } from './xml.ts'
-import { buildWordSnapshot, readWordParagraphs } from './word-snapshot.ts'
+import { buildWordSnapshot, readWordBlocks, readWordImages, type WordBlock } from './word-snapshot.ts'
 
 type WordStyle = WordParagraph['style']
 type WordAlign = NonNullable<WordParagraph['align']>
@@ -298,14 +301,32 @@ function exportRun(run: WordRun): TextRun {
 /**
  * 将已校验的可编辑 Word 快照打包为新文档；字号四舍五入到半磅，回车统一为换行。
  * 不复制输入文件的 OOXML 部件。
- * @param document - 领域校验后的 Word 快照；表格与图片不进入导出的 `.docx`。
+ * @param document - 领域校验后的 Word 快照；段落、表格与图片都会写进 `.docx`。
  * @returns `.docx` 文件字节；打包器出错时拒绝。
  */
 export async function exportWord(document: Extract<OfficeDocument, { kind: 'word' }>): Promise<Uint8Array> {
-  const children = readWordParagraphs(document.snapshot).map(paragraph => new Paragraph({
+  const paragraphOf = (paragraph: WordParagraph) => new Paragraph({
     ...(paragraph.style === 'normal' ? {} : { heading: HEADING[paragraph.style] }),
     ...(paragraph.align === undefined ? {} : { alignment: ALIGNMENT[paragraph.align] }),
     children: paragraph.runs.map(exportRun),
-  }))
+  })
+  const blockOf = (block: WordBlock): Paragraph | Table => {
+    if (block.kind === 'paragraph') return paragraphOf(block.paragraph)
+    return new Table({
+      rows: block.table.rows.map(row => new TableRow({
+        children: row.cells.map(cell => new TableCell({
+          children: (cell.length > 0 ? cell : [blankWordParagraph()]).map(paragraphOf),
+        })),
+      })),
+    })
+  }
+  const children: (Paragraph | Table)[] = readWordBlocks(document.snapshot).map(blockOf)
+  for (const image of readWordImages(document.snapshot)) {
+    children.push(new Paragraph({
+      children: [new ImageRun({
+        type: image.type, data: image.data, transformation: { width: image.width, height: image.height },
+      })],
+    }))
+  }
   return new Uint8Array(await Packer.toArrayBuffer(new Document({ sections: [{ children }] })))
 }

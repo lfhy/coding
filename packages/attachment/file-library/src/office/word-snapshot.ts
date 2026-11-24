@@ -12,6 +12,10 @@ const NAMED_STYLES: Record<WordParagraphStyle, number> = { normal: 1, title: 2, 
 const ALIGNMENTS: Record<WordParagraphAlign, number> = { left: 1, center: 2, right: 3, justify: 4 }
 const MODERN_DOCUMENT = 2
 const TABLE_START = '\u001a'
+const TABLE_ROW_START = '\u001b'
+const TABLE_CELL_START = '\u001c'
+const TABLE_CELL_END = '\u001d'
+const TABLE_END = '\u001f'
 
 const EMPTY_PARAGRAPH: WordParagraph = { style: 'normal', runs: [] }
 
@@ -144,6 +148,83 @@ function sliceRuns(stream: string, runs: readonly Record<string, unknown>[], sta
   return out
 }
 
+/** 表格里的单元格按段落保存；每行至少一格才能导出。 */
+export interface WordTableBlock {
+  readonly rows: readonly { readonly cells: readonly WordParagraph[][] }[]
+}
+
+/** 导出与助手共用的块序列：段落按顺序排列，表格作为整块出现。 */
+export type WordBlock =
+  | { readonly kind: 'paragraph'; readonly paragraph: WordParagraph }
+  | { readonly kind: 'table'; readonly table: WordTableBlock }
+
+function cellParagraphs(stream: string, runs: readonly Record<string, unknown>[], start: number, end: number): WordParagraph[] {
+  const paragraphs: WordParagraph[] = []
+  let cursor = start
+  while (cursor < end) {
+    const breakAt = stream.indexOf(PARAGRAPH_BREAK, cursor)
+    const stop = breakAt < 0 || breakAt > end ? end : breakAt
+    paragraphs.push({ style: 'normal', runs: sliceRuns(stream, runs, cursor, stop) })
+    cursor = stop + 1
+  }
+  return paragraphs.length > 0 ? paragraphs : [{ style: 'normal', runs: [] }]
+}
+
+/** 按控制字符切分表格：行以 `\u001b` 开始，单元格内容落在 `\u001c` 与 `\u001d` 之间。 */
+function parseTable(stream: string, runs: readonly Record<string, unknown>[], from: number, to: number): WordTableBlock {
+  const rows: { cells: WordParagraph[][] }[] = []
+  let row: { cells: WordParagraph[][] } | undefined
+  for (let i = from + 1; i < to;) {
+    const char = stream[i]
+    if (char === TABLE_ROW_START) {
+      row = { cells: [] }
+      rows.push(row)
+      i++
+    } else if (char === TABLE_CELL_START) {
+      const close = stream.indexOf(TABLE_CELL_END, i)
+      const stop = close < 0 || close > to ? to : close
+      row?.cells.push(cellParagraphs(stream, runs, i + 1, stop))
+      i = stop + 1
+    } else if (char === TABLE_END) break
+    else i++
+  }
+  return { rows: rows.filter(item => item.cells.length > 0) }
+}
+
+/**
+ * 按正文顺序读回段落与表格，供导出 `.docx` 使用；图片另行按 `drawings` 读取。
+ * @param snapshot - 已校验的引擎快照。
+ * @returns 段落与表格交替出现的块序列。
+ */
+export function readWordBlocks(snapshot: WordSnapshot): WordBlock[] {
+  const stream = snapshot.body.dataStream
+  const runs = Array.isArray(snapshot.body.textRuns) ? snapshot.body.textRuns as Record<string, unknown>[] : []
+  const metadata = Array.isArray(snapshot.body.paragraphs) ? snapshot.body.paragraphs as Record<string, unknown>[] : []
+  const blocks: WordBlock[] = []
+  let start = 0
+  while (start < stream.length) {
+    if (stream[start] === TABLE_START) {
+      const table = tableRanges(snapshot).find(([from]) => from === start)
+      const stop = table === undefined ? stream.indexOf(TABLE_END, start) + 1 : table[1]
+      // `endIndex` 已是 TABLE_END 之后的边界，直接当排他终点使用。
+      const end = stop < 0 ? stream.length : Math.min(stop, stream.length)
+      blocks.push({ kind: 'table', table: parseTable(stream, runs, start, end) })
+      start = end
+      continue
+    }
+    const breakAt = stream.indexOf(PARAGRAPH_BREAK, start)
+    const end = breakAt < 0 ? stream.length : breakAt
+    const meta = metadata.find(item => item.startIndex === end)
+    const style = styleOf((meta?.paragraphStyle as Record<string, unknown> | undefined)?.namedStyleType)
+    const align = alignOf((meta?.paragraphStyle as Record<string, unknown> | undefined)?.horizontalAlign)
+    blocks.push({ kind: 'paragraph', paragraph: { style, ...(align === undefined ? {} : { align }), runs: sliceRuns(stream, runs, start, end) } })
+    if (breakAt < 0) break
+    start = breakAt + 1
+    if (stream.slice(start).trim() === '') break
+  }
+  return blocks
+}
+
 /**
  * 从引擎快照读回段落与文字格式，供导出 `.docx` 与助手读取；表格按其区间整段跳过。
  * @param snapshot - 已校验的引擎快照。
@@ -189,4 +270,49 @@ export function hasRichWordContent(snapshot: WordSnapshot): boolean {
     if (typeof value === 'object') return Object.keys(value).length > 0
     return true
   })
+}
+
+/** 导出 `.docx` 需要的内嵌图片：类型、原始字节与显示尺寸。 */
+export interface WordImage {
+  readonly type: 'png' | 'jpg' | 'gif' | 'bmp'
+  readonly data: Buffer
+  readonly width: number
+  readonly height: number
+}
+
+const IMAGE_TYPES = { png: 'png', jpeg: 'jpg', jpg: 'jpg', gif: 'gif', bmp: 'bmp' } as const
+
+/**
+ * 读出快照里内嵌的图片。图片既可以直接写成 data URL，也可以按标识引用 `resources`。
+ * @param snapshot - 已校验的引擎快照。
+ * @returns 可写入 `.docx` 的图片列表；不是内嵌 data URL 的来源直接跳过。
+ */
+export function readWordImages(snapshot: WordSnapshot): WordImage[] {
+  const drawings = snapshot.drawings
+  if (typeof drawings !== 'object' || drawings === null || Array.isArray(drawings)) return []
+  const resources = new Map<string, string>()
+  if (Array.isArray(snapshot.resources)) {
+    for (const item of snapshot.resources) {
+      const record = item as { name?: unknown; data?: unknown }
+      if (typeof record.name === 'string' && typeof record.data === 'string') resources.set(record.name, record.data)
+    }
+  }
+  const images: WordImage[] = []
+  for (const drawing of Object.values(drawings as Record<string, unknown>)) {
+    if (typeof drawing !== 'object' || drawing === null) continue
+    const record = drawing as Record<string, unknown>
+    const source = typeof record.source === 'string' ? record.source : undefined
+    if (source === undefined) continue
+    const url = source.startsWith('data:') ? source : resources.get(source)
+    const match = url === undefined ? null : /^data:image\/(png|jpe?g|gif|bmp);base64,(.+)$/u.exec(url)
+    if (match === null || match[2] === undefined) continue
+    const position = (record.docTransform ?? record.transform) as { width?: unknown; height?: unknown } | undefined
+    images.push({
+      type: IMAGE_TYPES[match[1] as keyof typeof IMAGE_TYPES],
+      data: Buffer.from(match[2], 'base64'),
+      width: typeof position?.width === 'number' ? Math.round(position.width) : 200,
+      height: typeof position?.height === 'number' ? Math.round(position.height) : 150,
+    })
+  }
+  return images
 }

@@ -84,3 +84,41 @@ describe('Word OOXML', () => {
     expect(xml).not.toMatch(/w:fldChar|w:instrText/)
   })
 })
+
+describe('导出含表格与图片的快照', () => {
+  const snapshotOf = (stream: string, extra: Record<string, unknown> = {}) => ({
+    version: 2 as const,
+    kind: 'word' as const,
+    snapshot: {
+      body: {
+        dataStream: stream,
+        paragraphs: [],
+        textRuns: [],
+        tables: [{ startIndex: 1, endIndex: stream.indexOf('\u001f') + 1, tableId: 't1' }],
+      },
+      tableSource: { t1: { tableRows: [{ tableCells: [{}, {}] }, { tableCells: [{}, {}] }] } },
+      ...extra,
+    },
+  })
+
+  it('表格按行列写进 w:tbl，单元格内段落保留文字', async () => {
+    const stream = '\r\u001a\u001b\u001c甲\r\u001d\u001c乙\r\u001d\u000e\u001b\u001c丙\r\u001d\u001c丁\r\u001d\u000e\u001f\r\n'
+    const bytes = await exportWord(snapshotOf(stream))
+    const xml = strFromU8(unzipSync(bytes)['word/document.xml']!)
+    expect(xml).toContain('<w:tbl>')
+    expect(xml.match(/<w:tr>/g)).toHaveLength(2)
+    expect(xml.match(/<w:tc>/g)).toHaveLength(4)
+    for (const text of ['甲', '乙', '丙', '丁']) expect(xml).toContain(`>${text}<`)
+  })
+
+  it('data URL 图片作为内嵌图片写入导出文件', async () => {
+    const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
+    const document = snapshotOf('\r\n', {
+      drawings: { d1: { source: png, imageSourceType: 2, docTransform: { width: 120, height: 80 } } },
+    })
+    const bytes = await exportWord(document)
+    const parts = unzipSync(bytes)
+    expect(Object.keys(parts).some(path => path.startsWith('word/media/'))).toBe(true)
+    expect(strFromU8(parts['word/document.xml']!)).toContain('<w:drawing>')
+  })
+})
