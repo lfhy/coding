@@ -99,6 +99,7 @@ function bindPageGapToggle(container: HTMLElement, univer: Univer, signal: Abort
     }
   }
   const GAP_PROBE = 40
+  const GAP_SLACK = 12
   container.addEventListener('dblclick', (event) => {
     const canvas = container.querySelector('canvas')
     if (canvas === null) return
@@ -113,7 +114,14 @@ function bindPageGapToggle(container: HTMLElement, univer: Univer, signal: Abort
       const [red = 0, green = 0, blue = 0] = ctx.getImageData(x, atY, 1, 1).data
       return red > 235 && green > 235 && blue > 235
     }
-    if (!white(y) && white(y - GAP_PROBE) && white(y + GAP_PROBE)) toggle()
+    // 页间空白可能只有几像素宽，双击落点允许上下浮动一档，避免“明明点到了却没反应”。
+    for (let offset = -GAP_SLACK; offset <= GAP_SLACK; offset += 3) {
+      const at = y + offset
+      if (!white(at) && white(at - GAP_PROBE) && white(at + GAP_PROBE)) {
+        toggle()
+        return
+      }
+    }
   }, { signal })
 }
 
@@ -200,7 +208,7 @@ function localePack(module: { default: unknown }): ILanguagePack {
 function bindFitToWidth(univer: Univer): void {
   const config: IConfigService = univer.__getInjector().get(IConfigService)
   config.setConfig(DOCS_UI_PLUGIN_CONFIG_KEY, {
-    fitToWidth: { mode: 'fit-width', target: 'container', align: 'center', paddingX: PAGE_DESK_MARGIN, minScale: 0.25 },
+    fitToWidth: { mode: 'fit-width', target: 'container', align: 'start', paddingX: PAGE_DESK_MARGIN, minScale: 0.25 },
   }, { merge: true })
 }
 
