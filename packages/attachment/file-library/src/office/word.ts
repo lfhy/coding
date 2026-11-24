@@ -310,8 +310,10 @@ export async function exportWord(document: Extract<OfficeDocument, { kind: 'word
     ...(paragraph.align === undefined ? {} : { alignment: ALIGNMENT[paragraph.align] }),
     children: paragraph.runs.map(exportRun),
   })
-  const blockOf = (block: WordBlock): Paragraph | Table => {
+  const blockOf = (block: WordBlock): Paragraph | Table | undefined => {
     if (block.kind === 'paragraph') return paragraphOf(block.paragraph)
+    // 图片占位不进正文；图片本身在末尾按 `drawings` 写入。
+    if (block.kind === 'image') return undefined
     return new Table({
       rows: block.table.rows.map(row => new TableRow({
         children: row.cells.map(cell => new TableCell({
@@ -320,7 +322,8 @@ export async function exportWord(document: Extract<OfficeDocument, { kind: 'word
       })),
     })
   }
-  const children: (Paragraph | Table)[] = readWordBlocks(document.snapshot).map(blockOf)
+  const children = readWordBlocks(document.snapshot)
+    .flatMap((block) => { const built = blockOf(block); return built === undefined ? [] : [built] })
   for (const image of readWordImages(document.snapshot)) {
     children.push(new Paragraph({
       children: [new ImageRun({

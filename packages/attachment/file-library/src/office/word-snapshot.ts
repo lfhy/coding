@@ -102,6 +102,15 @@ function tableRanges(snapshot: WordSnapshot): [number, number][] {
   return ranges.sort((left, right) => left[0] - right[0])
 }
 
+/** 与 `tableRanges` 同序读取表格标识，写回时据此取回原有表格样式。 */
+function tableIdsOf(snapshot: WordSnapshot): string[] {
+  const tables = snapshot.body.tables
+  if (!Array.isArray(tables)) return []
+  return tables
+    .map(table => (table as { tableId?: unknown }).tableId)
+    .filter((id): id is string => typeof id === 'string')
+}
+
 function insideTable(ranges: readonly [number, number][], start: number, end: number): boolean {
   return ranges.some(([from, to]) => start < to && end > from)
 }
@@ -153,12 +162,16 @@ function sliceRuns(stream: string, runs: readonly Record<string, unknown>[], sta
 /** 表格里的单元格按段落保存；每行至少一格才能导出。 */
 export interface WordTableBlock {
   readonly rows: readonly { readonly cells: readonly WordParagraph[][] }[]
+  /** 原始正文片段与表格标识，写回时原样保留表格结构与样式。 */
+  readonly segment: string
+  readonly tableId: string
 }
 
-/** 导出与助手共用的块序列：段落按顺序排列，表格作为整块出现。 */
+/** 导出与助手共用的块序列：段落按顺序排列，表格与图片作为整块出现。 */
 export type WordBlock =
   | { readonly kind: 'paragraph'; readonly paragraph: WordParagraph }
   | { readonly kind: 'table'; readonly table: WordTableBlock }
+  | { readonly kind: 'image' }
 
 function cellParagraphs(stream: string, runs: readonly Record<string, unknown>[], start: number, end: number): WordParagraph[] {
   const paragraphs: WordParagraph[] = []
@@ -173,7 +186,7 @@ function cellParagraphs(stream: string, runs: readonly Record<string, unknown>[]
 }
 
 /** 按控制字符切分表格：行以 `\u001b` 开始，单元格内容落在 `\u001c` 与 `\u001d` 之间。 */
-function parseTable(stream: string, runs: readonly Record<string, unknown>[], from: number, to: number): WordTableBlock {
+function parseTable(stream: string, runs: readonly Record<string, unknown>[], from: number, to: number, tableId: string): WordTableBlock {
   const rows: { cells: WordParagraph[][] }[] = []
   let row: { cells: WordParagraph[][] } | undefined
   for (let i = from + 1; i < to;) {
@@ -190,7 +203,7 @@ function parseTable(stream: string, runs: readonly Record<string, unknown>[], fr
     } else if (char === TABLE_END) break
     else i++
   }
-  return { rows: rows.filter(item => item.cells.length > 0) }
+  return { rows: rows.filter(item => item.cells.length > 0), segment: stream.slice(from, to), tableId }
 }
 
 /**
@@ -203,18 +216,25 @@ export function readWordBlocks(snapshot: WordSnapshot): WordBlock[] {
   const runs = Array.isArray(snapshot.body.textRuns) ? snapshot.body.textRuns as Record<string, unknown>[] : []
   const metadata = Array.isArray(snapshot.body.paragraphs) ? snapshot.body.paragraphs as Record<string, unknown>[] : []
   const tables = tableRanges(snapshot)
+  const tableIds = tableIdsOf(snapshot)
   const blocks: WordBlock[] = []
   let start = 0
   while (start < stream.length) {
-    const table = tables.find(([from]) => from === start)
+    const index = tables.findIndex(([from]) => from === start)
+    const table = tables[index]
     if (table !== undefined) {
       const end = Math.min(table[1], stream.length)
-      blocks.push({ kind: 'table', table: parseTable(stream, runs, start, end) })
+      const tableId = tableIds[index] ?? `word-table-${index + 1}`
+      blocks.push({ kind: 'table', table: parseTable(stream, runs, start, end, tableId) })
       start = end
       continue
     }
-    // 图片在正文里是一个占位字符；图片本身按 `drawings` 单独导出。
-    if (stream[start] === IMAGE_PLACEHOLDER) { start++; continue }
+    // 图片在正文里是一个占位字符；导出时按 `drawings` 单独写，编辑时原样保留占位。
+    if (stream[start] === IMAGE_PLACEHOLDER) {
+      blocks.push({ kind: 'image' })
+      start++
+      continue
+    }
     const breakAt = stream.indexOf(PARAGRAPH_BREAK, start)
     const end = breakAt < 0 ? stream.length : breakAt
     const meta = metadata.find(item => item.startIndex === end)
@@ -318,4 +338,69 @@ export function readWordImages(snapshot: WordSnapshot): WordImage[] {
     })
   }
   return images
+}
+
+/**
+ * 把块序列写回引擎快照：段落重建为新的正文流，表格片段与图片占位原样拼回，
+ * 其余引擎结构（图片定义、文档样式、资源）从模板复制，避免编辑段落时丢掉它们。
+ * @param blocks - 编辑后的块序列。
+ * @param template - 原快照，提供表格样式与图片等引擎结构。
+ * @returns 可落盘的新快照。
+ */
+export function writeWordBlocks(blocks: readonly WordBlock[], template: WordSnapshot): WordSnapshot {
+  const parts: string[] = []
+  const metadata: Record<string, unknown>[] = []
+  const textRuns: Record<string, unknown>[] = []
+  const tables: Record<string, unknown>[] = []
+  const tableSource: Record<string, unknown> = {}
+  const sources = typeof template.tableSource === 'object' && template.tableSource !== null
+    ? template.tableSource as Record<string, unknown>
+    : {}
+  let offset = 0
+  let paragraphs = 0
+  for (const block of blocks) {
+    if (block.kind === 'image') {
+      parts.push(IMAGE_PLACEHOLDER)
+      offset++
+      continue
+    }
+    if (block.kind === 'table') {
+      const start = offset
+      parts.push(block.table.segment)
+      offset += block.table.segment.length
+      tables.push({ startIndex: start, endIndex: offset, tableId: block.table.tableId })
+      const source = sources[block.table.tableId]
+      if (source !== undefined) tableSource[block.table.tableId] = source
+      continue
+    }
+    for (const run of block.paragraph.runs) {
+      if (run.text === '') continue
+      const text = run.text.replace(/\r\n|\r|\n/g, SOFT_BREAK)
+      parts.push(text)
+      textRuns.push({ st: offset, ed: offset + text.length, ts: encodeInlineStyle(run) })
+      offset += text.length
+    }
+    metadata.push({
+      startIndex: offset,
+      paragraphId: `word-paragraph-${paragraphs + 1}`,
+      paragraphStyle: encodeParagraphStyle(block.paragraph, paragraphs),
+    })
+    paragraphs++
+    parts.push(PARAGRAPH_BREAK)
+    offset++
+  }
+  const snapshot = structuredClone(template) as Record<string, unknown>
+  const body: Record<string, unknown> = {
+    ...(template.body as unknown as Record<string, unknown>),
+    dataStream: parts.join('') + SECTION_END,
+    paragraphs: metadata,
+    textRuns,
+    sectionBreaks: [{ startIndex: offset, sectionId: 'word-section-1' }],
+  }
+  if (tables.length > 0) body.tables = tables
+  else delete body.tables
+  snapshot.body = body
+  if (Object.keys(tableSource).length > 0) snapshot.tableSource = tableSource
+  else delete snapshot.tableSource
+  return snapshot as unknown as WordSnapshot
 }

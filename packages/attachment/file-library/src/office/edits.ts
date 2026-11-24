@@ -1,11 +1,11 @@
 /** Office 编辑批次先验证所有操作，在独立快照中应用，磁盘提交由笔记存储负责。 */
-import type { ExcelSheet, OfficeDocument, OfficeEdit, WordParagraph } from '../types.ts'
+import type { ExcelSheet, OfficeDocument, OfficeEdit } from '../types.ts'
 import {
   blankWordParagraph, excelSheetId, excelSheetName, newExcelSheet, OfficeBudget, officeArray, officeCellKey,
   officeInteger, officeRecord, OFFICE_MAX_PARAGRAPHS, OFFICE_MAX_SHEETS, parseExcelCells, parseOfficeDocument,
   parseWordParagraph,
 } from './document.ts'
-import { buildWordSnapshot, hasRichWordContent, readWordParagraphs } from './word-snapshot.ts'
+import { readWordBlocks, writeWordBlocks, type WordBlock } from './word-snapshot.ts'
 
 /** 编辑批次与一次单元格替换的上限，不接受空批次。 */
 const MAX_EDITS = 32
@@ -50,25 +50,39 @@ export function parseOfficeEdits(value: unknown): OfficeEdit[] {
   })
 }
 
-function applyWordEdits(paragraphs: WordParagraph[], edits: readonly OfficeEdit[]): void {
+/** 段落索引只在段落块之间计数；表格与图片块原地保留，编辑后仍有完整正文。 */
+function applyWordEdits(blocks: WordBlock[], edits: readonly OfficeEdit[]): void {
+  const paragraphs = (): number[] => blocks.flatMap((block, index) => (block.kind === 'paragraph' ? [index] : []))
   for (const edit of edits) {
+    const positions = paragraphs()
     switch (edit.op) {
-      case 'replace_paragraph':
-        if (edit.index >= paragraphs.length) throw new TypeError('Word 段落不存在')
-        paragraphs[edit.index] = edit.paragraph
+      case 'replace_paragraph': {
+        const target = positions[edit.index]
+        if (target === undefined) throw new TypeError('Word 段落不存在')
+        blocks[target] = { kind: 'paragraph', paragraph: edit.paragraph }
         break
-      case 'insert_paragraph':
-        if (edit.index > paragraphs.length || paragraphs.length >= OFFICE_MAX_PARAGRAPHS) throw new TypeError('Word 段落位置或数量无效')
-        paragraphs.splice(edit.index, 0, edit.paragraph)
+      }
+      case 'insert_paragraph': {
+        if (edit.index > positions.length || positions.length >= OFFICE_MAX_PARAGRAPHS) {
+          throw new TypeError('Word 段落位置或数量无效')
+        }
+        const previous = positions[edit.index - 1]
+        const at = previous === undefined ? (positions[0] ?? blocks.length) : previous + 1
+        blocks.splice(at, 0, { kind: 'paragraph', paragraph: edit.paragraph })
         break
-      case 'delete_paragraph':
-        if (edit.index >= paragraphs.length) throw new TypeError('Word 段落不存在')
-        paragraphs.splice(edit.index, 1)
+      }
+      case 'delete_paragraph': {
+        const target = positions[edit.index]
+        if (target === undefined) throw new TypeError('Word 段落不存在')
+        blocks.splice(target, 1)
         break
+      }
       default: throw new TypeError('Excel 编辑不能应用于 Word 笔记')
     }
   }
-  if (paragraphs.length === 0) paragraphs.push(blankWordParagraph())
+  if (!blocks.some(block => block.kind === 'paragraph')) {
+    blocks.push({ kind: 'paragraph', paragraph: blankWordParagraph() })
+  }
 }
 
 function assertUniqueName(sheets: readonly ExcelSheet[], name: string, exceptId?: string): void {
@@ -112,11 +126,9 @@ function applyExcelEdits(sheets: ExcelSheet[], edits: readonly OfficeEdit[]): vo
 /** 按顺序应用编辑并重新检查整篇文档的预算；失败不改动传入快照。 */
 export function applyOfficeEdits(document: OfficeDocument, edits: readonly OfficeEdit[]): OfficeDocument {
   if (document.kind === 'word') {
-    // 段落编辑会重建正文；含表格、图片等引擎结构时重建会丢内容，直接拒绝。
-    if (hasRichWordContent(document.snapshot)) throw new TypeError('Word 文档含表格或图片，暂不支持按段落编辑')
-    const paragraphs = readWordParagraphs(document.snapshot)
-    applyWordEdits(paragraphs, edits)
-    return parseOfficeDocument({ ...document, snapshot: buildWordSnapshot(paragraphs) }, document.kind)
+    const blocks = readWordBlocks(document.snapshot)
+    applyWordEdits(blocks, edits)
+    return parseOfficeDocument({ ...document, snapshot: writeWordBlocks(blocks, document.snapshot) }, document.kind)
   }
   const sheets = [...document.sheets]
   applyExcelEdits(sheets, edits)

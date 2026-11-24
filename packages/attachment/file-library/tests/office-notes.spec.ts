@@ -106,6 +106,40 @@ describe('Office 笔记存取', () => {
     expect((await readdir(root)).sort()).toEqual([path])
   })
 
+  it('含表格与图片的快照也能按段落编辑，结构原样保留', async () => {
+    const { store } = await setup()
+    const { path } = await store.office.create('word', '带结构')
+    const base = await store.office.read(path)
+    if (base.document.kind !== 'word') throw new Error('类型不符')
+    const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
+    // 一张图片 + 一个 1×2 表格，中间夹一个普通段落。
+    const snapshot = {
+      ...base.document.snapshot,
+      drawings: { d1: { drawingId: 'd1', source: png, imageSourceType: 'BASE64', docTransform: { width: 20, height: 20 } } },
+      tableSource: { t1: { tableRows: [{ tableCells: [{}, {}] }] } },
+      body: {
+        dataStream: '\u0008\r\u001a\u001b\u001c甲\r\u001d\u001c乙\r\u001d\u000e\u001f\r\n',
+        paragraphs: [{ startIndex: 1, paragraphId: 'p1', paragraphStyle: { namedStyleType: 1 } }],
+        textRuns: [],
+        sectionBreaks: [{ startIndex: 18, sectionId: 's1' }],
+        tables: [{ startIndex: 2, endIndex: 18, tableId: 't1' }],
+      },
+    }
+    const saved = await store.office.save(path, base.revision, { version: 2, kind: 'word', snapshot })
+    const edited = await store.office.edit(path, saved.revision, [
+      { op: 'replace_paragraph', index: 0, paragraph: { style: 'normal', runs: [{ text: '新的正文' }] } },
+    ])
+    expect(edited.document.kind).toBe('word')
+    if (edited.document.kind !== 'word') throw new Error('类型不符')
+    const result = edited.document.snapshot
+    expect(result.drawings).toEqual(snapshot.drawings)
+    expect(result.tableSource).toEqual(snapshot.tableSource)
+    expect(result.body.tables).toHaveLength(1)
+    expect(result.body.dataStream).toContain('\u001a\u001b\u001c甲\r\u001d')
+    expect(result.body.dataStream).toContain('新的正文')
+    expect(result.body.dataStream.startsWith('\u0008')).toBe(true)
+  })
+
   it('Excel 编辑整格替换、按规则清空并保持工作表 ID，失败批次保留整个快照', async () => {
     const { store } = await setup()
     const { path } = await store.office.create('excel', '统计')
