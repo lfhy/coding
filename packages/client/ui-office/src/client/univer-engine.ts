@@ -59,6 +59,64 @@ function bindPaperColors(univer: Univer): void {
   bind(0)
 }
 
+/** 文档组件与纸张背景组件都按 pageMarginTop 排页，改它就能收拢页间空白。 */
+interface PageGapTarget {
+  pageMarginTop: number
+  makeDirty?(dirty: boolean): void
+}
+
+/**
+ * 双击两页之间的空白，把分页纸张拼成一整张长页；再双击还原，与 WPS / Word 隐藏页间空白的手感一致。
+ * 命中判定直接读画布像素：双击处不是纸白、而上下各留 40px 都是纸白时，说明点在页间空隙上，
+ * 这样不用换算视图缩放，缩放或改版式后依然准。
+ * @param container - 承载画布的宿主元素。
+ * @param univer - 当前编辑器实例；须在文档渲染单元注册之后调用。
+ * @param signal - 组件释放信号，随画布一起移除监听。
+ */
+function bindPageGapToggle(container: HTMLElement, univer: Univer, signal: AbortSignal): void {
+  const renderManager: IRenderManagerService = univer.__getInjector().get(IRenderManagerService)
+  let pageGap: number | undefined
+  const targets = () => {
+    const render = renderManager.getRenderUnitById(UNIT_ID)
+    return {
+      main: render?.mainComponent as PageGapTarget | null | undefined,
+      background: render?.components?.get('__Document_Render_Background__') as PageGapTarget | undefined,
+    }
+  }
+  const toggle = (): void => {
+    const { main, background } = targets()
+    if (main === null || main === undefined) return
+    if (main.pageMarginTop > 0) {
+      pageGap = main.pageMarginTop
+      main.pageMarginTop = 0
+    } else {
+      main.pageMarginTop = pageGap ?? 0
+    }
+    main.makeDirty?.(true)
+    if (background !== undefined) {
+      background.pageMarginTop = main.pageMarginTop
+      background.makeDirty?.(true)
+    }
+  }
+  const GAP_PROBE = 40
+  container.addEventListener('dblclick', (event) => {
+    const canvas = container.querySelector('canvas')
+    if (canvas === null) return
+    const rect = canvas.getBoundingClientRect()
+    const ratio = canvas.width / rect.width
+    const x = Math.round((event.clientX - rect.left) * ratio)
+    const y = Math.round((event.clientY - rect.top) * ratio)
+    const ctx = canvas.getContext('2d')
+    if (ctx === null) return
+    const white = (atY: number): boolean => {
+      if (atY < 0 || atY >= canvas.height) return false
+      const [red = 0, green = 0, blue = 0] = ctx.getImageData(x, atY, 1, 1).data
+      return red > 235 && green > 235 && blue > 235
+    }
+    if (!white(y) && white(y - GAP_PROBE) && white(y + GAP_PROBE)) toggle()
+  }, { signal })
+}
+
 /** 只暴露原生格式能保存的格式化动作。 */
 export type OfficeFormat =
   | { key: 'bold' | 'italic' | 'underline' | 'strike' | 'undo' | 'redo' | 'merge' | 'unmerge' }
@@ -284,15 +342,16 @@ function bindRuntime(options: OfficeEngineOptions, presetCss: string, runtime: R
  */
 export async function createOfficeEngine(options: OfficeEngineOptions): Promise<OfficeEngine> {
   const { container, document: input, signal } = options
-  const layout = { container, toolbar: false, contextMenu: false } as const
+  const layout = { container, toolbar: false } as const
   if (input.kind === 'word') {
     const [docs, zh, en, { default: css }] = await Promise.all([
       import('@univerjs/preset-docs-core'), import('@univerjs/preset-docs-core/locales/zh-CN'),
       import('@univerjs/preset-docs-core/locales/en-US'), import('@univerjs/preset-docs-core/lib/index.css?inline'),
     ])
     signal.throwIfAborted()
+    // 正文右键菜单由 Univer 提供（剪切/复制/粘贴与行内格式），表格编辑器仍然关着。
     const runtime = newRuntime(docs.UniverDocsCorePreset({
-      ...layout, header: false, footer: true, toc: true, disableAutoFocus: true,
+      ...layout, contextMenu: true, header: false, footer: true, toc: true, disableAutoFocus: true,
     }), localePack(zh), localePack(en), docs.IHTTPImplementation)
     // 图片是浮动对象，由绘图插件提供命令与渲染；不注册时画布插不进图片。
     runtime.univer.registerPlugin(UniverDocsDrawingPlugin)
@@ -302,6 +361,7 @@ export async function createOfficeEngine(options: OfficeEngineOptions): Promise<
       const model = api.createDocument(toUniverDocument(input, UNIT_ID, ''))
       // 渲染单元随文档注册；此时把颜色服务换成透传实现，正文才能保持白纸。
       bindPaperColors(runtime.univer)
+      bindPageGapToggle(container, runtime.univer, signal)
       const toggle = {
         bold: docs.SetInlineFormatBoldCommand, italic: docs.SetInlineFormatItalicCommand,
         underline: docs.SetInlineFormatUnderlineCommand, strike: docs.SetInlineFormatStrikethroughCommand,
@@ -344,7 +404,7 @@ export async function createOfficeEngine(options: OfficeEngineOptions): Promise<
   signal.throwIfAborted()
   const runtime = newRuntime(sheets.UniverSheetsCorePreset({
     // 头部挂载公式栏；disableAutoFocus 会关闭表格键入监听，不只是阻止首屏抢焦点。
-    ...layout, header: true, formulaBar: true, sheets: { enableFillHandle: false },
+    ...layout, contextMenu: false, header: true, formulaBar: true, sheets: { enableFillHandle: false },
     footer: { sheetBar: true, statisticBar: false, menus: false, zoomSlider: false },
   }), localePack(zh), localePack(en), sheets.IHTTPImplementation)
   const api = runtime.univerAPI
