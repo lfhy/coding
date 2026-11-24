@@ -230,15 +230,17 @@
   background: var(--dsw-alias-border-l3);
 }
 
+/* 行容器：行管理动作（.rowActions）是行的兄弟节点，用绝对定位贴在行右端，
+ * 因此这里必须是定位上下文——否则它会上溯到 .content（内容区唯一带
+ * position 的祖先），所有行的按钮组叠在内容区中部同一个点上。 */
 .rowSeat {
+  position: relative;
   display: flex;
   flex: none;
 }
 
-/* Row geometry is shared by directory and file rows; the right 52px strip is
- * reserved for the two management actions, which sit exactly where the
- * chevron is (the chevron steps aside while they show, so no name ever runs
- * underneath a button and no row shifts on hover). */
+/* 目录行与文件行共用行几何：右侧 52px 预留给两个管理动作，位置与箭头重合
+ * （悬停时箭头让位），因此名字永远不会跑到按钮底下，行也不会在悬停时抖动。 */
 .row {
   position: relative;
   width: 100%;
@@ -302,11 +304,10 @@
   color: var(--dsw-alias-label-tertiary);
 }
 
-/* Management actions: visible only while the row is hovered or holds focus
- * (`:focus-within`), which is also what keyboard traversal produces — the
- * buttons are ALWAYS in the tab order (opacity, never visibility/display), so
- * tabbing into them is what reveals them. Pointer events follow the same
- * state so a hidden button never eats a row click. */
+/* 管理动作：只在所属行被悬停或持有焦点时（`:focus-within`，键盘遍历同样会产生）
+ * 露出；按钮始终留在 Tab 序列里（只切 opacity，不用 visibility/display），所以把
+ * 焦点 Tab 到按钮上本身就是让它显形的方式。指针事件跟随同一状态，藏起来的按钮
+ * 不会吃掉行的点击。定位上下文是 .rowSeat，不是内容区。 */
 .rowActions {
   position: absolute;
   right: 4px;
