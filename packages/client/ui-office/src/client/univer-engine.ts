@@ -59,6 +59,25 @@ function bindPaperColors(univer: Univer): void {
   bind(0)
 }
 
+/**
+ * 把画布上方浮层的滚轮转发给画布本身。
+ * Univer 的滚动监听绑在 canvas 上，而正文字符输入层压在画布顶部：真实滚轮落在输入层上，
+ * 引擎收不到事件就会表现为「长文档完全不能滚」。这里只转发没有落在画布上的滚轮。
+ * @param container - 承载画布的宿主元素。
+ * @param signal - 组件释放信号，随画布一起移除监听。
+ */
+function bindWheelForwarding(container: HTMLElement, signal: AbortSignal): void {
+  container.addEventListener('wheel', (event) => {
+    const canvas = container.querySelector('canvas')
+    if (canvas === null || event.target === canvas) return
+    canvas.dispatchEvent(new WheelEvent('wheel', {
+      deltaX: event.deltaX, deltaY: event.deltaY, deltaMode: event.deltaMode,
+      clientX: event.clientX, clientY: event.clientY, bubbles: true, cancelable: true,
+    }))
+    event.preventDefault()
+  }, { signal, passive: false })
+}
+
 /** 文档组件与纸张背景组件都按 pageMarginTop 排页，改它就能收拢页间空白。 */
 interface PageGapTarget {
   pageMarginTop: number
@@ -370,6 +389,7 @@ export async function createOfficeEngine(options: OfficeEngineOptions): Promise<
       // 渲染单元随文档注册；此时把颜色服务换成透传实现，正文才能保持白纸。
       bindPaperColors(runtime.univer)
       bindPageGapToggle(container, runtime.univer, signal)
+      bindWheelForwarding(container, signal)
       const toggle = {
         bold: docs.SetInlineFormatBoldCommand, italic: docs.SetInlineFormatItalicCommand,
         underline: docs.SetInlineFormatUnderlineCommand, strike: docs.SetInlineFormatStrikethroughCommand,
