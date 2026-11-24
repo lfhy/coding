@@ -49,6 +49,46 @@ setDependencies(NoteDocRenderController, [
   DocLayoutExecutorService, DocLayoutInteractionService, ILogService,
 ], 1)
 
+/** 引擎颜色服务的可替换面：只需换掉取色方法。 */
+interface PaperColorService {
+  getRenderColor(color: string): string
+  readonly _resolvedThemeColors?: Map<string, string>
+  readonly _themeService?: { getTheme(): Record<string, Record<string, string>> }
+}
+
+/**
+ * Word 正文在暗色下保持白纸。Univer 的颜色服务在暗色里把所有主题色反相：白纸变黑底、
+ * 与页面背景融为一体，正文文字变白后在白纸上又不可见。渲染插件在启动期重新注册该服务，
+ * createUniver 的 override 会被覆盖掉，所以等文档渲染单元就绪后直接把实例的取色方法换成
+ * 透传实现：正文一律按浅色主题取色（白纸、黑字、浅灰线条），外层「桌面」背景由 CSS 跟随主题。
+ * @param univer - 当前编辑器实例；须在文档渲染单元注册之后调用，未就绪时按 50ms 间隔重试。
+ */
+function bindPaperColors(univer: Univer): void {
+  const renderManager: IRenderManagerService = univer.__getInjector().get(IRenderManagerService)
+  const service = (): PaperColorService | undefined =>
+    renderManager.getRenderUnitById(UNIT_ID)?.engine?.canvasColorService as PaperColorService | undefined
+  const bind = (attempts: number) => {
+    const target = service()
+    if (target === undefined) {
+      if (attempts < 20) setTimeout(() => bind(attempts + 1), 50)
+      return
+    }
+    const resolved = target._resolvedThemeColors
+    target.getRenderColor = (color: string) => {
+      const cached = resolved?.get(color)
+      if (cached !== undefined) return cached
+      // 令牌形如「调色板.级别」（gray.0）；缓存缺位时退回当前主题的浅色色板。
+      const dot = color.indexOf('.')
+      if (dot > 0) {
+        const value = target._themeService?.getTheme()?.[color.slice(0, dot)]?.[color.slice(dot + 1)]
+        if (typeof value === 'string') return value
+      }
+      return color
+    }
+  }
+  bind(0)
+}
+
 /** 只暴露原生格式能保存的格式化动作。 */
 export type OfficeFormat =
   | { key: 'bold' | 'italic' | 'underline' | 'strike' | 'undo' | 'redo' | 'merge' | 'unmerge' }
@@ -305,6 +345,8 @@ export async function createOfficeEngine(options: OfficeEngineOptions): Promise<
     const api = runtime.univerAPI
     return bindRuntime(options, css, runtime, () => {
       const model = api.createDocument(toUniverDocument(input, UNIT_ID, ''))
+      // 渲染单元随文档注册；此时把颜色服务换成透传实现，正文才能保持白纸。
+      bindPaperColors(runtime.univer)
       const toggle = {
         bold: docs.SetInlineFormatBoldCommand, italic: docs.SetInlineFormatItalicCommand,
         underline: docs.SetInlineFormatUnderlineCommand, strike: docs.SetInlineFormatStrikethroughCommand,

@@ -115,8 +115,10 @@
   min-width: 0;
   min-height: 0;
   overflow: hidden;
-  /* 页面由引擎画在画布中央、两侧留出边距；衬底退到工作区底色，正文才有纸张边界。 */
-  background: var(--dsw-alias-bg-overlay);
+  /* 衬底与侧边栏同一底色（SidebarRoot 的 --dsw-specific-sidebar-fill）作「桌面」，
+     四周留出桌面边距；正文始终是白纸（暗色下引擎纸张色不反相）。 */
+  padding: 16px;
+  background: var(--dsw-specific-sidebar-fill);
 }
 
 .engine {
