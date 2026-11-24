@@ -6,7 +6,7 @@ import type {} from 'coding-host-webserver'
 import type { FileLibrary } from './index.ts'
 import { mindmapImportByteLimit } from './mindmap-notes.ts'
 import { NoteConflictError, NoteNotFoundError } from './note-path.ts'
-import { OFFICE_NATIVE_MAX_BYTES, officeKind } from './office/document.ts'
+import { officeKind } from './office/document.ts'
 import { OFFICE_UPLOAD_MAX_BYTES } from './office/zip.ts'
 import type { OfficeExport } from './types.ts'
 
@@ -411,7 +411,7 @@ function installOfficeRoutes(ctx: Context, service: FileLibrary): void {
     json(res, 200, await service.readNoteOffice(params.get('path') ?? ''))
   })
   route('save', 'POST', async (req, res) => {
-    const { path, revision, document } = await payload(req, ['path', 'revision', 'document'], OFFICE_NATIVE_MAX_BYTES + metadataBytes)
+    const { path, revision, document } = await payload(req, ['path', 'revision', 'document'], Number.POSITIVE_INFINITY)
     if (typeof path !== 'string' || typeof revision !== 'string') throw new TypeError('保存办公笔记载荷无效')
     json(res, 200, await service.saveNoteOffice(path, revision, document))
   })

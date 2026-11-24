@@ -16,6 +16,8 @@ const TABLE_ROW_START = '\u001b'
 const TABLE_CELL_START = '\u001c'
 const TABLE_CELL_END = '\u001d'
 const TABLE_END = '\u001f'
+// 图片在正文流里的占位字符，导出时跳过，改由 drawings 读成内嵌图片。
+const IMAGE_PLACEHOLDER = '\b'
 
 const EMPTY_PARAGRAPH: WordParagraph = { style: 'normal', runs: [] }
 
@@ -200,18 +202,19 @@ export function readWordBlocks(snapshot: WordSnapshot): WordBlock[] {
   const stream = snapshot.body.dataStream
   const runs = Array.isArray(snapshot.body.textRuns) ? snapshot.body.textRuns as Record<string, unknown>[] : []
   const metadata = Array.isArray(snapshot.body.paragraphs) ? snapshot.body.paragraphs as Record<string, unknown>[] : []
+  const tables = tableRanges(snapshot)
   const blocks: WordBlock[] = []
   let start = 0
   while (start < stream.length) {
-    if (stream[start] === TABLE_START) {
-      const table = tableRanges(snapshot).find(([from]) => from === start)
-      const stop = table === undefined ? stream.indexOf(TABLE_END, start) + 1 : table[1]
-      // `endIndex` 已是 TABLE_END 之后的边界，直接当排他终点使用。
-      const end = stop < 0 ? stream.length : Math.min(stop, stream.length)
+    const table = tables.find(([from]) => from === start)
+    if (table !== undefined) {
+      const end = Math.min(table[1], stream.length)
       blocks.push({ kind: 'table', table: parseTable(stream, runs, start, end) })
       start = end
       continue
     }
+    // 图片在正文里是一个占位字符；图片本身按 `drawings` 单独导出。
+    if (stream[start] === IMAGE_PLACEHOLDER) { start++; continue }
     const breakAt = stream.indexOf(PARAGRAPH_BREAK, start)
     const end = breakAt < 0 ? stream.length : breakAt
     const meta = metadata.find(item => item.startIndex === end)

@@ -159,12 +159,13 @@ describe('Excel OOXML', () => {
     expect(() => fromXlsx(fixture([first, second]))).toThrow(/单元格数/u)
   })
 
-  it('按每个引用格计入共享字符串的 UTF-8 字节，而不是只计入字符串表', () => {
+  it('共享字符串按每个引用格展开，不设总字节上限', () => {
     const value = '长'.repeat(32_000)
     const repeated = '<c t="s"><v>0</v></c>'.repeat(44)
     const options = { strings: `<si><t>${value}</t></si>` }
     expect(fromXlsx(fixture([sheetData(repeated)], options)).sheets[0]?.cells).toHaveLength(44)
-    expect(() => fromXlsx(fixture([sheetData(repeated), sheetData(repeated)], options))).toThrow(/超过 8 MiB/u)
+    // 原生笔记不再限制文件大小，重复引用会真的展开成两份单元格。
+    expect(fromXlsx(fixture([sheetData(repeated), sheetData(repeated)], options)).sheets).toHaveLength(2)
   })
 
   it('不把无效数字或不一致的坐标解释成其他有效值', () => {

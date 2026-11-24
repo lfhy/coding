@@ -4,8 +4,6 @@ import type { ExcelCell, ExcelMerge, ExcelSheet, ExcelStyle, OfficeDocument, Off
 import { validateOfficeFormula } from './formula.ts'
 import { buildWordSnapshot } from './word-snapshot.ts'
 
-/** 原生文件完整 JSON 字节上限，不含 HTTP 请求的外层字段。 */
-export const OFFICE_NATIVE_MAX_BYTES = 8 * 1024 * 1024
 /** Word 段落上限。 */
 export const OFFICE_MAX_PARAGRAPHS = 10_000
 /** Word 全文的文字片段上限。 */
@@ -129,7 +127,6 @@ export class OfficeBudget {
 
   text(value: string): string {
     this.textBytes += Buffer.byteLength(value, 'utf8')
-    if (this.textBytes > OFFICE_NATIVE_MAX_BYTES) throw new TypeError('办公笔记超过 8 MiB')
     return value
   }
 
@@ -280,16 +277,13 @@ export function parseOfficeDocument(value: unknown, kind: OfficeKind): OfficeDoc
   return { version: 1, kind, sheets }
 }
 
-/** 序列化已校验文档，以完整 UTF-8 JSON 验证原生文件上限。 */
+/** 序列化已校验文档；原生笔记不设文件大小上限。 */
 export function encodeOfficeDocument(document: OfficeDocument): Buffer {
-  const data = Buffer.from(JSON.stringify(document), 'utf8')
-  if (data.byteLength > OFFICE_NATIVE_MAX_BYTES) throw new TypeError('办公笔记超过 8 MiB')
-  return data
+  return Buffer.from(JSON.stringify(document), 'utf8')
 }
 
 /** 拒绝无效 UTF-8／JSON，并校验与真实路径类型匹配的原生文档。 */
 export function decodeOfficeDocument(bytes: Uint8Array, kind: OfficeKind): OfficeDocument {
-  if (bytes.byteLength > OFFICE_NATIVE_MAX_BYTES) throw new TypeError('办公笔记超过 8 MiB')
   let source: unknown
   try { source = JSON.parse(utf8.decode(bytes)) }
   catch { throw new TypeError('办公笔记不是有效的原生文档') }

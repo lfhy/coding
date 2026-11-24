@@ -6,7 +6,7 @@ import { basename, join } from 'node:path'
 import { NoteConflictError, NoteNotFoundError, noteTarget, StaleNoteError, strictNoteParent, type NoteParent } from './note-path.ts'
 import { safeName, sameEntry, syncDirectory, writeNoteBytes } from './private-files.ts'
 import type { OfficeDocument, OfficeExport, OfficeKind, OfficeSnapshot } from './types.ts'
-import { blankOfficeDocument, decodeOfficeDocument, encodeOfficeDocument, OFFICE_NATIVE_MAX_BYTES, officeKind, parseOfficeDocument } from './office/document.ts'
+import { blankOfficeDocument, decodeOfficeDocument, encodeOfficeDocument, officeKind, parseOfficeDocument } from './office/document.ts'
 import { applyOfficeEdits, parseOfficeEdits } from './office/edits.ts'
 import { exportExcel, importExcel } from './office/excel.ts'
 import { OFFICE_FORMAT, openOfficePackage } from './office/package.ts'
@@ -67,7 +67,6 @@ async function readOfficeBytes(target: string): Promise<{ bytes: Buffer; info: S
   try {
     const info = await handle.stat()
     if (!info.isFile() || !sameEntry(info, expected)) throw new StaleNoteError()
-    if (info.size > OFFICE_NATIVE_MAX_BYTES) throw new TypeError('办公笔记超过 8 MiB')
     // 文件可能增长：读到预期大小后的额外一个字节即可确认快照已失效，不继续分配。
     const buffer = Buffer.allocUnsafe(info.size + 1)
     let count = 0

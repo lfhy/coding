@@ -34,11 +34,13 @@ const PALETTE = ['#000000', '#262626', '#595959', '#8c8c8c', '#d9d9d9', '#ffffff
  * @param props - 文档类型、就绪状态、词典与格式动作回调。
  * @returns 分区的格式工具栏。
  */
-export function FormatToolbar({ kind, disabled, t, format }: {
+export function FormatToolbar({ kind, disabled, t, format, insertImage }: {
   kind: OfficeKind
   disabled: boolean
   t: Translate
   format: (action: OfficeFormat) => void
+  /** 选择并插入图片；只有 Word 提供这个动作。 */
+  insertImage: () => void
 }) {
   useKeepCanvasFocus()
   const [open, setOpen] = useState('')
@@ -80,6 +82,9 @@ export function FormatToolbar({ kind, disabled, t, format }: {
       <ColorPicker label={t('textColor')} icon="format-text-color" open={open === 'textColor'} disabled={disabled}
         onToggle={() => { toggle('textColor') }} onClose={() => { setOpen('') }}
         onSelect={(value) => { run({ key: 'textColor', value }) }} onCustom={() => { setColor({ key: 'textColor', value: '', invalid: false }) }} t={t} />
+      <Separator />
+      <ToolButton label={t('insertImage')} disabled={disabled} onRun={insertImage}>
+        <Icon name="format-insert-image" /></ToolButton>
     </> : <>
       <Picker label={t('numberFormat')} open={open === 'numberFormat'} disabled={disabled} onToggle={() => { toggle('numberFormat') }}
         items={numberChoices} onClose={() => { setOpen('') }} onSelect={pickFrom(numberChoices)} />

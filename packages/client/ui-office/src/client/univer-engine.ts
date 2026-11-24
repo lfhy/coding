@@ -8,6 +8,9 @@ import {
   DocRenderController, DocSelectionManagerService, DocSelectionRenderService, DocSkeletonManagerService,
   DocViewScaleService, DOCS_UI_PLUGIN_CONFIG_KEY, IEditorService, IRenderManagerService, type IRenderContext,
 } from '@univerjs/preset-docs-core'
+import { UniverDocsDrawingPlugin } from '@univerjs/docs-drawing'
+// facade 是副作用入口：它把 `insertImage` 挂到文档 facade 上，必须显式加载。
+import '@univerjs/docs-drawing/facade'
 import { en as english, zh as chinese } from './locales.ts'
 import type { OfficeDocument, ParagraphAlign, ParagraphStyle } from './office-document.ts'
 import { markOfficeHost, HOST_CLASS } from './office-portal.ts'
@@ -54,13 +57,35 @@ export type OfficeFormat =
   | { key: 'align'; value: ParagraphAlign }
   | { key: 'fontSize'; value: number }
 
+/** 文档 facade 上的插图能力；由 `UniverDocsDrawingPlugin` 注册后提供。 */
+type InsertableImageDocument = {
+  insertImage(options: {
+    readonly source: string
+    readonly imageSourceType: 'BASE64'
+    readonly wrappingStyle: 'inline'
+  }): Promise<object | null>
+}
+
 /** 每份画布单独拥有读快照、结束编辑、事件和释放权。 */
 export interface OfficeEngine {
   read(): OfficeDocument
   isEditing(): boolean
   finishEditing(): Promise<boolean>
   format(action: OfficeFormat): Promise<boolean>
+  /** 把图片作为行内对象插入当前选区；读取失败或命令失败时返回 false。 */
+  insertImage(image: Blob): Promise<boolean>
   dispose(): void
+}
+
+/** 读取图片的 data URL；失败时拒绝，由调用方决定如何提示。 */
+async function readImageDataUrl(image: Blob): Promise<string> {
+  const reader = new FileReader()
+  const loaded = new Promise<string>((resolve, reject) => {
+    reader.onload = () => { resolve(typeof reader.result === 'string' ? reader.result : '') }
+    reader.onerror = () => { reject(reader.error ?? new Error('图片读取失败')) }
+  })
+  reader.readAsDataURL(image)
+  return await loaded
 }
 
 interface OfficeEngineOptions {
@@ -149,10 +174,19 @@ function labelControls(container: HTMLElement, documentKind: OfficeDocument['kin
   }
 }
 
-function onlyTextClipboard(container: HTMLElement): () => void {
+function clipboardHandling(container: HTMLElement, insertImage: (image: File) => void): () => void {
   const paste = (event: ClipboardEvent) => {
     const data = event.clipboardData
-    if (data === null || (!data.types.includes('text/html') && data.files.length === 0)) return
+    if (data === null) return
+    // 截图与图片文件按行内图片插入；其余富文本仍然只保留纯文字。
+    const image = [...data.files].find(file => file.type.startsWith('image/'))
+    if (image !== undefined) {
+      event.preventDefault()
+      event.stopImmediatePropagation()
+      insertImage(image)
+      return
+    }
+    if (!data.types.includes('text/html')) return
     event.preventDefault()
     event.stopImmediatePropagation()
     const text = data.getData('text/plain')
@@ -185,7 +219,9 @@ function bindRuntime(options: OfficeEngineOptions, presetCss: string, runtime: R
   const { univer, univerAPI } = runtime
   const releaseStyle = setupStyles(container, presetCss)
   const releaseHost = markOfficeHost()
-  const releasePaste = onlyTextClipboard(container)
+  // 粘贴回调在画布创建前就安装好，这里留一个在模型就绪后替换的入口。
+  let insertImageIntoDocument: (image: Blob) => Promise<boolean> = () => Promise.resolve(false)
+  const releasePaste = clipboardHandling(container, (image) => { void insertImageIntoDocument(image) })
   const media = document.defaultView?.matchMedia(DARK_PREFERENCE)
   let disposed = false
   let scheduled = false
@@ -225,6 +261,7 @@ function bindRuntime(options: OfficeEngineOptions, presetCss: string, runtime: R
   }
   try {
     const model = createModel()
+    insertImageIntoDocument = image => model.insertImage(image)
     observer.observe(document.documentElement, { attributes: true, attributeFilter: ['style', 'lang'] })
     controlObserver.observe(container, { childList: true, subtree: true })
     label()
@@ -262,6 +299,8 @@ export async function createOfficeEngine(options: OfficeEngineOptions): Promise<
     const runtime = newRuntime(docs.UniverDocsCorePreset({
       ...layout, header: false, footer: true, toc: true, disableAutoFocus: true,
     }), localePack(zh), localePack(en), docs.IHTTPImplementation, true)
+    // 图片是浮动对象，由绘图插件提供命令与渲染；不注册时画布插不进图片。
+    runtime.univer.registerPlugin(UniverDocsDrawingPlugin)
     bindFitToWidth(runtime.univer)
     const api = runtime.univerAPI
     return bindRuntime(options, css, runtime, () => {
@@ -277,6 +316,16 @@ export async function createOfficeEngine(options: OfficeEngineOptions): Promise<
         read: () => fromUniverDocument(model.save()),
         isEditing: () => false,
         finishEditing: () => Promise.resolve(true),
+        insertImage: async (image) => {
+          const source = await readImageDataUrl(image)
+          if (source === '') return false
+          // 插件在 facade 上补出 `insertImage`；类型没有合并过来，这里按运行时契约声明。
+          const target = api.getActiveDocument() as unknown as InsertableImageDocument | null
+          if (target === null) return false
+          try {
+            return await target.insertImage({ source, imageSourceType: 'BASE64', wrappingStyle: 'inline' }) !== null
+          } catch { return false }
+        },
         format: (action) => {
           switch (action.key) {
             case 'undo': case 'redo': return api.executeCommand(`univer.command.${action.key}`)
@@ -310,6 +359,7 @@ export async function createOfficeEngine(options: OfficeEngineOptions): Promise<
     }
     return {
       read: () => fromUniverWorkbook(model.save()),
+      insertImage: () => Promise.resolve(false),
       isEditing: () => model.isCellEditing(),
       finishEditing: () => model.isCellEditing() ? model.endEditingAsync(true) : Promise.resolve(true),
       format: (action) => {

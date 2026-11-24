@@ -36,6 +36,7 @@ function engine(document: OfficeDocument) {
   return {
     read: vi.fn(() => document), dispose: vi.fn(), isEditing: vi.fn(() => false),
     finishEditing: vi.fn(() => Promise.resolve(true)), format: vi.fn(() => Promise.resolve(true)),
+    insertImage: vi.fn(() => Promise.resolve(true)),
   } satisfies OfficeEngine
 }
 
@@ -137,7 +138,7 @@ it('格式工具栏按分区排列，图标按钮直接执行对应动作', asyn
   expect(within(align).getAllByRole('button')).toHaveLength(4)
   fireEvent.click(within(align).getByRole('button', { name: '居中' }))
   expect(word.format).toHaveBeenCalledWith({ key: 'align', value: 'center' })
-  expect(within(bar).getAllByRole('separator')).toHaveLength(4)
+  expect(within(bar).getAllByRole('separator')).toHaveLength(5)
   const size = within(bar).getByRole('button', { name: '字号' })
   expect(size.getAttribute('aria-haspopup')).toBe('menu')
 })

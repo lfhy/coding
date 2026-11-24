@@ -31,6 +31,7 @@ import SemiFontColor from '@douyinfe/semi-icons/lib/es/icons/IconFontColor'
 import SemiFill from '@douyinfe/semi-icons/lib/es/icons/IconFillStroked'
 import SemiGridView from '@douyinfe/semi-icons/lib/es/icons/IconGridView'
 import SemiHeading from '@douyinfe/semi-icons/lib/es/icons/IconH2'
+import SemiImage from '@douyinfe/semi-icons/lib/es/icons/IconImageStroked'
 import SemiList from '@douyinfe/semi-icons/lib/es/icons/IconList'
 import SemiQuote from '@douyinfe/semi-icons/lib/es/icons/IconQuote'
 import { IconTerminalOutline16, IconThinkOutline16 } from './legacy.tsx'
@@ -40,7 +41,7 @@ import type { IconProps } from './props.ts'
 /** 工具栏格式按钮的语义名称；与 `formatting` 映射的键一一对应。 */
 export type FormatIconName = 'format-bold' | 'format-italic' | 'format-underline' | 'format-strike' | 'format-align-left'
   | 'format-align-center' | 'format-align-right' | 'format-align-justify' | 'format-font-size' | 'format-text-color'
-  | 'format-fill-color' | 'format-merge' | 'format-heading' | 'format-list' | 'format-quote'
+  | 'format-fill-color' | 'format-merge' | 'format-heading' | 'format-list' | 'format-quote' | 'format-insert-image'
 
 /** 消费方使用的图标含义，不暴露第三方库中的组件名。 */
 export type IconName = 'sidebar' | 'files-panel' | 'bottom-panel' | 'terminal-menu'
@@ -64,6 +65,7 @@ const formatting = {
   'format-heading': SemiHeading,
   'format-list': SemiList,
   'format-quote': SemiQuote,
+  'format-insert-image': SemiImage,
 } satisfies Record<FormatIconName, unknown>
 
 /** 产品语义名称加上共享的布局属性。 */

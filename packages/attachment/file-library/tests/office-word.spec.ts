@@ -111,6 +111,20 @@ describe('导出含表格与图片的快照', () => {
     for (const text of ['甲', '乙', '丙', '丁']) expect(xml).toContain(`>${text}<`)
   })
 
+  it('图片占位不影响表格解析，两者同时出现在导出文件里', async () => {
+    const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
+    // 图片在正文里是 \u0008 占位，表格区间因此从占位之后开始。
+    const stream = '\r\u0008\u001a\u001b\u001c甲\r\u001d\u001c乙\r\u001d\u000e\u001f\r\n'
+    const document = snapshotOf(stream, {
+      drawings: { d1: { source: png, docTransform: { width: 40, height: 40 } } },
+    })
+    const parts = unzipSync(await exportWord(document))
+    const xml = strFromU8(parts['word/document.xml']!)
+    expect(xml).toContain('<w:tbl>')
+    expect(xml).toContain('>甲<')
+    expect(xml).toContain('<w:drawing>')
+  })
+
   it('data URL 图片作为内嵌图片写入导出文件', async () => {
     const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
     const document = snapshotOf('\r\n', {

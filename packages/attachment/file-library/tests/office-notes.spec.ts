@@ -5,7 +5,6 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { NOTE_EXCEL_SUFFIX, NOTE_WORD_SUFFIX, NoteConflictError, NoteNotFoundError, type OfficeDocument } from '../src/index.ts'
 import { NoteStore } from '../src/notes.ts'
-import { OFFICE_NATIVE_MAX_BYTES } from '../src/office/document.ts'
 import { buildWordSnapshot } from '../src/office/word-snapshot.ts'
 
 const directories: string[] = []
@@ -154,11 +153,12 @@ describe('Office 笔记存取', () => {
       await expect(store.office.edit(path, first.revision, batch)).rejects.toThrow(TypeError)
     }
     await expect(store.office.read(path)).resolves.toEqual(first)
-    const raw = join(root, 'over.codingword')
-    await writeFile(raw, new Uint8Array(OFFICE_NATIVE_MAX_BYTES + 1))
-    await expect(store.office.read('over.codingword')).rejects.toThrow(/8 MiB/u)
+    // 原生笔记不再限制文件大小：超大文件按内容判定，而不是按字节数直接拒绝。
+    const raw = join(root, 'big.codingword')
+    await writeFile(raw, new Uint8Array(9 * 1024 * 1024))
+    await expect(store.office.read('big.codingword')).rejects.toThrow(/不是有效的原生文档/u)
     await expect(store.office.import('word', '非法.docx', new Uint8Array([1, 0, 0]))).rejects.toThrow(TypeError)
-    expect((await readdir(root)).sort()).toEqual(['over.codingword', path].sort())
+    expect((await readdir(root)).sort()).toEqual(['big.codingword', path].sort())
   })
 
   it('每一级父路径和文件均拒绝符号链接，不能把幻灯片工程用作 Office 容器', async () => {

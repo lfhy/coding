@@ -51,6 +51,7 @@ External packages that a workspace package resolves at runtime. The tier covers 
 | [`@standard-schema/spec`](https://github.com/standard-schema/standard-schema) | MIT |
 | [`@tanstack/react-virtual`](https://github.com/TanStack/virtual) | MIT |
 | [`@types/mdast`](https://github.com/DefinitelyTyped/DefinitelyTyped) | MIT |
+| [`@univerjs/docs-drawing`](https://github.com/dream-num/univer) | Apache-2.0 |
 | [`@univerjs/preset-docs-core`](https://github.com/dream-num/univer) | Apache-2.0 |
 | [`@univerjs/preset-sheets-core`](https://github.com/dream-num/univer) | Apache-2.0 |
 | [`@univerjs/presets`](https://github.com/dream-num/univer) | Apache-2.0 |

@@ -114,6 +114,7 @@ function OfficeBody({ path, kind, initial, retain, t }: BodyProps) {
   const toastId = useRef(0)
   const dialogEpoch = useRef(0)
   const exportButton = useRef<HTMLButtonElement>(null)
+  const imagePicker = useRef<HTMLInputElement>(null)
   const resolveButton = useRef<HTMLButtonElement>(null)
   const saveButton = useRef<HTMLButtonElement>(null)
 
@@ -235,6 +236,19 @@ function OfficeBody({ path, kind, initial, retain, t }: BodyProps) {
       if (canvas.owner.current === owner) showToast('formatFailed')
     }
   }
+  /** 图片按行内对象插入当前选区；失败时提示而不是静默丢弃。 */
+  const insertImage = async (image: File) => {
+    const owner = canvas.owner.current
+    if (owner === null) return
+    try {
+      const ok = await owner.engine.insertImage(image)
+      if (canvas.owner.current !== owner) return
+      if (ok) owner.capture()
+      else showToast('imageFailed')
+    } catch {
+      if (canvas.owner.current === owner) showToast('imageFailed')
+    }
+  }
   const shortcut = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key.toLowerCase() !== 's' || !(event.metaKey || event.ctrlKey)) return
     event.preventDefault()
@@ -256,7 +270,14 @@ function OfficeBody({ path, kind, initial, retain, t }: BodyProps) {
           disabled={!ready || blocked || conflict} onClick={() => { ++dialogEpoch.current; setNotice(null); setDialog('export') }}>{t('export')}</Button>
       </div>
     </div>
-    <FormatToolbar kind={kind} disabled={!ready} t={t} format={(action) => { void format(action) }} />
+    <FormatToolbar kind={kind} disabled={!ready} t={t} format={(action) => { void format(action) }}
+      insertImage={() => { imagePicker.current?.click() }} />
+    <input ref={imagePicker} type="file" accept="image/*" hidden aria-hidden tabIndex={-1}
+      onChange={(event) => {
+        const image = event.target.files?.[0]
+        event.target.value = ''
+        if (image !== undefined) void insertImage(image)
+      }} />
     <section className={css.canvas} aria-label={name} aria-busy={view.status === 'loading' || (view.seed !== null && !ready && !canvas.failed)}>
       <div ref={canvas.container} className={css.engine} />
       {view.seed === null && (view.status === 'loadFailed' || view.status === 'missing') && <div className={css.empty}>
