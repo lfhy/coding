@@ -51,10 +51,10 @@
     }
   },
   "dependencies": {
-    "@univerjs/docs-drawing": "1.5.0",
-    "@univerjs/preset-docs-core": "1.5.0",
-    "@univerjs/preset-sheets-core": "1.5.0",
-    "@univerjs/presets": "1.5.0",
+    "@univerjs/docs-drawing": "1.6.1",
+    "@univerjs/preset-docs-core": "1.6.1",
+    "@univerjs/preset-sheets-core": "1.6.1",
+    "@univerjs/presets": "1.6.1",
     "rxjs": "^7.8.2"
   },
   "peerDependencies": {

@@ -20,7 +20,7 @@ Word 正文宽度跟随画布，左右各留一段空白，页面因此始终是
 
 本包没有配置项。浏览器入口通过 `ctx.slots.inject` 等待 `notes.document.office` 声明，按会话、路径和类型挂载一个编辑实例；隐藏、切换或改名都会释放旧实例和请求。草稿只保留在该会话和原路径的内存中，重新打开后需要手动保存或继续编辑，不自动写到改名后的路径或另一个同名文件。Host 已执行的写入不会因取消响应而回滚。
 
-只使用 Apache-2.0 的 [Univer Docs Core](https://docs.univer.ai/guides/docs/features/core) 和 [Sheets Core](https://docs.univer.ai/guides/sheets/features/core) 1.5.0 预设。画布在本地运行，未启用商用扩展、云转换或遥测传输。读取、保存和 Office 导出仅使用[文件库同源接口](../../../docs/subsystems/attachment.md#word-与-excel-文档快照)；浏览器不加载 Host 运行时。
+只使用 Apache-2.0 的 [Univer Docs Core](https://docs.univer.ai/guides/docs/features/core) 和 [Sheets Core](https://docs.univer.ai/guides/sheets/features/core) 1.6.1 预设。画布在本地运行，未启用商用扩展、云转换或遥测传输。读取、保存和 Office 导出仅使用[文件库同源接口](../../../docs/subsystems/attachment.md#word-与-excel-文档快照)；浏览器不加载 Host 运行时。
 
 Word 画布替换了 Univer 文档的渲染控制器，让连续布局按容器宽度排版并预留左侧段落柄区域；替换发生在 Ready 阶段之前，依赖项依赖 Univer 内部的受保护方法，升级预设时需要重新核对。预设样式只作用于本编辑器的画布和它创建的浮层容器，不影响页面其它部分。段落柄、块菜单和悬停说明都是 body 直属节点，样式靠在 body 上加宿主类名圈定，而 `@scope` 的规则不匹配作用域根元素，浮层容器自身的工具类由 [`office-scope.ts`](src/client/office-scope.ts) 另行补充；漏掉这层补充会让浮层留在文档流里撑高整页，引出页面滚动条。
 
