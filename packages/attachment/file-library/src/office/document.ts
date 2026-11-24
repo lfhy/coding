@@ -55,7 +55,7 @@ export function officeInteger(value: unknown, max: number, subject: string): num
   return value
 }
 
-function officeText(value: unknown, max: number, subject: string): string {
+export function officeText(value: unknown, max: number, subject: string): string {
   // 跨格式保留 XML 1.0 可表示的文本；孤立代理项会导致导出时静默替换字符。
   if (typeof value !== 'string' || value.length > max
     || /[\u0000-\u0008\u000b\u000c\u000e-\u001f\ud800-\udfff\ufffe\uffff]/u.test(value)) {

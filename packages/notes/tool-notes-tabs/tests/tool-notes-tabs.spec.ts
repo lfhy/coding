@@ -326,6 +326,39 @@ describe('笔记助手 Word 和 Excel', () => {
       } })
   })
 
+  it('读取时返回表格摘要，并可用 set_table_cells 写入单元格', async () => {
+    const { agent, office } = await boot()
+    office.readNoteOffice.mockResolvedValue({
+      ...word,
+      document: {
+        kind: 'word', version: 2,
+        snapshot: {
+          body: {
+            dataStream: '\r\u001a\u001b\u001c甲\r\u001d\u001c乙\r\u001d\u000e\u001f\r\n',
+            paragraphs: [{ startIndex: 0, paragraphId: 'p1', paragraphStyle: { namedStyleType: 1 } }],
+            textRuns: [],
+            sectionBreaks: [{ startIndex: 17, sectionId: 's1' }],
+            tables: [{ startIndex: 1, endIndex: 17, tableId: 't1' }],
+          },
+          tableSource: { t1: { tableRows: [{ tableCells: [{}, {}] }] } },
+        },
+      },
+    })
+    const read = await callOffice(agent, { action: 'read', path: wordPath })
+    if (read.isError) throw new Error(JSON.stringify(read.content))
+    expect(read.value).toMatchObject({ tables: [{ tableId: 't1', rows: 1, columns: 2, cells: [['甲', '乙']] }] })
+
+    office.editNoteOffice.mockResolvedValue({ path: wordPath, revision: 'word-2', document: word.document })
+    const edited = await callOffice(agent, {
+      action: 'edit', path: wordPath, revision: 'word-1',
+      edits: [{ op: 'set_table_cells', tableId: 't1', cells: [{ row: 0, column: 0, text: '新甲' }] }],
+    })
+    if (edited.isError) throw new Error(JSON.stringify(edited.content))
+    expect(office.editNoteOffice).toHaveBeenCalledWith(wordPath, 'word-1', [
+      { op: 'set_table_cells', tableId: 't1', cells: [{ row: 0, column: 0, text: '新甲' }] },
+    ])
+  })
+
   it('分页读取工作表元数据及单元格，保留公式和类型', async () => {
     const { agent, office } = await boot()
     office.readNoteOffice.mockResolvedValue(excel)

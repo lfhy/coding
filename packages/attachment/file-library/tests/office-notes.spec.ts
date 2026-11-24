@@ -140,6 +140,38 @@ describe('Office 笔记存取', () => {
     expect(result.body.dataStream.startsWith('\u0008')).toBe(true)
   })
 
+  it('按表格标识写入单元格文字，结构与其它内容不受影响', async () => {
+    const { store } = await setup()
+    const { path } = await store.office.create('word', '表格编辑')
+    const base = await store.office.read(path)
+    if (base.document.kind !== 'word') throw new Error('类型不符')
+    const snapshot = {
+      ...base.document.snapshot,
+      tableSource: { t1: { tableRows: [{ tableCells: [{}, {}] }] } },
+      body: {
+        dataStream: '\r\u001a\u001b\u001c甲\r\u001d\u001c乙\r\u001d\u000e\u001f\r\n',
+        paragraphs: [{ startIndex: 0, paragraphId: 'p1', paragraphStyle: { namedStyleType: 1 } }],
+        textRuns: [],
+        sectionBreaks: [{ startIndex: 17, sectionId: 's1' }],
+        tables: [{ startIndex: 1, endIndex: 17, tableId: 't1' }],
+      },
+    }
+    const saved = await store.office.save(path, base.revision, { version: 2, kind: 'word', snapshot })
+    const edited = await store.office.edit(path, saved.revision, [
+      { op: 'set_table_cells', tableId: 't1', cells: [{ row: 0, column: 1, text: '新乙' }] },
+    ])
+    if (edited.document.kind !== 'word') throw new Error('类型不符')
+    expect(edited.document.snapshot.body.dataStream).toContain('\u001c甲\r\u001d')
+    expect(edited.document.snapshot.body.dataStream).toContain('\u001c新乙\r\u001d')
+    expect(edited.document.snapshot.tableSource).toEqual(snapshot.tableSource)
+    await expect(store.office.edit(path, edited.revision, [
+      { op: 'set_table_cells', tableId: 't1', cells: [{ row: 3, column: 0, text: '越界' }] },
+    ])).rejects.toThrow(/行坐标/u)
+    await expect(store.office.edit(path, edited.revision, [
+      { op: 'set_table_cells', tableId: '缺失', cells: [{ row: 0, column: 0, text: 'x' }] },
+    ])).rejects.toThrow(/表格不存在/u)
+  })
+
   it('Excel 编辑整格替换、按规则清空并保持工作表 ID，失败批次保留整个快照', async () => {
     const { store } = await setup()
     const { path } = await store.office.create('excel', '统计')

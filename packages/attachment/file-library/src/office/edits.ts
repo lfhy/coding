@@ -2,10 +2,10 @@
 import type { ExcelSheet, OfficeDocument, OfficeEdit } from '../types.ts'
 import {
   blankWordParagraph, excelSheetId, excelSheetName, newExcelSheet, OfficeBudget, officeArray, officeCellKey,
-  officeInteger, officeRecord, OFFICE_MAX_PARAGRAPHS, OFFICE_MAX_SHEETS, parseExcelCells, parseOfficeDocument,
-  parseWordParagraph,
+  officeInteger, officeRecord, officeText, OFFICE_MAX_COLUMNS, OFFICE_MAX_PARAGRAPHS, OFFICE_MAX_ROWS,
+  OFFICE_MAX_SHEETS, OFFICE_MAX_TEXT, parseExcelCells, parseOfficeDocument, parseWordParagraph,
 } from './document.ts'
-import { readWordBlocks, writeWordBlocks, type WordBlock } from './word-snapshot.ts'
+import { readWordBlocks, setWordTableCells, writeWordBlocks, type WordBlock } from './word-snapshot.ts'
 
 /** 编辑批次与一次单元格替换的上限，不接受空批次。 */
 const MAX_EDITS = 32
@@ -17,7 +17,7 @@ export function parseOfficeEdits(value: unknown): OfficeEdit[] {
   if (source.length === 0) throw new TypeError('办公笔记编辑批次不能为空')
   const budget = new OfficeBudget()
   return Array.from(source, (item) => {
-    const keys = ['op', 'index', 'paragraph', 'sheetId', 'cells', 'name']
+    const keys = ['op', 'index', 'paragraph', 'sheetId', 'cells', 'name', 'tableId']
     const { op } = officeRecord(item, keys, '办公笔记编辑')
     switch (op) {
       case 'replace_paragraph':
@@ -28,6 +28,22 @@ export function parseOfficeEdits(value: unknown): OfficeEdit[] {
       case 'delete_paragraph': {
         const { index } = officeRecord(item, ['op', 'index'], '段落编辑')
         return { op, index: officeInteger(index, OFFICE_MAX_PARAGRAPHS, '段落位置') }
+      }
+      case 'set_table_cells': {
+        const { tableId, cells } = officeRecord(item, ['op', 'tableId', 'cells'], '表格单元格编辑')
+        const list = officeArray(cells, MAX_SET_CELLS, '表格单元格数')
+        return {
+          op,
+          tableId: budget.text(officeText(tableId, 128, '表格标识')),
+          cells: Array.from(list, (raw) => {
+            const cell = officeRecord(raw, ['row', 'column', 'text'], '表格单元格')
+            return {
+              row: officeInteger(cell.row, OFFICE_MAX_ROWS - 1, '行坐标'),
+              column: officeInteger(cell.column, OFFICE_MAX_COLUMNS - 1, '列坐标'),
+              text: budget.wordText(officeText(cell.text, OFFICE_MAX_TEXT, '单元格文字')),
+            }
+          }),
+        }
       }
       case 'set_cells': {
         const { sheetId, cells } = officeRecord(item, ['op', 'sheetId', 'cells'], '单元格编辑')
@@ -126,9 +142,13 @@ function applyExcelEdits(sheets: ExcelSheet[], edits: readonly OfficeEdit[]): vo
 /** 按顺序应用编辑并重新检查整篇文档的预算；失败不改动传入快照。 */
 export function applyOfficeEdits(document: OfficeDocument, edits: readonly OfficeEdit[]): OfficeDocument {
   if (document.kind === 'word') {
+    const paragraphs = edits.filter(edit => edit.op !== 'set_table_cells')
+    const cells = edits.filter(edit => edit.op === 'set_table_cells')
     const blocks = readWordBlocks(document.snapshot)
-    applyWordEdits(blocks, edits)
-    return parseOfficeDocument({ ...document, snapshot: writeWordBlocks(blocks, document.snapshot) }, document.kind)
+    applyWordEdits(blocks, paragraphs)
+    let snapshot = writeWordBlocks(blocks, document.snapshot)
+    for (const edit of cells) snapshot = setWordTableCells(snapshot, edit.tableId, edit.cells)
+    return parseOfficeDocument({ ...document, snapshot }, document.kind)
   }
   const sheets = [...document.sheets]
   applyExcelEdits(sheets, edits)

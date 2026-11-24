@@ -126,11 +126,19 @@ export type OfficeDocument =
   | { version: 2; kind: 'word'; snapshot: WordSnapshot }
   | { version: 1; kind: 'excel'; sheets: ExcelSheet[] }
 
-/** 一项原子批次中的编辑；段落索引从零开始，单元格操作完整替换指定坐标。 */
+/** 表格单元格的文字替换；行列坐标从零开始。 */
+export interface WordTableCellEdit {
+  row: number
+  column: number
+  text: string
+}
+
+/** 一项原子批次中的编辑；段落索引与表格坐标都从零开始，写入时完整替换目标。 */
 export type OfficeEdit =
   | { op: 'replace_paragraph'; index: number; paragraph: WordParagraph }
   | { op: 'insert_paragraph'; index: number; paragraph: WordParagraph }
   | { op: 'delete_paragraph'; index: number }
+  | { op: 'set_table_cells'; tableId: string; cells: WordTableCellEdit[] }
   | { op: 'set_cells'; sheetId: string; cells: ExcelCell[] }
   | { op: 'add_sheet'; name: string }
   | { op: 'rename_sheet'; sheetId: string; name: string }

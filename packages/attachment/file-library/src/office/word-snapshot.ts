@@ -15,6 +15,7 @@ const TABLE_START = '\u001a'
 const TABLE_ROW_START = '\u001b'
 const TABLE_CELL_START = '\u001c'
 const TABLE_CELL_END = '\u001d'
+const TABLE_ROW_END = '\u000e'
 const TABLE_END = '\u001f'
 // 图片在正文流里的占位字符，导出时跳过，改由 drawings 读成内嵌图片。
 const IMAGE_PLACEHOLDER = '\b'
@@ -403,4 +404,83 @@ export function writeWordBlocks(blocks: readonly WordBlock[], template: WordSnap
   if (Object.keys(tableSource).length > 0) snapshot.tableSource = tableSource
   else delete snapshot.tableSource
   return snapshot as unknown as WordSnapshot
+}
+
+/** 助手读取用的表格视图：行列数与每格纯文本。 */
+export interface WordTableSnapshotEntry {
+  readonly tableId: string
+  readonly rows: number
+  readonly columns: number
+  readonly cells: readonly (readonly string[])[]
+}
+
+function cellText(cell: readonly WordParagraph[]): string {
+  return cell.map(paragraph => paragraph.runs.map(run => run.text).join('')).join('\n')
+}
+
+/**
+ * 读出快照里的表格，供助手了解文档结构后再定点修改。
+ * @param snapshot - 已校验的引擎快照。
+ * @returns 每张表格的标识、行列数与纯文本内容。
+ */
+export function readWordTables(snapshot: WordSnapshot): WordTableSnapshotEntry[] {
+  return readWordBlocks(snapshot)
+    .flatMap((block) => {
+      if (block.kind !== 'table') return []
+      return [{
+        tableId: block.table.tableId,
+        rows: block.table.rows.length,
+        columns: Math.max(0, ...block.table.rows.map(row => row.cells.length)),
+        cells: block.table.rows.map(row => row.cells.map(cellText)),
+      }]
+    })
+}
+
+/** 把行列内容编码回正文片段；换行写成软换行，单元格至少保留一个空段落。 */
+function encodeTable(rows: readonly { readonly cells: readonly WordParagraph[][] }[]): string {
+  let text = TABLE_START
+  for (const row of rows) {
+    text += TABLE_ROW_START
+    for (const cell of row.cells) {
+      text += TABLE_CELL_START
+      for (const paragraph of (cell.length > 0 ? cell : [{ style: 'normal', runs: [] }])) {
+        text += paragraph.runs.map(run => run.text.replace(/\r\n|\r|\n/g, SOFT_BREAK)).join('')
+        text += PARAGRAPH_BREAK
+      }
+      text += TABLE_CELL_END
+    }
+    text += TABLE_ROW_END
+  }
+  return text + TABLE_END
+}
+
+/**
+ * 按行列坐标替换表格单元格的文字，保留该单元格原有段落样式。
+ * @param snapshot - 已校验的引擎快照。
+ * @param tableId - 读取时返回的表格标识。
+ * @param cells - 要写入的单元格与文字；越界坐标直接拒绝。
+ * @returns 更新后的快照副本。
+ */
+export function setWordTableCells(
+  snapshot: WordSnapshot,
+  tableId: string,
+  cells: readonly { readonly row: number; readonly column: number; readonly text: string }[],
+): WordSnapshot {
+  const blocks = readWordBlocks(snapshot)
+  const index = blocks.findIndex(block => block.kind === 'table' && block.table.tableId === tableId)
+  const target = blocks[index]
+  if (target === undefined || target.kind !== 'table') throw new TypeError('Word 表格不存在')
+  const rows = target.table.rows.map(row => ({ cells: row.cells.map(cell => [...cell]) }))
+  for (const cell of cells) {
+    const row = rows[cell.row]
+    if (row === undefined) throw new TypeError('Word 表格行坐标超出范围')
+    const current = row.cells[cell.column]
+    if (current === undefined) throw new TypeError('Word 表格列坐标超出范围')
+    // 只替换文字，保留原单元格第一个段落的样式与对齐。
+    const style = current[0]?.style ?? 'normal'
+    const align = current[0]?.align
+    row.cells[cell.column] = [{ style, ...(align === undefined ? {} : { align }), runs: cell.text === '' ? [] : [{ text: cell.text }] }]
+  }
+  blocks[index] = { kind: 'table', table: { ...target.table, rows, segment: encodeTable(rows) } }
+  return writeWordBlocks(blocks, snapshot)
 }

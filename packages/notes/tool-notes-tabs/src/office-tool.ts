@@ -1,7 +1,7 @@
 /** 笔记助手的 Word／Excel 工具；结构、格式和写入事务由文件库负责。 */
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from 'coding-agent'
-import { NoteConflictError, NoteNotFoundError, readWordParagraphs, type ExcelCell, type OfficeKind, type OfficeSnapshot, type WordParagraph } from 'coding-file-library'
+import { NoteConflictError, NoteNotFoundError, readWordParagraphs, readWordTables, type ExcelCell, type OfficeKind, type OfficeSnapshot, type WordParagraph } from 'coding-file-library'
 import { defineTool } from 'coding-tools'
 import { toolActionTitle } from 'coding-tools/tool-action-title'
 
@@ -57,11 +57,12 @@ function readPage<T, U, K extends string>(
   base: PageTarget, key: K, offset: number, items: readonly T[],
   map: (item: T, index: number) => U,
   preview?: (item: T, index: number) => U,
+  extras: Record<string, unknown> = {},
 ) {
   if (!Number.isSafeInteger(offset) || offset < 0 || offset > items.length) throw new TypeError('分页位置无效，请从头读取。')
   const pageItems: U[] = []
   const page = {
-    ...base, offset, total: items.length, nextOffset: offset < items.length ? offset : null,
+    ...base, ...extras, offset, total: items.length, nextOffset: offset < items.length ? offset : null,
     ...{ [key]: pageItems } as Record<K, U[]>,
   }
   const fits = (value: unknown) => Buffer.byteLength(JSON.stringify(value)) <= PAGE_BYTES
@@ -95,6 +96,13 @@ function pageOf(snapshot: OfficeSnapshot, offset: number, sheetId?: string, rang
   const base = { path, revision, kind: document.kind }
   if (document.kind === 'word') {
     if (sheetId !== undefined || range !== undefined) throw new TypeError('只有 Excel 工作簿可以读取指定工作表或区域。')
+    // 表格以摘要形式随页返回：助手据此拿到 tableId 与行列坐标，再用 set_table_cells 定点写入。
+    const tables = readWordTables(document.snapshot).map(table => ({
+      tableId: table.tableId,
+      rows: table.rows,
+      columns: table.columns,
+      cells: table.cells.map(row => row.map(text => text.length > PREVIEW_LENGTH ? text.slice(0, PREVIEW_LENGTH) : text)),
+    }))
     return readPage<WordParagraph, WordPageEntry, 'paragraphs'>(base, 'paragraphs', offset, readWordParagraphs(document.snapshot),
       (paragraph, index) => ({ index, ...paragraph }), (paragraph, index) => {
         let preview = ''
@@ -103,7 +111,7 @@ function pageOf(snapshot: OfficeSnapshot, offset: number, sheetId?: string, rang
           if (preview.length >= PREVIEW_LENGTH) break
         }
         return { index, style: paragraph.style, preview, truncated: true }
-      })
+      }, tables.length > 0 ? { tables } : {})
   }
   if (sheetId === undefined) {
     if (range !== undefined) throw new TypeError('读取区域需要指定工作表 ID。')
@@ -158,6 +166,17 @@ export function registerNotesOffice(
             op: { type: 'string', const: 'delete_paragraph', required: true }, index,
           } },
           { type: 'object', additionalProperties: false, properties: {
+            op: { type: 'string', const: 'set_table_cells', required: true },
+            tableId: { ...requiredString, description: '读取返回的表格标识。' },
+            cells: {
+              type: 'array', required: true, description: '一次设置 1 至 256 个表格单元格，行列从 0 开始。',
+              items: { type: 'object', additionalProperties: false, properties: {
+                row: { type: 'integer', required: true }, column: { type: 'integer', required: true },
+                text: { type: 'string', required: true, description: '单元格文字；空串表示清空。' },
+              } },
+            },
+          } },
+          { type: 'object', additionalProperties: false, properties: {
             op: { type: 'string', const: 'set_cells', required: true }, sheetId: requiredString,
             cells: { type: 'array', required: true, description: '一次设置 1 至 256 个单元格。', items: cellSchema },
           } },
@@ -185,6 +204,10 @@ export function registerNotesOffice(
         ] } },
         sheets: { type: 'array', items: { type: 'object', additionalProperties: false, properties: {
           id: requiredString, name: requiredString, cellCount: index, mergeCount: index,
+        } } },
+        tables: { type: 'array', items: { type: 'object', additionalProperties: false, properties: {
+          tableId: requiredString, rows: index, columns: index,
+          cells: { type: 'array', items: { type: 'array', items: { type: 'string' } } },
         } } },
         cells: { type: 'array', items: { oneOf: [
           cellSchema,
