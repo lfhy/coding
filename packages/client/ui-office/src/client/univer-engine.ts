@@ -85,6 +85,17 @@ interface PageGapTarget {
 }
 
 /**
+ * 纸张背景组件：页描边与页间距一起决定两页看起来是否断开。
+ * 组件的填充字段默认是 undefined（绘制时才回退到主题色），所以只能原样透传，不能填空串。
+ */
+interface PagePaperTarget extends PageGapTarget {
+  _backgroundFillColor?: string
+  _pageFillColor?: string
+  _pageStrokeColor?: string
+  setFillColors?(background: string | undefined, page: string | undefined, stroke: string | undefined, margin: string | undefined): void
+}
+
+/**
  * 双击两页之间的空白，把分页纸张拼成一整张长页；再双击还原，与 WPS / Word 隐藏页间空白的手感一致。
  * 命中判定直接读画布像素：双击处不是纸白、而上下各留 40px 都是纸白时，说明点在页间空隙上，
  * 这样不用换算视图缩放，缩放或改版式后依然准。
@@ -95,11 +106,12 @@ interface PageGapTarget {
 function bindPageGapToggle(container: HTMLElement, univer: Univer, signal: AbortSignal): void {
   const renderManager: IRenderManagerService = univer.__getInjector().get(IRenderManagerService)
   let pageGap: number | undefined
+  let pageStroke: string | undefined
   const targets = () => {
     const render = renderManager.getRenderUnitById(UNIT_ID)
     return {
       main: render?.mainComponent as PageGapTarget | null | undefined,
-      background: render?.components?.get('__Document_Render_Background__') as PageGapTarget | undefined,
+      background: render?.components?.get('__Document_Render_Background__') as PagePaperTarget | undefined,
     }
   }
   const toggle = (): void => {
@@ -114,6 +126,10 @@ function bindPageGapToggle(container: HTMLElement, univer: Univer, signal: Abort
     main.makeDirty?.(true)
     if (background !== undefined) {
       background.pageMarginTop = main.pageMarginTop
+      // 拼页时把纸张描边一起隐掉，两页才会连成一整张；还原时交回原描边（默认 undefined 即主题色）。
+      if (pageStroke === undefined) pageStroke = background._pageStrokeColor
+      const stroke = main.pageMarginTop > 0 ? pageStroke : 'transparent'
+      background.setFillColors?.(background._backgroundFillColor, background._pageFillColor, stroke, stroke)
       background.makeDirty?.(true)
     }
   }
