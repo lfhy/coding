@@ -79,6 +79,10 @@
   transition: transform 120ms ease;
 }
 
+.picker[aria-expanded='true'] {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
 .picker[aria-expanded='true'] .pickerArrow {
   transform: rotate(180deg);
 }
@@ -111,13 +115,23 @@
   min-width: 0;
   min-height: 0;
   overflow: hidden;
-  background: var(--dsw-alias-bg-base);
+  /* 页面由引擎画在画布中央、两侧留出边距；衬底退到工作区底色，正文才有纸张边界。 */
+  background: var(--dsw-alias-bg-overlay);
 }
 
 .engine {
   position: absolute;
   inset: 0;
   overflow: hidden;
+}
+
+/* 工作台自带的白底与引擎写进画布元素的内联背景都会盖住衬底；只放开背景，页面仍由引擎绘制。 */
+.engine :global(.univer-bg-gray-0) {
+  background: transparent;
+}
+
+.engine canvas {
+  background: transparent !important;
 }
 
 .empty {

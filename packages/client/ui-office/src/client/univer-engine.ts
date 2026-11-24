@@ -1,15 +1,17 @@
 /** 仅在可见正文中启动一个本地编辑实例，不把第三方对象交给业务组件。 */
 import { throwError } from 'rxjs'
-import { createUniver, ICommandService, ILogService, IUniverInstanceService, LocaleType, NamedStyleType,
+import { createUniver, ICommandService, IConfigService, ILogService, IUniverInstanceService, LocaleType, NamedStyleType,
   setDependencies, ThemeService, Univer, UniverInstanceType, CommandType, type DocumentDataModel, type ILanguagePack,
   type IPreset } from '@univerjs/presets'
 import {
   DocLayoutExecutorService, DocLayoutInteractionService, DocPageLayoutService,
   DocRenderController, DocSelectionManagerService, DocSelectionRenderService, DocSkeletonManagerService,
-  DocViewScaleService, IEditorService, IRenderManagerService, type IRenderContext,
+  DocViewScaleService, DOCS_UI_PLUGIN_CONFIG_KEY, IEditorService, IRenderManagerService, type IRenderContext,
 } from '@univerjs/preset-docs-core'
 import { en as english, zh as chinese } from './locales.ts'
 import type { OfficeDocument, ParagraphAlign, ParagraphStyle } from './office-document.ts'
+import { markOfficeHost, HOST_CLASS } from './office-portal.ts'
+import { selfScopedRules } from './office-scope.ts'
 import { fromUniverDocument, toUniverDocument } from './word-conversion.ts'
 import { fromUniverWorkbook, toUniverWorkbook } from './excel-conversion.ts'
 
@@ -27,9 +29,10 @@ class NoteDocRenderController extends DocRenderController {
     const [unitId, skeleton, options, refreshMainSelection, preserveInactiveViewportAnchor] = args
     const parent = this._context.scene.getParent()
     // 画布尚未挂载时场景父级宽度仍是初始占位值，此时沿用编辑器自身的宽度。
+    // 页面宽度直接跟随画布：fit-width 缩放再把它等比缩进画布，减留白反而溢出。
     const available = parent.width > 1 ? parent.width : this._context.engine.width
-    const bound = Number.isFinite(available) && available > DOCUMENT_GUTTER * 2 + 1
-      ? { ...options, modernPageWidth: available, modernHorizontalMargin: DOCUMENT_GUTTER } satisfies LayoutOptions
+    const bound = Number.isFinite(available) && available > 1
+      ? { ...options, modernPageWidth: available, modernHorizontalMargin: this._getHorizontalPageMargin() } satisfies LayoutOptions
       : options
     super._scheduleLayout(unitId, skeleton, bound, refreshMainSelection, preserveInactiveViewportAnchor)
   }
@@ -109,34 +112,24 @@ function bindContinuousLayout(univer: Univer): void {
 }
 
 /**
- * Univer 工作台首帧会在 body 下新建一个匿名容器，所有浮动弹层（段落柄、斜杠菜单等）都挂进去。
- * 预设样式用 @scope 限定在本编辑器内，所以要把这个容器标出来；只认「本次运行时新挂上、且含 Univer 组件」的节点，
- * 不碰页面上其它 body 子节点。
+ * 让页面按画布宽度缩放适配：窄窗口里默认整页可见，不会出现横向滚动条。
+ * 用的是 Univer 自己的 fit-width 视图缩放，页脚缩放控件仍可在此基础上继续放大；
+ * 默认 minScale 是 1，必须放宽才允许缩到比页面更窄的容器里。
+ * @param univer - 当前编辑器实例。
  */
-const PORTAL_CLASS = 'coding-office-portal'
-
-function markPortalContainer(): () => void {
-  const known = new Set(document.body.children)
-  const marked = new Set<Element>()
-  const mark = () => {
-    for (const node of document.body.children) {
-      if (known.has(node) || marked.has(node) || node.querySelector('[data-u-comp]') === null) continue
-      node.classList.add(PORTAL_CLASS)
-      marked.add(node)
-    }
-  }
-  const observer = new MutationObserver(mark)
-  observer.observe(document.body, { childList: true, subtree: true })
-  return () => {
-    observer.disconnect()
-    for (const node of marked) node.classList.remove(PORTAL_CLASS)
-  }
+function bindFitToWidth(univer: Univer): void {
+  const config: IConfigService = univer.__getInjector().get(IConfigService)
+  config.setConfig(DOCS_UI_PLUGIN_CONFIG_KEY, {
+    fitToWidth: { mode: 'fit-width', target: 'container', align: 'start', paddingX: DOCUMENT_GUTTER, minScale: 0.25 },
+  }, { merge: true })
 }
 
 function setupStyles(container: HTMLElement, css: string): () => void {
   const style = document.createElement('style')
-  // 画布根由编辑器独占；样式在文档头中保持有效，选择器只作用于画布及其浮层。
-  style.textContent = `@scope (.coding-office-canvas, [id^="univer-popup-portal-"], .${PORTAL_CLASS}) {${css.replaceAll(/url\([^)]*\)/g, 'none')}}`
+  const scoped = css.replaceAll(/url\([^)]*\)/g, 'none')
+  // 画布根由编辑器独占；Univer 的浮层是 body 直属节点，靠宿主类名一并圈进作用域。
+  // @scope 的规则不匹配作用域根元素，浮层容器自身另用补充规则（见 office-scope.ts）。
+  style.textContent = `@scope (.coding-office-canvas, [id^="univer-popup-portal-"], body.${HOST_CLASS} > *) {${scoped}}${selfScopedRules(scoped)}`
   container.classList.add('coding-office-canvas')
   document.head.append(style)
   return () => { style.remove(); container.classList.remove('coding-office-canvas') }
@@ -191,7 +184,7 @@ function bindRuntime(options: OfficeEngineOptions, presetCss: string, runtime: R
   const { container, onChange, document: input } = options
   const { univer, univerAPI } = runtime
   const releaseStyle = setupStyles(container, presetCss)
-  const releasePortal = markPortalContainer()
+  const releaseHost = markOfficeHost()
   const releasePaste = onlyTextClipboard(container)
   const media = document.defaultView?.matchMedia(DARK_PREFERENCE)
   let disposed = false
@@ -226,7 +219,7 @@ function bindRuntime(options: OfficeEngineOptions, presetCss: string, runtime: R
     try {
       univer.dispose()
     } finally {
-      releasePortal()
+      releaseHost()
       releaseStyle()
     }
   }
@@ -267,8 +260,9 @@ export async function createOfficeEngine(options: OfficeEngineOptions): Promise<
     ])
     signal.throwIfAborted()
     const runtime = newRuntime(docs.UniverDocsCorePreset({
-      ...layout, header: false, footer: false, toc: false, disableAutoFocus: true,
+      ...layout, header: false, footer: true, toc: true, disableAutoFocus: true,
     }), localePack(zh), localePack(en), docs.IHTTPImplementation, true)
+    bindFitToWidth(runtime.univer)
     const api = runtime.univerAPI
     return bindRuntime(options, css, runtime, () => {
       const model = api.createDocument(toUniverDocument(input, UNIT_ID, ''))

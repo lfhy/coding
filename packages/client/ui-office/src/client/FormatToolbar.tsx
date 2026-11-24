@@ -166,7 +166,7 @@ function ToolButton({ label, disabled, onRun, children }: {
   children: ReactNode
 }) {
   return <Tooltip label={label} side="bottom">
-    <Button size="sm" variant="toolbar" className={css.tool} icon={children} disabled={disabled} aria-label={label}
+    <Button size="sm" variant="ghost" className={css.tool} icon={children} disabled={disabled} aria-label={label}
       onMouseDown={(event) => { event.preventDefault() }} onClick={onRun} />
   </Tooltip>
 }
@@ -184,7 +184,7 @@ function Picker({ label, icon, open, disabled, onToggle, items, onClose, onSelec
 }) {
   const portal = useFormatPortal()
   return <Menu open={open && !disabled} portal portalContainer={portal} matchAnchorWidth keyboardNavigation
-    anchor={<Button size="sm" variant="toolbar" className={css.picker} aria-haspopup="menu" aria-expanded={open && !disabled}
+    anchor={<Button size="sm" variant="ghost" className={css.picker} aria-haspopup="menu" aria-expanded={open && !disabled}
       icon={icon === undefined ? undefined : <Icon name={icon} />} disabled={disabled} aria-label={label}
       onMouseDown={(event) => { event.preventDefault() }} onClick={onToggle}>
       {label}<IconChevronDownOutline14 className={css.pickerArrow} />
@@ -206,7 +206,7 @@ function ColorPicker({ label, icon, open, disabled, onToggle, onClose, onSelect,
 }) {
   const portal = useFormatPortal()
   return <Menu open={open && !disabled} portal portalContainer={portal} onClose={onClose} onSelect={() => { onCustom() }}
-    anchor={<Button size="sm" variant="toolbar" className={css.picker} aria-haspopup="menu" aria-expanded={open && !disabled}
+    anchor={<Button size="sm" variant="ghost" className={css.picker} aria-haspopup="menu" aria-expanded={open && !disabled}
       disabled={disabled} aria-label={label} onMouseDown={(event) => { event.preventDefault() }} onClick={onToggle}>
       <Icon name={icon} /><IconChevronDownOutline14 className={css.pickerArrow} />
     </Button>}
