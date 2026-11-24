@@ -183,15 +183,18 @@ describe('browser tools and skill in the shipped Web preset composition', () => 
       expect(ctx.egoBrowser.toolDefinitions().map(tool => tool.name)).toEqual(
         browserTools.map(name => `ego_${name.slice('browser_'.length)}`))
       // 合并后的标准模式同时通告原生 schema 与 run_code，SDK 段也照常生成。
+      // 工具侧另登记宿主没有的 `browser_viewport`，所以模型可见集合比上游多一个。
       expect(prompt.tools.map(tool => tool.name).filter(name => name.startsWith('browser_')))
-        .toEqual([...browserTools].sort())
+        .toEqual([...browserTools, 'browser_viewport'].sort())
       expect(prompt.tools.map(tool => tool.name)).not.toContain('browser_use')
       expect(prompt.tools.map(tool => tool.name)).not.toContain('browser_act')
       expect(prompt.tools.map(tool => tool.name)).not.toContain('browser_close')
       expect(prompt.tools.map(tool => tool.name)).toContain('run_code')
       expect(prompt.sections.find(section => section.name === 'tools:sdk')?.text)
         .toMatch(/browser_navigate/)
-      expect(ctx.tools.schemas(merged.agent).map(tool => tool.name).filter(name => name.startsWith('browser_'))).toEqual(browserTools)
+      // schemas() 保留注册顺序：上游工具之后是工具包自己追加的视口工具。
+      expect(ctx.tools.schemas(merged.agent).map(tool => tool.name).filter(name => name.startsWith('browser_')))
+        .toEqual([...browserTools, 'browser_viewport'])
 
       const direct = await call(merged.agent, 'browser_navigate', { url: 'https://example.test' })
       expect(direct).toMatchObject({ isError: false, value: {

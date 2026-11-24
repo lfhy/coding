@@ -5,6 +5,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { ContentBlock } from 'coding-llm'
 import type { Session } from 'coding-session'
 import { remoteWorkspacePath } from 'coding-subprocess'
+import { defineTool } from 'coding-tools'
 import type { ToolDefinition, ToolRunContext } from 'coding-tools'
 import type { ApprovalService } from 'coding-user-approval'
 import type {} from 'coding-browser-ego-host'
@@ -52,6 +53,14 @@ const FILE_PARAMETER_DESCRIPTIONS: Readonly<Record<string, string>> = {
   'browser_upload.path': 'Path of the file to upload. A relative path resolves inside the session workspace;'
     + ' an absolute path must stay there.',
 }
+/**
+ * 视口工具是本包自己定义的（宿主没有同名上游工具），所以说明要讲清覆盖范围与使用顺序：
+ * 模型先把页面调成目标尺寸，再用 `browser_screenshot` 判断布局；恢复窗口尺寸走 `reset`。
+ */
+const VIEWPORT_DESCRIPTION = 'Emulate a device viewport on the current page: pass width and height in CSS pixels, '
+  + 'optionally with mobile and deviceScaleFactor, to inspect a responsive or mobile layout; pass reset: true to go '
+  + 'back to the browser window size. The override stays on the page until you reset it or the page closes, so call '
+  + 'browser_screenshot afterwards. The result reports the viewport the page actually applied.'
 
 /** 把上游的全局空间说明收敛为当前会话，不改实际参数与输出格式。 */
 function browserDescription(name: string, description: string): string {
@@ -103,6 +112,13 @@ function origin(value: unknown): string {
 }
 
 function reason(name: string, args: Record<string, unknown>): string {
+  // 视口调整不带 URL，审批理由直接写尺寸：用户要看懂页面将被渲染成什么形状。
+  if (name === 'browser_viewport') {
+    const size = args.reset === true
+      ? 'reset to the browser window size'
+      : `${typeof args.width === 'number' ? args.width : '?'}×${typeof args.height === 'number' ? args.height : '?'}`
+    return `Browser viewport (${size}; this call only)`
+  }
   const target = origin(args.url)
   return `Browser ${name.slice('browser_'.length)} (origin: ${target}; this call only)`
 }
@@ -254,6 +270,8 @@ async function run(ctx: Context, source: ToolDefinition, name: string, input: un
   try { value = await source.execute(localized.args, exec) } catch (error) {
     exec.signal.throwIfAborted()
     const detail = failureDetail(error)
+    // 视口参数越界与测量失败本身就是让模型改正下一次调用的说明，套上「操作失败」会把它埋掉。
+    if (name === 'browser_viewport' && detail !== '') throw new Error(`${name}: ${detail}`)
     const isSpaceError = detail.includes('another task space is not available')
     const advice = isSpaceError
       ? 'omit the space argument to use this session’s pages; do not retry another session’s space'
@@ -266,6 +284,57 @@ async function run(ctx: Context, source: ToolDefinition, name: string, input: un
     if (shot !== null) imageForPath.set(shot.path, shot.image)
   }
   return value
+}
+
+/**
+ * 视口工具：把「按目标尺寸看布局」做成模型能直接发现的一次调用。
+ *
+ * 上游没有同名工具，所以参数与说明由本包定义；实际执行交给宿主
+ * （`ctx.egoBrowser.emulateViewport`），由宿主校验值域并在页面自己的会话里
+ * 设置或清除 CDP 设备度量，再读回实测视口。
+ * @param ctx 拥有会话浏览器宿主的上下文。
+ * @returns 注册用的工具定义。
+ */
+function viewportTool(ctx: Context): ToolDefinition {
+  return defineTool({
+    name: 'browser_viewport',
+    description: VIEWPORT_DESCRIPTION,
+    parameters: {
+      width: { type: 'integer', description: 'CSS viewport width in pixels; 200–3840. Required unless reset is true.' },
+      height: { type: 'integer', description: 'CSS viewport height in pixels; 200–2160. Required unless reset is true.' },
+      mobile: {
+        type: 'boolean',
+        description: 'Emulate mobile device metrics (touch and mobile viewport behaviour). Defaults to false.',
+      },
+      deviceScaleFactor: {
+        type: 'number',
+        description: 'Device pixel ratio from 0.5 to 3; defaults to 1 and only changes rendering density.',
+      },
+      reset: {
+        type: 'boolean',
+        description: 'Clear an earlier override and return to the browser window size. Cannot be combined with width or height.',
+      },
+    },
+    output: {
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          ok: { type: 'boolean', required: true },
+          width: { type: 'integer' },
+          height: { type: 'integer' },
+          devicePixelRatio: { type: 'number' },
+          reason: { type: 'string' },
+        },
+      },
+      render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }],
+    },
+    execute: async (args, exec) => {
+      const agent = exec.agent
+      if (agent === undefined) throw new Error('browser_viewport: calling agent is required')
+      return ctx.egoBrowser.emulateViewport({ sessionId: agent.session.id, input: { ...args } })
+    },
+  })
 }
 
 /**
@@ -300,4 +369,10 @@ export function apply(ctx: Context): void {
       execute: (args, exec) => run(ctx, source, visibleName, args, exec, imageForPath),
     })
   }
+  // 视口工具与上游工具走同一条执行路径：审批、工作区边界、结果上限与失败说明都不另起一套。
+  const viewport = viewportTool(ctx)
+  ctx.tools.register({
+    ...viewport,
+    execute: (args, exec) => run(ctx, viewport, viewport.name, args, exec, imageForPath),
+  })
 }

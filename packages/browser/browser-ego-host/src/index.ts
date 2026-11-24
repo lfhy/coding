@@ -1,4 +1,4 @@
-/** ego-lite 浏览器 Host：完整移植上游 35 个安全工具定义，并保留会话与信任边界。 @module coding-browser-ego-host */
+/** ego-lite 浏览器 Host：完整移植上游 35 个安全工具定义，另提供设备模拟视口，并保留会话与信任边界。 @module coding-browser-ego-host */
 import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
@@ -15,6 +15,7 @@ import { markToolStart, revealsBrowserView } from './activity.ts'
 import { parseScriptResult } from './scripts.ts'
 import { sessionSpaceArgs, spaceNameForSession, targetIdsForSession } from './session-space.ts'
 import { installRoutes, trusted } from './routes.ts'
+import { viewportRequest, viewportScript, type ViewportOutcome } from './viewport.ts'
 import { apply as applyUpstream } from 'coding-browser-ego-host/upstream'
 
 /** 上游 apply 只按结构使用 Context，本地适配层集中在这里。 */
@@ -269,6 +270,66 @@ export default class EgoBrowserHost extends Service {
     } catch {
       return false
     }
+  }
+
+  /**
+   * 为当前活动页设置或清除设备模拟视口。
+   *
+   * 模型要在别的宽度或移动端语义下判断响应式布局时使用：覆盖由 CDP 挂在该页上，
+   * 本组装的常驻执行器让它跨工具调用保持，直到再次调用并 `reset` 或页面关闭。
+   * 结果里的宽高是页面自身读回的实测值，不是请求值的回显。
+   * 同时记一次可见活动，让工作台为会话展开浏览器面板——布局变化是用户能看到的。
+   * @param options - 调用会话与模型给出的原始视口参数。
+   * @returns 实测视口，或可操作的失败原因（会话已结束、没有页面、脚本失败）。
+   * @throws Error - 参数缺失、越界或互相矛盾时抛出面向模型的说明。
+   */
+  async emulateViewport(options: {
+    readonly sessionId: SessionId
+    readonly input: Record<string, unknown>
+  }): Promise<ViewportOutcome> {
+    const request = viewportRequest(options.input)
+    if (!this.ctx.sessions.get(options.sessionId)) return { ok: false, reason: 'the session is no longer open' }
+    markToolStart(options.sessionId, 'ego_viewport', revealsBrowserView('ego_viewport', {}))
+    const script = viewportScript(spaceNameForSession(options.sessionId), request)
+    const value = await this.runScript(script, 4096)
+    if (value === null || typeof value !== 'object') {
+      return { ok: false, reason: 'the browser did not return a viewport measurement' }
+    }
+    const result = value as {
+      ok?: unknown
+      reason?: unknown
+      width?: unknown
+      height?: unknown
+      devicePixelRatio?: unknown
+    }
+    if (result.ok !== true) {
+      return { ok: false, reason: typeof result.reason === 'string' ? result.reason : 'the viewport could not be applied' }
+    }
+    if (typeof result.width !== 'number' || typeof result.height !== 'number'
+      || typeof result.devicePixelRatio !== 'number') {
+      return { ok: false, reason: 'the browser returned an incomplete viewport measurement' }
+    }
+    return { ok: true, width: result.width, height: result.height, devicePixelRatio: result.devicePixelRatio }
+  }
+
+  /**
+   * 在会话空间执行一段由 Host 常量拼装的脚本，并解析它的结果标记。
+   * @param script - 完整脚本，不接受模型提供的 JS。
+   * @param maxBytes - stdout/stderr 各自的字节上限。
+   * @returns 脚本打印的 JSON；进程非零退出、被取消或没有结果时为 undefined。
+   */
+  private async runScript(script: string, maxBytes: number): Promise<unknown> {
+    const env = this.spawnEnv()
+    try {
+      const handle = this.ctx.subprocess.spawn({
+        argv: [process.execPath, CLI, 'nodejs'], cwd: process.cwd(), env,
+        stdio: { stdin: { data: script }, stdout: { maxBytes }, stderr: { maxBytes } },
+        graceMs: 30_000,
+      })
+      const outcome = await handle.done
+      if (outcome.exitCode !== 0) return undefined
+      return parseScriptResult(handle.collected.stdout?.readFrom(0).text ?? '')
+    } catch { return undefined }
   }
 
   /**

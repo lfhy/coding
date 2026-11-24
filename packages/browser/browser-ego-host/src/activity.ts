@@ -18,12 +18,13 @@ let count = 0
  * 所以这些调用仍然写入动作历史，只是不广播。
  *
  * 原始脚本类（`ego_js`、`ego_cdp`、`ego_cli`、`ego_script`）无从静态判断是否只读，
- * 按会驱动页面处理；`ego_tabs` 由 {@link revealsBrowserView} 按动作区分。
+ * 按会驱动页面处理；`ego_tabs` 由 {@link revealsBrowserView} 按动作区分；
+ * `ego_viewport` 会重排整页布局，用户也该看到随之变化的面板画面。
  */
 const REVEALS: ReadonlySet<string> = new Set([
   'ego_navigate', 'ego_click', 'ego_fill', 'ego_key', 'ego_hover', 'ego_select', 'ego_drag',
   'ego_scroll', 'ego_check', 'ego_upload', 'ego_download', 'ego_dialog', 'ego_wait_for_human',
-  'ego_js', 'ego_cdp', 'ego_cli', 'ego_script',
+  'ego_js', 'ego_cdp', 'ego_cli', 'ego_script', 'ego_viewport',
 ])
 
 /**

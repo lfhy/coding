@@ -1,6 +1,6 @@
 # coding-tool-browser-ego
 
-模型侧的 Ego 浏览器工具消费方。需同时挂载 `coding-browser-ego-host`、`coding-tools`、`coding-attachment` 与 `coding-user-approval`；有效沙箱模式由可选的 `coding-sandbox-policy` 按调用会话解析。宿主返回完整工具定义，本包全部登记并把 `ego_*` 名称映射为 `browser_*`；空间参数的说明改为本会话页面，其余说明替换旧工具名，参数形状和输出 JSON Schema 保持不变。不引入旧浏览器作为回退。函数插件没有公开配置；注册项随插件卸载撤销。
+模型侧的 Ego 浏览器工具消费方。需同时挂载 `coding-browser-ego-host`、`coding-tools`、`coding-attachment` 与 `coding-user-approval`；有效沙箱模式由可选的 `coding-sandbox-policy` 按调用会话解析。宿主返回完整工具定义，本包全部登记并把 `ego_*` 名称映射为 `browser_*`；空间参数的说明改为本会话页面，其余说明替换旧工具名，参数形状和输出 JSON Schema 保持不变。不引入旧浏览器作为回退。除上游定义外，本包另外声明一个 `browser_viewport`：宿主没有对应的上游工具，它把「按目标尺寸看布局」做成一次可发现的调用——设置固定 CSS 视口（可带移动端语义与像素比）或清除覆盖，并回报页面实测的视口；执行交给宿主的 `emulateViewport`，共用同一条审批、结果上限与失败说明路径。函数插件没有公开配置；注册项随插件卸载撤销。
 
 每次调用要求活跃 Agent 和审批服务；浏览器属于执行工具的那台 Host，因此 Remote-SSH 工作区照常可用；只有上传、下载与本地 `file:///` 导航会在审批前后各查一次工作区 marker，远程会话不能借浏览器读写 Host 本机文件。会话有效沙箱模式为 `danger-full-access` 且审批策略为 `never` 时，常规浏览器操作免于弹窗；其余组合调用 `approval.request`，只接受本次的 `allowed-once`。拒绝、取消、无人应答与权限在等待期间变更均不会调用宿主。审批理由只说明操作与目标 HTTP(S) origin，拒绝在审计记录中包含 URL 路径、查询、表单、文件路径、空间名和脚本。宿主还须按会话隔离浏览器空间并禁止模型选择其它空间；本包不提供跨会话空间能力。
 
@@ -18,7 +18,7 @@
 
 #### What the model sees
 
-模型看到宿主交付的全部 `browser_*` 参数 schema；`space` 的说明要求省略以使用本会话，`space_open`／`space_close` 的 `name` 说明使用 `default` 别名，不再建议全局空间；上传、下载与截图的路径说明写明相对路径按会话工作区解析，截图的结果路径是绝对路径；`browser_script`／`browser_cli` 的说明补一句脚本内相对路径不属于会话工作区、必须写绝对路径并打印 `page.screenshot(...)` 的返回值；其余描述中旧工具名替换为新名称。若显式指定其他会话空间被拒，错误说明应省略空间字段，而不是反复查询同一个空间。执行结果保持上游规范 JSON；只有显式截图会多一个持久图像块，过大结果与拒绝仅返回可恢复的错误文本。
+模型看到宿主交付的全部 `browser_*` 参数 schema；`space` 的说明要求省略以使用本会话，`space_open`／`space_close` 的 `name` 说明使用 `default` 别名，不再建议全局空间；上传、下载与截图的路径说明写明相对路径按会话工作区解析，截图的结果路径是绝对路径；`browser_script`／`browser_cli` 的说明补一句脚本内相对路径不属于会话工作区、必须写绝对路径并打印 `page.screenshot(...)` 的返回值；其余描述中旧工具名替换为新名称。`browser_viewport` 的说明要求先设尺寸再用 `browser_screenshot` 判断布局，并说明覆盖会保留到 `reset` 或页面关闭；它的参数是 `width`／`height`（200–3840、200–2160 的 CSS 像素）、`mobile`、`deviceScaleFactor`（0.5–3）与 `reset`，越界与自相矛盾由宿主拒绝，结果回报页面实测的宽高与像素比。若显式指定其他会话空间被拒，错误说明应省略空间字段，而不是反复查询同一个空间。执行结果保持上游规范 JSON；只有显式截图会多一个持久图像块，过大结果与拒绝仅返回可恢复的错误文本。
 
 #### Token effect
 
@@ -33,3 +33,4 @@
 - 脚本、CLI 与 CDP 在 Host 进程里执行，脚本自身的文件读写不受会话工作区与沙箱模式约束；本包只把上传、下载与截图三类文件参数落到工作区，其余入口仍依赖会话审批，建议按会话收紧权限。
 - 真实写文件时宿主必须使用禁止符号链接跟随的原子方式；本包的执行前 realpath/lstat 无法单独消除跨进程 TOCTOU 竞争。
 - 上游帮助会宣传本产品禁用的脚本与跨会话工具，因此不登记 `browser_help`；页面观测属于页面自身内容，不对其中的文字做命名替换。
+- `browser_viewport` 改的是该页的 CDP 设备度量，不是桌面壳原生视图或 Web 面板的容器尺寸：桌面端里页面按新视口渲染在视图左上角、其余区域留白，Web/CLI 的右侧单帧仍按面板宽高采集，模型要看缩窄后的整页布局应以 `browser_screenshot` 的结果为准。上游设置项的 `viewportWidth`／`viewportHeight` 非 0 时会在每次工具调用前重放固定视口并覆盖本工具的效果。

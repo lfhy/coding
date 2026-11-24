@@ -13,6 +13,7 @@ Load this skill before the first browser call. It maps a browser task to the reg
 | Read one element's text, HTML, value, attribute, or visibility | `browser_read_element` |
 | Wait for rendering, a URL, or a network response | `browser_wait_for_selector`, `browser_wait_for_url`, `browser_wait_for_response`, `browser_wait` |
 | Judge layout or appearance | `browser_screenshot` |
+| Check a responsive or mobile layout at a device size | `browser_viewport` |
 | List, open, switch, or close tabs | `browser_tabs` |
 | Upload a workspace file, capture a download | `browser_upload`, `browser_download` |
 | Evaluate page JS, send a raw CDP command, run a multi-step script | `browser_js`, `browser_cdp`, `browser_script` |
@@ -49,17 +50,20 @@ browser_wait_for_selector({selector: "[data-results]"})
 browser_read_element({selector: "[data-results]", what: "text"})
 ```
 
-Check a local development page, including a viewport-specific layout, in one call that also restores the viewport:
+Check a local development page at a device size, then restore the window size:
 
 ```text
 browser_navigate({url: "http://localhost:5173/"})
-browser_script({script: "await cdp('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 3, mobile: true })\nconst wide = await page.evaluate(() => document.body.scrollWidth)\nconst shot = await page.screenshot()\nawait cdp('Emulation.clearDeviceMetricsOverride')\nconsole.log('@@DSH_RESULT@@' + JSON.stringify({ wide, shot }))"})
-browser_page_info({})
+browser_viewport({width: 390, height: 844, mobile: true})
+browser_screenshot({path: "artifacts/mobile.png"})
+browser_viewport({reset: true})
 ```
 
-A script runs in the Host process, not in the session workspace: `page.screenshot()` without `path` returns the PNG's absolute path in the Host's temp directory, and a relative `path` lands beside the Host process rather than in your project. Print whatever it returns, or pass an absolute path the session may write — `browser_screenshot` is the tool that saves into the workspace for you.
+`browser_viewport` applies device metrics to the current page: `width` and `height` are CSS pixels, `mobile` and `deviceScaleFactor` matter when the layout depends on them, and `reset: true` goes back to the browser window size. The override stays until you reset it or the page closes, so screenshot and read the page at that size before moving on, and do not leave a narrow phone viewport behind for the next step. The result reports the size the page actually applied; if it differs from what you asked for, the layout is not running at the size you wanted — say so instead of describing the wrong rendering.
 
-A device-metrics override belongs to that page in this Host's browser session, so it outlives the call: a later `browser_page_info({})` still reports the emulated size, and the right-sidebar picture keeps rendering at the narrow width. Always clear it in the same script once the measurement is taken, and let `browser_page_info({})` confirm the viewport is back before you report the layout result.
+A script still runs in the Host process, not in the session workspace: `page.screenshot()` without `path` returns the PNG's absolute path in the Host's temp directory, and a relative `path` lands beside the Host process rather than in your project. Print whatever it returns, or pass an absolute path the session may write — `browser_screenshot` is the tool that saves into the workspace for you.
+
+When `browser_viewport` is not in your catalog, `browser_script` with `Emulation.setDeviceMetricsOverride`, the measurement and `page.screenshot()` in a single call is the fallback: a `browser_cdp` override alone only holds while the host keeps that page's CDP session.
 
 Verify appearance with pixels, not the semantic tree:
 

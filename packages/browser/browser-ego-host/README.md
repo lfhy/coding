@@ -14,6 +14,8 @@
 
 浏览器 Profile/状态由 ego-lite 在用户目录保存，不在 Coding 项目根：Unix/macOS 默认分别为 `~/.local/share/ego-lite-linux/profile` 与 `~/.local/state/ego-lite-linux/`，Windows 默认 `%LOCALAPPDATA%/ego-lite-linux/`；可使用 `XDG_DATA_HOME`、`XDG_STATE_HOME`、`EGO_LINUX_STATE_DIR` 与 `EGO_LINUX_PROFILE` 设置实际位置。这些目录可能含网站登录态、浏览记录和空间 target 信息，**不要提交或分享**。Web/CLI 下 Host 强制 `EGO_ISOLATE_SPACES=1`，每个任务空间使用独立 Chromium context；context 创建失败会拒绝运行而不是降级共用页面。桌面壳承载页面时改为共用它的持久分区，目的是让用户新登录的账号在重启后仍然有效。运行时依赖本机已经安装的浏览器，不下载浏览器或 FFmpeg。临时目录中隔离的真机 Edge 测试不会触碰默认 Profile。
 
+除上游工具外，宿主另有 `emulateViewport`：为当前会话的活动页设置或清除 CDP 设备度量（宽 200–3840、高 200–2160、像素比 0.5–3），并读回页面自己的 `innerWidth`／`innerHeight`／`devicePixelRatio`；参数越界、`reset` 与尺寸同时出现、空间里没有页面都给出可操作说明，不启动浏览器进程。消费方据此注册 `browser_viewport`，让模型在一个普通调用里改尺寸再看布局。
+
 ## 运行位置与交互细节
 
 桌面壳原生呈现网页时，面板使用 `/api/ego/stream?sessionId=<id>&frames=off`；该连接只更新会话页面目录（`spaces`），不会启动后台帧采集。省略 `frames` 时，同一连接同时提供目录和帧流，供 Web 面板显示。原生视图依赖窗口尺寸，由截图临时调整的视口不得用作它的持续画面来源。
@@ -27,7 +29,7 @@
 - **页面光标标签**：`cursorName` 默认 `Agent`，通过 `EGO_LINUX_CURSOR_NAME` 传给运行时；模型渠道是逐会话选择的，因此默认标签只描述角色，不写具体厂商。面板的窗口入口复用同一份环境（由上游按当前设置计算），因此换成可见窗口后光标标签与启动模式仍与配置一致。
 - **CSS 选择器范围**：`ego_click`、`ego_hover` 对 CSS 目标先在顶层文档定位；找不到时回退到穿透 open shadow root 与同源 iframe 的查找，再按元素中心发真实鼠标事件。多匹配、无效选择器与不可见目标仍以原错误失败，不会改点别的元素。
 - **标签页错误**：`ego_tabs` 的 `switch`/`close` 先读取当前任务空间实际存在的 id；目标不属于该空间时返回可操作的说明与现存 id 列表，`open` 失败返回底层原因。脚本只声明一次空间变量，避免整条工具调用因重复声明而失败。
-- **响应式与移动端验证**：视口覆盖由 CDP 会话语义决定，随一次 `ego-browser nodejs` 调用结束失效，因此 `ego_cdp` 单独设置 `Emulation.setDeviceMetricsOverride` 对后续调用和截图都不生效。Agent 要在别的宽度或 `mobile` 下验证，必须在同一次 `ego_script`／`ego_js` 调用里设置覆盖再取测量或 `page.screenshot`，截图尺寸是 CSS 像素（`deviceScaleFactor` 只影响布局与 `devicePixelRatio`）；面板画面与单帧由另一个 worker 的会话采集，不受该覆盖影响。设置卡的 `viewportWidth`／`viewportHeight` 则相反：每次工具调用都会在切换标签后重放固定视口，适合长时间固定在某一宽度工作。
+- **响应式与移动端验证**：`emulateViewport`（模型侧 `browser_viewport`）把当前页固定成给定 CSS 视口，或清除覆盖回到窗口尺寸；结果回报页面自己读回的实测宽高与 `devicePixelRatio`，请求值与实测不符时以实测为准。本组装的常驻执行器持有跨调用的 CDP 会话，覆盖因此在后续工具调用之间保持，直到 `reset`、页面关闭或下一次设置。一次性 `ego-browser nodejs` 进程下 CDP 会话随调用结束失效，`ego_cdp` 单独设置 `Emulation.setDeviceMetricsOverride` 对后续调用与截图都不生效，那时只能在同一次 `ego_script`／`ego_js` 调用里设置覆盖再取测量或 `page.screenshot`。`deviceScaleFactor` 只改变渲染精度与 `devicePixelRatio`，截图尺寸仍是 CSS 像素。桌面壳的原生视图尺寸不随覆盖变化，页面按新视口渲染在视图左上角；Web/CLI 的右侧单帧由另一个 worker 的采集会话设置面板视口，模型侧的覆盖不会带到那一帧。设置卡的 `viewportWidth`／`viewportHeight` 相反：非 0 时每次工具调用都会在切换标签后重放固定视口，并覆盖 `browser_viewport` 的效果——需要按模型给的尺寸看布局时保持这两个设置为 0。
 
 ## Host 生命周期与页面保留
 

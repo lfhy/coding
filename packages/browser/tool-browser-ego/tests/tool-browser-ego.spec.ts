@@ -48,11 +48,21 @@ class FixtureHost extends Service {
     },
   )
   definitions: ToolDefinition[] = []
+  /** 视口请求由宿主执行；这里只记录参数，并回一份实测结果。 */
+  readonly viewports = vi.fn(async (options: { sessionId: string; input: Record<string, unknown> }) => ({
+    ok: true as const,
+    width: typeof options.input.width === 'number' ? options.input.width : 1280,
+    height: typeof options.input.height === 'number' ? options.input.height : 800,
+    devicePixelRatio: 1,
+  }))
   constructor(ctx: Context) { super(ctx, 'egoBrowser') }
   toolDefinitions(): readonly ToolDefinition[] {
     return this.definitions.map(source => ({ ...source,
       execute: args => this.calls(source.name, args as Record<string, unknown>),
     }))
+  }
+  emulateViewport(options: { sessionId: string; input: Record<string, unknown> }) {
+    return this.viewports(options)
   }
 }
 
@@ -107,17 +117,23 @@ describe('Ego browser model tools', () => {
       url: { type: 'string', required: true, description: 'Use ego_snapshot' },
     })))
     expect(ctx.tools.schemas().map(schema => schema.name).sort())
-      .toEqual(ALL.map(name => `browser_${name}`).sort())
+      .toEqual([...ALL.map(name => `browser_${name}`), 'browser_viewport'].sort())
     expect(ctx.tools.get('browser_navigate')?.parameters).toMatchObject({
       properties: { url: { type: 'string', description: 'Use browser_snapshot' } },
     })
     expect(ctx.tools.get('browser_navigate')?.description).toBe('Call browser_navigate then browser_snapshot')
+    // 视口工具是本包自定义的一等入口：说明要写清覆盖范围与先调尺寸再截图。
+    expect(ctx.tools.get('browser_viewport')?.description).toContain('responsive or mobile layout')
+    expect(ctx.tools.get('browser_viewport')?.parameters).toMatchObject({
+      properties: { width: { type: 'integer' }, height: { type: 'integer' }, reset: { type: 'boolean' } },
+    })
     expect(await ctx.tools.execute({ name: 'browser_cli', arguments: {}, callId: CallId('x'),
       signal: new AbortController().signal, agent: undefined as never })).toMatchObject({ isError: true })
     expect(host.calls).not.toHaveBeenCalled()
     await fiber.dispose()
     expect(ctx.tools.get('browser_navigate')).toBeUndefined()
     expect(ctx.tools.get('browser_script')).toBeUndefined()
+    expect(ctx.tools.get('browser_viewport')).toBeUndefined()
   })
 
   it('describes only this session’s pages without changing browser argument shapes', async () => {
@@ -144,6 +160,42 @@ describe('Ego browser model tools', () => {
       expect(properties.name?.description).toContain('this session')
     }
     expect(host.calls).toHaveBeenCalledTimes(5)
+  })
+
+  it('emulates a viewport through approval and the Host service', async () => {
+    const { call, host, ctx } = await setup([fixture('snapshot')], 'danger-full-access', 'ask')
+    const asked = vi.fn(async (request: { reason?: string }) => {
+      // 审批理由要说明这一页将被渲染成什么形状，不能只说「浏览器操作」。
+      expect(request.reason).toContain('390×844')
+      return 'allowed-once' as const
+    })
+    ctx.on('approval/request', asked)
+    const result = await call('viewport', { width: 390, height: 844, mobile: true })
+    expect(result.isError).toBe(false)
+    expect(content(result)).toContain('"width":390')
+    expect(asked).toHaveBeenCalledOnce()
+    expect(host.viewports).toHaveBeenCalledWith({
+      sessionId: SessionId('ego-test'), input: { width: 390, height: 844, mobile: true },
+    })
+    // 视口走宿主方法，不借用上游工具名执行，也不产生额外调用记录。
+    expect(host.calls).not.toHaveBeenCalled()
+  })
+
+  it('rejects malformed viewport arguments before the Host runs', async () => {
+    const { call, host } = await setup([fixture('snapshot')])
+    const result = await call('viewport', { width: 'wide', height: 844 })
+    expect(result.isError).toBe(true)
+    expect(content(result)).toContain('invalid arguments')
+    expect(host.viewports).not.toHaveBeenCalled()
+  })
+
+  it('reports Host-side viewport reasons without the generic operation prefix', async () => {
+    const { call, host } = await setup([fixture('snapshot')])
+    host.viewports.mockRejectedValueOnce(new Error('width must be an integer between 200 and 3840'))
+    const result = await call('viewport', { width: 390, height: 844 })
+    expect(result.isError).toBe(true)
+    expect(content(result)).toContain('browser_viewport: width must be an integer between 200 and 3840')
+    expect(content(result)).not.toContain('browser operation failed')
   })
 
   it.each([

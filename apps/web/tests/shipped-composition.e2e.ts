@@ -67,6 +67,7 @@ const EXPECTED_TOOLS = [
   'browser_status',
   'browser_tabs',
   'browser_upload',
+  'browser_viewport',
   'browser_wait',
   'browser_wait_for_human',
   'browser_wait_for_response',
