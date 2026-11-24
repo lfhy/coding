@@ -82,9 +82,6 @@ export function FormatToolbar({ kind, disabled, t, format, insertImage }: {
       <ColorPicker label={t('textColor')} icon="format-text-color" open={open === 'textColor'} disabled={disabled}
         onToggle={() => { toggle('textColor') }} onClose={() => { setOpen('') }}
         onSelect={(value) => { run({ key: 'textColor', value }) }} onCustom={() => { setColor({ key: 'textColor', value: '', invalid: false }) }} t={t} />
-      <Separator />
-      <ToolButton label={t('insertImage')} disabled={disabled} onRun={insertImage}>
-        <Icon name="format-insert-image" /></ToolButton>
     </> : <>
       <Picker label={t('numberFormat')} open={open === 'numberFormat'} disabled={disabled} onToggle={() => { toggle('numberFormat') }}
         items={numberChoices} onClose={() => { setOpen('') }} onSelect={pickFrom(numberChoices)} />
@@ -100,6 +97,11 @@ export function FormatToolbar({ kind, disabled, t, format, insertImage }: {
         {mergeChoices.map(({ id, label, action }) => <ToolButton key={id} label={label} disabled={disabled} onRun={() => { run(action) }}>
           <Icon name="format-merge" /></ToolButton>)}
       </div>
+    </>}
+    {kind === 'word' && <>
+      <Separator />
+      <ToolButton label={t('insertImage')} disabled={disabled} onRun={insertImage}>
+        <Icon name="format-insert-image" /></ToolButton>
     </>}
     {color !== null && <Modal open trapFocus title={t(color.key)} closeLabel={t('close')} onClose={() => { setColor(null) }}
       footer={<Button type="submit" form={`${baseId}-color`} variant="primary">{t('apply')}</Button>}>

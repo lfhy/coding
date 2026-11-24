@@ -359,6 +359,7 @@ export async function createOfficeEngine(options: OfficeEngineOptions): Promise<
     }
     return {
       read: () => fromUniverWorkbook(model.save()),
+      // Excel 的浮动图片要另装绘图插件，当前预设组合加载不起来，暂不支持。
       insertImage: () => Promise.resolve(false),
       isEditing: () => model.isCellEditing(),
       finishEditing: () => model.isCellEditing() ? model.endEditingAsync(true) : Promise.resolve(true),
