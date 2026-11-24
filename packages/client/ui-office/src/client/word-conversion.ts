@@ -2,8 +2,17 @@
 import type { IDocumentData } from '@univerjs/presets'
 import type { WordDocument, WordSnapshotData } from './office-document.ts'
 
+// A4 纸在引擎里的像素尺寸（96dpi），与 Univer 的 PAGE_SIZE.A4 一致。
+const A4 = { width: 794, height: 1124 }
+// 页面四边留白：Word 默认的 1 英寸，正文不会贴到纸边。
+const PAGE_MARGIN = 96
+// DocumentFlavor.TRADITIONAL：按纸分页排版，白纸衬在桌面底色上。
+const TRADITIONAL = 1
+
 /**
  * 取出可以直接交给编辑器的快照；复制顶层对象，避免覆盖原快照里的文档标识。
+ * 打开时把版式归一化为 A4 分页纸：快照里存的是内容与引擎结构，版式只在这一层决定，
+ * 因此旧笔记（历史上按连续版式保存）不需要迁移就能拿到同样的纸张效果。
  * @param document - 已校验的 Word 笔记。
  * @param id - 当前编辑器实例的文档标识。
  * @param title - 编辑器使用的文档标题。
@@ -11,7 +20,19 @@ import type { WordDocument, WordSnapshotData } from './office-document.ts'
  */
 export function toUniverDocument(document: WordDocument, id: string, title: string): IDocumentData {
   const snapshot = structuredClone(document.snapshot) as Record<string, unknown>
-  return { ...snapshot, id, ...(title === '' ? {} : { title }) } as IDocumentData
+  const style = typeof snapshot.documentStyle === 'object' && snapshot.documentStyle !== null
+    ? snapshot.documentStyle as Record<string, unknown>
+    : {}
+  const documentStyle = {
+    ...style,
+    documentFlavor: TRADITIONAL,
+    pageSize: A4,
+    marginTop: PAGE_MARGIN,
+    marginBottom: PAGE_MARGIN,
+    marginLeft: PAGE_MARGIN,
+    marginRight: PAGE_MARGIN,
+  }
+  return { ...snapshot, id, ...(title === '' ? {} : { title }), documentStyle } as IDocumentData
 }
 
 /**

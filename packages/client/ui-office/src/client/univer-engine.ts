@@ -1,13 +1,8 @@
 /** 仅在可见正文中启动一个本地编辑实例，不把第三方对象交给业务组件。 */
 import { throwError } from 'rxjs'
-import { createUniver, ICommandService, IConfigService, ILogService, IUniverInstanceService, LocaleType, NamedStyleType,
-  setDependencies, ThemeService, Univer, UniverInstanceType, CommandType, type DocumentDataModel, type ILanguagePack,
+import { createUniver, IConfigService, LocaleType, NamedStyleType, Univer, CommandType, type ILanguagePack,
   type IPreset } from '@univerjs/presets'
-import {
-  DocLayoutExecutorService, DocLayoutInteractionService, DocPageLayoutService,
-  DocRenderController, DocSelectionManagerService, DocSelectionRenderService, DocSkeletonManagerService,
-  DocViewScaleService, DOCS_UI_PLUGIN_CONFIG_KEY, IEditorService, IRenderManagerService, type IRenderContext,
-} from '@univerjs/preset-docs-core'
+import { DOCS_UI_PLUGIN_CONFIG_KEY, IRenderManagerService } from '@univerjs/preset-docs-core'
 import { UniverDocsDrawingPlugin } from '@univerjs/docs-drawing'
 // facade 是副作用入口：它把 `insertImage` 挂到文档 facade 上，必须显式加载。
 import '@univerjs/docs-drawing/facade'
@@ -17,37 +12,6 @@ import { markOfficeHost, HOST_CLASS } from './office-portal.ts'
 import { selfScopedRules } from './office-scope.ts'
 import { fromUniverDocument, toUniverDocument } from './word-conversion.ts'
 import { fromUniverWorkbook, toUniverWorkbook } from './excel-conversion.ts'
-
-/** 桌面版按固定 960px 排版；这里改为跟随画布宽度，正文两侧仍保留页面边距。 */
-type LayoutArgs = Parameters<DocRenderController['_scheduleLayout']>
-type LayoutOptions = LayoutArgs[2]
-class NoteDocRenderController extends DocRenderController {
-  declare protected _context: IRenderContext<DocumentDataModel>
-
-  protected override _getHorizontalPageMargin(): number {
-    return DOCUMENT_GUTTER
-  }
-
-  protected override _scheduleLayout(...args: LayoutArgs): void {
-    const [unitId, skeleton, options, refreshMainSelection, preserveInactiveViewportAnchor] = args
-    const parent = this._context.scene.getParent()
-    // 画布尚未挂载时场景父级宽度仍是初始占位值，此时沿用编辑器自身的宽度。
-    // 页面宽度直接跟随画布：fit-width 缩放再把它等比缩进画布，减留白反而溢出。
-    const available = parent.width > 1 ? parent.width : this._context.engine.width
-    const bound = Number.isFinite(available) && available > 1
-      ? { ...options, modernPageWidth: available, modernHorizontalMargin: this._getHorizontalPageMargin() } satisfies LayoutOptions
-      : options
-    super._scheduleLayout(unitId, skeleton, bound, refreshMainSelection, preserveInactiveViewportAnchor)
-  }
-}
-// 第 0 个参数是渲染单元创建时传入的渲染上下文，其余依赖从第 1 个参数起注入。子类不继承父类构造参数上的
-// 依赖装饰器，仓库又未开启装饰器编译，所以在模块加载时登记一次：setDependencies 是追加语义，重复调用会让
-// 同一构造参数出现两个依赖描述符。
-setDependencies(NoteDocRenderController, [
-  ICommandService, DocSelectionRenderService, DocSkeletonManagerService, IEditorService, IRenderManagerService,
-  IUniverInstanceService, DocPageLayoutService, DocSelectionManagerService, DocViewScaleService, ThemeService,
-  DocLayoutExecutorService, DocLayoutInteractionService, ILogService,
-], 1)
 
 /** 引擎颜色服务的可替换面：只需换掉取色方法。 */
 interface PaperColorService {
@@ -60,13 +24,17 @@ interface PaperColorService {
  * Word 正文在暗色下保持白纸。Univer 的颜色服务在暗色里把所有主题色反相：白纸变黑底、
  * 与页面背景融为一体，正文文字变白后在白纸上又不可见。渲染插件在启动期重新注册该服务，
  * createUniver 的 override 会被覆盖掉，所以等文档渲染单元就绪后直接把实例的取色方法换成
- * 透传实现：正文一律按浅色主题取色（白纸、黑字、浅灰线条），外层「桌面」背景由 CSS 跟随主题。
+ * 透传实现：纸面与正文一律按浅色主题取色（白纸、黑字、浅灰线条）；纸外的桌面直接取
+ * 侧边栏底色，跟随当前主题。
  * @param univer - 当前编辑器实例；须在文档渲染单元注册之后调用，未就绪时按 50ms 间隔重试。
  */
 function bindPaperColors(univer: Univer): void {
   const renderManager: IRenderManagerService = univer.__getInjector().get(IRenderManagerService)
   const service = (): PaperColorService | undefined =>
     renderManager.getRenderUnitById(UNIT_ID)?.engine?.canvasColorService as PaperColorService | undefined
+  /** 桌面底色与侧边栏共用同一个 token，主题切换后每次取色都读到当前值。 */
+  const deskColor = (fallback: string): string =>
+    document.defaultView?.getComputedStyle(document.body).getPropertyValue('--dsw-specific-sidebar-fill').trim() || fallback
   const bind = (attempts: number) => {
     const target = service()
     if (target === undefined) {
@@ -76,6 +44,8 @@ function bindPaperColors(univer: Univer): void {
     const resolved = target._resolvedThemeColors
     target.getRenderColor = (color: string) => {
       const cached = resolved?.get(color)
+      // 分页版式的桌面底（gray.100）换成侧边栏底色，纸张之外露出的是工作台的面。
+      if (color === 'gray.100') return deskColor(cached ?? '#ffffff')
       if (cached !== undefined) return cached
       // 令牌形如「调色板.级别」（gray.0）；缓存缺位时退回当前主题的浅色色板。
       const dot = color.indexOf('.')
@@ -137,8 +107,8 @@ interface OfficeEngineOptions {
 
 const UNIT_ID = 'office-content'
 const DARK_PREFERENCE = '(prefers-color-scheme: dark)'
-// 页面左侧留给段落柄的宽度：正文从画布左缘缩进这段距离，段落柄停靠在其中。
-const DOCUMENT_GUTTER = 72
+// 纸张四周留给桌面的宽度：fit-width 把 A4 纸缩进画布时左右各留这段桌面。
+const PAGE_DESK_MARGIN = 24
 const NAMED: Record<ParagraphStyle, NamedStyleType> = {
   normal: NamedStyleType.NORMAL_TEXT,
   title: NamedStyleType.TITLE,
@@ -164,28 +134,15 @@ function localePack(module: { default: unknown }): ILanguagePack {
 }
 
 /**
- * 把连续布局的正文宽度绑定到画布，并让文档组件把左侧留白算进外边距。
- *
- * 桌面版 Word 画布按 960px 定宽排版，页面左侧的 50px 留白落不到视口里：段落柄按
- * 「页面左边距」停靠，被画布边界推到正文右缘后裁成一条竖线。这里把文档的渲染控制器
- * 换成跟随容器宽度的实现（Univer 移动端同款做法）。渲染模块按标识去重、先登记者生效，
- * 所以必须在 DocsUI 插件登记原控制器之前调用；createUniver 返回时插件只跑到 Starting 阶段。
- */
-function bindContinuousLayout(univer: Univer): void {
-  const renderManager: IRenderManagerService = univer.__getInjector().get(IRenderManagerService)
-  renderManager.registerRenderModule(UniverInstanceType.UNIVER_DOC, [DocRenderController, { useClass: NoteDocRenderController }])
-}
-
-/**
- * 让页面按画布宽度缩放适配：窄窗口里默认整页可见，不会出现横向滚动条。
+ * 让 A4 纸按画布宽度缩放适配：窄窗口里整张纸都能看到，不会出现横向滚动条。
  * 用的是 Univer 自己的 fit-width 视图缩放，页脚缩放控件仍可在此基础上继续放大；
- * 默认 minScale 是 1，必须放宽才允许缩到比页面更窄的容器里。
+ * 默认 minScale 是 1，必须放宽才允许缩到比页面更窄的容器里。纸张居中，两侧留出桌面。
  * @param univer - 当前编辑器实例。
  */
 function bindFitToWidth(univer: Univer): void {
   const config: IConfigService = univer.__getInjector().get(IConfigService)
   config.setConfig(DOCS_UI_PLUGIN_CONFIG_KEY, {
-    fitToWidth: { mode: 'fit-width', target: 'container', align: 'start', paddingX: DOCUMENT_GUTTER, minScale: 0.25 },
+    fitToWidth: { mode: 'fit-width', target: 'container', align: 'center', paddingX: PAGE_DESK_MARGIN, minScale: 0.25 },
   }, { merge: true })
 }
 
@@ -242,15 +199,13 @@ function clipboardHandling(container: HTMLElement, insertImage: (image: File) =>
 
 function newRuntime(
   preset: IPreset, zh: ILanguagePack, en: ILanguagePack,
-  http: typeof import('@univerjs/preset-docs-core')['IHTTPImplementation'], gutter: boolean,
+  http: typeof import('@univerjs/preset-docs-core')['IHTTPImplementation'],
 ) {
-  const runtime = createUniver({
+  return createUniver({
     presets: [preset], locale: language(), darkMode: darkMode(),
     locales: { [LocaleType.ZH_CN]: zh, [LocaleType.EN_US]: en },
     override: [[http, { useValue: { send: () => throwError(() => new Error('Offline office editor')) } }]],
   })
-  if (gutter) bindContinuousLayout(runtime.univer)
-  return runtime
 }
 
 function bindRuntime(options: OfficeEngineOptions, presetCss: string, runtime: ReturnType<typeof newRuntime>,
@@ -338,7 +293,7 @@ export async function createOfficeEngine(options: OfficeEngineOptions): Promise<
     signal.throwIfAborted()
     const runtime = newRuntime(docs.UniverDocsCorePreset({
       ...layout, header: false, footer: true, toc: true, disableAutoFocus: true,
-    }), localePack(zh), localePack(en), docs.IHTTPImplementation, true)
+    }), localePack(zh), localePack(en), docs.IHTTPImplementation)
     // 图片是浮动对象，由绘图插件提供命令与渲染；不注册时画布插不进图片。
     runtime.univer.registerPlugin(UniverDocsDrawingPlugin)
     bindFitToWidth(runtime.univer)
@@ -391,7 +346,7 @@ export async function createOfficeEngine(options: OfficeEngineOptions): Promise<
     // 头部挂载公式栏；disableAutoFocus 会关闭表格键入监听，不只是阻止首屏抢焦点。
     ...layout, header: true, formulaBar: true, sheets: { enableFillHandle: false },
     footer: { sheetBar: true, statisticBar: false, menus: false, zoomSlider: false },
-  }), localePack(zh), localePack(en), sheets.IHTTPImplementation, false)
+  }), localePack(zh), localePack(en), sheets.IHTTPImplementation)
   const api = runtime.univerAPI
   return bindRuntime(options, css, runtime, () => {
     const model = api.createWorkbook(toUniverWorkbook(input, UNIT_ID, ''))

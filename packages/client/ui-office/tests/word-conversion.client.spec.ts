@@ -24,6 +24,14 @@ it('打开时覆盖文档标识与标题，不修改原快照', () => {
   expect((document.snapshot as Record<string, unknown>).id).toBeUndefined()
 })
 
+it('打开时把版式统一成 A4 分页纸，旧快照不必迁移', () => {
+  const opened = toUniverDocument(document, 'office-content', '')
+  const style = opened.documentStyle as Record<string, unknown>
+  expect(style.documentFlavor).toBe(1)
+  expect(style.pageSize).toEqual({ width: 794, height: 1124 })
+  expect([style.marginTop, style.marginBottom, style.marginLeft, style.marginRight]).toEqual([96, 96, 96, 96])
+})
+
 it('保存时原样带回引擎快照，表格与链接都留在文档里', () => {
   const saved = fromUniverDocument(snapshot)
   expect(saved.version).toBe(2)
