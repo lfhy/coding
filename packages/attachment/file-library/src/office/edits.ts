@@ -5,6 +5,7 @@ import {
   officeInteger, officeRecord, OFFICE_MAX_PARAGRAPHS, OFFICE_MAX_SHEETS, parseExcelCells, parseOfficeDocument,
   parseWordParagraph,
 } from './document.ts'
+import { buildWordSnapshot, hasRichWordContent, readWordParagraphs } from './word-snapshot.ts'
 
 /** 编辑批次与一次单元格替换的上限，不接受空批次。 */
 const MAX_EDITS = 32
@@ -111,9 +112,11 @@ function applyExcelEdits(sheets: ExcelSheet[], edits: readonly OfficeEdit[]): vo
 /** 按顺序应用编辑并重新检查整篇文档的预算；失败不改动传入快照。 */
 export function applyOfficeEdits(document: OfficeDocument, edits: readonly OfficeEdit[]): OfficeDocument {
   if (document.kind === 'word') {
-    const paragraphs = [...document.paragraphs]
+    // 段落编辑会重建正文；含表格、图片等引擎结构时重建会丢内容，直接拒绝。
+    if (hasRichWordContent(document.snapshot)) throw new TypeError('Word 文档含表格或图片，暂不支持按段落编辑')
+    const paragraphs = readWordParagraphs(document.snapshot)
     applyWordEdits(paragraphs, edits)
-    return parseOfficeDocument({ ...document, paragraphs }, document.kind)
+    return parseOfficeDocument({ ...document, snapshot: buildWordSnapshot(paragraphs) }, document.kind)
   }
   const sheets = [...document.sheets]
   applyExcelEdits(sheets, edits)

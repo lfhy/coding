@@ -1,7 +1,7 @@
 /** 笔记助手的 Word／Excel 工具；结构、格式和写入事务由文件库负责。 */
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from 'coding-agent'
-import { NoteConflictError, NoteNotFoundError, type ExcelCell, type OfficeKind, type OfficeSnapshot, type WordParagraph } from 'coding-file-library'
+import { NoteConflictError, NoteNotFoundError, readWordParagraphs, type ExcelCell, type OfficeKind, type OfficeSnapshot, type WordParagraph } from 'coding-file-library'
 import { defineTool } from 'coding-tools'
 import { toolActionTitle } from 'coding-tools/tool-action-title'
 
@@ -95,7 +95,7 @@ function pageOf(snapshot: OfficeSnapshot, offset: number, sheetId?: string, rang
   const base = { path, revision, kind: document.kind }
   if (document.kind === 'word') {
     if (sheetId !== undefined || range !== undefined) throw new TypeError('只有 Excel 工作簿可以读取指定工作表或区域。')
-    return readPage<WordParagraph, WordPageEntry, 'paragraphs'>(base, 'paragraphs', offset, document.paragraphs,
+    return readPage<WordParagraph, WordPageEntry, 'paragraphs'>(base, 'paragraphs', offset, readWordParagraphs(document.snapshot),
       (paragraph, index) => ({ index, ...paragraph }), (paragraph, index) => {
         let preview = ''
         for (const run of paragraph.runs) {

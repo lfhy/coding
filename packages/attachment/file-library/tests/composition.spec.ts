@@ -10,6 +10,7 @@ import { pathToFileURL } from 'node:url'
 import Storage from 'coding-storage'
 import * as StorageDomain from 'coding-storage-domain'
 import * as Sqlite from 'coding-storage-sqlite'
+import { buildWordSnapshot } from '../src/office/word-snapshot.ts'
 import WebServer from 'coding-host-webserver'
 import * as Connection from 'coding-client-connection'
 import FileLibrary from '../src/index.ts'
@@ -219,11 +220,11 @@ describe('文件库真实装配', () => {
     expect(initial.headers.get('x-content-type-options')).toBe('nosniff')
     const snapshot = await initial.json() as OfficeSnapshot
     const document: OfficeDocument = snapshot.document.kind === 'word'
-      ? { version: 1, kind: 'word', paragraphs: [{ style: 'title', align: 'center', runs: [{ text: '季度报告', bold: true }] }] }
+      ? { version: 2, kind: 'word', snapshot: buildWordSnapshot([{ style: 'title', align: 'center', runs: [{ text: '季度报告', bold: true }] }]) }
       : { version: 1, kind: 'excel', sheets: [{ id: 'stats', name: '统计', cells: [
         { row: 0, column: 0, value: '销售额' }, { row: 2, column: 1, value: 12, formula: '=SUM(7,5)' },
       ], merges: [{ startRow: 0, startColumn: 0, endRow: 0, endColumn: 1 }] }] }
-    expect(snapshot).toMatchObject({ path, document: { kind, version: 1 } })
+    expect(snapshot).toMatchObject({ path, document: { kind, version: kind === 'word' ? 2 : 1 } })
     expect((await fetch(`${endpoint}&${query}`)).status).toBe(400)
     expect((await fetch(endpoint, { headers: { 'sec-fetch-site': 'cross-site' } })).status).toBe(403)
     expect((await fetch(`${notes}/read?${query}`)).status).toBe(400)

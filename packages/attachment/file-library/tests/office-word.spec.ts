@@ -3,6 +3,7 @@ import { strFromU8, strToU8, unzipSync } from 'fflate'
 import { describe, expect, it } from 'vitest'
 import type { OfficePackage } from '../src/office/package.ts'
 import { exportWord, importWord } from '../src/office/word.ts'
+import { buildWordSnapshot, readWordParagraphs } from '../src/office/word-snapshot.ts'
 import { readOfficeXml, WORD_STRICT_NS } from '../src/office/xml.ts'
 
 describe('Word OOXML', () => {
@@ -37,22 +38,19 @@ describe('Word OOXML', () => {
       relation() { throw new Error('该文档的正文无需通过关系标识查找') },
     }
 
-    expect(importWord(packageFile)).toEqual({
-      version: 1,
-      kind: 'word',
-      paragraphs: [
-        { style: 'heading2', align: 'right', runs: [{ text: ' 甲 \t乙\n丙', bold: false, underline: true, color: '#ABCD12', fontSize: 12.5 }] },
-        { style: 'normal', runs: ['A', '\n', 'B', '\t', '\t', 'C'].map(text => ({ text })) },
-        { style: 'normal', runs: [{ text: 'D' }] },
-      ],
-    })
+    const imported = importWord(packageFile)
+    expect(readWordParagraphs(imported.snapshot)).toEqual([
+      { style: 'heading2', align: 'right', runs: [{ text: ' 甲 \t乙\n丙', bold: false, underline: true, color: '#ABCD12', fontSize: 12.5 }] },
+      { style: 'normal', runs: ['A', '\n', 'B', '\t', '\t', 'C'].map(text => ({ text })) },
+      { style: 'normal', runs: [{ text: 'D' }] },
+    ])
   })
 
   it('将页码域同名文字原样写入，换行和制表符使用真正的 Word 元素', async () => {
     const bytes = await exportWord({
-      version: 1,
+      version: 2,
       kind: 'word',
-      paragraphs: [
+      snapshot: buildWordSnapshot([
         {
           style: 'title',
           align: 'justify',
@@ -66,7 +64,7 @@ describe('Word OOXML', () => {
             fontSize: 12.5,
           }],
         },
-      ],
+      ]),
     })
 
     const body = unzipSync(bytes)['word/document.xml']

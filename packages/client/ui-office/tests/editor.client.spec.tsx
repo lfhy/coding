@@ -13,9 +13,9 @@ vi.mock('../src/client/univer-engine.ts', () => ({ createOfficeEngine: vi.fn() }
 type Props = Parameters<typeof OfficeEditor>[0]
 const WORD = '草稿.codingword'
 const EXCEL = '工作簿.codingexcel'
-const EMPTY_WORD = { kind: 'word', version: 1, paragraphs: [{ style: 'normal', runs: [] }] } as const
+const EMPTY_WORD = { kind: 'word', version: 2, snapshot: { body: { dataStream: '\r\n' } } } as const
 const EMPTY_EXCEL = { kind: 'excel', version: 1, sheets: [{ id: 'first', name: '表一', cells: [] }] } as const
-const EDITED = { kind: 'word', version: 1, paragraphs: [{ style: 'normal', runs: [{ text: '保留此修改' }] }] } as const
+const EDITED = { kind: 'word', version: 2, snapshot: { body: { dataStream: '保留此修改\r\n' } } } as const
 const request = vi.fn<typeof fetch>()
 const open = vi.mocked(createOfficeEngine)
 const snapshot = (path: string, document: OfficeDocument, revision = 'v1') => Response.json({ path, revision, document })

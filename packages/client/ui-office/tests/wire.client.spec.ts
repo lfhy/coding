@@ -2,7 +2,7 @@ import { expect, it, vi } from 'vitest'
 import { isOfficeDocument, type OfficeDocument } from '../src/client/office-document.ts'
 import { createOfficeIo } from '../src/client/wire.ts'
 
-const word: OfficeDocument = { version: 1, kind: 'word', paragraphs: [{ style: 'title', align: 'center', runs: [{ text: '文字', bold: true }] }] }
+const word: OfficeDocument = { version: 2, kind: 'word', snapshot: { body: { dataStream: '文字\r\n', textRuns: [{ st: 0, ed: 2, ts: { bl: 1 } }], paragraphs: [{ startIndex: 2, paragraphId: 'p1', paragraphStyle: { namedStyleType: 2 } }] } } }
 const path = '自用/文档 & 表.codingword'
 const snapshot = { path, revision: 'first', document: word }
 const signal = new AbortController().signal
@@ -60,10 +60,11 @@ it('只接收文件附件并用笔记名称生成相应的扩展名', async () =
 
 it('拒绝不能写回的结构、无效内容和重复工作表', () => {
   expect(isOfficeDocument(word, 'word')).toBe(true)
-  const invalidRun = (run: object) => isOfficeDocument({ version: 1, kind: 'word', paragraphs: [{ style: 'normal', runs: [run] }] }, 'word')
-  expect(invalidRun({ text: '甲', fontSize: 401 })).toBe(false)
-  expect(invalidRun({ text: '甲\u0000' })).toBe(false)
-  expect(invalidRun({ text: '甲', external: true })).toBe(false)
+  const snapshotOf = (snapshot: object) => isOfficeDocument({ version: 2, kind: 'word', snapshot }, 'word')
+  expect(snapshotOf({ body: { dataStream: '甲\r\n', tables: [] } })).toBe(true)
+  expect(snapshotOf({ body: {} })).toBe(false)
+  expect(snapshotOf({ body: { dataStream: '' } })).toBe(false)
+  expect(isOfficeDocument({ version: 1, kind: 'word', paragraphs: [] }, 'word')).toBe(false)
   const sheet = { id: 'one', name: 'Sheet1', cells: [{ row: 99_999, column: 1023, value: null, formula: '=1+2' }] }
   const excel = (sheets: readonly unknown[]) => isOfficeDocument({ version: 1, kind: 'excel', sheets }, 'excel')
   expect(excel([sheet])).toBe(true)

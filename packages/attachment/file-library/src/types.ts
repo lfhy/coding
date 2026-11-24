@@ -109,9 +109,21 @@ export interface ExcelSheet {
   merges?: ExcelMerge[]
 }
 
+/** 引擎文档快照的正文；除 `dataStream` 外的表格、图片、链接等结构原样保留。 */
+export interface WordSnapshotBody {
+  dataStream: string
+  [key: string]: unknown
+}
+
+/** 引擎文档快照；Word 笔记直接保存它，因此引擎能表达的块都能落盘。 */
+export interface WordSnapshot {
+  body: WordSnapshotBody
+  [key: string]: unknown
+}
+
 /** Office 笔记原生文档；版本及类型由 Host 在存取边界校验。 */
 export type OfficeDocument =
-  | { version: 1; kind: 'word'; paragraphs: WordParagraph[] }
+  | { version: 2; kind: 'word'; snapshot: WordSnapshot }
   | { version: 1; kind: 'excel'; sheets: ExcelSheet[] }
 
 /** 一项原子批次中的编辑；段落索引从零开始，单元格操作完整替换指定坐标。 */

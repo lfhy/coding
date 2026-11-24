@@ -4,6 +4,7 @@ import type { OfficeDocument, WordParagraph, WordRun } from '../types.ts'
 import { blankWordParagraph, OfficeBudget, OFFICE_MAX_PARAGRAPHS, OFFICE_MAX_RUNS, OFFICE_MAX_TEXT } from './document.ts'
 import type { OfficePackage } from './package.ts'
 import { WORD_NS, WORD_STRICT_NS, type XmlElement, xmlAttr, xmlChild, xmlChildren } from './xml.ts'
+import { buildWordSnapshot, readWordParagraphs } from './word-snapshot.ts'
 
 type WordStyle = WordParagraph['style']
 type WordAlign = NonNullable<WordParagraph['align']>
@@ -270,7 +271,7 @@ export function importWord(packageFile: OfficePackage): Extract<OfficeDocument, 
     }
   }
   if (!paragraphs.length) paragraphs.push(blankWordParagraph())
-  return { version: 1, kind: 'word', paragraphs }
+  return { version: 2, kind: 'word', snapshot: buildWordSnapshot(paragraphs) }
 }
 
 function exportRun(run: WordRun): TextRun {
@@ -297,11 +298,11 @@ function exportRun(run: WordRun): TextRun {
 /**
  * 将已校验的可编辑 Word 快照打包为新文档；字号四舍五入到半磅，回车统一为换行。
  * 不复制输入文件的 OOXML 部件。
- * @param document - 领域校验后的段落与文字格式。
+ * @param document - 领域校验后的 Word 快照；表格与图片不进入导出的 `.docx`。
  * @returns `.docx` 文件字节；打包器出错时拒绝。
  */
 export async function exportWord(document: Extract<OfficeDocument, { kind: 'word' }>): Promise<Uint8Array> {
-  const children = document.paragraphs.map(paragraph => new Paragraph({
+  const children = readWordParagraphs(document.snapshot).map(paragraph => new Paragraph({
     ...(paragraph.style === 'normal' ? {} : { heading: HEADING[paragraph.style] }),
     ...(paragraph.align === undefined ? {} : { alignment: ALIGNMENT[paragraph.align] }),
     children: paragraph.runs.map(exportRun),

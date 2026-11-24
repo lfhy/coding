@@ -10,6 +10,7 @@ import SessionStore, { SessionId, Session } from 'coding-session'
 import ToolRuntime from 'coding-tools'
 import { StaleNoteError, type FileLibrary, type MindMapSnapshot, type OfficeSnapshot } from 'coding-file-library'
 import SystemPrompt from 'coding-system-prompt'
+import { buildWordSnapshot } from '../../../attachment/file-library/src/office/word-snapshot.ts'
 import TypertRegistry from 'coding-typert-registry'
 import * as notesTabs from '../src/index.ts'
 
@@ -272,7 +273,7 @@ describe('笔记助手 Word 和 Excel', () => {
   const wordPath = '会议纪要.codingword'
   const word: OfficeSnapshot = {
     path: wordPath, revision: 'word-1',
-    document: { kind: 'word', version: 1, paragraphs: [{ style: 'heading1', runs: [{ text: '结果', bold: true }] }] },
+    document: { kind: 'word', version: 2, snapshot: buildWordSnapshot([{ style: 'heading1', runs: [{ text: '结果', bold: true }] }]) },
   }
   const sheetId = 'first'
   const excelPath = '预算.codingexcel'
@@ -307,7 +308,7 @@ describe('笔记助手 Word 和 Excel', () => {
       { style: 'normal' as const, runs: [{ text: '🙂'.repeat(8_000) }] },
       ...Array.from({ length: 30 }, () => ({ style: 'title' as const, runs: [{ text: '列席代表' }] })),
     ]
-    office.readNoteOffice.mockResolvedValue({ ...word, document: { kind: 'word', version: 1, paragraphs } })
+    office.readNoteOffice.mockResolvedValue({ ...word, document: { kind: 'word', version: 2, snapshot: buildWordSnapshot(paragraphs) } })
     const first = await callOffice(agent, { action: 'read', path: wordPath })
     if (first.isError) throw new Error(JSON.stringify(first.content))
     expect(first.value).toMatchObject({ total: 31, nextOffset: 24, paragraphs: [

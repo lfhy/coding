@@ -1,7 +1,8 @@
 /** Office 原生文档与编辑载荷的运行时校验；不依赖浏览器或文件格式转换器。 */
 import { randomUUID } from 'node:crypto'
-import type { ExcelCell, ExcelMerge, ExcelSheet, ExcelStyle, OfficeDocument, OfficeKind, WordParagraph, WordRun } from '../types.ts'
+import type { ExcelCell, ExcelMerge, ExcelSheet, ExcelStyle, OfficeDocument, OfficeKind, WordParagraph, WordRun, WordSnapshot } from '../types.ts'
 import { validateOfficeFormula } from './formula.ts'
+import { buildWordSnapshot } from './word-snapshot.ts'
 
 /** 原生文件完整 JSON 字节上限，不含 HTTP 请求的外层字段。 */
 export const OFFICE_NATIVE_MAX_BYTES = 8 * 1024 * 1024
@@ -94,8 +95,25 @@ export function blankWordParagraph(): WordParagraph {
 /** 生成满足非空段落或非空工作簿约束的新文档。 */
 export function blankOfficeDocument(kind: OfficeKind): OfficeDocument {
   return kind === 'word'
-    ? { version: 1, kind, paragraphs: [blankWordParagraph()] }
+    ? { version: 2, kind, snapshot: buildWordSnapshot([blankWordParagraph()]) }
     : { version: 1, kind, sheets: [newExcelSheet('Sheet1')] }
+}
+
+/**
+ * 校验引擎文档快照的最小结构；表格、图片等引擎结构原样保留，不在这里逐字段重建。
+ * @param value - 请求中的快照字段。
+ * @returns 可以直接落盘的快照对象。
+ */
+export function wordSnapshot(value: unknown): WordSnapshot {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) throw new TypeError('Word 快照无效')
+  const snapshot = value as Record<string, unknown>
+  const body = snapshot.body
+  if (typeof body !== 'object' || body === null || Array.isArray(body)) throw new TypeError('Word 快照缺少正文')
+  const stream = (body as Record<string, unknown>).dataStream
+  if (typeof stream !== 'string' || stream.length === 0 || !stream.endsWith('\n')) throw new TypeError('Word 快照正文无效')
+  // 段内换行与制表符在导出时会展开成 Word 节点，超出上限就拒绝保存。
+  if ((stream.match(/[\u2028\t]/gu) ?? []).length > WORD_MAX_BREAKS) throw new TypeError('Word 换行和制表符过多')
+  return snapshot as WordSnapshot
 }
 
 /**
@@ -235,14 +253,14 @@ function excelMerges(value: unknown, budget: OfficeBudget): ExcelMerge[] {
 
 /** 校验完整文档并返回独立的原生对象；仅允许文件后缀对应的类型。 */
 export function parseOfficeDocument(value: unknown, kind: OfficeKind): OfficeDocument {
-  const source = officeRecord(value, ['version', 'kind', kind === 'word' ? 'paragraphs' : 'sheets'], '办公笔记')
-  if (source.version !== 1 || source.kind !== kind) throw new TypeError('办公笔记版本或类型不匹配')
-  const budget = new OfficeBudget()
+  const source = officeRecord(value, kind === 'word' ? ['version', 'kind', 'snapshot'] : ['version', 'kind', 'sheets'], '办公笔记')
+  if (source.kind !== kind) throw new TypeError('办公笔记版本或类型不匹配')
   if (kind === 'word') {
-    const paragraphs = Array.from(officeArray(source.paragraphs, OFFICE_MAX_PARAGRAPHS, 'Word 段落数'),
-      item => parseWordParagraph(item, budget))
-    return { version: 1, kind, paragraphs: paragraphs.length === 0 ? [blankWordParagraph()] : paragraphs }
+    if (source.version !== 2) throw new TypeError('办公笔记版本或类型不匹配')
+    return { version: 2, kind, snapshot: wordSnapshot(source.snapshot) }
   }
+  if (source.version !== 1) throw new TypeError('办公笔记版本或类型不匹配')
+  const budget = new OfficeBudget()
   const rawSheets = officeArray(source.sheets, OFFICE_MAX_SHEETS, 'Excel 工作表数')
   if (rawSheets.length === 0) throw new TypeError('Excel 工作簿必须至少保留一张工作表')
   const ids = new Set<string>()

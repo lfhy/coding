@@ -34,9 +34,9 @@
 
 ### Word 与 Excel 笔记
 
-包入口导出 `NOTE_WORD_SUFFIX`（`.codingword`）、`NOTE_EXCEL_SUFFIX`（`.codingexcel`）以及 [`OfficeKind`、`OfficeDocument`、`OfficeEdit`、`OfficeSnapshot` 和字段类型](src/types.ts)。`createNoteOffice(kind, name, directory?)` 写入空白普通段落或名为 `Sheet1` 的空表。`importNoteOffice(kind, name, bytes, directory?)` 校验 `.docx`／`.xlsx` 的内容与类型，移除名称中的对应源后缀后保存新副本，不存放或改写来源 ZIP。`name` 也可直接给目标名称。两者先写入并同步 `0600` 的临时文件，再独占发布，成功返回 `{path}`；非法导入和同名冲突不会留下半成品。父目录必须已存在，逐段拒绝符号链接、越界路径及幻灯片工程目录。
+包入口导出 `NOTE_WORD_SUFFIX`（`.codingword`）、`NOTE_EXCEL_SUFFIX`（`.codingexcel`）以及 [`OfficeKind`、`OfficeDocument`、`OfficeEdit`、`OfficeSnapshot` 和字段类型](src/types.ts)。`.codingword` 的 `version: 2` 直接保存编辑引擎的完整文档快照（`document.snapshot`），表格、图片、链接与页眉页脚因此都能落盘；`.codingexcel` 仍是结构化的单元格模型。`readWordParagraphs(snapshot)` 与 `hasRichWordContent(snapshot)` 供导出和助手读取段落视图，`buildWordSnapshot(paragraphs)` 供新建与导入生成快照。`createNoteOffice(kind, name, directory?)` 写入空白普通段落或名为 `Sheet1` 的空表。`importNoteOffice(kind, name, bytes, directory?)` 校验 `.docx`／`.xlsx` 的内容与类型，移除名称中的对应源后缀后保存新副本，不存放或改写来源 ZIP。`name` 也可直接给目标名称。两者先写入并同步 `0600` 的临时文件，再独占发布，成功返回 `{path}`；非法导入和同名冲突不会留下半成品。父目录必须已存在，逐段拒绝符号链接、越界路径及幻灯片工程目录。
 
-`readNoteOffice(path)`、`saveNoteOffice(path, revision, document)` 和 `editNoteOffice(path, revision, edits)` 返回 `{path, revision, document}`。版本取自实际磁盘字节的 SHA-256，消费方应按不透明字符串原样回传。保存完整文档和模型整批编辑与改名、删除共用同一写入队列，先核对版本，全部校验成功后才原子替换。每批 1–32 项；`set_cells` 一次最多 256 格，覆盖整格，`value: null` 且无公式或样式时移除该格。Word 段落索引和 Excel 行列坐标从零开始，工作表 ID 在本原生笔记的读写及改名中不变。版本失配或笔记同名抛出 `NoteConflictError`，已消失抛出 `NoteNotFoundError`，路径、类型或内容不合规抛出 `TypeError`。
+`readNoteOffice(path)`、`saveNoteOffice(path, revision, document)` 和 `editNoteOffice(path, revision, edits)` 返回 `{path, revision, document}`。版本取自实际磁盘字节的 SHA-256，消费方应按不透明字符串原样回传。保存完整文档和模型整批编辑与改名、删除共用同一写入队列，先核对版本，全部校验成功后才原子替换。每批 1–32 项；`set_cells` 一次最多 256 格，覆盖整格，`value: null` 且无公式或样式时移除该格。Word 段落索引和 Excel 行列坐标从零开始，工作表 ID 在本原生笔记的读写及改名中不变。Word 的整段替换按快照里的段落视图应用；快照含表格、图片等内容时拒绝该批次，避免重建正文丢掉结构。版本失配或笔记同名抛出 `NoteConflictError`，已消失抛出 `NoteNotFoundError`，路径、类型或内容不合规抛出 `TypeError`。
 
 `exportNoteOffice(path, revision?)` 从一次读取的快照另生成 `.docx`／`.xlsx`，返回 `{name, mediaType, bytes}`，不写磁盘、不登记文件；传入版本时必须匹配该快照。导入、导出均在 Host 离线完成。不读取 XML 外部资源，不接受外部关系（包括外部超链接）、宏、嵌入的活动对象或联网字段。Excel 公式不由 Host 执行，仅接受受支持的本地函数及工作簿内引用，拒绝外链、DDE、未知函数和外部连接。
 
@@ -71,6 +71,6 @@ Office 路由位于 `/api/notes/office/`，与其他笔记路由共用回环同�
 
 - 文件管理页只提供图片预览，不提供任意文件下载、写入或删除；进入未分组列表的 Markdown 笔记没有预览，点行不触发打开。
 - 结构化笔记的编辑队列协调同一 Host 内的请求；对外部写入核对文件身份与磁盘版本，但不是跨进程锁。
-- Word 保留常见段落、标题、对齐和行内格式；表格按行转换，单元格以制表符分隔。不保留图片、页眉页脚及分页布局，导出字号舍入到半磅。Excel 保留工作表、基本值与样式、本地公式及缓存、合并区域；主题样式、图表、数组公式区域、模拟运算表和日期系统不做无损转换。工作表改名、删除不会自动重写公式。
+- Word 笔记本身保留引擎能表达的全部结构（表格、图片、链接、页眉页脚），但导出 `.docx` 与助手读取只看段落视图：导入时表格按行转成文本、图片与页眉页脚不保留；导出字号舍入到半磅，表格与图片不进入 `.docx`。两端能力不对称是实现取舍，不是磁盘格式限制。Excel 保留工作表、基本值与样式、本地公式及缓存、合并区域；主题样式、图表、数组公式区域、模拟运算表和日期系统不做无损转换。工作表改名、删除不会自动重写公式。
 - 元数据和磁盘内容不能跨介质原子提交；上传文件的孤儿清理、配额和删除策略尚未定义。
 - `isManagedUploadPath` 校验登记路径当前仍是普通文件，但不校验内容摘要；同一用户在库目录内替换原件后，PPT 导入和浏览器上传会读取替换后的内容。

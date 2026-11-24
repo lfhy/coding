@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { NOTE_EXCEL_SUFFIX, NOTE_WORD_SUFFIX, NoteConflictError, NoteNotFoundError, type OfficeDocument } from '../src/index.ts'
 import { NoteStore } from '../src/notes.ts'
 import { OFFICE_NATIVE_MAX_BYTES } from '../src/office/document.ts'
+import { buildWordSnapshot } from '../src/office/word-snapshot.ts'
 
 const directories: string[] = []
 afterEach(async () => {
@@ -19,7 +20,7 @@ async function setup() {
 }
 
 const paragraph = (text: string) => ({ style: 'normal' as const, runs: [{ text }] })
-const words = (texts: string[]): OfficeDocument => ({ version: 1, kind: 'word', paragraphs: texts.map(paragraph) })
+const words = (texts: string[]): OfficeDocument => ({ version: 2, kind: 'word', snapshot: buildWordSnapshot(texts.map(paragraph)) })
 
 function rejectionOf(result: PromiseSettledResult<unknown>): unknown {
   if (result.status !== 'rejected') throw new Error('操作应被拒绝')
@@ -33,7 +34,7 @@ describe('Office 笔记存取', () => {
     const excel = await store.office.create('excel', '周报')
     expect(path).toBe(`周报${NOTE_WORD_SUFFIX}`)
     expect(excel.path).toBe(`周报${NOTE_EXCEL_SUFFIX}`)
-    expect((await store.office.read(path)).document).toEqual({ version: 1, kind: 'word', paragraphs: [{ style: 'normal', runs: [] }] })
+    expect((await store.office.read(path)).document).toEqual({ version: 2, kind: 'word', snapshot: buildWordSnapshot([{ style: 'normal', runs: [] }]) })
     if (process.platform !== 'win32') expect((await lstat(join(root, path))).mode & 0o777).toBe(0o600)
     await expect(store.readNote(path)).rejects.toThrow(TypeError)
     await expect(store.saveNote(path, '不要覆盖')).rejects.toThrow(TypeError)

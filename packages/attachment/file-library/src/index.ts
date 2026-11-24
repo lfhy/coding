@@ -24,6 +24,7 @@ export { FileId } from './brand.ts'
 export { isDeckDirectoryName, NOTE_DECK_SUFFIX, NoteConflictError, NoteNotFoundError, StaleNoteError } from './note-path.ts'
 export { NOTE_MINDMAP_SUFFIX } from './mindmap.ts'
 export { NOTE_EXCEL_SUFFIX, NOTE_WORD_SUFFIX } from './office-notes.ts'
+export { hasRichWordContent, readWordParagraphs } from './office/word-snapshot.ts'
 export type {
   ExcelCell, ExcelMerge, ExcelSheet, ExcelStyle,
   ManagedFileCategory, ManagedFileKind, ManagedFileRecord, ManagedFilePage,

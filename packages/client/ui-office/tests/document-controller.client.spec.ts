@@ -4,7 +4,7 @@ import type { OfficeSnapshot, WordDocument } from '../src/client/office-document
 import type { OfficeIo, OfficeResult } from '../src/client/wire.ts'
 
 const path = '这是文件.codingword'
-const word = (text: string): WordDocument => ({ version: 1, kind: 'word', paragraphs: [{ style: 'normal', runs: [{ text }] }] })
+const word = (text: string): WordDocument => ({ version: 2, kind: 'word', snapshot: { body: { dataStream: `${text}\r\n` } } })
 const snapshot = (revision: string, text: string): OfficeResult<OfficeSnapshot> => ({
   kind: 'ready', value: { path, revision, document: word(text) },
 })

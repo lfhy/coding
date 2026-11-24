@@ -25,8 +25,14 @@ export interface WordParagraph {
   readonly runs: readonly WordRun[]
 }
 
-/** 空文档也有一个普通段落。 */
-export type WordDocument = { readonly version: 1; readonly kind: 'word'; readonly paragraphs: readonly WordParagraph[] }
+/** 引擎文档快照的正文；表格、图片、链接等结构随快照原样保存。 */
+export interface WordSnapshotData {
+  readonly body: { readonly dataStream: string; readonly [key: string]: unknown }
+  readonly [key: string]: unknown
+}
+
+/** Word 笔记保存引擎快照，因此引擎能表达的块都能落盘。 */
+export type WordDocument = { readonly version: 2; readonly kind: 'word'; readonly snapshot: WordSnapshotData }
 
 /** 单元格可保存的格式；颜色使用六位十六进制。 */
 export interface ExcelStyle {
@@ -77,14 +83,10 @@ export interface OfficeSnapshot {
   readonly document: OfficeDocument
 }
 
-const WORD_STYLES = new Set<unknown>(['normal', 'title', 'heading1', 'heading2', 'heading3'])
-const ALIGNMENTS = new Set<unknown>(['left', 'center', 'right', 'justify'])
 const COLOR = /^#[0-9a-f]{6}$/i
 const NON_XML_TEXT = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\ud800-\udfff\ufffe\uffff]/u
 const EMPHASIS = ['bold', 'italic', 'underline', 'strike'] as const
 const MAX_TEXT = 32_767
-const MAX_RUNS = 50_000
-const MAX_PARAGRAPHS = 10_000
 const MAX_SHEETS = 32
 const MAX_CELLS = 50_000
 const MAX_MERGES = 2_048
@@ -123,15 +125,13 @@ function isArrayOf<T>(value: unknown, isItem: (item: unknown) => item is T): val
   return true
 }
 
-function isWordRun(value: unknown): value is WordRun {
-  return hasKeys(value, ['text', ...EMPHASIS, 'color', 'fontSize']) && isNativeText(value.text, MAX_TEXT) && isEmphasis(value)
-    && (value.color === undefined || isColor(value.color))
-    && (value.fontSize === undefined || (isFiniteNumber(value.fontSize) && value.fontSize >= 1 && value.fontSize <= 400))
-}
-
-function isWordParagraph(value: unknown): value is WordParagraph {
-  return hasKeys(value, ['style', 'align', 'runs']) && WORD_STYLES.has(value.style)
-    && (value.align === undefined || ALIGNMENTS.has(value.align)) && isArrayOf(value.runs, isWordRun)
+/** 只校验快照的最小结构：正文是引擎的字符串文档流，其余结构由引擎自己解释。 */
+function isWordSnapshot(value: unknown): value is WordSnapshotData {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false
+  const body = (value as Record<string, unknown>).body
+  if (typeof body !== 'object' || body === null || Array.isArray(body)) return false
+  const stream = (body as Record<string, unknown>).dataStream
+  return isString(stream) && stream.length > 0 && stream.endsWith('\n')
 }
 
 function isExcelStyle(value: unknown): value is ExcelStyle {
@@ -191,10 +191,8 @@ function isExcelSheet(value: unknown): value is ExcelSheet {
  */
 export function isOfficeDocument(value: unknown, kind: OfficeKind): value is OfficeDocument {
   if (kind === 'word') {
-    return hasKeys(value, ['version', 'kind', 'paragraphs']) && value.version === 1 && value.kind === kind
-      && isArrayOf(value.paragraphs, isWordParagraph) && value.paragraphs.length > 0
-      && value.paragraphs.length <= MAX_PARAGRAPHS
-      && value.paragraphs.reduce((total, paragraph) => total + paragraph.runs.length, 0) <= MAX_RUNS
+    return hasKeys(value, ['version', 'kind', 'snapshot']) && value.version === 2 && value.kind === kind
+      && isWordSnapshot(value.snapshot)
   }
   return hasKeys(value, ['version', 'kind', 'sheets']) && value.version === 1 && value.kind === kind
     && isArrayOf(value.sheets, isExcelSheet) && value.sheets.length > 0 && unique(value.sheets, sheet => sheet.id)
