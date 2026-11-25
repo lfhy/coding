@@ -82,27 +82,113 @@ function bindWheelForwarding(container: HTMLElement, signal: AbortSignal): void 
   }, { signal, passive: false })
 }
 
-/** 文档组件与纸张背景组件都按 pageMarginTop 排页，改它就能收拢页间空白。 */
+/** 骨架页面上决定纸张位置与页内留白的字段：收拢页间空白时按页改写它们。 */
+interface SkeletonPageBox {
+  pageHeight: number
+  marginTop: number
+  marginBottom: number
+  originMarginTop?: number
+  originMarginBottom?: number
+}
+
+/** 组件与骨架的只读面：正文组件和纸张背景都按同一份骨架排页。 */
 interface PageGapTarget {
   pageMarginTop: number
   makeDirty?(dirty: boolean): void
+  draw?(ctx: CanvasRenderingContext2D, bounds?: unknown): void
+  getSkeleton?(): { getSkeletonData?(): { pages?: SkeletonPageBox[] } | undefined } | undefined
+}
+
+/** 收拢前每页的原始尺寸；重新排版会换掉页对象，那时再重新记一份。 */
+interface PageBoxSnapshot {
+  pageHeight: number
+  marginTop: number
+  marginBottom: number
+  originMarginTop: number
+  originMarginBottom: number
+}
+
+/** 纸面恒为纯白，与桌面底色、页描边、正文墨色都拉得开。 */
+const PAPER_CHANNEL_MIN = 252
+/** 页间带在画布上的高度上限：分页间距在最大缩放下也远小于它。 */
+const GAP_MAX_PIXELS = 240
+/** 横带两端比纸面窄出这么多像素，就是纸内的横线（表格边框、下划线），不是页缝。 */
+const EDGE_INSET = 8
+/** 横带宽度不低于纸面宽度的这个比例才算页缝。 */
+const GAP_SPAN_RATIO = 0.9
+/** 落点上下浮动这么多画布像素仍算点在页间带上。 */
+const GAP_SLACK_Y = 10
+/** 同一位置的连续点击只切换一次：双击（单击后紧跟第二下）不会把刚拼好的纸张拆开。 */
+const TOGGLE_SETTLE_MS = 350
+/** 按下到抬起的位移超过这个距离视为拖选，不当作点击。 */
+const PRESS_SLOP = 4
+
+/** 从一行或一列像素里按位置取 RGB。 */
+function pixelAt(row: Uint8ClampedArray, index: number): readonly [number, number, number] {
+  return [row[index * 4] ?? 0, row[index * 4 + 1] ?? 0, row[index * 4 + 2] ?? 0]
+}
+
+/** 两个颜色是否同一种（容忍相邻色阶与抗锯齿）。 */
+function sameTone(left: readonly [number, number, number], right: readonly [number, number, number]): boolean {
+  return Math.abs(left[0] - right[0]) <= 3 && Math.abs(left[1] - right[1]) <= 3 && Math.abs(left[2] - right[2]) <= 3
+}
+
+/** 一连串像素里以落点为锚、与锚点同色的左右边界。 */
+function toneSpan(row: Uint8ClampedArray, x: number, tone: readonly [number, number, number]): { from: number; to: number } {
+  let from = x
+  while (from > 0 && sameTone(pixelAt(row, from - 1), tone)) from -= 1
+  let to = x
+  while (to < row.length / 4 - 1 && sameTone(pixelAt(row, to + 1), tone)) to += 1
+  return { from, to }
 }
 
 /**
- * 纸张背景组件：页描边与页间距一起决定两页看起来是否断开。
- * 组件的填充字段默认是 undefined（绘制时才回退到主题色），所以只能原样透传，不能填空串。
+ * 判断落点是否在两页之间那条带上（页间空白，或拼页后两页相接的细线）。
+ * 只看画布像素：带子夹在两张纸之间、上下都成片是纸白，横向覆盖整张纸又不比纸面窄一截。
+ * 正文字形、下划线和表格边框或太短、或比纸面窄出一截，都不会被当成页缝。
+ * @param canvas - 正文画布。
+ * @param ctx - 画布的二维上下文。
+ * @param column - 落点所在竖列的一整列像素，由调用方读取一次复用。
+ * @param x - 落点的画布横坐标。
+ * @param y - 落点的画布纵坐标。
+ * @returns 命中页间带时为 true。
  */
-interface PagePaperTarget extends PageGapTarget {
-  _backgroundFillColor?: string
-  _pageFillColor?: string
-  _pageStrokeColor?: string
-  setFillColors?(background: string | undefined, page: string | undefined, stroke: string | undefined, margin: string | undefined): void
+function hitsPageSeam(
+  canvas: HTMLCanvasElement, ctx: CanvasRenderingContext2D, column: Uint8ClampedArray, x: number, y: number,
+): boolean {
+  const height = canvas.height
+  const isPaper = (index: number): boolean => {
+    const at = index * 4
+    return (column[at] ?? 0) >= PAPER_CHANNEL_MIN
+      && (column[at + 1] ?? 0) >= PAPER_CHANNEL_MIN
+      && (column[at + 2] ?? 0) >= PAPER_CHANNEL_MIN
+  }
+  if (isPaper(y)) return false
+  // 带子的上下沿：贴着落点向两侧扩展，直到碰上纸白。页描边与抗锯齿都不算纸，会一并跳过。
+  let top = y
+  while (top > 0 && !isPaper(top - 1) && y - top < GAP_MAX_PIXELS) top -= 1
+  let bottom = y
+  while (bottom < height - 1 && !isPaper(bottom + 1) && bottom - y < GAP_MAX_PIXELS) bottom += 1
+  if (!isPaper(top - 1) || !isPaper(bottom + 1)) return false
+  // 横带要横贯整张纸：比纸窄一截的是纸内横线，两端都不够宽就不是页缝。
+  const middle = Math.round((top + bottom) / 2)
+  const paperRow = ctx.getImageData(0, top - 1, canvas.width, 1).data
+  const bandRow = ctx.getImageData(0, middle, canvas.width, 1).data
+  const paperSpan = toneSpan(paperRow, x, pixelAt(paperRow, x))
+  const bandSpan = toneSpan(bandRow, x, pixelAt(bandRow, x))
+  if (bandSpan.to - bandSpan.from + 1 < (paperSpan.to - paperSpan.from + 1) * GAP_SPAN_RATIO) return false
+  return !(bandSpan.from - paperSpan.from > EDGE_INSET && paperSpan.to - bandSpan.to > EDGE_INSET)
 }
 
 /**
- * 双击两页之间的空白，把分页纸张拼成一整张长页；再双击还原，与 WPS / Word 隐藏页间空白的手感一致。
- * 命中判定直接读画布像素：双击处不是纸白、而上下各留 40px 都是纸白时，说明点在页间空隙上，
- * 这样不用换算视图缩放，缩放或改版式后依然准。
+ * 点击两页之间的空白，把分页纸张拼成一整张长页；再点两页相接的细线还原，
+ * 与 WPS / Word 隐藏页间空白的手感一致。命中判定直接读画布像素，不用换算视图缩放。
+ *
+ * 拼页要连每页自己的上下留白一起收掉：正文按页边距排在纸内，只把页间距归零时，
+ * 上一页的页脚留白与下一页的页眉留白仍然留着，看起来还是两页。这里改骨架页的页高与
+ * 页边距：首页保留上边距、末页保留下边距（纸的外缘不动），中间的页上下边距归零，
+ * 正文因此一页紧贴下一页，页与页之间只剩一条细线。
+ * 每页「页高 - 上边距 - 下边距」保持不变，排版算出的分页与行位置都不受影响。
  * @param container - 承载画布的宿主元素。
  * @param univer - 当前编辑器实例；须在文档渲染单元注册之后调用。
  * @param signal - 组件释放信号，随画布一起移除监听。
@@ -110,53 +196,114 @@ interface PagePaperTarget extends PageGapTarget {
 function bindPageGapToggle(container: HTMLElement, univer: Univer, signal: AbortSignal): void {
   const renderManager: IRenderManagerService = univer.__getInjector().get(IRenderManagerService)
   let pageGap: number | undefined
-  let pageStroke: string | undefined
+  let joined = false
+  let toggledAt = 0
+  let pressX = Number.NaN
+  let pressY = Number.NaN
+  /** 收拢前的页高与页边距，按页对象记；重排会换掉页对象，那时重新记一份。 */
+  const pageBoxes = new WeakMap<SkeletonPageBox, PageBoxSnapshot>()
+  const hooked = new WeakSet<PageGapTarget>()
   const targets = () => {
     const render = renderManager.getRenderUnitById(UNIT_ID)
     return {
       main: render?.mainComponent as PageGapTarget | null | undefined,
-      background: render?.components?.get('__Document_Render_Background__') as PagePaperTarget | undefined,
+      background: render?.components.get('__Document_Render_Background__') as PageGapTarget | undefined,
+    }
+  }
+  // 拼页/还原都要动每页的页高与页边距：正文与纸张一起收紧，页间才真的没有留白。
+  const applyBoxes = (target: PageGapTarget): void => {
+    const pages = target.getSkeleton?.()?.getSkeletonData?.()?.pages
+    if (pages === undefined) return
+    const last = pages.length - 1
+    pages.forEach((page, index) => {
+      let snapshot = pageBoxes.get(page)
+      if (snapshot === undefined) {
+        if (!joined) return
+        snapshot = {
+          pageHeight: page.pageHeight,
+          marginTop: page.marginTop,
+          marginBottom: page.marginBottom,
+          originMarginTop: page.originMarginTop ?? 0,
+          originMarginBottom: page.originMarginBottom ?? 0,
+        }
+        pageBoxes.set(page, snapshot)
+      }
+      if (!joined) {
+        page.marginTop = snapshot.marginTop
+        page.marginBottom = snapshot.marginBottom
+        page.originMarginTop = snapshot.originMarginTop
+        page.originMarginBottom = snapshot.originMarginBottom
+        page.pageHeight = snapshot.pageHeight
+        return
+      }
+      // 首页保留上边距、末页保留下边距，与 Word「隐藏空白」一致：纸的外缘留白不动，
+      // 只有页与页之间的两段页边距被收掉，正文因此一页接一页。
+      const keepTop = index === 0 ? snapshot.marginTop : 0
+      const keepBottom = index === last ? snapshot.marginBottom : 0
+      page.marginTop = keepTop
+      page.marginBottom = keepBottom
+      page.originMarginTop = keepTop
+      page.originMarginBottom = keepBottom
+      page.pageHeight = snapshot.pageHeight - snapshot.marginTop - snapshot.marginBottom + keepTop + keepBottom
+    })
+  }
+  // 重排会换上新的页对象，所以在每帧绘制前再套一次收拢值，编辑后也不会退回带留白的样子。
+  const hookDraw = (target: PageGapTarget | undefined): void => {
+    if (target === undefined || target.draw === undefined || hooked.has(target)) return
+    hooked.add(target)
+    const original = target.draw.bind(target)
+    target.draw = (ctx, bounds) => {
+      applyBoxes(target)
+      original(ctx, bounds)
     }
   }
   const toggle = (): void => {
     const { main, background } = targets()
     if (main === null || main === undefined) return
-    if (main.pageMarginTop > 0) {
-      pageGap = main.pageMarginTop
+    joined = !joined
+    if (joined) {
+      if (main.pageMarginTop > 0) pageGap = main.pageMarginTop
       main.pageMarginTop = 0
     } else {
       main.pageMarginTop = pageGap ?? 0
     }
+    applyBoxes(main)
     main.makeDirty?.(true)
     if (background !== undefined) {
       background.pageMarginTop = main.pageMarginTop
-      // 拼页时把纸张描边一起隐掉，两页才会连成一整张；还原时交回原描边（默认 undefined 即主题色）。
-      if (pageStroke === undefined) pageStroke = background._pageStrokeColor
-      const stroke = main.pageMarginTop > 0 ? pageStroke : 'transparent'
-      background.setFillColors?.(background._backgroundFillColor, background._pageFillColor, stroke, stroke)
+      applyBoxes(background)
       background.makeDirty?.(true)
     }
+    toggledAt = Date.now()
   }
-  const GAP_PROBE = 40
-  const GAP_SLACK = 12
-  container.addEventListener('dblclick', (event) => {
+  hookDraw(targets().main ?? undefined)
+  hookDraw(targets().background)
+  container.addEventListener('pointerdown', (event) => {
+    pressX = event.clientX
+    pressY = event.clientY
+  }, { signal })
+  container.addEventListener('click', (event) => {
+    // 拖选文字松手也会派发 click，位移超过阈值就不当成点页缝。
+    if (!Number.isNaN(pressX) && (Math.abs(event.clientX - pressX) > PRESS_SLOP
+      || Math.abs(event.clientY - pressY) > PRESS_SLOP)) return
+    pressX = Number.NaN
+    pressY = Number.NaN
+    if (Date.now() - toggledAt < TOGGLE_SETTLE_MS) return
     const canvas = container.querySelector('canvas')
     if (canvas === null) return
     const rect = canvas.getBoundingClientRect()
+    if (rect.width <= 0 || rect.height <= 0) return
+    const ctx = canvas.getContext('2d')
+    if (ctx === null) return
     const ratio = canvas.width / rect.width
     const x = Math.round((event.clientX - rect.left) * ratio)
     const y = Math.round((event.clientY - rect.top) * ratio)
-    const ctx = canvas.getContext('2d')
-    if (ctx === null) return
-    const white = (atY: number): boolean => {
-      if (atY < 0 || atY >= canvas.height) return false
-      const [red = 0, green = 0, blue = 0] = ctx.getImageData(x, atY, 1, 1).data
-      return red > 235 && green > 235 && blue > 235
-    }
-    // 页间空白可能只有几像素宽，双击落点允许上下浮动一档，避免“明明点到了却没反应”。
-    for (let offset = -GAP_SLACK; offset <= GAP_SLACK; offset += 3) {
-      const at = y + offset
-      if (!white(at) && white(at - GAP_PROBE) && white(at + GAP_PROBE)) {
+    if (x < 0 || y < 0 || x >= canvas.width || y >= canvas.height) return
+    // 整列像素读一次，命中判定在上下浮动时复用，避免每次点击都反复取像素。
+    const column = ctx.getImageData(x, 0, 1, canvas.height).data
+    // 页间空白可能只有十几像素，落点允许上下浮动一档，避免「明明点到了却没反应」。
+    for (let offset = 0; offset <= GAP_SLACK_Y; offset += 1) {
+      if (hitsPageSeam(canvas, ctx, column, x, y - offset) || hitsPageSeam(canvas, ctx, column, x, y + offset)) {
         toggle()
         return
       }
