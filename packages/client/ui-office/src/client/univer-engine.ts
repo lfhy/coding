@@ -17,7 +17,7 @@ import { fromUniverWorkbook, toUniverWorkbook } from './excel-conversion.ts'
 interface PaperColorService {
   getRenderColor(color: string): string
   readonly _resolvedThemeColors?: Map<string, string>
-  readonly _themeService?: { getTheme(): Record<string, Record<string, string>> }
+  readonly _themeService?: { getTheme?(): Record<string, Record<string, string>> }
 }
 
 /**
@@ -26,6 +26,7 @@ interface PaperColorService {
  * createUniver 的 override 会被覆盖掉，所以等文档渲染单元就绪后直接把实例的取色方法换成
  * 透传实现：纸面与正文一律按浅色主题取色（白纸、黑字、浅灰线条）；纸外的桌面直接取
  * 侧边栏底色，跟随当前主题。
+ * 取色抛错会中断整帧绘制（选区高亮、光标都画不出来），所以每条兜底路径都必须返回颜色字符串。
  * @param univer - 当前编辑器实例；须在文档渲染单元注册之后调用，未就绪时按 50ms 间隔重试。
  */
 function bindPaperColors(univer: Univer): void {
@@ -48,9 +49,12 @@ function bindPaperColors(univer: Univer): void {
       if (color === 'gray.100') return deskColor(cached ?? '#ffffff')
       if (cached !== undefined) return cached
       // 令牌形如「调色板.级别」（gray.0）；缓存缺位时退回当前主题的浅色色板。
+      // `_themeService` 的形态随预设版本变化，取不到 palette 时按原令牌返回，绝不抛错。
       const dot = color.indexOf('.')
       if (dot > 0) {
-        const value = target._themeService?.getTheme()?.[color.slice(0, dot)]?.[color.slice(dot + 1)]
+        const theme = target._themeService
+        const palette = typeof theme?.getTheme === 'function' ? theme.getTheme() : undefined
+        const value = palette?.[color.slice(0, dot)]?.[color.slice(dot + 1)]
         if (typeof value === 'string') return value
       }
       return color
@@ -235,15 +239,17 @@ function localePack(module: { default: unknown }): ILanguagePack {
 }
 
 /**
- * 让 A4 纸按画布宽度缩放适配：窄窗口里整张纸都能看到，不会出现横向滚动条。
- * 用的是 Univer 自己的 fit-width 视图缩放，页脚缩放控件仍可在此基础上继续放大；
- * 默认 minScale 是 1，必须放宽才允许缩到比页面更窄的容器里。纸张居中，两侧留出桌面。
+ * 让 A4 纸按画布宽度缩放适配：容器比纸窄时整张纸缩进画布，不会出现横向滚动条。
+ * 只缩不放（`maxScale: 1`）：容器比纸宽时仍按 100% 原大显示，页脚显示的缩放值才和肉眼看到的一致；
+ * 放大会让纸撑满整屏，看起来像「一打开就放大了」。纸张居中，两侧留出桌面。
  * @param univer - 当前编辑器实例。
  */
 function bindFitToWidth(univer: Univer): void {
   const config: IConfigService = univer.__getInjector().get(IConfigService)
   config.setConfig(DOCS_UI_PLUGIN_CONFIG_KEY, {
-    fitToWidth: { mode: 'fit-width', target: 'container', align: 'start', paddingX: PAGE_DESK_MARGIN, minScale: 0.25 },
+    fitToWidth: {
+      mode: 'fit-width', target: 'container', align: 'center', paddingX: PAGE_DESK_MARGIN, minScale: 0.25, maxScale: 1,
+    },
   }, { merge: true })
 }
 
