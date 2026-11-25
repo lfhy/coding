@@ -600,6 +600,38 @@ describe('NotesPage', () => {
     fireEvent.input(editor, { target: { value: 'hello a' } })
   })
 
+  it('并排时源码与预览按比例互相带动滚动，单栏视图不联动', async () => {
+    makeServer()
+    await mount()
+    const editor = screen.getByRole<HTMLTextAreaElement>('textbox', { name: '原始文本' })
+    const preview = screen.getByRole('region', { name: '预览' })
+    const size = (element: HTMLElement, scrollHeight: number, clientHeight: number) => {
+      Object.defineProperty(element, 'scrollHeight', { configurable: true, value: scrollHeight })
+      Object.defineProperty(element, 'clientHeight', { configurable: true, value: clientHeight })
+    }
+    size(editor, 1600, 400)
+    size(preview, 800, 100)
+
+    editor.scrollTop = 400
+    fireEvent.scroll(editor)
+    // 源码滚了三分之一（400 / 1200），预览跟到三分之一（700 / 3 ≈ 233）。
+    expect(preview.scrollTop).toBe(233)
+    // 程序化写入后浏览器会再报一次同位置的 scroll，这次回声不再带动源码。
+    fireEvent.scroll(preview)
+    expect(editor.scrollTop).toBe(400)
+
+    preview.scrollTop = 700
+    fireEvent.scroll(preview)
+    expect(editor.scrollTop).toBe(1200)
+
+    // 切到单栏后另一侧隐藏，滚动不再带动。
+    act(() => { fireEvent.click(screen.getByRole('button', { name: '预览' })) })
+    preview.scrollTop = 300
+    fireEvent.scroll(preview)
+    expect(editor.scrollTop).toBe(1200)
+    act(() => { fireEvent.click(screen.getByRole('button', { name: '并排' })) })
+  })
+
   it('工具栏插入标题、粗体与链接，行号不写入笔记', async () => {
     makeServer()
     await mount()

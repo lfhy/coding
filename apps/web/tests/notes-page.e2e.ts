@@ -115,6 +115,23 @@ describe('Web 笔记工作区', () => {
     await page.keyboard.press('Shift+Tab')
     expect(await editor.inputValue()).toBe(revised)
 
+    // 并排时两侧按比例互相带动滚动；先换成足够长的正文，验完再换回原稿。
+    const long = Array.from({ length: 80 }, (_, index) => `## Section ${index + 1}\n\nParagraph ${index + 1}\n`).join('\n')
+    await editor.fill(long)
+    const preview = main.getByRole('region', { name: 'Preview', exact: true })
+    const scrollBy = async (locator: Locator) => locator.evaluate((node) => {
+      node.scrollTop = (node.scrollHeight - node.clientHeight) * 0.5
+      node.dispatchEvent(new Event('scroll', { bubbles: true }))
+    })
+    await scrollBy(editor)
+    expect(await editor.evaluate(node => node.scrollTop)).toBeGreaterThan(0)
+    expect(await preview.evaluate(node => node.scrollTop)).toBeGreaterThan(0)
+    await scrollBy(preview)
+    expect(await preview.evaluate(node => node.scrollTop)).toBeGreaterThan(0)
+    expect(await editor.evaluate(node => node.scrollTop)).toBeGreaterThan(0)
+    await editor.fill(revised)
+    await expect.poll(async () => (await scaffold.ctx.fileLibrary.readNote('Release notes.md')).content).toBe(revised)
+
     const assistantInput = page.locator('[data-page-assistant-track] textarea:visible').first()
     await dock.getByRole('button', { name: 'Summarize', exact: true }).click()
     const prompt = await assistantInput.inputValue()

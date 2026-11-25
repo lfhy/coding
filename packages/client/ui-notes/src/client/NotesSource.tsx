@@ -14,15 +14,16 @@ interface NotesSourceProps {
   placeholder: string
   onChange: (text: string) => void
   onBlur: () => void
+  onScroll?: (() => void) | undefined
 }
 
 /**
  * 保留原生选区与输入法；只在普通大小的笔记上叠加不参与编辑的行号和语法提示。
  * 有选区时 Tab／Shift+Tab 按行缩进或退一级，没有选区时 Tab 仍用于移出输入区。
- * @param props - 文本域引用、源码和由笔记页持有的编辑状态。
+ * @param props - 文本域引用、源码和由笔记页持有的编辑状态；`onScroll` 用于带动预览滚动。
  * @returns 共享文本域及与其滚动同步的呈现层。
  */
-export function NotesSource({ editor, content, label, placeholder, onChange, onBlur }: NotesSourceProps) {
+export function NotesSource({ editor, content, label, placeholder, onChange, onBlur, onScroll }: NotesSourceProps) {
   const mirror = useRef<HTMLDivElement>(null)
   const [composing, setComposing] = useState(false)
   const lines = useMemo(() => {
@@ -78,7 +79,10 @@ export function NotesSource({ editor, content, label, placeholder, onChange, onB
       <MarkdownTextarea ref={editor} className={css.field} value={content} aria-label={label} placeholder={placeholder}
         onCompositionStart={() => { setComposing(true) }} onCompositionEnd={() => { setComposing(false) }}
         onKeyDown={indent}
-        onScroll={(event) => { if (mirror.current !== null) mirror.current.scrollTop = event.currentTarget.scrollTop }}
+        onScroll={(event) => {
+          if (mirror.current !== null) mirror.current.scrollTop = event.currentTarget.scrollTop
+          onScroll?.()
+        }}
         onChange={(event) => { onChange(event.target.value) }} onBlur={onBlur} />
     </div>
   )

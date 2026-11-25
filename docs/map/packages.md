@@ -69,7 +69,7 @@ workspace 共 283 个包，按 group 分节。每行给出包目录、职责（R
 - `packages/client/ui-message-feedback` — 单条消息反馈插件的浏览器侧：一对 Like/Dislike 按钮加一个可选备注… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 4）
 - `packages/client/ui-mindmap` — 本包没有配置项 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 4）
 - `packages/client/ui-model-selection` — 模型选择插件（浏览器侧）：**两个入口共用一份会话级目录**，由 `ModelDirectoryResolver`… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 3）
-- `packages/client/ui-notes` — 笔记界面：外侧窄导航的「笔记」入口、独立主内容页，以及完全复用对话的 AI 助手栏 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 11）
+- `packages/client/ui-notes` — 笔记界面：外侧窄导航的「笔记」入口、独立主内容页，以及完全复用对话的 AI 助手栏 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 12）
 - `packages/client/ui-office` — 在笔记页打开 Word 文档或 Excel 工作簿，当前正文可直接编辑 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 7）
 - `packages/client/ui-open-in-app` — 右侧工作台的标签、功能菜单与显隐按 Session 管理；文件管理器、文件预览、Git 历史、终端和外部插件内容共用顶栏 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 17）
 - `packages/client/ui-permission-presets` — 面向两种不同生命周期的浏览器权限界面 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 3）

@@ -3,6 +3,8 @@ import type { ReactNode } from 'react'
 import { Button, Icon, IconChecklistOutline14, IconCodeOutline16, IconLinkOutline16, MarkdownText } from 'coding-client-ui-primitives'
 import type { NotesLocaleKey } from './locales.ts'
 import { NotesSource } from './NotesSource.tsx'
+import { createScrollFollower } from './preview-scroll.ts'
+import type { ScrollSide } from './preview-scroll.ts'
 import css from './NotesPage.module.css'
 
 /** 为并排的两个正文区域各留出约 320px；助手与目录的占用计入测量。 */
@@ -36,9 +38,24 @@ export function NotesEditor({ content, onChange, onBlur, t }: NotesEditorProps) 
   const workspace = useRef<HTMLDivElement>(null)
   const source = useRef<HTMLTextAreaElement>(null)
   const preview = useRef<HTMLElement>(null)
+  const follower = useRef(createScrollFollower())
   const [canSplit, setCanSplit] = useState(true)
   const [view, setView] = useState<View>('split')
   const activeView = !canSplit && view === 'split' ? 'edit' : view
+
+  // 并排时源码与预览互相带动：按两侧可滚动余量等比换算，写入引发的回声由 follower 丢弃。
+  const followScroll = (side: ScrollSide) => {
+    // 单栏视图下另一侧是隐藏的，没有可对齐的位置。
+    if (activeView !== 'split') return
+    const editor = source.current
+    const pane = preview.current
+    /* v8 ignore if -- scroll 只可能来自已挂载并可见的这一侧，两侧引用必然就绪。 */
+    if (editor === null || pane === null) return
+    const write = follower.current.follow(side, { source: editor, preview: pane })
+    if (write === null) return
+    if (write.side === 'source') editor.scrollTop = write.offset
+    else pane.scrollTop = write.offset
+  }
 
   useLayoutEffect(() => {
     const element = workspace.current
@@ -122,9 +139,10 @@ export function NotesEditor({ content, onChange, onBlur, t }: NotesEditorProps) 
       <div id={viewId} className={css.panes} data-view={activeView}>
         <div className={css.source} hidden={activeView === 'preview'}>
           <NotesSource editor={source} content={content} label={t('source')} placeholder={t('placeholder')}
-            onChange={onChange} onBlur={onBlur} />
+            onChange={onChange} onBlur={onBlur} onScroll={() => { followScroll('source') }} />
         </div>
-        <section ref={preview} className={css.preview} aria-label={t('preview')} hidden={activeView === 'edit'} tabIndex={0}>
+        <section ref={preview} className={css.preview} aria-label={t('preview')} hidden={activeView === 'edit'} tabIndex={0}
+          onScroll={() => { followScroll('preview') }}>
           <div className={css.previewBody}>
             <MarkdownText text={content} codeLabels={{ copyLabel: t('copy'), copiedLabel: t('copied') }}
               onOpenUrl={(href) => { window.open(href, '_blank', 'noopener,noreferrer') }} />

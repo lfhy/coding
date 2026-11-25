@@ -4,7 +4,7 @@
 
 ## 页面结构
 
-笔记占用 `shell.page` 的 `notes` 键。页内目录复用 `SidebarRoot`，与对话侧栏共用宽度和折叠状态；目录行独立滚动，加号与「全部笔记」标题同行，收起时仍留在图标轨顶部。中央顶栏展示已打开文档的横向可滚动标签，目录项负责打开或选中标签，标签可切换或关闭。下方 `NotesDocument` 承载活动文档，头部提供标题和助手入口；共享页头的保存状态与导出菜单只用于 Markdown。Markdown 正文在「编辑／并排／预览」之间切换，中央实际宽度至少 640px 时默认并排；不足时隐藏「并排」，默认编辑，仍可切换到预览。视图切换不丢弃草稿。
+笔记占用 `shell.page` 的 `notes` 键。页内目录复用 `SidebarRoot`，与对话侧栏共用宽度和折叠状态；目录行独立滚动，加号与「全部笔记」标题同行，收起时仍留在图标轨顶部。中央顶栏展示已打开文档的横向可滚动标签，目录项负责打开或选中标签，标签可切换或关闭。下方 `NotesDocument` 承载活动文档，头部提供标题和助手入口；共享页头的保存状态与导出菜单只用于 Markdown。Markdown 正文在「编辑／并排／预览」之间切换，中央实际宽度至少 640px 时默认并排；不足时隐藏「并排」，默认编辑，仍可切换到预览。视图切换不丢弃草稿。并排时源码与预览互相带动滚动：按两侧可滚动余量等比换算，滚到底两侧同时到底；单栏视图不联动。
 
 幻灯片（`.codingppt` 工程目录）通过 `notes.document.ppt` 复用 PPT 工作台；思维导图（`.codingmindmap` 文件）通过会话范围内的 `notes.document.mindmap` 挂载[导图编辑器](../ui-mindmap/README.md)。Word（`.codingword`）与 Excel（`.codingexcel`）通过会话范围内的 `notes.document.office` 挂载 [ui-office](../ui-office/src/client/index.ts) 的开源 Univer 编辑器。笔记页传入相对笔记根目录的 `path` 和显隐状态 `shown`，Word 与 Excel 还传入 `kind`。结构化文档共用目录和标签操作，不进入 Markdown 草稿流程。
 
