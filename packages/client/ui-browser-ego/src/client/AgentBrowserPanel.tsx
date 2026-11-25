@@ -10,7 +10,7 @@ import type {} from 'coding-client-ui-open-in-app/client'
 import type { BrowserEgoController, BrowserEgoView } from './controller.ts'
 import { pointOnFrame } from './geometry.ts'
 import { mergeDownload, type EgoDownloadItem, type EgoDownloadsBridge } from './downloads.ts'
-import { concealEgoSurface, type EgoNativeSurface } from './native.ts'
+import { concealEgoSurface, type EgoNativeSurface, type EgoSurfaceBounds } from './native.ts'
 import { NS } from './locales.ts'
 import type { EgoBrowserCapture } from './settings.ts'
 import { createMsePlayer } from './video.ts'
@@ -56,6 +56,22 @@ function sameHover(left: HoverState | null, right: HoverState | null): boolean {
 const NAVIGATION_KEYS: Readonly<Record<string, number>> = {
   Enter: 13, Backspace: 8, Delete: 46, Home: 36, End: 35,
   ArrowLeft: 37, ArrowUp: 38, ArrowRight: 39, ArrowDown: 40,
+}
+
+/** 撤下原生视图时上报的空矩形。 */
+const EMPTY_BOUNDS = { x: 0, y: 0, width: 0, height: 0 } as const
+
+/** 需要盖住整个窗口的浮层：原图预览、确认框与设置面板都用这组语义。 */
+const OVERLAY_SELECTOR = '[role="dialog"][aria-modal="true"]'
+
+/**
+ * 判断当前是否有整屏浮层压在页面上。
+ * 原生视图永远在网页 DOM 之上，浮层一出现就必须先退让，否则用户看不到也点不到它。
+ * @returns 存在可见的 `aria-modal` 对话框时为 true。
+ */
+function overlayOpen(): boolean {
+  return [...document.querySelectorAll(OVERLAY_SELECTOR)]
+    .some(dialog => dialog.closest('[hidden], [aria-hidden="true"]') === null)
 }
 
 /** 人工地址栏只接受无凭据的 HTTP(S) 地址，不传递可执行或本地文件协议。 */
@@ -205,31 +221,65 @@ export function AgentBrowserPanel({
     }
     let timer: ReturnType<typeof setTimeout> | null = null
     let last = ''
-    const report = (visible: boolean): void => {
-      const rect = node.getBoundingClientRect()
-      const bounds = { x: Math.round(rect.left), y: Math.round(rect.top),
-        width: Math.round(rect.width), height: Math.round(rect.height) }
-      if (visible && (bounds.width < 320 || bounds.height < 200)) return
+    const send = (visible: boolean, bounds: EgoSurfaceBounds): void => {
       const key = `${targetId}|${visible}|${bounds.x},${bounds.y},${bounds.width},${bounds.height}`
       if (key === last) return
       last = key
       void surface.present({ targetId, visible, bounds }).catch(() => undefined)
     }
+    /**
+     * 原生视图固定压在网页内容之上，不服从任何 `z-index`：整屏浮层（原图预览、确认框、
+     * 设置）、面板自己的下载浮层、被主内容页顶掉的工作台列出现时都必须先撤回视图，
+     * 否则用户看不到也点不到浮层。
+     * @returns 页面此刻需要让出窗口时为 true。
+     */
+    const retreated = (): boolean => overlayOpen() || downloadsOpen || node.closest('[inert]') !== null
+    const report = (): void => {
+      if (retreated()) {
+        send(false, EMPTY_BOUNDS)
+        return
+      }
+      const rect = node.getBoundingClientRect()
+      const bounds = { x: Math.round(rect.left), y: Math.round(rect.top),
+        width: Math.round(rect.width), height: Math.round(rect.height) }
+      // 面板被收窄到放不下页面时同样撤回；留着旧矩形会把视图压在相邻列上。
+      if (bounds.width < 320 || bounds.height < 200) {
+        send(false, EMPTY_BOUNDS)
+        return
+      }
+      send(true, bounds)
+    }
     const schedule = (): void => {
       if (timer !== null) clearTimeout(timer)
-      timer = setTimeout(() => { timer = null; report(true) }, 120)
+      timer = setTimeout(() => { timer = null; report() }, 120)
     }
-    report(true)
+    report()
     const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(schedule)
     observer?.observe(node)
+    /**
+     * 只在让位状态翻转时重新上报：聊天流式输出会持续改 DOM，不能每次变更都读布局。
+     * 让位必须立刻生效（浮层已经在画了），恢复则走去抖，等浮层收起动画结束后再放回视图。
+     */
+    let retreating = retreated()
+    const overlays = new MutationObserver(() => {
+      const next = retreated()
+      if (next === retreating) return
+      retreating = next
+      if (next) report()
+      else schedule()
+    })
+    // 浮层由 body portal 或 `shell.overlay` 挂载；观察整棵 body 才能看到它们。
+    overlays.observe(document.body, { childList: true, subtree: true,
+      attributes: true, attributeFilter: ['role', 'aria-modal', 'aria-hidden', 'hidden', 'inert'] })
     globalThis.addEventListener('resize', schedule)
     return () => {
       if (timer !== null) clearTimeout(timer)
       observer?.disconnect()
+      overlays.disconnect()
       globalThis.removeEventListener('resize', schedule)
       concealEgoSurface(surface, targetId)
     }
-  }, [surface, shown, selected?.targetId])
+  }, [surface, shown, selected?.targetId, downloadsOpen])
   const videoTarget = selected?.targetId ?? null
   // 只有用户选择视频后端、Host 报告 fMP4 就绪且上一次播放没有失败时才用 MSE。
   const videoMode = shown && settings.backend === 'ffmpeg' && videoMime !== null && !videoFailed
