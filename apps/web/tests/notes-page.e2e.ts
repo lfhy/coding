@@ -104,6 +104,17 @@ describe('Web 笔记工作区', () => {
     const revised = '# Release checklist\n\n- Review docs\n- Check notes layout\n'
     await editor.fill(revised)
     await expect.poll(async () => (await scaffold.ctx.fileLibrary.readNote('Release notes.md')).content).toBe(revised)
+
+    // 选中两行按 Tab 逐行缩进、Shift+Tab 退回，键盘事件由真实浏览器派发。
+    await editor.focus()
+    await editor.evaluate((node: HTMLTextAreaElement) => {
+      node.setSelectionRange(node.value.indexOf('- Review docs'), node.value.length)
+    })
+    await page.keyboard.press('Tab')
+    expect(await editor.inputValue()).toBe('# Release checklist\n\n  - Review docs\n  - Check notes layout\n')
+    await page.keyboard.press('Shift+Tab')
+    expect(await editor.inputValue()).toBe(revised)
+
     const assistantInput = page.locator('[data-page-assistant-track] textarea:visible').first()
     await dock.getByRole('button', { name: 'Summarize', exact: true }).click()
     const prompt = await assistantInput.inputValue()

@@ -565,6 +565,41 @@ describe('NotesPage', () => {
     expect(state.saveCalls).toEqual([{ path: 'a.md', content: '- [ ] `hello` a', baseMtimeMs: 1000 }])
   })
 
+  it('多行选区按 Tab 逐行缩进，Shift+Tab 退回一级；没有选区时 Tab 交给浏览器', async () => {
+    makeServer()
+    await mount()
+    const editor = screen.getByRole<HTMLTextAreaElement>('textbox', { name: '原始文本' })
+    fireEvent.input(editor, { target: { value: '- a\n- b\n- c' } })
+    editor.setSelectionRange(0, 7)
+    fireEvent.keyDown(editor, { key: 'Tab' })
+    expect(editor.value).toBe('  - a\n  - b\n- c')
+    // 缩进后选区覆盖整行，再次 Tab 或 Shift+Tab 都在同一批行上继续。
+    expect([editor.selectionStart, editor.selectionEnd]).toEqual([0, 11])
+    fireEvent.keyDown(editor, { key: 'Tab', shiftKey: true })
+    expect(editor.value).toBe('- a\n- b\n- c')
+    // 单行选区也按整行处理，缩进一格后可以退回来。
+    editor.setSelectionRange(1, 2)
+    fireEvent.keyDown(editor, { key: 'Tab' })
+    expect(editor.value).toBe('  - a\n- b\n- c')
+    fireEvent.keyDown(editor, { key: 'Tab', shiftKey: true, altKey: true })
+    expect(editor.value).toBe('  - a\n- b\n- c')
+    editor.setSelectionRange(0, 0)
+    expect(fireEvent.keyDown(editor, { key: 'Tab' })).toBe(true)
+    expect(editor.value).toBe('  - a\n- b\n- c')
+    // 顶格的行退不动，也不把焦点移出去。
+    editor.setSelectionRange(6, 9)
+    expect(fireEvent.keyDown(editor, { key: 'Tab', shiftKey: true })).toBe(false)
+    expect(editor.value).toBe('  - a\n- b\n- c')
+    // 组合输入期间的 Tab 不按行缩进。
+    editor.setSelectionRange(0, 5)
+    fireEvent.compositionStart(editor)
+    expect(fireEvent.keyDown(editor, { key: 'Tab', isComposing: true })).toBe(true)
+    expect(editor.value).toBe('  - a\n- b\n- c')
+    fireEvent.compositionEnd(editor)
+    fireEvent.scroll(editor)
+    fireEvent.input(editor, { target: { value: 'hello a' } })
+  })
+
   it('工具栏插入标题、粗体与链接，行号不写入笔记', async () => {
     makeServer()
     await mount()
