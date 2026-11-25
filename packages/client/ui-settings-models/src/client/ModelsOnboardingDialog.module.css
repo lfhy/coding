@@ -1,5 +1,4 @@
 .layout { display: flex; flex-direction: column; min-height: 0; height: 100%; }
-.description { flex: none; margin: 0; padding: 0 28px 20px; font-size: 14px; line-height: 22px; color: var(--dsw-alias-label-secondary); }
 .workspace { flex: 1; min-height: 0; overflow: hidden; border-top: 1px solid var(--dsw-alias-border-l2); border-bottom: 1px solid var(--dsw-alias-border-l2); }
 .footer { flex: none; display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; min-width: 0; padding: 16px 28px 20px; }
 .feedback { align-self: center; min-width: 0; max-width: 360px; }
@@ -19,4 +18,4 @@
 .start:disabled { opacity: .45; cursor: default; }
 .start:focus-visible, .retry:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: 2px; }
 @media (max-width: 760px) { .footer { align-items: stretch; flex-direction: column; } .feedback { align-self: stretch; max-width: none; } .actions { width: 100%; } .modelField { flex: 1; min-width: 0; } }
-@media (max-width: 560px) { .description { padding: 0 20px 16px; } .footer { padding: 12px 20px 16px; } .actions { flex-direction: column; align-items: stretch; } .start { width: 100%; } }
+@media (max-width: 560px) { .footer { padding: 12px 20px 16px; } .actions { flex-direction: column; align-items: stretch; } .start { width: 100%; } }

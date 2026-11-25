@@ -85,7 +85,8 @@ export function ModelsOnboardingDialog(props: ModelsOnboardingDialogProps): Reac
   const diagnostics = (() => {
     switch (readiness.kind) {
       case 'loading': return t('onboardingLoading')
-      case 'needs-selection': return t('onboardingSelectHint')
+      // 已有可选模型时不再额外写提示，默认模型下拉与「开始使用」本身说明下一步。
+      case 'needs-selection': return undefined
       case 'needs-setup':
         switch (readiness.reason) {
           case 'no-provider': return t(providerUnavailable ? 'onboardingProviderUnavailable' : 'onboardingNoProvider')
@@ -107,7 +108,6 @@ export function ModelsOnboardingDialog(props: ModelsOnboardingDialogProps): Reac
   return (
     <OnboardingModal title={t('onboardingTitle')} focusTitle manageInert={false}>
       <div className={styles.layout}>
-        <p className={styles.description}>{t('onboardingDescription')}</p>
         <div className={styles.workspace}>
           {state.hasLoaded
             ? <ModelsSection controller={controller} useSnapshot={useModels}
@@ -115,11 +115,12 @@ export function ModelsOnboardingDialog(props: ModelsOnboardingDialogProps): Reac
         </div>
         <div className={styles.footer}>
           <div className={styles.feedback}>
-            <p className={readiness.kind === 'unavailable' || providerUnavailable ? styles.error : styles.hint}
-              role={readiness.kind === 'unavailable' || providerUnavailable ? 'alert' : 'status'}>
-              {diagnostics}{readiness.kind === 'unavailable' && readiness.detail !== undefined
-                ? `：${readiness.detail}` : ''}
-            </p>
+            {diagnostics === undefined ? null
+              : <p className={readiness.kind === 'unavailable' || providerUnavailable ? styles.error : styles.hint}
+                role={readiness.kind === 'unavailable' || providerUnavailable ? 'alert' : 'status'}>
+                {diagnostics}{readiness.kind === 'unavailable' && readiness.detail !== undefined
+                  ? `：${readiness.detail}` : ''}
+              </p>}
             {state.onboardingModelFailures.length > 0 && readiness.kind === 'needs-selection'
               ? <p className={styles.error} role="alert">
                 {t('onboardingSomeCatalogFailed')}：{state.onboardingModelFailures

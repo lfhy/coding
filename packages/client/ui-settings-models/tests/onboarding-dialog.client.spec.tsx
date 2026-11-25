@@ -21,6 +21,11 @@ afterEach(() => {
   document.getElementById('root')?.remove()
 })
 
+/** 等到频道与模型目录就绪：默认模型下拉可用即可以开始。 */
+async function awaitStartable(): Promise<void> {
+  await waitFor(() => { expect(screen.getByLabelText<HTMLSelectElement>(en.onboardingModel).disabled).toBe(false) })
+}
+
 let rpcId = 0
 function ok<T>(value: T): RpcResponse<T> {
   return { rpcId: `onboarding-${rpcId++}` as never, result: { ok: true, value } }
@@ -186,7 +191,6 @@ describe('ModelsOnboardingDialog', () => {
     expect(screen.queryByRole('dialog')).toBeNull()
     await screen.findByText(en.onboardingProviderUnavailable)
     const dialog = screen.getByRole('dialog', { name: en.onboardingTitle })
-    expect(screen.getByText(en.onboardingDescription)).toBeTruthy()
     expect(within(dialog).getByRole<HTMLButtonElement>('button', { name: en.onboardingStart }).disabled).toBe(true)
     expect(h.complete).not.toHaveBeenCalled()
     expect(h.openSection).not.toHaveBeenCalled()
@@ -207,7 +211,7 @@ describe('ModelsOnboardingDialog', () => {
   it('keeps the selected channel and unsaved draft mounted throughout a refresh', async () => {
     const h = harness({ secondProvider: true, configured: true, models: true })
     render(<ModelsOnboardingDialog {...h.props} />)
-    await screen.findByText(en.onboardingSelectHint)
+    await awaitStartable()
     fireEvent.click(screen.getByRole('button', { name: /^Other AI/ }))
     expect(screen.getByRole('main', { name: 'Other AI' })).toBeTruthy()
     const channelName = screen.getByLabelText<HTMLInputElement>(en.channelName)
@@ -225,7 +229,7 @@ describe('ModelsOnboardingDialog', () => {
     expect(selector.disabled).toBe(true)
     expect(screen.getByRole<HTMLButtonElement>('button', { name: en.onboardingStart }).disabled).toBe(true)
     await act(async () => { release(); await refresh })
-    await screen.findByText(en.onboardingSelectHint)
+    await awaitStartable()
     expect(screen.getByRole('main', { name: 'Other AI' })).toBeTruthy()
     expect(screen.getByLabelText<HTMLInputElement>(en.channelName)).toBe(channelName)
     expect(channelName.value).toBe('Uncommitted channel')
@@ -264,7 +268,7 @@ describe('ModelsOnboardingDialog', () => {
   it('preserves drafts and refuses completion when the held settings mirror fails to refresh', async () => {
     const h = harness({ configured: true, models: true })
     render(<ModelsOnboardingDialog {...h.props} />)
-    await screen.findByText(en.onboardingSelectHint)
+    await awaitStartable()
     const key = screen.getByLabelText<HTMLInputElement>(en.keyInput)
     fireEvent.change(key, { target: { value: 'sk-held-draft' } })
     h.setSettingsError('settings refresh offline')
@@ -311,7 +315,7 @@ describe('ModelsOnboardingDialog', () => {
   it('offers another provider model and skips when a saved default already matches', async () => {
     const h = harness({ provider: 'other', configured: true, models: true })
     const view = render(<ModelsOnboardingDialog {...h.props} />)
-    await screen.findByText(en.onboardingSelectHint)
+    await awaitStartable()
     expect(screen.getByRole('option', { name: /Other AI.*Model One/ })).toBeTruthy()
     expect(h.complete).not.toHaveBeenCalled()
     view.unmount()
@@ -354,7 +358,7 @@ describe('ModelsOnboardingDialog', () => {
   it('reports a failed default write without closing', async () => {
     const h = harness({ configured: true, models: true, writeError: 'revision conflict' })
     render(<ModelsOnboardingDialog {...h.props} />)
-    await screen.findByText(en.onboardingSelectHint)
+    await awaitStartable()
     fireEvent.change(screen.getByLabelText(en.onboardingModel), { target: { value: 'deepseek-official\u0000model-one' } })
     fireEvent.click(screen.getByRole('button', { name: en.onboardingStart }))
     expect(await screen.findByText('revision conflict')).toBeTruthy()
@@ -370,7 +374,7 @@ describe('ModelsOnboardingDialog', () => {
     const appRoot = document.getElementById('root')!
     appRoot.inert = true
     const view = render(<ModelsOnboardingDialog {...h.props} />)
-    await screen.findByText(en.onboardingSelectHint)
+    await awaitStartable()
     expect(appRoot.inert).toBe(true)
     expect(document.activeElement).toBe(screen.getByRole('heading', { name: en.onboardingTitle }))
     fireEvent.keyDown(document, { key: 'Escape' })
