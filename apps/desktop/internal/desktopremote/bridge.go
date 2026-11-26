@@ -610,7 +610,7 @@ func isRetiredCleanupRoute(method, requestPath string) bool {
 
 func allowedBridgeRoute(method, path string) bool {
 	switch path {
-	case "/v1/resolve", "/v1/stat", "/v1/directories", "/v1/read_file", "/v1/read_bytes", "/v1/update_file", "/v1/edit_file", "/v1/exec", "/v1/search", "/v1/code/start", "/v1/code/next", "/v1/code/reply", "/v1/code/cancel", "/v1/terminals/start", "/v1/terminals/read", "/v1/terminals/write", "/v1/terminals/resize", "/v1/terminals/foreground", "/v1/terminals/signal", "/v1/terminals/terminate", "/v1/processes/resolve", "/v1/processes/start", "/v1/processes/read", "/v1/processes/write", "/v1/processes/wait", "/v1/processes/kill":
+	case "/v1/resolve", "/v1/stat", "/v1/directories", "/v1/read_file", "/v1/read_bytes", "/v1/update_file", "/v1/edit_file", "/v1/remove_file", "/v1/exec", "/v1/search", "/v1/code/start", "/v1/code/next", "/v1/code/reply", "/v1/code/cancel", "/v1/terminals/start", "/v1/terminals/read", "/v1/terminals/write", "/v1/terminals/resize", "/v1/terminals/foreground", "/v1/terminals/signal", "/v1/terminals/terminate", "/v1/processes/resolve", "/v1/processes/start", "/v1/processes/read", "/v1/processes/write", "/v1/processes/wait", "/v1/processes/kill":
 		return method == http.MethodPost
 	default:
 		return false

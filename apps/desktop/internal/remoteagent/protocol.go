@@ -191,3 +191,16 @@ type SearchResponse struct {
 	Truncated   bool          `json:"truncated"`
 	TruncatedBy []string      `json:"truncatedBy,omitempty"`
 }
+
+// RemoveRequest 请求删除一个远端文件或目录。
+type RemoveRequest struct {
+	Root string `json:"root,omitempty"`
+	Path string `json:"path"`
+	// Recursive 声明目标目录连同后代一起删除；缺省时目录以 is-directory 拒绝。
+	Recursive bool `json:"recursive,omitempty"`
+}
+
+// RemoveResponse 返回被删除条目的类型，供调用方区分文件与整棵子树。
+type RemoveResponse struct {
+	Type string `json:"type"`
+}

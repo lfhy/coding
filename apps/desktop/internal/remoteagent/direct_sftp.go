@@ -107,7 +107,7 @@ func (backend *directSFTPBackend) ListDirectories(ctx context.Context, raw strin
 
 // Proxy 对受 bridge 绑定的 root 再执行路径约束；其他 agent 路由不可用。
 func (backend *directSFTPBackend) Proxy(ctx context.Context, method, route string, body []byte) (ProxyResponse, error) {
-	if method != http.MethodPost || (route != "/v1/resolve" && route != "/v1/stat" && route != "/v1/directories" && route != "/v1/read_file" && route != "/v1/read_bytes" && route != "/v1/update_file" && route != "/v1/edit_file") {
+	if method != http.MethodPost || (route != "/v1/resolve" && route != "/v1/stat" && route != "/v1/directories" && route != "/v1/read_file" && route != "/v1/read_bytes" && route != "/v1/update_file" && route != "/v1/edit_file" && route != "/v1/remove_file") {
 		return ProxyResponse{}, errors.New("unsupported direct SFTP route")
 	}
 	if len(body) > maxRequestBytes {
@@ -126,6 +126,8 @@ func (backend *directSFTPBackend) Proxy(ctx context.Context, method, route strin
 		target = &WriteRequest{}
 	case "/v1/edit_file":
 		target = &EditRequest{}
+	case "/v1/remove_file":
+		target = &RemoveRequest{}
 	default:
 		target = &request
 	}
@@ -151,11 +153,13 @@ func (backend *directSFTPBackend) Proxy(ctx context.Context, method, route strin
 		request.Root, request.Path = value.Root, value.Path
 	case *EditRequest:
 		request.Root, request.Path = value.Root, value.Path
+	case *RemoveRequest:
+		request.Root, request.Path = value.Root, value.Path
 	}
 	if !path.IsAbs(request.Root) || strings.IndexByte(request.Root, 0) >= 0 {
 		return directError(fail(http.StatusBadRequest, "invalid-path", "root must be an absolute path")), nil
 	}
-	name, err := backend.resolve(ctx, request.Root, request.Path, noFollow || route == "/v1/update_file" || route == "/v1/edit_file")
+	name, err := backend.resolve(ctx, request.Root, request.Path, noFollow || route == "/v1/update_file" || route == "/v1/edit_file" || route == "/v1/remove_file")
 	if err != nil {
 		return directError(err), nil
 	}
@@ -223,6 +227,8 @@ func (backend *directSFTPBackend) Proxy(ctx context.Context, method, route strin
 		result, err = backend.update(ctx, request.Root, name, *target.(*WriteRequest))
 	case "/v1/edit_file":
 		result, err = backend.edit(ctx, request.Root, name, *target.(*EditRequest))
+	case "/v1/remove_file":
+		result, err = backend.remove(ctx, name, *target.(*RemoveRequest))
 	}
 	if err != nil {
 		return directError(err), nil
@@ -885,6 +891,74 @@ func (backend *directSFTPBackend) edit(ctx context.Context, root, name string, r
 		return EditResponse{}, err
 	}
 	return EditResponse{Version: write.Version, Before: before, After: after}, nil
+}
+
+// remove 经 SFTP 删除一个条目。目录必须显式声明递归；递归遍历用 Lstat 判定子项
+// 类型，因此符号链接作为条目本身删除，绝不跟随到它的目标。
+func (backend *directSFTPBackend) remove(ctx context.Context, name string, request RemoveRequest) (RemoveResponse, error) {
+	if err := backend.check(ctx); err != nil {
+		return RemoveResponse{}, err
+	}
+	info, err := backend.sftp.Lstat(name)
+	if err != nil {
+		return RemoveResponse{}, directRemoteError(err)
+	}
+	kind := "other"
+	switch {
+	case info.IsDir():
+		kind = "directory"
+	case info.Mode().IsRegular():
+		kind = "file"
+	}
+	if kind == "directory" {
+		if !request.Recursive {
+			return RemoveResponse{}, fail(http.StatusConflict, "is-directory", "target is a directory; pass recursive to delete it and everything inside")
+		}
+		if err := backend.removeTree(ctx, name); err != nil {
+			return RemoveResponse{}, err
+		}
+		return RemoveResponse{Type: kind}, nil
+	}
+	if err := backend.check(ctx); err != nil {
+		return RemoveResponse{}, err
+	}
+	if err := backend.sftp.Remove(name); err != nil {
+		return RemoveResponse{}, directRemoteError(err)
+	}
+	return RemoveResponse{Type: kind}, nil
+}
+
+// removeTree 深度优先删除一棵远端目录树，先删子项再删目录本身。
+func (backend *directSFTPBackend) removeTree(ctx context.Context, name string) error {
+	if err := backend.check(ctx); err != nil {
+		return err
+	}
+	entries, err := backend.sftp.ReadDir(name)
+	if err != nil {
+		return directRemoteError(err)
+	}
+	for _, entry := range entries {
+		if err := backend.check(ctx); err != nil {
+			return err
+		}
+		child := path.Join(name, entry.Name())
+		if entry.IsDir() {
+			if err := backend.removeTree(ctx, child); err != nil {
+				return err
+			}
+			continue
+		}
+		if err := backend.sftp.Remove(child); err != nil {
+			return directRemoteError(err)
+		}
+	}
+	if err := backend.check(ctx); err != nil {
+		return err
+	}
+	if err := backend.sftp.RemoveDirectory(name); err != nil {
+		return directRemoteError(err)
+	}
+	return nil
 }
 
 func directCommitUnknown() error {

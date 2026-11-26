@@ -495,3 +495,98 @@ func TestDirectSFTPRejectsEscapesAndInvalidText(t *testing.T) {
 		}
 	}
 }
+
+func TestDirectSFTPRemove(t *testing.T) {
+	server, err := sshfixture.StartWithoutForwarding()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer server.Close()
+	client, err := ssh.Dial("tcp", net.JoinHostPort(server.Host, fmt.Sprint(server.Port)), &ssh.ClientConfig{
+		User: server.Username, Auth: []ssh.AuthMethod{ssh.Password(server.Password)}, HostKeyCallback: ssh.InsecureIgnoreHostKey(), Timeout: time.Second,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+	backend, err := newDirectSFTPBackend(client)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer backend.Close()
+	call := func(route string, request any, status int, result any) {
+		t.Helper()
+		body, err := json.Marshal(request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		response, err := backend.Proxy(context.Background(), http.MethodPost, route, body)
+		if err != nil || response.Status != status {
+			t.Fatalf("%s = %d %s, %v; want %d", route, response.Status, response.Body, err, status)
+		}
+		if result != nil && status == http.StatusOK {
+			if err := json.Unmarshal(response.Body, result); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	root := server.RemoteRoot
+	file := filepath.Join(root, "remove-me.txt")
+	if err := os.WriteFile(file, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var removedFile RemoveResponse
+	call("/v1/remove_file", RemoveRequest{Root: root, Path: "remove-me.txt"}, http.StatusOK, &removedFile)
+	if removedFile.Type != "file" {
+		t.Fatalf("removed file = %+v", removedFile)
+	}
+	if _, err := os.Stat(file); !os.IsNotExist(err) {
+		t.Fatalf("file still exists: %v", err)
+	}
+	call("/v1/remove_file", RemoveRequest{Root: root, Path: "remove-me.txt"}, http.StatusNotFound, nil)
+
+	tree := filepath.Join(root, "tree", "deep")
+	if err := os.MkdirAll(tree, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(tree, "leaf.txt"), []byte("leaf"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// 目录未声明递归时拒绝，子树原样保留。
+	call("/v1/remove_file", RemoveRequest{Root: root, Path: "tree"}, http.StatusConflict, nil)
+	if _, err := os.Stat(filepath.Join(tree, "leaf.txt")); err != nil {
+		t.Fatalf("refused delete changed the tree: %v", err)
+	}
+	var removedTree RemoveResponse
+	call("/v1/remove_file", RemoveRequest{Root: root, Path: "tree", Recursive: true}, http.StatusOK, &removedTree)
+	if removedTree.Type != "directory" {
+		t.Fatalf("removed tree = %+v", removedTree)
+	}
+	if _, err := os.Stat(filepath.Join(root, "tree")); !os.IsNotExist(err) {
+		t.Fatalf("tree still exists: %v", err)
+	}
+
+	// 符号链接作为条目本身删除，绝不跟随到目标。
+	target := filepath.Join(root, "link-target.txt")
+	if err := os.WriteFile(target, []byte("keep"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// 相对链接：测试夹具把 SFTP 关在临时根内，绝对链接目标会被它判成越界。
+	link := filepath.Join(root, "link.txt")
+	if err := os.Symlink("link-target.txt", link); err != nil {
+		t.Fatal(err)
+	}
+	var removedLink RemoveResponse
+	call("/v1/remove_file", RemoveRequest{Root: root, Path: "link.txt"}, http.StatusOK, &removedLink)
+	// 条目类型按 SFTP Lstat 判定；不同服务端对符号链接的呈现不一致，这里只要求
+	// 不是目录，并以下面的「目标仍在、链接消失」验证没有跟随链接。
+	if removedLink.Type == "directory" {
+		t.Fatalf("removed link = %+v", removedLink)
+	}
+	if _, err := os.Lstat(link); !os.IsNotExist(err) {
+		t.Fatalf("link still exists: %v", err)
+	}
+	if data, err := os.ReadFile(target); err != nil || string(data) != "keep" {
+		t.Fatalf("link target = %q, %v", data, err)
+	}
+}

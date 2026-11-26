@@ -185,6 +185,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("/v1/read_bytes", s.handleReadBytes)
 	mux.HandleFunc("/v1/update_file", s.handleUpdate)
 	mux.HandleFunc("/v1/edit_file", s.handleEdit)
+	mux.HandleFunc("/v1/remove_file", s.handleRemove)
 	mux.HandleFunc("/v1/exec", s.handleExec)
 	mux.HandleFunc("/v1/search", s.handleSearch)
 	mux.HandleFunc("/v1/code/start", s.handleCodeStart)
@@ -222,7 +223,7 @@ func allowedAgentRoute(method, path string) bool {
 	switch path {
 	case "/v1/health":
 		return method == http.MethodGet
-	case "/v1/resolve", "/v1/stat", "/v1/directories", "/v1/read_file", "/v1/read_bytes", "/v1/update_file", "/v1/edit_file", "/v1/exec", "/v1/search", "/v1/code/start", "/v1/code/next", "/v1/code/reply", "/v1/code/cancel", "/v1/terminals/start", "/v1/terminals/read", "/v1/terminals/write", "/v1/terminals/resize", "/v1/terminals/foreground", "/v1/terminals/signal", "/v1/terminals/terminate", "/v1/processes/resolve", "/v1/processes/start", "/v1/processes/read", "/v1/processes/write", "/v1/processes/wait", "/v1/processes/kill", "/v1/shutdown":
+	case "/v1/resolve", "/v1/stat", "/v1/directories", "/v1/read_file", "/v1/read_bytes", "/v1/update_file", "/v1/edit_file", "/v1/remove_file", "/v1/exec", "/v1/search", "/v1/code/start", "/v1/code/next", "/v1/code/reply", "/v1/code/cancel", "/v1/terminals/start", "/v1/terminals/read", "/v1/terminals/write", "/v1/terminals/resize", "/v1/terminals/foreground", "/v1/terminals/signal", "/v1/terminals/terminate", "/v1/processes/resolve", "/v1/processes/start", "/v1/processes/read", "/v1/processes/write", "/v1/processes/wait", "/v1/processes/kill", "/v1/shutdown":
 		return method == http.MethodPost
 	default:
 		return false
@@ -405,6 +406,30 @@ func (s *Server) handleEdit(w http.ResponseWriter, r *http.Request) {
 		}
 		return resolveScopedPath(request.Root, request.Path, true)
 	})
+	if err != nil {
+		writeAgentError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+// handleRemove 删除一个远端条目。目录只有显式递归才整棵删除，删除的始终是
+// 路径本身（noFollow），因此替换进来的符号链接不会被跟随。
+func (s *Server) handleRemove(w http.ResponseWriter, r *http.Request) {
+	var request RemoveRequest
+	if !decodeJSON(w, r, &request) {
+		return
+	}
+	path, err := resolveScopedPath(request.Root, request.Path, true)
+	if err != nil {
+		writeAgentError(w, err)
+		return
+	}
+	if err := activeRequest(r.Context()); err != nil {
+		writeAgentError(w, err)
+		return
+	}
+	result, err := removePath(path, request.Recursive)
 	if err != nil {
 		writeAgentError(w, err)
 		return
@@ -854,6 +879,35 @@ func resolvePath(raw string) (string, error) {
 // 的基准目录，不是访问边界：远端工作区可以访问整台远端主机，文件操作最终受
 // SSH 账户权限约束。noFollow 仅保留最后一个路径项，供 lstat 与拒绝符号链接
 // 写入的 mutation 使用。
+// removePath 删除一个已规范化的远端条目。目录必须显式声明递归，否则以
+// is-directory 拒绝；递归删除不跟随符号链接（os.RemoveAll 使用 lstat）。
+func removePath(path string, recursive bool) (RemoveResponse, error) {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return RemoveResponse{}, err
+	}
+	kind := "other"
+	switch {
+	case info.IsDir():
+		kind = "directory"
+	case info.Mode().IsRegular():
+		kind = "file"
+	}
+	if kind == "directory" {
+		if !recursive {
+			return RemoveResponse{}, fail(http.StatusConflict, "is-directory", "target is a directory; pass recursive to delete it and everything inside")
+		}
+		if err := os.RemoveAll(path); err != nil {
+			return RemoveResponse{}, err
+		}
+		return RemoveResponse{Type: kind}, nil
+	}
+	if err := os.Remove(path); err != nil {
+		return RemoveResponse{}, err
+	}
+	return RemoveResponse{Type: kind}, nil
+}
+
 func resolveScopedPath(root, raw string, noFollow bool) (string, error) {
 	if strings.TrimSpace(root) == "" {
 		path, err := resolvePath(raw)

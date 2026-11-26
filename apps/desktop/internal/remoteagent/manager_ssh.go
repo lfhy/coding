@@ -719,6 +719,7 @@ func isAgentRoute(method, requestPath string) bool {
 		"/v1/read_bytes":           http.MethodPost,
 		"/v1/update_file":          http.MethodPost,
 		"/v1/edit_file":            http.MethodPost,
+		"/v1/remove_file":          http.MethodPost,
 		"/v1/exec":                 http.MethodPost,
 		"/v1/search":               http.MethodPost,
 		"/v1/code/start":           http.MethodPost,
