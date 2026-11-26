@@ -1,6 +1,6 @@
 # 文件系统
 
-可选的文件系统能力由四个部分组成：[dsh-fs](../../packages/fs/fs) 拥有 `ctx.fs` 以及带可选守卫的原子文本操作；[dsh-fs-local](../../packages/fs/fs-local) 实现本地磁盘后端；[dsh-fs-observation-policy](../../packages/fs/fs-observation-policy) 记录观测到的存在或缺失状态，并通过事件（而非服务）添加新鲜度规则；[dsh-tool-fs](../../packages/fs/tool-fs) 直接执行面向模型的 read/write/edit 调用并渲染窗口。它位于 agent loop（智能体循环）主干之外；替换后端不会改变策略或工具 schema。
+可选的文件系统能力由四个部分组成：[dsh-fs](../../packages/fs/fs) 拥有 `ctx.fs` 以及带可选守卫的原子文本操作；[dsh-fs-local](../../packages/fs/fs-local) 实现本地磁盘后端；[dsh-fs-observation-policy](../../packages/fs/fs-observation-policy) 记录观测到的存在或缺失状态，并通过事件（而非服务）添加新鲜度规则；[dsh-tool-fs](../../packages/fs/tool-fs) 直接执行面向模型的 read/write/edit/delete_file 调用并渲染窗口。它位于 agent loop（智能体循环）主干之外；替换后端不会改变策略或工具 schema。
 
 `dsh-fs-observation-policy` 是可选插件。没有该插件时，`FileSystem` 服务定义、一个提供方和 `dsh-tool-fs` 消费方组成完整且不受约束的文件系统 seam：`write` 无条件创建或覆盖，`edit` 无条件替换字面文本。策略插件通过裁决 `fs/*` waterfall（瀑布式事件）来改变这些操作。移除该插件不会破坏工具，因为工具调用 `ctx.fs` 并分发事件，而不调用策略方法。加载了 `dsh-tool-fs` 的部署也应加载 `dsh-fs-observation-policy`，使默认行为为「先读后写、编辑尽量按观测版本守卫」：写入未读过的文件仍被拒绝，编辑不再要求先读（未观测的编辑没有版本基准，字面量匹配失败时提示先读）。
 
@@ -252,6 +252,7 @@ interface FileReadOutcome {
 type FsErrorCode =
   | 'FS_NOT_FOUND'
   | 'FS_NOT_DIRECTORY'
+  | 'FS_IS_DIRECTORY'
   | 'FS_NOT_TEXT'
   | 'FS_NOT_REGULAR_FILE'
   | 'FS_TOO_LARGE'
@@ -265,7 +266,7 @@ type FsErrorCode =
   | 'FS_ABORTED'
 ```
 
-目录列表使用 `FS_NOT_DIRECTORY`、`FS_PERMISSION_DENIED` 与 `FS_IO_ERROR` 区分已存在但并非目录的目标、被拒绝的列表操作和意外的后端 I/O 失败。`FS_SANDBOX_DENIED` 是强制执行沙箱的后端（`dsh-fs-sandbox`）所作的策略拒绝——模式边界拒绝了写入/编辑——与 `FS_PERMISSION_DENIED`（宿主内核拒绝）不同。`FS_NOT_OBSERVED` 表示策略插件没有此所有者的先前观测记录（或 `createIfAbsent` 遇到了现有文件）。`FS_NOT_FOUND` 也表示策略因确认缺失而拒绝 edit。`FS_STALE_VERSION` 表示后端版本不再与观测到的版本匹配（或提供方本身收到针对缺失目标的 edit）。新鲜度授权没有部分/完整之分，因此不存在 `FS_PARTIAL_OBSERVATION`。
+目录列表使用 `FS_NOT_DIRECTORY`、`FS_PERMISSION_DENIED` 与 `FS_IO_ERROR` 区分已存在但并非目录的目标、被拒绝的列表操作和意外的后端 I/O 失败。`FS_IS_DIRECTORY` 表示 `remove` 收到了没有 `recursive` 的目录目标：递归删除必须显式声明，避免一次调用静默清空整棵子树。`FS_SANDBOX_DENIED` 是强制执行沙箱的后端（`dsh-fs-sandbox`）所作的策略拒绝——模式边界拒绝了写入/编辑——与 `FS_PERMISSION_DENIED`（宿主内核拒绝）不同。`FS_NOT_OBSERVED` 表示策略插件没有此所有者的先前观测记录（或 `createIfAbsent` 遇到了现有文件）。`FS_NOT_FOUND` 也表示策略因确认缺失而拒绝 edit。`FS_STALE_VERSION` 表示后端版本不再与观测到的版本匹配（或提供方本身收到针对缺失目标的 edit）。新鲜度授权没有部分/完整之分，因此不存在 `FS_PARTIAL_OBSERVATION`。
 
 ## 文件 IO 不设超时
 
@@ -283,7 +284,7 @@ type FsErrorCode =
 
 ### 设计：注册表 + 工作区匹配
 
-- `FileSystem` 继续作为**后端**契约（十二个原语）。新增 `FsRegistry` 作为 `ctx.fs` 的服务实例：后端通过 `register(backend, { id, matches(cwd) })` 加入，注册返回 disposer，随 fiber 卸载自动撤销。
+- `FileSystem` 继续作为**后端**契约（十三个原语）。新增 `FsRegistry` 作为 `ctx.fs` 的服务实例：后端通过 `register(backend, { id, matches(cwd) })` 加入，注册返回 disposer，随 fiber 卸载自动撤销。
 - 分派依据：异步方法按 `opts.cwd`（工具层已传入会话工作区）选择后端；`processPath`、`fileUrl`、`contains` 这些同步方法按 `FsTargetKey` 的不透明前缀选择后端，不做 I/O。各后端自带前缀（远端是 `coding-remote-target:v1:`，只读 Git 后端用自有前缀）。
 - 工作区绑定以**显式记录**为准：工作区创建时决定后端（本地、Remote-SSH、将来的 Git 只读视图），把后端 id 记在该工作区的持久化记录上，并由注册表维护一张 `cwd → 后端` 表；打开工作区、恢复会话时按记录装配，而不是每次调用重新推断。`SessionHeader.cwd` 仍是工作区键，后端 id 跟着工作区记录走，因此同一目录可以拥有不同后端的两个工作区。
 - 注册表只在**没有记录**时回退到后端的 `matches(cwd)`（本地兜底、Remote-SSH 占位目录），用于迁移旧工作区与无会话调用（Host API、LSP、open-in-app）。两者都缺失时使用本地后端，保持单后端部署的现有行为。
@@ -307,7 +308,7 @@ type FsErrorCode =
 
 ## 服务与插件
 
-`FileSystem`（`ctx.fs`，abstract）拥有提供方原语：`resolve`、`processPath`、`fileUrl`、`contains`、`stat`、`lstat`、`readText`、`streamText`、`readBytes`、`listDir`、`writeText` 与 `editText`。`dsh-fs-observation-policy` **不注册服务**——它是一个通过 `fs/*` 事件门禁添加策略的插件：根据未见/缺失/存在状态对写入与编辑意图 waterfall 作出决策，并记录 `FsObservation` 值。执行器是 `dsh-tool-fs`：它通过 `ctx.fs` 读取/写入/编辑，分发 waterfall，并 emit 记录事件。下方生成的 [`ctx.fs` 小节](#ctxfs--filesystem-abstract-seam) 展示确切的 `ctx.fs` 签名。
+`FileSystem`（`ctx.fs`，abstract）拥有提供方原语：`resolve`、`processPath`、`fileUrl`、`contains`、`stat`、`lstat`、`readText`、`streamText`、`readBytes`、`listDir`、`writeText`、`editText` 与 `remove`。`dsh-fs-observation-policy` **不注册服务**——它是一个通过 `fs/*` 事件门禁添加策略的插件：根据未见/缺失/存在状态对写入与编辑意图 waterfall 作出决策，并记录 `FsObservation` 值。执行器是 `dsh-tool-fs`：它通过 `ctx.fs` 读取/写入/编辑/删除，分发 waterfall，并 emit 记录事件。下方生成的 [`ctx.fs` 小节](#ctxfs--filesystem-abstract-seam) 展示确切的 `ctx.fs` 签名。
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
@@ -482,11 +483,25 @@ abstract writeText( target: FsTarget, content: string, expected?: FsWriteIntent,
  * @returns the outcome, including the version the edit produced.
  */
 abstract editText( target: FsTarget, edit: FsEditRequest, expected?: { version: FsVersion }, signal?: AbortSignal, sandboxPolicy?: SandboxExecutionPolicy, ): Promise<FsEditOutcome>
+
+/**
+ * 删除一个已解析目标：普通文件删除自身，目录只有在 `recursive` 为 true 时连同后代
+ * 一起删除，否则以 `FS_IS_DIRECTORY` 拒绝。目标缺失报 `FS_NOT_FOUND`。
+ *
+ * 删除落在解析后的目标上，与写入/编辑一致：经符号链接到达的文件删除的是链接目标。
+ * 因此面向模型的工具在调用前用 `lstat` 拒绝链接本身，避免一次删除连带抹掉链接目标。
+ * @param target - 已解析的待删除目标。
+ * @param options - `recursive` 控制目录子树；省略时只接受文件与其它条目。
+ * @param signal - 在进入删除临界区前中止。
+ * @param sandboxPolicy - 本次调用的模式与工作区根；施加沙箱的后端按它围栏，裸后端忽略。
+ * @returns 被删除目标的类型。
+ */
+abstract remove( target: FsTarget, options?: FsRemoveOptions, signal?: AbortSignal, sandboxPolicy?: SandboxExecutionPolicy, ): Promise<FsRemoveOutcome>
 ```
 
 Types: [SandboxExecutionPolicy](sandbox.md)
 
-Source: [`packages/fs/fs/src/index.ts:91`](../../packages/fs/fs/src/index.ts)
+Source: [`packages/fs/fs/src/index.ts:95`](../../packages/fs/fs/src/index.ts)
 
 <a id="fs-events"></a>
 
@@ -509,7 +524,7 @@ Single-slot decision for the next FileSystem.editText. Calling `next()` yields a
 'fs/edit-intent'(target: FsTarget, actor: object | undefined, next: () => { version: FsVersion } | undefined | Promise<{ version: FsVersion } | undefined>): Promise<{ version: FsVersion } | undefined>
 ```
 
-Source: [`packages/fs/fs/src/index.ts:71`](../../packages/fs/fs/src/index.ts)
+Source: [`packages/fs/fs/src/index.ts:75`](../../packages/fs/fs/src/index.ts)
 
 <a id="fsobserved--emit"></a>
 
@@ -530,7 +545,7 @@ Record an authoritative positive or negative observation. Listeners must be sync
 'fs/observed'(target: FsTarget, observation: FsObservation, actor: object | undefined): void
 ```
 
-Source: [`packages/fs/fs/src/index.ts:81`](../../packages/fs/fs/src/index.ts)
+Source: [`packages/fs/fs/src/index.ts:85`](../../packages/fs/fs/src/index.ts)
 
 <a id="fswrite-intent--waterfall"></a>
 
@@ -550,5 +565,5 @@ Single-slot decision for the next FileSystem.writeText. Calling `next()` yields 
 'fs/write-intent'(target: FsTarget, actor: object | undefined, next: () => FsWriteIntent | undefined | Promise<FsWriteIntent | undefined>): Promise<FsWriteIntent | undefined>
 ```
 
-Source: [`packages/fs/fs/src/index.ts:63`](../../packages/fs/fs/src/index.ts)
+Source: [`packages/fs/fs/src/index.ts:67`](../../packages/fs/fs/src/index.ts)
 <!-- END GENERATED cordis-surface -->

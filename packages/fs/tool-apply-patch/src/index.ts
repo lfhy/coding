@@ -3,8 +3,8 @@
  *
  * Responses 原生语法工具直接接收补丁文本；其他协议仍以 JSON `input` 字符串传递。
  * 两者共用 Codex `*** Begin Patch` / `*** End Patch` 封套与执行器，仅支持新建和
- * 编辑：删除和改名会被明确拒绝，因为 `FileSystem` 没有对应原语，需要时由 shell
- * 承担。所有写入仍会经过 `fs/*` 策略监听与提供方的沙箱边界。
+ * 编辑：删除由独立的 `delete_file` 工具承担，改名仍没有原语，因此这两种补丁段
+ * 在这里被明确拒绝。所有写入仍会经过 `fs/*` 策略监听与提供方的沙箱边界。
  *
  * @module coding-tool-apply-patch
  */

@@ -495,7 +495,7 @@ const TOOL_PACKAGES: ToolPackage[] = [
       await ctx.plugin(ToolApplyPatch)
     },
     note:
-      'Codex-style patch envelope over the filesystem seam. Add File and Update File are supported; Delete File and Move to are explicitly rejected because the filesystem service has no delete or rename primitive.',
+      'Codex-style patch envelope over the filesystem seam. Add File and Update File are supported; Delete File and Move to are explicitly rejected because deletion belongs to `delete_file` and the filesystem service has no rename primitive.',
   },
   {
     pkg: 'coding-tool-fs-search',

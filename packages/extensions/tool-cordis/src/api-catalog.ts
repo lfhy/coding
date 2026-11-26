@@ -821,7 +821,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'async createSessionPage(sessionId: SessionId, url: string): Promise<boolean>',
-        description: '仅为空会话创建自己的任务空间页面；CLI 在该空间创建或使用空白锚页，不选全局标签。',
+        description: '仅为空会话创建自己的任务空间页面；CLI 在该空间创建或使用空白锚页，不选全局标签。 空间自带的空白锚页就是本会话的首张页面：直接导航它，与 `pages` 入口和模型侧 `ego_navigate` 的复用规则一致，不在标签栏里留下一张多余的「新标签页」。',
         parameters: [{ name: 'sessionId', description: '已在 sessions 服务中确认存在的会话。' }, { name: 'url', description: 'Host 已验证的绝对导航地址。' }],
         returns: '页面归属写入会话空间并确认仍存在时为 true。',
       },
@@ -830,6 +830,13 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: '在会话自己的 Agent 浏览器空间里打开一页本地 HTML 并截图。\n\n页面进的是该会话的正常空间，因此右侧「Agent 浏览器」标签会像别的页面一样显示它； 截图与页面共用同一个标签，不额外开一套渲染通道。同路径再次捕获时导航到 唯一 URL，等待新文档完成加载后才截图；截图期间临时隐藏浏览器自身的光标标记， 随后恢复页面。调用方负责先写好本地文件。',
         parameters: [{ name: 'options', description: '会话、本地页面路径、视口尺寸与输出路径。' }],
         returns: '截图写入成功时为 true。',
+      },
+      {
+        signature: 'async emulateViewport(options: { readonly sessionId: SessionId readonly input: Record<string, unknown> }): Promise<ViewportOutcome>',
+        description: '为当前活动页设置或清除设备模拟视口。\n\n模型要在别的宽度或移动端语义下判断响应式布局时使用：覆盖由 CDP 挂在该页上， 本组装的常驻执行器让它跨工具调用保持，直到再次调用并 `reset` 或页面关闭。 结果里的宽高是页面自身读回的实测值，不是请求值的回显。 同时记一次可见活动，让工作台为会话展开浏览器面板——布局变化是用户能看到的。',
+        parameters: [{ name: 'options', description: '调用会话与模型给出的原始视口参数。' }],
+        returns: '实测视口，或可操作的失败原因（会话已结束、没有页面、脚本失败）。',
+        throws: ['Error - 参数缺失、越界或互相矛盾时抛出面向模型的说明。'],
       },
       {
         signature: 'async createBlankPage(sessionId: SessionId): Promise<string | null>',
@@ -1139,6 +1146,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Atomically edit literal text. When supplied, the version guard is checked before matching so stale content reports `FS_STALE_VERSION`; omission edits the current content without a freshness precondition.',
         parameters: [{ name: 'target', description: 'the resolved target to edit.' }, { name: 'edit', description: 'the literal search/replace request.' }, { name: 'expected', description: 'the version guard; omit for an unconditional edit.' }, { name: 'signal', description: 'aborts before atomic publication takes effect.' }, { name: 'sandboxPolicy', description: 'the per-call mode and workspace root this edit runs under; a sandboxing backend fences the edit by it, the bare backend ignores it. Omit to leave the backend its own default.' }],
         returns: 'the outcome, including the version the edit produced.',
+      },
+      {
+        signature: 'abstract remove( target: FsTarget, options?: FsRemoveOptions, signal?: AbortSignal, sandboxPolicy?: SandboxExecutionPolicy, ): Promise<FsRemoveOutcome>',
+        description: '删除一个已解析目标：普通文件删除自身，目录只有在 `recursive` 为 true 时连同后代 一起删除，否则以 `FS_IS_DIRECTORY` 拒绝。目标缺失报 `FS_NOT_FOUND`。\n\n删除落在解析后的目标上，与写入/编辑一致：经符号链接到达的文件删除的是链接目标。 因此面向模型的工具在调用前用 `lstat` 拒绝链接本身，避免一次删除连带抹掉链接目标。',
+        parameters: [{ name: 'target', description: '已解析的待删除目标。' }, { name: 'options', description: '`recursive` 控制目录子树；省略时只接受文件与其它条目。' }, { name: 'signal', description: '在进入删除临界区前中止。' }, { name: 'sandboxPolicy', description: '本次调用的模式与工作区根；施加沙箱的后端按它围栏，裸后端忽略。' }],
+        returns: '被删除目标的类型。',
       },
     ],
   },
@@ -4362,6 +4375,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface FsPathInfo {\n    version: FsVersion;\n    type: \'file\' | \'directory\' | \'symlink\' | \'other\';\n    size?: number;\n}',
   },
   {
+    name: 'FsRemoveOptions',
+    declaration: 'export interface FsRemoveOptions {\n    recursive?: boolean;\n}',
+  },
+  {
+    name: 'FsRemoveOutcome',
+    declaration: 'export interface FsRemoveOutcome {\n    type: \'file\' | \'directory\' | \'other\';\n}',
+  },
+  {
     name: 'FsTarget',
     declaration: 'export interface FsTarget {\n    targetKey: FsTargetKey;\n    displayPath: string;\n}',
   },
@@ -6156,6 +6177,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'UserQuestionProvider',
     declaration: 'export interface UserQuestionProvider {\n    ask(request: AskUserQuestionRequest): Promise<AskUserQuestionAnswer>;\n}',
+  },
+  {
+    name: 'ViewportMeasurement',
+    declaration: 'export interface ViewportMeasurement {\n    readonly width: number;\n    readonly height: number;\n    readonly devicePixelRatio: number;\n}',
+  },
+  {
+    name: 'ViewportOutcome',
+    declaration: 'export type ViewportOutcome = ({\n    readonly ok: true;\n} & ViewportMeasurement) | {\n    readonly ok: false;\n    readonly reason: string;\n};',
   },
   {
     name: 'WebBootEntry',

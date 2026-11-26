@@ -1,6 +1,6 @@
 # dsh-fs-sandbox：强制沙箱的文件系统后端
 
-`SandboxedFileSystem` 扩展 [`LocalFileSystem`](../fs-local/README.md) 并注册为 `ctx.fs`；同一份围栏另以 `SandboxedBackend` 装饰器形式导出，可包装任意 `FsProvider` 并注册进多后端注册表，`id`、`matches`、`owns` 透传被包装后端。它逐字继承全部文本存储机制（解析、stat、读取／流式读取、列出、原子写入、按读取、匹配、写入顺序执行的编辑临界区），只为 `writeText`/`editText` 增加按调用的模式围栏。读取始终直接通过：所有模式都允许读取。
+`SandboxedFileSystem` 扩展 [`LocalFileSystem`](../fs-local/README.md) 并注册为 `ctx.fs`；同一份围栏另以 `SandboxedBackend` 装饰器形式导出，可包装任意 `FsProvider` 并注册进多后端注册表，`id`、`matches`、`owns` 透传被包装后端。它逐字继承全部文本存储机制（解析、stat、读取／流式读取、列出、原子写入、按读取、匹配、写入顺序执行的编辑临界区、按目标串行的删除），只为 `writeText`/`editText`/`remove` 增加按调用的模式围栏。读取始终直接通过：所有模式都允许读取。
 
 它原样复用本地后端配置：`cwd` 仍是相对路径的解析默认值，`diffBasisMaxBytes` 则限制可选的覆写上下文 diff 基础。
 
@@ -12,6 +12,8 @@
 
 - `read-only`：以结构化 `FS_SANDBOX_DENIED` 拒绝所有变更；
 - `workspace-write`：本地变更只有在目标规范化后位于可写根目录下时才会被允许。可写根包括工作区根目录和平台临时区域（`/tmp`、`os.tmpdir()`），与 Seatbelt profile 授权的集合相同；该集合由唯一的 [`writableRoots`](../../sandbox/README.md) 函数派生，使 fs 围栏与 bash runner 不会漂移。规范拼写使用词法快速路径；基于身份的祖先回退可以识别 Windows 长名称和 8.3 名称等别名等价根目录，而不会把无关前缀视为包含关系。委托前会立即重新规范化目标，因此工具解析后被替换的祖先符号链接也会被发现。对于 Remote-SSH，可写根只有调用 Session cwd 在 marker 远程根下映射出的目录；本地临时目录不会投影到远程执行世界；
+删除与写入/编辑共用同一次判断：围栏的是**目标本身**，允许之后再递归删除的整棵子树必然位于同一个允许范围内，因此不需要逐个子项复核，`recursive` 也不改变围栏结论。
+
 - `danger-full-access`：不经过策略围栏直接委托。Remote-SSH 变更可以落在远端主机任意路径，仍以 SSH 账户权限为最终边界；`workspace-write` 下根外变更依旧被本围栏拒绝。
 
 ## 威胁模型：策略围栏，而非内核边界

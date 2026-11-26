@@ -1,13 +1,13 @@
 # coding-fs-local
 
-`ctx.fs` 提供方约定（[`coding-fs`](../fs)）的**本地文件系统实现**：`LocalFileSystemBackend` 是纯实现（`FsProvider`，`id: local`），`LocalFileSystem` 是把它注册为 `ctx.fs` 的单后端服务入口；多后端装配直接注册 backend。它使用宿主文件系统支持十二个 `FileSystem` 原语；将其作为插件加载会填充 `ctx.fs`。在桌面端组合中，它识别无凭据的 Remote-SSH Workspace marker，并经已认证的本地 bridge 将文件系统原语路由到所选远程根目录。`basic` 模式经 SFTP 读写内容，列目录与单路径元数据在 POSIX 远端经常驻 Shell 控制面、否则经 SFTP，`agent` 模式经远端 agent 读写；普通本地路径仍保留宿主文件系统行为。模式与能力定义见 [`dsh-subprocess`](../../subprocess/subprocess/README.md)。
+`ctx.fs` 提供方约定（[`coding-fs`](../fs)）的**本地文件系统实现**：`LocalFileSystemBackend` 是纯实现（`FsProvider`，`id: local`），`LocalFileSystem` 是把它注册为 `ctx.fs` 的单后端服务入口；多后端装配直接注册 backend。它使用宿主文件系统支持十三个 `FileSystem` 原语；将其作为插件加载会填充 `ctx.fs`。在桌面端组合中，它识别无凭据的 Remote-SSH Workspace marker，并经已认证的本地 bridge 将文件系统原语路由到所选远程根目录。`basic` 模式经 SFTP 读写内容，列目录与单路径元数据在 POSIX 远端经常驻 Shell 控制面、否则经 SFTP，`agent` 模式经远端 agent 读写；普通本地路径仍保留宿主文件系统行为。模式与能力定义见 [`dsh-subprocess`](../../subprocess/subprocess/README.md)。
 
 ```ts ignore-check
 import { LocalFileSystem } from 'coding-fs-local'
 
 await ctx.plugin(LocalFileSystem, { cwd: process.cwd() })
 // ctx.fs uses the local backend; load coding-fs-observation-policy for the
-// freshness policy gate and coding-tool-fs to expose read/write/edit.
+// freshness policy gate and coding-tool-fs to expose read/write/edit/delete_file.
 ```
 
 ## 行为
@@ -17,6 +17,7 @@ await ctx.plugin(LocalFileSystem, { cwd: process.cwd() })
 - **执行世界坐标**：对于本地目标，`processPath` 公开规范化宿主路径，`fileUrl` 通过 Node 的平台感知 URL 转换对其编码。对于 Remote-SSH 目标，`processPath` 返回规范远程路径，`fileUrl` 使用目标平台的 `file:` 语法；已验证的 marker target 会把这些坐标携带给远程子进程 Provider，绝不会交给本地 Node 进程。`contains` 仍可比较同一当前 marker／连接内的远程目标，Consumer 无需解析 `targetKey`。
 - **`stat` / `lstat` / `statMetadata`**：返回目标元数据；目标不存在时返回 `undefined`。`statMetadata` 是只读探测：本地后端与 `stat` 等价，Remote-SSH 后端让桥接器跳过内容版本（`noVersion`），因此不需要为版本读取整份文件；它给出的版本只能用于展示与变更判断，条件写的 `replaceIfVersion` 仍要求来自读取的内容版本。`stat` 为已解析目标报告 `FsInfo`（`type` 为 `file`/`directory`/`other`，另有不透明 `version` 与字节 `size`）；路径形态的 `lstat` 不跟随最后一个符号链接，报告 `FsPathInfo`，因此可以返回 `symlink`。本地版本由 bigint `dev:ino:size:mtimeNs:ctimeNs` 派生；Remote-SSH 版本和元数据来自有界 agent 响应。两者都会在异步元数据探测前后检查取消，因此异步探测进行期间发生的中止会报告 `FS_ABORTED`，而非陈旧的不存在结果。
 - **`readText` / `streamText`**：只支持 UTF-8。对于本地目标，`readText` 读取整个文件，`streamText` 按分片解码，因此超大文件无需整体保存在内存中；两者都会拒绝无效 UTF-8、包含 NUL 字节的二进制样本（`FS_NOT_TEXT`）以及非普通文件目标。Remote-SSH 通过已认证 bridge 接收完整且有大小限制的文本，并将其作为单个 `streamText` 分片公开。`read` 工具（`coding-tool-fs`）拥有行窗口逻辑。
+- **`remove`**：删除已解析目标，在同一个每目标锁内执行，因此不会与同目标的写入/编辑交错。普通文件直接删除；目录只有 `recursive` 为 true 时才连同后代删除，否则以 `FS_IS_DIRECTORY` 拒绝。目标按 realpath 身份处理，与写入/编辑一致——在符号链接路径上删除的是链接指向的条目，链接本身保留为悬空链接；Remote-SSH 目标经 bridge 的 `/v1/remove_file` 删除，目录的递归语义由远端执行世界完成。
 - **`readBytes`**：按原始字节读取整个文件，不做解码或二进制拒绝（`read_image` 工具通过附件服务校验内容）。对于本地目标，必填的字节上限在任何内容 I/O 之前先按 stat 大小短路，随后的流最多多读一个字节。Remote-SSH 会针对请求上限与固定的 16 MiB 上限校验规范 base64 bridge 响应。
 - **`listDir`**：按稳定的 `name.localeCompare()` 顺序列出一层目录。每个条目携带子项 basename、类型、解析后的子目标和低成本 stat 元数据（`version`，普通文件另有 `size`）。本地子项的 `targetKey` 使用 realpath 身份；Remote-SSH 子项使用 marker 范围内的远程身份和 agent 提供的元数据。它绝不会打开或解码文件内容。缺失目标报告 `FS_NOT_FOUND`，文件／特殊文件目标报告 `FS_NOT_DIRECTORY`，已中止调用报告 `FS_ABORTED`，权限失败报告 `FS_PERMISSION_DENIED`，其他列出或子项元数据 I/O 失败报告 `FS_IO_ERROR`。在本地目标中，损坏／消失的子项以无元数据的 `other` 返回，但解析子项时出现权限／I/O 失败会让整个列表以结构化 `FsError` 失败。
 - **`writeText`**：对于本地目标，原子发布会向目标旁随机命名的私有暂存目录（`0o700`）中排他打开的临时文件（`wx`、`0o600`）写入，随后执行 fsync 并发布。现有文件的 mode 会保留，新文件默认为 `0o600`；Windows 上的新文件继承目标目录的 DACL，而替换会在写入前把目标 DACL 复制到空临时文件，并通过 `ReplaceFileW` 发布，使原访问策略得以保留（见 Windows DACL 保留 设计记录）。`expected` 防护是可选的：省略时无条件创建或覆盖；`createIfAbsent` 通过硬链接把暂存文件发布到目标位置，以实现原子且不替换的发布，因此初始探测后创建的普通文件会被保留，并以 `FS_NOT_OBSERVED` 拒绝本次写入；非普通路径条目也会被保留，并以 `FS_NOT_REGULAR_FILE` 拒绝；`replaceIfVersion` 只在观察到的版本上替换（目标缺失或版本不匹配均为 `FS_STALE_VERSION`）。仅当打开后的旧文件和 UTF-8 替换内容都严格低于 `config.diffBasisMaxBytes`（默认 10 MiB）时，本地覆写才返回旧文本作为上下文 diff 基础；否则返回 `before: null`。Remote-SSH 把相同意图及规范化 before／after 结果委托给 bridge，并在发出请求后等待其确定确认；`basic` 使用 SFTP 执行，不会写入本地文件。

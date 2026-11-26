@@ -1,6 +1,6 @@
 # coding-tool-fs
 
-**面向模型的文件系统工具**（`read`、`read_image`、`write`、`edit`）及其**执行器**。这是文件系统栈的消费方层：拥有工具名称、JSON Schema、参数校验、提示词段、**读取窗口逻辑**和结果格式化。它**直接**通过 `ctx.fs` 提供方约定（[`coding-fs`](../fs)）读取／写入／编辑。新鲜度／观察策略由独立插件（[`coding-fs-observation-policy`](../fs-observation-policy)）通过 `fs/*` 事件门禁贡献；工具不与其方法耦合。使用施加沙箱限制的提供方时，逐会话执行需要共享沙箱策略服务，工具还会为文件系统变更提供升权路径。
+**面向模型的文件系统工具**（`read`、`read_image`、`write`、`edit`、`delete_file`）及其执行器。这是文件系统栈的消费方层：拥有工具名称、JSON Schema、参数校验、提示词段、**读取窗口逻辑**和结果格式化。它**直接**通过 `ctx.fs` 提供方约定（[`coding-fs`](../fs)）读取／写入／编辑／删除。新鲜度／观察策略由独立插件（[`coding-fs-observation-policy`](../fs-observation-policy)）通过 `fs/*` 事件门禁贡献；工具不与其方法耦合。使用施加沙箱限制的提供方时，逐会话执行需要共享沙箱策略服务，工具还会为文件系统变更提供升权路径。
 
 ```ts ignore-check
 // Default deployment: a ctx.fs provider, the policy plugin, then the tools.
@@ -33,6 +33,7 @@ await ctx.plugin(ToolFs)                                  // this package — re
 | `read_image` | `file_path` | 通过有界字节 seam 读取 PNG/JPEG/WebP/GIF 文件，经 `ctx.attachments.saveImage` 持久保存，并在小型元数据信封旁返回图像块。只有确切路由的模型声明图像输入时才会成功。 |
 | `write` | `file_path`、`content` | 创建文件或完整替换文件。有策略插件时：覆盖现有文件要求先在未变版本上执行 `read`；创建新文件不需要。没有插件时：无条件执行。 |
 | `edit` | `file_path`、非空 `old_string`、`new_string`、`replace_all?` | 字面量替换；除非 `replace_all` 为 true，否则要求唯一匹配。有策略插件时：要求先执行 `read`（任何窗口），且文件此后未变。没有插件时：无条件执行。 |
+| `delete_file` | `file_path`（字符串或字符串数组）、`recursive?` | 删除一个或一组路径。目录只有 `recursive: true` 才删除整棵子树，否则返回 `FS_IS_DIRECTORY`。批量调用逐项执行：成功项与被拒绝项分开返回，全部失败时才按第一次失败的 code 抛出错误结果。本身是符号链接的路径被拒绝，因为删除作用于解析后的目标。 |
 
 字段名使用 snake_case，与 Claude Code 和现有 harness 工具 schema 一致。
 
@@ -46,6 +47,8 @@ await ctx.plugin(ToolFs)                                  // this package — re
 - **read_image**：在任何 I/O 之前校验参数、扩展名、附件可用性、部署接受的媒体类型和图像路由；随后一次 `ctx.fs.stat`（目标缺失时与 `read` 一样记录 `absent` 观察）、以源图片单张和消息字节限额中较小者为上限进行有界 `ctx.fs.readBytes`（远程桥仍有独立的 16 MiB 传输上限），再交给 `attachments.saveImage` 统一归一化和持久提交（`tool/result` 事件追加时引用已存在），最后发出 `fs/observed`。（1 次 stat。）
 - **write**：调用 `ctx.waterfall('fs/write-intent', target, exec, () => undefined)` 取得可选防护，然后调用 `ctx.fs.writeText(target, content, intent)`，再发出 `fs/observed`。（0 次 stat。）
 - **edit**：调用 `ctx.waterfall('fs/edit-intent', target, exec, () => undefined)` 取得可选防护，然后调用 `ctx.fs.editText(target, edit, intent)`，再发出 `fs/observed`。（0 次 stat。）
+
+**delete_file**：先对原始路径做一次 `lstat` 拒绝符号链接本身，再调用 `ctx.fs.remove`，成功后发出 `{ kind: 'absent' }` 观察，使后续 edit 报未找到、write 重新建立文件。批量调用按参数顺序逐项执行，单项失败不回滚已成功的删除。
 
 工具在每次分派中把 `exec`（工具执行上下文）作为不透明 `actor` 传入。默认 thunk 返回 `undefined`（不受约束的裸提供方）。加载 `coding-fs-observation-policy` 后，它会占用单个决策槽：返回 `createIfAbsent`/`replaceIfVersion`/`{ version }`（未观测的编辑返回 `undefined`，即无版本基准），在 `fs/observed` 时记录，并在编辑已确认缺失的目标时抛出 `FS_NOT_FOUND`。后端错误（`FsError`）和抛出的 `FS_NOT_OBSERVED` 会流经 `ToolRuntime.execute()`，变成 `isError` 工具结果，并附带 `{ name, code }`。
 
@@ -79,6 +82,12 @@ Use the read tool — not shell commands like cat — to inspect text files. Res
 Use the write tool to create files or completely replace file contents. Existing files are overwritten, so read an existing file first (the default fs-observation-policy requires it) and prefer edit for targeted changes.
 ```
 
+##### delete_file 指导
+
+```markdown
+Use delete_file to remove files, passing one path or an array of paths. Deleting a directory requires recursive: true and removes everything inside it, so list the directory first when its contents are not obvious. A path that is itself a symbolic link is refused because deletion follows the link to its target; use the shell to remove the link.
+```
+
 ##### Edit 指导
 
 ```markdown
@@ -97,7 +106,7 @@ Use the edit tool for targeted changes to existing UTF-8 text files. It replaces
 
 #### 模型看到的内容
 
-模型会看到已生成的 [`read`、`read_image`、`write` 和 `edit` schema](../../../docs/tool-catalog.md#deepseek-aidsh-tool-fs)，参数使用 snake_case。`read_image` 只在持久附件存储已挂载时出现；schema 本身与路由无关，严格门禁在执行时拒绝。作用域工具限制可以为某个 agent 移除任一定义。
+模型会看到已生成的 [`read`、`read_image`、`write`、`edit` 和 `delete_file` schema](../../../docs/tool-catalog.md#deepseek-aidsh-tool-fs)，参数使用 snake_case。`read_image` 只在持久附件存储已挂载时出现；schema 本身与路由无关，严格门禁在执行时拒绝。作用域工具限制可以为某个 agent 移除任一定义。
 
 #### Token 影响
 

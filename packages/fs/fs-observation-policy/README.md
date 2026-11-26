@@ -20,7 +20,7 @@ await ctx.plugin(FsPolicy)
 
 | 层 | 包 | 角色 |
 |---|---|---|
-| 工具/执行器 | `coding-tool-fs` | 面向模型的 schema、读取窗口和文本渲染；通过 `ctx.fs` 读取/写入/编辑，并分派 `fs/*` 事件 |
+| 工具/执行器 | `coding-tool-fs` | 面向模型的 schema、读取窗口和文本渲染；通过 `ctx.fs` 读取/写入/编辑/删除，并分派 `fs/*` 事件 |
 | 策略 | `coding-fs-observation-policy`（本包） | 通过 `fs/*` 事件门禁提供已观察状态、编辑前读取和版本防护的写入/编辑（无服务） |
 | 提供方约定 | `coding-fs` | `ctx.fs`：文本 I/O 与原子变更原语（可选版本防护）；拥有 `fs/*` 事件词汇 |
 | 提供方 | `coding-fs-local` | `ctx.fs` 的本地实现 |

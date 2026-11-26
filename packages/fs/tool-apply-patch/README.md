@@ -6,7 +6,7 @@
 
 解析器接受 `*** Begin Patch`／`*** End Patch` 封套、`*** Add File` 与 `*** Update File`，更新段包含 `@@` 上下文、`+`／`-`／空格行和可选 `*** End of File`。模型侧提供与该子集一致的 Lark 语法；原生语法工具的说明要求直接提交补丁文本，不包 JSON。普通函数调用仍以 `{ "input": "<完整补丁文本>" }` 提交。
 
-路径交给 `ctx.fs.resolve`，不在工具层预先要求工作区相对路径；文件系统提供方和沙箱策略负责解析与约束。新增和更新分别使用 `ctx.fs.writeText` 与 `ctx.fs.editText`，保留观测策略、版本检查与远程文件系统路由。`*** Delete File` 和 `*** Move to` 会明确拒绝：`coding-fs` 没有删除和重命名原语，工具不会绕过该能力边界直接操作宿主文件系统。
+路径交给 `ctx.fs.resolve`，不在工具层预先要求工作区相对路径；文件系统提供方和沙箱策略负责解析与约束。新增和更新分别使用 `ctx.fs.writeText` 与 `ctx.fs.editText`，保留观测策略、版本检查与远程文件系统路由。`*** Delete File` 和 `*** Move to` 会明确拒绝：删除由 `coding-tool-fs` 的 `delete_file` 承担（它有自己的递归目录语义与符号链接护栏），改名仍没有后端原语，工具不会绕过能力边界直接操作宿主文件系统。
 
 ## 模型体验
 
