@@ -34,6 +34,7 @@
       "inject": [
         "coding-client-runtime",
         "coding-client-ui-workspace",
+        "coding-client-ui-ide",
         "coding-client-locale"
       ],
       "platform": "web"
@@ -51,6 +52,7 @@
     "coding-client-locale": "workspace:^",
     "coding-client-runtime": "workspace:^",
     "coding-client-ui-workspace": "workspace:^",
+    "coding-client-ui-ide": "workspace:^",
     "coding-invariants": "workspace:^",
     "@deepseek-ai/cordis": "workspace:^"
   },
@@ -61,6 +63,7 @@
     "coding-client-ui-primitives": "workspace:^",
     "coding-client-ui-slots": "workspace:^",
     "coding-client-ui-workspace": "workspace:^",
+    "coding-client-ui-ide": "workspace:^",
     "coding-invariants": "workspace:^",
     "@testing-library/react": "^16.1.0",
     "@types/react": "~18.3.1",

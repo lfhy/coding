@@ -3,7 +3,7 @@
 
 # 包清单
 
-workspace 共 283 个包，按 group 分节。每行给出包目录、职责（README 首段）、源码入口与 `tests/` 下的 spec 文件数；标 `client` 的包导出 `./client` 浏览器半，标 `bundle` 的包是 profile/bundle 装配层。
+workspace 共 284 个包，按 group 分节。每行给出包目录、职责（README 首段）、源码入口与 `tests/` 下的 spec 文件数；标 `client` 的包导出 `./client` 浏览器半，标 `bundle` 的包是 profile/bundle 装配层。
 
 模型可见工具的名称与 schema 见 [tool-catalog.md](../tool-catalog.md)，插件可配置项见 [config-catalog.md](../config-catalog.md)，依赖边见 [module-graph.md](../module-graph.md)。
 
@@ -62,6 +62,7 @@ workspace 共 283 个包，按 group 分节。每行给出包目录、职责（R
 - `packages/client/ui-files` — 外侧窄导航的「文件管理」进入独立主内容页，默认管理没有工作区的会话输入、生成图片和导出成品；页面只展示文件库元数据，不把本机绝对路径交给浏览器 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 4）
 - `packages/client/ui-goal` — Goal 界面插件（浏览器端部分）：`GoalBar` 条带是 `conversation.input.dock` composer 上下文堆栈… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 4）
 - `packages/client/ui-icons` — 本包是浏览器客户端图标的独立组件边界 入口 `src/index.ts`（tests 1）
+- `packages/client/ui-ide` — 外侧窄导航的「代码工作区」进入独立欢迎页 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 5）
 - `packages/client/ui-image-gen` — 图像生成的浏览器界面：设置里的「图像生成」分区、外层窄导航栏的画图图标入口，以及主内容「工作台／灵感／图库」页面 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 11）
 - `packages/client/ui-input-trigger` — 输入触发流水线插件：光标处的 `/` 与 `@` 检测（词边界 + guard tier 规则）、分组候选菜单… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 5）
 - `packages/client/ui-jobs` — Web 后台任务特性的归属方：向 `conversation.overview.jobs` 贡献一个会话作用域列表… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 2）

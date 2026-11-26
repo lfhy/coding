@@ -39,6 +39,12 @@
 - **技术与边界**：UI 依 slot 声明生命周期注册；工作区归属来自 Host 台账，不从会话目录或父子关系推断。最近列表及其搜索结果按 `updatedAt` 倒序、id 升序稳定排列，不使用手动顺序台账；三类视图均排除子代理、空白和已归档会话。目录后端是 browse、native 或 auto 的可替换 Provider，不能在组件内按平台自行选择。行为契约见 [ui-workspace](../../packages/client/ui-workspace/README.md) 与 [Host directory-picker](../../packages/host/directory-picker/README.md)。
 - **连带与验证**：调整座位同步 `ui-sidebar`、`ui-workspace/src/client/contract/slots.ts`、目录占用插件与组合行；调整页签范围、排序或搜索时同步[包说明](../../packages/client/ui-workspace/README.md)、[用户指南](../user/guide/index.md#管理侧栏会话)与对应测试，核对本地选择恢复、窄轨道保留选择、切页回顶及内容命中不跨范围；顶部入口同步[对话路线](#对话输入命令与视图)、[设计规范](../../packages/client/UI_DESIGN.md#页面层级)和[开始方式指南](../user/guide/index.md#选择开始方式)，验收从最近单向切回工作／对话、侧栏筛选不触发创建或导航、非空会话隐藏入口、草稿与附件保留、失败重试及迟到请求不抢页面；目录协议变更同步 Host Provider 和 Client flow。定向运行 `pnpm exec vitest run packages/client/ui-sidebar/tests packages/client/ui-workspace/tests packages/client/ui-conversation/tests packages/client/ui-directory-picker-browse/tests`，组装交互再跑 `pnpm run test:gui`。
 
+## 代码工作区入口
+
+- **拥有**：`packages/client/ui-ide` 注册 `shell.navigation.entry` 与 keyed `shell.page`，欢迎页只负责选择目录或最近工作区；`shell.ide.welcome.directoryFlow` 由已装配的浏览式或原生目录选择包占用。目录注册、空白会话复用和会话选择归 `coding-client-runtime`，页面路由与返回动作归 `ui-layout`。
+- **不拥有**：文件树、标签、编辑器、终端面板、AI 助手或工具调用联动；欢迎阶段调用 `setPageAssistant(false)`，选择工作区后关闭独立页并进入现有三栏视图。
+- **连带与验证**：修改目录选择时同步 `ui-directory-picker-browse`、`ui-directory-picker-native` 与目录占用测试；修改页面座位时核对 `ui-layout` 的 `ShellPageOwnerProps`。定向运行 `pnpm exec vitest run packages/client/ui-ide/tests packages/client/ui-directory-picker-browse/tests/client-flow.client.spec.tsx packages/client/ui-directory-picker-native/tests/client-flow.client.spec.tsx`，可见输出补充 `DSH_SNAPSHOT=replay pnpm run test:web`。
+
 ## Git seam 与克隆仓库
 
 - **路线**：能力定义在 `packages/git/git/src/index.ts`（`ctx.git`，`capability()` 报告 `cli`／`js` 与可执行操作），本机实现在 `packages/git/git-local/src/index.ts`：`cli-process.ts` 负责子进程环境与超时，`cli-repository.ts` 负责状态／分支／历史／切换／推送／拉取，`credentials.ts` 持有凭据优先级与 askpass，`clone.ts` 是两条克隆路径，`http-node.ts` 是内置实现自己的 `node:http(s)` 传输。消费方是 `packages/host/apiproxy/src/api-proxy.ts` 的 `workspace.git*` RPC；客户端入口在 `packages/client/ui-workspace/src/client/`（选择器菜单“打开仓库”、克隆向导与认证弹窗，保存路径可借用同一个目录流程槽位挑选），注入面见 `contract/slots.ts`。

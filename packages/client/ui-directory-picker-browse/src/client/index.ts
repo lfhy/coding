@@ -8,28 +8,27 @@
  * copy is locale-registered here — the flow package owns its own strings.
  */
 import type { ClientContext } from 'coding-client-runtime/client'
-// Type-only: pulls the SlotMap merge declaring the directory-flow holes.
+// 仅类型引入：拉入欢迎页与既有工作区入口声明的目录流槽位。
 import type {} from 'coding-client-ui-workspace/client'
+import type {} from 'coding-client-ui-ide/client'
 import type { BrowseFlowInjected } from './flow.ts'
 import { BrowseDirectoryFlow } from './flow.ts'
 
 /** Locale namespace owning the browser dialog's copy. */
 const LOCALE_NS = 'directory-browser'
 
-/** Required services (cordis fiber inject): the slot registry, the wire-facing workspace service, and locale. */
+/** 必需服务：slot 注册表、工作区服务与本地化服务。 */
 export const inject = ['slots', 'workspaces', 'locale']
 
 /**
- * Client plugin body: register the dialog's dictionaries and the browse flow
- * into both directory-flow holes through `slots.inject()` because the
- * ui-workspace entries may activate later or replace their declarations.
- * @param ctx - client root context.
+ * 注册目录对话框词典和浏览流。工作区入口可能稍后激活或重新声明，
+ * 因此通过 `slots.inject()` 等待对应槽位。
+ * @param ctx - Client 根 Context。
  */
 export function apply(ctx: ClientContext): void {
   ctx.effect(() => {
-    // The two dictionaries land as a unit: if the second registration hits a
-    // rival owner of the namespace, the first rolls back before the throw —
-    // a failed activation must not squat the namespace's other locale.
+    // 两份词典作为一组注册；第二份遇到冲突时先回滚第一份，
+    // 激活失败不能占用同一命名空间里的其他词典。
     const disposers: (() => void)[] = []
     const dictionaries: [locale: string, dict: Record<string, string>][] = [
       ['zh', {
@@ -111,9 +110,7 @@ export function apply(ctx: ClientContext): void {
     removeEntry: path => ctx.workspaces.deleteDirectoryEntry(path),
     t: ctx.locale.bind(LOCALE_NS),
   })
-  // Both declaration lifetimes must be live before the pair installs; the
-  // generator makes the two registrations one transactional effect. The
-  // outer/inner nesting order is arbitrary; neither hole has precedence.
+  // 两个既有入口的声明必须同时就绪；生成器让这一组注册原子安装或回滚。
   ctx.slots.inject('conversation.hero.workspace.directoryFlow', () =>
     ctx.slots.inject('sidebar.workspaces.directoryFlow', function* () {
       yield ctx.slots.register({
@@ -123,4 +120,8 @@ export function apply(ctx: ClientContext): void {
         name: 'sidebar.workspaces.directoryFlow', inject: injected,
       }, BrowseDirectoryFlow)
     }))
+  // 欢迎页是可选入口；它的声明未装载时不能阻塞既有两处工作区入口。
+  ctx.slots.inject('shell.ide.welcome.directoryFlow', () => ctx.slots.register({
+    name: 'shell.ide.welcome.directoryFlow', inject: injected,
+  }, BrowseDirectoryFlow))
 }

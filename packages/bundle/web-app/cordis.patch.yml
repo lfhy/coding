@@ -229,6 +229,9 @@
     - id: ui-files
       name: 'coding-client-ui-files'
 
+    - id: ui-ide
+      name: 'coding-client-ui-ide'
+
     - id: ui-notes
       name: 'coding-client-ui-notes'
 

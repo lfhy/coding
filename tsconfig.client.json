@@ -92,6 +92,7 @@
     { "path": "./packages/client/ui-agent-preset" },
     { "path": "./packages/client/ui-open-in-app" },
     { "path": "./packages/client/ui-files" },
+    { "path": "./packages/client/ui-ide" },
     { "path": "./packages/client/ui-notes" },
     { "path": "./packages/client/ui-mindmap" },
     { "path": "./packages/client/ui-office" },

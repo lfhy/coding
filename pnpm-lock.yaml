@@ -1764,6 +1764,9 @@ importers:
       coding-client-ui-goal:
         specifier: workspace:^
         version: link:../../client/ui-goal
+      coding-client-ui-ide:
+        specifier: workspace:^
+        version: link:../../client/ui-ide
       coding-client-ui-image-gen:
         specifier: workspace:^
         version: link:../../client/ui-image-gen
@@ -2616,6 +2619,9 @@ importers:
       coding-client-test-runtime:
         specifier: workspace:^
         version: link:../../test-support/client-runtime
+      coding-client-ui-ide:
+        specifier: workspace:^
+        version: link:../ui-ide
       coding-client-ui-primitives:
         specifier: workspace:^
         version: link:../ui-primitives
@@ -2649,6 +2655,9 @@ importers:
       coding-client-runtime:
         specifier: workspace:^
         version: link:../runtime
+      coding-client-ui-ide:
+        specifier: workspace:^
+        version: link:../ui-ide
       coding-client-ui-workspace:
         specifier: workspace:^
         version: link:../ui-workspace
@@ -2776,6 +2785,48 @@ importers:
       coding-invariants:
         specifier: workspace:^
         version: link:../../runtime-diagnostics/invariants
+
+  packages/client/ui-ide:
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@testing-library/react':
+        specifier: ^16.1.0
+        version: 16.3.2(@testing-library/dom@10.4.2)(@types/react-dom@18.3.7(@types/react@18.3.31))(@types/react@18.3.31)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      '@types/react':
+        specifier: ~18.3.1
+        version: 18.3.31
+      coding-client-locale:
+        specifier: workspace:^
+        version: link:../locale
+      coding-client-runtime:
+        specifier: workspace:^
+        version: link:../runtime
+      coding-client-ui-icons:
+        specifier: workspace:^
+        version: link:../ui-icons
+      coding-client-ui-layout:
+        specifier: workspace:^
+        version: link:../ui-layout
+      coding-client-ui-primitives:
+        specifier: workspace:^
+        version: link:../ui-primitives
+      coding-client-ui-slots:
+        specifier: workspace:^
+        version: link:../ui-slots
+      coding-client-ui-workspace:
+        specifier: workspace:^
+        version: link:../ui-workspace
+      coding-invariants:
+        specifier: workspace:^
+        version: link:../../runtime-diagnostics/invariants
+      react:
+        specifier: ^18.2.0
+        version: 18.3.1
+      react-dom:
+        specifier: ^18.2.0
+        version: 18.3.1(react@18.3.1)
 
   packages/client/ui-image-gen:
     devDependencies:

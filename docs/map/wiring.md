@@ -629,6 +629,7 @@
 - `ui-settings` → `coding-client-ui-settings`
 - `ui-settings-general` → `coding-client-ui-settings-general`
 - `ui-files` → `coding-client-ui-files`
+- `ui-ide` → `coding-client-ui-ide`
 - `ui-notes` → `coding-client-ui-notes`
 - `ui-mindmap` → `coding-client-ui-mindmap`
 - `ui-office` → `coding-client-ui-office`

@@ -11,7 +11,11 @@ import { apply as nodeApply } from '../src/index.ts'
 
 afterEach(cleanup)
 
-const HOLES = ['conversation.hero.workspace.directoryFlow', 'sidebar.workspaces.directoryFlow'] as const
+const HOLES = [
+  'conversation.hero.workspace.directoryFlow',
+  'sidebar.workspaces.directoryFlow',
+  'shell.ide.welcome.directoryFlow',
+] as const
 
 async function bench() {
   const ctx = new Context()
@@ -39,7 +43,7 @@ describe('directory-picker-native client half', () => {
     expect(inject).toEqual(['slots', 'workspaces'])
   })
 
-  it('fills both directory-flow holes for declarations before or after apply, and leaves with its fiber', async () => {
+  it('fills the workspace and welcome-page directory-flow holes before or after apply, and leaves with its fiber', async () => {
     const before = await bench()
     before.declare()
     const fiber = before.ctx.plugin({ inject: [...inject], apply })

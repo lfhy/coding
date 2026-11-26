@@ -25,6 +25,9 @@
     },
     {
       "path": "../ui-workspace"
+    },
+    {
+      "path": "../ui-ide"
     }
   ]
 }

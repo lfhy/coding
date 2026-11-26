@@ -28,6 +28,7 @@
 | 改默认 Electron 桌面壳行为 | [map/hot.md 的桌面路线](map/hot.md#桌面壳与-host-启动) | `apps/desktop-electron/`、Go helper、共享 Host/Remote-SSH 契约、打包脚本 | 定向测试 + `pnpm run test:electron:smoke`；SSH 与生产包分别做 opt-in 原生验收 |
 | 改远程连接模式或能力 | [map/hot.md 的远程路线](map/hot.md#远程连接模式与能力) | `ui-workspace`、`desktopremote`、`remoteagent`、`subprocess/remote-workspace` 与各能力 Provider | Client/Go/Host 定向测试；原生 SSH 验收另行 opt-in |
 | 改工作区侧栏或目录选择 | [map/hot.md 的导航路线](map/hot.md#侧栏工作区与目录选择) | `ui-sidebar`、`ui-workspace`、目录选择 Client/Host 提供方 | 对应包测试 + `pnpm run test:gui` |
+| 改代码工作区入口或欢迎页 | [map/hot.md 的代码工作区条目](map/hot.md#代码工作区入口) | `ui-ide`、`ui-layout` 的 `shell.page`、目录选择占用方 | `ui-ide` 与目录选择包测试 + `pnpm run test:gui` |
 | 改设置和模型凭据界面 | [map/hot.md 的设置路线](map/hot.md#设置界面与凭据) | `ui-settings*`、settings/credentials 提供方或 `apiproxy` | 对应包测试 + `pnpm run test:gui` |
 | 改全局文件上传或文件管理列表 | [map/hot.md 的文件拖放路线](map/hot.md#对话输入命令与视图)、[设置路线](map/hot.md#设置界面与凭据) | `file-library`、`open-in-app`、`ui-conversation`、`ui-files` | 四包定向测试 + `pnpm run test:gui` |
 | 改输入、命令、工具卡片或轨迹 | [map/hot.md 的对话路线](map/hot.md#对话输入命令与视图) | `ui-conversation`、`ui-input-trigger`、`ui-commands`、`ui-tool`、`ui-trajectory` | 对应包测试 + 用户可见输出的 keyless 回放 |
