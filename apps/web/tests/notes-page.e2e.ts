@@ -132,6 +132,21 @@ describe('Web 笔记工作区', () => {
     await page.keyboard.press('Shift+Tab')
     expect(await editor.inputValue()).toBe(revised)
 
+    // 工具栏「插入表格」写在光标处，预览同步成为表格。
+    await editor.evaluate((node: HTMLTextAreaElement) => {
+      node.setSelectionRange(node.value.length, node.value.length)
+    })
+    await main.getByRole('button', { name: 'Insert table', exact: true }).click()
+    expect(await editor.inputValue()).toContain('| Column 1 | Column 2 | Column 3 |')
+    await expect.poll(async () => main.locator('table th').evaluateAll(cells => cells.map(cell => cell.textContent)),
+      { timeout: 15_000 }).toEqual(['Column 1', 'Column 2', 'Column 3'])
+    // 工具栏写入走的是 DOM 选区，随后用真实输入写回原稿并确认落盘。
+    await editor.selectText()
+    await page.keyboard.type(revised)
+    expect(await editor.inputValue()).toBe(revised)
+    await expect.poll(async () => (await scaffold.ctx.fileLibrary.readNote('Release notes.md')).content,
+      { timeout: 15_000 }).toBe(revised)
+
     const assistantInput = page.locator('[data-page-assistant-track] textarea:visible').first()
     await dock.getByRole('button', { name: 'Summarize', exact: true }).click()
     const prompt = await assistantInput.inputValue()

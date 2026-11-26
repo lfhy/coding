@@ -670,6 +670,23 @@ describe('NotesPage', () => {
     expect(editor.selectionStart).toBe(editor.value.length - 1)
   })
 
+  it('工具栏插入表格模板：三列表头加两行空单元格，预览成为表格', async () => {
+    makeServer()
+    await mount()
+    const editor = screen.getByRole<HTMLTextAreaElement>('textbox', { name: '原始文本' })
+    editor.setSelectionRange(0, 0)
+    fireEvent.click(screen.getByRole('button', { name: '插入表格' }))
+    const table = '| 列 1 | 列 2 | 列 3 |\n| --- | --- | --- |\n|  |  |  |\n|  |  |  |'
+    expect(editor.value).toBe(`${table}\n\nhello a`)
+    // 插入后选中第一个表头，直接输入就能改名。
+    expect(editor.value.slice(editor.selectionStart, editor.selectionEnd)).toBe('列 1')
+    expect(document.activeElement).toBe(editor)
+    const preview = within(screen.getByRole('region', { name: '预览' }))
+    expect(preview.getAllByRole('columnheader').map(cell => cell.textContent)).toEqual(['列 1', '列 2', '列 3'])
+    expect(preview.getAllByRole('cell')).toHaveLength(6)
+    fireEvent.input(editor, { target: { value: 'hello a' } })
+  })
+
   it('页头助手入口透传显隐与控制关系，打开的非模态抽屉优先处理 Escape', async () => {
     makeServer()
     const { rerender } = await mount()

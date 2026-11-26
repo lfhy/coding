@@ -3,6 +3,8 @@ import type { ReactNode } from 'react'
 import { Button, Icon, IconChecklistOutline14, IconCodeOutline16, IconLinkOutline16, MarkdownText } from 'coding-client-ui-primitives'
 import type { NotesLocaleKey } from './locales.ts'
 import { NotesSource } from './NotesSource.tsx'
+import { insertTable } from './markdown-table.ts'
+import type { TableTemplate } from './markdown-table.ts'
 import { createScrollFollower } from './preview-scroll.ts'
 import type { ScrollSide } from './preview-scroll.ts'
 import css from './NotesPage.module.css'
@@ -12,13 +14,18 @@ const SPLIT_MIN_WIDTH = 640
 const VIEWS = ['edit', 'split', 'preview'] as const
 type View = typeof VIEWS[number]
 const LINE_PREFIX = { heading: '## ', bullets: '- ', list: '- [ ] ', quote: '> ' } as const
-type Format = keyof typeof LINE_PREFIX | 'bold' | 'italic' | 'inlineCode' | 'link'
+type Format = keyof typeof LINE_PREFIX | 'bold' | 'italic' | 'inlineCode' | 'link' | 'table'
+
+/** 工具栏插入的表格模板列数与数据行数；表头占位文字按语言生成。 */
+const TABLE_COLUMNS = 3
+const TABLE_ROWS = 2
 
 const FORMATS: readonly [Format, ReactNode][] = [
   ['heading', <Icon name="format-heading" />], ['bold', <Icon name="format-bold" />],
   ['italic', <Icon name="format-italic" />], ['inlineCode', <IconCodeOutline16 />],
   ['link', <IconLinkOutline16 />], ['quote', <Icon name="format-quote" />],
   ['bullets', <Icon name="format-list" />], ['list', <IconChecklistOutline14 />],
+  ['table', <Icon name="format-table" />],
 ]
 
 interface NotesEditorProps {
@@ -86,7 +93,14 @@ export function NotesEditor({ content, onChange, onBlur, t }: NotesEditorProps) 
     if (editor === null) return
     const { value, selectionStart, selectionEnd } = editor
     const text = value.slice(selectionStart, selectionEnd)
-    if (kind === 'bold' || kind === 'italic') {
+    if (kind === 'table') {
+      const [first, ...rest] = Array.from({ length: TABLE_COLUMNS },
+        (_, index) => t('tableColumn').replace('{index}', String(index + 1)))
+      const template: TableTemplate = { headers: [first ?? '', ...rest], rows: TABLE_ROWS }
+      const edit = insertTable(value, selectionStart, template)
+      editor.setRangeText(edit.block, edit.from, edit.to, 'end')
+      editor.setSelectionRange(edit.selectionStart, edit.selectionEnd)
+    } else if (kind === 'bold' || kind === 'italic') {
       const token = kind === 'bold' ? '**' : '*'
       editor.setRangeText(token + text + token, selectionStart, selectionEnd, 'select')
       editor.setSelectionRange(selectionStart + token.length, selectionEnd + token.length)

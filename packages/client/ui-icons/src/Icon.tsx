@@ -30,6 +30,7 @@ import SemiFont from '@douyinfe/semi-icons/lib/es/icons/IconFont'
 import SemiFontColor from '@douyinfe/semi-icons/lib/es/icons/IconFontColor'
 import SemiFill from '@douyinfe/semi-icons/lib/es/icons/IconFillStroked'
 import SemiGridView from '@douyinfe/semi-icons/lib/es/icons/IconGridView'
+import SemiGridSquare from '@douyinfe/semi-icons/lib/es/icons/IconGridSquare'
 import SemiHeading from '@douyinfe/semi-icons/lib/es/icons/IconH2'
 import SemiImage from '@douyinfe/semi-icons/lib/es/icons/IconImageStroked'
 import SemiList from '@douyinfe/semi-icons/lib/es/icons/IconList'
@@ -42,6 +43,7 @@ import type { IconProps } from './props.ts'
 export type FormatIconName = 'format-bold' | 'format-italic' | 'format-underline' | 'format-strike' | 'format-align-left'
   | 'format-align-center' | 'format-align-right' | 'format-align-justify' | 'format-font-size' | 'format-text-color'
   | 'format-fill-color' | 'format-merge' | 'format-heading' | 'format-list' | 'format-quote' | 'format-insert-image'
+  | 'format-table'
 
 /** 消费方使用的图标含义，不暴露第三方库中的组件名。 */
 export type IconName = 'sidebar' | 'files-panel' | 'bottom-panel' | 'terminal-menu'
@@ -66,6 +68,7 @@ const formatting = {
   'format-list': SemiList,
   'format-quote': SemiQuote,
   'format-insert-image': SemiImage,
+  'format-table': SemiGridSquare,
 } satisfies Record<FormatIconName, unknown>
 
 /** 产品语义名称加上共享的布局属性。 */

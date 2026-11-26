@@ -10,7 +10,7 @@
 `file-word` 与 `file-excel` 分别使用 Semi 的 Word 与 Excel 文件图形，供笔记目录、标签和新建／导入菜单区分两种文档；图标不承载按钮名称。
 `files` 与 `file-other` 分别使用文件夹与收件箱图形，用于文件分类里的「全部」和「其他」；三者都不承载按钮名称。
 `notes` 使用 Semi 的线性文字文档图形，供笔记页的外层导航入口与侧栏笔记行使用，与 `file` 的普通文档图形区分开；同样不承载按钮名称。
-`format-bold`、`format-italic`、`format-heading`、`format-list`、`format-quote` 与 `format-insert-image` 对应编辑器的粗体、斜体、标题、列表、引用与插入图片操作；图标继承主题颜色，按钮名称由编辑器提供。
+`format-bold`、`format-italic`、`format-heading`、`format-list`、`format-quote`、`format-insert-image` 与 `format-table` 对应编辑器的粗体、斜体、标题、列表、引用、插入图片与插入表格操作；图标继承主题颜色，按钮名称由编辑器提供。
 `format-underline`、`format-strike`、`format-align-left`／`format-align-center`／`format-align-right`／`format-align-justify`、`format-font-size`、`format-text-color`、`format-fill-color` 与 `format-merge` 供 Word 与 Excel 编辑器的格式工具栏使用，分别表示下划线、删除线、四种段落对齐、字号、文字颜色、单元格填充与合并单元格；同样继承主题颜色，按钮名称由编辑器提供。
 `undo` 与 `redo` 分别使用 Semi 的左右回转箭头，继承 `currentColor`，尺寸与布局类名通过统一的 `Icon` 属性传入。
 `drag-handle` 使用 Semi 的六点抓手，用于标示悬浮面板等区域的拖拽位置；图标只负责呈现，拖拽交互由调用方实现。

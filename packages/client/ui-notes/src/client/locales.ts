@@ -6,6 +6,7 @@ export type NotesLocaleKey =
   | 'search' | 'clearSearch' | 'noMatches' | 'dateLocale'
   | 'view' | 'edit' | 'split' | 'preview' | 'format' | 'inlineCode' | 'list'
   | 'heading' | 'bold' | 'italic' | 'bullets' | 'quote' | 'link'
+  | 'table' | 'tableSize' | 'tableCell' | 'tableRow' | 'tableColumn'
   | 'welcomeMorning' | 'welcomeAfternoon' | 'welcomeEvening' | 'welcomeDescription'
   | 'newEntry' | 'entryFolder' | 'entryNote' | 'entryPresentation'
   | 'entryMindmap' | 'newMindmap' | 'mindmapName' | 'mindmapCreated' | 'mindmapImported'
@@ -31,6 +32,7 @@ export const zh: Record<NotesLocaleKey, string> = {
   view: '正文视图', edit: '编辑', split: '并排', preview: '预览',
   format: '文本格式', inlineCode: '行内代码', list: '待办列表',
   heading: '二级标题', bold: '粗体', italic: '斜体', bullets: '无序列表', quote: '引用', link: '链接',
+  table: '插入表格', tableSize: '{rows} 行 × {columns} 列', tableCell: '表头 {index}', tableRow: '第 {index} 行', tableColumn: '列 {index}',
   welcomeMorning: '早上好呀，新的一天开始啦', welcomeAfternoon: '下午好呀，欢迎回来', welcomeEvening: '晚上好呀，欢迎回来',
   welcomeDescription: '在这里记录你的想法、灵感与工作内容',
   loading: '正在读取笔记…',
@@ -84,6 +86,7 @@ export const en: Record<NotesLocaleKey, string> = {
   view: 'Note view', edit: 'Edit', split: 'Split', preview: 'Preview',
   format: 'Formatting', inlineCode: 'Inline code', list: 'Task list',
   heading: 'Level 2 heading', bold: 'Bold', italic: 'Italic', bullets: 'Bulleted list', quote: 'Quote', link: 'Link',
+  table: 'Insert table', tableSize: '{rows} rows × {columns} columns', tableCell: 'Header {index}', tableRow: 'Row {index}', tableColumn: 'Column {index}',
   welcomeMorning: 'Good morning! A new day begins', welcomeAfternoon: 'Good afternoon! Welcome back', welcomeEvening: 'Good evening! Welcome back',
   welcomeDescription: 'A place for your thoughts, ideas, and work',
   loading: 'Loading notes…',
