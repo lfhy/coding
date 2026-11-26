@@ -442,7 +442,7 @@ async getUpload(path: string): Promise<ManagedFileRecord | undefined>
 async isManagedUploadPath(path: string): Promise<boolean>
 ```
 
-Source: [`packages/attachment/file-library/src/index.ts:60`](../../packages/attachment/file-library/src/index.ts)
+Source: [`packages/attachment/file-library/src/index.ts:61`](../../packages/attachment/file-library/src/index.ts)
 
 <a id="ctximagegeneration--imagegeneration"></a>
 

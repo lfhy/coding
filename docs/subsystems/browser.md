@@ -247,6 +247,8 @@ async raiseWindow(): Promise<boolean>
 
 /**
  * 仅为空会话创建自己的任务空间页面；CLI 在该空间创建或使用空白锚页，不选全局标签。
+ * 空间自带的空白锚页就是本会话的首张页面：直接导航它，与 `pages` 入口和模型侧
+ * `ego_navigate` 的复用规则一致，不在标签栏里留下一张多余的「新标签页」。
  * @param sessionId - 已在 sessions 服务中确认存在的会话。
  * @param url - Host 已验证的绝对导航地址。
  * @returns 页面归属写入会话空间并确认仍存在时为 true。
@@ -264,6 +266,19 @@ async createSessionPage(sessionId: SessionId, url: string): Promise<boolean>
  * @returns 截图写入成功时为 true。
  */
 async captureSessionPage(options: { /** 会话身份；页面进入它的浏览器空间。 */ readonly sessionId: SessionId /** 本地 HTML 的绝对路径。 */ readonly htmlPath: string /** 视口宽度（CSS 像素），与 HTML 的画布宽度一致。 */ readonly width: number /** 视口高度（CSS 像素）。 */ readonly height: number /** 要写入的 PNG 绝对路径。 */ readonly outPath: string /** 等待整页稳定的毫秒数；缺省 300。 */ readonly settleMs?: number }): Promise<boolean>
+
+/**
+ * 为当前活动页设置或清除设备模拟视口。
+ *
+ * 模型要在别的宽度或移动端语义下判断响应式布局时使用：覆盖由 CDP 挂在该页上，
+ * 本组装的常驻执行器让它跨工具调用保持，直到再次调用并 `reset` 或页面关闭。
+ * 结果里的宽高是页面自身读回的实测值，不是请求值的回显。
+ * 同时记一次可见活动，让工作台为会话展开浏览器面板——布局变化是用户能看到的。
+ * @param options - 调用会话与模型给出的原始视口参数。
+ * @returns 实测视口，或可操作的失败原因（会话已结束、没有页面、脚本失败）。
+ * @throws Error - 参数缺失、越界或互相矛盾时抛出面向模型的说明。
+ */
+async emulateViewport(options: { readonly sessionId: SessionId readonly input: Record<string, unknown> }): Promise<ViewportOutcome>
 
 /**
  * 为人工工作台在指定会话空间新建一张空白页；同会话的请求串行执行，首张页面复用空间锚页。
@@ -285,5 +300,5 @@ async restoreSessionPages(sessionId: SessionId): Promise<boolean>
 
 Types: [SessionId](core.md) · [ToolDefinition](tools.md)
 
-Source: [`packages/browser/browser-ego-host/src/index.ts:63`](../../packages/browser/browser-ego-host/src/index.ts)
+Source: [`packages/browser/browser-ego-host/src/index.ts:64`](../../packages/browser/browser-ego-host/src/index.ts)
 <!-- END GENERATED cordis-surface -->

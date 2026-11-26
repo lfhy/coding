@@ -303,6 +303,8 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   BrowserTabId: 'browser.md',
   BrowserTabSummary: 'browser.md',
   BrowserUseErrorCode: 'browser.md',
+  // 浏览器视口命令的返回类型；语义见 browser.md 的 set-viewport／viewport 段。
+  ViewportOutcome: 'browser.md',
   PptCheckResult: 'ppt.md',
   PptExportResult: 'ppt.md',
   PptSnapshot: 'ppt.md',
@@ -379,6 +381,8 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   FsInfo: 'filesystem.md',
   FsObservation: 'filesystem.md',
   FsPathInfo: 'filesystem.md',
+  FsRemoveOptions: 'filesystem.md',
+  FsRemoveOutcome: 'filesystem.md',
   FsObservationActor: 'filesystem.md',
   FsTarget: 'filesystem.md',
   FsVersion: 'filesystem.md',
