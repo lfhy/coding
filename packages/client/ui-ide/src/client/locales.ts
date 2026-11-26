@@ -10,6 +10,7 @@ export type IdeLocaleKey =
   | 'editor' | 'saving' | 'saved' | 'save' | 'saveShortcut' | 'assistant'
   | 'workspaceHeadline' | 'workspaceDescription'
   | 'discardTitle' | 'discardDescription' | 'discard' | 'reloadTitle' | 'reloadDescription' | 'cancel'
+  | 'switchWorkspace' | 'openOtherFolder' | 'split' | 'splitHint' | 'paneLabel' | 'closePane' | 'dropLeft' | 'dropRight'
 
 /** 简体中文文案。 */
 export const zh: Record<IdeLocaleKey, string> = {
@@ -27,6 +28,9 @@ export const zh: Record<IdeLocaleKey, string> = {
   assistant: 'AI 助手', workspaceHeadline: '从左侧选择文件开始编码', workspaceDescription: '文件会在这里打开；右侧助手与当前工作区会话共用上下文。',
   discardTitle: '放弃未保存的更改？', discardDescription: '关闭 {name} 会丢弃当前草稿。', discard: '放弃并关闭',
   reloadTitle: '重新载入文件？', reloadDescription: '重新载入 {name} 会丢弃当前草稿。', cancel: '取消',
+  switchWorkspace: '切换工作区', openOtherFolder: '打开其他文件夹…', split: '向右拆分',
+  splitHint: '把当前文件拆到新的编辑器分组（也可直接拖动标签）', paneLabel: '编辑器分组 {index}',
+  closePane: '关闭编辑器分组 {index}', dropLeft: '在左侧新建分组', dropRight: '在右侧新建分组',
 }
 
 /** 英文文案。 */
@@ -45,4 +49,7 @@ export const en: Record<IdeLocaleKey, string> = {
   assistant: 'AI assistant', workspaceHeadline: 'Choose a file to start coding', workspaceDescription: 'Files open here; the assistant on the right shares the current workspace session.',
   discardTitle: 'Discard unsaved changes?', discardDescription: 'Closing {name} will discard your draft.', discard: 'Discard and close',
   reloadTitle: 'Reload this file?', reloadDescription: 'Reloading {name} will discard your draft.', cancel: 'Cancel',
+  switchWorkspace: 'Switch workspace', openOtherFolder: 'Open another folder…', split: 'Split right',
+  splitHint: 'Move this file into a new editor group (or drag the tab)', paneLabel: 'Editor group {index}',
+  closePane: 'Close editor group {index}', dropLeft: 'New group on the left', dropRight: 'New group on the right',
 }

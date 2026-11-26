@@ -15,6 +15,8 @@ interface IdeEditorProps {
   onSave: () => void
   onReload: () => void
   onRetry: () => void
+  /** 分组身份：分屏后每个分组各有自己的编辑器面板与标签关联。 */
+  paneId: string
   t: PropsLocale<typeof NS>['t']
 }
 
@@ -24,7 +26,7 @@ function languageLabel(name: string, t: PropsLocale<typeof NS>['t']): string {
 }
 
 /** 活动文件的编辑与恢复区域；错误时保留草稿并提供明确下一步。 */
-export function IdeEditor({ document, onChange, onSave, onReload, onRetry, t }: IdeEditorProps) {
+export function IdeEditor({ document, onChange, onSave, onReload, onRetry, paneId, t }: IdeEditorProps) {
   const field = useRef<HTMLTextAreaElement>(null)
   const gutter = useRef<HTMLDivElement>(null)
   const [cursor, setCursor] = useState({ line: 1, column: 1 })
@@ -32,6 +34,7 @@ export function IdeEditor({ document, onChange, onSave, onReload, onRetry, t }: 
   const mirrored = lines.length <= MAX_GUTTER_LINES
   const editable = document.status === 'ready'
   const tabId = `ide-tab-${encodeURIComponent(document.path)}`
+  const panelId = `ide-editor-panel-${paneId}`
 
   const updateCursor = (input: HTMLTextAreaElement): void => {
     const before = input.value.slice(0, input.selectionStart)
@@ -66,13 +69,13 @@ export function IdeEditor({ document, onChange, onSave, onReload, onRetry, t }: 
     const message = document.status === 'loading' ? t('loading')
       : document.status === 'unsupported' ? t(document.error === 'too-large' ? 'tooLarge' : 'unsupported')
         : t('loadError')
-    return <section id="ide-editor-panel" className={css.state} role="tabpanel" aria-labelledby={tabId}>
+    return <section id={panelId} className={css.state} role="tabpanel" aria-labelledby={tabId}>
       <p role={document.status === 'error' ? 'alert' : 'status'}>{message}</p>
       {document.status === 'error' && <Button size="sm" variant="outline" onClick={onRetry}>{t('retry')}</Button>}
     </section>
   }
 
-  return <section id="ide-editor-panel" className={css.editorPanel} role="tabpanel" aria-labelledby={tabId}>
+  return <section id={panelId} className={css.editorPanel} role="tabpanel" aria-labelledby={tabId}>
     {document.error !== undefined && <div className={css.recovery} role="alert">
       <span>{t(document.error === 'conflict' ? 'conflictKept' : 'draftKept')}</span>
       {document.error === 'conflict'

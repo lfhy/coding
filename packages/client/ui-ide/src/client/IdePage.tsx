@@ -1,9 +1,17 @@
+/**
+ * 代码工作区的页面根：固定从欢迎页开始，选中工作区后进入三栏编辑器。
+ *
+ * 页面只读取本包自己的状态：会话 id 用于向 Host 读写文件，欢迎页与三栏的切换由
+ * `workspaceId` 决定。对话页当前会话只作为外壳的承载会话，不决定这里显示什么。
+ */
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   Button, IconChevronRightOutline14, IconCloudOutline16, IconCodeOutline16,
   IconFolderClose16, IconFolderOpenOutline16, Toast,
 } from 'coding-client-ui-primitives'
-import type { InjectFace, PropsLocale, PropsRenderSlots, PropsRuntime, PropsStore } from 'coding-client-ui-slots'
+import type {
+  HostObservable, InjectFace, PropsLocale, PropsRenderSlots, PropsRuntime,
+} from 'coding-client-ui-slots'
 import {
   isRemoteWorkspacePath, remoteWorkspaceDisplayPath,
   type WorkspaceId, type WorkspaceView,
@@ -11,19 +19,24 @@ import {
 import type { WorkspaceFilesService } from 'coding-client-ui-open-in-app/client'
 import type { DirectoryFlowOwnerProps } from 'coding-client-ui-workspace/client'
 import { IdeWorkspace } from './IdeWorkspace.tsx'
-import { createIdeWorkspaceStore } from './ide-store.ts'
+import type { IdeActionsBaked, IdeState } from './ide-store.ts'
 import { NS } from './locales.ts'
 import css from './IdePage.module.css'
 
+/** 页面可用能力：状态源、写入动作与文件工作区服务。 */
 export interface IdePageFace {
+  hooks: { ideState: HostObservable<IdeState> }
+  actions: IdeActionsBaked
   createWorkspace: (input: { path: string }) => Promise<WorkspaceView>
+  /** 进入工作区：绑定会话、记录选择并展开三栏。 */
   openWorkspace: (workspaceId: WorkspaceId) => Promise<void>
+  /** 回到欢迎页，收起右侧助手。 */
+  leaveWorkspace: () => void
   workspaceFiles: WorkspaceFilesService
 }
 
 export type IdePageProps = PropsRuntime<'shell.page'> & PropsLocale<typeof NS>
-  & PropsRenderSlots<'shell.ide.welcome.directoryFlow'> & PropsStore<ReturnType<typeof createIdeWorkspaceStore>>
-  & InjectFace<IdePageFace>
+  & PropsRenderSlots<'shell.ide.welcome.directoryFlow'> & InjectFace<IdePageFace>
 
 /** 代码工作区欢迎页：选择目录或最近工作区，尚未加载文件与编辑器内容。 */
 function IdeWelcome({
@@ -33,7 +46,7 @@ function IdeWelcome({
   const phase = useWorkspaces(state => state.phase)
   const listState = useWorkspaces(state => state.state)
   const recent = useMemo(
-    () => [...items].sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt)).slice(0, 5),
+    () => [...items].sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt)).slice(0, 6),
     [items],
   )
   const headingRef = useRef<HTMLHeadingElement>(null)
@@ -48,7 +61,7 @@ function IdeWelcome({
     return () => { alive.current = false }
   }, [])
 
-  /** 把短暂失败统一交给共享 Toast；成功后页面通常已关闭。 */
+  /** 把短暂失败统一交给共享 Toast；成功后页面通常已切换形态。 */
   const notify = (text: string): void => {
     setToast(previous => ({ id: (previous?.id ?? 0) + 1, text }))
   }
@@ -135,17 +148,27 @@ function IdeWelcome({
   </div>
 }
 
-/** 按当前会话是否归属工作区，在欢迎页与三栏 IDE 之间路由。 */
+/** 页面根：欢迎页与三栏由本包自己的选择驱动，与对话页当前会话无关。 */
 export function IdePage(props: IdePageProps) {
+  const { useIdeState, actions } = props
   const items = props.useWorkspaces(state => state.items)
-  const workspace = useMemo(
-    () => items.find(item => item.sessionIds.includes(props.sessionId)),
-    [items, props.sessionId],
-  )
-  if (workspace === undefined) return <IdeWelcome {...props} />
-  return <IdeWorkspace workspace={workspace} sessionId={props.sessionId}
+  const openWorkspace = props.openWorkspace
+  const workspaceId = useIdeState(state => state.workspaceId)
+  const views = useIdeState(state => state.views)
+  const sessions = useIdeState(state => state.sessions)
+  const live = workspaceId === null ? undefined : items.find(item => item.workspaceId === workspaceId)
+  const view = workspaceId === null ? undefined : views[workspaceId]
+  const fileSessionId = workspaceId === null ? undefined : sessions[workspaceId]
+  // 绑定会话已被移除（例如在别处归档）或工作区已不存在时回到欢迎页；
+  // 再次选择会经 openWorkspace 重新建一个会话，页面状态按工作区原样保留。
+  if (live === undefined || view === undefined || fileSessionId === undefined) {
+    return <IdeWelcome {...props} />
+  }
+  return <IdeWorkspace workspace={live} workspaces={items} fileSessionId={fileSessionId}
+    view={view} actions={actions} workspaceFiles={props.workspaceFiles}
+    onSwitchWorkspace={(next) => { void openWorkspace(next).catch(() => {}) }}
+    onOpenFolder={props.leaveWorkspace}
     sidebarCollapsed={props.sidebarCollapsed} sidebarWidth={props.sidebarWidth}
     assistantOpen={props.assistantOpen} assistantPanelId={props.assistantPanelId}
-    toggleAssistant={props.toggleAssistant} closePage={props.closePage}
-    workspaceFiles={props.workspaceFiles} useStore={props.useStore} actions={props.actions} t={props.t} />
+    toggleAssistant={props.toggleAssistant} closePage={props.closePage} t={props.t} />
 }

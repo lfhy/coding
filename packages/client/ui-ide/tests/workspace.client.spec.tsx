@@ -1,12 +1,12 @@
 // @vitest-environment jsdom
-/** 工作区三栏、文件标签、版本保存与冲突恢复的真实组件行为。 */
+/** 工作区三栏、文件标签、版本保存与拖拽分屏的真实组件行为。 */
 import { useSyncExternalStore } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { WorkspaceFilesService, WorkspaceFileEntry } from 'coding-client-ui-open-in-app/client'
-import type { WorkspaceView } from 'coding-client-runtime/client'
+import type { WorkspaceId, WorkspaceView } from 'coding-client-runtime/client'
 import { IdePage, type IdePageProps } from '../src/client/IdePage.tsx'
-import { createIdeWorkspaceStore } from '../src/client/ide-store.ts'
+import { createIdeStore } from '../src/client/ide-store.ts'
 import { zh } from '../src/client/locales.ts'
 
 afterEach(() => {
@@ -15,10 +15,16 @@ afterEach(() => {
 })
 
 const SESSION = 'session-ide' as WorkspaceView['sessionIds'][number]
+const WORKSPACE_ID = 'workspace-ide' as WorkspaceId
 const WORKSPACE: WorkspaceView = {
-  workspaceId: 'workspace-ide' as WorkspaceView['workspaceId'],
+  workspaceId: WORKSPACE_ID,
   path: '/repo', title: '示例项目', sessionIds: [SESSION],
   createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-02T00:00:00Z',
+}
+const OTHER: WorkspaceView = {
+  workspaceId: 'workspace-other' as WorkspaceId,
+  path: '/other', title: '另一个项目', sessionIds: [],
+  createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z',
 }
 const ROOT_ENTRIES: WorkspaceFileEntry[] = [
   { name: 'src', type: 'directory', segments: ['src'] },
@@ -26,7 +32,16 @@ const ROOT_ENTRIES: WorkspaceFileEntry[] = [
 ]
 const SRC_ENTRIES: WorkspaceFileEntry[] = [
   { name: 'index.ts', type: 'file', segments: ['src', 'index.ts'], size: 16 },
+  { name: 'util.ts', type: 'file', segments: ['src', 'util.ts'], size: 12 },
 ]
+
+/** jsdom 的 DragEvent 不接收 clientX，派生一个带坐标的事件给落点判定使用。 */
+function dragEvent(type: 'dragover' | 'drop', clientX: number, dataTransfer: object): Event {
+  const event = new Event(type, { bubbles: true, cancelable: true })
+  Object.defineProperty(event, 'clientX', { value: clientX })
+  Object.defineProperty(event, 'dataTransfer', { value: dataTransfer })
+  return event
+}
 
 function deferred<T>() {
   let resolve!: (value: T) => void
@@ -39,9 +54,15 @@ function setup(options: {
   read?: WorkspaceFilesService['read']
   save?: WorkspaceFilesService['save']
   list?: WorkspaceFilesService['list']
+  enter?: boolean
+  workspaces?: readonly WorkspaceView[]
 } = {}) {
-  const instance = createIdeWorkspaceStore().create(SESSION)
-  const useStore = <T,>(selector: (state: ReturnType<typeof instance.getSnapshot>) => T) =>
+  const instance = createIdeStore().create()
+  if (options.enter !== false) {
+    instance.actions.bindSession(WORKSPACE_ID, SESSION)
+    instance.actions.enter(WORKSPACE_ID)
+  }
+  const useIdeState = <T,>(selector: (state: ReturnType<typeof instance.getSnapshot>) => T) =>
     useSyncExternalStore(listener => instance.subscribe(listener), () => selector(instance.getSnapshot()),
       () => selector(instance.getSnapshot()))
   const list = vi.fn(options.list ?? (async (_sessionId, segments) => ({
@@ -60,25 +81,32 @@ function setup(options: {
   })))
   const closePage = vi.fn()
   const toggleAssistant = vi.fn()
+  const openWorkspace = vi.fn(async (workspaceId: WorkspaceId) => {
+    instance.actions.bindSession(workspaceId, (workspaceId === WORKSPACE_ID ? SESSION : 'session-other') as never)
+    instance.actions.enter(workspaceId)
+  })
   const workspaceFiles: WorkspaceFilesService = {
     list, read, save,
     locate: vi.fn(async () => ({ segments: ['src', 'index.ts'] })),
   }
   const props = {
-    sessionId: SESSION,
     closePage,
     toggleAssistant,
     sidebarCollapsed: false,
     sidebarWidth: 280,
     assistantOpen: true,
     assistantPanelId: 'ide-assistant',
-    useWorkspaces: (selector: (value: { items: readonly WorkspaceView[]; phase: 'pending' | 'ready'; state: 'idle' | 'loading' | 'error' }) => unknown) =>
-      selector({ items: [WORKSPACE], phase: 'ready', state: 'idle' }),
+    useWorkspaces: (selector: (value: {
+      items: readonly WorkspaceView[]
+      phase: 'pending' | 'ready'
+      state: 'idle' | 'loading' | 'error'
+    }) => unknown) => selector({ items: options.workspaces ?? [WORKSPACE, OTHER], phase: 'ready', state: 'idle' }),
     workspaceFiles,
-    useStore,
+    useIdeState,
     actions: instance.actions,
-    createWorkspace: vi.fn(),
-    openWorkspace: vi.fn(async () => {}),
+    createWorkspace: vi.fn(async () => WORKSPACE),
+    openWorkspace,
+    leaveWorkspace: vi.fn(() => { instance.actions.enter(null) }),
     renderSlot: () => null,
     t: (key: keyof typeof zh, params?: Record<string, string | number>) => {
       const text = zh[key]
@@ -87,7 +115,7 @@ function setup(options: {
     },
   }
   const view = render(<IdePage {...(props as unknown as IdePageProps)} />)
-  return { view, instance, list, read, save, closePage, toggleAssistant }
+  return { view, instance, list, read, save, closePage, toggleAssistant, openWorkspace }
 }
 
 async function openIndex(_fixture: ReturnType<typeof setup>): Promise<void> {
@@ -124,7 +152,7 @@ describe('IDE 工作区三栏', () => {
       expect(fixture.save).toHaveBeenCalledWith(SESSION, ['src', 'index.ts'], 'v1', 'const value = 2\n')
     })
     await screen.findByText(zh.saved)
-    expect(fixture.instance.getSnapshot().tabs[0]?.dirty).toBe(false)
+    expect(fixture.instance.getSnapshot().views[WORKSPACE_ID]?.documents['src/index.ts']?.dirty).toBe(false)
   })
 
   it('保存冲突保留草稿，确认重新载入后恢复服务端内容', async () => {
@@ -370,5 +398,229 @@ describe('IDE 工作区三栏', () => {
     fireEvent.click(within(dialog).getByRole('button', { name: zh.cancel }))
     expect(screen.queryByRole('dialog')).toBeNull()
     expect(editor).toHaveProperty('value', 'draft')
+  })
+
+  it('切换工作区保留另一个工作区已打开的标签并按工作区重新读取', async () => {
+    const fixture = setup()
+    fireEvent.click(await screen.findByText('README.md'))
+    await screen.findByRole('textbox', { name: zh.editorLabel.replace('{name}', 'README.md') })
+    expect(screen.getByRole('heading', { name: WORKSPACE.title })).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: zh.switchWorkspace }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: OTHER.title }))
+    await waitFor(() => { expect(fixture.openWorkspace).toHaveBeenCalledWith(OTHER.workspaceId) })
+    await screen.findByRole('heading', { name: OTHER.title })
+
+    fireEvent.click(screen.getByRole('button', { name: zh.switchWorkspace }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: WORKSPACE.title }))
+    await screen.findByRole('textbox', { name: zh.editorLabel.replace('{name}', 'README.md') })
+    expect(fixture.instance.getSnapshot().views[OTHER.workspaceId]?.panes[0]?.paths).toEqual([])
+  })
+
+  it('拖动标签到编辑区侧边形成新分组，拖动到另一组标签栏则移动标签', async () => {
+    const fixture = setup()
+    await openIndex(fixture)
+    fireEvent.click(screen.getByText('util.ts'))
+    await screen.findByRole('textbox', { name: zh.editorLabel.replace('{name}', 'util.ts') })
+    const transfer = { effectAllowed: 'none', setData: () => {} }
+    const dragTab = (name: RegExp): Element =>
+      screen.getByRole('tab', { name }).closest('[draggable="true"]') as Element
+    const bodyOf = (index: number): HTMLElement =>
+      screen.getAllByRole('region', { name: zh.paneLabel.replace('{index}', String(index + 1)) })[0]
+        ?.querySelector('[data-pane-body]') as HTMLElement
+
+    fireEvent.dragStart(dragTab(/util\.ts/u), { dataTransfer: transfer })
+    fireEvent.dragOver(bodyOf(0), { clientX: 900, dataTransfer: transfer })
+    fireEvent.dragOver(bodyOf(0), { clientX: 10, dataTransfer: transfer })
+    fireEvent.dragOver(bodyOf(0), { clientX: 900, dataTransfer: transfer })
+    fireEvent.dragLeave(bodyOf(0))
+    fireEvent.dragOver(bodyOf(0), { clientX: 900, dataTransfer: transfer })
+    fireEvent.drop(bodyOf(0), { clientX: 900, dataTransfer: transfer })
+    const split = fixture.instance.getSnapshot().views[WORKSPACE_ID]?.panes ?? []
+    expect(split).toHaveLength(2)
+    expect(split[1]?.paths).toEqual(['src/util.ts'])
+
+    // 拖到另一组的标签栏把标签移过去，而不是再拆一屏。
+    fireEvent.dragStart(dragTab(/index\.ts/u), { dataTransfer: transfer })
+    const targetTabs = screen.getAllByRole('tablist')[1] as HTMLElement
+    fireEvent.dragOver(targetTabs, { dataTransfer: transfer })
+    fireEvent.drop(targetTabs, { dataTransfer: transfer })
+    // 源分组被搬空后随之收起，标签都留在目标分组里。
+    const moved = fixture.instance.getSnapshot().views[WORKSPACE_ID]?.panes ?? []
+    expect(moved.map(pane => pane.paths)).toEqual([['src/util.ts', 'src/index.ts']])
+
+    // 没有拖动时落点忽略事件。
+    fireEvent.dragOver(targetTabs, { dataTransfer: transfer })
+    fireEvent.drop(targetTabs, { dataTransfer: transfer })
+    fireEvent.drop(bodyOf(0), { clientX: 900, dataTransfer: transfer })
+
+    // 只有一个分组时不渲染关闭按钮。
+    expect(screen.queryByRole('button', { name: zh.closePane.replace('{index}', '1') })).toBeNull()
+  })
+})
+
+describe('IDE 编辑器分组交互', () => {
+  it('拖动落点按指针所在半区判定，未拖动时落点与拖出事件都不改状态', async () => {
+    const fixture = setup()
+    await openIndex(fixture)
+    fireEvent.click(screen.getByText('util.ts'))
+    await screen.findByRole('textbox', { name: zh.editorLabel.replace('{name}', 'util.ts') })
+    const transfer = { effectAllowed: 'none', setData: () => {} }
+    const paneRegion = (index: number): HTMLElement =>
+      screen.getByRole('region', { name: zh.paneLabel.replace('{index}', String(index + 1)) })
+    const tabsOf = (index: number): HTMLElement =>
+      paneRegion(index).querySelector('[role="tablist"]') as HTMLElement
+    const bodyOf = (index: number): HTMLElement =>
+      paneRegion(index).querySelector('[data-pane-body]') as HTMLElement
+
+    // 没有拖动时，标签栏与编辑区的落点事件都被忽略。
+    fireEvent.dragOver(tabsOf(0), { dataTransfer: transfer })
+    fireEvent.drop(tabsOf(0), { dataTransfer: transfer })
+    fireEvent.drop(bodyOf(0), { clientX: 900, dataTransfer: transfer })
+    expect(fixture.instance.getSnapshot().views[WORKSPACE_ID]?.panes ?? []).toHaveLength(1)
+
+    // 指针停在左半区时提示出现，随后落点按该侧拆分。
+    // jsdom 没有布局，`fireEvent` 也不带 pointer 坐标：这里给出内容区矩形并直接派发带 clientX 的事件。
+    const dragTab = screen.getByRole('tab', { name: /util\.ts/u }).closest('[draggable="true"]') as Element
+    fireEvent.dragStart(dragTab, { dataTransfer: transfer })
+    const body = bodyOf(0)
+    body.getBoundingClientRect = () => ({
+      left: 0, width: 800, top: 0, height: 600, right: 800, bottom: 600, x: 0, y: 0,
+      toJSON: () => ({}),
+    })
+    act(() => { body.dispatchEvent(dragEvent('dragover', 10, transfer)) })
+    expect(screen.getByText(zh.dropLeft)).toBeTruthy()
+    act(() => { body.dispatchEvent(dragEvent('drop', 10, transfer)) })
+    const leftSplit = fixture.instance.getSnapshot().views[WORKSPACE_ID]?.panes ?? []
+    expect(leftSplit.map(pane => pane.paths)).toEqual([['src/util.ts'], ['src/index.ts']])
+    expect(leftSplit[0]?.paths).toEqual(['src/util.ts'])
+
+    // 提示归属另一个分组时，在别的分组上离开不清除提示。
+    const regionsAfter = screen.getAllByRole('region', { name: /编辑器分组/u })
+    fireEvent.dragStart(dragTab, { dataTransfer: transfer })
+    fireEvent.dragOver(regionsAfter[0]?.querySelector('[data-pane-body]') as HTMLElement,
+      { clientX: 900, dataTransfer: transfer })
+    fireEvent.dragLeave(regionsAfter[1]?.querySelector('[data-pane-body]') as HTMLElement)
+    fireEvent.dragEnd(dragTab)
+    // 没有拖动时在内容区上移动指针被忽略。
+    fireEvent.dragOver(regionsAfter[0]?.querySelector('[data-pane-body]') as HTMLElement, { clientX: 900 })
+
+    // 关闭第二个分组后回到单栏。
+    fireEvent.click(screen.getByRole('button', { name: zh.closePane.replace('{index}', '2') }))
+    expect(fixture.instance.getSnapshot().views[WORKSPACE_ID]?.panes ?? []).toHaveLength(1)
+  })
+
+  it('页头拆分、保存与分组聚焦按钮各自触发对应动作', async () => {
+    const fixture = setup()
+    await openIndex(fixture)
+    fireEvent.click(screen.getByRole('button', { name: zh.split }))
+    const split = fixture.instance.getSnapshot().views[WORKSPACE_ID]?.panes ?? []
+    expect(split.map(pane => pane.paths)).toEqual([['src/index.ts'], ['src/index.ts']])
+
+    // 两个分组各有一份编辑器；点到哪一组就把焦点交给哪一组。
+    const regions = screen.getAllByRole('region', { name: /编辑器分组/u })
+    expect(regions).toHaveLength(2)
+    fireEvent.focus(screen.getAllByRole('textbox')[1] as HTMLElement)
+    expect(fixture.instance.getSnapshot().views[WORKSPACE_ID]?.activePaneId)
+      .toBe(fixture.instance.getSnapshot().views[WORKSPACE_ID]?.panes[1]?.id)
+    fireEvent.pointerDown(regions[0] as HTMLElement)
+    expect(fixture.instance.getSnapshot().views[WORKSPACE_ID]?.activePaneId)
+      .toBe(fixture.instance.getSnapshot().views[WORKSPACE_ID]?.panes[0]?.id)
+
+    const editor = screen.getAllByRole('textbox')[0] as HTMLElement
+    fireEvent.change(editor, { target: { value: 'changed' } })
+    fireEvent.click(screen.getByRole('button', { name: zh.save }))
+    await waitFor(() => { expect(fixture.save).toHaveBeenCalledOnce() })
+  })
+
+  it('切换工作区失败时留在原工作区，不弹确认也不丢状态', async () => {
+    const fixture = setup()
+    await openIndex(fixture)
+    fixture.openWorkspace.mockRejectedValueOnce(new Error('offline'))
+    fireEvent.click(screen.getByRole('button', { name: zh.switchWorkspace }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: OTHER.title }))
+    await waitFor(() => { expect(fixture.openWorkspace).toHaveBeenCalledWith(OTHER.workspaceId) })
+    expect(screen.getByRole('heading', { name: WORKSPACE.title })).toBeTruthy()
+    expect(fixture.instance.getSnapshot().workspaceId).toBe(WORKSPACE_ID)
+  })
+
+  it('重新进入工作区时补读上次被中断的正文', async () => {
+    const read = vi.fn<WorkspaceFilesService['read']>(async (_sessionId, segments) => ({
+      path: `/repo/${segments.join('/')}`,
+      version: 'v1',
+      content: { kind: 'code' as const, text: 'const value = 1\n', language: 'ts' },
+    }))
+    const instance = createIdeStore().create()
+    instance.actions.bindSession(WORKSPACE_ID, SESSION)
+    instance.actions.enter(WORKSPACE_ID)
+    // 模拟上次读取被中断：标签停在 loading，正文为空。
+    instance.actions.openTab(WORKSPACE_ID, 'src/index.ts', 'index.ts', ['src', 'index.ts'])
+    const useIdeState = <T,>(selector: (state: ReturnType<typeof instance.getSnapshot>) => T) =>
+      useSyncExternalStore(listener => instance.subscribe(listener), () => selector(instance.getSnapshot()),
+        () => selector(instance.getSnapshot()))
+    const workspaceFiles: WorkspaceFilesService = {
+      list: async () => ({ path: '/repo', entries: ROOT_ENTRIES, truncated: false }),
+      read,
+      save: vi.fn(),
+      locate: vi.fn(),
+    }
+    const props = {
+      closePage: vi.fn(), toggleAssistant: vi.fn(), sidebarCollapsed: false, sidebarWidth: 280,
+      assistantOpen: true, assistantPanelId: 'ide-assistant',
+      useWorkspaces: (selector: (value: { items: readonly WorkspaceView[]; phase: 'ready'; state: 'idle' }) => unknown) =>
+        selector({ items: [WORKSPACE], phase: 'ready', state: 'idle' }),
+      workspaceFiles, useIdeState, actions: instance.actions,
+      createWorkspace: vi.fn(), openWorkspace: vi.fn(), leaveWorkspace: vi.fn(),
+      renderSlot: () => null,
+      t: (key: keyof typeof zh, params?: Record<string, string | number>) => {
+        const text = zh[key]
+        if (params === undefined) return text
+        return text.replace(/\{(\w+)\}/gu, (_match, name: string) => String(params[name] ?? ''))
+      },
+    }
+    render(<IdePage {...(props as unknown as IdePageProps)} />)
+    await screen.findByRole('textbox', { name: zh.editorLabel.replace('{name}', 'index.ts') })
+    expect(read).toHaveBeenCalledWith(SESSION, ['src', 'index.ts'], expect.any(AbortSignal))
+  })
+
+  it('切换菜单选中当前工作区时不重复进入，分组标签可点击与取消拖动', async () => {
+    const fixture = setup()
+    await openIndex(fixture)
+    fireEvent.click(screen.getByRole('button', { name: zh.switchWorkspace }))
+    // 菜单也可以直接收起而不选任何项。
+    fireEvent.keyDown(document.body, { key: 'Escape' })
+    fireEvent.click(screen.getByRole('button', { name: zh.switchWorkspace }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: WORKSPACE.title }))
+    expect(fixture.openWorkspace).not.toHaveBeenCalled()
+
+    const transfer = { effectAllowed: 'none', setData: () => {} }
+    const dragTab = screen.getByRole('tab', { name: /index\.ts/u }).closest('[draggable="true"]') as Element
+    fireEvent.dragStart(dragTab, { dataTransfer: transfer })
+    fireEvent.dragEnd(dragTab)
+    // 拖动取消后落点不再生效。
+    fireEvent.drop(screen.getAllByRole('tablist')[0] as HTMLElement, { dataTransfer: transfer })
+    expect(fixture.instance.getSnapshot().views[WORKSPACE_ID]?.panes ?? []).toHaveLength(1)
+
+    fireEvent.click(screen.getByRole('tab', { name: /index\.ts/u }))
+    expect(fixture.instance.getSnapshot().views[WORKSPACE_ID]?.panes[0]?.activePath).toBe('src/index.ts')
+  })
+})
+
+describe('IDE 欢迎页与状态独立', () => {
+  it('没有记住工作区时先进欢迎页，不因为对话页已有工作区就进入三栏', async () => {
+    const fixture = setup({ enter: false })
+    expect(screen.getByRole('heading', { name: zh.headline })).toBeTruthy()
+    expect(screen.queryByRole('heading', { name: WORKSPACE.title })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: /示例项目/u }))
+    await waitFor(() => { expect(fixture.openWorkspace).toHaveBeenCalledWith(WORKSPACE_ID) })
+    expect(await screen.findByRole('heading', { name: WORKSPACE.title })).toBeTruthy()
+  })
+
+  it('页头菜单可以回到欢迎页重新选择文件夹', async () => {
+    const fixture = setup()
+    fireEvent.click(screen.getByRole('button', { name: zh.switchWorkspace }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: zh.openOtherFolder }))
+    expect(fixture.instance.getSnapshot().workspaceId).toBeNull()
+    expect(await screen.findByRole('button', { name: zh.openFolder })).toBeTruthy()
   })
 })

@@ -37,7 +37,10 @@ interface Harness {
   >
 }
 
-function harness(cwd: string | null = '/workspace'): Harness {
+function harness(
+  cwd: string | null = '/workspace',
+  options: { live?: boolean; persistedCwd?: string | null } = {},
+): Harness {
   const root = target('root', String.raw`C:\repo`)
   const entries = new Map<string, FsDirEntry[]>()
   const info = new Map<string, FsInfo | undefined>()
@@ -63,10 +66,16 @@ function harness(cwd: string | null = '/workspace'): Harness {
     readBytes,
     writeText,
   }
+  const live = options.live ?? true
+  const persisted = options.persistedCwd === undefined
+    ? { id: 'session', ...cwd === null ? {} : { cwd } }
+    : { id: 'session', ...options.persistedCwd === null ? {} : { cwd: options.persistedCwd } }
   const ctx = {
-    sessions: { get: (id: string) => id === 'session' ? session : undefined },
+    sessions: { get: (id: string) => id === 'session' && live ? session : undefined },
     fs,
-    get: () => undefined,
+    get: (name: string) => (name === 'sessionPersistence'
+      ? { list: async () => [persisted] }
+      : undefined),
   } as unknown as Context
   return { ctx, entries, info, contents, root, resolve, readBytes, writeText }
 }
@@ -159,6 +168,29 @@ describe('Session-bound directory listing', () => {
     expect(nestedListing.entries[0]).toEqual({ name: 'index.ts', type: 'file', size: 6 })
     expect(nestedListing.truncated).toBe(true)
     expect(state.resolve.mock.calls).toContainEqual(['/workspace', { cwd: '/workspace' }])
+  })
+
+  it('服务 Host 重启后的冷会话：cwd 取自持久化 header', async () => {
+    const live = harness('/workspace')
+    live.entries.set('root', [file('plain.txt')])
+    const cold = harness('/workspace', { live: false, persistedCwd: '/workspace' })
+    cold.entries.set('root', [file('plain.txt')])
+    const listed = await listWorkspaceFiles(cold.ctx, { sessionId: 'session', segments: [] })
+    expect(listed.entries.map(entry => entry.name)).toEqual(['plain.txt'])
+    // 同一组合里的重复请求走缓存，不再扫持久化列表。
+    const list = vi.fn(async () => [{ id: 'session', cwd: '/workspace' }])
+    ;(cold.ctx.get as (name: string) => unknown) = (name: string) =>
+      (name === 'sessionPersistence' ? { list } : undefined)
+    await listWorkspaceFiles(cold.ctx, { sessionId: 'session', segments: [] })
+    expect(list).not.toHaveBeenCalled()
+
+    await expect(listWorkspaceFiles(harness('/workspace', { live: false, persistedCwd: null }).ctx,
+      { sessionId: 'session', segments: [] }))
+      .rejects.toMatchObject({ status: 409, code: 'workspace-unavailable' })
+    await expect(listWorkspaceFiles(harness('/workspace', {
+      live: false, persistedCwd: '/workspace',
+    }).ctx, { sessionId: 'other', segments: [] }))
+      .rejects.toMatchObject({ status: 404, code: 'session-not-found' })
   })
 
   it('fails closed for missing Sessions, absent cwd, traversal, files, and outside targets', async () => {

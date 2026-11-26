@@ -23,14 +23,25 @@ function setup(items: WorkspaceView[] = [], phase: 'pending' | 'ready' = 'ready'
   let flow: DirectoryFlowOwnerProps | undefined
   const createWorkspace = vi.fn(async (input: { path: string }) => workspace('created', input.path, '2026-01-02T00:00:00Z', input.path))
   const openWorkspace = vi.fn(async () => {})
+  const leaveWorkspace = vi.fn()
   const closePage = vi.fn()
+  const actions = new Proxy({}, { get: () => () => {} })
   const props = {
     closePage,
     useWorkspaces: (selector: (value: { items: readonly WorkspaceView[]; phase: 'pending' | 'ready'; state: 'idle' | 'loading' | 'error' }) => unknown) =>
       selector({ items, phase, state }),
     createWorkspace,
     openWorkspace,
-    t: (key: keyof typeof zh) => zh[key],
+    leaveWorkspace,
+    // 欢迎页不读页面状态；给出空快照即可验证它只按工作区列表渲染。
+    useIdeState: (selector: (value: { workspaceId: null; views: {}; sessions: {} }) => unknown) =>
+      selector({ workspaceId: null, views: {}, sessions: {} }),
+    actions,
+    t: (key: keyof typeof zh, params?: Record<string, string | number>) => {
+      const text = zh[key]
+      if (params === undefined) return text
+      return text.replace(/\{(\w+)\}/gu, (_match, name: string) => String(params[name] ?? ''))
+    },
     renderSlot: (_name: string, owner: DirectoryFlowOwnerProps) => {
       flow = owner
       return <div data-testid="directory-flow">{owner.open ? 'open' : 'closed'}</div>

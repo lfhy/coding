@@ -81,13 +81,13 @@ target 与 open 路由会在读取应用可用性前检查 Remote-SSH marker。�
 <a id="workspace-files"></a>
 ## 工作区文件
 
-文件路由先用 `sessionId` 查找当前 live Session，再只从其 `header.cwd` 解析根；列目录与读取预览的客户端除了 Session id 只能提交 provider 返回的 `segments`，不能提供根目录或展示路径。每个路径段只能精确匹配 `ctx.fs.listDir` 返回的子项，并在进入下一层或读取文件前用 `ctx.fs.contains` 复核 containment；浏览器字符串从不拼成 OS 路径。因此同一协议覆盖本地、SSH Host、Remote-SSH marker、Windows 盘符与 UNC 展示路径。
+文件路由先用 `sessionId` 查找 live Session，没有时回落到持久化 header 的 `cwd`（Host 重启后尚未恢复的会话照样能列目录、读文件与保存），并从该 `cwd` 解析根；列目录与读取预览的客户端除了 Session id 只能提交 provider 返回的 `segments`，不能提供根目录或展示路径。每个路径段只能精确匹配 `ctx.fs.listDir` 返回的子项，并在进入下一层或读取文件前用 `ctx.fs.contains` 复核 containment；浏览器字符串从不拼成 OS 路径。因此同一协议覆盖本地、SSH Host、Remote-SSH marker、Windows 盘符与 UNC 展示路径。
 
 `locate` 是这条路径链唯一的入口翻译：模型给出的工具路径可能是工作区相对路径、本地占位目录下的绝对路径，也可能是 Remote-SSH 执行世界里的远端绝对路径，浏览器无法自己换算。它用 `ctx.fs.resolve(path, { cwd })` 在 Session 自己的执行世界解析一次，要求结果仍被 `ctx.fs.contains` 判定在工作区根内，再逐层用 `ctx.fs.listDir` 子项名称拼出段链；末段必须是普通文件，越级、工作区外、无法解析和目录一律 404，不返回 provider 诊断或解析后路径。调用方拿到的段可以继续交给 `files`／`read`，因此远端文件与本地文件走同一份预览。
 
 只有目录 target 可以推进名称链，预览的最后一段必须仍是普通文件。列表响应包含 `displayPath`、普通 entry 元数据和 `truncated`，单层最多 2,000 项。预览在 `previewMaxBytes` 内完整读取：Markdown、HTML、SVG、代码和其他严格 UTF-8 文本返回 `kind: text` 与对应 format；支持的图片返回 `kind: image`、MIME 与 base64；含 NUL、无效 UTF-8 或超限文件返回 `kind: unsupported`，不返回原始内容。超限响应以 `truncated: true` 明确区分。所有预览响应都带读取时 `ctx.fs.stat` 得到的不透明 `version`。
 
-保存只接受已存在的普通文本文件，完整内容受同一个 `previewMaxBytes` 限制。Host 重新校验 live Session、cwd、路径段与 containment 后，以 `replaceIfVersion` 调用 `ctx.fs.writeText`；策略存在时传入按该 Session 解析的 `SandboxExecutionPolicy`。基础版本过期或文件消失返回 409 `file-conflict`，只读或沙箱拒绝返回 403 `file-readonly`，超限返回 413，非文本目标返回 400。成功返回新 `version` 与 `operation`，不返回 provider target key。客户端不会用新内容盲目覆盖外部改动。
+保存只接受已存在的普通文本文件，完整内容受同一个 `previewMaxBytes` 限制。Host 重新校验会话 cwd、路径段与 containment 后，以 `replaceIfVersion` 调用 `ctx.fs.writeText`；策略存在时传入按该 Session 解析的 `SandboxExecutionPolicy`（会话是冷的时按部署默认策略解析，工作区根仍取该会话 cwd）。基础版本过期或文件消失返回 409 `file-conflict`，只读或沙箱拒绝返回 403 `file-readonly`，超限返回 413，非文本目标返回 400。成功返回新 `version` 与 `operation`，不返回 provider target key。客户端不会用新内容盲目覆盖外部改动。
 
 上传请求使用 `Content-Type: application/octet-stream`、`x-session-id: <live session id>` 和 `x-file-name: encodeURIComponent(file.name)`，body 是原始文件字节。仅本机回环同源、有普通本地工作区的 live Session 可上传；经 SSH 启动的 Host、Remote-SSH marker（包括损坏 marker）、缺少或替换的工作区均拒绝。文件由 `ctx.fileLibrary` 保存到解析后的 Coding home 的 `files/uploads/` 并在 SQLite 登记，工作区不创建 `.dsh-uploads/`。文件名合成重音，只保留 Unicode 字母数字、空格及 `._-`；其他字符替换为 `_`，保留安全扩展名并按 UTF-8 字节截短。空名、无法解码或无可见名称拒绝。字节写完后服务复核原 live Session、cwd 与工作区身份，登记成功才返回绝对 `{ path }`，可供本地 `@file` 引用；跨会话文件列表由文件库持有。原始流超过 32 MiB（或声明长度已超限）返回 413；无本机工作区、远端或存储失败返回 409；无 live Session 返回 404，其他无效请求返回 4xx。失败响应不包含内部路径。
 

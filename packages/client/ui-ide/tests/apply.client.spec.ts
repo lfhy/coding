@@ -56,7 +56,8 @@ describe('ui-ide registration', () => {
     expect(localeRegister.mock.calls[0]?.[1].zh.nav).toBe(zh.nav)
     expect(registered[0]).toMatchObject({ id: 'ide', order: 12, locale: 'ide' })
     expect(registered[1]).toMatchObject({ key: 'ide', locale: 'ide' })
-    expect(typeof registered[1]?.store).toBe('function')
+    // 页面状态由插件自己持有（跨挂载存活），不注册成会话级 store。
+    expect(registered[1]?.store).toBeUndefined()
     expect(registered[1]?.children).toHaveProperty('shell.ide.welcome.directoryFlow')
 
     const navigation = registered[0]?.inject() as { openIde: () => Promise<void> }
@@ -67,11 +68,15 @@ describe('ui-ide registration', () => {
     expect(setPageAssistant).toHaveBeenCalledWith(false)
 
     const page = registered[1]?.inject() as {
+      hooks: { ideState: { getSnapshot: () => { workspaceId: string | null } } }
+      actions: { enter: (workspaceId: string | null) => void }
       createWorkspace: (input: { path: string }) => Promise<unknown>
       openWorkspace: (workspaceId: 'workspace-1') => Promise<void>
+      leaveWorkspace: () => void
       workspaceFiles: unknown
     }
     expect(page.workspaceFiles).toBe(workspaceFiles)
+    expect(typeof page.hooks.ideState.getSnapshot().workspaceId).not.toBe('undefined')
     const workspace = await page.createWorkspace({ path: '/tmp/project' })
     expect(create).toHaveBeenCalledWith({ path: '/tmp/project' })
     await page.openWorkspace((workspace as { workspaceId: 'workspace-1' }).workspaceId)
@@ -79,6 +84,8 @@ describe('ui-ide registration', () => {
     expect(open).toHaveBeenCalledWith('session-workspace')
     expect(openPage).toHaveBeenCalledWith('ide', 'session-workspace', 'session-current')
     expect(setPageAssistant).toHaveBeenLastCalledWith('auto')
+    page.leaveWorkspace()
+    expect(setPageAssistant).toHaveBeenLastCalledWith(false)
     expect(closePage).not.toHaveBeenCalled()
   })
 })

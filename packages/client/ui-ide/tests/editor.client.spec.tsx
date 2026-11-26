@@ -21,7 +21,7 @@ function setup(overrides: Partial<IdeDocument> = {}) {
   const onSave = vi.fn()
   const onReload = vi.fn()
   const onRetry = vi.fn()
-  render(<IdeEditor document={document(overrides)} t={translate} onChange={onChange}
+  render(<IdeEditor document={document(overrides)} paneId="pane-0" t={translate} onChange={onChange}
     onSave={onSave} onReload={onReload} onRetry={onRetry} />)
   return { onChange, onSave, onReload, onRetry }
 }

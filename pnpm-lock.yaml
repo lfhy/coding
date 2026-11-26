@@ -6862,6 +6862,9 @@ importers:
       coding-session:
         specifier: workspace:^
         version: link:../../core/session
+      coding-session-persistence:
+        specifier: workspace:^
+        version: link:../../session/session-persistence
       coding-storage:
         specifier: workspace:^
         version: link:../../storage/storage

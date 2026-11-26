@@ -267,6 +267,8 @@
       "coding-client-ui-user-questions": ["./packages/client/ui-user-questions/src"],
       "coding-client-ui-trajectory": ["./packages/client/ui-trajectory/src"],
       "coding-client-ui-workspace": ["./packages/client/ui-workspace/src"],
+      "coding-client-ui-ide": ["./packages/client/ui-ide/src"],
+      "coding-client-ui-ide/client": ["./packages/client/ui-ide/src/client"],
       "coding-client-ui-theme": ["./packages/client/ui-theme/src"],
       "coding-client-ui-settings": ["./packages/client/ui-settings/src"],
       "coding-client-ui-settings-computer-use": ["./packages/client/ui-settings-computer-use/src"],

@@ -4,6 +4,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import { FsVersion } from 'coding-fs'
 import type { FsDirEntry, FsTarget } from 'coding-fs'
 import { SessionId } from 'coding-session'
+import type {} from 'coding-session-persistence'
 import type {} from 'coding-sandbox-policy'
 import type {
   OpenInAppFileEntry,
@@ -157,21 +158,59 @@ function workspaceUnavailable(message: string): WorkspaceProtocolError {
   return new WorkspaceProtocolError(404, 'not-found', message)
 }
 
-/** 读出 Session 的工作区根路径；Session 或工作区缺席时给出协议错误。 */
-function sessionCwdOf(ctx: Context, sessionId: string): string {
-  const session = ctx.sessions.get(SessionId(sessionId))
-  if (session === undefined) {
-    throw new WorkspaceProtocolError(404, 'session-not-found', `session is not live: ${sessionId}`)
+/**
+ * 读出 Session 的工作区根路径。
+ *
+ * 文件树与预览只需要会话的 cwd 与执行世界，与「该会话此刻是否在 Host 内存里
+ * 运行」无关：持久化过的会话在 Host 重启后是冷的，浏览器侧仍能复用它读写文件。
+ * 因此 live 会话优先，其次读持久化 header，两者都没有才报 session-not-found。
+ * 结果按本 Host 组合缓存——会话 header 的 cwd 在会话生命周期内不变，而列表读取
+ * 每次都要扫一遍持久化目录。
+ * @param ctx - 携带 Session store 与可选持久化的 Host 上下文。
+ * @param sessionId - 请求里的会话身份。
+ * @returns 该会话 cwd 的绝对路径。
+ */
+async function sessionCwdOf(ctx: Context, sessionId: string): Promise<string> {
+  const cache = cwdCacheOf(ctx)
+  const live = ctx.sessions.get(SessionId(sessionId))
+  if (live !== undefined) {
+    const cwd = live.header.cwd
+    if (cwd === undefined) {
+      throw new WorkspaceProtocolError(409, 'workspace-unavailable', 'session has no workspace directory')
+    }
+    cache.set(sessionId, cwd)
+    return cwd
   }
-  const cwd = session.header.cwd
-  if (cwd === undefined) {
+  const cached = cache.get(sessionId)
+  if (cached !== undefined) return cached
+  const persistence = ctx.get('sessionPersistence')
+  const stored = persistence === undefined
+    ? undefined
+    : (await persistence.list()).find(header => header.id === sessionId)
+  if (stored === undefined) {
+    throw new WorkspaceProtocolError(404, 'session-not-found', `session is unknown: ${sessionId}`)
+  }
+  if (stored.cwd === undefined) {
     throw new WorkspaceProtocolError(409, 'workspace-unavailable', 'session has no workspace directory')
   }
-  return cwd
+  cache.set(sessionId, stored.cwd)
+  return stored.cwd
+}
+
+/** 每个 Host 组合一份会话到 cwd 的缓存；键来自不可变 header，不含凭据或用户输入。 */
+const cwdCaches = new WeakMap<Context, Map<string, string>>()
+
+function cwdCacheOf(ctx: Context): Map<string, string> {
+  let cache = cwdCaches.get(ctx)
+  if (cache === undefined) {
+    cache = new Map<string, string>()
+    cwdCaches.set(ctx, cache)
+  }
+  return cache
 }
 
 async function rootFor(ctx: Context, sessionId: string): Promise<FsTarget> {
-  const cwd = sessionCwdOf(ctx, sessionId)
+  const cwd = await sessionCwdOf(ctx, sessionId)
   return ctx.fs.resolve(cwd, { cwd })
 }
 
@@ -241,7 +280,7 @@ export async function locateWorkspaceFile(
   ctx: Context,
   request: OpenInAppLocateRequest,
 ): Promise<OpenInAppLocatePayload> {
-  const cwd = sessionCwdOf(ctx, request.sessionId)
+  const cwd = await sessionCwdOf(ctx, request.sessionId)
   const root = await ctx.fs.resolve(cwd, { cwd })
   let target: FsTarget
   try {
@@ -405,11 +444,11 @@ export async function saveWorkspaceFile(
   request: OpenInAppSaveRequest,
 ): Promise<OpenInAppSavePayload> {
   const { entry, target } = await fileEntry(ctx, request)
+  // 冷会话（Host 重启后尚未恢复）仍可写入：沙箱策略退化为工作区根，版本校验不变。
   const session = ctx.sessions.get(SessionId(request.sessionId))
-  if (session === undefined) {
-    throw new WorkspaceProtocolError(404, 'session-not-found', `session is not live: ${request.sessionId}`)
-  }
-  const policy = ctx.get('sandboxPolicy')?.resolve({ session })
+  const policy = session === undefined
+    ? ctx.get('sandboxPolicy')?.resolve({})
+    : ctx.get('sandboxPolicy')?.resolve({ session })
   try {
     const outcome = await ctx.fs.writeText(
       target,

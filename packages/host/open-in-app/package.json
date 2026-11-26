@@ -55,11 +55,13 @@
     "coding-host-webserver": "workspace:^",
     "coding-invariants": "workspace:^",
     "coding-sandbox-policy": "workspace:^",
-    "coding-session": "workspace:^"
+    "coding-session": "workspace:^",
+    "coding-session-persistence": "workspace:^"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "workspace:^",
     "@deepseek-ai/cordis-plugin-loader": "workspace:^",
+    "@types/ws": "^8.18.1",
     "coding-agent": "workspace:^",
     "coding-file-library": "workspace:^",
     "coding-fs": "workspace:^",
@@ -68,9 +70,9 @@
     "coding-invariants": "workspace:^",
     "coding-sandbox-policy": "workspace:^",
     "coding-session": "workspace:^",
+    "coding-session-persistence": "workspace:^",
     "coding-storage": "workspace:^",
     "coding-storage-domain": "workspace:^",
-    "coding-storage-sqlite": "workspace:^",
-    "@types/ws": "^8.18.1"
+    "coding-storage-sqlite": "workspace:^"
   }
 }

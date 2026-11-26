@@ -54,6 +54,7 @@ describe('代码工作区入口', () => {
     const project = join(scaffold.workspaceCwd, 'ide-project')
     await mkdir(join(project, 'src'), { recursive: true })
     await writeFile(join(project, 'src', 'index.ts'), 'const answer = 1\n')
+    await writeFile(join(project, 'src', 'util.ts'), 'export const util = 1\n')
     await scaffold.ctx.workspaceRegistry.create(project, 'IDE project')
     await page.reload({ waitUntil: 'load' })
     await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
@@ -78,6 +79,46 @@ describe('代码工作区入口', () => {
     }))
     expect(metrics.width).toBe(metrics.viewportWidth)
     expect(metrics.height).toBe(metrics.viewportHeight)
+    expect(consoleLog.pageErrors).toEqual([])
+  })
+
+  it('切换工作区保留各自标签，拖动标签可分屏', async () => {
+    onTestFailed(() => saveFailureShot(page, 'ide-split'))
+    const other = join(scaffold.workspaceCwd, 'ide-other')
+    await mkdir(join(other, 'docs'), { recursive: true })
+    await writeFile(join(other, 'docs', 'note.md'), '# note\n')
+    await scaffold.ctx.workspaceRegistry.create(other, 'IDE other')
+    await page.reload({ waitUntil: 'load' })
+    await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
+    await page.getByRole('button', { name: 'Code', exact: true }).click()
+
+    // 欢迎页开项目 A，打开一个文件。
+    await page.getByRole('button', { name: /IDE project/ }).click()
+    await page.getByRole('heading', { level: 1, name: 'IDE project', exact: true }).waitFor({ timeout: 60_000 })
+    await page.getByText('src', { exact: true }).click()
+    await page.getByText('index.ts', { exact: true }).click()
+    await page.getByRole('tab', { name: /index\.ts/u }).waitFor()
+    // 分屏需要把标签从一栏拖到另一栏，先打开第二个文件。
+    await page.getByText('util.ts', { exact: true }).click()
+    await page.getByRole('tab', { name: /util\.ts/u }).waitFor()
+
+    // 页内切到项目 B，再切回来：标签仍在。
+    await page.getByRole('button', { name: 'Switch workspace', exact: true }).click()
+    await page.getByRole('menuitem', { name: 'IDE other', exact: true }).click()
+    await page.getByRole('heading', { level: 1, name: 'IDE other', exact: true }).waitFor({ timeout: 60_000 })
+    expect(await page.getByRole('tab', { name: /index\.ts/u }).count()).toBe(0)
+    await page.getByRole('button', { name: 'Switch workspace', exact: true }).click()
+    await page.getByRole('menuitem', { name: 'IDE project', exact: true }).click()
+    await page.getByRole('tab', { name: /index\.ts/u }).waitFor({ timeout: 60_000 })
+
+    // 拖到编辑区右半区形成第二个分组。
+    const tab = page.locator('[draggable="true"]', { has: page.getByRole('tab', { name: /util\.ts/u }) }).first()
+    const body = page.locator('[data-pane-body]').first()
+    const box = await body.boundingBox()
+    expect(box).not.toBeNull()
+    await tab.dragTo(body, { targetPosition: { x: (box?.width ?? 100) - 8, y: 20 } })
+    await page.getByRole('region', { name: 'Editor group 2', exact: true }).waitFor({ timeout: 30_000 })
+    expect(await page.getByRole('region', { name: /Editor group/u }).count()).toBe(2)
     expect(consoleLog.pageErrors).toEqual([])
   })
 })
