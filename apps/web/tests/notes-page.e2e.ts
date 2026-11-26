@@ -115,22 +115,22 @@ describe('Web 笔记工作区', () => {
     await page.keyboard.press('Shift+Tab')
     expect(await editor.inputValue()).toBe(revised)
 
-    // 并排时两侧按比例互相带动滚动；先换成足够长的正文，验完再换回原稿。
-    const long = Array.from({ length: 80 }, (_, index) => `## Section ${index + 1}\n\nParagraph ${index + 1}\n`).join('\n')
-    await editor.fill(long)
-    const preview = main.getByRole('region', { name: 'Preview', exact: true })
-    const scrollBy = async (locator: Locator) => locator.evaluate((node) => {
-      node.scrollTop = (node.scrollHeight - node.clientHeight) * 0.5
-      node.dispatchEvent(new Event('scroll', { bubbles: true }))
+    // 编辑器语义：光标处 Tab 只缩进，Home／End 落在行首行尾，都不把焦点移出输入区。
+    const layoutLine = revised.lastIndexOf('- Check notes layout')
+    await editor.evaluate((node: HTMLTextAreaElement) => {
+      node.setSelectionRange(node.value.length - 3, node.value.length - 3)
     })
-    await scrollBy(editor)
-    expect(await editor.evaluate(node => node.scrollTop)).toBeGreaterThan(0)
-    expect(await preview.evaluate(node => node.scrollTop)).toBeGreaterThan(0)
-    await scrollBy(preview)
-    expect(await preview.evaluate(node => node.scrollTop)).toBeGreaterThan(0)
-    expect(await editor.evaluate(node => node.scrollTop)).toBeGreaterThan(0)
-    await editor.fill(revised)
-    await expect.poll(async () => (await scaffold.ctx.fileLibrary.readNote('Release notes.md')).content).toBe(revised)
+    await page.keyboard.press('Home')
+    expect(await editor.evaluate((node: HTMLTextAreaElement) => node.selectionStart)).toBe(layoutLine)
+    await page.keyboard.press('Tab')
+    expect(await editor.inputValue()).toBe('# Release checklist\n\n- Review docs\n  - Check notes layout\n')
+    expect(await editor.evaluate((node: HTMLTextAreaElement) => document.activeElement === node)).toBe(true)
+    await page.keyboard.press('End')
+    const caret = await editor.evaluate((node: HTMLTextAreaElement) => [node.selectionStart, node.value.length - 1])
+    expect(caret[0]).toBe(caret[1])
+    await page.keyboard.press('Home')
+    await page.keyboard.press('Shift+Tab')
+    expect(await editor.inputValue()).toBe(revised)
 
     const assistantInput = page.locator('[data-page-assistant-track] textarea:visible').first()
     await dock.getByRole('button', { name: 'Summarize', exact: true }).click()

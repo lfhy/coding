@@ -1,7 +1,7 @@
 import { useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { KeyboardEvent, RefObject } from 'react'
 import { MarkdownTextarea } from 'coding-client-ui-primitives'
-import { indentSelection } from './markdown-indent.ts'
+import { edgeSelection, indentAtCaret, indentSelection } from './editor-keys.ts'
 import css from './NotesSource.module.css'
 
 const MIRROR_CHAR_LIMIT = 32_768
@@ -19,7 +19,7 @@ interface NotesSourceProps {
 
 /**
  * 保留原生选区与输入法；只在普通大小的笔记上叠加不参与编辑的行号和语法提示。
- * 有选区时 Tab／Shift+Tab 按行缩进或退一级，没有选区时 Tab 仍用于移出输入区。
+ * 源码视图按编辑器语义处理 Tab、Shift+Tab 与 Home／End。
  * @param props - 文本域引用、源码和由笔记页持有的编辑状态；`onScroll` 用于带动预览滚动。
  * @returns 共享文本域及与其滚动同步的呈现层。
  */
@@ -50,21 +50,38 @@ export function NotesSource({ editor, content, label, placeholder, onChange, onB
     return () => { observer.disconnect() }
   }, [editor, mirrored])
 
-  const indent = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (event.key !== 'Tab' || event.altKey || event.ctrlKey || event.metaKey) return
+  /**
+   * 源码视图按编辑器语义处理 Tab 与 Home／End：Tab 缩进、Shift+Tab 退格，
+   * Home／End 落在逻辑行首尾而不是跳到文首文末。其余按键（含 Cmd/Ctrl+Home 等
+   * 整篇跳转、方向键、翻页）保持原生行为。
+   */
+  const onEditorKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.nativeEvent.isComposing) return
     const field = event.currentTarget
     const start = field.selectionStart
     const end = field.selectionEnd
-    // 没有选区时 Tab 交给浏览器移动焦点，键盘用户才能离开输入区。
-    if (start === end) return
-    // 有选区时 Tab 一律按行缩进，不再把焦点移走。
+    if (event.key === 'Tab' && !event.altKey && !event.ctrlKey && !event.metaKey) {
+      event.preventDefault()
+      // 光标不停在选区上时 Tab 在光标处插一级缩进；有选区或按着 Shift 时按行走。
+      if (start === end && !event.shiftKey) {
+        const edit = indentAtCaret(field.value, start)
+        field.setRangeText(edit.block, edit.from, edit.to, 'end')
+        field.setSelectionRange(edit.selectionStart, edit.selectionEnd)
+        onChange(edit.value)
+        return
+      }
+      const edit = indentSelection(field.value, start, end, event.shiftKey)
+      if (edit.value === field.value) return
+      field.setRangeText(edit.block, edit.from, edit.to, 'end')
+      field.setSelectionRange(edit.selectionStart, edit.selectionEnd)
+      onChange(edit.value)
+      return
+    }
+    if ((event.key !== 'Home' && event.key !== 'End') || event.altKey || event.ctrlKey || event.metaKey) return
     event.preventDefault()
-    const edit = indentSelection(field.value, start, end, event.shiftKey)
-    if (edit.value === field.value) return
-    field.setRangeText(edit.block, edit.from, edit.to, 'end')
-    field.setSelectionRange(edit.selectionStart, edit.selectionEnd)
-    onChange(edit.value)
+    const edit = edgeSelection(field.value, start, end, field.selectionDirection,
+      event.key === 'Home' ? 'start' : 'end', event.shiftKey)
+    field.setSelectionRange(edit.selectionStart, edit.selectionEnd, edit.selectionDirection)
   }
   return (
     <div className={css.root} data-mirrored={mirrored || undefined} data-composing={composing || undefined}>
@@ -78,7 +95,7 @@ export function NotesSource({ editor, content, label, placeholder, onChange, onB
       )}
       <MarkdownTextarea ref={editor} className={css.field} value={content} aria-label={label} placeholder={placeholder}
         onCompositionStart={() => { setComposing(true) }} onCompositionEnd={() => { setComposing(false) }}
-        onKeyDown={indent}
+        onKeyDown={onEditorKeyDown}
         onScroll={(event) => {
           if (mirror.current !== null) mirror.current.scrollTop = event.currentTarget.scrollTop
           onScroll?.()

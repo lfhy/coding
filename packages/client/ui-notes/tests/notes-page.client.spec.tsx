@@ -565,7 +565,7 @@ describe('NotesPage', () => {
     expect(state.saveCalls).toEqual([{ path: 'a.md', content: '- [ ] `hello` a', baseMtimeMs: 1000 }])
   })
 
-  it('多行选区按 Tab 逐行缩进，Shift+Tab 退回一级；没有选区时 Tab 交给浏览器', async () => {
+  it('源码视图按编辑器语义处理 Tab 与 Home／End，不把焦点移出输入区', async () => {
     makeServer()
     await mount()
     const editor = screen.getByRole<HTMLTextAreaElement>('textbox', { name: '原始文本' })
@@ -583,19 +583,40 @@ describe('NotesPage', () => {
     expect(editor.value).toBe('  - a\n- b\n- c')
     fireEvent.keyDown(editor, { key: 'Tab', shiftKey: true, altKey: true })
     expect(editor.value).toBe('  - a\n- b\n- c')
-    editor.setSelectionRange(0, 0)
-    expect(fireEvent.keyDown(editor, { key: 'Tab' })).toBe(true)
-    expect(editor.value).toBe('  - a\n- b\n- c')
-    // 顶格的行退不动，也不把焦点移出去。
+    // 顶格的行退不动，此时不写回内容。
     editor.setSelectionRange(6, 9)
-    expect(fireEvent.keyDown(editor, { key: 'Tab', shiftKey: true })).toBe(false)
+    fireEvent.keyDown(editor, { key: 'Tab', shiftKey: true })
     expect(editor.value).toBe('  - a\n- b\n- c')
-    // 组合输入期间的 Tab 不按行缩进。
+    // 组合输入期间的 Tab 不参与缩进。
     editor.setSelectionRange(0, 5)
     fireEvent.compositionStart(editor)
-    expect(fireEvent.keyDown(editor, { key: 'Tab', isComposing: true })).toBe(true)
-    expect(editor.value).toBe('  - a\n- b\n- c')
+    fireEvent.keyDown(editor, { key: 'Tab', isComposing: true })
     fireEvent.compositionEnd(editor)
+    expect(editor.value).toBe('  - a\n- b\n- c')
+    // 换成短文本，逐条核对光标处缩进与行首尾跳转的下标。
+    fireEvent.input(editor, { target: { value: 'ab\n  cd\nef' } })
+    editor.focus()
+    editor.setSelectionRange(4, 4)
+    expect(fireEvent.keyDown(editor, { key: 'Tab' })).toBe(false)
+    expect(editor.value).toBe('ab\n    cd\nef')
+    expect(editor.selectionStart).toBe(6)
+    expect(document.activeElement).toBe(editor)
+    fireEvent.keyDown(editor, { key: 'Tab', shiftKey: true })
+    expect(editor.value).toBe('ab\n  cd\nef')
+    // Home／End 落在逻辑行首尾，不是全文首尾。
+    editor.setSelectionRange(5, 5)
+    expect(fireEvent.keyDown(editor, { key: 'End' })).toBe(false)
+    expect(editor.selectionStart).toBe(7)
+    fireEvent.keyDown(editor, { key: 'Home' })
+    expect(editor.selectionStart).toBe(5)
+    fireEvent.keyDown(editor, { key: 'Home' })
+    expect(editor.selectionStart).toBe(3)
+    // Shift 组合只扩展选区，不改全文。
+    editor.setSelectionRange(5, 5)
+    fireEvent.keyDown(editor, { key: 'End', shiftKey: true })
+    expect([editor.selectionStart, editor.selectionEnd]).toEqual([5, 7])
+    // Cmd/Ctrl+End 保持整篇跳转，交给浏览器。
+    expect(fireEvent.keyDown(editor, { key: 'End', metaKey: true })).toBe(true)
     fireEvent.scroll(editor)
     fireEvent.input(editor, { target: { value: 'hello a' } })
   })
