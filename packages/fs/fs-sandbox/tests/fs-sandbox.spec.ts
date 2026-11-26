@@ -81,6 +81,13 @@ describe('read-only', () => {
     expect(await readFile(path, 'utf8')).toBe('original')
   })
 
+  it('denies delete, leaving the file on disk', async () => {
+    const path = join(workspace, 'keep.txt')
+    await writeFile(path, 'original')
+    await expect(fs.remove(await target(path))).rejects.toMatchObject({ code: 'FS_SANDBOX_DENIED' })
+    expect(await readFile(path, 'utf8')).toBe('original')
+  })
+
   it('allows reads (every mode permits reading)', async () => {
     const path = join(workspace, 'readable.txt')
     await writeFile(path, 'hello')
@@ -96,6 +103,21 @@ describe('workspace-write containment', () => {
     const outcome = await fs.writeText(await target(path), 'inside')
     expect(outcome.operation).toBe('create')
     expect(await readFile(path, 'utf8')).toBe('inside')
+  })
+
+  it('a recursive delete inside the workspace removes the subtree', async () => {
+    const path = join(workspace, 'dist', 'nested')
+    await mkdir(path, { recursive: true })
+    await writeFile(join(path, 'bundle.js'), 'x')
+    await expect(fs.remove(await target(join(workspace, 'dist')), { recursive: true })).resolves.toEqual({ type: 'directory' })
+    expect(existsSync(join(workspace, 'dist'))).toBe(false)
+  })
+
+  it('a delete outside the workspace is denied, leaving the file in place', async () => {
+    const path = join(outside, 'keep.txt')
+    await writeFile(path, 'keep')
+    await expect(fs.remove(await target(path))).rejects.toMatchObject({ code: 'FS_SANDBOX_DENIED' })
+    expect(await readFile(path, 'utf8')).toBe('keep')
   })
 
   it('a write to the platform temp area lands (parity with the bash runner grant)', async () => {

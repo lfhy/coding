@@ -80,6 +80,11 @@ class FakeFileSystem extends FileSystem {
     this.files.set(target.targetKey, after)
     return { version: FsVersion('v3'), before: content, after }
   }
+
+  override async remove(target: FsTarget): Promise<{ type: 'file' | 'directory' | 'other' }> {
+    if (!this.files.delete(target.targetKey)) throw new FsError(`not found: ${target.displayPath}`, 'FS_NOT_FOUND')
+    return { type: 'file' }
+  }
 }
 
 describe('FileSystem provider seam', () => {

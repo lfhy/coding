@@ -33,7 +33,16 @@
 import { Context } from '@deepseek-ai/cordis'
 import { LocalFileSystem } from 'coding-fs-local'
 import type { Config as LocalConfig } from 'coding-fs-local'
-import type { FsEditOutcome, FsEditRequest, FsTarget, FsVersion, FsWriteIntent, FsWriteOutcome } from 'coding-fs'
+import type {
+  FsEditOutcome,
+  FsEditRequest,
+  FsRemoveOptions,
+  FsRemoveOutcome,
+  FsTarget,
+  FsVersion,
+  FsWriteIntent,
+  FsWriteOutcome,
+} from 'coding-fs'
 import type { SandboxExecutionPolicy, SandboxMode } from 'coding-sandbox'
 import type {} from 'coding-sandbox-policy'
 import { fencedTarget } from './backend.ts'
@@ -110,6 +119,24 @@ export class SandboxedFileSystem extends LocalFileSystem {
     sandboxPolicy?: SandboxExecutionPolicy,
   ): Promise<FsEditOutcome> {
     return super.editText(await this.checkedTarget(target, sandboxPolicy), edit, expected, signal)
+  }
+
+  /**
+   * 按调用策略围栏删除，再委托本地后端的删除原语。递归删除同样先围栏目标本身：
+   * 围栏之后删除的整棵子树都在允许范围内。
+   * @param target - 已解析的待删除目标。
+   * @param options - `recursive` 控制目录子树。
+   * @param signal - 在进入删除前中止。
+   * @param sandboxPolicy - 本次调用的模式与工作区根；省略时用部署默认值。
+   * @returns 被删除条目的类型。
+   */
+  override async remove(
+    target: FsTarget,
+    options?: FsRemoveOptions,
+    signal?: AbortSignal,
+    sandboxPolicy?: SandboxExecutionPolicy,
+  ): Promise<FsRemoveOutcome> {
+    return super.remove(await this.checkedTarget(target, sandboxPolicy), options, signal)
   }
 
   /**

@@ -178,6 +178,21 @@ export interface FsEditRequest {
   replaceAll: boolean
 }
 
+/** 删除请求：目录必须显式声明递归，避免一次调用静默清空整棵子树。 */
+export interface FsRemoveOptions {
+  /**
+   * 目标为目录时是否连同其后代一起删除。省略或为 false 时目录以
+   * `FS_IS_DIRECTORY` 拒绝；普通文件与其它条目不受该标志影响。
+   */
+  recursive?: boolean
+}
+
+/** Outcome of a removal. */
+export interface FsRemoveOutcome {
+  /** 被删除条目的类型，供调用方区分文件与整棵目录子树。 */
+  type: 'file' | 'directory' | 'other'
+}
+
 /** Outcome of a literal edit. */
 export interface FsEditOutcome {
   /** Opaque version of the file after the edit. */
@@ -200,6 +215,7 @@ export interface FsEditOutcome {
 export type FsErrorCode =
   | 'FS_NOT_FOUND'
   | 'FS_NOT_DIRECTORY'
+  | 'FS_IS_DIRECTORY'
   | 'FS_NOT_TEXT'
   | 'FS_NOT_REGULAR_FILE'
   | 'FS_TOO_LARGE'

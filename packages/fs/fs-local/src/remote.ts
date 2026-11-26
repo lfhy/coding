@@ -27,6 +27,8 @@ import type {
   FsInfo,
   FsPathInfo,
   FsProvider,
+  FsRemoveOptions,
+  FsRemoveOutcome,
   FsTarget,
   FsVersion,
   FsWriteIntent,
@@ -149,6 +151,8 @@ export function fsRemoteError(error: unknown, operation: string, displayPath: st
         return new FsError(`cannot ${operation} "${displayPath}": not found`, 'FS_NOT_FOUND')
       case 'not-directory':
         return new FsError(`cannot ${operation} "${displayPath}": not a directory`, 'FS_NOT_DIRECTORY')
+      case 'is-directory':
+        return new FsError(`cannot ${operation} "${displayPath}": target is a directory; pass recursive to delete it and everything inside`, 'FS_IS_DIRECTORY')
       case 'not-text':
         return new FsError(`cannot ${operation} "${displayPath}": invalid UTF-8 text`, 'FS_NOT_TEXT')
       case 'not-regular-file':
@@ -599,6 +603,37 @@ export class RemoteWorkspaceRouter implements FsProvider {
       }, signal, true)
     } catch (error: unknown) {
       throw fsRemoteError(error, 'edit', target.displayPath)
+    }
+  }
+
+  /**
+   * 经桥接器删除远端目标。目录的递归语义由 bridge 端点执行；这里只校验响应形状，
+   * 因此远端失败仍落到统一的结构化错误码。
+   * @param target - 已解析的远端目标。
+   * @param options - `recursive` 控制目录子树。
+   * @param signal - 取消桥接往返。
+   * @returns 被删除条目的类型。
+   */
+  async remove(
+    target: FsTarget,
+    options?: FsRemoveOptions,
+    signal?: AbortSignal,
+  ): Promise<FsRemoveOutcome> {
+    const remote = await this.verified(target, signal, 'delete')
+    try {
+      return await callRemoteWorkspaceBridge(remote, '/v1/remove_file', 'POST', {
+        path: remote.remotePath,
+        recursive: options?.recursive === true,
+      }, (value) => {
+        const record = bridgeRecord(value)
+        const type = bridgeString(record, 'type')
+        if (type !== 'file' && type !== 'directory' && type !== 'other') {
+          throw new RemoteWorkspaceError('REMOTE_BRIDGE_RESPONSE_INVALID', 'remote workspace bridge returned an invalid response')
+        }
+        return { type }
+      }, signal, true)
+    } catch (error: unknown) {
+      throw fsRemoteError(error, 'delete', target.displayPath)
     }
   }
 

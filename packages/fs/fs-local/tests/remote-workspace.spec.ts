@@ -14,7 +14,7 @@ vi.mock('../src/fsio.ts', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../src/fsio.ts')>()
   const localIoNames = new Set([
     'listDirectory', 'probe', 'probeNoFollow', 'readForEdit', 'readTextForDiff',
-    'readWholeBytes', 'readWholeText', 'resolveLocalTarget', 'streamWholeText', 'writeFileAtomic',
+    'readWholeBytes', 'readWholeText', 'removeLocalTarget', 'resolveLocalTarget', 'streamWholeText', 'writeFileAtomic',
   ])
   return Object.fromEntries(Object.entries(actual).map(([name, value]) => [name,
     localIoNames.has(name)
@@ -113,6 +113,9 @@ describe('LocalFileSystem Remote-SSH marker routing', () => {
         case '/v1/edit_file':
           mutations.push(body)
           return { version: 'v3', before: 'new', after: 'edited' }
+        case '/v1/remove_file':
+          mutations.push(body)
+          return { type: body.recursive === true ? 'directory' : 'file' }
         default:
           throw new Error(`unexpected bridge path ${path}`)
       }
@@ -140,10 +143,14 @@ describe('LocalFileSystem Remote-SSH marker routing', () => {
         .resolves.toMatchObject({ operation: 'update', version: 'v2', before: 'hello', after: 'new' })
       await expect(fs.editText(target, { oldString: 'new', newString: 'edited', replaceAll: false }, { version: FsVersion('v2') }))
         .resolves.toMatchObject({ version: 'v3', before: 'new', after: 'edited' })
-      expect(calls.slice(-2)).toEqual(['/v1/update_file', '/v1/edit_file'])
+      await expect(fs.remove(target, { recursive: false })).resolves.toEqual({ type: 'file' })
+      await expect(fs.remove(target, { recursive: true })).resolves.toEqual({ type: 'directory' })
+      expect(calls.slice(-4)).toEqual(['/v1/update_file', '/v1/edit_file', '/v1/remove_file', '/v1/remove_file'])
       expect(mutations).toMatchObject([
         { path: '/srv/project/source.ts', content: 'new', expected: { kind: 'replaceIfVersion', version: 'v1' } },
         { path: '/srv/project/source.ts', oldString: 'new', newString: 'edited', expected: { kind: 'replaceIfVersion', version: 'v2' } },
+        { path: '/srv/project/source.ts', recursive: false },
+        { path: '/srv/project/source.ts', recursive: true },
       ])
       expect(localFsAccess).not.toHaveBeenCalled()
     } finally {

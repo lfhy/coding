@@ -14,6 +14,8 @@ import type {
   FsEditRequest,
   FsInfo,
   FsPathInfo,
+  FsRemoveOptions,
+  FsRemoveOutcome,
   FsTarget,
   FsWriteIntent,
   FsWriteOutcome,
@@ -425,6 +427,42 @@ export class E2BFileSystem extends FileSystem {
       const storage = restoreLineEndings(after, detectsCrlf(raw))
       const version = await this.writeAtomic(target, storage, existing, false, signal)
       return { version, before, after }
+    })
+  }
+
+  /**
+   * 删除远端目标。E2B 的 `files.remove` 对目录是整棵删除，因此目录必须先在这里
+   * 拒绝未声明递归的调用，否则一次误用会静默清空子树。
+   * @param target - 已解析的远端目标。
+   * @param options - `recursive` 控制目录子树。
+   * @param signal - 取消 SDK 往返。
+   * @returns 被删除条目的类型。
+   */
+  override async remove(
+    target: FsTarget,
+    options?: FsRemoveOptions,
+    signal?: AbortSignal,
+  ): Promise<FsRemoveOutcome> {
+    return this.withLock(String(target.targetKey), async () => {
+      const existing = await this.probe(String(target.targetKey), target.displayPath, signal)
+      if (existing === undefined) {
+        throw new FsError(`cannot delete "${target.displayPath}": not found`, 'FS_NOT_FOUND')
+      }
+      const type = existing.symlinkTarget === undefined ? entryType(existing) : 'other'
+      if (type === 'directory' && options?.recursive !== true) {
+        throw new FsError(
+          `cannot delete "${target.displayPath}": target is a directory; pass recursive to delete it and everything inside`,
+          'FS_IS_DIRECTORY',
+        )
+      }
+      assertNotAborted(signal, 'delete')
+      const sandbox = await this.ctx.e2b.getSandbox()
+      try {
+        await sandbox.files.remove(String(target.targetKey), signalOpts(signal))
+      } catch (error: unknown) {
+        throw mapError(error, 'delete', target.displayPath, signal)
+      }
+      return { type }
     })
   }
 

@@ -18,6 +18,8 @@ import type {
   FsEditRequest,
   FsInfo,
   FsPathInfo,
+  FsRemoveOptions,
+  FsRemoveOutcome,
   FsTarget,
   FsWriteIntent,
   FsWriteOutcome,
@@ -32,6 +34,7 @@ import {
   readTextForDiff,
   readWholeBytes,
   readWholeText,
+  removeLocalTarget,
   resolveLocalTarget,
   restoreLineEndings,
   streamWholeText,
@@ -309,6 +312,25 @@ export class LocalFileSystemBackend implements FsProvider {
     })
   }
 
+  async remove(
+    target: FsTarget,
+    options?: FsRemoveOptions,
+    signal?: AbortSignal,
+  ): Promise<FsRemoveOutcome> {
+    return this.withLock(target.targetKey, async () => {
+      if (this.remoteRouter.owns(String(target.targetKey))) {
+        if (signal?.aborted) throw new FsError('delete aborted', 'FS_ABORTED')
+        return await this.remoteRouter.remove(target, options, signal)
+      }
+      const type = await removeLocalTarget(
+        { displayPath: target.displayPath, targetKey: target.targetKey },
+        options?.recursive === true,
+        signal,
+      )
+      return { type }
+    })
+  }
+
   /* v8 ignore next 5 -- the post-write probe finding the file absent requires a
    * concurrent unlink between rename and stat; fall back to a sentinel version. */
   private versionAfterWrite(after: { version: FsVersion } | null, target: FsTarget): FsVersion {
@@ -407,6 +429,14 @@ export class LocalFileSystem extends FileSystem {
     signal?: AbortSignal,
   ): Promise<FsEditOutcome> {
     return this.backend.editText(target, edit, expected, signal)
+  }
+
+  remove(
+    target: FsTarget,
+    options?: FsRemoveOptions,
+    signal?: AbortSignal,
+  ): Promise<FsRemoveOutcome> {
+    return this.backend.remove(target, options, signal)
   }
 }
 

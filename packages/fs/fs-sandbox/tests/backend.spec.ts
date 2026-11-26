@@ -6,13 +6,15 @@ import type { SandboxExecutionPolicy } from 'coding-sandbox'
 import { SandboxedBackend } from '../src/index.ts'
 
 /** 只记录被调用原语的本地形状后端；targetKey 就是绝对路径。 */
-function provider(): FsProvider & { writes: string[]; edits: string[] } {
+function provider(): FsProvider & { writes: string[]; edits: string[]; removes: string[] } {
   const writes: string[] = []
   const edits: string[] = []
+  const removes: string[] = []
   return {
     id: 'local',
     writes,
     edits,
+    removes,
     sandboxMode: undefined,
     matches: () => true,
     owns: () => true,
@@ -35,6 +37,10 @@ function provider(): FsProvider & { writes: string[]; edits: string[] } {
     async editText(target) {
       edits.push(String(target.targetKey))
       return { version: FsVersion('v3'), before: '', after: '' }
+    },
+    async remove(target) {
+      removes.push(String(target.targetKey))
+      return { type: 'file' as const }
     },
   }
 }
@@ -59,9 +65,11 @@ describe('SandboxedBackend', () => {
     await expect(backend.writeText(target('/work/a.ts'), 'x')).rejects.toMatchObject({ code: 'FS_SANDBOX_DENIED' })
     await expect(backend.editText(target('/work/a.ts'), { oldString: 'a', newString: 'b', replaceAll: false }))
       .rejects.toMatchObject({ code: 'FS_SANDBOX_DENIED' })
+    await expect(backend.remove(target('/work/a.ts'))).rejects.toMatchObject({ code: 'FS_SANDBOX_DENIED' })
     await expect(backend.readText(target('/work/a.ts'))).resolves.toBe('content')
     expect(inner.writes).toEqual([])
     expect(inner.edits).toEqual([])
+    expect(inner.removes).toEqual([])
   })
 
   it('danger-full-access 直接委托，并沿用后端身份', async () => {
@@ -84,6 +92,16 @@ describe('SandboxedBackend', () => {
     expect(inner.writes).toEqual(['/work/a.ts'])
     await expect(backend.writeText(target('/etc/hosts'), 'x')).rejects.toMatchObject({ code: 'FS_SANDBOX_DENIED' })
     expect(inner.writes).toEqual(['/work/a.ts'])
+  })
+
+  it('workspace-write 只在工作区内围栏删除，递归标志原样转发', async () => {
+    const ctx = contextWithPolicy('workspace-write', '/work')
+    const inner = provider()
+    const backend = new SandboxedBackend(ctx, inner)
+    await expect(backend.remove(target('/work/build'), { recursive: true })).resolves.toEqual({ type: 'file' })
+    expect(inner.removes).toEqual(['/work/build'])
+    await expect(backend.remove(target('/etc/passwd'))).rejects.toMatchObject({ code: 'FS_SANDBOX_DENIED' })
+    expect(inner.removes).toEqual(['/work/build'])
   })
 
   it('委托全部读取原语', async () => {

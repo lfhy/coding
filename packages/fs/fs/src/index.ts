@@ -20,6 +20,8 @@ import type {
   FsPathAliasExpansion,
   FsPathInfo,
   FsObservation,
+  FsRemoveOptions,
+  FsRemoveOutcome,
   FsTarget,
   FsVersion,
   FsWriteIntent,
@@ -41,6 +43,8 @@ export type {
   FsPathAlias,
   FsPathAliasExpansion,
   FsPathInfo,
+  FsRemoveOptions,
+  FsRemoveOutcome,
   FsTarget,
   FsWriteIntent,
   FsWriteOutcome,
@@ -342,10 +346,29 @@ export abstract class FileSystem extends Service {
     signal?: AbortSignal,
     sandboxPolicy?: SandboxExecutionPolicy,
   ): Promise<FsEditOutcome>
+
+  /**
+   * 删除一个已解析目标：普通文件删除自身，目录只有在 `recursive` 为 true 时连同后代
+   * 一起删除，否则以 `FS_IS_DIRECTORY` 拒绝。目标缺失报 `FS_NOT_FOUND`。
+   *
+   * 删除落在解析后的目标上，与写入/编辑一致：经符号链接到达的文件删除的是链接目标。
+   * 因此面向模型的工具在调用前用 `lstat` 拒绝链接本身，避免一次删除连带抹掉链接目标。
+   * @param target - 已解析的待删除目标。
+   * @param options - `recursive` 控制目录子树；省略时只接受文件与其它条目。
+   * @param signal - 在进入删除临界区前中止。
+   * @param sandboxPolicy - 本次调用的模式与工作区根；施加沙箱的后端按它围栏，裸后端忽略。
+   * @returns 被删除目标的类型。
+   */
+  abstract remove(
+    target: FsTarget,
+    options?: FsRemoveOptions,
+    signal?: AbortSignal,
+    sandboxPolicy?: SandboxExecutionPolicy,
+  ): Promise<FsRemoveOutcome>
 }
 
 /**
- * 一个执行世界的文件系统后端。十二个原语与 `FileSystem` 相同；额外三项只用于
+ * 一个执行世界的文件系统后端。十三个原语与 `FileSystem` 相同；额外三项只用于
  * 分派：`id` 是稳定标识，`matches` 在缺少显式绑定时按工作区路径选择后端，
  * `owns` 让同步方法按不透明 target key 找回后端而不做 I/O。
  */
@@ -395,6 +418,12 @@ export interface FsProvider {
     signal?: AbortSignal,
     sandboxPolicy?: SandboxExecutionPolicy,
   ): Promise<FsEditOutcome>
+  remove(
+    target: FsTarget,
+    options?: FsRemoveOptions,
+    signal?: AbortSignal,
+    sandboxPolicy?: SandboxExecutionPolicy,
+  ): Promise<FsRemoveOutcome>
 }
 
 /** 已注册后端；dispose 后注册表不再选择它。 */
@@ -592,6 +621,15 @@ export class FsRegistry extends FileSystem {
     sandboxPolicy?: SandboxExecutionPolicy,
   ): Promise<FsEditOutcome> {
     return this.backendForTarget(String(target.targetKey)).editText(target, edit, expected, signal, sandboxPolicy)
+  }
+
+  override remove(
+    target: FsTarget,
+    options?: FsRemoveOptions,
+    signal?: AbortSignal,
+    sandboxPolicy?: SandboxExecutionPolicy,
+  ): Promise<FsRemoveOutcome> {
+    return this.backendForTarget(String(target.targetKey)).remove(target, options, signal, sandboxPolicy)
   }
 }
 

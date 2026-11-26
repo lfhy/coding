@@ -43,6 +43,9 @@ function recordingBackend(id: string): RecordingBackend {
     async editText() {
       return { version: FsVersion('v2'), before: '', after: '' }
     },
+    async remove() {
+      return { type: 'file' as const }
+    },
   }
 }
 

@@ -57,6 +57,10 @@ function backend(id: string, prefix: string, options: { matches?: (cwd: string) 
       calls.push('editText')
       return { version: FsVersion('v3'), before: '', after: '' }
     },
+    async remove() {
+      calls.push('remove')
+      return { type: 'file' as const }
+    },
   }
 }
 

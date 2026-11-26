@@ -13,6 +13,8 @@ import type {
   FsInfo,
   FsPathInfo,
   FsProvider,
+  FsRemoveOptions,
+  FsRemoveOutcome,
   FsTarget,
   FsVersion,
   FsWriteIntent,
@@ -184,5 +186,17 @@ export class SandboxedBackend implements FsProvider {
       ctx: this.ctx, resolve: path => this.inner.resolve(path), target, policy: sandboxPolicy,
     })
     return this.inner.editText(fenced, edit, expected, signal)
+  }
+
+  async remove(
+    target: FsTarget,
+    options?: FsRemoveOptions,
+    signal?: AbortSignal,
+    sandboxPolicy?: SandboxExecutionPolicy,
+  ): Promise<FsRemoveOutcome> {
+    const fenced = await fencedTarget({
+      ctx: this.ctx, resolve: path => this.inner.resolve(path), target, policy: sandboxPolicy,
+    })
+    return this.inner.remove(fenced, options, signal)
   }
 }

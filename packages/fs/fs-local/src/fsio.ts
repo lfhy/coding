@@ -254,6 +254,53 @@ export async function probeNoFollow(absolutePath: string): Promise<PathLinkInfo 
   }
 }
 
+// --- Removal ---
+
+function removalIoError(displayPath: string, error: unknown): FsError {
+  if (error instanceof FsError) return error
+  if (isENOENT(error) || isENOTDIR(error)) return new FsError(`cannot delete "${displayPath}": not found`, 'FS_NOT_FOUND', { cause: error })
+  if (isPermissionError(error)) return new FsError(`cannot delete "${displayPath}": permission denied`, 'FS_PERMISSION_DENIED', { cause: error })
+  return new FsError(`cannot delete "${displayPath}": ${errorMessage(error)}`, 'FS_IO_ERROR', { cause: error })
+}
+
+/**
+ * 删除一个本地目标。目录必须显式声明递归，否则以 `FS_IS_DIRECTORY` 拒绝，
+ * 避免一次调用静默清空整棵子树。
+ *
+ * 目标按 realpath 身份处理，与写入／编辑一致：经符号链接解析出来的目标删除的是链接指向
+ * 的条目。需要保留链接本身时，调用方应先对原始路径执行 `lstat` 并拒绝链接。
+ * @param target - 已解析的待删除目标。
+ * @param recursive - 目标为目录时是否连同后代一起删除。
+ * @param signal - 在进入删除前中止。
+ * @returns 被删除条目的类型。
+ */
+export async function removeLocalTarget(
+  target: LocalTarget,
+  recursive: boolean,
+  signal?: AbortSignal,
+): Promise<'file' | 'directory' | 'other'> {
+  throwIfAborted(signal, 'delete')
+  let info: PathLinkInfo | null
+  try {
+    info = await probeNoFollow(target.targetKey)
+  } catch (error: unknown) {
+    throw removalIoError(target.displayPath, error)
+  }
+  if (info === null) throw new FsError(`cannot delete "${target.displayPath}": not found`, 'FS_NOT_FOUND')
+  const type = info.type === 'symlink' ? 'other' : info.type
+  if (type === 'directory' && !recursive) {
+    throw new FsError(`cannot delete "${target.displayPath}": target is a directory; pass recursive to delete it and everything inside`, 'FS_IS_DIRECTORY')
+  }
+  throwIfAborted(signal, 'delete')
+  try {
+    // rm 只作用于 realpath 身份本身：递归删除遍历的是目录内容，不会跟随子项链接。
+    await rm(target.targetKey, { recursive: type === 'directory', force: false })
+  } catch (error: unknown) {
+    throw removalIoError(target.displayPath, error)
+  }
+  return type
+}
+
 // --- Directory listing ---
 
 function listingIoError(displayPath: string, error: unknown): FsError {

@@ -751,6 +751,52 @@ describe('editText', () => {
   })
 })
 
+describe('remove', () => {
+  it('deletes a regular file and reports its type', async () => {
+    await writeFile(join(dir, 'a.txt'), 'gone')
+    const target = await fs.resolve('a.txt')
+    await expect(fs.remove(target)).resolves.toEqual({ type: 'file' })
+    expect(await fs.stat(target)).toBeUndefined()
+  })
+
+  it('refuses a directory without recursive and leaves the subtree intact', async () => {
+    await mkdir(join(dir, 'nested', 'deep'), { recursive: true })
+    await writeFile(join(dir, 'nested', 'deep', 'leaf.txt'), 'leaf')
+    await expect(fs.remove(await fs.resolve('nested'))).rejects.toMatchObject({ code: 'FS_IS_DIRECTORY' })
+    expect(await readFile(join(dir, 'nested', 'deep', 'leaf.txt'), 'utf8')).toBe('leaf')
+  })
+
+  it('deletes a whole subtree with recursive', async () => {
+    await mkdir(join(dir, 'nested', 'deep'), { recursive: true })
+    await writeFile(join(dir, 'nested', 'deep', 'leaf.txt'), 'leaf')
+    await expect(fs.remove(await fs.resolve('nested'), { recursive: true })).resolves.toEqual({ type: 'directory' })
+    await expect(stat(join(dir, 'nested'))).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
+  it('reports a missing target as FS_NOT_FOUND', async () => {
+    await expect(fs.remove(await fs.resolve('missing.txt'))).rejects.toMatchObject({ code: 'FS_NOT_FOUND' })
+  })
+
+  it('deletes the symlink target rather than the link (identity semantics)', async () => {
+    await writeFile(join(dir, 'real.txt'), 'real')
+    await symlink(join(dir, 'real.txt'), join(dir, 'link.txt'))
+    const target = await fs.resolve('link.txt')
+    expect(target.targetKey).toBe(await realpath(join(dir, 'real.txt')))
+    await expect(fs.remove(target)).resolves.toEqual({ type: 'file' })
+    await expect(stat(join(dir, 'real.txt'))).rejects.toMatchObject({ code: 'ENOENT' })
+    // The link itself remains, now dangling: the documented identity semantics.
+    expect((await stat(join(dir, 'link.txt')).catch(() => 'missing'))).toBe('missing')
+  })
+
+  it('honours cancellation before touching the target', async () => {
+    await writeFile(join(dir, 'a.txt'), 'keep')
+    const target = await fs.resolve('a.txt')
+    await expect(fs.remove(target, { recursive: true }, AbortSignal.abort()))
+      .rejects.toMatchObject({ code: 'FS_ABORTED' })
+    expect(await readFile(join(dir, 'a.txt'), 'utf8')).toBe('keep')
+  })
+})
+
 describe('symlink targetKey identity', () => {
   it('two paths to the same file via a symlink share one version and write the real target', async () => {
     await writeFile(join(dir, 'real.txt'), 'hello')
