@@ -19,7 +19,7 @@ import { toolActionTitle, toolCallPreview, toolResultPreview } from 'coding-tool
 export type { ToolCallBlock } from 'coding-client-runtime/client'
 
 /** Tool-call row variants selected by the generic atomic renderer. */
-export type ToolRowVariant = 'search' | 'read' | 'bash' | 'write' | 'edit' | 'code' | 'others'
+export type ToolRowVariant = 'search' | 'read' | 'bash' | 'write' | 'edit' | 'delete' | 'code' | 'others'
 
 /** Row state semantic; colors self-supplied via StateDot (design gives none). */
 export type ToolRowState = 'running' | 'ok' | 'error' | 'stopped'
@@ -27,7 +27,7 @@ export type ToolRowState = 'running' | 'ok' | 'error' | 'stopped'
 /** Figma row titles per variant (design literals, not translatable copy). */
 export const VARIANT_TITLES: Record<ToolRowVariant, string> = {
   search: 'Search', read: 'Read', bash: 'Bash',
-  write: 'Write', edit: 'Edit', code: 'Code', others: 'Tool call',
+  write: 'Write', edit: 'Edit', delete: 'Delete', code: 'Code', others: 'Tool call',
 }
 
 /**
@@ -51,8 +51,8 @@ const TOOL_VARIANTS: Record<string, ToolRowVariant> = {
   glob: 'search',
   write: 'write',
   edit: 'edit',
-  // 删除在通用行里与编辑同属「文件变更」类别；标题由 delete_file 自己的动作名给出。
-  delete_file: 'edit',
+  // 删除用自己的变体：铅笔图标会让「删掉」读成「改过」。
+  delete_file: 'delete',
   apply_patch: 'edit',
   str_replace_editor: 'edit',
   read_image: 'read',
@@ -156,8 +156,25 @@ const SUMMARY_KEYS: Record<ToolRowVariant, readonly string[]> = {
   search: ['query', 'pattern', 'url'],
   write: ['path', 'file_path'],
   edit: ['path', 'file_path'],
+  delete: ['file_path', 'path'],
   code: ['description'],
   others: [],
+}
+
+/**
+ * 删除调用可以带一个或多个目标：折叠行显示首个目标，多于一个时补上数量，
+ * 与 apply_patch 的「首个路径 等 N 个文件」一致。
+ * @param args - 已解析的调用参数。
+ * @returns 折叠行摘要；没有可用目标时为空串。
+ */
+function summarizeDeleteTargets(args: Record<string, unknown>): string {
+  const raw = args.file_path
+  const paths = typeof raw === 'string'
+    ? [raw]
+    : Array.isArray(raw) ? raw.filter((path): path is string => typeof path === 'string' && path !== '') : []
+  if (paths.length === 0) return ''
+  const first = firstLine(paths[0] as string)
+  return paths.length === 1 ? first : `${first} 等 ${paths.length} 个文件`
 }
 
 /** 委派和技能只显示短描述，不把完整任务或工具输入露出在折叠行。 */
@@ -207,6 +224,7 @@ function deriveSummary(toolName: string, variant: ToolRowVariant, argsRaw: strin
     const queries = args.queries.filter((query): query is string => typeof query === 'string' && query !== '')
     if (queries.length > 0) return queries.map(firstLine).join(', ')
   }
+  if (variant === 'delete') return summarizeDeleteTargets(args)
   const keys = Object.hasOwn(TOOL_SUMMARY_KEYS, toolName) ? TOOL_SUMMARY_KEYS[toolName] : undefined
   const picked = pickString(args, keys ?? SUMMARY_KEYS[variant])
   if (picked !== undefined) return firstLine(picked)

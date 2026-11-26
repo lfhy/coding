@@ -3,7 +3,7 @@ import { toolDisplayDescription } from './display-description-value.ts'
 /** 已知模型工具的用户可见动作标题，供对话和轨迹共用。未知动作由各视图回退。 */
 const ACTION_TITLES: Readonly<Record<string, string>> = {
   apply_patch: 'Apply patch',
-  delete_file: 'Delete files',
+  delete_file: 'Delete',
   str_replace_editor: 'Edit file',
   read_image: 'Read image',
   write_stdin: '查看后台任务输出',
@@ -228,6 +228,13 @@ export function toolArgsPreview(name: string, argsRaw: string): string | undefin
         .map(match => match[1]?.trim()).filter((path): path is string => !!path)
       return targets.length > 1 ? `${targets[0]} 等 ${targets.length} 个文件` : targets[0]
     }
+    if (name === 'delete_file') {
+      const value = record.file_path
+      const targets = typeof value === 'string'
+        ? [value]
+        : Array.isArray(value) ? value.filter((path): path is string => typeof path === 'string' && path.trim() !== '') : []
+      return targets.length > 1 ? `${targets[0]} 等 ${targets.length} 个文件` : targets[0]?.split(/[\r\n]/, 1)[0]
+    }
     const keys = name === 'browser_click' ? ['label']
       : name === 'browser_navigate' || name === 'web_fetch' ? ['url']
         : name === 'browser_js' ? []
@@ -245,7 +252,7 @@ export function toolArgsPreview(name: string, argsRaw: string): string | undefin
 }
 
 /**
- * 已有动作说明优先保留；补丁调用仍把目标放在最前，避免较长说明遮住文件。
+ * 已有动作说明优先保留；补丁与删除调用仍把目标放在最前，避免较长说明遮住文件。
  * @param name - 会话记录中的工具名。
  * @param argsRaw - 已持久化的调用参数。
  * @param description - 已有的逐次友好说明。
@@ -253,7 +260,9 @@ export function toolArgsPreview(name: string, argsRaw: string): string | undefin
  */
 export function toolCallPreview(name: string, argsRaw: string, description?: string): string | undefined {
   const target = toolArgsPreview(name, argsRaw)
-  if (name === 'apply_patch' && target !== undefined) return description === undefined ? target : `${target} · ${description}`
+  if ((name === 'apply_patch' || name === 'delete_file') && target !== undefined) {
+    return description === undefined ? target : `${target} · ${description}`
+  }
   return description ?? target
 }
 

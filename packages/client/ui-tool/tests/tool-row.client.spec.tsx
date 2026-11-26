@@ -41,7 +41,7 @@ describe('tool-call-model', () => {
     expect(classifyTool('write')).toBe('write')
     expect(classifyTool('edit')).toBe('edit')
     expect(classifyTool('apply_patch')).toBe('edit')
-    expect(classifyTool('delete_file')).toBe('edit')
+    expect(classifyTool('delete_file')).toBe('delete')
     expect(classifyTool('cordis_runtime_inspect')).toBe('read')
     // The v3 run-control verbs: `others` is the decided intent, not an
     // unclassified default (there is no program to show and no file to open).
@@ -238,6 +238,26 @@ describe('tool-call-model', () => {
     expect(patch('*** Begin Patch').summary).toBe('')
     expect(toolRowModel('apply_patch', running({ name: 'apply_patch', argsRaw: '{"input":"*** Begin' })).summary)
       .toBe('')
+  })
+
+  it('shows what a delete call targets instead of only its action', () => {
+    expect(toolRowModel('delete_file', running({ name: 'delete_file', argsRaw: '{"file_path":"src/a.ts"}' })))
+      .toMatchObject({ variant: 'delete', title: 'Delete', summary: 'src/a.ts' })
+    expect(toolRowModel('delete_file', running({ name: 'delete_file', argsRaw: '{"file_path":["src/a.ts","src/b.ts"]}' })))
+      .toMatchObject({ summary: 'src/a.ts 等 2 个文件' })
+    // 空数组、非法项与非数组参数都不进入摘要。
+    expect(toolRowModel('delete_file', running({ name: 'delete_file', argsRaw: '{"file_path":[]}' })).summary).toBe('')
+    expect(toolRowModel('delete_file', running({ name: 'delete_file', argsRaw: '{"file_path":[1,null]}' })).summary).toBe('')
+    expect(toolRowModel('delete_file', running({ name: 'delete_file', argsRaw: '{"file_path":""}' })).summary).toBe('')
+    // 单目标路径同样按会话工作区缩短，并换成垃圾桶图标而不是铅笔。
+    expect(toolRowModel(
+      'delete_file', running({ name: 'delete_file', argsRaw: '{"file_path":"/Users/u/ws/src/x.ts"}' }), '/Users/u/ws',
+    ).summary).toBe('src/x.ts')
+    const view = render(<GenericToolCard {...{
+      callId: 'c1', toolName: 'delete_file', block: running({ name: 'delete_file', argsRaw: '{"file_path":"src/a.ts"}' }),
+      openFile: vi.fn(), t,
+    }} />)
+    expect(view.getByText('src/a.ts')).toBeTruthy()
   })
 
   it('names common tools without echoing raw parameters into the collapsed row', () => {
