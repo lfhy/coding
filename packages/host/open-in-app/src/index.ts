@@ -50,6 +50,7 @@ import {
   OPEN_IN_APP_LOCATE_ROUTE,
   OPEN_IN_APP_OPEN_ROUTE,
   OPEN_IN_APP_READ_ROUTE,
+  OPEN_IN_APP_SAVE_ROUTE,
   OPEN_IN_APP_TARGET_ROUTE,
   OPEN_IN_APP_TERMINAL_ROUTE,
   type OpenInAppOpenPayload,
@@ -63,7 +64,9 @@ import {
   parseFilesRequest,
   parseLocateRequest,
   parseReadRequest,
+  parseSaveRequest,
   readWorkspaceFile,
+  saveWorkspaceFile,
   WorkspaceProtocolError,
 } from './workspace.ts'
 
@@ -82,7 +85,7 @@ export interface Config {
   readonly iconTimeoutMs: number
   /** 启动器仍存活即视为成功的早期失败观察窗口。 */
   readonly launchWatchMs: number
-  /** 单个文件预览允许读取的最大完整文件字节数。 */
+  /** 单个文件预览与编辑保存允许的完整字节数。 */
   readonly previewMaxBytes: number
 }
 
@@ -123,12 +126,12 @@ function sendMethodNotAllowed(res: ServerResponse, allow: 'GET' | 'POST'): void 
 }
 
 /** 收集有界 UTF-8 请求体；超过上限时排空剩余 stream 并返回 null。 */
-async function readBoundedBody(req: IncomingMessage): Promise<string | null> {
+async function readBoundedBody(req: IncomingMessage, maxBytes = MAX_BODY_BYTES): Promise<string | null> {
   const chunks: Buffer[] = []
   let size = 0
   for await (const chunk of req as AsyncIterable<Buffer>) {
     size += chunk.byteLength
-    if (size > MAX_BODY_BYTES) {
+    if (size > maxBytes) {
       req.resume()
       return null
     }
@@ -142,14 +145,14 @@ type JsonBody =
   | { readonly ok: false; readonly status: 400 | 413 | 415; readonly message: string }
 
 /** 校验 JSON 媒体类型和 body 上限，并解析一个 wire 值。 */
-async function readJsonBody(req: IncomingMessage): Promise<JsonBody> {
+async function readJsonBody(req: IncomingMessage, maxBytes = MAX_BODY_BYTES): Promise<JsonBody> {
   const essence = String(req.headers['content-type']).split(';', 1)[0]?.trim().toLowerCase()
   if (essence !== 'application/json') {
     return { ok: false, status: 415, message: 'content-type must be application/json' }
   }
   let text: string | null
   try {
-    text = await readBoundedBody(req)
+    text = await readBoundedBody(req, maxBytes)
   } catch {
     return { ok: false, status: 400, message: 'request body unreadable' }
   }
@@ -211,8 +214,8 @@ async function workspaceTargetKind(path: string, ssh: boolean): Promise<Workspac
 }
 
 /** 读取 JSON body，失败时直接回答统一 wire 错误。 */
-async function acceptedJson(req: IncomingMessage, res: ServerResponse): Promise<unknown> {
-  const body = await readJsonBody(req)
+async function acceptedJson(req: IncomingMessage, res: ServerResponse, maxBytes = MAX_BODY_BYTES): Promise<unknown> {
+  const body = await readJsonBody(req, maxBytes)
   if (body.ok) return body.value
   sendJson(res, body.status, { code: 'bad-request', message: body.message })
   return undefined
@@ -477,6 +480,31 @@ export function apply(ctx: Context, config: Config): void {
       }
     },
   }), `open-in-app: POST ${OPEN_IN_APP_READ_ROUTE}`)
+
+  ctx.effect(() => ctx.webServer.register({
+    kind: 'exact',
+    path: OPEN_IN_APP_SAVE_ROUTE,
+    handler: async (req, res) => {
+      if (rejected(req, res)) return
+      if (req.method !== 'POST') {
+        sendMethodNotAllowed(res, 'POST')
+        return
+      }
+      const bodyLimit = config.previewMaxBytes * 6 + MAX_BODY_BYTES
+      const raw = await acceptedJson(req, res, bodyLimit)
+      if (raw === undefined) return
+      try {
+        const body = parseSaveRequest(raw, config.previewMaxBytes)
+        if (body === undefined) {
+          sendJson(res, 400, { code: 'bad-request', message: 'invalid session workspace save request' })
+          return
+        }
+        sendJson(res, 200, await saveWorkspaceFile(ctx, body))
+      } catch (error) {
+        sendWorkspaceError(res, error)
+      }
+    },
+  }), `open-in-app: POST ${OPEN_IN_APP_SAVE_ROUTE}`)
 
   ctx.effect(() => ctx.webServer.register({
     kind: 'exact',

@@ -7,7 +7,9 @@ import {
   listWorkspaceFiles,
   parseFilesRequest,
   parseReadRequest,
+  parseSaveRequest,
   readWorkspaceFile,
+  saveWorkspaceFile,
   WorkspaceProtocolError,
 } from '../src/workspace.ts'
 
@@ -25,6 +27,14 @@ interface Harness {
   readonly readBytes: ReturnType<
     typeof vi.fn<(value: FsTarget, signal: AbortSignal | undefined, maxBytes: number) => Promise<Uint8Array>>
   >
+  readonly writeText: ReturnType<
+    typeof vi.fn<(value: FsTarget, content: string, expected?: unknown, signal?: AbortSignal, policy?: unknown) => Promise<{
+      operation: 'create' | 'update'
+      version: string
+      before: string | null
+      after: string
+    }>>
+  >
 }
 
 function harness(cwd: string | null = '/workspace'): Harness {
@@ -39,18 +49,26 @@ function harness(cwd: string | null = '/workspace'): Harness {
     if (bytes.byteLength > maxBytes) throw Object.assign(new Error('large'), { code: 'FS_TOO_LARGE' })
     return bytes
   })
+  const writeText = vi.fn(async (_value: FsTarget, content: string) => ({
+    operation: 'update' as const,
+    version: 'v2',
+    before: '',
+    after: content,
+  }))
   const fs = {
     resolve,
     listDir: vi.fn(async (value: FsTarget) => entries.get(String(value.targetKey)) ?? []),
     contains: vi.fn((_parent: FsTarget, child: FsTarget) => !String(child.targetKey).startsWith('outside')),
     stat: vi.fn(async (value: FsTarget) => info.get(String(value.targetKey))),
     readBytes,
+    writeText,
   }
   const ctx = {
     sessions: { get: (id: string) => id === 'session' ? session : undefined },
     fs,
+    get: () => undefined,
   } as unknown as Context
-  return { ctx, entries, info, contents, root, resolve, readBytes }
+  return { ctx, entries, info, contents, root, resolve, readBytes, writeText }
 }
 
 function file(name: string, key = name, size?: number): FsDirEntry {
@@ -86,6 +104,30 @@ describe('workspace request parsers', () => {
     ]
     for (const value of invalid) expect(parseFilesRequest(value)).toBeUndefined()
     expect(parseReadRequest({ sessionId: 'session', segments: [] })).toBeUndefined()
+  })
+
+  it('accepts only bounded versioned saves with complete text content', () => {
+    expect(parseSaveRequest({
+      sessionId: 'session', segments: ['a.txt'], baseVersion: 'v1', content: 'hello',
+    }, 100)).toEqual({
+      sessionId: 'session', segments: ['a.txt'], baseVersion: 'v1', content: 'hello',
+    })
+    for (const value of [
+      { sessionId: 'session', segments: [], baseVersion: 'v1', content: 'x' },
+      { sessionId: 'session', segments: ['a.txt'], baseVersion: '', content: 'x' },
+      { sessionId: 'session', segments: ['a.txt'], baseVersion: 'v1', content: 1 },
+      { sessionId: 'session', segments: ['a.txt'], baseVersion: 'v1', content: 'x\0y' },
+      { sessionId: 'session', segments: ['a.txt'], baseVersion: 'v1', content: 'x', path: '/outside' },
+    ]) expect(parseSaveRequest(value, 100)).toBeUndefined()
+    expect(() => parseSaveRequest({
+      sessionId: 'session', segments: ['a.txt'], baseVersion: 'v1', content: 'x'.repeat(101),
+    }, 100)).toThrow(expect.objectContaining({ status: 413, code: 'file-too-large' }))
+    expect(parseSaveRequest({
+      sessionId: 'session', segments: ['a.txt'], baseVersion: 'v1', content: 'x'.repeat(100),
+    }, 100)?.content).toHaveLength(100)
+    expect(() => parseSaveRequest({
+      sessionId: 'session', segments: ['a.txt'], baseVersion: 'v1', content: 'é'.repeat(51),
+    }, 100)).toThrow(expect.objectContaining({ status: 413, code: 'file-too-large' }))
   })
 })
 
@@ -179,6 +221,7 @@ describe('bounded file previews', () => {
         displayPath: '/workspace/image',
         name: 'logo.png',
         truncated: false,
+        version: 'v1',
       })
     await expect(readWorkspaceFile(state.ctx, { sessionId: 'session', segments: ['index.html'] }, 100))
       .resolves.toMatchObject({ kind: 'text', format: 'html', text: '<!doctype html><h1>hello</h1>' })
@@ -247,5 +290,43 @@ describe('bounded file previews', () => {
     await expect(readWorkspaceFile(state.ctx, { sessionId: 'session', segments: ['failed.txt'] }, 100))
       .rejects.toThrow('provider offline')
     expect(new WorkspaceProtocolError(400, 'bad-request', 'bad').name).toBe('WorkspaceProtocolError')
+  })
+})
+
+describe('versioned workspace saves', () => {
+  it('writes the complete text with the observed version and returns the new version', async () => {
+    const state = harness()
+    const entry = file('a.txt', 'a', 3)
+    state.entries.set('root', [entry])
+    state.info.set('a', { version: 'v1' as never, type: 'file', size: 3 })
+
+    await expect(saveWorkspaceFile(state.ctx, {
+      sessionId: 'session', segments: ['a.txt'], baseVersion: 'v1', content: 'next',
+    })).resolves.toEqual({
+      displayPath: '/workspace/a', name: 'a.txt', version: 'v2', operation: 'update',
+    })
+    expect(state.writeText).toHaveBeenCalledWith(
+      entry.target,
+      'next',
+      { kind: 'replaceIfVersion', version: 'v1' },
+      undefined,
+      undefined,
+    )
+  })
+
+  it('maps stale, missing, oversize, and readonly provider failures to stable HTTP errors', async () => {
+    const state = harness()
+    state.entries.set('root', [file('a.txt', 'a')])
+    state.info.set('a', { version: 'v1' as never, type: 'file' })
+    const request = { sessionId: 'session', segments: ['a.txt'], baseVersion: 'v1', content: 'next' }
+    for (const [code, status, wire] of [
+      ['FS_STALE_VERSION', 409, 'file-conflict'],
+      ['FS_NOT_FOUND', 404, 'not-found'],
+      ['FS_TOO_LARGE', 413, 'file-too-large'],
+      ['FS_SANDBOX_DENIED', 403, 'file-readonly'],
+    ] as const) {
+      state.writeText.mockRejectedValueOnce(Object.assign(new Error(code), { code }))
+      await expect(saveWorkspaceFile(state.ctx, request)).rejects.toMatchObject({ status, code: wire })
+    }
   })
 })

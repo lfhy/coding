@@ -13,7 +13,9 @@ kind: "package-reference"
 
 ## 使用本包
 
-把本 Client 插件与 [`dsh-host-open-in-app`](../../host/open-in-app/README.md) 及提供 `workspace.gitHistory` 的 [`dsh-host-apiproxy`](../../host/apiproxy/README.md) 并排挂载。布局 owner 必须声明 root scope 的 `workbench` 与 `workbench.bottom` slot；工作台通过 `useSessions` 读取当前 Session，底栏接收 owner 的当前 Session id。[`ctx.layout`](../ui-layout/README.md#use-this-package) 按会话提供右栏动作与状态源、按工作区提供底栏动作；会话壳须声明 `conversation.session.header.utilities` 与欢迎页的 `conversation.hero.actions`。Host shared 必须提供本地应用目标／启动路由、`sessionId + segments` 文件列表与读取路由、`sessionId + path` 路径定位路由，以及 Session 终端 WebSocket 路由和封闭帧类型。
+把本 Client 插件与 [`dsh-host-open-in-app`](../../host/open-in-app/README.md) 及提供 `workspace.gitHistory` 的 [`dsh-host-apiproxy`](../../host/apiproxy/README.md) 并排挂载。布局 owner 必须声明 root scope 的 `workbench` 与 `workbench.bottom` slot；工作台通过 `useSessions` 读取当前 Session，底栏接收 owner 的当前 Session id。[`ctx.layout`](../ui-layout/README.md#use-this-package) 按会话提供右栏动作与状态源、按工作区提供底栏动作；会话壳须声明 `conversation.session.header.utilities` 与欢迎页的 `conversation.hero.actions`。Host shared 必须提供本地应用目标／启动路由、`sessionId + segments` 文件列表、读取与版本化保存路由、`sessionId + path` 路径定位路由，以及 Session 终端 WebSocket 路由和封闭帧类型。
+
+本包通过 `ctx.workspaceFiles` 向其他 Client 插件提供同一组 Session 绑定文件操作：`list`、`read`、`save` 与 `locate`。`read` 返回不透明的 `version`，`save` 必须原样回传该版本；HTTP 拒绝以 `{ ok: false, error: { status, code } }` 返回，传输或协议错误仍抛出。右侧工作台继续只读，IDE 等编辑器消费方使用 `save`，不直接访问 Host 路由。
 
 ## 行为
 
@@ -75,7 +77,7 @@ Git 历史、文件管理器、文件预览、终端和外部插件标签共用�
 
 ## 已知限制与延后工作
 
-- 文件视图只读，不提供上传、保存、重命名或删除。
+- 右侧工作台的文件视图只读，不提供保存、重命名或删除；`ctx.workspaceFiles.save` 供 IDE 等编辑消费方使用，工作台本身不调用它。
 - 文件内容由 Host 完整返回；大文件截断、大小上限和二进制分类由 Host 契约负责。
 - 文件树不监听实时文件系统变更，用户可显式刷新根目录或文件预览。
 - 文件预览支持 Markdown、代码、普通文本、HTML、SVG 以及常见图片（PNG、JPEG、GIF、WebP 等）。文本文件可在“预览”和“原文”之间切换；HTML 预览使用无权限沙箱 iframe，SVG 通过图片资源展示，不把工作区内容直接插入应用 DOM。PDF、Office 尚未接入。

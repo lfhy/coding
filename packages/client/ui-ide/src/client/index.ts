@@ -2,9 +2,11 @@
 import type { ClientContext, WorkspaceId } from 'coding-client-runtime/client'
 import type {} from 'coding-client-locale/client'
 import type {} from 'coding-client-ui-layout/client'
+import type {} from 'coding-client-ui-open-in-app/client'
 import type { DirectoryFlowOwnerProps } from 'coding-client-ui-workspace/client'
 import { IdeNavigationEntry } from './IdeNavigationEntry.tsx'
 import { IdePage } from './IdePage.tsx'
+import { createIdeWorkspaceStore } from './ide-store.ts'
 import { en, zh, NS, type IdeLocaleKey } from './locales.ts'
 
 const PAGE = 'ide'
@@ -22,7 +24,7 @@ declare module 'coding-client-ui-slots' {
 }
 
 /** 页面与目录流所需服务。 */
-export const inject = ['slots', 'locale', 'layout', 'sessions', 'workspaces']
+export const inject = ['slots', 'locale', 'layout', 'sessions', 'workspaces', 'workspaceFiles']
 
 /**
  * 注册代码工作区导航与欢迎页。
@@ -35,11 +37,12 @@ export function apply(ctx: ClientContext): void {
     inject: () => ({ hooks: { idePage: ctx.layout.page }, openIde: openIdeFor(ctx) }),
   }, IdeNavigationEntry))
   ctx.slots.inject('shell.page', () => ctx.slots.register({
-    name: 'shell.page', key: PAGE, locale: NS,
+    name: 'shell.page', key: PAGE, locale: NS, store: createIdeWorkspaceStore,
     children: { 'shell.ide.welcome.directoryFlow': { kind: 'single', scope: 'root' } },
     inject: () => ({
       createWorkspace: (input: { path: string }) => ctx.workspaces.create(input),
       openWorkspace: (workspaceId: WorkspaceId) => openWorkspaceFor(ctx, workspaceId),
+      workspaceFiles: ctx.workspaceFiles,
     }),
   }, IdePage))
 }
@@ -56,8 +59,9 @@ function openIdeFor(ctx: ClientContext): () => Promise<void> {
       for (let attempt = 0; attempt < 30; attempt++) {
         try {
           ctx.layout.togglePage(PAGE, target, origin)
-          // 欢迎阶段只展示入口本身，不提前展开共享助手栏。
-          ctx.layout.setPageAssistant(false)
+          const inWorkspace = ctx.workspaces.list.getSnapshot().items.some(item => item.sessionIds.includes(target))
+          // 欢迎阶段收起助手；已绑定工作区的会话直接进入三栏并自动并排助手。
+          ctx.layout.setPageAssistant(inWorkspace ? 'auto' : false)
           return
         } catch {
           await new Promise<void>((resolve) => { window.setTimeout(resolve, 32) })
@@ -69,9 +73,12 @@ function openIdeFor(ctx: ClientContext): () => Promise<void> {
   }
 }
 
-/** 打开工作区的空白会话，并离开独立欢迎页进入现有三栏工作区。 */
+/** 打开工作区的空白会话，并留在同一 IDE 页进入三栏工作区。 */
 async function openWorkspaceFor(ctx: ClientContext, workspaceId: WorkspaceId): Promise<void> {
+  const page = ctx.layout.page.getSnapshot()
+  const origin = page?.returnSessionId ?? page?.sessionId ?? ctx.sessions.list.getSnapshot().current
   const sessionId = await ctx.workspaces.connectWorkspace(workspaceId)
   ctx.sessions.open(sessionId)
-  ctx.layout.closePage()
+  ctx.layout.openPage(PAGE, sessionId, origin)
+  ctx.layout.setPageAssistant('auto')
 }

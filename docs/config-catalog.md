@@ -689,7 +689,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/attachment/file-library/src/index.ts:42`](../packages/attachment/file-library/src/index.ts)
+Source: [`packages/attachment/file-library/src/index.ts:43`](../packages/attachment/file-library/src/index.ts)
 
 <a id="coding-file-reference-local"></a>
 
@@ -728,7 +728,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/fs/fs-local/src/index.ts:43`](../packages/fs/fs-local/src/index.ts)
+Source: [`packages/fs/fs-local/src/index.ts:46`](../packages/fs/fs-local/src/index.ts)
 
 <a id="coding-fs-sandbox"></a>
 
@@ -748,7 +748,7 @@ export type Config = LocalConfig
 
 Depends on: [`LocalConfig`](#coding-fs-local)
 
-Source: [`packages/fs/fs-sandbox/src/index.ts:49`](../packages/fs/fs-sandbox/src/index.ts)
+Source: [`packages/fs/fs-sandbox/src/index.ts:58`](../packages/fs/fs-sandbox/src/index.ts)
 
 <a id="coding-fs-workspace"></a>
 
@@ -941,12 +941,12 @@ export interface Config {
   readonly iconTimeoutMs: number
   /** 启动器仍存活即视为成功的早期失败观察窗口。 */
   readonly launchWatchMs: number
-  /** 单个文件预览允许读取的最大完整文件字节数。 */
+  /** 单个文件预览与编辑保存允许的完整字节数。 */
   readonly previewMaxBytes: number
 }
 ```
 
-Source: [`packages/host/open-in-app/src/index.ts:78`](../packages/host/open-in-app/src/index.ts)
+Source: [`packages/host/open-in-app/src/index.ts:81`](../packages/host/open-in-app/src/index.ts)
 
 <a id="coding-host-webserver"></a>
 
@@ -2799,7 +2799,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/fs/tool-fs/src/index.ts:25`](../packages/fs/tool-fs/src/index.ts)
+Source: [`packages/fs/tool-fs/src/index.ts:27`](../packages/fs/tool-fs/src/index.ts)
 
 <a id="coding-tool-fs-search"></a>
 
@@ -3718,6 +3718,7 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 - `coding-client-ui-directory-picker-native` ([`packages/client/ui-directory-picker-native/src/index.ts`](../packages/client/ui-directory-picker-native/src/index.ts))
 - `coding-client-ui-files` ([`packages/client/ui-files/src/index.ts`](../packages/client/ui-files/src/index.ts))
 - `coding-client-ui-goal` ([`packages/client/ui-goal/src/index.ts`](../packages/client/ui-goal/src/index.ts))
+- `coding-client-ui-ide` ([`packages/client/ui-ide/src/index.ts`](../packages/client/ui-ide/src/index.ts))
 - `coding-client-ui-image-gen` ([`packages/client/ui-image-gen/src/index.ts`](../packages/client/ui-image-gen/src/index.ts))
 - `coding-client-ui-input-trigger` ([`packages/client/ui-input-trigger/src/index.ts`](../packages/client/ui-input-trigger/src/index.ts))
 - `coding-client-ui-jobs` ([`packages/client/ui-jobs/src/index.ts`](../packages/client/ui-jobs/src/index.ts))

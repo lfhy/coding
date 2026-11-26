@@ -1,0 +1,14 @@
+.treeError {
+  display: grid;
+  gap: 8px;
+  padding: 4px 4px 12px;
+  color: var(--dsw-alias-state-error-primary);
+  font: var(--dsw-font-xxs-12);
+}
+
+.treeNote {
+  margin: 0;
+  padding: 0 4px 8px;
+  color: var(--dsw-alias-label-tertiary);
+  font: var(--dsw-font-xxs-12);
+}

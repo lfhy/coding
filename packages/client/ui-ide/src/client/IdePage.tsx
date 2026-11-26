@@ -3,25 +3,30 @@ import {
   Button, IconChevronRightOutline14, IconCloudOutline16, IconCodeOutline16,
   IconFolderClose16, IconFolderOpenOutline16, Toast,
 } from 'coding-client-ui-primitives'
-import type { InjectFace, PropsLocale, PropsRenderSlots, PropsRuntime } from 'coding-client-ui-slots'
+import type { InjectFace, PropsLocale, PropsRenderSlots, PropsRuntime, PropsStore } from 'coding-client-ui-slots'
 import {
   isRemoteWorkspacePath, remoteWorkspaceDisplayPath,
   type WorkspaceId, type WorkspaceView,
 } from 'coding-client-runtime/client'
+import type { WorkspaceFilesService } from 'coding-client-ui-open-in-app/client'
 import type { DirectoryFlowOwnerProps } from 'coding-client-ui-workspace/client'
+import { IdeWorkspace } from './IdeWorkspace.tsx'
+import { createIdeWorkspaceStore } from './ide-store.ts'
 import { NS } from './locales.ts'
 import css from './IdePage.module.css'
 
 export interface IdePageFace {
   createWorkspace: (input: { path: string }) => Promise<WorkspaceView>
   openWorkspace: (workspaceId: WorkspaceId) => Promise<void>
+  workspaceFiles: WorkspaceFilesService
 }
 
 export type IdePageProps = PropsRuntime<'shell.page'> & PropsLocale<typeof NS>
-  & PropsRenderSlots<'shell.ide.welcome.directoryFlow'> & InjectFace<IdePageFace>
+  & PropsRenderSlots<'shell.ide.welcome.directoryFlow'> & PropsStore<ReturnType<typeof createIdeWorkspaceStore>>
+  & InjectFace<IdePageFace>
 
 /** 代码工作区欢迎页：选择目录或最近工作区，尚未加载文件与编辑器内容。 */
-export function IdePage({
+function IdeWelcome({
   closePage, useWorkspaces, renderSlot, createWorkspace, openWorkspace, t,
 }: IdePageProps) {
   const items = useWorkspaces(state => state.items)
@@ -128,4 +133,19 @@ export function IdePage({
     {renderSlot('shell.ide.welcome.directoryFlow', flow)}
     {toast !== null && <Toast key={toast.id} text={toast.text} onDone={() => { setToast(null) }} />}
   </div>
+}
+
+/** 按当前会话是否归属工作区，在欢迎页与三栏 IDE 之间路由。 */
+export function IdePage(props: IdePageProps) {
+  const items = props.useWorkspaces(state => state.items)
+  const workspace = useMemo(
+    () => items.find(item => item.sessionIds.includes(props.sessionId)),
+    [items, props.sessionId],
+  )
+  if (workspace === undefined) return <IdeWelcome {...props} />
+  return <IdeWorkspace workspace={workspace} sessionId={props.sessionId}
+    sidebarCollapsed={props.sidebarCollapsed} sidebarWidth={props.sidebarWidth}
+    assistantOpen={props.assistantOpen} assistantPanelId={props.assistantPanelId}
+    toggleAssistant={props.toggleAssistant} closePage={props.closePage}
+    workspaceFiles={props.workspaceFiles} useStore={props.useStore} actions={props.actions} t={props.t} />
 }

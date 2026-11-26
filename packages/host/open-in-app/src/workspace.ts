@@ -1,8 +1,10 @@
 /** Session 绑定的工作区路径解析、目录列表与有界文件预览。 */
 
 import type { Context } from '@deepseek-ai/cordis'
+import { FsVersion } from 'coding-fs'
 import type { FsDirEntry, FsTarget } from 'coding-fs'
 import { SessionId } from 'coding-session'
+import type {} from 'coding-sandbox-policy'
 import type {
   OpenInAppFileEntry,
   OpenInAppFilesPayload,
@@ -11,6 +13,8 @@ import type {
   OpenInAppLocateRequest,
   OpenInAppReadPayload,
   OpenInAppReadRequest,
+  OpenInAppSavePayload,
+  OpenInAppSaveRequest,
 } from './shared.ts'
 
 const MAX_FILE_SEGMENTS = 64
@@ -49,8 +53,9 @@ export class WorkspaceProtocolError extends Error {
    * @param message - 不含 provider 身份或凭据的诊断。
    */
   constructor(
-    readonly status: 400 | 404 | 409,
-    readonly code: 'bad-request' | 'session-not-found' | 'workspace-unavailable' | 'not-found',
+    readonly status: 400 | 403 | 404 | 409 | 413,
+    readonly code: 'bad-request' | 'session-not-found' | 'workspace-unavailable' | 'not-found'
+      | 'file-conflict' | 'file-too-large' | 'file-readonly',
     message: string,
   ) {
     super(message)
@@ -64,10 +69,14 @@ function recordOf(value: unknown): Record<string, unknown> | undefined {
     : undefined
 }
 
-function parseRequest(value: unknown, requireFile: boolean): OpenInAppFilesRequest | undefined {
+function parseRequest(
+  value: unknown,
+  requireFile: boolean,
+  extraKeys: readonly string[] = [],
+): OpenInAppFilesRequest | undefined {
   const body = recordOf(value)
   if (body === undefined
-    || Object.keys(body).some(key => key !== 'sessionId' && key !== 'segments')
+    || Object.keys(body).some(key => key !== 'sessionId' && key !== 'segments' && !extraKeys.includes(key))
     || typeof body.sessionId !== 'string'
     || body.sessionId.length === 0
     || body.sessionId.includes(NUL)
@@ -102,6 +111,26 @@ export function parseFilesRequest(value: unknown): OpenInAppFilesRequest | undef
  */
 export function parseReadRequest(value: unknown): OpenInAppReadRequest | undefined {
   return parseRequest(value, true)
+}
+
+/**
+ * 解析封闭的版本化保存请求，并在解析点执行完整内容字节上限。
+ * @param value - JSON 请求体。
+ * @param maxBytes - 单个文本文件允许的最大字节数。
+ * @returns 通过校验的保存请求；畸形或含多余字段时返回 undefined。
+ * @throws {WorkspaceProtocolError} 完整内容超过 maxBytes 时返回 413。
+ */
+export function parseSaveRequest(value: unknown, maxBytes: number): OpenInAppSaveRequest | undefined {
+  const path = parseRequest(value, true, ['baseVersion', 'content'])
+  const body = recordOf(value)
+  if (path === undefined || body === undefined
+    || typeof body.baseVersion !== 'string' || body.baseVersion.length === 0
+    || Buffer.byteLength(body.baseVersion, 'utf8') > 4_096
+    || typeof body.content !== 'string' || body.content.includes(NUL)) return undefined
+  if (Buffer.byteLength(body.content, 'utf8') > maxBytes) {
+    throw new WorkspaceProtocolError(413, 'file-too-large', 'workspace file is too large to save')
+  }
+  return { ...path, baseVersion: body.baseVersion, content: body.content }
 }
 
 /**
@@ -250,7 +279,7 @@ export async function listWorkspaceFiles(
 async function fileEntry(
   ctx: Context,
   request: OpenInAppReadRequest,
-): Promise<{ readonly entry: FsDirEntry; readonly target: FsTarget }> {
+): Promise<{ readonly entry: FsDirEntry; readonly target: FsTarget; readonly version: string }> {
   const root = await rootFor(ctx, request.sessionId)
   const parent = await descendDirectories(ctx, root, request.segments.slice(0, -1))
   const name = request.segments.at(-1) as string
@@ -270,7 +299,7 @@ async function fileEntry(
   const currentEntry: FsDirEntry = current.size === undefined
     ? withoutSize
     : { ...withoutSize, size: current.size }
-  return { entry: currentEntry, target: entry.target }
+  return { entry: currentEntry, target: entry.target, version: String(current.version) }
 }
 
 function extensionOf(name: string): string {
@@ -290,6 +319,7 @@ function textFormat(name: string): 'markdown' | 'code' | 'html' | 'svg' | 'text'
 function unsupported(
   entry: FsDirEntry,
   target: FsTarget,
+  version: string,
   reason: 'binary' | 'too-large',
 ): OpenInAppReadPayload {
   return {
@@ -298,6 +328,7 @@ function unsupported(
     displayPath: target.displayPath,
     name: entry.name,
     truncated: reason === 'too-large',
+    version,
   }
 }
 
@@ -317,17 +348,17 @@ export async function readWorkspaceFile(
   request: OpenInAppReadRequest,
   maxBytes: number,
 ): Promise<OpenInAppReadPayload> {
-  const { entry, target } = await fileEntry(ctx, request)
-  if (entry.size !== undefined && entry.size > maxBytes) return unsupported(entry, target, 'too-large')
+  const { entry, target, version } = await fileEntry(ctx, request)
+  if (entry.size !== undefined && entry.size > maxBytes) return unsupported(entry, target, version, 'too-large')
   let bytes: Uint8Array
   try {
     bytes = await ctx.fs.readBytes(target, undefined, maxBytes)
   } catch (error) {
-    if (tooLarge(error)) return unsupported(entry, target, 'too-large')
+    if (tooLarge(error)) return unsupported(entry, target, version, 'too-large')
     throw error
   }
-  if (bytes.byteLength > maxBytes) return unsupported(entry, target, 'too-large')
-  const base = { displayPath: target.displayPath, name: entry.name, truncated: false } as const
+  if (bytes.byteLength > maxBytes) return unsupported(entry, target, version, 'too-large')
+  const base = { displayPath: target.displayPath, name: entry.name, truncated: false, version } as const
   const mime = IMAGE_MIME_TYPES[extensionOf(entry.name)]
   if (mime !== undefined) {
     return { ...base, kind: 'image', mime, dataBase64: Buffer.from(bytes).toString('base64') }
@@ -336,8 +367,66 @@ export async function readWorkspaceFile(
   try {
     text = new TextDecoder('utf-8', { fatal: true }).decode(bytes)
   } catch {
-    return unsupported(entry, target, 'binary')
+    return unsupported(entry, target, version, 'binary')
   }
-  if (text.includes(NUL)) return unsupported(entry, target, 'binary')
+  if (text.includes(NUL)) return unsupported(entry, target, version, 'binary')
   return { ...base, kind: 'text', format: textFormat(entry.name), text }
+}
+
+/** 将文件系统保存失败映射为浏览器可恢复的稳定协议错误。 */
+function saveFailure(error: unknown): WorkspaceProtocolError | undefined {
+  const code = typeof error === 'object' && error !== null && 'code' in error && typeof error.code === 'string'
+    ? error.code
+    : undefined
+  if (code === 'FS_STALE_VERSION' || code === 'FS_NOT_OBSERVED') {
+    return new WorkspaceProtocolError(409, 'file-conflict', 'workspace file changed since it was read')
+  }
+  if (code === 'FS_NOT_FOUND') return workspaceUnavailable('workspace file is unavailable')
+  if (code === 'FS_TOO_LARGE') {
+    return new WorkspaceProtocolError(413, 'file-too-large', 'workspace file is too large to save')
+  }
+  if (code === 'FS_SANDBOX_DENIED' || code === 'FS_PERMISSION_DENIED') {
+    return new WorkspaceProtocolError(403, 'file-readonly', 'workspace file is not writable')
+  }
+  if (code === 'FS_NOT_TEXT' || code === 'FS_NOT_REGULAR_FILE') {
+    return new WorkspaceProtocolError(400, 'bad-request', 'workspace save target must remain a text file')
+  }
+  return undefined
+}
+
+/**
+ * 按读取版本原子保存已有文本文件；Session 策略与工作区包含关系都在 Host 执行世界复核。
+ * @param ctx - 携带 Session store、组合文件系统与可选沙箱策略的 Host 上下文。
+ * @param request - 已验证的 Session、路径段、基础版本与完整内容。
+ * @returns 新版本及本次写入类型。
+ */
+export async function saveWorkspaceFile(
+  ctx: Context,
+  request: OpenInAppSaveRequest,
+): Promise<OpenInAppSavePayload> {
+  const { entry, target } = await fileEntry(ctx, request)
+  const session = ctx.sessions.get(SessionId(request.sessionId))
+  if (session === undefined) {
+    throw new WorkspaceProtocolError(404, 'session-not-found', `session is not live: ${request.sessionId}`)
+  }
+  const policy = ctx.get('sandboxPolicy')?.resolve({ session })
+  try {
+    const outcome = await ctx.fs.writeText(
+      target,
+      request.content,
+      { kind: 'replaceIfVersion', version: FsVersion(request.baseVersion) },
+      undefined,
+      policy,
+    )
+    return {
+      displayPath: target.displayPath,
+      name: entry.name,
+      version: String(outcome.version),
+      operation: outcome.operation,
+    }
+  } catch (error) {
+    const failure = saveFailure(error)
+    if (failure !== undefined) throw failure
+    throw error
+  }
 }

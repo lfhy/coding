@@ -39,11 +39,12 @@
 - **技术与边界**：UI 依 slot 声明生命周期注册；工作区归属来自 Host 台账，不从会话目录或父子关系推断。最近列表及其搜索结果按 `updatedAt` 倒序、id 升序稳定排列，不使用手动顺序台账；三类视图均排除子代理、空白和已归档会话。目录后端是 browse、native 或 auto 的可替换 Provider，不能在组件内按平台自行选择。行为契约见 [ui-workspace](../../packages/client/ui-workspace/README.md) 与 [Host directory-picker](../../packages/host/directory-picker/README.md)。
 - **连带与验证**：调整座位同步 `ui-sidebar`、`ui-workspace/src/client/contract/slots.ts`、目录占用插件与组合行；调整页签范围、排序或搜索时同步[包说明](../../packages/client/ui-workspace/README.md)、[用户指南](../user/guide/index.md#管理侧栏会话)与对应测试，核对本地选择恢复、窄轨道保留选择、切页回顶及内容命中不跨范围；顶部入口同步[对话路线](#对话输入命令与视图)、[设计规范](../../packages/client/UI_DESIGN.md#页面层级)和[开始方式指南](../user/guide/index.md#选择开始方式)，验收从最近单向切回工作／对话、侧栏筛选不触发创建或导航、非空会话隐藏入口、草稿与附件保留、失败重试及迟到请求不抢页面；目录协议变更同步 Host Provider 和 Client flow。定向运行 `pnpm exec vitest run packages/client/ui-sidebar/tests packages/client/ui-workspace/tests packages/client/ui-conversation/tests packages/client/ui-directory-picker-browse/tests`，组装交互再跑 `pnpm run test:gui`。
 
-## 代码工作区入口
+## 代码工作区三栏
 
-- **拥有**：`packages/client/ui-ide` 注册 `shell.navigation.entry` 与 keyed `shell.page`，欢迎页只负责选择目录或最近工作区；`shell.ide.welcome.directoryFlow` 由已装配的浏览式或原生目录选择包占用。目录注册、空白会话复用和会话选择归 `coding-client-runtime`，页面路由与返回动作归 `ui-layout`。
-- **不拥有**：文件树、标签、编辑器、终端面板、AI 助手或工具调用联动；欢迎阶段调用 `setPageAssistant(false)`，选择工作区后关闭独立页并进入现有三栏视图。
-- **连带与验证**：修改目录选择时同步 `ui-directory-picker-browse`、`ui-directory-picker-native` 与目录占用测试；修改页面座位时核对 `ui-layout` 的 `ShellPageOwnerProps`。定向运行 `pnpm exec vitest run packages/client/ui-ide/tests packages/client/ui-directory-picker-browse/tests/client-flow.client.spec.tsx packages/client/ui-directory-picker-native/tests/client-flow.client.spec.tsx`，可见输出补充 `DSH_SNAPSHOT=replay pnpm run test:web`。
+- **拥有**：`packages/client/ui-ide` 注册 `shell.navigation.entry`、keyed `shell.page` 与会话级 IDE store。欢迎页选择目录或最近工作区；已归属工作区的会话显示 `SidebarRoot` 文件树、文件标签、文本编辑区和页头助手开关。`shell.ide.welcome.directoryFlow` 由已装配的浏览式或原生目录选择包占用。
+- **数据与边界**：目录注册、空白会话复用和会话选择归 `coding-client-runtime`；页面路由、侧栏几何与右侧共享助手归 `ui-layout`。文件 list/read/save/locate 统一经 `coding-client-ui-open-in-app` 的 `ctx.workspaceFiles`，Host 实现在 `coding-host-open-in-app`；IDE 不拼 OS 路径，不注册 `conversation`，也不直接渲染助手内容。保存带读取版本，409 保留草稿。
+- **不拥有**：右侧工作台与根底栏终端、模型工具调用联动、文件新建／重命名／删除、语法高亮与补全。页内终端需要本包声明子 slot，由终端拥有包贡献，不能复用页面打开时隐藏的 `workbench.bottom`。
+- **连带与验证**：修改目录选择时同步 `ui-directory-picker-browse`、`ui-directory-picker-native` 与目录占用测试；修改文件协议时同步 `ui-open-in-app` 的 wire/controller/service 与 `host/open-in-app` 的 shared/workspace/routes；修改页面座位时核对 `ui-layout` 的 `ShellPageOwnerProps`。定向运行 `pnpm exec vitest run packages/client/ui-ide/tests packages/client/ui-open-in-app/tests packages/host/open-in-app/tests packages/client/ui-directory-picker-browse/tests/client-flow.client.spec.tsx packages/client/ui-directory-picker-native/tests/client-flow.client.spec.tsx`，可见输出补充 `DSH_SNAPSHOT=replay pnpm run test:web`。
 
 ## Git seam 与克隆仓库
 
@@ -244,12 +245,12 @@
 
 ## packages/client/ui-open-in-app
 
-- **拥有**：工作区打开能力的浏览器半：会话页头分体入口（`OpenInAppAction`）及右侧边栏、终端底栏开关（`WorkbenchPanelToggles`），均占用 `conversation.session.header.utilities`；欢迎页开关占用 `conversation.hero.actions`；内置工作台（`WorkspaceWorkbench`，占用 root scope `workbench`）按 Session 持有功能菜单、唯一共享新增入口、文件管理器／文件预览／终端／外部标签、文件视图及右侧终端，声明 keyed `sidebar.right.pane.tab`／`.title` 子 slot；保留式底栏终端（`RetainedTerminalPanel`）独立占用 `workbench.bottom`；另有 `OpenInAppController`。
-- **不拥有**：浏览器页面、实时画面及人工输入属于 `packages/browser/browser-ego-host` 和 `packages/client/ui-browser-ego`；Host 路由（应用启动、文件 list/locate/read、终端 WebSocket）属于 `packages/host/open-in-app`；workbench 壳层几何与 `ctx.layout` 属于 `packages/client/ui-layout`；`conversation.session.header.utilities` 与 `conversation.hero.actions` 座位声明属于 `packages/client/ui-conversation`。
+- **拥有**：工作区打开能力的浏览器半：会话页头分体入口（`OpenInAppAction`）及右侧边栏、终端底栏开关（`WorkbenchPanelToggles`），均占用 `conversation.session.header.utilities`；欢迎页开关占用 `conversation.hero.actions`；内置工作台（`WorkspaceWorkbench`，占用 root scope `workbench`）按 Session 持有功能菜单、唯一共享新增入口、文件管理器／文件预览／终端／外部标签、文件视图及右侧终端，声明 keyed `sidebar.right.pane.tab`／`.title` 子 slot；保留式底栏终端（`RetainedTerminalPanel`）独立占用 `workbench.bottom`；另有 `OpenInAppController` 与 `ctx.workspaceFiles`（list/read/save/locate）。
+- **不拥有**：浏览器页面、实时画面及人工输入属于 `packages/browser/browser-ego-host` 和 `packages/client/ui-browser-ego`；Host 路由（应用启动、文件 list/locate/read/save、终端 WebSocket）属于 `packages/host/open-in-app`；workbench 壳层几何与 `ctx.layout` 属于 `packages/client/ui-layout`；`conversation.session.header.utilities` 与 `conversation.hero.actions` 座位声明属于 `packages/client/ui-conversation`。
 - **入口**：`packages/client/ui-open-in-app/src/client/index.ts`（注入 `slots`、`locale`、`layout`、`sessions`、`workspaces`；通过 `ctx.slots.inject(...)` 在各座位注册）；node 半是空 apply。
 - **接线**：`packages/bundle/web-app/cordis.patch.yml` 的 `ui-open-in-app` 行与 host 行 `open-in-app` 并排挂载；共享常量经 `coding-host-open-in-app/shared`。
-- **关键文件**：`packages/client/ui-open-in-app/src/client/index.ts`、`packages/client/ui-open-in-app/src/client/controller.ts`、`packages/client/ui-open-in-app/src/client/store.ts`、`packages/client/ui-open-in-app/src/client/WorkspaceWorkbench.tsx`、`packages/client/ui-open-in-app/src/client/sidebar-tab-registry.ts`、`packages/client/ui-open-in-app/src/client/sidebar-tab-service.ts`、`packages/client/ui-open-in-app/src/client/TerminalPanel.tsx`、`packages/client/ui-open-in-app/src/client/RetainedTerminalPanel.tsx`。
-- **改这里要同步**：路由或帧协议改动同步 `packages/host/open-in-app`；文件预览格式、预览／原文切换或安全呈现改动同步 `packages/host/open-in-app` 的 shared/workspace、`packages/client/ui-open-in-app` 的 wire/controller/WorkspaceWorkbench 与包 README；工作台或底栏显隐语义改动同步 `packages/client/ui-layout`（owner prop `bottomOpen`），页头与欢迎页入口变动核对 `packages/client/ui-conversation` 的座位；外部标签定义、实例状态或 keyed slot 变动同步本包 README 和对应插件贡献。
+- **关键文件**：`packages/client/ui-open-in-app/src/client/index.ts`、`packages/client/ui-open-in-app/src/client/controller.ts`、`packages/client/ui-open-in-app/src/client/wire.ts`、`packages/client/ui-open-in-app/src/client/store.ts`、`packages/client/ui-open-in-app/src/client/WorkspaceWorkbench.tsx`、`packages/client/ui-open-in-app/src/client/sidebar-tab-registry.ts`、`packages/client/ui-open-in-app/src/client/sidebar-tab-service.ts`、`packages/client/ui-open-in-app/src/client/TerminalPanel.tsx`、`packages/client/ui-open-in-app/src/client/RetainedTerminalPanel.tsx`。
+- **改这里要同步**：路由或帧协议改动同步 `packages/host/open-in-app`；文件预览格式、版本字段、预览／原文切换、安全呈现或条件保存改动同步 `packages/host/open-in-app` 的 shared/workspace、`packages/client/ui-open-in-app` 的 wire/controller/service 与包 README；工作台或底栏显隐语义改动同步 `packages/client/ui-layout`（owner prop `bottomOpen`），页头与欢迎页入口变动核对 `packages/client/ui-conversation` 的座位；外部标签定义、实例状态或 keyed slot 变动同步本包 README 和对应插件贡献。
 - **不变量**：文件树只回传当前 Session id 与 Host 返回的 provider segment 数组，绝不提交工作区根或自行拼接 Windows/POSIX/UNC 路径；菜单终端新建右侧标签，底栏入口显示独立底栏，两处标签分别独占 WebSocket 与 PTY；切换标签或 Session、隐藏底栏或工作台均不释放已激活终端，关闭对应标签释放该终端；外部标签按 Session 隔离，浏览器一个 target 同步为一个工作台实例，关闭视图不关闭 Host target，同一目录轮询不得重新打开用户关闭的视图；功能菜单本身是标题为“新标签页”的 launcher，右侧边栏只在有标签时显示——显示中该 Session 没有标签就先补一个空闲 launcher，关闭最后一个标签（含 Shell 退出关闭最后一个终端）时收起并保留底栏，本次清空不立即补回；只有共享 `+` 新建的 launcher 才在选中引导项时经贡献方创建新页面，且只在发起 launcher 仍选中时替换，空闲 launcher 与普通选择仅查看现有页；定义卸载时清理该定义的已打开实例，被动清理同样收起。
 - **终端尺寸**：可见终端在建连前 fit，以实测 cols/rows 分配 PTY；尺寸在建连期间及 ready 后变化时同步到同一 PTY。右侧与底栏均走 `TerminalPanel`，隐藏/切换不重连。
 - **测试**：`pnpm exec vitest run packages/client/ui-open-in-app/tests`
@@ -323,13 +324,13 @@
 
 ## packages/host/open-in-app
 
-- **拥有**：在工作区打开本地应用的 Host 半边——编译期应用 catalog 的惰性平台解析、图标提取、启动端点、Session 绑定的只读文件协议、用户终端 WebSocket upgrade，以及全部路由安全栅栏。
+- **拥有**：在工作区打开本地应用的 Host 半边——编译期应用 catalog 的惰性平台解析、图标提取、启动端点、Session 绑定的文件列表／预览／版本化保存协议、用户终端 WebSocket upgrade，以及全部路由安全栅栏。
 - **不拥有**：浏览器侧 UI 与分流（归 `packages/client/ui-open-in-app`）；HTTP 载体（归 `packages/host/webserver` 的 `ctx.webServer`）；认证栅栏服务 `requestRejection`（归 `packages/client/connection`）；PTY 与 subprocess 机制（归 `packages/subprocess`）；上传文件的磁盘与元数据存储（归 `packages/attachment/file-library`）。
 - **入口**：`packages/host/open-in-app/src/index.ts`（函数插件 `name = 'open-in-app'`，注册 `/open-in-app/*` 路由与终端 upgrade）。
 - **接线**：`packages/bundle/web-app/cordis.patch.yml` 的行 `open-in-app`，与客户端行 `ui-open-in-app` 成对。
 - **关键文件**：`packages/host/open-in-app/src/index.ts`、`packages/host/open-in-app/src/attach.ts`、`packages/host/open-in-app/src/workspace.ts`、`packages/host/open-in-app/src/terminal.ts`、`packages/host/open-in-app/src/resolver.ts`、`packages/host/open-in-app/src/catalog.ts`。
-- **改这里要同步**：`packages/client/ui-open-in-app`（wire 与交互）、`packages/attachment/file-library`（上传语义与元数据）、`docs/map/wiring.md`、包 README 的路由与安全表。
-- **不变量**：每条 HTTP 路由与 upgrade 先调 connection 的 `requestRejection`（只收 loopback 且同源），拒绝发生在读载荷、查 Session、分配 PTY 之前；工作区根只从 `Session.header.cwd` 解析，路径逐段匹配 `ctx.fs.listDir` 子项并以 `ctx.fs.contains` 复核，浏览器字符串绝不拼成 OS 路径；`locate` 是唯一把模型路径翻译成段链的入口，必须在 Session 的执行世界里 `ctx.fs.resolve` 并复核 containment，只回传工作区内普通文件的段；Remote-SSH marker 或 SSH 启动一律 fail-closed 到 `files` 分支。
+- **改这里要同步**：`packages/client/ui-open-in-app`（wire、controller 与 `ctx.workspaceFiles`）、`packages/client/ui-ide`（编辑器保存与冲突恢复）、`packages/attachment/file-library`（上传语义与元数据）、`docs/map/wiring.md`、包 README 的路由与安全表。
+- **不变量**：每条 HTTP 路由与 upgrade 先调 connection 的 `requestRejection`（只收 loopback 且同源），拒绝发生在读载荷、查 Session、分配 PTY 之前；工作区根只从 `Session.header.cwd` 解析，路径逐段匹配 `ctx.fs.listDir` 子项并以 `ctx.fs.contains` 复核，浏览器字符串绝不拼成 OS 路径；`locate` 是唯一把模型路径翻译成段链的入口，必须在 Session 的执行世界里 `ctx.fs.resolve` 并复核 containment，只回传工作区内普通文件的段；预览返回不透明版本，保存以 `replaceIfVersion` 写回并传入 Session 沙箱策略，版本冲突不得覆盖；Remote-SSH marker 或 SSH 启动一律 fail-closed 到 `files` 分支。
 - **测试**：`pnpm exec vitest run packages/host/open-in-app/tests/host-routes.spec.ts`
 
 ## packages/host/directory-picker（含 -native、-browse、-auto）

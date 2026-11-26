@@ -54,6 +54,7 @@
     "coding-fs": "workspace:^",
     "coding-host-webserver": "workspace:^",
     "coding-invariants": "workspace:^",
+    "coding-sandbox-policy": "workspace:^",
     "coding-session": "workspace:^"
   },
   "devDependencies": {
@@ -65,6 +66,7 @@
     "coding-fs-local": "workspace:^",
     "coding-host-webserver": "workspace:^",
     "coding-invariants": "workspace:^",
+    "coding-sandbox-policy": "workspace:^",
     "coding-session": "workspace:^",
     "coding-storage": "workspace:^",
     "coding-storage-domain": "workspace:^",

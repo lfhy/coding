@@ -18,6 +18,7 @@ const ROUTES: OpenInAppRoutes = {
   files: '/open-in-app/files',
   locate: '/open-in-app/locate',
   readFile: '/open-in-app/files/read',
+  saveFile: '/open-in-app/files/save',
   terminal: '/open-in-app/terminal',
 }
 
@@ -180,16 +181,18 @@ describe('OpenInAppController workspace files', () => {
       [{ kind: 'text', format: 'html', text: '<h1>hello</h1>' }, { kind: 'html', text: '<h1>hello</h1>' }],
       [{ kind: 'text', format: 'svg', text: '<svg/>' }, { kind: 'svg', text: '<svg/>' }],
       [{ kind: 'image', mime: 'image/png', dataBase64: 'AAAA' }, { kind: 'image', mimeType: 'image/png', data: 'AAAA' }],
-      [{ kind: 'unsupported', reason: 'binary' }, { kind: 'unsupported' }],
-      [{ kind: 'unsupported', reason: 'too-large' }, { kind: 'unsupported' }],
+      [{ kind: 'unsupported', reason: 'binary' }, { kind: 'unsupported', reason: 'binary' }],
+      [{ kind: 'unsupported', reason: 'too-large' }, { kind: 'unsupported', reason: 'too-large' }],
     ] as const
     for (const [host, content] of cases) {
       const fetcher = vi.fn(async (_input: string | URL, _init?: RequestInit) => jsonResponse({
-        displayPath: '/w/file', name: 'file', truncated: false, ...host,
+        displayPath: '/w/file', name: 'file', truncated: false, version: 'v1', ...host,
       }))
       const controller = new OpenInAppController(fetcher, ROUTES)
       const abort = new AbortController()
-      await expect(controller.readFile(SESSION, ['file'], abort.signal)).resolves.toEqual({ path: '/w/file', content })
+      await expect(controller.readFile(SESSION, ['file'], abort.signal)).resolves.toEqual({
+        path: '/w/file', version: 'v1', content,
+      })
       expect(fetcher.mock.calls[0]?.[1]).toMatchObject({
         body: JSON.stringify({ sessionId: SESSION, segments: ['file'] }),
         signal: abort.signal,
@@ -203,11 +206,11 @@ describe('OpenInAppController workspace files', () => {
       ['main.kt', 'kotlin'], ['header.hpp', 'cpp'], ['Makefile', undefined],
     ] as const) {
       const controller = new OpenInAppController(async () => jsonResponse({
-        displayPath: '/w/unrelated', name, truncated: false,
+        displayPath: '/w/unrelated', name, truncated: false, version: 'v1',
         kind: 'text', format: 'code', text: 'const a = 1\n',
       }), ROUTES)
       await expect(controller.readFile(SESSION, [name])).resolves.toEqual({
-        path: '/w/unrelated', content: {
+        path: '/w/unrelated', version: 'v1', content: {
           kind: 'code', text: 'const a = 1\n', ...(language === undefined ? {} : { language }),
         },
       })
@@ -218,19 +221,57 @@ describe('OpenInAppController workspace files', () => {
     await expect(new OpenInAppController(async () => jsonResponse({}, 500), ROUTES)
       .readFile(SESSION, [])).rejects.toThrow('workspace file failed: HTTP 500')
     const invalid = [
-      { displayPath: 1, name: 'x', truncated: false, kind: 'text', format: 'text', text: 'x' },
-      { displayPath: '/w', name: 1, truncated: false, kind: 'text', format: 'text', text: 'x' },
-      { displayPath: '/w', name: 'x', truncated: 'no', kind: 'text', format: 'text', text: 'x' },
-      { displayPath: '/w', name: 'x', truncated: false, kind: 'text', format: 'unknown', text: 'x' },
-      { displayPath: '/w', name: 'x', truncated: false, kind: 'text', format: 'code', text: 1 },
-      { displayPath: '/w', name: 'x', truncated: false, kind: 'image', mime: 'text/html', dataBase64: 'x' },
-      { displayPath: '/w', name: 'x', truncated: false, kind: 'image', mime: 'image/png', dataBase64: 1 },
-      { displayPath: '/w', name: 'x', truncated: false, kind: 'unsupported', reason: 'other' },
-      { displayPath: '/w', name: 'x', truncated: false, kind: 'unknown' },
+      { displayPath: 1, name: 'x', truncated: false, version: 'v1', kind: 'text', format: 'text', text: 'x' },
+      { displayPath: '/w', name: 1, truncated: false, version: 'v1', kind: 'text', format: 'text', text: 'x' },
+      { displayPath: '/w', name: 'x', truncated: 'no', version: 'v1', kind: 'text', format: 'text', text: 'x' },
+      { displayPath: '/w', name: 'x', truncated: false, kind: 'text', format: 'text', text: 'x' },
+      { displayPath: '/w', name: 'x', truncated: false, version: '', kind: 'text', format: 'text', text: 'x' },
+      { displayPath: '/w', name: 'x', truncated: false, version: 'v1', kind: 'text', format: 'unknown', text: 'x' },
+      { displayPath: '/w', name: 'x', truncated: false, version: 'v1', kind: 'text', format: 'code', text: 1 },
+      { displayPath: '/w', name: 'x', truncated: false, version: 'v1', kind: 'image', mime: 'text/html', dataBase64: 'x' },
+      { displayPath: '/w', name: 'x', truncated: false, version: 'v1', kind: 'image', mime: 'image/png', dataBase64: 1 },
+      { displayPath: '/w', name: 'x', truncated: false, version: 'v1', kind: 'unsupported', reason: 'other' },
+      { displayPath: '/w', name: 'x', truncated: false, version: 'v1', kind: 'unknown' },
     ]
     for (const payload of invalid) {
       await expect(new OpenInAppController(async () => jsonResponse(payload), ROUTES)
         .readFile(SESSION, [])).rejects.toThrow(/invalid (file|code)/)
+    }
+  })
+
+  it('saves complete text with the observed version and validates the new version', async () => {
+    const fetcher = vi.fn(async (_input: string | URL, _init?: RequestInit) => jsonResponse({
+      displayPath: '/w/a.ts', name: 'a.ts', version: 'v2', operation: 'update',
+    }))
+    const controller = new OpenInAppController(fetcher, ROUTES)
+    const abort = new AbortController()
+    await expect(controller.saveFile(SESSION, ['a.ts'], 'v1', 'next', abort.signal)).resolves.toEqual({
+      ok: true,
+      value: { path: '/w/a.ts', version: 'v2', operation: 'update' },
+    })
+    expect(fetcher.mock.calls[0]?.[1]).toMatchObject({
+      method: 'POST',
+      body: JSON.stringify({ sessionId: SESSION, segments: ['a.ts'], baseVersion: 'v1', content: 'next' }),
+      signal: abort.signal,
+    })
+  })
+
+  it('returns structured save rejections and rejects malformed success payloads', async () => {
+    const conflict = new OpenInAppController(async () => jsonResponse({ code: 'file-conflict' }, 409), ROUTES)
+    await expect(conflict.saveFile(SESSION, ['a.ts'], 'v1', 'next')).resolves.toEqual({
+      ok: false, error: { status: 409, code: 'file-conflict' },
+    })
+    await expect(new OpenInAppController(async () => new Response('unavailable', { status: 500 }), ROUTES)
+      .saveFile(SESSION, ['a.ts'], 'v1', 'next')).resolves.toEqual({
+      ok: false, error: { status: 500, code: 'workspace-save-failed' },
+    })
+    for (const payload of [
+      {},
+      { displayPath: '/w/a.ts', name: 'a.ts', version: '', operation: 'update' },
+      { displayPath: '/w/a.ts', name: 'a.ts', version: 'v2', operation: 'other' },
+    ]) {
+      await expect(new OpenInAppController(async () => jsonResponse(payload), ROUTES)
+        .saveFile(SESSION, ['a.ts'], 'v1', 'next')).rejects.toThrow('invalid save response')
     }
   })
 
@@ -268,11 +309,12 @@ describe('OpenInAppController terminal URL and shared routes', () => {
   })
 
   it('fails loudly when Host shared omits a required route', async () => {
-    const missing: OpenInAppRoutes = { files: '', locate: '', readFile: '', terminal: '' }
+    const missing: OpenInAppRoutes = { files: '', locate: '', readFile: '', saveFile: '', terminal: '' }
     const controller = new OpenInAppController(async () => jsonResponse({}), missing)
     await expect(controller.listFiles(SESSION, [])).rejects.toThrow('files route')
     await expect(controller.locateFile(SESSION, '/w/a.ts')).rejects.toThrow('locate route')
     await expect(controller.readFile(SESSION, [])).rejects.toThrow('file read route')
+    await expect(controller.saveFile(SESSION, ['a.ts'], 'v1', 'x')).rejects.toThrow('file save route')
     expect(() => controller.terminalUrl(SESSION)).toThrow('terminal route')
   })
 })

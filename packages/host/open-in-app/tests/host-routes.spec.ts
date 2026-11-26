@@ -345,9 +345,28 @@ describe('open-in-app host routes (real Loader composition)', () => {
         body: JSON.stringify({ sessionId: 'session', segments: ['README.md'] }),
       })
       expect(preview.status).toBe(200)
-      expect(await preview.json()).toMatchObject({
+      const previewBody = await preview.json() as { version: string }
+      expect(previewBody).toMatchObject({
         kind: 'text', format: 'markdown', text: 'readme', name: 'README.md', truncated: false,
       })
+      expect(typeof previewBody.version).toBe('string')
+      const save = (baseVersion: string, content: string) => fetch(`${base}/open-in-app/save`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ sessionId: 'session', segments: ['README.md'], baseVersion, content }),
+      })
+      const saved = await save(previewBody.version, 'updated')
+      expect(saved.status).toBe(200)
+      const savedBody = await saved.json() as { version: string; operation: string }
+      expect(savedBody.operation).toBe('update')
+      expect(typeof savedBody.version).toBe('string')
+      expect((await save(previewBody.version, 'stale')).status).toBe(409)
+      const reread = await fetch(`${base}/open-in-app/read`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ sessionId: 'session', segments: ['README.md'] }),
+      })
+      expect(await reread.json()).toMatchObject({ kind: 'text', text: 'updated', version: savedBody.version })
       await writeFile(join(workspace, 'index.html'), '<h1>hello</h1>')
       await writeFile(join(workspace, 'icon.svg'), '<svg xmlns="http://www.w3.org/2000/svg"/>')
       const readByPath = async (path: string) => {
@@ -411,6 +430,7 @@ describe('open-in-app host routes (real Loader composition)', () => {
     expect((await fetch(`${base}/open-in-app/files`)).status).toBe(405)
     expect((await fetch(`${base}/open-in-app/locate`)).status).toBe(405)
     expect((await fetch(`${base}/open-in-app/read`)).status).toBe(405)
+    expect((await fetch(`${base}/open-in-app/save`)).status).toBe(405)
     expect((await fetch(`${base}/open-in-app/target`, {
       method: 'POST', headers: { 'content-type': 'application/json' }, body: 'not-json',
     })).status).toBe(400)
@@ -421,6 +441,9 @@ describe('open-in-app host routes (real Loader composition)', () => {
       method: 'POST', headers: { 'content-type': 'application/json' }, body: 'not-json',
     })).status).toBe(400)
     expect((await fetch(`${base}/open-in-app/read`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: 'not-json',
+    })).status).toBe(400)
+    expect((await fetch(`${base}/open-in-app/save`, {
       method: 'POST', headers: { 'content-type': 'application/json' }, body: 'not-json',
     })).status).toBe(400)
 
@@ -455,6 +478,18 @@ describe('open-in-app host routes (real Loader composition)', () => {
     }
     expect((await post('/open-in-app/files', { sessionId: 'missing', segments: [] })).status).toBe(404)
     expect((await post('/open-in-app/read', { sessionId: 'session', segments: [] })).status).toBe(400)
+    const invalidSaves: unknown[] = [
+      null,
+      [],
+      { sessionId: 'session', segments: [], baseVersion: 'v1', content: 'x' },
+      { sessionId: 'session', segments: ['a.txt'], baseVersion: '', content: 'x' },
+      { sessionId: 'session', segments: ['a.txt'], baseVersion: 'v1', content: 1 },
+      { sessionId: 'session', segments: ['a.txt'], baseVersion: 'v1', content: 'x\0y' },
+      { sessionId: 'session', segments: ['a.txt'], baseVersion: 'v1', content: 'x', extra: true },
+    ]
+    for (const value of invalidSaves) {
+      expect((await post('/open-in-app/save', value)).status).toBe(400)
+    }
 
     const invalidPaths: unknown[] = [
       null,

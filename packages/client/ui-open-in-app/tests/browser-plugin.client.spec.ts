@@ -7,7 +7,7 @@ import { LocaleRuntime } from 'coding-client-locale/client'
 import type { SessionId } from 'coding-session/types'
 import type {} from 'coding-client-ui-conversation/client'
 
-import { apply, inject, type OpenInAppActionInjected } from '../src/client/index.ts'
+import { apply, inject, type OpenInAppActionInjected, type WorkspaceFilesService } from '../src/client/index.ts'
 import { apply as nodeApply } from '../src/index.ts'
 import { OpenInAppAction } from '../src/client/OpenInAppAction.tsx'
 import { WorkspaceWorkbench, type WorkspaceWorkbenchInjected } from '../src/client/WorkspaceWorkbench.tsx'
@@ -136,9 +136,17 @@ describe('open-in-app browser half', () => {
       }
       if (url.includes('/open-in-app/read')) {
         return new Response(JSON.stringify({
-          displayPath: '/w/README.md', name: 'README.md', truncated: false,
+          displayPath: '/w/README.md', name: 'README.md', truncated: false, version: 'v1',
           kind: 'text', format: 'markdown', text: '# Readme',
         }), { status: 200 })
+      }
+      if (url.includes('/open-in-app/save')) {
+        return new Response(JSON.stringify({
+          displayPath: '/w/README.md', name: 'README.md', version: 'v2', operation: 'update',
+        }), { status: 200 })
+      }
+      if (url.includes('/open-in-app/locate')) {
+        return new Response(JSON.stringify({ segments: ['README.md'] }), { status: 200 })
       }
       if (url.includes('/open-in-app/files')) {
         return new Response(JSON.stringify({
@@ -182,11 +190,18 @@ describe('open-in-app browser half', () => {
     })
     expect(openWorkbench).toHaveBeenLastCalledWith(SESSION)
     await expect(workbenchFace.readFile(SESSION, ['README.md'])).resolves.toEqual({
-      path: '/w/README.md', content: { kind: 'markdown', text: '# Readme' },
+      path: '/w/README.md', version: 'v1', content: { kind: 'markdown', text: '# Readme' },
     })
     await expect(workbenchFace.listFiles(SESSION, [])).resolves.toEqual({
       path: '/w', entries: [{ name: 'README.md', type: 'file', segments: ['README.md'] }], truncated: false,
     })
+    const workspaceFiles = ctx.get('workspaceFiles') as WorkspaceFilesService
+    await expect(workspaceFiles.list(SESSION, [])).resolves.toMatchObject({ path: '/w' })
+    await expect(workspaceFiles.read(SESSION, ['README.md'])).resolves.toMatchObject({ version: 'v1' })
+    await expect(workspaceFiles.save(SESSION, ['README.md'], 'v1', '# Updated')).resolves.toEqual({
+      ok: true, value: { path: '/w/README.md', version: 'v2', operation: 'update' },
+    })
+    await expect(workspaceFiles.locate(SESSION, '/w/README.md')).resolves.toEqual({ segments: ['README.md'] })
     await expect(workbenchFace.gitHistory(SESSION, { count: 60 }, new AbortController().signal)).resolves.toBeNull()
     workbenchFace.closeWorkbench(SESSION)
     workbenchFace.openWorkbench(SESSION)

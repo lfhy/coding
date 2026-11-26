@@ -16,6 +16,8 @@ import {
   type WorkspaceFileContent,
   type WorkspaceFileEntry,
   type WorkspaceFilePayload,
+  type WorkspaceFileSavePayload,
+  type WorkspaceFileSaveResult,
   type WorkspaceFilesPayload,
   type WorkspaceLocatedPath,
 } from './wire.ts'
@@ -127,7 +129,7 @@ function previewLanguage(name: string): string | undefined {
 /** 校验单文件读取响应。 */
 function readPayload(value: Record<string, unknown>): WorkspaceFilePayload {
   if (typeof value.displayPath !== 'string' || typeof value.name !== 'string'
-    || typeof value.truncated !== 'boolean') {
+    || typeof value.truncated !== 'boolean' || typeof value.version !== 'string' || value.version === '') {
     throw new Error('open-in-app host returned an invalid file response')
   }
   let content: WorkspaceFileContent
@@ -145,11 +147,11 @@ function readPayload(value: Record<string, unknown>): WorkspaceFilePayload {
     content = { kind: 'image', mimeType: value.mime, data: value.dataBase64 }
   } else if (value.kind === 'unsupported'
     && (value.reason === 'binary' || value.reason === 'too-large')) {
-    content = { kind: 'unsupported' }
+    content = { kind: 'unsupported', reason: value.reason }
   } else {
     throw new Error('open-in-app host returned invalid file content')
   }
-  return { path: value.displayPath, content }
+  return { path: value.displayPath, version: value.version, content }
 }
 
 /** 校验路径定位响应。 */
@@ -292,6 +294,48 @@ export class OpenInAppController {
     })
     if (!response.ok) throw new Error(`workspace file failed: HTTP ${String(response.status)}`)
     return readPayload(await responseRecord(response))
+  }
+
+  /**
+   * 按读取版本保存已有文本文件；HTTP 拒绝返回结构化结果，传输与协议错误仍抛出。
+   * @param sessionId - 当前工作台 Session。
+   * @param pathSegments - provider 返回的文件 segment 链。
+   * @param baseVersion - 最近一次读取获得的不透明版本。
+   * @param content - 完整新内容。
+   * @param signal - 取消当前保存。
+   * @returns 新版本或可恢复的 Host 拒绝。
+   */
+  async saveFile(
+    sessionId: SessionId,
+    pathSegments: readonly string[],
+    baseVersion: string,
+    content: string,
+    signal?: AbortSignal,
+  ): Promise<WorkspaceFileSaveResult> {
+    const response = await this.fetcher(new URL(requiredRoute(this.routes.saveFile, 'file save route'), hostBase()), {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ sessionId, segments: pathSegments, baseVersion, content }),
+      ...signal === undefined ? {} : { signal },
+    })
+    if (!response.ok) {
+      const body = await responseRecord(response).catch((): Record<string, unknown> => ({}))
+      return {
+        ok: false,
+        error: { status: response.status, code: typeof body.code === 'string' ? body.code : 'workspace-save-failed' },
+      }
+    }
+    const value = await responseRecord(response)
+    if (typeof value.displayPath !== 'string' || typeof value.version !== 'string' || value.version === ''
+      || (value.operation !== 'create' && value.operation !== 'update')) {
+      throw new Error('open-in-app host returned an invalid save response')
+    }
+    const saved: WorkspaceFileSavePayload = {
+      path: value.displayPath,
+      version: value.version,
+      operation: value.operation,
+    }
+    return { ok: true, value: saved }
   }
 
   /**

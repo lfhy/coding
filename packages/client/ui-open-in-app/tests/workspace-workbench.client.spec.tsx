@@ -99,7 +99,7 @@ function bench(over: {
   const renderSlot = vi.fn((name: string, _owner?: unknown, _options?: unknown) => <div data-testid={name} />)
   const listFiles = vi.fn(over.listFiles ?? (async () => listing('/workspace', [])))
   const readFile = vi.fn(over.readFile ?? (async (): Promise<WorkspaceFilePayload> => ({
-    path: '/workspace/file', content: { kind: 'text', text: '' },
+    path: '/workspace/file', version: 'v1', content: { kind: 'text', text: '' },
   })))
   const gitHistory = vi.fn(over.gitHistory ?? (async () => null))
   const props = {
@@ -817,6 +817,7 @@ describe('WorkspaceWorkbench shell', () => {
       ]))
     const readFile = vi.fn(async (segments: readonly string[]) => ({
       path: `/provider/${segments.at(-1) ?? ''}`,
+      version: 'v1',
       content: { kind: 'text' as const, text: 'first line\nsecond line' },
     }))
     const b = bench({ listFiles, readFile, initialView: 'files' })
@@ -862,14 +863,14 @@ describe('WorkspaceWorkbench shell', () => {
 
   it('renders Markdown, code, text, image, and unsupported previews in switchable tabs', async () => {
     const payloads: Record<string, WorkspaceFilePayload> = {
-      'doc.md': { path: '/w/doc.md', content: { kind: 'markdown', text: '# Heading' } },
-      'code.ts': { path: '/w/code.ts', content: { kind: 'code', text: 'const x = 1\n', language: 'ts' } },
-      'notes.txt': { path: '/w/notes.txt', content: { kind: 'text', text: 'plain\ntext' } },
-      'page.html': { path: '/w/page.html', content: { kind: 'html', text: '<h1>Safe preview</h1><script>window.evil = true</script>' } },
-      'icon.svg': { path: '/w/icon.svg', content: { kind: 'svg', text: '<svg xmlns="http://www.w3.org/2000/svg"><circle/></svg>' } },
-      'logo.png': { path: '/w/logo.png', content: { kind: 'image', mimeType: 'image/png', data: 'AAAA' } },
-      'archive.zip': { path: '/w/archive.zip', content: { kind: 'unsupported', mimeType: 'application/zip' } },
-      'unknown.bin': { path: '/w/unknown.bin', content: { kind: 'unsupported' } },
+      'doc.md': { path: '/w/doc.md', version: 'v1', content: { kind: 'markdown', text: '# Heading' } },
+      'code.ts': { path: '/w/code.ts', version: 'v1', content: { kind: 'code', text: 'const x = 1\n', language: 'ts' } },
+      'notes.txt': { path: '/w/notes.txt', version: 'v1', content: { kind: 'text', text: 'plain\ntext' } },
+      'page.html': { path: '/w/page.html', version: 'v1', content: { kind: 'html', text: '<h1>Safe preview</h1><script>window.evil = true</script>' } },
+      'icon.svg': { path: '/w/icon.svg', version: 'v1', content: { kind: 'svg', text: '<svg xmlns="http://www.w3.org/2000/svg"><circle/></svg>' } },
+      'logo.png': { path: '/w/logo.png', version: 'v1', content: { kind: 'image', mimeType: 'image/png', data: 'AAAA' } },
+      'archive.zip': { path: '/w/archive.zip', version: 'v1', content: { kind: 'unsupported', mimeType: 'application/zip' } },
+      'unknown.bin': { path: '/w/unknown.bin', version: 'v1', content: { kind: 'unsupported' } },
     }
     const b = bench({ initialView: 'files',
       readFile: async segments => payloads[segments.at(-1) ?? ''] as WorkspaceFilePayload,
@@ -972,7 +973,7 @@ describe('WorkspaceWorkbench shell', () => {
     mounted.unmount()
     expect(signals.every(signal => signal.aborted)).toBe(true)
     rejectList(new Error('late list failure'))
-    reads[0]?.resolve({ path: '/resolve.txt', content: { kind: 'text', text: 'late' } })
+    reads[0]?.resolve({ path: '/resolve.txt', version: 'v1', content: { kind: 'text', text: 'late' } })
     reads[1]?.reject(new Error('late read failure'))
     await Promise.resolve()
     await Promise.resolve()

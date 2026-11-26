@@ -8,6 +8,7 @@ function openIde(options: {
   current?: string
   page?: unknown
   togglePage?: () => void
+  workspaceSessions?: readonly string[]
 } = {}) {
   const registered: { id?: string; inject: () => Record<string, unknown> }[] = []
   const connectHome = vi.fn(async () => 'session-home' as const)
@@ -25,7 +26,11 @@ function openIde(options: {
       },
     },
     sessions: { list: { getSnapshot: () => ({ current: options.current as never }) }, open },
-    workspaces: { connectHome, connectWorkspace: vi.fn(), create: vi.fn() },
+    workspaces: {
+      connectHome, connectWorkspace: vi.fn(), create: vi.fn(),
+      list: { getSnapshot: () => ({ items: options.workspaceSessions === undefined ? [] : [{ sessionIds: options.workspaceSessions }] }) },
+    },
+    workspaceFiles: {},
     layout: {
       page: { getSnapshot: () => options.page ?? null },
       togglePage, setPageAssistant, closePage: vi.fn(),
@@ -49,6 +54,13 @@ describe('代码工作区入口打开流程', () => {
     expect(fixture.open).toHaveBeenCalledWith('session-home')
     expect(fixture.togglePage).toHaveBeenCalledWith('ide', 'session-home', 'origin-session')
     expect(fixture.setPageAssistant).toHaveBeenCalledWith(false)
+  })
+
+  it('当前会话已属于工作区时直接进入三栏并自动展开助手', async () => {
+    const fixture = openIde({ current: 'session-current', workspaceSessions: ['session-current'] })
+    await fixture.openIde()
+    expect(fixture.togglePage).toHaveBeenCalledWith('ide', 'session-current', 'session-current')
+    expect(fixture.setPageAssistant).toHaveBeenCalledWith('auto')
   })
 
   it('并发点击复用在途打开，页面短暂不可用后自动重试', async () => {

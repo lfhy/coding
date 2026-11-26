@@ -23,6 +23,12 @@ import { SidebarRightTabRegistry } from './sidebar-tab-registry.ts'
 import { SidebarRightController } from './sidebar-tab-service.ts'
 import { tabInfoInject, type SidebarRightTabOwnerProps, type SidebarRightTabSlotInject } from './sidebar-tab-contract.ts'
 import { workspaceFileName, workspaceFileSegments } from './workspace-path.ts'
+import type {
+  WorkspaceFilePayload,
+  WorkspaceFileSaveResult,
+  WorkspaceFilesPayload,
+  WorkspaceLocatedPath,
+} from './wire.ts'
 import { en, NS, zh } from './locales.ts'
 
 export type { OpenInAppActionInjected, OpenInAppActionProps } from './OpenInAppAction.tsx'
@@ -32,6 +38,18 @@ export type { SidebarRightTabOwnerProps } from './sidebar-tab-contract.ts'
 export type {
   ISidebarRight, SidebarRightKindOptions, SidebarRightOpenOptions, SidebarRightUpdateOptions,
 } from './sidebar-tab-service.ts'
+export type {
+  WorkspaceFileEntry, WorkspaceFilePayload, WorkspaceFileSaveResult, WorkspaceFilesPayload, WorkspaceLocatedPath,
+} from './wire.ts'
+
+/** Session 绑定的工作区文件协议；IDE 与内置工作台共享同一 Host 边界。 */
+export interface WorkspaceFilesService {
+  list(sessionId: SessionId, segments: readonly string[], signal?: AbortSignal): Promise<WorkspaceFilesPayload>
+  read(sessionId: SessionId, segments: readonly string[], signal?: AbortSignal): Promise<WorkspaceFilePayload>
+  save(sessionId: SessionId, segments: readonly string[], baseVersion: string, content: string, signal?: AbortSignal):
+  Promise<WorkspaceFileSaveResult>
+  locate(sessionId: SessionId, path: string, signal?: AbortSignal): Promise<WorkspaceLocatedPath>
+}
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -39,6 +57,8 @@ declare module '@deepseek-ai/cordis' {
     sidebarRightTabs: SidebarRightTabRegistry
     /** 指定 Session 的单面板标签动作。 */
     sidebarRight: SidebarRightController
+    /** Session 绑定的工作区目录、文本读取与版本化保存。 */
+    workspaceFiles: WorkspaceFilesService
   }
 }
 
@@ -95,6 +115,14 @@ export function apply(ctx: ClientContext): void {
     { openWorkbench: (sessionId) => { ctx.layout.openWorkbench(sessionId) } },
     () => activeSessionId(ctx),
   )
+  const workspaceFiles: WorkspaceFilesService = {
+    list: (sessionId, segments, signal) => controller.listFiles(sessionId, segments, signal),
+    read: (sessionId, segments, signal) => controller.readFile(sessionId, segments, signal),
+    save: (sessionId, segments, baseVersion, content, signal) =>
+      controller.saveFile(sessionId, segments, baseVersion, content, signal),
+    locate: (sessionId, path, signal) => controller.locateFile(sessionId, path, signal),
+  }
+  ctx.effect(() => ctx.reflect.provide('workspaceFiles', workspaceFiles), 'open-in-app: workspace files service')
   const t = ctx.locale.bind(NS)
   // 远端工作区的 cwd 只是本地占位目录：工具路径属于远端执行世界，本机打开器打不开，
   // 由 Host 在 Session 自己的执行世界里定位成 provider 段后再进内置工作台预览。

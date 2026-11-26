@@ -24,6 +24,9 @@ export const OPEN_IN_APP_LOCATE_ROUTE = '/open-in-app/locate'
 /** 读取一个 Session 工作区文件预览的 POST 路由。 */
 export const OPEN_IN_APP_READ_ROUTE = '/open-in-app/read'
 
+/** 按读取版本保存一个 Session 工作区文本文件的 POST 路由。 */
+export const OPEN_IN_APP_SAVE_ROUTE = '/open-in-app/save'
+
 /** 将本地拖放文件保存到全局文件库的 POST 路由。 */
 export const OPEN_IN_APP_ATTACH_ROUTE = '/open-in-app/attach'
 
@@ -102,6 +105,8 @@ export interface OpenInAppReadBase {
   readonly displayPath: string
   readonly name: string
   readonly truncated: boolean
+  /** 读取时观察到的不透明文件版本；编辑器保存时必须原样回传。 */
+  readonly version: string
 }
 
 /** 文件预览响应；过大或非 UTF-8 的文件不会把内容带到浏览器。 */
@@ -121,6 +126,22 @@ export type OpenInAppReadPayload = OpenInAppReadBase & (
     readonly reason: 'binary' | 'too-large'
   }
 )
+
+/** 按读取版本保存已有文本文件；内容上限由 Host 配置强制执行。 */
+export interface OpenInAppSaveRequest {
+  readonly sessionId: string
+  readonly segments: readonly string[]
+  readonly baseVersion: string
+  readonly content: string
+}
+
+/** 保存成功后返回的新版本与写入类型。 */
+export interface OpenInAppSavePayload {
+  readonly displayPath: string
+  readonly name: string
+  readonly version: string
+  readonly operation: 'create' | 'update'
+}
 
 /** 成功保存文件后返回绝对物理路径，供当前草稿引用。 */
 export interface OpenInAppAttachPayload {

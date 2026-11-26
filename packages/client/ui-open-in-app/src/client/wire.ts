@@ -4,6 +4,7 @@ import {
   OPEN_IN_APP_FILES_ROUTE,
   OPEN_IN_APP_LOCATE_ROUTE,
   OPEN_IN_APP_READ_ROUTE,
+  OPEN_IN_APP_SAVE_ROUTE,
   OPEN_IN_APP_TERMINAL_ROUTE,
 } from 'coding-host-open-in-app/shared'
 import type {
@@ -16,6 +17,7 @@ export interface OpenInAppRoutes {
   readonly files: string
   readonly locate: string
   readonly readFile: string
+  readonly saveFile: string
   readonly terminal: string
 }
 
@@ -24,6 +26,7 @@ export const OPEN_IN_APP_ROUTES: OpenInAppRoutes = {
   files: OPEN_IN_APP_FILES_ROUTE,
   locate: OPEN_IN_APP_LOCATE_ROUTE,
   readFile: OPEN_IN_APP_READ_ROUTE,
+  saveFile: OPEN_IN_APP_SAVE_ROUTE,
   terminal: OPEN_IN_APP_TERMINAL_ROUTE,
 }
 
@@ -55,12 +58,31 @@ export type WorkspaceFileContent =
   | { readonly kind: 'svg'; readonly text: string }
   | { readonly kind: 'text'; readonly text: string }
   | { readonly kind: 'image'; readonly mimeType: string; readonly data: string }
-  | { readonly kind: 'unsupported'; readonly mimeType?: string }
+  | { readonly kind: 'unsupported'; readonly mimeType?: string; readonly reason?: 'binary' | 'too-large' }
 
 /** 单文件读取响应。 */
 export interface WorkspaceFilePayload {
   readonly path: string
+  readonly version: string
   readonly content: WorkspaceFileContent
+}
+
+/** 版本化保存的封闭结果；冲突与权限拒绝保留为可恢复的结构化失败。 */
+export type WorkspaceFileSaveResult =
+  | { readonly ok: true; readonly value: WorkspaceFileSavePayload }
+  | { readonly ok: false; readonly error: WorkspaceFileFailure }
+
+/** 保存失败；status 与 code 来自 Host 的稳定工作区协议。 */
+export interface WorkspaceFileFailure {
+  readonly status: number
+  readonly code: string
+}
+
+/** 一次成功保存的投影。 */
+export interface WorkspaceFileSavePayload {
+  readonly path: string
+  readonly version: string
+  readonly operation: 'create' | 'update'
 }
 
 /** 浏览器发往 Host 的终端帧。 */

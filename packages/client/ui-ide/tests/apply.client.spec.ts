@@ -9,6 +9,7 @@ describe('ui-ide registration', () => {
       key?: string
       order?: number
       locale?: string
+      store?: unknown
       children?: Record<string, unknown>
       inject: () => Record<string, unknown>
     }
@@ -22,8 +23,10 @@ describe('ui-ide registration', () => {
       _dictionaries: { zh: Record<string, string>; en: Record<string, string> },
     ) => () => {})
     const togglePage = vi.fn()
+    const openPage = vi.fn()
     const setPageAssistant = vi.fn()
     const closePage = vi.fn()
+    const workspaceFiles = {}
     const connectHome = vi.fn(async () => 'session-home' as const)
     const connectWorkspace = vi.fn(async () => 'session-workspace' as const)
     const open = vi.fn()
@@ -36,19 +39,24 @@ describe('ui-ide registration', () => {
       locale: { register: localeRegister, bind: () => (key: string) => key },
       slots: { inject: (_name: string, install: () => unknown) => { install() }, register },
       sessions: { list: { getSnapshot: () => ({ current: 'session-current' as const }) }, open },
-      workspaces: { connectHome, connectWorkspace, create },
+      workspaces: {
+        connectHome, connectWorkspace, create,
+        list: { getSnapshot: () => ({ items: [] }) },
+      },
+      workspaceFiles,
       layout: {
         page: { getSnapshot: () => null },
-        togglePage, setPageAssistant, closePage,
+        togglePage, openPage, setPageAssistant, closePage,
       },
     }
     apply(ctx as never)
 
-    expect(inject).toEqual(['slots', 'locale', 'layout', 'sessions', 'workspaces'])
+    expect(inject).toEqual(['slots', 'locale', 'layout', 'sessions', 'workspaces', 'workspaceFiles'])
     expect(localeRegister.mock.calls[0]?.[0]).toBe('ide')
     expect(localeRegister.mock.calls[0]?.[1].zh.nav).toBe(zh.nav)
     expect(registered[0]).toMatchObject({ id: 'ide', order: 12, locale: 'ide' })
     expect(registered[1]).toMatchObject({ key: 'ide', locale: 'ide' })
+    expect(typeof registered[1]?.store).toBe('function')
     expect(registered[1]?.children).toHaveProperty('shell.ide.welcome.directoryFlow')
 
     const navigation = registered[0]?.inject() as { openIde: () => Promise<void> }
@@ -61,12 +69,16 @@ describe('ui-ide registration', () => {
     const page = registered[1]?.inject() as {
       createWorkspace: (input: { path: string }) => Promise<unknown>
       openWorkspace: (workspaceId: 'workspace-1') => Promise<void>
+      workspaceFiles: unknown
     }
+    expect(page.workspaceFiles).toBe(workspaceFiles)
     const workspace = await page.createWorkspace({ path: '/tmp/project' })
     expect(create).toHaveBeenCalledWith({ path: '/tmp/project' })
     await page.openWorkspace((workspace as { workspaceId: 'workspace-1' }).workspaceId)
     expect(connectWorkspace).toHaveBeenCalledWith('workspace-1')
     expect(open).toHaveBeenCalledWith('session-workspace')
-    expect(closePage).toHaveBeenCalledOnce()
+    expect(openPage).toHaveBeenCalledWith('ide', 'session-workspace', 'session-current')
+    expect(setPageAssistant).toHaveBeenLastCalledWith('auto')
+    expect(closePage).not.toHaveBeenCalled()
   })
 })

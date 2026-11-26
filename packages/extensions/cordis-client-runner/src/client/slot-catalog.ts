@@ -1863,7 +1863,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'shadows-shipped-ui',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'shell.ide.welcome.directoryFlow\', () => ctx.slots.register(\n      { name: \'shell.ide.welcome.directoryFlow\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-ide/src/client/index.ts:20',
+    source: 'packages/client/ui-ide/src/client/index.ts:22',
   },
   {
     key: 'shell.navigation.entry',
@@ -2131,7 +2131,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'none',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'sidebar.right.pane.tab\', () => ctx.slots.register(\n      { name: \'sidebar.right.pane.tab\', key: \'<one key the owner dispatches>\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-open-in-app/src/client/index.ts:48',
+    source: 'packages/client/ui-open-in-app/src/client/index.ts:68',
   },
   {
     key: 'sidebar.right.pane.tab.title',
@@ -2169,7 +2169,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     occupants: [],
     replaceRisk: 'none',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'sidebar.right.pane.tab.title\', () => ctx.slots.register(\n      { name: \'sidebar.right.pane.tab.title\', key: \'<one key the owner dispatches>\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-open-in-app/src/client/index.ts:56',
+    source: 'packages/client/ui-open-in-app/src/client/index.ts:76',
   },
   {
     key: 'sidebar.top.entry',
