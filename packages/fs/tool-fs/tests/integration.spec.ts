@@ -6,7 +6,8 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { existsSync, readdirSync } from 'node:fs'
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
@@ -226,6 +227,77 @@ describe('default deployment (with dsh-fs-observation-policy)', () => {
       const result = await call('edit', { file_path: 'a.txt', old_string: 'two', new_string: 'three' })
       expect(result.isError).toBe(false)
       expect(await readFile(join(dir, 'a.txt'), 'utf8')).toBe('one three')
+    })
+  })
+
+  describe('delete_file', () => {
+    it('deletes a single file passed as a string', async () => {
+      await writeFile(join(dir, 'a.txt'), 'gone')
+      const result = await call('delete_file', { file_path: 'a.txt' })
+      expect(result.isError).toBe(false)
+      if (result.isError) throw new Error('expected delete success')
+      expect(result.value).toEqual({ deleted: [{ path: join(dir, 'a.txt'), type: 'file' }], failed: [] })
+      await expect(readFile(join(dir, 'a.txt'), 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
+    })
+
+    it('deletes several files passed as an array and reports every failure individually', async () => {
+      await writeFile(join(dir, 'a.txt'), 'a')
+      await writeFile(join(dir, 'b.txt'), 'b')
+      const result = await call('delete_file', { file_path: ['a.txt', 'missing.txt', 'b.txt'] })
+      expect(result.isError).toBe(false)
+      if (result.isError) throw new Error('expected delete success')
+      expect(result.value).toMatchObject({
+        deleted: [
+          { path: join(dir, 'a.txt'), type: 'file' },
+          { path: join(dir, 'b.txt'), type: 'file' },
+        ],
+        failed: [{ path: join(dir, 'missing.txt') }],
+      })
+      expect(text(result)).toContain('1 path was not deleted.')
+      await expect(readFile(join(dir, 'a.txt'), 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
+    })
+
+    it('refuses a directory unless recursive is set, then removes the whole subtree', async () => {
+      const nested = join(dir, 'nested', 'deep')
+      await mkdir(nested, { recursive: true })
+      await writeFile(join(nested, 'leaf.txt'), 'leaf')
+      const refused = await call('delete_file', { file_path: 'nested' })
+      expect(refused.isError).toBe(true)
+      expect(refused.error).toMatchObject({ info: { code: 'FS_IS_DIRECTORY' } })
+      expect(readdirSync(nested)).toEqual(['leaf.txt'])
+
+      const removed = await call('delete_file', { file_path: 'nested', recursive: true })
+      expect(removed.isError).toBe(false)
+      if (removed.isError) throw new Error('expected recursive delete success')
+      expect(removed.value).toEqual({ deleted: [{ path: join(dir, 'nested'), type: 'directory' }], failed: [] })
+      expect(existsSync(join(dir, 'nested'))).toBe(false)
+    })
+
+    it('refuses a symbolic link instead of deleting its target', async () => {
+      await writeFile(join(dir, 'target.txt'), 'keep me')
+      await symlink(join(dir, 'target.txt'), join(dir, 'link.txt'))
+      const result = await call('delete_file', { file_path: 'link.txt' })
+      expect(result.isError).toBe(true)
+      expect(text(result)).toContain('symbolic link')
+      expect(await readFile(join(dir, 'target.txt'), 'utf8')).toBe('keep me')
+      expect(existsSync(join(dir, 'link.txt'))).toBe(true)
+    })
+
+    it('records the removal as an absent observation so a follow-up edit reports not found', async () => {
+      await writeFile(join(dir, 'a.txt'), 'text')
+      await call('read', { file_path: 'a.txt' })
+      expect((await call('delete_file', { file_path: 'a.txt' })).isError).toBe(false)
+      const edit = await call('edit', { file_path: 'a.txt', old_string: 'text', new_string: 'other' })
+      expect(edit.isError).toBe(true)
+      expect(edit.error).toMatchObject({ info: { code: 'FS_NOT_FOUND' } })
+    })
+
+    it('fails the call with a structured code when every path fails', async () => {
+      const result = await call('delete_file', { file_path: ['missing-a.txt', 'missing-b.txt'] })
+      expect(result.isError).toBe(true)
+      expect(result.error).toMatchObject({ info: { code: 'FS_NOT_FOUND' } })
+      expect(text(result)).toContain('missing-a.txt')
+      expect(text(result)).toContain('missing-b.txt')
     })
   })
 

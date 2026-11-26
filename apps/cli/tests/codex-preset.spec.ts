@@ -119,7 +119,7 @@ describe('the shipped Codex preset', () => {
       // 这些工具在标准模式里存在，Codex 模式不再暴露它们。
       expect(toolNames(codex.agent)).toEqual(expect.not.arrayContaining([
         'bash', 'job_kill', 'job_list', 'job_output',
-        'read', 'write', 'edit', 'read_image', 'glob', 'grep',
+        'read', 'write', 'edit', 'delete_file', 'read_image', 'glob', 'grep',
         'generate_image', 'generate_images', 'edit_image',
         'subagent_fork', 'workflow', 'ralph',
         'get_goal', 'create_goal', 'update_goal', 'exit_plan_mode', 'ask_user_question',

@@ -51,6 +51,8 @@ const TOOL_VARIANTS: Record<string, ToolRowVariant> = {
   glob: 'search',
   write: 'write',
   edit: 'edit',
+  // 删除在通用行里与编辑同属「文件变更」类别；标题由 delete_file 自己的动作名给出。
+  delete_file: 'edit',
   apply_patch: 'edit',
   str_replace_editor: 'edit',
   read_image: 'read',

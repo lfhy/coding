@@ -150,6 +150,10 @@ class RecordingFileSystem extends FileSystem {
   override async editText(_target: FsTarget, _edit: FsEditRequest): Promise<FsEditOutcome> {
     return { version: FsVersion('unused'), before: '', after: '' }
   }
+
+  override async remove(_target: FsTarget): Promise<{ type: 'file' | 'directory' | 'other' }> {
+    throw new Error('delete is not needed in agent-instructions tests')
+  }
 }
 
 /** 记录 stat 并发度的替身：并发探测会叠加 in-flight，串行实现始终停在 1。 */

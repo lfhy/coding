@@ -3,6 +3,7 @@ import { toolDisplayDescription } from './display-description-value.ts'
 /** 已知模型工具的用户可见动作标题，供对话和轨迹共用。未知动作由各视图回退。 */
 const ACTION_TITLES: Readonly<Record<string, string>> = {
   apply_patch: 'Apply patch',
+  delete_file: 'Delete files',
   str_replace_editor: 'Edit file',
   read_image: 'Read image',
   write_stdin: '查看后台任务输出',

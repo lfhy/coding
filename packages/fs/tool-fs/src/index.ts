@@ -1,7 +1,8 @@
 /**
- * Model-facing read, read_image, write, and edit tools over `ctx.fs`. This package owns schemas, validation,
- * read windows, formatting, and observation events, never a concrete provider. An optional
- * event policy supplies mutation guards; without one the tools use unconditional provider calls.
+ * Model-facing read, read_image, write, edit, and delete_file tools over `ctx.fs`. This package
+ * owns schemas, validation, read windows, formatting, and observation events, never a concrete
+ * provider. An optional event policy supplies mutation guards; without one the tools use
+ * unconditional provider calls.
  * @module coding-tool-fs
  */
 
@@ -10,6 +11,7 @@ import z from '@deepseek-ai/schemastery'
 import type {} from 'coding-user-approval'
 import { applyReadTool, READ_LIMIT, STREAM_MIN_SIZE } from './read.ts'
 import { applyWriteTool } from './write.ts'
+import { applyDeleteTool } from './delete.ts'
 import { applyEditTool } from './edit.ts'
 import { applyReadImageTool } from './read-image.ts'
 import { READ_MAX_BYTES, READ_MAX_LINE_LENGTH } from './read-render.ts'
@@ -76,4 +78,5 @@ export function apply(ctx: Context, config: Config): void {
   const sandbox = new FsSandboxController(ctx)
   applyWriteTool(ctx, sandbox)
   applyEditTool(ctx, sandbox)
+  applyDeleteTool(ctx, sandbox)
 }

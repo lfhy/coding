@@ -40,6 +40,7 @@ class FakeFs extends FileSystem {
   rejectWith?: FsError
   writeIntents: (FsWriteIntent | undefined)[] = []
   editIntents: ({ version: FsVersion } | undefined)[] = []
+  removeRequests: boolean[] = []
 
   private throwIfArmed(): void {
     if (this.rejectWith) throw this.rejectWith
@@ -96,6 +97,14 @@ class FakeFs extends FileSystem {
     this.files.set(target.targetKey, after)
     return { version: FsVersion('v3'), before: content, after }
   }
+  override async remove(target: FsTarget, options?: { recursive?: boolean }): Promise<{ type: 'file' | 'directory' | 'other' }> {
+    this.throwIfArmed()
+    this.removeRequests.push(options?.recursive === true)
+    const content = this.files.get(target.targetKey)
+    if (content === undefined) throw new FsError(`cannot delete "${target.displayPath}": not found`, 'FS_NOT_FOUND')
+    this.files.delete(target.targetKey)
+    return { type: 'file' }
+  }
 }
 
 async function setup() {
@@ -151,9 +160,9 @@ describe('session cwd resolution', () => {
 })
 
 describe('registration', () => {
-  it('registers read, write, and edit', async () => {
+  it('registers read, write, edit, and delete_file', async () => {
     const { ctx } = await setup()
-    expect(ctx.tools.schemas().map(s => s.name).sort()).toEqual(['edit', 'read', 'write'])
+    expect(ctx.tools.schemas().map(s => s.name).sort()).toEqual(['delete_file', 'edit', 'read', 'write'])
   })
 
   it('declares read parallel-safe while write/edit remain exclusive', async () => {
@@ -191,9 +200,9 @@ describe('registration', () => {
     const fiber = await ctx.plugin(ToolFs)
     // Each tool contributes BOTH a schema and a prompt section; disposal must
     // withdraw both, not just the schemas.
-    expect(ctx.tools.schemas()).toHaveLength(3)
+    expect(ctx.tools.schemas()).toHaveLength(4)
     const sectionNames = (a: { sections: { name: string }[] }) => a.sections.map(s => s.name).sort()
-    expect(sectionNames(await ctx.systemPrompt.assemble())).toEqual(['deployment:persona', 'harness:identity', 'tool:edit', 'tool:read', 'tool:write'])
+    expect(sectionNames(await ctx.systemPrompt.assemble())).toEqual(['deployment:persona', 'harness:identity', 'tool:delete_file', 'tool:edit', 'tool:read', 'tool:write'])
     await fiber.dispose()
     expect(ctx.tools.schemas()).toHaveLength(0)
     // Only the system-prompt plugin's own built-in sections remain.

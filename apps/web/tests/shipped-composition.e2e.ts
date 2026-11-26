@@ -75,6 +75,7 @@ const EXPECTED_TOOLS = [
   'browser_wait_for_url',
   'context_compact',
   'create_goal',
+  'delete_file',
   'edit',
   'exit_plan_mode',
   'followup_task',

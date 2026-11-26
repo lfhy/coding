@@ -41,6 +41,7 @@ describe('tool-call-model', () => {
     expect(classifyTool('write')).toBe('write')
     expect(classifyTool('edit')).toBe('edit')
     expect(classifyTool('apply_patch')).toBe('edit')
+    expect(classifyTool('delete_file')).toBe('edit')
     expect(classifyTool('cordis_runtime_inspect')).toBe('read')
     // The v3 run-control verbs: `others` is the decided intent, not an
     // unclassified default (there is no program to show and no file to open).
