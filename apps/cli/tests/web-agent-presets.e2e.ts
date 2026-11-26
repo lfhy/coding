@@ -249,7 +249,7 @@ describe('the shipped Web composition', () => {
         'job_output', 'list_agents', 'list_subagent_models', 'memory_compact', 'memory_delete',
         'memory_list', 'memory_read', 'memory_save', 'memory_update', 'ralph',
         'read', 'read_image', 'render_ui', 'run_code', 'send_message', 'set_status', 'skill',
-        'skill_read', 'subagent', 'subagent_fork', 'todo_write', 'update_goal', 'validate_gen_ui',
+        'skill_read', 'subagent', 'subagent_fork', 'todo_write', 'update_file', 'update_goal', 'validate_gen_ui',
         'web_search', 'workflow', 'write',
       ])
     } finally {

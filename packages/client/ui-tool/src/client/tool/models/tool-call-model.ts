@@ -51,6 +51,8 @@ const TOOL_VARIANTS: Record<string, ToolRowVariant> = {
   glob: 'search',
   write: 'write',
   edit: 'edit',
+  // `update_file` 是 edit 的别名：同一类别、同一标题，行内只显示目标路径。
+  update_file: 'edit',
   // 删除用自己的变体：铅笔图标会让「删掉」读成「改过」。
   delete_file: 'delete',
   apply_patch: 'edit',
@@ -240,6 +242,7 @@ const FILE_PATH_KEYS = ['path', 'file_path'] as const
 
 /** File-tool variants whose summary may be an openable workspace path. */
 const FILE_PATH_VARIANTS: ReadonlySet<ToolRowVariant> = new Set(['read', 'write', 'edit'])
+
 
 function deriveFilePath(variant: ToolRowVariant, argsRaw: string): string | undefined {
   if (!FILE_PATH_VARIANTS.has(variant)) return undefined

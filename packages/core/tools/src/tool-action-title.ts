@@ -54,6 +54,7 @@ const ACTION_TITLES: Readonly<Record<string, string>> = {
   read: 'Read',
   write: 'Write',
   edit: 'Edit',
+  update_file: 'Edit',
   grep: 'Search',
   glob: 'Search',
   web_search: 'Search',
@@ -239,7 +240,7 @@ export function toolArgsPreview(name: string, argsRaw: string): string | undefin
       : name === 'browser_navigate' || name === 'web_fetch' ? ['url']
         : name === 'browser_js' ? []
           : name === 'lsp' ? ['file_path']
-            : name === 'str_replace_editor' || name === 'read' || name === 'write' || name === 'edit' || name === 'read_image'
+            : name === 'str_replace_editor' || name === 'read' || name === 'write' || name === 'edit' || name === 'update_file' || name === 'read_image'
               ? ['path', 'file_path'] : []
     for (const key of keys) {
       const value = record[key]

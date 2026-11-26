@@ -7,13 +7,19 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import { defineTool } from 'coding-tools'
-import type { DiffCallView, DiffResultView, ToolResult } from 'coding-tools'
+import type { DiffCallView, DiffResultView, ToolDefinition, ToolResult } from 'coding-tools'
 import type {} from 'coding-fs'
 import type {} from 'coding-system-prompt'
 import { computeHunkDiffs, diffsFromMeta } from './diff.ts'
 import { remediateFsError } from './error.ts'
 import { sessionResolveOptions } from './session-cwd.ts'
 import type { FsSandboxController } from './sandbox.ts'
+
+/**
+ * 同一套字面量编辑的两个模型可见名称：`update_file` 是 `edit` 的别名，供只认这个
+ * 名称的调用方使用。两者共享同一份 schema 与执行路径，差别只有动作名。
+ */
+export type EditToolName = 'edit' | 'update_file'
 
 /** Validated `edit` arguments after defaulting. */
 interface EditInput {
@@ -69,7 +75,9 @@ export function formatEditOutput(displayPath: string, replaceAll: boolean): stri
 }
 
 /**
- * Register the `edit` tool and its system-prompt guidance.
+ * 注册字面量编辑工具与它的提示词段：`edit` 是主名称，`update_file` 是等价的别名。
+ * 两个名称共用一份 schema、一条执行路径和一个提示词段，因此选中哪个都不会改变
+ * 行为或 README 记录的操作语义。
  * @param ctx - the plugin context; registrations are effects scoped to it, and execution uses its `fs` service.
  * @param sandbox - the shared sandbox-escalation API (advertisement, mode stamping, denial mapping).
  */
@@ -77,12 +85,25 @@ export function applyEditTool(ctx: Context, sandbox: FsSandboxController): void 
   ctx.systemPrompt.section({
     name: 'tool:edit',
     order: 102,
-    text: 'Use the edit tool for targeted changes to existing UTF-8 text files. It replaces literal old_string with new_string; by default old_string must appear exactly once. If old_string appears multiple times, provide a more specific old_string or set replace_all to true. When old_string is not found the edit fails and tells you to read the file: read it to confirm the exact current text, then retry.',
+    text: 'Use the edit tool for targeted changes to existing UTF-8 text files. It replaces literal old_string with new_string; by default old_string must appear exactly once. If old_string appears multiple times, provide a more specific old_string or set replace_all to true. When old_string is not found the edit fails and tells you to read the file: read it to confirm the exact current text, then retry. The same tool is also registered as update_file; call only one of them per change.',
   })
 
-  ctx.tools.register(defineTool({
-    name: 'edit',
-    description: 'Edit an existing UTF-8 text file by replacing literal text.',
+  ctx.tools.register(editDefinition(ctx, sandbox, 'edit', 'Edit an existing UTF-8 text file by replacing literal text.'))
+  ctx.tools.register(editDefinition(ctx, sandbox, 'update_file', 'Update an existing UTF-8 text file by replacing literal text. Equivalent to edit.'))
+}
+
+/**
+ * 构建一个字面量编辑工具定义。
+ * @param ctx - the plugin context providing the filesystem service and events.
+ * @param sandbox - the shared sandbox-escalation API.
+ * @param name - 本次注册的模型可见名称。
+ * @param description - 该名称的模型可见说明。
+ * @returns 可直接注册的工具定义。
+ */
+function editDefinition(ctx: Context, sandbox: FsSandboxController, name: EditToolName, description: string): ToolDefinition {
+  return defineTool({
+    name,
+    description,
     parameters: {
       file_path: { type: 'string', required: true, description: 'Path to edit, resolved by the filesystem backend.' },
       old_string: { type: 'string', required: true, description: 'Literal text to replace. Must match exactly.' },
@@ -113,7 +134,8 @@ export function applyEditTool(ctx: Context, sandbox: FsSandboxController): void 
       const input = parseEditArgs(args)
       // Resolve the per-call sandbox policy (approved mode > session override
       // > backend default, plus the session cwd root) BEFORE anything executes.
-      const sandboxPolicy = await sandbox.resolvePolicy('edit', args, exec)
+      // 升权审批记录用本次调用实际的工具名，别名不会伪装成主名称。
+      const sandboxPolicy = await sandbox.resolvePolicy(name, args, exec)
       const target = await ctx.fs.resolve(input.filePath, sessionResolveOptions(exec, input.filePath, sandboxPolicy?.workspaceRoot))
       // Single-slot decision: the policy plugin returns { version: vObserved } or
       // throws FS_NOT_OBSERVED; the bare default is undefined (unconditional edit).
@@ -164,5 +186,5 @@ export function applyEditTool(ctx: Context, sandbox: FsSandboxController): void 
       if (diffs === undefined) return undefined
       return { card: 'diff', title: `Edit ${args.file_path}`, diffs }
     },
-  }))
+  })
 }

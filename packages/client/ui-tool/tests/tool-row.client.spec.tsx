@@ -40,6 +40,8 @@ describe('tool-call-model', () => {
     expect(classifyTool('grep')).toBe('search')
     expect(classifyTool('write')).toBe('write')
     expect(classifyTool('edit')).toBe('edit')
+    // update_file 是 edit 的别名：同一行变体，标题与目标都按编辑显示。
+    expect(classifyTool('update_file')).toBe('edit')
     expect(classifyTool('apply_patch')).toBe('edit')
     expect(classifyTool('delete_file')).toBe('delete')
     expect(classifyTool('cordis_runtime_inspect')).toBe('read')

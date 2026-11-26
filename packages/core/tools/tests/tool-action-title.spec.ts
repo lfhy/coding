@@ -56,3 +56,10 @@ describe('删除调用的动作与目标', () => {
 function toolArgsPreviewOf(args: Record<string, unknown>): string | undefined {
   return toolCallPreview('delete_file', JSON.stringify(args))
 }
+
+describe('update_file 别名', () => {
+  it('与 edit 共用动作标题，并把目标路径放进折叠行', () => {
+    expect(toolActionTitle('update_file')).toBe(toolActionTitle('edit'))
+    expect(toolCallPreview('update_file', JSON.stringify({ file_path: 'src/a.ts' }))).toBe('src/a.ts')
+  })
+})

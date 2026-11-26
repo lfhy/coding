@@ -33,6 +33,7 @@ await ctx.plugin(ToolFs)                                  // this package — re
 | `read_image` | `file_path` | 通过有界字节 seam 读取 PNG/JPEG/WebP/GIF 文件，经 `ctx.attachments.saveImage` 持久保存，并在小型元数据信封旁返回图像块。只有确切路由的模型声明图像输入时才会成功。 |
 | `write` | `file_path`、`content` | 创建文件或完整替换文件。有策略插件时：覆盖现有文件要求先在未变版本上执行 `read`；创建新文件不需要。没有插件时：无条件执行。 |
 | `edit` | `file_path`、非空 `old_string`、`new_string`、`replace_all?` | 字面量替换；除非 `replace_all` 为 true，否则要求唯一匹配。有策略插件时：要求先执行 `read`（任何窗口），且文件此后未变。没有插件时：无条件执行。 |
+| `update_file` | 与 `edit` 相同 | `edit` 的等价别名：同一份 schema、同一条执行路径、同一个提示词段，只为认这个名称的调用方提供入口。一次改动只调用其中一个。 |
 | `delete_file` | `file_path`（字符串或字符串数组）、`recursive?` | 删除一个或一组路径。目录只有 `recursive: true` 才删除整棵子树，否则返回 `FS_IS_DIRECTORY`。批量调用逐项执行：成功项与被拒绝项分开返回，全部失败时才按第一次失败的 code 抛出错误结果。本身是符号链接的路径被拒绝，因为删除作用于解析后的目标。 |
 
 字段名使用 snake_case，与 Claude Code 和现有 harness 工具 schema 一致。
@@ -68,7 +69,7 @@ await ctx.plugin(ToolFs)                                  // this package — re
 
 #### 模型看到的内容
 
-该插件注册作用域内的每个请求都会收到下方独立注册的 read、write 与 edit 指导。作用域工具限制可以隐藏 schema，而不移除这些段。
+该插件注册作用域内的每个请求都会收到下方独立注册的 read、write、edit（覆盖 `update_file` 别名）与 delete_file 指导。作用域工具限制可以隐藏 schema，而不移除这些段。
 
 ##### Read 指导
 
@@ -82,6 +83,10 @@ Use the read tool — not shell commands like cat — to inspect text files. Res
 Use the write tool to create files or completely replace file contents. Existing files are overwritten, so read an existing file first (the default fs-observation-policy requires it) and prefer edit for targeted changes.
 ```
 
+##### update_file 别名
+
+`edit` 同时以 `update_file` 注册：两者共享参数、schema、执行器与呈现，动作标题都是 Edit。提示词段只有一条，并在末尾说明「同一工具也注册为 update_file，一次改动只调用其中一个」，因此模型不会因为出现两个名字而各改一遍。
+
 ##### delete_file 指导
 
 ```markdown
@@ -91,7 +96,7 @@ Use delete_file to remove files, passing one path or an array of paths. Deleting
 ##### Edit 指导
 
 ```markdown
-Use the edit tool for targeted changes to existing UTF-8 text files. It replaces literal old_string with new_string; by default old_string must appear exactly once. If old_string appears multiple times, provide a more specific old_string or set replace_all to true. Read the file first (the default fs-observation-policy requires it), unless you just created or edited it in this session.
+Use the edit tool for targeted changes to existing UTF-8 text files. It replaces literal old_string with new_string; by default old_string must appear exactly once. If old_string appears multiple times, provide a more specific old_string or set replace_all to true. When old_string is not found the edit fails and tells you to read the file: read it to confirm the exact current text, then retry. The same tool is also registered as update_file; call only one of them per change.
 ```
 
 #### Token 影响
@@ -106,7 +111,7 @@ Use the edit tool for targeted changes to existing UTF-8 text files. It replaces
 
 #### 模型看到的内容
 
-模型会看到已生成的 [`read`、`read_image`、`write`、`edit` 和 `delete_file` schema](../../../docs/tool-catalog.md#deepseek-aidsh-tool-fs)，参数使用 snake_case。`read_image` 只在持久附件存储已挂载时出现；schema 本身与路由无关，严格门禁在执行时拒绝。作用域工具限制可以为某个 agent 移除任一定义。
+模型会看到已生成的 [`read`、`read_image`、`write`、`edit`、`update_file` 和 `delete_file` schema](../../../docs/tool-catalog.md#deepseek-aidsh-tool-fs)，参数使用 snake_case。`read_image` 只在持久附件存储已挂载时出现；schema 本身与路由无关，严格门禁在执行时拒绝。作用域工具限制可以为某个 agent 移除任一定义。
 
 #### Token 影响
 

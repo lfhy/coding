@@ -69,7 +69,8 @@ function sameContextPayload(left: UserMessage, right: UserMessage): boolean {
     && isDeepStrictEqual(left.source, right.source)
 }
 
-const FILE_TOUCH_TOOL_NAMES = new Set(['read', 'write', 'edit'])
+// `update_file` 是 `edit` 的别名：它同样落到文件，必须触发指令文件的重新发现。
+const FILE_TOUCH_TOOL_NAMES = new Set(['read', 'write', 'edit', 'update_file'])
 
 function filePathFromExecution(exec: ToolExecution): string | undefined {
   if (!FILE_TOUCH_TOOL_NAMES.has(exec.name)) return undefined

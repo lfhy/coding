@@ -160,9 +160,28 @@ describe('session cwd resolution', () => {
 })
 
 describe('registration', () => {
-  it('registers read, write, edit, and delete_file', async () => {
+  it('registers read, write, edit (and its update_file alias), and delete_file', async () => {
     const { ctx } = await setup()
-    expect(ctx.tools.schemas().map(s => s.name).sort()).toEqual(['delete_file', 'edit', 'read', 'write'])
+    expect(ctx.tools.schemas().map(s => s.name).sort())
+      .toEqual(['delete_file', 'edit', 'read', 'update_file', 'write'])
+  })
+
+  it('update_file is the same edit behind another name', async () => {
+    const { ctx, fs } = await setup()
+    fs.files.set('key:a.txt', 'hello world')
+    const definition = ctx.tools.get('update_file')
+    const edit = ctx.tools.get('edit')
+    expect(definition).toBeDefined()
+    // 同一份 schema：别名不引入第二种参数形态。
+    expect(definition?.parameters).toEqual(edit?.parameters)
+    const result = await call(ctx, 'update_file', { file_path: 'a.txt', old_string: 'world', new_string: 'there' })
+    expect(result.isError).toBe(false)
+    expect(fs.files.get('key:a.txt')).toBe('hello there')
+    // 并发分类与主名称一致：别名同样互斥。
+    expect(ctx.tools.executionMode({
+      signal: testToolSignal, callId: CallId('update-file-exclusive'), name: 'update_file',
+      arguments: { file_path: 'a.txt', old_string: 'x', new_string: 'y' },
+    })).toEqual({ kind: 'exclusive' })
   })
 
   it('declares read parallel-safe while write/edit remain exclusive', async () => {
@@ -200,7 +219,7 @@ describe('registration', () => {
     const fiber = await ctx.plugin(ToolFs)
     // Each tool contributes BOTH a schema and a prompt section; disposal must
     // withdraw both, not just the schemas.
-    expect(ctx.tools.schemas()).toHaveLength(4)
+    expect(ctx.tools.schemas()).toHaveLength(5)
     const sectionNames = (a: { sections: { name: string }[] }) => a.sections.map(s => s.name).sort()
     expect(sectionNames(await ctx.systemPrompt.assemble())).toEqual(['deployment:persona', 'harness:identity', 'tool:delete_file', 'tool:edit', 'tool:read', 'tool:write'])
     await fiber.dispose()

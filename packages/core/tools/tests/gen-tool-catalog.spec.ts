@@ -57,7 +57,7 @@ describe('gen-tool-catalog collectToolCatalog', () => {
       'send_message', 'send_message', 'session_event_read', 'session_event_search', 'session_event_trace',
       'session_search', 'session_trace', 'set_status', 'skill', 'skill_read', 'spawn_teammate', 'str_replace_editor', 'subagent',
       'team_task_create', 'team_task_get', 'team_task_list', 'team_task_update', 'terminal_close', 'terminal_list',
-      'terminal_open', 'terminal_read', 'terminal_send', 'terminal_signal', 'todo_write', 'update_goal',
+      'terminal_open', 'terminal_read', 'terminal_send', 'terminal_signal', 'todo_write', 'update_file', 'update_goal',
       'wait_agent', 'wait_agent', 'web_fetch', 'web_search', 'workflow', 'write', 'write_stdin',
     ])
     // parameters 与模型实际看到的 JSON Schema 使用同一结构。
