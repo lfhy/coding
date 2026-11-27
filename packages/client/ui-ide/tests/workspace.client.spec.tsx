@@ -293,21 +293,27 @@ describe('IDE 工作区三栏', () => {
     const tree = document.querySelector('button[role="listitem"][title="index.ts"]') as HTMLElement
     const transfer = { effectAllowed: 'none', dropEffect: 'none', setData: () => {} }
     const tabs = screen.getByRole('tablist', { name: zh.openFiles })
+    const tabBar = tabs.parentElement as HTMLElement
+    tabBar.getBoundingClientRect = () => ({
+      left: 0, width: 800, top: 0, height: 36, right: 800, bottom: 36, x: 0, y: 0,
+      toJSON: () => ({}),
+    })
     fireEvent.dragLeave(tabs)
     fireEvent.dragStart(tree, { dataTransfer: transfer })
-    fireEvent.dragOver(tabs, { dataTransfer: transfer })
+    act(() => { tabs.dispatchEvent(dragEvent('dragover', 10, transfer)) })
     expect(screen.getByText(zh.dropSplit)).toBeTruthy()
+    expect(screen.getByText(zh.dropSplit).getAttribute('data-side')).toBe('left')
     expect(transfer.dropEffect).toBe('copy')
     fireEvent.dragLeave(tabs, { relatedTarget: null })
     expect(screen.queryByText(zh.dropSplit)).toBeNull()
     fireEvent.dragOver(tabs, { dataTransfer: transfer })
-    fireEvent.drop(tabs, { dataTransfer: transfer })
+    act(() => { tabs.dispatchEvent(dragEvent('drop', 10, transfer)) })
     expect(screen.queryByText(zh.dropSplit)).toBeNull()
     await screen.findByRole('textbox', { name: zh.editorLabel.replace('{name}', 'index.ts') })
     let split = fixture.instance.getSnapshot().views[WORKSPACE_ID]
     expect(split?.panes.map(pane => ({ paths: pane.paths, previewPath: pane.previewPath }))).toEqual([
-      { paths: ['README.md'], previewPath: 'README.md' },
       { paths: ['src/index.ts'], previewPath: null },
+      { paths: ['README.md'], previewPath: 'README.md' },
     ])
 
     const other = [...document.querySelectorAll('button[role="listitem"]')]
@@ -328,7 +334,7 @@ describe('IDE 工作区三栏', () => {
     await screen.findByRole('textbox', { name: zh.editorLabel.replace('{name}', 'util.ts') })
     split = fixture.instance.getSnapshot().views[WORKSPACE_ID]
     expect(split?.panes.map(pane => pane.paths)).toEqual([
-      ['src/util.ts'], ['README.md'], ['src/index.ts'],
+      ['src/util.ts'], ['src/index.ts'], ['README.md'],
     ])
 
     const readme = document.querySelector('button[role="listitem"][title="README.md"]') as HTMLElement
@@ -340,8 +346,8 @@ describe('IDE 工作区三栏', () => {
       { dataTransfer: transfer })
     split = fixture.instance.getSnapshot().views[WORKSPACE_ID]
     expect(split?.panes).toHaveLength(3)
-    expect(split?.panes[1]?.activePath).toBe('README.md')
-    expect(split?.activePaneId).toBe(split?.panes[1]?.id)
+    expect(split?.panes[2]?.activePath).toBe('README.md')
+    expect(split?.activePaneId).toBe(split?.panes[2]?.id)
   })
 
   it('空分组拖拽文件直接固定打开，不创建额外分组', async () => {

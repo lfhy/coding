@@ -325,8 +325,10 @@ export function IdeWorkspace({
     if (dragging === null) return
     event.preventDefault()
     event.stopPropagation()
-    if (dragging.kind === 'file') openDraggedFile(paneId, dragging.ref)
-    else actions.moveTab(workspaceId, dragging.path, paneId)
+    if (dragging.kind === 'file') {
+      const side = dropSideOf(event.currentTarget.getBoundingClientRect(), event.clientX)
+      openDraggedFile(paneId, dragging.ref, side)
+    } else actions.moveTab(workspaceId, dragging.path, paneId)
     setDragging(null)
     setDropHint(null)
     setFileDropHint(null)
@@ -420,7 +422,8 @@ export function IdeWorkspace({
                 if (dragging.kind === 'file') {
                   event.dataTransfer.dropEffect = 'copy'
                   setDropHint(null)
-                  const side = fileDropSide(dragging.ref, pane.id, 'right')
+                  const pointerSide = dropSideOf(event.currentTarget.getBoundingClientRect(), event.clientX)
+                  const side = fileDropSide(dragging.ref, pane.id, pointerSide)
                   setFileDropHint(side === undefined
                     ? { paneId: pane.id, area: 'tabs', text: fileDropCopy(dragging.ref, pane.id) }
                     : { paneId: pane.id, area: 'tabs', side, text: fileDropCopy(dragging.ref, pane.id) })
@@ -447,7 +450,9 @@ export function IdeWorkspace({
                 aria-label={t('closePane', { index: index + 1 })} title={t('closePane', { index: index + 1 })}
                 onClick={() => { actions.closePane(workspaceId, pane.id) }}>×</button>}
               {fileDropHint?.paneId === pane.id && fileDropHint.area === 'tabs'
-                && <span className={css.fileDropHint} role="presentation">{fileDropHint.text}</span>}
+                && <span className={css.fileDropHint} data-side={fileDropHint.side} role="presentation">
+                  {fileDropHint.text}
+                </span>}
             </div>
             <div className={css.paneBody} data-pane-body={pane.id}
               data-file-drop={fileDropHint?.paneId === pane.id && fileDropHint.area === 'body' ? '' : undefined}
