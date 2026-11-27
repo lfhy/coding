@@ -92,6 +92,7 @@ export function IdeWorkspace({
   const [menuOpen, setMenuOpen] = useState(false)
   const [dragging, setDragging] = useState<DragState | null>(null)
   const [dropHint, setDropHint] = useState<{ paneId: string; side: IdeSplitSide } | null>(null)
+  const [fileDropHint, setFileDropHint] = useState<{ paneId: string; area: 'tabs' | 'body' } | null>(null)
   const alive = useRef(true)
   const heading = useRef<HTMLHeadingElement>(null)
   const viewRef = useRef(view)
@@ -103,6 +104,26 @@ export function IdeWorkspace({
     alive.current = true
     heading.current?.focus({ preventScroll: true })
     return () => { alive.current = false }
+  }, [])
+
+  // 原生拖拽可能在 React 源节点卸载后结束；窗口级兜底确保光标、提示和拖动态一起回收。
+  useEffect(() => {
+    const finish = (): void => {
+      setDragging(null)
+      setDropHint(null)
+      setFileDropHint(null)
+    }
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') finish()
+    }
+    window.addEventListener('dragend', finish)
+    window.addEventListener('drop', finish)
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      window.removeEventListener('dragend', finish)
+      window.removeEventListener('drop', finish)
+      document.removeEventListener('keydown', onKeyDown)
+    }
   }, [])
 
   const loadDirectory = useCallback(async (path: string): Promise<void> => {
@@ -211,6 +232,7 @@ export function IdeWorkspace({
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
       if (event.defaultPrevented || document.querySelector('[role="dialog"], [role="menu"], [role="listbox"]')) return
+      if (dragging !== null) return
       if (event.key === 'Escape') void leavePage()
     }
     const onBlur = (): void => { if (active !== undefined) void saveDocument(active) }
@@ -226,7 +248,7 @@ export function IdeWorkspace({
       window.removeEventListener('blur', onBlur)
       window.removeEventListener('beforeunload', onBeforeUnload)
     }
-  }, [active, leavePage, saveDocument, view.documents])
+  }, [active, dragging, leavePage, saveDocument, view.documents])
 
   const requestClose = (path: string): void => {
     if (view.documents[path]?.dirty === true) setClosePending(path)
@@ -246,6 +268,7 @@ export function IdeWorkspace({
       openFileInPane(paneId, dragging.ref)
       setDragging(null)
       setDropHint(null)
+      setFileDropHint(null)
       return
     }
     // 落点以指针位置为准（提示只是预览），因此没有提示时同样能拆分。
@@ -253,6 +276,7 @@ export function IdeWorkspace({
     actions.splitTab(workspaceId, dragging.path, paneId, side)
     setDragging(null)
     setDropHint(null)
+    setFileDropHint(null)
   }
 
   const dropOnTabs = (event: DragEvent<HTMLDivElement>, paneId: string): void => {
@@ -263,6 +287,7 @@ export function IdeWorkspace({
     else actions.moveTab(workspaceId, dragging.path, paneId)
     setDragging(null)
     setDropHint(null)
+    setFileDropHint(null)
   }
 
   const closeTab = view.documents[closePending ?? '']
@@ -281,12 +306,17 @@ export function IdeWorkspace({
     { id: 'folder', label: t('openOtherFolder'), icon: <IconFolderOpenOutline16 size={16} /> },
   ]
 
-  return <main className={css.page} style={pageStyle} aria-label={t('title')}>
+  return <main className={css.page} style={pageStyle} aria-label={t('title')}
+    data-dragging={dragging?.kind}>
     <IdeFileTree title={workspace.title} collapsed={sidebarCollapsed} width={sidebarWidth}
       directories={view.directories} expanded={view.expanded} activePath={activePane.activePath}
       openEditors={openEditors} onToggle={toggleDirectory} onOpen={openFile}
-      onDragFile={(path, name, segments) => { setDragging({ kind: 'file', ref: { path, name, segments } }); setDropHint(null) }}
-      onDragFileEnd={() => { setDragging(null); setDropHint(null) }}
+      onDragFile={(path, name, segments) => {
+        setDragging({ kind: 'file', ref: { path, name, segments } })
+        setDropHint(null)
+        setFileDropHint(null)
+      }}
+      onDragFileEnd={() => { setDragging(null); setDropHint(null); setFileDropHint(null) }}
       onActivateEditor={(paneId, path) => { actions.activateTab(workspaceId, paneId, path) }}
       onPinEditor={(paneId, path) => { actions.pinTab(workspaceId, paneId, path) }}
       onRetry={() => { void loadDirectory('') }} t={t} />
@@ -341,26 +371,58 @@ export function IdeWorkspace({
             onFocusCapture={() => { actions.focusPane(workspaceId, pane.id) }}
             onPointerDownCapture={() => { actions.focusPane(workspaceId, pane.id) }}>
             <div className={css.paneTabs}
-              onDragOver={(event) => { if (dragging !== null) event.preventDefault() }}
+              data-file-drop={fileDropHint?.paneId === pane.id && fileDropHint.area === 'tabs' ? '' : undefined}
+              onDragOver={(event) => {
+                if (dragging === null) return
+                event.preventDefault()
+                if (dragging.kind === 'file') {
+                  event.dataTransfer.dropEffect = 'copy'
+                  setDropHint(null)
+                  setFileDropHint({ paneId: pane.id, area: 'tabs' })
+                } else {
+                  event.dataTransfer.dropEffect = 'move'
+                  setFileDropHint(null)
+                }
+              }}
+              onDragLeave={() => {
+                setFileDropHint(current => (current?.paneId === pane.id && current.area === 'tabs' ? null : current))
+              }}
               onDrop={(event) => { dropOnTabs(event, pane.id) }}>
               <IdeTabs tabs={tabDocuments} activePath={pane.activePath} paneId={pane.id}
                 onActivate={(paneId, path) => { actions.activateTab(workspaceId, paneId, path) }}
                 onClose={requestClose}
                 onPin={(path) => { actions.pinTab(workspaceId, pane.id, path) }}
-                onDragStart={(paneId, path) => { setDragging({ kind: 'tab', paneId, path }); setDropHint(null) }}
-                onDragEnd={() => { setDragging(null); setDropHint(null) }} t={t} />
+                onDragStart={(paneId, path) => {
+                  setDragging({ kind: 'tab', paneId, path })
+                  setDropHint(null)
+                  setFileDropHint(null)
+                }}
+                onDragEnd={() => { setDragging(null); setDropHint(null); setFileDropHint(null) }} t={t} />
               {view.panes.length > 1 && <button type="button" className={css.closePane}
                 aria-label={t('closePane', { index: index + 1 })} title={t('closePane', { index: index + 1 })}
                 onClick={() => { actions.closePane(workspaceId, pane.id) }}>×</button>}
+              {fileDropHint?.paneId === pane.id && fileDropHint.area === 'tabs'
+                && <span className={css.fileDropHint} role="presentation">{t('dropFile')}</span>}
             </div>
             <div className={css.paneBody} data-pane-body={pane.id}
+              data-file-drop={fileDropHint?.paneId === pane.id && fileDropHint.area === 'body' ? '' : undefined}
               onDragOver={(event) => {
                 if (dragging === null) return
                 event.preventDefault()
-                if (dragging.kind !== 'tab') return
+                if (dragging.kind === 'file') {
+                  event.dataTransfer.dropEffect = 'copy'
+                  setDropHint(null)
+                  setFileDropHint({ paneId: pane.id, area: 'body' })
+                  return
+                }
+                event.dataTransfer.dropEffect = 'move'
+                setFileDropHint(null)
                 setDropHint({ paneId: pane.id, side: dropSideOf(event.currentTarget.getBoundingClientRect(), event.clientX) })
               }}
-              onDragLeave={() => { setDropHint(current => (current?.paneId === pane.id ? null : current)) }}
+              onDragLeave={() => {
+                setDropHint(current => (current?.paneId === pane.id ? null : current))
+                setFileDropHint(current => (current?.paneId === pane.id && current.area === 'body' ? null : current))
+              }}
               onDrop={(event) => { dropOnBody(event, pane.id) }}>
               {document === undefined ? <div className={css.empty}>
                 <span className={css.emptyIcon} aria-hidden="true"><IconCodeOutline16 size={30} /></span>
@@ -375,6 +437,8 @@ export function IdeWorkspace({
                 data-side={dropHint.side} role="presentation">
                 {t(dropHint.side === 'left' ? 'dropLeft' : 'dropRight')}
               </span>}
+              {fileDropHint?.paneId === pane.id && fileDropHint.area === 'body'
+                && <span className={css.fileDropHint} role="presentation">{t('dropFile')}</span>}
             </div>
           </section>
         })}

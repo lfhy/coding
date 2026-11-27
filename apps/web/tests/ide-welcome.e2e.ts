@@ -103,7 +103,15 @@ describe('代码工作区入口', () => {
       .toBe('const answer = 42\n')
 
     const packageFile = page.locator('button[role="listitem"][title="package.json"]')
-    await packageFile.dragTo(page.getByRole('tablist', { name: 'Open files', exact: true }))
+    const fileTabs = page.getByRole('tablist', { name: 'Open files', exact: true })
+    const dataTransfer = await page.evaluateHandle(() => new DataTransfer())
+    await packageFile.dispatchEvent('dragstart', { dataTransfer })
+    await fileTabs.dispatchEvent('dragover', { dataTransfer })
+    await page.getByText('Drop to open file', { exact: true }).waitFor()
+    await packageFile.dispatchEvent('dragend', { dataTransfer })
+    await page.getByText('Drop to open file', { exact: true }).waitFor({ state: 'detached' })
+    await dataTransfer.dispose()
+    await packageFile.dragTo(fileTabs)
     await page.getByRole('textbox', { name: 'package.json editor', exact: true }).waitFor()
     expect(await page.getByRole('tab', { name: /util\.ts/u }).count()).toBe(1)
     const metrics = await page.evaluate(() => ({

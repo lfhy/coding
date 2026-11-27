@@ -286,14 +286,23 @@ describe('IDE 工作区三栏', () => {
 
   it('把文件从侧栏拖到编辑区或标签栏都按预览打开', async () => {
     const fixture = setup()
+    fireEvent.click(await screen.findByText('README.md'))
+    await screen.findByRole('textbox', { name: zh.editorLabel.replace('{name}', 'README.md') })
     fireEvent.click(await screen.findByText('src'))
     await screen.findByTitle('index.ts')
     const tree = document.querySelector('button[role="listitem"][title="index.ts"]') as HTMLElement
-    const transfer = { effectAllowed: 'none', setData: () => {} }
+    const transfer = { effectAllowed: 'none', dropEffect: 'none', setData: () => {} }
     const tabs = screen.getByRole('tablist', { name: zh.openFiles })
+    fireEvent.dragLeave(tabs)
     fireEvent.dragStart(tree, { dataTransfer: transfer })
     fireEvent.dragOver(tabs, { dataTransfer: transfer })
+    expect(screen.getByText(zh.dropFile)).toBeTruthy()
+    expect(transfer.dropEffect).toBe('copy')
+    fireEvent.dragLeave(tabs, { relatedTarget: null })
+    expect(screen.queryByText(zh.dropFile)).toBeNull()
+    fireEvent.dragOver(tabs, { dataTransfer: transfer })
     fireEvent.drop(tabs, { dataTransfer: transfer })
+    expect(screen.queryByText(zh.dropFile)).toBeNull()
     await screen.findByRole('textbox', { name: zh.editorLabel.replace('{name}', 'index.ts') })
     expect(fixture.instance.getSnapshot().views[WORKSPACE_ID]?.panes[0]).toMatchObject({
       paths: ['src/index.ts'], previewPath: 'src/index.ts',
@@ -303,6 +312,12 @@ describe('IDE 工作区三栏', () => {
       .find(row => row.getAttribute('title') === 'util.ts') as HTMLElement
     const body = screen.getAllByRole('region', { name: /编辑器分组/u })[0]?.querySelector('[data-pane-body]') as HTMLElement
     fireEvent.dragStart(other, { dataTransfer: transfer })
+    fireEvent.dragOver(body, { clientX: 10, dataTransfer: transfer })
+    expect(screen.getByText(zh.dropFile)).toBeTruthy()
+    expect(transfer.dropEffect).toBe('copy')
+    fireEvent.dragLeave(body, { relatedTarget: null })
+    expect(screen.queryByText(zh.dropFile)).toBeNull()
+    fireEvent.dragOver(body, { clientX: 10, dataTransfer: transfer })
     fireEvent.drop(body, { clientX: 10, dataTransfer: transfer })
     await screen.findByRole('textbox', { name: zh.editorLabel.replace('{name}', 'util.ts') })
     const split = fixture.instance.getSnapshot().views[WORKSPACE_ID]
@@ -310,16 +325,35 @@ describe('IDE 工作区三栏', () => {
     expect(split?.panes[0]?.paths).toEqual(['src/util.ts'])
   })
 
-  it('拖动文件时编辑区不显示拆分提示', async () => {
+  it('拖动文件时显示打开提示而不显示拆分提示，拖拽结束后回收状态', async () => {
     setup()
     fireEvent.click(await screen.findByText('src'))
     await screen.findByTitle('index.ts')
     const row = document.querySelector('button[role="listitem"][title="index.ts"]') as HTMLElement
+    const main = screen.getByRole('main', { name: zh.title })
     const body = screen.getAllByRole('region', { name: /编辑器分组/u })[0]?.querySelector('[data-pane-body]') as HTMLElement
-    fireEvent.dragStart(row, { dataTransfer: { effectAllowed: 'none', setData: () => {} } })
-    fireEvent.dragOver(body, { clientX: 10 })
+    const transfer = { effectAllowed: 'none', dropEffect: 'none', setData: () => {} }
+    fireEvent.dragStart(row, { dataTransfer: transfer })
+    expect(main.getAttribute('data-dragging')).toBe('file')
+    fireEvent.dragOver(body, { clientX: 10, dataTransfer: transfer })
+    expect(screen.getByText(zh.dropFile)).toBeTruthy()
     expect(screen.queryByText(zh.dropLeft)).toBeNull()
     fireEvent.dragEnd(row)
+    expect(main.hasAttribute('data-dragging')).toBe(false)
+    expect(screen.queryByText(zh.dropFile)).toBeNull()
+  })
+
+  it('Escape 取消文件拖拽且不离开页面', async () => {
+    const fixture = setup()
+    fireEvent.click(await screen.findByText('src'))
+    await screen.findByTitle('index.ts')
+    const row = document.querySelector('button[role="listitem"][title="index.ts"]') as HTMLElement
+    const body = screen.getAllByRole('region', { name: /编辑器分组/u })[0]?.querySelector('[data-pane-body]') as HTMLElement
+    fireEvent.dragStart(row, { dataTransfer: { effectAllowed: 'none', dropEffect: 'none', setData: () => {} } })
+    fireEvent.dragOver(body, { clientX: 10, dataTransfer: { effectAllowed: 'none', dropEffect: 'none', setData: () => {} } })
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(screen.queryByText(zh.dropFile)).toBeNull()
+    expect(fixture.closePage).not.toHaveBeenCalled()
   })
 
   it('失焦自动保存活动草稿', async () => {

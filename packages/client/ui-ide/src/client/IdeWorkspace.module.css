@@ -135,7 +135,13 @@
   border-left: 1px solid var(--dsw-alias-border-l1);
 }
 
+.page[data-dragging='file'],
+.page[data-dragging='file'] button { cursor: copy; }
+.page[data-dragging='tab'],
+.page[data-dragging='tab'] button { cursor: grabbing; }
+
 .paneTabs {
+  position: relative;
   display: flex;
   flex: 0 0 auto;
   align-items: stretch;
@@ -186,3 +192,16 @@
 
 .dropHint[data-side='left'] { left: 0; }
 .dropHint[data-side='right'] { right: 0; }
+
+.fileDropHint {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  border: 1px dashed var(--dsw-alias-state-business-primary);
+  color: var(--dsw-alias-state-business-primary);
+  background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 12%, transparent);
+  font: var(--dsw-font-xs-strong-13);
+}
