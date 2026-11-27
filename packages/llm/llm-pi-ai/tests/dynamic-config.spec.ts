@@ -243,6 +243,41 @@ describe('request-level dynamic profiles', () => {
     expect(server.paths).toEqual(['/v1/responses', '/v1/responses'])
   })
 
+  it('在占用同名目录或路由的其他适配器释放后自动重试注册', async () => {
+    const dir = await home()
+    await writeFile(join(dir, '.credentials.yaml'), 'PI_LIVE_KEY: live-key\nPI_OTHER_KEY: other\n', { mode: 0o600 })
+    const server = await mockServer([{ events: textEvents }])
+    const ctx = await boot(dir, { providers: { openai: { apiKeyEnv: 'PI_LIVE_KEY', baseURL: `${server.url}/v1` } } })
+    const releaseDirectory = ctx.llm.registerConfigurableProviders([{
+      provider: 'acme-gateway', displayName: 'foreign directory', settingsNs: 'foreign', settingsPath: [],
+    }])
+    const releaseRoute = ctx.llm.registerAdapter(['anthropic'], new StubAdapter())
+
+    await ctx.settings.update(NS, {
+      providers: {
+        openai: { apiKeyEnv: 'PI_LIVE_KEY', baseURL: `${server.url}/v1` },
+        anthropic: { apiKeyEnv: 'PI_OTHER_KEY' },
+        'acme-gateway': {
+          apiKeyEnv: 'PI_OTHER_KEY', baseURL: `${server.url}/v1`,
+          models: [{ id: 'acme-model', name: 'Acme Model' }],
+        },
+      },
+    })
+    expect(ctx.llm.listConfigurableProviders().find(entry => entry.provider === 'acme-gateway')?.settingsNs)
+      .toBe('foreign')
+    expect(ctx.llm.listProviders().map(provider => provider.id).sort()).toEqual(['anthropic', 'openai'])
+
+    releaseDirectory()
+    expect(ctx.llm.listConfigurableProviders().find(entry => entry.provider === 'acme-gateway')?.settingsNs)
+      .toBe('llm-pi-ai')
+    expect(ctx.llm.listProviders().map(provider => provider.id).sort()).toEqual(['anthropic', 'openai'])
+
+    releaseRoute()
+    expect(ctx.llm.listProviders().map(provider => provider.id).sort())
+      .toEqual(['acme-gateway', 'anthropic', 'openai'])
+    await expect(ctx.llm.listModels('acme-gateway')).resolves.toHaveLength(1)
+  })
+
   it('ignores a settings document that merely reorders its provider keys', async () => {
     const dir = await home()
     const ctx = await boot(dir, { providers: { openai: {}, anthropic: {} } })
