@@ -39,6 +39,8 @@ export interface IdePaneState {
   /** 组内标签的路径顺序。 */
   paths: string[]
   activePath: string | null
+  /** 组内唯一的临时预览标签；固定标签与草稿都不占这个位置。 */
+  previewPath: string | null
 }
 
 /** 一个工作区的视图状态。 */
@@ -80,7 +82,8 @@ type IdeActions = {
   setDirectory: (draft: IdeState, workspaceId: WorkspaceId, path: string,
     status: IdeDirectoryState['status'], entries?: readonly WorkspaceFileEntry[], truncated?: boolean) => void
   toggleExpanded: (draft: IdeState, workspaceId: WorkspaceId, path: string) => void
-  openTab: (draft: IdeState, workspaceId: WorkspaceId, path: string, name: string, segments: readonly string[]) => void
+  openTab: (draft: IdeState, workspaceId: WorkspaceId, path: string, name: string,
+    segments: readonly string[], mode?: 'preview' | 'pinned') => void
   reloadTab: (draft: IdeState, workspaceId: WorkspaceId, path: string, name: string, segments: readonly string[]) => void
   readyTab: (draft: IdeState, workspaceId: WorkspaceId, path: string, content: string, version: string) => void
   updateTab: (draft: IdeState, workspaceId: WorkspaceId, path: string, content: string) => void
@@ -89,6 +92,8 @@ type IdeActions = {
     status?: 'error' | 'unsupported' | 'ready') => void
   /** 聚焦分组并激活其中的标签。 */
   activateTab: (draft: IdeState, workspaceId: WorkspaceId, paneId: string, path: string) => void
+  /** 把指定分组里的预览标签转为固定标签。 */
+  pinTab: (draft: IdeState, workspaceId: WorkspaceId, paneId: string, path: string) => void
   /** 关闭标签；组内最后一个标签关闭后移除该组，只保留唯一分组。 */
   closeTab: (draft: IdeState, workspaceId: WorkspaceId, path: string) => void
   /** 把标签移到另一个分组（已在其中时只切换活动文件）。 */
@@ -107,7 +112,10 @@ type IdeActions = {
 
 /** 新建一个空的单分组视图；组件在没有记录时用它渲染空态。 */
 export function emptyView(): IdeWorkspaceView {
-  return { documents: {}, directories: {}, expanded: [], panes: [{ id: 'pane-0', paths: [], activePath: null }], activePaneId: 'pane-0' }
+  return {
+    documents: {}, directories: {}, expanded: [], activePaneId: 'pane-0',
+    panes: [{ id: 'pane-0', paths: [], activePath: null, previewPath: null }],
+  }
 }
 
 /** 取出（必要时创建并写回）一个工作区的视图状态。 */
@@ -125,12 +133,6 @@ function paneOf(target: IdeWorkspaceView, paneId: string): IdePaneState | undefi
 }
 
 /**
- * 取当前聚焦的分组；`activePaneId` 指向已收起的分组时退回第一个分组。
- *
- * `pruneEmptyPanes` 保证分组列表始终非空，因此首项真实存在；列表为空只可能来自
- * 绕过 store 写法的外部篡改，这里直接报错而不是静默创建分组。
- */
-/**
  * 取分组列表里的某一项；索引已被调用点确认可达，越界只可能是外部篡改。
  * @param target - 目标工作区视图。
  * @param index - 已确认范围内的下标。
@@ -145,7 +147,7 @@ function paneAt(target: IdeWorkspaceView, index: number): IdePaneState {
 
 /** 建一个新分组并返回它；id 在同一工作区内单调递增。 */
 function newPane(draft: IdeState): IdePaneState {
-  const pane: IdePaneState = { id: `pane-${draft.nextPaneSeq}`, paths: [], activePath: null }
+  const pane: IdePaneState = { id: `pane-${draft.nextPaneSeq}`, paths: [], activePath: null, previewPath: null }
   draft.nextPaneSeq += 1
   return pane
 }
@@ -155,6 +157,7 @@ function retirePath(pane: IdePaneState, path: string): void {
   const index = pane.paths.indexOf(path)
   if (index < 0) return
   pane.paths.splice(index, 1)
+  if (pane.previewPath === path) pane.previewPath = null
   if (pane.activePath !== path) return
   pane.activePath = pane.paths[index] ?? pane.paths[index - 1] ?? null
 }
@@ -169,7 +172,7 @@ function detachPath(target: IdeWorkspaceView, path: string): void {
 function pruneEmptyPanes(target: IdeWorkspaceView): void {
   const kept = target.panes.filter(pane => pane.paths.length > 0)
   if (kept.length === 0) {
-    target.panes = [{ id: 'pane-0', paths: [], activePath: null }]
+    target.panes = [{ id: 'pane-0', paths: [], activePath: null, previewPath: null }]
     target.activePaneId = 'pane-0'
     return
   }
@@ -201,6 +204,27 @@ function attachPath(target: IdeWorkspaceView, destination: IdePaneState, path: s
   destination.activePath = path
   target.activePaneId = destination.id
   pruneEmptyPanes(target)
+}
+
+/** 路径是否仍被任一分组引用；预览替换只删除已经没有标签的正文。 */
+function pathInUse(target: IdeWorkspaceView, path: string): boolean {
+  return target.panes.some(pane => pane.paths.includes(path))
+}
+
+/** 移除不再被任何分组引用的文件正文。 */
+function discardUnused(target: IdeWorkspaceView, path: string): void {
+  if (!pathInUse(target, path)) Reflect.deleteProperty(target.documents, path)
+}
+
+/** 用新的预览标签替换组内旧预览；旧预览被别的分组引用时只移出本组。 */
+function replacePreview(target: IdeWorkspaceView, pane: IdePaneState, path: string): void {
+  const previous = pane.previewPath
+  if (previous !== null && previous !== path) {
+    retirePath(pane, previous)
+    discardUnused(target, previous)
+  }
+  attachPath(target, pane, path)
+  pane.previewPath = path
 }
 
 /**
@@ -238,7 +262,7 @@ export function createIdeStore(): EngineStoreHandle<IdeState, IdeActions> {
           ? target.expanded.filter(candidate => candidate !== path)
           : [...target.expanded, path]
       },
-      openTab: (draft, workspaceId, path, name, segments) => {
+      openTab: (draft, workspaceId, path, name, segments, mode = 'pinned') => {
         const target = view(draft, workspaceId)
         const existing = target.documents[path]
         if (existing === undefined) {
@@ -247,15 +271,24 @@ export function createIdeStore(): EngineStoreHandle<IdeState, IdeActions> {
             dirty: false, status: 'loading',
           }
         }
-        attachPath(target, focusedPane(target), path)
+        const pane = focusedPane(target)
+        if (mode === 'preview' && !pane.paths.includes(path)) {
+          replacePreview(target, pane, path)
+          return
+        }
+        if (pane.previewPath === path && mode === 'pinned') pane.previewPath = null
+        attachPath(target, pane, path)
       },
       reloadTab: (draft, workspaceId, path, name, segments) => {
         const target = view(draft, workspaceId)
+        const pane = focusedPane(target)
+        const preview = pane.previewPath === path
         target.documents[path] = {
           path, name, segments: [...segments], content: '', savedContent: '', version: '',
           dirty: false, status: 'loading',
         }
-        attachPath(target, focusedPane(target), path)
+        attachPath(target, pane, path)
+        if (preview) pane.previewPath = path
       },
       readyTab: (draft, workspaceId, path, content, version) => {
         const document = view(draft, workspaceId).documents[path]
@@ -268,10 +301,16 @@ export function createIdeStore(): EngineStoreHandle<IdeState, IdeActions> {
         delete document.error
       },
       updateTab: (draft, workspaceId, path, content) => {
-        const document = view(draft, workspaceId).documents[path]
+        const target = view(draft, workspaceId)
+        const document = target.documents[path]
         if (document === undefined || document.status === 'loading') return
         document.content = content
         document.dirty = content !== document.savedContent
+        if (document.dirty) {
+          for (const pane of target.panes) {
+            if (pane.previewPath === path) pane.previewPath = null
+          }
+        }
       },
       savedTab: (draft, workspaceId, path, version, savedContent) => {
         const document = view(draft, workspaceId).documents[path]
@@ -295,6 +334,10 @@ export function createIdeStore(): EngineStoreHandle<IdeState, IdeActions> {
         pane.activePath = path
         target.activePaneId = pane.id
       },
+      pinTab: (draft, workspaceId, paneId, path) => {
+        const pane = paneOf(view(draft, workspaceId), paneId)
+        if (pane?.previewPath === path) pane.previewPath = null
+      },
       closeTab: (draft, workspaceId, path) => {
         const target = view(draft, workspaceId)
         detachPath(target, path)
@@ -306,7 +349,9 @@ export function createIdeStore(): EngineStoreHandle<IdeState, IdeActions> {
         // 只搬已经打开的标签：未知路径不进入分组，避免留下打不开的标签。
         const destination = paneOf(target, paneId)
         if (destination === undefined || target.documents[path] === undefined) return
+        const preview = target.panes.some(pane => pane.previewPath === path)
         attachPath(target, destination, path)
+        if (preview) replacePreview(target, destination, path)
       },
       splitTab: (draft, workspaceId, path, paneId, side, mode = 'move') => {
         const target = view(draft, workspaceId)
@@ -320,6 +365,7 @@ export function createIdeStore(): EngineStoreHandle<IdeState, IdeActions> {
         target.panes.splice(index + (side === 'right' ? 1 : 0), 0, pane)
         pane.paths = [path]
         pane.activePath = path
+        pane.previewPath = source.previewPath === path ? path : null
         if (mode === 'move') retirePath(source, path)
         target.activePaneId = pane.id
         pruneEmptyPanes(target)
@@ -339,6 +385,9 @@ export function createIdeStore(): EngineStoreHandle<IdeState, IdeActions> {
         const neighbour = index > 0 ? paneAt(target, index - 1) : paneAt(target, index + 1)
         for (const path of [...pane.paths]) {
           if (!neighbour.paths.includes(path)) neighbour.paths.push(path)
+        }
+        if (pane.previewPath !== null && neighbour.previewPath === null) {
+          neighbour.previewPath = pane.previewPath
         }
         // 被关闭分组的活动文件在相邻分组里接着选中；非空分组总有活动文件。
         /* v8 ignore next -- 有标签的分组始终有活动文件，`??` 右侧是不可达的兜底。 */

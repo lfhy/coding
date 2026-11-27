@@ -5,7 +5,7 @@ export type IdeLocaleKey =
   | 'nav' | 'title' | 'headline' | 'description' | 'openFolder'
   | 'recent' | 'empty' | 'loading' | 'error' | 'entryError' | 'workspaceError'
   | 'files' | 'treeEmpty' | 'treeError' | 'treeTruncated' | 'retry'
-  | 'openFiles' | 'unsaved' | 'closeFile' | 'close' | 'editorLabel' | 'plainText' | 'lineColumn'
+  | 'openFiles' | 'openEditors' | 'noOpenEditors' | 'previewTabHint' | 'unsaved' | 'closeFile' | 'close' | 'editorLabel' | 'plainText' | 'lineColumn'
   | 'tooLarge' | 'unsupported' | 'loadError' | 'conflictKept' | 'draftKept' | 'reload'
   | 'editor' | 'saving' | 'saved' | 'save' | 'saveShortcut' | 'assistant'
   | 'workspaceHeadline' | 'workspaceDescription'
@@ -20,7 +20,8 @@ export const zh: Record<IdeLocaleKey, string> = {
   loading: '正在读取工作区…', error: '无法读取工作区，请稍后重试。',
   entryError: '无法打开代码工作区，请重试。', workspaceError: '无法打开工作区，请重试。',
   files: '文件', treeEmpty: '这个目录还没有文件。', treeError: '无法读取目录。', treeTruncated: '目录条目较多，仅显示前面部分。',
-  retry: '重试', openFiles: '打开的文件', unsaved: '未保存', closeFile: '关闭 {name}', close: '关闭',
+  retry: '重试', openFiles: '打开的文件', openEditors: '打开的编辑器', noOpenEditors: '没有打开的编辑器',
+  previewTabHint: '双击固定标签页', unsaved: '未保存', closeFile: '关闭 {name}', close: '关闭',
   editorLabel: '{name} 编辑器', plainText: '纯文本', lineColumn: '第 {line} 行，第 {column} 列',
   tooLarge: '文件太大，无法在编辑器中打开。', unsupported: '这种文件暂时只能在外部应用中查看。',
   loadError: '无法读取文件，请重试。', conflictKept: '文件已被其他操作修改，当前草稿已保留。', draftKept: '保存失败，当前草稿已保留。',
@@ -41,7 +42,8 @@ export const en: Record<IdeLocaleKey, string> = {
   loading: 'Loading workspaces…', error: 'Could not load workspaces. Try again later.',
   entryError: 'Could not open the code workspace. Try again.', workspaceError: 'Could not open the workspace. Try again.',
   files: 'Files', treeEmpty: 'This directory is empty.', treeError: 'Could not load this directory.', treeTruncated: 'This directory is large; only the first entries are shown.',
-  retry: 'Retry', openFiles: 'Open files', unsaved: 'Unsaved', closeFile: 'Close {name}', close: 'Close',
+  retry: 'Retry', openFiles: 'Open files', openEditors: 'Open Editors', noOpenEditors: 'No open editors',
+  previewTabHint: 'Double-click to pin tab', unsaved: 'Unsaved', closeFile: 'Close {name}', close: 'Close',
   editorLabel: '{name} editor', plainText: 'Plain text', lineColumn: 'Ln {line}, Col {column}',
   tooLarge: 'This file is too large to open in the editor.', unsupported: 'This file type can only be opened in an external app for now.',
   loadError: 'Could not read this file. Try again.', conflictKept: 'This file changed elsewhere. Your draft is preserved.', draftKept: 'Saving failed. Your draft is preserved.',

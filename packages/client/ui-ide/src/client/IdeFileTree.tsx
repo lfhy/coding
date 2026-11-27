@@ -3,6 +3,7 @@ import { useMemo } from 'react'
 import { Button, SidebarRoot, type SidebarRootItem } from 'coding-client-ui-primitives'
 import type { PropsLocale } from 'coding-client-ui-slots'
 import type { IdeDirectoryState } from './ide-store.ts'
+import { IdeOpenEditors, type IdeOpenEditorRow } from './IdeOpenEditors.tsx'
 import { NS } from './locales.ts'
 import css from './IdeFileTree.module.css'
 
@@ -13,8 +14,11 @@ interface IdeFileTreeProps {
   directories: Readonly<Record<string, IdeDirectoryState>>
   expanded: readonly string[]
   activePath: string | null
+  openEditors: readonly IdeOpenEditorRow[]
   onToggle: (path: string) => void
   onOpen: (path: string, name: string, segments: readonly string[]) => void
+  onActivateEditor: (paneId: string, path: string) => void
+  onPinEditor: (paneId: string, path: string) => void
   onRetry: () => void
   t: PropsLocale<typeof NS>['t']
 }
@@ -59,7 +63,8 @@ function treeItems(
 
 /** 文件树列；展开状态与已加载层级由页面 store 保存。 */
 export function IdeFileTree({
-  title, collapsed, width, directories, expanded, activePath, onToggle, onOpen, onRetry, t,
+  title, collapsed, width, directories, expanded, activePath, openEditors,
+  onToggle, onOpen, onActivateEditor, onPinEditor, onRetry, t,
 }: IdeFileTreeProps) {
   const items = useMemo(
     () => treeItems(directories, expanded, activePath, onToggle, onOpen),
@@ -68,6 +73,8 @@ export function IdeFileTree({
   const root = directories['']
   const failed = root?.status === 'error'
   return <SidebarRoot label={t('files')} title={title} collapsed={collapsed} width={width}
+    header={<IdeOpenEditors items={openEditors} collapsed={collapsed}
+      onActivate={onActivateEditor} onPin={onPinEditor} t={t} />}
     items={items}
     empty={root?.status === 'loading' ? t('loading') : t('treeEmpty')}
     toolbar={failed ? <div className={css.treeError} role="alert">

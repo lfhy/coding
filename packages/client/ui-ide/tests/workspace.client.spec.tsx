@@ -155,6 +155,17 @@ describe('IDE 工作区三栏', () => {
     expect(fixture.instance.getSnapshot().views[WORKSPACE_ID]?.documents['src/index.ts']?.dirty).toBe(false)
   })
 
+  it('打开编辑器列表可激活文件并双击固定预览', async () => {
+    const fixture = setup()
+    await openIndex(fixture)
+    const opened = within(screen.getByRole('region', { name: zh.openEditors }))
+      .getByRole('button', { name: /index\.ts/ })
+    fireEvent.click(opened)
+    expect(fixture.instance.getSnapshot().views[WORKSPACE_ID]?.panes[0]?.activePath).toBe('src/index.ts')
+    fireEvent.doubleClick(opened)
+    expect(fixture.instance.getSnapshot().views[WORKSPACE_ID]?.panes[0]?.previewPath).toBeNull()
+  })
+
   it('保存冲突保留草稿，确认重新载入后恢复服务端内容', async () => {
     const fixture = setup({
       save: async () => ({ ok: false, error: { status: 409, code: 'file-conflict' } }),
@@ -263,6 +274,7 @@ describe('IDE 工作区三栏', () => {
     const fixture = setup()
     fireEvent.click(await screen.findByText('README.md'))
     await screen.findByRole('textbox', { name: zh.editorLabel.replace('{name}', 'README.md') })
+    fireEvent.doubleClick(screen.getByRole('tab', { name: /README\.md/ }))
     await openIndex(fixture)
     fireEvent.click(screen.getByRole('tab', { name: /README\.md/ }))
     expect(screen.getByRole('tab', { name: /README\.md/ }).getAttribute('aria-selected')).toBe('true')
@@ -288,7 +300,7 @@ describe('IDE 工作区三栏', () => {
     await screen.findByRole('textbox')
     fireEvent.click(screen.getByText('src'))
     fireEvent.click(screen.getByText('src'))
-    fireEvent.click(screen.getByTitle('index.ts'))
+    fireEvent.click(document.querySelector('button[role="listitem"][title="index.ts"]') as Element)
     expect(fixture.list.mock.calls.filter(call => call[1].length === 1)).toHaveLength(1)
     expect(fixture.read).toHaveBeenCalledOnce()
   })
@@ -420,6 +432,7 @@ describe('IDE 工作区三栏', () => {
   it('拖动标签到编辑区侧边形成新分组，拖动到另一组标签栏则移动标签', async () => {
     const fixture = setup()
     await openIndex(fixture)
+    fireEvent.doubleClick(screen.getByRole('tab', { name: /index\.ts/ }))
     fireEvent.click(screen.getByText('util.ts'))
     await screen.findByRole('textbox', { name: zh.editorLabel.replace('{name}', 'util.ts') })
     const transfer = { effectAllowed: 'none', setData: () => {} }
@@ -463,6 +476,7 @@ describe('IDE 编辑器分组交互', () => {
   it('拖动落点按指针所在半区判定，未拖动时落点与拖出事件都不改状态', async () => {
     const fixture = setup()
     await openIndex(fixture)
+    fireEvent.doubleClick(screen.getByRole('tab', { name: /index\.ts/ }))
     fireEvent.click(screen.getByText('util.ts'))
     await screen.findByRole('textbox', { name: zh.editorLabel.replace('{name}', 'util.ts') })
     const transfer = { effectAllowed: 'none', setData: () => {} }

@@ -64,6 +64,11 @@
   white-space: nowrap;
 }
 
+.tab[data-preview] .label {
+  padding-right: 1px;
+  font-style: italic;
+}
+
 .dirty {
   width: 6px;
   height: 6px;

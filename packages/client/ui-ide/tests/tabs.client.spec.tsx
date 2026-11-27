@@ -2,28 +2,30 @@
 /** 文件标签的鼠标、键盘导航、关闭与拖拽起点。 */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
-import { IdeTabs } from '../src/client/IdeTabs.tsx'
+import { IdeTabs, type IdeTabDocument } from '../src/client/IdeTabs.tsx'
 import type { IdeDocument } from '../src/client/ide-store.ts'
 import { zh } from '../src/client/locales.ts'
 import { translate } from './translate.client.ts'
 
 afterEach(() => { cleanup() })
 
-function tab(path: string, dirty = false): IdeDocument {
-  return {
+function tab(path: string, dirty = false, preview = false): IdeTabDocument {
+  const document: IdeDocument = {
     path, name: path, segments: [path], content: '', savedContent: '', version: 'v1', dirty, status: 'ready',
   }
+  return { ...document, preview }
 }
 
 function setup(activePath: string | null = 'b.ts', paneId = 'pane-0') {
   const onActivate = vi.fn()
   const onClose = vi.fn()
+  const onPin = vi.fn()
   const onDragStart = vi.fn()
   const onDragEnd = vi.fn()
-  const tabs = [tab('a.ts'), tab('b.ts', true), tab('c.ts')]
+  const tabs = [tab('a.ts', false, true), tab('b.ts', true), tab('c.ts', false, true)]
   const view = render(<IdeTabs tabs={tabs} activePath={activePath} paneId={paneId}
-    onActivate={onActivate} onClose={onClose} onDragStart={onDragStart} onDragEnd={onDragEnd} t={translate} />)
-  return { ...view, onActivate, onClose, onDragStart, onDragEnd }
+    onActivate={onActivate} onClose={onClose} onPin={onPin} onDragStart={onDragStart} onDragEnd={onDragEnd} t={translate} />)
+  return { ...view, onActivate, onClose, onPin, onDragStart, onDragEnd }
 }
 
 describe('IDE 文件标签', () => {
@@ -76,5 +78,18 @@ describe('IDE 文件标签', () => {
   it('标签的 aria-controls 指向本分组的编辑器面板', () => {
     setup('b.ts', 'pane-7')
     expect(screen.getByRole('tab', { name: /b\.ts/ }).getAttribute('aria-controls')).toBe('ide-editor-panel-pane-7')
+  })
+
+  it('预览标签使用斜体提示，双击只固定预览标签', () => {
+    const { onPin } = setup()
+    const preview = screen.getByRole('tab', { name: /a\.ts/ })
+    const pinned = screen.getByRole('tab', { name: /b\.ts/ })
+    expect(preview.title).toBe(zh.previewTabHint)
+    expect(preview.closest('[data-preview]')).not.toBeNull()
+    expect(pinned.closest('[data-preview]')).toBeNull()
+    fireEvent.doubleClick(preview)
+    fireEvent.doubleClick(pinned)
+    expect(onPin).toHaveBeenCalledOnce()
+    expect(onPin).toHaveBeenCalledWith('a.ts')
   })
 })

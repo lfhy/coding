@@ -215,4 +215,94 @@ describe('IDE 工作区 store', () => {
     store.actions.closePane(A, 'missing')
     expect(store.getSnapshot().views[A]?.activePaneId).toBe('pane-0')
   })
+
+  it('预览标签逐个替换，固定标签与草稿不会被替换', () => {
+    const store = setup()
+    store.actions.enter(A)
+    store.actions.openTab(A, 'a.ts', 'a.ts', ['a.ts'], 'preview')
+    expect(store.getSnapshot().views[A]?.panes[0]).toMatchObject({ paths: ['a.ts'], previewPath: 'a.ts' })
+    store.actions.openTab(A, 'b.ts', 'b.ts', ['b.ts'], 'preview')
+    expect(store.getSnapshot().views[A]?.documents['a.ts']).toBeUndefined()
+    expect(store.getSnapshot().views[A]?.panes[0]).toMatchObject({ paths: ['b.ts'], previewPath: 'b.ts' })
+
+    store.actions.openTab(A, 'fixed.ts', 'fixed.ts', ['fixed.ts'])
+    store.actions.openTab(A, 'b.ts', 'b.ts', ['b.ts'], 'preview')
+    expect(store.getSnapshot().views[A]?.panes[0]).toMatchObject({
+      paths: ['b.ts', 'fixed.ts'], activePath: 'b.ts', previewPath: 'b.ts',
+    })
+    store.actions.pinTab(A, 'pane-0', 'b.ts')
+    store.actions.pinTab(A, 'missing', 'b.ts')
+    expect(store.getSnapshot().views[A]?.panes[0]?.previewPath).toBeNull()
+
+    store.actions.openTab(A, 'next.ts', 'next.ts', ['next.ts'], 'preview')
+    store.actions.readyTab(A, 'next.ts', 'old', 'v1')
+    store.actions.updateTab(A, 'next.ts', 'draft')
+    expect(store.getSnapshot().views[A]?.panes[0]?.previewPath).toBeNull()
+    store.actions.openTab(A, 'last.ts', 'last.ts', ['last.ts'], 'preview')
+    expect(store.getSnapshot().views[A]?.panes[0]?.paths).toEqual(['b.ts', 'fixed.ts', 'next.ts', 'last.ts'])
+    expect(store.getSnapshot().views[A]?.panes[0]?.previewPath).toBe('last.ts')
+    store.actions.closeTab(A, 'last.ts')
+    expect(store.getSnapshot().views[A]?.panes[0]?.previewPath).toBeNull()
+  })
+
+  it('预览状态随拆分与移动保留，并在目标分组替换旧预览', () => {
+    const store = setup()
+    store.actions.enter(A)
+    store.actions.openTab(A, 'fixed.ts', 'fixed.ts', ['fixed.ts'])
+    store.actions.openTab(A, 'preview.ts', 'preview.ts', ['preview.ts'], 'preview')
+    store.actions.splitTab(A, 'preview.ts', 'pane-0', 'right')
+    const split = store.getSnapshot().views[A]
+    expect(split?.panes.map(pane => pane.previewPath)).toEqual([null, 'preview.ts'])
+    const right = split?.panes[1]?.id as string
+
+    store.actions.focusPane(A, 'pane-0')
+    store.actions.openTab(A, 'other.ts', 'other.ts', ['other.ts'], 'preview')
+    store.actions.moveTab(A, 'preview.ts', 'pane-0')
+    expect(store.getSnapshot().views[A]?.panes[0]).toMatchObject({
+      paths: ['fixed.ts', 'preview.ts'], activePath: 'preview.ts', previewPath: 'preview.ts',
+    })
+    expect(store.getSnapshot().views[A]?.documents['other.ts']).toBeUndefined()
+    expect(store.getSnapshot().views[A]?.panes.some(pane => pane.id === right)).toBe(false)
+
+    store.actions.openTab(A, 'preview.ts', 'preview.ts', ['preview.ts'], 'preview')
+    expect(store.getSnapshot().views[A]?.panes[0]?.previewPath).toBe('preview.ts')
+  })
+
+  it('固定动作可把当前预览转为固定，复制预览被替换时保留共享正文', () => {
+    const store = setup()
+    store.actions.enter(A)
+    store.actions.openTab(A, 'a.ts', 'a.ts', ['a.ts'], 'preview')
+    store.actions.openTab(A, 'a.ts', 'a.ts', ['a.ts'], 'pinned')
+    expect(store.getSnapshot().views[A]?.panes[0]?.previewPath).toBeNull()
+
+    store.actions.openTab(A, 'preview.ts', 'preview.ts', ['preview.ts'], 'preview')
+    store.actions.splitTab(A, 'preview.ts', 'pane-0', 'right', 'copy')
+    store.actions.focusPane(A, 'pane-0')
+    store.actions.openTab(A, 'next.ts', 'next.ts', ['next.ts'], 'preview')
+    expect(store.getSnapshot().views[A]?.documents['preview.ts']).toBeDefined()
+    expect(store.getSnapshot().views[A]?.panes.map(pane => pane.paths)).toEqual([
+      ['a.ts', 'next.ts'], ['preview.ts'],
+    ])
+  })
+
+  it('关闭分组时保留目标已有预览，否则接管来源预览', () => {
+    const store = setup()
+    store.actions.enter(A)
+    store.actions.openTab(A, 'fixed.ts', 'fixed.ts', ['fixed.ts'])
+    store.actions.openTab(A, 'preview.ts', 'preview.ts', ['preview.ts'], 'preview')
+    store.actions.splitTab(A, 'preview.ts', 'pane-0', 'right', 'copy')
+    store.actions.focusPane(A, 'pane-0')
+    store.actions.openTab(A, 'left-preview.ts', 'left-preview.ts', ['left-preview.ts'], 'preview')
+    const right = store.getSnapshot().views[A]?.panes[1]?.id as string
+    store.actions.closePane(A, right)
+    expect(store.getSnapshot().views[A]?.panes[0]?.previewPath).toBe('left-preview.ts')
+
+    store.actions.openTab(A, 'right-preview.ts', 'right-preview.ts', ['right-preview.ts'], 'preview')
+    store.actions.splitTab(A, 'right-preview.ts', 'pane-0', 'right')
+    const moved = store.getSnapshot().views[A]?.panes[1]?.id as string
+    store.actions.focusPane(A, 'pane-0')
+    store.actions.pinTab(A, 'pane-0', 'left-preview.ts')
+    store.actions.closePane(A, moved)
+    expect(store.getSnapshot().views[A]?.panes[0]?.previewPath).toBe('right-preview.ts')
+  })
 })

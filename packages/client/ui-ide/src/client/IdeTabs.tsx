@@ -6,14 +6,19 @@ import type { IdeDocument } from './ide-store.ts'
 import { NS } from './locales.ts'
 import css from './IdeTabs.module.css'
 
+/** 标签文档加上当前分组决定的预览状态。 */
+export type IdeTabDocument = IdeDocument & { preview: boolean }
+
 interface IdeTabsProps {
   /** 本分组已打开的文件，顺序即显示顺序。 */
-  tabs: readonly IdeDocument[]
+  tabs: readonly IdeTabDocument[]
   activePath: string | null
   /** 本分组身份；拖拽与移动动作都要带上它。 */
   paneId: string
   onActivate: (paneId: string, path: string) => void
   onClose: (path: string) => void
+  /** 双击预览标签时固定；固定标签不响应这个动作。 */
+  onPin: (path: string) => void
   /** 拖拽开始；由工作区记录被拖动的标签，供落点判断。 */
   onDragStart: (paneId: string, path: string) => void
   onDragEnd: () => void
@@ -22,7 +27,7 @@ interface IdeTabsProps {
 
 /** 标签栏只显示文件身份与未保存状态，不承载编辑操作。 */
 export function IdeTabs({
-  tabs, activePath, paneId, onActivate, onClose, onDragStart, onDragEnd, t,
+  tabs, activePath, paneId, onActivate, onClose, onPin, onDragStart, onDragEnd, t,
 }: IdeTabsProps) {
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
     if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
@@ -47,12 +52,15 @@ export function IdeTabs({
   return <div className={css.tabs} role="tablist" aria-label={t('openFiles')} onKeyDown={onKeyDown}
     data-pane={paneId}>
     {tabs.map(tab => <div key={tab.path} className={css.tab} data-active={tab.path === activePath ? '' : undefined}
+      data-preview={tab.preview ? '' : undefined}
       draggable
       onDragStart={(event) => { startDrag(event, tab.path) }}
       onDragEnd={onDragEnd}>
       <button id={`ide-tab-${encodeURIComponent(tab.path)}`} type="button" role="tab"
         aria-selected={tab.path === activePath} aria-controls={`ide-editor-panel-${paneId}`} tabIndex={tab.path === activePath ? 0 : -1}
-        className={css.tabButton} title={tab.path} onClick={() => { onActivate(paneId, tab.path) }}>
+        className={css.tabButton} title={tab.preview ? t('previewTabHint') : tab.name}
+        onClick={() => { onActivate(paneId, tab.path) }}
+        onDoubleClick={() => { if (tab.preview) onPin(tab.path) }}>
         <Icon name="file" size={14} />
         <span className={css.label}>{tab.name}</span>
         {tab.dirty && <span className={css.dirty} aria-label={t('unsaved')} />}

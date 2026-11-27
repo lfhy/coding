@@ -11,7 +11,8 @@ import type { WorkspaceFilesService } from 'coding-client-ui-open-in-app/client'
 import { dropSideOf } from './ide-drag.ts'
 import { IdeEditor } from './IdeEditor.tsx'
 import { IdeFileTree } from './IdeFileTree.tsx'
-import { IdeTabs } from './IdeTabs.tsx'
+import type { IdeOpenEditorRow } from './IdeOpenEditors.tsx'
+import { IdeTabs, type IdeTabDocument } from './IdeTabs.tsx'
 import { focusedPane } from './ide-store.ts'
 import type { IdeActionsBaked, IdeDocument, IdePaneState, IdeSplitSide, IdeWorkspaceView } from './ide-store.ts'
 import { NS } from './locales.ts'
@@ -45,11 +46,32 @@ function segmentsOf(path: string): string[] {
   return path === '' ? [] : path.split('/')
 }
 
-/** 分组内的标签按 store 顺序取出文档快照。 */
-function documentsOf(view: IdeWorkspaceView, pane: IdePaneState): IdeDocument[] {
+/** 分组内的标签按 store 顺序取出文档快照，并附加本组的预览状态。 */
+function documentsOf(view: IdeWorkspaceView, pane: IdePaneState): IdeTabDocument[] {
   return pane.paths
     .map(path => view.documents[path])
     .filter((document): document is IdeDocument => document !== undefined)
+    .map(document => ({ ...document, preview: pane.previewPath === document.path }))
+}
+
+/** 打开编辑器按首次出现顺序去重；任一分组固定同一文件时不再显示为预览。 */
+function openEditorsOf(view: IdeWorkspaceView): IdeOpenEditorRow[] {
+  const rows: IdeOpenEditorRow[] = []
+  const seen = new Set<string>()
+  for (const pane of view.panes) {
+    for (const document of documentsOf(view, pane)) {
+      if (seen.has(document.path)) continue
+      seen.add(document.path)
+      const instances = view.panes.filter(candidate => candidate.paths.includes(document.path))
+      rows.push({
+        path: document.path, name: document.name, paneId: pane.id,
+        active: pane.id === view.activePaneId && pane.activePath === document.path,
+        dirty: document.dirty,
+        preview: instances.every(candidate => candidate.previewPath === document.path),
+      })
+    }
+  }
+  return rows
 }
 
 /** 工作区 IDE 内容；请求生命周期与保存冲突都留在当前页面实例内。 */
@@ -60,6 +82,7 @@ export function IdeWorkspace({
   const workspaceId = workspace.workspaceId
   const activePane = focusedPane(view)
   const active = activePane.activePath === null ? undefined : view.documents[activePane.activePath]
+  const openEditors = openEditorsOf(view)
   const [savingPath, setSavingPath] = useState<string | null>(null)
   const [closePending, setClosePending] = useState<string | null>(null)
   const [reloadPending, setReloadPending] = useState<string | null>(null)
@@ -133,7 +156,7 @@ export function IdeWorkspace({
 
   const openFile = (path: string, name: string, segments: readonly string[]): void => {
     const existing = view.documents[path]
-    actions.openTab(workspaceId, path, name, segments)
+    actions.openTab(workspaceId, path, name, segments, 'preview')
     if (existing === undefined) void readDocument({ path, name, segments })
   }
 
@@ -245,7 +268,10 @@ export function IdeWorkspace({
   return <main className={css.page} style={pageStyle} aria-label={t('title')}>
     <IdeFileTree title={workspace.title} collapsed={sidebarCollapsed} width={sidebarWidth}
       directories={view.directories} expanded={view.expanded} activePath={activePane.activePath}
-      onToggle={toggleDirectory} onOpen={openFile} onRetry={() => { void loadDirectory('') }} t={t} />
+      openEditors={openEditors} onToggle={toggleDirectory} onOpen={openFile}
+      onActivateEditor={(paneId, path) => { actions.activateTab(workspaceId, paneId, path) }}
+      onPinEditor={(paneId, path) => { actions.pinTab(workspaceId, paneId, path) }}
+      onRetry={() => { void loadDirectory('') }} t={t} />
     <section className={css.work} aria-label={t('editor')}>
       <header className={css.header}>
         <span className={css.headerIcon} aria-hidden="true"><IconCodeOutline16 size={18} /></span>
@@ -302,6 +328,7 @@ export function IdeWorkspace({
               <IdeTabs tabs={tabDocuments} activePath={pane.activePath} paneId={pane.id}
                 onActivate={(paneId, path) => { actions.activateTab(workspaceId, paneId, path) }}
                 onClose={requestClose}
+                onPin={(path) => { actions.pinTab(workspaceId, pane.id, path) }}
                 onDragStart={(paneId, path) => { setDragging({ paneId, path }); setDropHint(null) }}
                 onDragEnd={() => { setDragging(null); setDropHint(null) }} t={t} />
               {view.panes.length > 1 && <button type="button" className={css.closePane}
