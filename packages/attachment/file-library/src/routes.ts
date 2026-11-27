@@ -245,6 +245,27 @@ export function installFileRoutes(ctx: Context, service: FileLibrary): void {
       },
     }), 'file-library: POST /api/notes/rename')
     webCtx.effect(() => webCtx.webServer.register({
+      kind: 'exact', path: '/api/notes/move',
+      handler: async (req, res) => {
+        if (!trusted(webCtx, req, res)) return
+        if (req.method !== 'POST') { res.writeHead(405, { allow: 'POST' }); res.end(); return }
+        try {
+          const body = await readJsonBody(req)
+          if (typeof body.path !== 'string' || typeof body.directory !== 'string'
+            || body.before !== undefined && body.before !== null && typeof body.before !== 'string') {
+            throw new TypeError('移动载荷无效')
+          }
+          json(res, 200, await service.moveNote(body.path, body.directory, body.before))
+        } catch (error) {
+          if (error instanceof NoteConflictError) { json(res, 409, { error: error.message }); return }
+          if (error instanceof NoteNotFoundError) { json(res, 404, { error: error.message }); return }
+          if (error instanceof TypeError) { json(res, 400, { error: error.message }); return }
+          webCtx.logger.warn('file-library notes move request failed', error)
+          json(res, 503, { error: '笔记暂不可移动' })
+        }
+      },
+    }), 'file-library: POST /api/notes/move')
+    webCtx.effect(() => webCtx.webServer.register({
       kind: 'exact', path: '/api/notes/delete',
       handler: async (req, res) => {
         if (!trusted(webCtx, req, res)) return

@@ -14,6 +14,7 @@ import {
 } from './notes-tree.ts'
 import type { createNotesUiStore } from './notes-ui-store.ts'
 import { useNoteDraft } from './useNoteDraft.ts'
+import { useNoteMove } from './useNoteMove.ts'
 import { usePublishNotesTabs } from './usePublishNotesTabs.ts'
 import {
   notesCreate, notesCreateDirectory, notesCreateMindmap, notesCreateOffice, notesCreateSlide, notesDelete, notesRename, notesTree,
@@ -238,6 +239,10 @@ export function NotesPage({
     setTree(fresh)
     return fresh
   }, [])
+
+  const moveEntry = useNoteMove({
+    creatingRequest, setCreating, setExpanded, flush, renamePath, actions, refreshTree, treeRevision, seenNotes, notify,
+  })
 
   const openCreateDialog = useCallback((kind: NoteCreateKind, path: string, trigger: HTMLButtonElement | null) => {
     dialogTrigger.current = trigger
@@ -486,6 +491,7 @@ export function NotesPage({
       <NotesDirectory t={t} tree={tree} expanded={expanded} activePath={activePath}
         collapsed={sidebarCollapsed} width={sidebarWidth} creating={creating} launcherRef={createTrigger}
         query={query} onQueryChange={setQuery} onToggleDir={toggleDir} onSelectPath={(path) => { void selectTab(path) }}
+        onMove={(path, directory, before) => { void moveEntry(path, directory, before) }}
         onCreate={openCreateDialog} onEdit={openTargetDialog}
         imports={noteImportPickers(sessionId, t, runImport, notify)} />
       <div className={css.document}>

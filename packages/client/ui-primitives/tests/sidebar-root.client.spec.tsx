@@ -155,4 +155,22 @@ describe('SidebarRoot', () => {
     expect(onDragStart).toHaveBeenCalledTimes(2)
     expect(onDragEnd).toHaveBeenCalledTimes(2)
   })
+
+  it('转发投放位置与事件，供目录显示内置提示', () => {
+    const onDragOver = vi.fn()
+    const onDragLeave = vi.fn()
+    const onDrop = vi.fn()
+    const tree: SidebarRootItem[] = [{
+      id: 'draft', label: '草稿', icon: 'file', dropPosition: 'inside', onDragOver, onDragLeave, onDrop,
+    }]
+    render(<SidebarRoot label="笔记" title="笔记" items={tree} collapsed={false} width={280} />)
+    const row = screen.getByRole('listitem', { name: '草稿' })
+    expect(row.getAttribute('data-drop-position')).toBe('inside')
+    fireEvent.dragOver(row)
+    fireEvent.dragLeave(row)
+    fireEvent.drop(row)
+    expect(onDragOver).toHaveBeenCalledOnce()
+    expect(onDragLeave).toHaveBeenCalledOnce()
+    expect(onDrop).toHaveBeenCalledOnce()
+  })
 })

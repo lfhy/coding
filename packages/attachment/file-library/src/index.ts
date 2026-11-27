@@ -537,6 +537,17 @@ export class FileLibrary extends Service {
     return this.notes.renameNote(relativePath, name)
   }
 
+  /**
+   * 移动笔记条目；同目录时只调整持久化顺序，跨目录时保留名称并拒绝覆盖。
+   * @param relativePath - 文件或真实目录的相对路径。
+   * @param directory - 目标目录的相对路径，空字符串表示笔记根目录。
+   * @param before - 目标目录中的直属插入位置，缺省或 null 表示末尾。
+   * @returns 移动后的相对路径。
+   */
+  async moveNote(relativePath: string, directory: string, before?: string | null): Promise<{ path: string }> {
+    return this.notes.moveNote(relativePath, directory, before)
+  }
+
   /** 删除单个笔记文件或递归删除真实目录，不跟随符号链接。
    * @param relativePath - 要删除的文件或目录路径。
    * @returns 删除完成。

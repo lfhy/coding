@@ -12,13 +12,17 @@
 
 ## 笔记存储
 
-笔记域使用同一根目录下的 `notes/`，不占用 `files` 领域表。`notesTree()` 按名称排序返回普通目录、真实 Markdown、思维导图和办公笔记文件，以及 `.codingppt` 幻灯片工程目录。`kind: 'mindmap'`、`'word'`、`'excel'` 和 `'deck'` 均不携带 `children`；只有真实文件按思维导图或办公后缀分类，符号链接不入树。幻灯片工程内部不扫描且不计入预算。其余条目（含不展示的文件与链接）共用 4096 个条目预算，目录超过 8 层或超出预算时整棵树按 `TypeError` 拒绝。
+笔记域使用同一根目录下的 `notes/`，不占用 `files` 领域表。`notesTree()` 按各目录保存的顺序返回普通目录、真实 Markdown、思维导图和办公笔记文件，以及 `.codingppt` 幻灯片工程目录。`kind: 'mindmap'`、`'word'`、`'excel'` 和 `'deck'` 均不携带 `children`；只有真实文件按思维导图或办公后缀分类，符号链接不入树。幻灯片工程内部不扫描且不计入预算。其余条目（含不展示的文件与链接）共用 4096 个条目预算，目录超过 8 层或超出预算时整棵树按 `TypeError` 拒绝。
 
-`readNote(path)`、`saveNote(path, content, baseMtimeMs?)` 与 `createNote(name, directory?, content?)` 只处理 Markdown，原文最多 1 MiB。保存经临时文件原子替换；无修改时间基准时可创建中间目录并收紧为 `0700`，有基准时不覆盖外部修改或重建已删除文件。新建名称按上传规则净化，缺省补 `.md`（例如 `draft.pptx` 变为 `draft.pptx.md`）；同名或原文超限时拒绝，不留下空文件。`createNoteDirectory(name, parent?)` 独占创建真实私有子目录。
+每个目录用隐藏私有 `.coding-notes-order.json` 保存直属名称顺序；该文件不进入目录树、节点预算或文件索引。清单读取有界且使用 no-follow 句柄，写入经临时文件原子替换。清单缺失、损坏或被替换时回退名称排序，未记录条目按名称排在已记录条目之后。移动普通目录时，其内部清单随目录一起移动。
+
+`readNote(path)`、`saveNote(path, content, baseMtimeMs?)` 与 `createNote(name, directory?, content?)` 只处理 Markdown，原文最多 1 MiB。保存经临时文件原子替换；无修改时间基准时可创建中间目录并收紧为 `0700`，有基准时不覆盖外部修改或重建已删除文件。新建名称按上传规则净化，缺省补 `.md`（例如 `draft.pptx` 变为 `draft.pptx.md`）；同名或原文超限时拒绝，不留下空文件。`createNoteDirectory(name, parent?)` 独占创建真实私有子目录。Markdown 保存与创建、目录和幻灯片工程创建、移动、改名、删除及结构化编辑共用同一笔记写入队列。
 
 `createNoteDeck(name, directory?)` 只供 Host 的 PPT 服务使用：以 `0700` 独占创建 `.codingppt` 工程目录，同步父目录后返回相对路径与只在仍拥有本次目录时递归清理的句柄。文件库不写工程内容。同名、符号链接、越界路径或层级／条目超限按 `TypeError` 拒绝。
 
 `renameNote(path, name)` 在同一父目录内改名且拒绝覆盖。Markdown、思维导图及办公笔记保留原扩展名及大小写；名称可省略原扩展名，但不能转换格式。`.codingppt` 工程目录同样保留后缀。`deleteNote(path)` 单独删除一个笔记文件，或递归删除一个真实目录（包括幻灯片工程目录）。路径只接受笔记根目录内的相对路径，父链经 `realpath` 核对；条目符号链接不得改名或删除，递归删除不跟随目录内的链接。
+
+`FileLibrary.moveNote(path, directory, before?)` 委托 `NoteStore.moveNote` 在同一写入队列内移动或排序：`directory: ''` 表示根目录，`before` 必须是目标目录直属条目路径，`null` 或省略表示末尾。同目录只写顺序，不重命名磁盘条目；跨目录保留名称并拒绝覆盖同名。源／目标父目录在 POSIX 上收紧为 `0700`；源条目、源／目标父链的符号链接及幻灯片工程父目录均拒绝，普通目录不能移入自身或后代，并继续遵守 8 层与 4096 节点预算。创建、改名和删除会尽量同步已有顺序清单；清单维护失败不撤销已成功的文件操作。跨目录移动若在磁盘改名后遇到目录同步或顺序写入失败，操作可能已经落盘但向调用方抛出错误，调用方应刷新最新目录。
 
 `noteRecords()` 只登记笔记根目录直属的 Markdown 文件。同一路径已由领域表登记时不重复；实时记录的 `FileId` 由相对路径的 SHA-1 推导成版本 5 UUID，`read(id)` 对这类 ID 直接服务磁盘文件。`listWithNotes(offset, limit, filter)` 将这些笔记并入未分组或 `kind: 'note'` 视图。另经 `saveExport` 登记的 XLSX 文件按 SpreadsheetML 媒体类型或 `.xlsx` 后缀归入文档。`notesRootPath()` 返回笔记根目录的绝对路径，仅供 Host 侧会话工作目录使用。
 
@@ -28,7 +32,7 @@
 
 原生文档的 `version` 为 `1`，仅包含 `root` 主题树；主题仅含 `id`、`text`、`children`。主题 ID 在文档内唯一，原生导入、移动、改名与重新读取不改变已有主题 ID。原生文件及输入最多 1 MiB，根主题计入最多 400 个主题及 20 层深度，文字最多 256 个 Unicode 码点且不超过 1024 个 UTF-8 字节。XMind 原始文件最多 16 MiB，ZIP 最多 4096 个成员，仅解包根级 `content.json`，实际解压输出最多 2 MiB，并校验长度与 CRC。仅转换首张图的主题文字与层次（含直属和自由主题），不保留格式、链接、附件或其他图页；不读写 ZIP 中的其他成员或路径，不支持只有 `content.xml` 的旧版 XMind。
 
-`readNoteMindmap(path)` 返回 `{path,revision,document}`，`revision` 是原始字节的 SHA-256 摘要，调用方按不透明字符串原样回传。`editNoteMindmap(path, revision, edits)` 与笔记改名和删除使用同一写入队列，在队列内核对基准、按顺序验证和应用整批，再以一次原子替换发布。每批需要 1–32 个 `add`、`rename`、`move` 或 `delete` 操作；拒绝不明字段、未知主题、循环或删除／移动中心主题。`move.index` 按移除原节点后的目标子主题数组计数，从零开始；不传则追加。任一无效操作使整批不落盘。旧版本或重名抛出 `NoteConflictError`，文件或父目录已消失抛出 `NoteNotFoundError`，非法路径、文件结构或操作抛出 `TypeError`。
+`readNoteMindmap(path)` 返回 `{path,revision,document}`，`revision` 是原始字节的 SHA-256 摘要，调用方按不透明字符串原样回传。`editNoteMindmap(path, revision, edits)` 与笔记目录移动、改名和删除使用同一写入队列，在队列内核对基准、按顺序验证和应用整批，再以一次原子替换发布。每批需要 1–32 个 `add`、`rename`、`move` 或 `delete` 操作；拒绝不明字段、未知主题、循环或删除／移动中心主题。`move.index` 按移除原节点后的目标子主题数组计数，从零开始；不传则追加。任一无效操作使整批不落盘。旧版本或重名抛出 `NoteConflictError`，文件或父目录已消失抛出 `NoteNotFoundError`，非法路径、文件结构或操作抛出 `TypeError`。
 
 目录和 Markdown 由 [`src/notes.ts`](src/notes.ts) 持有写入队列；思维导图在 [`src/mindmap-notes.ts`](src/mindmap-notes.ts) 检查文件身份及提交，在 [`src/mindmap.ts`](src/mindmap.ts) 校验主题与编辑，在 [`src/xmind.ts`](src/xmind.ts) 限定解包。
 
@@ -36,7 +40,7 @@
 
 包入口导出 `NOTE_WORD_SUFFIX`（`.codingword`）、`NOTE_EXCEL_SUFFIX`（`.codingexcel`）以及 [`OfficeKind`、`OfficeDocument`、`OfficeEdit`、`OfficeSnapshot` 和字段类型](src/types.ts)。`.codingword` 的 `version: 2` 直接保存编辑引擎的完整文档快照（`document.snapshot`），表格、图片、链接与页眉页脚因此都能落盘；`.codingexcel` 仍是结构化的单元格模型。`readWordParagraphs(snapshot)`、`readWordTables(snapshot)`、`readWordBlocks(snapshot)` 与 `hasRichWordContent(snapshot)` 供导出和助手读取段落与表格视图，`buildWordSnapshot(paragraphs)` 与 `writeWordBlocks(blocks, template)` 负责生成与写回快照。`createNoteOffice(kind, name, directory?)` 写入空白普通段落或名为 `Sheet1` 的空表。`importNoteOffice(kind, name, bytes, directory?)` 校验 `.docx`／`.xlsx` 的内容与类型，移除名称中的对应源后缀后保存新副本，不存放或改写来源 ZIP。`name` 也可直接给目标名称。两者先写入并同步 `0600` 的临时文件，再独占发布，成功返回 `{path}`；非法导入和同名冲突不会留下半成品。父目录必须已存在，逐段拒绝符号链接、越界路径及幻灯片工程目录。
 
-`readNoteOffice(path)`、`saveNoteOffice(path, revision, document)` 和 `editNoteOffice(path, revision, edits)` 返回 `{path, revision, document}`。版本取自实际磁盘字节的 SHA-256，消费方应按不透明字符串原样回传。保存完整文档和模型整批编辑与改名、删除共用同一写入队列，先核对版本，全部校验成功后才原子替换。每批 1–32 项；`set_cells` 一次最多 256 格，覆盖整格，`value: null` 且无公式或样式时移除该格。Word 段落索引和 Excel 行列坐标从零开始，工作表 ID 在本原生笔记的读写及改名中不变。Word 的整段替换按快照里的段落视图应用：段落重建为新的正文流，表格片段与图片占位原样拼回，图片定义与表格样式从原快照复制，因此含表格、图片的文档同样可以按段落编辑。`set_table_cells` 按读取返回的 `tableId` 与行列坐标改写单元格文字，保留该格的段落样式，行列越界或表格不存在时整批失败。版本失配或笔记同名抛出 `NoteConflictError`，已消失抛出 `NoteNotFoundError`，路径、类型或内容不合规抛出 `TypeError`。
+`readNoteOffice(path)`、`saveNoteOffice(path, revision, document)` 和 `editNoteOffice(path, revision, edits)` 返回 `{path, revision, document}`。版本取自实际磁盘字节的 SHA-256，消费方应按不透明字符串原样回传。保存完整文档和模型整批编辑与目录移动、改名、删除共用同一写入队列，先核对版本，全部校验成功后才原子替换。每批 1–32 项；`set_cells` 一次最多 256 格，覆盖整格，`value: null` 且无公式或样式时移除该格。Word 段落索引和 Excel 行列坐标从零开始，工作表 ID 在本原生笔记的读写及改名中不变。Word 的整段替换按快照里的段落视图应用：段落重建为新的正文流，表格片段与图片占位原样拼回，图片定义与表格样式从原快照复制，因此含表格、图片的文档同样可以按段落编辑。`set_table_cells` 按读取返回的 `tableId` 与行列坐标改写单元格文字，保留该格的段落样式，行列越界或表格不存在时整批失败。版本失配或笔记同名抛出 `NoteConflictError`，已消失抛出 `NoteNotFoundError`，路径、类型或内容不合规抛出 `TypeError`。
 
 `exportNoteOffice(path, revision?)` 从一次读取的快照另生成 `.docx`／`.xlsx`，返回 `{name, mediaType, bytes}`，不写磁盘、不登记文件；传入版本时必须匹配该快照。导入、导出均在 Host 离线完成。不读取 XML 外部资源，不接受外部关系（包括外部超链接）、宏、嵌入的活动对象或联网字段。Excel 公式不由 Host 执行，仅接受受支持的本地函数及工作簿内引用，拒绝外链、DDE、未知函数和外部连接。
 
@@ -47,6 +51,8 @@
 只有连接服务的 `requestRejection` 允许、Host 绑定回环、请求来自回环且 Host/Origin 严格同源时，`GET /api/files/list?offset=<n>&limit=<n>` 返回同一分页对象；可选 `sessionId=<id>`、`scope=unscoped`、`category=<image|presentation|document|other>`、`kind=<upload|generated-image|export|note>` 过滤文件。`scope=unscoped` 与 `kind=note` 的列表并入无目录笔记。`GET /api/files/preview?id=<fileId>` 只为已登记的图片返回本地文件字节，供文件管理页预览；文件 ID、媒体类型和同源信任均在 Host 校验，浏览器不接触绝对路径。多余、重复、负数或非整数参数返回 400；只允许 GET。列表响应不含绝对路径，预览带 `private, no-store` 和 `nosniff`。
 
 笔记路由沿用上述同源信任。`GET /api/notes/tree` 返回 `{children}`；`GET /api/notes/read?path=<相对路径>` 只读取 Markdown，返回 `{path,content,mtimeMs}`；`POST /api/notes/save` 只保存 Markdown，接受 `{path,content,baseMtimeMs?}` 返回 `{path,mtimeMs}`，外部修改或目标已删除返回 409/404；`POST /api/notes/create` 只创建 Markdown，接受 `{name,directory?,content?}` 返回 `{path}`；`POST /api/notes/create-directory` 接受 `{name,parent?}` 返回 `{path}`；`POST /api/notes/rename` 接受 `{path,name}` 返回改名后的 `{path}`；`GET /api/notes/cwd` 返回 `{path}` 笔记根目录绝对路径，供会话工作目录使用。`DELETE /api/notes/delete` 接受 `{path}`，成功返回 204。请求体为限长 JSON；路径逃逸、非法扩展名与超限内容返回 400。
+
+`POST /api/notes/move` 接受 `{path,directory,before?}` 并返回 200 `{path}`；`directory: ''` 为根，`before` 为目标目录直属条目路径，`null` 或省略为末尾。非法输入返回 400，源或目标不存在返回 404，同名、插入位置变化或目录身份变化返回 409，其他服务失败返回 503。503 可能发生在磁盘移动之后，消费方须刷新目录后判断实际结果。
 
 思维导图路由不接收会话参数，返回 `Cache-Control: private, no-store`，JSON 响应同时设置 `nosniff`。未通过同源检查返回 403；错误方法返回 405；非法或超限输入返回 400，缺失返回 404，版本冲突或重名返回 409，其他服务错误返回 503。
 
@@ -70,7 +76,8 @@ Office 路由位于 `/api/notes/office/`，与其他笔记路由共用回环同�
 ## Known Limitations and Deferred Work
 
 - 文件管理页只提供图片预览，不提供任意文件下载、写入或删除；进入未分组列表的 Markdown 笔记没有预览，点行不触发打开。
-- 结构化笔记的编辑队列协调同一 Host 内的请求；对外部写入核对文件身份与磁盘版本，但不是跨进程锁。
+- 笔记写入队列协调同一 Host 内的保存、创建、移动、改名、删除和结构化编辑，避免同进程的迟到写入覆盖刚创建的条目；它不是跨进程锁，外部写入与冲突检查之间仍有竞态。
+- 目录顺序清单是显示增强，其维护失败不撤销已完成的文件操作；跨目录移动可能已经落盘却返回 503，消费方必须刷新 Host 最新目录。
 - Word 笔记本身保留引擎能表达的全部结构；导出的 `.docx` 会把表格写成 Word 表格、把快照里内嵌的 data URL 图片写成内嵌图片。导入仍然简单：`.docx` 的表格按行转成文本，图片与页眉页脚不保留。当前预设不含绘图插件，编辑器还不能插入图片，因此图片通道暂时只在导入/导出侧就绪。Excel 保留工作表、基本值与样式、本地公式及缓存、合并区域；主题样式、图表、数组公式区域、模拟运算表和日期系统不做无损转换。工作表改名、删除不会自动重写公式。
 - 元数据和磁盘内容不能跨介质原子提交；上传文件的孤儿清理、配额和删除策略尚未定义。
 - `isManagedUploadPath` 校验登记路径当前仍是普通文件，但不校验内容摘要；同一用户在库目录内替换原件后，PPT 导入和浏览器上传会读取替换后的内容。

@@ -20,7 +20,7 @@ export type NotesLocaleKey =
   | 'saved' | 'saving' | 'unsaved' | 'conflict' | 'reload' | 'reloadConfirm' | 'draftKept' | 'discardDraft' | 'retry'
   | 'loadError' | 'saveError' | 'createError' | 'createFolderError' | 'createPresentationError' | 'importTextError' | 'importSlideError' | 'treeError'
   | 'rename' | 'renaming' | 'renameNote' | 'renameFolder' | 'renamePresentation' | 'delete' | 'deleteConfirm' | 'deleteFolderConfirm' | 'deletePresentationConfirm'
-  | 'renameEntry' | 'deleteEntry' | 'deleting' | 'deleted' | 'renameError' | 'deleteError'
+  | 'renameEntry' | 'deleteEntry' | 'deleting' | 'deleted' | 'renameError' | 'deleteError' | 'moveError'
   | 'copy' | 'copied'
   | 'export' | 'exportMarkdown' | 'exportWord' | 'exportPdf' | 'exportImage' | 'exportError'
 
@@ -72,7 +72,7 @@ export const zh: Record<NotesLocaleKey, string> = {
   deleteConfirm: '删除笔记「{name}」？此操作不可撤销。',
   deleteFolderConfirm: '删除目录「{name}」及其中的所有文件和子目录？此操作不可撤销。',
   deletePresentationConfirm: '删除幻灯片「{name}」及其工作文件？此操作不可撤销。',
-  renameError: '无法重命名', deleteError: '无法删除，请重试。',
+  renameError: '无法重命名', deleteError: '无法删除，请重试。', moveError: '无法移动或排序，请刷新后重试。',
   copy: '复制', copied: '已复制',
   export: '导出', exportMarkdown: 'Markdown（.md）', exportWord: 'Word（.docx）',
   exportPdf: 'PDF（.pdf）', exportImage: '图片（.png）', exportError: '导出失败',
@@ -126,7 +126,7 @@ export const en: Record<NotesLocaleKey, string> = {
   deleteConfirm: 'Delete the note “{name}”? This cannot be undone.',
   deleteFolderConfirm: 'Delete the folder “{name}” and all its files and subfolders? This cannot be undone.',
   deletePresentationConfirm: 'Delete the presentation “{name}” and its working files? This cannot be undone.',
-  renameError: 'Could not rename', deleteError: 'Could not delete. Try again.',
+  renameError: 'Could not rename', deleteError: 'Could not delete. Try again.', moveError: 'Could not move or reorder. Refresh and try again.',
   copy: 'Copy', copied: 'Copied',
   export: 'Export', exportMarkdown: 'Markdown (.md)', exportWord: 'Word (.docx)',
   exportPdf: 'PDF (.pdf)', exportImage: 'Image (.png)', exportError: 'Export failed',

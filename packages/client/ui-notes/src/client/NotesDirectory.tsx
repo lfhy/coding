@@ -1,6 +1,6 @@
 /** 笔记目录持有搜索与菜单，文件操作和当前文档由页面协调。 */
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
-import type { MouseEvent, RefObject } from 'react'
+import type { DragEvent, MouseEvent, RefObject } from 'react'
 import {
   Button, IconCloseOutline16, IconEditOutline16, IconPlusOutline16, IconProjectAddOutline16,
   IconSearchOutline16, IconTrashOutline16, Input, Menu, SidebarRoot, type MenuEntry, type SidebarRootItem,
@@ -18,6 +18,8 @@ export type NoteActionTarget = Pick<NotesTreeEntry, 'kind' | 'name' | 'path'>
 /** 新建子菜单与创建弹窗共用的操作类型。 */
 export type NoteCreateKind = 'create' | 'folder' | 'presentation' | 'mindmap' | OfficeKind
 type NoteContextMenu = { target: NoteActionTarget; x: number; y: number; trigger: HTMLButtonElement }
+type NotesDrag = { path: string; kind: NotesTreeEntry['kind'] }
+type NotesDrop = { path: string; position: 'before' | 'after' | 'inside' }
 
 const importTypes = [
   ['text', 'importText', 'notes'],
@@ -26,6 +28,19 @@ const importTypes = [
   ['word', 'entryWord', 'file-word'],
   ['excel', 'entryExcel', 'file-excel'],
 ] as const
+
+/** 目录行中间承接拖入，上下边缘用于在其前后插入；文件行按上下半区插入。 */
+function dropPositionFor(event: DragEvent<HTMLElement>, entry: NotesTreeEntry): 'before' | 'after' | 'inside' {
+  const rect = event.currentTarget.getBoundingClientRect()
+  if (entry.kind !== 'dir') return event.clientY < rect.top + rect.height / 2 ? 'before' : 'after'
+  const ratio = (event.clientY - rect.top) / rect.height
+  return ratio < 0.25 ? 'before' : ratio > 0.75 ? 'after' : 'inside'
+}
+
+/** 判断路径是否位于目录自身或其后代中，用于阻止目录递归移入自身。 */
+function isWithin(path: string, directory: string): boolean {
+  return path === directory || path.startsWith(`${directory}/`)
+}
 
 type NotesDirectoryProps = PropsLocale<typeof NS> & {
   tree: readonly NotesTreeEntry[]
@@ -39,6 +54,7 @@ type NotesDirectoryProps = PropsLocale<typeof NS> & {
   launcherRef: RefObject<HTMLButtonElement>
   onToggleDir: (path: string) => void
   onSelectPath: (path: string) => void
+  onMove: (path: string, directory: string, before: string | null) => void
   onCreate: (kind: NoteCreateKind, path: string, trigger: HTMLButtonElement | null) => void
   onEdit: (kind: 'rename' | 'delete', target: NoteActionTarget, trigger: HTMLButtonElement) => void
   imports: Record<NoteImportKind, NoteImportPicker>
@@ -51,7 +67,7 @@ type NotesDirectoryProps = PropsLocale<typeof NS> & {
  */
 export function NotesDirectory({
   t, tree, expanded, activePath, collapsed, width, creating, query, onQueryChange, launcherRef,
-  onToggleDir, onSelectPath, onCreate, onEdit, imports,
+  onToggleDir, onSelectPath, onMove, onCreate, onEdit, imports,
 }: NotesDirectoryProps) {
   const searchId = useId()
   const searchTrigger = useRef<HTMLButtonElement>(null)
@@ -59,6 +75,26 @@ export function NotesDirectory({
   const [searchOpen, setSearchOpen] = useState(false)
   const [launcherOpen, setLauncherOpen] = useState(false)
   const [contextMenu, setContextMenu] = useState<NoteContextMenu | null>(null)
+  const [drag, setDrag] = useState<NotesDrag | null>(null)
+  const [drop, setDrop] = useState<NotesDrop | null>(null)
+  /** 原生 dragstart 后立即读取拖拽源，不能等 React 提交状态后才处理 dragover/drop。 */
+  const dragRef = useRef<NotesDrag | null>(null)
+
+  const structure = useMemo(() => {
+    const parents = new Map<string, string>()
+    const siblings = new Map<string, string[]>()
+    const walk = (nodes: readonly NotesTreeEntry[], parent: string): void => {
+      const paths: string[] = []
+      for (const entry of nodes) {
+        parents.set(entry.path, parent)
+        paths.push(entry.path)
+        if (entry.children !== undefined) walk(entry.children, entry.path)
+      }
+      siblings.set(parent, paths)
+    }
+    walk(tree, '')
+    return { parents, siblings }
+  }, [tree])
 
   const closeSearch = () => {
     setSearchOpen(false)
@@ -89,6 +125,83 @@ export function NotesDirectory({
 
   const locale = t('dateLocale')
   const needle = searchOpen && !collapsed ? query.trim().toLocaleLowerCase(locale) : ''
+  const dragEnabled = !collapsed && !creating && needle === ''
+
+  const startDrag = useCallback((entry: NotesTreeEntry, event: DragEvent<HTMLButtonElement>) => {
+    if (!dragEnabled) return
+    event.dataTransfer.effectAllowed = 'move'
+    event.dataTransfer.setData('text/plain', entry.path)
+    const next = { path: entry.path, kind: entry.kind }
+    dragRef.current = next
+    setDrag(next)
+    setDrop(null)
+  }, [dragEnabled])
+
+  const endDrag = useCallback(() => {
+    dragRef.current = null
+    setDrag(null)
+    setDrop(null)
+  }, [])
+
+  const canDrop = useCallback((entry: NotesTreeEntry, position: NotesDrop['position']): boolean => {
+    const current = dragRef.current
+    if (current === null || !dragEnabled || entry.path === current.path) return false
+    if (position === 'inside') {
+      return entry.kind === 'dir' && (current.kind !== 'dir' || !isWithin(entry.path, current.path))
+    }
+    const parent = structure.parents.get(entry.path) ?? ''
+    return current.kind !== 'dir' || !isWithin(parent, current.path)
+  }, [dragEnabled, structure.parents])
+
+  const dragOver = useCallback((entry: NotesTreeEntry, event: DragEvent<HTMLElement>) => {
+    if (dragRef.current === null) return
+    const position = dropPositionFor(event, entry)
+    if (!canDrop(entry, position)) {
+      setDrop(previous => previous?.path === entry.path ? null : previous)
+      return
+    }
+    event.preventDefault()
+    event.dataTransfer.dropEffect = 'move'
+    setDrop(previous => previous?.path === entry.path && previous.position === position ? previous : { path: entry.path, position })
+  }, [canDrop])
+
+  const dragLeave = useCallback((entry: NotesTreeEntry, event: DragEvent<HTMLElement>) => {
+    if (event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget)) return
+    setDrop(previous => previous?.path === entry.path ? null : previous)
+  }, [])
+
+  const dropOn = useCallback((entry: NotesTreeEntry, event: DragEvent<HTMLElement>) => {
+    const current = dragRef.current
+    if (current === null) return
+    const position = drop?.path === entry.path ? drop.position : dropPositionFor(event, entry)
+    if (!canDrop(entry, position)) return
+    event.preventDefault()
+    event.stopPropagation()
+    const parent = position === 'inside' ? entry.path : structure.parents.get(entry.path) ?? ''
+    const siblings = structure.siblings.get(parent) ?? []
+    const index = siblings.indexOf(entry.path)
+    const before = position === 'before' ? entry.path
+      : position === 'after' ? siblings[index + 1] ?? null : null
+    onMove(current.path, parent, before)
+    endDrag()
+  }, [drop, canDrop, structure.parents, structure.siblings, onMove, endDrag])
+
+  useEffect(() => {
+    if (drag === null) return
+    // 拖出列表时仍由本页接纳原生事件，避免 Electron 把条目当成外部文件打开。
+    const acceptDrag = (event: globalThis.DragEvent): void => {
+      event.preventDefault()
+      if (event.dataTransfer !== null) event.dataTransfer.dropEffect = 'move'
+    }
+    const acceptDrop = (event: globalThis.DragEvent): void => { event.preventDefault() }
+    document.addEventListener('dragover', acceptDrag)
+    document.addEventListener('drop', acceptDrop)
+    return () => {
+      document.removeEventListener('dragover', acceptDrag)
+      document.removeEventListener('drop', acceptDrop)
+    }
+  }, [drag])
+
   const treeItems = useMemo(() => {
     const date = new Intl.DateTimeFormat(locale, { month: 'short', day: 'numeric' })
     const flatten = (entries: readonly NotesTreeEntry[], out: SidebarRootItem[], depth: number): void => {
@@ -125,6 +238,13 @@ export function NotesDirectory({
             if (folder) onToggleDir(entry.path)
             else onSelectPath(entry.path)
           },
+          draggable: dragEnabled,
+          onDragStart: (event) => { startDrag(entry, event) },
+          onDragEnd: endDrag,
+          ...(drop?.path === entry.path ? { dropPosition: drop.position } : {}),
+          onDragOver: (event) => { dragOver(entry, event) },
+          onDragLeave: (event) => { dragLeave(entry, event) },
+          onDrop: (event) => { dropOn(entry, event) },
           onContextMenu: (event) => { openContextMenu(entry, event) },
         })
         if (open && entry.children !== undefined) flatten(entry.children, out, depth + 1)
@@ -133,7 +253,8 @@ export function NotesDirectory({
     const items: SidebarRootItem[] = []
     flatten(tree, items, 0)
     return items
-  }, [tree, expanded, activePath, locale, needle, onSelectPath, onToggleDir, createIn, editTarget, openContextMenu, t])
+  }, [tree, expanded, activePath, locale, needle, dragEnabled, startDrag, endDrag, drop, dragOver, dragLeave, dropOn,
+    onSelectPath, onToggleDir, createIn, editTarget, openContextMenu, t])
 
   const launcherEntries: readonly MenuEntry[] = [
     {

@@ -85,6 +85,7 @@
 }
 
 .row {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -133,6 +134,39 @@
 .rowSeat:hover, .rowSeat:has(.row[aria-current='true']) { background: var(--dsw-alias-interactive-bg-hover); }
 .row[aria-current='true'] { font-weight: 600; }
 .row:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: -2px; }
+
+/* 拖拽提示只表达插入边界或目录承接，不改变行高与侧栏滚动几何。 */
+.rowSeat[data-drop-position='inside'],
+.row[data-drop-position='inside'],
+.railButton[data-drop-position='inside'] {
+  background: var(--dsw-alias-state-business-tertiary);
+  box-shadow: inset 0 0 0 1px var(--dsw-alias-state-business-primary);
+}
+
+.rowSeat[data-drop-position='before']::before,
+.rowSeat[data-drop-position='after']::before,
+.row[data-drop-position='before']::before,
+.row[data-drop-position='after']::before,
+.railButton[data-drop-position='before']::before,
+.railButton[data-drop-position='after']::before {
+  content: '';
+  position: absolute;
+  z-index: 2;
+  right: 4px;
+  left: 4px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--dsw-alias-state-business-primary);
+  pointer-events: none;
+}
+
+.rowSeat[data-drop-position='before']::before,
+.row[data-drop-position='before']::before,
+.railButton[data-drop-position='before']::before { top: -2px; }
+
+.rowSeat[data-drop-position='after']::before,
+.row[data-drop-position='after']::before,
+.railButton[data-drop-position='after']::before { bottom: -2px; }
 
 .rowIcon {
   display: inline-flex;
@@ -221,6 +255,7 @@
 .empty { margin: 8px; color: var(--dsw-alias-label-tertiary); font: var(--dsw-font-xs-13); }
 
 .railButton {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;

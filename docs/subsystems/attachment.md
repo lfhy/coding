@@ -124,9 +124,17 @@ interface ManagedFilePage {
 
 `saveUpload` 在读流前和提交记录前调用消费方的会话校验；`saveGeneratedImage` 只接受附件服务已准入的 PNG/JPEG/WebP/GIF 字节，由 `ctx.imageGeneration` 在生成图片入库前复制；`getUpload` 对真实、已登记的上传文件返回安全保存名等记录，`isManagedUploadPath` 复用同一检查。浏览器读取面只有回环同源的 `GET /api/files/list` 分页路由，响应不含绝对路径或文件内容，[ui-files](../../packages/client/ui-files/README.md) 的设置分区是它的消费方。删除、重命名与配额策略未定义，见[包 README](../../packages/attachment/file-library/README.md)。
 
+### 笔记目录、移动与顺序
+
+`ctx.fileLibrary.moveNote(path, directory, before?)` 与内部 `NoteStore.moveNote` 在同一笔记写入队列内完成移动：`directory: ''` 表示根目录，`before` 为目标目录直属条目路径，`null` 或省略表示末尾。同目录只更新持久顺序，跨目录保留名称并拒绝覆盖同名；源／目标父目录在 POSIX 上收紧为 `0700`，源条目及源／目标父链中的符号链接、幻灯片工程父目录、目录移入自身或后代均拒绝，并遵守 8 层与 4096 节点预算。创建、改名和删除会尽量同步顺序清单，但清单维护失败不撤销已完成的文件操作。
+
+每个目录用隐藏私有 `.coding-notes-order.json` 保存直属名称顺序，不出现在目录树、节点预算或文件索引中；读取有界且 no-follow，写入原子。清单缺失、损坏或被替换时回退名称排序，未记录条目排在已记录条目之后；移动普通目录时清单随目录移动。跨目录移动在磁盘改名后若同步或顺序写入失败，服务会抛出错误但条目可能已经落盘，调用方必须刷新最新目录。完整约束见[文件库说明](../../packages/attachment/file-library/README.md#笔记存储)。
+
+[`POST /api/notes/move`](../../packages/attachment/file-library/src/routes.ts)接受 `{path,directory,before?}`，成功返回 200 `{path}`；非法输入返回 400，源或目标不存在返回 404，同名、插入位置变化或目录身份变化返回 409，其他服务失败返回 503。503 可能发生在磁盘移动之后，笔记页会先刷新 Host 目录再提示失败。
+
 ### 思维导图文档与快照
 
-文件库的结构化导图读写与 Markdown 入口隔离。`readNoteMindmap` 返回文档与对应版本；`editNoteMindmap` 使用该版本提交整批编辑，版本变化或任一操作不合法时不会写入。路径和导入限额见[文件库的思维导图说明](../../packages/attachment/file-library/README.md)。
+文件库的结构化导图读写与 Markdown 入口隔离。`readNoteMindmap` 返回文档与对应版本；`editNoteMindmap` 使用该版本提交整批编辑，版本变化或任一操作不合法时不会写入，并与笔记目录移动、改名和删除共用写入队列。路径和导入限额见[文件库的思维导图说明](../../packages/attachment/file-library/README.md)。
 
 ```ts type-equiv
 /** 主题节点；同一文档内 `id` 唯一，编辑主题内容或位置不改变该 ID。 */
@@ -161,7 +169,7 @@ export interface MindMapSnapshot {
 
 文件库在笔记根目录下将 Word、Excel 分别存为 `.codingword`、`.codingexcel`；不走 Markdown 的读写接口。[文档类型](../../packages/attachment/file-library/src/types.ts)的格式版本为 `1`，`OfficeKind` 以 `word` 和 `excel` 区分段落文档与工作簿。`readNoteOffice` 返回 `OfficeSnapshot`，其中 `path` 相对笔记根目录，`revision` 对应实际磁盘字节。[文件库实现](../../packages/attachment/file-library/src/office-notes.ts)只接受根目录内的真实文件与父目录。
 
-`createNoteOffice` 创建空白文档，`importNoteOffice` 本地转换 `.docx`／`.xlsx`；两者独占写入新笔记，不改动原件，不覆盖同名文件。`saveNoteOffice` 替换整份文档，`editNoteOffice` 提交整批编辑；二者按读回的版本写入，与改名、删除共用队列，版本失配或内容未通过校验时不写入。
+`createNoteOffice` 创建空白文档，`importNoteOffice` 本地转换 `.docx`／`.xlsx`；两者独占写入新笔记，不改动原件，不覆盖同名文件。`saveNoteOffice` 替换整份文档，`editNoteOffice` 提交整批编辑；二者按读回的版本写入，与目录移动、改名和删除共用队列，版本失配或内容未通过校验时不写入。
 
 [同源路由](../../packages/attachment/file-library/src/routes.ts)位于 `/api/notes/office/`：`create`、`import`、`save` 使用 `POST`，`read`、`export` 使用 `GET`。`import` 接收 Office 原始字节；`save` 接收 `path`、`revision` 和完整的 `document`；`export` 调用 `exportNoteOffice` 从单次读取的快照返回 `OfficeExport` 的下载文件名、MIME 类型和字节，不改写或登记文件。导出指定 `revision` 时也须匹配；HTTP 版本冲突返回 `409`。笔记助手复用服务执行结构化编辑和版本化导出，入库规则见[办公笔记操作](../../packages/notes/tool-notes-tabs/README.md#办公笔记操作)。
 

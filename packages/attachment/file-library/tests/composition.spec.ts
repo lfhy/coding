@@ -125,6 +125,36 @@ describe('文件库真实装配', () => {
     expect(await missing.json()).toEqual({ error: '笔记不存在' })
   })
 
+  it('同源移动路由支持排序与跨目录移动，并公开来源、方法和冲突错误', async () => {
+    const { ctx, origin } = await boot()
+    await ctx.fileLibrary.createNote('a.md')
+    await ctx.fileLibrary.createNote('b.md')
+    await ctx.fileLibrary.createNoteDirectory('target')
+    const url = `${origin}/api/notes/move`
+    const post = (body: unknown, requestOrigin = origin, method = 'POST') => fetch(url, {
+      method, headers: { origin: requestOrigin, 'content-type': 'application/json' }, body: JSON.stringify(body),
+    })
+
+    expect((await post({ path: 'a.md', directory: 'target' }, origin.replace('http:', 'https:'))).status).toBe(403)
+    const wrongMethod = await fetch(url, { method: 'GET', headers: { origin } })
+    expect(wrongMethod.status).toBe(405)
+    expect(wrongMethod.headers.get('allow')).toBe('POST')
+    expect((await post({ path: 'a.md' })).status).toBe(400)
+    expect((await post({ path: 'missing.md', directory: 'target' })).status).toBe(404)
+    const moved = await post({ path: 'a.md', directory: 'target', before: null })
+    expect(moved.status).toBe(200)
+    expect(moved.headers.get('cache-control')).toBe('private, no-store')
+    expect(await moved.json()).toEqual({ path: 'target/a.md' })
+    await expect(readFile(join(ctx.fileLibrary.notesRootPath(), 'target', 'a.md'), 'utf8')).resolves.toBe('')
+
+    await ctx.fileLibrary.createNote('a.md')
+    expect((await post({ path: 'a.md', directory: 'target' })).status).toBe(409)
+    expect((await post({ path: 'b.md', directory: '', before: 'a.md' })).status).toBe(200)
+    const tree = await (await fetch(`${origin}/api/notes/tree`)).json() as { children: NotesTreeNode[] }
+    expect(tree.children.map(entry => entry.name)).toEqual(['b.md', 'a.md', 'target'])
+    expect(tree.children[2]?.children?.map(entry => entry.name)).toEqual(['a.md'])
+  })
+
   it('同源思维导图路由创建和导入真实笔记，公开版本冲突与文件缺失', async () => {
     const { ctx, origin } = await boot()
     const notes = `${origin}/api/notes`

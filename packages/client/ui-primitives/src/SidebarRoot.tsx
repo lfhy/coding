@@ -30,6 +30,11 @@ export interface SidebarRootItem {
   draggable?: boolean
   onDragStart?: (event: DragEvent<HTMLButtonElement>) => void
   onDragEnd?: (event: DragEvent<HTMLButtonElement>) => void
+  /** 拖拽投放位置；`inside` 用于目录，前后位置用于同级排序。 */
+  dropPosition?: 'before' | 'after' | 'inside'
+  onDragOver?: (event: DragEvent<HTMLElement>) => void
+  onDragLeave?: (event: DragEvent<HTMLElement>) => void
+  onDrop?: (event: DragEvent<HTMLElement>) => void
   /** 右键菜单入口；调用方负责根据事件位置打开上下文操作。 */
   onContextMenu?: (event: MouseEvent<HTMLButtonElement>) => void
   /** 树形条目的缩进层级（0 起）；非树条目缺省 0。 */
@@ -120,6 +125,10 @@ export function SidebarRoot({
                       aria-expanded={item.folder ? item.open === true : undefined} onClick={item.onSelect}
                       draggable={item.draggable === true}
                       onDragStart={item.onDragStart} onDragEnd={item.onDragEnd}
+                      data-drop-position={item.actions == null ? item.dropPosition : undefined}
+                      onDragOver={item.actions == null ? item.onDragOver : undefined}
+                      onDragLeave={item.actions == null ? item.onDragLeave : undefined}
+                      onDrop={item.actions == null ? item.onDrop : undefined}
                       onContextMenu={item.onContextMenu}>
                       {(item.folder || variant === 'summary') && (
                         <span className={css.chevronSlot} aria-hidden="true">
@@ -134,7 +143,9 @@ export function SidebarRoot({
                     </button>
                   )
                   return item.actions == null ? row : (
-                    <div key={item.id} role="listitem" className={css.rowSeat}>
+                    <div key={item.id} role="listitem" className={css.rowSeat}
+                      data-drop-position={item.dropPosition}
+                      onDragOver={item.onDragOver} onDragLeave={item.onDragLeave} onDrop={item.onDrop}>
                       {row}
                       <div className={css.rowEnd}>
                         <div className={css.rowActions}>{item.actions}</div>
@@ -152,6 +163,8 @@ export function SidebarRoot({
                 aria-label={item.label} title={item.label} aria-pressed={item.active === true} data-icon-tone={item.iconTone}
                 onClick={item.onSelect} draggable={item.draggable === true}
                 onDragStart={item.onDragStart} onDragEnd={item.onDragEnd}
+                data-drop-position={item.dropPosition}
+                onDragOver={item.onDragOver} onDragLeave={item.onDragLeave} onDrop={item.onDrop}
                 onContextMenu={item.onContextMenu}>
                 <Icon name={item.icon} size={18} />
               </button>

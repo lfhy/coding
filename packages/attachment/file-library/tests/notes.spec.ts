@@ -7,6 +7,7 @@ import Storage from 'coding-storage'
 import { DomainFacility } from 'coding-storage-domain'
 import { SqliteStorageBackend } from 'coding-storage-sqlite'
 import FileLibrary, { NoteConflictError, NoteNotFoundError, StaleNoteError } from '../src/index.ts'
+import { NOTE_ORDER_FILE } from '../src/note-order.ts'
 
 /** 测试用二进制字节；文件库只处理路径，不解析或改写演示文稿内容。 */
 const pptxBytes = Buffer.from([0x50, 0x4b, 0x03, 0x04, 0x00, 0xff, 0xfe])
@@ -425,5 +426,151 @@ describe('无目录笔记域', () => {
     expect(Buffer.from(served!.data).toString('utf8')).toBe('可服务的内容')
     // 同一相对路径重复调用仍映射同一 id，且登记后不重复出现在实时记录。
     expect((await library.noteRecords()).map(row => row.id)).toEqual([record!.id])
+  })
+
+  it('同目录移动写入持久顺序，改名、新建和删除保持清单一致', async () => {
+    const { library } = await harness()
+    await library.createNote('a.md')
+    await library.createNote('b.md')
+    await library.createNoteDirectory('dir')
+    expect((await library.notesTree()).map(entry => entry.name)).toEqual(['a.md', 'b.md', 'dir'])
+
+    expect(await library.moveNote('b.md', '', 'a.md')).toEqual({ path: 'b.md' })
+    expect((await library.notesTree()).map(entry => entry.name)).toEqual(['b.md', 'a.md', 'dir'])
+    expect(JSON.parse(await readFile(join(library.notesRootPath(), NOTE_ORDER_FILE), 'utf8'))).toEqual({
+      version: 1, order: ['b.md', 'a.md', 'dir'],
+    })
+
+    await library.renameNote('b.md', 'renamed')
+    await library.createNote('c.md')
+    await library.deleteNote('a.md')
+    expect((await library.notesTree()).map(entry => entry.name)).toEqual(['renamed.md', 'dir', 'c.md'])
+  })
+
+  it('跨目录移动保留内容、拒绝同名覆盖，并可移回原目录的指定位置', async () => {
+    const { library } = await harness()
+    await library.createNoteDirectory('target')
+    await library.createNote('x.md', 'target', '目标内容')
+    await library.createNote('a.md', '', '原文')
+    await library.createNote('b.md', '', '另一篇')
+
+    expect(await library.moveNote('a.md', 'target', 'target/x.md')).toEqual({ path: 'target/a.md' })
+    expect(await library.readNote('target/a.md')).toMatchObject({ content: '原文' })
+    expect((await library.notesTree()).map(entry => entry.name)).toEqual(['b.md', 'target'])
+    expect((await library.notesTree())[1]?.children?.map(entry => entry.name)).toEqual(['a.md', 'x.md'])
+
+    await writeFile(join(library.notesRootPath(), 'target', 'b.md'), '外部同名文件')
+    await expect(library.moveNote('b.md', 'target')).rejects.toThrow(NoteConflictError)
+    expect((await library.notesTree())[0]?.name).toBe('b.md')
+    await library.moveNote('target/a.md', '', 'b.md')
+    expect((await library.notesTree()).map(entry => entry.name)).toEqual(['a.md', 'b.md', 'target'])
+  })
+
+  it('移动普通目录和幻灯片工程时保留子树顺序与完整内容', async () => {
+    const { library } = await harness()
+    await library.createNoteDirectory('source')
+    await library.createNote('a.md', 'source', '甲')
+    await library.createNote('b.md', 'source', '乙')
+    await library.moveNote('source/b.md', 'source', 'source/a.md')
+    await library.createNoteDirectory('target')
+    await library.createNoteDeck('demo')
+
+    await library.moveNote('source', 'target')
+    expect((await library.notesTree()).map(entry => entry.name)).toEqual(['demo.codingppt', 'target'])
+    const target = (await library.notesTree())[1]
+    expect(target?.children?.[0]?.name).toBe('source')
+    expect(target?.children?.[0]?.children?.map(entry => entry.name)).toEqual(['b.md', 'a.md'])
+    expect(await library.readNote('target/source/a.md')).toMatchObject({ content: '甲' })
+
+    await library.moveNote('demo.codingppt', 'target', 'target/source')
+    expect((await library.notesTree())[0]?.children?.map(entry => entry.name)).toEqual(['demo.codingppt', 'source'])
+  })
+
+  it('拒绝符号链接、目录移入自身和超深移动，并修复目标目录权限', async () => {
+    const { library } = await harness()
+    await library.notesTree()
+    const root = library.notesRootPath()
+    await library.createNote('real.md')
+    await library.createNoteDirectory('target')
+    await symlink(join(root, 'real.md'), join(root, 'link.md'))
+    await expect(library.moveNote('link.md', 'target')).rejects.toThrow(TypeError)
+    await expect(library.moveNote('target', 'target')).rejects.toThrow(TypeError)
+
+    const target = join(root, 'target')
+    if (process.platform !== 'win32') await chmod(target, 0o755)
+    await library.moveNote('real.md', 'target')
+    if (process.platform !== 'win32') expect((await lstat(target)).mode & 0o077).toBe(0)
+
+    await library.createNoteDirectory('empty')
+    let deep = ''
+    for (let index = 1; index <= 7; index += 1) {
+      deep = deep === '' ? `d${index}` : `${deep}/d${index}`
+      await library.createNoteDirectory(`d${index}`, deep.includes('/') ? deep.slice(0, deep.lastIndexOf('/')) : '')
+    }
+    await library.moveNote('empty', deep)
+    await library.createNoteDirectory('too-deep')
+    await library.createNoteDirectory('d8', deep)
+    await expect(library.moveNote('too-deep', `${deep}/d8`)).rejects.toThrow(/层级过深/u)
+  })
+
+  it('移动与迟到保存按写入队列排序，旧路径不会复活文件', async () => {
+    const { library } = await harness()
+    await library.createNoteDirectory('target')
+    await library.createNote('a.md', '', '原文')
+    const first = await library.readNote('a.md')
+    const moving = library.moveNote('a.md', 'target')
+    const lateSave = library.saveNote('a.md', '迟到内容', first.mtimeMs).then(() => true, () => false)
+    await moving
+    expect(await lateSave).toBe(false)
+    expect(await library.readNote('target/a.md')).toMatchObject({ content: '原文' })
+
+    await library.createNote('b.md', '', '原文')
+    const second = await library.readNote('b.md')
+    await Promise.all([
+      library.saveNote('b.md', '先保存', second.mtimeMs),
+      library.moveNote('b.md', 'target'),
+    ])
+    expect(await library.readNote('target/b.md')).toMatchObject({ content: '先保存' })
+  })
+
+  it('移动思维导图保留快照，并拒绝把条目放进幻灯片工程目录', async () => {
+    const { library } = await harness()
+    await library.createNoteDirectory('target')
+    await library.createNoteDeck('deck')
+    const created = await library.createNoteMindmap('map')
+    await expect(library.moveNote(created.path, 'deck.codingppt')).rejects.toThrow(TypeError)
+    expect(await library.moveNote(created.path, 'target')).toEqual({ path: 'target/map.codingmindmap' })
+    expect(await library.readNoteMindmap('target/map.codingmindmap')).toMatchObject({
+      path: 'target/map.codingmindmap', document: { root: { text: 'map' } },
+    })
+  })
+
+  it('顺序清单写入失败时保留已完成的磁盘移动，调用方须按最新目录判断', async () => {
+    const { library } = await harness()
+    await library.createNoteDirectory('target')
+    await library.createNote('a.md', '', '原文')
+    await mkdir(join(library.notesRootPath(), 'target', NOTE_ORDER_FILE), { mode: 0o700 })
+    await expect(library.moveNote('a.md', 'target')).rejects.toThrow()
+    expect(await library.readNote('target/a.md')).toMatchObject({ content: '原文' })
+    await expect(library.readNote('a.md')).rejects.toThrow(/笔记不存在/u)
+  })
+
+  it('损坏或被替换的排序清单不阻断目录树，排序写入不跟随符号链接', async () => {
+    const { library } = await harness()
+    await library.createNote('a.md')
+    await library.createNote('b.md')
+    const root = library.notesRootPath()
+    const orderPath = join(root, NOTE_ORDER_FILE)
+    await writeFile(orderPath, '{"version":1,"order":["b.md","b.md"]}')
+    expect((await library.notesTree()).map(entry => entry.name)).toEqual(['a.md', 'b.md'])
+
+    const outside = join(root, '..', 'outside-order.json')
+    await writeFile(outside, '外部内容')
+    await rm(orderPath)
+    await symlink(outside, orderPath)
+    await library.moveNote('b.md', '', 'a.md')
+    expect((await library.notesTree()).map(entry => entry.name)).toEqual(['b.md', 'a.md'])
+    expect((await lstat(orderPath)).isSymbolicLink()).toBe(false)
+    expect(await readFile(outside, 'utf8')).toBe('外部内容')
   })
 })

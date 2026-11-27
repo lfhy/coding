@@ -23,16 +23,16 @@ describe('notes tree helpers', () => {
     expect(original[0]?.children?.[0]?.children).toHaveLength(1)
   })
 
-  it('刷新失败时补齐缺失父目录，保留现有子项并按名称排序', () => {
+  it('刷新失败时补齐缺失父目录，保留现有子项与手工顺序', () => {
     const original = [folder('Z', 'Z'), folder('Archive', 'Archive', [leaf('old.md', 'Archive/old.md')])]
     const withChild = addTreeDirectory(original, 'Archive/New', 50)
-    expect(withChild.map(entry => entry.name)).toEqual(['Archive', 'Z'])
-    expect(withChild[0]?.children?.map(entry => entry.name)).toEqual(['New', 'old.md'])
-    expect(withChild[0]?.children?.[0]).toEqual({ ...folder('New', 'Archive/New', []), mtimeMs: 50 })
+    expect(withChild.map(entry => entry.name)).toEqual(['Z', 'Archive'])
+    expect(withChild[1]?.children?.map(entry => entry.name)).toEqual(['old.md', 'New'])
+    expect(withChild[1]?.children?.[1]).toEqual({ ...folder('New', 'Archive/New', []), mtimeMs: 50 })
     expect(original[1]?.children).toHaveLength(1)
 
     const fromChildless = addTreeDirectory(original, 'Z/Child', 60)
-    expect(fromChildless[1]?.children?.[0]?.path).toBe('Z/Child')
+    expect(fromChildless[0]?.children?.[0]?.path).toBe('Z/Child')
     expect(addTreeDirectory([], 'Missing/Deep', 70)).toEqual([
       { name: 'Missing', path: 'Missing', kind: 'dir', mtimeMs: 70, children: [
         { name: 'Deep', path: 'Missing/Deep', kind: 'dir', mtimeMs: 70, children: [] },

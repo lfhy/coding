@@ -61,7 +61,7 @@ export function removeTreeEntry(entries: readonly NotesTreeEntry[], path: string
  * @param entries - 当前显示的笔记树。
  * @param path - Host 确认创建的相对目录路径。
  * @param mtimeMs - 创建时间，下一次目录刷新后由 Host 的修改时间替换。
- * @returns 包含该目录的新树，不改变原有条目。
+ * @returns 包含该目录的新树，不改变原有条目顺序。
  */
 export function addTreeDirectory(entries: readonly NotesTreeEntry[], path: string, mtimeMs: number): NotesTreeEntry[] {
   const segments = path.split('/')
@@ -74,7 +74,11 @@ export function addTreeDirectory(entries: readonly NotesTreeEntry[], path: strin
     const updated = depth === segments.length - 1 ? directory : {
       ...directory, children: insert(directory.children ?? [], depth + 1),
     }
-    return [...nodes.filter(entry => entry.path !== currentPath), updated].sort((a, b) => a.name.localeCompare(b.name))
+    const index = nodes.findIndex(entry => entry.path === currentPath)
+    const updatedNodes = nodes.filter(entry => entry.path !== currentPath)
+    if (index < 0) updatedNodes.push(updated)
+    else updatedNodes.splice(index, 0, updated)
+    return updatedNodes
   }
   return insert(entries, 0)
 }

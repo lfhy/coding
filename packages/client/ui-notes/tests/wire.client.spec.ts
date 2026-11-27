@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   assertNotePath, notesCreate, notesCreateDirectory, notesCreateSlide, notesCwd, notesDelete, notesImportSlide,
-  notesRead, notesRename, notesSave, notesTree, NoteConflictError,
+  notesMove, notesRead, notesRename, notesSave, notesTree, NoteConflictError,
 } from '../src/client/wire.ts'
 
 const treeBody = {
@@ -154,6 +154,21 @@ describe('notes wire', () => {
     await expect(notesRename('a.md', 'b.md')).resolves.toEqual({ path: 'b.md' })
     await expect(notesDelete('b.md')).resolves.toBeUndefined()
     await expect(notesRename('../a.md', 'b.md')).rejects.toThrow('Invalid note path')
+  })
+
+  it('移动与排序提交目标目录和插入位置，并校验返回路径', async () => {
+    stubFetch((url, init) => {
+      expect(url).toBe('/api/notes/move')
+      expect(init?.method).toBe('POST')
+      expect(requestJson(init)).toEqual({ path: 'a.md', directory: '资料', before: '资料/b.md' })
+      return Response.json({ path: '资料/a.md' })
+    })
+    await expect(notesMove('a.md', '资料', '资料/b.md')).resolves.toEqual({ path: '资料/a.md' })
+    stubFetch(() => Response.json({ path: '../a.md' }))
+    await expect(notesMove('a.md', '')).rejects.toThrow('Invalid note path')
+    stubFetch(() => new Response('conflict', { status: 409 }))
+    await expect(notesMove('a.md', '资料')).rejects.toThrow('notes move HTTP 409')
+    await expect(notesMove('a.md', '../资料')).rejects.toThrow('Invalid note path')
   })
 
   it('笔记根目录必须是绝对路径', async () => {

@@ -458,4 +458,32 @@ describe('Web 笔记工作区', () => {
     expect(JSON.parse(await readFile(deckPath, 'utf8'))).toMatchObject({ revision: 1, deck: { title: '测试' } })
     expect(consoleLog.pageErrors).toEqual([])
   })
+
+  it('目录支持拖拽排序并把文档移入目录', async () => {
+    await scaffold.ctx.fileLibrary.createNoteDirectory('Ideas')
+    await scaffold.ctx.fileLibrary.saveNote('Roadmap.md', '# Roadmap')
+    await page.reload({ waitUntil: 'load' })
+    await page.getByRole('button', { name: 'Notes', exact: true }).click()
+    const directory = page.getByRole('complementary', { name: 'Note directory' })
+    const release = directory.getByTitle('Release notes', { exact: true })
+    const roadmap = directory.getByTitle('Roadmap', { exact: true })
+    const ideas = directory.getByTitle('Ideas', { exact: true })
+    await release.waitFor()
+
+    await roadmap.dragTo(release, { targetPosition: { x: 120, y: 2 } })
+    await expect.poll(async () => {
+      const names = (await scaffold.ctx.fileLibrary.notesTree()).map(entry => entry.name)
+      return names.indexOf('Roadmap.md') < names.indexOf('Release notes.md')
+    }).toBe(true)
+
+    await release.dragTo(ideas, { targetPosition: { x: 120, y: 17 } })
+    await expect.poll(async () =>
+      (await scaffold.ctx.fileLibrary.notesTree()).some(entry => entry.name === 'Release notes.md'))
+      .toBe(false)
+    await directory.getByTitle('Release notes', { exact: true }).waitFor({ state: 'visible' })
+    await expect.poll(async () => (await scaffold.ctx.fileLibrary.readNote('Ideas/Release notes.md')).content)
+      .toContain('Release checklist')
+    await expect(scaffold.ctx.fileLibrary.readNote('Release notes.md')).rejects.toThrow()
+    expect(consoleLog.pageErrors).toEqual([])
+  })
 })

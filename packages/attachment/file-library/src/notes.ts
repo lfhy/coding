@@ -8,7 +8,8 @@ import {
   isDeckDirectoryName, NOTE_DECK_SUFFIX, NOTE_MAX_DEPTH, NoteConflictError, NoteNotFoundError, noteTarget, StaleNoteError, strictNoteParent,
 } from './note-path.ts'
 import { officeKindOfName, OfficeNotes } from './office-notes.ts'
-import { safeName, syncDirectory, writeNoteBytes } from './private-files.ts'
+import { NOTE_ORDER_FILE, appendNoteOrder, orderNoteNodes, readNoteOrder, removeNoteOrder, replaceNoteOrderName, writeNoteOrder } from './note-order.ts'
+import { safeName, sameEntry, syncDirectory, writeNoteBytes } from './private-files.ts'
 import type { NotesTreeNode } from './types.ts'
 
 /** 原文读写只接受 Markdown；结构化笔记使用独立的文件格式。 */
@@ -23,6 +24,24 @@ const NOTE_MAX_NODES = 4096
 /** 统计目录树的节点总数（含目录与文件），用于新建前的节点预算检查。 */
 function countTreeNodes(entries: readonly NotesTreeNode[]): number {
   return entries.reduce((count, entry) => count + 1 + (entry.children === undefined ? 0 : countTreeNodes(entry.children)), 0)
+}
+
+/** 在已扫描的目录树中查找条目；移动前用它核对类型和子树深度。 */
+function findTreeEntry(entries: readonly NotesTreeNode[], path: string): NotesTreeNode | undefined {
+  for (const entry of entries) {
+    if (entry.path === path) return entry
+    if (entry.children !== undefined) {
+      const found = findTreeEntry(entry.children, path)
+      if (found !== undefined) return found
+    }
+  }
+  return undefined
+}
+
+/** 普通目录自身及后代普通目录占用的扫描层数；文件与幻灯片工程都是零层叶子。 */
+function subtreeDepth(entry: NotesTreeNode): number {
+  if (entry.kind !== 'dir' || entry.children === undefined) return 0
+  return 1 + Math.max(0, ...entry.children.map(subtreeDepth))
 }
 
 /**
@@ -141,14 +160,15 @@ export class NoteStore {
    * 扫描真实目录、笔记文件和幻灯片工程，不跟随符号链接。
    * 幻灯片工程目录只出现为一行 `deck` 条目，其内部的工程文件不参与扫描与节点预算。
    * 深度与节点总数超限视为结构异常，整棵树拒绝。
-   * @returns 根级条目数组；子节点按名称排序。
+   * @returns 根级条目数组；每个目录按手工顺序排列，未记录的条目再按名称排序。
    */
   async notesTree(): Promise<NotesTreeNode[]> {
     const notesDir = await this.openRoot()
     let count = 0
     const scan = async (dirPath: string, prefix: string, depth: number): Promise<NotesTreeNode[]> => {
       if (depth > NOTE_MAX_DEPTH) throw new TypeError('笔记目录层级过深')
-      const entries = (await readdir(dirPath, { withFileTypes: true })).sort((a, b) => a.name.localeCompare(b.name))
+      const allEntries = await readdir(dirPath, { withFileTypes: true })
+      const entries = allEntries.filter(entry => entry.name !== NOTE_ORDER_FILE).sort((a, b) => a.name.localeCompare(b.name))
       const nodes: NotesTreeNode[] = []
       for (const entry of entries) {
         count += 1
@@ -172,7 +192,7 @@ export class NoteStore {
           if (info.isFile() && !info.isSymbolicLink()) nodes.push({ name: entry.name, kind, path: rel, mtimeMs: info.mtimeMs })
         }
       }
-      return nodes
+      return orderNoteNodes(nodes, await readNoteOrder(dirPath))
     }
     return await scan(notesDir, '', 0)
   }
@@ -253,36 +273,39 @@ export class NoteStore {
    * @throws TypeError 名称、父目录或内容不安全，或同名条目已存在时。
    */
   async createNote(name: string, directory: string = '', content?: string): Promise<{ path: string }> {
-    const leaf = safeName(name)
-    const fileName = NOTE_EXTENSIONS.has(extname(leaf).toLowerCase()) ? leaf : `${leaf}.md`
-    if (content !== undefined && typeof content !== 'string') throw new TypeError('笔记内容无效')
-    if (content !== undefined && Buffer.byteLength(content, 'utf8') > NOTE_MAX_BYTES) {
-      throw new TypeError('笔记超过大小上限')
-    }
-    const parent = await this.safeNoteDirectory(directory)
-    const target = join(parent.target, fileName)
-    const flags = constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW
-    const handle = await open(target, flags, 0o600).catch((error: unknown) => {
-      if ((error as NodeJS.ErrnoException).code === 'EEXIST') throw new TypeError('笔记已存在')
-      throw error
-    })
-    let writeFailure: unknown
-    try {
-      if (content !== undefined && content !== '') {
-        await handle.writeFile(Buffer.from(content, 'utf8'))
-        await handle.sync()
+    return this.scheduleNotesWrite(async () => {
+      const leaf = safeName(name)
+      const fileName = NOTE_EXTENSIONS.has(extname(leaf).toLowerCase()) ? leaf : `${leaf}.md`
+      if (content !== undefined && typeof content !== 'string') throw new TypeError('笔记内容无效')
+      if (content !== undefined && Buffer.byteLength(content, 'utf8') > NOTE_MAX_BYTES) {
+        throw new TypeError('笔记超过大小上限')
       }
-    } catch (error) {
-      writeFailure = error
-    } finally {
-      await handle.close()
-    }
-    if (writeFailure !== undefined) {
-      try { await unlink(target) } catch { /* 只清理本次独占创建且写入失败的条目。 */ }
-      throw writeFailure instanceof Error ? writeFailure : new Error('笔记写入失败')
-    }
-    await syncDirectory(parent.target)
-    return { path: parent.rel === '' ? fileName : `${parent.rel}/${fileName}` }
+      const parent = await this.safeNoteDirectory(directory)
+      const target = join(parent.target, fileName)
+      const flags = constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW
+      const handle = await open(target, flags, 0o600).catch((error: unknown) => {
+        if ((error as NodeJS.ErrnoException).code === 'EEXIST') throw new TypeError('笔记已存在')
+        throw error
+      })
+      let writeFailure: unknown
+      try {
+        if (content !== undefined && content !== '') {
+          await handle.writeFile(Buffer.from(content, 'utf8'))
+          await handle.sync()
+        }
+      } catch (error) {
+        writeFailure = error
+      } finally {
+        await handle.close()
+      }
+      if (writeFailure !== undefined) {
+        try { await unlink(target) } catch { /* 只清理本次独占创建且写入失败的条目。 */ }
+        throw writeFailure instanceof Error ? writeFailure : new Error('笔记写入失败')
+      }
+      await syncDirectory(parent.target)
+      await appendNoteOrder(parent.target, fileName).catch(() => undefined)
+      return { path: parent.rel === '' ? fileName : `${parent.rel}/${fileName}` }
+    })
   }
 
   /**
@@ -315,6 +338,7 @@ export class NoteStore {
         try { await rmdir(target) } catch { /* 原错误是同步失败；只回滚本次仍为空的目录。 */ }
         throw error
       }
+      await appendNoteOrder(parent.target, leaf).catch(() => undefined)
       return {
         path: parent.rel === '' ? leaf : `${parent.rel}/${leaf}`,
         // 只在目录仍是本次创建的那一个时递归清理，避免误删后来被替换或被填满的目录。
@@ -324,6 +348,7 @@ export class NoteStore {
             if (!current.isDirectory() || current.isSymbolicLink() || current.dev !== owned.dev || current.ino !== owned.ino) return
             await rm(target, { recursive: true })
             await syncDirectory(parent.target)
+            await removeNoteOrder(parent.target, leaf).catch(() => undefined)
           } catch { /* 清理不能覆盖原始创建错误。 */ }
         },
       }
@@ -337,24 +362,27 @@ export class NoteStore {
    * @returns 相对笔记根目录的新目录路径。
    */
   async createNoteDirectory(name: string, parent: string = ''): Promise<{ path: string }> {
-    if (typeof name !== 'string' || name.length === 0 || name.length > 1024 || name.includes('\0')
-      || /[\u0001-\u001f\u007f]/u.test(name) || /[\\/]/u.test(name) || name === '.' || name === '..'
-      || /^[a-zA-Z]:/u.test(name)) {
-      throw new TypeError('目录名无效')
-    }
-    const leaf = safeName(name)
-    const parentDirectory = await this.safeNoteDirectory(parent)
-    const parentSegments = parentDirectory.rel === '' ? [] : parentDirectory.rel.split('/')
-    if (parentSegments.length + 1 > NOTE_MAX_DEPTH) throw new TypeError('笔记目录层级过深')
-    if (countTreeNodes(await this.notesTree()) >= NOTE_MAX_NODES) throw new TypeError('笔记条目过多')
-    const target = join(parentDirectory.target, leaf)
-    try { await mkdir(target, { mode: 0o700 }) }
-    catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'EEXIST') throw new TypeError('笔记目录已存在')
-      throw error
-    }
-    await syncDirectory(parentDirectory.target)
-    return { path: parentDirectory.rel === '' ? leaf : `${parentDirectory.rel}/${leaf}` }
+    return this.scheduleNotesWrite(async () => {
+      if (typeof name !== 'string' || name.length === 0 || name.length > 1024 || name.includes('\0')
+        || /[\u0001-\u001f\u007f]/u.test(name) || /[\\/]/u.test(name) || name === '.' || name === '..'
+        || /^[a-zA-Z]:/u.test(name)) {
+        throw new TypeError('目录名无效')
+      }
+      const leaf = safeName(name)
+      const parentDirectory = await this.safeNoteDirectory(parent)
+      const parentSegments = parentDirectory.rel === '' ? [] : parentDirectory.rel.split('/')
+      if (parentSegments.length + 1 > NOTE_MAX_DEPTH) throw new TypeError('笔记目录层级过深')
+      if (countTreeNodes(await this.notesTree()) >= NOTE_MAX_NODES) throw new TypeError('笔记条目过多')
+      const target = join(parentDirectory.target, leaf)
+      try { await mkdir(target, { mode: 0o700 }) }
+      catch (error) {
+        if ((error as NodeJS.ErrnoException).code === 'EEXIST') throw new TypeError('笔记目录已存在')
+        throw error
+      }
+      await syncDirectory(parentDirectory.target)
+      await appendNoteOrder(parentDirectory.target, leaf).catch(() => undefined)
+      return { path: parentDirectory.rel === '' ? leaf : `${parentDirectory.rel}/${leaf}` }
+    })
   }
 
   /**
@@ -412,7 +440,106 @@ export class NoteStore {
       }
       await rename(source, targetPath)
       await syncDirectory(writeParent)
+      // 排序清单只是显示增强；写入失败不撤销已经成功的改名。
+      await replaceNoteOrderName(writeParent, basename(source), basename(targetPath)).catch(() => undefined)
       return { path: `${rel.slice(0, rel.lastIndexOf('/') + 1)}${basename(targetPath)}` }
+    })
+  }
+
+  /**
+   * 移动笔记条目并写入目标目录顺序；同目录移动只更新排序，不重命名磁盘条目。
+   * `before` 为目标目录中的直属条目路径，缺省或 null 表示追加到末尾。
+   * @param relativePath - 要移动的文件或真实目录的相对路径。
+   * @param directory - 目标目录的相对路径，空字符串表示笔记根目录。
+   * @param before - 可选的插入位置；必须与目标目录直属。
+   * @returns 移动后的相对路径。
+   */
+  async moveNote(relativePath: string, directory: string, before?: string | null): Promise<{ path: string }> {
+    return this.scheduleNotesWrite(async () => {
+      const sourcePath = noteTarget(this.root, relativePath)
+      const notesDir = await this.openRoot()
+      const sourceParentSegments = sourcePath.segments.slice(0, -1)
+      const sourceParent = await strictNoteParent(notesDir, sourceParentSegments, true)
+      const sourceParentRel = sourceParentSegments.join('/')
+      const sourceName = sourcePath.segments.at(-1)
+      if (sourceName === undefined) throw new TypeError('笔记路径无效')
+      const sourceEntryPath = join(sourceParent.target, sourceName)
+      const current = await lstat(sourceEntryPath).catch((error: unknown) => {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw new NoteNotFoundError()
+        throw error
+      })
+      if (current.isSymbolicLink() || !current.isFile() && !current.isDirectory()) throw new TypeError('笔记条目无效')
+
+      const tree = await this.notesTree()
+      const sourceEntry = findTreeEntry(tree, sourcePath.rel)
+      if (sourceEntry === undefined) throw new NoteNotFoundError()
+      const destinationSegments = directory === '' ? [] : noteTarget(this.root, directory).segments
+      const destinationParent = await strictNoteParent(notesDir, destinationSegments, true)
+      const destinationRel = destinationSegments.join('/')
+      const destinationNode = destinationRel === '' ? undefined : findTreeEntry(tree, destinationRel)
+      if (destinationRel !== '' && destinationNode?.kind !== 'dir') throw new TypeError('笔记目录无效')
+      const destinationChildren = destinationRel === '' ? tree : destinationNode?.children
+      if (destinationChildren === undefined) throw new TypeError('笔记目录无效')
+
+      let beforeName: string | undefined
+      if (before !== undefined && before !== null) {
+        const insertion = noteTarget(this.root, before)
+        const insertionParent = insertion.segments.slice(0, -1).join('/')
+        if (insertionParent !== destinationRel) throw new TypeError('插入位置无效')
+        if (insertion.rel === sourcePath.rel) return { path: sourcePath.rel }
+        if (!destinationChildren.some(entry => entry.path === insertion.rel)) throw new NoteConflictError('插入位置已变化')
+        beforeName = insertion.segments.at(-1)
+      }
+
+      const sameDirectory = sourceParentRel === destinationRel
+      if (!sameDirectory && current.isDirectory()
+        && (destinationRel === sourcePath.rel || destinationRel.startsWith(`${sourcePath.rel}/`))) {
+        throw new TypeError('不能将目录移入自身或其子目录')
+      }
+      if (!sameDirectory && current.isDirectory()
+        && destinationSegments.length + subtreeDepth(sourceEntry) > NOTE_MAX_DEPTH) {
+        throw new TypeError('笔记目录层级过深')
+      }
+
+      const currentNames = destinationChildren.map(entry => entry.name).filter(name => !sameDirectory || name !== sourceName)
+      const insertionIndex = beforeName === undefined ? currentNames.length : currentNames.indexOf(beforeName)
+      if (insertionIndex < 0) throw new NoteConflictError('插入位置已变化')
+      const orderedNames = [...currentNames.slice(0, insertionIndex), sourceName, ...currentNames.slice(insertionIndex)]
+      const latestSourceParent = await strictNoteParent(notesDir, sourceParentSegments, true)
+      const latestDestinationParent = await strictNoteParent(notesDir, destinationSegments, true)
+      if (latestSourceParent.target !== sourceParent.target || latestDestinationParent.target !== destinationParent.target
+        || !sameEntry(latestSourceParent.info, sourceParent.info) || !sameEntry(latestDestinationParent.info, destinationParent.info)
+        || !sameEntry(latestSourceParent.rootInfo, sourceParent.rootInfo)) {
+        throw new NoteConflictError('笔记目录已更换')
+      }
+      if (sameDirectory) {
+        if (orderedNames.every((name, index) => name === destinationChildren[index]?.name)) return { path: sourcePath.rel }
+        await writeNoteOrder(destinationParent.target, orderedNames)
+        return { path: sourcePath.rel }
+      }
+
+      const officeKind = current.isFile() ? officeKindOfName(sourceName) : undefined
+      const mindmap = current.isFile() && isMindmapName(sourceName)
+      if (current.isFile() && officeKind === undefined && !mindmap && !isMarkdownNoteName(sourceName)) {
+        throw new TypeError('笔记扩展名无效')
+      }
+      const source = officeKind !== undefined ? await this.office.confirmEntry(sourcePath.rel, current)
+        : mindmap ? await this.mindmaps.confirmEntry(sourcePath.rel, current) : sourceEntryPath
+      if (!sameEntry(await lstat(source), current)) throw new NoteConflictError('笔记条目已更换')
+      const targetPath = join(destinationParent.target, sourceName)
+      try {
+        await lstat(targetPath)
+        throw new NoteConflictError('笔记已存在')
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+      }
+      await rename(source, targetPath)
+      await syncDirectory(sourceParent.target)
+      if (destinationParent.target !== sourceParent.target) await syncDirectory(destinationParent.target)
+      if (sourceParent.target !== notesDir || destinationParent.target !== notesDir) await syncDirectory(notesDir)
+      await writeNoteOrder(destinationParent.target, orderedNames)
+      await removeNoteOrder(sourceParent.target, sourceName).catch(() => undefined)
+      return { path: destinationRel === '' ? sourceName : `${destinationRel}/${sourceName}` }
     })
   }
 
@@ -452,6 +579,7 @@ export class NoteStore {
         else await unlink(entry)
       }
       await syncDirectory(realParent)
+      await removeNoteOrder(realParent, basename(entry)).catch(() => undefined)
     })
   }
 }

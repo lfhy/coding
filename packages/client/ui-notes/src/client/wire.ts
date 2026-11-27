@@ -305,6 +305,28 @@ export async function notesRename(path: string, name: string): Promise<{ path: s
 }
 
 /**
+ * 移动或重新排序笔记条目；同目录移动只写顺序，跨目录移动保留原名称。
+ * @param path - 要移动的相对路径。
+ * @param directory - 目标目录，空字符串表示笔记根目录。
+ * @param before - 目标目录中的直属插入位置，null 或省略表示末尾。
+ * @returns Host 确认的新相对路径。
+ */
+export async function notesMove(path: string, directory: string, before?: string | null): Promise<{ path: string }> {
+  assertNotePath(path)
+  if (directory !== '') assertNotePath(directory)
+  if (before !== undefined && before !== null) assertNotePath(before)
+  const response = await fetch('/api/notes/move', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ path, directory, before: before ?? null }),
+  })
+  if (!response.ok) throw new Error(`notes move HTTP ${response.status}`)
+  const body = (await response.json()) as unknown
+  if (!isObject(body) || !nonemptyString(body.path)) throw new Error('Invalid note move payload')
+  assertNotePath(body.path)
+  return { path: body.path }
+}
+
+/**
  * 删除笔记或整个目录；调用方须先取得用户确认。
  * @param path - 相对笔记根目录的斜杠路径。
  * @returns Host 完成删除后兑现；请求失败时拒绝。
