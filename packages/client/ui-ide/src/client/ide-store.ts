@@ -84,6 +84,9 @@ type IdeActions = {
   toggleExpanded: (draft: IdeState, workspaceId: WorkspaceId, path: string) => void
   openTab: (draft: IdeState, workspaceId: WorkspaceId, path: string, name: string,
     segments: readonly string[], mode?: 'preview' | 'pinned') => void
+  /** 在指定来源分组旁新建分组，并以固定标签打开文件；正文已存在时复用。 */
+  openSplitTab: (draft: IdeState, workspaceId: WorkspaceId, sourcePaneId: string, path: string, name: string,
+    segments: readonly string[], side: IdeSplitSide) => void
   reloadTab: (draft: IdeState, workspaceId: WorkspaceId, path: string, name: string, segments: readonly string[]) => void
   readyTab: (draft: IdeState, workspaceId: WorkspaceId, path: string, content: string, version: string) => void
   updateTab: (draft: IdeState, workspaceId: WorkspaceId, path: string, content: string) => void
@@ -227,6 +230,15 @@ function replacePreview(target: IdeWorkspaceView, pane: IdePaneState, path: stri
   pane.previewPath = path
 }
 
+/** 首次打开文件时建立加载中文档；已有正文与草稿继续复用。 */
+function ensureDocument(target: IdeWorkspaceView, path: string, name: string, segments: readonly string[]): void {
+  if (target.documents[path] !== undefined) return
+  target.documents[path] = {
+    path, name, segments: [...segments], content: '', savedContent: '', version: '',
+    dirty: false, status: 'loading',
+  }
+}
+
 /**
  * 创建代码工作区状态；实例由插件持有，不随会话切换重建。
  * @returns 声明了 init 与 actions 的 store handle。
@@ -264,13 +276,7 @@ export function createIdeStore(): EngineStoreHandle<IdeState, IdeActions> {
       },
       openTab: (draft, workspaceId, path, name, segments, mode = 'pinned') => {
         const target = view(draft, workspaceId)
-        const existing = target.documents[path]
-        if (existing === undefined) {
-          target.documents[path] = {
-            path, name, segments: [...segments], content: '', savedContent: '', version: '',
-            dirty: false, status: 'loading',
-          }
-        }
+        ensureDocument(target, path, name, segments)
         const pane = focusedPane(target)
         if (mode === 'preview' && !pane.paths.includes(path)) {
           replacePreview(target, pane, path)
@@ -278,6 +284,19 @@ export function createIdeStore(): EngineStoreHandle<IdeState, IdeActions> {
         }
         if (pane.previewPath === path && mode === 'pinned') pane.previewPath = null
         attachPath(target, pane, path)
+      },
+      openSplitTab: (draft, workspaceId, sourcePaneId, path, name, segments, side) => {
+        const target = view(draft, workspaceId)
+        const source = paneOf(target, sourcePaneId)
+        if (source === undefined) return
+        ensureDocument(target, path, name, segments)
+        const pane = newPane(draft)
+        const index = target.panes.findIndex(candidate => candidate.id === source.id)
+        target.panes.splice(index + (side === 'right' ? 1 : 0), 0, pane)
+        pane.paths = [path]
+        pane.activePath = path
+        pane.previewPath = null
+        target.activePaneId = pane.id
       },
       reloadTab: (draft, workspaceId, path, name, segments) => {
         const target = view(draft, workspaceId)

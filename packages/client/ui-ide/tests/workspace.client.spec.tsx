@@ -284,7 +284,7 @@ describe('IDE 工作区三栏', () => {
     expect(screen.getByText(zh.workspaceHeadline)).toBeTruthy()
   })
 
-  it('把文件从侧栏拖到编辑区或标签栏都按预览打开', async () => {
+  it('拖拽新文件固定打开，目标已有标签时自动分屏', async () => {
     const fixture = setup()
     fireEvent.click(await screen.findByText('README.md'))
     await screen.findByRole('textbox', { name: zh.editorLabel.replace('{name}', 'README.md') })
@@ -296,33 +296,70 @@ describe('IDE 工作区三栏', () => {
     fireEvent.dragLeave(tabs)
     fireEvent.dragStart(tree, { dataTransfer: transfer })
     fireEvent.dragOver(tabs, { dataTransfer: transfer })
-    expect(screen.getByText(zh.dropFile)).toBeTruthy()
+    expect(screen.getByText(zh.dropSplit)).toBeTruthy()
     expect(transfer.dropEffect).toBe('copy')
     fireEvent.dragLeave(tabs, { relatedTarget: null })
-    expect(screen.queryByText(zh.dropFile)).toBeNull()
+    expect(screen.queryByText(zh.dropSplit)).toBeNull()
     fireEvent.dragOver(tabs, { dataTransfer: transfer })
     fireEvent.drop(tabs, { dataTransfer: transfer })
-    expect(screen.queryByText(zh.dropFile)).toBeNull()
+    expect(screen.queryByText(zh.dropSplit)).toBeNull()
     await screen.findByRole('textbox', { name: zh.editorLabel.replace('{name}', 'index.ts') })
-    expect(fixture.instance.getSnapshot().views[WORKSPACE_ID]?.panes[0]).toMatchObject({
-      paths: ['src/index.ts'], previewPath: 'src/index.ts',
-    })
+    let split = fixture.instance.getSnapshot().views[WORKSPACE_ID]
+    expect(split?.panes.map(pane => ({ paths: pane.paths, previewPath: pane.previewPath }))).toEqual([
+      { paths: ['README.md'], previewPath: 'README.md' },
+      { paths: ['src/index.ts'], previewPath: null },
+    ])
 
     const other = [...document.querySelectorAll('button[role="listitem"]')]
       .find(row => row.getAttribute('title') === 'util.ts') as HTMLElement
     const body = screen.getAllByRole('region', { name: /编辑器分组/u })[0]?.querySelector('[data-pane-body]') as HTMLElement
+    body.getBoundingClientRect = () => ({
+      left: 0, width: 800, top: 0, height: 600, right: 800, bottom: 600, x: 0, y: 0,
+      toJSON: () => ({}),
+    })
     fireEvent.dragStart(other, { dataTransfer: transfer })
     fireEvent.dragOver(body, { clientX: 10, dataTransfer: transfer })
-    expect(screen.getByText(zh.dropFile)).toBeTruthy()
+    expect(screen.getByText(zh.dropSplit)).toBeTruthy()
     expect(transfer.dropEffect).toBe('copy')
     fireEvent.dragLeave(body, { relatedTarget: null })
-    expect(screen.queryByText(zh.dropFile)).toBeNull()
+    expect(screen.queryByText(zh.dropSplit)).toBeNull()
     fireEvent.dragOver(body, { clientX: 10, dataTransfer: transfer })
-    fireEvent.drop(body, { clientX: 10, dataTransfer: transfer })
+    act(() => { body.dispatchEvent(dragEvent('drop', 10, transfer)) })
     await screen.findByRole('textbox', { name: zh.editorLabel.replace('{name}', 'util.ts') })
-    const split = fixture.instance.getSnapshot().views[WORKSPACE_ID]
-    expect(split?.panes).toHaveLength(1)
-    expect(split?.panes[0]?.paths).toEqual(['src/util.ts'])
+    split = fixture.instance.getSnapshot().views[WORKSPACE_ID]
+    expect(split?.panes.map(pane => pane.paths)).toEqual([
+      ['src/util.ts'], ['README.md'], ['src/index.ts'],
+    ])
+
+    const readme = document.querySelector('button[role="listitem"][title="README.md"]') as HTMLElement
+    fireEvent.dragStart(readme, { dataTransfer: transfer })
+    fireEvent.dragOver(screen.getAllByRole('tablist', { name: zh.openFiles })[0] as HTMLElement,
+      { dataTransfer: transfer })
+    expect(screen.getByText(zh.dropExisting)).toBeTruthy()
+    fireEvent.drop(screen.getAllByRole('tablist', { name: zh.openFiles })[0] as HTMLElement,
+      { dataTransfer: transfer })
+    split = fixture.instance.getSnapshot().views[WORKSPACE_ID]
+    expect(split?.panes).toHaveLength(3)
+    expect(split?.panes[1]?.activePath).toBe('README.md')
+    expect(split?.activePaneId).toBe(split?.panes[1]?.id)
+  })
+
+  it('空分组拖拽文件直接固定打开，不创建额外分组', async () => {
+    const fixture = setup()
+    fireEvent.click(await screen.findByText('src'))
+    await screen.findByTitle('index.ts')
+    const row = document.querySelector('button[role="listitem"][title="index.ts"]') as HTMLElement
+    const body = screen.getAllByRole('region', { name: /编辑器分组/u })[0]?.querySelector('[data-pane-body]') as HTMLElement
+    const transfer = { effectAllowed: 'none', dropEffect: 'none', setData: () => {} }
+    fireEvent.dragStart(row, { dataTransfer: transfer })
+    fireEvent.dragOver(body, { clientX: 10, dataTransfer: transfer })
+    expect(screen.getByText(zh.dropFile)).toBeTruthy()
+    fireEvent.drop(body, { clientX: 10, dataTransfer: transfer })
+    await screen.findByRole('textbox', { name: zh.editorLabel.replace('{name}', 'index.ts') })
+    expect(fixture.instance.getSnapshot().views[WORKSPACE_ID]?.panes).toHaveLength(1)
+    expect(fixture.instance.getSnapshot().views[WORKSPACE_ID]?.panes[0]).toMatchObject({
+      paths: ['src/index.ts'], previewPath: null,
+    })
   })
 
   it('拖动文件时显示打开提示而不显示拆分提示，拖拽结束后回收状态', async () => {

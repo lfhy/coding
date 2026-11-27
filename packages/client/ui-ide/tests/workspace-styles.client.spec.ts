@@ -15,5 +15,6 @@ describe('IDE 标签栏几何', () => {
     expect(workspaceCss).toMatch(/\.page\[data-dragging='file'\][^{}]*\{[^}]*cursor:\s*copy/)
     expect(workspaceCss).toMatch(/\.fileDropHint\s*\{[^}]*border:\s*1px dashed var\(--dsw-alias-state-business-primary\)/)
     expect(workspaceCss).toMatch(/\.fileDropHint\s*\{[^}]*pointer-events:\s*none/)
+    expect(workspaceCss).toMatch(/\.fileDropHint\[data-side='left'\]\s*\{[^}]*width:\s*50%/)
   })
 })

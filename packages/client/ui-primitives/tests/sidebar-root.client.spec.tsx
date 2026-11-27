@@ -156,6 +156,15 @@ describe('SidebarRoot', () => {
     expect(onDragEnd).toHaveBeenCalledTimes(2)
   })
 
+  it('收起态可单独隐藏文件图标轨而不影响展开列表', () => {
+    const tree: SidebarRootItem[] = [{ id: 'draft', label: '草稿', icon: 'file' }]
+    const { unmount } = render(<SidebarRoot label="笔记" title="笔记" items={tree} collapsed={false} width={280} />)
+    expect(screen.getByRole('listitem', { name: '草稿' })).toBeTruthy()
+    unmount()
+    render(<SidebarRoot label="笔记" title="笔记" items={tree} railItems={[]} collapsed width={56} />)
+    expect(screen.queryByRole('button', { name: '草稿' })).toBeNull()
+  })
+
   it('转发投放位置与事件，供目录显示内置提示', () => {
     const onDragOver = vi.fn()
     const onDragLeave = vi.fn()

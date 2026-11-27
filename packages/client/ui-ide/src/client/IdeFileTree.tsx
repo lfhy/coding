@@ -86,7 +86,7 @@ export function IdeFileTree({
   return <SidebarRoot label={t('files')} title={title} collapsed={collapsed} width={width}
     header={<IdeOpenEditors items={openEditors} collapsed={collapsed}
       onActivate={onActivateEditor} onPin={onPinEditor} t={t} />}
-    items={items}
+    items={items} railItems={[]}
     empty={root?.status === 'loading' ? t('loading') : t('treeEmpty')}
     toolbar={failed ? <div className={css.treeError} role="alert">
       <span>{t('treeError')}</span>

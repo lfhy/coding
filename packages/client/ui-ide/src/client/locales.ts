@@ -10,7 +10,7 @@ export type IdeLocaleKey =
   | 'editor' | 'saving' | 'saved' | 'save' | 'saveShortcut' | 'assistant'
   | 'workspaceHeadline' | 'workspaceDescription'
   | 'discardTitle' | 'discardDescription' | 'discard' | 'reloadTitle' | 'reloadDescription' | 'cancel'
-  | 'switchWorkspace' | 'openOtherFolder' | 'split' | 'splitHint' | 'paneLabel' | 'closePane' | 'dropLeft' | 'dropRight' | 'dropFile'
+  | 'switchWorkspace' | 'openOtherFolder' | 'split' | 'splitHint' | 'paneLabel' | 'closePane' | 'dropLeft' | 'dropRight' | 'dropFile' | 'dropSplit' | 'dropExisting'
 
 /** 简体中文文案。 */
 export const zh: Record<IdeLocaleKey, string> = {
@@ -32,6 +32,7 @@ export const zh: Record<IdeLocaleKey, string> = {
   switchWorkspace: '切换工作区', openOtherFolder: '打开其他文件夹…', split: '向右拆分',
   splitHint: '把当前文件拆到新的编辑器分组（也可直接拖动标签）', paneLabel: '编辑器分组 {index}',
   closePane: '关闭编辑器分组 {index}', dropLeft: '在左侧新建分组', dropRight: '在右侧新建分组', dropFile: '松开打开文件',
+  dropSplit: '松开在新分组打开', dropExisting: '切换到已打开文件',
 }
 
 /** 英文文案。 */
@@ -54,5 +55,5 @@ export const en: Record<IdeLocaleKey, string> = {
   switchWorkspace: 'Switch workspace', openOtherFolder: 'Open another folder…', split: 'Split right',
   splitHint: 'Move this file into a new editor group (or drag the tab)', paneLabel: 'Editor group {index}',
   closePane: 'Close editor group {index}', dropLeft: 'New group on the left', dropRight: 'New group on the right',
-  dropFile: 'Drop to open file',
+  dropFile: 'Drop to open file', dropSplit: 'Drop to open in new group', dropExisting: 'Switch to open file',
 }

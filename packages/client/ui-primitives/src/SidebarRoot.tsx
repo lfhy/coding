@@ -51,6 +51,8 @@ export interface SidebarRootProps {
   /** 展开态标题行文案。 */
   title: string
   items: readonly SidebarRootItem[]
+  /** 收起态图标轨条目；缺省复用展开条目，传空数组可隐藏整条文件轨。 */
+  railItems?: readonly SidebarRootItem[]
   collapsed: boolean
   /** 对话侧栏的实际宽度，由根布局计算；收起时为 56px。 */
   width: number
@@ -76,7 +78,7 @@ export interface SidebarRootProps {
  * @returns 展开列或收起轨。
  */
 export function SidebarRoot({
-  label, title, items, collapsed, width, variant = 'rows', empty, header, headerAction, toolbar,
+  label, title, items, railItems, collapsed, width, variant = 'rows', empty, header, headerAction, toolbar,
 }: SidebarRootProps) {
   // 与对话侧栏同一套折叠时序：宽度先滑动，宽内容就地淡出 150ms，落定后换成图标轨并淡入。
   const [settled, setSettled] = useState(collapsed)
@@ -158,7 +160,7 @@ export function SidebarRoot({
             )
         ) : (
           <div className={css.rail}>
-            {items.filter(item => !item.folder).map(item => (
+            {(railItems ?? items).filter(item => !item.folder).map(item => (
               <button key={item.id} type="button" className={css.railButton}
                 aria-label={item.label} title={item.label} aria-pressed={item.active === true} data-icon-tone={item.iconTone}
                 onClick={item.onSelect} draggable={item.draggable === true}

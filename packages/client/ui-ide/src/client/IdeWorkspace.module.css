@@ -205,3 +205,6 @@
   background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 12%, transparent);
   font: var(--dsw-font-xs-strong-13);
 }
+
+.fileDropHint[data-side='left'] { left: 0; width: 50%; }
+.fileDropHint[data-side='right'] { right: 0; width: 50%; }

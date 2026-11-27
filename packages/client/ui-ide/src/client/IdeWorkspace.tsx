@@ -23,6 +23,14 @@ type DragState =
   | { kind: 'tab'; paneId: string; path: string }
   | { kind: 'file'; ref: DocumentRef }
 
+/** 拖拽落点来自当前渲染的分组，找不到只可能是外部篡改。 */
+function paneById(view: IdeWorkspaceView, paneId: string): IdePaneState {
+  const pane = view.panes.find(candidate => candidate.id === paneId)
+  /* v8 ignore next -- 分组 id 只由当前渲染提供。 */
+  if (pane === undefined) throw new Error('ide workspace: unknown pane')
+  return pane
+}
+
 interface IdeWorkspaceProps {
   workspace: WorkspaceView
   /** 最近工作区，供页头切换菜单使用。 */
@@ -92,7 +100,12 @@ export function IdeWorkspace({
   const [menuOpen, setMenuOpen] = useState(false)
   const [dragging, setDragging] = useState<DragState | null>(null)
   const [dropHint, setDropHint] = useState<{ paneId: string; side: IdeSplitSide } | null>(null)
-  const [fileDropHint, setFileDropHint] = useState<{ paneId: string; area: 'tabs' | 'body' } | null>(null)
+  const [fileDropHint, setFileDropHint] = useState<{
+    paneId: string
+    area: 'tabs' | 'body'
+    side?: IdeSplitSide
+    text: string
+  } | null>(null)
   const alive = useRef(true)
   const heading = useRef<HTMLHeadingElement>(null)
   const viewRef = useRef(view)
@@ -184,10 +197,38 @@ export function IdeWorkspace({
     if (existing === undefined) void readDocument({ path, name, segments })
   }
 
-  /** 文件拖到指定分组时先聚焦该组，再按单击文件的预览语义打开。 */
-  const openFileInPane = (paneId: string, ref: DocumentRef): void => {
-    actions.focusPane(workspaceId, paneId)
-    openFile(ref.path, ref.name, ref.segments)
+  /** 拖拽文件始终固定打开；目标已有标签时新建相邻分组，空分组则直接打开。 */
+  const openDraggedFile = (paneId: string, ref: DocumentRef, side: IdeSplitSide = 'right'): void => {
+    const current = viewRef.current
+    const opened = current.panes.find(pane => pane.paths.includes(ref.path))
+    if (opened !== undefined) {
+      actions.activateTab(workspaceId, opened.id, ref.path)
+      return
+    }
+    const target = paneById(current, paneId)
+    if (target.paths.length === 0) {
+      actions.focusPane(workspaceId, paneId)
+      actions.openTab(workspaceId, ref.path, ref.name, ref.segments, 'pinned')
+    } else {
+      actions.openSplitTab(workspaceId, paneId, ref.path, ref.name, ref.segments, side)
+    }
+    void readDocument(ref)
+  }
+
+  /** 只有目标已有标签且文件尚未打开时才需要新建分组。 */
+  const fileDropSide = (ref: DocumentRef, paneId: string, side: IdeSplitSide): IdeSplitSide | undefined => {
+    const current = viewRef.current
+    if (current.panes.some(pane => pane.paths.includes(ref.path))) return undefined
+    const target = paneById(current, paneId)
+    return target.paths.length === 0 ? undefined : side
+  }
+
+  /** 悬停文案按最终落点行为区分，避免用户以为会替换当前预览。 */
+  const fileDropCopy = (ref: DocumentRef, paneId: string): string => {
+    const current = viewRef.current
+    if (current.panes.some(pane => pane.paths.includes(ref.path))) return t('dropExisting')
+    const target = paneById(current, paneId)
+    return target.paths.length === 0 ? t('dropFile') : t('dropSplit')
   }
 
   const toggleDirectory = (path: string): void => {
@@ -265,7 +306,8 @@ export function IdeWorkspace({
     event.preventDefault()
     event.stopPropagation()
     if (dragging.kind === 'file') {
-      openFileInPane(paneId, dragging.ref)
+      const side = dropSideOf(event.currentTarget.getBoundingClientRect(), event.clientX)
+      openDraggedFile(paneId, dragging.ref, side)
       setDragging(null)
       setDropHint(null)
       setFileDropHint(null)
@@ -283,7 +325,7 @@ export function IdeWorkspace({
     if (dragging === null) return
     event.preventDefault()
     event.stopPropagation()
-    if (dragging.kind === 'file') openFileInPane(paneId, dragging.ref)
+    if (dragging.kind === 'file') openDraggedFile(paneId, dragging.ref)
     else actions.moveTab(workspaceId, dragging.path, paneId)
     setDragging(null)
     setDropHint(null)
@@ -378,7 +420,10 @@ export function IdeWorkspace({
                 if (dragging.kind === 'file') {
                   event.dataTransfer.dropEffect = 'copy'
                   setDropHint(null)
-                  setFileDropHint({ paneId: pane.id, area: 'tabs' })
+                  const side = fileDropSide(dragging.ref, pane.id, 'right')
+                  setFileDropHint(side === undefined
+                    ? { paneId: pane.id, area: 'tabs', text: fileDropCopy(dragging.ref, pane.id) }
+                    : { paneId: pane.id, area: 'tabs', side, text: fileDropCopy(dragging.ref, pane.id) })
                 } else {
                   event.dataTransfer.dropEffect = 'move'
                   setFileDropHint(null)
@@ -402,7 +447,7 @@ export function IdeWorkspace({
                 aria-label={t('closePane', { index: index + 1 })} title={t('closePane', { index: index + 1 })}
                 onClick={() => { actions.closePane(workspaceId, pane.id) }}>×</button>}
               {fileDropHint?.paneId === pane.id && fileDropHint.area === 'tabs'
-                && <span className={css.fileDropHint} role="presentation">{t('dropFile')}</span>}
+                && <span className={css.fileDropHint} role="presentation">{fileDropHint.text}</span>}
             </div>
             <div className={css.paneBody} data-pane-body={pane.id}
               data-file-drop={fileDropHint?.paneId === pane.id && fileDropHint.area === 'body' ? '' : undefined}
@@ -412,7 +457,11 @@ export function IdeWorkspace({
                 if (dragging.kind === 'file') {
                   event.dataTransfer.dropEffect = 'copy'
                   setDropHint(null)
-                  setFileDropHint({ paneId: pane.id, area: 'body' })
+                  const pointerSide = dropSideOf(event.currentTarget.getBoundingClientRect(), event.clientX)
+                  const side = fileDropSide(dragging.ref, pane.id, pointerSide)
+                  setFileDropHint(side === undefined
+                    ? { paneId: pane.id, area: 'body', text: fileDropCopy(dragging.ref, pane.id) }
+                    : { paneId: pane.id, area: 'body', side, text: fileDropCopy(dragging.ref, pane.id) })
                   return
                 }
                 event.dataTransfer.dropEffect = 'move'
@@ -438,7 +487,9 @@ export function IdeWorkspace({
                 {t(dropHint.side === 'left' ? 'dropLeft' : 'dropRight')}
               </span>}
               {fileDropHint?.paneId === pane.id && fileDropHint.area === 'body'
-                && <span className={css.fileDropHint} role="presentation">{t('dropFile')}</span>}
+                && <span className={css.fileDropHint} data-side={fileDropHint.side} role="presentation">
+                  {fileDropHint.text}
+                </span>}
             </div>
           </section>
         })}

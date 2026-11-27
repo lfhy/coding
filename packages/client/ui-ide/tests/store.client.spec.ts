@@ -285,6 +285,26 @@ describe('IDE 工作区 store', () => {
     ])
   })
 
+  it('可在来源分组旁新建固定标签分组并复用已有正文', () => {
+    const store = setup()
+    store.actions.enter(A)
+    store.actions.openTab(A, 'fixed.ts', 'fixed.ts', ['fixed.ts'])
+    store.actions.openSplitTab(A, 'pane-0', 'dragged.ts', 'dragged.ts', ['dragged.ts'], 'right')
+    expect(store.getSnapshot().views[A]?.panes.map(pane => ({
+      paths: pane.paths, activePath: pane.activePath, previewPath: pane.previewPath,
+    }))).toEqual([
+      { paths: ['fixed.ts'], activePath: 'fixed.ts', previewPath: null },
+      { paths: ['dragged.ts'], activePath: 'dragged.ts', previewPath: null },
+    ])
+    expect(store.getSnapshot().views[A]?.activePaneId).toBe('pane-1')
+
+    store.actions.readyTab(A, 'dragged.ts', 'draft source', 'v1')
+    store.actions.openSplitTab(A, 'pane-1', 'dragged.ts', 'dragged.ts', ['dragged.ts'], 'left')
+    expect(store.getSnapshot().views[A]?.documents['dragged.ts']?.content).toBe('draft source')
+    store.actions.openSplitTab(A, 'missing', 'ignored.ts', 'ignored.ts', ['ignored.ts'], 'right')
+    expect(store.getSnapshot().views[A]?.documents['ignored.ts']).toBeUndefined()
+  })
+
   it('关闭分组时保留目标已有预览，否则接管来源预览', () => {
     const store = setup()
     store.actions.enter(A)

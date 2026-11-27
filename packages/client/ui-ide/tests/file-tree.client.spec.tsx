@@ -103,9 +103,11 @@ describe('IDE 文件树', () => {
     setup({ '': { status: 'ready', entries: [], truncated: false } })
     expect(screen.getByText(zh.noOpenEditors)).toBeTruthy()
     cleanup()
-    setup({ '': { status: 'ready', entries: [], truncated: false } }, [], true, [
+    setup({ '': { status: 'ready', truncated: false,
+      entries: [{ name: 'a.ts', type: 'file', segments: ['opaque', 'a.ts'] }] } }, [], true, [
       { path: 'a.ts', name: 'a.ts', paneId: 'pane-0', active: true, dirty: false, preview: true },
     ])
     expect(screen.queryByRole('region', { name: zh.openEditors })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'a.ts' })).toBeNull()
   })
 })

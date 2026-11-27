@@ -107,13 +107,20 @@ describe('代码工作区入口', () => {
     const dataTransfer = await page.evaluateHandle(() => new DataTransfer())
     await packageFile.dispatchEvent('dragstart', { dataTransfer })
     await fileTabs.dispatchEvent('dragover', { dataTransfer })
-    await page.getByText('Drop to open file', { exact: true }).waitFor()
+    await page.getByText('Drop to open in new group', { exact: true }).waitFor()
     await packageFile.dispatchEvent('dragend', { dataTransfer })
-    await page.getByText('Drop to open file', { exact: true }).waitFor({ state: 'detached' })
+    await page.getByText('Drop to open in new group', { exact: true }).waitFor({ state: 'detached' })
     await dataTransfer.dispose()
     await packageFile.dragTo(fileTabs)
+    await page.getByRole('region', { name: 'Editor group 2', exact: true }).waitFor()
     await page.getByRole('textbox', { name: 'package.json editor', exact: true }).waitFor()
     expect(await page.getByRole('tab', { name: /util\.ts/u }).count()).toBe(1)
+    expect(await page.getByRole('tab', { name: /index\.ts/u }).count()).toBe(1)
+    expect(await page.getByRole('tab', { name: /package\.json/u }).locator('span').last()
+      .evaluate(element => getComputedStyle(element).fontStyle)).toBe('normal')
+    await page.getByRole('button', { name: 'Collapse sidebar', exact: true }).click()
+    await page.waitForFunction(() => document.querySelector('[aria-label="Files"]')
+      ?.querySelectorAll('button[title]').length === 0)
     const metrics = await page.evaluate(() => ({
       width: document.documentElement.scrollWidth, height: document.documentElement.scrollHeight,
       viewportWidth: innerWidth, viewportHeight: innerHeight,
