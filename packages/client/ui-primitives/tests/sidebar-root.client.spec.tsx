@@ -132,4 +132,27 @@ describe('SidebarRoot', () => {
     expect(screen.queryByRole('button', { name: '重命名草稿' })).toBeNull()
     expect(screen.getByRole('button', { name: '草稿' })).toBeTruthy()
   })
+
+  it('可拖拽条目在展开与收起态都转发拖拽事件', () => {
+    const onDragStart = vi.fn()
+    const onDragEnd = vi.fn()
+    const tree: SidebarRootItem[] = [{ id: 'draft', label: '草稿', icon: 'file', draggable: true,
+      onDragStart, onDragEnd }]
+    const { unmount } = render(<SidebarRoot label="笔记" title="笔记" items={tree} collapsed={false} width={280} />)
+    const expanded = screen.getByRole('listitem', { name: '草稿' })
+    expect(expanded.getAttribute('draggable')).toBe('true')
+    fireEvent.dragStart(expanded)
+    fireEvent.dragEnd(expanded)
+    expect(onDragStart).toHaveBeenCalledOnce()
+    expect(onDragEnd).toHaveBeenCalledOnce()
+
+    unmount()
+    render(<SidebarRoot label="笔记" title="笔记" items={tree} collapsed width={56} />)
+    const collapsed = screen.getByRole('button', { name: '草稿' })
+    expect(collapsed.getAttribute('draggable')).toBe('true')
+    fireEvent.dragStart(collapsed)
+    fireEvent.dragEnd(collapsed)
+    expect(onDragStart).toHaveBeenCalledTimes(2)
+    expect(onDragEnd).toHaveBeenCalledTimes(2)
+  })
 })

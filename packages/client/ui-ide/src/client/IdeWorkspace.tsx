@@ -19,6 +19,9 @@ import { NS } from './locales.ts'
 import css from './IdeWorkspace.module.css'
 
 type DocumentRef = Pick<IdeDocument, 'path' | 'name' | 'segments'>
+type DragState =
+  | { kind: 'tab'; paneId: string; path: string }
+  | { kind: 'file'; ref: DocumentRef }
 
 interface IdeWorkspaceProps {
   workspace: WorkspaceView
@@ -87,7 +90,7 @@ export function IdeWorkspace({
   const [closePending, setClosePending] = useState<string | null>(null)
   const [reloadPending, setReloadPending] = useState<string | null>(null)
   const [menuOpen, setMenuOpen] = useState(false)
-  const [dragging, setDragging] = useState<{ paneId: string; path: string } | null>(null)
+  const [dragging, setDragging] = useState<DragState | null>(null)
   const [dropHint, setDropHint] = useState<{ paneId: string; side: IdeSplitSide } | null>(null)
   const alive = useRef(true)
   const heading = useRef<HTMLHeadingElement>(null)
@@ -155,9 +158,15 @@ export function IdeWorkspace({
   }, [loadDirectory, readDocument])
 
   const openFile = (path: string, name: string, segments: readonly string[]): void => {
-    const existing = view.documents[path]
+    const existing = viewRef.current.documents[path]
     actions.openTab(workspaceId, path, name, segments, 'preview')
     if (existing === undefined) void readDocument({ path, name, segments })
+  }
+
+  /** 文件拖到指定分组时先聚焦该组，再按单击文件的预览语义打开。 */
+  const openFileInPane = (paneId: string, ref: DocumentRef): void => {
+    actions.focusPane(workspaceId, paneId)
+    openFile(ref.path, ref.name, ref.segments)
   }
 
   const toggleDirectory = (path: string): void => {
@@ -233,6 +242,12 @@ export function IdeWorkspace({
     if (dragging === null) return
     event.preventDefault()
     event.stopPropagation()
+    if (dragging.kind === 'file') {
+      openFileInPane(paneId, dragging.ref)
+      setDragging(null)
+      setDropHint(null)
+      return
+    }
     // 落点以指针位置为准（提示只是预览），因此没有提示时同样能拆分。
     const side = dropSideOf(event.currentTarget.getBoundingClientRect(), event.clientX)
     actions.splitTab(workspaceId, dragging.path, paneId, side)
@@ -244,7 +259,8 @@ export function IdeWorkspace({
     if (dragging === null) return
     event.preventDefault()
     event.stopPropagation()
-    actions.moveTab(workspaceId, dragging.path, paneId)
+    if (dragging.kind === 'file') openFileInPane(paneId, dragging.ref)
+    else actions.moveTab(workspaceId, dragging.path, paneId)
     setDragging(null)
     setDropHint(null)
   }
@@ -269,6 +285,8 @@ export function IdeWorkspace({
     <IdeFileTree title={workspace.title} collapsed={sidebarCollapsed} width={sidebarWidth}
       directories={view.directories} expanded={view.expanded} activePath={activePane.activePath}
       openEditors={openEditors} onToggle={toggleDirectory} onOpen={openFile}
+      onDragFile={(path, name, segments) => { setDragging({ kind: 'file', ref: { path, name, segments } }); setDropHint(null) }}
+      onDragFileEnd={() => { setDragging(null); setDropHint(null) }}
       onActivateEditor={(paneId, path) => { actions.activateTab(workspaceId, paneId, path) }}
       onPinEditor={(paneId, path) => { actions.pinTab(workspaceId, paneId, path) }}
       onRetry={() => { void loadDirectory('') }} t={t} />
@@ -329,7 +347,7 @@ export function IdeWorkspace({
                 onActivate={(paneId, path) => { actions.activateTab(workspaceId, paneId, path) }}
                 onClose={requestClose}
                 onPin={(path) => { actions.pinTab(workspaceId, pane.id, path) }}
-                onDragStart={(paneId, path) => { setDragging({ paneId, path }); setDropHint(null) }}
+                onDragStart={(paneId, path) => { setDragging({ kind: 'tab', paneId, path }); setDropHint(null) }}
                 onDragEnd={() => { setDragging(null); setDropHint(null) }} t={t} />
               {view.panes.length > 1 && <button type="button" className={css.closePane}
                 aria-label={t('closePane', { index: index + 1 })} title={t('closePane', { index: index + 1 })}
@@ -339,6 +357,7 @@ export function IdeWorkspace({
               onDragOver={(event) => {
                 if (dragging === null) return
                 event.preventDefault()
+                if (dragging.kind !== 'tab') return
                 setDropHint({ paneId: pane.id, side: dropSideOf(event.currentTarget.getBoundingClientRect(), event.clientX) })
               }}
               onDragLeave={() => { setDropHint(current => (current?.paneId === pane.id ? null : current)) }}
@@ -352,7 +371,7 @@ export function IdeWorkspace({
                 onSave={() => { void saveDocument(document) }}
                 onReload={() => { setReloadPending(document.path) }}
                 onRetry={() => { retryActive(document) }} />}
-              {dragging !== null && dropHint?.paneId === pane.id && <span className={css.dropHint}
+              {dragging?.kind === 'tab' && dropHint?.paneId === pane.id && <span className={css.dropHint}
                 data-side={dropHint.side} role="presentation">
                 {t(dropHint.side === 'left' ? 'dropLeft' : 'dropRight')}
               </span>}

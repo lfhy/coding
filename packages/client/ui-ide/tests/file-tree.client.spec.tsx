@@ -14,13 +14,16 @@ function setup(directories: Record<string, IdeDirectoryState>, expanded: string[
   openEditors: IdeOpenEditorRow[] = []) {
   const onToggle = vi.fn()
   const onOpen = vi.fn()
+  const onDragFile = vi.fn()
+  const onDragFileEnd = vi.fn()
   const onActivateEditor = vi.fn()
   const onPinEditor = vi.fn()
   const onRetry = vi.fn()
   render(<IdeFileTree title="项目" collapsed={collapsed} width={280} directories={directories} expanded={expanded}
     activePath="src/a.ts" openEditors={openEditors} onToggle={onToggle} onOpen={onOpen}
+    onDragFile={onDragFile} onDragFileEnd={onDragFileEnd}
     onActivateEditor={onActivateEditor} onPinEditor={onPinEditor} onRetry={onRetry} t={translate} />)
-  return { onToggle, onOpen, onActivateEditor, onPinEditor, onRetry }
+  return { onToggle, onOpen, onDragFile, onDragFileEnd, onActivateEditor, onPinEditor, onRetry }
 }
 
 describe('IDE 文件树', () => {
@@ -80,6 +83,20 @@ describe('IDE 文件树', () => {
     expect(opened.onActivateEditor).toHaveBeenCalledWith('pane-0', 'a.ts')
     expect(opened.onPinEditor).toHaveBeenCalledOnce()
     expect(opened.onPinEditor).toHaveBeenCalledWith('pane-0', 'a.ts')
+  })
+
+  it('文件行可拖出名称链，拖拽结束交还页面清理状态', () => {
+    const fixture = setup({ '': { status: 'ready', truncated: false,
+      entries: [{ name: 'a.ts', type: 'file', segments: ['opaque', 'a.ts'] }] } })
+    const row = screen.getByRole('listitem', { name: 'a.ts' })
+    const written = new Map<string, string>()
+    const transfer = { effectAllowed: 'none', setData: (type: string, value: string) => { written.set(type, value) } }
+    fireEvent.dragStart(row, { dataTransfer: transfer })
+    expect(transfer.effectAllowed).toBe('copy')
+    expect(written.get('text/plain')).toBe('a.ts')
+    expect(fixture.onDragFile).toHaveBeenCalledWith('a.ts', 'a.ts', ['opaque', 'a.ts'])
+    fireEvent.dragEnd(row)
+    expect(fixture.onDragFileEnd).toHaveBeenCalledOnce()
   })
 
   it('没有打开编辑器时显示空态，收起侧栏时隐藏整个分区', () => {

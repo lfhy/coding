@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import type { CSSProperties, MouseEvent, ReactNode } from 'react'
+import type { CSSProperties, DragEvent, MouseEvent, ReactNode } from 'react'
 import clsx from 'clsx'
 import { Icon, type IconName } from 'coding-client-ui-icons'
 import css from './SidebarRoot.module.css'
@@ -26,6 +26,10 @@ export interface SidebarRootItem {
   actions?: ReactNode
   active?: boolean
   onSelect?: () => void
+  /** 条目是否可作为拖拽源；展开与收起态使用同一套拖拽事件。 */
+  draggable?: boolean
+  onDragStart?: (event: DragEvent<HTMLButtonElement>) => void
+  onDragEnd?: (event: DragEvent<HTMLButtonElement>) => void
   /** 右键菜单入口；调用方负责根据事件位置打开上下文操作。 */
   onContextMenu?: (event: MouseEvent<HTMLButtonElement>) => void
   /** 树形条目的缩进层级（0 起）；非树条目缺省 0。 */
@@ -114,6 +118,8 @@ export function SidebarRoot({
                       style={{ '--tree-depth': item.depth ?? 0 } as CSSProperties}
                       aria-current={item.active === true ? 'true' : undefined} data-icon-tone={item.iconTone}
                       aria-expanded={item.folder ? item.open === true : undefined} onClick={item.onSelect}
+                      draggable={item.draggable === true}
+                      onDragStart={item.onDragStart} onDragEnd={item.onDragEnd}
                       onContextMenu={item.onContextMenu}>
                       {(item.folder || variant === 'summary') && (
                         <span className={css.chevronSlot} aria-hidden="true">
@@ -144,7 +150,9 @@ export function SidebarRoot({
             {items.filter(item => !item.folder).map(item => (
               <button key={item.id} type="button" className={css.railButton}
                 aria-label={item.label} title={item.label} aria-pressed={item.active === true} data-icon-tone={item.iconTone}
-                onClick={item.onSelect} onContextMenu={item.onContextMenu}>
+                onClick={item.onSelect} draggable={item.draggable === true}
+                onDragStart={item.onDragStart} onDragEnd={item.onDragEnd}
+                onContextMenu={item.onContextMenu}>
                 <Icon name={item.icon} size={18} />
               </button>
             ))}

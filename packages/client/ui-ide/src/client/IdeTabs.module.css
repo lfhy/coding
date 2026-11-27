@@ -1,8 +1,9 @@
 .tabs {
   display: flex;
-  flex: 0 0 36px;
+  flex: 1 1 auto;
   align-items: stretch;
   min-width: 0;
+  height: 36px;
   overflow-x: auto;
   overflow-y: hidden;
   border-bottom: 1px solid var(--dsw-alias-border-l1);

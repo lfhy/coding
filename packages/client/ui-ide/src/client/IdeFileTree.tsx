@@ -17,6 +17,8 @@ interface IdeFileTreeProps {
   openEditors: readonly IdeOpenEditorRow[]
   onToggle: (path: string) => void
   onOpen: (path: string, name: string, segments: readonly string[]) => void
+  onDragFile: (path: string, name: string, segments: readonly string[]) => void
+  onDragFileEnd: () => void
   onActivateEditor: (paneId: string, path: string) => void
   onPinEditor: (paneId: string, path: string) => void
   onRetry: () => void
@@ -30,6 +32,8 @@ function treeItems(
   activePath: string | null,
   onToggle: (path: string) => void,
   onOpen: (path: string, name: string, segments: readonly string[]) => void,
+  onDragFile: (path: string, name: string, segments: readonly string[]) => void,
+  onDragFileEnd: () => void,
 ): SidebarRootItem[] {
   const rows: SidebarRootItem[] = []
   const visit = (parent: string, depth: number): void => {
@@ -52,7 +56,14 @@ function treeItems(
       } else {
         rows.push({
           id: path, label: entry.name, icon: 'file', depth, active: path === activePath,
+          draggable: true,
           onSelect: () => { onOpen(path, entry.name, entry.segments) },
+          onDragStart: (event) => {
+            event.dataTransfer.effectAllowed = 'copy'
+            event.dataTransfer.setData('text/plain', path)
+            onDragFile(path, entry.name, entry.segments)
+          },
+          onDragEnd: onDragFileEnd,
         })
       }
     }
@@ -64,11 +75,11 @@ function treeItems(
 /** 文件树列；展开状态与已加载层级由页面 store 保存。 */
 export function IdeFileTree({
   title, collapsed, width, directories, expanded, activePath, openEditors,
-  onToggle, onOpen, onActivateEditor, onPinEditor, onRetry, t,
+  onToggle, onOpen, onDragFile, onDragFileEnd, onActivateEditor, onPinEditor, onRetry, t,
 }: IdeFileTreeProps) {
   const items = useMemo(
-    () => treeItems(directories, expanded, activePath, onToggle, onOpen),
-    [directories, expanded, activePath, onToggle, onOpen],
+    () => treeItems(directories, expanded, activePath, onToggle, onOpen, onDragFile, onDragFileEnd),
+    [directories, expanded, activePath, onToggle, onOpen, onDragFile, onDragFileEnd],
   )
   const root = directories['']
   const failed = root?.status === 'error'

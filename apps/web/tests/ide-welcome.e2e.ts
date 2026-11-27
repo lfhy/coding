@@ -55,6 +55,7 @@ describe('代码工作区入口', () => {
     await mkdir(join(project, 'src'), { recursive: true })
     await writeFile(join(project, 'src', 'index.ts'), 'const answer = 1\n')
     await writeFile(join(project, 'src', 'util.ts'), 'export const util = 1\n')
+    await writeFile(join(project, 'package.json'), '{"name":"ide-project"}\n')
     await scaffold.ctx.workspaceRegistry.create(project, 'IDE project')
     await page.reload({ waitUntil: 'load' })
     await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
@@ -71,6 +72,10 @@ describe('代码工作区入口', () => {
     const opened = page.getByRole('region', { name: 'Open Editors', exact: true })
     await opened.waitFor()
     const previewTab = page.getByRole('tab', { name: /index\.ts/u })
+    const tabBar = await page.getByRole('tablist', { name: 'Open files', exact: true }).boundingBox()
+    const paneBox = await page.getByRole('region', { name: 'Editor group 1', exact: true }).boundingBox()
+    expect(tabBar?.width).toBeGreaterThan(600)
+    expect(tabBar?.width).toBeLessThanOrEqual((paneBox?.width ?? 0) + 1)
     expect(await previewTab.locator('span').last().evaluate(element => getComputedStyle(element).fontStyle))
       .toBe('italic')
 
@@ -96,6 +101,11 @@ describe('代码工作区入口', () => {
     await page.getByText('Saved', { exact: true }).waitFor()
     expect(await readFile(join(scaffold.workspaceCwd, 'ide-project', 'src', 'index.ts'), 'utf8'))
       .toBe('const answer = 42\n')
+
+    const packageFile = page.locator('button[role="listitem"][title="package.json"]')
+    await packageFile.dragTo(page.getByRole('tablist', { name: 'Open files', exact: true }))
+    await page.getByRole('textbox', { name: 'package.json editor', exact: true }).waitFor()
+    expect(await page.getByRole('tab', { name: /util\.ts/u }).count()).toBe(1)
     const metrics = await page.evaluate(() => ({
       width: document.documentElement.scrollWidth, height: document.documentElement.scrollHeight,
       viewportWidth: innerWidth, viewportHeight: innerHeight,
