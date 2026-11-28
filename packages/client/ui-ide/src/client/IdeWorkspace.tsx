@@ -8,9 +8,10 @@ import {
 import type { PropsLocale } from 'coding-client-ui-slots'
 import type { SessionId, WorkspaceId, WorkspaceView } from 'coding-client-runtime/client'
 import type { WorkspaceFilesService } from 'coding-client-ui-open-in-app/client'
-import { dropSideOf } from './ide-drag.ts'
+import { dropSideOf, dropTabSideOf } from './ide-drag.ts'
 import { IdeEditor } from './IdeEditor.tsx'
 import { IdeFileTree } from './IdeFileTree.tsx'
+import { IdeLayoutTree } from './IdeLayoutTree.tsx'
 import type { IdeOpenEditorRow } from './IdeOpenEditors.tsx'
 import { IdeTabs, type IdeTabDocument } from './IdeTabs.tsx'
 import { focusedPane } from './ide-store.ts'
@@ -306,7 +307,7 @@ export function IdeWorkspace({
     event.preventDefault()
     event.stopPropagation()
     if (dragging.kind === 'file') {
-      const side = dropSideOf(event.currentTarget.getBoundingClientRect(), event.clientX)
+      const side = dropSideOf(event.currentTarget.getBoundingClientRect(), event.clientX, event.clientY)
       openDraggedFile(paneId, dragging.ref, side)
       setDragging(null)
       setDropHint(null)
@@ -314,7 +315,7 @@ export function IdeWorkspace({
       return
     }
     // 落点以指针位置为准（提示只是预览），因此没有提示时同样能拆分。
-    const side = dropSideOf(event.currentTarget.getBoundingClientRect(), event.clientX)
+    const side = dropSideOf(event.currentTarget.getBoundingClientRect(), event.clientX, event.clientY)
     actions.splitTab(workspaceId, dragging.path, paneId, side)
     setDragging(null)
     setDropHint(null)
@@ -326,7 +327,7 @@ export function IdeWorkspace({
     event.preventDefault()
     event.stopPropagation()
     if (dragging.kind === 'file') {
-      const side = dropSideOf(event.currentTarget.getBoundingClientRect(), event.clientX)
+      const side = dropTabSideOf(event.currentTarget.getBoundingClientRect(), event.clientX)
       openDraggedFile(paneId, dragging.ref, side)
     } else actions.moveTab(workspaceId, dragging.path, paneId)
     setDragging(null)
@@ -407,7 +408,9 @@ export function IdeWorkspace({
         </div>
       </header>
       <div className={css.panes} data-split={view.panes.length > 1 ? '' : undefined}>
-        {view.panes.map((pane, index) => {
+        <IdeLayoutTree node={view.layout} renderPane={(paneId) => {
+          const index = view.panes.findIndex(candidate => candidate.id === paneId)
+          const pane = paneById(view, paneId)
           const tabDocuments = documentsOf(view, pane)
           const document = pane.activePath === null ? undefined : view.documents[pane.activePath]
           return <section key={pane.id} className={css.pane} data-active={pane.id === activePane.id ? '' : undefined}
@@ -422,7 +425,7 @@ export function IdeWorkspace({
                 if (dragging.kind === 'file') {
                   event.dataTransfer.dropEffect = 'copy'
                   setDropHint(null)
-                  const pointerSide = dropSideOf(event.currentTarget.getBoundingClientRect(), event.clientX)
+                  const pointerSide = dropTabSideOf(event.currentTarget.getBoundingClientRect(), event.clientX)
                   const side = fileDropSide(dragging.ref, pane.id, pointerSide)
                   setFileDropHint(side === undefined
                     ? { paneId: pane.id, area: 'tabs', text: fileDropCopy(dragging.ref, pane.id) }
@@ -462,7 +465,7 @@ export function IdeWorkspace({
                 if (dragging.kind === 'file') {
                   event.dataTransfer.dropEffect = 'copy'
                   setDropHint(null)
-                  const pointerSide = dropSideOf(event.currentTarget.getBoundingClientRect(), event.clientX)
+                  const pointerSide = dropSideOf(event.currentTarget.getBoundingClientRect(), event.clientX, event.clientY)
                   const side = fileDropSide(dragging.ref, pane.id, pointerSide)
                   setFileDropHint(side === undefined
                     ? { paneId: pane.id, area: 'body', text: fileDropCopy(dragging.ref, pane.id) }
@@ -471,7 +474,10 @@ export function IdeWorkspace({
                 }
                 event.dataTransfer.dropEffect = 'move'
                 setFileDropHint(null)
-                setDropHint({ paneId: pane.id, side: dropSideOf(event.currentTarget.getBoundingClientRect(), event.clientX) })
+                setDropHint({
+                  paneId: pane.id,
+                  side: dropSideOf(event.currentTarget.getBoundingClientRect(), event.clientX, event.clientY),
+                })
               }}
               onDragLeave={() => {
                 setDropHint(current => (current?.paneId === pane.id ? null : current))
@@ -489,7 +495,7 @@ export function IdeWorkspace({
                 onRetry={() => { retryActive(document) }} />}
               {dragging?.kind === 'tab' && dropHint?.paneId === pane.id && <span className={css.dropHint}
                 data-side={dropHint.side} role="presentation">
-                {t(dropHint.side === 'left' ? 'dropLeft' : 'dropRight')}
+                {t(({ left: 'dropLeft', right: 'dropRight', top: 'dropTop', bottom: 'dropBottom' } as const)[dropHint.side])}
               </span>}
               {fileDropHint?.paneId === pane.id && fileDropHint.area === 'body'
                 && <span className={css.fileDropHint} data-side={fileDropHint.side} role="presentation">
@@ -497,7 +503,7 @@ export function IdeWorkspace({
                 </span>}
             </div>
           </section>
-        })}
+        }} />
       </div>
     </section>
     {closeTab !== undefined && <Modal open title={t('discardTitle')} closeLabel={t('close')} trapFocus

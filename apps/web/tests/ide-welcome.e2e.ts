@@ -170,9 +170,20 @@ describe('代码工作区入口', () => {
     const body = page.locator('[data-pane-body]').first()
     const box = await body.boundingBox()
     expect(box).not.toBeNull()
-    await tab.dragTo(body, { targetPosition: { x: (box?.width ?? 100) - 8, y: 20 } })
+    await tab.dragTo(body, { targetPosition: { x: (box?.width ?? 100) - 8, y: (box?.height ?? 100) / 2 } })
     await page.getByRole('region', { name: 'Editor group 2', exact: true }).waitFor({ timeout: 30_000 })
     expect(await page.getByRole('region', { name: /Editor group/u }).count()).toBe(2)
+
+    const packageFile = page.locator('button[role="listitem"][title="package.json"]')
+    const firstBody = page.locator('[data-pane-body]').first()
+    const firstBox = await firstBody.boundingBox()
+    expect(firstBox).not.toBeNull()
+    await packageFile.dragTo(firstBody, {
+      targetPosition: { x: (firstBox?.width ?? 100) / 2, y: 8 },
+    })
+    await page.getByRole('region', { name: 'Editor group 3', exact: true }).waitFor({ timeout: 30_000 })
+    expect(await page.getByRole('region', { name: /Editor group/u }).count()).toBe(3)
+    expect(await page.locator('[data-orientation="column"]').count()).toBe(1)
     expect(consoleLog.pageErrors).toEqual([])
   })
 })

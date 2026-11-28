@@ -16,5 +16,12 @@ describe('IDE 标签栏几何', () => {
     expect(workspaceCss).toMatch(/\.fileDropHint\s*\{[^}]*border:\s*1px dashed var\(--dsw-alias-state-business-primary\)/)
     expect(workspaceCss).toMatch(/\.fileDropHint\s*\{[^}]*pointer-events:\s*none/)
     expect(workspaceCss).toMatch(/\.fileDropHint\[data-side='left'\]\s*\{[^}]*width:\s*50%/)
+    expect(workspaceCss).toMatch(/\.fileDropHint\[data-side='top'\]\s*\{[^}]*height:\s*50%/)
+  })
+
+  it('嵌套分组树支持左右与上下分隔', () => {
+    expect(workspaceCss).toMatch(/\.layoutSplit\[data-orientation='row'\]\s*>\s*\.layoutBranch\s*\+\s*\.layoutBranch\s*\{[^}]*border-left/)
+    expect(workspaceCss)
+      .toMatch(/\.layoutSplit\[data-orientation='column'\]\s*>\s*\.layoutBranch\s*\+\s*\.layoutBranch\s*\{[^}]*border-top/)
   })
 })

@@ -130,6 +130,37 @@ describe('IDE 工作区 store', () => {
     expect(merged?.panes[0]?.activePath).toBe('c.ts')
   })
 
+  it('支持上下嵌套分屏，关闭叶分组时逐层折叠布局', () => {
+    const store = setup()
+    store.actions.enter(A)
+    for (const path of ['a.ts', 'b.ts', 'c.ts']) store.actions.openTab(A, path, path, [path])
+    store.actions.splitTab(A, 'c.ts', 'pane-0', 'top')
+    store.actions.splitTab(A, 'b.ts', 'pane-0', 'right')
+    const split = store.getSnapshot().views[A]
+    expect(split?.panes.map(pane => pane.paths)).toEqual([['c.ts'], ['a.ts'], ['b.ts']])
+    expect(split?.layout).toEqual({
+      kind: 'split', orientation: 'column', children: [
+        { kind: 'pane', paneId: split?.panes[0]?.id },
+        { kind: 'split', orientation: 'row', children: [
+          { kind: 'pane', paneId: 'pane-0' },
+          { kind: 'pane', paneId: split?.panes[2]?.id },
+        ] },
+      ],
+    })
+
+    store.actions.closePane(A, split?.panes[0]?.id as string)
+    expect(store.getSnapshot().views[A]?.panes.map(pane => pane.paths)).toEqual([['a.ts', 'c.ts'], ['b.ts']])
+    expect(store.getSnapshot().views[A]?.layout).toEqual({
+      kind: 'split', orientation: 'row', children: [
+        { kind: 'pane', paneId: 'pane-0' },
+        { kind: 'pane', paneId: split?.panes[2]?.id },
+      ],
+    })
+    store.actions.closePane(A, split?.panes[2]?.id as string)
+    expect(store.getSnapshot().views[A]?.panes).toHaveLength(1)
+    expect(store.getSnapshot().views[A]?.layout).toEqual({ kind: 'pane', paneId: 'pane-0' })
+  })
+
   it('拖动已关闭的文件不让空分组残留，关闭分组会保留来源分组的相邻选中', () => {
     const store = setup()
     store.actions.enter(A)

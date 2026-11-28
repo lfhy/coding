@@ -35,10 +35,11 @@ const SRC_ENTRIES: WorkspaceFileEntry[] = [
   { name: 'util.ts', type: 'file', segments: ['src', 'util.ts'], size: 12 },
 ]
 
-/** jsdom 的 DragEvent 不接收 clientX，派生一个带坐标的事件给落点判定使用。 */
-function dragEvent(type: 'dragover' | 'drop', clientX: number, dataTransfer: object): Event {
+/** jsdom 的 DragEvent 不接收坐标，派生一个带指针位置的事件给落点判定使用。 */
+function dragEvent(type: 'dragover' | 'drop', clientX: number, dataTransfer: object, clientY = 0): Event {
   const event = new Event(type, { bubbles: true, cancelable: true })
   Object.defineProperty(event, 'clientX', { value: clientX })
+  Object.defineProperty(event, 'clientY', { value: clientY })
   Object.defineProperty(event, 'dataTransfer', { value: dataTransfer })
   return event
 }
@@ -330,7 +331,7 @@ describe('IDE 工作区三栏', () => {
     fireEvent.dragLeave(body, { relatedTarget: null })
     expect(screen.queryByText(zh.dropSplit)).toBeNull()
     fireEvent.dragOver(body, { clientX: 10, dataTransfer: transfer })
-    act(() => { body.dispatchEvent(dragEvent('drop', 10, transfer)) })
+    act(() => { body.dispatchEvent(dragEvent('drop', 10, transfer, 300)) })
     await screen.findByRole('textbox', { name: zh.editorLabel.replace('{name}', 'util.ts') })
     split = fixture.instance.getSnapshot().views[WORKSPACE_ID]
     expect(split?.panes.map(pane => pane.paths)).toEqual([
@@ -348,6 +349,55 @@ describe('IDE 工作区三栏', () => {
     expect(split?.panes).toHaveLength(3)
     expect(split?.panes[2]?.activePath).toBe('README.md')
     expect(split?.activePaneId).toBe(split?.panes[2]?.id)
+  })
+
+  it('文件拖到编辑区上沿形成上下分屏，并可在子分组继续嵌套', async () => {
+    const fixture = setup({ list: async (_sessionId, segments) => ({
+      path: segments.length === 0 ? '/repo' : `/repo/${segments.join('/')}`,
+      entries: segments.length === 0
+        ? [...ROOT_ENTRIES, { name: 'package.json', type: 'file' as const, segments: ['package.json'] }]
+        : SRC_ENTRIES,
+      truncated: false,
+    }) })
+    fireEvent.click(await screen.findByText('README.md'))
+    await screen.findByRole('textbox', { name: zh.editorLabel.replace('{name}', 'README.md') })
+    fireEvent.doubleClick(screen.getByRole('tab', { name: /README\.md/u }))
+    fireEvent.click(await screen.findByText('src'))
+    fireEvent.click(await screen.findByTitle('index.ts'))
+    await screen.findByRole('textbox', { name: zh.editorLabel.replace('{name}', 'index.ts') })
+    const transfer = { effectAllowed: 'none', dropEffect: 'none', setData: () => {} }
+    const util = document.querySelector('button[role="listitem"][title="util.ts"]') as HTMLElement
+    const body = screen.getAllByRole('region', { name: /编辑器分组/u })[0]?.querySelector('[data-pane-body]') as HTMLElement
+    body.getBoundingClientRect = () => ({
+      left: 0, width: 800, top: 0, height: 600, right: 800, bottom: 600, x: 0, y: 0,
+      toJSON: () => ({}),
+    })
+    fireEvent.dragStart(util, { dataTransfer: transfer })
+    act(() => { body.dispatchEvent(dragEvent('dragover', 400, transfer, 10)) })
+    expect(screen.getByText(zh.dropSplit).getAttribute('data-side')).toBe('top')
+    act(() => { body.dispatchEvent(dragEvent('drop', 400, transfer, 10)) })
+    await screen.findByRole('textbox', { name: zh.editorLabel.replace('{name}', 'util.ts') })
+    let view = fixture.instance.getSnapshot().views[WORKSPACE_ID]
+    expect(view?.panes.map(pane => pane.paths)).toEqual([['src/util.ts'], ['README.md', 'src/index.ts']])
+    expect(document.querySelector('[data-orientation="column"]')).toBeTruthy()
+
+    const packageFile = document.querySelector('button[role="listitem"][title="package.json"]') as HTMLElement
+    const nestedBody = screen.getAllByRole('region', { name: /编辑器分组/u })[0]?.querySelector('[data-pane-body]') as HTMLElement
+    nestedBody.getBoundingClientRect = () => ({
+      left: 0, width: 800, top: 0, height: 600, right: 800, bottom: 600, x: 0, y: 0,
+      toJSON: () => ({}),
+    })
+    fireEvent.dragStart(packageFile, { dataTransfer: transfer })
+    act(() => { nestedBody.dispatchEvent(dragEvent('dragover', 790, transfer, 300)) })
+    expect(screen.getByText(zh.dropSplit).getAttribute('data-side')).toBe('right')
+    act(() => { nestedBody.dispatchEvent(dragEvent('drop', 790, transfer, 300)) })
+    await screen.findByRole('textbox', { name: zh.editorLabel.replace('{name}', 'package.json') })
+    view = fixture.instance.getSnapshot().views[WORKSPACE_ID]
+    expect(view?.panes.map(pane => pane.paths)).toEqual([
+      ['src/util.ts'], ['package.json'], ['README.md', 'src/index.ts'],
+    ])
+    expect(document.querySelector('[data-orientation="row"]')).toBeTruthy()
+    expect(document.querySelectorAll('[data-orientation="column"]')).toHaveLength(1)
   })
 
   it('空分组拖拽文件直接固定打开，不创建额外分组', async () => {
@@ -557,13 +607,18 @@ describe('IDE 工作区三栏', () => {
       screen.getAllByRole('region', { name: zh.paneLabel.replace('{index}', String(index + 1)) })[0]
         ?.querySelector('[data-pane-body]') as HTMLElement
 
+    const body = bodyOf(0)
+    body.getBoundingClientRect = () => ({
+      left: 0, width: 800, top: 0, height: 600, right: 800, bottom: 600, x: 0, y: 0,
+      toJSON: () => ({}),
+    })
     fireEvent.dragStart(dragTab(/util\.ts/u), { dataTransfer: transfer })
-    fireEvent.dragOver(bodyOf(0), { clientX: 900, dataTransfer: transfer })
-    fireEvent.dragOver(bodyOf(0), { clientX: 10, dataTransfer: transfer })
-    fireEvent.dragOver(bodyOf(0), { clientX: 900, dataTransfer: transfer })
-    fireEvent.dragLeave(bodyOf(0))
-    fireEvent.dragOver(bodyOf(0), { clientX: 900, dataTransfer: transfer })
-    fireEvent.drop(bodyOf(0), { clientX: 900, dataTransfer: transfer })
+    fireEvent.dragOver(body, { clientX: 900, dataTransfer: transfer })
+    fireEvent.dragOver(body, { clientX: 10, dataTransfer: transfer })
+    fireEvent.dragOver(body, { clientX: 900, dataTransfer: transfer })
+    fireEvent.dragLeave(body)
+    act(() => { body.dispatchEvent(dragEvent('dragover', 790, transfer, 300)) })
+    act(() => { body.dispatchEvent(dragEvent('drop', 790, transfer, 300)) })
     const split = fixture.instance.getSnapshot().views[WORKSPACE_ID]?.panes ?? []
     expect(split).toHaveLength(2)
     expect(split[1]?.paths).toEqual(['src/util.ts'])
@@ -617,9 +672,9 @@ describe('IDE 编辑器分组交互', () => {
       left: 0, width: 800, top: 0, height: 600, right: 800, bottom: 600, x: 0, y: 0,
       toJSON: () => ({}),
     })
-    act(() => { body.dispatchEvent(dragEvent('dragover', 10, transfer)) })
+    act(() => { body.dispatchEvent(dragEvent('dragover', 10, transfer, 300)) })
     expect(screen.getByText(zh.dropLeft)).toBeTruthy()
-    act(() => { body.dispatchEvent(dragEvent('drop', 10, transfer)) })
+    act(() => { body.dispatchEvent(dragEvent('drop', 10, transfer, 300)) })
     const leftSplit = fixture.instance.getSnapshot().views[WORKSPACE_ID]?.panes ?? []
     expect(leftSplit.map(pane => pane.paths)).toEqual([['src/util.ts'], ['src/index.ts']])
     expect(leftSplit[0]?.paths).toEqual(['src/util.ts'])

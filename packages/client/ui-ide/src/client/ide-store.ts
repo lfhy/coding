@@ -43,12 +43,19 @@ export interface IdePaneState {
   previewPath: string | null
 }
 
+/** 编辑器分组布局：叶子对应一个分组，节点记录左右或上下拆分关系。 */
+export type IdeLayoutNode =
+  | { kind: 'pane'; paneId: string }
+  | { kind: 'split'; orientation: 'row' | 'column'; children: [IdeLayoutNode, IdeLayoutNode] }
+
 /** 一个工作区的视图状态。 */
 export interface IdeWorkspaceView {
   documents: Record<string, IdeDocument>
   directories: Record<string, IdeDirectoryState>
   expanded: string[]
   panes: IdePaneState[]
+  /** 分组树决定嵌套分屏的视觉顺序，`panes` 保留扁平查找与标签操作。 */
+  layout: IdeLayoutNode
   activePaneId: string
 }
 
@@ -71,8 +78,8 @@ export type IdeActionsBaked = {
     : never
 }
 
-/** 分屏方向：把标签拖到编辑器左半或右半。 */
-export type IdeSplitSide = 'left' | 'right'
+/** 分屏方向：在目标分组左、右、上、下任一侧新建分组。 */
+export type IdeSplitSide = 'left' | 'right' | 'top' | 'bottom'
 
 type IdeActions = {
   /** 进入工作区，或传 `null` 回到欢迎页。 */
@@ -102,7 +109,7 @@ type IdeActions = {
   /** 把标签移到另一个分组（已在其中时只切换活动文件）。 */
   moveTab: (draft: IdeState, workspaceId: WorkspaceId, path: string, paneId: string) => void
   /**
-   * 把标签拆到目标分组的左/右半区形成新的编辑器分组。
+   * 把标签拆到目标分组的左、右、上、下半区形成新的编辑器分组。
    * `move`（拖拽）把标签搬过去，`copy`（页头拆分按钮）在新分组里打开同一文件。
    */
   splitTab: (draft: IdeState, workspaceId: WorkspaceId, path: string, paneId: string,
@@ -118,6 +125,7 @@ export function emptyView(): IdeWorkspaceView {
   return {
     documents: {}, directories: {}, expanded: [], activePaneId: 'pane-0',
     panes: [{ id: 'pane-0', paths: [], activePath: null, previewPath: null }],
+    layout: { kind: 'pane', paneId: 'pane-0' },
   }
 }
 
@@ -155,6 +163,44 @@ function newPane(draft: IdeState): IdePaneState {
   return pane
 }
 
+/** 在分组树的目标叶子旁插入新叶子，支持任意深度的嵌套组合。 */
+function insertPaneLayout(node: IdeLayoutNode, sourcePaneId: string, paneId: string, side: IdeSplitSide): IdeLayoutNode {
+  if (node.kind === 'pane') {
+    if (node.paneId !== sourcePaneId) return node
+    const before = side === 'left' || side === 'top'
+    const source = { kind: 'pane', paneId: sourcePaneId } as const
+    const created = { kind: 'pane', paneId } as const
+    return {
+      kind: 'split', orientation: side === 'left' || side === 'right' ? 'row' : 'column',
+      children: before ? [created, source] : [source, created],
+    }
+  }
+  const first = insertPaneLayout(node.children[0], sourcePaneId, paneId, side)
+  if (first !== node.children[0]) return { ...node, children: [first, node.children[1]] }
+  const second = insertPaneLayout(node.children[1], sourcePaneId, paneId, side)
+  /* v8 ignore next -- sourcePaneId 已由调用方确认存在于当前分组树。 */
+  return second === node.children[1] ? node : { ...node, children: [node.children[0], second] }
+}
+
+/** 移除目标叶子并把父拆分折叠为另一侧，保持剩余分组相对位置。 */
+function withoutPaneLayout(node: IdeLayoutNode, paneId: string): IdeLayoutNode | undefined {
+  if (node.kind === 'pane') return node.paneId === paneId ? undefined : node
+  const first = withoutPaneLayout(node.children[0], paneId)
+  if (first === undefined) return node.children[1]
+  const second = withoutPaneLayout(node.children[1], paneId)
+  if (second === undefined) return node.children[0]
+  /* v8 ignore next -- paneId 已由调用方确认存在于当前分组树。 */
+  if (first === node.children[0] && second === node.children[1]) return node
+  return { ...node, children: [first, second] }
+}
+
+/** 分组树至少保留一个叶子；单叶被移除只发生在整体重置路径。 */
+function removePaneLayout(target: IdeWorkspaceView, paneId: string): void {
+  const next = withoutPaneLayout(target.layout, paneId)
+  /* v8 ignore next -- 只剩一个分组时调用方不会删除它。 */
+  target.layout = next ?? { kind: 'pane', paneId: target.activePaneId }
+}
+
 /** 从一个分组里摘掉路径；被摘掉的是活动文件时，选中退到相邻标签。 */
 function retirePath(pane: IdePaneState, path: string): void {
   const index = pane.paths.indexOf(path)
@@ -176,8 +222,12 @@ function pruneEmptyPanes(target: IdeWorkspaceView): void {
   const kept = target.panes.filter(pane => pane.paths.length > 0)
   if (kept.length === 0) {
     target.panes = [{ id: 'pane-0', paths: [], activePath: null, previewPath: null }]
+    target.layout = { kind: 'pane', paneId: 'pane-0' }
     target.activePaneId = 'pane-0'
     return
+  }
+  for (const pane of target.panes) {
+    if (!kept.includes(pane)) removePaneLayout(target, pane.id)
   }
   target.panes = kept
   // kept 非空（上面已返回），首项一定存在。
@@ -292,7 +342,9 @@ export function createIdeStore(): EngineStoreHandle<IdeState, IdeActions> {
         ensureDocument(target, path, name, segments)
         const pane = newPane(draft)
         const index = target.panes.findIndex(candidate => candidate.id === source.id)
-        target.panes.splice(index + (side === 'right' ? 1 : 0), 0, pane)
+        const before = side === 'left' || side === 'top'
+        target.panes.splice(index + (before ? 0 : 1), 0, pane)
+        target.layout = insertPaneLayout(target.layout, source.id, pane.id, side)
         pane.paths = [path]
         pane.activePath = path
         pane.previewPath = null
@@ -381,7 +433,9 @@ export function createIdeStore(): EngineStoreHandle<IdeState, IdeActions> {
         if (mode === 'move' && soleTab) return
         const pane = newPane(draft)
         const index = target.panes.findIndex(candidate => candidate.id === source.id)
-        target.panes.splice(index + (side === 'right' ? 1 : 0), 0, pane)
+        const before = side === 'left' || side === 'top'
+        target.panes.splice(index + (before ? 0 : 1), 0, pane)
+        target.layout = insertPaneLayout(target.layout, source.id, pane.id, side)
         pane.paths = [path]
         pane.activePath = path
         pane.previewPath = source.previewPath === path ? path : null
@@ -412,6 +466,7 @@ export function createIdeStore(): EngineStoreHandle<IdeState, IdeActions> {
         /* v8 ignore next -- 有标签的分组始终有活动文件，`??` 右侧是不可达的兜底。 */
         neighbour.activePath = pane.activePath ?? neighbour.activePath
         target.panes.splice(index, 1)
+        removePaneLayout(target, paneId)
         if (target.activePaneId === paneId) target.activePaneId = neighbour.id
         pruneEmptyPanes(target)
       },
